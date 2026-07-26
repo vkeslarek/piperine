@@ -80,6 +80,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: SS-14 / crates/piperine-solver/src/error.rs:1,result.rs:1 (piperine-solver)
 - last seen: 2026-07-19T16:34:44Z
 
+### L-012 — When a metadata sidecar is resolved at the POM/lang layer and consumed at the codegen layer, attributes attached to POM nodes that do not surface in codegen's runtime catalogs (e.g. a var shadowed/never-assigned so the kernel omits it from opvar_names) must be cross-checked at the codegen boundary — silently dropping the orphan metadata violates fail-loud.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `piperine-lang/pom, piperine-codegen/device, fail-loud` · harmful: 0
+- features: phdl-introspection-attributes
+- evidence: .specs/features/phdl-introspection-attributes/validation.md Edge Cases bullet 3 (orphan @unit/@description on shadowed var); pom/design.rs:469-500; device/mod.rs:428-440 (piperine-lang/pom, piperine-codegen/device, fail-loud)
+- last seen: 2026-07-24T02:29:17Z
+
+### L-013 — A guard that only scans a clean tree passes even when its detector is broken: extract each check into a named predicate and test it against fixture inputs (must-flag and must-not-flag), or the guard is verified only by a human remembering to inject a violation.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `policy guards` · harmful: 0
+- features: p6-cleanup-completeness
+- evidence: tests/suite_hygiene.rs / mutants M3+M4 (policy guards)
+- last seen: 2026-07-26T03:33:18Z
+
+### L-014 — Before writing 'delete the unenforceable rule' into a spec, check whether the rule is unreachable or merely unenforced — an unenforced-but-reachable rule needs its status stated in place, since deleting it trades documentation drift for a silent capability regression.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `docs/spec` · harmful: 0
+- features: p6-cleanup-completeness
+- evidence: CLN-18 / audit.md §7b (docs/spec)
+- last seen: 2026-07-26T03:33:18Z
+
+### L-015 — Never plan against a quoted test count: grep the tree for #[test] and reconcile against the runner's number, because a #![cfg(any())] file contributes tests to the source count and zero to the gate.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `test suite` · harmful: 0
+- features: p6-cleanup-completeness
+- evidence: audit.md §1 reconciliation / ROADMAP P6 (test suite)
+- last seen: 2026-07-26T03:33:18Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

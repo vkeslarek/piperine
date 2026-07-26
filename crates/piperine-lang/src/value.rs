@@ -467,8 +467,8 @@ mod tests {
 
     #[test]
     fn value_real_construction_and_access() {
-        let v = Value::Real(3.14);
-        assert_eq!(v.as_real(), Some(3.14));
+        let v = Value::Real(2.71);
+        assert_eq!(v.as_real(), Some(2.71));
         assert_eq!(v.as_integer(), None);
     }
 

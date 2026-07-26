@@ -168,6 +168,120 @@ pub enum Direction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SignConvention { IntoTerminal, OutOfTerminal }
 
+/// Whether a terminal is user-facing or internal (ABI-29). External ports
+/// appear in the module signature; internal terminals are non-port wires
+/// the kernel nonetheless surfaces (series-R, thermal, hidden probes); an
+/// auxiliary terminal is a diagnostic-only point a host hides by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TerminalKind {
+    /// A port declared in the module signature (user-facing).
+    External,
+    /// An internal node (non-port `wire` — series-R, thermal, etc.).
+    Internal,
+    /// An auxiliary node (hidden, diagnostic-only — e.g., a probe point).
+    Auxiliary,
+}
+
+/// Model identity and version for diagnostics + introspection (ABI-46). A
+/// host uses this to render model-specific UI (e.g., picking the right
+/// opvar table for `"mos"` vs `"diode"`) and to gate feature availability
+/// without name-matching. The default `{ type_id: "", version: "" }` is
+/// the conservative "no identity declared" — a host falls back to the
+/// instance name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelDescriptor {
+    /// Source-level type id (`"mos"`, `"diode"`, `"bjt"`, …). Empty when
+    /// the device does not declare a model family.
+    pub type_id: String,
+    /// Model version (`"3"`, `"3.1"`, …). Empty when unversioned.
+    pub version: String,
+}
+
+impl ModelDescriptor {
+    /// The "no identity declared" default — a host falls back to the
+    /// instance name from [`Element::name`](crate::core::element::Element::name).
+    pub const EMPTY: ModelDescriptor = ModelDescriptor {
+        type_id: String::new(),
+        version: String::new(),
+    };
+}
+
+/// What kind of runtime quantity an [`ObservableDescriptor`] names
+/// (ABI-32). The kind tells a host how to interpret the recorded value
+/// (a branch current is a current; a state slot is operator-dependent)
+/// and lets it group probes by category in UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ObservableKind {
+    /// A branch current the device reports via a force branch (`V(...) <- …`
+    /// with a series-R term). The descriptor's `name` is the branch label.
+    BranchCurrent,
+    /// A charge-storing reactive state (`ddt` companion). The `name` is the
+    /// state slot name from the kernel catalog.
+    Charge,
+    /// A flux-storing reactive state (inductor companion).
+    Flux,
+    /// A runtime state slot (delay/transition/idt operator, `$limit` vold).
+    /// The `name` is the slot name from [`Introspect::list_state_slot_names`].
+    State,
+    /// A module-level persistent variable slot. The `name` is the var name
+    /// (or a synthesized `var[k]` when the kernel does not surface names).
+    Var,
+}
+
+/// A device-declared observable a host can request for per-step recording
+/// (ABI-32). The descriptor carries the source-level name, the kind (so a
+/// host can render/group probes), and a relative recording cost hint
+/// (0 = free, 1 = full bank clone) — letting a host budget recording
+/// against simulation cost.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObservableDescriptor {
+    /// Source-level name (matches the entry a `ProbeSelection` request
+    /// names). Unique within one device.
+    pub name: String,
+    /// What the recorded value represents.
+    pub kind: ObservableKind,
+    /// Relative recording cost (0 = free, 1 = full bank clone). A host
+    /// uses this to budget recording against simulation cost.
+    pub cost: f32,
+}
+
+/// Per-device observable requests for transient recording (ABI-33). Each
+/// entry is `(device_label, observable_name)`; the analysis driver filters
+/// `collect_device_banks` to record only the requested observables. An
+/// empty selection records nothing — today's default-off behavior. The
+/// global `TransientAnalysisOptions::record_device_state = true` remains
+/// the "record every observable on every device" shorthand.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProbeSelection {
+    /// `(device_label, observable_name)` pairs.
+    pub requests: Vec<(String, String)>,
+}
+
+impl ProbeSelection {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add one `(device_label, observable_name)` request.
+    pub fn request(mut self, device_label: impl Into<String>, observable: impl Into<String>) -> Self {
+        self.requests.push((device_label.into(), observable.into()));
+        self
+    }
+
+    /// Whether `device_label`/`observable_name` was requested.
+    pub fn contains(&self, device_label: &str, observable_name: &str) -> bool {
+        self.requests
+            .iter()
+            .any(|(d, o)| d == device_label && o == observable_name)
+    }
+}
+
+impl Default for ModelDescriptor {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
 /// Metadata for one declared terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerminalDescriptor {
@@ -179,6 +293,9 @@ pub struct TerminalDescriptor {
     pub required: bool,
     pub discipline: Option<String>,
     pub sign: SignConvention,
+    /// Whether the terminal is a user-facing port or an internal/auxiliary
+    /// node (ABI-29). Defaults to [`TerminalKind::External`].
+    pub kind: TerminalKind,
 }
 
 impl TerminalDescriptor {
@@ -186,6 +303,7 @@ impl TerminalDescriptor {
         Self {
             name: name.into(), domain, direction,
             required: true, discipline: None, sign: SignConvention::IntoTerminal,
+            kind: TerminalKind::External,
         }
     }
 }
@@ -252,7 +370,7 @@ mod tests {
             }]
         }
         fn get_param(&self, name: &str) -> Option<Value> {
-            (name == "r").then(|| Value::Real(self.r))
+            (name == "r").then_some(Value::Real(self.r))
         }
         fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {
             if name != "r" {
@@ -320,6 +438,7 @@ mod tests {
         assert!(desc.required);
         assert_eq!(desc.discipline, None);
         assert_eq!(desc.sign, SignConvention::IntoTerminal);
+        assert_eq!(desc.kind, TerminalKind::External);
     }
 
     #[test]
@@ -327,8 +446,80 @@ mod tests {
         let mut desc = TerminalDescriptor::new("n", Domain::Analog, Direction::Inout);
         desc.discipline = Some("electrical".into());
         desc.sign = SignConvention::OutOfTerminal;
+        desc.kind = TerminalKind::Internal;
         
         assert_eq!(desc.discipline, Some("electrical".into()));
         assert_eq!(desc.sign, SignConvention::OutOfTerminal);
+        assert_eq!(desc.kind, TerminalKind::Internal);
+    }
+
+    #[test]
+    fn terminal_kind_distinguishes_external_internal_auxiliary() {
+        let ext = TerminalDescriptor::new("d", Domain::Analog, Direction::Inout);
+        let mut int = TerminalDescriptor::new("dp", Domain::Analog, Direction::Inout);
+        let mut aux = TerminalDescriptor::new("probe", Domain::Analog, Direction::Inout);
+        int.kind = TerminalKind::Internal;
+        aux.kind = TerminalKind::Auxiliary;
+        // ABI-29: the three kinds are distinct values; `External` is the
+        // default in `TerminalDescriptor::new`, the other two are opt-in.
+        assert_eq!(ext.kind, TerminalKind::External);
+        assert_eq!(int.kind, TerminalKind::Internal);
+        assert_eq!(aux.kind, TerminalKind::Auxiliary);
+        assert_ne!(ext.kind, int.kind);
+        assert_ne!(int.kind, aux.kind);
+        assert_ne!(ext.kind, aux.kind);
+    }
+
+    #[test]
+    fn model_descriptor_default_is_empty_sentinel() {
+        // ABI-46: a host-built Element with no kernel inherits the empty
+        // descriptor — both fields empty, host falls back to instance name.
+        let r = Resistor { r: 1000.0 };
+        let descriptor = r.model_descriptor();
+        assert_eq!(descriptor.type_id, "");
+        assert_eq!(descriptor.version, "");
+        assert_eq!(ModelDescriptor::default(), ModelDescriptor::EMPTY);
+        assert_eq!(ModelDescriptor::EMPTY.type_id, "");
+        assert_eq!(ModelDescriptor::EMPTY.version, "");
+    }
+
+    #[test]
+    fn named_catalogs_default_empty_for_simple_element() {
+        // ABI-47: a plain analog-only device inherits empty named catalogs
+        // for state slots, force terminals, and noise terminals.
+        let r = Resistor { r: 1000.0 };
+        assert!(r.list_state_slot_names().is_empty());
+        assert!(r.list_force_terminal_pairs().is_empty());
+        assert!(r.list_noise_terminal_pairs().is_empty());
+    }
+
+    #[test]
+    fn observable_catalog_defaults_empty_for_simple_element() {
+        // ABI-32: a plain analog-only device inherits an empty observable
+        // catalog — `list_observables()` defaults to nothing, so a host
+        // requesting anything on it fails loud at setup (ABI-35).
+        let r = Resistor { r: 1000.0 };
+        assert!(r.list_observables().is_empty());
+    }
+
+    #[test]
+    fn probe_selection_default_empty_and_contains_check_works() {
+        // ABI-33: an empty `ProbeSelection` is the default-off recording
+        // mode (no device/observable pairs requested). `contains` is the
+        // per-(device, observable) lookup the analysis driver uses to
+        // filter `collect_device_banks`.
+        let sel = ProbeSelection::new();
+        assert!(sel.requests.is_empty());
+        assert!(!sel.contains("r1", "i"));
+
+        let sel = ProbeSelection::new()
+            .request("r1", "i(p,n)")
+            .request("c1", "ddt[0]");
+        assert_eq!(sel.requests.len(), 2);
+        assert!(sel.contains("r1", "i(p,n)"));
+        assert!(sel.contains("c1", "ddt[0]"));
+        assert!(!sel.contains("r1", "ddt[0]"));
+        assert!(!sel.contains("c1", "i(p,n)"));
+        assert!(!sel.contains("missing", "i(p,n)"));
     }
 }

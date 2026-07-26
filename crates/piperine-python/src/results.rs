@@ -19,10 +19,83 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
 use num_complex::Complex64;
-use piperine_api::{AcTrace, ComplexWaveform, FourierResult, NetRef, NoiseTrace, OpResult, Trace, Waveform};
+use piperine_api::{AcTrace, ComplexWaveform, FourierResult, NoiseTrace, OpResult, Trace, Waveform};
 use piperine_solver::abi::SolverStats;
 
 use crate::instance::InstanceResolver;
+
+/// `_LimitingReport` — one device's structured limiting diagnostic (HOST-10 /
+/// ABI-09): which device clamped what value, by which limiter, and why.
+/// Uniform-shape (MD-22): mirrors the solver's `LimitingReport` field names.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _LimitingReport {
+    #[pyo3(get)]
+    pub device: String,
+    #[pyo3(get)]
+    pub net: String,
+    #[pyo3(get)]
+    pub proposed: f64,
+    #[pyo3(get)]
+    pub limited_value: f64,
+    #[pyo3(get)]
+    pub limiter_name: String,
+    #[pyo3(get)]
+    pub reason: String,
+}
+
+impl _LimitingReport {
+    pub(crate) fn from_solver(r: &piperine_solver::abi::LimitingReport) -> Self {
+        use piperine_solver::abi::LimitReason;
+        let reason = match r.reason {
+            LimitReason::VoltageStep => "voltage_step",
+            LimitReason::VdsStep => "vds_step",
+            LimitReason::Other(s) => s,
+        };
+        Self {
+            device: r.device.clone(),
+            net: format!("{:?}", r.net),
+            proposed: r.proposed,
+            limited_value: r.limited_value,
+            limiter_name: r.limiter_name.to_string(),
+            reason: reason.to_string(),
+        }
+    }
+}
+
+/// `_NoiseContribution` — one noise source's contribution to the output
+/// noise (HOST-11 / ABI): element label, source name, noise kind, and the
+/// integrated mean-square value. Uniform-shape (MD-22): mirrors the api.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _NoiseContribution {
+    #[pyo3(get)]
+    pub element: String,
+    #[pyo3(get)]
+    pub source: String,
+    #[pyo3(get)]
+    pub kind: String,
+    #[pyo3(get)]
+    pub integrated_sq: f64,
+}
+
+impl _NoiseContribution {
+    pub(crate) fn from_solver(c: &piperine_api::NoiseContribution) -> Self {
+        use piperine_solver::prelude::NoiseKind;
+        let kind = match c.kind {
+            NoiseKind::Thermal => "thermal",
+            NoiseKind::Shot => "shot",
+            NoiseKind::Flicker => "flicker",
+            NoiseKind::Other => "other",
+        };
+        Self {
+            element: c.element.clone(),
+            source: c.source.clone(),
+            kind: kind.to_string(),
+            integrated_sq: c.integrated_sq,
+        }
+    }
+}
 
 /// `_SolverStats` — per-analysis convergence + performance diagnostics
 /// (CP-09). Every field from the solver's `SolverStats` is exposed as a
@@ -55,6 +128,8 @@ pub struct _SolverStats {
     pub assembly_time_ns: u64,
     #[pyo3(get)]
     pub solve_time_ns: u64,
+    #[pyo3(get)]
+    pub limiting: Vec<_LimitingReport>,
 }
 
 impl _SolverStats {
@@ -73,6 +148,7 @@ impl _SolverStats {
             homotopy_levels: s.homotopy_levels,
             assembly_time_ns: s.assembly_time_ns,
             solve_time_ns: s.solve_time_ns,
+            limiting: s.limiting.iter().map(_LimitingReport::from_solver).collect(),
         }
     }
 }
@@ -130,13 +206,6 @@ impl _OpResult {
         Rc::clone(&self.inner)
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
-    /// readout takes. Kept as a struct method (MD-13: no loose `fn`).
-    fn net(name: &str) -> NetRef {
-        NetRef {
-            name: name.to_string(),
-        }
-    }
 }
 
 #[pymethods]
@@ -144,11 +213,15 @@ impl _OpResult {
     /// Node voltage of `a` minus `b` (ground-referenced when `b` is omitted)
     /// — spec AC4. A digital `Bit`/`Logic` net reads its logic value (0/1,
     /// NaN for X/Z). An unaddressable net raises `KeyError` (fail loud).
+    /// HOST-23: `a`/`b` resolve through `NetRef`'s `Into` ergonomics — no
+    /// bare `NetRef { name }` construction needed.
     #[pyo3(signature = (a, b=None))]
     fn v(&self, a: &str, b: Option<&str>) -> PyResult<f64> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)
+        match b {
+            Some(b) => self.inner.v((a, b)),
+            None => self.inner.v(a),
+        }
+        .map_err(readout_err)
     }
 
     /// Branch current from terminal `a` to `b` (ground-referenced when `b`
@@ -157,9 +230,11 @@ impl _OpResult {
     /// `RuntimeError` for an ambiguous branch.
     #[pyo3(signature = (a, b=None))]
     fn i(&self, a: &str, b: Option<&str>) -> PyResult<f64> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        self.inner.i(&net_a, net_b.as_ref()).map_err(readout_err)
+        match b {
+            Some(b) => self.inner.i((a, b)),
+            None => self.inner.i(a),
+        }
+        .map_err(readout_err)
     }
 
     /// Per-analysis convergence + performance statistics.
@@ -226,34 +301,32 @@ impl _Trace {
         Rc::clone(&self.inner)
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
-    /// readout takes. Kept as a struct method (MD-13).
-    fn net(name: &str) -> NetRef {
-        NetRef {
-            name: name.to_string(),
-        }
-    }
 }
 
 #[pymethods]
 impl _Trace {
     /// Net voltage `a` minus `b` (ground-referenced when `b` is omitted) over
     /// time — spec AC7. A digital net reads its logic value per step. An
-    /// unaddressable net raises `KeyError` (fail loud).
+    /// unaddressable net raises `KeyError` (fail loud). HOST-23: `a`/`b`
+    /// resolve through `NetRef`'s `Into` ergonomics.
     #[pyo3(signature = (a, b=None))]
     fn v(&self, a: &str, b: Option<&str>) -> PyResult<_Waveform> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        let wf = self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        let wf = match b {
+            Some(b) => self.inner.v((a, b)),
+            None => self.inner.v(a),
+        }
+        .map_err(readout_err)?;
         Ok(_Waveform::new(wf))
     }
 
     /// Branch current from `a` to `b` over time — spec AC7.
     #[pyo3(signature = (a, b=None))]
     fn i(&self, a: &str, b: Option<&str>) -> PyResult<_Waveform> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        let wf = self.inner.i(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        let wf = match b {
+            Some(b) => self.inner.i((a, b)),
+            None => self.inner.i(a),
+        }
+        .map_err(readout_err)?;
         Ok(_Waveform::new(wf))
     }
 
@@ -364,10 +437,11 @@ impl _Waveform {
 
     /// First axis value where the waveform crosses `level` in direction
     /// `dir` (`"Rising"`/`"Falling"`/`"Either"`), or `None`. Uniform-shape
-    /// (host `Waveform::cross`).
+    /// (host `Waveform::cross`). HOST-23: the facade's `CrossDirection`
+    /// enum's `.value` is exactly one of these three strings.
     #[pyo3(signature = (level, dir="Either"))]
     fn cross(&self, level: f64, dir: &str) -> Option<f64> {
-        self.inner.cross(level, dir)
+        self.inner.cross(level, dir.into())
     }
 
     /// Number of samples — equal to `.values` length.
@@ -543,25 +617,21 @@ impl _AcTrace {
         Self { inner }
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
-    /// readout takes. Kept as a struct method (MD-13).
-    fn net(name: &str) -> NetRef {
-        NetRef {
-            name: name.to_string(),
-        }
-    }
 }
 
 #[pymethods]
 impl _AcTrace {
     /// Net voltage `a` minus `b` (ground-referenced when `b` is omitted) over
     /// the AC frequency sweep — spec AC8. An unaddressable net raises
-    /// `KeyError` (fail loud).
+    /// `KeyError` (fail loud). HOST-23: `a`/`b` resolve through `NetRef`'s
+    /// `Into` ergonomics.
     #[pyo3(signature = (a, b=None))]
     fn v(&self, a: &str, b: Option<&str>) -> PyResult<_ComplexWaveform> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        let cw = self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        let cw = match b {
+            Some(b) => self.inner.v((a, b)),
+            None => self.inner.v(a),
+        }
+        .map_err(readout_err)?;
         Ok(_ComplexWaveform::new(cw))
     }
 
@@ -596,5 +666,46 @@ impl _NoiseTrace {
     /// Integrated total noise (RMS) — spec AC9.
     fn total(&self) -> f64 {
         self.inner.total()
+    }
+
+    /// Per-source noise PSD as `_Waveform`s (HOST-11): keyed
+    /// `"element/source"` (e.g. `"r1/thermal"`). Each waveform is the PSD
+    /// contribution of that source alone.
+    fn by_source(&self) -> std::collections::HashMap<String, _Waveform> {
+        self.inner
+            .by_source()
+            .into_iter()
+            .map(|(k, w)| (k, _Waveform::new(w)))
+            .collect()
+    }
+
+    /// The full per-source contribution catalog (HOST-11): each entry is a
+    /// `_NoiseContribution` with `element`/`source`/`kind`/`integrated_sq`.
+    fn contributions(&self) -> Vec<_NoiseContribution> {
+        self.inner
+            .contributions()
+            .iter()
+            .map(_NoiseContribution::from_solver)
+            .collect()
+    }
+}
+
+/// `_TfResult` — the `.tf` result (HOST-03): DC small-signal gain, input
+/// resistance, and output resistance from unit excitations on the system
+/// linearized at the operating point. Uniform-shape (MD-22): same field
+/// names as the api's `TfResult`, on both hosts.
+#[pyclass(module = "piperine")]
+pub struct _TfResult {
+    #[pyo3(get)]
+    pub gain: f64,
+    #[pyo3(get)]
+    pub z_in: f64,
+    #[pyo3(get)]
+    pub z_out: f64,
+}
+
+impl _TfResult {
+    pub(crate) fn from_solver(r: piperine_api::TfResult) -> Self {
+        Self { gain: r.gain, z_in: r.z_in, z_out: r.z_out }
     }
 }

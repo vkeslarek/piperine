@@ -1,0 +1,5 @@
+error: expected `struct`
+ --> tests/ui/device_on_a_function.rs:4:1
+  |
+4 | fn not_a_struct() {}
+  | ^^

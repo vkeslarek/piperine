@@ -7,6 +7,7 @@ impl Parse for ModuleDeclaration {
     /// Parses a `mod Name[CONST]<TYPE>(PORTS) { body }` or `mod Name[CONST]<TYPE>(PORTS);` declaration.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
         let start = parser.current_span_start();
+        let doc = parser.current_doc();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         parser.expect_ident_str("mod")?;
@@ -54,7 +55,7 @@ impl Parse for ModuleDeclaration {
 
         let end = parser.previous_span_end();
         let span = Some((start, end - start).into());
-        Ok(ModuleDeclaration { span, attrs, is_pub, name, const_params, type_params, ports, body })
+        Ok(ModuleDeclaration { span, attrs, doc, is_pub, name, const_params, type_params, ports, body })
     }
 }
 
@@ -76,7 +77,8 @@ impl Parse for TypeParam {
 impl Parse for Port {
     /// Parses a module port: `direction name : type`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
-        let _start = parser.current_span_start();
+        let start = parser.current_span_start();
+        let doc = parser.current_doc();
         let attrs = parser.parse_attributes()?;
         let direction = if parser.eat_ident("input") {
             Direction::Input
@@ -90,6 +92,8 @@ impl Parse for Port {
         let name = parser.parse_ident()?;
         parser.expect(&Tok::Colon)?;
         let ty = Type::parse(parser)?;
-        Ok(Port { attrs, direction, name, ty })
+        let end = parser.previous_span_end();
+        let span = Some((start, end - start).into());
+        Ok(Port { span, attrs, doc, direction, name, ty })
     }
 }

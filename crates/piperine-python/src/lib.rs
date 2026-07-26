@@ -29,13 +29,14 @@ mod instance;
 mod live;
 mod module;
 mod results;
+pub mod scripted;
 mod value_bridge;
 
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
-use instance::{_InstanceView, _Terminal};
-use live::_LiveSession;
+use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _ParamDescriptor, _Terminal, _TerminalDescriptor};
+use live::{_Grid, _Session, _Sweep};
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
@@ -44,9 +45,13 @@ use results::_FourierComponent;
 use results::_FourierResult;
 use results::_NoiseTrace;
 use results::_SolverStats;
+use results::_LimitingReport;
+use results::_NoiseContribution;
 use results::_OpResult;
+use results::_TfResult;
 use results::_Trace;
 use results::_Waveform;
+use scripted::{_Ctx, _Staging};
 
 /// `_piperine.load(path) -> _Design` (PY-01). Thin FFI shim delegating to
 /// [`_Design::load`].
@@ -55,12 +60,21 @@ fn load(path: &str) -> PyResult<_Design> {
     _Design::load(path)
 }
 
+/// `_piperine.load_str(src) -> _Design` (HOST-24). Thin FFI shim
+/// delegating to [`_Design::load_str`] — elaborates `src` directly, no
+/// filesystem read.
+#[pyfunction]
+fn load_str(src: &str) -> PyResult<_Design> {
+    _Design::load_str(src)
+}
+
 /// The `_piperine` native extension module. Registered by the facade and, for
 /// `piperine run`, appended to the embedded interpreter's init table
 /// ([`embed::run_script`], PY-15).
 #[pymodule]
 pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load, m)?)?;
+    m.add_function(wrap_pyfunction!(load_str, m)?)?;
     m.add_class::<_Design>()?;
     m.add_class::<_Module>()?;
     m.add_class::<_Port>()?;
@@ -79,9 +93,20 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
     m.add_class::<_SolverStats>()?;
+    m.add_class::<_LimitingReport>()?;
+    m.add_class::<_NoiseContribution>()?;
     m.add_class::<_InstanceView>()?;
     m.add_class::<_Terminal>()?;
-    m.add_class::<_LiveSession>()?;
+    m.add_class::<_ModelDescriptor>()?;
+    m.add_class::<_TerminalDescriptor>()?;
+    m.add_class::<_ObservableDescriptor>()?;
+    m.add_class::<_ParamDescriptor>()?;
+    m.add_class::<_Session>()?;
+    m.add_class::<_Sweep>()?;
+    m.add_class::<_Grid>()?;
+    m.add_class::<_TfResult>()?;
+    m.add_class::<_Ctx>()?;
+    m.add_class::<_Staging>()?;
     Ok(())
 }
 
@@ -144,7 +169,7 @@ mod DividerBoard() {
             let modules = design.getattr("modules")?.call0()?;
             let mut names: Vec<String> = modules
                 .try_iter()?
-                .map(|item| Ok::<String, PyErr>(item?.getattr("name")?.extract::<String>()?))
+                .map(|item| item?.getattr("name")?.extract::<String>())
                 .collect::<PyResult<Vec<String>>>()?;
             names.sort();
             assert!(
@@ -257,7 +282,6 @@ mod DividerBoard() {
                 .getattr("params")?
                 .call0()?
                 .try_iter()?
-                .map(|p| Ok::<Bound<'_, PyAny>, PyErr>(p?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(params.len(), 1, "Resistor has one param");
             assert_eq!(params[0].getattr("name")?.extract::<String>()?, "r");
@@ -268,7 +292,6 @@ mod DividerBoard() {
                 .getattr("behaviors")?
                 .call0()?
                 .try_iter()?
-                .map(|b| Ok::<Bound<'_, PyAny>, PyErr>(b?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(behaviors.len(), 1, "Resistor has one behavior");
             assert_eq!(behaviors[0].getattr("kind")?.extract::<String>()?, "analog");
@@ -307,7 +330,6 @@ mod DividerBoard() {
                 .getattr("nodes")?
                 .call0()?
                 .try_iter()?
-                .map(|n| Ok::<Bound<'_, PyAny>, PyErr>(n?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(nodes.len(), 1);
             assert_eq!(nodes[0].getattr("kind")?.extract::<String>()?, "instance");
@@ -320,7 +342,6 @@ mod DividerBoard() {
                 .getattr("nodes")?
                 .call0()?
                 .try_iter()?
-                .map(|n| Ok::<Bound<'_, PyAny>, PyErr>(n?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(port_nodes.len(), 1);
             assert_eq!(port_nodes[0].getattr("kind")?.extract::<String>()?, "port");
@@ -439,7 +460,7 @@ mod Divider() {
     #[test]
     fn stage_overrides_next_analysis() -> PyResult<()> {
         use pyo3::types::PyAnyMethods;
-        use piperine_api::{NetRef, OpResult as HostOpResult};
+        use piperine_api::OpResult as HostOpResult;
 
         let path = std::env::temp_dir().join("piperine_python_p6_stage_test.phdl");
         std::fs::write(&path, ANALYSIS_PHDL)?;
@@ -455,11 +476,10 @@ mod Divider() {
             let mid_voltage = |module: &Bound<'_, PyAny>| -> PyResult<f64> {
                 let op_obj = module.getattr("op")?.call0()?;
                 let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
-                let mid_ref = NetRef {
-                    name: "mid".to_string(),
-                };
-                // `inner` is `Rc<OpResult>`; deref through Rc to call `v`.
-                let v = HostOpResult::v(&*pyref.inner, &mid_ref, None)
+                // `inner` is `Rc<OpResult>`; deref through Rc to call `v`
+                // (HOST-23: `"mid"` resolves through `NetRef`'s `Into`
+                // ergonomics — no bare `NetRef { name }` needed).
+                let v = HostOpResult::v(&pyref.inner, "mid")
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
                 Ok(v)
             };
@@ -488,10 +508,7 @@ mod Divider() {
             let v_fresh = {
                 let op_obj = fresh_module.getattr("op")?.call0()?;
                 let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
-                let mid_ref = NetRef {
-                    name: "mid".to_string(),
-                };
-                HostOpResult::v(&*pyref.inner, &mid_ref, None)
+                HostOpResult::v(&pyref.inner, "mid")
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
             };
             assert!(
@@ -680,8 +697,8 @@ mod Divider() {
     /// - `.v("n")` == `op.v("mid")` == 2.0 V;
     /// - `.v("p", "n")` == `op.v("vin", "mid")` == 3.0 V (drop across r_top);
     /// - `.i("p", "n")` == `op.i("vin", "mid")` == 1 mA (branch current).
-    /// `view["p"]` SHALL equal `view.v("p")` (uniform shape — the same
-    /// `__getitem__ → .v` mapping the parent defines for net names).
+    ///   `view["p"]` SHALL equal `view.v("p")` (uniform shape — the same
+    ///   `__getitem__ → .v` mapping the parent defines for net names).
     #[test]
     fn instance_path_returns_terminal_subview() -> PyResult<()> {
         let path = std::env::temp_dir().join("piperine_python_py13_instance_test.phdl");
@@ -709,9 +726,11 @@ mod Divider() {
             );
 
             // Terminals: Resistor declares (p, n); r_top binds p→vin, n→mid.
-            // Port-declaration order is preserved.
+            // Port-declaration order is preserved. (PY-13 connectivity —
+            // renamed from `terminals()` to `terminal_connections()` so the
+            // HOST-09 descriptor property can take the `terminals` name.)
             let terminals: Vec<(String, String)> = view
-                .getattr("terminals")?
+                .getattr("terminal_connections")?
                 .call0()?
                 .try_iter()?
                 .map(|t| {

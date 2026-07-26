@@ -1,3 +1,7 @@
+//! Digital scheduler topology: DAG ordering, back-edge detection, zero-delay
+//! propagation, fan-out, diamonds, an RS latch, a DFF pipeline, a ring
+//! oscillator, and disconnected islands.
+
 // Comprehensive digital topology tests.
 //
 // Covers: DAG ordering, back-edge detection, zero-delay propagation,
@@ -107,7 +111,7 @@ impl Element for AndGate {
 
 
 
-struct DFF {
+struct Dff {
     inputs: [DigitalNet; 2], // [clk, d]
     q: DigitalNet,
     last_clk: LogicValue,
@@ -115,15 +119,15 @@ struct DFF {
     _id: usize,
 }
 
-impl DFF {
+impl Dff {
     fn new(_id: usize, clk: DigitalNet, d: DigitalNet, q: DigitalNet, clk_to_q: f64) -> Self {
-        Self { inputs: [clk, d], q, last_clk: LogicValue::Zero, clk_to_q, _id: _id }
+        Self { inputs: [clk, d], q, last_clk: LogicValue::Zero, clk_to_q, _id }
     }
 }
 
-impl AnalogDevice for DFF {}
+impl AnalogDevice for Dff {}
 
-impl DigitalDevice for DFF {
+impl DigitalDevice for Dff {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.q) }
     }
@@ -140,9 +144,9 @@ impl DigitalDevice for DFF {
     }
 }
 
-impl Introspect for DFF {}
+impl Introspect for Dff {}
 
-impl Element for DFF {
+impl Element for Dff {
     fn name(&self) -> &str { "dff" }
     fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
@@ -340,7 +344,7 @@ fn test_rs_nor_latch_set() {
     // Apply S=1 at t=1ns
     instance.digital_state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(1), value: LogicValue::One, source: 99, seq: 0 });
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -356,7 +360,7 @@ fn test_rs_nor_latch_reset() {
     let mut instance = make_rs_latch_instance("RSReset", LogicValue::Zero, LogicValue::Zero, LogicValue::One, LogicValue::Zero);
     instance.digital_state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -372,7 +376,7 @@ fn test_rs_nor_latch_holds_state() {
     let mut instance = make_rs_latch_instance("RSHold", LogicValue::Zero, LogicValue::Zero, LogicValue::One, LogicValue::Zero);
     // No events scheduled
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -395,10 +399,10 @@ fn test_dff_rising_edge_capture() {
 
     let mut instance = make_instance("DFFCapture");
     instance.digital_state = state;
-    instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
+    instance.devices.push(Box::new(Dff::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
     instance.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -417,10 +421,10 @@ fn test_dff_does_not_capture_on_falling_edge() {
 
     let mut instance = make_instance("DFFNoCapture");
     instance.digital_state = state;
-    instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
+    instance.devices.push(Box::new(Dff::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
     instance.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -444,12 +448,12 @@ fn test_dff_pipeline_three_stages() {
 
     let mut instance = make_instance("DFFPipeline");
     instance.digital_state = state;
-    instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.1e-9)));
-    instance.devices.push(Box::new(DFF::new(1, DigitalNet(0), DigitalNet(2), DigitalNet(3), 0.1e-9)));
-    instance.devices.push(Box::new(DFF::new(2, DigitalNet(0), DigitalNet(3), DigitalNet(4), 0.1e-9)));
+    instance.devices.push(Box::new(Dff::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.1e-9)));
+    instance.devices.push(Box::new(Dff::new(1, DigitalNet(0), DigitalNet(2), DigitalNet(3), 0.1e-9)));
+    instance.devices.push(Box::new(Dff::new(2, DigitalNet(0), DigitalNet(3), DigitalNet(4), 0.1e-9)));
     instance.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(20e-9.into(), 0.5e-9.into());
+    let options = TransientAnalysisOptions::new(20e-9, 0.5e-9);
     let _ = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -481,7 +485,7 @@ fn test_ring_oscillator_five_inv() {
     let topo = instance.digital_topology.as_ref().unwrap();
     assert!(!topo.back_edges.is_empty(), "5-inverter ring must have back edges");
 
-    let options = TransientAnalysisOptions::new(100e-9.into(), 0.5e-9.into());
+    let options = TransientAnalysisOptions::new(100e-9, 0.5e-9);
     let mut solver = instance.transient(options, Context::default()).unwrap();
     let result = solver.solve().unwrap();
 
@@ -632,7 +636,7 @@ fn test_cosim_d2a_event_at_correct_time() {
     instance.digital_state = state;
     instance.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let result = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()
@@ -660,7 +664,7 @@ fn test_cosim_d2a_multiple_events() {
     instance.digital_state = state;
     instance.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
+    let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let result = {
         let mut solver = instance.transient(options, Context::default()).unwrap();
         solver.solve().unwrap()

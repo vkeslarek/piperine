@@ -58,6 +58,13 @@ use piperine_lang::parse::ast::Expr as PomExpr;
 /// this bank). Unused when the module has no module-level vars.
 type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, *mut f64);
 
+/// An ordered branch (node pair) in the analog netlist.
+pub type Branch = (NodeId, NodeId);
+/// An ordered pair of branches for second-derivative disto.
+pub type Disto2Pair = (Branch, Branch);
+/// An ordered triple of branches for third-derivative disto.
+pub type Disto3Triple = (Branch, Branch, Branch);
+
 /// A compiled analog capability: JIT'd functions plus the terminal/branch
 /// metadata its stamper needs. Presence of the capability *is* `Some(_)` on
 /// the [`AnalogKernel`] field that holds it — see the module docs.
@@ -104,7 +111,7 @@ pub enum CompiledTrigger {
     Above,
     /// Fires every `period` seconds, first fire at `phase` (both
     /// parameter-constant). `phase = 0` reproduces `@timer(period)`.
-    Timer { period: PomExpr, phase: PomExpr },
+    Timer { period: PomExpr, phase: Box<PomExpr> },
 }
 
 /// A compiled runtime analog event: its trigger plus the vars-bank slots its
@@ -125,6 +132,17 @@ struct AnalogCore {
     /// Terminal order: module ports first, then internal analog nodes
     /// referenced by the body. `terminals[i]` is the node driving `volts[i]`.
     terminals: Vec<NodeId>,
+    /// Source-level names parallel to [`terminals`](Self::terminals), looked
+    /// up from the symbol table at compile time. Surfaced through
+    /// [`AnalogKernel::terminal_name`] so the introspection bridge (ABI-27)
+    /// returns names, not positional indices.
+    terminal_names: Vec<String>,
+    /// Per-state-slot introspection names (ABI-47): one entry per slot in
+    /// `[0, num_state_slots)`. Runtime-serviced operators carry their kind
+    /// name plus slot id (`"ddt[3]"`, `"delay[5]"`, …); trailing `$limit`
+    /// vold slots are `"vold[k]"`. Surfaced through
+    /// [`AnalogKernel::state_slot_names`].
+    state_slot_names: Vec<String>,
     /// `digital_terminals[i]` is `true` when `terminals[i]` is a
     /// digital-domain node (a `Bit`/`Logic` port read by bare name inside
     /// this analog body, not through `V`/`I`). Such a terminal is never an
@@ -202,7 +220,7 @@ pub struct AnalogKernel {
     disto2: Vec<AnalogFn>,
     /// Ordered branch pairs `(j, k)` the disto2 kernel emits rows for, in
     /// `out` row order — only pairs with at least one nonzero row.
-    disto2_pairs: Vec<((NodeId, NodeId), (NodeId, NodeId))>,
+    disto2_pairs: Vec<Disto2Pair>,
     /// Contribution terminals `(plus, minus)` in disto2 row order:
     /// resistive first, then charge (the split is `disto2_charge_start`).
     disto2_contribs: Vec<(NodeId, NodeId)>,
@@ -216,10 +234,23 @@ pub struct AnalogKernel {
     disto3: Vec<AnalogFn>,
     /// Ordered branch triples `(j, k, l)` the disto3 kernel emits rows
     /// for, in `out` row order — only triples with a nonzero row.
-    disto3_triples: Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>,
+    disto3_triples: Vec<Disto3Triple>,
     /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
     initial_condition_terminals: Vec<(NodeId, NodeId)>,
     initial_conditions: Option<AnalogFn>,
+    /// Operating-point variable evaluation (ABI-30): one row per non-shadow
+    /// module `var`, reading the same `state`/`vars` banks the residual
+    /// uses, evaluated against the final post-solve voltages. `None` when
+    /// the module declares no analog vars (zero overhead — no function
+    /// compiled, the eval call is a no-op).
+     opvars: Option<AnalogFn>,
+    opvar_names: Vec<String>,
+    /// Source-level names of the persistent-var bank slots (PIA-06), aligned
+    /// with `0..num_vars`. Empty for slots without a source name. The
+    /// observable catalog reads this to match an `@name`/`@kind` sidecar
+    /// entry to its var-bank slot; absent `@name` keeps the positional
+    /// `var[k]` fallback (PIA-08, no regression).
+    var_names: Vec<String>,
 }
 
 // The JITModule is frozen after `finalize_definitions`; the function pointers
@@ -267,6 +298,63 @@ impl AnalogKernel {
     /// All terminals: ports first, then internal nodes.
     pub fn terminals(&self) -> &[NodeId] {
         &self.core.terminals
+    }
+
+    /// The source-level name of terminal `i`, in
+    /// [`terminals`](Self::terminals) order (ABI-27). Panics on out-of-range
+    /// `i` — every caller is internal and bounds the index via
+    /// [`num_terminals`](Self::num_terminals) first.
+    pub fn terminal_name(&self, i: usize) -> &str {
+        &self.core.terminal_names[i]
+    }
+
+    /// Source-level name of `node`, looking it up through the terminal order
+    /// used by [`terminals`](Self::terminals) (ABI-27). Returns `None` for
+    /// a `NodeId` not in the kernel's terminal set — internal-only callers
+    /// treat that as "no name to surface" (e.g., a force/noise pair whose
+    /// terminal was pruned).
+    pub fn name_of_node(&self, node: NodeId) -> Option<&str> {
+        self.core
+            .terminals
+            .iter()
+            .position(|&t| t == node)
+            .map(|i| self.terminal_name(i))
+    }
+
+    /// Per-slot names for the runtime state bank (ABI-47), one entry per
+    /// slot in `[0, num_state_slots)`. Used by the introspection bridge to
+    /// surface `.state` rows with readable names rather than positional
+    /// indices.
+    pub fn state_slot_names(&self) -> &[String] {
+        &self.core.state_slot_names
+    }
+
+    /// Named terminal pairs `(plus, minus)` per force branch (ABI-47),
+    /// looked up through [`name_of_node`](Self::name_of_node). Pairs whose
+    /// terminals aren't in the kernel's terminal set fall back to `"gnd"`
+    /// (matching the resolver's `NodeId::GROUND` convention).
+    pub fn force_terminal_name_pairs(&self) -> Vec<(String, String)> {
+        self.force_terminals()
+            .iter()
+            .map(|&(p, m)| {
+                let p_name = self.name_of_node(p).unwrap_or("gnd").to_string();
+                let m_name = self.name_of_node(m).unwrap_or("gnd").to_string();
+                (p_name, m_name)
+            })
+            .collect()
+    }
+
+    /// Named terminal pairs `(plus, minus)` per noise source (ABI-47),
+    /// looked up through [`name_of_node`](Self::name_of_node).
+    pub fn noise_terminal_name_pairs(&self) -> Vec<(String, String)> {
+        self.noise_terminals()
+            .iter()
+            .map(|&(p, m)| {
+                let p_name = self.name_of_node(p).unwrap_or("gnd").to_string();
+                let m_name = self.name_of_node(m).unwrap_or("gnd").to_string();
+                (p_name, m_name)
+            })
+            .collect()
     }
 
     /// `true` when terminal `i` is digital-domain (never an MNA unknown —
@@ -349,6 +437,14 @@ impl AnalogKernel {
         self.limits.as_ref().map_or(&[], |l| &l.branches)
     }
 
+    /// Per-slot `(limiter_name, reason)` catalog (phdl-introspection-attributes
+    /// PIA-15/16), in slot order. The name is the `$limit` call-site `kind`;
+    /// the reason is inferred from the kind. Read by the device's
+    /// `limiting_report` to name the slot that clamped.
+    pub fn limit_catalog(&self) -> &[(&'static str, piperine_solver::abi::LimitReason)] {
+        self.limits.as_ref().map_or(&[], |l| &l.catalog)
+    }
+
     /// Branch terminals `(plus, minus)` per force row.
     pub fn force_terminals(&self) -> &[(NodeId, NodeId)] {
         self.forces.as_ref().map_or(&[], |f| &f.terminals)
@@ -423,6 +519,22 @@ impl AnalogKernel {
     }
 
     /// Size of the runtime-state value array instances must provide.
+    /// Whether this kernel's **DC** stamps are a pure function of the terminal
+    /// voltages — the `ElementCapabilities::BYPASS_OK` contract.
+    ///
+    /// Everything that makes a stamp depend on something else disqualifies it:
+    /// a history-dependent operator slot (`delay`/`slew`/`transition`/`idt`),
+    /// a runtime event (whose action mutates state), a `$limit` limiter (whose
+    /// `vold` slot advances per evaluation), or a diagnostic (whose side effect
+    /// must not be skipped). A `ddt` contribution does **not** disqualify: charge
+    /// is not part of the DC stamp.
+    pub fn dc_stamps_depend_only_on_terminal_voltages(&self) -> bool {
+        self.runtime_states.is_empty()
+            && self.events.is_empty()
+            && self.limits.is_none()
+            && self.diagnostics.is_empty()
+    }
+
     pub fn num_state_slots(&self) -> usize {
         self.core.num_state_slots
     }
@@ -660,7 +772,7 @@ impl AnalogKernel {
 
     /// Ordered branch pairs `(j, k)` the disto2 kernel emits, in `out` row
     /// order.
-    pub fn disto2_pairs(&self) -> &[((NodeId, NodeId), (NodeId, NodeId))] {
+    pub fn disto2_pairs(&self) -> &[Disto2Pair] {
         &self.disto2_pairs
     }
 
@@ -698,7 +810,7 @@ impl AnalogKernel {
 
     /// Ordered branch triples `(j, k, l)` the disto3 kernel emits, in `out`
     /// row order.
-    pub fn disto3_triples(&self) -> &[((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))] {
+    pub fn disto3_triples(&self) -> &[Disto3Triple] {
         &self.disto3_triples
     }
 
@@ -716,6 +828,37 @@ impl AnalogKernel {
         let nc = self.disto2_contribs.len();
         for (i, &f) in self.disto3.iter().enumerate() {
             Self::call(f, volts, params, state, vars, sim, &mut out[i * nc..(i + 1) * nc]);
+        }
+    }
+
+    /// Whether this kernel compiles an opvar-evaluation function (ABI-30).
+    /// `false` for a module with no non-shadow analog `var`s — the eval
+    /// path is absent and `read_opvars` returns empty.
+    pub fn has_opvars(&self) -> bool {
+        self.opvars.is_some()
+    }
+
+    /// Source-level names of the operating-point variables (ABI-30), in
+    /// `eval_opvars` row order. Empty when the kernel compiled no opvar
+    /// path.
+    pub fn opvar_names(&self) -> &[String] {
+        &self.opvar_names
+    }
+
+    /// Source-level names of the persistent-var bank slots (PIA-06), aligned
+    /// with `0..num_vars`. Empty string for a slot with no source name.
+    pub fn var_names(&self) -> &[String] {
+        &self.var_names
+    }
+
+    /// Write each opvar's value to `out[0..opvar_names.len()]` (ABI-30),
+    /// evaluated against the final post-solve voltages and the same
+    /// `state`/`vars` banks the residual reads. No-op when the kernel
+    /// compiled no opvar path (zero overhead for devices without vars).
+    pub fn eval_opvars(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.opvars {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 }

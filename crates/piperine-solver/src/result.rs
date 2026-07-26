@@ -36,6 +36,10 @@ pub struct SolverStats {
     // Timing (nanoseconds)
     pub assembly_time_ns: u64,
     pub solve_time_ns: u64,
+    // HOST-10: structured limiting diagnostics from the final Newton step —
+    // one entry per device whose limiter clamped a value. Empty when no
+    // device limited (the common case for linear / well-converged circuits).
+    pub limiting: Vec<crate::core::element::LimitingReport>,
 }
 
 #[derive(Debug)]
@@ -193,6 +197,13 @@ impl TransientStep {
     /// no runtime banks).
     pub fn device_state(&self, label: &str) -> Option<&(Vec<f64>, Vec<f64>)> {
         self.device_state.get(label)
+    }
+
+    /// The labels of devices recorded into this step's `device_state`. Used
+    /// by the selective-recording contract (ABI-34): a `ProbeSelection`
+    /// requesting one device yields exactly that device's label here.
+    pub fn device_state_keys(&self) -> impl Iterator<Item = &str> {
+        self.device_state.keys().map(String::as_str)
     }
 
     /// This step's hidden digital state for the device labelled `label`
@@ -413,6 +424,13 @@ pub struct DistoResult {
     /// Intermodulation ratio at `2F1∓F2`/`2F2∓F1` relative to the
     /// fundamental (two-tone, DISTO-02).
     pub im3: Option<f64>,
+    /// Named capability diagnostics from the `.disto` pre-scan (ABI-24): a
+    /// purely linear circuit yields a zero HD2/HD3 result legitimately, but
+    /// the host must not be left with a silent zero — each entry names the
+    /// missing derivative order (`"Element: no device provides disto2
+    /// capability; HD2 results will be zero"`). Empty when at least one
+    /// device contributes each order.
+    pub warnings: Vec<String>,
 }
 
 impl std::fmt::Display for TransferType {

@@ -20,6 +20,11 @@ use crate::results::_OpResult;
 use crate::results::_Trace;
 use crate::value_bridge::PyValue;
 
+/// Return type for `.disto`: `(hd2, hd3, im2, im3)`.
+type DistoMetrics = (Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+/// Return type for `.sp`: `(frequencies, s_matrix, opvars, n_ports)`.
+type SpParams = (Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize);
+
 /// `_Module` — a reflected view of a named module in a shared [`Design`].
 /// Stores `(Rc<Design>, name)` and re-looks the module up on each call so the
 /// GIL-bound lifetime never fights the POM borrow (design
@@ -98,7 +103,7 @@ impl _Module {
     /// Duck-typed (reads the prelude `bundle Solver` fields by attribute) so
     /// the facade needs no mirrored pyclass; `None` keeps the defaults.
     /// A missing/mistyped attribute fails loud, never a silent default.
-    /// Shared with [`crate::live::_LiveSession`] (LIVE-13: one config mapping).
+    /// Shared with [`crate::live::_Session`] (LIVE-13: one config mapping).
     pub(crate) fn solver_config(solver: Option<&Bound<'_, PyAny>>) -> PyResult<SolverConfig> {
         let mut sc = SolverConfig::default();
         if let Some(obj) = solver {
@@ -107,6 +112,7 @@ impl _Module {
             sc.abstol = obj.getattr("abstol")?.extract()?;
             sc.gmin = obj.getattr("gmin")?.extract()?;
             sc.max_iter = obj.getattr("max_iter")?.extract()?;
+            sc.dc_damp_tolerance = obj.getattr("dc_damp_tolerance")?.extract()?;
         }
         Ok(sc)
     }
@@ -257,7 +263,7 @@ impl _Module {
         f2: Option<f64>,
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
+    ) -> PyResult<DistoMetrics> {
         let session = self.session()?;
         let result = session
             .run_disto(f1, f2, amplitude, output, output_ref, &Self::solver_config(solver)?)
@@ -283,7 +289,7 @@ impl _Module {
         points: usize,
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<(Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize)> {
+    ) -> PyResult<SpParams> {
         let session = self.session()?;
         let result = session
             .run_sp(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
@@ -303,7 +309,11 @@ impl _Module {
     /// `record_device_state` opts into per-step device runtime-bank
     /// recording, unlocking `Trace.i` on state-reading devices
     /// (`delay`/`transition`/`idt`); off, that read stays a loud error.
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false))]
+    /// `probe` (HOST-08) names `"instance.opvar_name"` observables to record
+    /// selectively — read back via `Trace.opvar`; an unknown device or
+    /// observable fails loud at setup (ABI-35).
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false, probe=Vec::new()))]
+    #[allow(clippy::too_many_arguments)]
     fn tran(
         &self,
         stop: f64,
@@ -312,10 +322,12 @@ impl _Module {
         ic: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
         record_device_state: bool,
+        probe: Vec<String>,
     ) -> PyResult<_Trace> {
         let session = self.session()?;
+        let probe_refs: Vec<&str> = probe.iter().map(String::as_str).collect();
         let result = session
-            .run_tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref(), record_device_state)
+            .run_tran((stop, start), step, &Self::solver_config(solver)?, ic.as_ref(), record_device_state, &probe_refs)
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }
@@ -341,6 +353,7 @@ impl _Module {
     /// Run an output-referred noise analysis (PY-04 / spec AC9). `reference`
     /// defaults to `"gnd"` (the single-net `NoiseConfig.out` form).
     #[pyo3(signature = (out, fstart, fstop, points=100, reference="gnd", logarithmic=true, solver=None))]
+    #[allow(clippy::too_many_arguments)]
     fn noise(
         &self,
         out: &str,
@@ -356,8 +369,7 @@ impl _Module {
             .run_noise(
                 out,
                 reference,
-                fstart,
-                fstop,
+                (fstart, fstop),
                 points,
                 logarithmic,
                 &Self::solver_config(solver)?,
@@ -379,13 +391,13 @@ impl _Module {
     }
 
     /// Compile this module **once** into a live session (LIVE-10): the
-    /// returned [`crate::live::_LiveSession`] holds the elaborated design and
+    /// returned [`crate::live::_Session`] holds the elaborated design and
     /// the JIT-compiled circuit; `set` + re-run analyses never recompile
     /// (MD-18). Currently staged overrides are baked into the compilation
     /// (same replay as [`Self::session`]); the parent `_Design` stays
     /// untouched.
-    fn compile(&self) -> PyResult<crate::live::_LiveSession> {
-        crate::live::_LiveSession::from_design(&self.design, &self.name, &self.staged.borrow())
+    fn compile(&self) -> PyResult<crate::live::_Session> {
+        crate::live::_Session::from_design(&self.design, &self.name, &self.staged.borrow())
     }
 }
 

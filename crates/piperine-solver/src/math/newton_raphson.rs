@@ -63,15 +63,18 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     ) {
     }
 
-    /// Whether any device in this system reports active limiting. The
-    /// Newton strategy calls this each iteration as part of convergence.
-    fn any_limiting(&self) -> bool {
+    /// Whether any device in this system reports active limiting (ABI-10).
+    /// The Newton strategy calls this each iteration as part of convergence:
+    /// a device that returns a `LimitingReport` vetoes convergence until the
+    /// limited value settles.
+    fn any_limiting_report(&self) -> bool {
         false
     }
 
-    /// Apply device convergence hints (structured limiting) to the Newton
-    /// guess before the convergence test. Default: no hints.
-    fn apply_convergence_hints(&self, _guess: ArrayViewMut1<E>) {}
+    /// Apply structured limiting reports to the Newton guess before the
+    /// convergence test (ABI-10): each report's `limited_value` overwrites its
+    /// `net` so the iteration continues from the clamped point. Default: none.
+    fn apply_limiting_reports(&self, _guess: ArrayViewMut1<E>) {}
 }
 
 pub struct NewtonRaphsonSolver<A, E, L>
@@ -365,14 +368,14 @@ where
                 strategy.damp_update(prev, current_guess.view_mut(), policy);
             }
 
-            // Structured limiting: devices that know *what* they clamped
-            // steer the guess to the limited value before the convergence
-            // test (CP-12) — instead of only vetoing via any_limiting.
-            system.apply_convergence_hints(current_guess.view_mut());
+            // Structured limiting (ABI-10): devices that know *what* they
+            // clamped steer the guess to the limited value before the
+            // convergence test (CP-12) — instead of only vetoing convergence.
+            system.apply_limiting_reports(current_guess.view_mut());
 
             // Device limiting gate: the strategy checks update+residual;
-            // limiting_active is a system-level check done per iteration.
-            if !system.any_limiting()
+            // limiting_report is a system-level check done per iteration.
+            if !system.any_limiting_report()
                 && strategy.is_converged(
                     &self.state,
                     &current_guess.view(),

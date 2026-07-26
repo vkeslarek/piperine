@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use piperine::{NetRef, OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// The piperine-vs-ngspice comparison harness. Owns detection of the ngspice
@@ -157,7 +157,7 @@ impl NgspiceHarness {
         let golden = self.ngspice_op(circuit).unwrap_or_else(|e| panic!("{e}"));
         let op = self.piperine_op(circuit).unwrap_or_else(|e| panic!("{e}"));
         Self::compare_op(circuit, &golden, |node| {
-            op.v(&NetRef { name: node.to_string() }, None).ok()
+            op.v(node.to_string()).ok()
         })
         .unwrap_or_else(|e| panic!("{e}"));
         eprintln!("PASS {circuit} ({} golden nodes)", golden.len());
@@ -245,7 +245,7 @@ impl NgspiceHarness {
         let mut mismatches = Vec::new();
         for ((x, i_golden), op) in golden.iter().zip(&ops) {
             let i_piperine = op
-                .i(&NetRef { name: branch_a.to_string() }, Some(&NetRef { name: branch_b.to_string() }))
+                .i((branch_a.to_string(), branch_b.to_string()))
                 .unwrap_or_else(|e| panic!("{circuit}: current readback failed at {source}={x}: {e:?}"));
             if !Self::within_tolerance(*i_golden, i_piperine, abstol) {
                 mismatches.push(format!(
@@ -262,6 +262,258 @@ impl NgspiceHarness {
             mismatches.join("\n")
         );
         eprintln!("PASS {circuit} ({} sweep points)", golden.len());
+    }
+
+    /// Piperine side shared by the spectral cross-checks: elaborate
+    /// `<circuit>.phdl` into a session.
+    fn piperine_session(&self, circuit: &str) -> Result<SimSession, String> {
+        let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
+        let src = std::fs::read_to_string(&phdl)
+            .map_err(|e| format!("{circuit}: {}: {e}", phdl.display()))?;
+        let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
+            .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))?;
+        Ok(SimSession::new(design, "Top".to_string()))
+    }
+
+    // ── Spectral analyses (.disto/.four/.pz) ─────────────────────────────
+
+    /// Golden side of `.disto`: parse the two `DISTORTION - Nth harmonic`
+    /// tables (the 2nd/3rd-harmonic components of `v(out)`) and the `.ac`
+    /// fundamental `v(out) = <re>,<im>`; return the magnitudes
+    /// `(fundamental, hd2_component, hd3_component)`.
+    fn ngspice_disto(&self, circuit: &str) -> Result<(f64, f64, f64), String> {
+        let cir = Self::circuits_dir().join(format!("{circuit}.cir"));
+        let output = std::process::Command::new(&self.exe)
+            .arg("-b")
+            .arg(&cir)
+            .output()
+            .map_err(|e| format!("{circuit}: failed to run ngspice: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut fundamental = None;
+        let mut hd2 = None;
+        let mut hd3 = None;
+        let mut harmonic: Option<u8> = None;
+        for line in stdout.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("v(out) =") {
+                let re = rest
+                    .split(',')
+                    .next()
+                    .and_then(|s| s.trim().parse::<f64>().ok());
+                fundamental = Some(re.ok_or_else(|| format!("{circuit}: unparseable ac line `{line}`"))?.abs());
+                continue;
+            }
+            if line.starts_with("DISTORTION - 2nd harmonic") {
+                harmonic = Some(2);
+                continue;
+            }
+            if line.starts_with("DISTORTION - 3rd harmonic") {
+                harmonic = Some(3);
+                continue;
+            }
+            if line.starts_with("DISTORTION") {
+                harmonic = None;
+                continue;
+            }
+            // Table data row: `<idx> <freq> <re>, <im>` — first row only.
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() >= 3 && cols[0] == "0"
+                && let Ok(re) = cols[2].trim_end_matches(',').parse::<f64>()
+            {
+                match harmonic {
+                    Some(2) if hd2.is_none() => hd2 = Some(re.abs()),
+                    Some(3) if hd3.is_none() => hd3 = Some(re.abs()),
+                    _ => {}
+                }
+            }
+        }
+        match (fundamental, hd2, hd3) {
+            (Some(f), Some(h2), Some(h3)) => Ok((f, h2, h3)),
+            _ => {
+                let excerpt: String = stdout.chars().take(600).collect();
+                Err(format!(
+                    "{circuit}: missing ac fundamental or distortion table in ngspice output — raw excerpt:\n{excerpt}"
+                ))
+            }
+        }
+    }
+
+    /// `.disto` golden case: piperine's HD2/HD3 ratios against ngspice's
+    /// harmonic components normalized by its AC fundamental.
+    fn disto_case(&self, circuit: &str, f1: f64, reltol: f64) {
+        let (fund, ng_hd2, ng_hd3) =
+            self.ngspice_disto(circuit).unwrap_or_else(|e| panic!("{e}"));
+        assert!(fund > 0.0, "{circuit}: ngspice fundamental must be positive");
+        let (ng_hd2, ng_hd3) = (ng_hd2 / fund, ng_hd3 / fund);
+
+        let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
+        let result = session
+            .run_disto(f1, None, 1.0, "out", None, &SolverConfig::default())
+            .unwrap_or_else(|e| panic!("{circuit}: piperine .disto failed: {e}"));
+        let pp_hd2 = result.hd2.expect("single-tone reports HD2");
+        let pp_hd3 = result.hd3.expect("single-tone reports HD3");
+
+        for (name, ng, pp) in [("HD2", ng_hd2, pp_hd2), ("HD3", ng_hd3, pp_hd3)] {
+            assert!(
+                (ng - pp).abs() <= reltol * ng.max(pp),
+                "{circuit}: {name} ngspice={ng:.6e} piperine={pp:.6e} Δ={:.3e}",
+                (ng - pp).abs()
+            );
+        }
+        eprintln!("PASS {circuit} (.disto HD2 {pp_hd2:.4e} vs {ng_hd2:.4e}, HD3 {pp_hd3:.4e} vs {ng_hd3:.4e})");
+    }
+
+    /// Golden side of `.four`: parse `THD: <x> %` and the harmonic table's
+    /// `Norm. Mag` column; return `(thd_fraction, norm_mags)` with
+    /// `norm_mags[k - 1]` the normalized magnitude of harmonic `k ≥ 1`.
+    fn ngspice_fourier(&self, circuit: &str) -> Result<(f64, Vec<f64>), String> {
+        let cir = Self::circuits_dir().join(format!("{circuit}.cir"));
+        let output = std::process::Command::new(&self.exe)
+            .arg("-b")
+            .arg(&cir)
+            .output()
+            .map_err(|e| format!("{circuit}: failed to run ngspice: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut thd = None;
+        let mut norm_mags = Vec::new();
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.contains("THD:") {
+                let after = line.split("THD:").nth(1).unwrap_or("");
+                let pct = after
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .parse::<f64>()
+                    .map_err(|e| format!("{circuit}: unparseable THD in `{line}`: {e}"))?;
+                thd = Some(pct / 100.0);
+                continue;
+            }
+            // Harmonic table row: `<k> <freq> <mag> <phase> <norm_mag> <norm_phase>`.
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() == 6
+                && let Ok(k) = cols[0].parse::<u32>()
+                && k >= 1
+                && let Ok(norm) = cols[4].parse::<f64>()
+            {
+                norm_mags.push(norm);
+            }
+        }
+        match (thd, norm_mags.is_empty()) {
+            (Some(t), false) => Ok((t, norm_mags)),
+            _ => {
+                let excerpt: String = stdout.chars().take(600).collect();
+                Err(format!(
+                    "{circuit}: missing THD line or harmonic table in ngspice output — raw excerpt:\n{excerpt}"
+                ))
+            }
+        }
+    }
+
+    /// `.four` golden case: piperine's transient + `Waveform::fourier`
+    /// against ngspice's `fourier` on the same hard-driven stage.
+    fn four_case(&self, circuit: &str, f0: f64, stop: f64, reltol: f64) {
+        let (ng_thd, ng_norms) = self.ngspice_fourier(circuit).unwrap_or_else(|e| panic!("{e}"));
+
+        let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
+        let trace = session
+            .run_tran((stop, 0.0), None, &SolverConfig::default(), None, false, &[])
+            .unwrap_or_else(|e| panic!("{circuit}: piperine transient failed: {e}"));
+        let wf = trace
+            .v("out".to_string())
+            .unwrap_or_else(|e| panic!("{circuit}: no v(out) waveform: {e}"));
+        let result = wf
+            .fourier(f0, 10)
+            .unwrap_or_else(|e| panic!("{circuit}: piperine fourier failed: {e}"));
+
+        assert!(
+            (result.thd - ng_thd).abs() <= reltol * result.thd.max(ng_thd),
+            "{circuit}: THD ngspice={ng_thd:.6e} piperine={:.6e} Δ={:.3e}",
+            result.thd,
+            (result.thd - ng_thd).abs()
+        );
+        // The dominant harmonics (2 and 3) track individually.
+        for k in [2usize, 3] {
+            let ng = ng_norms[k - 1];
+            let pp = result.harmonics[k].norm_magnitude;
+            assert!(
+                (ng - pp).abs() <= reltol * ng.max(pp),
+                "{circuit}: norm mag H{k} ngspice={ng:.6e} piperine={pp:.6e} Δ={:.3e}",
+                (ng - pp).abs()
+            );
+        }
+        eprintln!("PASS {circuit} (.four THD {:.4e} vs {ng_thd:.4e})", result.thd);
+    }
+
+    /// Golden side of `.pz`: parse the `Pole-Zero Analysis` table rows
+    /// (`<idx> <re>, <im>`) into pole values.
+    fn ngspice_poles(&self, circuit: &str) -> Result<Vec<(f64, f64)>, String> {
+        let cir = Self::circuits_dir().join(format!("{circuit}.cir"));
+        let output = std::process::Command::new(&self.exe)
+            .arg("-b")
+            .arg(&cir)
+            .output()
+            .map_err(|e| format!("{circuit}: failed to run ngspice: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut in_table = false;
+        let mut poles = Vec::new();
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.contains("Pole-Zero Analysis") {
+                in_table = true;
+                continue;
+            }
+            if !in_table {
+                continue;
+            }
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() >= 3
+                && cols[0].parse::<usize>().is_ok()
+                && let (Ok(re), Ok(im)) = (
+                    cols[1].trim_end_matches(',').parse::<f64>(),
+                    cols[2].trim_end_matches(',').parse::<f64>(),
+                )
+            {
+                poles.push((re, im));
+            }
+        }
+        if poles.is_empty() {
+            let excerpt: String = stdout.chars().take(600).collect();
+            return Err(format!(
+                "{circuit}: no poles in ngspice output — raw excerpt:\n{excerpt}"
+            ));
+        }
+        Ok(poles)
+    }
+
+    /// `.pz` golden case: the natural poles of the shared RC network.
+    fn pz_case(&self, circuit: &str, reltol: f64) {
+        let ng_poles = self.ngspice_poles(circuit).unwrap_or_else(|e| panic!("{e}"));
+
+        let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
+        let result = session
+            .run_pz("v1", "out", None, &SolverConfig::default())
+            .unwrap_or_else(|e| panic!("{circuit}: piperine .pz failed: {e}"));
+
+        assert_eq!(
+            result.poles.len(),
+            ng_poles.len(),
+            "{circuit}: pole count piperine={} ngspice={}",
+            result.poles.len(),
+            ng_poles.len()
+        );
+        for (pp, &(ng_re, ng_im)) in result.poles.iter().zip(&ng_poles) {
+            assert!(
+                (pp.re - ng_re).abs() <= reltol * ng_re.abs().max(pp.re.abs()),
+                "{circuit}: pole Re ngspice={ng_re:.6e} piperine={:.6e}",
+                pp.re
+            );
+            assert_eq!(pp.im, ng_im, "{circuit}: pole must be real");
+        }
+        eprintln!("PASS {circuit} (.pz pole {:.6e} vs {ng_re:.6e})", result.poles[0].re, ng_re = ng_poles[0].0);
     }
 }
 
@@ -333,6 +585,33 @@ fn ngspice_bjt_ce() {
 #[test]
 fn ngspice_bjt_mirror() {
     ngspice_op_case("bjt_mirror");
+}
+
+// ── URC lumped RC line (FLAT-04) ───────────────────────────────────────────
+//
+// Three DC operating-point cross-checks of the FlattenHierarchy pass at
+// work: each `Top` instantiates a mid-level `urcN` module that the flatten
+// pass inlines into N series `res` + N shunt `cap` leaves. ngspice sees the
+// SAME ladder topology built from discrete R/C elements (`urc_lumpN.cir`),
+// so the DC operating point must match exactly. Each lump value yields a
+// distinct Vout (Vout = 5·1000/(100·N+1000)) — the test is discriminating:
+// dropping or duplicating a segment shifts Vout by ≥0.13 V, well outside
+// the harness's 1e-3 reltol. Capacitors are open at DC, so the comparison
+// isolates the flatten pass's structural correctness.
+
+#[test]
+fn ngspice_urc_lump2() {
+    ngspice_op_case("urc_lump2");
+}
+
+#[test]
+fn ngspice_urc_lump5() {
+    ngspice_op_case("urc_lump5");
+}
+
+#[test]
+fn ngspice_urc_lump10() {
+    ngspice_op_case("urc_lump10");
 }
 
 // ── DC sweep circuits (SPICE-08) ────────────────────────────────────────────
@@ -435,6 +714,41 @@ fn ngspice_jfet_id_vds_sweep() {
     }
 }
 
+// ── Spectral analyses (.disto/.four/.pz) — spectral-analyses T15 ─────────
+
+/// `.disto`: a hard-biased diode's HD2/HD3 — piperine's Volterra ratios
+/// against ngspice's harmonic components normalized by its AC fundamental
+/// (both sides run the same nonlinear-currents method on the
+/// equation-identical diode, 1 % tolerance).
+#[test]
+fn ngspice_disto_diode() {
+    match NgspiceHarness::detect() {
+        Some(harness) => harness.disto_case("disto_diode", 1e6, 1e-2),
+        None => eprintln!("SKIP disto_diode: ngspice not on PATH"),
+    }
+}
+
+/// `.four`: the hard-driven diode stage's THD — piperine's transient +
+/// `Waveform::fourier` against ngspice's `fourier` over the last period
+/// (integrator-pair tolerance 2 %).
+#[test]
+fn ngspice_four_diode() {
+    match NgspiceHarness::detect() {
+        Some(harness) => harness.four_case("four_diode", 1e6, 3e-6, 2e-2),
+        None => eprintln!("SKIP four_diode: ngspice not on PATH"),
+    }
+}
+
+/// `.pz`: the RC network's single natural pole at −500 rad/s — piperine's
+/// QZ poles against ngspice's pole-zero analysis (1e-3 relative).
+#[test]
+fn ngspice_pz_rc() {
+    match NgspiceHarness::detect() {
+        Some(harness) => harness.pz_case("pz_rc", 1e-3),
+        None => eprintln!("SKIP pz_rc: ngspice not on PATH"),
+    }
+}
+
 // ── Harness failure modes (SPICE-06/SPICE-07) ───────────────────────────────
 
 /// SPICE-06: without a binary on the (injected) PATH, detection yields the
@@ -523,8 +837,8 @@ fn ngspice_wrdata_parsed_strictly() {
 fn ngspice_series_junctions_are_self_consistent() {
     let harness_less = NgspiceHarness { exe: PathBuf::new() };
     let op = harness_less.piperine_op("diode_series").unwrap_or_else(|e| panic!("{e}"));
-    let va = op.v(&NetRef { name: "a".to_string() }, None).unwrap();
-    let vb = op.v(&NetRef { name: "b".to_string() }, None).unwrap();
+    let va = op.v("a".to_string()).unwrap();
+    let vb = op.v("b".to_string()).unwrap();
     let d1 = va - vb;
     let d2 = vb;
     assert!(

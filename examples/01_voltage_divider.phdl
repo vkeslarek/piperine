@@ -2,10 +2,7 @@
 // The python twin checks the exact DC transfer ratio and the branch current, then
 // sweeps the load leg and verifies the divider equation at every point.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod VoltageSource(inout p : Electrical, inout n : Electrical) {
     param voltage : Real = 5.0;
@@ -27,8 +24,14 @@ mod DividerBoard() {
     wire gnd : Electrical;
     wire vin : Electrical;
     wire mid : Electrical;
-    source : VoltageSource(.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top  : Resistor(.p = vin, .n = mid) { .r = 3e3 };
-    r_bot  : Resistor(.p = mid, .n = gnd) { .r = 2e3 };
+    source : VoltageSource(.p = vin,.n = gnd) {
+        .voltage = 5.0
+    };
+    r_top : Resistor(.p = vin,.n = mid) {
+        .r = 3e3
+    };
+    r_bot : Resistor(.p = mid,.n = gnd) {
+        .r = 2e3
+    };
 }
 

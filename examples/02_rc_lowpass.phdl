@@ -4,10 +4,7 @@
 //  - Transient: with the node preset to 1 V through `TranConfig.ic`, the
 //    free discharge follows e^(−t/τ), τ = RC.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod Resistor(inout p : Electrical, inout n : Electrical) {
     param r : Real = 1e3;
@@ -27,6 +24,7 @@ analog Capacitor {
 
 // A small-signal test current source: invisible at DC and in transient,
 // 1 A ∠0° during `$ac`.
+
 mod AcProbe(inout p : Electrical, inout n : Electrical) { }
 
 analog AcProbe {
@@ -36,8 +34,13 @@ analog AcProbe {
 mod RcFilter() {
     wire gnd : Electrical;
     wire out : Electrical;
-    r1    : Resistor(.p = out, .n = gnd) { .r = 1e3 };
-    c1    : Capacitor(.p = out, .n = gnd) { .c = 100e-9 };   // fc ≈ 1.5915 kHz, τ = 100 µs
-    probe : AcProbe(.p = out, .n = gnd);
+    r1 : Resistor(.p = out,.n = gnd) {
+        .r = 1e3
+    };
+    c1 : Capacitor(.p = out,.n = gnd) {
+        .c = 100e-9
+    };
+    // fc ≈ 1.5915 kHz, τ = 100 µs
+    probe : AcProbe(.p = out,.n = gnd);
 }
 

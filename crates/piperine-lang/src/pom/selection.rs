@@ -97,6 +97,12 @@ impl<T> IntoIterator for Selection<T> {
     }
 }
 
+impl<T> From<Vec<T>> for Selection<T> {
+    fn from(items: Vec<T>) -> Self {
+        Self::from_vec(items)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,11 +171,5 @@ mod tests {
         let sel = Selection::from_vec(vec![1, 2, 3]);
         let doubled: Vec<i32> = sel.map(|x| x * 2);
         assert_eq!(doubled, vec![2, 4, 6]);
-    }
-}
-
-impl<T> From<Vec<T>> for Selection<T> {
-    fn from(items: Vec<T>) -> Self {
-        Self::from_vec(items)
     }
 }

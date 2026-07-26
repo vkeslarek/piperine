@@ -46,9 +46,9 @@ fn python_fourier_matches_rust_fourier() {
             .expect("Top elaborates");
     let session = piperine_api::SimSession::new(design, "Top".to_string());
     let trace = session
-        .run_tran(stop, None, 0.0, &piperine_api::SolverConfig::default(), None, false)
+        .run_tran((stop, 0.0), None, &piperine_api::SolverConfig::default(), None, false, &[])
         .expect("rust transient");
-    let wf = trace.v(&piperine_api::NetRef { name: "out".into() }, None).expect("v(out)");
+    let wf = trace.v("out").expect("v(out)");
     let rust = wf.fourier(f0, n_harmonics).expect("rust fourier");
     let rust_thd = rust.thd;
     let rust_hd3 = rust.harmonics[3].norm_magnitude;

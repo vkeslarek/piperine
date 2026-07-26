@@ -1,8 +1,8 @@
 //! Hook surfaces. In-process plugins reflect over **the real POM** —
 //! `&Design` is the one structural interface (SPEC Part IV); there is no
 //! parallel view model. The staging handle is the one mutable surface
-//! (SPEC Part VI §8.2). Out-of-host tiers (WASM/process) receive the POM's
-//! own serialized form (serde on `Design` itself, owned by `piperine-lang`).
+//! (SPEC Part VI §8.2). Both hosts are in-process (native dlopen + embedded
+//! Python, MD-21), so no tier ever sees a serialized substitute.
 
 use piperine_lang::pom::staging::{ConnectionSpec, InstanceSpec};
 use piperine_lang::Design;
@@ -28,7 +28,10 @@ pub struct DesignStaging<'a> {
 }
 
 impl<'a> DesignStaging<'a> {
-    pub(crate) fn new(design: &'a Design, plugin: &str) -> Self {
+    /// A staging handle over `design` attributed to `plugin` (P0008
+    /// provenance) — constructed by the host per `transform_design`
+    /// dispatch and by embedded bridges mirroring it.
+    pub fn new(design: &'a Design, plugin: &str) -> Self {
         Self { design, plugin: plugin.to_string() }
     }
 

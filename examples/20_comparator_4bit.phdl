@@ -6,24 +6,23 @@
 // The decision ripples down four module boundaries. EXHAUSTIVE over all
 // 16 × 16 = 256 (a, b) pairs, asserting both `a > b` and `a == b`.
 
-discipline Bit {
-    storage Boolean;
-}
+use piperine::disciplines;
 
 mod BitDriver(output q : Bit) {
     param level : Real = 0.0;
     var b : Bit = 0;
 }
+
 digital BitDriver {
     b = level > 0.5;
     q <- b;
 }
 
-mod CmpSlice(input ai : Bit, input bi : Bit, input gt_in : Bit, input eq_in : Bit,
-             output gt_out : Bit, output eq_out : Bit) {
+mod CmpSlice(input ai : Bit, input bi : Bit, input gt_in : Bit, input eq_in : Bit, output gt_out : Bit, output eq_out : Bit) {
     var g : Bit = 0;
     var e : Bit = 0;
 }
+
 digital CmpSlice {
     g = gt_in || (eq_in && (ai && !bi));
     e = eq_in && (ai == bi);
@@ -32,26 +31,43 @@ digital CmpSlice {
 }
 
 mod Comparator4() {
-    wire a0 : Bit; wire a1 : Bit; wire a2 : Bit; wire a3 : Bit;
-    wire b0 : Bit; wire b1 : Bit; wire b2 : Bit; wire b3 : Bit;
+    wire a0 : Bit;
+    wire a1 : Bit;
+    wire a2 : Bit;
+    wire a3 : Bit;
+    wire b0 : Bit;
+    wire b1 : Bit;
+    wire b2 : Bit;
+    wire b3 : Bit;
     // Running decision down the chain (MSB slice first).
-    wire g3 : Bit; wire e3 : Bit;
-    wire g2 : Bit; wire e2 : Bit;
-    wire g1 : Bit; wire e1 : Bit;
-    wire gt : Bit; wire eq : Bit;
+    wire g3 : Bit;
+    wire e3 : Bit;
+    wire g2 : Bit;
+    wire e2 : Bit;
+    wire g1 : Bit;
+    wire e1 : Bit;
+    wire gt : Bit;
+    wire eq : Bit;
     // Head constants: gt_in = 0, eq_in = 1 into the MSB slice.
-    wire zero : Bit; wire one : Bit;
+    wire zero : Bit;
+    wire one : Bit;
 
     dz : BitDriver(.q = zero);
-    do1 : BitDriver(.q = one) { .level = 1.0 };
-    da0 : BitDriver(.q = a0); da1 : BitDriver(.q = a1);
-    da2 : BitDriver(.q = a2); da3 : BitDriver(.q = a3);
-    db0 : BitDriver(.q = b0); db1 : BitDriver(.q = b1);
-    db2 : BitDriver(.q = b2); db3 : BitDriver(.q = b3);
+    do1 : BitDriver(.q = one) {
+        .level = 1.0
+    };
+    da0 : BitDriver(.q = a0);
+    da1 : BitDriver(.q = a1);
+    da2 : BitDriver(.q = a2);
+    da3 : BitDriver(.q = a3);
+    db0 : BitDriver(.q = b0);
+    db1 : BitDriver(.q = b1);
+    db2 : BitDriver(.q = b2);
+    db3 : BitDriver(.q = b3);
 
-    s3 : CmpSlice(.ai = a3, .bi = b3, .gt_in = zero, .eq_in = one, .gt_out = g3, .eq_out = e3);
-    s2 : CmpSlice(.ai = a2, .bi = b2, .gt_in = g3,   .eq_in = e3,  .gt_out = g2, .eq_out = e2);
-    s1 : CmpSlice(.ai = a1, .bi = b1, .gt_in = g2,   .eq_in = e2,  .gt_out = g1, .eq_out = e1);
-    s0 : CmpSlice(.ai = a0, .bi = b0, .gt_in = g1,   .eq_in = e1,  .gt_out = gt, .eq_out = eq);
+    s3 : CmpSlice(.ai = a3,.bi = b3,.gt_in = zero,.eq_in = one,.gt_out = g3,.eq_out = e3);
+    s2 : CmpSlice(.ai = a2,.bi = b2,.gt_in = g3,.eq_in = e3,.gt_out = g2,.eq_out = e2);
+    s1 : CmpSlice(.ai = a1,.bi = b1,.gt_in = g2,.eq_in = e2,.gt_out = g1,.eq_out = e1);
+    s0 : CmpSlice(.ai = a0,.bi = b0,.gt_in = g1,.eq_in = e1,.gt_out = gt,.eq_out = eq);
 }
 

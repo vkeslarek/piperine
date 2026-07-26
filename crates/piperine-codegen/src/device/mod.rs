@@ -28,8 +28,9 @@ use piperine_solver::abi::Noise;
 use piperine_solver::abi::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{
-    Bounds, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
+    Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
 };
+use piperine_solver::abi::{TerminalDescriptor, TerminalKind};
 use piperine_solver::abi::DigitalEvent;
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::abi::CircularArrayBuffer2;
@@ -98,6 +99,11 @@ pub struct PiperineDevice {
     label: String,
     analog: Option<AnalogInstance>,
     digital: Option<DigitalInstance>,
+    /// Author-declared introspection metadata resolved from POM attributes
+    /// (phdl-introspection-attributes). The `Introspect` bridge prefers a
+    /// sidecar field over the codegen-derived default and falls back when
+    /// absent (PIA-02/08/12). Empty for a module with no introspection attrs.
+    meta: piperine_lang::pom::IntrospectionMeta,
     /// Analog terminal netlist references for digital-only devices (devices
     /// with analog input ports but no analog body). Used by the A2D bridge
     /// to read analog voltages when there's no `AnalogInstance` to track
@@ -117,11 +123,13 @@ impl PiperineDevice {
         label: impl Into<String>,
         analog: Option<AnalogInstance>,
         digital: Option<DigitalInstance>,
+        meta: piperine_lang::pom::IntrospectionMeta,
     ) -> Self {
         Self {
             label: label.into(),
             analog,
             digital,
+            meta,
             analog_terminal_refs: Vec::new(),
             analog_terminal_node_ids: Vec::new(),
             last_analog_voltages: Vec::new(),
@@ -148,13 +156,83 @@ impl PiperineDevice {
     pub fn digital(&self) -> Option<&DigitalInstance> {
         self.digital.as_ref()
     }
+
+    /// The display name for the var identified by `kernel_name`: the author-
+    /// declared `@name(value)` when present, else the kernel var id. ONE
+    /// `@name` feeds both the opvar-query catalog and the observable catalog
+    /// (PIA-07 — the inconsistency is dissolved at the source). Absent
+    /// `@name` → kernel id unchanged (PIA-08, no regression).
+    fn var_display_name(&self, kernel_name: &str) -> String {
+        self.meta
+            .vars
+            .get(kernel_name)
+            .and_then(|m| m.name.clone())
+            .unwrap_or_else(|| kernel_name.to_string())
+    }
+
+    /// Map a validated `@kind(value)` canonical string (lowercased
+    /// `ObservableKind` variant name, see `pom::introspection::VAR_KINDS`)
+    /// onto the solver enum. The `_` arm is unreachable post-resolution
+    /// (the lang resolver rejects values outside `VAR_KINDS`); `Var` is the
+    /// defensive fallback so a future enum drift never silently panics.
+    fn observable_kind_from_str(s: &str) -> piperine_solver::abi::ObservableKind {
+        use piperine_solver::abi::ObservableKind;
+        match s {
+            "branchcurrent" => ObservableKind::BranchCurrent,
+            "charge" => ObservableKind::Charge,
+            "flux" => ObservableKind::Flux,
+            "state" => ObservableKind::State,
+            _ => ObservableKind::Var,
+        }
+    }
+
+    /// Map a validated terminal `@kind(value)` canonical string (lowercased
+    /// `TerminalKind` variant, see `pom::introspection::TERMINAL_KINDS`) onto
+    /// the solver enum. The `_` arm is unreachable post-resolution; the
+    /// position-inferred kind is the caller's responsibility (passed in), so
+    /// this only runs when the author declared a `@kind`.
+    fn terminal_kind_from_str(s: &str) -> piperine_solver::abi::TerminalKind {
+        use piperine_solver::abi::TerminalKind;
+        match s {
+            "external" => TerminalKind::External,
+            "internal" => TerminalKind::Internal,
+            _ => TerminalKind::Auxiliary,
+        }
+    }
 }
 
 impl AnalogDevice for PiperineDevice {
-    fn limiting_active(&self) -> bool {
+    /// Compose the per-instance effective temperature (ABI-21): the solver
+    /// or a host temperature sweep passes the ambient/nominal temperature
+    /// (`t_nominal`); this override adds the instance `dtemp` (SPICE
+    /// convention — an instance param defaulting to 0) and caches
+    /// `t_effective = t_nominal + dtemp` on the analog instance. Keeping
+    /// the composition in the device keeps the solver's
+    /// `CircuitInstance::set_temperature` generic (no param-name
+    /// knowledge). The kernel's `$temperature()` syscall still reads
+    /// `sim.temperature` (set by `sync_sim` from
+    /// `Context.tolerances.temperature`), so the model's own
+    /// `var t = $temperature() + dtemp` produces the same effective value
+    /// at eval time — the cache is the host/opvar-readable surface.
+    fn set_temperature(&mut self, t_nominal: f64) {
+        if let Some(analog) = self.analog.as_mut() {
+            let dtemp = analog.param("dtemp").unwrap_or(0.0);
+            analog.set_temperature(t_nominal + dtemp);
+        }
+    }
+
+    /// Structured limiting feedback (ABI-09/12): the cached report from the
+    /// last `load_dc`/`load_transient` — `Some` when the junction limiter is
+    /// clamping. The solver both gates Newton convergence on `is_some()` and
+    /// steers the guess from `limited_value`.
+    fn limiting_report(&self) -> Option<piperine_solver::abi::LimitingReport> {
         self.analog
             .as_ref()
-            .is_some_and(AnalogInstance::limiting_active)
+            .and_then(AnalogInstance::limiting_report)
+            .map(|mut r| {
+                r.device = self.label.clone();
+                r
+            })
     }
 
     fn bound_step_hint(&self) -> f64 {
@@ -322,6 +400,49 @@ impl DigitalDevice for PiperineDevice {
 }
 
 impl Introspect for PiperineDevice {
+    /// Operating-point variables (ABI-30): the analog kernel's compiled
+    /// opvar-eval function evaluated against the last accepted terminal
+    /// voltages + state/var banks. Empty for a device whose kernel
+    /// compiled no opvar path (no analog vars, or no analog body at all).
+    /// The surfaced name is the author-declared `@name(value)` when present,
+    /// else the kernel var id (PIA-07); the value is always looked up by the
+    /// kernel id (renaming the label never breaks the value fetch).
+    fn read_opvars(&self) -> Vec<(String, f64)> {
+        self.analog.as_ref().map_or_else(Vec::new, |a| {
+            a.eval_opvars()
+                .into_iter()
+                .map(|(name, value)| (self.var_display_name(&name), value))
+                .collect()
+        })
+    }
+
+    /// Declared query catalog (ABI-31 / PIA-05): one `QueryDescriptor` per
+    /// opvar, typed [`QueryKind::OperatingVariable`]. The name is the author-
+    /// declared `@name(value)` when present (PIA-07); `@unit`/`@description`
+    /// annotate the descriptor when declared. Absent attributes → the bare
+    /// `QueryDescriptor::opvar(name)` shape (PIA-08, no regression).
+    fn list_queries(&self) -> Vec<piperine_solver::abi::QueryDescriptor> {
+        let Some(a) = &self.analog else { return Vec::new() };
+        let names = a.kernel().opvar_names();
+        if names.is_empty() {
+            return Vec::new();
+        }
+        names
+            .iter()
+            .map(|n| {
+                let Some(meta) = self.meta.vars.get(n) else {
+                    return piperine_solver::abi::QueryDescriptor::opvar(n.clone());
+                };
+                piperine_solver::abi::QueryDescriptor {
+                    name: meta.name.clone().unwrap_or_else(|| n.clone()),
+                    kind: piperine_solver::abi::QueryKind::OperatingVariable,
+                    unit: meta.unit.clone(),
+                    description: meta.description.clone(),
+                }
+            })
+            .collect()
+    }
+
     fn list_params(&self) -> Vec<ParamDescriptor> {
         let Some(analog) = &self.analog else { return Vec::new() };
         analog
@@ -374,6 +495,182 @@ impl Introspect for PiperineDevice {
         }
         Err(ParamError::Unknown(name.to_string()))
     }
+
+    /// Bridge the analog kernel's terminal catalog to the introspection
+    /// surface (ABI-27): one [`TerminalDescriptor`] per kernel terminal,
+    /// named from the symbol table. Ports are [`TerminalKind::External`];
+    /// module-internal nodes referenced by the body (a series-R/thermal
+    /// `wire`, an `idt` accumulator's hidden probe, …) are
+    /// [`TerminalKind::Internal`]. Digital-domain terminal pairs from the
+    /// digital kernel are appended (ABI-28): one descriptor per input +
+    /// per output, carrying [`Domain::Digital`] + the matching direction.
+    fn list_terminals(&self) -> Vec<TerminalDescriptor> {
+        let mut out = Vec::new();
+        if let Some(analog) = &self.analog {
+            let kernel = analog.kernel();
+            let num_ports = kernel.num_ports();
+            for (i, _) in kernel.terminals().iter().enumerate() {
+                let kernel_name = kernel.terminal_name(i);
+                let direction = if i < num_ports {
+                    Direction::Inout
+                } else {
+                    Direction::Out
+                };
+                // PIA-10..14: @name/@kind on a port or internal wire override
+                // the position-inferred name/kind. The author declaration wins
+                // over inference (e.g. @kind("external") on a wire is legal);
+                // absent attributes keep the position-inferred default
+                // (port→External, non-port wire→Internal, PIA-12).
+                let inferred_kind = if i < num_ports {
+                    TerminalKind::External
+                } else {
+                    TerminalKind::Internal
+                };
+                let (name, kind) = match self.meta.terminals.get(kernel_name) {
+                    Some(tm) => (
+                        tm.name.clone().unwrap_or_else(|| kernel_name.to_string()),
+                        tm.kind.as_deref().map_or(inferred_kind, Self::terminal_kind_from_str),
+                    ),
+                    None => (kernel_name.to_string(), inferred_kind),
+                };
+                let mut desc = TerminalDescriptor::new(name, Domain::Analog, direction);
+                desc.kind = kind;
+                out.push(desc);
+            }
+        }
+        if let Some(digital) = &self.digital {
+            let kernel = digital.kernel();
+            for (i, _) in kernel.inputs().iter().enumerate() {
+                let mut desc = TerminalDescriptor::new(
+                    kernel.input_name(i),
+                    Domain::Digital,
+                    Direction::In,
+                );
+                desc.kind = TerminalKind::External;
+                out.push(desc);
+            }
+            for (i, _) in kernel.outputs().iter().enumerate() {
+                let mut desc = TerminalDescriptor::new(
+                    kernel.output_name(i),
+                    Domain::Digital,
+                    Direction::Out,
+                );
+                desc.kind = TerminalKind::External;
+                out.push(desc);
+            }
+        }
+        out
+    }
+
+    /// Model identity (ABI-46): the kernel's module name as `type_id`, no
+    /// version (the language has no version declaration today — empty
+    /// string is the documented "unversioned" sentinel). A host uses this
+    /// to render family-specific UI without name-matching.
+    fn model_descriptor(&self) -> piperine_solver::abi::ModelDescriptor {
+        // PIA-01: an author-declared `@model(type, version)` on the module
+        // populates the descriptor from the sidecar. PIA-02: absent `@model`
+        // falls back to today's module-name echo with empty version — no
+        // regression for stdlib models that carry no `@model`.
+        if let Some(model) = &self.meta.model {
+            return piperine_solver::abi::ModelDescriptor {
+                type_id: model.type_id.clone(),
+                version: model.version.clone(),
+            };
+        }
+        let type_id = self
+            .analog
+            .as_ref()
+            .map(|a| a.kernel().name().to_string())
+            .or_else(|| self.digital.as_ref().map(|d| d.kernel().name().to_string()))
+            .unwrap_or_default();
+        piperine_solver::abi::ModelDescriptor { type_id, version: String::new() }
+    }
+
+    /// Per-slot names for the analog kernel's runtime state bank (ABI-47):
+    /// runtime operators (`ddt`, `delay`, `idt`, …) named by kind + slot
+    /// id; trailing `$limit` vold slots named `vold[k]`. Empty for a
+    /// digital-only device.
+    fn list_state_slot_names(&self) -> Vec<String> {
+        self.analog
+            .as_ref()
+            .map(|a| a.kernel().state_slot_names().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Named `(plus, minus)` terminal pairs per force branch (ABI-47),
+    /// bridged from `AnalogKernel::force_terminals` via the symbol table.
+    fn list_force_terminal_pairs(&self) -> Vec<(String, String)> {
+        self.analog
+            .as_ref()
+            .map(|a| a.kernel().force_terminal_name_pairs())
+            .unwrap_or_default()
+    }
+
+    /// Named `(plus, minus)` terminal pairs per noise source (ABI-47),
+    /// bridged from `AnalogKernel::noise_terminals` via the symbol table.
+    fn list_noise_terminal_pairs(&self) -> Vec<(String, String)> {
+        self.analog
+            .as_ref()
+            .map(|a| a.kernel().noise_terminal_name_pairs())
+            .unwrap_or_default()
+    }
+
+    /// Device-declared observables for per-step recording (ABI-32): one
+    /// descriptor per kernel state slot (kind = `State`), per module var
+    /// slot (kind = `Var`, synthesized `var[k]` name when the kernel
+    /// exposes no source-level var names), and per force branch carrying
+    /// a series-R current term (kind = `BranchCurrent`, named
+    /// `i(<plus>,<minus>)`). The host pairs this catalog with a
+    /// [`ProbeSelection`](piperine_solver::abi::ProbeSelection) to record
+    /// a subset of these per step. Empty for a digital-only device.
+    fn list_observables(&self) -> Vec<piperine_solver::abi::ObservableDescriptor> {
+        use piperine_solver::abi::{ObservableDescriptor, ObservableKind};
+        let mut out = Vec::new();
+        let Some(analog) = &self.analog else { return out };
+        let kernel = analog.kernel();
+        for name in kernel.state_slot_names() {
+            if name.is_empty() {
+                continue;
+            }
+            out.push(ObservableDescriptor {
+                name: name.clone(),
+                kind: ObservableKind::State,
+                cost: 0.2,
+            });
+        }
+        for k in 0..kernel.num_vars() {
+            // PIA-06/07: a var carrying `@name`/`@kind` surfaces in the
+            // observable catalog by that name and kind (NOT positional
+            // `var[k]`). The same `@name` used by `list_queries`/
+            // `read_opvars` is read here — one declaration, both catalogs.
+            // Absent `@name` keeps today's positional `var[k]` (PIA-08).
+            let src_name = kernel.var_names().get(k).map(|s| s.as_str()).unwrap_or("");
+            let (name, kind) = self
+                .meta
+                .vars
+                .get(src_name)
+                .and_then(|m| m.name.as_ref().map(|label| (label.clone(), m.kind.as_deref())))
+                .map(|(label, kind)| {
+                    (label, kind.map_or(ObservableKind::Var, Self::observable_kind_from_str))
+                })
+                .unwrap_or_else(|| (format!("var[{k}]"), ObservableKind::Var));
+            out.push(ObservableDescriptor {
+                name,
+                kind,
+                cost: 0.1,
+            });
+        }
+        if kernel.has_force_current() {
+            for (plus, minus) in kernel.force_terminal_name_pairs() {
+                out.push(ObservableDescriptor {
+                    name: format!("i({plus},{minus})"),
+                    kind: ObservableKind::BranchCurrent,
+                    cost: 0.3,
+                });
+            }
+        }
+        out
+    }
 }
 
 impl Element for PiperineDevice {
@@ -393,6 +690,38 @@ impl Element for PiperineDevice {
             caps |= ElementCapabilities::DIGITAL;
             if digital.kernel().layout().num_analog() > 0 {
                 caps |= ElementCapabilities::SAMPLES_ANALOG;
+            }
+        }
+        // ABI-04/ABI-05: a device with a `$limit` limiter or stateful digital
+        // registers owns mutable non-accept-gated state the solver must
+        // checkpoint/restore around rejected steps.
+        if self.analog.as_ref().is_some_and(AnalogInstance::has_limiter)
+            || self.digital.as_ref().is_some_and(DigitalInstance::has_registers)
+        {
+            caps |= ElementCapabilities::SUPPORTS_ROLLBACK;
+        }
+        // ABI-26: a JIT device declares the analytic derivative orders its
+        // kernel compiled — symbolic differentiation always produces one, so
+        // every nonlinear JIT device sets the matching bit(s). The `.disto`
+        // driver checks these before solving for HD2/HD3 (ABI-24); a fully
+        // linear device (resistor) compiles no disto kernels and sets
+        // neither. `NUMERIC_JACOBIAN` is never set by the JIT (its Jacobian
+        // is always analytic) — that bit is reserved for finite-difference
+        // plugins.
+        if let Some(analog) = &self.analog {
+            let kernel = analog.kernel();
+            if kernel.has_disto2() {
+                caps |= ElementCapabilities::HAS_DISTO2;
+            }
+            if kernel.has_disto3() {
+                caps |= ElementCapabilities::HAS_DISTO3;
+            }
+            // P6/CLN-12: opt into the DC stamp bypass only when this device's
+            // stamps are a pure function of its terminal voltages. A digital
+            // half disqualifies it — its stamps follow the digital snapshot,
+            // not the solution vector.
+            if self.digital.is_none() && kernel.dc_stamps_depend_only_on_terminal_voltages() {
+                caps |= ElementCapabilities::BYPASS_OK;
             }
         }
         caps
@@ -428,6 +757,56 @@ impl Element for PiperineDevice {
 
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
+    }
+
+    /// Checkpoint the device's mutable non-accept-gated state (ABI-04/05):
+    /// the limiter (active, seeds, vold) from the analog instance and the
+    /// register banks (vars_int, vars_real, prev_watch) from the digital
+    /// instance. Returns `None` when the device owns no such state.
+    /// Layout: `int_state` carries the digital registers; `real_state` is
+    /// `[limiter_pack..., digital_vars_real...]`.
+    fn checkpoint_state(&self) -> Option<piperine_solver::abi::ElementCheckpoint> {
+        let limiter = self.analog.as_ref().and_then(AnalogInstance::checkpoint_limiter);
+        let digital = self
+            .digital
+            .as_ref()
+            .and_then(DigitalInstance::checkpoint_registers);
+        match (limiter, digital) {
+            (None, None) => None,
+            (Some(lim), None) => Some(lim),
+            (None, Some((dig_int, dig_real))) => Some(piperine_solver::abi::ElementCheckpoint {
+                int_state: dig_int,
+                real_state: dig_real,
+            }),
+            (Some(mut lim), Some((dig_int, dig_real))) => {
+                // Limiter's real_state goes first; digital real vars follow.
+                lim.real_state.extend(dig_real);
+                lim.int_state = dig_int;
+                Some(lim)
+            }
+        }
+    }
+
+    /// Restore device state from a checkpoint produced by
+    /// [`checkpoint_state`](Self::checkpoint_state) (ABI-04/05): rewinds the
+    /// limiter (reading its own leading slice of `real_state`) and the
+    /// digital registers (`int_state` + the trailing `real_state`).
+    fn restore_state(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
+        let limiter_len = self
+            .analog
+            .as_ref()
+            .map_or(0, AnalogInstance::limiter_checkpoint_len);
+        if let Some(analog) = self.analog.as_mut() {
+            analog.restore_limiter(checkpoint);
+        }
+        if let Some(digital) = self.digital.as_mut() {
+            let dig_real = if checkpoint.real_state.len() > limiter_len {
+                &checkpoint.real_state[limiter_len..]
+            } else {
+                &[]
+            };
+            digital.restore_registers(&checkpoint.int_state, dig_real);
+        }
     }
 }
 

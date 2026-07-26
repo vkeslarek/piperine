@@ -117,7 +117,7 @@ mod Top() {
         .expect("rust pss");
     let rust_max = rust
         .trace
-        .v(&piperine_api::NetRef { name: "out".into() }, None)
+        .v("out")
         .expect("v(out)")
         .max();
 

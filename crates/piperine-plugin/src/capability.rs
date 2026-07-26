@@ -10,6 +10,7 @@ use crate::manifest::Permissions;
 
 /// The host context handed to hooks and scripts. Carries the owning
 /// plugin's permissions and the project root every path resolves against.
+#[derive(Clone)]
 pub struct HostCtx {
     plugin: String,
     project_root: PathBuf,
@@ -17,7 +18,10 @@ pub struct HostCtx {
 }
 
 impl HostCtx {
-    pub(crate) fn new(plugin: &str, project_root: &Path, permissions: Permissions) -> Self {
+    /// A capability facade for `plugin` resolving against `project_root` —
+    /// hosts embedding the plugin system (the CLI, the embedded-Python
+    /// bridge) construct one per dispatch.
+    pub fn new(plugin: &str, project_root: &Path, permissions: Permissions) -> Self {
         Self { plugin: plugin.to_string(), project_root: project_root.to_path_buf(), permissions }
     }
 

@@ -3,12 +3,14 @@
 
 // The contract
 pub use crate::core::element::{
-    AnalogDevice, ConvergenceHint, DigitalDevice, Element, ElementCapabilities, Introspect,
+    AnalogDevice, DigitalDevice, Element, ElementCapabilities,
+    ElementCheckpoint, Introspect, LimitReason, LimitingReport,
 };
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::introspect::{
-    Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError,
-    ParamScope, QueryDescriptor, QueryKind, TerminalDescriptor,
+    Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
+    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
+    TerminalDescriptor, TerminalKind,
     Value, ValueKind, SignConvention,
 };
 // Stamping + naming
@@ -36,6 +38,9 @@ pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches
 pub use crate::analyses::{Context, Policy, Tolerances};
+pub use crate::analyses::events::{
+    EventEntry, EventKind, EventPriority, EventQueue, EventSource, EventTarget, RollbackBehavior,
+};
 pub use crate::result::{NoiseContribution, Result, SolverStats};
 pub use crate::error::{Error, SolverDomain};
 // Element lifecycle allocator (ABI-09)

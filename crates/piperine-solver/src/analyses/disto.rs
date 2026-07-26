@@ -50,6 +50,7 @@ use crate::analyses::Context;
 use crate::analyses::ac::AcAnalysisContext;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
+use crate::core::element::ElementCapabilities;
 use crate::error::{Error, SolverDomain};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -62,6 +63,13 @@ use num_complex::{Complex, Complex64};
 
 // ── element-facing vocabulary ────────────────────────────────────────────
 
+/// A branch `(plus, minus)` in the disto-contribution netlist; `None` is ground.
+pub type DistoBranch = (Option<AnalogReference>, Option<AnalogReference>);
+/// An ordered pair of branches for second-derivative disto.
+pub type Disto2Pair = (DistoBranch, DistoBranch);
+/// An ordered triple of branches for third-derivative disto.
+pub type Disto3Triple = (DistoBranch, DistoBranch, DistoBranch);
+
 /// A device's second derivatives at the DC operating point (DISTO-03): the
 /// Hessian of every nonlinear contribution over every ordered
 /// controlling-branch pair — the element-facing half of the `.disto`
@@ -71,10 +79,7 @@ pub struct Disto2 {
     /// Ordered controlling branch pairs `((j_plus, j_minus), (k_plus,
     /// k_minus))`, in `values` row order; a `None` terminal is ground.
     /// Only pairs with at least one nonzero Hessian row appear.
-    pub pairs: Vec<(
-        (Option<AnalogReference>, Option<AnalogReference>),
-        (Option<AnalogReference>, Option<AnalogReference>),
-    )>,
+    pub pairs: Vec<Disto2Pair>,
     /// Contribution terminals `(plus, minus)` (a `None` terminal is
     /// ground), in `values` column order: resistive contributions first,
     /// then charge contributions (the split is `charge_start`).
@@ -93,11 +98,7 @@ pub struct Disto3 {
     /// Ordered controlling branch triples `(j, k, l)`, in `values` row
     /// order; a `None` terminal is ground. Only triples with at least one
     /// nonzero row appear.
-    pub triples: Vec<(
-        (Option<AnalogReference>, Option<AnalogReference>),
-        (Option<AnalogReference>, Option<AnalogReference>),
-        (Option<AnalogReference>, Option<AnalogReference>),
-    )>,
+    pub triples: Vec<Disto3Triple>,
     /// Contribution terminals `(plus, minus)`, in `values` column order:
     /// resistive first, then charge (the split is `charge_start`) — the
     /// same row order as [`Disto2::contribs`].
@@ -181,6 +182,10 @@ pub struct DistoSolver<'a> {
     output_ref: AnalogReference,
     output_ref_node: Option<AnalogReference>,
     policy: crate::analyses::Policy,
+    /// Named capability diagnostics from the pre-scan (ABI-24): carried onto
+    /// the [`DistoResult`] so a host learns why an all-zero HD2/HD3 is
+    /// legitimate (no nonlinear device) rather than reading a silent zero.
+    warnings: Vec<String>,
 }
 
 impl<'a> DistoSolver<'a> {
@@ -194,6 +199,15 @@ impl<'a> DistoSolver<'a> {
     ) -> crate::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
+
+        // ABI-24/25 capability pre-scan: run before the (relatively
+        // expensive) DC operating-point solve. A device declaring
+        // `NUMERIC_JACOBIAN` cannot provide the analytic Hessian the
+        // method of nonlinear currents requires — fail loud. A circuit
+        // where no device contributes a derivative order still solves
+        // (legitimate zero result) but the host must see a named warning,
+        // never a silent zero.
+        let warnings = Self::capability_prescan(circuit)?;
 
         if options.f1 <= 0.0 {
             return Err(Error::simple(
@@ -250,7 +264,7 @@ impl<'a> DistoSolver<'a> {
         };
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, options, output_ref, output_ref_node, policy: crate::analyses::Policy::default() })
+        Ok(Self { system, solver, options, output_ref, output_ref_node, policy: crate::analyses::Policy::default(), warnings })
     }
 
     /// Single-tone distortion: first order at `F1`, second order at
@@ -291,8 +305,53 @@ impl<'a> DistoSolver<'a> {
         Ok(DistoResult {
             hd2: Some(out2.norm() / out1.norm()),
             hd3: Some(out3.norm() / out1.norm()),
+            warnings: self.warnings.clone(),
             ..DistoResult::default()
         })
+    }
+
+    /// ABI-24/25 capability pre-scan: walks the circuit's elements once
+    /// before the Volterra recursion. A device declaring
+    /// [`ElementCapabilities::NUMERIC_JACOBIAN`] has a finite-difference
+    /// Jacobian and cannot provide the exact Hessian the method of
+    /// nonlinear currents requires (`.disto` would silently perturb instead
+    /// of using the symbolic second/third derivative) — fail loud, naming
+    /// the offending device. Otherwise, when no device declares
+    /// [`ElementCapabilities::HAS_DISTO2`] (resp. `HAS_DISTO3`), record a
+    /// named warning: a fully linear circuit legitimately yields zero
+    /// HD2/HD3, but the host must see *why* the result is zero rather than
+    /// read a silent no-op.
+    fn capability_prescan(circuit: &CircuitInstance) -> crate::result::Result<Vec<String>> {
+        let mut has_disto2 = false;
+        let mut has_disto3 = false;
+        for dev in &circuit.devices {
+            let caps = dev.capabilities();
+            if caps.contains(ElementCapabilities::NUMERIC_JACOBIAN) {
+                return Err(Error::simple(
+                    SolverDomain::Element,
+                    format!(
+                        "device `{}` has numeric-only Jacobian; .disto requires analytic derivatives",
+                        dev.name()
+                    ),
+                ));
+            }
+            has_disto2 |= caps.contains(ElementCapabilities::HAS_DISTO2);
+            has_disto3 |= caps.contains(ElementCapabilities::HAS_DISTO3);
+        }
+        let mut warnings = Vec::new();
+        if !has_disto2 {
+            warnings.push(format!(
+                "{}: no device provides disto2 capability; HD2 results will be zero",
+                SolverDomain::Element
+            ));
+        }
+        if !has_disto3 {
+            warnings.push(format!(
+                "{}: no device provides disto3 capability; HD3 results will be zero",
+                SolverDomain::Element
+            ));
+        }
+        Ok(warnings)
     }
 
     /// Solve the linearized system at `f_hz` with the stimulus scaled by
@@ -306,7 +365,7 @@ impl<'a> DistoSolver<'a> {
         self.system.frequency = f_hz;
         self.system.stim_scale = stim_scale;
         self.system.nonlinear_rhs = extra;
-        Ok(self.solver.solve(&mut self.system, self.policy.max_iter)?)
+        self.solver.solve(&mut self.system, self.policy.max_iter)
     }
 
     /// Two-tone distortion (DISTO-02): first order per tone, second-order
@@ -348,7 +407,7 @@ impl<'a> DistoSolver<'a> {
         let x3 = self.solve_at((2.0 * f1 - f2).abs(), 0.0, Self::rhs(i3))?;
         let im3 = self.output_phasor(&x3).norm() / out1.norm();
 
-        Ok(DistoResult { im2: Some(im2), im3: Some(im3), ..DistoResult::default() })
+        Ok(DistoResult { im2: Some(im2), im3: Some(im3), warnings: self.warnings.clone(), ..DistoResult::default() })
     }
 
     /// Nonlinear-current injections as RHS stamps (`Y·X = −I`).
@@ -813,7 +872,11 @@ mod tests {
             "n1"
         }
         fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
+            ElementCapabilities::ANALOG
+                | ElementCapabilities::LOADS_DC
+                | ElementCapabilities::LOADS_AC
+                | ElementCapabilities::HAS_DISTO2
+                | ElementCapabilities::HAS_DISTO3
         }
     }
 
@@ -961,7 +1024,11 @@ mod tests {
             "n1"
         }
         fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
+            ElementCapabilities::ANALOG
+                | ElementCapabilities::LOADS_DC
+                | ElementCapabilities::LOADS_AC
+                | ElementCapabilities::HAS_DISTO2
+                | ElementCapabilities::HAS_DISTO3
         }
     }
 
@@ -1102,5 +1169,143 @@ mod tests {
             panic!("f1 = 0 must fail loud");
         };
         assert!(err.to_string().contains("positive stimulus frequency"), "{err}");
+    }
+
+    // ── ABI-24/25: .disto capability pre-scan ────────────────────────────────
+
+    /// A device that declares `NUMERIC_JACOBIAN` — its Jacobian is
+    /// finite-difference, so it cannot provide the analytic Hessian `.disto`
+    /// needs. Used only to exercise the fail-loud path.
+    struct TestNumericDevice {
+        n1: AnalogReference,
+        n2: AnalogReference,
+    }
+    impl AnalogDevice for TestNumericDevice {
+        fn load_dc(
+            &mut self,
+            _s: &DcAnalysisState<'_>,
+            _c: &Context,
+        ) -> Vec<Stamp<AnalogReference, f64>> {
+            let g = 1.0 / 1000.0;
+            vec![
+                Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+                Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+            ]
+        }
+    }
+    impl DigitalDevice for TestNumericDevice {}
+    impl Introspect for TestNumericDevice {}
+    impl Element for TestNumericDevice {
+        fn name(&self) -> &str { "numeric_dev" }
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG
+                | ElementCapabilities::LOADS_DC
+                | ElementCapabilities::NUMERIC_JACOBIAN
+        }
+    }
+
+    /// ABI-24: a purely linear circuit (resistors + VCVS, no device declares
+    /// `HAS_DISTO2`/`HAS_DISTO3`) yields a zero HD2/HD3 result AND a named
+    /// warning — the host sees *why* the result is zero rather than a silent
+    /// no-op.
+    #[test]
+    fn linear_circuit_emits_named_capability_warning() {
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestAcVsource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
+            Box::new(TestResistor { n1: n_in, n2: n_out.clone(), r: 1000.0 }),
+            Box::new(TestResistor { n1: n_out, n2: gnd, r: 1000.0 }),
+        ];
+        let mut circuit = CircuitInstance::from_devices_and_netlist("linear-warn", devices, netlist);
+        let options = DistoOptions {
+            f1: 1e6,
+            f2: None,
+            amplitude: 0.5,
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+            output_ref: None,
+        };
+        let mut solver = DistoSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let result = solver.solve().expect("disto solves");
+
+        assert_eq!(result.hd2, Some(0.0), "a linear circuit has no 2nd-order response");
+        assert!(
+            result.warnings.iter().any(|w| w.contains("no device provides disto2 capability") && w.contains("HD2")),
+            "linear circuit must warn about the absent disto2 capability, got {:?}",
+            result.warnings
+        );
+        assert!(
+            result.warnings.iter().any(|w| w.contains("no device provides disto3 capability") && w.contains("HD3")),
+            "linear circuit must warn about the absent disto3 capability, got {:?}",
+            result.warnings
+        );
+        assert!(
+            result.warnings.iter().all(|w| w.starts_with("Element:")),
+            "warnings carry the SolverDomain::Element prefix, got {:?}",
+            result.warnings
+        );
+    }
+
+    /// ABI-24: a circuit with one nonlinear device (declares `HAS_DISTO2`/
+    /// `HAS_DISTO3`) runs `.disto` normally with NO capability warning — the
+    /// pre-scan only fires when a derivative order is entirely absent.
+    #[test]
+    fn nonlinear_circuit_runs_with_no_capability_warning() {
+        let (mut circuit, _, _) = poly_stage(0.5, 50.0, 0.1, 0.02, 0.003);
+        let options = DistoOptions {
+            f1: 1e6,
+            f2: None,
+            amplitude: 0.1,
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+            output_ref: None,
+        };
+        let mut solver = DistoSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let result = solver.solve().expect("disto solves");
+        assert!(
+            result.warnings.is_empty(),
+            "nonlinear circuit must not emit capability warnings, got {:?}",
+            result.warnings
+        );
+        assert!(result.hd2.is_some(), "nonlinear circuit reports an HD2");
+    }
+
+    /// ABI-25: a device declaring `NUMERIC_JACOBIAN` cannot provide the
+    /// analytic Hessian the method of nonlinear currents requires; `.disto`
+    /// fails loud at the pre-scan (before the DC operating-point solve),
+    /// naming the offending device.
+    #[test]
+    fn numeric_jacobian_device_fails_loud_at_prescan() {
+        let mut netlist = Netlist::new();
+        let n1 = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n2 = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestAcVsource { p: n1.clone(), n: gnd.clone(), branch, v: 1.0 }),
+            Box::new(TestNumericDevice { n1: n1.clone(), n2: gnd.clone() }),
+            Box::new(TestResistor { n1, n2, r: 1000.0 }),
+        ];
+        let mut circuit = CircuitInstance::from_devices_and_netlist("numeric-fail", devices, netlist);
+        let options = DistoOptions {
+            f1: 1e6,
+            f2: None,
+            amplitude: 0.1,
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
+            output_ref: None,
+        };
+        let Err(err) = DistoSolver::new(&mut circuit, options, Context::default()) else {
+            panic!("a NUMERIC_JACOBIAN device must fail loud at the .disto pre-scan");
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("numeric_dev"), "error must name the offending device: {msg}");
+        assert!(
+            msg.contains("numeric-only Jacobian") && msg.contains("analytic derivatives"),
+            "error must explain the analytic-derivative requirement: {msg}"
+        );
     }
 }

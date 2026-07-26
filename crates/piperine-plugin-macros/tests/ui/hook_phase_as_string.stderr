@@ -1,0 +1,5 @@
+error: expected identifier
+ --> tests/ui/hook_phase_as_string.rs:3:32
+  |
+3 | #[piperine_plugin_macros::hook("after_parse")]
+  |                                ^^^^^^^^^^^^^

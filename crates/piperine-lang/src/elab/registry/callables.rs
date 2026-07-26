@@ -45,6 +45,11 @@ pub trait CallableDef: Send + Sync {
     /// (T14) and DLS-05's error message can both point at real source.
     fn decl_span(&self) -> Option<miette::SourceSpan> { None }
 
+    /// The declaration's own `///` doc comment, when known (BUG-2/
+    /// LSB-04..06) — `None` for candidates with no textual source or no
+    /// doc comment. Mirrors [`Self::decl_span`]'s pattern.
+    fn doc(&self) -> Option<&str> { None }
+
     /// A human-readable signature, used in overload-resolution error
     /// messages (SPEC DLS-07: "naming every candidate signature tried").
     fn signature_desc(&self) -> String {
@@ -153,4 +158,5 @@ impl CallableDef for ExternFnDecl {
     fn param_types(&self) -> Option<&[ValueType]> { Some(&self.param_types) }
     fn is_extern(&self) -> bool { true }
     fn decl_span(&self) -> Option<miette::SourceSpan> { self.sig.span }
+    fn doc(&self) -> Option<&str> { self.sig.doc.as_deref() }
 }

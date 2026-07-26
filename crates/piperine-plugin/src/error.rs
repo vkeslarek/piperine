@@ -41,14 +41,30 @@ pub enum PluginError {
     #[diagnostic(code(P0009))]
     UnknownScript(String),
 
-    /// Declared-language-surface T25 (DLS-22): a plugin contributes an
-    /// attribute schema (`Registrar::attr_schema`) but publishes no
-    /// `extern.phdl` stub — the schema would otherwise only be reachable
-    /// through the old dynamic-registration path, which is no longer a
-    /// silent fallback (spec Edge Cases).
-    #[error("plugin `{plugin}` contributes attribute schema `{schema}` but publishes no `extern.phdl` stub (expected at `{expected_path}`) — every plugin-contributed schema needs a textual declaration")]
-    #[diagnostic(code(P0010))]
-    MissingExternStub { plugin: String, schema: String, expected_path: String },
+    /// Plugin-interface v2 (PLG-02): a manifest declaring a removed
+    /// backend (`abi = "wasm"|"process"`) gets a targeted removal error —
+    /// never a generic unknown-field/unknown-value one.
+    #[error("plugin `{plugin}`: the `{backend}` backend was removed — plugins are native + Python only (MD-21); a device plugin declares `device = {{ … }}`, a scripted plugin `python = \"…\"`")]
+    #[diagnostic(code(P0011))]
+    RemovedBackend { plugin: String, backend: String },
+
+    /// Plugin-interface v2 (PLG-19): no release asset matches the host
+    /// target triple — prebuilt-binary only, no build-from-source (D6).
+    #[error("plugin `{plugin}`: no release asset for target triple `{triple}` in release `{release}` (prebuilt-binary only)")]
+    #[diagnostic(code(P0012))]
+    NoAssetForTriple { plugin: String, triple: String, release: String },
+
+    /// Plugin-interface v2 (PLG-18): the fetched asset's hash does not
+    /// match the manifest's `verify` hash — a hard fail, never a prompt.
+    #[error("plugin `{plugin}`: fetched asset for `{release}` does not match the manifest's `verify` hash")]
+    #[diagnostic(code(P0013))]
+    VerifyMismatch { plugin: String, release: String },
+
+    /// Plugin-interface v2 (PLG-23): the user denied the declared
+    /// `[plugin.permissions]` at `add` — the install aborts.
+    #[error("plugin `{0}`: declared permissions denied — install aborted")]
+    #[diagnostic(code(P0014))]
+    PermissionsDenied(String),
 
     #[error("plugin `{plugin}`: {message}")]
     #[diagnostic(code(P0099))]

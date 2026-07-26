@@ -11,6 +11,20 @@ fn examples_dir() -> PathBuf {
     dir
 }
 
+/// The `SourceMap` a real `piperine` invocation builds for the examples
+/// project: the bundled stdlib headers under the `piperine`/`spice`
+/// namespaces, so an example's `use piperine::disciplines;` /
+/// `use spice::...;` resolves exactly as it does on the CLI (which uses
+/// `piperine_project::project_source_map`). `SourceMap::dummy()` maps no
+/// namespaces — it can only elaborate a fully self-contained file.
+fn examples_source_map() -> piperine_lang::SourceMap {
+    let headers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/piperine-lang/headers");
+    let mut map = piperine_lang::SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 /// Every file in `examples/` with extension `ext`, sorted for a stable
 /// report order. The gallery must never silently shrink to nothing.
 fn gallery(ext: &str) -> Vec<PathBuf> {
@@ -32,7 +46,7 @@ fn every_example_phdl_elaborates() {
     let mut failures: Vec<String> = Vec::new();
     for path in gallery("phdl") {
         let body = fs::read_to_string(&path).unwrap();
-        if let Err(e) = piperine_lang::parse_and_elaborate(&body, &piperine_lang::SourceMap::dummy()) {
+        if let Err(e) = piperine_lang::parse_and_elaborate(&body, &examples_source_map()) {
             failures.push(format!("{}: elaboration failed: {e:?}", path.display()));
         }
     }

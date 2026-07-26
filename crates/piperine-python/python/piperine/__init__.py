@@ -28,6 +28,9 @@ Numpy arrays: ``Waveform.values`` / ``.axis`` are real ``np.ndarray``;
 
 from __future__ import annotations
 
+import dataclasses
+import functools
+import re
 import typing
 from dataclasses import dataclass, field
 from enum import Enum
@@ -37,6 +40,7 @@ import _piperine
 __all__ = [
     # load
     "load",
+    "load_str",
     # reflection
     "Design",
     "Module",
@@ -50,9 +54,18 @@ __all__ = [
     # instance sub-views + solver statistics
     "InstanceView",
     "Terminal",
+    "ModelDescriptor",
+    "TerminalDescriptor",
+    "ObservableDescriptor",
+    "ParamDescriptor",
     "SolverStats",
+    "LimitingReport",
+    "NoiseContribution",
     # live session (compile once, set, re-run)
-    "LiveSession",
+    "Session",
+    "Sweep",
+    "SweepPoint",
+    "Grid",
     # analyses
     "OpResult",
     "Trace",
@@ -61,6 +74,7 @@ __all__ = [
     "SensResult",
     "PoleZeroResult",
     "SpResult",
+    "TfResult",
     "Waveform",
     "ComplexWaveform",
     "FourierComponent",
@@ -69,12 +83,132 @@ __all__ = [
     "NoiseTrace",
     # config bundles (mirror headers/prelude.phdl)
     "Scale",
+    "CrossDirection",
+    "Direction",
     "Solver",
     "OpConfig",
     "TranConfig",
     "AcConfig",
     "NoiseConfig",
+    # plotting (HOST-17, matplotlib-guarded)
+    "plot",
+    "bode",
+    "extract",
+    # SI unit helpers (HOST-21)
+    "Hz",
+    "ns",
+    "mV",
+    "C",
+    # plugin decorators (plugin-interface v2, PLG-06/10/11)
+    "script",
+    "hook",
+    "device",
+    "Ctx",
+    "Staging",
+    "HOOK_PHASES",
+    # exception hierarchy (HOST-22)
+    "SimulationError",
+    "ElaborationError",
+    "UnknownModule",
+    "UnknownNet",
+    "ConvergenceError",
 ]
+
+
+# ── exception hierarchy (HOST-22) ──────────────────────────────────────────
+#
+# Every subclass also inherits the matching builtin exception type
+# (`KeyError`/`ValueError`/`RuntimeError`) so existing `except KeyError`-style
+# code (including LIVE-11's `Session.set` error-parity contract) keeps
+# working completely unchanged — these are additive, more specific types
+# layered over the same builtin taxonomy, not a replacement for it.
+
+
+class SimulationError(Exception):
+    """Base exception for every host-facing simulation failure (HOST-22).
+
+    A raw native failure that doesn't fit a more specific subclass below is
+    never silently swallowed — it propagates as its original builtin type
+    (`KeyError`/`ValueError`/`RuntimeError`) unchanged; this hierarchy only
+    adds sharper types for the failure modes it can positively identify.
+    """
+
+
+class ElaborationError(SimulationError, ValueError):
+    """PHDL elaboration failed (parse / const-eval / instantiation) —
+    raised by :func:`load` on a bad source file."""
+
+
+class UnknownModule(SimulationError, ValueError):
+    """A referenced module name does not exist in the design — raised by
+    :meth:`Design.module` (a ``ValueError`` subclass: the native lookup
+    already raises ``ValueError``, so this stays compatible with existing
+    ``except ValueError`` code)."""
+
+
+class UnknownNet(SimulationError, KeyError):
+    """A referenced net/instance/param name is not addressable in the
+    compiled circuit."""
+
+
+class ConvergenceError(SimulationError, RuntimeError):
+    """The Newton solver failed to converge.
+
+    ``node``/``iteration``/``analysis`` are best-effort diagnostics: parsed
+    from the underlying solver message when present, ``None`` otherwise —
+    the solver's convergence-failure message does not always name the
+    offending node.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        node: str | None = None,
+        iteration: int | None = None,
+        analysis: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.node = node
+        self.iteration = iteration
+        self.analysis = analysis
+
+
+def _classify_analysis_error(exc: Exception, analysis: str) -> Exception | None:
+    """Map a raw native analysis exception onto the [`SimulationError`]
+    hierarchy (HOST-22) by message content, or return ``None`` to leave it
+    unchanged (unmatched — passes through as its original builtin type).
+    """
+    if isinstance(exc, SimulationError):
+        return None
+    msg = str(exc)
+    if "Failed to converge" in msg:
+        match = re.search(r"after (\d+) iterations", msg)
+        iteration = int(match.group(1)) if match else None
+        return ConvergenceError(msg, iteration=iteration, analysis=analysis)
+    if "is not addressable" in msg or "is not a solved analog net" in msg:
+        return UnknownNet(msg)
+    return None
+
+
+def _wrap_analysis_errors(fn):
+    """Decorator (HOST-22): call `fn`, reclassifying any raised exception
+    through :func:`_classify_analysis_error`; an unmatched exception
+    re-raises completely unchanged (same type, same traceback) — this is
+    purely additive, never a behavior change for an already-tested raise
+    site.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            mapped = _classify_analysis_error(exc, fn.__name__)
+            if mapped is not None:
+                raise mapped from exc
+            raise
+
+    return wrapper
 
 
 # ── config bundles (mirror crates/piperine-lang/headers/prelude.phdl) ─────────
@@ -88,12 +222,60 @@ class Scale(Enum):
     Oct = "Oct"
 
 
+class CrossDirection(Enum):
+    """Threshold-crossing search direction (HOST-23) for
+    :meth:`Waveform.cross`/:meth:`ComplexWaveform.mag`'s crossing helpers:
+    ``wf.cross(1.0, CrossDirection.Rising)``. Its ``.value`` is exactly the
+    string the native `.cross()` still accepts, so either spelling works.
+    """
+
+    Rising = "Rising"
+    Falling = "Falling"
+    Either = "Either"
+
+
+class Direction(Enum):
+    """Port/terminal signal direction (HOST-23): ``Direction(port.
+    direction)`` turns the native ``str`` reflection field
+    (``"in"``/``"out"``/``"inout"``) into a real enum for symbolic
+    comparison (``d is Direction.In`` instead of comparing strings).
+
+    ``Port.direction``/``Terminal.direction`` themselves stay plain ``str``
+    (unchanged, HOST-23 SPEC_DEVIATION — see the ``Direction`` note near
+    the class registrations below) since they are `#[pyclass]` fields
+    reflected straight off the POM/ABI with no Python-level wrapper to
+    intercept; this enum is the ergonomic typed handle layered on top.
+    """
+
+    In = "in"
+    Out = "out"
+    Inout = "inout"
+
+
+class _ConfigMixin:
+    """Shared ``.with_(**overrides)`` immutable-copy helper (HOST-20) for the
+    config-bundle dataclasses below: ``cfg.with_(reltol=1e-6)`` returns a new
+    instance with the named fields replaced, leaving ``cfg`` untouched —
+    ``dataclasses.replace`` under the hood. Every field is discoverable via
+    ``inspect.signature(TranConfig)`` (a plain dataclass ``__init__``), so no
+    hand-written stub is needed to keep the two in sync.
+    """
+
+    def with_(self, **overrides: typing.Any) -> typing.Self:
+        """Return an immutable copy with the named fields replaced
+        (``dataclasses.replace``); the original instance is untouched."""
+        return dataclasses.replace(self, **overrides)
+
+
 @dataclass
-class Solver:
+class Solver(_ConfigMixin):
     """Solver tolerance + iteration config (prelude ``bundle Solver``).
 
     Field defaults mirror ``headers/prelude.phdl`` exactly; the solver's own
-    defaults (``Context::default``) are the source of truth on the Rust side.
+    defaults (``Context::default``/``Policy::default``) are the source of
+    truth on the Rust side. ``dc_damp_tolerance`` (DC damping/homotopy
+    threshold) is the same knob the Rust ``SolverConfig`` carries — HOST-20
+    canonicalizes the two hosts on one name (``Solver``) and one field set.
     """
 
     temperature: float = 300.15
@@ -101,10 +283,11 @@ class Solver:
     abstol: float = 1e-12
     gmin: float = 1e-12
     max_iter: int = 100
+    dc_damp_tolerance: float = 0.5
 
 
 @dataclass
-class OpConfig:
+class OpConfig(_ConfigMixin):
     """DC operating-point config (prelude ``bundle OpConfig``)."""
 
     solver: Solver = field(default_factory=Solver)
@@ -112,7 +295,7 @@ class OpConfig:
 
 
 @dataclass
-class TranConfig:
+class TranConfig(_ConfigMixin):
     """Transient analysis config (prelude ``bundle TranConfig``).
 
     ``step = 0.0`` selects the adaptive stepper (initial ``dt = stop/1000``).
@@ -130,7 +313,7 @@ class TranConfig:
 
 
 @dataclass
-class AcConfig:
+class AcConfig(_ConfigMixin):
     """AC small-signal sweep config (prelude ``bundle AcConfig``).
 
     ``scale`` selects the sweep geometry: ``Dec``/``Oct`` → logarithmic,
@@ -145,7 +328,7 @@ class AcConfig:
 
 
 @dataclass
-class NoiseConfig:
+class NoiseConfig(_ConfigMixin):
     """Output-referred noise analysis config (prelude ``bundle NoiseConfig``)."""
 
     out: str
@@ -161,8 +344,18 @@ class NoiseConfig:
 # The native _piperine extension returns these as #[pyclass] objects with the
 # listed attributes; the facade re-exports them so the IDE offers .name /
 # .direction / .ty / etc. on every reflected child. These are the runtime
-# types — at runtime, ``module.ports()[0]`` IS a ``_piperine._Port``; the
+# types — at runtime, ``module.ports[0]`` IS a ``_piperine._Port``; the
 # alias makes the type name match the public vocabulary.
+#
+# SPEC_DEVIATION (HOST-23): `.direction` on `Port`/`Terminal` stays a plain
+# `str` (`"in"`/`"out"`/`"inout"`) rather than becoming the `Direction` enum
+# directly — these are native `#[pyclass]` fields set from Rust, with no
+# Python-level wrapper class here to intercept the getter (unlike
+# `Waveform.cross`, which is a plain attribute-assignable method on an
+# already-Python-visible class). Wrap with `Direction(port.direction)` for
+# the typed enum. Reason: rewriting `_Port`/`_Terminal` as native-backed
+# Python wrapper classes to intercept every reflection getter is a much
+# larger, separable change than HOST-23's scope; flagged for the Verifier.
 
 Port = _piperine._Port
 Net = _piperine._Net
@@ -177,7 +370,13 @@ Node = _piperine._Node
 # objects; ``.stats`` on any analysis result is a ``SolverStats``.
 InstanceView = _piperine._InstanceView
 Terminal = _piperine._Terminal
+ModelDescriptor = _piperine._ModelDescriptor
+TerminalDescriptor = _piperine._TerminalDescriptor
+ObservableDescriptor = _piperine._ObservableDescriptor
+ParamDescriptor = _piperine._ParamDescriptor
 SolverStats = _piperine._SolverStats
+LimitingReport = _piperine._LimitingReport
+NoiseContribution = _piperine._NoiseContribution
 
 # Analysis-result types — no config-bundle translation needed, so they are
 # plain re-exports of the native pyclasses. Their methods (.v/.i/.values/
@@ -206,31 +405,46 @@ NoiseTrace = _piperine._NoiseTrace
 class Design:
     """A loaded, elaborated POM design (spec AC1/2).
 
-    Obtain one via :func:`load`. Reflect the top module (``design.top()``),
-    look up a module by name (``design.module("Amp")``), enumerate modules
-    (``design.modules()``), read constants (``design.const_("PI")``), or
-    resolve a hierarchical selector path (``design.select("/r1/port::p")``).
+    Obtain one via :func:`load`/:func:`load_str`. Reflect the top module
+    (``design.top``, a property), look up a module by name (``design
+    ["Amp"]`` or ``design.module("Amp")``), enumerate modules (``design.
+    modules()``), read constants (``design.const("PI")``), or resolve a
+    hierarchical selector path (``design.select("/r1/port::p")``).
     Read-only — the only mutation is :meth:`Module.set`.
     """
 
     def __init__(self, _native: _piperine._Design) -> None:
         self._native = _native
 
+    @property
     def top(self) -> Module | None:
-        """The elaborated top module, if one is set (spec AC2)."""
+        """The elaborated top module, if one is set (spec AC2, HOST-24:
+        a property — reflection, not an action)."""
         m = self._native.top()
         return Module(m) if m is not None else None
 
     def module(self, name: str) -> Module:
-        """Look up a module by name; raises ``ValueError`` if absent."""
-        return Module(self._native.module(name))
+        """Look up a module by name; raises :class:`UnknownModule` (a
+        ``ValueError`` subclass, HOST-22) if absent."""
+        try:
+            return Module(self._native.module(name))
+        except Exception as exc:
+            raise UnknownModule(str(exc)) from exc
+
+    def __getitem__(self, name: str) -> Module:
+        """``design[name]`` (HOST-24) — same as :meth:`module`, the
+        ideal.md-normative access form."""
+        return self.module(name)
 
     def modules(self) -> list[Module]:
         """Every elaborated module."""
         return [Module(m) for m in self._native.modules()]
 
-    def const_(self, name: str) -> typing.Any:
-        """A global constant by name, or ``None`` if unknown."""
+    def const(self, name: str) -> typing.Any:
+        """A global constant by name, or ``None`` if unknown (HOST-24:
+        renamed from ``const_`` — ``const`` is not a Python keyword, only a
+        Rust one, so the facade drops the trailing underscore the native
+        binding needs)."""
         return self._native.const_(name)
 
     def select(self, path: str) -> Selection:
@@ -244,8 +458,8 @@ class Design:
         """
         return self._native.select(path)
 
-    def compile(self, module: str | None = None) -> LiveSession:
-        """Compile a module **once** into a :class:`LiveSession`.
+    def compile(self, module: str | None = None) -> Session:
+        """Compile a module **once** into a :class:`Session`.
 
         ``module = None`` compiles the design's top module (raises
         ``ValueError`` when no unambiguous top exists). The session holds the
@@ -253,7 +467,7 @@ class Design:
         """
         if module is not None:
             return self.module(module).compile()
-        top = self.top()
+        top = self.top
         if top is None:
             raise ValueError("design has no unambiguous top module; pass a module name")
         return top.compile()
@@ -356,6 +570,22 @@ class DistoResult:
     im3: float | None
 
 
+@dataclass
+class TfResult:
+    """``.tf`` result (HOST-03): DC small-signal transfer characteristics
+    from unit excitations on the system linearized at the operating point.
+
+    The uniform host shape (MD-22): same field names as the Rust
+    ``TfResult { gain, z_in, z_out }``. Binds the existing solver ``.tf``
+    driver — no new solver math; voltage-source input only (documented
+    limit, not a gap).
+    """
+
+    gain: float
+    z_in: float
+    z_out: float
+
+
 class Module:
     """A reflected view of one POM module (spec AC14) + the four analyses.
 
@@ -374,28 +604,35 @@ class Module:
         """The module's declared name."""
         return self._native.name
 
+    @property
     def ports(self) -> list[Port]:
-        """The module's ports (name, direction, discipline type)."""
+        """The module's ports (name, direction, discipline type). HOST-24:
+        a property — reflection, not an action."""
         return list(self._native.ports())
 
+    @property
     def nets(self) -> list[Net]:
         """The module's ``wire`` declarations (name, discipline type)."""
         return list(self._native.nets())
 
+    @property
     def instances(self) -> list[Instance]:
         """The module's submodule instances (label, module name)."""
         return list(self._native.instances())
 
+    @property
     def params(self) -> list[Param]:
         """The module's params (name, type, default value)."""
         return list(self._native.params())
 
+    @property
     def behaviors(self) -> list[Behavior]:
         """The module's ``analog``/``digital`` behavior blocks."""
         return list(self._native.behaviors())
 
     # ── analyses (spec AC3/6/8/9) ──────────────────────────────────────────
 
+    @_wrap_analysis_errors
     def op(self, config: OpConfig | None = None) -> OpResult:
         """Run a DC operating-point analysis (spec AC3).
 
@@ -407,6 +644,7 @@ class Module:
         nodeset = config.nodeset if config.nodeset else None
         return self._native.op(nodeset, config.solver)
 
+    @_wrap_analysis_errors
     def sens(
         self,
         outputs: list[str],
@@ -423,6 +661,7 @@ class Module:
         """
         return SensResult(self._native.sens(outputs, params, dp_rel, solver))
 
+    @_wrap_analysis_errors
     def pss(
         self,
         period: float,
@@ -439,6 +678,7 @@ class Module:
         trace, iters, residual, settle = self._native.pss(period, tstab, solver)
         return PssResult(trace, PssStats(iters, residual, settle))
 
+    @_wrap_analysis_errors
     def pz(
         self,
         input_source: str,
@@ -458,6 +698,7 @@ class Module:
         poles, zeros = self._native.pz(input_source, output, output_ref, solver)
         return PoleZeroResult(poles=list(poles), zeros=list(zeros))
 
+    @_wrap_analysis_errors
     def sp(
         self,
         fstart: float,
@@ -477,6 +718,7 @@ class Module:
         frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
         return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
 
+    @_wrap_analysis_errors
     def disto(
         self,
         f1: float,
@@ -499,6 +741,7 @@ class Module:
         hd2, hd3, im2, im3 = self._native.disto(f1, amplitude, output, f2, output_ref, solver)
         return DistoResult(hd2=hd2, hd3=hd3, im2=im2, im3=im3)
 
+    @_wrap_analysis_errors
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).
 
@@ -513,6 +756,7 @@ class Module:
             config.stop, step, config.start, ic, config.solver, config.record_device_state
         )
 
+    @_wrap_analysis_errors
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep (spec AC8).
 
@@ -524,6 +768,7 @@ class Module:
             config.fstart, config.fstop, config.points, logarithmic, config.solver
         )
 
+    @_wrap_analysis_errors
     def noise(self, config: NoiseConfig) -> NoiseTrace:
         """Run an output-referred noise analysis (spec AC9)."""
         logarithmic = config.scale in (Scale.Dec, Scale.Oct)
@@ -539,27 +784,28 @@ class Module:
 
     # ── staging (spec AC11/12) ─────────────────────────────────────────────
 
+    @_wrap_analysis_errors
     def set(self, label: str, param: str, value: float) -> None:
         """Set a parameter override for the next analysis (spec AC11/12).
 
         The next analysis on this module uses ``value`` for the instance
         ``label``'s ``param``. Setting is pure — the held ``Design`` is not
         mutated; overrides replay onto each analysis's fork. Sweeps are
-        native Python ``for`` loops. Same verb as :meth:`LiveSession.set`:
+        native Python ``for`` loops. Same verb as :meth:`Session.set`:
         both mean "subsequent analyses see the new value".
         """
         self._native.set(label, param, value)
 
-    def compile(self) -> LiveSession:
-        """Compile this module **once** into a :class:`LiveSession`.
+    def compile(self) -> Session:
+        """Compile this module **once** into a :class:`Session`.
 
         Currently staged overrides are baked into the compilation; the
         parent :class:`Design` stays untouched.
         """
-        return LiveSession(self._native.compile())
+        return Session(self._native.compile())
 
 
-class LiveSession:
+class Session:
     """A compiled circuit held live across analyses (compile once, set,
     re-run — the optimization-loop primitive).
 
@@ -574,7 +820,7 @@ class LiveSession:
     types, same readouts).
     """
 
-    def __init__(self, _native: _piperine._LiveSession) -> None:
+    def __init__(self, _native: _piperine._Session) -> None:
         self._native = _native
 
     @property
@@ -583,6 +829,7 @@ class LiveSession:
         (``0`` until a structural set lands)."""
         return self._native.rebuilds
 
+    @_wrap_analysis_errors
     def set(self, label: str, param: str, value: float) -> None:
         """Write a parameter on the compiled circuit, effective from the
         next analysis run.
@@ -593,6 +840,7 @@ class LiveSession:
         """
         self._native.set(label, param, value)
 
+    @_wrap_analysis_errors
     def schedule_set(self, t: float, label: str, param: str, value: float) -> None:
         """Schedule ``set`` at simulation time ``t`` for the next
         :meth:`tran` run.
@@ -606,6 +854,7 @@ class LiveSession:
 
     # ── analyses on the held circuit (same shapes as Module's) ─────────────
 
+    @_wrap_analysis_errors
     def op(self, config: OpConfig | None = None) -> OpResult:
         """Run a DC operating point on the held circuit (spec AC3 shape)."""
         if config is None:
@@ -613,6 +862,7 @@ class LiveSession:
         nodeset = config.nodeset if config.nodeset else None
         return self._native.op(nodeset, config.solver)
 
+    @_wrap_analysis_errors
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient on the held circuit (spec AC6 shape), honoring
         any pending :meth:`schedule_set` entries."""
@@ -622,6 +872,7 @@ class LiveSession:
             config.stop, step, config.start, ic, config.solver, config.record_device_state
         )
 
+    @_wrap_analysis_errors
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep on the held circuit (spec AC8
         shape)."""
@@ -630,6 +881,7 @@ class LiveSession:
             config.fstart, config.fstop, config.points, logarithmic, config.solver
         )
 
+    @_wrap_analysis_errors
     def noise(self, config: NoiseConfig) -> NoiseTrace:
         """Run an output-referred noise analysis on the held circuit (spec
         AC9 shape)."""
@@ -644,6 +896,232 @@ class LiveSession:
             config.solver,
         )
 
+    @_wrap_analysis_errors
+    def sens(
+        self,
+        outputs: list[str],
+        params: list[tuple[str, str]],
+        dp_rel: float = 1.0e-6,
+        solver: Solver | None = None,
+    ) -> SensResult:
+        """Run a DC sensitivity analysis (``.sens``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.sens`."""
+        return SensResult(self._native.sens(outputs, params, dp_rel, solver))
+
+    @_wrap_analysis_errors
+    def pss(
+        self,
+        period: float,
+        tstab: float = 0.0,
+        solver: Solver | None = None,
+    ) -> PssResult:
+        """Run a periodic-steady-state analysis on the held circuit
+        (HOST-02), same shape as :meth:`Module.pss`."""
+        trace, iters, residual, settle = self._native.pss(period, tstab, solver)
+        return PssResult(trace, PssStats(iters, residual, settle))
+
+    @_wrap_analysis_errors
+    def pz(
+        self,
+        input_source: str,
+        output: str,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> PoleZeroResult:
+        """Run a pole-zero analysis (``.pz``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.pz`."""
+        poles, zeros = self._native.pz(input_source, output, output_ref, solver)
+        return PoleZeroResult(poles=list(poles), zeros=list(zeros))
+
+    @_wrap_analysis_errors
+    def disto(
+        self,
+        f1: float,
+        amplitude: float,
+        output: str,
+        f2: float | None = None,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> DistoResult:
+        """Run a distortion analysis (``.disto``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.disto`."""
+        hd2, hd3, im2, im3 = self._native.disto(f1, amplitude, output, f2, output_ref, solver)
+        return DistoResult(hd2=hd2, hd3=hd3, im2=im2, im3=im3)
+
+    @_wrap_analysis_errors
+    def sp(
+        self,
+        fstart: float,
+        fstop: float,
+        points: int = 100,
+        logarithmic: bool = True,
+        solver: Solver | None = None,
+    ) -> SpResult:
+        """Run an N-port S-parameter analysis (``.sp``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.sp`."""
+        frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
+        return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
+
+    @_wrap_analysis_errors
+    def tf(
+        self,
+        output: str,
+        input_source: str,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> TfResult:
+        """Run a transfer-function analysis (``.tf``, HOST-03) on the held
+        circuit: DC small-signal gain, input resistance, and output
+        resistance from unit excitations on the system linearized at the
+        operating point. Binds the existing solver ``.tf`` driver — no new
+        solver math (voltage-source input only, MD-14).
+        """
+        native = self._native.tf(output, input_source, output_ref, solver)
+        return TfResult(gain=native.gain, z_in=native.z_in, z_out=native.z_out)
+
+    @_wrap_analysis_errors
+    def dc(
+        self,
+        label: str,
+        param: str,
+        values: list[float],
+        nodeset: dict[str, float] | None = None,
+        solver: Solver | None = None,
+    ) -> Trace:
+        """Run a compile-once DC sweep (``.dc``, HOST-05): restamp
+        ``label``'s ``param`` for each of ``values`` on the one compilation
+        (MD-18), returning a swept :class:`Trace` over the axis — read the
+        same way as :meth:`tran`/:meth:`pss` (``.v``/``.i``/``.axis``).
+
+        ``nodeset`` seeds the Newton initial guess at every swept point
+        (same knob :meth:`op`/:meth:`tran` accept — HOST-20 nodeset parity
+        with the Rust ``Session::dc``).
+        """
+        return self._native.dc(label, param, list(values), nodeset or None, solver)
+
+    def sweep(self, label: str, param: str, values: list[float]) -> "Sweep":
+        """A fluent single-knob sweep over ``label.param`` (HOST-18):
+        ``for point in session.sweep("r1", "r", [1e3, 2e3, 3e3]): point.op()``.
+
+        Each ``point`` is a :class:`SweepPoint` — a ``Session`` view at that
+        knob value (every :class:`Session` method is available directly on
+        it via attribute delegation). Reuses :meth:`set`'s compile-once
+        restamp (MD-18); a structural knob auto-rebuilds and counts it in
+        :attr:`rebuilds` (LIVE-14), same as a bare :meth:`set` — the sweep
+        adds no separate rebuild path. Each iteration builds a fresh native
+        ``_Session.sweep`` iterator (so a :class:`Sweep` can be iterated
+        more than once); this wrapper turns each native ``(value, index)``
+        step into a :class:`SweepPoint` view of *this* ``Session``.
+        """
+        return Sweep(self, label, param, list(values))
+
+    def sweep_grid(self, axes: dict[str, list[float]]) -> "Grid":
+        """A named multi-axis sweep grid (HOST-19):
+        ``session.sweep_grid({"r1.r": [1e3, 2e3], "c1.c": [1e-9, 2e-9]})``
+        iterates every combination in row-major (outer-axis-first) order;
+        :meth:`Grid.map` collects results into an axis-shaped
+        ``numpy.ndarray``.
+
+        Each key is a ``"label.param"`` path (the same addressing
+        :meth:`sweep`/:meth:`set`/``probe=`` use) — not a bare kwarg name —
+        since PHDL parameters are addressed by flat instance label, and a
+        dotted path is not a valid Python identifier.
+        """
+        parsed: list[tuple[str, str, list[float]]] = []
+        for path, values in axes.items():
+            label, param = path.split(".", 1)
+            parsed.append((label, param, list(values)))
+        return Grid(self, parsed)
+
+
+class SweepPoint:
+    """A :class:`Session` view at one sweep coordinate (HOST-18/19).
+
+    Every :class:`Session` method/property (``op``/``tran``/``ac``/…) is
+    reachable directly via attribute delegation to the underlying session —
+    ``point.op()`` runs on the session restamped (or rebuilt) to this
+    point's value. ``.value``/``.index`` name the sweep coordinate: a
+    single ``float``/``int`` for a :class:`Sweep`, a ``tuple`` (one entry
+    per axis) for a :class:`Grid`.
+    """
+
+    def __init__(self, session: Session, value, index) -> None:
+        self._session = session
+        self.value = value
+        self.index = index
+
+    def __getattr__(self, name: str):
+        return getattr(self._session, name)
+
+
+class Sweep:
+    """A fluent single-knob sweep (HOST-18, :meth:`Session.sweep`):
+    iterating yields one :class:`SweepPoint` per value, in order, restamped
+    (or rebuilt, for a structural knob) onto the session's one compilation.
+
+    Each ``for point in sweep`` builds a fresh native ``_Session.sweep``
+    iterator (which does the actual restamping) — a :class:`Sweep` is a
+    reusable recipe, not a single-use iterator, so it can be iterated more
+    than once.
+    """
+
+    def __init__(self, session: Session, label: str, param: str, values: list[float]) -> None:
+        self._session = session
+        self._label = label
+        self._param = param
+        self._values = values
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __iter__(self):
+        native_sweep = self._session._native.sweep(self._label, self._param, self._values)
+        for value, index in native_sweep:
+            yield SweepPoint(self._session, value, index)
+
+
+class Grid:
+    """A named multi-axis sweep grid (HOST-19, :meth:`Session.sweep_grid`):
+    iterating yields one :class:`SweepPoint` per row-major combination;
+    :meth:`map` collects results into an axis-shaped ``numpy.ndarray``.
+
+    Each ``for point in grid`` builds a fresh native ``_Session.sweep_grid``
+    iterator (which does the actual restamping) — a :class:`Grid` is a
+    reusable recipe, not a single-use iterator (:meth:`map` iterates it
+    internally, but a `Grid` can still be iterated again afterward).
+    """
+
+    def __init__(self, session: Session, axes: list[tuple[str, str, list[float]]]) -> None:
+        self._session = session
+        self._axes = axes
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """The grid's shape — one length per axis, outer axis first."""
+        return tuple(len(values) for _, _, values in self._axes)
+
+    def __len__(self) -> int:
+        n = 1
+        for size in self.shape:
+            n *= size
+        return n
+
+    def __iter__(self):
+        native_grid = self._session._native.sweep_grid(self._axes)
+        for coord, index in native_grid:
+            yield SweepPoint(self._session, tuple(coord), tuple(index))
+
+    def map(self, fn) -> "np.ndarray":  # noqa: F821
+        """Apply ``fn(point)`` at every grid combination (row-major) and
+        return the results as a ``numpy.ndarray`` shaped like :attr:`shape`
+        (HOST-19) — ``result[i, j, ...] == fn(point at axis values
+        (axes[0][i], axes[1][j], ...))``.
+        """
+        import numpy as np
+
+        values = [fn(point) for point in self]
+        return np.array(values).reshape(self.shape)
+
 
 # ── load ──────────────────────────────────────────────────────────────────────
 
@@ -652,7 +1130,381 @@ def load(path: str) -> Design:
     """Load + elaborate a ``.phdl``/``.ppr`` file into a :class:`Design`
     (spec AC1).
 
-    Raises ``ValueError`` (with the diagnostic) on a parse/elaboration
-    failure or an unreadable file — never a silent success.
+    Raises :class:`ElaborationError` (a ``ValueError`` subclass, HOST-22)
+    with the diagnostic on a parse/elaboration failure or an unreadable
+    file — never a silent success.
     """
-    return Design(_piperine.load(path))
+    try:
+        return Design(_piperine.load(path))
+    except Exception as exc:
+        raise ElaborationError(str(exc)) from exc
+
+
+def load_str(src: str) -> Design:
+    """Elaborate PHDL/PPR source text directly into a :class:`Design`
+    (HOST-24) — no filesystem read, no project discovery (a standalone/
+    self-contained design, same as a project-less :func:`load`).
+
+    Raises :class:`ElaborationError` (a ``ValueError`` subclass, HOST-22)
+    with the diagnostic on a parse/elaboration failure.
+    """
+    try:
+        return Design(_piperine.load_str(src))
+    except Exception as exc:
+        raise ElaborationError(str(exc)) from exc
+
+
+# ── extract (HOST-25, the removed bench's measurement-dict shape) ──────────
+
+
+def extract(
+    source: typing.Any,
+    measurements: dict[str, typing.Callable[[typing.Any], typing.Any]],
+) -> dict[str, typing.Any]:
+    """Apply every named measurement function in `measurements` to `source`,
+    collecting the results into a dict (HOST-25) — the named-measurement
+    shape the removed PHDL bench construct used to provide::
+
+        m = pip.extract(trace, {
+            "slew":      lambda tr: tr.v("out").slew_rate(),
+            "overshoot": lambda tr: tr.v("out").overshoot(),
+        })
+
+    `source` is whatever each measurement function expects to receive — a
+    :class:`Trace` (each function reads `tr.v(net)`/`tr.i(net)` itself, as
+    above) or a bare :class:`Waveform`/:class:`ComplexWaveform` (each
+    function reads it directly, e.g. ``lambda w: w.slew_rate()``); `extract`
+    itself is agnostic — it just calls ``fn(source)`` for each entry. A
+    measurement function's own failure (e.g. a fail-loud `Waveform`
+    measurement on a flat signal) propagates unchanged — `extract` does not
+    swallow or wrap it.
+    """
+    return {name: fn(source) for name, fn in measurements.items()}
+
+
+# ── SI unit helpers (HOST-21) ────────────────────────────────────────────────
+#
+# Mirror the Rust `Freq`/`Time` newtypes' string parsing (`units.rs`): a
+# string value takes an optional SI prefix (f/p/n/u(µ)/m/k/M/G/T) and an
+# optional trailing unit-name suffix; a non-string value is taken as already
+# being in the function's base unit — SI prefixes never apply to a raw
+# `float`/`int` (a bare number is not re-parsed as a string).
+
+_SI_PREFIXES = {
+    "f": 1e-15,
+    "p": 1e-12,
+    "n": 1e-9,
+    "u": 1e-6,
+    "µ": 1e-6,
+    "m": 1e-3,
+    "k": 1e3,
+    "M": 1e6,
+    "G": 1e9,
+    "T": 1e12,
+}
+
+
+def _parse_si(value: str, unit_suffix: str) -> float:
+    """Parse `value` as `<number><optional SI prefix>`, with an optional
+    trailing `unit_suffix` stripped first if present (e.g. `_parse_si
+    ("10MHz", "Hz")` and `_parse_si("10M", "Hz")` both yield `1e7`). Raises
+    ``ValueError`` on anything else (fail loud, no silent default)."""
+    trimmed = value.strip()
+    body = trimmed[: -len(unit_suffix)] if trimmed.endswith(unit_suffix) else trimmed
+    if not body:
+        raise ValueError(f"`{trimmed}` has no numeric part")
+    mult = 1.0
+    if body[-1] in _SI_PREFIXES:
+        mult = _SI_PREFIXES[body[-1]]
+        body = body[:-1]
+    try:
+        return float(body) * mult
+    except ValueError as e:
+        raise ValueError(
+            f"cannot parse `{trimmed}` as a number (expected `<number>` optionally followed by "
+            f"an SI prefix (k/M/G/m/u/n/p/f) and/or the `{unit_suffix}` suffix)"
+        ) from e
+
+
+def Hz(value: float | str) -> float:
+    """A frequency in Hz (HOST-21): ``Hz(1e6) == 1e6``,
+    ``Hz("10M") == 1e7``, ``Hz("10MHz") == 1e7``. SI prefixes only apply
+    when ``value`` is a ``str`` — a raw ``float``/``int`` is returned as-is,
+    never re-parsed as a string.
+    """
+    if isinstance(value, str):
+        return _parse_si(value, "Hz")
+    return float(value)
+
+
+def ns(value: float | str) -> float:
+    """A duration in nanoseconds, converted to seconds (HOST-21):
+    ``ns(10) == 10e-9``, ``ns("10n") == 10e-9``, ``ns("10ns") == 10e-9``.
+    """
+    if isinstance(value, str):
+        return _parse_si(value, "s")
+    return float(value) * 1e-9
+
+
+def mV(value: float | str) -> float:
+    """A voltage in millivolts, converted to volts (HOST-21):
+    ``mV(300) == 0.3``, ``mV("300m") == 0.3``.
+    """
+    if isinstance(value, str):
+        return _parse_si(value, "V")
+    return float(value) * 1e-3
+
+
+def C(value: float) -> float:
+    """A temperature in degrees Celsius, converted to Kelvin (HOST-21) — the
+    unit ``Solver.temperature`` expects: ``C(27) == 300.15``.
+    """
+    return float(value) + 273.15
+
+
+# ── plotting (HOST-17, matplotlib-guarded) ─────────────────────────────────
+#
+# matplotlib is never a hard dependency (spec Out-of-Scope / AC4): every
+# entry point below imports it lazily and raises a clear ``ImportError``
+# when it's absent, rather than failing at `import piperine` time or
+# silently no-op'ing. Figures are returned, not shown — a library call
+# forcing a blocking ``plt.show()`` would hang a headless/test process; the
+# caller decides whether/how to display or save the figure (``fig.show()``,
+# ``fig.savefig(...)``, or nothing at all in a notebook, which renders the
+# returned `Figure` inline).
+
+
+def _require_matplotlib():
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "piperine.plot/bode/Waveform.plot requires matplotlib — "
+            "install it with `pip install matplotlib`"
+        ) from e
+    return plt
+
+
+def plot(waveform: Waveform | dict[str, Waveform], **kwargs) -> "matplotlib.figure.Figure":  # noqa: F821
+    """Plot one real :class:`Waveform`, or several keyed by label
+    (``{"vout": wf1, "vin": wf2}``), on one axis (HOST-17). ``xlabel``/
+    ``ylabel``/``title`` kwargs label the axes; unrecognized kwargs are
+    ignored. Requires matplotlib — raises ``ImportError`` with an install
+    hint when it's not installed (no hard dependency, no silent no-op).
+    """
+    plt = _require_matplotlib()
+    fig, ax = plt.subplots()
+    if isinstance(waveform, dict):
+        for label, wf in waveform.items():
+            ax.plot(wf.axis, wf.values, label=label)
+        ax.legend()
+    else:
+        ax.plot(waveform.axis, waveform.values)
+    ax.set_xlabel(kwargs.get("xlabel", "axis"))
+    ax.set_ylabel(kwargs.get("ylabel", "value"))
+    if "title" in kwargs:
+        ax.set_title(kwargs["title"])
+    ax.grid(True)
+    return fig
+
+
+def bode(cw: ComplexWaveform, **kwargs) -> "matplotlib.figure.Figure":  # noqa: F821
+    """Bode plot (magnitude in dB + phase in degrees, log-frequency x-axis)
+    of a :class:`ComplexWaveform` (HOST-17). ``title`` kwarg labels the
+    figure. Requires matplotlib — raises ``ImportError`` with an install
+    hint when it's not installed.
+    """
+    import numpy as np
+
+    plt = _require_matplotlib()
+    fig, (ax_mag, ax_phase) = plt.subplots(2, 1, sharex=True)
+    freq = cw.axis
+    ax_mag.semilogx(freq, cw.db.values)
+    ax_mag.set_ylabel("Magnitude (dB)")
+    ax_mag.grid(True, which="both")
+    ax_phase.semilogx(freq, np.degrees(cw.phase.values))
+    ax_phase.set_ylabel("Phase (deg)")
+    ax_phase.set_xlabel("Frequency (Hz)")
+    ax_phase.grid(True, which="both")
+    if "title" in kwargs:
+        fig.suptitle(kwargs["title"])
+    return fig
+
+
+def _waveform_plot_method(self, **kwargs):
+    """``wf.plot()`` (HOST-17) — same as :func:`plot` bound onto
+    :class:`Waveform`."""
+    return plot(self, **kwargs)
+
+
+def _complex_waveform_plot_method(self, **kwargs):
+    """``cw.plot()`` (HOST-17) — a `ComplexWaveform`'s natural render is a
+    Bode plot; same as :func:`bode` bound onto :class:`ComplexWaveform`."""
+    return bode(self, **kwargs)
+
+
+# Save the native `.cross()` (still string-keyed) before overwriting it
+# below (HOST-23) — the same class-attribute-assignment technique `.plot()`
+# uses, so `Waveform.cross` accepts the typed `CrossDirection` enum while
+# still accepting a bare string for backward compatibility with any
+# existing caller.
+#
+# `Waveform` is the native `_piperine._Waveform` *class object itself*
+# (shared/cached across every embedded-interpreter re-materialization of
+# this facade module — `piperine run`/`run_script` re-executes this file's
+# top level on every call in the same process, e.g. once per example in
+# `run_examples.rs`). Capturing `Waveform.cross` unconditionally on every
+# re-execution would, on the *second* execution, capture the *already-
+# wrapped* `_waveform_cross_enum` from the first — infinite recursion the
+# first time a wrapped `.cross()` calls what it thinks is "the native
+# method". The `hasattr` guard makes the capture idempotent: only the
+# first execution in a process captures the true native method.
+if not hasattr(Waveform, "_host_cross_native"):
+    Waveform._host_cross_native = Waveform.cross
+
+
+def _waveform_cross_enum(self, level: float, dir: CrossDirection | str = CrossDirection.Either) -> float | None:
+    """``wf.cross(level, dir)`` (HOST-23): `dir` accepts a
+    :class:`CrossDirection` enum member (or the legacy string spelling) —
+    the first axis value where the waveform crosses `level` in that
+    direction, or ``None``.
+    """
+    value = dir.value if isinstance(dir, CrossDirection) else dir
+    return Waveform._host_cross_native(self, level, value)
+
+
+# Bind `.plot()`/`.cross()` onto the native pyclasses themselves (not just
+# the facade aliases above) — the native `_piperine._Waveform`/
+# `_ComplexWaveform` types PyO3 generates are ordinary heap types, so a
+# plain class-attribute assignment works exactly like it would on a
+# pure-Python class; this is the only way to add `.plot()` without
+# threading a matplotlib dependency into the Rust `piperine-python` crate
+# itself (kept out per the spec's "matplotlib as a hard dependency"
+# Out-of-Scope entry), and the same technique layers the typed
+# `CrossDirection` enum over `.cross()` without a native signature change.
+Waveform.cross = _waveform_cross_enum
+Waveform.plot = _waveform_plot_method
+ComplexWaveform.plot = _complex_waveform_plot_method
+
+
+# ── plugin decorators (plugin-interface v2, PLG-06/10/11) ─────────────────
+#
+# The declaration-coupled contribution surface, name-identical to the Rust
+# `#[pip::…]` macros (MD-22 literal parity): `@pip.script("name")` declares
+# AND binds a CLI subcommand, `@pip.hook.<phase>` a lifecycle hook for one
+# of the five frozen phases, `@pip.device("Type")` marks an `@device`
+# binding for a Python-glue plugin. Decorated functions land in a per-load
+# registration table the embedded host reads back (via `_take_registry`)
+# after exec-ing the plugin's `python` entry — declaration and registration
+# are one decorator, never an imperative register call.
+
+HOOK_PHASES = ("after_parse", "after_elaborate", "transform_design", "before_lower", "after_solve")
+"""The five frozen lifecycle hook phases (D8) — the only phase names
+:attr:`hook` accepts, spelled identically to the Rust `#[pip::hook(…)]`
+arguments."""
+
+Ctx = _piperine._Ctx
+Staging = _piperine._Staging
+
+_registry = {"scripts": {}, "hooks": {phase: [] for phase in HOOK_PHASES}, "devices": {}}
+
+
+def script(name: str):
+    """Declare a CLI subcommand (PLG-06/10): ``piperine <name> …``
+    dispatches to the decorated function with ``(args, ctx)``; its return
+    value becomes the process exit code::
+
+        @pip.script("lint")
+        def lint(args, ctx):
+            ...
+            return 0
+
+    Re-declaring an occupied name raises ``ValueError`` (declaration-time
+    conflict, never a silent shadow).
+    """
+
+    def deco(fn):
+        if name in _registry["scripts"]:
+            raise ValueError(f"script {name!r} is already declared")
+        _registry["scripts"][name] = fn
+        return fn
+
+    return deco
+
+
+class _HookDecorators:
+    """The `@pip.hook.<phase>` decorator namespace (PLG-06/11): one
+    attribute per frozen phase — ``after_parse``, ``after_elaborate``,
+    ``transform_design``, ``before_lower``, ``after_solve``. Any other
+    attribute name raises ``AttributeError`` (the catalog is frozen at
+    five). The decorated function's payload matches its phase:
+    ``after_parse`` receives ``(ctx, source)``, the design hooks ``(ctx)``
+    with ``ctx.design()``, ``transform_design`` ``(ctx, staging)``, and
+    ``after_solve`` ``(ctx, result)``.
+    """
+
+    def __getattr__(self, phase: str):
+        if phase not in HOOK_PHASES:
+            raise AttributeError(
+                f"unknown hook phase {phase!r} — the five frozen phases are: "
+                + ", ".join(HOOK_PHASES)
+            )
+
+        def deco(fn):
+            _registry["hooks"][phase].append(fn)
+            return fn
+
+        return deco
+
+
+hook = _HookDecorators()
+"""Lifecycle hook decorators (PLG-06/11): ``@pip.hook.after_elaborate``
+declares AND binds a hook for that phase — the five frozen phases only."""
+
+
+def device(type_id: str):
+    """Mark an ``@device`` binding for a Python-glue plugin (PLG-05/06):
+    the decorated class is recorded under the `type` id the plugin's PHDL
+    names in ``@device(type = …)``. The solver `Element` itself comes from
+    the device binary — this decorator marks the binding, it does not
+    construct elements. Re-declaring an occupied type id raises
+    ``ValueError``.
+    """
+
+    def deco(cls):
+        if type_id in _registry["devices"]:
+            raise ValueError(f"device {type_id!r} is already declared")
+        _registry["devices"][type_id] = cls
+        return cls
+
+    return deco
+
+
+def _take_registry() -> dict[str, list[str]]:
+    """Read back AND RESET the per-load registration table — the embedded
+    host's post-exec protocol (each plugin load starts from a fresh
+    table). Returns ``{"scripts": [...], "hooks": [...], "devices": [...]}``
+    of declared names, sorted for determinism.
+    """
+    table = {
+        "scripts": sorted(_registry["scripts"]),
+        "hooks": sorted(phase for phase, fns in _registry["hooks"].items() if fns),
+        "devices": sorted(_registry["devices"]),
+    }
+    _registry["scripts"].clear()
+    _registry["devices"].clear()
+    for fns in _registry["hooks"].values():
+        fns.clear()
+    return table
+
+
+def _registered_script(name: str):
+    """The function declared for script `name` in this load, or ``None``
+    (embedded-host dispatch protocol)."""
+    return _registry["scripts"].get(name)
+
+
+def _registered_hooks(phase: str) -> list:
+    """The functions declared for hook `phase` in this load, in declaration
+    order (embedded-host dispatch protocol)."""
+    return list(_registry["hooks"][phase])

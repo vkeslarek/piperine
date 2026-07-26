@@ -6,7 +6,7 @@ use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
-use crate::core::element::{Element, ElementCapabilities};
+use crate::core::element::{Element, ElementCapabilities, Introspect};
 use crate::digital::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
@@ -95,6 +95,21 @@ impl CircuitInstance {
 
     pub fn all_devices(&self) -> &[Box<dyn Element>] { &self.devices }
     pub fn all_devices_mut(&mut self) -> &mut [Box<dyn Element>] { &mut self.devices }
+
+    /// Reach one device's [`Introspect`] surface by its source-level label
+    /// (host-library HOST-07..12 enabling seam). `None` when no element
+    /// carries that label — every device is nameable via [`Element::name`],
+    /// so this is the same addressing [`set_element_param`](Self::set_element_param)
+    /// uses, just read-only and returning the whole introspection surface
+    /// (opvars, params, terminals, model descriptor, observables) instead of
+    /// one parameter. No solver-math change — a pure trait-object upcast
+    /// over the already-shipped `Element: Introspect` supertrait.
+    pub fn device_introspect(&self, label: &str) -> Option<&dyn Introspect> {
+        self.devices
+            .iter()
+            .find(|d| d.name() == label)
+            .map(|d| d.as_ref() as &dyn Introspect)
+    }
 
     // ── Analysis entry ───────────────────────────────────────────────────────
     //
@@ -332,12 +347,34 @@ impl CircuitInstance {
     pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::result::Result<()> {
         if self.is_set_up { return Ok(()); }
         for d in self.devices.iter_mut() { d.setup(ctx)?; }
+        // ABI-19: seed every element with the run's nominal temperature during
+        // setup, after `allocate_unknowns` (run in `CircuitBuilder::build`)
+        // and before the first `load_*`. Subsequent runs short-circuit on
+        // `is_set_up`; a temperature sweep re-seeds through `set_temperature`.
+        self.set_temperature(ctx.tolerances.temperature);
         self.is_set_up = true;
         Ok(())
     }
 
     pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
         self.devices.iter_mut().for_each(|d| d.update(state, context));
+    }
+
+    /// Set the instance temperature on every element (ABI-19/20): each
+    /// element's `set_temperature` recomputes its temperature-dependent
+    /// constants; the next load restamps naturally. The return value is
+    /// always [`Invalidation::Temperature`] — temperature changes never
+    /// leave the matrix shape untouched at a higher level than restamp
+    /// (a structural `Rebuild` from a temperature change is the same
+    /// fail-loud path as a parameter `Rebuild`, surfaced by `set_param`).
+    /// Default no-op devices (no `set_temperature` override) are
+    /// unaffected — they keep reading `$temperature` at eval time
+    /// (backward compatible).
+    pub fn set_temperature(&mut self, t: f64) -> crate::core::introspect::Invalidation {
+        for d in self.devices.iter_mut() {
+            d.set_temperature(t);
+        }
+        crate::core::introspect::Invalidation::Temperature
     }
 
     /// Solver-level restamp path (MD-18): set a parameter on the built
@@ -397,18 +434,18 @@ impl CircuitInstance {
     }
 
     /// Steer the Newton guess with every device's structured limiting
-    /// feedback ([`AnalogDevice::convergence_hint`](crate::core::element::AnalogDevice::convergence_hint)):
-    /// the clamped unknown is set
-    /// to the limited value before the convergence test. The DC and
-    /// transient systems delegate here each iteration.
-    pub fn apply_convergence_hints(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
+    /// feedback ([`AnalogDevice::limiting_report`](crate::core::element::AnalogDevice::limiting_report)):
+    /// each report's `limited_value` overwrites its `net` before the
+    /// convergence test (ABI-10). The DC and transient systems delegate here
+    /// each iteration.
+    pub fn apply_limiting_reports(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
         use crate::math::linear::AsIndex;
         for dev in &self.devices {
-            if let Some(hint) = dev.convergence_hint()
-                && let Some(i) = hint.net.as_index()
+            if let Some(report) = dev.limiting_report()
+                && let Some(i) = report.net.as_index()
                 && i < guess.len()
             {
-                guess[i] = hint.limited_value;
+                guess[i] = report.limited_value;
             }
         }
     }

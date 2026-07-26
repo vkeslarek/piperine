@@ -3,10 +3,7 @@
 // voltage. Three full periods have six crossings after t = 0 — the python twin
 // checks the count and cross-validates with `Waveform.cross`.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod SineSource(inout p : Electrical, inout n : Electrical) {
     param amplitude : Real = 1.0;
@@ -32,7 +29,7 @@ mod Counter() {
     wire gnd : Electrical;
     wire sig : Electrical;
     wire count : Electrical;
-    src : SineSource(.p = sig, .n = gnd);
-    det : CrossCounter(.vin = sig, .count = count, .gnd = gnd);
+    src : SineSource(.p = sig,.n = gnd);
+    det : CrossCounter(.vin = sig,.count = count,.gnd = gnd);
 }
 

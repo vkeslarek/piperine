@@ -12,8 +12,16 @@ use super::LoadCtx;
 /// junction from a tracked one.
 pub(super) struct Limiter {
     /// Whether junction voltage limiting was still moving at the last load
-    /// (vetoes Newton convergence — see [`Limiter::update`]).
+    /// (vetoes Newton convergence — see [`Limiter::update`]). The OR of
+    /// [`active_slots`](Self::active_slots).
     active: bool,
+    /// Per-slot "still clamping" flags (phdl-introspection-attributes PIA-15/
+    /// 17), parallel to the kernel's limit slots. Read by
+    /// [`active_slot`](Self::active_slot) to name the limiter that actually
+    /// fired in `limiting_report`. Transient — recomputed each `update`, so
+    /// not checkpointed (the vold slots in the state bank are the durable
+    /// state; the flags are re-derived on the next load after a restore).
+    active_slots: Vec<bool>,
     /// Per-`$limit` seed voltage `vcrit`.
     seeds: Vec<f64>,
 }
@@ -25,7 +33,7 @@ impl Limiter {
     /// same point in `AnalogInstance::new` as before this split — after
     /// `@initial` events, matching the original construction order exactly).
     pub(super) fn new(num_limits: usize) -> Self {
-        Self { active: false, seeds: vec![0.0; num_limits] }
+        Self { active: false, active_slots: vec![false; num_limits], seeds: vec![0.0; num_limits] }
     }
 
     /// Seed each `$limit` vold slot (in `state`) with its critical voltage
@@ -49,6 +57,34 @@ impl Limiter {
 
     pub(super) fn active(&self) -> bool {
         self.active
+    }
+
+    /// The first slot still clamping at the last [`update`](Self::update), for
+    /// naming the limiter that actually fired in `limiting_report` (PIA-15/17).
+    /// `None` when no slot is active (the report is then suppressed).
+    pub(super) fn active_slot(&self) -> Option<usize> {
+        self.active_slots.iter().position(|&a| a)
+    }
+
+    /// Pack the limiter's own state (the `active` flag + the vcrit `seeds`)
+    /// for a checkpoint (ABI-04). The vold slots live in the analog
+    /// instance's `state` bank and are packed by the caller alongside this.
+    /// Layout: `[active_as_f64, seed_0, seed_1, …]`.
+    pub(super) fn pack(&self) -> Vec<f64> {
+        let mut v = Vec::with_capacity(1 + self.seeds.len());
+        v.push(if self.active { 1.0 } else { 0.0 });
+        v.extend_from_slice(&self.seeds);
+        v
+    }
+
+    /// Restore the limiter's own state from a pack produced by
+    /// [`pack`](Self::pack) (ABI-04). No-op when the layout is too short.
+    pub(super) fn unpack(&mut self, packed: &[f64]) {
+        let Some((&a, rest)) = packed.split_first() else { return };
+        self.active = a != 0.0;
+        if rest.len() == self.seeds.len() {
+            self.seeds.clone_from_slice(rest);
+        }
     }
 
     /// Node voltages with each `$limit` junction branch replaced by its
@@ -105,10 +141,14 @@ impl Limiter {
         // A junction is "still limiting" iff pnjlim actually clamped this
         // iteration — the limited value differs from the raw branch voltage
         // (ngspice's `Check == 1`). While that holds, the Newton loop must not
-        // declare convergence (see PiperineDevice::limiting_active): a clamped
+        // declare convergence (see PiperineDevice::limiting_report): a clamped
         // junction can momentarily satisfy KCL at a non-solution voltage. Tiny
         // Newton jitter once limiting is off (vnew ≈ vlim) must NOT veto, hence
-        // the tolerance below.
+        // the tolerance below. Per-slot tracking (PIA-15/17) names the limiter
+        // that fired; the aggregate `active` (OR of slots) keeps the veto gate.
+        for slot in self.active_slots.iter_mut() {
+            *slot = false;
+        }
         let mut active = false;
         for (i, v) in vlim.into_iter().enumerate() {
             let old = state[base + i];
@@ -120,6 +160,7 @@ impl Limiter {
                 continue;
             }
             if (vnew[i] - v).abs() > 1e-6 + 1e-4 * vnew[i].abs() {
+                self.active_slots[i] = true;
                 active = true;
             }
             state[base + i] = v;

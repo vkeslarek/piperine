@@ -183,10 +183,25 @@ impl<'m> DigitalCompiler<'m> {
             .map(|(id, p)| (p.name.clone(), id))
             .collect();
 
+        let input_names: Vec<String> = self
+            .body
+            .inputs
+            .iter()
+            .map(|&id| self.module.symbols.node(id).name.clone())
+            .collect();
+        let output_names: Vec<String> = self
+            .body
+            .outputs
+            .iter()
+            .map(|&id| self.module.symbols.node(id).name.clone())
+            .collect();
+
         Ok(DigitalKernel {
             name: self.module.name.clone(),
             inputs: self.body.inputs.clone(),
             outputs: self.body.outputs.clone(),
+            input_names,
+            output_names,
             layout: self.layout,
             clocked_blocks: clocked_specs,
             num_watch_terms: watch_terms.len(),

@@ -1,3 +1,7 @@
+//! The analog/digital boundary: A2D sampling, D2A forcing, event ordering
+//! across the Newton and event-driven domains, and the settle loop that joins
+//! them.
+
 // Mixed-signal integration tests.
 //
 // Tests the boundary between the analog (Newton-Raphson MNA) and digital

@@ -7,7 +7,9 @@ use lsp_types::{
 };
 
 use super::{ConnectionExt, RequestExt};
-use crate::state::ServerState;
+use crate::state::{DocumentState, ServerState};
+use piperine_lang::elab::registry::ElabContext;
+use piperine_lang::parse::lexer::Tok;
 use piperine_lang::parse::predict::{ExpectedSyntax, IdentRole};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
@@ -21,13 +23,61 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
         .get(&uri)
         .map(|doc| {
             let offset = crate::text_pos::position_to_byte(&doc.source, pos);
-            let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
-            build_completions_predictive(&expected, doc.design.as_ref())
+            completions_at(doc, offset)
         })
         .unwrap_or_default();
 
     let result = CompletionResponse::List(CompletionList { is_incomplete: false, items });
     connection.respond(id, result);
+}
+
+/// The completion items for `offset` in `doc` — either `@schema` completion
+/// (T18/LSP-20, when the cursor sits right after an `@` and an optional
+/// partial schema name) or the ordinary predictive-parser completions.
+/// Exposed as its own function (rather than inlined in `handle`) so tests
+/// can drive it directly against a `DocumentState` without a full LSP
+/// round trip.
+pub fn completions_at(doc: &DocumentState, offset: usize) -> Vec<CompletionItem> {
+    if let Some(prefix) = attr_schema_prefix(&doc.source, offset) {
+        return schema_completions(doc.ctx.as_ref(), prefix);
+    }
+    let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
+    build_completions_predictive(&expected, doc.design.as_ref())
+}
+
+/// Whether `offset` sits right after an `@` (possibly with a partial
+/// identifier already typed, e.g. `@rf|`) — an attribute-schema-name
+/// completion position. Returns the partial identifier typed so far (empty
+/// string when the cursor is immediately after the bare `@`).
+fn attr_schema_prefix(source: &str, offset: usize) -> Option<&str> {
+    let bytes = source.as_bytes();
+    if offset > bytes.len() {
+        return None;
+    }
+    let mut i = offset;
+    while i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_') {
+        i -= 1;
+    }
+    if i > 0 && bytes[i - 1] == b'@' {
+        Some(&source[i..offset])
+    } else {
+        None
+    }
+}
+
+/// Only the in-scope schema names (`ctx.schemas` — the registry populated
+/// for this document's own compilation unit) whose name starts with
+/// `prefix`, as completion items (T18/LSP-20).
+fn schema_completions(ctx: Option<&ElabContext>, prefix: &str) -> Vec<CompletionItem> {
+    let Some(ctx) = ctx else { return Vec::new() };
+    let mut items: Vec<CompletionItem> = ctx
+        .schemas
+        .names()
+        .filter(|name| name.starts_with(prefix))
+        .map(|name| kw_item(name, "Attribute schema", CompletionItemKind::PROPERTY))
+        .collect();
+    items.sort_by(|a, b| a.label.cmp(&b.label));
+    items
 }
 
 
@@ -78,7 +128,27 @@ pub fn build_completions_predictive(expected: &[ExpectedSyntax], design: Option<
     if expected.is_empty() {
         add_top_level_completions(&mut items);
     }
-    
+
+    // BUG-4 (LSB-11..13): cursor sitting immediately after a module's
+    // closing `}` makes `check_cursor()` intercept every subsequent
+    // `peek()`/`eat_ident()` attempt in the mod-body statement dispatcher,
+    // snowballing `expected` into every possible body-statement
+    // continuation (including behavior-only keywords like `for`) with no
+    // signal that the block is actually closing. The confirmed repro's
+    // signature — `Punctuation(RBrace)` together with a module-body-only
+    // keyword (`param`/`wire`) both present — is the "likely a block
+    // boundary" heuristic (scoped to this exact signature, not a general
+    // claim about every `}` position; see design.md). `if`/`var` are
+    // deliberately not suppressed — both are valid inside a `mod{}` body
+    // too, so suppressing them would be a new false negative.
+    let has_rbrace = expected.iter().any(|e| matches!(e, ExpectedSyntax::Punctuation(Tok::RBrace)));
+    let has_mod_body_only = expected.iter().any(|e| matches!(e, ExpectedSyntax::Keyword(k) if k == "param" || k == "wire"));
+    if has_rbrace && has_mod_body_only {
+        let behavior_only = ["for", "match", "return", "when"];
+        items.retain(|it| !behavior_only.contains(&it.label.as_str()));
+        add_top_level_completions(&mut items);
+    }
+
     // Deduplicate items based on label
     items.sort_by(|a, b| a.label.cmp(&b.label));
     items.dedup_by(|a, b| a.label == b.label);

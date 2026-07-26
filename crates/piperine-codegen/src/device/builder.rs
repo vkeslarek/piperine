@@ -200,7 +200,13 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 })
                 .collect()
         });
+        let meta = self.compiler.introspection_meta(instance.module_name())?;
         if let (Some(kernel), Some(terminals)) = (compiled.analog(), &analog_terminals) {
+            let opvar_display_names = kernel
+                .opvar_names()
+                .iter()
+                .map(|n| meta.vars.get(n).and_then(|m| m.name.clone()).unwrap_or_else(|| n.clone()))
+                .collect();
             self.build_info.instances.push(BuiltInstanceInfo {
                 label: instance.name().to_string(),
                 module: instance.module_name().to_string(),
@@ -208,6 +214,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 params: params.clone(),
                 terminals: terminals.clone(),
                 num_forces: kernel.num_forces(),
+                opvar_display_names,
             });
         }
         let analog = match (compiled.analog(), analog_terminals) {
@@ -258,6 +265,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             instance.name().to_string(),
             analog,
             digital,
+            meta,
         );
 
         // For digital-only devices with analog input ports (e.g. a
@@ -355,6 +363,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             format!("{}__top", self.top.name()),
             analog,
             digital,
+            self.compiler.introspection_meta(self.top.name())?,
         );
 
         // A2D bridge for digital-only top behavior with analog port reads.

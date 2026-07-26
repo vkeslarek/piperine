@@ -8,31 +8,37 @@ use piperine::SimHooks;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
 use piperine_lang::elab::registry::{AttrField, ElabContext};
 use piperine_lang::Design;
+use piperine_project::lockfile::PiperineLock;
+use piperine_project::release::{GitHubClient, PluginCache, ReleaseError, ReleaseRef};
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
 use piperine_solver::abi::Element;
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
-use crate::contributions::{Contributions, Registrar};
+use crate::contributions::Contributions;
 use crate::error::{PluginError, PluginResult};
-use crate::manifest::{Abi, Manifest};
-use crate::trust::{artifact_hash, ensure_trusted, TrustMode};
+use crate::manifest::Manifest;
+use crate::registry::{HookCall, HookPhase};
+use crate::trust::{artifact_hash, ensure_release_trusted, ensure_trusted, TrustMode};
 use crate::view::{DesignStaging, SolveResultView};
 use crate::Plugin;
+
+/// Map a release-fetch failure onto the plugin error catalog — the
+/// unsupported-triple case keeps its own typed error (P0012, PLG-19).
+fn release_error(plugin: &str, e: ReleaseError) -> PluginError {
+    match e {
+        ReleaseError::NoAssetForTriple { triple, release } => {
+            PluginError::NoAssetForTriple { plugin: plugin.to_string(), triple, release }
+        }
+        other => PluginError::Other { plugin: plugin.to_string(), message: other.to_string() },
+    }
+}
 
 /// One loaded plugin: its manifest plus the (backend-owning) instance.
 struct LoadedPlugin {
     manifest: Manifest,
     instance: PluginInstance,
-    /// The plugin's published `extern.phdl` stub (declared-language-surface
-    /// T24, DLS-22 groundwork), parsed once at load time — `None` for
-    /// `from_plugins`-loaded (in-process/test) plugins, which have no
-    /// filesystem location a stub could live at, and for `load_for_project`
-    /// plugins that simply don't publish one (T24 imposes no requirement
-    /// yet; T25 is where "no stub" becomes load-time-fatal for a plugin
-    /// that also contributes a schema).
-    extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
 }
 
 impl LoadedPlugin {
@@ -91,24 +97,46 @@ impl PluginHost {
         let mut host = Self::empty();
         for plugin in plugins {
             let manifest = plugin.manifest().clone();
-            // No filesystem location exists for an in-process plugin, so
-            // there is nowhere an `extern.phdl` stub could live — always
-            // `None` (declared-language-surface T24).
-            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest, None)?;
+            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest)?;
         }
         host.sort();
         Ok(host)
     }
 
-    /// Discover, verify, and load every `[plugins]` entry of the project at
-    /// `root` (SPEC Part VI §5): resolve sources, parse manifests (P0006),
-    /// hash artifacts, run TOFU (P0001/P0007), dlopen, register (P0003).
+    /// Discover, verify, and load every plugin of the project at `root`
+    /// (SPEC Part VI §5) — its `[plugins]` entries plus every
+    /// `[dependencies]` entry carrying a `piperine-plugin.toml` (D9: a
+    /// plugin is a contributing dependency, so `piperine add <git>` is the
+    /// whole install): resolve sources, parse manifests (P0006),
+    /// hash artifacts, run TOFU (P0001/P0007), dlopen, register (P0003). A
+    /// scripted (`python = "…"`) plugin needs an embedded-Python host —
+    /// [`Self::load_for_project_scripted`]; without one it is a loud error,
+    /// never a silent skip.
     pub fn load_for_project(root: &Path, trust: TrustMode) -> PluginResult<Self> {
+        Self::load(root, trust, None)
+    }
+
+    /// [`Self::load_for_project`] with a scripted host for `python = "…"`
+    /// plugins (PLG-06/10 — the embedded-Python bridge execs the entry and
+    /// reads back its decorator declarations).
+    pub fn load_for_project_scripted(
+        root: &Path,
+        trust: TrustMode,
+        scripted: &dyn crate::ScriptedHost,
+    ) -> PluginResult<Self> {
+        Self::load(root, trust, Some(scripted))
+    }
+
+    fn load(root: &Path, trust: TrustMode, scripted: Option<&dyn crate::ScriptedHost>) -> PluginResult<Self> {
         let toml_path = root.join("Piperine.toml");
         let Ok(toml) = PiperineToml::load(&toml_path) else {
             return Ok(Self::empty());
         };
-        if toml.plugins.is_empty() {
+        // A project with neither section has nothing to load; a project with
+        // only `[dependencies]` may still carry contributing dependencies
+        // (D9 — `piperine add <git>` is the whole install), so the resolver
+        // decides, not the section count.
+        if toml.plugins.is_empty() && toml.dependencies.is_empty() {
             return Ok(Self::empty());
         }
 
@@ -117,6 +145,9 @@ impl PluginHost {
             plugin: "<resolver>".into(),
             message: e.to_string(),
         })?;
+        if resolved.is_empty() {
+            return Ok(Self::empty());
+        }
 
         let mut host = Self::empty();
         host.project_root = root.to_path_buf();
@@ -126,91 +157,96 @@ impl PluginHost {
         for name in names {
             let plugin_root = &resolved[name];
             let manifest = Manifest::load(name, plugin_root)?;
-            let artifact = plugin_root.join(&manifest.entry);
-            let hash = artifact_hash(&artifact)?;
             let source = toml
                 .plugins
                 .get(name)
                 .map(|s| format!("{s:?}"))
                 .unwrap_or_else(|| plugin_root.display().to_string());
-            ensure_trusted(root, &manifest, &source, &hash, trust)?;
-            let instance = match manifest.abi {
-                Abi::Native => PluginInstance::Native(native::load(&manifest.name, &artifact)?),
-                Abi::Wasm => {
-                    PluginInstance::InProcess(crate::backend::wasm::load(&manifest, &artifact)?)
-                }
-                Abi::Process => {
-                    PluginInstance::InProcess(crate::backend::process::load(&manifest, &artifact)?)
-                }
-            };
-            let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;
-            let plugin_name = manifest.name.clone();
-            let has_stub = extern_stub.is_some();
-            host.register_one(&plugin_name, instance, manifest, extern_stub)?;
-            // T25 (DLS-22): a plugin that contributes an attribute schema
-            // but publishes no stub fails loud here — never silently kept
-            // reachable through the old dynamic-registration path (spec
-            // Edge Cases). `from_plugins` (in-process/test plugins) is
-            // deliberately exempt — see `LoadedPlugin::extern_stub`'s doc.
-            if !has_stub {
-                if let Some((schema, _)) =
-                    host.contributions.schemas.iter().find(|(_, (owner, _))| owner == &plugin_name)
-                {
-                    return Err(PluginError::MissingExternStub {
-                        plugin: plugin_name.clone(),
-                        schema: schema.clone(),
-                        expected_path: plugin_root.join("extern.phdl").display().to_string(),
-                    });
-                }
+            if let Some(device) = &manifest.device {
+                let artifact = match &device.path {
+                    Some(rel) => plugin_root.join(rel),
+                    None => {
+                        // Release distribution (plugin-interface v2,
+                        // PLG-16..18): resolve the triple-matched asset,
+                        // fetch + cache it, then verify/TOFU-pin
+                        // `(release-url, triple, content-hash)`.
+                        let coord = device.release.clone().unwrap_or_default();
+                        let release = ReleaseRef::parse(&coord).map_err(|e| PluginError::Other {
+                            plugin: manifest.name.clone(),
+                            message: e.to_string(),
+                        })?;
+                        let triple = ReleaseRef::host_triple();
+                        let pinned = PiperineLock::load(&root.join("Piperine.lock"))
+                            .ok()
+                            .flatten()
+                            .and_then(|l| l.plugin_entry(&manifest.name).and_then(|e| e.content_hash.clone()));
+                        let cache = PluginCache::new(PluginCache::default_dir());
+                        let fetched = cache
+                            .fetch(&GitHubClient, &release, &triple, pinned.as_deref())
+                            .map_err(|e| release_error(&manifest.name, e))?;
+                        ensure_release_trusted(
+                            root,
+                            &manifest,
+                            &coord,
+                            &fetched.content_hash,
+                            &fetched.triple,
+                            device.verify.as_deref(),
+                            trust,
+                        )?;
+                        fetched.path
+                    }
+                };
+                let hash = artifact_hash(&artifact)?;
+                ensure_trusted(root, &manifest, &source, &hash, trust)?;
+                let instance = PluginInstance::Native(native::load(&manifest.name, &artifact)?);
+                let plugin_name = manifest.name.clone();
+                host.register_one(&plugin_name, instance, manifest.clone())?;
             }
+            if let Some(python) = &manifest.python {
+                let Some(bridge) = scripted else {
+                    return Err(PluginError::Other {
+                        plugin: manifest.name.clone(),
+                        message: "scripted (Python) plugin declared, but no embedded-Python host \
+                                  is wired (load through PluginHost::load_for_project_scripted)"
+                            .into(),
+                    });
+                };
+                let entry = plugin_root.join(python);
+                let hash = artifact_hash(&entry)?;
+                ensure_trusted(root, &manifest, &source, &hash, trust)?;
+                let plugin = bridge.load_scripted(plugin_root, &manifest).map_err(|e| {
+                    PluginError::Other { plugin: manifest.name.clone(), message: e }
+                })?;
+                let plugin_name = manifest.name.clone();
+                host.register_one(&plugin_name, PluginInstance::InProcess(plugin), manifest.clone())?;
+            }
+            // Neither key: a pure-PHDL plugin is a code library — its `pub`
+            // items resolve via `use`, nothing runs.
         }
         host.sort();
         Ok(host)
-    }
-
-    /// Parse `extern.phdl` alongside a loaded plugin's manifest, if it
-    /// publishes one (declared-language-surface T24, DLS-22 groundwork).
-    /// `Ok(None)` when no stub file exists — T24 imposes no requirement
-    /// that one does; a malformed stub (a real authoring bug, not a
-    /// "plugin didn't publish one" case) fails loud naming the plugin.
-    fn load_extern_stub(
-        plugin_name: &str,
-        plugin_root: &Path,
-    ) -> PluginResult<Option<Vec<piperine_lang::parse::ast::Item>>> {
-        let stub_path = plugin_root.join("extern.phdl");
-        let Ok(text) = std::fs::read_to_string(&stub_path) else {
-            return Ok(None);
-        };
-        let source = piperine_lang::parse::parse_str(&text).map_err(|e| PluginError::Other {
-            plugin: plugin_name.to_string(),
-            message: format!("malformed extern stub `{}`: {e}", stub_path.display()),
-        })?;
-        Ok(Some(source.items))
     }
 
     fn sort(&mut self) {
         self.plugins.sort_by(|a, b| a.manifest.name.cmp(&b.manifest.name));
     }
 
-    /// Run one plugin's `register()` and merge its contributions.
-    /// Contribution collisions surface here as P0003.
+    /// Merge one plugin's declared contributions (`Plugin::collect` — the
+    /// `#[pip::…]` registry of the plugin's own binary). Distinct
+    /// declarations colliding on a device type id or script name surface
+    /// here as P0003.
     fn register_one(
         &mut self,
         name: &str,
         instance: PluginInstance,
         manifest: Manifest,
-        extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
     ) -> PluginResult<()> {
-        let plugin: &dyn Plugin = match &instance {
-            PluginInstance::Native(n) => n.plugin.as_ref(),
-            PluginInstance::InProcess(p) => p.as_ref(),
+        let declared = match &instance {
+            PluginInstance::Native(n) => n.plugin.collect(),
+            PluginInstance::InProcess(p) => p.collect(),
         };
-        let mut errors = Vec::new();
-        plugin.register(&mut Registrar::new(name, &mut self.contributions, &mut errors));
-        if let Some(err) = errors.into_iter().next() {
-            return Err(err);
-        }
-        self.plugins.push(LoadedPlugin { manifest, instance, extern_stub });
+        self.contributions.merge(name, declared)?;
+        self.plugins.push(LoadedPlugin { manifest, instance });
         Ok(())
     }
 
@@ -240,9 +276,50 @@ impl PluginHost {
         Ok(())
     }
 
+    /// Fire the `#[pip::hook(phase)]` declarations merged into the
+    /// contributions, in load order, each under its owning plugin's
+    /// capability facade. Trait-method hooks (fired by [`Self::fire`]) and
+    /// declared hooks coexist; both fail loud as P0005.
+    fn fire_declared(
+        &self,
+        phase: HookPhase,
+        source: Option<&str>,
+        design: Option<&Design>,
+        result: Option<&SolveResultView>,
+    ) -> Result<(), String> {
+        for entry in self.contributions.hooks.iter().filter(|h| h.phase == phase) {
+            let Some(owner) = self.plugins.iter().find(|l| l.manifest.name == entry.plugin) else {
+                return Err(format!(
+                    "hook `{}` declared by `{}`, which is not a loaded plugin",
+                    phase.as_str(),
+                    entry.plugin
+                ));
+            };
+            let cx = self.ctx_for(owner);
+            let staging = design.map(|d| DesignStaging::new(d, &entry.plugin));
+            let call = HookCall {
+                host: &cx,
+                source,
+                design,
+                staging: staging.as_ref(),
+                result,
+            };
+            (entry.invoke)(&call).map_err(|e| {
+                PluginError::HookFailed {
+                    hook: phase.as_str(),
+                    plugin: entry.plugin.clone(),
+                    message: e,
+                }
+                .to_string()
+            })?;
+        }
+        Ok(())
+    }
+
     /// Hook 1 — fired by whoever drives parsing (CLI), on the raw source.
     pub fn fire_after_parse(&self, source: &str) -> Result<(), String> {
-        self.fire("after_parse", |p, cx| p.after_parse(cx, source))
+        self.fire("after_parse", |p, cx| p.after_parse(cx, source))?;
+        self.fire_declared(HookPhase::AfterParse, Some(source), None, None)
     }
 
     /// Hook 2 — fired once the design elaborates. Native/in-process
@@ -251,28 +328,29 @@ impl PluginHost {
         if self.is_empty() {
             return Ok(());
         }
-        self.fire("after_elaborate", |p, cx| p.after_elaborate(cx, design))
+        self.fire("after_elaborate", |p, cx| p.after_elaborate(cx, design))?;
+        self.fire_declared(HookPhase::AfterElaborate, None, Some(design), None)
     }
 
-    /// The plugin system's own `piperine plugin list` view: name, abi,
+    /// The plugin system's own `piperine plugin list` view: name, shape,
     /// and contribution counts.
     pub fn describe(&self) -> Vec<String> {
         self.plugins
             .iter()
             .map(|l| {
                 let name = &l.manifest.name;
-                let devices = self.contributions.devices.values().filter(|(o, _)| o == name).count();
-                let schemas = self.contributions.schemas.values().filter(|(o, _)| o == name).count();
+                let devices =
+                    self.contributions.devices.values().filter(|d| d.plugin == *name).count();
                 let scripts: Vec<&str> = self
                     .contributions
                     .scripts
                     .iter()
-                    .filter(|(_, (o, _))| o == name)
+                    .filter(|(_, s)| s.plugin == *name)
                     .map(|(n, _)| n.as_str())
                     .collect();
                 format!(
-                    "{name} ({}): {devices} device(s), {schemas} schema(s), scripts: [{}]",
-                    l.manifest.abi.as_str(),
+                    "{name} ({}): {devices} device(s), scripts: [{}]",
+                    l.manifest.shape().as_str(),
                     scripts.join(", ")
                 )
             })
@@ -282,19 +360,21 @@ impl PluginHost {
     /// Run a plugin-contributed CLI script (SPEC Part VI §10). `None` when
     /// no loaded plugin registered `name`.
     pub fn run_script(&self, name: &str, args: &[String]) -> Option<Result<i32, PluginError>> {
-        let (owner, handler) = self.contributions.scripts.get(name)?;
-        let loaded = self.plugins.iter().find(|l| &l.manifest.name == owner)?;
+        let entry = self.contributions.scripts.get(name)?;
+        let loaded = self.plugins.iter().find(|l| l.manifest.name == entry.plugin)?;
         let mut cx = self.ctx_for(loaded);
-        Some(handler.invoke(args, &mut cx).map_err(|e| PluginError::HookFailed {
+        Some(entry.handler.invoke(args, &mut cx).map_err(|e| PluginError::HookFailed {
             hook: "script",
-            plugin: owner.clone(),
+            plugin: entry.plugin.clone(),
             message: e,
         }))
     }
 
     /// Seed the elaboration registries (Plugin plan D2): the plugin
-    /// system's own `@device`/`@port` schemas, plus every plugin-declared
-    /// schema. Called by whoever drives elaboration (CLI, hosts, tests)
+    /// system's own `@device`/`@port` schemas — the ONLY plugin-facing
+    /// schema names (plugin-interface v2, PLG-08/09: plugins contribute
+    /// no schemas; the per-plugin `extern.phdl` stub mechanism is
+    /// deleted). Called by whoever drives elaboration (CLI, hosts, tests)
     /// through `parse_and_elaborate_seeded`.
     ///
     /// `@device`/`@port`'s shape (declared-language-surface T23, DLS-21)
@@ -317,36 +397,15 @@ impl PluginHost {
         )) {
             Self::register_attribute_items(ctx, &source.items);
         }
-        // Each loaded plugin's own published `extern.phdl` stub (T24/T25,
-        // DLS-22) — auto-imported, no explicit `use` required (mirrors
-        // `headers/spice/`'s availability). Ctrl+click on a stub-declared
-        // `@name(...)` resolves to the stub's own `decl_span`, exactly like
-        // any other `extern attribute`. This is now the **only** path a
-        // plugin-contributed schema is reachable through: the old dynamic
-        // `register_declared(name, fields_from_registrar, None)` fallback
-        // is gone (T25) — `load_for_project` already refuses to load a
-        // plugin that contributes a schema (`Registrar::attr_schema`) with
-        // no published stub (`PluginError::MissingExternStub`), so by the
-        // time a `PluginHost` exists, every `contributions.schemas` entry
-        // either came from a `from_plugins`-loaded (in-process/test)
-        // plugin that never elaborates real PHDL against it, or has a
-        // stub already imported here.
-        for loaded in &self.plugins {
-            if let Some(items) = &loaded.extern_stub {
-                Self::register_attribute_items(ctx, items);
-            }
-        }
     }
 
-    /// Register every `extern attribute` item's schema into `ctx.schemas` —
-    /// shared by `@device`/`@port`'s own header and each plugin's
-    /// `extern.phdl` stub (T23/T24). Non-attribute items are ignored (a
-    /// stub could in principle carry other `extern` kinds; only attribute
-    /// schemas are this feature's concern here).
+    /// Register every `extern attribute` item's schema into `ctx.schemas`
+    /// (T23) — used for `@device`/`@port`'s own header. Non-attribute
+    /// items are ignored.
     fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
         for item in items {
             if let piperine_lang::parse::ast::Item::ExternDecl(
-                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields },
+                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields, doc },
             ) = item
             {
                 let attr_fields = fields
@@ -359,7 +418,7 @@ impl PluginHost {
                         decl_span: f.span,
                     })
                     .collect();
-                ctx.schemas.register_declared(name, attr_fields, *span);
+                ctx.schemas.register_declared(name, attr_fields, *span, doc.clone());
             }
         }
     }
@@ -390,14 +449,15 @@ impl SimHooks for PluginHost {
                     .to_string(),
                 })?;
         }
-        Ok(())
+        self.fire_declared(HookPhase::TransformDesign, None, Some(design), None)
     }
 
     fn before_lower(&self, design: &Design) -> Result<(), String> {
         if self.is_empty() {
             return Ok(());
         }
-        self.fire("before_lower", |p, cx| p.before_lower(cx, design))
+        self.fire("before_lower", |p, cx| p.before_lower(cx, design))?;
+        self.fire_declared(HookPhase::BeforeLower, None, Some(design), None)
     }
 
     fn after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), String> {
@@ -408,7 +468,8 @@ impl SimHooks for PluginHost {
             analysis: analysis.to_string(),
             node_voltages: node_voltages.to_vec(),
         };
-        self.fire("after_solve", |p, cx| p.after_solve(cx, &result))
+        self.fire("after_solve", |p, cx| p.after_solve(cx, &result))?;
+        self.fire_declared(HookPhase::AfterSolve, None, None, Some(&result))
     }
 
 }
@@ -418,17 +479,17 @@ impl SimHooks for PluginHost {
 /// the solver `Element`.
 impl DeviceProvider for PluginHost {
     fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
-        let (owner, factory) = self
+        let entry = self
             .contributions
             .devices
             .get(&spec.type_id)
             .ok_or_else(|| PluginError::DeviceNotRegistered(spec.type_id.clone()).to_string())?;
-        if *owner != spec.plugin {
+        if entry.plugin != spec.plugin {
             return Err(format!(
-                "device `{}` is registered by plugin `{owner}`, but @device names plugin `{}`",
-                spec.type_id, spec.plugin
+                "device `{}` is registered by plugin `{}`, but @device names plugin `{}`",
+                spec.type_id, entry.plugin, spec.plugin
             ));
         }
-        factory.instantiate(&spec)
+        entry.factory.instantiate(&spec)
     }
 }

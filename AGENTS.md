@@ -50,8 +50,9 @@ crates/
 │                           CircuitCompiler → PiperineDevice)
 ├── piperine-solver/        Element ABI, Net naming, ConvergencePlan, IntegrationMethod,
 │                           DC/AC/tran/noise/TF drivers, digital scheduler, prelude
-├── piperine-plugin/        plugin SDK + host: native/WASM/process backends, TOFU, @device
-├── piperine-plugin-wasm/   WASM guest SDK
+├── piperine-plugin/        plugin SDK + host: native dlopen + embedded Python, TOFU +
+│                         permissions consent, @device, release-asset device binaries
+├── piperine-plugin-macros/ #[pip::device] / #[pip::script] / #[pip::hook(phase)]
 ├── piperine-cli/           `piperine` CLI (check, fmt, run, test, new, add, remove, tree, plugin)
 ├── piperine-project/       Piperine.toml + git dependency resolver + plugin lockfile
 └── piperine-lang-server/   LSP server (editors/vscode/ is the extension)
@@ -108,7 +109,7 @@ violates any of them is not ready.
 | POM → resolved + circuit | `piperine-codegen/tests/{codegen_ir,codegen_api,from_ir,silent_bugs}.rs` |
 | JIT kernels | `piperine-codegen/tests/{analog_jit,digital_jit}.rs` |
 | solver analyses / mixed-signal | `piperine-solver/tests/{digital_topology,mixed_signal}.rs` |
-| plugin e2e | `piperine-plugin/tests/{e2e,native_smoke,phase3,process_smoke,wasm_smoke,trust,manifest}.rs` |
+| plugin e2e | `piperine-plugin/tests/{e2e,native_smoke,phase3,inject,release_fetch,macro_collisions,extern_stub,trust,manifest}.rs`, `piperine-plugin-macros/tests/`, root `tests/plugin_parity.rs` |
 
 ## Documentation
 

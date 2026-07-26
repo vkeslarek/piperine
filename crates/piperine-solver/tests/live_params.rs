@@ -45,6 +45,10 @@ impl AnalogDevice for Resistor {
 impl DigitalDevice for Resistor {}
 
 impl Introspect for Resistor {
+    fn read_opvars(&self) -> Vec<(String, f64)> {
+        vec![("g".into(), 1.0 / self.r)]
+    }
+
     fn list_params(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor {
             name: "r".into(),
@@ -58,7 +62,7 @@ impl Introspect for Resistor {
     }
 
     fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "r").then(|| Value::Real(self.r))
+        (name == "r").then_some(Value::Real(self.r))
     }
 
     fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {
@@ -140,7 +144,7 @@ impl Introspect for Vdc {
     }
 
     fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "dc").then(|| Value::Real(self.v))
+        (name == "dc").then_some(Value::Real(self.v))
     }
 
     fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {
@@ -408,5 +412,28 @@ fn scheduled_set_with_bad_addressing_fails_the_run_loud() {
     tran.schedule_set(1e-6, "r2", "bogus", Value::Real(1.0));
     let err = tran.solve().expect_err("bad scheduled set must fail the run");
     assert!(err.to_string().contains("bogus"), "{err}");
+}
+
+// ── T9 (host-library HOST-07..12): `device_introspect` addressing seam ──────
+
+#[test]
+fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
+    let circuit = divider(1000.0, 1000.0);
+
+    let r1 = circuit.device_introspect("r1").expect("r1 is a labeled device");
+    assert_eq!(r1.read_opvars(), vec![("g".to_string(), 1.0 / 1000.0)]);
+    assert_eq!(r1.get_param("r"), Some(Value::Real(1000.0)));
+    let params = r1.list_params();
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0].name, "r");
+
+    let v1 = circuit.device_introspect("v1").expect("v1 is a labeled device");
+    assert_eq!(v1.get_param("dc"), Some(Value::Real(10.0)));
+}
+
+#[test]
+fn device_introspect_returns_none_for_an_unknown_label() {
+    let circuit = divider(1000.0, 1000.0);
+    assert!(circuit.device_introspect("nope").is_none());
 }
 

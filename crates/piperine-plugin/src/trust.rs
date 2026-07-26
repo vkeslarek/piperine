@@ -57,27 +57,148 @@ pub fn ensure_trusted(
         };
     }
 
-    let approved = match mode {
+    if !decide(mode, manifest, source, content_hash) {
+        return Err(PluginError::Untrusted(manifest.name.clone()));
+    }
+    pin(&mut lock, &lock_path, manifest, source, content_hash, None)
+}
+
+/// TOFU for a fetched release asset (plugin-interface v2, PLG-17/18,
+/// design §4) — distinct from [`ensure_trusted`] in two ways:
+///
+/// - `verify` is checked **up front**: a mismatch is a hard fail with no
+///   prompt; a match is trusted (and pinned) without a TOFU prompt.
+/// - a **changed** asset (a pinned hash that differs from the fetched
+///   one — a mutable release tag) re-prompts per `mode` instead of
+///   hard-failing, re-pinning on accept.
+///
+/// The approved pin records `(release-url, triple, content-hash)` — the
+/// triple lands in the entry's `abi` field.
+pub fn ensure_release_trusted(
+    project_root: &Path,
+    manifest: &Manifest,
+    release: &str,
+    content_hash: &str,
+    triple: &str,
+    verify: Option<&str>,
+    mode: TrustMode,
+) -> PluginResult<()> {
+    let lock_path = project_root.join("Piperine.lock");
+    let mut lock = PiperineLock::load(&lock_path)
+        .map_err(|e| PluginError::Other { plugin: manifest.name.clone(), message: e.to_string() })?
+        .unwrap_or_default();
+
+    if let Some(expected) = verify {
+        if expected != content_hash {
+            return Err(PluginError::VerifyMismatch {
+                plugin: manifest.name.clone(),
+                release: release.to_string(),
+            });
+        }
+        // `verify` IS the explicit consent — pin without prompting.
+        return pin(&mut lock, &lock_path, manifest, release, content_hash, Some(triple));
+    }
+
+    if let Some(entry) = lock.plugin_entry(&manifest.name) {
+        if entry.content_hash.as_deref() == Some(content_hash) {
+            // Already approved — reproducible from the lockfile, no prompt.
+            return Ok(());
+        }
+        // A changed asset re-prompts (PLG-17); reject aborts.
+        if !decide(mode, manifest, release, content_hash) {
+            return Err(PluginError::Untrusted(manifest.name.clone()));
+        }
+        return pin(&mut lock, &lock_path, manifest, release, content_hash, Some(triple));
+    }
+
+    if !decide(mode, manifest, release, content_hash) {
+        return Err(PluginError::Untrusted(manifest.name.clone()));
+    }
+    pin(&mut lock, &lock_path, manifest, release, content_hash, Some(triple))
+}
+
+/// The TOFU decision for one artifact: deterministic in the non-
+/// interactive modes, the prompt otherwise.
+fn decide(mode: TrustMode, manifest: &Manifest, source: &str, content_hash: &str) -> bool {
+    match mode {
         TrustMode::AcceptAll => true,
         TrustMode::RejectUntrusted => false,
         TrustMode::Interactive => prompt(manifest, source, content_hash),
+    }
+}
+
+/// Permissions consent at `add` (plugin-interface v2, PLG-23 / D11) —
+/// the FIRST of the two trust gates, distinct from the artifact-hash
+/// TOFU above: the declared `[plugin.permissions]` are printed and
+/// require an explicit accept/deny; a deny aborts the install
+/// ([`PluginError::PermissionsDenied`]). A manifest declaring no
+/// permissions needs no consent. The deterministic modes bypass:
+/// `AcceptAll` accepts, `RejectUntrusted` denies.
+pub fn ensure_permissions_consented(manifest: &Manifest, mode: TrustMode) -> PluginResult<()> {
+    if manifest.permissions.is_default() {
+        return Ok(());
+    }
+    print_permissions(manifest);
+    let approved = match mode {
+        TrustMode::AcceptAll => true,
+        TrustMode::RejectUntrusted => false,
+        TrustMode::Interactive => {
+            if !std::io::stdin().is_terminal() {
+                // Non-tty stdin denies — CI must opt in explicitly.
+                false
+            } else {
+                eprint!("  Grant these permissions? [y/N] ");
+                let mut line = String::new();
+                if std::io::stdin().read_line(&mut line).is_err() {
+                    return Err(PluginError::PermissionsDenied(manifest.name.clone()));
+                }
+                matches!(line.trim(), "y" | "Y" | "yes")
+            }
+        }
     };
     if !approved {
-        return Err(PluginError::Untrusted(manifest.name.clone()));
+        return Err(PluginError::PermissionsDenied(manifest.name.clone()));
     }
+    Ok(())
+}
 
+/// Print the declared permissions — always, tty or not: the gate must
+/// show what it is asking about (PLG-23).
+fn print_permissions(manifest: &Manifest) {
+    eprintln!();
+    eprintln!("  Plugin '{}' declares permissions:", manifest.name);
+    if !manifest.permissions.filesystem.is_empty() {
+        eprintln!("    filesystem    : {}", manifest.permissions.filesystem.join(", "));
+    }
+    if manifest.permissions.network {
+        eprintln!("    network       : true");
+    }
+    if !manifest.permissions.process_spawn.is_empty() {
+        eprintln!("    process_spawn : {}", manifest.permissions.process_spawn.join(", "));
+    }
+}
+
+/// Record (or replace) the approved pin and persist the lockfile.
+fn pin(
+    lock: &mut PiperineLock,
+    lock_path: &Path,
+    manifest: &Manifest,
+    source: &str,
+    content_hash: &str,
+    triple: Option<&str>,
+) -> PluginResult<()> {
     lock.record_plugin(LockEntry {
         name: manifest.name.clone(),
         source: source.to_string(),
         hash: content_hash.to_string(),
         kind: EntryKind::Plugin,
         content_hash: Some(content_hash.to_string()),
-        abi: Some(manifest.abi.as_str().to_string()),
+        // The device binary's target triple for a release fetch.
+        abi: triple.map(str::to_string),
         trusted_at: Some(now_rfc3339()),
     });
-    lock.save(&lock_path)
-        .map_err(|e| PluginError::Other { plugin: manifest.name.clone(), message: e.to_string() })?;
-    Ok(())
+    lock.save(lock_path)
+        .map_err(|e| PluginError::Other { plugin: manifest.name.clone(), message: e.to_string() })
 }
 
 /// Interactive TOFU prompt. Non-tty stdin rejects — CI must opt in
@@ -87,7 +208,7 @@ fn prompt(manifest: &Manifest, source: &str, content_hash: &str) -> bool {
         return false;
     }
     eprintln!();
-    eprintln!("  Plugin '{}' ({}) loaded from:", manifest.name, manifest.abi.as_str());
+    eprintln!("  Plugin '{}' ({}) loaded from:", manifest.name, manifest.shape().as_str());
     eprintln!("    {source}");
     if !manifest.permissions.filesystem.is_empty() {
         eprintln!("    filesystem    : {}", manifest.permissions.filesystem.join(", "));

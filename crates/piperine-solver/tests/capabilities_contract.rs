@@ -42,9 +42,32 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
             "descriptor: analog load reads the digital snapshot (D2A ordering)"
         }
         // ── Reserved bits owned by a named follow-up feature ─────────────────
-        "BYPASS_OK" => "reserved: solver-performance owns stamp bypass",
-        "SUPPORTS_ROLLBACK" => "reserved: solver-commit-rollback owns the lifecycle",
-        "SUPPORTS_QUERIES" => "reserved: host query-metadata hint; no solver consumer today (SS-11 audit)",
+        "BYPASS_OK" => {
+            "consumed: the DC stamp-bypass cache is gated on every element declaring it \
+             (analyses/dc.rs `bypass_allowed`); codegen declares it only for devices whose \
+             DC stamps are a pure function of terminal voltages (P6/CLN-12)"
+        }
+        "SUPPORTS_ROLLBACK" => {
+            "consumed: transient reject path + DC homotopy retry call \
+             Element::checkpoint_state before each attempt and restore_state \
+             on rejection (analyses/transient.rs, analyses/convergence.rs)"
+        }
+        // ── Jacobian / derivative capability (ABI-23) ───────────────────────
+        "HAS_DISTO2" => {
+            "consumed: .disto driver pre-scan — a device declaring this \
+             contributes second-order nonlinear currents (HD2); the driver \
+             warns when no device sets it (analyses/disto.rs, ABI-24)"
+        }
+        "HAS_DISTO3" => {
+            "consumed: .disto driver pre-scan — a device declaring this \
+             contributes third-order nonlinear currents (HD3); the driver \
+             warns when no device sets it (analyses/disto.rs, ABI-24)"
+        }
+        "NUMERIC_JACOBIAN" => {
+            "consumed: .disto driver pre-scan fail-loud — a device declaring \
+             this has a finite-difference Jacobian and cannot provide the \
+             analytic Hessian .disto requires; the driver errors (analyses/disto.rs, ABI-25)"
+        }
         _ => return None,
     })
 }
@@ -66,12 +89,74 @@ fn every_surviving_capability_flag_is_documented() {
 
 #[test]
 fn removed_write_only_flags_stay_gone() {
-    // The flags dropped by SS-10 had a producer but no consumer. They must not
-    // reappear on the ABI surface.
-    for gone in ["LINEAR", "ANALYTIC_JACOBIAN", "STAMPS_CHARGE"] {
+    // The flags dropped by SS-10 had a producer but no consumer, and
+    // `SUPPORTS_QUERIES` (P6/CLN-11) had neither. None may reappear on the ABI
+    // surface.
+    for gone in ["LINEAR", "ANALYTIC_JACOBIAN", "STAMPS_CHARGE", "SUPPORTS_QUERIES"] {
         let present = ElementCapabilities::all()
             .iter_names()
             .any(|(name, _)| name == gone);
         assert!(!present, "removed write-only flag `{gone}` reappeared on ElementCapabilities");
     }
+}
+
+/// ABI-23: the Jacobian/derivative capability bits occupy the documented bit
+/// positions (`1 << 12`, `1 << 13`, `1 << 14`), compose with the existing
+/// participation flags without collision, and are independently testable
+/// through `contains`.
+#[test]
+fn jacobian_capability_bits_compose_correctly() {
+    use piperine_solver::abi::ElementCapabilities as EC;
+
+    // The three new bits are distinct and at the documented positions.
+    assert_eq!(EC::HAS_DISTO2.bits(), 1u32 << 12);
+    assert_eq!(EC::HAS_DISTO3.bits(), 1u32 << 13);
+    assert_eq!(EC::NUMERIC_JACOBIAN.bits(), 1u32 << 14);
+
+    // They compose with each other and with the prior flags.
+    let analytic_nonlinear = EC::ANALOG | EC::LOADS_DC | EC::HAS_DISTO2 | EC::HAS_DISTO3;
+    assert!(analytic_nonlinear.contains(EC::HAS_DISTO2));
+    assert!(analytic_nonlinear.contains(EC::HAS_DISTO3));
+    assert!(!analytic_nonlinear.contains(EC::NUMERIC_JACOBIAN));
+
+    // A numeric-only device declares the numeric bit but not the disto bits.
+    let numeric = EC::ANALOG | EC::NUMERIC_JACOBIAN;
+    assert!(numeric.contains(EC::NUMERIC_JACOBIAN));
+    assert!(!numeric.contains(EC::HAS_DISTO2));
+    assert!(!numeric.contains(EC::HAS_DISTO3));
+
+    // A purely linear device (resistor) declares none of the derivative bits.
+    let linear = EC::ANALOG | EC::LOADS_DC;
+    assert!(!linear.contains(EC::HAS_DISTO2));
+    assert!(!linear.contains(EC::HAS_DISTO3));
+    assert!(!linear.contains(EC::NUMERIC_JACOBIAN));
+
+    // No overlap with the highest prior bit (BYPASS_OK = 1 << 11).
+    assert_eq!(EC::BYPASS_OK.bits() & (EC::HAS_DISTO2 | EC::HAS_DISTO3 | EC::NUMERIC_JACOBIAN).bits(), 0);
+}
+
+/// P6/CLN-13: no bit may sit on the ABI as "reserved" forever. Every registry
+/// entry must name a live consumer — a branch gate, a loader, a driver — so the
+/// state P6 ended (two bits nothing read) cannot quietly return.
+///
+/// The check is on the registry text because that text *is* the claim: an entry
+/// that cannot name where the solver reads the flag is describing an intention,
+/// not a contract.
+#[test]
+fn no_capability_flag_is_merely_reserved() {
+    let merely_reserved: Vec<String> = ElementCapabilities::all()
+        .iter_names()
+        .filter_map(|(name, _)| {
+            let entry = documented_consumer(name)?;
+            let lowered = entry.to_ascii_lowercase();
+            (lowered.starts_with("reserved") || lowered.contains("no consumer"))
+                .then(|| format!("{name}: {entry}"))
+        })
+        .collect();
+
+    assert!(
+        merely_reserved.is_empty(),
+        "capability flags claiming no live consumer (wire them or remove them — P6/CLN-13):\n  {}",
+        merely_reserved.join("\n  ")
+    );
 }

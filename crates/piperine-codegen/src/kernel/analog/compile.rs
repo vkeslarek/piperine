@@ -8,7 +8,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use crate::emit::{Builder, Resolver};
 use crate::resolve::{Domain, LoweredBody, StateKind, NodeId};
 
-use crate::flatten::analog::{visit_all, FlatAnalog, FlatContrib, FlatEventTrigger, FlatForce};
+use crate::flatten::analog::{visit_all, FlatAnalog, FlatContrib, FlatEventTrigger, FlatForce, temp_ref};
 use crate::error::CodegenError;
 use piperine_lang::math;
 
@@ -298,7 +298,7 @@ impl<'m> AnalogCompiler<'m> {
                         ex.clone()
                     })
                 };
-                let temps_ac: Vec<PomExpr> = temps.iter().map(|t| subst(t)).collect();
+                let temps_ac: Vec<PomExpr> = temps.iter().map(subst).collect();
                 let contribs_ac: Vec<FlatContrib> = resistive
                     .iter()
                     .map(|c| FlatContrib { plus: c.plus, minus: c.minus, expr: subst(&c.expr) })
@@ -479,6 +479,28 @@ impl<'m> AnalogCompiler<'m> {
                 })
             })
             .collect();
+        // Per-slot `(limiter_name, reason)` catalog (phdl-introspection-
+        // attributes PIA-15/16): the `$limit` call-site `kind` (arg 0) per
+        // slot, mapped to its `(&'static str, LimitReason)` entry. Read by the
+        // device's `limiting_report` to name the slot that clamped.
+        let limit_catalog: Vec<(&'static str, piperine_solver::abi::LimitReason)> = self
+            .limits
+            .iter()
+            .map(|l| {
+                let kind = match l {
+                    PomExpr::SysCall(name, args)
+                        if name.trim_start_matches('$') == "limit" && !args.is_empty() =>
+                    {
+                        match &args[0] {
+                            PomExpr::Literal(piperine_lang::parse::ast::Literal::String(s)) => s.as_str(),
+                            _ => "",
+                        }
+                    }
+                    _ => "",
+                };
+                super::Limits::catalog_entry_for_kind(kind)
+            })
+            .collect();
         let ac_stims = std::mem::take(&mut self.flat.ac_stims);
         let (ac_stim_mag_id, ac_stim_phase_id) = if ac_stims.is_empty() {
             (None, None)
@@ -511,6 +533,24 @@ impl<'m> AnalogCompiler<'m> {
                 rows[id.0 as usize] = input.clone();
             }
             Some(self.compile_rows("state_inputs", &rows)?)
+        };
+
+        // Opvar compilation path (ABI-30): one row per non-shadow module
+        // var, reading its final temp (`__temp(id)`). When the module has
+        // no analog vars, the path is `None` (zero overhead — no function
+        // compiled, no eval call). The function shares the same state/var
+        // banks the residual reads, so a post-solve evaluation sees the
+        // same instance state a mid-Newton evaluation would.
+        let module_var_temps = std::mem::take(&mut self.flat.module_var_temps);
+        let (opvar_id, opvar_names): (Option<FuncId>, Vec<String>) = if module_var_temps.is_empty() {
+            (None, Vec::new())
+        } else {
+            let names: Vec<String> = module_var_temps.iter().map(|(n, _)| n.clone()).collect();
+            let rows: Vec<PomExpr> = module_var_temps
+                .iter()
+                .map(|(_, id)| temp_ref(*id))
+                .collect();
+            (Some(self.compile_rows("opvars", &rows)?), names)
         };
 
         let events = std::mem::take(&mut self.flat.events);
@@ -548,7 +588,7 @@ impl<'m> AnalogCompiler<'m> {
                     FlatEventTrigger::Cross { dir, .. } => CompiledTrigger::Cross(*dir),
                     FlatEventTrigger::Above { .. } => CompiledTrigger::Above,
                     FlatEventTrigger::Timer { period, phase } => {
-                        CompiledTrigger::Timer { period: period.clone(), phase: phase.clone() }
+                        CompiledTrigger::Timer { period: period.clone(), phase: Box::new(phase.clone()) }
                     }
                 },
                 action_vars: e.actions.iter().map(|a| a.var).collect(),
@@ -633,6 +673,7 @@ impl<'m> AnalogCompiler<'m> {
                 seed: get(&self.jit, seed),
                 vnew: get(&self.jit, vnew),
                 branches: limit_branches,
+                catalog: limit_catalog,
             });
         let noise_cap = noise_id.map(|id| Noise {
             source: get(&self.jit, id),
@@ -660,6 +701,7 @@ impl<'m> AnalogCompiler<'m> {
             .collect();
         let disto2_charge_start = resistive.len();
         let initial_conditions = ic_values_id.map(|id| get(&self.jit, id));
+        let opvars = opvar_id.map(|id| get(&self.jit, id));
         let diagnostics = std::mem::take(&mut self.flat.diagnostics);
 
         let digital_terminals: Vec<bool> = self
@@ -669,11 +711,49 @@ impl<'m> AnalogCompiler<'m> {
             .collect();
         let param_names: Vec<String> =
             self.module.symbols.params().map(|(_, p)| p.name.clone()).collect();
+        let terminal_names: Vec<String> = self
+            .terminals
+            .iter()
+            .map(|&id| self.module.symbols.node(id).name.clone())
+            .collect();
+        // Per-state-slot introspection names (ABI-47): each runtime-serviced
+        // state kind gets `"<kind>[<id>]"`; the trailing `$limit` vold slots
+        // are `"vold[k]"`. Slots without a runtime state stay empty.
+        let num_state_slots = self.module.symbols.num_states() + self.limits.len();
+        let mut state_slot_names: Vec<String> = vec![String::new(); num_state_slots];
+        for (id, sv) in self.module.symbols.states() {
+            let idx = id.0 as usize;
+            if idx < state_slot_names.len() {
+                state_slot_names[idx] = format!("{}[{}]", sv.kind.name(), id.0);
+            }
+        }
+        let limit_base = self.module.symbols.num_states();
+        for k in 0..self.limits.len() {
+            let idx = limit_base + k;
+            if idx < state_slot_names.len() {
+                state_slot_names[idx] = format!("vold[{k}]");
+            }
+        }
+        // Per-var-bank-slot source names (phdl-introspection-attributes PIA-06):
+        // aligned with `0..num_vars`, one entry per persistent var slot. Empty
+        // for slots without a source name. The observable catalog reads this
+        // to match an `@name`/`@kind` sidecar entry to its slot; absent
+        // `@name` keeps the positional `var[k]` fallback (PIA-08).
+        let num_vars = self.module.symbols.vars().count();
+        let mut var_names = vec![String::new(); num_vars];
+        for (id, v) in self.module.symbols.vars() {
+            let idx = id.0 as usize;
+            if idx < var_names.len() {
+                var_names[idx] = v.name.clone();
+            }
+        }
         let terminals = std::mem::take(&mut self.terminals);
 
         let core = AnalogCore {
             name: self.module.name.clone(),
             terminals,
+            terminal_names,
+            state_slot_names,
             digital_terminals,
             read_bounds,
             param_names,
@@ -681,7 +761,7 @@ impl<'m> AnalogCompiler<'m> {
             num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
             num_state_slots: self.module.symbols.num_states() + self.limits.len(),
-            num_vars: self.module.symbols.vars().count(),
+            num_vars,
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
@@ -711,6 +791,9 @@ impl<'m> AnalogCompiler<'m> {
             disto2_charge_start,
             initial_condition_terminals: ic_terminals,
             initial_conditions,
+            opvars,
+            opvar_names,
+            var_names,
         })
     }
 
@@ -877,7 +960,7 @@ impl<'m> AnalogCompiler<'m> {
         resistive: &[FlatContrib],
         charge: &[FlatContrib],
         temps: &[PomExpr],
-    ) -> Result<Option<(Vec<FuncId>, Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+    ) -> Result<Option<(Vec<FuncId>, Vec<crate::kernel::analog::Disto3Triple>)>, CodegenError> {
         let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
         if contribs.is_empty() {
             return Ok(None);
@@ -917,7 +1000,7 @@ impl<'m> AnalogCompiler<'m> {
                         .map(|&(c, d)| {
                             temps
                                 .iter()
-                                .map(|t| crate::resolve::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, d1, d2, d12))
+                                .map(|t| crate::resolve::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, (d1, d2, d12)))
                                 .collect()
                         })
                         .collect()
@@ -941,7 +1024,7 @@ impl<'m> AnalogCompiler<'m> {
                     let rows: Vec<Option<PomExpr>> = contribs
                         .iter()
                         .map(|contrib| {
-                            let row = crate::resolve::diff::d_dv_thrice(&contrib.expr, a, b, c, d, e, f, &resolve_node);
+                            let row = crate::resolve::diff::d_dv_thrice(&contrib.expr, (a, b), (c, d), (e, f), &resolve_node);
                             match &row {
                                 PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
                                 _ => Some(row),
@@ -1027,7 +1110,7 @@ impl<'m> AnalogCompiler<'m> {
         resistive: &[FlatContrib],
         charge: &[FlatContrib],
         temps: &[PomExpr],
-    ) -> Result<Option<(Vec<FuncId>, Vec<((NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+    ) -> Result<Option<(Vec<FuncId>, Vec<crate::kernel::analog::Disto2Pair>)>, CodegenError> {
         let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
         if contribs.is_empty() {
             return Ok(None);

@@ -5,7 +5,7 @@ site_description: Piperine PHDL Simulator and Language Specification
 # Change this field when the PHDL language version evolves.
 # Independent of the Rust simulator codebase version.
 extra:
-  phdl_version: "0.1.1"
+  phdl_version: "0.2.0"
 # ===================================
 theme:
   name: material

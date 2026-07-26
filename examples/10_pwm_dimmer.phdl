@@ -1,11 +1,8 @@
-// PWM dimmer: an `@timer` event toggles the drive at 10 kHz (50% duty),
-// the switch forces a 0/5 V square wave, and an RC (τ = 1 ms) extracts the
-// average. The python twin checks the settled mean is VDD/2 with small ripple.
-
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+/// PWM dimmer: an `@timer` event toggles the drive at 10 kHz (50% duty),
+/// the switch forces a 0/5 V square wave, and an RC (τ = 1 ms) extracts the
+/// average. The python twin checks the settled mean is VDD/2 with small ripple.
+/// Doc do moc
+use piperine::disciplines;
 
 mod PwmSwitch(inout sw : Electrical, inout gnd : Electrical) {
     param vdd : Real = 5.0;
@@ -40,8 +37,8 @@ mod Dimmer() {
     wire gnd : Electrical;
     wire sw : Electrical;
     wire out : Electrical;
-    pwm : PwmSwitch(.sw = sw, .gnd = gnd);
-    r1  : Resistor(.p = sw, .n = out);
-    c1  : Capacitor(.p = out, .n = gnd);
+    pwm : PwmSwitch(.sw = sw,.gnd = gnd);
+    r1 : Resistor(.p = sw,.n = out);
+    c1 : Capacitor(.p = out,.n = gnd);
 }
 

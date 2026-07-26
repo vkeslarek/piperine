@@ -3,10 +3,7 @@
 // Transient: from a zeroed compensation node, the step settles with
 // τ = 1/(2π·GBW) — checked at 1 τ and at 6 τ.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod VoltageSource(inout p : Electrical, inout n : Electrical) {
     param voltage : Real = 1.0;
@@ -18,6 +15,7 @@ analog VoltageSource {
 
 // A0 = gm·rp = 1e4, pole fp = 1/(2π·rp·cp) = 10 Hz, GBW = A0·fp = 100 kHz.
 // The compensation node is a pin so the testbench can preset it.
+
 mod OpAmp(input inp : Electrical, input inn : Electrical, inout pole : Electrical, inout out : Electrical, inout gnd : Electrical) {
     param gm : Real = 1e-3;
     param rp : Real = 1e7;
@@ -36,7 +34,9 @@ mod Follower() {
     wire vin : Electrical;
     wire comp : Electrical;
     wire out : Electrical;
-    src : VoltageSource(.p = vin, .n = gnd) { .voltage = 1.0 };
-    amp : OpAmp(.inp = vin, .inn = out, .pole = comp, .out = out, .gnd = gnd);
+    src : VoltageSource(.p = vin,.n = gnd) {
+        .voltage = 1.0
+    };
+    amp : OpAmp(.inp = vin,.inn = out,.pole = comp,.out = out,.gnd = gnd);
 }
 

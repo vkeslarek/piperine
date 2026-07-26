@@ -5,13 +5,15 @@
 //!   default 100 Ω) stamped through `Element::load_dc`/`load_transient`.
 //! - `Fixture::Inverter` — a digital inverter through `Element::comb_phase`.
 //!
-//! Lives as a crate example: `cargo build --example fixture_plugin` builds
-//! the cdylib the native smoke test dlopens; the e2e tests compile this
-//! source in-process via `#[path]`.
+//! Both devices are declared with `#[pip::device]` (plugin-interface v2,
+//! PLG-05): the attribute on the `Element` type IS the registration — no
+//! imperative `register()` body. Lives as a crate example: `cargo build
+//! --example fixture_plugin` builds the cdylib the native smoke test
+//! dlopens; the e2e tests compile this source in-process via `#[path]`.
 
 use piperine_plugin::{
-    entry, Abi, DeviceFactory, DeviceKind, Manifest, Permissions, Plugin, PluginDeviceSpec,
-    PluginPort, PortBinding, Registrar,
+    entry, DeviceKind, Manifest, Permissions, Plugin, PluginDevice, PluginDeviceSpec, PluginPort,
+    PortBinding,
 };
 use piperine_solver::abi::AnalogReference;
 use piperine_solver::abi::DcAnalysisState;
@@ -31,9 +33,9 @@ impl FixturePlugin {
         Self {
             manifest: Manifest {
                 name: "fixture".into(),
-                abi: Abi::Native,
-                entry: String::new(),
                 description: Some("test fixture devices".into()),
+                python: None,
+                device: None,
                 permissions: Permissions::default(),
             },
         }
@@ -50,11 +52,8 @@ impl Plugin for FixturePlugin {
     fn manifest(&self) -> &Manifest {
         &self.manifest
     }
-
-    fn register(&self, r: &mut Registrar) {
-        r.device("Fixture::Resistor", Box::new(ResistorFactory));
-        r.device("Fixture::Inverter", Box::new(InverterFactory));
-    }
+    // Contributions come from the `#[pip::device]` declarations below —
+    // the default `collect()` drains this binary's registry.
 }
 
 /// Native entry symbols (Plugin plan D7): dlopen loads this cdylib and
@@ -71,14 +70,19 @@ pub extern "C" fn piperine_plugin_entry() -> *mut core::ffi::c_void {
 
 // ─── Fixture::Resistor ─────────────────────────────────────────────────────────
 
-struct ResistorFactory;
+/// A linear resistor: constant Jacobian `g`, zero Norton RHS.
+#[pip::device("Fixture::Resistor")]
+struct PluginResistor {
+    label: String,
+    a: AnalogReference,
+    b: AnalogReference,
+    g: f64,
+}
 
-impl DeviceFactory for ResistorFactory {
-    fn kind(&self) -> DeviceKind {
-        DeviceKind::Analog
-    }
+impl PluginDevice for PluginResistor {
+    const KIND: DeviceKind = DeviceKind::Analog;
 
-    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
+    fn from_spec(spec: &PluginDeviceSpec) -> Result<Self, String> {
         let refs: Vec<AnalogReference> = spec
             .ports
             .iter()
@@ -100,21 +104,8 @@ impl DeviceFactory for ResistorFactory {
         if r <= 0.0 {
             return Err(format!("Fixture::Resistor: r must be positive, got {r}"));
         }
-        Ok(Box::new(PluginResistor {
-            label: spec.instance_label.clone(),
-            a: a.clone(),
-            b: b.clone(),
-            g: 1.0 / r,
-        }))
+        Ok(Self { label: spec.instance_label.clone(), a: a.clone(), b: b.clone(), g: 1.0 / r })
     }
-}
-
-/// A linear resistor: constant Jacobian `g`, zero Norton RHS.
-struct PluginResistor {
-    label: String,
-    a: AnalogReference,
-    b: AnalogReference,
-    g: f64,
 }
 
 impl PluginResistor {
@@ -164,33 +155,26 @@ impl Element for PluginResistor {
 
 // ─── Fixture::Inverter ─────────────────────────────────────────────────────────
 
-struct InverterFactory;
+/// `y <- !a`, one delta cycle, X propagates as X.
+#[pip::device("Fixture::Inverter")]
+struct PluginInverter {
+    label: String,
+    input: DigitalNet,
+    output: DigitalNet,
+}
 
-impl DeviceFactory for InverterFactory {
-    fn kind(&self) -> DeviceKind {
-        DeviceKind::Digital
-    }
+impl PluginDevice for PluginInverter {
+    const KIND: DeviceKind = DeviceKind::Digital;
 
-    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
+    fn from_spec(spec: &PluginDeviceSpec) -> Result<Self, String> {
         let digital = |p: &PluginPort| match &p.binding {
             PortBinding::Digital(net) => Ok(*net),
             PortBinding::Analog(_) => Err(format!("port `{}` must be digital", p.logical)),
         };
         let a = spec.ports.iter().find(|p| p.logical == "a").ok_or("missing port `a`")?;
         let y = spec.ports.iter().find(|p| p.logical == "y").ok_or("missing port `y`")?;
-        Ok(Box::new(PluginInverter {
-            label: spec.instance_label.clone(),
-            input: digital(a)?,
-            output: digital(y)?,
-        }))
+        Ok(Self { label: spec.instance_label.clone(), input: digital(a)?, output: digital(y)? })
     }
-}
-
-/// `y <- !a`, one delta cycle, X propagates as X.
-struct PluginInverter {
-    label: String,
-    input: DigitalNet,
-    output: DigitalNet,
 }
 
 impl AnalogDevice for PluginInverter {}

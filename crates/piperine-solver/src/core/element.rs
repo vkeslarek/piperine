@@ -12,7 +12,7 @@ use crate::analyses::noise::Noise;
 use crate::analyses::transient::{TransientAnalysisContext, TransientAnalysisState};
 use crate::analog::AnalogReference;
 use crate::core::introspect::{
-    Invalidation, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
+    Invalidation, ObservableDescriptor, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
 };
 use crate::digital::{DigitalNet, LogicValue};
 use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
@@ -62,38 +62,97 @@ bitflags::bitflags! {
         /// before analysis, but the loader needs this flag to know the element
         /// took the allocation seam.
         const HAS_INTERNAL_UNKNOWNS = 1 << 8;
-        /// Reserved: the commit/rollback lifecycle is owned by the
-        /// `solver-commit-rollback` follow-up. No method is promised here — the
-        /// `Element` trait exposes no checkpoint/rollback/commit hooks today.
+        /// The model checkpoints its mutable non-accept-gated state for
+        /// rollback on a rejected step. The solver calls
+        /// [`Element::checkpoint_state`] before every candidate attempt
+        /// (transient `attempt_step`, DC homotopy before each strategy) and
+        /// [`Element::restore_state`] on rejection; on acceptance the
+        /// checkpoint is dropped. A device that returns `None` (default) is
+        /// stateless and pays nothing.
         const SUPPORTS_ROLLBACK = 1 << 9;
-        /// Reserved: a host hint that the model overrides `list_queries`/`query`
-        /// with typed metadata beyond the `read_opvars` default. No solver path
-        /// reads this flag today (audit SS-11); it remains a host-facing
-        /// descriptor with no solver consumer.
-        const SUPPORTS_QUERIES = 1 << 10;
+        // `1 << 10` is unused: `SUPPORTS_QUERIES` was removed in P6 (CLN-11).
+        // It promised a host hint that a model overrides `list_queries`/`query`,
+        // but nothing declared it and nothing read it — and both methods have
+        // working `read_opvars`-derived defaults, so a hint gates nothing. The
+        // bit position is left vacant rather than renumbering the flags above.
         /// The model is eligible for stamp bypass: when its terminal voltages
         /// are unchanged within tolerance since the last evaluation, the
         /// solver may skip re-evaluating and re-stamping it for that Newton
         /// iteration (reusing its previous contribution). Suppressed globally
-        /// while any element reports `limiting_active()`. Opt-in — a model
-        /// only sets this when its stamps are a pure function of terminal
-        /// voltages (linear devices, settled logic).
+        /// while any element reports an active `LimitingReport`. Opt-in — a
+        /// model only sets this when its stamps are a pure function of
+        /// terminal voltages (linear devices, settled logic).
         const BYPASS_OK = 1 << 11;
+
+        // ── Jacobian / derivative capability (ABI-23) ───────────────────────
+        /// The model provides analytic second derivatives — the `.disto`
+        /// Hessian compiled from symbolic differentiation (DISTO-03). The
+        /// `.disto` driver checks this before solving for HD2; a device
+        /// without it contributes no second-order nonlinear current. Every
+        /// in-tree JIT device that compiles a `.disto` 2nd-derivative kernel
+        /// sets this (ABI-26).
+        const HAS_DISTO2 = 1 << 12;
+        /// The model provides analytic third derivatives — the `.disto`
+        /// third-order Hessian compiled from symbolic differentiation
+        /// (DISTO-03). The `.disto` driver checks this before solving for
+        /// HD3; a device without it contributes no third-order nonlinear
+        /// current.
+        const HAS_DISTO3 = 1 << 13;
+        /// The model's Jacobian is finite-difference (numeric), not analytic
+        /// — e.g., a plugin that perturbs its residual to fill the Jacobian.
+        /// Analyses that require analytic derivatives (`.disto`) fail loud
+        /// on these devices (ABI-25): the method of nonlinear currents
+        /// needs the exact Hessian, never a numeric perturbation.
+        const NUMERIC_JACOBIAN = 1 << 14;
     }
 }
 
-/// A device limiter's structured feedback: which unknown it clamped and to
-/// what value this iteration. Where `limiting_active()` only vetoes the
-/// convergence test, a hint lets the solver steer — it applies the limited
-/// value to the Newton guess before testing convergence, so the iteration
-/// continues from the clamped point instead of oscillating around it
-/// (pnjlim/fetlim lineage).
+/// Opaque device-state checkpoint for rollback on rejected timesteps
+/// (ABI-01). Devices pack whatever mutable non-accept-gated state they own
+/// into the `(int, real)` carrier — the same shape as
+/// [`DigitalDevice::digital_hidden_snapshot`]'s carrier, deliberately, so
+/// per-step rollback and PSS full-state re-entry stay compatible. A default
+/// `None` from [`Element::checkpoint_state`] means stateless (zero cost).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElementCheckpoint {
+    /// Integer state: digital registers, edge-detection memory.
+    pub int_state: Vec<i64>,
+    /// Real state: limiter (`active`, `seeds`) and vold slots, analog vars.
+    pub real_state: Vec<f64>,
+}
+
+/// Structured limiting feedback from a device limiter (ABI-09): the limiter
+/// reports the unknown it clamped, the proposed vs limited value, and which
+/// limiter fired. `is_some()` gates Newton convergence (a clamped junction
+/// can momentarily satisfy KCL at a non-solution voltage); `limited_value`
+/// applied to `net` steers the Newton guess to the clamped point
+/// (pnjlim/fetlim lineage); `device` + `limiter_name` + `reason` are
+/// diagnostics for hosts (HOST-10 — surfaced on `op.stats.limiting`).
 #[derive(Debug, Clone)]
-pub struct ConvergenceHint {
+pub struct LimitingReport {
+    /// The instance label of the device whose limiter fired (HOST-10).
+    pub device: String,
     /// The unknown the limiter clamped (node voltage or branch current).
     pub net: AnalogReference,
-    /// The value the limiter clamped it to.
+    /// The raw Newton-proposed value before limiting.
+    pub proposed: f64,
+    /// The clamped value the solver should use.
     pub limited_value: f64,
+    /// Which limiter fired (`"pnjlim"`, `"fetlim"`, `"limvds"`, …).
+    pub limiter_name: &'static str,
+    /// Why the limiter clamped (diagnostic, not behavioral).
+    pub reason: LimitReason,
+}
+
+/// Why a limiter clamped a value (diagnostic for hosts).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LimitReason {
+    /// Junction voltage step too large (pnjlim/fetlim).
+    VoltageStep,
+    /// Drain-source voltage step too large (limvds).
+    VdsStep,
+    /// Custom limiter reason (plugin-defined).
+    Other(&'static str),
 }
 
 /// Analog participation: MNA loading + the analog lifecycle/convergence hooks.
@@ -106,16 +165,12 @@ pub struct ConvergenceHint {
 pub trait AnalogDevice: Send + Sync {
     // ── Analog lifecycle ──────────────────────────────────────────────────────
 
-    /// Whether a device limiter is currently clamping (pnjlim/fetlim). While
-    /// active the global Newton loop must not declare convergence.
-    fn limiting_active(&self) -> bool { false }
-
-    /// Structured limiting feedback: which unknown was clamped, and to what.
-    /// The solver applies the hint to the Newton guess before the convergence
-    /// test. Default `None` — a device that only knows *that* it limited
-    /// keeps reporting through [`limiting_active`](AnalogDevice::limiting_active);
-    /// a device that knows *what* it limited upgrades to a hint.
-    fn convergence_hint(&self) -> Option<ConvergenceHint> { None }
+    /// Structured limiting feedback (ABI-09): when a device limiter clamps a
+    /// value, return a [`LimitingReport`] naming the clamped unknown, the
+    /// proposed vs limited value, and which limiter fired. The solver gates
+    /// Newton convergence on `is_some()` and applies `limited_value` to
+    /// `net`. Default `None` — a device that does not limit inherits this.
+    fn limiting_report(&self) -> Option<LimitingReport> { None }
 
     /// Largest timestep the element can tolerate from here (`$bound_step`).
     fn bound_step_hint(&self) -> f64 { f64::INFINITY }
@@ -344,6 +399,39 @@ pub trait Introspect: Send + Sync {
     /// Declared terminals (name, domain, direction, required). Empty when the
     /// element does not describe its terminals.
     fn list_terminals(&self) -> Vec<TerminalDescriptor> { Vec::new() }
+
+    /// Model identity (ABI-46): type id + version, the family a host
+    /// renders against. Defaults to no identity — a host falls back to the
+    /// instance name.
+    fn model_descriptor(&self) -> crate::core::introspect::ModelDescriptor {
+        crate::core::introspect::ModelDescriptor::default()
+    }
+
+    /// Per-slot names for the runtime state bank (ABI-47): one entry per
+    /// state slot, in bank order. Empty when the device declares no
+    /// introspectable runtime state. A host uses this to render
+    /// `.state`/`.op` rows with kind names (`"ddt[0]"`, `"vold[1]"`, …)
+    /// rather than positional indices.
+    fn list_state_slot_names(&self) -> Vec<String> { Vec::new() }
+
+    /// Named terminal pairs `(plus, minus)` per force branch (ABI-47),
+    /// sourced from the kernel's `force_terminals` catalog. Empty for a
+    /// device with no `V(...) <- ...` potential forces.
+    fn list_force_terminal_pairs(&self) -> Vec<(String, String)> { Vec::new() }
+
+    /// Named terminal pairs `(plus, minus)` per noise source (ABI-47),
+    /// sourced from the kernel's `noise_terminals` catalog. Empty for a
+    /// device with no noise contributions.
+    fn list_noise_terminal_pairs(&self) -> Vec<(String, String)> { Vec::new() }
+
+    /// Device-declared observables a host may request for per-step
+    /// recording (ABI-32): branch currents, charge/flux/state slots, and
+    /// module vars — each with a relative cost hint. Default empty — a
+    /// stateless device declares nothing, so a `ProbeSelection`
+    /// referencing it fails loud at setup (ABI-35). A host pairs this
+    /// catalog with [`ProbeSelection`](crate::core::introspect::ProbeSelection)
+    /// to record only the observables it wants.
+    fn list_observables(&self) -> Vec<ObservableDescriptor> { Vec::new() }
 }
 
 /// A single thing the solver simulates — the one contract over every
@@ -409,4 +497,22 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         (&[], &[])
     }
+
+    /// Snapshot the device's mutable non-accept-gated state for rollback on a
+    /// rejected step (ABI-01). The solver calls this before every candidate
+    /// attempt (transient `attempt_step`, DC homotopy before each strategy);
+    /// on rejection it calls [`restore_state`](Element::restore_state) with
+    /// the snapshot, on acceptance the snapshot is dropped. Default `None` =
+    /// stateless (the solver skips the restore — zero cost). Accept-gated
+    /// state (operators, event detectors, `last_volts`) is advanced only in
+    /// [`accept_timestep`](Element::accept_timestep) and is naturally safe —
+    /// never checkpoint it.
+    fn checkpoint_state(&self) -> Option<ElementCheckpoint> { None }
+
+    /// Restore device state from a snapshot produced by
+    /// [`checkpoint_state`](Element::checkpoint_state) (ABI-02). Called before
+    /// a retry after the previous attempt was rejected, so the retry starts
+    /// from the last accepted device state — not the dirty rejected-attempt
+    /// state. Default: no-op (stateless device).
+    fn restore_state(&mut self, _checkpoint: &ElementCheckpoint) {}
 }

@@ -37,6 +37,7 @@ pub mod lower;
 pub mod typecheck;
 pub mod resolve;
 pub mod registry;
+pub mod resolution;
 
 use crate::pom::{Design, ElabError, ElabErrorKind};
 pub use lower::Elaborator;
@@ -78,6 +79,8 @@ impl SourceFile {
         seed(&mut elaborator.ctx);
         let mut design = elaborator.elaborate(augmented)?;
         design.set_origins(resolver.take_origins());
+        design.set_item_files(resolver.take_item_files());
+        design.set_use_files(resolver.take_file_paths());
         Ok(design)
     }
 
@@ -102,6 +105,68 @@ impl SourceFile {
         let mut elaborator = Elaborator::new();
         let mut design = elaborator.elaborate(augmented)?;
         design.set_origins(resolver.take_origins());
+        design.set_item_files(resolver.take_item_files());
+        design.set_use_files(resolver.take_file_paths());
         Ok((design, elaborator.ctx))
+    }
+
+    /// Like [`elaborate`](Self::elaborate), but also returns a
+    /// [`ResolutionIndex`][crate::elab::resolution::ResolutionIndex] built
+    /// over the resulting `Design` (LSP-03/05) — the side artifact the
+    /// language server reads for binding-identity-aware resolution instead
+    /// of a word-based global scan. Additive: `Design` itself is unchanged,
+    /// and existing `elaborate*` entry points are untouched (no call-site
+    /// churn for hosts that don't need the index yet).
+    pub fn elaborate_with_index(
+        self,
+        source_map: &SourceMap,
+    ) -> Result<(Design, crate::elab::resolution::ResolutionIndex), ElabError> {
+        let design = self.elaborate(source_map)?;
+        let index = crate::elab::resolution::index_design(&design);
+        Ok((design, index))
+    }
+
+    /// Like [`elaborate_with_context`](Self::elaborate_with_context), but
+    /// never stops at the first error (LSP-18/T16): accumulates every
+    /// independent error a recoverable pass finds
+    /// (`Elaborator::elaborate_accumulating` — see its docs for exactly
+    /// which passes accumulate vs. fail fast) instead of returning
+    /// `Result`. `errors` is empty on a clean elaboration; a non-empty
+    /// `errors` means `design`/the returned [`ElabContext`] are
+    /// best-effort/partial (whatever passes managed to run before a
+    /// fail-fast precondition stopped the pipeline, or everything an
+    /// accumulating pass could still process around its own failures).
+    ///
+    /// Additive: `elaborate`/`elaborate_with_context`/`elaborate_with_index`
+    /// are untouched, so no existing caller's signature or behavior
+    /// changes.
+    pub fn elaborate_with_context_accumulating(
+        self,
+        source_map: &SourceMap,
+    ) -> (Design, crate::elab::registry::ElabContext, Vec<ElabError>) {
+        let mut resolver = Resolver::new(source_map);
+        let mut items = resolver.prelude_items();
+        let expanded = match resolver.expand(self) {
+            Ok(expanded) => expanded,
+            Err(e) => {
+                // `use`-resolution runs before any pass in the pipeline —
+                // a precondition failure like `elaborate`'s own handling
+                // of this same error, not something a pass could recover
+                // from.
+                return (
+                    Design::new(),
+                    crate::elab::registry::ElabContext::new(),
+                    vec![ElabError::from(ElabErrorKind::Other(e.to_string()))],
+                );
+            }
+        };
+        items.extend(expanded);
+        let augmented = SourceFile { items };
+        let mut elaborator = Elaborator::new();
+        let (mut design, errors) = elaborator.elaborate_accumulating(augmented);
+        design.set_origins(resolver.take_origins());
+        design.set_item_files(resolver.take_item_files());
+        design.set_use_files(resolver.take_file_paths());
+        (design, elaborator.ctx, errors)
     }
 }

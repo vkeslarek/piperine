@@ -18,6 +18,10 @@ pub use crate::parse::ast::{Stmt as BehaviorStmt, StmtMatchArm as MatchArm};
 #[derive(Debug, Clone)]
 pub struct Behavior {
     pub span: Option<miette::SourceSpan>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07). Not
+    /// `#[serde]`-carried: `Behavior` itself does not cross the
+    /// serialization boundary (SPEC Part IV §7).
+    pub doc: Option<String>,
     /// Behavior block name.
     pub name: String,
     /// Whether this is an analog or digital block.
@@ -34,11 +38,13 @@ impl Behavior {
     /// Construct a new Behavior (used by the elaborator and codegen).
     #[doc(hidden)]
     pub fn new(name: String, kind: BehaviorKind, body: Vec<BehaviorStmt>) -> Self {
-        Self { span: None, name, kind, body, var_types: Default::default() }
+        Self { span: None, doc: None, name, kind, body, var_types: Default::default() }
     }
 
     /// The behavior block name.
     pub fn name(&self) -> &str { &self.name }
+    /// The behavior's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
     /// The behavior kind (analog or digital).
     pub fn kind(&self) -> &BehaviorKind { &self.kind }
     /// The statements inside the behavior block.

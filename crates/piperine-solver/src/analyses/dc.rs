@@ -99,6 +99,14 @@ pub struct DcSystem<'a> {
     stamp_cache: Vec<Stamp<AnalogReference, f64>>,
     last_solution: Vec<f64>,
     cache_valid: bool,
+    /// Whether **every** element in the circuit declares
+    /// [`ElementCapabilities::BYPASS_OK`] — the bypass's opt-in gate (P6/CLN-12).
+    /// One element whose stamps are not a pure function of its terminal
+    /// voltages disables the cache for the whole circuit: a stale stamp can
+    /// satisfy the convergence test and lock in a wrong operating point.
+    /// Computed once at construction; the element set cannot change during a
+    /// solve.
+    bypass_allowed: bool,
     pub bypass_hits: usize,
     pub bypass_misses: usize,
 }
@@ -114,14 +122,17 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         // Device bypass: if the solution barely moved since the last
         // evaluation, reuse cached stamps instead of re-evaluating every
-        // device model (audit P4 — BYPASS_OK declared but never consulted).
-        // Suppressed while any device limiter is clamping — a bypassed
-        // `load_dc` would freeze the limiter's internal state and stall the
-        // convergence gate. The cache is dropped by `invalidate_bypass`
-        // whenever the stamps depend on anything besides the solution vector
-        // (homotopy scale changes, digital settle).
-        if self.cache_valid && !self.any_limiting() {
-            if let Some(curr) = state.latest() {
+        // device model. Gated on `bypass_allowed` — every element must have
+        // declared `BYPASS_OK`, the opt-in the flag has always documented
+        // (P6/CLN-12; before that the cache applied to devices that never
+        // opted in). Additionally suppressed while any device limiter is
+        // clamping — a bypassed `load_dc` would freeze the limiter's internal
+        // state and stall the convergence gate. The cache is dropped by
+        // `invalidate_bypass` whenever the stamps depend on anything besides
+        // the solution vector (homotopy scale changes, digital settle).
+        if self.bypass_allowed && self.cache_valid && !self.any_limiting_report()
+            && let Some(curr) = state.latest()
+        {
                 // Per-variable threshold (ngspice bypass semantics):
                 // |Δv_i| < vntol + reltol·max(|v_i|, |v_i_old|) for every
                 // unknown. A global max-|v| scale would open a millivolt
@@ -139,7 +150,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
                     self.bypass_hits += 1;
                     return Ok(self.stamp_cache.clone());
                 }
-            }
         }
         self.bypass_misses += 1;
 
@@ -200,12 +210,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         self.circuit.netlist()
     }
 
-    fn any_limiting(&self) -> bool {
-        self.circuit.devices.iter().any(|d| d.limiting_active())
+    fn any_limiting_report(&self) -> bool {
+        self.circuit.devices.iter().any(|d| d.limiting_report().is_some())
     }
 
-    fn apply_convergence_hints(&self, guess: ndarray::ArrayViewMut1<f64>) {
-        self.circuit.apply_convergence_hints(guess);
+    fn apply_limiting_reports(&self, guess: ndarray::ArrayViewMut1<f64>) {
+        self.circuit.apply_limiting_reports(guess);
     }
 
     /// Called after successful convergence to check for Safe Operating Area violations.
@@ -241,6 +251,10 @@ pub struct DcSolver<'a> {
     /// How many plain-Newton attempts the convergence plan drove (1 = no
     /// homotopy). `SolverStats::homotopy_levels` is this minus the first.
     newton_calls: usize,
+    /// One-deep device-state checkpoint (ABI-07): snapshotted before each
+    /// homotopy attempt, restored on strategy fallthrough so the limiter and
+    /// other non-accept-gated state start clean on the next retry.
+    device_checkpoint: Vec<Option<crate::core::element::ElementCheckpoint>>,
 }
 
 impl<'a> DcSolver<'a> {
@@ -249,6 +263,13 @@ impl<'a> DcSolver<'a> {
         circuit.setup_all(&context)?;
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
+
+        // Opt-in gate: read once, before the borrow moves into the system.
+        let bypass_allowed = !circuit.devices.is_empty()
+            && circuit
+                .devices
+                .iter()
+                .all(|d| d.capabilities().contains(ElementCapabilities::BYPASS_OK));
 
         let mut system = DcSystem {
             circuit,
@@ -259,13 +280,14 @@ impl<'a> DcSolver<'a> {
             stamp_cache: Vec::new(),
             last_solution: Vec::new(),
             cache_valid: false,
+            bypass_allowed,
             bypass_hits: 0,
             bypass_misses: 0,
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, policy: Policy::default(), newton_calls: 0 })
+        Ok(Self { system, solver, policy: Policy::default(), newton_calls: 0, device_checkpoint: Vec::new() })
     }
 
     /// Seed the DC Newton initial guess with node-voltage hints (the host
@@ -372,6 +394,16 @@ impl<'a> DcSolver<'a> {
         result.stats.homotopy_levels = self.newton_calls.saturating_sub(1);
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
+        // HOST-10: collect each device's final limiting state — the
+        // structured diagnostics a host reads via `op.stats.limiting`.
+        // Mirrors `apply_limiting_reports`'s iteration over devices.
+        result.stats.limiting = self
+            .system
+            .circuit
+            .all_devices()
+            .iter()
+            .filter_map(|d| d.limiting_report())
+            .collect();
         Ok(result)
     }
 }
@@ -406,5 +438,29 @@ impl HomotopyDriver for DcSolver<'_> {
 
     fn gmin_floor(&self) -> f64 {
         self.system.context.tolerances.gmin.max(1e-12)
+    }
+
+    fn checkpoint_devices(&mut self) {
+        self.device_checkpoint = self
+            .system
+            .circuit
+            .devices
+            .iter()
+            .map(|d| d.checkpoint_state())
+            .collect();
+    }
+
+    fn restore_devices(&mut self) {
+        for (dev, ckpt) in self
+            .system
+            .circuit
+            .devices
+            .iter_mut()
+            .zip(&self.device_checkpoint)
+        {
+            if let Some(c) = ckpt {
+                dev.restore_state(c);
+            }
+        }
     }
 }

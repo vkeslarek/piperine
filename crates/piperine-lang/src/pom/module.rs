@@ -32,6 +32,9 @@ pub struct Port {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    #[serde(default)]
+    pub doc: Option<String>,
     pub direction: crate::parse::ast::Direction,
     pub name: String,
     pub ty: NetType,
@@ -45,6 +48,8 @@ impl Port {
     pub fn direction(&self) -> &crate::parse::ast::Direction { &self.direction }
     /// The port's net type (discipline or bus).
     pub fn net_type(&self) -> &NetType { &self.ty }
+    /// The port's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
 }
 
 impl Named for Port { fn name(&self) -> &str { self.name() } }
@@ -58,6 +63,9 @@ pub struct Param {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    #[serde(default)]
+    pub doc: Option<String>,
     pub name: String,
     pub ty: ValueType,
     pub default: Option<Value>,
@@ -72,6 +80,8 @@ impl Param {
     pub fn name(&self) -> &str { &self.name }
     pub fn value_type(&self) -> &ValueType { &self.ty }
     pub fn default(&self) -> Option<&Value> { self.default.as_ref() }
+    /// The param's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
 
     /// Returns the param's default value, cloned, if it has one. (With the
     /// unified [`Value`] there is no conversion — kept for the existing
@@ -92,6 +102,9 @@ pub struct Wire {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    #[serde(default)]
+    pub doc: Option<String>,
     pub name: String,
     pub ty: NetType,
 }
@@ -102,6 +115,8 @@ impl Wire {
     pub fn name(&self) -> &str { &self.name }
     /// The wire's net type (discipline or bus).
     pub fn net_type(&self) -> &NetType { &self.ty }
+    /// The wire's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
 }
 
 impl Named for Wire { fn name(&self) -> &str { self.name() } }
@@ -115,7 +130,17 @@ impl Kinded for Wire { fn kind(&self) -> Kind { Kind::Wire } }
 pub struct Instance {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
+    /// Byte span of just the label token (`src` in `src : Type(...)`), if
+    /// the instance is labeled (LSB-07..10).
+    #[serde(skip)]
+    pub label_span: Option<miette::SourceSpan>,
+    /// Byte span of just the module-type-identifier token (LSB-07..10).
+    #[serde(skip)]
+    pub type_span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    #[serde(default)]
+    pub doc: Option<String>,
     pub label: Option<String>,
     pub module: String,
     pub ports: Vec<NetRef>,
@@ -136,6 +161,8 @@ impl Instance {
     pub fn params(&self) -> &[(String, Value)] { &self.params }
     /// The instance label, if one was given.
     pub fn label(&self) -> Option<&str> { self.label.as_deref() }
+    /// The instance's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
 }
 
 impl Named for Instance { fn name(&self) -> &str { self.name() } }
@@ -153,6 +180,9 @@ pub struct Var {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    #[serde(default)]
+    pub doc: Option<String>,
     pub name: String,
     pub ty: ValueType,
     pub init: Option<Value>,
@@ -163,6 +193,8 @@ impl Var {
     pub fn name(&self) -> &str { &self.name }
     pub fn value_type(&self) -> &ValueType { &self.ty }
     pub fn init(&self) -> Option<&Value> { self.init.as_ref() }
+    /// The var's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
 }
 
 impl Named for Var { fn name(&self) -> &str { self.name() } }
@@ -193,6 +225,9 @@ pub struct Module {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    #[serde(default)]
+    pub doc: Option<String>,
     pub name: String,
     pub ports: Vec<Port>,
     pub params: Vec<Param>,
@@ -222,11 +257,13 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { span: None, attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, origin: None }
+        Self { span: None, attributes: Vec::new(), doc: None, name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, origin: None }
     }
 
     /// The module's name.
     pub fn name(&self) -> &str { &self.name }
+    /// The module's attached `///` doc comment, if any.
+    pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
     /// Returns `false` — always false post-monomorphization.
     pub fn is_generic(&self) -> bool { false }
 

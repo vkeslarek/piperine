@@ -19,12 +19,21 @@ pub mod hooks;
 pub mod prelude;
 pub mod results;
 pub mod session;
+pub mod units;
 pub mod waveform;
 
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
 pub use hooks::SimHooks;
-pub use piperine_solver::prelude::{PoleZeroResult, SpResult};
-pub use results::{NetRef, OpResult, PssResult, SensResult};
-pub use session::{SimSession, SolverConfig};
-pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};
+pub use piperine_solver::prelude::{
+    Bounds, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind, ParamDescriptor,
+    ParamScope, TerminalDescriptor, TerminalKind,
+};
+pub use piperine_solver::abi::NoiseContribution;
+pub use results::{
+    DistoResult, InstanceView, NetRef, NetSelector, OpResult, PssResult, PzResult, SParamResult, SensResult,
+    TfResult,
+};
+pub use session::{Grid, Nested, Scale, Session, SimSession, SolverConfig, Sweep, SweepPoint};
+pub use units::{Freq, Time};
+pub use waveform::{AcTrace, ComplexWaveform, CrossDirection, NoiseTrace, Trace, Waveform};

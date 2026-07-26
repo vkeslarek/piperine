@@ -171,6 +171,27 @@ impl DigitalInstance {
         }
     }
 
+    /// Whether this instance owns mutable register state worth checkpointing
+    /// (ABI-05): module vars or edge-detection watch memory.
+    pub fn has_registers(&self) -> bool {
+        !(self.vars_int.is_empty() && self.vars_real.is_empty() && self.prev_watch.is_empty())
+    }
+
+    /// Checkpoint the digital register state for per-step rollback (ABI-05):
+    /// `vars_int`, `vars_real`, and `prev_watch`. Same register set and layout
+    /// as [`hidden_snapshot`](Self::hidden_snapshot) (PSS re-entry) — both
+    /// rewind the non-accept-gated registers a rejected settle dirties.
+    pub fn checkpoint_registers(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        self.hidden_snapshot()
+    }
+
+    /// Restore digital registers from a checkpoint produced by
+    /// [`checkpoint_registers`](Self::checkpoint_registers) (ABI-05): rewinds
+    /// `vars_int`, `vars_real`, and `prev_watch`.
+    pub fn restore_registers(&mut self, ints: &[i64], reals: &[f64]) {
+        self.hidden_restore(&(ints.to_vec(), reals.to_vec()));
+    }
+
     /// Export all register/variable values as `f64`, indexed by `VarId`.
     /// Used by the D2A bridge to sync digital state into the analog vars
     /// bank after each evaluation.

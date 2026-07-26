@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 12,
+  "next_id": 16,
   "lessons": [
     {
       "id": "L-001",
@@ -202,6 +202,78 @@
       ],
       "created": "2026-07-19T16:34:44Z",
       "last_seen": "2026-07-19T16:34:44Z"
+    },
+    {
+      "id": "L-012",
+      "key": "ac_gap::when a metadata sidecar is resolved at the pom lang layer and consumed at the codegen layer attributes attached to pom nodes that do not surface in codegen s runtime catalogs e g a var shadowed never assigned so the kernel omits it from opvar names must be cross checked at the codegen boundary silently dropping the orphan metadata violates fail loud",
+      "text": "When a metadata sidecar is resolved at the POM/lang layer and consumed at the codegen layer, attributes attached to POM nodes that do not surface in codegen's runtime catalogs (e.g. a var shadowed/never-assigned so the kernel omits it from opvar_names) must be cross-checked at the codegen boundary — silently dropping the orphan metadata violates fail-loud.",
+      "signal": "ac_gap",
+      "scope": "piperine-lang/pom, piperine-codegen/device, fail-loud",
+      "status": "candidate",
+      "features": [
+        "phdl-introspection-attributes"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/phdl-introspection-attributes/validation.md Edge Cases bullet 3 (orphan @unit/@description on shadowed var); pom/design.rs:469-500; device/mod.rs:428-440 (piperine-lang/pom, piperine-codegen/device, fail-loud)"
+      ],
+      "created": "2026-07-24T02:29:17Z",
+      "last_seen": "2026-07-24T02:29:17Z"
+    },
+    {
+      "id": "L-013",
+      "key": "surviving_mutant::a guard that only scans a clean tree passes even when its detector is broken extract each check into a named predicate and test it against fixture inputs must flag and must not flag or the guard is verified only by a human remembering to inject a violation",
+      "text": "A guard that only scans a clean tree passes even when its detector is broken: extract each check into a named predicate and test it against fixture inputs (must-flag and must-not-flag), or the guard is verified only by a human remembering to inject a violation.",
+      "signal": "surviving_mutant",
+      "scope": "policy guards",
+      "status": "candidate",
+      "features": [
+        "p6-cleanup-completeness"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "tests/suite_hygiene.rs / mutants M3+M4 (policy guards)"
+      ],
+      "created": "2026-07-26T03:33:18Z",
+      "last_seen": "2026-07-26T03:33:18Z"
+    },
+    {
+      "id": "L-014",
+      "key": "spec_deviation::before writing delete the unenforceable rule into a spec check whether the rule is unreachable or merely unenforced an unenforced but reachable rule needs its status stated in place since deleting it trades documentation drift for a silent capability regression",
+      "text": "Before writing 'delete the unenforceable rule' into a spec, check whether the rule is unreachable or merely unenforced — an unenforced-but-reachable rule needs its status stated in place, since deleting it trades documentation drift for a silent capability regression.",
+      "signal": "spec_deviation",
+      "scope": "docs/spec",
+      "status": "candidate",
+      "features": [
+        "p6-cleanup-completeness"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "CLN-18 / audit.md §7b (docs/spec)"
+      ],
+      "created": "2026-07-26T03:33:18Z",
+      "last_seen": "2026-07-26T03:33:18Z"
+    },
+    {
+      "id": "L-015",
+      "key": "ac_gap::never plan against a quoted test count grep the tree for test and reconcile against the runner s number because a cfg any file contributes tests to the source count and zero to the gate",
+      "text": "Never plan against a quoted test count: grep the tree for #[test] and reconcile against the runner's number, because a #![cfg(any())] file contributes tests to the source count and zero to the gate.",
+      "signal": "ac_gap",
+      "scope": "test suite",
+      "status": "candidate",
+      "features": [
+        "p6-cleanup-completeness"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "audit.md §1 reconciliation / ROADMAP P6 (test suite)"
+      ],
+      "created": "2026-07-26T03:33:18Z",
+      "last_seen": "2026-07-26T03:33:18Z"
     }
   ]
 }

@@ -63,7 +63,7 @@ pub trait NewtonStrategy: Send + Sync {
     );
 
     /// Converged if: update test passes AND residual test passes.
-    /// Device limiting (`limiting_active()`) is NOT checked here — the driver
+    /// Device limiting (`limiting_report()`) is NOT checked here — the driver
     /// gates on it separately after solve returns. This keeps the strategy
     /// borrowing only the netlist, not the device vector.
     fn is_converged(
@@ -163,15 +163,10 @@ pub trait StepperStrategy: Send + Sync {
 /// already normalized by tolerance). The result is clamped to a safe per-step
 /// range and `[dt_min, dt_max]`. A rejection resets the error memory so the
 /// retry is not biased (TRB-09). All gains live in [`StepperGains`].
+#[derive(Default)]
 pub struct PiController {
     pub gains: StepperGains,
     prev_error: Option<f64>,
-}
-
-impl Default for PiController {
-    fn default() -> Self {
-        Self { gains: StepperGains::default(), prev_error: None }
-    }
 }
 
 impl PiController {
@@ -246,6 +241,18 @@ pub trait HomotopyDriver {
     /// The smallest meaningful extra conductance — the real device gmin,
     /// floored — below which gmin stepping has effectively reached zero.
     fn gmin_floor(&self) -> f64;
+
+    /// Snapshot every element's non-accept-gated state before an attempt
+    /// (ABI-07): plain Newton or a homotopy strategy can dirty device-internal
+    /// state (the limiter) before failing; the next attempt must start from the
+    /// pre-failure checkpoint, not the dirty rejected-attempt state. Default
+    /// no-op — a driver whose devices have no `SUPPORTS_ROLLBACK` pays nothing.
+    fn checkpoint_devices(&mut self) {}
+
+    /// Restore elements to the snapshot from the last
+    /// [`checkpoint_devices`](Self::checkpoint_devices) before retrying with
+    /// the next homotopy parameter (ABI-07). Default no-op.
+    fn restore_devices(&mut self) {}
 }
 
 /// One homotopy: reshapes a hard operating-point problem into an easy one and
@@ -272,9 +279,16 @@ pub trait HomotopyStrategy: Send + Sync {
 /// is the seam where an analysis or host selects a different escalation. Owns
 /// the [`Schedules`] every strategy reads its numeric ramp from, and the
 /// [`TraceFlags`] the driver seeds from its [`Policy`].
+///
+/// Completes the strategy composition triad (MD-28): the plan owns the
+/// [`NewtonStrategy`], the [`HomotopyStrategy`] escalation, and the
+/// [`StepperStrategy`] the transient driver delegates `propose_dt`/`reject_dt`
+/// to. Every analysis gets a uniform strategy surface — no inline rejection
+/// logic in the driver.
 pub struct ConvergencePlan {
     newton: Box<dyn NewtonStrategy>,
     strategies: Vec<Box<dyn HomotopyStrategy>>,
+    stepper: Box<dyn StepperStrategy>,
     limits: PlanLimits,
     schedules: Schedules,
     trace: TraceFlags,
@@ -283,11 +297,14 @@ pub struct ConvergencePlan {
 impl Default for ConvergencePlan {
     /// SPICE's standard escalation: [`GminStepping`] first (cheap, robust), then
     /// [`SourceStepping`] (finds the correct solution branch where gmin stepping
-    /// can settle on the wrong one — BJT/MOS amplifiers).
+    /// can settle on the wrong one — BJT/MOS amplifiers). The default stepper
+    /// is the [`PiController`] (TR-BDF2 adaptive timestep, ngspice-lineage
+    /// gains).
     fn default() -> Self {
         Self {
             newton: Box::new(DampedNewton),
             strategies: vec![Box::new(GminStepping), Box::new(SourceStepping)],
+            stepper: Box::new(PiController::default()),
             limits: PlanLimits::default(),
             schedules: Schedules::default(),
             trace: TraceFlags::default(),
@@ -301,6 +318,7 @@ impl ConvergencePlan {
         Self {
             newton: Box::new(DampedNewton),
             strategies,
+            stepper: Box::new(PiController::default()),
             limits: PlanLimits::default(),
             schedules: Schedules::default(),
             trace: TraceFlags::default(),
@@ -310,6 +328,14 @@ impl ConvergencePlan {
     /// Override the Newton strategy.
     pub fn with_newton(mut self, newton: Box<dyn NewtonStrategy>) -> Self {
         self.newton = newton;
+        self
+    }
+
+    /// Override the transient timestep strategy (ABI-42). The transient driver
+    /// delegates `propose_dt`/`reject_dt` to this strategy through the plan,
+    /// instead of owning one inline.
+    pub fn with_stepper(mut self, stepper: Box<dyn StepperStrategy>) -> Self {
+        self.stepper = stepper;
         self
     }
 
@@ -337,6 +363,18 @@ impl ConvergencePlan {
         self.newton.as_ref()
     }
 
+    /// The transient timestep strategy (ABI-42). Transient drivers delegate
+    /// `propose_dt`/`reject_dt` here; the plan is the single owner.
+    pub fn stepper(&self) -> &dyn StepperStrategy {
+        self.stepper.as_ref()
+    }
+
+    /// Mutable access to the stepper — the transient driver advances the
+    /// strategy's internal state across accepted/rejected steps.
+    pub fn stepper_mut(&mut self) -> &mut dyn StepperStrategy {
+        self.stepper.as_mut()
+    }
+
     /// Numerical caps every driver should honor.
     pub fn limits(&self) -> PlanLimits {
         self.limits
@@ -349,19 +387,27 @@ impl ConvergencePlan {
 
     /// Run the plan: plain Newton, then each homotopy in order. Returns the
     /// first converged solution (and which strategy found it), else the most
-    /// recent failure.
+    /// recent failure. Each attempt is bracketed by a device-state checkpoint
+    /// (ABI-07): a failed attempt restores device-internal state (limiter)
+    /// before the next strategy retries from the last accepted point.
     pub fn solve(&self, driver: &mut dyn HomotopyDriver) -> Result<PlanOutcome> {
+        driver.checkpoint_devices();
         let mut last = match driver.newton() {
             Ok(solution) => return Ok(PlanOutcome { solution, strategy: None }),
             Err(err) => err,
         };
+        driver.restore_devices();
         for strategy in &self.strategies {
+            driver.checkpoint_devices();
             match strategy.converge(driver, &self.schedules, self.trace) {
                 Ok(solution) => {
                     return Ok(PlanOutcome { solution, strategy: Some(strategy.name()) });
                 }
                 Err(err) => last = err,
             }
+            // Strategy fell through — restore device state before the next
+            // attempt so its limiter starts clean (ABI-07).
+            driver.restore_devices();
         }
         Err(last)
     }

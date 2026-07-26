@@ -3,11 +3,10 @@
 // settles combinational logic), and reads the output Bit nets directly:
 // `r.v(sum)` returns the logic value as 0/1.
 
-discipline Bit {
-    storage Boolean;
-}
+use piperine::disciplines;
 
 // Drives a Bit net from a stageable Real parameter.
+
 mod BitDriver(output q : Bit) {
     param level : Real = 0.0;
     var b : Bit = 0;
@@ -39,6 +38,6 @@ mod AdderBoard() {
     da : BitDriver(.q = na);
     db : BitDriver(.q = nb);
     dc : BitDriver(.q = nc);
-    fa : FullAdder(.a = na, .b = nb, .cin = nc, .sum = nsum, .cout = ncout);
+    fa : FullAdder(.a = na,.b = nb,.cin = nc,.sum = nsum,.cout = ncout);
 }
 

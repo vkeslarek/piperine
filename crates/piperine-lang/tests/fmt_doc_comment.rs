@@ -1,0 +1,128 @@
+//! `piperine fmt` must never insert a blank line between a `///` doc-comment
+//! run and the declaration it documents — the lexer's doc-attach rule drops
+//! a pending run on a blank line (LSP-06), so a blank-line-inserting
+//! formatter silently strips every doc comment it "cleans up".
+
+use piperine_lang::parse::format::{FormatOptions, TokenFormatter};
+use piperine_lang::parse::lexer::Lexer;
+
+fn format(src: &str) -> String {
+    let mut lexer = Lexer::new(src);
+    let tokens = lexer.tokenize_all().expect("lexer must succeed");
+    TokenFormatter::format_source(src, &tokens, FormatOptions::default())
+}
+
+/// A `///` doc comment directly above `mod` must stay directly above it —
+/// no blank line inserted between them.
+#[test]
+fn doc_comment_stays_attached_to_mod_after_formatting() {
+    let src = "/// A resistor.\nmod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// A resistor.\nmod Resistor"),
+        "doc comment must stay directly adjacent to `mod`, got:\n{out}"
+    );
+}
+
+/// Same, for `fn`.
+#[test]
+fn doc_comment_stays_attached_to_fn_after_formatting() {
+    let src = "/// Doubles x.\nfn double(x: Real) -> Real { return 2.0 * x; }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// Doubles x.\nfn double"),
+        "doc comment must stay directly adjacent to `fn`, got:\n{out}"
+    );
+}
+
+/// A multi-line `///` block must also stay attached — the LAST doc line is
+/// the one immediately preceding the declaration.
+#[test]
+fn multiline_doc_comment_stays_attached() {
+    let src = "/// Line one.\n/// Line two.\nmod M() { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// Line two.\nmod M"),
+        "the doc block's last line must stay directly adjacent to `mod`, got:\n{out}"
+    );
+}
+
+/// A plain `//` (non-doc) comment is NOT doc-attaching — the formatter's
+/// normal blank-line-before-declaration behavior must be unaffected for it
+/// (this proves the fix is scoped to `///` specifically, not comments in
+/// general).
+#[test]
+fn plain_comment_still_gets_blank_line_before_mod() {
+    let src = "// just a note\nmod M() { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("// just a note\n\nmod M"),
+        "a plain `//` comment should still get the usual blank-line separation, got:\n{out}"
+    );
+}
+
+/// `pub mod` must stay on one line — `pub` is not a fresh item boundary
+/// when `mod` immediately follows it on the same line, so `mod` must not
+/// force a blank line between them (a pre-existing bug, independent of
+/// doc comments: the original blank-line rule didn't know `pub` already
+/// started this same declaration).
+#[test]
+fn pub_mod_stays_on_one_line() {
+    let src = "pub mod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("pub mod Resistor"),
+        "`pub` and `mod` must stay on the same line, got:\n{out}"
+    );
+}
+
+/// A `///` doc comment above a `pub mod` must stay attached, and `pub mod`
+/// must stay on one line — both fixes composed together (the exact
+/// real-world case that surfaced the `pub` gap).
+#[test]
+fn doc_comment_above_pub_mod_stays_attached_and_pub_mod_stays_together() {
+    let src = "/// A resistor.\npub mod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// A resistor.\npub mod Resistor"),
+        "doc must stay attached AND `pub mod` must stay together, got:\n{out}"
+    );
+}
+
+/// Healing case: a file already has a blank line between a `///` doc block
+/// and its declaration (source-authored, or left over from a previous
+/// buggy formatter run) — fmt must COLLAPSE it, not just avoid adding a
+/// new one. Mirrors the real `examples/10_pwm_dimmer.phdl` repro.
+#[test]
+fn existing_blank_line_between_doc_and_decl_gets_collapsed() {
+    let src = "/// Doc do moc\n\nmod PwmSwitch(inout sw: Electrical, inout gnd: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// Doc do moc\nmod PwmSwitch"),
+        "a pre-existing blank line between /// and its decl must be collapsed, got:\n{out}"
+    );
+}
+
+/// Same healing case for a file-level doc block above `discipline`.
+#[test]
+fn existing_blank_line_between_doc_and_discipline_gets_collapsed() {
+    let src = "/// A file header.\n\ndiscipline Electrical { potential v: Real; flow i: Real; }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// A file header.\ndiscipline Electrical"),
+        "a pre-existing blank line between /// and discipline must be collapsed, got:\n{out}"
+    );
+}
+
+/// Two consecutive top-level declarations, the second `pub`, still get
+/// their normal blank-line separation — the `pub`-continuation exemption
+/// must not suppress the ordinary between-declarations blank line.
+#[test]
+fn blank_line_between_declarations_unaffected_by_pub_fix() {
+    let src = "mod A() { }\npub mod B() { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("mod A() { }\n\npub mod B"),
+        "normal blank-line separation between declarations must be unaffected, got:\n{out}"
+    );
+}

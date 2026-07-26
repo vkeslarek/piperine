@@ -93,6 +93,19 @@ pub struct AnalogInstance {
     last_volts: Vec<f64>,
     /// Limits capability: `$limit` voltage-limiting runtime state.
     limiter: Limiter,
+    /// Cached `LimitingReport` rebuilt each load (ABI-09/12): `limiting_report`
+    /// is read by the solver AFTER `load_dc`/`load_transient` (in
+    /// `apply_limiting_reports`), so the load caches the current clamped
+    /// node/value here. `None` when the limiter is inactive.
+    limit_report: Option<piperine_solver::abi::LimitingReport>,
+    /// Cached effective instance temperature (ABI-21): the value received
+    /// from the last `set_temperature(t_ambient + dtemp)` call. `None` until
+    /// the solver's setup path or a host temperature sweep seeds it. The
+    /// kernel still reads `$temperature` from `sim.temperature` (set by
+    /// `sync_sim` from `Context.tolerances.temperature`); this cache is the
+    /// device-author surface for overrides that compute temperature-dependent
+    /// constants at the seam rather than at eval time.
+    cached_temperature: Option<f64>,
 }
 
 impl AnalogInstance {
@@ -234,6 +247,8 @@ impl AnalogInstance {
             vars: vec![0.0; num_vars],
             last_volts: vec![0.0; n],
             limiter: Limiter::new(num_limits),
+            limit_report: None,
+            cached_temperature: None,
         };
         instance.fire_initial_events();
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
@@ -362,18 +377,169 @@ impl AnalogInstance {
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         stamps.extend(self.forces.stamp(&self.ctx(), &volts, state.src_scale));
         self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
+        self.rebuild_limit_report(&volts, &veff);
         stamps
     }
 
-    /// Whether junction voltage limiting is still moving (see `Limiter::update`).
-    pub fn limiting_active(&self) -> bool {
-        self.limiter.active()
+    /// The cached limiting report (ABI-09/12): `Some` when the junction
+    /// voltage limiter (`pnjlim`/`fetlim` lineage) is still clamping this
+    /// iteration, naming the clamped node, the proposed vs limited node
+    /// voltage, and which limiter fired. The solver gates Newton convergence
+    /// on `is_some()` and applies `limited_value` to `net`.
+    pub fn limiting_report(&self) -> Option<piperine_solver::abi::LimitingReport> {
+        self.limit_report.clone()
+    }
+
+    /// Rebuild the cached limiting report from the current limiter state +
+    /// the clamped node voltages this load computed. Called at the end of
+    /// each load (after `Limiter::update` sets `active`), passing the `veff`
+    /// computed BEFORE the update advanced the vold slot — recomputing after
+    /// would see no clamp (the vold caught up). Reports the active slot's
+    /// clamped node + that slot's `(limiter_name, reason)` from the kernel
+    /// catalog (PIA-15/17) — never the hardcoded `"pnjlim"`.
+    fn rebuild_limit_report(&mut self, volts: &[f64], veff: &[f64]) {
+        self.limit_report = None;
+        if !self.limiter.active() || self.kernel.num_limits() == 0 {
+            return;
+        }
+        // PIA-15/17: name the limiter that actually clamped. The active slot
+        // selects both the clamped node (its branch) and the catalog entry.
+        let Some(slot) = self.limiter.active_slot() else { return };
+        let branches = self.kernel.limit_branches();
+        let catalog = self.kernel.limit_catalog();
+        if slot >= branches.len() || slot >= catalog.len() {
+            return;
+        }
+        let Some((plus, minus)) = branches[slot] else { return };
+        // The clamped node matches `Limiter::limited_volts`: the minus node
+        // moves when it is a real node, otherwise the plus node.
+        let Some(term) = minus.or(plus) else { return };
+        let Some(Some(net)) = self.node_refs.get(term).cloned() else { return };
+        let proposed = volts.get(term).copied().unwrap_or(0.0);
+        let limited_value = veff.get(term).copied().unwrap_or(0.0);
+        let (limiter_name, reason) = catalog[slot];
+        self.limit_report = Some(piperine_solver::abi::LimitingReport {
+            device: String::new(),
+            net,
+            proposed,
+            limited_value,
+            limiter_name,
+            reason,
+        });
+    }
+
+    /// Whether this instance carries a `$limit` limiter with mutable state
+    /// worth checkpointing (ABI-04).
+    pub fn has_limiter(&self) -> bool {
+        self.kernel.num_limits() > 0
+    }
+
+    /// Cache the effective instance temperature (ABI-21): the value the
+    /// solver's setup path or a host temperature sweep passed to
+    /// `set_temperature` — already composed with this instance's `dtemp`
+    /// by the caller (`CircuitInstance::set_temperature`). The kernel's
+    /// `$temperature()` syscall continues to read `sim.temperature` (set
+    /// from `Context.tolerances.temperature` in `sync_sim`); this cache is
+    /// the surface a host or opvar reporter reads to learn the device's
+    /// effective temperature without re-deriving it from the ambient + the
+    /// instance `dtemp`.
+    pub fn set_temperature(&mut self, t_effective: f64) {
+        self.cached_temperature = Some(t_effective);
+    }
+
+    /// The cached effective instance temperature (ABI-21): `Some(t_eff)`
+    /// after `set_temperature` ran, `None` until then. Equals
+    /// `t_ambient + dtemp_instance` — the value the device's temperature-
+    /// dependent parameter evaluation should use.
+    pub fn cached_temperature(&self) -> Option<f64> {
+        self.cached_temperature
+    }
+
+    /// Checkpoint the limiter's non-accept-gated state (ABI-04): the `active`
+    /// flag, the vcrit `seeds`, and the vold slots in `state`. Returns `None`
+    /// when the device has no `$limit`. Layout of `real_state`:
+    /// `[active, seed_0..seed_n, vold_0..vold_n]`.
+    pub fn checkpoint_limiter(
+        &self,
+    ) -> Option<piperine_solver::abi::ElementCheckpoint> {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return None;
+        }
+        let base = self.kernel.limit_base();
+        let mut real = self.limiter.pack();
+        let end = (base + nl).min(self.state.len());
+        if end > base {
+            real.extend_from_slice(&self.state[base..end]);
+        }
+        Some(piperine_solver::abi::ElementCheckpoint {
+            int_state: Vec::new(),
+            real_state: real,
+        })
+    }
+
+    /// Restore the limiter state from a checkpoint produced by
+    /// [`checkpoint_limiter`](Self::checkpoint_limiter) (ABI-04): rewinds
+    /// `active`, `seeds`, and the vold slots. Reads exactly its own slice
+    /// (`real_state[..1 + 2·num_limits]`) so a combined limiter+digital
+    /// checkpoint can carry digital real state after it.
+    pub fn restore_limiter(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return;
+        }
+        let total = 1 + 2 * nl;
+        if checkpoint.real_state.len() < total {
+            return;
+        }
+        self.limiter.unpack(&checkpoint.real_state[..1 + nl]);
+        let vold = &checkpoint.real_state[1 + nl..1 + 2 * nl];
+        let base = self.kernel.limit_base();
+        if base + nl <= self.state.len() {
+            self.state[base..base + nl].clone_from_slice(vold);
+        }
+    }
+
+    /// Length of this limiter's slice within a combined checkpoint's
+    /// `real_state` (`1 + 2·num_limits`: active flag + seeds + vold). `0`
+    /// when the device has no `$limit`.
+    pub fn limiter_checkpoint_len(&self) -> usize {
+        let nl = self.kernel.num_limits();
+        if nl == 0 { 0 } else { 1 + 2 * nl }
     }
 
     /// Runtime banks read by the kernel — `(state, vars)` — exposed for
     /// opt-in per-step recording (the host's `Trace.i` recompute path).
     pub fn runtime_banks(&self) -> (&[f64], &[f64]) {
         (&self.state, &self.vars)
+    }
+
+    /// Evaluate the kernel's operating-point variables (ABI-30) against
+    /// the last accepted terminal voltages and the current state/var banks.
+    /// Returns `(name, value)` pairs in kernel order. Empty when the kernel
+    /// compiled no opvar path. The `read_opvars` ABI bridge calls this; a
+    /// host's `.op` query reads the post-solve values without recomputing
+    /// the residual.
+    pub fn eval_opvars(&self) -> Vec<(String, f64)> {
+        if !self.kernel.has_opvars() {
+            return Vec::new();
+        }
+        let n = self.kernel.opvar_names().len();
+        let mut out = vec![0.0; n];
+        self.kernel.eval_opvars(
+            &self.last_volts,
+            &self.params,
+            &self.state,
+            &self.vars,
+            &self.sim,
+            &mut out,
+        );
+        self.kernel
+            .opvar_names()
+            .iter()
+            .zip(out)
+            .map(|(n, v)| (n.clone(), v))
+            .collect()
     }
 
     /// Instance parameter names, in kernel order (aligned with the values).
@@ -542,6 +708,7 @@ impl AnalogInstance {
             stamps.extend(self.force_flux_stamps(&volts, states, tran_ctx));
         }
         self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
+        self.rebuild_limit_report(&volts, &veff);
         stamps
     }
 

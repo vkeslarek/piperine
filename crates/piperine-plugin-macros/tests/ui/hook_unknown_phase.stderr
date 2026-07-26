@@ -1,0 +1,5 @@
+error: unknown hook phase `on_startup` — the five frozen phases are: after_parse, after_elaborate, transform_design, before_lower, after_solve
+ --> tests/ui/hook_unknown_phase.rs:3:32
+  |
+3 | #[piperine_plugin_macros::hook(on_startup)]
+  |                                ^^^^^^^^^^

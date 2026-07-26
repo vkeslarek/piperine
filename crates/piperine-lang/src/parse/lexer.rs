@@ -128,6 +128,10 @@ pub struct Lexed {
     pub tok: Tok,
     pub start: usize,
     pub end: usize,
+    /// A `///` doc-comment run captured immediately before this token, if any.
+    /// See [`Lexer::tokenize`] — only present on the filtered (parser-facing)
+    /// token stream, never populated by [`Lexer::tokenize_all`].
+    pub doc: Option<String>,
 }
 
 /// Converts a PHDL source string into a token sequence.
@@ -139,10 +143,54 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    /// Tokenizes the entire source into a flat sequence of `Lexed` tokens, filtering out whitespace/comments.
+    /// Tokenizes the entire source into a flat sequence of `Lexed` tokens,
+    /// filtering out whitespace/comments.
+    ///
+    /// A run of consecutive `///` line comments immediately adjacent to the
+    /// next token (no blank line, no plain `//`/`/* */` comment in between)
+    /// is captured and attached to that token's `doc` field, joined by `\n`
+    /// with the leading `///` stripped from each line. Ordinary `//` comments
+    /// (including `///` occurring inside them, which cannot happen since the
+    /// prefix check is on the whole comment token) are discarded like before.
+    /// A blank line, a non-doc comment, or reaching EOF resets any pending run
+    /// — a dangling run with no following token is simply dropped.
     pub fn tokenize(&mut self) -> Result<Vec<Lexed>, String> {
         let all = self.tokenize_all()?;
-        Ok(all.into_iter().filter(|l| !matches!(l.tok, Tok::Newline | Tok::LineComment | Tok::BlockComment)).collect())
+        let mut result = Vec::with_capacity(all.len());
+        let mut doc_lines: Vec<String> = Vec::new();
+        let mut consecutive_newlines = 0usize;
+        for l in all {
+            match &l.tok {
+                Tok::Newline => {
+                    consecutive_newlines += 1;
+                    if consecutive_newlines >= 2 {
+                        // A blank line breaks any pending doc run.
+                        doc_lines.clear();
+                    }
+                }
+                Tok::LineComment => {
+                    consecutive_newlines = 0;
+                    let text = &self.input[l.start..l.end];
+                    if let Some(body) = text.strip_prefix("///") {
+                        doc_lines.push(body.trim().to_string());
+                    } else {
+                        // Plain `//` (or `//!`, `////`, ...) is not a doc run.
+                        doc_lines.clear();
+                    }
+                }
+                Tok::BlockComment => {
+                    consecutive_newlines = 0;
+                    doc_lines.clear();
+                }
+                _ => {
+                    consecutive_newlines = 0;
+                    let doc = if doc_lines.is_empty() { None } else { Some(doc_lines.join("\n")) };
+                    doc_lines.clear();
+                    result.push(Lexed { doc, ..l });
+                }
+            }
+        }
+        Ok(result)
     }
 
     /// Creates a new lexer for the given source string.
@@ -181,7 +229,7 @@ impl<'a> Lexer<'a> {
                 && c.is_whitespace() {
                     self.advance();
                     if c == '\n' {
-                        tokens.push(Lexed { tok: Tok::Newline, start, end: self.pos });
+                        tokens.push(Lexed { tok: Tok::Newline, start, end: self.pos, doc: None });
                     }
                     continue;
                 }
@@ -194,7 +242,7 @@ impl<'a> Lexer<'a> {
                     }
                     self.advance();
                 }
-                tokens.push(Lexed { tok: Tok::LineComment, start, end: self.pos });
+                tokens.push(Lexed { tok: Tok::LineComment, start, end: self.pos, doc: None });
                 continue;
             } else if self.input[self.pos..].starts_with("/*") {
                 self.advance();
@@ -204,7 +252,7 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                 }
-                tokens.push(Lexed { tok: Tok::BlockComment, start, end: self.pos });
+                tokens.push(Lexed { tok: Tok::BlockComment, start, end: self.pos, doc: None });
                 continue;
             }
 
@@ -291,7 +339,7 @@ impl<'a> Lexer<'a> {
                 _ => return Err(format!("Unexpected character '{}' at byte {}", c, start)),
             };
 
-            tokens.push(Lexed { tok, start, end: self.pos });
+            tokens.push(Lexed { tok, start, end: self.pos, doc: None });
         }
         Ok(tokens)
     }

@@ -61,7 +61,7 @@ for n in dir(_piperine):
             failures.append(f"native function {n} not surfaced on piperine")
 
 # ── parity: every facade wrapper method forwards to a real native method ──
-for facade_cls, native_cls in [("Design", "_Design"), ("Module", "_Module"), ("LiveSession", "_LiveSession")]:
+for facade_cls, native_cls in [("Design", "_Design"), ("Module", "_Module"), ("Session", "_Session")]:
     f = getattr(piperine, facade_cls)
     n = getattr(_piperine, native_cls)
     for mname in dir(f):
@@ -72,6 +72,11 @@ for facade_cls, native_cls in [("Design", "_Design"), ("Module", "_Module"), ("L
             continue
         if mname == "compile" and facade_cls == "Design":
             continue  # facade-level convenience over Module.compile
+        if mname == "const" and facade_cls == "Design":
+            continue  # HOST-24: `const` is a Rust keyword, so the native
+            # binding stays `const_`; the facade drops the underscore since
+            # `const` is not reserved in Python. Deliberate name mismatch,
+            # not a parity gap (mirrors the `compile` exemption above).
         if not hasattr(n, mname):
             failures.append(f"{facade_cls}.{mname} has no native {native_cls}.{mname}")
 

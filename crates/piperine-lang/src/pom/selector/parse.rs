@@ -171,9 +171,9 @@ mod tests {
     #[test]
     fn test_parse_simple_absolute() {
         let sel = "/dac".parse::<Selector>().unwrap();
-        assert_eq!(sel.absolute, true);
+        assert!(sel.absolute);
         assert_eq!(sel.steps.len(), 1);
-        assert_eq!(sel.steps[0].is_descendant, false);
+        assert!(!sel.steps[0].is_descendant);
         assert_eq!(sel.steps[0].axis, Axis::Inst);
         assert_eq!(sel.steps[0].test, NodeTest::Name("dac".to_string()));
     }
@@ -207,9 +207,9 @@ mod tests {
     #[test]
     fn test_parse_descendant() {
         let sel = "//Resistor".parse::<Selector>().unwrap();
-        assert_eq!(sel.absolute, true);
+        assert!(sel.absolute);
         assert_eq!(sel.steps.len(), 1);
-        assert_eq!(sel.steps[0].is_descendant, true);
+        assert!(sel.steps[0].is_descendant);
         assert_eq!(sel.steps[0].axis, Axis::Inst);
         assert_eq!(sel.steps[0].test, NodeTest::Name("Resistor".to_string()));
     }
@@ -217,9 +217,9 @@ mod tests {
     #[test]
     fn test_parse_axis_explicit() {
         let sel = "net::*".parse::<Selector>().unwrap();
-        assert_eq!(sel.absolute, false);
+        assert!(!sel.absolute);
         assert_eq!(sel.steps.len(), 1);
-        assert_eq!(sel.steps[0].is_descendant, false);
+        assert!(!sel.steps[0].is_descendant);
         assert_eq!(sel.steps[0].axis, Axis::Net);
         assert_eq!(sel.steps[0].test, NodeTest::Any);
     }

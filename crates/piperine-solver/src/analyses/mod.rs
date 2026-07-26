@@ -21,6 +21,7 @@ pub mod config;
 pub mod convergence;
 pub mod dc;
 pub mod disto;
+pub mod events;
 pub mod noise;
 pub mod pss;
 pub mod pz;

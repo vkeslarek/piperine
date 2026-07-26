@@ -22,18 +22,35 @@ use crate::pom::{Behavior, BehaviorStmt};
 use crate::parse::ast::Expr;
 use crate::pom::{ElabError, ElabErrorKind, Module as DesignModule};
 
-/// Run the typecheck pass over every module of the elaborated program.
+/// Run the typecheck pass over every module of the elaborated program,
+/// stopping at (and returning) the first module's error.
 ///
-/// Each module is checked independently. A failure in one module does
-/// not abort the check of the remaining modules — the first error wins
-/// (enumeration order is deterministic: declaration order in the AST).
+/// Delegates to [`typecheck_program_accumulating`] — same check, same
+/// per-module independence — and keeps only the first error, preserving
+/// this function's existing single-error contract for its callers.
 pub fn typecheck_program(
     design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
-    for module in design.modules.values() {
-        check_module(module, design)?;
+    match typecheck_program_accumulating(design).into_iter().next() {
+        Some(e) => Err(e),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// Run the typecheck pass over every module of the elaborated program,
+/// checking *every* module even after one fails (LSP-18/T16) — each
+/// module is checked independently, so one module's width/discipline
+/// error has no bearing on the correctness of any other module's check.
+/// Returns every error found, in module-declaration order; empty when the
+/// whole program typechecks cleanly.
+pub fn typecheck_program_accumulating(design: &crate::pom::Design) -> Vec<ElabError> {
+    let mut errors = Vec::new();
+    for module in design.modules.values() {
+        if let Err(e) = check_module(module, design) {
+            errors.push(e);
+        }
+    }
+    errors
 }
 
 /// Check a single module. Delegates to focused sub-checks.
@@ -264,189 +281,6 @@ fn resolve_connection_end(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ty(name: &str) -> NetType {
-        NetType::Discipline(name.to_string())
-    }
-    fn scalar(name: &str) -> crate::pom::Module {
-        crate::pom::Module::new(
-            "T".into(),
-            vec![crate::pom::module::Port { span: None, attributes: vec![],
-                direction: crate::parse::ast::Direction::Inout,
-                name: "p".into(),
-                ty: ty(name),
-            }],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-        )
-    }
-
-    #[test]
-    fn width_mismatch_on_named_connection_is_caught() {
-                let mut prog = crate::pom::Design::new();
-        let _bad = scalar("Bit");
-        // Override port width via a fake module — we keep it scalar here
-        // and rely on the width mismatch coming from the second conn
-        // entry's index difference.
-        let bad_mod = crate::pom::Module::new(
-            "T".into(),
-            vec![crate::pom::module::Port { span: None, attributes: vec![],
-                direction: crate::parse::ast::Direction::Inout,
-                name: "p".into(),
-                ty: NetType::Array(Box::new(ty("Bit")), 8),
-            }],
-            vec![],
-            vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "w".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
-            ],
-            vec![],
-            vec![crate::pom::module::Connection { span: None,
-                lhs: crate::pom::net_type::NetRef::simple("p"),
-                rhs: crate::pom::net_type::NetRef::simple("w"),
-            }],
-            vec![],
-        );
-        prog.modules.insert("T".into(), bad_mod);
-
-        let err = typecheck_program(&prog).unwrap_err().to_string();
-        assert!(err.contains("width"), "expected width mismatch message, got: {err}");
-    }
-
-    #[test]
-    fn wire_width_mismatch_via_array_dim_is_caught() {
-        // Two arrays of different widths connected.
-        let bad_mod = crate::pom::Module::new(
-            "T".into(),
-            vec![],
-            vec![],
-            vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "a".into(), ty: NetType::Array(Box::new(ty("Bit")), 8) },
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "b".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
-            ],
-            vec![],
-            vec![crate::pom::module::Connection { span: None,
-                lhs: crate::pom::net_type::NetRef::simple("a"),
-                rhs: crate::pom::net_type::NetRef::simple("b"),
-            }],
-            vec![],
-        );
-                let mut prog = crate::pom::Design::new();
-        prog.modules.insert("T".into(), bad_mod);
-        let err = typecheck_program(&prog).unwrap_err().to_string();
-        assert!(err.contains("width") && err.contains("8") && err.contains("4"),
-            "expected width mismatch naming both widths, got: {err}");
-    }
-
-    #[test]
-    fn discipline_crossing_is_rejected() {
-                let mut prog = crate::pom::Design::new();
-        let bad_mod = crate::pom::Module::new(
-            "T".into(),
-            vec![
-                crate::pom::module::Port { span: None, attributes: vec![],
-                    direction: crate::parse::ast::Direction::Inout,
-                    name: "e".into(),
-                    ty: ty("Electrical"),
-                },
-                crate::pom::module::Port { span: None, attributes: vec![],
-                    direction: crate::parse::ast::Direction::Inout,
-                    name: "t".into(),
-                    ty: ty("Thermal"),
-                },
-            ],
-            vec![],
-            vec![],
-            vec![],
-            vec![crate::pom::module::Connection { span: None,
-                lhs: crate::pom::net_type::NetRef::simple("e"),
-                rhs: crate::pom::net_type::NetRef::simple("t"),
-            }],
-            vec![],
-        );
-        prog.modules.insert("T".into(), bad_mod);
-        let err = typecheck_program(&prog).unwrap_err().to_string();
-        assert!(err.contains("discipline crossing") || err.contains("DisciplineCrossing"),
-            "expected discipline-crossing error, got: {err}");
-    }
-
-    #[test]
-    fn same_discipline_connection_passes() {
-                let mut prog = crate::pom::Design::new();
-        let ok_mod = crate::pom::Module::new(
-            "T".into(),
-            vec![],
-            vec![],
-            vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "a".into(), ty: ty("Electrical") },
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "b".into(), ty: ty("Electrical") },
-            ],
-            vec![],
-            vec![crate::pom::module::Connection { span: None,
-                lhs: crate::pom::net_type::NetRef::simple("a"),
-                rhs: crate::pom::net_type::NetRef::simple("b"),
-            }],
-            vec![],
-        );
-        prog.modules.insert("T".into(), ok_mod);
-        assert!(typecheck_program(&prog).is_ok(), "same-discipline connect should validate");
-    }
-
-    #[test]
-    fn multiple_drivers_on_digital_net_is_rejected() {
-        let mut prog = crate::pom::Design::new();
-        // A module that drives `out` from two instances.
-        let bad_mod = crate::pom::Module::new(
-            "T".into(),
-            vec![],
-            vec![],
-            vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "w".into(), ty: ty("Bit") },
-            ],
-            vec![
-                crate::pom::Instance { span: None, attributes: vec![], label: Some("u1".into()),
-                    module: "Driver".into(),
-                    ports: vec![crate::pom::net_type::NetRef::simple("w")],
-                    params: vec![],
-                },
-                crate::pom::Instance { span: None, attributes: vec![], label: Some("u2".into()),
-                    module: "Driver".into(),
-                    ports: vec![crate::pom::net_type::NetRef::simple("w")],
-                    params: vec![],
-                },
-            ],
-            vec![],
-            vec![],
-        );
-        let driver_mod = crate::pom::Module::new(
-            "Driver".into(),
-            vec![
-                crate::pom::module::Port { span: None, attributes: vec![],
-                    direction: crate::parse::ast::Direction::Output,
-                    name: "o".into(),
-                    ty: ty("Bit"),
-                }
-            ],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-        );
-        prog.modules.insert("T".into(), bad_mod);
-        prog.modules.insert("Driver".into(), driver_mod);
-        
-        let err = typecheck_program(&prog).unwrap_err().to_string();
-        assert!(err.contains("multiple drivers") || err.contains("MultipleDrivers"),
-            "expected multiple drivers error, got: {err}");
-    }
-}
-
 /// The value type a discipline carries: its `storage` type for storage
 /// disciplines, `Real` (the potential) for conservative ones.
 fn discipline_value_type(discipline: &str, design: &crate::pom::Design) -> ValueType {
@@ -653,5 +487,188 @@ fn type_of_expr(expr: &Expr, locals: &std::collections::HashMap<String, ValueTyp
         }
         Expr::Unary(_, inner) => type_of_expr(inner, locals),
         _ => None, // Cannot infer or complex
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ty(name: &str) -> NetType {
+        NetType::Discipline(name.to_string())
+    }
+    fn scalar(name: &str) -> crate::pom::Module {
+        crate::pom::Module::new(
+            "T".into(),
+            vec![crate::pom::module::Port { span: None, attributes: vec![], doc: None,
+                direction: crate::parse::ast::Direction::Inout,
+                name: "p".into(),
+                ty: ty(name),
+            }],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        )
+    }
+
+    #[test]
+    fn width_mismatch_on_named_connection_is_caught() {
+                let mut prog = crate::pom::Design::new();
+        let _bad = scalar("Bit");
+        // Override port width via a fake module — we keep it scalar here
+        // and rely on the width mismatch coming from the second conn
+        // entry's index difference.
+        let bad_mod = crate::pom::Module::new(
+            "T".into(),
+            vec![crate::pom::module::Port { span: None, attributes: vec![], doc: None,
+                direction: crate::parse::ast::Direction::Inout,
+                name: "p".into(),
+                ty: NetType::Array(Box::new(ty("Bit")), 8),
+            }],
+            vec![],
+            vec![
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "w".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
+            ],
+            vec![],
+            vec![crate::pom::module::Connection { span: None,
+                lhs: crate::pom::net_type::NetRef::simple("p"),
+                rhs: crate::pom::net_type::NetRef::simple("w"),
+            }],
+            vec![],
+        );
+        prog.modules.insert("T".into(), bad_mod);
+
+        let err = typecheck_program(&prog).unwrap_err().to_string();
+        assert!(err.contains("width"), "expected width mismatch message, got: {err}");
+    }
+
+    #[test]
+    fn wire_width_mismatch_via_array_dim_is_caught() {
+        // Two arrays of different widths connected.
+        let bad_mod = crate::pom::Module::new(
+            "T".into(),
+            vec![],
+            vec![],
+            vec![
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "a".into(), ty: NetType::Array(Box::new(ty("Bit")), 8) },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "b".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
+            ],
+            vec![],
+            vec![crate::pom::module::Connection { span: None,
+                lhs: crate::pom::net_type::NetRef::simple("a"),
+                rhs: crate::pom::net_type::NetRef::simple("b"),
+            }],
+            vec![],
+        );
+                let mut prog = crate::pom::Design::new();
+        prog.modules.insert("T".into(), bad_mod);
+        let err = typecheck_program(&prog).unwrap_err().to_string();
+        assert!(err.contains("width") && err.contains("8") && err.contains("4"),
+            "expected width mismatch naming both widths, got: {err}");
+    }
+
+    #[test]
+    fn discipline_crossing_is_rejected() {
+                let mut prog = crate::pom::Design::new();
+        let bad_mod = crate::pom::Module::new(
+            "T".into(),
+            vec![
+                crate::pom::module::Port { span: None, attributes: vec![], doc: None,
+                    direction: crate::parse::ast::Direction::Inout,
+                    name: "e".into(),
+                    ty: ty("Electrical"),
+                },
+                crate::pom::module::Port { span: None, attributes: vec![], doc: None,
+                    direction: crate::parse::ast::Direction::Inout,
+                    name: "t".into(),
+                    ty: ty("Thermal"),
+                },
+            ],
+            vec![],
+            vec![],
+            vec![],
+            vec![crate::pom::module::Connection { span: None,
+                lhs: crate::pom::net_type::NetRef::simple("e"),
+                rhs: crate::pom::net_type::NetRef::simple("t"),
+            }],
+            vec![],
+        );
+        prog.modules.insert("T".into(), bad_mod);
+        let err = typecheck_program(&prog).unwrap_err().to_string();
+        assert!(err.contains("discipline crossing") || err.contains("DisciplineCrossing"),
+            "expected discipline-crossing error, got: {err}");
+    }
+
+    #[test]
+    fn same_discipline_connection_passes() {
+                let mut prog = crate::pom::Design::new();
+        let ok_mod = crate::pom::Module::new(
+            "T".into(),
+            vec![],
+            vec![],
+            vec![
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "a".into(), ty: ty("Electrical") },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "b".into(), ty: ty("Electrical") },
+            ],
+            vec![],
+            vec![crate::pom::module::Connection { span: None,
+                lhs: crate::pom::net_type::NetRef::simple("a"),
+                rhs: crate::pom::net_type::NetRef::simple("b"),
+            }],
+            vec![],
+        );
+        prog.modules.insert("T".into(), ok_mod);
+        assert!(typecheck_program(&prog).is_ok(), "same-discipline connect should validate");
+    }
+
+    #[test]
+    fn multiple_drivers_on_digital_net_is_rejected() {
+        let mut prog = crate::pom::Design::new();
+        // A module that drives `out` from two instances.
+        let bad_mod = crate::pom::Module::new(
+            "T".into(),
+            vec![],
+            vec![],
+            vec![
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "w".into(), ty: ty("Bit") },
+            ],
+            vec![
+                crate::pom::Instance { span: None, label_span: None, type_span: None, attributes: vec![], doc: None, label: Some("u1".into()),
+                    module: "Driver".into(),
+                    ports: vec![crate::pom::net_type::NetRef::simple("w")],
+                    params: vec![],
+                },
+                crate::pom::Instance { span: None, label_span: None, type_span: None, attributes: vec![], doc: None, label: Some("u2".into()),
+                    module: "Driver".into(),
+                    ports: vec![crate::pom::net_type::NetRef::simple("w")],
+                    params: vec![],
+                },
+            ],
+            vec![],
+            vec![],
+        );
+        let driver_mod = crate::pom::Module::new(
+            "Driver".into(),
+            vec![
+                crate::pom::module::Port { span: None, attributes: vec![], doc: None,
+                    direction: crate::parse::ast::Direction::Output,
+                    name: "o".into(),
+                    ty: ty("Bit"),
+                }
+            ],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
+        prog.modules.insert("T".into(), bad_mod);
+        prog.modules.insert("Driver".into(), driver_mod);
+        
+        let err = typecheck_program(&prog).unwrap_err().to_string();
+        assert!(err.contains("multiple drivers") || err.contains("MultipleDrivers"),
+            "expected multiple drivers error, got: {err}");
     }
 }

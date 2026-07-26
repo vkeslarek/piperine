@@ -2,10 +2,7 @@
 // output near one forward drop. Exercises the Newton solve of a stiff
 // nonlinearity and staged-override re-runs.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod VoltageSource(inout p : Electrical, inout n : Electrical) {
     param voltage : Real = 5.0;
@@ -22,7 +19,9 @@ mod Clipper() {
     wire gnd : Electrical;
     wire drive : Electrical;
     wire out : Electrical;
-    source : VoltageSource(.p = drive, .n = gnd) { .voltage = 5.0 };
+    source : VoltageSource(.p = drive,.n = gnd) {
+        .voltage = 5.0
+    };
 }
 
 analog Clipper {

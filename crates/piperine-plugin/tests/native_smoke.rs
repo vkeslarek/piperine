@@ -34,7 +34,7 @@ fn project_with_fixture(dir: &std::path::Path, artifact: &std::path::Path) {
     std::fs::copy(artifact, plugin_dir.join(entry)).unwrap();
     std::fs::write(
         plugin_dir.join("piperine-plugin.toml"),
-        format!("[plugin]\nname = \"fixture\"\nabi = \"native\"\nentry = \"{entry}\"\n"),
+        format!("[plugin]\nname = \"fixture\"\ndevice = {{ path = \"{entry}\" }}\n"),
     )
     .unwrap();
     std::fs::write(
@@ -78,6 +78,54 @@ fn dlopen_load_register_and_trust_flow() {
         .map(|_| ())
         .unwrap_err();
     assert!(matches!(err, PluginError::HashMismatch { .. }), "{err}");
+}
+
+/// D9 — `piperine add <git>` is the whole install: a plugin declared only as
+/// a **dependency** (what `add` writes) loads its contributions, with no
+/// hand-written `[plugins]` entry.
+#[test]
+fn a_contributing_dependency_loads_as_a_plugin() {
+    let artifact = fixture_cdylib();
+    let dir = tempfile::tempdir().unwrap();
+    project_with_fixture(dir.path(), &artifact);
+    // Same fixture package, declared the way `piperine add` declares it.
+    std::fs::write(
+        dir.path().join("fixture-plugin").join("Piperine.toml"),
+        "[project]\nname = \"fixture\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("Piperine.toml"),
+        "[project]\nname = \"smoke\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
+         [dependencies.fixture]\npath = \"fixture-plugin\"\n",
+    )
+    .unwrap();
+
+    let host = PluginHost::load_for_project(dir.path(), TrustMode::AcceptAll).expect("load");
+    assert_eq!(host.plugin_names(), vec!["fixture"]);
+    assert!(host.describe().iter().any(|d| d.contains("device")), "{:?}", host.describe());
+}
+
+/// A plain dependency (no `piperine-plugin.toml`) contributes nothing — the
+/// host stays inert instead of treating every dependency as a plugin.
+#[test]
+fn a_plain_dependency_is_not_a_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("lib").join("src")).unwrap();
+    std::fs::write(
+        dir.path().join("lib").join("Piperine.toml"),
+        "[project]\nname = \"lib\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("Piperine.toml"),
+        "[project]\nname = \"demo\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
+         [dependencies.lib]\npath = \"lib\"\n",
+    )
+    .unwrap();
+
+    let host = PluginHost::load_for_project(dir.path(), TrustMode::RejectUntrusted).expect("inert");
+    assert!(host.is_empty());
 }
 
 #[test]

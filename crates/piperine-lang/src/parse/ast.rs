@@ -105,7 +105,13 @@ impl Item {
 #[derive(Debug, Clone)]
 pub enum ExternDecl {
     /// `extern type Name;` — a primitive value type, no body.
-    Type { span: Option<miette::SourceSpan>, name: String },
+    Type {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        /// A `///` doc-comment run attached immediately before this
+        /// declaration (LSP-06/07/BUG-2), if any.
+        doc: Option<String>,
+    },
     /// `extern fn name(params) -> RetType;` — a native function, signature
     /// only (the body is a compiler-side registry entry, e.g. `math.rs`).
     Fn(ExternSig),
@@ -117,7 +123,14 @@ pub enum ExternDecl {
     Operator(ExternSig),
     /// `extern attribute name { field: Type, ... }` — an attribute schema
     /// (`@device`, `@port`, plugin-contributed ones).
-    Attribute { span: Option<miette::SourceSpan>, name: String, fields: Vec<ExternAttrField> },
+    Attribute {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        fields: Vec<ExternAttrField>,
+        /// A `///` doc-comment run attached immediately before this
+        /// declaration (LSP-06/07/BUG-2), if any.
+        doc: Option<String>,
+    },
     /// `extern impl [Capability for] TypeName { fn method(self, ...) ->
     /// Ret; ... }` — native methods on a type. `capability` is `Some` for
     /// `extern impl Capability for TypeName`, `None` for inherent methods
@@ -129,6 +142,10 @@ pub enum ExternDecl {
         capability: Option<String>,
         target: String,
         methods: Vec<ExternSig>,
+        /// A `///` doc-comment run attached immediately before the `extern
+        /// impl` block itself (LSP-06/07/BUG-2), if any. Per-method docs
+        /// live on each method's own `ExternSig::doc`.
+        doc: Option<String>,
     },
 }
 
@@ -153,6 +170,15 @@ impl ExternDecl {
             ExternDecl::Impl { target, .. } => target,
         }
     }
+
+    /// The `///` doc-comment run attached immediately before this
+    /// declaration (LSP-06/07/BUG-2), if any.
+    pub fn doc(&self) -> Option<&str> {
+        match self {
+            ExternDecl::Type { doc, .. } | ExternDecl::Attribute { doc, .. } | ExternDecl::Impl { doc, .. } => doc.as_deref(),
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => sig.doc.as_deref(),
+        }
+    }
 }
 
 /// One field of an `extern attribute` schema — same name/type shape as a
@@ -175,6 +201,9 @@ pub struct ExternSig {
     pub name: String,
     pub params: Vec<FnParam>,
     pub ret: Type,
+    /// A `///` doc-comment run attached immediately before this declaration
+    /// (LSP-06/07/BUG-2), if any.
+    pub doc: Option<String>,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
@@ -205,6 +234,9 @@ pub struct ConstDecl {
 pub struct ModuleDeclaration {
     pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this declaration
+    /// (LSP-06/07), if any.
+    pub doc: Option<String>,
     pub is_pub: bool,
     pub name: String,
     /// Compile-time Natural const parameters, e.g. `N` in `mod Foo[N]`.
@@ -229,7 +261,11 @@ pub struct TypeParam {
 /// The elaborator validates net-capability and expands bundles to flat fields.
 #[derive(Debug, Clone)]
 pub struct Port {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this port
+    /// (LSP-06/07), if any.
+    pub doc: Option<String>,
     pub direction: Direction,
     pub name: String,
     /// Unresolved type — may be a bundle name, discipline name, or parameterized type.
@@ -269,17 +305,33 @@ impl ModuleStatement {
 
 #[derive(Debug, Clone)]
 pub enum ModuleStatement {
-    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
-    WireDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type },
-    VarDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
+    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr> },
+    WireDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type },
+    VarDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr> },
     StructuralFor { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModuleStatement> },
     StructuralIf { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModuleStatement>, else_body: Option<Vec<ModuleStatement>> },
     Instance {
         span: Option<miette::SourceSpan>,
         attrs: Vec<Attribute>,
+        doc: Option<String>,
+        /// Byte span of the label-identifier token (`src` in `src : Type(...)`),
+        /// captured before the `:`. `None` for unlabeled instances (LSB-07..10).
+        label_span: Option<miette::SourceSpan>,
+        /// Byte span of the module-type-identifier token — `Type` in the
+        /// labeled `: Type` form, or the single identifier in the unlabeled
+        /// bare form (LSB-07..10).
+        type_span: Option<miette::SourceSpan>,
         name: Option<String>,
         array_index: Option<Expr>,
+        /// The instantiated module's name (the last path segment for a
+        /// qualified reference, e.g. `res` in `spice::passives::res`).
         module: String,
+        /// The full qualified path when the instance type was written as a
+        /// `::`-path (`["spice", "passives", "res"]`), else empty. The
+        /// prefix (`spice::passives`) is the file the resolver auto-loads
+        /// as an implicit `use`; `module` is the final segment. Empty for a
+        /// bare, already-in-scope module name.
+        module_path: Vec<String>,
         const_args: Vec<Expr>,
         type_args: Vec<Type>,
         ports: Vec<PortConnection>,
@@ -341,6 +393,8 @@ pub struct Type {
 #[derive(Debug, Clone)]
 pub struct DisciplineDecl {
     pub span: Option<miette::SourceSpan>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    pub doc: Option<String>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -376,12 +430,22 @@ pub enum ResolveKind {
 pub struct Attribute {
     pub name: String,
     pub args: Vec<AttrArg>,
+    /// The whole `@name(...)` span, from `@` through the closing `)` (or
+    /// just the name when there is no arg list) — T19/LSP-21: the fallback
+    /// diagnostic location for schema-level errors (unknown schema, a
+    /// missing required field) that have no single offending argument to
+    /// point at.
+    pub span: Option<miette::SourceSpan>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AttrArg {
     pub name: String,
     pub expr: Expr,
+    /// The `name = expr` span of this one argument — T19/LSP-21: lets
+    /// attribute-argument diagnostics (unknown field, bad type) point at
+    /// the specific argument instead of the whole attribute.
+    pub span: Option<miette::SourceSpan>,
 }
 
 // ─────────────────────────────── Bundles ─────────────────────────────────────
@@ -720,6 +784,9 @@ pub struct StmtMatchArm {
 pub struct BehaviorDecl {
     pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this behavior
+    /// block (LSP-06/07), if any.
+    pub doc: Option<String>,
     pub is_pub: bool,
     pub kind: BehaviorKind,
     pub name: String,

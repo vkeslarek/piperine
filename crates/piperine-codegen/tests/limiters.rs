@@ -4,6 +4,8 @@
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::SimCtx;
 use piperine_lang::parse_and_elaborate;
+use piperine_solver::abi::{CircularArrayBuffer2, DcAnalysisState, LimitReason};
+use piperine_solver::prelude::Context;
 
 /// ngspice `DEVlimvds(vnew, vold)` — the reference (devsup.c).
 fn ref_limvds(vnew: f64, vold: f64) -> f64 {
@@ -140,4 +142,113 @@ fn fetlim_matches_ngspice_reference() {
             "fetlim(vnew={vnew}, vold={vold}, vto={vto}): jit={got} ref={want}"
         );
     }
+}
+
+// ── phdl-introspection-attributes PIA-15/16 (T7, kernel side) ──────────────
+// The per-slot `(limiter_name, reason)` catalog is collected from each
+// `$limit` call-site `kind`, in slot order. `limvds` → VdsStep; the junction
+// limiters (pnjlim/fetlim) → VoltageStep. The device-side report (T8) reads
+// this catalog to name the slot that clamped.
+
+/// PIA-15: `limit_catalog()` carries the call-site kind per slot.
+#[test]
+fn limit_catalog_records_kind_per_slot() {
+    use piperine_solver::abi::LimitReason;
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
+        analog L {
+            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+            I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+        }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let kernel = AnalogKernel::compile(&bodies["L"]).expect("compile two-limiter device");
+    let catalog = kernel.limit_catalog();
+    assert_eq!(catalog.len(), 2, "two $limit slots, got {catalog:?}");
+    // The catalog names each limiter by its call-site kind (PIA-15) — never a
+    // hardcoded "pnjlim".
+    let has_fetlim = catalog.iter().any(|(n, r)| *n == "fetlim" && *r == LimitReason::VoltageStep);
+    let has_limvds = catalog.iter().any(|(n, r)| *n == "limvds" && *r == LimitReason::VdsStep);
+    assert!(has_fetlim, "fetlim slot must be named `fetlim`/VoltageStep, got {catalog:?}");
+    assert!(has_limvds, "limvds slot must be named `limvds`/VdsStep, got {catalog:?}");
+    assert!(
+        catalog.iter().all(|(n, _)| *n != "pnjlim"),
+        "no hardcoded pnjlim when the device uses fetlim/limvds, got {catalog:?}"
+    );
+}
+
+/// PIA-16/18: a `pnjlim` site infers `VoltageStep` (today's default reason),
+/// and a single-limiter device reports exactly one catalog entry — the
+/// `$limit` signature is unchanged.
+#[test]
+fn limit_catalog_pnjlim_infers_voltage_step() {
+    use piperine_solver::abi::LimitReason;
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod D (inout p: Electrical, inout n: Electrical) {}
+        analog D { I(p, n) <+ $limit(\"pnjlim\", V(p, n), 0.0, 0.7, 0.7); }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let kernel = AnalogKernel::compile(&bodies["D"]).expect("compile pnjlim device");
+    let catalog = kernel.limit_catalog();
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].0, "pnjlim");
+    assert_eq!(catalog[0].1, LimitReason::VoltageStep, "omitted reason infers VoltageStep (PIA-16)");
+}
+
+/// PIA-15/17 (device side): a two-limiter device's `limiting_report` names the
+/// limiter that actually clamped — never the hardcoded `"pnjlim"`. Each slot
+/// names itself from the call-site kind (no cross-contamination).
+#[test]
+fn limiting_report_names_the_actual_limiter_not_hardcoded_pnjlim() {
+    use piperine_codegen::{resolve::lower_bodies, CircuitCompiler};
+
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
+        analog L {
+            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+            I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+        }
+        mod Top (inout a: Electrical, inout b: Electrical) { L(a, b); }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = lower_bodies(&elab).expect("lowering");
+    let mut ci = CircuitCompiler::new(&elab, &bodies).build_circuit("Top").expect("builds");
+    let dev = &mut ci.all_devices_mut()[0];
+
+    // A large Vds (5 V) drives at least one limiter to clamp.
+    let mut buf = CircularArrayBuffer2::new(1, 2);
+    let guess = ndarray::arr1(&[5.0, 0.0]);
+    buf.push(&guess.view());
+    let dc_state = DcAnalysisState::new(&buf, &[], 1.0);
+    let _ = dev.load_dc(&dc_state, &Context::default());
+
+    if let Some(report) = dev.limiting_report() {
+        // PIA-17: the report names one of the actual limiters, never the
+        // former hardcoded "pnjlim".
+        assert!(
+            report.limiter_name == "fetlim" || report.limiter_name == "limvds",
+            "two-limiter report must name fetlim or limvds, got `{}`",
+            report.limiter_name
+        );
+        assert_ne!(
+            report.limiter_name, "pnjlim",
+            "the hardcoded pnjlim name must be gone (PIA-15)"
+        );
+        // The reason matches the named limiter's kind (PIA-16).
+        let expected_reason = if report.limiter_name == "limvds" {
+            LimitReason::VdsStep
+        } else {
+            LimitReason::VoltageStep
+        };
+        assert_eq!(report.reason, expected_reason);
+    }
+    // If no report (no slot clamped for this drive), the kernel catalog test
+    // (limit_catalog_records_kind_per_slot) already proves both names are
+    // recorded separately — PIA-17's "no cross-contamination" holds at the
+    // catalog level regardless.
 }

@@ -4,41 +4,51 @@
 // so the test proves selection propagates correctly through two levels of
 // module boundaries. EXHAUSTIVE over all 2^6 = 64 input/select combinations.
 
-discipline Bit {
-    storage Boolean;
-}
+use piperine::disciplines;
 
 mod BitDriver(output q : Bit) {
     param level : Real = 0.0;
     var b : Bit = 0;
 }
+
 digital BitDriver {
     b = level > 0.5;
     q <- b;
 }
 
 // 2:1 mux: y = sel ? b : a.
+
 mod Mux2(input a : Bit, input b : Bit, input sel : Bit, output y : Bit) {
     var m : Bit = 0;
 }
+
 digital Mux2 {
     m = (a && !sel) || (b && sel);
     y <- m;
 }
 
 mod Mux4() {
-    wire i0 : Bit; wire i1 : Bit; wire i2 : Bit; wire i3 : Bit;
-    wire sel0 : Bit; wire sel1 : Bit;
-    wire lo : Bit; wire hi : Bit; wire out : Bit;
+    wire i0 : Bit;
+    wire i1 : Bit;
+    wire i2 : Bit;
+    wire i3 : Bit;
+    wire sel0 : Bit;
+    wire sel1 : Bit;
+    wire lo : Bit;
+    wire hi : Bit;
+    wire out : Bit;
 
-    d0 : BitDriver(.q = i0); d1 : BitDriver(.q = i1);
-    d2 : BitDriver(.q = i2); d3 : BitDriver(.q = i3);
-    ds0 : BitDriver(.q = sel0); ds1 : BitDriver(.q = sel1);
+    d0 : BitDriver(.q = i0);
+    d1 : BitDriver(.q = i1);
+    d2 : BitDriver(.q = i2);
+    d3 : BitDriver(.q = i3);
+    ds0 : BitDriver(.q = sel0);
+    ds1 : BitDriver(.q = sel1);
 
     // Level 1: two leaf muxes selected by sel0.
-    mlo : Mux2(.a = i0, .b = i1, .sel = sel0, .y = lo);
-    mhi : Mux2(.a = i2, .b = i3, .sel = sel0, .y = hi);
+    mlo : Mux2(.a = i0,.b = i1,.sel = sel0,.y = lo);
+    mhi : Mux2(.a = i2,.b = i3,.sel = sel0,.y = hi);
     // Level 2: root mux selected by sel1.
-    mroot : Mux2(.a = lo, .b = hi, .sel = sel1, .y = out);
+    mroot : Mux2(.a = lo,.b = hi,.sel = sel1,.y = out);
 }
 

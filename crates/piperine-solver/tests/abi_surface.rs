@@ -1,3 +1,7 @@
+//! `piperine_solver::abi` is enough on its own: a device implements the
+//! `Element` contract — stamps, param descriptors, get/set with `Invalidation` —
+//! importing nothing but `abi` (MD-17's two-tier surface).
+
 use piperine_solver::abi::*;
 
 struct Resistor {
@@ -34,7 +38,7 @@ impl Introspect for Resistor {
     }
 
     fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "r").then(|| Value::Real(self.r))
+        (name == "r").then_some(Value::Real(self.r))
     }
 
     fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {

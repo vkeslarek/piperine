@@ -1,0 +1,12 @@
+* four_diode — diode THD cross-check (.four)
+* Hard-driven (0.3 V amplitude) so the harmonic content sits far above
+* transient truncation noise; fourier over the last period.
+Vin in 0 dc 0.3 sin(0.3 0.3 1e6)
+R1 in out 1000
+D1 out 0 DMOD
+.model DMOD D(IS=1e-14 N=1)
+.control
+tran 2e-9 3e-6
+fourier 1e6 v(out)
+.endc
+.end

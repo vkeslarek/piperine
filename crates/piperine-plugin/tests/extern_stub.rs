@@ -1,12 +1,9 @@
-//! Plugin extern-stub auto-import (declared-language-surface T24, DLS-22
-//! groundwork): a loaded plugin's published `extern.phdl` stub is parsed
-//! into the project's `ElabContext` automatically at `seed_schemas` time —
-//! no explicit `use` required, mirroring `headers/spice/`'s availability.
-//! Reuses the same on-disk-plugin harness as `native_smoke.rs` (build the
-//! fixture cdylib, point a throwaway project's `[plugins]` at it), since
-//! the auto-import mechanism only exists for `load_for_project`'s real
-//! filesystem plugin path — `from_plugins` (in-process/test plugins) has
-//! no directory an `extern.phdl` stub could live in.
+//! Plugin `extern` ban (plugin-interface v2: PLG-07, PLG-08, PLG-09). The
+//! per-plugin `extern.phdl` stub mechanism is deleted — a plugin cannot
+//! mint new attribute-schema names; only the stdlib `@device`/`@port`
+//! schemas (`headers/device_port.phdl`) are seeded when a plugin loads.
+//! Driven through the real `load_for_project` path (build the fixture
+//! cdylib, point a throwaway project's `[plugins]` at it).
 
 use std::path::PathBuf;
 
@@ -33,21 +30,18 @@ fn fixture_cdylib() -> PathBuf {
 }
 
 /// A throwaway project whose `[plugins]` names the fixture by path, with an
-/// `extern.phdl` stub published alongside the manifest when `stub` is
-/// `Some`.
-fn project_with_fixture(dir: &std::path::Path, artifact: &std::path::Path, stub: Option<&str>) {
+/// `extern.phdl` file shipped alongside the manifest.
+fn project_with_fixture_and_stub(dir: &std::path::Path, artifact: &std::path::Path, stub: &str) {
     let plugin_dir = dir.join("fixture-plugin");
     std::fs::create_dir_all(&plugin_dir).unwrap();
     let entry = artifact.file_name().unwrap().to_str().unwrap();
     std::fs::copy(artifact, plugin_dir.join(entry)).unwrap();
     std::fs::write(
         plugin_dir.join("piperine-plugin.toml"),
-        format!("[plugin]\nname = \"fixture\"\nabi = \"native\"\nentry = \"{entry}\"\n"),
+        format!("[plugin]\nname = \"fixture\"\ndevice = {{ path = \"{entry}\" }}\n"),
     )
     .unwrap();
-    if let Some(text) = stub {
-        std::fs::write(plugin_dir.join("extern.phdl"), text).unwrap();
-    }
+    std::fs::write(plugin_dir.join("extern.phdl"), stub).unwrap();
     std::fs::write(
         dir.join("Piperine.toml"),
         "[project]\nname = \"stub-smoke\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
@@ -56,57 +50,47 @@ fn project_with_fixture(dir: &std::path::Path, artifact: &std::path::Path, stub:
     .unwrap();
 }
 
-/// A plugin publishing an `extern.phdl` stub declaring a custom attribute
-/// schema — its declaration is available in a project using that plugin
-/// with **no** explicit `use`.
+/// PLG-07/08/09: a plugin shipping an `extern.phdl` loads fine (the file
+/// is inert — no per-plugin stub is parsed or imported), a schema name the
+/// stub declares does NOT resolve (no plugin-schema path), and the stdlib
+/// `@device` schema still seeds for the same host.
 #[test]
-fn published_stub_attribute_resolves_without_explicit_use() {
+fn shipped_extern_stub_is_inert_and_only_stdlib_schemas_seed() {
     let artifact = fixture_cdylib();
     let dir = tempfile::tempdir().unwrap();
-    project_with_fixture(
+    project_with_fixture_and_stub(
         dir.path(),
         &artifact,
-        Some("extern attribute widget_meta { rating: Real }\n"),
+        "extern attribute widget_meta { rating: Real }\n",
     );
 
+    // Shipping the file is not an error — it is simply never loaded.
     let host = PluginHost::load_for_project(dir.path(), TrustMode::AcceptAll).expect("load");
     assert_eq!(host.plugin_names(), vec!["fixture"]);
 
-    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
-               mod Top ( inout p : Electrical ) { @widget_meta(rating = 4.5) wire w : Electrical; }";
-    let design = piperine_lang::parse_and_elaborate_seeded(src, &SourceMap::dummy(), |ctx| {
+    // The stdlib `@device`/`@port` schemas still seed (PLG-09).
+    let stdlib_src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+                      @device(plugin = \"fixture\", type = \"Fixture::Resistor\")\n\
+                      mod PluginResistor(inout p: Electrical, inout n: Electrical) {\n\
+                          param r: Real = 100.0;\n\
+                      }\n\
+                      mod Top() {}\n";
+    let design = piperine_lang::parse_and_elaborate_seeded(stdlib_src, &SourceMap::dummy(), |ctx| {
         host.seed_schemas(ctx);
     })
-    .expect("`@widget_meta` must resolve via the plugin's auto-imported extern.phdl stub");
-
-    // The attribute round-trips: it's on the wire, with the declared value.
-    let module = design.module("Top").expect("module Top");
-    let widget = module.wires[0]
-        .attributes()
-        .iter()
-        .find(|a| a.schema() == "widget_meta")
-        .expect("@widget_meta attribute present");
-    assert_eq!(widget.field("rating"), Some(&piperine_lang::Value::Real(4.5)));
-}
-
-/// A project using a plugin that publishes **no** `extern.phdl` stub still
-/// elaborates normally as long as nothing references a plugin-contributed
-/// schema — T24 imposes no requirement that every plugin publish one;
-/// enforcement of "plugin contributes a schema ⇒ must publish a stub" is
-/// T25's job.
-#[test]
-fn no_stub_is_fine_when_nothing_needs_one() {
-    let artifact = fixture_cdylib();
-    let dir = tempfile::tempdir().unwrap();
-    project_with_fixture(dir.path(), &artifact, None);
-
-    let host = PluginHost::load_for_project(dir.path(), TrustMode::AcceptAll).expect("load");
-    assert_eq!(host.plugin_names(), vec!["fixture"]);
-
-    let src = "mod Top() {}\n";
-    let design = piperine_lang::parse_and_elaborate_seeded(src, &SourceMap::dummy(), |ctx| {
-        host.seed_schemas(ctx);
-    })
-    .expect("elaboration without any stub-backed attribute use must still succeed");
+    .expect("the stdlib `@device` schema must still resolve");
     assert!(design.module("Top").is_some());
+
+    // The plugin-shipped schema name does NOT resolve (PLG-07/08): the
+    // stub is never imported, so `@widget_meta` is an unknown schema.
+    let stub_src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+                    mod Top ( inout p : Electrical ) { @widget_meta(rating = 4.5) wire w : Electrical; }";
+    let err = piperine_lang::parse_and_elaborate_seeded(stub_src, &SourceMap::dummy(), |ctx| {
+        host.seed_schemas(ctx);
+    })
+    .expect_err("a plugin-shipped `extern.phdl` must not mint schema names");
+    assert!(
+        format!("{err:?}").contains("widget_meta"),
+        "the error names the unresolvable schema: {err:?}"
+    );
 }

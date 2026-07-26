@@ -58,10 +58,10 @@ fn run_op_solves_and_reads_back_by_net_name() {
     let mid = NetRef { name: "mid".into() };
     let vin = NetRef { name: "vin".into() };
     let gnd = NetRef { name: "gnd".into() };
-    assert!((op.v(&mid, None).expect("v(mid)") - 2.0).abs() < 1e-9);
-    assert!((op.v(&vin, Some(&gnd)).expect("v(vin,gnd)") - 5.0).abs() < 1e-9);
-    assert!((op.i(&vin, Some(&mid)).expect("i(vin,mid)") - 1e-3).abs() < 1e-12);
-    assert!((op.i(&vin, Some(&gnd)).expect("i(vin,gnd)") + 1e-3).abs() < 1e-12);
+    assert!((op.v(&mid).expect("v(mid)") - 2.0).abs() < 1e-9);
+    assert!((op.v((&vin, &gnd)).expect("v(vin,gnd)") - 5.0).abs() < 1e-9);
+    assert!((op.i((&vin, &mid)).expect("i(vin,mid)") - 1e-3).abs() < 1e-12);
+    assert!((op.i((&vin, &gnd)).expect("i(vin,gnd)") + 1e-3).abs() < 1e-12);
 }
 
 /// A staged override is consumed by the next analysis: `r_top.r = 2e3` →
@@ -72,7 +72,7 @@ fn staged_override_reaches_the_next_analysis() {
     session.stage("r_top", "r", Value::Real(2e3));
     let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
     let mid = NetRef { name: "mid".into() };
-    assert!((op.v(&mid, None).expect("v(mid)") - 2.5).abs() < 1e-9);
+    assert!((op.v(&mid).expect("v(mid)") - 2.5).abs() < 1e-9);
 }
 
 /// An unknown net name fails loud — never a silent 0.0.
@@ -81,7 +81,7 @@ fn unaddressable_net_is_a_loud_error() {
     let session = divider_session();
     let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
     let bogus = NetRef { name: "bogus".into() };
-    let err = op.v(&bogus, None).expect_err("bogus net must fail");
+    let err = op.v(&bogus).expect_err("bogus net must fail");
     assert!(err.to_string().contains("net `bogus` is not addressable"));
 }
 
@@ -130,14 +130,14 @@ fn rc_session() -> SimSession {
 fn tran_delayed_start_records_from_start_not_zero() {
     let session = rc_session();
     let trace = session
-        .run_tran(5e-3, None, 2.5e-3, &SolverConfig::default(), None, false)
+        .run_tran((5e-3, 2.5e-3), None, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let axis = trace.axis();
     assert!(axis.len() > 1, "delayed-start trace still has samples");
     let t0 = axis.at(0.0);
     assert!(t0 >= 2.5e-3, "recording starts at `start`, not t=0; got {t0}");
     let out = NetRef { name: "out".into() };
-    let v = trace.v(&out, None).expect("v(out)");
+    let v = trace.v(&out).expect("v(out)");
     assert!(v.at(t0) > 4.9, "still settled at the delayed start; got {}", v.at(t0));
 }
 
@@ -151,7 +151,7 @@ fn op_nodeset_hint_is_accepted() {
         .run_op(&SolverConfig::default(), Some(&nodeset))
         .expect("op with nodeset solves");
     let out = NetRef { name: "out".into() };
-    assert!(op.v(&out, None).expect("v(out)") > 4.9);
+    assert!(op.v(&out).expect("v(out)") > 4.9);
 }
 
 /// `Trace::i` recomputes a two-terminal device current per step from the
@@ -162,11 +162,11 @@ fn op_nodeset_hint_is_accepted() {
 fn trace_i_over_time_recomputes_a_resistor_current() {
     let session = divider_session();
     let trace = session
-        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false)
+        .run_tran((1e-3, 0.0), Some(1e-4), &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
-    let i = trace.i(&vin, Some(&mid)).expect("i(vin,mid)");
+    let i = trace.i((&vin, &mid)).expect("i(vin,mid)");
     assert!(i.len() > 1, "current waveform has samples");
     let i0 = i.at(0.0);
     assert!(
@@ -183,13 +183,13 @@ fn trace_i_over_time_recomputes_a_resistor_current() {
 fn trace_i_over_time_exercises_the_reactive_path() {
     let session = rc_session();
     let trace = session
-        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false)
+        .run_tran((1e-3, 0.0), Some(1e-4), &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let vsrc = NetRef { name: "vsrc".into() };
     let out = NetRef { name: "out".into() };
     let gnd = NetRef { name: "gnd".into() };
-    let i_r = trace.i(&vsrc, Some(&out)).expect("i(vsrc,out)");
-    let i_c = trace.i(&out, Some(&gnd)).expect("i(out,gnd)");
+    let i_r = trace.i((&vsrc, &out)).expect("i(vsrc,out)");
+    let i_c = trace.i((&out, &gnd)).expect("i(out,gnd)");
     assert!(i_r.at(0.0).abs() < 1e-6, "settled resistor current ≈ 0, got {}", i_r.at(0.0));
     assert!(i_c.at(0.0).abs() < 1e-6, "settled capacitor current ≈ 0, got {}", i_c.at(0.0));
 }
@@ -239,13 +239,13 @@ fn rl_idt_session() -> SimSession {
 fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
     let session = rl_idt_session();
     let trace = session
-        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, true)
+        .run_tran((60e-6, 0.0), Some(0.5e-6), &SolverConfig::default(), None, true, &[])
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
     let gnd = NetRef { name: "gnd".into() };
-    let i_l = trace.i(&mid, Some(&gnd)).expect("i(mid,gnd) with recording");
-    let i_r = trace.i(&vin, Some(&mid)).expect("i(vin,mid)");
+    let i_l = trace.i((&mid, &gnd)).expect("i(mid,gnd) with recording");
+    let i_r = trace.i((&vin, &mid)).expect("i(vin,mid)");
 
     // Per-step KCL: the state-recomputed inductor current is the current the
     // solver stamped — identical to the voltage-recomputed resistor current.
@@ -274,11 +274,11 @@ fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
 fn trace_i_on_stateful_device_fails_loud_when_recording_disabled() {
     let session = rl_idt_session();
     let trace = session
-        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, false)
+        .run_tran((60e-6, 0.0), Some(0.5e-6), &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let mid = NetRef { name: "mid".into() };
     let gnd = NetRef { name: "gnd".into() };
-    let err = trace.i(&mid, Some(&gnd)).expect_err("stateful i() without recording is loud");
+    let err = trace.i((&mid, &gnd)).expect_err("stateful i() without recording is loud");
     let msg = format!("{err}");
     assert!(msg.contains("l1"), "error names the device: {msg}");
     assert!(
@@ -318,9 +318,9 @@ fn op_result_reads_digital_nets_directly() {
     let na = NetRef { name: "na".into() };
     let ny = NetRef { name: "ny".into() };
     let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
-    assert!(op.v(&na, None).expect("v(na)").abs() < 1e-9, "driver low");
-    assert!((op.v(&ny, None).expect("v(ny)") - 1.0).abs() < 1e-9, "inverter high");
+    assert!(op.v(&na).expect("v(na)").abs() < 1e-9, "driver low");
+    assert!((op.v(&ny).expect("v(ny)") - 1.0).abs() < 1e-9, "inverter high");
     session.stage("d", "level", Value::Real(1.0));
     let op2 = session.run_op(&SolverConfig::default(), None).expect("op solves");
-    assert!(op2.v(&ny, None).expect("v(ny)").abs() < 1e-9, "inverter follows the staged input");
+    assert!(op2.v(&ny).expect("v(ny)").abs() < 1e-9, "inverter follows the staged input");
 }

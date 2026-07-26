@@ -49,11 +49,15 @@ pub struct SchemaRegistry {
     /// already resolved via `design.bundles()`) and host/plugin-registered
     /// schemas with no textual source.
     decl_spans: HashMap<String, miette::SourceSpan>,
+    /// The declaration's own `///` doc comment, when known (BUG-2/
+    /// LSB-04..06) — populated only for `extern attribute` declarations,
+    /// mirroring [`Self::decl_spans`]'s population rule exactly.
+    docs: HashMap<String, String>,
 }
 
 impl SchemaRegistry {
     pub fn new() -> Self {
-        Self { schemas: HashMap::new(), decl_spans: HashMap::new() }
+        Self { schemas: HashMap::new(), decl_spans: HashMap::new(), docs: HashMap::new() }
     }
 
     /// Register a schema name backed by the named bundle's fields.
@@ -64,11 +68,21 @@ impl SchemaRegistry {
     /// Register a schema name with directly-declared fields (host/plugins),
     /// optionally with the declaration's own `decl_span` (populated for
     /// `extern attribute`; `None` for host/plugin-registered schemas with
-    /// no textual source, e.g. the built-in `@rfport`).
-    pub fn register_declared(&mut self, schema_name: &str, fields: Vec<AttrField>, decl_span: Option<miette::SourceSpan>) {
+    /// no textual source, e.g. the built-in `@rfport`) and doc comment
+    /// (same population rule as `decl_span`).
+    pub fn register_declared(
+        &mut self,
+        schema_name: &str,
+        fields: Vec<AttrField>,
+        decl_span: Option<miette::SourceSpan>,
+        doc: Option<String>,
+    ) {
         self.schemas.insert(schema_name.to_string(), SchemaShape::Declared(fields));
         if let Some(span) = decl_span {
             self.decl_spans.insert(schema_name.to_string(), span);
+        }
+        if let Some(doc) = doc {
+            self.docs.insert(schema_name.to_string(), doc);
         }
     }
 
@@ -93,6 +107,18 @@ impl SchemaRegistry {
     /// The schema name's own `decl_span`, when known (T14 — LSP indexing).
     pub fn decl_span(&self, schema_name: &str) -> Option<miette::SourceSpan> {
         self.decl_spans.get(schema_name).copied()
+    }
+
+    /// The schema name's own `///` doc comment, when known (BUG-2/
+    /// LSB-04..06 — LSP hover).
+    pub fn doc(&self, schema_name: &str) -> Option<&str> {
+        self.docs.get(schema_name).map(String::as_str)
+    }
+
+    /// Every registered schema name, in-scope for the compilation unit this
+    /// registry was built for (T18 — `@schema` completion).
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.schemas.keys().map(String::as_str)
     }
 }
 

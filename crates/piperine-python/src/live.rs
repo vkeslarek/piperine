@@ -1,4 +1,4 @@
-//! `_LiveSession` — compile once, `set`, re-run (LIVE-10..13).
+//! `_Session` — compile once, `set`, re-run (LIVE-10..13).
 //!
 //! Unlike [`crate::module::_Module`], which forks the design and rebuilds a
 //! fresh `SimSession` per analysis, a live session elaborates + JITs **once**
@@ -26,7 +26,30 @@ use piperine_solver::prelude::{CircuitInstance, NodeIdentifier};
 use crate::instance::InstanceResolver;
 use crate::results::{_AcTrace, _NoiseTrace, _OpResult, _Trace};
 
-/// `_LiveSession` — a compiled circuit held live across analyses (LIVE-10).
+/// Return type for `.disto`: `(hd2, hd3, im2, im3)`.
+type DistoMetrics = (Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+/// Return type for `.sp`: `(frequencies, s_matrix, opvars, n_ports)`.
+type SpParams = (Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize);
+
+/// Build a `ProbeSelection` from host `"instance.name"` paths (HOST-08's
+/// `tran(probe = [...])`). Mirrors `piperine_api::session::build_probe_selection`
+/// — kept local rather than promoted to `pub` to avoid widening the api's
+/// private surface; the proper MD-13 home (a `ProbeSelection::from_host_paths`
+/// inherent method) is a Phase 5 ergonomics cleanup.
+fn build_probe_selection(probe: &[String]) -> Result<piperine_solver::prelude::ProbeSelection, piperine_api::Error> {
+    let mut selection = piperine_solver::prelude::ProbeSelection::new();
+    for path in probe {
+        let (label, name) = path.split_once('.').ok_or_else(|| {
+            piperine_api::Error::Measurement(format!(
+                "probe path `{path}` must be `instance.name` (got no `.`)"
+            ))
+        })?;
+        selection = selection.request(label, name);
+    }
+    Ok(selection)
+}
+
+/// `_Session` — a compiled circuit held live across analyses (LIVE-10).
 ///
 /// Owns the applied [`Design`] (the POM the circuit was compiled from — the
 /// oracle for structural rebuilds and the instance resolver's hierarchy
@@ -35,7 +58,7 @@ use crate::results::{_AcTrace, _NoiseTrace, _OpResult, _Trace};
 ///
 /// `unsendable`: same single-interpreter contract as [`crate::_Design`].
 #[pyclass(module = "piperine", unsendable)]
-pub struct _LiveSession {
+pub struct _Session {
     design: Rc<Design>,
     module: String,
     circuit: CircuitInstance,
@@ -62,7 +85,7 @@ pub struct _LiveSession {
     dirty: Vec<(String, String, f64)>,
 }
 
-impl _LiveSession {
+impl _Session {
     /// Build the one-and-only compilation for a module (called by
     /// [`crate::module::_Module::compile`]): fork the parent design, replay
     /// the staged overrides, apply them, lower + JIT, and hold everything.
@@ -331,7 +354,7 @@ impl _LiveSession {
 }
 
 #[pymethods]
-impl _LiveSession {
+impl _Session {
     /// How many automatic structural rebuilds this session has performed
     /// (LIVE-14 notice; `0` until a structural set lands).
     #[getter]
@@ -392,7 +415,15 @@ impl _LiveSession {
         drop(dc);
         self.record_voltages(|node| result.get_node(node).unwrap_or(0.0));
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
-        let op = OpResult::new(result, digital, Rc::new(self.info.clone()));
+        let opvars = SimSession::snapshot_opvars(&self.circuit);
+        let introspect = SimSession::snapshot_introspect(&self.circuit);
+        let op = OpResult::new(
+            result,
+            digital,
+            opvars,
+            introspect,
+            Rc::new(self.info.clone()),
+        );
         Ok(_OpResult::new(op).with_resolver(self.instance_resolver()))
     }
 
@@ -413,8 +444,12 @@ impl _LiveSession {
     /// there — same absolute clock (`start_time`), carried node state as
     /// initial conditions — and the recorded segments stitch into one
     /// continuous trace. `record_device_state` opts into per-step device
-    /// runtime-bank recording (`Trace.i` on state-reading devices).
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false))]
+    /// runtime-bank recording (`Trace.i` on state-reading devices). `probe`
+    /// (HOST-08) names `"instance.opvar_name"` observables to record
+    /// selectively (read back via `Trace.opvar`); an unknown device or
+    /// observable fails loud at setup (ABI-35).
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false, probe=Vec::new()))]
+    #[allow(clippy::too_many_arguments)]
     fn tran(
         &mut self,
         stop: f64,
@@ -423,8 +458,11 @@ impl _LiveSession {
         ic: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
         record_device_state: bool,
+        probe: Vec<String>,
     ) -> PyResult<_Trace> {
         let config = crate::module::_Module::solver_config(solver)?;
+        let probe_selection = build_probe_selection(&probe)
+            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
         let dt = match step {
             Some(dt) if dt > 0.0 => dt,
             _ => stop * 1e-3,
@@ -447,14 +485,13 @@ impl _LiveSession {
         loop {
             // The earliest structural set inside this segment splits it.
             let mut split: Option<f64> = None;
-            for i in 0..scheduled.len() {
-                let (t, label, param, value) = scheduled[i].clone();
-                if t > seg_start
-                    && t <= stop
-                    && split.is_none_or(|s| t < s)
-                    && self.set_is_structural(&label, &param, value)
+            for (t, label, param, value) in &scheduled {
+                if *t > seg_start
+                    && *t <= stop
+                    && split.is_none_or(|s| *t < s)
+                    && self.set_is_structural(label.as_str(), param.as_str(), *value)
                 {
-                    split = Some(t);
+                    split = Some(*t);
                 }
             }
             let seg_stop = split.unwrap_or(stop);
@@ -469,6 +506,7 @@ impl _LiveSession {
                 .with_start(seg_start)
                 .with_record_from(start);
             opts.record_device_state = record_device_state;
+            opts.probe_selection = probe_selection.clone();
             let ivs = self.ivs(user_ic.take())?;
             let mut tran = self
                 .circuit
@@ -523,10 +561,9 @@ impl _LiveSession {
             // an idle set (LIVE-14); the carry seeded from the segment-end
             // state becomes the restart's initial conditions (LIVE-16).
             let old_nets = self.info.nets.clone();
-            for i in 0..scheduled.len() {
-                let (t, label, param, value) = scheduled[i].clone();
-                if t == t_split && self.set_is_structural(&label, &param, value) {
-                    self.set(&label, &param, value)?;
+            for (t, label, param, value) in &scheduled {
+                if *t == t_split && self.set_is_structural(label.as_str(), param.as_str(), *value) {
+                    self.set(label.as_str(), param.as_str(), *value)?;
                 }
             }
             // Re-key the recorded history onto the rebuilt circuit: nodes
@@ -540,7 +577,8 @@ impl _LiveSession {
 
         let mut result = piperine_solver::prelude::TransientAnalysisResult::new(steps);
         result.set_stats(agg);
-        let trace = piperine_api::Trace::new(result, Rc::new(self.info.clone()));
+        let trace =
+            piperine_api::Trace::<piperine_api::Waveform>::new(result, Rc::new(self.info.clone()));
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
 
@@ -606,6 +644,334 @@ impl _LiveSession {
             .map_err(Self::analysis_err)?;
         let trace = piperine_api::NoiseTrace::new(result);
         Ok(_NoiseTrace::new(trace))
+    }
+
+    /// Run a DC sensitivity analysis (`.sens`) on the held circuit (HOST-02);
+    /// same signature and result shape as `_Module::sens`.
+    #[pyo3(signature = (outputs, params, dp_rel=1.0e-6, solver=None))]
+    fn sens(
+        &mut self,
+        outputs: Vec<String>,
+        params: Vec<(String, String)>,
+        dp_rel: f64,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<HashMap<(String, String), f64>> {
+        let config = crate::module::_Module::solver_config(solver)?;
+        let mut nets = Vec::with_capacity(outputs.len());
+        for name in &outputs {
+            let node = self.node(name)?;
+            let var = AnalogVariable::Node(node);
+            let net = self
+                .circuit
+                .nets()
+                .into_iter()
+                .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
+                .ok_or_else(|| PyKeyError::new_err(format!("net `{name}` is not a solved analog net")))?;
+            nets.push((name.clone(), net));
+        }
+        let opts = piperine_solver::prelude::SensAnalysisOptions {
+            outputs: nets.iter().map(|(_, n)| n.clone()).collect(),
+            params: params.clone(),
+            dp_rel,
+        };
+        let mut solver = self.circuit.sens(opts, config.to_context()).map_err(Self::analysis_err)?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve().map_err(Self::analysis_err)?;
+        let mut d = HashMap::new();
+        for (name, net) in &nets {
+            for (label, param) in &params {
+                if let Some(v) = inner.get(net.label(), label, param) {
+                    d.insert((name.clone(), format!("{label}.{param}")), v);
+                }
+            }
+        }
+        Ok(d)
+    }
+
+    /// Run a periodic-steady-state analysis on the held circuit (HOST-02);
+    /// same signature and result shape as `_Module::pss`.
+    #[pyo3(signature = (period, tstab=0.0, solver=None))]
+    fn pss(
+        &mut self,
+        period: f64,
+        tstab: f64,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<(_Trace, usize, f64, Option<f64>)> {
+        let config = crate::module::_Module::solver_config(solver)?;
+        let opts = piperine_solver::prelude::PssAnalysisOptions::new(period).with_tstab(tstab);
+        let mut solver = self.circuit.pss(opts, config.to_context()).map_err(Self::analysis_err)?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve().map_err(Self::analysis_err)?;
+        let trace = piperine_api::Trace::<piperine_api::Waveform>::new(inner.trace, Rc::new(self.info.clone()));
+        Ok((
+            _Trace::new(trace).with_resolver(self.instance_resolver()),
+            inner.stats.shoot_iterations,
+            inner.stats.residual,
+            inner.stats.estimated_settle_time,
+        ))
+    }
+
+    /// Run a pole-zero analysis (`.pz`) on the held circuit (HOST-02); same
+    /// signature and result shape as `_Module::pz`.
+    #[pyo3(signature = (input_source, output, output_ref=None, solver=None))]
+    fn pz(
+        &mut self,
+        input_source: &str,
+        output: &str,
+        output_ref: Option<&str>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<(Vec<num_complex::Complex64>, Vec<num_complex::Complex64>)> {
+        let config = crate::module::_Module::solver_config(solver)?;
+        let output_node = self.node(output)?;
+        let output_ref_node = output_ref.map(|r| self.node(r)).transpose()?;
+        let options = piperine_solver::prelude::PoleZeroOptions {
+            input_source: piperine_solver::abi::BranchIdentifier::new(input_source, "force0"),
+            output: AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+        };
+        let solver = self.circuit.pz(options, config.to_context()).map_err(Self::analysis_err)?;
+        let poles = solver.poles().map_err(Self::analysis_err)?;
+        let zeros = solver.zeros().map_err(Self::analysis_err)?;
+        Ok((poles, zeros))
+    }
+
+    /// Run a distortion analysis (`.disto`) on the held circuit (HOST-02);
+    /// same signature and result shape as `_Module::disto`.
+    #[pyo3(signature = (f1, amplitude, output, f2=None, output_ref=None, solver=None))]
+    fn disto(
+        &mut self,
+        f1: f64,
+        amplitude: f64,
+        output: &str,
+        f2: Option<f64>,
+        output_ref: Option<&str>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<DistoMetrics> {
+        let config = crate::module::_Module::solver_config(solver)?;
+        let output_node = self.node(output)?;
+        let output_ref_node = output_ref.map(|r| self.node(r)).transpose()?;
+        let options = piperine_solver::prelude::DistoOptions {
+            f1,
+            f2,
+            amplitude,
+            output: AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+        };
+        let mut solver = self.circuit.disto(options, config.to_context()).map_err(Self::analysis_err)?;
+        let result = solver.solve().map_err(Self::analysis_err)?;
+        Ok((result.hd2, result.hd3, result.im2, result.im3))
+    }
+
+    /// Run an N-port S-parameter analysis (`.sp`) on the held circuit
+    /// (HOST-02); same signature and result shape as `_Module::sp`.
+    #[pyo3(signature = (fstart, fstop, points=100, logarithmic=true, solver=None))]
+    fn sp(
+        &mut self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<SpParams> {
+        let config = crate::module::_Module::solver_config(solver)?;
+        let rfports = self.design.rfports(&self.module).map_err(|e| PyValueError::new_err(format!("{e}")))?;
+        let mut ports = Vec::with_capacity(rfports.len());
+        for p in &rfports {
+            let node = self.node(&p.node)?;
+            ports.push(piperine_solver::prelude::SpPort { num: p.num as usize, node, z0: p.z0 });
+        }
+        let options = piperine_solver::prelude::SpOptions {
+            ports,
+            sweep: piperine_solver::prelude::AcSweepAnalysisOptions {
+                start_frequency: fstart,
+                stop_frequency: fstop,
+                steps: points,
+                logarithmic,
+            },
+        };
+        let mut solver = self.circuit.sp(options, config.to_context()).map_err(Self::analysis_err)?;
+        let result = solver.solve_sweep().map_err(Self::analysis_err)?;
+        let s: Vec<Vec<Vec<num_complex::Complex64>>> =
+            result.s.iter().map(|mat| mat.rows().into_iter().map(|row| row.to_vec()).collect()).collect();
+        Ok((result.frequencies, s, result.z0, result.n_ports))
+    }
+
+    /// Run a transfer-function analysis (`.tf`, HOST-03) on the held
+    /// circuit: binds the solver's `.tf` driver — no new solver math.
+    #[pyo3(signature = (output, input_source, output_ref=None, solver=None))]
+    fn tf(
+        &mut self,
+        output: &str,
+        input_source: &str,
+        output_ref: Option<&str>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<crate::results::_TfResult> {
+        let config = crate::module::_Module::solver_config(solver)?;
+        let output_node = self.node(output)?;
+        let output_ref_node = output_ref.map(|r| self.node(r)).transpose()?;
+        let options = piperine_solver::prelude::TransferFunctionAnalysisOptions {
+            output: AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+            input_source: piperine_solver::abi::BranchIdentifier::new(input_source, "force0"),
+        };
+        let mut solver =
+            self.circuit.transfer_function(options, config.to_context()).map_err(Self::analysis_err)?;
+        let result = solver.solve().map_err(Self::analysis_err)?;
+        Ok(crate::results::_TfResult::from_solver(piperine_api::TfResult::from_solver(result)))
+    }
+
+    /// Run a compile-once DC sweep (`.dc`, HOST-05) on the held circuit:
+    /// restamp `label.param` for each of `values` (MD-18), returning a
+    /// `_Trace` over the swept axis — read the same way as `tran`/`pss`.
+    /// `nodeset` seeds the Newton initial guess at every point (same knob
+    /// `op`/`tran` accept — HOST-20 nodeset parity).
+    #[pyo3(signature = (label, param, values, nodeset=None, solver=None))]
+    fn dc(
+        &mut self,
+        label: &str,
+        param: &str,
+        values: Vec<f64>,
+        nodeset: Option<HashMap<String, f64>>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<_Trace> {
+        use piperine_solver::abi::Value;
+        let config = crate::module::_Module::solver_config(solver)?;
+        let mut points = Vec::with_capacity(values.len());
+        let mut digital = Vec::with_capacity(values.len());
+        let mut stats = piperine_solver::abi::SolverStats { converged: true, ..Default::default() };
+        for &v in &values {
+            self.circuit.set_element_param(label, param, Value::Real(v)).map_err(Self::set_err)?;
+            self.note_applied(label, param, v);
+            let ivs = self.ivs(nodeset.clone())?;
+            let mut dc = self.circuit.dc(config.to_context()).map_err(Self::analysis_err)?;
+            dc.policy = config.to_policy();
+            dc.apply_initial_conditions(ivs);
+            let result = dc.solve().map_err(Self::analysis_err)?;
+            drop(dc);
+            stats.converged &= result.stats.converged;
+            stats.newton_iterations += result.stats.newton_iterations;
+            digital.push(SimSession::snapshot_digital(&self.info, &self.circuit));
+            points.push(result);
+        }
+        let trace = piperine_api::Trace::<piperine_api::Waveform>::from_dc_sweep(
+            values,
+            points,
+            digital,
+            Rc::new(self.info.clone()),
+            stats,
+        );
+        Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
+    }
+
+    /// A fluent single-knob sweep over `label.param` (HOST-18): the
+    /// returned `_Sweep` iterates `(value, index)` per point, restamping
+    /// (or rebuilding, same as `set`) the held circuit before each is
+    /// yielded. The facade's `Session.sweep` wraps each step into a
+    /// `SweepPoint` view of the *same* `Session` object.
+    fn sweep(slf: Py<Self>, label: String, param: String, values: Vec<f64>) -> _Sweep {
+        _Sweep { session: slf, label, param, values, idx: 0 }
+    }
+
+    /// A named multi-axis sweep grid (HOST-19): `axes` is
+    /// `[(label, param, values), ...]`; the returned `_Grid` iterates
+    /// `(coord, index)` per row-major combination, restamping (or
+    /// rebuilding) every axis before each is yielded.
+    fn sweep_grid(slf: Py<Self>, axes: Vec<(String, String, Vec<f64>)>) -> _Grid {
+        _Grid { session: slf, axes, idx: 0 }
+    }
+}
+
+/// `_Sweep` — the native half of HOST-18's fluent sweep
+/// ([`_Session::sweep`]): a Python iterator yielding `(value, index)` per
+/// sweep point. Holds an owned `Py<_Session>` (not a borrow) so the
+/// returned object can outlive the `sweep()` call that created it — the
+/// standard PyO3 shape for an iterator that mutates its parent on each
+/// step.
+#[pyclass(module = "piperine", unsendable)]
+pub struct _Sweep {
+    session: Py<_Session>,
+    label: String,
+    param: String,
+    values: Vec<f64>,
+    idx: usize,
+}
+
+#[pymethods]
+impl _Sweep {
+    /// Number of points in this sweep.
+    fn __len__(&self) -> usize {
+        self.values.len()
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Restamp (or rebuild) the session onto the next value and yield
+    /// `(value, index)`; `None` once every value has been visited.
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<(f64, usize)>> {
+        if slf.idx >= slf.values.len() {
+            return Ok(None);
+        }
+        let value = slf.values[slf.idx];
+        let index = slf.idx;
+        slf.idx += 1;
+        let label = slf.label.clone();
+        let param = slf.param.clone();
+        let session = slf.session.clone_ref(py);
+        session.borrow_mut(py).set(&label, &param, value)?;
+        Ok(Some((value, index)))
+    }
+}
+
+/// `_Grid` — the native half of HOST-19's named multi-axis sweep
+/// ([`_Session::sweep_grid`]): a Python iterator yielding `(coord, index)`
+/// per row-major combination of the axes' values. Same owned-`Py<_Session>`
+/// shape as [`_Sweep`].
+#[pyclass(module = "piperine", unsendable)]
+pub struct _Grid {
+    session: Py<_Session>,
+    axes: Vec<(String, String, Vec<f64>)>,
+    idx: usize,
+}
+
+#[pymethods]
+impl _Grid {
+    /// Total number of grid points (product of every axis's length).
+    fn __len__(&self) -> usize {
+        self.axes.iter().map(|(_, _, v)| v.len()).product()
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Restamp (or rebuild) every axis onto the next row-major combination
+    /// and yield `(coord, index)` — `coord`/`index` are one entry per axis,
+    /// outer axis first; `None` once the grid is exhausted.
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<(Vec<f64>, Vec<usize>)>> {
+        let shape: Vec<usize> = slf.axes.iter().map(|(_, _, v)| v.len()).collect();
+        let total: usize = shape.iter().product();
+        if total == 0 || slf.idx >= total {
+            return Ok(None);
+        }
+        // Row-major unravel of the flat `idx` over `shape`.
+        let mut rem = slf.idx;
+        let mut index = vec![0usize; shape.len()];
+        for d in (0..shape.len()).rev() {
+            index[d] = rem % shape[d];
+            rem /= shape[d];
+        }
+        slf.idx += 1;
+        let axes = slf.axes.clone();
+        let session = slf.session.clone_ref(py);
+        let mut coord = Vec::with_capacity(shape.len());
+        for (d, (label, param, values)) in axes.iter().enumerate() {
+            let v = values[index[d]];
+            session.borrow_mut(py).set(label, param, v)?;
+            coord.push(v);
+        }
+        Ok(Some((coord, index)))
     }
 }
 

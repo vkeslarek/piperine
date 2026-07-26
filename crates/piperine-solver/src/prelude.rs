@@ -14,10 +14,11 @@
 pub use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 pub use crate::core::builder::CircuitBuilder;
 pub use crate::core::circuit::CircuitInstance;
-pub use crate::core::element::{ConvergenceHint, Element, ElementCapabilities};
+pub use crate::core::element::{Element, ElementCapabilities};
 pub use crate::core::introspect::{
-    Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError, ParamScope,
-    QueryDescriptor, QueryKind, SignConvention, TerminalDescriptor, Value, ValueKind,
+    Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
+    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
+    SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
 pub use crate::digital::{DigitalNet, LogicValue};

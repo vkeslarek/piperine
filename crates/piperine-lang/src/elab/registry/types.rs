@@ -15,7 +15,13 @@ pub enum TypeDefKind {
     /// DLS-08) — a type whose shape is a native Rust registry entry, but
     /// whose *name* has a textual `decl_span` an LSP can resolve to. Types
     /// are not overloadable (one type per name), unlike callables.
-    Extern { name: String, decl_span: Option<miette::SourceSpan> },
+    Extern {
+        name: String,
+        decl_span: Option<miette::SourceSpan>,
+        /// The declaration's own `///` doc comment, when known (BUG-2/
+        /// LSB-04..06).
+        doc: Option<String>,
+    },
 }
 
 impl TypeDefKind {

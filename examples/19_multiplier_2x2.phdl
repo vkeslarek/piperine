@@ -4,14 +4,13 @@
 // real datapath spanning several module boundaries. EXHAUSTIVE over all
 // 4 × 4 = 16 operand pairs, asserting p = a · b as a 4-bit result.
 
-discipline Bit {
-    storage Boolean;
-}
+use piperine::disciplines;
 
 mod BitDriver(output q : Bit) {
     param level : Real = 0.0;
     var b : Bit = 0;
 }
+
 digital BitDriver {
     b = level > 0.5;
     q <- b;
@@ -20,16 +19,19 @@ digital BitDriver {
 mod And2(input a : Bit, input b : Bit, output y : Bit) {
     var t : Bit = 0;
 }
+
 digital And2 {
     t = a && b;
     y <- t;
 }
 
 // Half adder: sum = a ⊕ b, carry = a · b.
+
 mod HalfAdder(input a : Bit, input b : Bit, output sum : Bit, output carry : Bit) {
     var s : Bit = 0;
     var c : Bit = 0;
 }
+
 digital HalfAdder {
     s = a != b;
     c = a && b;
@@ -38,26 +40,37 @@ digital HalfAdder {
 }
 
 mod Mult2() {
-    wire a0 : Bit; wire a1 : Bit; wire b0 : Bit; wire b1 : Bit;
+    wire a0 : Bit;
+    wire a1 : Bit;
+    wire b0 : Bit;
+    wire b1 : Bit;
     // Partial products.
-    wire pp00 : Bit; wire pp01 : Bit; wire pp10 : Bit; wire pp11 : Bit;
+    wire pp00 : Bit;
+    wire pp01 : Bit;
+    wire pp10 : Bit;
+    wire pp11 : Bit;
     // Carries between the two adder stages.
     wire c1 : Bit;
     // Result bits.
-    wire p0 : Bit; wire p1 : Bit; wire p2 : Bit; wire p3 : Bit;
+    wire p0 : Bit;
+    wire p1 : Bit;
+    wire p2 : Bit;
+    wire p3 : Bit;
 
-    da0 : BitDriver(.q = a0); da1 : BitDriver(.q = a1);
-    db0 : BitDriver(.q = b0); db1 : BitDriver(.q = b1);
+    da0 : BitDriver(.q = a0);
+    da1 : BitDriver(.q = a1);
+    db0 : BitDriver(.q = b0);
+    db1 : BitDriver(.q = b1);
 
-    g00 : And2(.a = a0, .b = b0, .y = pp00);
-    g01 : And2(.a = a0, .b = b1, .y = pp01);
-    g10 : And2(.a = a1, .b = b0, .y = pp10);
-    g11 : And2(.a = a1, .b = b1, .y = pp11);
+    g00 : And2(.a = a0,.b = b0,.y = pp00);
+    g01 : And2(.a = a0,.b = b1,.y = pp01);
+    g10 : And2(.a = a1,.b = b0,.y = pp10);
+    g11 : And2(.a = a1,.b = b1,.y = pp11);
 
     // p0 is just a0·b0.
     // p1 = pp01 ⊕ pp10, carry c1.
-    ha1 : HalfAdder(.a = pp01, .b = pp10, .sum = p1, .carry = c1);
+    ha1 : HalfAdder(.a = pp01,.b = pp10,.sum = p1,.carry = c1);
     // p2 = pp11 ⊕ c1, carry → p3.
-    ha2 : HalfAdder(.a = pp11, .b = c1, .sum = p2, .carry = p3);
+    ha2 : HalfAdder(.a = pp11,.b = c1,.sum = p2,.carry = p3);
 }
 

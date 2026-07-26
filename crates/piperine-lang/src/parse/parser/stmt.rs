@@ -21,6 +21,7 @@ impl<'a> Parser<'a> {
     /// Parses a single statement inside a `mod` body: `param`, `wire`, `var`, `for`, `if`, instance, or connection.
     pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModuleStatement, crate::parse::error::ParseError> {
         let start = self.current_span_start();
+        let doc = self.current_doc();
         let attrs = self.parse_attributes()?;
         if matches!(self.peek(), Some(Tok::SysCall(name)) if name == "assert") {
             self.pos += 1;
@@ -40,7 +41,7 @@ impl<'a> Parser<'a> {
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
             let end = self.previous_span_end();
-            return Ok(ModuleStatement::ParamDecl { span: Some((start, end - start).into()), attrs, name, ty, default });
+            return Ok(ModuleStatement::ParamDecl { span: Some((start, end - start).into()), attrs, doc, name, ty, default });
         }
         if self.eat_ident("wire") {
             let name = self.parse_ident()?;
@@ -48,7 +49,7 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             self.expect(&Tok::Semi)?;
             let end = self.previous_span_end();
-            return Ok(ModuleStatement::WireDecl { span: Some((start, end - start).into()), attrs, name, ty });
+            return Ok(ModuleStatement::WireDecl { span: Some((start, end - start).into()), attrs, doc, name, ty });
         }
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
@@ -57,7 +58,7 @@ impl<'a> Parser<'a> {
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
             let end = self.previous_span_end();
-            return Ok(ModuleStatement::VarDecl { span: Some((start, end - start).into()), attrs, name, ty, default });
+            return Ok(ModuleStatement::VarDecl { span: Some((start, end - start).into()), attrs, doc, name, ty, default });
         }
         if self.eat_ident("for") {
             let var = self.parse_ident()?;
@@ -100,9 +101,24 @@ impl<'a> Parser<'a> {
         }
 
         // InstanceOrConnect — leading Ident, then branch on next token.
+        let name_start = self.current_span_start();
         let name = self.parse_ident()?;
+        let name_span: miette::SourceSpan = (name_start, self.previous_span_end() - name_start).into();
         let mut module_name = name.clone();
+        let mut module_name_span = name_span;
+        let mut module_path: Vec<String> = Vec::new();
         let mut is_named_instance = false;
+
+        // Unlabeled instance with a qualified type:
+        // `spice::passives::res(...)` — the leading ident is the first path
+        // segment, not a label. The resolver auto-loads the prefix file as
+        // an implicit `use`; `module_name` becomes the final segment.
+        if self.peek() == Some(&Tok::DoubleColon) {
+            let (m, mp, mspan) = self.finish_module_path(name.clone(), name_start)?;
+            module_name = m;
+            module_name_span = mspan;
+            module_path = mp;
+        }
 
         let mut array_index: Option<Expr> = None;
         if self.eat(&Tok::LBrack) {
@@ -110,7 +126,7 @@ impl<'a> Parser<'a> {
             self.expect(&Tok::RBrack)?;
         }
 
-        if self.eat(&Tok::Assign) {
+        if module_path.is_empty() && self.eat(&Tok::Assign) {
             let mut lhs = Expr::Ident(name);
             if let Some(idx) = array_index {
                 lhs = Expr::Index(Box::new(lhs), Box::new(idx));
@@ -123,7 +139,13 @@ impl<'a> Parser<'a> {
 
         if self.eat(&Tok::Colon) {
             is_named_instance = true;
-            module_name = self.parse_ident()?;
+            let type_start = self.current_span_start();
+            let first = self.parse_ident()?;
+            // The type after `:` may be a qualified path (`x : spice::passives::res(...)`).
+            let (m, mp, mspan) = self.finish_module_path(first, type_start)?;
+            module_name = m;
+            module_name_span = mspan;
+            module_path = mp;
         }
 
         let mut const_args = Vec::new();
@@ -196,9 +218,13 @@ impl<'a> Parser<'a> {
         Ok(ModuleStatement::Instance {
             span: Some((start, end - start).into()),
             attrs,
+            doc,
+            label_span: if is_named_instance { Some(name_span) } else { None },
+            type_span: Some(module_name_span),
             name: if is_named_instance { Some(name) } else { None },
             array_index,
             module: module_name,
+            module_path,
             const_args,
             type_args,
             ports,
@@ -206,17 +232,45 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Given the first path segment already parsed (`first`, starting at
+    /// byte `first_start`), consume any `:: ident` continuation of a
+    /// qualified module-type path. Returns `(module_name, module_path,
+    /// type_span)`: `module_name` is the final segment (the module),
+    /// `module_path` is the full segment list (`["spice","passives","res"]`)
+    /// when qualified or empty for a bare single-segment name, and
+    /// `type_span` covers the final segment token (the LSP goto/hover
+    /// target). See `ModuleStatement::Instance::module_path`.
+    fn finish_module_path(
+        &mut self,
+        first: String,
+        first_start: usize,
+    ) -> Result<(String, Vec<String>, miette::SourceSpan), crate::parse::error::ParseError> {
+        let mut segments = vec![first];
+        let mut last_start = first_start;
+        let mut last_end = self.previous_span_end();
+        while self.eat(&Tok::DoubleColon) {
+            last_start = self.current_span_start();
+            segments.push(self.parse_ident()?);
+            last_end = self.previous_span_end();
+        }
+        let module_name = segments.last().cloned().unwrap_or_default();
+        let module_path = if segments.len() > 1 { segments } else { Vec::new() };
+        let span: miette::SourceSpan = (last_start, last_end - last_start).into();
+        Ok((module_name, module_path, span))
+    }
+
     // ─────────────────────────── §7  Behavior ────────────────────────────────
 
     /// Parses an `analog Name { ... }` or `digital Name { ... }` behavior block.
-    pub(crate) fn parse_behavior(&mut self, attrs: Vec<Attribute>, is_pub: bool, kind: BehaviorKind) -> Result<BehaviorDecl, crate::parse::error::ParseError> {
+    pub(crate) fn parse_behavior(&mut self, start: usize, attrs: Vec<Attribute>, doc: Option<String>, is_pub: bool, kind: BehaviorKind) -> Result<BehaviorDecl, crate::parse::error::ParseError> {
         let name = self.parse_ident()?;
         self.expect(&Tok::LBrace)?;
         let mut body = Vec::new();
         while !self.eat(&Tok::RBrace) {
             body.push(self.parse_behavior_stmt()?);
         }
-        Ok(BehaviorDecl { span: None, attrs, is_pub, kind, name, body })
+        let end = self.previous_span_end();
+        Ok(BehaviorDecl { span: Some((start, end - start).into()), attrs, doc, is_pub, kind, name, body })
     }
 
     /// Parses a single statement inside an `analog`/`digital` behavior
@@ -519,10 +573,11 @@ impl Parse for ModuleStatement {
 
 impl Parse for BehaviorDecl {
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
-        let _start = parser.current_span_start();
+        let start = parser.current_span_start();
+        let doc = parser.current_doc();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         let kind = if parser.eat_ident("analog") { BehaviorKind::Analog } else if parser.eat_ident("digital") { BehaviorKind::Digital } else { return Err("Expected analog or digital".into()); };
-        parser.parse_behavior(attrs, is_pub, kind)
+        parser.parse_behavior(start, attrs, doc, is_pub, kind)
     }
 }

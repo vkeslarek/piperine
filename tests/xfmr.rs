@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
@@ -37,8 +37,8 @@ mod Top() {
         .run_ac(1.0e3, 1.0e6, 20, true, &SolverConfig::default())
         .unwrap_or_else(|e| panic!("xfmr ac failed: {e}"));
 
-    let vsec = trace.v(&NetRef { name: "sec".into() }, None).expect("v(sec)").mag();
-    let vpri = trace.v(&NetRef { name: "pri".into() }, None).expect("v(pri)").mag();
+    let vsec = trace.v("sec").expect("v(sec)").mag();
+    let vpri = trace.v("pri").expect("v(pri)").mag();
     // The ratio is frequency-independent for an open secondary; check a decade.
     for f in [1.0e3, 1.0e4, 1.0e5] {
         let ratio = vsec.at(f) / vpri.at(f);
@@ -97,11 +97,11 @@ mod Top() {
         .expect("coupled tanks elaborate");
     let ic = std::collections::HashMap::from([("v1".to_string(), 1.0)]);
     let trace = SimSession::new(design, "Top".to_string())
-        .run_tran(12.0e-6, Some(1.0e-8), 0.0, &SolverConfig::default(), Some(&ic), false)
+        .run_tran((12.0e-6, 0.0), Some(1.0e-8), &SolverConfig::default(), Some(&ic), false, &[])
         .unwrap_or_else(|e| panic!("coupled tanks tran failed: {e}"));
 
-    let v1 = trace.v(&NetRef { name: "v1".into() }, None).expect("v(v1)");
-    let v2 = trace.v(&NetRef { name: "v2".into() }, None).expect("v(v2)");
+    let v1 = trace.v("v1").expect("v(v1)");
+    let v2 = trace.v("v2").expect("v(v2)");
     let pts1 = v1.points();
     let pts2 = v2.points();
 

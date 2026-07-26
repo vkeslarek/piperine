@@ -2,10 +2,7 @@
 // v(out) = code · Iunit · Rload. The python twin walks codes by setting the bit
 // params and checks the staircase — including full-scale and midscale.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod CurrentDac(inout out : Electrical, inout gnd : Electrical) {
     param b3 : Real = 0.0;
@@ -30,7 +27,9 @@ analog Resistor {
 mod DacBoard() {
     wire gnd : Electrical;
     wire out : Electrical;
-    dac  : CurrentDac(.out = out, .gnd = gnd);
-    load : Resistor(.p = out, .n = gnd) { .r = 1e3 };
+    dac : CurrentDac(.out = out,.gnd = gnd);
+    load : Resistor(.p = out,.n = gnd) {
+        .r = 1e3
+    };
 }
 

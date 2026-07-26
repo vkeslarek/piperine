@@ -4,11 +4,14 @@
 //! scheduled parameter sets.
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
-use crate::analyses::Context;
-use crate::analyses::convergence::StepperStrategy;
 use crate::analyses::dc::DcSolver;
+use crate::analyses::events::{
+    EventEntry, EventKind, EventQueue, EventSource,
+};
+use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
-use crate::digital::LogicValue;
+use crate::core::element::ElementCheckpoint;
+use crate::digital::{DigitalNet, LogicValue};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::integration::{TrBdf2, TrBdf2Phase};
@@ -86,8 +89,20 @@ pub struct TransientAnalysisOptions {
     /// enabling it clones the stateful devices' banks per accepted step.
     /// With it on, `Trace.i` recomputes currents of state-reading devices
     /// (`delay`/`transition`/`idt`); with it off, that read stays a loud
-    /// error.
+    /// error. When on, this is the shorthand for "record every observable
+    /// on every device" — equivalent to a `probe_selection` enumerating
+    /// every device's full observable catalog (ABI-34).
     pub record_device_state: bool,
+
+    /// Per-device observable requests for selective recording (ABI-33/34).
+    /// Empty by default (no selective recording — the prior all-or-nothing
+    /// behavior stays controlled by `record_device_state`). When non-empty,
+    /// `collect_device_banks` records only the requested observables for
+    /// each device — a host running a long transient with one probe pays
+    /// `O(requested)` memory, not `O(devices × steps)`. Validation
+    /// (`list_observables` membership for every request) runs once at
+    /// solver setup (ABI-35).
+    pub probe_selection: crate::core::introspect::ProbeSelection,
 }
 
 impl TransientAnalysisOptions {
@@ -102,6 +117,7 @@ impl TransientAnalysisOptions {
             record_from: 0.0,
             start_time: 0.0,
             record_device_state: false,
+            probe_selection: crate::core::introspect::ProbeSelection::new(),
         }
     }
 
@@ -126,6 +142,20 @@ impl TransientAnalysisOptions {
     /// Set the earliest recorded time (`TranConfig.start`).
     pub fn with_record_from(mut self, record_from: f64) -> Self {
         self.record_from = record_from;
+        self
+    }
+
+    /// Set the per-device observable selection (ABI-33). When non-empty,
+    /// `collect_device_banks` records only the requested observables
+    /// (instead of the full `(state, vars)` banks every step). An empty
+    /// selection leaves the prior behavior in place: nothing recorded
+    /// unless `record_device_state = true`. Unknown device/observable
+    /// requests fail loud at solver setup (ABI-35).
+    pub fn with_probe_selection(
+        mut self,
+        selection: crate::core::introspect::ProbeSelection,
+    ) -> Self {
+        self.probe_selection = selection;
         self
     }
 }
@@ -343,12 +373,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         self.circuit.netlist()
     }
 
-    fn any_limiting(&self) -> bool {
-        self.circuit.devices.iter().any(|d| d.limiting_active())
+    fn any_limiting_report(&self) -> bool {
+        self.circuit.devices.iter().any(|d| d.limiting_report().is_some())
     }
 
-    fn apply_convergence_hints(&self, guess: ndarray::ArrayViewMut1<f64>) {
-        self.circuit.apply_convergence_hints(guess);
+    fn apply_limiting_reports(&self, guess: ndarray::ArrayViewMut1<f64>) {
+        self.circuit.apply_limiting_reports(guess);
     }
 
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
@@ -429,6 +459,9 @@ struct StepAttempt {
     outcome: crate::result::Result<Option<TransientStep>>,
     /// Analog history checkpoint, restored on rejection.
     analog_history: CircularArrayBuffer2<f64>,
+    /// Per-element device-state checkpoints (ABI-02): restored on rejection,
+    /// dropped on acceptance. `None` entries = stateless devices.
+    device_checkpoints: Vec<Option<ElementCheckpoint>>,
 }
 
 /// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
@@ -489,8 +522,18 @@ pub struct TransientSolver<'a> {
     /// state reflects them. Milestone-1: a seed (the companion model's
     /// first step may show a transient); full enforced-hold is deferred.
     initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
-    /// Stateful PI timestep controller (TRB-07).
-    stepper: crate::analyses::convergence::PiController,
+    /// Convergence plan owning the timestep strategy (ABI-42). The transient
+    /// driver delegates `propose_dt`/`reject_dt` to `plan.stepper()` — the
+    /// plan is the single strategy owner across analyses (Newton +
+    /// Homotopy + Stepper).
+    plan: crate::analyses::convergence::ConvergencePlan,
+    /// Unified event queue (ABI-36..41). Populated each `predict_step`
+    /// from the four sources (digital peek, analog breakpoints, scheduled
+    /// sets, `$bound_step` hints). `attempt_step` checkpoints + drains
+    /// it; `accept_step` commits, `reject_step` / `reject_lte_step`
+    /// roll back — each entry's [`RollbackBehavior`] is honored (digital
+    /// restored, breakpoints re-polled, hints discarded).
+    event_queue: EventQueue,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: crate::analyses::Policy,
@@ -507,8 +550,21 @@ impl<'a> TransientSolver<'a> {
         options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
+        Self::with_plan(circuit, options, context, crate::analyses::convergence::ConvergencePlan::default())
+    }
+
+    /// Build a transient solver with an explicit convergence plan (ABI-42):
+    /// the plan's stepper owns the timestep strategy; the driver delegates
+    /// `propose_dt`/`reject_dt` to it.
+    pub fn with_plan(
+        circuit: &'a mut CircuitInstance,
+        options: TransientAnalysisOptions,
+        context: Context,
+        plan: crate::analyses::convergence::ConvergencePlan,
+    ) -> crate::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
+        Self::validate_probe_selection(circuit, &options.probe_selection)?;
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();
@@ -535,11 +591,52 @@ impl<'a> TransientSolver<'a> {
             solver,
             options,
             initial_conditions: Vec::new(),
-            stepper: crate::analyses::convergence::PiController::default(),
+            plan,
+            event_queue: EventQueue::new(),
             policy: crate::analyses::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
         })
+    }
+
+    /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
+    /// custom stepper; the driver delegates rejection/proposal to it.
+    pub fn set_plan(&mut self, plan: crate::analyses::convergence::ConvergencePlan) {
+        self.plan = plan;
+    }
+
+    /// Validate the `ProbeSelection` against the assembled circuit at setup
+    /// time (ABI-35). Each `(device_label, observable_name)` request must
+    /// name a device that exists and an observable that device declares —
+    /// otherwise fail loud with a named error before the run starts, not
+    /// silently record nothing. Runs once after `setup_all` so the device
+    /// catalog (`list_observables`) is populated.
+    fn validate_probe_selection(
+        circuit: &CircuitInstance,
+        selection: &crate::core::introspect::ProbeSelection,
+    ) -> crate::result::Result<()> {
+        for (label, observable) in &selection.requests {
+            let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Element,
+                    format!("device `{label}` not found"),
+                ));
+            };
+            let declared = dev.list_observables();
+            if !declared.iter().any(|d| &d.name == observable) {
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Element,
+                    format!("device `{label}` has no observable `{observable}`"),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Read-only access to the convergence plan (e.g., for tests asserting
+    /// which strategy is wired).
+    pub fn plan(&self) -> &crate::analyses::convergence::ConvergencePlan {
+        &self.plan
     }
 
     /// Start the integration from a previously captured step — analog
@@ -743,36 +840,75 @@ impl<'a> TransientSolver<'a> {
     /// the Milne-LTE gate: the LTE would otherwise see the intentional
     /// source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
     /// reject, thrashing the integrator against the edge it already hit.
-    fn predict_step(&self, st: &TimeLoop) -> StepPrediction {
-        let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
+    ///
+    /// The four ad-hoc sources merge through a single [`EventQueue`]
+    /// (ABI-36): digital events, analog breakpoints, scheduled live sets,
+    /// and `$bound_step` hints each enter the queue with their own
+    /// [`RollbackBehavior`](crate::analyses::events::RollbackBehavior);
+    /// `predict_step` reads the earliest from one place.
+    fn predict_step(&mut self, st: &TimeLoop) -> StepPrediction {
         let pi_target = st.current_time + st.dt;
         let mut t_next = pi_target.min(self.options.stop_time);
         let mut landed_on_breakpoint = false;
-        if t_next_event < t_next {
-            t_next = t_next_event;
-            landed_on_breakpoint = true;
+
+        // Unified event queue (ABI-36/T26): one read path for all four
+        // time-discontinuity sources. The queue persists across the
+        // predict→attempt→reject cycle (ABI-40/41) so the reject path can
+        // honor each entry's `RollbackBehavior` (T27): digital events
+        // restored, breakpoints re-polled (dropped), hints discarded.
+        let mut queue = EventQueue::new();
+
+        // Digital events — peek the scheduler's heap.
+        let t_digital = self.system.circuit.digital_state.peek_next_event_time();
+        if t_digital.is_finite() {
+            queue.push(EventEntry::digital(t_digital, DigitalNet(0), "scheduler"));
         }
-        for dev in self.system.circuit.devices.iter() {
+
+        // Analog breakpoints (pulse edges, PWL corners, `@timer` fires).
+        for (idx, dev) in self.system.circuit.devices.iter().enumerate() {
             for bp in dev.next_breakpoints(st.current_time, st.dt) {
-                if bp > st.current_time && bp < t_next {
-                    t_next = bp;
-                    landed_on_breakpoint = true;
+                if bp > st.current_time {
+                    queue.push_breakpoint(bp, idx, dev.name());
                 }
             }
         }
-        // Scheduled live sets (LIVE-06): each pending set time is a
-        // declared discontinuity — land exactly on it so the write
-        // applies at its scheduled time with the edge rules (skip LTE,
-        // reset prev_h). The relative-epsilon snap absorbs float
-        // accumulation: a proposal one ulp shy of the set time
-        // stretches onto it instead of leaving a ~1e-22 s sliver step.
+
+        // Scheduled live sets (LIVE-06) — host-scheduled parameter writes.
         if let Some(ts) = self.sets.next_breakpoint(st.current_time) {
-            let snap = 1e-9 * ts.abs().max(f64::MIN_POSITIVE);
-            if ts <= t_next + snap {
-                t_next = ts;
-                landed_on_breakpoint = true;
+            queue.push_scheduled_set(ts);
+        }
+
+        // Stash the queue for the attempt/reject phases (T27). Replacing
+        // each prediction is correct: predict is the read-side authority,
+        // and the queue carries only the events predicted for THIS landing
+        // point. Per-entry rollback semantics fire on the queue snapshot
+        // taken by `attempt_step`.
+        self.event_queue = queue;
+
+        // One read path: peek the earliest event. Per-source semantics:
+        // digital/breakpoints use strict `<`; sets additionally snap
+        // within a float tolerance (LIVE-06 — absolute scheduled times
+        // accumulate ulp drift across long runs).
+        if let Some(front) = self.event_queue.peek() {
+            let time = front.time;
+            if time > st.current_time {
+                let is_set = matches!(front.source, EventSource::ScheduledSet);
+                let snap = 1e-9 * time.abs().max(f64::MIN_POSITIVE);
+                let lands = if is_set {
+                    time <= t_next + snap
+                } else {
+                    time < t_next
+                };
+                if lands {
+                    t_next = time;
+                    landed_on_breakpoint = matches!(
+                        front.kind,
+                        EventKind::Digital | EventKind::Breakpoint
+                    );
+                }
             }
         }
+
         StepPrediction {
             t_next,
             dt_actual: t_next - st.current_time,
@@ -793,11 +929,22 @@ impl<'a> TransientSolver<'a> {
         prediction: StepPrediction,
     ) -> crate::result::Result<StepAttempt> {
         self.system.circuit.digital_state.checkpoint();
+        // Per-element checkpoint (ABI-01): snapshot each device's mutable
+        // non-accept-gated state BEFORE the digital settle + Newton solve can
+        // dirty it, so a rejected attempt restores to the last accepted state.
+        let device_checkpoints = self.snapshot_device_checkpoints();
         let analog_history = self.solver.state_snapshot();
+        // Unified event queue checkpoint (ABI-40/41): snapshot the queue
+        // before draining the events due at this landing point. On reject,
+        // `rollback()` honors each entry's `RollbackBehavior` — digital
+        // events restored, breakpoints dropped (re-polled next predict),
+        // hints discarded. On accept, `commit()` drops the snapshot.
+        self.event_queue.checkpoint();
+        let _due_events = self.event_queue.drain_due(prediction.t_next);
         self.system.circuit.run_digital_at(prediction.t_next)?;
         let outcome =
             self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
-        Ok(StepAttempt { prediction, outcome, analog_history })
+        Ok(StepAttempt { prediction, outcome, analog_history, device_checkpoints })
     }
 
     /// Phase 3 — assess: the global Milne-LTE accept gate (TRB-05/06). The
@@ -856,6 +1003,10 @@ impl<'a> TransientSolver<'a> {
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
         self.settle_digital(t_next)?;
+        // Unified event queue commit (ABI-40): the attempt's drained events
+        // fired; the snapshot is dropped. Predict rebuilds the queue next
+        // step from the live sources.
+        self.event_queue.commit();
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
         if self.apply_scheduled_sets(st, steps, dt_actual)? {
@@ -883,7 +1034,7 @@ impl<'a> TransientSolver<'a> {
     fn apply_scheduled_sets(
         &mut self,
         st: &mut TimeLoop,
-        steps: &mut Vec<TransientStep>,
+        steps: &mut [TransientStep],
         dt_actual: f64,
     ) -> crate::result::Result<bool> {
         let due = self.sets.drain_due(st.current_time);
@@ -937,10 +1088,14 @@ impl<'a> TransientSolver<'a> {
     /// Record an accepted step's snapshot when it falls inside the
     /// `record_from` window. Runtime banks committed by the digital settle
     /// (idt/operator state) post-date the in-step snapshot — re-attach so
-    /// the recorded state matches this point.
+    /// the recorded state matches this point. Device-state recording is
+    /// gated by either `record_device_state` (full-bank shorthand) or a
+    /// non-empty `probe_selection` (selective recording — ABI-34).
     fn record_step(&self, steps: &mut Vec<TransientStep>, t_next: f64, snapshot: TransientStep) {
         if t_next >= self.options.record_from {
-            let snapshot = if self.options.record_device_state {
+            let snapshot = if self.options.record_device_state
+                || !self.options.probe_selection.requests.is_empty()
+            {
                 snapshot.with_device_state(self.collect_device_banks())
             } else {
                 snapshot
@@ -971,7 +1126,7 @@ impl<'a> TransientSolver<'a> {
         let mut dt = if post_set_step {
             dt_proposed
         } else {
-            self.stepper.propose_dt(milne, dt_actual, &self.options)
+            self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options)
         };
         if sets_just_applied {
             dt = (1e-3 * dt_actual).max(self.options.dt_min);
@@ -1072,6 +1227,7 @@ impl<'a> TransientSolver<'a> {
         prediction: &StepPrediction,
         milne: f64,
         analog_history: CircularArrayBuffer2<f64>,
+        device_checkpoints: Vec<Option<ElementCheckpoint>>,
     ) -> bool {
         if self.policy.trace.transient {
             eprintln!(
@@ -1083,7 +1239,13 @@ impl<'a> TransientSolver<'a> {
             );
         }
         self.system.circuit.digital_state.rollback();
-        st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
+        // Unified event queue rollback (ABI-40/41): honor each drained
+        // entry's `RollbackBehavior` — digital events restored (re-fire
+        // on retry), scheduled sets restored (still pending), breakpoints
+        // dropped (re-declared by next_breakpoints next predict), step
+        // hints discarded (re-emitted by the device).
+        self.event_queue.rollback();
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options);
         if st.dt <= self.options.dt_min {
             st.dt_min_floor_hits += 1;
             tracing::warn!(
@@ -1095,6 +1257,9 @@ impl<'a> TransientSolver<'a> {
         }
         st.steps_rejected += 1;
         st.last_step_accepted = false;
+        // Restore device-internal state (limiter/digital registers) so the
+        // retry starts from the pre-attempt checkpoint (ABI-02).
+        self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
         false
     }
@@ -1107,12 +1272,19 @@ impl<'a> TransientSolver<'a> {
         st: &mut TimeLoop,
         dt_proposed: f64,
         analog_history: CircularArrayBuffer2<f64>,
+        device_checkpoints: Vec<Option<ElementCheckpoint>>,
     ) {
         st.steps_rejected += 1;
         st.last_step_accepted = false;
         self.system.circuit.digital_state.rollback();
+        // Restore device-internal state (limiter/digital registers) so the
+        // retry starts from the pre-attempt checkpoint (ABI-02).
+        self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
-        st.dt = self.stepper.reject_dt(dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options);
+        // Unified event queue rollback — same per-entry semantics as the
+        // LTE reject path (ABI-40/41).
+        self.event_queue.rollback();
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
@@ -1125,18 +1297,20 @@ impl<'a> TransientSolver<'a> {
             // Whether this step's Milne window spans a live-set value jump
             // (consumed here; re-armed below when new sets apply).
             let post_set_step = st.sets_just_applied;
-            let StepAttempt { prediction, outcome, analog_history } = attempt;
+            let StepAttempt { prediction, outcome, analog_history, device_checkpoints } = attempt;
 
             if let Ok(Some(snapshot)) = outcome {
                 // Both Newton phases converged.
                 let assessment = self.assess_step(&prediction, post_set_step, &node_indices);
                 if assessment.accept {
+                    // ABI-03: discard the checkpoints — accept_timestep advances
+                    // accept-gated state, the non-accept-gated state is kept.
                     self.accept_step(
                         &mut st, &mut steps, prediction, snapshot,
                         assessment.milne, post_set_step,
                     )?;
                 } else if self.reject_lte_step(
-                    &mut st, &prediction, assessment.milne, analog_history,
+                    &mut st, &prediction, assessment.milne, analog_history, device_checkpoints,
                 ) {
                     // dt floor: accept the step as-is rather than stall.
                     self.accept_step(
@@ -1146,7 +1320,7 @@ impl<'a> TransientSolver<'a> {
                 }
             } else {
                 // Either phase failed to converge — reject the whole step.
-                self.reject_step(&mut st, prediction.dt_proposed, analog_history);
+                self.reject_step(&mut st, prediction.dt_proposed, analog_history, device_checkpoints);
                 if st.dt <= self.options.dt_min && let Err(e) = outcome {
                     return Err(e);
                 }
@@ -1170,7 +1344,9 @@ impl<'a> TransientSolver<'a> {
         let step = TransientStep::new(time, values)
             .with_digital(self.system.circuit.digital_state.nets.clone())
             .with_digital_hidden(self.collect_digital_hidden());
-        if !self.options.record_device_state {
+        if !self.options.record_device_state
+            && self.options.probe_selection.requests.is_empty()
+        {
             return step;
         }
         step.with_device_state(self.collect_device_banks())
@@ -1189,17 +1365,74 @@ impl<'a> TransientSolver<'a> {
         hidden
     }
 
-    /// Clone each stateful device's runtime banks (opt-in recording; see
-    /// `TransientAnalysisOptions::record_device_state`).
+    /// Clone each stateful device's runtime banks — either the full
+    /// `(state, vars)` banks (when `record_device_state` is on, the
+    /// "record everything" shorthand — ABI-34) or only the slices the
+    /// `probe_selection` requested (when non-empty). Empty
+    /// `probe_selection` + `record_device_state = false` records nothing
+    /// (today's default-off). The selection is consulted per-(device,
+    /// observable): only requested observables land in the returned map.
     fn collect_device_banks(&self) -> HashMap<String, (Vec<f64>, Vec<f64>)> {
         let mut device_state = HashMap::new();
+        let selection = &self.options.probe_selection;
+        let selective = !selection.requests.is_empty();
         for dev in &self.system.circuit.devices {
             let (state, vars) = dev.runtime_banks();
-            if !state.is_empty() || !vars.is_empty() {
+            if selective {
+                let label = dev.name();
+                if !selection.requests.iter().any(|(d, _)| d == label) {
+                    continue;
+                }
+                let (mut filt_state, mut filt_vars) = (Vec::new(), Vec::new());
+                for (i, slot) in dev.list_observables().into_iter().enumerate() {
+                    if !selection.contains(label, &slot.name) {
+                        continue;
+                    }
+                    match slot.kind {
+                        crate::core::introspect::ObservableKind::State
+                        | crate::core::introspect::ObservableKind::Charge
+                        | crate::core::introspect::ObservableKind::Flux => {
+                            if i < state.len() {
+                                filt_state.push(state[i]);
+                            }
+                        }
+                        crate::core::introspect::ObservableKind::Var => {
+                            let vi = i.saturating_sub(state.len());
+                            if vi < vars.len() {
+                                filt_vars.push(vars[vi]);
+                            }
+                        }
+                        crate::core::introspect::ObservableKind::BranchCurrent => {}
+                    }
+                }
+                device_state.insert(label.to_string(), (filt_state, filt_vars));
+            } else if !state.is_empty() || !vars.is_empty() {
                 device_state.insert(dev.name().to_string(), (state.to_vec(), vars.to_vec()));
             }
         }
         device_state
+    }
+
+    /// Snapshot every element's non-accept-gated state for the rollback
+    /// checkpoint (ABI-01). Stateless devices return `None`; the Vec is
+    /// indexed parallel to `circuit.devices`.
+    fn snapshot_device_checkpoints(&self) -> Vec<Option<ElementCheckpoint>> {
+        self.system
+            .circuit
+            .devices
+            .iter()
+            .map(|d| d.checkpoint_state())
+            .collect()
+    }
+
+    /// Restore each element that produced a checkpoint before the rejected
+    /// attempt (ABI-02). `None` entries are skipped (stateless device).
+    fn restore_device_checkpoints(&mut self, checkpoints: &[Option<ElementCheckpoint>]) {
+        for (dev, ckpt) in self.system.circuit.devices.iter_mut().zip(checkpoints) {
+            if let Some(c) = ckpt {
+                dev.restore_state(c);
+            }
+        }
     }
 }
 

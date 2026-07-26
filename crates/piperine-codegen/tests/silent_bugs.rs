@@ -187,8 +187,7 @@ fn d2_idt_in_contribution_lowers_to_integrator() {
     dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     assert!(rhs[0].abs() < 1e-12_f64, "D.2: DC residual near 0, got {}", rhs[0]);
     // In-step (dt = 1e-3, accumulated y = 2e-6): I = (y + dt·V)/L.
-    let mut sim = SimCtx::default();
-    sim.step = 1.0e-3;
+    let sim = SimCtx { step: 1.0e-3, ..Default::default() };
     let state = vec![2.0e-6_f64; dev.num_state_slots()];
     let mut rhs = [0.0_f64; 2];
     dev.eval_residual(&v, &params, &state, &[], &sim, &mut rhs);
@@ -241,5 +240,5 @@ fn ir_analog_to_device(
 ) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
     let module = bodies.get(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
     let compiled = piperine_codegen::CompiledModule::compile(module)?;
-    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).cloned()
 }

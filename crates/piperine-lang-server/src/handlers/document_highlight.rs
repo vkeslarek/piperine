@@ -13,20 +13,17 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let highlights = state
         .documents
         .get(&uri)
-        .and_then(|doc| {
+        .map(|doc| {
             let offset = crate::text_pos::position_to_byte(&doc.source, pos);
-            let word = crate::text_pos::word_at_position(&doc.source, pos)?;
-            doc.resolve_at(offset)?;
-
-            Some(
-                doc.word_occurrences(&word)
-                    .into_iter()
-                    .map(|(start, end)| DocumentHighlight {
-                        range: crate::text_pos::byte_range(&doc.source, start, end),
-                        kind: Some(DocumentHighlightKind::TEXT),
-                    })
-                    .collect::<Vec<_>>(),
-            )
+            // occurrences_at (T8) — the same binding-identity source as
+            // references/rename, not a text scan (LSP-13).
+            doc.occurrences_at(offset)
+                .into_iter()
+                .map(|(start, end)| DocumentHighlight {
+                    range: crate::text_pos::byte_range(&doc.source, start, end),
+                    kind: Some(DocumentHighlightKind::TEXT),
+                })
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 

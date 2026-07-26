@@ -32,11 +32,59 @@ pub fn publish_diagnostics(state: &ServerState, uri: &lsp_types::Uri, connection
         .map(|e| parse_error_to_diagnostic(&doc.source, e))
         .collect();
 
-    let params = PublishDiagnosticsParams {
-        uri: uri.clone(),
-        diagnostics,
-        version: Some(doc.version),
-    };
+    send_diagnostics(connection, uri.clone(), diagnostics, Some(doc.version));
+}
+
+/// Per-file diagnostic fan-out (T15/LSP-16): publish every project file's
+/// own errors against its own URI — not just `uri`'s document. Called
+/// instead of [`publish_diagnostics`] whenever the analyzed document
+/// belongs to a project (`doc.project_root.is_some()`); standalone
+/// documents keep going through `publish_diagnostics` unchanged (LSP-17).
+///
+/// A file currently open in the editor uses its own live `DocumentState`
+/// (`state.documents`) — its buffer may hold unsaved edits `ProjectUnit`'s
+/// on-disk snapshot doesn't see. Every other project file's errors come
+/// from `ProjectUnit.errors` (captured by `ProjectUnit::build` against the
+/// same on-disk text `designs`/`index` were built from).
+pub fn publish_project_diagnostics(state: &ServerState, root: &std::path::Path, connection: &Connection) {
+    let Some(unit) = state.projects.get(root) else { return };
+
+    let mut files: std::collections::HashSet<std::path::PathBuf> =
+        unit.designs.keys().cloned().collect();
+    files.extend(unit.errors.keys().cloned());
+
+    for path in files {
+        let Ok(file_uri) = format!("file://{}", path.display()).parse::<lsp_types::Uri>() else {
+            continue;
+        };
+
+        if let Some(doc) = state.documents.get(&file_uri) {
+            // Live buffer — its own errors/version are authoritative.
+            let diagnostics: Vec<Diagnostic> =
+                doc.errors.iter().map(|e| parse_error_to_diagnostic(&doc.source, e)).collect();
+            send_diagnostics(connection, file_uri, diagnostics, Some(doc.version));
+            continue;
+        }
+
+        // Not open — diagnostics come from ProjectUnit's own build against
+        // the on-disk text.
+        let Ok(source) = std::fs::read_to_string(&path) else { continue };
+        let diagnostics: Vec<Diagnostic> = unit
+            .errors
+            .get(&path)
+            .map(|errs| errs.iter().map(|e| parse_error_to_diagnostic(&source, e)).collect())
+            .unwrap_or_default();
+        send_diagnostics(connection, file_uri, diagnostics, None);
+    }
+}
+
+fn send_diagnostics(
+    connection: &Connection,
+    uri: lsp_types::Uri,
+    diagnostics: Vec<Diagnostic>,
+    version: Option<i32>,
+) {
+    let params = PublishDiagnosticsParams { uri, diagnostics, version };
 
     let not = Notification {
         method: lsp_types::notification::PublishDiagnostics::METHOD.into(),
@@ -65,12 +113,31 @@ fn parse_error_to_diagnostic(source: &str, error: &ParseError) -> Diagnostic {
 
     Diagnostic {
         range,
-        severity: Some(DiagnosticSeverity::ERROR),
-        code: Some(NumberOrString::String("parse-error".into())),
+        severity: Some(severity_for_code(error.code.as_deref())),
+        code: error
+            .code
+            .clone()
+            .map(NumberOrString::String)
+            .or_else(|| Some(NumberOrString::String("parse-error".into()))),
         source: Some("piperine".into()),
         message: error.message.clone(),
         ..Default::default()
     }
+}
+
+/// Map a structured diagnostic code (T17/LSP-19) to its LSP severity.
+///
+/// SPEC_DEVIATION: every code currently defined across
+/// `piperine_lang::parse::error::ParseError` (E1001..E1004) and
+/// `piperine_lang::pom::error::ElabErrorKind` (E2001..E2025, E2999) is a
+/// genuine hard failure — elaboration/compilation cannot proceed past any
+/// of them, so none is warning-class today (verified by reading every
+/// variant in both enums; no lint/deprecation-style kind exists yet). This
+/// function still exists as the single seam a future non-blocking kind
+/// (e.g. a deprecation warning) would extend with one match arm, rather
+/// than inventing a downgrade for a code that doesn't warrant one.
+fn severity_for_code(_code: Option<&str>) -> DiagnosticSeverity {
+    DiagnosticSeverity::ERROR
 }
 
 /// Extract a byte range from an error message. Test-support surface: the
@@ -88,6 +155,7 @@ pub fn extract_error_range(source: &str, error: &str) -> Range {
                     .and_then(|n| n.parse::<usize>().ok())
             })
             .map(|offset| miette::SourceSpan::new(offset.into(), 1)),
+        code: None,
     };
     parse_error_to_diagnostic(source, &pe).range
 }

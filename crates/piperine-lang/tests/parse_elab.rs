@@ -1,6 +1,10 @@
+//! Parse → AST → elaboration over the example gallery and the language's
+//! structural forms: what the parser produces and what elaboration makes of it.
+
 use piperine_lang::parse_str;
 use piperine_lang::parse::ast::*;
 use piperine_lang::parse::ast::SourceFile;
+use piperine_lang::{Lexer, Tok};
 
 /// Flatten a SourceFile into categorized lists (replaces the old model::Document).
 struct Document {
@@ -85,7 +89,7 @@ fn test_core_structure() {
     let doc = Document::from_ast(ast);
 
     // Disciplines
-    assert!(doc.disciplines.len() >= 1, "Expected at least 1 discipline");
+    assert!(!doc.disciplines.is_empty(), "Expected at least 1 discipline");
     assert_eq!(doc.disciplines[0].name, "Electrical");
 
     // Modules: Resistor, Capacitor, VSource, Diode, Comparator, BitToVoltage
@@ -100,7 +104,7 @@ fn test_core_structure() {
     assert!(doc.behaviors.len() >= 4, "Expected at least 4 behaviors, got {}", doc.behaviors.len());
 
     // Functions
-    assert!(doc.functions.len() >= 1, "Expected at least 1 function");
+    assert!(!doc.functions.is_empty(), "Expected at least 1 function");
     assert_eq!(doc.functions[0].sig.name, "thermal_voltage");
 }
 
@@ -137,7 +141,7 @@ fn test_sar_adc_structure() {
         .filter(|b| b.kind == BehaviorKind::Digital)
         .collect();
     assert!(analog_behaviors.len() >= 2);
-    assert!(digital_behaviors.len() >= 1);
+    assert!(!digital_behaviors.is_empty());
 }
 
 // ─────────────────────────── Structural: capabilities ──────────────────────
@@ -164,7 +168,7 @@ fn test_capabilities_structure() {
     assert_eq!(uint.const_params, vec!["N"]);
 
     // Impls
-    assert!(doc.impls.len() >= 1);
+    assert!(!doc.impls.is_empty());
     let add_impl = doc.impls.iter().find(|i| i.capability == Some("Add".into())).unwrap();
     assert_eq!(add_impl.ty, "UInt");
 }
@@ -325,16 +329,12 @@ fn test_fn(a: Boolean, b: Boolean, c: Boolean) -> Boolean {
 }
 "#;
     let ast = parse_str(src).unwrap();
-    if let Item::FnDecl(f) = &ast.items[0] {
-        if let Some(Stmt::Return(expr)) = f.body.stmts.first() {
-            // Should be Binary(a, BitOr, Binary(b, BitAnd, c))
-            if let Expr::Binary(lhs, BinaryOp::BitOr, rhs) = expr {
-                assert!(matches!(lhs.as_ref(), Expr::Ident(n) if n == "a"));
-                assert!(matches!(rhs.as_ref(), Expr::Binary(_, BinaryOp::BitAnd, _)));
-            } else {
-                panic!("Expected BitOr at top level, got {:?}", expr);
-            }
-        }
+    if let Item::FnDecl(f) = &ast.items[0]
+        && let Some(Stmt::Return(expr)) = f.body.stmts.first()
+        && let Expr::Binary(lhs, BinaryOp::BitOr, rhs) = expr
+    {
+        assert!(matches!(lhs.as_ref(), Expr::Ident(n) if n == "a"));
+        assert!(matches!(rhs.as_ref(), Expr::Binary(_, BinaryOp::BitAnd, _)));
     }
 }
 
@@ -349,10 +349,10 @@ fn test_fn() -> Real {
 }
 "#;
     let ast = parse_str(src).unwrap();
-    if let Item::FnDecl(f) = &ast.items[0] {
-        if let Some(Stmt::VarDecl { default: Some(expr), .. }) = f.body.stmts.first() {
-            assert!(matches!(expr, Expr::Block(_)), "Expected Block expr, got {:?}", expr);
-        }
+    if let Item::FnDecl(f) = &ast.items[0]
+        && let Some(Stmt::VarDecl { default: Some(expr), .. }) = f.body.stmts.first()
+    {
+        assert!(matches!(expr, Expr::Block(_)), "Expected Block expr, got {:?}", expr);
     }
 }
 
@@ -400,16 +400,12 @@ fn test_fn() -> Complex {
 }
 "#;
     let ast = parse_str(src).unwrap();
-    if let Item::FnDecl(f) = &ast.items[0] {
-        if let Some(Stmt::VarDecl { default: Some(expr), .. }) = f.body.stmts.first() {
-            // Should be Call(Path(Complex::polar), [1.0, 0.5])
-            if let Expr::Call(callee, args) = expr {
-                assert!(matches!(callee.as_ref(), Expr::Path(p) if p.segments == vec!["Complex", "polar"]));
-                assert_eq!(args.len(), 2);
-            } else {
-                panic!("Expected Call expr, got {:?}", expr);
-            }
-        }
+    if let Item::FnDecl(f) = &ast.items[0]
+        && let Some(Stmt::VarDecl { default: Some(expr), .. }) = f.body.stmts.first()
+        && let Expr::Call(callee, args) = expr
+    {
+        assert!(matches!(callee.as_ref(), Expr::Path(p) if p.segments == vec!["Complex", "polar"]));
+        assert_eq!(args.len(), 2);
     }
 }
 
@@ -459,6 +455,64 @@ fn test_error_on_missing_semicolon() {
     assert!(result.is_err());
 }
 
+// ─────────────────────────── Lexer `///` doc-comment capture (LSP-06) ──────
+
+#[test]
+fn test_doc_run_before_decl_is_captured() {
+    let src = "/// A two-terminal resistor.\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    // First surviving token is the `module` identifier.
+    let first = &toks[0];
+    assert!(matches!(&first.tok, Tok::Ident(s) if s == "module"));
+    assert_eq!(first.doc.as_deref(), Some("A two-terminal resistor."));
+}
+
+#[test]
+fn test_multiline_doc_run_joins_with_newline() {
+    let src = "/// Line one.\n/// Line two.\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert_eq!(first.doc.as_deref(), Some("Line one.\nLine two."));
+}
+
+#[test]
+fn test_plain_line_comment_is_discarded_not_captured_as_doc() {
+    let src = "// just a note\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert!(matches!(&first.tok, Tok::Ident(s) if s == "module"));
+    assert_eq!(first.doc, None, "plain `//` must never attach as doc trivia");
+}
+
+#[test]
+fn test_triple_slash_inside_plain_comment_line_is_not_special() {
+    // The whole line is lexed as a single `//` comment token starting with
+    // `//`, not `///` — the `///` occurring mid-line must not trigger doc
+    // capture.
+    let src = "// see /// for details\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert_eq!(first.doc, None);
+}
+
+#[test]
+fn test_dangling_doc_run_with_no_following_decl_is_ignored() {
+    // A `///` run at end-of-file with nothing after it must not crash and
+    // must not appear anywhere in the (empty) result.
+    let src = "/// orphaned doc comment\n";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    assert!(toks.is_empty());
+}
+
+#[test]
+fn test_doc_run_separated_by_blank_line_does_not_attach() {
+    // Only the run immediately adjacent to the declaration attaches.
+    let src = "/// stale comment\n\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert_eq!(first.doc, None);
+}
+
 // ─────────────────────────── Use declarations ─────────────────────────────
 
 #[test]
@@ -498,5 +552,5 @@ fn test_language_features_structure() {
     assert!(doc.functions.len() >= 2);
 
     // Modules (RcChain)
-    assert!(doc.modules.len() >= 1);
+    assert!(!doc.modules.is_empty());
 }

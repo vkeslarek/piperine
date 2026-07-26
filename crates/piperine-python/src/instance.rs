@@ -232,10 +232,12 @@ impl _InstanceView {
         self.label.clone()
     }
 
-    /// The instance's terminals as a list of `_Terminal(port, net)` pairs
-    /// (port name + connected top-level net name), in port-declaration order
-    /// (PY-13: "exposing that instance's terminal quantities").
-    fn terminals(&self) -> PyResult<Vec<_Terminal>> {
+    /// The instance's terminal connectivity as a list of `_Terminal(port, net)`
+    /// pairs (port name + connected top-level net name), in port-declaration
+    /// order (PY-13: "exposing that instance's terminal quantities"). Renamed
+    /// from `terminals()` to free the `terminals` property for the HOST-09
+    /// descriptor catalog.
+    fn terminal_connections(&self) -> PyResult<Vec<_Terminal>> {
         Ok(self
             .resolver
             .terminal_nets(&self.label)?
@@ -253,11 +255,19 @@ impl _InstanceView {
         let (net_a, net_b) = self.resolve_pair(port_a, port_b)?;
         Python::with_gil(|py| match &self.inner {
             InstanceResult::Op(op) => {
-                let f = op.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let f = match net_b {
+                    Some(b) => op.v((net_a, b)),
+                    None => op.v(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(f.into_pyobject(py)?.into_any().unbind())
             }
             InstanceResult::Trace(trace) => {
-                let w = trace.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let w = match net_b {
+                    Some(b) => trace.v((net_a, b)),
+                    None => trace.v(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(Py::new(py, _Waveform::new(w))?.into_any())
             }
         })
@@ -273,11 +283,19 @@ impl _InstanceView {
         let (net_a, net_b) = self.resolve_pair(port_a, port_b)?;
         Python::with_gil(|py| match &self.inner {
             InstanceResult::Op(op) => {
-                let f = op.i(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let f = match net_b {
+                    Some(b) => op.i((net_a, b)),
+                    None => op.i(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(f.into_pyobject(py)?.into_any().unbind())
             }
             InstanceResult::Trace(trace) => {
-                let w = trace.i(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let w = match net_b {
+                    Some(b) => trace.i((net_a, b)),
+                    None => trace.i(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(Py::new(py, _Waveform::new(w))?.into_any())
             }
         })
@@ -287,6 +305,109 @@ impl _InstanceView {
     /// `__getitem__ → .v` mapping the parent result defines for net names).
     fn __getitem__(&self, port: &str) -> PyResult<PyObject> {
         self.v(port, None)
+    }
+
+    /// The device's computed operating-point variable `name` (HOST-07):
+    /// reads the `read_opvars` snapshot taken when the parent `.op()`
+    /// solved. Fails loud — never `None`/`NaN` — on an unknown opvar or on
+    /// a trace view (recorded observables use `trace.opvar(path)` instead,
+    /// HOST-08).
+    fn opvar(&self, name: &str) -> PyResult<f64> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                op.instance(&self.label).and_then(|v| v.opvar(name)).map_err(readout_err)
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "opvar() is not available on a trace view; use trace.opvar(path) instead",
+            )),
+        }
+    }
+
+    /// Every opvar this device declared, as `(name, value)` pairs (HOST-07).
+    fn opvars(&self) -> PyResult<Vec<(String, f64)>> {
+        match &self.inner {
+            InstanceResult::Op(op) => op.instance(&self.label).map(|v| v.opvars()).map_err(readout_err),
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "opvars() is not available on a trace view; use trace.opvar(path) instead",
+            )),
+        }
+    }
+
+    /// The device's model identity (HOST-09 / ABI-46): `type_id` and
+    /// `version` from the shipped `model_descriptor()` catalog. Read-only
+    /// reflection — not available on a trace view.
+    #[getter]
+    fn model(&self) -> PyResult<_ModelDescriptor> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let m = op.instance(&self.label).map_err(readout_err)?.model().clone();
+                Ok(_ModelDescriptor::from_solver(m))
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "model is not available on a trace view",
+            )),
+        }
+    }
+
+    /// The device's terminal descriptors (HOST-09 / ABI-27): each carrying
+    /// `.name`, `.kind` (`"external"`/`"internal"`/`"auxiliary"`), `.domain`,
+    /// `.direction`. Read-only reflection — not available on a trace view.
+    /// For port→net connectivity, use `terminal_connections()`.
+    #[getter]
+    fn terminals(&self) -> PyResult<Vec<_TerminalDescriptor>> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let t = op.instance(&self.label).map_err(readout_err)?.terminals().to_vec();
+                Ok(t.into_iter().map(_TerminalDescriptor::from_solver).collect())
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "terminals is not available on a trace view",
+            )),
+        }
+    }
+
+    /// The device's observable catalog (HOST-09 / ABI-32): what CAN be probed
+    /// via `probe=["inst.name"]` — each entry carries `.name`, `.kind`, and
+    /// `.cost`. Read-only reflection — not available on a trace view.
+    fn observables(&self) -> PyResult<Vec<_ObservableDescriptor>> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let o = op.instance(&self.label).map_err(readout_err)?.observables().to_vec();
+                Ok(o.into_iter().map(_ObservableDescriptor::from_solver).collect())
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "observables() is not available on a trace view",
+            )),
+        }
+    }
+
+    /// The device's parameter descriptor for `name` (HOST-12): `bounds`,
+    /// `unit`, `scope`, `invalidation`. Fails loud on an unknown param.
+    fn param(&self, name: &str) -> PyResult<_ParamDescriptor> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let view = op.instance(&self.label).map_err(readout_err)?;
+                let p = view.param(name).map_err(readout_err)?;
+                Ok(_ParamDescriptor::from_solver(p.clone()))
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "param() is not available on a trace view",
+            )),
+        }
+    }
+
+    /// The device's full parameter descriptor catalog (HOST-12): `bounds`/
+    /// `unit`/`scope`/`invalidation` for each declared parameter.
+    fn params(&self) -> PyResult<Vec<_ParamDescriptor>> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let p = op.instance(&self.label).map_err(readout_err)?.params().to_vec();
+                Ok(p.into_iter().map(_ParamDescriptor::from_solver).collect())
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "params() is not available on a trace view",
+            )),
+        }
     }
 }
 
@@ -326,6 +447,138 @@ impl _Terminal {
     #[getter]
     fn net(&self) -> String {
         self.net.clone()
+    }
+}
+
+/// `_ModelDescriptor` — model identity and version (HOST-09 / ABI-46).
+/// Uniform-shape (MD-22): mirrors the api `ModelDescriptor` — `type_id` +
+/// `version`, same field names on both hosts.
+#[pyclass(module = "piperine")]
+pub struct _ModelDescriptor {
+    #[pyo3(get)]
+    type_id: String,
+    #[pyo3(get)]
+    version: String,
+}
+
+impl _ModelDescriptor {
+    pub(crate) fn from_solver(m: piperine_api::ModelDescriptor) -> Self {
+        Self { type_id: m.type_id, version: m.version }
+    }
+}
+
+/// `_TerminalDescriptor` — one terminal's metadata (HOST-09 / ABI-27). The
+/// `.kind` string (`"external"`/`"internal"`/`"auxiliary"`) carries the
+/// terminal classification; `.domain` is `"analog"` or `"digital"`.
+/// Uniform-shape (MD-22): mirrors the api `TerminalDescriptor`.
+#[pyclass(module = "piperine")]
+pub struct _TerminalDescriptor {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    kind: String,
+    #[pyo3(get)]
+    domain: String,
+    #[pyo3(get)]
+    direction: String,
+}
+
+impl _TerminalDescriptor {
+    pub(crate) fn from_solver(t: piperine_solver::prelude::TerminalDescriptor) -> Self {
+        use piperine_solver::prelude::{Direction, Domain, TerminalKind};
+        let kind = match t.kind {
+            TerminalKind::External => "external",
+            TerminalKind::Internal => "internal",
+            TerminalKind::Auxiliary => "auxiliary",
+        };
+        let domain = match t.domain {
+            Domain::Analog => "analog",
+            Domain::Digital => "digital",
+        };
+        let direction = match t.direction {
+            Direction::In => "in",
+            Direction::Out => "out",
+            Direction::Inout => "inout",
+        };
+        Self {
+            name: t.name,
+            kind: kind.to_string(),
+            domain: domain.to_string(),
+            direction: direction.to_string(),
+        }
+    }
+}
+
+/// `_ObservableDescriptor` — one device-declared observable (HOST-09 /
+/// ABI-32): the source-level `.name`, what the recorded value represents
+/// (`.kind`), and a relative recording `.cost` hint.
+#[pyclass(module = "piperine")]
+pub struct _ObservableDescriptor {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    kind: String,
+    #[pyo3(get)]
+    cost: f32,
+}
+
+impl _ObservableDescriptor {
+    pub(crate) fn from_solver(o: piperine_solver::prelude::ObservableDescriptor) -> Self {
+        use piperine_solver::prelude::ObservableKind;
+        let kind = match o.kind {
+            ObservableKind::BranchCurrent => "branch_current",
+            ObservableKind::Charge => "charge",
+            ObservableKind::Flux => "flux",
+            ObservableKind::State => "state",
+            ObservableKind::Var => "var",
+        };
+        Self {
+            name: o.name,
+            kind: kind.to_string(),
+            cost: o.cost,
+        }
+    }
+}
+
+/// `_ParamDescriptor` — one parameter's metadata (HOST-12): `bounds`,
+/// `unit`, `scope`, `invalidation`. The `.bounds` is a `(min, max)` tuple
+/// (either may be `None` = unbounded). Uniform-shape (MD-22): mirrors the
+/// api `ParamDescriptor`.
+#[pyclass(module = "piperine")]
+pub struct _ParamDescriptor {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    bounds: (Option<f64>, Option<f64>),
+    #[pyo3(get)]
+    unit: Option<String>,
+    #[pyo3(get)]
+    scope: String,
+    #[pyo3(get)]
+    invalidation: String,
+}
+
+impl _ParamDescriptor {
+    pub(crate) fn from_solver(p: piperine_solver::prelude::ParamDescriptor) -> Self {
+        use piperine_solver::prelude::{Invalidation, ParamScope};
+        let scope = match p.scope {
+            ParamScope::Model => "model",
+            ParamScope::Instance => "instance",
+        };
+        let invalidation = match p.invalidation {
+            Invalidation::None => "none",
+            Invalidation::Restamp => "restamp",
+            Invalidation::Temperature => "temperature",
+            Invalidation::OperatingPoint => "operating_point",
+            Invalidation::Rebuild => "rebuild",
+        };
+        Self {
+            name: p.name,
+            bounds: (p.bounds.min, p.bounds.max),
+            unit: p.unit,
+            scope: scope.to_string(),
+            invalidation: invalidation.to_string(),
+        }
     }
 }
 

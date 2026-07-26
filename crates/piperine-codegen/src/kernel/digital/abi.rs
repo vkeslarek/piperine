@@ -106,6 +106,13 @@ pub struct DigitalKernel {
     pub(crate) name: String,
     pub(crate) inputs: Vec<NodeId>,
     pub(crate) outputs: Vec<NodeId>,
+    /// Source-level names parallel to [`inputs`](Self::inputs) and
+    /// [`outputs`](Self::outputs), looked up from the symbol table at
+    /// compile time. Surfaced through [`DigitalKernel::input_name`] /
+    /// [`DigitalKernel::output_name`] so the introspection bridge (ABI-28)
+    /// returns names, not positional indices.
+    pub(crate) input_names: Vec<String>,
+    pub(crate) output_names: Vec<String>,
     pub(crate) layout: DigitalLayout,
     pub(crate) clocked_blocks: Vec<ClockedSpec>,
     pub(crate) num_watch_terms: usize,
@@ -137,6 +144,20 @@ impl DigitalKernel {
 
     pub fn outputs(&self) -> &[NodeId] {
         &self.outputs
+    }
+
+    /// Source-level name of digital input `i` (ABI-28). Panics on
+    /// out-of-range `i` — every caller is internal and bounds the index
+    /// via [`inputs`](Self::inputs) first.
+    pub fn input_name(&self, i: usize) -> &str {
+        &self.input_names[i]
+    }
+
+    /// Source-level name of digital output `i` (ABI-28). Panics on
+    /// out-of-range `i` — every caller is internal and bounds the index
+    /// via [`outputs`](Self::outputs) first.
+    pub fn output_name(&self, i: usize) -> &str {
+        &self.output_names[i]
     }
 
     pub fn layout(&self) -> &DigitalLayout {

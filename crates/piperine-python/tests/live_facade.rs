@@ -1,4 +1,4 @@
-//! T7 — the typed facade `LiveSession` (LIVE-11): PHDL-name `set` with
+//! T7 — the typed facade `Session` (LIVE-11): PHDL-name `set` with
 //! error parity against the Rust solver path (identical messages), and
 //! `schedule_set` reaching the transient queue (the mid-tran RC scenario
 //! driven from Python).
@@ -77,11 +77,11 @@ import piperine
 
 design = piperine.load("{phdl}")
 
-# Both facade entry points build a LiveSession.
+# Both facade entry points build a Session.
 s2 = design.module("Top").compile()
-assert type(s2).__name__ == "LiveSession"
+assert type(s2).__name__ == "Session"
 s = design.compile()          # top-module shorthand (Top is the only root)
-assert type(s).__name__ == "LiveSession"
+assert type(s).__name__ == "Session"
 assert s.rebuilds == 0
 
 # ── LIVE-11: error parity with the Rust solver path (exact messages) ────

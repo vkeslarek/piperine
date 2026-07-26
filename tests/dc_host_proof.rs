@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_codegen::{AnalogKernel, CircuitCompiler};
 use piperine_lang::{SourceMap, Value};
 use piperine_solver::prelude::Context;
@@ -54,7 +54,7 @@ fn fresh_build_v_mid(v_dc: f64, r_bot: f64) -> f64 {
     session.stage("v1", "dc", Value::Real(v_dc));
     session.stage("r2", "r", Value::Real(r_bot));
     let op = session.run_op(&SolverConfig::default(), None).expect("fresh op");
-    op.v(&NetRef { name: "mid".into() }, None).expect("v(mid)")
+    op.v("mid").expect("v(mid)")
 }
 
 /// Nested `(v1.dc × r2.r)` and source-only sweeps on one compilation:

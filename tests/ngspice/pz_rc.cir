@@ -1,0 +1,11 @@
+* pz_rc — natural-pole cross-check (.pz)
+* Current input keeps the network's natural response intact (an ideal
+* voltage source would pin `in`); the single finite pole is at
+* -1/((R1+R2)*C) = -500 rad/s.
+I1 in 0 dc 1
+R1 in out 1000
+R2 in 0 1000
+C1 out 0 1e-6
+.pz in 0 out 0 cur pol
+.print pz all
+.end

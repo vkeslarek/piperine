@@ -1,0 +1,105 @@
+// NGSPICE faithful models — uniform distributed RC (URC) lumped line.
+//
+// Source: ngspice/src/spicelib/devices/urc/  (URC device, lumped RC model).
+//
+// The ngspice URC device approximates a uniform distributed RC line by a
+// finite ladder of N series resistors and N shunt capacitors, one C at every
+// tap node including the output. The total line resistance is RPERL·L and
+// the total line capacitance is CPERL·L; each lump takes a 1/N share.
+//
+// Authoring choice (FLAT-04). The natural shape is `mod urc[N]` with a
+// `StructuralFor` over `N` series RC segments using an array wire
+// `tap : Electrical[N+1]` for the taps. That route is BLOCKED today by the
+// flatten pass's gap-3 boundary — `tap[i]` becomes an indexed `NetRef` and
+// `FlattenHierarchy::remap` fails loud (array-net → flat-net expansion is
+// deferred, see `.specs/features/hierarchy-flattening/spec.md` §Three Gaps).
+// Instead, this file ships FIXED-N mid-level modules (`urc2`, `urc5`,
+// `urc10`) that use scalar tap wires and a reusable `urc_seg` submodule.
+// This stays inside the MVP flatten boundary (pure structural, no array
+// nets, no const-arg-into-behavior) while exercising the same 3-level
+// inlining path a parametric `urc[N]` would (Top → urcN → urc_seg → res/cap).
+//
+// Per-segment R/C are exposed as params so a host can scale them via the
+// flat-label override contract (`u1.s0.r1`, `u1.s0.c1`, …).
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::disciplines;
+use spice::passives;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  urc_seg — one ladder lump: a series R (p→n) and a shunt C (n→g).
+//
+//  Pure-structural: instantiates `res` and `cap` and owns no analog body.
+//  This is the recursion base for flattening — a mid-level module whose
+//  sub-instances are leaves. When inlined into a parent, its two leaves
+//  reappear under path-prefixed labels (`s0.r1`, `s0.c1`).
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod urc_seg ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    param r : Real = 100.0;     // series resistance of this lump (Ω)
+    param c : Real = 1.0e-9;    // shunt capacitance of this lump (F)
+
+    r1 : res ( .p=p, .n=n ) { .r = r };
+    c1 : cap ( .p=n, .n=g ) { .c = c };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  urc2 / urc5 / urc10 — fixed-N ladder of `urc_seg` lumps.
+//
+//  N series segments with N−1 scalar tap wires between them; the input port
+//  `p` is the first tap, the output port `n` the last. Each module is a
+//  pure-structural shell — its flat form (after `FlattenHierarchy`) is the
+//  2N leaf res/cap instances with composed labels (`u1.s0.r1`, …).
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod urc2 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    param r : Real = 100.0;
+    param c : Real = 1.0e-9;
+
+    wire t1 : Electrical;
+
+    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r, .c = c };
+    s1 : urc_seg ( .p=t1, .n=n,  .g=g ) { .r = r, .c = c };
+}
+
+pub mod urc5 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    param r : Real = 100.0;
+    param c : Real = 1.0e-9;
+
+    wire t1 : Electrical;
+    wire t2 : Electrical;
+    wire t3 : Electrical;
+    wire t4 : Electrical;
+
+    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r, .c = c };
+    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r, .c = c };
+    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r, .c = c };
+    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r, .c = c };
+    s4 : urc_seg ( .p=t4, .n=n,  .g=g ) { .r = r, .c = c };
+}
+
+pub mod urc10 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    param r : Real = 100.0;
+    param c : Real = 1.0e-9;
+
+    wire t1 : Electrical;
+    wire t2 : Electrical;
+    wire t3 : Electrical;
+    wire t4 : Electrical;
+    wire t5 : Electrical;
+    wire t6 : Electrical;
+    wire t7 : Electrical;
+    wire t8 : Electrical;
+    wire t9 : Electrical;
+
+    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r, .c = c };
+    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r, .c = c };
+    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r, .c = c };
+    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r, .c = c };
+    s4 : urc_seg ( .p=t4, .n=t5, .g=g ) { .r = r, .c = c };
+    s5 : urc_seg ( .p=t5, .n=t6, .g=g ) { .r = r, .c = c };
+    s6 : urc_seg ( .p=t6, .n=t7, .g=g ) { .r = r, .c = c };
+    s7 : urc_seg ( .p=t7, .n=t8, .g=g ) { .r = r, .c = c };
+    s8 : urc_seg ( .p=t8, .n=t9, .g=g ) { .r = r, .c = c };
+    s9 : urc_seg ( .p=t9, .n=n,  .g=g ) { .r = r, .c = c };
+}

@@ -8,12 +8,12 @@ members = [
     "crates/piperine-lang-server",
     "crates/piperine-solver",
     "crates/piperine-plugin",
-    "crates/piperine-plugin-wasm",
+    "crates/piperine-plugin-macros",
     "crates/piperine-python",
 ]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 
 [package]
@@ -22,13 +22,17 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-piperine-api = { version = "0.1.1", path = "crates/piperine-api" }
+piperine-api = { path = "crates/piperine-api" }
 
 # The tests of record stay on this crate importing `piperine::…` — they are
 # the proof the shell re-exports the full host surface. run_examples drives
 # the .py examples through the embedded-CPython host.
 [dev-dependencies]
 piperine-python = { path = "crates/piperine-python" }
+piperine-plugin = { path = "crates/piperine-plugin" }
+# The `#[pip::…]` macros under their public spelling — the plugin_parity
+# test compile-proves the decorator names against the Python `@pip.…` side.
+pip = { package = "piperine-plugin-macros", path = "crates/piperine-plugin-macros" }
 # The suites also reach lang/codegen directly (SourceMap setup, kernel
 # introspection) — dev-only edges, not part of the shell's public story.
 piperine-lang = { path = "crates/piperine-lang" }
@@ -37,6 +41,24 @@ piperine-solver = { path = "crates/piperine-solver" }
 num-complex = { workspace = true }
 
 [profile.dev.package.faer]
+opt-level = 3
+
+# Cranelift's own register allocator/codegen is prohibitively slow at
+# opt-level 0 — the JIT backend used by every analog kernel compile
+# (including `.disto`'s per-branch-combination kernels) needs release-speed
+# codegen even in dev/test builds, or symbolic-differentiation-heavy
+# devices (many controlling branches) compile too slowly to test.
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-jit]
+opt-level = 3
+[profile.dev.package.cranelift-module]
+opt-level = 3
+[profile.dev.package.cranelift-frontend]
+opt-level = 3
+[profile.dev.package.cranelift-native]
+opt-level = 3
+[profile.dev.package.regalloc2]
 opt-level = 3
 
 [profile.release]
@@ -62,6 +84,7 @@ rand_distr = "0.5.1"
 paste = "1.0.15"
 libloading = "0.8"
 tempfile = "3"
+inventory = "0.3"
 
 [workspace.lints.clippy]
 # ── Deny: mechanical, no reason to ignore ──

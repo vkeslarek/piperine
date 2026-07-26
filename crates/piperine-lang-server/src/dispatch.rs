@@ -123,10 +123,14 @@ pub fn handle_notification(state: &mut ServerState, not: Notification, conn_send
             // Re-elaborate all documents when a watched file changes
             let uris: Vec<_> = state.documents.keys().cloned().collect();
             for uri in uris {
-                if let Some(doc) = state.documents.get_mut(&uri) {
-                    let source_map = crate::project::ProjectContext::discover(&uri).source_map();
-                    doc.analyze(&source_map);
-                    crate::handlers::diagnostics::publish_diagnostics(state, &uri, &connection);
+                state.analyze_document(&uri);
+                // Per-file fan-out (T15/LSP-16) for project documents;
+                // single-file path otherwise (LSP-17).
+                match state.documents.get(&uri).and_then(|d| d.project_root.clone()) {
+                    Some(root) => {
+                        crate::handlers::diagnostics::publish_project_diagnostics(state, &root, &connection)
+                    }
+                    None => crate::handlers::diagnostics::publish_diagnostics(state, &uri, &connection),
                 }
             }
         }

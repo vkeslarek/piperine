@@ -2,15 +2,13 @@
 // capacitance. The python twin checks physics, not plumbing: the output PSD
 // plateau is 4kTR and the integrated noise approaches the classic kT/C.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
-// R = 1 kΩ at T = 300 K: thermal current PSD 4kT/R ≈ 1.657e-23 A²/Hz.
+/// R = 1 kΩ at T = 300 K: thermal current PSD 4kT/R ≈ 1.657e-23 A²/Hz.
 mod NoisyResistor(inout p : Electrical, inout n : Electrical) {
     param r : Real = 1e3;
-    param psd_4ktr : Real = 1.657e-23;    // 4·k·300/R, A²/Hz
+    param psd_4ktr : Real = 1.657e-23;
+    // 4·k·300/R, A²/Hz
 }
 
 analog NoisyResistor {
@@ -29,7 +27,8 @@ analog Capacitor {
 mod NoiseCell() {
     wire gnd : Electrical;
     wire out : Electrical;
-    r1 : NoisyResistor(.p = out, .n = gnd);
-    c1 : Capacitor(.p = out, .n = gnd);    // fc ≈ 159 kHz
+    r1 : NoisyResistor(.p = out,.n = gnd);
+    c1 : Capacitor(.p = out,.n = gnd);
+    // fc ≈ 159 kHz
 }
 

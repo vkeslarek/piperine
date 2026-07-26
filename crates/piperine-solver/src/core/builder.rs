@@ -134,7 +134,8 @@ impl CircuitBuilder {
         self
     }
 
-    /// Freeze: run `allocate_unknowns` for every element (ABI-09), assemble
+    /// Freeze: run `allocate_unknowns` for every element (ABI-09), seed the
+    /// nominal temperature on every element (ABI-19), assemble
     /// `CircuitInstance`, size + label digital state, rebuild topology, init
     /// digital devices.
     ///
@@ -157,6 +158,17 @@ impl CircuitBuilder {
                     ),
                 ));
             }
+        }
+
+        // Step 1b: seed the default nominal temperature on every element
+        // (ABI-19). `setup_all` re-seeds with the run's actual temperature
+        // before the first `load_*`; this initial seed covers circuits that
+        // never enter an analysis and gives elements a defined temperature
+        // from construction. The default-tolerances temperature (300.15 K)
+        // matches `Tolerances::default()`.
+        let default_temperature = crate::analyses::Tolerances::default().temperature;
+        for element in &mut self.elements {
+            element.set_temperature(default_temperature);
         }
 
         // Step 2: assemble CircuitInstance.

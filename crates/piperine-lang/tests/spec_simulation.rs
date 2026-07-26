@@ -812,7 +812,7 @@ fn sim_tran_rc_charging() {
     circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(5e-3.into(), 1e-5.into());
+    let options = TransientAnalysisOptions::new(5e-3, 1e-5);
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
@@ -980,7 +980,7 @@ fn sim_tran_above_event_toggles_switch_state() {
     circuit.rebuild_digital_topology();
 
     // Control ramps 0→10V over 1ms, crossing vt=1V at t=0.1ms.
-    let options = TransientAnalysisOptions::new(1e-3.into(), 1e-6.into());
+    let options = TransientAnalysisOptions::new(1e-3, 1e-6);
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
@@ -1223,7 +1223,7 @@ fn sim_tran_transition_ramps_step_into_rc() {
 
     // τ = 1e3·1e-8 = 10 µs ≪ tr = 500 µs: the RC tracks the ramp
     // quasi-statically, so V(out) ≈ the transition output itself.
-    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let options = TransientAnalysisOptions::new(2e-3, 1e-5);
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
@@ -1272,7 +1272,7 @@ fn sim_tran_transition_zero_rise_fall_is_an_instantaneous_step() {
     circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let options = TransientAnalysisOptions::new(2e-3, 1e-5);
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
@@ -1333,7 +1333,7 @@ fn sim_tran_initial_branch_force_precharged_cap() {
     circuit.rebuild_digital_topology();
 
     // τ = RC = 1 ms; stop at 5 ms = 5τ.
-    let options = TransientAnalysisOptions::new(5e-3.into(), 1e-6.into());
+    let options = TransientAnalysisOptions::new(5e-3, 1e-6);
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
@@ -1515,7 +1515,7 @@ fn sim_tran_transition_state_survives_rejected_steps() {
     circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
 
-    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let options = TransientAnalysisOptions::new(2e-3, 1e-5);
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 

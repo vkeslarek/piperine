@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use piperine_lang::pom::{Design, Module};
+use piperine_lang::pom::{Design, IntrospectionMeta, Module};
 
 use piperine_solver::abi::NodeIdentifier;
 use piperine_solver::abi::CircuitInstance;
@@ -64,6 +64,13 @@ pub struct BuiltInstanceInfo {
     /// nonzero count means the current is already a solver variable and
     /// should be read via `DcAnalysisResult::get_branch`, not recomputed.
     pub num_forces: usize,
+    /// The host-visible name for each entry of `kernel.opvar_names()`, in
+    /// the same order (host-library HOST-08): the `@name(value)` label when
+    /// the module var declares one, else the kernel id unchanged — the same
+    /// resolution `PiperineDevice::read_opvars`/`var_display_name` applies,
+    /// mirrored here so a recorded trace can address an opvar by the same
+    /// name a live `OpResult::instance(...).opvar(...)` read would use.
+    pub opvar_display_names: Vec<String>,
 }
 
 /// Compiles a POM [`Design`] into solver circuits. `bodies` is every
@@ -75,6 +82,12 @@ pub struct CircuitCompiler<'p> {
     design: &'p Design,
     bodies: &'p HashMap<String, LoweredBody>,
     kernels: HashMap<String, Arc<CompiledModule>>,
+    /// Resolved device-introspection metadata sidecars, one per module name
+    /// (phdl-introspection-attributes). Cached like `kernels` so a module
+    /// instantiated many times resolves its `@model`/`@name`/`@unit`/
+    /// `@description`/`@kind` attributes once. Built from POM attributes by
+    /// [`Design::introspection_meta`][piperine_lang::pom::Design::introspection_meta].
+    meta: HashMap<String, IntrospectionMeta>,
     /// Builds `@device`-annotated instances (SPEC Part VI §7). `None` means
     /// no plugin host is wired — a `@device` instance then fails loud.
     pub(super) provider: Option<&'p dyn super::plugin::DeviceProvider>,
@@ -93,7 +106,7 @@ pub struct CircuitCompiler<'p> {
 
 impl<'p> CircuitCompiler<'p> {
     pub fn new(design: &'p Design, bodies: &'p HashMap<String, LoweredBody>) -> Self {
-        Self { design, bodies, kernels: HashMap::new(), provider: None, fuse_digital_cones: true, compile_disto: true }
+        Self { design, bodies, kernels: HashMap::new(), meta: HashMap::new(), provider: None, fuse_digital_cones: true, compile_disto: true }
     }
 
     /// Wire a plugin host as the builder for `@device` instances.
@@ -115,6 +128,17 @@ impl<'p> CircuitCompiler<'p> {
         self.design.module(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
 
+    /// The flattened (leaf-only) form of module `name`, for codegen's ROOT
+    /// lookup. `Design::flat_module` falls back to the authored module when
+    /// no flat form is recorded — a leaf's flat form equals its authored
+    /// form, so existing two-level circuits are unchanged. A mid-level root
+    /// (one that instantiates sub-modules) resolves to its spliced-flat form
+    /// here, making the `builder.rs` nested-hierarchy guard unreachable for
+    /// valid flattened input. FLAT-01.
+    pub(super) fn flat_module(&self, name: &str) -> Result<&'p Module, CodegenError> {
+        self.design.flat_module(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
+    }
+
     pub(super) fn body(&self, name: &str) -> Result<&'p LoweredBody, CodegenError> {
         self.bodies.get(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
@@ -128,6 +152,25 @@ impl<'p> CircuitCompiler<'p> {
         let compiled = Arc::new(CompiledModule::compile_with_options(body, self.compile_disto)?);
         self.kernels.insert(name.to_string(), compiled.clone());
         Ok(compiled)
+    }
+
+    /// Resolve (and cache) the device-introspection metadata sidecar for
+    /// `module_name` — author-declared `@model`/`@name`/`@unit`/`@description`/
+    /// `@kind` attributes read off the POM module. A bad attribute (placement
+    /// error, `@kind` value outside its target enum, duplicate `@name`) fails
+    /// loud here as a [`CodegenError::Invalid`], mirroring how the `@rfport`
+    /// resolver surfaces its validation failures at the consumer boundary.
+    /// Cached so a module instantiated many times resolves once.
+    pub(super) fn introspection_meta(&mut self, module_name: &str) -> Result<IntrospectionMeta, CodegenError> {
+        if let Some(m) = self.meta.get(module_name) {
+            return Ok(m.clone());
+        }
+        let m = self
+            .design
+            .introspection_meta(module_name)
+            .map_err(|e| CodegenError::Invalid(e.to_string()))?;
+        self.meta.insert(module_name.to_string(), m.clone());
+        Ok(m)
     }
 
     /// Build the circuit rooted at module `top`. The top may have both
@@ -147,7 +190,12 @@ impl<'p> CircuitCompiler<'p> {
         &mut self,
         top: &str,
     ) -> Result<(CircuitInstance, CircuitBuildInfo), CodegenError> {
-        let top_module = self.module(top)?;
+        // The root comes from the FLAT netlist (`Design::flat_modules`) — a
+        // mid-level module's sub-instances have been spliced into its flat
+        // form by `FlattenHierarchy`, so the root seen here contains only
+        // leaf devices. Leaf children are still read via `module()` (their
+        // flat form equals their authored form). FLAT-01.
+        let top_module = self.flat_module(top)?;
         let top_body = self.body(top)?;
 
         let top_params = Self::param_values(top_body, &[])?;

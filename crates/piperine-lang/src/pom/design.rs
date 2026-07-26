@@ -2,10 +2,14 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
-use crate::pom::{ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
+use crate::pom::{
+    ElabError, ElabErrorKind, Function, ImplBlock, IntrospectionMeta, ModelId, Module,
+    OverrideMap, TermMeta, VAR_KINDS, Value, VarMeta, TERMINAL_KINDS,
+};
 
 /// A typed staging failure (SPEC Part VI §8.2–§8.4): the plugin layer maps
 /// `UndeclaredType` to P0005 ("type not declared") and `Conflict` to P0008.
@@ -48,6 +52,21 @@ pub struct Project {
     /// Item provenance: declared item name → the package it was imported
     /// from. Items declared in the project itself are absent.
     pub origins: HashMap<String, String>,
+    /// Item-name → the real on-disk file it was declared in (BUG-1/
+    /// LSB-01..03), recorded by [`crate::resolve::Resolver::item_files`]
+    /// during elaboration. Absence means "no textual declaration is
+    /// tracked" (e.g. a native-only registry entry) — goto-definition
+    /// declines rather than fabricating a location.
+    pub item_files: HashMap<String, PathBuf>,
+    /// `use`-path segments → the real on-disk file they load
+    /// (`["spice","passives"]` → `.../headers/spice/passives.phdl`).
+    /// Recorded during resolution; the language server uses it for
+    /// go-to-definition on a `use` statement's path. `#[serde(skip)]`: a
+    /// `Vec<String>` map key is not JSON-serializable, and this is derived
+    /// resolution data (like `Design::flat_modules`), rebuilt every
+    /// elaboration — not authored reflection structure.
+    #[serde(skip)]
+    pub use_files: HashMap<Vec<String>, PathBuf>,
 }
 
 impl Project {
@@ -60,6 +79,23 @@ impl Project {
         }
         let base = name.split("__").next()?;
         self.origins.get(base).map(String::as_str)
+    }
+
+    /// The real on-disk file `name` was declared in, `None` if untracked.
+    /// Monomorphized names (`Dac__8`) resolve through their base (`Dac`),
+    /// mirroring [`Self::origin_of`].
+    pub fn item_file(&self, name: &str) -> Option<&Path> {
+        if let Some(path) = self.item_files.get(name) {
+            return Some(path.as_path());
+        }
+        let base = name.split("__").next()?;
+        self.item_files.get(base).map(PathBuf::as_path)
+    }
+
+    /// The real on-disk file a `use` path (its `::`-split segments) loads,
+    /// `None` if that path was never resolved (e.g. a bare unknown import).
+    pub fn use_file(&self, segments: &[String]) -> Option<&Path> {
+        self.use_files.get(segments).map(PathBuf::as_path)
     }
 }
 
@@ -90,6 +126,15 @@ pub struct RfPort {
 #[serde(default)]
 pub struct Design {
     pub(crate) modules: HashMap<String, Module>,
+    /// Flattened (leaf-only) form of each module — populated by the
+    /// `FlattenHierarchy` elaboration pass and consumed only by codegen.
+    /// The authored hierarchy lives in `modules` and is never mutated by
+    /// flattening (POM navigability mirrors the source); this map is a
+    /// derived artifact rebuilt every elaboration, so it is skipped on
+    /// serialize — a deserialized `Design` carries an empty `flat_modules`
+    /// and the pass is re-runnable.
+    #[serde(skip)]
+    pub(crate) flat_modules: HashMap<String, Module>,
     #[serde(skip)]
     pub(crate) disciplines: HashMap<String, DisciplineDecl>,
     #[serde(skip)]
@@ -117,6 +162,7 @@ impl Design {
     pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
+            flat_modules: HashMap::new(),
             disciplines: HashMap::new(),
             bundles: HashMap::new(),
             enums: HashMap::new(),
@@ -157,6 +203,19 @@ impl Design {
         self.project.origins = origins;
     }
 
+    /// Record item-name → real on-disk declaring file (BUG-1/LSB-01..03) —
+    /// called once by elaboration with the resolver's record, alongside
+    /// [`Self::set_origins`].
+    pub(crate) fn set_item_files(&mut self, item_files: HashMap<String, PathBuf>) {
+        self.project.item_files = item_files;
+    }
+
+    /// Record `use`-path → real on-disk file — called once by elaboration
+    /// with the resolver's record, alongside [`Self::set_item_files`].
+    pub(crate) fn set_use_files(&mut self, use_files: HashMap<Vec<String>, PathBuf>) {
+        self.project.use_files = use_files;
+    }
+
     /// The elaborated top module, if set.
     pub fn top(&self) -> Option<&Module> {
         self.top_module.as_ref().and_then(|n| self.modules.get(n))
@@ -186,6 +245,28 @@ impl Design {
     /// Look up a module by name.
     pub fn module(&self, name: &str) -> Option<&Module> {
         self.modules.get(name)
+    }
+
+    /// The flattened (leaf-only) form of module `name`, for codegen. Falls
+    /// back to the authored module when no flat form is recorded — a leaf
+    /// module's flat form is its authored form, so the pass does not record
+    /// one. Returns `None` when `name` is neither a known module nor a
+    /// flattened one.
+    pub fn flat_module(&self, name: &str) -> Option<&Module> {
+        self.flat_modules.get(name).or_else(|| self.modules.get(name))
+    }
+
+    /// The mutable module to patch when applying an override — the FLAT form
+    /// when present (codegen reads `flat_module` via `lower_bodies`), else
+    /// the authored form. For a two-level design the flat form equals the
+    /// authored form, so existing override semantics are unchanged; a
+    /// flattened root's spliced instance list is what hosts address.
+    pub(crate) fn module_for_override_mut(&mut self, name: &str) -> Option<&mut Module> {
+        if self.flat_modules.contains_key(name) {
+            self.flat_modules.get_mut(name)
+        } else {
+            self.modules.get_mut(name)
+        }
     }
 
     /// Every elaborated (monomorphized) module.
@@ -344,6 +425,164 @@ impl Design {
         Ok(ports)
     }
 
+    /// Resolve the device-introspection metadata sidecar for `module_name`
+    /// (phdl-introspection-attributes) — author-declared `@model`/`@name`/
+    /// `@unit`/`@description`/`@kind` attributes read off POM nodes into an
+    /// [`IntrospectionMeta`] bundle. Mirrors [`Design::rfports`]: iterate the
+    /// module's nodes, match each introspection schema, read its fields via
+    /// [`Attribute::field`](crate::pom::module::Attribute::field), and fail
+    /// loud through [`ElabErrorKind::AttrSchemaField`] (field/enum validation)
+    /// or [`ElabErrorKind::Other`] (placement errors) on any violation.
+    ///
+    /// Every attribute is optional — a module with none yields an empty sidecar
+    /// and codegen falls back to its derived defaults (PIA-02/08/12, zero
+    /// regression). Placement matrix, `@kind` enum membership, and duplicate
+    /// `@name` are validated here so codegen never sees malformed metadata:
+    ///
+    /// | schema    | module | var | port | wire | enum resolved at this site |
+    /// |-----------|:------:|:---:|:----:|:----:|-----------------------------|
+    /// | `@model`  | ✓      |     |      |      | —                           |
+    /// | `@name`   |        | ✓   | ✓    | ✓    | —                           |
+    /// | `@unit`   |        | ✓   |      |      | —                           |
+    /// | `@description` | | ✓   | ✓    | ✓    | —                     |
+    /// | `@kind`   |        | ✓   | ✓    | ✓    | var→ObservableKind, port/wire→TerminalKind |
+    pub fn introspection_meta(&self, module_name: &str) -> Result<IntrospectionMeta, ElabError> {
+        let module = self.modules.get(module_name).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "introspection: unknown module `{module_name}`"
+            )))
+        })?;
+        let mut meta = IntrospectionMeta::default();
+
+        // Helpers (local closures, scoped to this method): one builds an
+        // `AttrSchemaField` error for field/value violations, the other an
+        // `Other` error for placement violations — matching `rfports`'s split
+        // (AttrSchemaField for field values, Other for the unknown-module case).
+        let field_err = |schema: &str, field: &str, reason: String| {
+            ElabError::from(ElabErrorKind::AttrSchemaField {
+                schema: schema.into(),
+                field: field.into(),
+                reason,
+            })
+        };
+        let place_err = |schema: &str, node: &str| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "`@{schema}` is not valid on a {node} (placement error)"
+            )))
+        };
+        // Read a single-field schema's `value` as a string.
+        let str_value = |attr: &crate::pom::module::Attribute, schema: &str| -> Result<String, ElabError> {
+            match attr.field("value") {
+                Some(Value::Str(s)) => Ok(s.clone()),
+                other => Err(field_err(schema, "value", format!("expected a String, got {other:?}"))),
+            }
+        };
+
+        // @model is legal on the Module only; the other four schemas misplaced here.
+        for attr in &module.attributes {
+            match attr.schema() {
+                "model" => {
+                    let type_id = match attr.field("type") {
+                        Some(Value::Str(s)) => s.clone(),
+                        other => return Err(field_err("model", "type", format!("expected a String, got {other:?}"))),
+                    };
+                    let version = match attr.field("version") {
+                        Some(Value::Str(s)) => s.clone(),
+                        other => return Err(field_err("model", "version", format!("expected a String, got {other:?}"))),
+                    };
+                    meta.model = Some(ModelId { type_id, version });
+                }
+                "name" | "unit" | "description" | "kind" => return Err(place_err(attr.schema(), "module")),
+                _ => {}
+            }
+        }
+
+        // None of the five introspection schemas target a `param` — any of them
+        // here is a placement error (PIA-19). Params carry only their own value.
+        for p in &module.params {
+            for attr in &p.attributes {
+                match attr.schema() {
+                    "model" | "name" | "unit" | "description" | "kind" => {
+                        return Err(place_err(attr.schema(), "param"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // vars: @name/@unit/@description/@kind legal; @model misplaced. The
+        // @kind target enum on a var is ObservableKind (VAR_KINDS).
+        for v in &module.vars {
+            let mut vm = VarMeta::default();
+            for attr in &v.attributes {
+                match attr.schema() {
+                    "name" => vm.name = Some(str_value(attr, "name")?),
+                    "unit" => vm.unit = Some(str_value(attr, "unit")?),
+                    "description" => vm.description = Some(str_value(attr, "description")?),
+                    "kind" => {
+                        let raw = str_value(attr, "kind")?;
+                        let canonical = raw.to_ascii_lowercase();
+                        if !VAR_KINDS.contains(&canonical.as_str()) {
+                            return Err(field_err("kind", "value", format!(
+                                "`{raw}` is not a valid var @kind (expected one of {VAR_KINDS:?} — an ObservableKind)"
+                            )));
+                        }
+                        vm.kind = Some(canonical);
+                    }
+                    "model" => return Err(place_err("model", "var")),
+                    _ => {}
+                }
+            }
+            if vm.has_any() {
+                if let Some(name) = &vm.name
+                    && meta.vars.values().any(|existing| existing.name.as_ref() == Some(name))
+                {
+                        return Err(field_err("name", "value", format!(
+                            "duplicate introspection name `{name}` (names must be unique within a module's var catalog)"
+                        )));
+                }
+                meta.vars.insert(v.name.clone(), vm);
+            }
+        }
+
+        // ports + wires: @name/@description/@kind legal; @unit/@model misplaced.
+        // The @kind target enum on a terminal is TerminalKind (TERMINAL_KINDS).
+        let mut collect_terminal = |node_name: &str, attrs: &[crate::pom::module::Attribute], node_kind: &str| -> Result<(), ElabError> {
+            let mut tm = TermMeta::default();
+            for attr in attrs {
+                match attr.schema() {
+                    "name" => tm.name = Some(str_value(attr, "name")?),
+                    "description" => tm.description = Some(str_value(attr, "description")?),
+                    "kind" => {
+                        let raw = str_value(attr, "kind")?;
+                        let canonical = raw.to_ascii_lowercase();
+                        if !TERMINAL_KINDS.contains(&canonical.as_str()) {
+                            return Err(field_err("kind", "value", format!(
+                                "`{raw}` is not a valid terminal @kind (expected one of {TERMINAL_KINDS:?} — a TerminalKind)"
+                            )));
+                        }
+                        tm.kind = Some(canonical);
+                    }
+                    "unit" => return Err(place_err("unit", node_kind)),
+                    "model" => return Err(place_err("model", node_kind)),
+                    _ => {}
+                }
+            }
+            if tm.has_any() {
+                meta.terminals.insert(node_name.to_string(), tm);
+            }
+            Ok(())
+        };
+        for p in &module.ports {
+            collect_terminal(&p.name, &p.attributes, "port")?;
+        }
+        for w in &module.wires {
+            collect_terminal(&w.name, &w.attributes, "wire")?;
+        }
+
+        Ok(meta)
+    }
+
     // ── Staging layer ─────────────────────────────────────────────────────
 
     /// Stage a parameter override. Does NOT mutate the elaborated design —
@@ -445,7 +684,12 @@ impl Design {
         let mut design = self.clone();
         let overrides: Vec<(String, String, Value)> =
             self.overrides.borrow().iter().map(|(p, n, v)| (p.clone(), n.clone(), v.clone())).collect();
-        let module = design.modules.get_mut(root_module).ok_or_else(|| {
+        // Patch the FLAT form when present (codegen reads `flat_module` via
+        // `lower_bodies`); fall back to authored. For a two-level design the
+        // flat form equals the authored form, so existing override semantics
+        // are unchanged. A flattened root's spliced instance list is what
+        // hosts address (e.g. `x.seg0`). FLAT-03.
+        let module = design.module_for_override_mut(root_module).ok_or_else(|| {
             ElabError::from(ElabErrorKind::Other(format!("root module `{root_module}` not found")))
         })?;
         for (path, param, value) in overrides {
@@ -477,14 +721,15 @@ impl Design {
         }
         // Apply staged instance/connection injections (SPEC Part VI §8.2).
         // The type/arity checks ran at staging time; here the specs become
-        // ordinary POM nodes on the parent module.
+        // ordinary POM nodes on the parent module — patched into the flat
+        // form when present (same retarget as the root override above).
         let staged_instances: Vec<crate::pom::staging::StagedInstance> =
             self.overrides.borrow().added_instances().to_vec();
         let staged_connections: Vec<(String, crate::pom::staging::ConnectionSpec)> =
             self.overrides.borrow().added_connections().to_vec();
         for staged in staged_instances {
             let (parent, spec) = (staged.parent, staged.spec);
-            let module = design.modules.get_mut(&parent).ok_or_else(|| {
+            let module = design.module_for_override_mut(&parent).ok_or_else(|| {
                 ElabError::from(ElabErrorKind::Other(format!(
                     "staged instance `{}`: parent module `{parent}` not found",
                     spec.label
@@ -498,7 +743,10 @@ impl Design {
             }
             module.instances.push(crate::pom::module::Instance {
                 span: None,
+                label_span: None,
+                type_span: None,
                 attributes: Vec::new(),
+                doc: None,
                 label: Some(spec.label),
                 module: spec.module,
                 ports: spec.ports.iter().map(|n| crate::pom::net_type::NetRef::simple(n.clone())).collect(),
@@ -506,7 +754,7 @@ impl Design {
             });
         }
         for (parent, spec) in staged_connections {
-            let module = design.modules.get_mut(&parent).ok_or_else(|| {
+            let module = design.module_for_override_mut(&parent).ok_or_else(|| {
                 ElabError::from(ElabErrorKind::Other(format!(
                     "staged connection: parent module `{parent}` not found"
                 )))
@@ -560,8 +808,92 @@ impl Design {
     pub(crate) fn insert_module(&mut self, name: String, module: Module) {
         self.modules.insert(name, module);
     }
+    /// Insert a flat module by name. Test-only: the flatten unit tests build
+    /// synthetic `flat_modules` maps without running the pass.
+    #[cfg(test)]
+    pub(crate) fn insert_flat_module(&mut self, name: String, module: Module) {
+        self.flat_modules.insert(name, module);
+    }
 }
 
 impl Default for Design {
     fn default() -> Self { Self::new() }
+}
+
+#[cfg(test)]
+mod flat_module_tests {
+    use super::*;
+    use crate::pom::{Module, NetType, Wire};
+
+    fn leaf_module(name: &str) -> Module {
+        Module::new(
+            name.to_string(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    fn module_with_wire(name: &str, wire: &str) -> Module {
+        Module::new(
+            name.to_string(),
+            Vec::new(),
+            Vec::new(),
+            vec![Wire {
+                span: None,
+                attributes: Vec::new(),
+                doc: None,
+                name: wire.to_string(),
+                ty: NetType::Discipline("Electrical".to_string()),
+            }],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    /// `flat_module` falls back to `modules` when no flat form is recorded —
+    /// a leaf module's flat form is its authored form.
+    #[test]
+    fn flat_module_falls_back_to_authored_when_absent() {
+        let mut design = Design::new();
+        design.insert_module("Foo".to_string(), leaf_module("Foo"));
+        let flat = design.flat_module("Foo").expect("Foo present in modules");
+        assert_eq!(flat.name(), "Foo");
+        assert!(design.flat_modules.is_empty(), "no flat form recorded");
+    }
+
+    /// `flat_module` prefers the flat form over the authored form when both
+    /// are present — codegen consumes the flattened netlist.
+    #[test]
+    fn flat_module_prefers_flat_form_when_present() {
+        let mut design = Design::new();
+        design.insert_module("Foo".to_string(), leaf_module("Foo"));
+        design.insert_flat_module("Foo".to_string(), module_with_wire("Foo", "internal"));
+        let returned = design.flat_module("Foo").expect("Foo present");
+        assert_eq!(returned.wires.len(), 1, "flat form preferred over authored");
+        assert_eq!(returned.wires[0].name, "internal");
+    }
+
+    /// `flat_module` returns `None` when the name is neither authored nor
+    /// flattened — a fail-loud signal, never a silent default.
+    #[test]
+    fn flat_module_returns_none_when_unknown() {
+        let design = Design::new();
+        assert!(design.flat_module("Missing").is_none());
+    }
+
+    /// `flat_module` resolves a name present only in `flat_modules` — the
+    /// authored map need not contain it (a fully-synthetic flat module).
+    #[test]
+    fn flat_module_resolves_flat_only_name() {
+        let mut design = Design::new();
+        design.insert_flat_module("Synth".to_string(), leaf_module("Synth"));
+        let flat = design.flat_module("Synth").expect("Synth in flat_modules");
+        assert_eq!(flat.name(), "Synth");
+        assert!(!design.modules.contains_key("Synth"));
+    }
 }

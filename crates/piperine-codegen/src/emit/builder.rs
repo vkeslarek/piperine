@@ -327,15 +327,78 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         if math::math_fn(name).is_some() {
             return self.emit_math(name, args);
         }
-        // User function — inline by looking up FnId and expanding
+        // User function — inline by substitution, same approach as the
+        // analog inliner (`resolve/pom/expr.rs::inline_user_fn`): bind each
+        // param name to its call-site argument expression, walk the body
+        // (Bind/VarDecl update the substitution map, Return yields the
+        // final expression), then emit the substituted expression right
+        // here via the existing `Codegen` dispatch.
         if let Some(&fn_id) = self.resolver.fns.get(name) {
-            let _ = fn_id;
-            // For now, error — user function inlining will be handled separately
-            return Err(CodegenError::unsupported(format!(
-                "user function `{name}` inlining in digital codegen — not yet implemented via POM path"
-            )));
+            let inlined = self.inline_user_fn(fn_id, name, args)?;
+            return inlined.emit(self);
         }
         Err(CodegenError::unsupported(format!("unknown call target `{name}`")))
+    }
+
+    /// Expand a user-function call into a single substituted [`Expr`] — pure
+    /// tree substitution, no Cranelift emission (mirrors
+    /// `resolve/pom/expr.rs::inline_user_fn`/`inline_fn_body`/`subst_expr`
+    /// for the digital `Codegen` path, which walks the same raw POM `Expr`/
+    /// `Stmt` AST but never runs through that resolved-analog lowering
+    /// pass).
+    fn inline_user_fn(&self, fn_id: crate::resolve::FnId, name: &str, args: &[Expr]) -> Result<Expr, CodegenError> {
+        let function = self.module.symbols.try_fn(fn_id).ok_or_else(|| {
+            CodegenError::unsupported(format!("function `{name}` not found in symbol table"))
+        })?;
+        if args.len() > function.params.len() {
+            return Err(CodegenError::unsupported(format!(
+                "function `{name}` called with {} args, expects at most {}",
+                args.len(),
+                function.params.len()
+            )));
+        }
+        let mut subst: HashMap<String, Expr> = HashMap::new();
+        for (i, &param_id) in function.params.iter().enumerate() {
+            let pname = self.module.symbols.var(param_id).name.clone();
+            let value = match args.get(i) {
+                Some(a) => a.clone(),
+                None => match function.defaults.get(i).and_then(|d| d.as_ref()) {
+                    Some(_) => {
+                        return Err(CodegenError::unsupported(format!(
+                            "function `{name}`: default param values in digital codegen — not yet implemented"
+                        )));
+                    }
+                    None => {
+                        return Err(CodegenError::unsupported(format!(
+                            "function `{name}`: missing argument #{} (no default)",
+                            i + 1
+                        )));
+                    }
+                },
+            };
+            subst.insert(pname, value);
+        }
+
+        for stmt in &function.body {
+            use piperine_lang::parse::ast::Stmt as S;
+            match stmt {
+                S::Return(e) => return Ok(subst_expr(e, &subst)),
+                S::Bind { dest: Expr::Ident(bind_name), op: _, src } => {
+                    let val = subst_expr(src, &subst);
+                    subst.insert(bind_name.clone(), val);
+                }
+                S::VarDecl { name: var_name, default: Some(e), .. } => {
+                    let val = subst_expr(e, &subst);
+                    subst.insert(var_name.clone(), val);
+                }
+                _ => {
+                    return Err(CodegenError::unsupported(format!(
+                        "function `{name}`: statement kind in digital fn inlining (only Bind/VarDecl/Return supported)"
+                    )));
+                }
+            }
+        }
+        Err(CodegenError::unsupported(format!("function `{name}`: no `return` statement in body")))
     }
 
     /// Load an analog branch voltage V(plus) - V(minus) for the A2D bridge.
@@ -675,9 +738,34 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 let projected = self.builder.ins().select(x_or_z, zero, v.value);
                 Ok(Typed::int(projected))
             }
-            (DigTy::Quad, DigTy::Real) | (DigTy::Real, DigTy::Quad) => Err(
-                CodegenError::unsupported("real ↔ 4-state conversion in digital codegen"),
-            ),
+            // PB-07: `Quad -> Real` reuses the two conversions immediately
+            // above unchanged: `Quad -> Int` (existing 2-state projection:
+            // X/Z collapse to `0`) then `Int -> Real` (existing
+            // `fcvt_from_sint`).
+            //
+            // SPEC_DEVIATION: the spec's suggested `Real -> Quad` route
+            // (`Real -> Int -> Quad`, reusing `fcvt_to_sint`) truncates
+            // toward zero — a fractional nonzero real like `0.5` would
+            // truncate to Int `0` and read as Quad `0`, contradicting the
+            // same AC's own stated semantics ("any finite value maps to `1`
+            // (nonzero) or `0` (zero)"). Comparing the raw `f64` against
+            // `0.0` directly (still composed from primitives already used
+            // elsewhere in this function — `fcmp`/`select`, not new
+            // machinery) satisfies the stated semantics without the
+            // truncation bug; `fcvt_to_sint` is reused as-is for the
+            // already-correct `Quad -> Real` direction.
+            (DigTy::Real, DigTy::Quad) => {
+                let zero_f = self.builder.ins().f64const(0.0);
+                let nonzero = self.builder.ins().fcmp(FloatCC::NotEqual, v.value, zero_f);
+                let one = self.builder_i64(1);
+                let zero = self.builder_i64(0);
+                let quad = self.builder.ins().select(nonzero, one, zero);
+                Ok(Typed::quad(quad))
+            }
+            (DigTy::Quad, DigTy::Real) => {
+                let as_int = self.coerce(v, DigTy::Int)?;
+                self.coerce(as_int, DigTy::Real)
+            }
             _ => unreachable!("same-type coercion handled above"),
         }
     }
@@ -793,6 +881,48 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// Substitute every free `Ident` in `expr` found in `subst`, recursively —
+/// the digital-codegen fn inliner's tree-rewrite step (mirrors
+/// `resolve/pom/expr.rs::subst_expr`, same `Expr` type, kept local to avoid
+/// depending on the analog-lowering-only `resolve::pom` module).
+fn subst_expr(expr: &Expr, subst: &HashMap<String, Expr>) -> Expr {
+    use piperine_lang::parse::ast::Block;
+    fn subst_block(block: &Block, subst: &HashMap<String, Expr>) -> Block {
+        Block {
+            stmts: block.stmts.clone(),
+            expr: block.expr.as_ref().map(|e| Box::new(subst_expr(e, subst))),
+        }
+    }
+    match expr {
+        Expr::Ident(name) => subst.get(name).cloned().unwrap_or_else(|| expr.clone()),
+        Expr::Unary(op, x) => Expr::Unary(op.clone(), Box::new(subst_expr(x, subst))),
+        Expr::Binary(l, op, r) => {
+            Expr::Binary(Box::new(subst_expr(l, subst)), op.clone(), Box::new(subst_expr(r, subst)))
+        }
+        Expr::Call(f, args) => {
+            let f = subst_expr(f, subst);
+            let args: Vec<Expr> = args.iter().map(|a| subst_expr(a, subst)).collect();
+            Expr::Call(Box::new(f), args)
+        }
+        Expr::SysCall(name, args) => {
+            let args: Vec<Expr> = args.iter().map(|a| subst_expr(a, subst)).collect();
+            Expr::SysCall(name.clone(), args)
+        }
+        Expr::If { cond, then_body, else_body } => Expr::If {
+            cond: Box::new(subst_expr(cond, subst)),
+            then_body: subst_block(then_body, subst),
+            else_body: subst_block(else_body, subst),
+        },
+        Expr::Block(b) => Expr::Block(subst_block(b, subst)),
+        Expr::Cast(t, x) => Expr::Cast(t.clone(), Box::new(subst_expr(x, subst))),
+        Expr::Field(base, field) => Expr::Field(Box::new(subst_expr(base, subst)), field.clone()),
+        Expr::Index(base, idx) => {
+            Expr::Index(Box::new(subst_expr(base, subst)), Box::new(subst_expr(idx, subst)))
+        }
+        _ => expr.clone(),
     }
 }
 
