@@ -99,7 +99,7 @@ impl<'a> PssSolver<'a> {
         options: PssAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
-        if !(options.period > 0.0) {
+        if options.period <= 0.0 {
             return Err(Error::simple(
                 SolverDomain::Pss,
                 format!("period must be positive (got {})", options.period),
@@ -223,10 +223,10 @@ impl<'a> PssSolver<'a> {
                             SolverDomain::Pss,
                             format!(
                                 "shooting found a fixed point, but the orbit does not repeat: \
-                                 |x(2T) − x(T)| = {:.3e} on `{}` — the drive is not periodic \
+                                 |x(2T) − x(T)| = {:.3e} on `{:?}` — the drive is not periodic \
                                  at T={period:.3e}",
                                 (a - b).abs(),
-                                format!("{:?}", vars[i].1)
+                                vars[i].1
                             ),
                         ));
                     }
@@ -406,7 +406,7 @@ fn dominant_monodromy_magnitude(j: &[Vec<f64>]) -> Option<f64> {
 /// so dense is fine.
 fn solve_dense(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
     let n = b.len();
-    let mut m: Vec<Vec<f64>> = a.iter().cloned().collect();
+    let mut m: Vec<Vec<f64>> = a.to_vec();
     let mut x: Vec<f64> = b.to_vec();
     for col in 0..n {
         let pivot = (col..n).max_by(|&i, &j| {
@@ -419,8 +419,11 @@ fn solve_dense(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
         x.swap(col, pivot);
         for row in (col + 1)..n {
             let f = m[row][col] / m[col][col];
-            for k in col..n {
-                m[row][k] -= f * m[col][k];
+            let (a, b) = m.split_at_mut(row);
+            let src = &a[col][col..n];
+            let dst = &mut b[0][col..n];
+            for (t, s) in dst.iter_mut().zip(src.iter()) {
+                *t -= f * *s;
             }
             x[row] -= f * x[col];
         }

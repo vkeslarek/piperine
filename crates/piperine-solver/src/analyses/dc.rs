@@ -130,8 +130,9 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         // state and stall the convergence gate. The cache is dropped by
         // `invalidate_bypass` whenever the stamps depend on anything besides
         // the solution vector (homotopy scale changes, digital settle).
-        if self.bypass_allowed && self.cache_valid && !self.any_limiting_report() {
-            if let Some(curr) = state.latest() {
+        if self.bypass_allowed && self.cache_valid && !self.any_limiting_report()
+            && let Some(curr) = state.latest()
+        {
                 // Per-variable threshold (ngspice bypass semantics):
                 // |Δv_i| < vntol + reltol·max(|v_i|, |v_i_old|) for every
                 // unknown. A global max-|v| scale would open a millivolt
@@ -149,7 +150,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
                     self.bypass_hits += 1;
                     return Ok(self.stamp_cache.clone());
                 }
-            }
         }
         self.bypass_misses += 1;
 

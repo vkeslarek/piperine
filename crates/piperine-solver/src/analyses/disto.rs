@@ -63,6 +63,13 @@ use num_complex::{Complex, Complex64};
 
 // ── element-facing vocabulary ────────────────────────────────────────────
 
+/// A branch `(plus, minus)` in the disto-contribution netlist; `None` is ground.
+pub type DistoBranch = (Option<AnalogReference>, Option<AnalogReference>);
+/// An ordered pair of branches for second-derivative disto.
+pub type Disto2Pair = (DistoBranch, DistoBranch);
+/// An ordered triple of branches for third-derivative disto.
+pub type Disto3Triple = (DistoBranch, DistoBranch, DistoBranch);
+
 /// A device's second derivatives at the DC operating point (DISTO-03): the
 /// Hessian of every nonlinear contribution over every ordered
 /// controlling-branch pair — the element-facing half of the `.disto`
@@ -72,10 +79,7 @@ pub struct Disto2 {
     /// Ordered controlling branch pairs `((j_plus, j_minus), (k_plus,
     /// k_minus))`, in `values` row order; a `None` terminal is ground.
     /// Only pairs with at least one nonzero Hessian row appear.
-    pub pairs: Vec<(
-        (Option<AnalogReference>, Option<AnalogReference>),
-        (Option<AnalogReference>, Option<AnalogReference>),
-    )>,
+    pub pairs: Vec<Disto2Pair>,
     /// Contribution terminals `(plus, minus)` (a `None` terminal is
     /// ground), in `values` column order: resistive contributions first,
     /// then charge contributions (the split is `charge_start`).
@@ -94,11 +98,7 @@ pub struct Disto3 {
     /// Ordered controlling branch triples `(j, k, l)`, in `values` row
     /// order; a `None` terminal is ground. Only triples with at least one
     /// nonzero row appear.
-    pub triples: Vec<(
-        (Option<AnalogReference>, Option<AnalogReference>),
-        (Option<AnalogReference>, Option<AnalogReference>),
-        (Option<AnalogReference>, Option<AnalogReference>),
-    )>,
+    pub triples: Vec<Disto3Triple>,
     /// Contribution terminals `(plus, minus)`, in `values` column order:
     /// resistive first, then charge (the split is `charge_start`) — the
     /// same row order as [`Disto2::contribs`].
@@ -365,7 +365,7 @@ impl<'a> DistoSolver<'a> {
         self.system.frequency = f_hz;
         self.system.stim_scale = stim_scale;
         self.system.nonlinear_rhs = extra;
-        Ok(self.solver.solve(&mut self.system, self.policy.max_iter)?)
+        self.solver.solve(&mut self.system, self.policy.max_iter)
     }
 
     /// Two-tone distortion (DISTO-02): first order per tone, second-order
@@ -1288,7 +1288,7 @@ mod tests {
         let devices: Vec<Box<dyn Element>> = vec![
             Box::new(TestAcVsource { p: n1.clone(), n: gnd.clone(), branch, v: 1.0 }),
             Box::new(TestNumericDevice { n1: n1.clone(), n2: gnd.clone() }),
-            Box::new(TestResistor { n1: n1, n2: n2, r: 1000.0 }),
+            Box::new(TestResistor { n1, n2, r: 1000.0 }),
         ];
         let mut circuit = CircuitInstance::from_devices_and_netlist("numeric-fail", devices, netlist);
         let options = DistoOptions {

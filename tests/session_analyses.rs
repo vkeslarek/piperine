@@ -127,7 +127,7 @@ fn session_tran_ac_noise_return_typed_traces() {
     let cw = ac.v(&out).expect("v(out) complex");
     assert!(cw.len() == 5);
 
-    let nz = session.noise("out", "gnd", 1.0, 1e6, 5, true, &SolverConfig::default()).expect("noise solves");
+    let nz = session.noise("out", "gnd", (1.0, 1e6), 5, true, &SolverConfig::default()).expect("noise solves");
     assert!(nz.total() >= 0.0);
 }
 

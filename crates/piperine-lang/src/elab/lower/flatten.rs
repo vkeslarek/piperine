@@ -19,6 +19,10 @@ use crate::pom::{
 use super::passes::ElabPass;
 use super::Elaborator;
 
+/// The result of inlining a non-leaf child: its spliced leaf instances,
+/// lifted wires, and rewritten connections.
+type InlineResult = (Vec<Instance>, Vec<Wire>, Vec<Connection>);
+
 /// Flatten hierarchy into a leaf-only netlist, memoized in
 /// `Design::flat_modules`. Runs as the last elaboration pass (after
 /// `Typecheck`) so it sees the fully resolved, monomorphized, for-unrolled
@@ -124,7 +128,7 @@ impl FlattenHierarchy {
     fn inline(
         inst: &Instance,
         child: &Module,
-    ) -> Result<(Vec<Instance>, Vec<Wire>, Vec<Connection>), ElabError> {
+    ) -> Result<InlineResult, ElabError> {
         let mut rho: HashMap<String, NetRef> = HashMap::new();
         let mut lifted_wires: Vec<Wire> = Vec::new();
 
@@ -363,8 +367,7 @@ mod tests {
         );
         let before = snapshot_modules(&design);
         let err = FlattenHierarchy::flatten_design(&mut design)
-            .err()
-            .expect("self-cycle must fail loud");
+            .expect_err("self-cycle must fail loud");
         let msg = err.to_string();
         assert!(
             msg.contains("recursive module instantiation") && msg.contains("Loop"),
@@ -386,8 +389,7 @@ mod tests {
         );
         let before = snapshot_modules(&design);
         let err = FlattenHierarchy::flatten_design(&mut design)
-            .err()
-            .expect("transitive cycle must fail loud");
+            .expect_err("transitive cycle must fail loud");
         let msg = err.to_string();
         assert!(
             msg.contains("recursive module instantiation"),
@@ -661,8 +663,7 @@ mod tests {
         );
         let before = snapshot_modules(&design);
         let err = FlattenHierarchy::flatten_design(&mut design)
-            .err()
-            .expect("dangling net must fail loud");
+            .expect_err("dangling net must fail loud");
         let msg = err.to_string();
         assert!(msg.contains("missing"), "error names the dangling net: {msg}");
         assert!(msg.contains("Seg"), "error names the child module: {msg}");
@@ -705,8 +706,7 @@ mod tests {
         );
         let before = snapshot_modules(&design);
         let err = FlattenHierarchy::flatten_design(&mut design)
-            .err()
-            .expect("indexed netref must fail loud (gap-3)");
+            .expect_err("indexed netref must fail loud (gap-3)");
         let msg = err.to_string();
         assert!(
             msg.contains("array-net expansion") && msg.contains("gap-3"),

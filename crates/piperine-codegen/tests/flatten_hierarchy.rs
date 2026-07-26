@@ -88,7 +88,7 @@ fn flattened_ladder_simulates_correctly() {
     let out = info.nets.get("out").expect("net `out`");
     let xmid = info.nets.get("x.mid").expect("net `x.mid`");
     let v_out = result.get_node(out).expect("v(out)");
-    let v_mid = result.get_node(&xmid).expect("v(x.mid)");
+    let v_mid = result.get_node(xmid).expect("v(x.mid)");
 
     // Seg is a 2k series string (r1=r2=1k); load rl=1k from out to gnd.
     // Total seen from v1: r1 + (r2 ∥ rl) = 1k + (1k ∥ 1k) = 1.5k.
@@ -242,8 +242,7 @@ fn override_on_unknown_spliced_label_fails_loud() {
     design.set_param("x.nonexistent", "r", piperine_lang::pom::Value::Real(2.0e3));
     let err = design
         .with_overrides_applied("Top")
-        .err()
-        .expect("unknown spliced label must fail loud");
+        .expect_err("unknown spliced label must fail loud");
     let msg = err.to_string();
     assert!(
         msg.contains("x.nonexistent") && msg.contains("unknown instance"),

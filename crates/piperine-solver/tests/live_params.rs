@@ -62,7 +62,7 @@ impl Introspect for Resistor {
     }
 
     fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "r").then(|| Value::Real(self.r))
+        (name == "r").then_some(Value::Real(self.r))
     }
 
     fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {
@@ -144,7 +144,7 @@ impl Introspect for Vdc {
     }
 
     fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "dc").then(|| Value::Real(self.v))
+        (name == "dc").then_some(Value::Real(self.v))
     }
 
     fn set_param(&mut self, name: &str, value: Value) -> std::result::Result<Invalidation, ParamError> {

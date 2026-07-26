@@ -13,6 +13,16 @@ use piperine_solver::prelude::{
 
 use crate::error::Error;
 
+/// Static introspection snapshot of a circuit's devices (HOST-09):
+/// model descriptors, terminal descriptors, observable catalogs, and
+/// parameter catalogs, keyed by instance label.
+pub type IntrospectSnapshot = (
+    HashMap<String, ModelDescriptor>,
+    HashMap<String, Vec<TerminalDescriptor>>,
+    HashMap<String, Vec<ObservableDescriptor>>,
+    HashMap<String, Vec<ParamDescriptor>>,
+);
+
 /// A resolved top-level net — the argument type `.v`/`.i` expect.
 #[derive(Debug, Clone)]
 pub struct NetRef {
@@ -331,12 +341,10 @@ impl OpResult {
         dc: DcAnalysisResult,
         digital: HashMap<String, f64>,
         opvars: HashMap<String, Vec<(String, f64)>>,
-        models: HashMap<String, ModelDescriptor>,
-        terminals: HashMap<String, Vec<TerminalDescriptor>>,
-        observables: HashMap<String, Vec<ObservableDescriptor>>,
-        params: HashMap<String, Vec<ParamDescriptor>>,
+        introspect: IntrospectSnapshot,
         info: Rc<CircuitBuildInfo>,
     ) -> Self {
+        let (models, terminals, observables, params) = introspect;
         Self { dc, digital, opvars, models, terminals, observables, params, info }
     }
 

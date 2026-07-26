@@ -30,19 +30,19 @@ fn event_spec_to_sources(spec: &EventSpec) -> Vec<EventSource> {
             // First arg is the watched expression; a missing arg defaults to a
             // zero literal (the elaborator rejects genuinely arg-less events).
             "cross" => vec![EventSource::Cross {
-                expr: args.first().cloned().unwrap_or_else(|| PomExpr::Literal(Literal::Real(0.0))),
+                expr: args.first().cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0))),
                 dir: CrossDir::Either,
             }],
             "above" => vec![EventSource::Above {
-                expr: args.first().cloned().unwrap_or_else(|| PomExpr::Literal(Literal::Real(0.0))),
+                expr: args.first().cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0))),
             }],
             // `@timer(period)` or `@timer(period, phase)`. `phase` (default 0)
             // offsets the fire times: fires at phase, phase+period, … instead
             // of period, 2·period, … — so a source can declare both its rise
             // and fall edges with two phased timers.
             "timer" => {
-                let period = args.first().cloned().unwrap_or_else(|| PomExpr::Literal(Literal::Real(0.0)));
-                let phase = args.get(1).cloned().unwrap_or_else(|| PomExpr::Literal(Literal::Real(0.0)));
+                let period = args.first().cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0)));
+                let phase = args.get(1).cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0)));
                 vec![EventSource::Timer { period, phase }]
             }
             // Digital events (posedge/negedge/change) don't appear in analog bodies.

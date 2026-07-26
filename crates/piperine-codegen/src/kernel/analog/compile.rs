@@ -298,7 +298,7 @@ impl<'m> AnalogCompiler<'m> {
                         ex.clone()
                     })
                 };
-                let temps_ac: Vec<PomExpr> = temps.iter().map(|t| subst(t)).collect();
+                let temps_ac: Vec<PomExpr> = temps.iter().map(subst).collect();
                 let contribs_ac: Vec<FlatContrib> = resistive
                     .iter()
                     .map(|c| FlatContrib { plus: c.plus, minus: c.minus, expr: subst(&c.expr) })
@@ -588,7 +588,7 @@ impl<'m> AnalogCompiler<'m> {
                     FlatEventTrigger::Cross { dir, .. } => CompiledTrigger::Cross(*dir),
                     FlatEventTrigger::Above { .. } => CompiledTrigger::Above,
                     FlatEventTrigger::Timer { period, phase } => {
-                        CompiledTrigger::Timer { period: period.clone(), phase: phase.clone() }
+                        CompiledTrigger::Timer { period: period.clone(), phase: Box::new(phase.clone()) }
                     }
                 },
                 action_vars: e.actions.iter().map(|a| a.var).collect(),
@@ -960,7 +960,7 @@ impl<'m> AnalogCompiler<'m> {
         resistive: &[FlatContrib],
         charge: &[FlatContrib],
         temps: &[PomExpr],
-    ) -> Result<Option<(Vec<FuncId>, Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+    ) -> Result<Option<(Vec<FuncId>, Vec<crate::kernel::analog::Disto3Triple>)>, CodegenError> {
         let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
         if contribs.is_empty() {
             return Ok(None);
@@ -1000,7 +1000,7 @@ impl<'m> AnalogCompiler<'m> {
                         .map(|&(c, d)| {
                             temps
                                 .iter()
-                                .map(|t| crate::resolve::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, d1, d2, d12))
+                                .map(|t| crate::resolve::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, (d1, d2, d12)))
                                 .collect()
                         })
                         .collect()
@@ -1024,7 +1024,7 @@ impl<'m> AnalogCompiler<'m> {
                     let rows: Vec<Option<PomExpr>> = contribs
                         .iter()
                         .map(|contrib| {
-                            let row = crate::resolve::diff::d_dv_thrice(&contrib.expr, a, b, c, d, e, f, &resolve_node);
+                            let row = crate::resolve::diff::d_dv_thrice(&contrib.expr, (a, b), (c, d), (e, f), &resolve_node);
                             match &row {
                                 PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
                                 _ => Some(row),
@@ -1110,7 +1110,7 @@ impl<'m> AnalogCompiler<'m> {
         resistive: &[FlatContrib],
         charge: &[FlatContrib],
         temps: &[PomExpr],
-    ) -> Result<Option<(Vec<FuncId>, Vec<((NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+    ) -> Result<Option<(Vec<FuncId>, Vec<crate::kernel::analog::Disto2Pair>)>, CodegenError> {
         let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
         if contribs.is_empty() {
             return Ok(None);

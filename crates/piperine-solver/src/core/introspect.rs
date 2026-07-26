@@ -370,7 +370,7 @@ mod tests {
             }]
         }
         fn get_param(&self, name: &str) -> Option<Value> {
-            (name == "r").then(|| Value::Real(self.r))
+            (name == "r").then_some(Value::Real(self.r))
         }
         fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {
             if name != "r" {

@@ -26,6 +26,11 @@ use piperine_solver::prelude::{CircuitInstance, NodeIdentifier};
 use crate::instance::InstanceResolver;
 use crate::results::{_AcTrace, _NoiseTrace, _OpResult, _Trace};
 
+/// Return type for `.disto`: `(hd2, hd3, im2, im3)`.
+type DistoMetrics = (Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+/// Return type for `.sp`: `(frequencies, s_matrix, opvars, n_ports)`.
+type SpParams = (Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize);
+
 /// Build a `ProbeSelection` from host `"instance.name"` paths (HOST-08's
 /// `tran(probe = [...])`). Mirrors `piperine_api::session::build_probe_selection`
 /// — kept local rather than promoted to `pub` to avoid widening the api's
@@ -411,15 +416,12 @@ impl _Session {
         self.record_voltages(|node| result.get_node(node).unwrap_or(0.0));
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
         let opvars = SimSession::snapshot_opvars(&self.circuit);
-        let (models, terminals, observables, params) = SimSession::snapshot_introspect(&self.circuit);
+        let introspect = SimSession::snapshot_introspect(&self.circuit);
         let op = OpResult::new(
             result,
             digital,
             opvars,
-            models,
-            terminals,
-            observables,
-            params,
+            introspect,
             Rc::new(self.info.clone()),
         );
         Ok(_OpResult::new(op).with_resolver(self.instance_resolver()))
@@ -447,6 +449,7 @@ impl _Session {
     /// selectively (read back via `Trace.opvar`); an unknown device or
     /// observable fails loud at setup (ABI-35).
     #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false, probe=Vec::new()))]
+    #[allow(clippy::too_many_arguments)]
     fn tran(
         &mut self,
         stop: f64,
@@ -482,14 +485,13 @@ impl _Session {
         loop {
             // The earliest structural set inside this segment splits it.
             let mut split: Option<f64> = None;
-            for i in 0..scheduled.len() {
-                let (t, label, param, value) = scheduled[i].clone();
-                if t > seg_start
-                    && t <= stop
-                    && split.is_none_or(|s| t < s)
-                    && self.set_is_structural(&label, &param, value)
+            for (t, label, param, value) in &scheduled {
+                if *t > seg_start
+                    && *t <= stop
+                    && split.is_none_or(|s| *t < s)
+                    && self.set_is_structural(label.as_str(), param.as_str(), *value)
                 {
-                    split = Some(t);
+                    split = Some(*t);
                 }
             }
             let seg_stop = split.unwrap_or(stop);
@@ -559,10 +561,9 @@ impl _Session {
             // an idle set (LIVE-14); the carry seeded from the segment-end
             // state becomes the restart's initial conditions (LIVE-16).
             let old_nets = self.info.nets.clone();
-            for i in 0..scheduled.len() {
-                let (t, label, param, value) = scheduled[i].clone();
-                if t == t_split && self.set_is_structural(&label, &param, value) {
-                    self.set(&label, &param, value)?;
+            for (t, label, param, value) in &scheduled {
+                if *t == t_split && self.set_is_structural(label.as_str(), param.as_str(), *value) {
+                    self.set(label.as_str(), param.as_str(), *value)?;
                 }
             }
             // Re-key the recorded history onto the rebuilt circuit: nodes
@@ -737,7 +738,6 @@ impl _Session {
     /// Run a distortion analysis (`.disto`) on the held circuit (HOST-02);
     /// same signature and result shape as `_Module::disto`.
     #[pyo3(signature = (f1, amplitude, output, f2=None, output_ref=None, solver=None))]
-    #[allow(clippy::too_many_arguments)]
     fn disto(
         &mut self,
         f1: f64,
@@ -746,7 +746,7 @@ impl _Session {
         f2: Option<f64>,
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
+    ) -> PyResult<DistoMetrics> {
         let config = crate::module::_Module::solver_config(solver)?;
         let output_node = self.node(output)?;
         let output_ref_node = output_ref.map(|r| self.node(r)).transpose()?;
@@ -772,7 +772,7 @@ impl _Session {
         points: usize,
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<(Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize)> {
+    ) -> PyResult<SpParams> {
         let config = crate::module::_Module::solver_config(solver)?;
         let rfports = self.design.rfports(&self.module).map_err(|e| PyValueError::new_err(format!("{e}")))?;
         let mut ports = Vec::with_capacity(rfports.len());

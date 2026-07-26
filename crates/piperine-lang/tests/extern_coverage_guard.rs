@@ -17,13 +17,13 @@
 //!   - `math::MATH_FNS`            — `crates/piperine-lang/src/math.rs`
 //!   - `eval::tasks::TaskRegistry` — `crates/piperine-lang/src/eval/tasks.rs`
 //!   - Runtime operators           — no central Rust table (scattered
-//!                                   string-match in codegen); spec.md
-//!                                   P4-AC4 + headers/operators.phdl
-//!                                   enumerate the contract
+//!     string-match in codegen); spec.md
+//!     P4-AC4 + headers/operators.phdl
+//!     enumerate the contract
 //!   - Primitive value types       — spec.md P4-AC1 (the 7 primitives)
 //!   - `@device`/`@port` schemas   — `headers/device_port.phdl`
-//!                                   (parsed by `PluginHost::seed_schemas`,
-//!                                   not part of every project's prelude)
+//!     (parsed by `PluginHost::seed_schemas`,
+//!     not part of every project's prelude)
 //!
 //! Out of scope here (per spec Out of Scope):
 //!   - `@rfport` — stays hardcoded in `ElabContext::new()` (T23 note);
@@ -230,10 +230,10 @@ fn cast_target_types_have_from_overloads_in_extern_impl_blocks() {
         .expect("headers/types.phdl must parse");
     let mut from_targets: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for item in &source.items {
-        if let Item::ExternDecl(ExternDecl::Impl { target, methods, .. }) = item {
-            if methods.iter().any(|m| m.name == "from") {
-                from_targets.insert(target.as_str());
-            }
+        if let Item::ExternDecl(ExternDecl::Impl { target, methods, .. }) = item
+            && methods.iter().any(|m| m.name == "from")
+        {
+            from_targets.insert(target.as_str());
         }
     }
     // T17 declared four target types (the five bare-cast names collapsed

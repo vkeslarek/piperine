@@ -54,7 +54,7 @@ fn call_every_rust_analysis(session: &mut Session) {
     let _ = session.op(&config, None);
     let _ = session.tran(1e-3, Some(1e-5), 0.0, &config, None, false, &[]);
     let _ = session.ac(1.0, 1e6, 5, true, &config);
-    let _ = session.noise("a", "gnd", 1.0, 1e6, 5, true, &config);
+    let _ = session.noise("a", "gnd", (1.0, 1e6), 5, true, &config);
     let _ = session.sens(&["a"], &[("r1".to_string(), "r".to_string())], 1e-6, &config);
     let _ = session.pss(1e-3, 0.0, &config);
     let _ = session.pz("V1", "b", None, &config);

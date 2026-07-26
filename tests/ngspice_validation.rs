@@ -318,13 +318,13 @@ impl NgspiceHarness {
             }
             // Table data row: `<idx> <freq> <re>, <im>` — first row only.
             let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.len() >= 3 && cols[0] == "0" {
-                if let Ok(re) = cols[2].trim_end_matches(',').parse::<f64>() {
-                    match harmonic {
-                        Some(2) if hd2.is_none() => hd2 = Some(re.abs()),
-                        Some(3) if hd3.is_none() => hd3 = Some(re.abs()),
-                        _ => {}
-                    }
+            if cols.len() >= 3 && cols[0] == "0"
+                && let Ok(re) = cols[2].trim_end_matches(',').parse::<f64>()
+            {
+                match harmonic {
+                    Some(2) if hd2.is_none() => hd2 = Some(re.abs()),
+                    Some(3) if hd3.is_none() => hd3 = Some(re.abs()),
+                    _ => {}
                 }
             }
         }
@@ -419,7 +419,7 @@ impl NgspiceHarness {
 
         let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
         let trace = session
-            .run_tran(stop, None, 0.0, &SolverConfig::default(), None, false, &[])
+            .run_tran((stop, 0.0), None, &SolverConfig::default(), None, false, &[])
             .unwrap_or_else(|e| panic!("{circuit}: piperine transient failed: {e}"));
         let wf = trace
             .v("out".to_string())

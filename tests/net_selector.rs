@@ -82,6 +82,6 @@ fn scale_enum_and_bool_both_convert_to_logarithmic() {
     // `bool` itself still satisfies `impl Into<bool>` (identity conversion,
     // every pre-existing `Session::ac(..., true, ...)`/`false` call site
     // keeps compiling unchanged).
-    let b: bool = true.into();
+    let b: bool = true;
     assert!(b);
 }

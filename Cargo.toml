@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 
 [package]
@@ -22,7 +22,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-piperine-api = { version = "0.1.1", path = "crates/piperine-api" }
+piperine-api = { path = "crates/piperine-api" }
 
 # The tests of record stay on this crate importing `piperine::…` — they are
 # the proof the shell re-exports the full host surface. run_examples drives

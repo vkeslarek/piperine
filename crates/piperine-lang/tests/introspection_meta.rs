@@ -17,8 +17,7 @@ fn elab(src: &str) -> piperine_lang::pom::Design {
 }
 fn elab_err(src: &str) -> String {
     parse_and_elaborate(src, &SourceMap::dummy())
-        .err()
-        .expect("expected elaboration to fail loud")
+        .expect_err("expected elaboration to fail loud")
         .to_string()
 }
 fn meta(src: &str, module: &str) -> IntrospectionMeta {

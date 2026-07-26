@@ -28,16 +28,6 @@ fn elab(src: &str, host: &PluginHost) -> piperine_lang::Design {
     .expect("elaborate")
 }
 
-/// An operating point of `Top` through a session wired with the host's
-/// device provider + lifecycle hooks.
-fn run_top_op(host: Rc<PluginHost>, src: &str) -> Result<OpResult, piperine::Error> {
-    let design = elab(src, &host);
-    let mut session = SimSession::new(design, "Top".to_string());
-    session.set_device_provider(host.clone());
-    session.set_hooks(host);
-    session.run_op(&SolverConfig::default(), None)
-}
-
 fn v(op: &OpResult, net: &str) -> f64 {
     op.v(net.to_string()).expect("net readable")
 }

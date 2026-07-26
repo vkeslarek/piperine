@@ -338,13 +338,11 @@ impl Drop for ScratchProject {
 }
 
 fn position_to_byte(source: &str, pos: Position) -> usize {
-    let mut line = 0u32;
     let mut byte = 0usize;
-    for l in source.split_inclusive('\n') {
-        if line == pos.line {
+    for (line, l) in source.split_inclusive('\n').enumerate() {
+        if line as u32 == pos.line {
             return byte + l.chars().take(pos.character as usize).map(|c| c.len_utf8()).sum::<usize>();
         }
-        line += 1;
         byte += l.len();
     }
     byte
@@ -516,13 +514,12 @@ fn test_e2e_lsp_server_memory_connection() {
     // Wait for the diagnostics notification, the server elaborates immediately after open.
     let mut received_diagnostics = false;
     for _ in 0..5 {
-        if let Ok(msg) = client_conn.receiver.recv_timeout(Duration::from_millis(500)) {
-            if let Message::Notification(not) = msg {
-                if not.method == lsp_types::notification::PublishDiagnostics::METHOD {
-                    received_diagnostics = true;
-                    break;
-                }
-            }
+        if let Ok(msg) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && let Message::Notification(not) = msg
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD
+        {
+            received_diagnostics = true;
+            break;
         }
     }
     assert!(received_diagnostics, "Expected PublishDiagnostics notification");

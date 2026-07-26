@@ -169,7 +169,7 @@ mod DividerBoard() {
             let modules = design.getattr("modules")?.call0()?;
             let mut names: Vec<String> = modules
                 .try_iter()?
-                .map(|item| Ok::<String, PyErr>(item?.getattr("name")?.extract::<String>()?))
+                .map(|item| item?.getattr("name")?.extract::<String>())
                 .collect::<PyResult<Vec<String>>>()?;
             names.sort();
             assert!(
@@ -282,7 +282,6 @@ mod DividerBoard() {
                 .getattr("params")?
                 .call0()?
                 .try_iter()?
-                .map(|p| Ok::<Bound<'_, PyAny>, PyErr>(p?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(params.len(), 1, "Resistor has one param");
             assert_eq!(params[0].getattr("name")?.extract::<String>()?, "r");
@@ -293,7 +292,6 @@ mod DividerBoard() {
                 .getattr("behaviors")?
                 .call0()?
                 .try_iter()?
-                .map(|b| Ok::<Bound<'_, PyAny>, PyErr>(b?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(behaviors.len(), 1, "Resistor has one behavior");
             assert_eq!(behaviors[0].getattr("kind")?.extract::<String>()?, "analog");
@@ -332,7 +330,6 @@ mod DividerBoard() {
                 .getattr("nodes")?
                 .call0()?
                 .try_iter()?
-                .map(|n| Ok::<Bound<'_, PyAny>, PyErr>(n?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(nodes.len(), 1);
             assert_eq!(nodes[0].getattr("kind")?.extract::<String>()?, "instance");
@@ -345,7 +342,6 @@ mod DividerBoard() {
                 .getattr("nodes")?
                 .call0()?
                 .try_iter()?
-                .map(|n| Ok::<Bound<'_, PyAny>, PyErr>(n?))
                 .collect::<PyResult<Vec<_>>>()?;
             assert_eq!(port_nodes.len(), 1);
             assert_eq!(port_nodes[0].getattr("kind")?.extract::<String>()?, "port");
@@ -483,7 +479,7 @@ mod Divider() {
                 // `inner` is `Rc<OpResult>`; deref through Rc to call `v`
                 // (HOST-23: `"mid"` resolves through `NetRef`'s `Into`
                 // ergonomics — no bare `NetRef { name }` needed).
-                let v = HostOpResult::v(&*pyref.inner, "mid")
+                let v = HostOpResult::v(&pyref.inner, "mid")
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
                 Ok(v)
             };
@@ -512,7 +508,7 @@ mod Divider() {
             let v_fresh = {
                 let op_obj = fresh_module.getattr("op")?.call0()?;
                 let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
-                HostOpResult::v(&*pyref.inner, "mid")
+                HostOpResult::v(&pyref.inner, "mid")
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
             };
             assert!(
@@ -701,8 +697,8 @@ mod Divider() {
     /// - `.v("n")` == `op.v("mid")` == 2.0 V;
     /// - `.v("p", "n")` == `op.v("vin", "mid")` == 3.0 V (drop across r_top);
     /// - `.i("p", "n")` == `op.i("vin", "mid")` == 1 mA (branch current).
-    /// `view["p"]` SHALL equal `view.v("p")` (uniform shape — the same
-    /// `__getitem__ → .v` mapping the parent defines for net names).
+    ///   `view["p"]` SHALL equal `view.v("p")` (uniform shape — the same
+    ///   `__getitem__ → .v` mapping the parent defines for net names).
     #[test]
     fn instance_path_returns_terminal_subview() -> PyResult<()> {
         let path = std::env::temp_dir().join("piperine_python_py13_instance_test.phdl");

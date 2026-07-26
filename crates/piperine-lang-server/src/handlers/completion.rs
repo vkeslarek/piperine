@@ -39,7 +39,7 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
 /// round trip.
 pub fn completions_at(doc: &DocumentState, offset: usize) -> Vec<CompletionItem> {
     if let Some(prefix) = attr_schema_prefix(&doc.source, offset) {
-        return schema_completions(doc.ctx.as_ref(), &prefix);
+        return schema_completions(doc.ctx.as_ref(), prefix);
     }
     let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
     build_completions_predictive(&expected, doc.design.as_ref())

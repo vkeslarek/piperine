@@ -143,6 +143,7 @@ fn python_missing_surface(out_path: &Path, extra: &[(&str, &str)]) {
         }
         target.push_str(&format!("{name:?}"));
     }
+    let phases_tuple = format!("{}, ", list(PHASES));
     let script = format!(
         r#"
 import piperine
@@ -169,7 +170,7 @@ def _probe():
 _probe()
 "#,
         decorators = decorators,
-        phases_tuple = format!("{}, ", list(PHASES)),
+        phases_tuple = phases_tuple,
         phases = phases,
         ctx_methods = ctx_methods,
         staging_methods = staging_methods,

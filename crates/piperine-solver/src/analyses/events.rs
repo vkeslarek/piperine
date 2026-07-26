@@ -264,15 +264,10 @@ struct Checkpoint {
 /// queue, `RePoll`/`Discard`-tagged entries stay out (re-populated by
 /// `next_breakpoints` next step, or re-detected by the device).
 /// `commit()` drops the snapshot on acceptance.
+#[derive(Default)]
 pub struct EventQueue {
     heap: BinaryHeap<Reverse<EventEntry>>,
     checkpoint: Option<Checkpoint>,
-}
-
-impl Default for EventQueue {
-    fn default() -> Self {
-        Self { heap: BinaryHeap::new(), checkpoint: None }
-    }
 }
 
 impl EventQueue {

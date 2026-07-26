@@ -12,7 +12,7 @@ use piperine_solver::abi::SolverStats;
 use piperine_solver::prelude::{Context, Policy};
 
 use crate::error::Error;
-use crate::results::{NetLookup, OpResult};
+use crate::results::{IntrospectSnapshot, NetLookup, OpResult};
 use crate::waveform::{AcTrace, NoiseTrace, Trace, Waveform};
 
 /// Frequency-sweep geometry (HOST-23): `Lin` steps `points` values evenly
@@ -372,9 +372,9 @@ impl SimSession {
         drop(dc);
         let digital = Self::snapshot_digital(&info, &circuit);
         let opvars = Self::snapshot_opvars(&circuit);
-        let (models, terminals, observables, params) = Self::snapshot_introspect(&circuit);
+        let introspect = Self::snapshot_introspect(&circuit);
         self.fire_after_solve("op", &node_voltages(&info, &result))?;
-        Ok(OpResult::new(result, digital, opvars, models, terminals, observables, params, Rc::new(info)))
+        Ok(OpResult::new(result, digital, opvars, introspect, Rc::new(info)))
     }
 
     /// Compile-once DC sweep (MD-18): elaborate/JIT the circuit **once**,
@@ -418,16 +418,13 @@ impl SimSession {
             drop(dc);
             let digital = Self::snapshot_digital(&info, &circuit);
             let opvars = Self::snapshot_opvars(&circuit);
-            let (models, terminals, observables, params) = Self::snapshot_introspect(&circuit);
+            let introspect = Self::snapshot_introspect(&circuit);
             self.fire_after_solve("op", &node_voltages(&info, &result))?;
             results.push(OpResult::new(
                 result,
                 digital,
                 opvars,
-                models,
-                terminals,
-                observables,
-                params,
+                introspect,
                 Rc::new(info.clone()),
             ));
         }
@@ -479,12 +476,7 @@ impl SimSession {
     /// (the Python live session) build the same snapshot.
     pub fn snapshot_introspect(
         circuit: &piperine_solver::prelude::CircuitInstance,
-    ) -> (
-        HashMap<String, piperine_solver::prelude::ModelDescriptor>,
-        HashMap<String, Vec<piperine_solver::prelude::TerminalDescriptor>>,
-        HashMap<String, Vec<piperine_solver::prelude::ObservableDescriptor>>,
-        HashMap<String, Vec<piperine_solver::prelude::ParamDescriptor>>,
-    ) {
+    ) -> IntrospectSnapshot {
         let mut models = HashMap::new();
         let mut terminals = HashMap::new();
         let mut observables = HashMap::new();
@@ -513,14 +505,14 @@ impl SimSession {
     /// values are read back with `Trace::opvar`.
     pub fn run_tran(
         &self,
-        stop: f64,
+        tspan: (f64, f64),
         step: Option<f64>,
-        start: f64,
         config: &SolverConfig,
         ic: Option<&HashMap<String, f64>>,
         record_device_state: bool,
         probe: &[&str],
     ) -> Result<Trace, Error> {
+        let (stop, start) = tspan;
         let (mut circuit, info) = self.build_circuit(false)?;
         let ivs = build_ivs(&info, ic, circuit.netlist())?;
         let mut opts = match step {
@@ -574,12 +566,12 @@ impl SimSession {
         &self,
         out: &str,
         reference: &str,
-        fstart: f64,
-        fstop: f64,
+        frange: (f64, f64),
         points: usize,
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<NoiseTrace, Error> {
+        let (fstart, fstop) = frange;
         let (mut circuit, info) = self.build_circuit(false)?;
         let out = resolve_net(&info, out)?;
         let reference = resolve_net(&info, reference)?;
@@ -724,15 +716,12 @@ impl Session {
         drop(dc);
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
         let opvars = SimSession::snapshot_opvars(&self.circuit);
-        let (models, terminals, observables, params) = SimSession::snapshot_introspect(&self.circuit);
+        let introspect = SimSession::snapshot_introspect(&self.circuit);
         Ok(OpResult::new(
             result,
             digital,
             opvars,
-            models,
-            terminals,
-            observables,
-            params,
+            introspect,
             Rc::new(self.info.clone()),
         ))
     }
@@ -829,12 +818,12 @@ impl Session {
         &mut self,
         out: &str,
         reference: &str,
-        fstart: f64,
-        fstop: f64,
+        frange: (f64, f64),
         points: usize,
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<NoiseTrace, Error> {
+        let (fstart, fstop) = frange;
         let out = resolve_net(&self.info, out)?;
         let reference = resolve_net(&self.info, reference)?;
         let opts = piperine_solver::prelude::NoiseAnalysisOptions {

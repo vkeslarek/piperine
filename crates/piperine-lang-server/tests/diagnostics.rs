@@ -22,12 +22,14 @@ fn cross_file_diagnostics_fan_out_to_the_erroring_file() {
 
     let by_uri = lsp_collect_diagnostics(&b_uri, b_src, 800);
 
-    let a_diags = by_uri.get(&a_uri).unwrap_or_else(|| {
+    let a_str = a_uri.to_string();
+    let b_str = b_uri.to_string();
+    let a_diags = by_uri.get(&a_str).unwrap_or_else(|| {
         panic!("expected a PublishDiagnostics notification for a.phdl, got URIs: {:?}", by_uri.keys().collect::<Vec<_>>())
     });
     assert!(!a_diags.is_empty(), "a.phdl's own undeclared-discipline error must be published against a.phdl");
 
-    let b_diags = by_uri.get(&b_uri).expect("b.phdl must also get a (empty) diagnostics publish");
+    let b_diags = by_uri.get(&b_str).expect("b.phdl must also get a (empty) diagnostics publish");
     assert!(b_diags.is_empty(), "b.phdl elaborates cleanly and must not inherit a.phdl's error");
 }
 
@@ -42,7 +44,8 @@ fn standalone_document_diagnostics_still_publish() {
 
     let by_uri = lsp_collect_diagnostics(&uri, src, 800);
 
-    let diags = by_uri.get(&uri).unwrap_or_else(|| {
+    let uri_str = uri.to_string();
+    let diags = by_uri.get(&uri_str).unwrap_or_else(|| {
         panic!("expected a PublishDiagnostics notification for the standalone file, got URIs: {:?}", by_uri.keys().collect::<Vec<_>>())
     });
     assert!(!diags.is_empty(), "the standalone document's own error must still be published (LSP-17 fallback)");
@@ -57,7 +60,8 @@ fn diagnostic_carries_the_structured_elab_error_code() {
     let src = "mod Top (inout p: Nonexistent) {}\n";
 
     let by_uri = lsp_collect_diagnostics(&uri, src, 800);
-    let diags = by_uri.get(&uri).expect("expected a PublishDiagnostics notification");
+    let uri_str = uri.to_string();
+    let diags = by_uri.get(&uri_str).expect("expected a PublishDiagnostics notification");
     assert!(!diags.is_empty(), "the undefined-type error must be published");
 
     let d = &diags[0];
@@ -81,7 +85,8 @@ fn diagnostic_carries_the_structured_parse_error_code() {
     let src = "mod Top ( this is not valid phdl\n";
 
     let by_uri = lsp_collect_diagnostics(&uri, src, 800);
-    let diags = by_uri.get(&uri).expect("expected a PublishDiagnostics notification");
+    let uri_str = uri.to_string();
+    let diags = by_uri.get(&uri_str).expect("expected a PublishDiagnostics notification");
     assert!(!diags.is_empty(), "the syntax error must be published");
 
     let d = &diags[0];

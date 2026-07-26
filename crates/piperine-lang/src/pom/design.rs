@@ -534,12 +534,12 @@ impl Design {
                 }
             }
             if vm.has_any() {
-                if let Some(name) = &vm.name {
-                    if meta.vars.values().any(|existing| existing.name.as_ref() == Some(name)) {
+                if let Some(name) = &vm.name
+                    && meta.vars.values().any(|existing| existing.name.as_ref() == Some(name))
+                {
                         return Err(field_err("name", "value", format!(
                             "duplicate introspection name `{name}` (names must be unique within a module's var catalog)"
                         )));
-                    }
                 }
                 meta.vars.insert(v.name.clone(), vm);
             }
@@ -894,6 +894,6 @@ mod flat_module_tests {
         design.insert_flat_module("Synth".to_string(), leaf_module("Synth"));
         let flat = design.flat_module("Synth").expect("Synth in flat_modules");
         assert_eq!(flat.name(), "Synth");
-        assert!(design.modules.get("Synth").is_none());
+        assert!(!design.modules.contains_key("Synth"));
     }
 }

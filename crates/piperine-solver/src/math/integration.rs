@@ -309,7 +309,7 @@ mod tests {
         assert!((TrBdf2::GAMMA - (2.0 - 2.0_f64.sqrt())).abs() < 1e-12);
         assert!((TrBdf2::GAMMA - 0.5857864376269049).abs() < 1e-9);
         // Equal-weight stages: γ and (1−γ) both positive.
-        assert!(TrBdf2::GAMMA > 0.0 && TrBdf2::GAMMA < 1.0);
+        const { assert!(TrBdf2::GAMMA > 0.0 && TrBdf2::GAMMA < 1.0); }
         // Sanity: γ + (1−γ) = 1, and 1−γ = √2 − 1.
         assert!(((1.0 - TrBdf2::GAMMA) - (2.0_f64.sqrt() - 1.0)).abs() < 1e-12);
     }

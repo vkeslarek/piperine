@@ -95,7 +95,7 @@ impl Introspect for TempResistor {
     }
 
     fn get_param(&self, name: &str) -> Option<Value> {
-        (name == "temp").then(|| Value::Real(self.temp))
+        (name == "temp").then_some(Value::Real(self.temp))
     }
 
     fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {

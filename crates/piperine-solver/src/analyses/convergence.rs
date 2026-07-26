@@ -163,15 +163,10 @@ pub trait StepperStrategy: Send + Sync {
 /// already normalized by tolerance). The result is clamped to a safe per-step
 /// range and `[dt_min, dt_max]`. A rejection resets the error memory so the
 /// retry is not biased (TRB-09). All gains live in [`StepperGains`].
+#[derive(Default)]
 pub struct PiController {
     pub gains: StepperGains,
     prev_error: Option<f64>,
-}
-
-impl Default for PiController {
-    fn default() -> Self {
-        Self { gains: StepperGains::default(), prev_error: None }
-    }
 }
 
 impl PiController {

@@ -70,10 +70,10 @@ fn named_tests(enforcement: &str) -> Vec<(String, String)> {
     let mut found = Vec::new();
     for token in enforcement.split(|c: char| c.is_whitespace() || c == ',' || c == '`') {
         let token = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.' && c != ':' && c != '/');
-        if let Some((file, test)) = token.split_once("::") {
-            if file.ends_with(".rs") && !test.is_empty() {
-                found.push((file.to_string(), test.to_string()));
-            }
+        if let Some((file, test)) = token.split_once("::")
+            && file.ends_with(".rs") && !test.is_empty()
+        {
+            found.push((file.to_string(), test.to_string()));
         }
     }
     found

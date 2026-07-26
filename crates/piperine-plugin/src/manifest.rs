@@ -53,7 +53,7 @@ pub struct DeviceSource {
 }
 
 /// Capability declarations — deny-by-default (SPEC Part VI §3.3).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Permissions {
     /// Glob patterns the plugin may read/write (`"read *.cir"`,
@@ -65,12 +65,6 @@ pub struct Permissions {
     /// Whitelist of executables the plugin may spawn; empty = none.
     #[serde(default)]
     pub process_spawn: Vec<String>,
-}
-
-impl Default for Permissions {
-    fn default() -> Self {
-        Self { filesystem: Vec::new(), network: false, process_spawn: Vec::new() }
-    }
 }
 
 impl Permissions {

@@ -5,11 +5,11 @@ edition.workspace = true
 description = "Piperine plugin SDK + host: manifest, TOFU trust, native backend, device factories"
 
 [dependencies]
-piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
-piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
-piperine-solver = { version = "0.1.0", path = "../piperine-solver" }
-piperine-project = { version = "0.1.0", path = "../piperine-project" }
-piperine = { version = "0.1.1", path = "../.." }
+piperine-lang = { path = "../piperine-lang" }
+piperine-codegen = { path = "../piperine-codegen" }
+piperine-solver = { path = "../piperine-solver" }
+piperine-project = { path = "../piperine-project" }
+piperine = { path = "../.." }
 thiserror.workspace = true
 miette = { version = "7", features = ["fancy"] }
 serde.workspace = true

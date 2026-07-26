@@ -101,7 +101,7 @@ pub fn d_dv_twice(
     d: NodeId,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
 ) -> Expr {
-    d_dv_twice_named(expr, a, b, c, d, resolve_node, "__dtemp_inner", "__dtemp", "__ddtemp")
+    d_dv_twice_named(expr, a, b, c, d, resolve_node, ("__dtemp_inner", "__dtemp", "__ddtemp"))
 }
 
 /// [`d_dv_twice`] with custom tape-marker names, so every installed tape's
@@ -115,10 +115,9 @@ pub fn d_dv_twice_named(
     c: NodeId,
     d: NodeId,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
-    d1: &'static str,
-    d2: &'static str,
-    d12: &'static str,
+    markers: (&'static str, &'static str, &'static str),
 ) -> Expr {
+    let (d1, d2, d12) = markers;
     let seed1 = |p: NodeId, m: NodeId| {
         if p == a && m == b { lit(1.0) } else { lit(0.0) }
     };
@@ -170,14 +169,14 @@ pub fn d_dv_once_more_named(
 /// `__dddtemp123` — this function applied to each `temps[id]`.
 pub fn d_dv_thrice(
     expr: &Expr,
-    a: NodeId,
-    b: NodeId,
-    c: NodeId,
-    d: NodeId,
-    e: NodeId,
-    f: NodeId,
+    branch1: (NodeId, NodeId),
+    branch2: (NodeId, NodeId),
+    branch3: (NodeId, NodeId),
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
 ) -> Expr {
+    let (a, b) = branch1;
+    let (c, d) = branch2;
+    let (e, f) = branch3;
     let pass1 = differentiate(expr, &|p, m| {
         if p == a && m == b { lit(1.0) } else { lit(0.0) }
     }, resolve_node, &[("__temp", "__dtemp1")]);

@@ -1625,7 +1625,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "piperine"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "num-complex",
  "piperine-api",
@@ -1639,7 +1639,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-api"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ndarray 0.17.2",
  "num-complex",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "clap",
  "include_dir",
@@ -1668,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-codegen"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-lang"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "miette",
  "num-complex",
@@ -1698,7 +1698,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-lang-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
  "lsp-server",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-plugin"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "inventory",
  "libloading",
@@ -1733,7 +1733,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-plugin-macros"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "piperine-lang",
  "piperine-plugin",
@@ -1746,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-project"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "git2",
  "piperine-lang",
@@ -1761,7 +1761,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-python"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "num-complex",
  "numpy",
@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "piperine-solver"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bimap",
  "bitflags 2.10.0",

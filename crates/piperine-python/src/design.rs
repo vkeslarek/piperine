@@ -206,7 +206,7 @@ impl _Selection {
 
     /// The matched nodes as a list of typed `_Node` objects (kind + name).
     fn nodes(&self) -> Vec<_Node> {
-        self.nodes.iter().map(|n| _Node::clone_snapshot(n)).collect()
+        self.nodes.iter().map(_Node::clone_snapshot).collect()
     }
 }
 

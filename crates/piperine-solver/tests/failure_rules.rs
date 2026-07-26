@@ -185,7 +185,7 @@ fn section_18_a_non_positive_period_is_an_analysis_error() {
         let mut circuit = resistor_circuit();
         let err = circuit
             .pss(pss_options(period, 0.0), Context::default())
-            .and_then(|mut p| p.solve())
+            .and_then(|p| p.solve())
             .map(|_| ())
             .expect_err("§18: a non-positive period must fail");
         assert_rule(&err, SolverDomain::Pss, "period must be positive");
@@ -197,7 +197,7 @@ fn section_18_a_negative_pre_roll_is_an_analysis_error() {
     let mut circuit = resistor_circuit();
     let err = circuit
         .pss(pss_options(1e-3, -1.0), Context::default())
-        .and_then(|mut p| p.solve())
+        .and_then(|p| p.solve())
         .map(|_| ())
         .expect_err("§18: a negative pre-roll must fail");
     assert_rule(&err, SolverDomain::Pss, "tstab");

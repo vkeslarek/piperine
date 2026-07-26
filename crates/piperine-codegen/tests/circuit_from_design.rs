@@ -51,7 +51,7 @@ fn from_ir_ppr_resistor_yields_circuit() {
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parse_and_elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let ci: CircuitInstance = from_ir(&elab, &bodies, "Top").expect("from_ir compiles top");
-    assert!(ci.all_devices().len() >= 1);
+    assert!(!ci.all_devices().is_empty());
 }
 
 #[test]
@@ -105,6 +105,6 @@ fn ir_analog_to_device(
 ) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
     let body = bodies.get(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
     let compiled = piperine_codegen::CompiledModule::compile(body)?;
-    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).cloned()
 }
 

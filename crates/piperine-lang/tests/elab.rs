@@ -23,8 +23,7 @@ fn elab(src: &str) -> piperine_lang::pom::Design {
 
 fn elab_err(src: &str) -> String {
     parse_str(src).expect("parse failed").elaborate(&piperine_lang::SourceMap::dummy())
-        .err()
-        .expect("expected elaboration error")
+        .expect_err("expected elaboration error")
         .to_string()
 }
 

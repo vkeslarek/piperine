@@ -72,7 +72,7 @@ fn transient_is_real_and_ac_is_complex_on_the_same_container() {
     let s = session();
     let out = NetRef { name: "out".into() };
 
-    let tran = s.run_tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &[]).expect("tran solves");
+    let tran = s.run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &[]).expect("tran solves");
     let w = tran.v(&out).expect("v(out) real");
     assert!(w.len() > 1);
 
@@ -89,7 +89,7 @@ fn transient_is_real_and_ac_is_complex_on_the_same_container() {
 #[test]
 fn noise_trace_still_exposes_psd_and_total() {
     let s = session();
-    let nz = s.run_noise("out", "gnd", 1.0, 1e6, 5, true, &SolverConfig::default()).expect("noise solves");
+    let nz = s.run_noise("out", "gnd", (1.0, 1e6), 5, true, &SolverConfig::default()).expect("noise solves");
     let psd = nz.psd();
     assert!(!psd.is_empty());
     assert!(nz.total() >= 0.0);

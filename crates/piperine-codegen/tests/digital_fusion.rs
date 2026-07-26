@@ -39,7 +39,7 @@ fn run(src: &str, top: &str, fuse: bool, stop: f64) -> (CircuitInstance, Circuit
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     compiler.fuse_digital_cones = fuse;
     let (mut circuit, info) = compiler.build_circuit_mapped(top).expect("builds");
-    let options = TransientAnalysisOptions::new(stop.into(), (stop / 100.0).into());
+    let options = TransientAnalysisOptions::new(stop, stop / 100.0);
     let result = circuit.transient(options, Context::default()).unwrap().solve().unwrap();
     let net_count = circuit.digital_state.nets.len();
     let steps: Vec<Vec<Option<LogicValue>>> = result

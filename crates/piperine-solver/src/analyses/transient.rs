@@ -1034,7 +1034,7 @@ impl<'a> TransientSolver<'a> {
     fn apply_scheduled_sets(
         &mut self,
         st: &mut TimeLoop,
-        steps: &mut Vec<TransientStep>,
+        steps: &mut [TransientStep],
         dt_actual: f64,
     ) -> crate::result::Result<bool> {
         let due = self.sets.drain_due(st.current_time);

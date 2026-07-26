@@ -129,10 +129,10 @@ fn test_vccs_jacobian_transconductance() {
     let n  = 4usize;
 
     // d(I_outp)/d(V_inp) = +gm, d(I_outp)/d(V_inn) = -gm
-    assert!((jac[2*n + 0] -  gm).abs() < 1e-12, "J[outp,inp] = {}", jac[2*n+0]);
+    assert!((jac[2*n] -  gm).abs() < 1e-12, "J[outp,inp] = {}", jac[2*n]);
     assert!((jac[2*n + 1] - -gm).abs() < 1e-12, "J[outp,inn] = {}", jac[2*n+1]);
     // d(I_outn)/d(V_inp) = -gm, d(I_outn)/d(V_inn) = +gm
-    assert!((jac[3*n + 0] - -gm).abs() < 1e-12, "J[outn,inp] = {}", jac[3*n+0]);
+    assert!((jac[3*n] - -gm).abs() < 1e-12, "J[outn,inp] = {}", jac[3*n]);
     assert!((jac[3*n + 1] -  gm).abs() < 1e-12, "J[outn,inn] = {}", jac[3*n+1]);
 }
 
@@ -248,5 +248,5 @@ fn ir_analog_to_device(
 ) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
     let module = bodies.get(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
     let compiled = piperine_codegen::CompiledModule::compile(module)?;
-    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).cloned()
 }

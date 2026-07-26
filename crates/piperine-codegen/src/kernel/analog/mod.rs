@@ -58,6 +58,13 @@ use piperine_lang::parse::ast::Expr as PomExpr;
 /// this bank). Unused when the module has no module-level vars.
 type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, *mut f64);
 
+/// An ordered branch (node pair) in the analog netlist.
+pub type Branch = (NodeId, NodeId);
+/// An ordered pair of branches for second-derivative disto.
+pub type Disto2Pair = (Branch, Branch);
+/// An ordered triple of branches for third-derivative disto.
+pub type Disto3Triple = (Branch, Branch, Branch);
+
 /// A compiled analog capability: JIT'd functions plus the terminal/branch
 /// metadata its stamper needs. Presence of the capability *is* `Some(_)` on
 /// the [`AnalogKernel`] field that holds it — see the module docs.
@@ -104,7 +111,7 @@ pub enum CompiledTrigger {
     Above,
     /// Fires every `period` seconds, first fire at `phase` (both
     /// parameter-constant). `phase = 0` reproduces `@timer(period)`.
-    Timer { period: PomExpr, phase: PomExpr },
+    Timer { period: PomExpr, phase: Box<PomExpr> },
 }
 
 /// A compiled runtime analog event: its trigger plus the vars-bank slots its
@@ -213,7 +220,7 @@ pub struct AnalogKernel {
     disto2: Vec<AnalogFn>,
     /// Ordered branch pairs `(j, k)` the disto2 kernel emits rows for, in
     /// `out` row order — only pairs with at least one nonzero row.
-    disto2_pairs: Vec<((NodeId, NodeId), (NodeId, NodeId))>,
+    disto2_pairs: Vec<Disto2Pair>,
     /// Contribution terminals `(plus, minus)` in disto2 row order:
     /// resistive first, then charge (the split is `disto2_charge_start`).
     disto2_contribs: Vec<(NodeId, NodeId)>,
@@ -227,7 +234,7 @@ pub struct AnalogKernel {
     disto3: Vec<AnalogFn>,
     /// Ordered branch triples `(j, k, l)` the disto3 kernel emits rows
     /// for, in `out` row order — only triples with a nonzero row.
-    disto3_triples: Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>,
+    disto3_triples: Vec<Disto3Triple>,
     /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
     initial_condition_terminals: Vec<(NodeId, NodeId)>,
     initial_conditions: Option<AnalogFn>,
@@ -765,7 +772,7 @@ impl AnalogKernel {
 
     /// Ordered branch pairs `(j, k)` the disto2 kernel emits, in `out` row
     /// order.
-    pub fn disto2_pairs(&self) -> &[((NodeId, NodeId), (NodeId, NodeId))] {
+    pub fn disto2_pairs(&self) -> &[Disto2Pair] {
         &self.disto2_pairs
     }
 
@@ -803,7 +810,7 @@ impl AnalogKernel {
 
     /// Ordered branch triples `(j, k, l)` the disto3 kernel emits, in `out`
     /// row order.
-    pub fn disto3_triples(&self) -> &[((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))] {
+    pub fn disto3_triples(&self) -> &[Disto3Triple] {
         &self.disto3_triples
     }
 

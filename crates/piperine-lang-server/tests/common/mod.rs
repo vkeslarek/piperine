@@ -706,7 +706,7 @@ pub fn lsp_rename_at(uri: &Uri, source: &str, line: u32, character: u32, new_nam
 /// every `PublishDiagnostics` notification received within `timeout_ms`,
 /// keyed by the URI they were published against — T15's fan-out publishes
 /// one notification per project file, not just the opened document's.
-pub fn lsp_collect_diagnostics(uri: &Uri, source: &str, timeout_ms: u64) -> HashMap<Uri, Vec<lsp_types::Diagnostic>> {
+pub fn lsp_collect_diagnostics(uri: &Uri, source: &str, timeout_ms: u64) -> HashMap<String, Vec<lsp_types::Diagnostic>> {
     let (client_conn, server_conn) = Connection::memory();
 
     std::thread::spawn(move || {
@@ -733,7 +733,7 @@ pub fn lsp_collect_diagnostics(uri: &Uri, source: &str, timeout_ms: u64) -> Hash
         if let Message::Notification(not) = msg
             && not.method == lsp_types::notification::PublishDiagnostics::METHOD
             && let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(not.params) {
-                by_uri.insert(params.uri, params.diagnostics);
+                by_uri.insert(params.uri.to_string(), params.diagnostics);
             }
         if std::time::Instant::now() >= deadline {
             break;

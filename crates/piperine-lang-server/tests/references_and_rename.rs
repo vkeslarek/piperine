@@ -51,9 +51,13 @@ mod B (inout p: Electrical, inout n: Electrical) {\n\
     let b_line = src[..src.find("mod B").unwrap()].matches('\n').count() as u32;
 
     let edit = lsp_rename(src, a_line, character, "gain").expect("rename on A's power must succeed");
-    let changes = edit.changes.expect("rename must produce changes");
+    let changes: HashMap<String, _> = edit.changes
+        .expect("rename must produce changes")
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
     let uri: Uri = "file:///rename_test.phdl".parse().unwrap();
-    let edits = changes.get(&uri).expect("changes must target the open document");
+    let edits = changes.get(&uri.to_string()).expect("changes must target the open document");
 
     assert!(!edits.is_empty(), "at least the declaration site must be edited");
     for e in edits {

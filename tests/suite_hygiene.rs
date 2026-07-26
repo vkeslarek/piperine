@@ -65,11 +65,9 @@ fn integration_targets() -> Vec<(String, String)> {
         .into_iter()
         .filter(|(path, _)| {
             let parts: Vec<&str> = path.split('/').collect();
-            match parts.as_slice() {
-                ["tests", _file] => true,
-                ["crates", _crate, "tests", _file] => true,
-                _ => false,
-            }
+            matches!(parts.as_slice(),
+                ["tests", _file] | ["crates", _, "tests", _file]
+            )
         })
         .collect()
 }

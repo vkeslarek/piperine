@@ -96,8 +96,7 @@ fn test_rfport_negative_z0_fails_loud() {
     let err = parse_str(src)
         .expect("parse failed")
         .elaborate(&piperine_lang::SourceMap::dummy())
-        .err()
-        .expect("negative z0 must fail loud (SP-05)")
+        .expect_err("negative z0 must fail loud (SP-05)")
         .to_string();
     assert!(err.contains("z0"), "expected z0 in error, got: {err}");
 }
@@ -139,8 +138,7 @@ fn test_rfport_bad_arg_type_fails_loud() {
     let err = parse_str(src)
         .expect("parse failed")
         .elaborate(&piperine_lang::SourceMap::dummy())
-        .err()
-        .expect("expected elaboration error");
+        .expect_err("expected elaboration error");
     let msg = err.to_string();
     assert!(msg.contains("z0"), "expected z0 in error, got: {msg}");
 }

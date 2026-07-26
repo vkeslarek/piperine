@@ -53,7 +53,7 @@ fn noise_trace() -> NoiseTrace {
         .expect("noise fixture elaborates");
     let session = SimSession::new(design, "Top".to_string());
     session
-        .run_noise("out", "gnd", 1.0, 1e6, 10, true, &SolverConfig::default())
+        .run_noise("out", "gnd", (1.0, 1e6), 10, true, &SolverConfig::default())
         .expect("noise solves")
 }
 
