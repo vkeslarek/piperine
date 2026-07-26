@@ -471,6 +471,32 @@ stamp bypass"`). Every other flag's entry names a branch-gate, a loader, or a
 driver. After T18–T20 the phrase "no consumer" cannot appear at all (T20 makes
 that an assertion).
 
+## 7b. T22/T23 — §16 disposition (CLN-18/19), with a spec deviation
+
+The audit's four "no failure site" rows turned out **reachable but unenforced**,
+not unenforceable — a bucket `spec.md` did not anticipate (CLN-18 offers only
+"remove the row"). Probed directly:
+
+| Row | What actually happens |
+|---|---|
+| §2 no-capability element | A circuit containing one **solves fine** — the element is silently inert. Enforcing it is a real behaviour change, and two existing fixtures (`live_params.rs:232`, `solver_entry.rs:115`) deliberately declare `empty()` capabilities as inert stand-ins. |
+| §4 boundary change mid-analysis | Nothing snapshots the boundary per analysis, so there is nothing to compare against. |
+| §4 digital event to a nonexistent net | `DigitalNet` is an index; an out-of-range target is not constructible through the public surface. |
+| §6 stamp naming an unmapped variable | `AnalogReference` carries its own index, so the condition is likewise not constructible. |
+
+**SPEC_DEVIATION (CLN-18).** Deleting normative rules that the implementation
+*should* honour would trade documentation drift for a silent capability
+regression — the opposite of P6's intent. Instead, §16 gained an **Enforcement**
+column: every row either names the test that trips it or is marked
+**not yet enforced**, and `spec_failure_rules_guard.rs` fails when a row is
+neither (and when a named test does not exist). 8 of 16 rows are bound to tests;
+8 carry the marker, and they are ROADMAP P6's residue.
+
+Guard proofs: blanking §15's enforcement cell failed
+`every_failure_rule_is_enforced_or_marked` naming §15; pointing it at
+`section_15_typo_that_does_not_exist` failed `every_named_enforcement_test_exists`
+naming the missing test. Both reverted.
+
 ## 8b. Phase 3 outcome — capability flags (CLN-11..14)
 
 | Flag | Verdict | Landed |

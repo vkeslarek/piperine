@@ -1118,24 +1118,33 @@ Every failure in this Part is an analysis or device-load error. These errors are
 not parse or elaboration errors unless the invalid condition is detectable before
 device construction.
 
-| Section | Rule | Failure |
-|---------|------|---------|
-| §2 | Circuit contains an element that declares no capability | Device-load error. |
-| §3 | Unsupported analog behavior reaches the ABI | Device-load or analysis error; never an empty fake stamp. |
-| §4 | Digital boundary changes during an analysis | Analysis error. |
-| §4 | Digital event targets a nonexistent net | Analysis error. |
-| §5 | External model or plugin cannot bind required terminals/params | Device-load error. |
-| §6 | Stamp references an unmapped non-ground/non-branch variable | Analysis error. |
-| §8 | Analysis-time loading changes matrix dimension or sparsity contract | Analysis error. |
-| §9 | DC fails plain Newton, gmin stepping, and source stepping | Convergence failure. |
-| §10 | Transient Newton solve reaches the minimum timestep without converging | Convergence failure. (An LTE rejection at the minimum timestep is instead accepted with a warning and counted in the run statistics.) |
-| §11 | AC frequency point cannot solve its linear system | Analysis error for that sweep. |
-| §12 | Noise output/reference node cannot be resolved | Analysis error. |
-| §13 | Unsupported transfer-function source form is requested | Analysis error. |
-| §14 | Digital delta cycle does not settle within the iteration cap | Digital convergence failure. |
-| §15 | Linear solve returns NaN or infinity | Convergence failure. |
-| §17 | Sensitivity parameter is unknown, unreadable, non-real, or rebuild-strength | Analysis error. |
-| §18 | Non-positive period or negative pre-roll requested; digital state not periodic after convergence | Analysis error. |
+**Enforcement column.** Each rule names the test that trips it, so the table is
+a contract rather than an intention (P6/CLN-16..19,
+`crates/piperine-solver/tests/failure_rules.rs` binds the two). A row marked
+**not yet enforced** is a rule the implementation does not currently check: the
+condition is reachable but passes silently, and the marker is the honest
+record of that until it is implemented (tracked in ROADMAP P6's residue).
+`crates/piperine-solver/tests/spec_failure_rules_guard.rs` fails if a row is
+neither bound to a test nor marked.
+
+| Section | Rule | Failure | Enforcement |
+|---------|------|---------|-------------|
+| §2 | Circuit contains an element that declares no capability | Device-load error. | **not yet enforced** — a no-capability element is silently inert; two existing fixtures rely on that (`live_params.rs`, `solver_entry.rs`) |
+| §3 | Unsupported analog behavior reaches the ABI | Device-load or analysis error; never an empty fake stamp. | codegen: `disto_jit.rs::disto2_branch_current_read_fails_loud_naming_device`, `digital_codegen_gaps.rs` |
+| §4 | Digital boundary changes during an analysis | Analysis error. | **not yet enforced** — no boundary snapshot is compared per analysis |
+| §4 | Digital event targets a nonexistent net | Analysis error. | **not yet enforced** — `DigitalNet` is an index; an out-of-range target is not representable through the public surface |
+| §5 | External model or plugin cannot bind required terminals/params | Device-load error. | plugin: `e2e.rs::unregistered_type_fails_loud`, `::device_without_host_fails_loud` |
+| §6 | Stamp references an unmapped non-ground/non-branch variable | Analysis error. | **not yet enforced** — `AnalogReference` carries its index, so an unmapped variable is not constructible |
+| §8 | Analysis-time loading changes matrix dimension or sparsity contract | Analysis error. | **not yet enforced** — the nearest guard is `analyses/dc.rs`'s "solution not contiguous" |
+| §9 | DC fails plain Newton, gmin stepping, and source stepping | Convergence failure (reported under the `Newton` domain — the exhausted plan surfaces its last attempt). | `failure_rules.rs::section_9_exhausting_every_dc_strategy_is_a_convergence_failure` |
+| §10 | Transient Newton solve reaches the minimum timestep without converging | Convergence failure. (An LTE rejection at the minimum timestep is instead accepted with a warning and counted in the run statistics.) | **not yet enforced** — the `dt_min` floor exists; no test drives a circuit onto it |
+| §11 | AC frequency point cannot solve its linear system | Analysis error for that sweep. | **not yet enforced** — `math/faer.rs` wraps the linear failure, but no test constructs a singular AC point |
+| §12 | Noise output/reference node cannot be resolved | Analysis error. | `failure_rules.rs::section_12_unresolvable_noise_output_node_is_an_analysis_error`, `::section_12_unresolvable_noise_reference_node_is_an_analysis_error` |
+| §13 | Unsupported transfer-function source form is requested | Analysis error. | root: `session_tf.rs::tf_current_source_input_fails_loud` |
+| §14 | Digital delta cycle does not settle within the iteration cap | Digital convergence failure. | **not yet enforced** — `digital/scheduler.rs` raises it; no test builds a non-settling loop |
+| §15 | Linear solve returns NaN or infinity | Convergence failure. | `failure_rules.rs::section_15_a_non_finite_stamp_is_a_convergence_failure` |
+| §17 | Sensitivity parameter is unknown, unreadable, non-real, or rebuild-strength | Analysis error. | root: `sens.rs` |
+| §18 | Non-positive period or negative pre-roll requested; digital state not periodic after convergence | Analysis error. | `failure_rules.rs::section_18_a_non_positive_period_is_an_analysis_error`, `::section_18_a_negative_pre_roll_is_an_analysis_error`; root `pss.rs` (non-periodic) |
 
 ---
 
