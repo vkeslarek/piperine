@@ -10,7 +10,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use piperine_api::{SimSession, SolverConfig};
+use piperine_api::{Session, SolverConfig};
 use piperine_lang::parse::ast::{BehaviorKind, Direction};
 use piperine_lang::{Behavior, Design, Instance, Module, Param, Port, Value, ValueType, Wire};
 
@@ -65,17 +65,17 @@ impl _Module {
         })
     }
 
-    /// Build a fresh [`SimSession`] for one analysis: fork the parent design,
-    /// replay every staged override onto the fork (the fork clears the
-    /// parent's override layer by construction — see [`Design::fork`]), then
-    /// hand the forked design to a new session. Each analysis call gets its
-    /// own session + fork, so results never leak between calls (spec §9).
-    fn session(&self) -> PyResult<SimSession> {
-        let forked = self.design.fork();
+    /// Compile a fresh [`Session`] for one analysis: hand every staged
+    /// override to a [`SessionBuilder`](piperine_api::SessionBuilder), which
+    /// forks the parent design and replays them onto the fork. Each analysis
+    /// call gets its own session + fork, so results never leak between calls
+    /// (spec §9).
+    fn session(&self) -> PyResult<Session> {
+        let mut builder = Session::builder(&self.design, &self.name);
         for ((label, param), value) in self.staged.borrow().iter() {
-            forked.set_param(label, param, value.clone());
+            builder = builder.stage(label, param, value.clone());
         }
-        Ok(SimSession::new(forked, self.name.clone()))
+        builder.compile().map_err(Self::analysis_err)
     }
 
     /// Surface a host analysis error as the right Python exception:
@@ -153,10 +153,10 @@ impl _Module {
 
     // ── analyses (PY-04) + staging (PY-12) ─────────────────────────────────
     //
-    // Each analysis builds a fresh `SimSession` over a forked design with the
+    // Each analysis compiles a fresh `Session` over a forked design with the
     // staged overrides replayed (see [`_Module::session`]); solver config
     // defaults to [`SolverConfig::default`]. The signatures mirror
-    // `SimSession::run_*` positionally — the facade (P10) wraps these with
+    // `Session`'s analysis menu positionally — the facade (P10) wraps these with
     // typed dataclasses (`OpConfig`/`TranConfig`/...).
 
     /// Run a DC operating-point analysis (PY-04 / spec AC3). Returns the
@@ -169,9 +169,9 @@ impl _Module {
         nodeset: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_OpResult> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_op(&Self::solver_config(solver)?, nodeset.as_ref())
+            .op(&Self::solver_config(solver)?, nodeset.as_ref())
             .map_err(Self::analysis_err)?;
         Ok(_OpResult::new(result).with_resolver(self.instance_resolver()))
     }
@@ -188,10 +188,10 @@ impl _Module {
         dp_rel: f64,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<HashMap<(String, String), f64>> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let outs: Vec<&str> = outputs.iter().map(|s| s.as_str()).collect();
         let result = session
-            .run_sens(&outs, &params, dp_rel, &Self::solver_config(solver)?)
+            .sens(&outs, &params, dp_rel, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         Ok(result.d)
     }
@@ -207,9 +207,9 @@ impl _Module {
         tstab: f64,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(_Trace, usize, f64, Option<f64>)> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_pss(period, tstab, &Self::solver_config(solver)?)
+            .pss(period, tstab, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         Ok((
             _Trace::new(result.trace).with_resolver(self.instance_resolver()),
@@ -236,9 +236,9 @@ impl _Module {
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Vec<num_complex::Complex64>, Vec<num_complex::Complex64>)> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_pz(input_source, output, output_ref, &Self::solver_config(solver)?)
+            .pz(input_source, output, output_ref, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         Ok((result.poles, result.zeros))
     }
@@ -264,9 +264,9 @@ impl _Module {
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<DistoMetrics> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_disto(f1, f2, amplitude, output, output_ref, &Self::solver_config(solver)?)
+            .disto(f1, f2, amplitude, output, output_ref, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         Ok((result.hd2, result.hd3, result.im2, result.im3))
     }
@@ -290,9 +290,9 @@ impl _Module {
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<SpParams> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_sp(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
+            .sp(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         let s: Vec<Vec<Vec<num_complex::Complex64>>> = result
             .s
@@ -324,10 +324,10 @@ impl _Module {
         record_device_state: bool,
         probe: Vec<String>,
     ) -> PyResult<_Trace> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let probe_refs: Vec<&str> = probe.iter().map(String::as_str).collect();
         let result = session
-            .run_tran((stop, start), step, &Self::solver_config(solver)?, ic.as_ref(), record_device_state, &probe_refs)
+            .tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref(), record_device_state, &probe_refs)
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }
@@ -343,9 +343,9 @@ impl _Module {
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_AcTrace> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_ac(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
+            .ac(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         Ok(_AcTrace::new(result))
     }
@@ -364,9 +364,9 @@ impl _Module {
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_NoiseTrace> {
-        let session = self.session()?;
+        let mut session = self.session()?;
         let result = session
-            .run_noise(
+            .noise(
                 out,
                 reference,
                 (fstart, fstop),

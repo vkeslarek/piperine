@@ -1,7 +1,7 @@
 //! `_Session` — compile once, `set`, re-run (LIVE-10..13).
 //!
 //! Unlike [`crate::module::_Module`], which forks the design and rebuilds a
-//! fresh `SimSession` per analysis, a live session elaborates + JITs **once**
+//! fresh `Session` per analysis, a live session elaborates + JITs **once**
 //! (`_Module::compile`) and then runs every analysis on the held, compiled
 //! [`CircuitInstance`]. Parameter writes route through the solver's live-set
 //! path (`CircuitInstance::set_element_param`, MD-18: restamp, never re-JIT),
@@ -17,7 +17,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use piperine_api::{OpResult, SimSession};
+use piperine_api::{OpResult, Session};
 use piperine_codegen::device::{CircuitBuildInfo, CircuitCompiler};
 use piperine_lang::{Design, Value};
 use piperine_solver::abi::{AnalogVariable, InitialValue, Invalidation};
@@ -119,7 +119,7 @@ impl _Session {
     }
 
     /// Lower + JIT `module` of `design` into a runnable circuit — the same
-    /// recipe as the host's `SimSession::build_circuit`, minus plugins.
+    /// recipe as the host's `SessionBuilder::compile`, minus plugins.
     fn build(design: &Design, module: &str) -> PyResult<(CircuitInstance, CircuitBuildInfo)> {
         let bodies = piperine_codegen::resolve::lower_bodies(design)
             .map_err(|e| PyValueError::new_err(format!("{e}")))?;
@@ -414,9 +414,9 @@ impl _Session {
         let result = dc.solve().map_err(Self::analysis_err)?;
         drop(dc);
         self.record_voltages(|node| result.get_node(node).unwrap_or(0.0));
-        let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
-        let opvars = SimSession::snapshot_opvars(&self.circuit);
-        let introspect = SimSession::snapshot_introspect(&self.circuit);
+        let digital = Session::snapshot_digital(&self.info, &self.circuit);
+        let opvars = Session::snapshot_opvars(&self.circuit);
+        let introspect = Session::snapshot_introspect(&self.circuit);
         let op = OpResult::new(
             result,
             digital,
@@ -850,7 +850,7 @@ impl _Session {
             drop(dc);
             stats.converged &= result.stats.converged;
             stats.newton_iterations += result.stats.newton_iterations;
-            digital.push(SimSession::snapshot_digital(&self.info, &self.circuit));
+            digital.push(Session::snapshot_digital(&self.info, &self.circuit));
             points.push(result);
         }
         let trace = piperine_api::Trace::<piperine_api::Waveform>::from_dc_sweep(
