@@ -1,11 +1,13 @@
-//! Noise (`.noise`) — the noise vocabulary (`Noise`/`NoiseKind`, per-source
-//! PSD contract) and options, plus the adjoint-method driver integrating
-//! per-source contributions over the frequency sweep.
+//! Noise (`.noise`) — the noise vocabulary (`Noise`/`NoiseKind`) and options,
+//! plus the adjoint-method driver integrating per-source contributions over
+//! the frequency sweep. A device reports its PSD through
+//! [`Element::noise_current_psd`](crate::core::element::AnalogDevice); this
+//! module owns the vocabulary that method returns, not a contract of its own.
 #![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
-use crate::analyses::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
-use crate::analyses::dc::{DcAnalysis, DcSolver};
+use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
+use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
@@ -37,13 +39,6 @@ impl Noise {
     }
 }
 
-pub trait NoiseSource: AcAnalysis + DcAnalysis {
-    fn noise_current_psd(
-        &mut self,
-        dc_point: &DcAnalysisResult,
-        ac_context: &AcAnalysisContext,
-    ) -> Vec<Noise>;
-}
 #[derive(Clone, Debug)]
 pub struct NoiseAnalysisOptions {
     pub sweep_options: AcSweepAnalysisOptions,

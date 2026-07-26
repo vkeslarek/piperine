@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::Context;
-use crate::analyses::dc::{DcAnalysis, DcSolver};
+use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -20,15 +20,6 @@ use std::collections::HashMap;
 
 pub struct AcAnalysisContext {
     pub frequency: f64,
-}
-
-pub trait AcAnalysis: DcAnalysis {
-    fn load_ac(
-        &mut self,
-        dc_analysis_result: &DcAnalysisResult,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex<f64>>>;
 }
 
 #[derive(Clone, Debug)]

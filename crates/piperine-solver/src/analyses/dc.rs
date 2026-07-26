@@ -60,18 +60,6 @@ impl Deref for DcAnalysisState<'_> {
     }
 }
 
-pub trait DcAnalysis {
-    fn load_dc(
-        &mut self,
-        dc_circuit_state: &DcAnalysisState<'_>,
-        context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>>;
-
-    fn initial_dc_values(&mut self, _context: &Context) -> Vec<InitialValue<AnalogReference, f64>> {
-        Vec::new()
-    }
-}
-
 // ── driver ───────────────────────────────────────────────────────────────
 
 /// Non-linear system representation for DC analysis.

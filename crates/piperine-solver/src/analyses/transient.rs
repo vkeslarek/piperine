@@ -206,30 +206,6 @@ pub struct TransientAnalysisContext {
     pub prev_h: f64,
 }
 
-pub trait TransientAnalysis {
-    fn load_transient(
-        &mut self,
-        circuit_states: &TransientAnalysisState<'_>,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>>;
-
-    fn load_transient_dynamic(
-        &mut self,
-        _circuit_states: &TransientAnalysisState<'_>,
-        _transient_analysis_context: &TransientAnalysisContext,
-        _context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![]
-    }
-
-    fn initial_transient_values(
-        &mut self,
-        _context: &Context,
-    ) -> Vec<InitialValue<AnalogReference, f64>> {
-        Vec::new()
-    }
-}
 
 
 
