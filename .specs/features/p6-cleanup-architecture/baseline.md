@@ -33,16 +33,16 @@ Exit code `0`.
 | `piperine-codegen` | 26 | 152 | 0 | 0 |
 | `piperine-lang` | 29 | 355 | 0 | 0 |
 | `piperine-lang-server` | 15 | 69 | 0 | 0 |
-| `piperine-plugin` | 12 | 49 | 0 | 0 |
+| `piperine-plugin` | 12 | 49 | 0 | 1 |
 | `piperine-plugin-macros` | 5 | 7 | 0 | 0 |
 | `piperine-project` | 3 | 26 | 0 | 0 |
 | `piperine-python` | 26 | 59 | 0 | 0 |
-| `piperine-solver` | 24 | 244 | 0 | 0 |
-| **Sum** | **190** | **1163** | **0** | **0** |
+| `piperine-solver` | 24 | 244 | 0 | 3 |
+| **Sum** | **190** | **1163** | **0** | **4** |
 
 The per-crate sum reconciles exactly with the workspace run (190 targets, 1163
-passed). Per-crate runs report `0 ignored` because the four ignored items are
-**doc-tests**, which the workspace run collects under the crate that owns them:
+passed, 4 ignored). All four ignored items are **doc-tests**, owned by
+`piperine-plugin` (1) and `piperine-solver` (3):
 
 | Ignored doc-test | Source |
 |---|---|
