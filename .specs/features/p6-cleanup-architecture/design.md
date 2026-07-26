@@ -247,27 +247,36 @@ patched (spec Edge Case).
 
 ---
 
-## Appendix — C1a equivalence matrix (filled by the first Phase-C task)
+## Appendix — C1a equivalence matrix (filled by T24)
+
+Full matrix with `file:line` evidence on both sides, the five dangerous
+same-role/different-behavior rows, and the porting hand-off:
+**`.specs/features/p6-cleanup-architecture/session-equivalence.md`**. Line
+references below are `crates/piperine-api/src/session.rs` at `e3c233b`.
 
 | `SimSession` method | `Session` counterpart | Verdict | Action |
 |---|---|---|---|
-| `new` | `Session::compile` / `builder` | | |
-| `set_device_provider` | `SessionBuilder::provider` | | |
-| `set_hooks` | `SessionBuilder::hooks` | | |
-| `stage` | `Design::set_param` / `SessionBuilder::stage` | | |
-| `design` | (port) `Session::design` | | |
-| `module` | `Session::module` | | |
-| `run_op` | `Session::op` | | |
-| `run_op_sweep` | `Session::dc` / `Session::sweep` | | |
-| `run_tran` | `Session::tran` | | |
-| `run_ac` | `Session::ac` | | |
-| `run_noise` | `Session::noise` | | |
-| `run_sens` | `Session::sens` | | |
-| `run_pss` | `Session::pss` | | |
-| `run_pz` | `Session::pz` | | |
-| `run_sp` | `Session::sp` | | |
-| `run_disto` | `Session::disto` + `builder().disto(true)` | | |
-| `snapshot_digital` | (port) | | |
-| `snapshot_opvars` | (port) | | |
-| `snapshot_introspect` | (port) | | |
-| `build_circuit` (private) | `SessionBuilder::compile` body | | |
+| `new` `:113` | `Session::compile` `:644` / `builder` | **differs** — unforked ownership + infallible vs double `fork` + `Result` | T25: `builder`; `Session`'s fork-and-isolate wins, staging re-expressed as `SessionBuilder::stage` |
+| `set_device_provider` `:118` | — | **missing** | T25: `SessionBuilder::provider` |
+| `set_hooks` `:126` | — | **missing** | T25: `SessionBuilder::hooks`; `Session` holds the `Rc` for solve-time firing |
+| `stage` `:148` | — | **differs by construction** (staging precedes compilation) | T25: `SessionBuilder::stage(label, param, Value)` |
+| `design` `:137` | — | **missing** | T25: `Session::design(&self) -> &Design`, same signature |
+| `module` `:141` | `Session::module` `:663` | **identical** | none |
+| `run_op` `:361` | `Session::op` `:706` | **differs** — re-elaborates + fires `after_solve("op", node_voltages)`; bodies otherwise line-for-line equal | T25 (builder) + T26 (hook firing) |
+| `run_op_sweep` `:390` | `Session::sweep` `:1050` + `op` (**not** `dc` `:1010`) | **differs (3×)** — return shape, per-point `info` clone `:428`, and ignored `Invalidation` `:401` | Retarget to `sweep` + `point.op()` (one build, one `OpResult`/point, `info` cloned per point `:725`). `dc`'s trace shape stays; the ignored-`Invalidation` difference is resolved in `Session`'s favour and recorded |
+| `run_tran` `:506` | `Session::tran` `:735` | **differs** — `tspan: (stop, start)` tuple vs positional; hooks; `tran` also drains `pending_sets` (`Session`-only) | T25 + T26; argument order is a call-site rewrite, same values |
+| `run_ac` `:540` | `Session::ac` `:796` | **differs (widening only)** — `impl Into<Freq>`/`impl Into<bool>` accept every `f64`/`bool` caller | T25 + T26 |
+| `run_noise` `:565` | `Session::noise` `:817` | **differs** — hooks + re-elaboration only | T25 + T26 |
+| `run_sens` `:185` | `Session::sens` `:847` | **differs** — hooks + re-elaboration; same two `Error::Measurement` messages | T25 + T26 |
+| `run_pss` `:235` | `Session::pss` `:887` | **differs** — hooks + re-elaboration only | T25 + T26 |
+| `run_pz` `:262` | `Session::pz` `:904` | **differs** — hooks + re-elaboration only | T25 + T26 |
+| `run_sp` `:293` | `Session::sp` `:952` | **differs** — hooks + re-elaboration only | T25 + T26 |
+| `run_disto` `:334` | `Session::disto` `:926` | **differs (cost, not result)** — the only `SimSession` path passing `compile_disto = true`; `Session` gets the kernels unconditionally (`CircuitCompiler::new` defaults the flag `true`) | T25: `SessionBuilder::disto(bool)` defaulting **`true`** — §C1's proposed `false` default would break `tests/session_analyses.rs:156` and `tests/host_parity.rs:61`; deviation recorded in `session-equivalence.md` §3.2 |
+| `snapshot_digital` `:438` | — | **missing** | T25: same associated fn on `Session`, body verbatim (`piperine-python/src/live.rs:417` calls it) |
+| `snapshot_opvars` `:461` | — | **missing** | as above (`live.rs:418`) |
+| `snapshot_introspect` `:477` | — | **missing** | as above (`live.rs:419`) |
+| `build_circuit` `:157` (private) | `Session::compile` body `:644` | **differs** — hooks + provider + `compile_disto` vs fork | T25: `SessionBuilder::compile` = this body **plus** the fork, hook order verbatim (`transform_design` → overrides → `before_lower` → lower → compile) |
+
+`Session`-only, nothing to reconcile: `rebuilds`, `set`, `schedule_set`, `tf`,
+`dc`, `sweep`, `sweep_grid`. `SimSession` has no `.tf`, so the collapse adds
+reach rather than removing it.
