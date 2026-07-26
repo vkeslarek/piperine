@@ -3,9 +3,7 @@
 //! analog operators → marker calls, user function inlining). The result is
 //! POM `Stmt` stored in `AnalogBody.stmts` or `Function.body`.
 
-use piperine_lang::parse::ast::{BindOp, Expr, Stmt};
-
-use crate::resolve::*;
+use piperine_lang::parse::ast::{BindOp, Stmt};
 
 use super::expr::{resolve_expr, resolve_stmt, parse_contrib_dest, scan_noise};
 use super::LowerCtx;
@@ -38,26 +36,4 @@ fn resolve_behavior_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Stmt {
         }
         _ => resolve_stmt(stmt, ctx),
     }
-}
-
-/// Check if an expression contains a `__ddt` marker (reactive).
-pub(crate) fn has_ddt_marker(expr: &Expr) -> bool {
-    use piperine_lang::parse::ast::Walk;
-    let mut found = false;
-    expr.walk(&mut |e| {
-        if let Expr::Call(func, _) = e
-            && let Expr::Ident(name) = func.as_ref()
-                && (name == "__ddt" || name == "__laplace" || name == "__ztransform") {
-                    found = true;
-                    return Walk::SkipChildren;
-                }
-        Walk::Continue
-    });
-    found
-}
-
-/// Extract the `(plus, minus)` node pair from a contribution destination
-/// `V(p,n)` or `I(p,n)`. Used by the flattener.
-pub(crate) fn contrib_branch(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, NodeId, NodeId) {
-    parse_contrib_dest(dest, ctx)
 }

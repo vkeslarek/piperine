@@ -174,29 +174,6 @@ impl<'a> LowerCtx<'a> {
         prog.consts().map(|(name, v)| (name.clone(), structure::value_to_pom_expr(v))).collect()
     }
 
-    /// `$param_given("name")` resolution: exact param name first, then a
-    /// unique flattened bundle field (`narrow` → `model_narrow`) — the
-    /// syscall's argument predates bundle flattening (GAPS §I.14).
-    pub fn require_param_given(&mut self, name: &str) -> ParamId {
-        if let Some(id) = self.lookup_param(name) {
-            return id;
-        }
-        let suffix = format!("_{name}");
-        let mut matches = self.params.iter().filter(|(n, _)| n.ends_with(&suffix));
-        if let (Some((_, &id)), None) = (matches.next(), matches.next()) {
-            return id;
-        }
-        if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
-            eprintln!("DBG param_given `{name}` params: {:?}", self.params.keys().collect::<Vec<_>>());
-        }
-        self.errors.push(LowerError {
-            module: self.module_name.clone(),
-            what: "parameter ($param_given)",
-            name: name.to_string(),
-        });
-        ParamId(0)
-    }
-
     /// The shadow `var` bridging digital-domain node `id` (named `name`,
     /// for a readable IR symbol) into this analog body. Reuses the same
     /// shadow if `id` was already read earlier in this behavior.
@@ -222,16 +199,6 @@ impl<'a> LowerCtx<'a> {
         let id = self.symbols.add_state(StateVar { kind, arg });
         self.states.push(id);
         id
-    }
-
-    /// Lookup a parameter by name.
-    pub fn lookup_param(&self, name: &str) -> Option<ParamId> {
-        self.params.get(name).copied()
-    }
-
-    /// Lookup a variable by name.
-    pub fn lookup_var(&self, name: &str) -> Option<VarId> {
-        self.vars.get(name).copied()
     }
 
     /// Lookup a node (net/port) by name. Also resolves named-instance
@@ -276,31 +243,6 @@ impl<'a> LowerCtx<'a> {
     }
 
 
-    /// Resolve a bare identifier that fell through every other namespace
-    /// (env binding, module var, node, enum variant): it must be a
-    /// parameter, or it is an unresolved name.
-    pub fn require_ident_as_param(&mut self, name: &str) -> ParamId {
-        self.lookup_param(name).unwrap_or_else(|| {
-            self.errors.push(LowerError {
-                module: self.module_name.clone(),
-                what: "name",
-                name: name.to_string(),
-            });
-            ParamId(0)
-        })
-    }
-
-    /// Resolve a var name or record an "unresolved variable" error.
-    pub fn require_var(&mut self, name: &str) -> VarId {
-        self.lookup_var(name).unwrap_or_else(|| {
-            self.errors.push(LowerError {
-                module: self.module_name.clone(),
-                what: "variable",
-                name: name.to_string(),
-            });
-            VarId(0)
-        })
-    }
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────

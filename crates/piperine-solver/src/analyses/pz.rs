@@ -76,7 +76,6 @@ const GUARD_ABS: f64 = 1e-12;
 pub struct PoleZeroSolver<'a> {
     #[allow(dead_code)]
     circuit: &'a mut CircuitInstance,
-    options: PoleZeroOptions,
     size: usize,
     g: Array2<f64>,
     c: Array2<f64>,
@@ -136,7 +135,7 @@ impl<'a> PoleZeroSolver<'a> {
         let g = Self::assemble_g(circuit, &dc_point, &context, size);
         let c = Self::assemble_c(circuit, &dc_point, &context, size)?;
 
-        Ok(Self { circuit, options, size, g, c, input_ref, output_ref, output_ref_node })
+        Ok(Self { circuit, size, g, c, input_ref, output_ref, output_ref_node })
     }
 
     /// The real DC Jacobian `G` (n×n), read-only — exposed for testing and
