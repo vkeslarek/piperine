@@ -1,3 +1,6 @@
+//! Value-type conversion rules at elaboration: which widenings are implicit,
+//! which narrowings need an explicit `Type::from`, and which are refused.
+
 use piperine_lang::parse_and_elaborate;
 
 #[test]

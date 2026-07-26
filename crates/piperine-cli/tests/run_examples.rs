@@ -1,3 +1,6 @@
+//! Example-gallery elaboration through `check_file` (deleted in P6 T9 — the
+//! root `tests/run_examples.rs` is the surviving copy).
+
 use piperine_cli::commands::check::check_file;
 use std::fs;
 use std::path::PathBuf;

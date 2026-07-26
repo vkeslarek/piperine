@@ -1,14 +1,14 @@
-/// Integration tests for the elaboration phase.
-///
-/// These tests verify that `elaborate()` produces a fully resolved `Design`:
-/// - types are concrete (`NetType` / `ValueType`, no free expressions)
-/// - port connections are `NetRef` (no raw `Expr`)
-/// - for loops are unrolled
-/// - bundles are expanded to flat ports
-/// - generic modules are monomorphized on demand
-/// - stdlib prelude is always in scope
-/// - `use` declarations are resolved
-/// - function and impl bodies are lowered to `BehaviorStmt`
+//! Integration tests for the elaboration phase.
+//!
+//! These tests verify that `elaborate()` produces a fully resolved `Design`:
+//! - types are concrete (`NetType` / `ValueType`, no free expressions)
+//! - port connections are `NetRef` (no raw `Expr`)
+//! - for loops are unrolled
+//! - bundles are expanded to flat ports
+//! - generic modules are monomorphized on demand
+//! - stdlib prelude is always in scope
+//! - `use` declarations are resolved
+//! - function and impl bodies are lowered to `BehaviorStmt`
 use piperine_lang::{
     pom::{BehaviorStmt, NetType, ValueType},
     parse_and_elaborate, parse_str,

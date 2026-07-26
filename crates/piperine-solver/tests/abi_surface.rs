@@ -1,3 +1,7 @@
+//! `piperine_solver::abi` is enough on its own: a device implements the
+//! `Element` contract — stamps, param descriptors, get/set with `Invalidation` —
+//! importing nothing but `abi` (MD-17's two-tier surface).
+
 use piperine_solver::abi::*;
 
 struct Resistor {

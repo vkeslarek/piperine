@@ -1,3 +1,6 @@
+//! Example-gallery elaboration (deleted in P6 T13 — the root
+//! `tests/run_examples.rs` is the surviving copy).
+
 use std::fs;
 use std::path::PathBuf;
 

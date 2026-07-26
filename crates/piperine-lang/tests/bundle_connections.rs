@@ -1,3 +1,6 @@
+//! Bundle connections through elaboration: fan-out, per-field wiring, and the
+//! errors a mismatched bundle connection must produce.
+
 use piperine_lang::parse_and_elaborate;
 
 #[test]

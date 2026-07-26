@@ -1,0 +1,198 @@
+//! Suite hygiene: the invariants that keep the test suite honest, enforced by
+//! the suite itself (P6/CLN-05, CLN-08).
+//!
+//! P6 found 38 tests in two files that had been switched off with
+//! `#![cfg(any())]` — one of them named in `CLAUDE.md` as a test of record —
+//! looking like coverage while never compiling. A policy that lives only in a
+//! document cannot catch that; these four tests can.
+//!
+//! Each walks the repository's own sources (never a hardcoded list of test
+//! names) so it cannot pass stale, and every failure names `file:line`.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+/// The repository root — this test target lives in the root package.
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// This file: it *spells* the forbidden patterns, so it is the one source the
+/// walk must skip — the rule book is not a subject of its own rules.
+const SELF: &str = "tests/suite_hygiene.rs";
+
+/// Every `.rs` file under `crates/`, `src/`, and `tests/`, skipping build
+/// output and this file. Returned as `(repo-relative path, contents)`.
+fn rust_sources() -> Vec<(String, String)> {
+    let root = repo_root();
+    let mut out = Vec::new();
+    for base in ["crates", "src", "tests"] {
+        collect(&root.join(base), &root, &mut out);
+    }
+    assert!(
+        out.len() > 100,
+        "the walk found only {} sources — the layout moved and this guard is blind",
+        out.len()
+    );
+    out
+}
+
+fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if path.is_dir() {
+            if name != "target" && name != ".git" {
+                collect(&path, root, out);
+            }
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+            if rel == SELF {
+                continue;
+            }
+            if let Ok(text) = fs::read_to_string(&path) {
+                out.push((rel, text));
+            }
+        }
+    }
+}
+
+/// Every integration-test target: `crates/*/tests/*.rs` and root `tests/*.rs`
+/// (top level only — a `tests/<dir>/` module file is a helper, not a target).
+fn integration_targets() -> Vec<(String, String)> {
+    rust_sources()
+        .into_iter()
+        .filter(|(path, _)| {
+            let parts: Vec<&str> = path.split('/').collect();
+            match parts.as_slice() {
+                ["tests", _file] => true,
+                ["crates", _crate, "tests", _file] => true,
+                _ => false,
+            }
+        })
+        .collect()
+}
+
+// ─── 1. No switched-off test code ─────────────────────────────────────────────
+
+/// A file or module compiled out of existence is worse than a missing test: it
+/// reads as coverage. `#![cfg(any())]`, `#[cfg(FALSE)]`, and a commented-out
+/// `#[test]` are all the same lie.
+#[test]
+fn no_disabled_test_code() {
+    let mut offences = Vec::new();
+    for (path, text) in rust_sources() {
+        for (index, line) in text.lines().enumerate() {
+            let trimmed = line.trim();
+            let disabled = trimmed.starts_with("#![cfg(any())]")
+                || trimmed.starts_with("#[cfg(any())]")
+                || trimmed.contains("cfg(FALSE)")
+                || trimmed.contains("cfg(false)")
+                || trimmed.starts_with("// #[test]")
+                || trimmed.starts_with("//#[test]");
+            if disabled {
+                offences.push(format!("{path}:{}: {trimmed}", index + 1));
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "switched-off test code (delete it or make it compile):\n  {}",
+        offences.join("\n  ")
+    );
+}
+
+// ─── 2. No ignored tests ──────────────────────────────────────────────────────
+
+/// An `#[ignore]`d test is work hidden from the gate, reason string or not.
+/// The tree holds zero; this keeps it that way.
+#[test]
+fn no_ignored_tests() {
+    let mut offences = Vec::new();
+    for (path, text) in rust_sources() {
+        for (index, line) in text.lines().enumerate() {
+            if line.trim_start().starts_with("#[ignore") {
+                offences.push(format!("{path}:{}", index + 1));
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "ignored tests (fix them or delete them — a skipped test proves nothing):\n  {}",
+        offences.join("\n  ")
+    );
+}
+
+// ─── 3. Every ignored doc example is accounted for ────────────────────────────
+
+/// A ```` ```ignore ```` doc fence cannot carry a reason inline, so the reason
+/// lives here: the registry below is the complete set of illustrative examples
+/// that are deliberately not compiled. A new one fails this test until someone
+/// records why — the same "registry + exhaustiveness" shape
+/// `capabilities_contract.rs` uses for capability flags.
+#[test]
+fn every_ignored_doc_example_is_registered() {
+    /// Why each file's `ignore` fence is not a runnable example.
+    fn reason(path: &str) -> Option<&'static str> {
+        Some(match path {
+            "crates/piperine-plugin/src/lib.rs" => {
+                "shows a plugin crate's own entry symbol — only compiles inside a cdylib plugin"
+            }
+            "crates/piperine-solver/src/analyses/ac.rs" => {
+                "illustrative sweep snippet: needs a built circuit the doc does not construct"
+            }
+            "crates/piperine-solver/src/core/builder.rs" => {
+                "illustrative builder sketch over an Element the doc does not define"
+            }
+            "crates/piperine-solver/src/prelude.rs" => {
+                "shows the import shape only — no runnable body"
+            }
+            _ => return None,
+        })
+    }
+
+    let mut unregistered = Vec::new();
+    let mut seen = Vec::new();
+    for (path, text) in rust_sources() {
+        if !text.contains("```ignore") {
+            continue;
+        }
+        match reason(&path) {
+            Some(_) => seen.push(path),
+            None => unregistered.push(path),
+        }
+    }
+    assert!(
+        unregistered.is_empty(),
+        "unregistered ```ignore doc examples (add the reason to this registry, \
+         or make the example runnable):\n  {}",
+        unregistered.join("\n  ")
+    );
+    assert_eq!(seen.len(), 4, "the registered set changed — update the registry: {seen:?}");
+}
+
+// ─── 4. Every integration target states its scope ─────────────────────────────
+
+/// MD-28 rule 2: integration tests are grouped **by functionality**. A target
+/// that cannot say in one `//!` line what it covers is not grouped — it is a
+/// pile. This is the mechanical half of that rule (the semantic half is the
+/// P6 allocation audit).
+#[test]
+fn every_integration_target_declares_its_scope() {
+    let mut headerless = Vec::new();
+    for (path, text) in integration_targets() {
+        let has_header = text
+            .lines()
+            .take(5)
+            .any(|line| line.trim_start().starts_with("//!"));
+        if !has_header {
+            headerless.push(path);
+        }
+    }
+    assert!(
+        headerless.is_empty(),
+        "integration targets with no `//!` scope header (say what the file covers):\n  {}",
+        headerless.join("\n  ")
+    );
+}

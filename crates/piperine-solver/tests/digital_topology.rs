@@ -1,3 +1,7 @@
+//! Digital scheduler topology: DAG ordering, back-edge detection, zero-delay
+//! propagation, fan-out, diamonds, an RS latch, a DFF pipeline, a ring
+//! oscillator, and disconnected islands.
+
 // Comprehensive digital topology tests.
 //
 // Covers: DAG ordering, back-edge detection, zero-delay propagation,

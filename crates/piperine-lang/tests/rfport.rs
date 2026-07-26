@@ -1,7 +1,7 @@
-/// Tests for the `@rfport(num, z0)` attribute (SP-01, SP-05) — the `.sp`
-/// S-parameter port declaration, resolved via the existing attribute-schema
-/// machinery (Part VI). See `.specs/features/spectral-analyses/spec.md`
-/// (P2 `.sp`) and `design.md` ("Port primitive — `@rfport` attribute").
+//! Tests for the `@rfport(num, z0)` attribute (SP-01, SP-05) — the `.sp`
+//! S-parameter port declaration, resolved via the existing attribute-schema
+//! machinery (Part VI). See `.specs/features/spectral-analyses/spec.md`
+//! (P2 `.sp`) and `design.md` ("Port primitive — `@rfport` attribute").
 use piperine_lang::{parse_str, pom::RfPort};
 
 fn elab(src: &str) -> piperine_lang::pom::Design {

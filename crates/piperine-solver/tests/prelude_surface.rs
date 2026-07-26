@@ -1,3 +1,7 @@
+//! `piperine_solver::prelude` is enough on its own: a hand-written `Element`
+//! (resistor) is declared, built, and DC-solved using only prelude imports —
+//! the host-facing surface stays self-sufficient (MD-17).
+
 use piperine_solver::prelude::*;
 use piperine_solver::abi::{AnalogDevice, DigitalDevice, Introspect};
 

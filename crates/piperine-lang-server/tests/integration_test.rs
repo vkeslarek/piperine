@@ -1,3 +1,6 @@
+//! LSP server integration over a real `lsp_server` connection: declared
+//! capabilities, hover, go-to-definition, and diagnostic ranges.
+
 use lsp_server::{Connection, Message, Request, RequestId, Notification};
 use lsp_types::{
     Position, Uri, HoverParams, TextDocumentPositionParams, TextDocumentIdentifier,

@@ -1,3 +1,7 @@
+//! The solver's entry points, from the outside: build a circuit from a
+//! hand-written `Element` and drive each analysis through its public entry,
+//! including the typed `SolverDomain` failures.
+
 use piperine_solver::prelude::*;
 use piperine_solver::abi::{AnalogDevice, DigitalDevice, Introspect, SolverDomain};
 

@@ -1,3 +1,6 @@
+//! Parse → AST → elaboration over the example gallery and the language's
+//! structural forms: what the parser produces and what elaboration makes of it.
+
 use piperine_lang::parse_str;
 use piperine_lang::parse::ast::*;
 use piperine_lang::parse::ast::SourceFile;
