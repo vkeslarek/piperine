@@ -323,7 +323,11 @@ def check(cases, verdicts, crate=None):
     for key, (verdict, _, _) in verdicts.rows.items():
         if verdict == "delete" or key in seen:
             continue
-        if crate is not None and f"crates/{crate}/" not in key and crate != "piperine":
+        # A row belongs to the crate its path names — the root package owns
+        # every path outside `crates/`, exactly as the scanner decides.
+        parts = key.split("/")
+        row_crate = parts[1] if parts[0] == "crates" else "piperine"
+        if crate is not None and row_crate != crate:
             continue
         failures.append(f"{key}: recorded `{verdict}` but the test no longer exists")
     for line in failures:

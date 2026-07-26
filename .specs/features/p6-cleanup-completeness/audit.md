@@ -154,6 +154,24 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T16 — root `tests/` (the host suite)
+
+All 36 targets keep their placement and their names: each is already named for
+the host surface or analysis it proves (`session_sweep_grid`, `host_probe`,
+`trace_generic`, `ngspice_validation`, `plugin_parity`, …) with a `//!` header
+naming its requirement id. The three shared stems were decided in §2 — the
+`run_examples` triplicate is now a single root copy (T9, T13), while
+`opvar_host` and `session_analyses` keep both halves because the pairs prove
+the Rust and Python hosts separately (MD-22 parity is the point).
+
+`cargo test -p piperine`: 165 passed (161 host tests + the 4 new hygiene
+guards), 0 failed. `--check piperine`: 0 violations.
+
+**Tool fix in this task:** `--check <crate>` mis-scoped the root package — for
+`piperine` it validated *every* crate's rows against the root crate's test set,
+reporting hundreds of phantom "test no longer exists" failures. A row's crate is
+now derived from its path exactly as the scanner does it.
+
 ### T15 — `piperine-solver`: nothing to move
 
 All 232 tests keep their placement, and every one of the 19 targets is already
