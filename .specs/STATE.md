@@ -730,7 +730,7 @@ deduplication (mixed partials are order-independent — cuts branch-pair/
 triple combinations by ~2×/~6× before compiling), not attempted here
 (diminishing returns given fix 3 already makes the cost opt-in).
 
-### Feature — `solver-simplification` (IN PROGRESS — batch 6 remaining)
+### Feature — `solver-simplification` (DELIVERED 2026-07-19, Verifier PASS)
 
 Spec/design/tasks in `.specs/features/solver-simplification/`.
 Behavior-preserving refactor of `piperine-solver`; the oracle is the P0
@@ -758,11 +758,18 @@ parity baselines (bit-identical) plus the unchanged 520-test suite.
   refreshed (MD-05 done, MD-01 amendment, this snapshot); module `//!`
   contract audit.
 
-**Baseline at batch-5 close:** `cargo test --workspace` 520 green /
+- **Batch 6 (P9)** ✅ — T33 `209be1c` Part VII §2–§5 rewritten (five
+  contracted `CircuitInstance` responsibilities, composed supertraits +
+  full `ElementCapabilities` table) · T34 `d5e54a2` §8–§16 stated-vs-code
+  audit · T35 `70395f2` consistency + completeness (§17 sens, §18 PSS,
+  failure rows, zero phantom references). Docs-only; no code touched.
+
+**Close:** all 35 tasks done (`tasks.md` Progress Log, batches 1–6). The
+Verifier returned **PASS — 18/18 requirements covered**, sensor 3/3 killed
+(`.specs/features/solver-simplification/validation.md`, diff range
+`4565f9e^..dc4fa07`). At close: `cargo test --workspace` 520 green /
 5 ignored, 0 rustc warnings; parity baselines bit-identical through every
-batch.
-**Remaining:** batch 6 (P9) — Part VII canonical rewrite (T33–T35), then
-the feature Verifier.
+batch. **No residue.**
 **Branch:** `feature/bench-removal`.
 
 ### Previously delivered features (summary)

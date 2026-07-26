@@ -684,6 +684,12 @@ quote were stale; corrected below.
       floor untested), §11 (singular AC point untested), §14 (non-settling delta
       cycle untested). Each is a behaviour addition or a fixture that P6's
       hygiene scope deliberately did not take on.
+- [ ] **User manual** — `docs/manual/` held a single placeholder `index.md`
+      promising guides nobody wrote, and was removed with its `mkdocs.yml` nav
+      entry (P6/T13, 2026-07-26). Writing the manual (CLI walkthrough, library
+      usage, toolchain guide) is a real deliverable and lives here until it is
+      scheduled; recreate the directory *with content* when it is. Today's usage
+      documentation is `README.md`, `CLAUDE.md`, and spec Appendix A.
 - [ ] **Non-blocking language/interpreter completeness** — slice expressions
       outside analog/digital bodies (`eval/interp.rs:448`); `for` in a digital
       body (`emit/stmt.rs:98`); selector complex-exprs / field-less match
