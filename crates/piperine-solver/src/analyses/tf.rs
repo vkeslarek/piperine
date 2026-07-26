@@ -1,6 +1,11 @@
 //! Transfer function (`.tf`) — the analysis options and the DC small-signal
 //! driver: gain, input resistance, and output resistance from unit
 //! excitations on the system linearized at the operating point.
+//!
+//! There is no per-analysis `TfContext`: MD-03 is superseded
+//! (p6-cleanup-architecture D2). The input source and output measurement
+//! travel on [`TransferFunctionAnalysisOptions`], and the shared
+//! [`Context`](crate::analyses::Context) carries what every analysis shares.
 #![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
@@ -48,13 +53,6 @@ pub struct TransferFunctionAnalysisOptions {
     pub input_source: BranchIdentifier,
 }
 
-
-
-/// Per-analysis config for TF. Thin wrapper over the analysis options.
-#[derive(Debug, Clone)]
-pub struct TfContext {
-    pub options: TransferFunctionAnalysisOptions,
-}
 
 // ── driver ───────────────────────────────────────────────────────────────
 

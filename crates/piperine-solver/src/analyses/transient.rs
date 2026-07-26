@@ -2,6 +2,12 @@
 //! clamps (ngspice `CKTsetIC`), and the adaptive TR-BDF2 driver: unified
 //! breakpoint table, Milne-LTE accept gate, PI timestep control, and live
 //! scheduled parameter sets.
+//!
+//! There is no per-analysis `TransientContext`: MD-03 is superseded
+//! (p6-cleanup-architecture D2). The step tunables stay on
+//! [`TransientAnalysisOptions`], the per-step kernel state is
+//! [`TransientAnalysisContext`], and the shared
+//! [`Context`](crate::analyses::Context) carries what every analysis shares.
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::dc::DcSolver;
@@ -157,30 +163,6 @@ impl TransientAnalysisOptions {
     ) -> Self {
         self.probe_selection = selection;
         self
-    }
-}
-
-/// Per-analysis config for transient. Built from
-/// [`TransientAnalysisOptions`] via `From`. Carries the tunables that
-/// used to be on the global `Context` (MD-03).
-#[derive(Debug, Clone)]
-pub struct TransientContext {
-    pub dt: f64,
-    pub dt_min: f64,
-    pub dt_max: f64,
-    pub record_from: f64,
-    pub stop_time: f64,
-}
-
-impl From<TransientAnalysisOptions> for TransientContext {
-    fn from(opts: TransientAnalysisOptions) -> Self {
-        Self {
-            dt: opts.dt,
-            dt_min: opts.dt_min,
-            dt_max: opts.dt_max,
-            record_from: opts.record_from,
-            stop_time: opts.stop_time,
-        }
     }
 }
 

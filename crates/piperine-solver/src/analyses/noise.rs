@@ -3,6 +3,11 @@
 //! the frequency sweep. A device reports its PSD through
 //! [`Element::noise_current_psd`](crate::core::element::AnalogDevice); this
 //! module owns the vocabulary that method returns, not a contract of its own.
+//!
+//! There is no per-analysis `NoiseContext`: MD-03 is superseded
+//! (p6-cleanup-architecture D2). The sweep, output/reference nodes and input
+//! source travel on [`NoiseAnalysisOptions`], and the shared
+//! [`Context`](crate::analyses::Context) carries what every analysis shares.
 #![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
@@ -47,14 +52,6 @@ pub struct NoiseAnalysisOptions {
     pub input_source_name: Option<String>,
 }
 
-
-
-/// Per-analysis config for noise. Carries the sweep, output/reference nodes,
-/// and optional input source name.
-#[derive(Debug, Clone)]
-pub struct NoiseContext {
-    pub options: NoiseAnalysisOptions,
-}
 
 #[cfg(test)]
 mod noise_tests {

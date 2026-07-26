@@ -1,6 +1,11 @@
 //! AC small-signal sweep (`.ac`) — the sweep options and the element-facing
 //! `AcAnalysisContext`, plus the driver that linearizes the circuit around
 //! the DC operating point and solves the complex system at each frequency.
+//!
+//! There is no per-analysis `AcContext`: MD-03 is superseded (p6-cleanup-
+//! architecture D2). The sweep tunables travel as
+//! [`AcSweepAnalysisOptions`] arguments, and the shared
+//! [`Context`](crate::analyses::Context) carries what every analysis shares.
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::Context;
@@ -70,13 +75,6 @@ impl AcSweepAnalysisOptions {
     }
 }
 
-
-
-/// Per-analysis config for AC. Thin wrapper over the sweep options.
-#[derive(Debug, Clone)]
-pub struct AcContext {
-    pub sweep: AcSweepAnalysisOptions,
-}
 
 // ── driver ───────────────────────────────────────────────────────────────
 
