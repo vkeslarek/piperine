@@ -154,6 +154,24 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T15 — `piperine-solver`: nothing to move
+
+All 232 tests keep their placement, and every one of the 19 targets is already
+named for a contract or a subsystem (`capabilities_contract`,
+`checkpoint_restore`, `digital_topology`, `event_adapters`, `probe_selection`,
+`parity_baseline`, …) with a `//!` header — five of those headers were written
+in T6.
+
+This is the crate where the heuristic disagreed most (169 `unit` hints among
+132 `tests/` cases). §2's reasoning is the answer: a solver test that reaches
+the crate only through `abi`/`prelude` is cross-module public-surface work, and
+the 100 inline cases sit in the analysis modules whose maths they check.
+Relocating either way would mean widening `pub` visibility to satisfy a naming
+rule — the opposite of MD-28's intent.
+
+`cargo test -p piperine-solver`: 232 passed, 0 failed. `--check
+piperine-solver`: 0 violations.
+
 ### T14 — `piperine-lang-server`
 
 The 1880-line `integration_test.rs` (47 items: 43 tests + 4 bespoke helpers)
