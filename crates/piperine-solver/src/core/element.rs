@@ -70,11 +70,11 @@ bitflags::bitflags! {
         /// checkpoint is dropped. A device that returns `None` (default) is
         /// stateless and pays nothing.
         const SUPPORTS_ROLLBACK = 1 << 9;
-        /// Reserved: a host hint that the model overrides `list_queries`/`query`
-        /// with typed metadata beyond the `read_opvars` default. No solver path
-        /// reads this flag today (audit SS-11); it remains a host-facing
-        /// descriptor with no solver consumer.
-        const SUPPORTS_QUERIES = 1 << 10;
+        // `1 << 10` is unused: `SUPPORTS_QUERIES` was removed in P6 (CLN-11).
+        // It promised a host hint that a model overrides `list_queries`/`query`,
+        // but nothing declared it and nothing read it — and both methods have
+        // working `read_opvars`-derived defaults, so a hint gates nothing. The
+        // bit position is left vacant rather than renumbering the flags above.
         /// The model is eligible for stamp bypass: when its terminal voltages
         /// are unchanged within tolerance since the last evaluation, the
         /// solver may skip re-evaluating and re-stamping it for that Newton

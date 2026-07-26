@@ -48,7 +48,6 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
              Element::checkpoint_state before each attempt and restore_state \
              on rejection (analyses/transient.rs, analyses/convergence.rs)"
         }
-        "SUPPORTS_QUERIES" => "reserved: host query-metadata hint; no solver consumer today (SS-11 audit)",
         // ── Jacobian / derivative capability (ABI-23) ───────────────────────
         "HAS_DISTO2" => {
             "consumed: .disto driver pre-scan — a device declaring this \
@@ -86,9 +85,10 @@ fn every_surviving_capability_flag_is_documented() {
 
 #[test]
 fn removed_write_only_flags_stay_gone() {
-    // The flags dropped by SS-10 had a producer but no consumer. They must not
-    // reappear on the ABI surface.
-    for gone in ["LINEAR", "ANALYTIC_JACOBIAN", "STAMPS_CHARGE"] {
+    // The flags dropped by SS-10 had a producer but no consumer, and
+    // `SUPPORTS_QUERIES` (P6/CLN-11) had neither. None may reappear on the ABI
+    // surface.
+    for gone in ["LINEAR", "ANALYTIC_JACOBIAN", "STAMPS_CHARGE", "SUPPORTS_QUERIES"] {
         let present = ElementCapabilities::all()
             .iter_names()
             .any(|(name, _)| name == gone);

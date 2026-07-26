@@ -158,7 +158,6 @@ to select behavior: capability flags gate, as before.
 | `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
 | `BYPASS_OK` | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
 | `SUPPORTS_ROLLBACK` | The element overrides `checkpoint_state`/`restore_state` to snapshot/restore its mutable non-accept-gated state around rejected timesteps and DC homotopy retries (§3.1, §15.8). Default `checkpoint_state() = None` = stateless = zero cost. |
-| `SUPPORTS_QUERIES` | Reserved: a host-facing hint that the model overrides `list_queries`/`query` with typed metadata beyond the `read_opvars` default. No solver path reads this flag. |
 
 An element must declare its capabilities accurately; the solver gates analysis
 and scheduling on this descriptor rather than on which methods are overridden.

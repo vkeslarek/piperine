@@ -102,7 +102,7 @@ both a package and the workspace) — always pass `--workspace`.
 
 - **One ABI:** `Element` trait (`core/element.rs`) with `ElementCapabilities` bitflags
   (`ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`, `LOADS_DC/AC/TRAN`, `EMITS_NOISE`,
-  `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `SUPPORTS_QUERIES`).
+  `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `BYPASS_OK`).
   No `Device` wrapper, no downcast.
 - **Naming:** `Net` (`core/net.rs`) unifies analog nodes, branch currents, digital nets,
   and pseudo variables under one public identity with stable labels.
