@@ -1,7 +1,11 @@
 import os, sys, piperine
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:
+    print("matplotlib not installed — skipping plot")
+    sys.exit(0)
 import numpy as np
 
 P = os.path.join(os.path.dirname(__file__), "23_mixed_signal_adc.phdl")
