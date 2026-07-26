@@ -154,6 +154,23 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T8 — `piperine-api` + `piperine-project`: nothing to move
+
+Both crates were already allocated correctly; the migration is a verification,
+not a change. Recorded so the zero-diff is a finding, not an omission:
+
+| Crate | Tests | Placement | `--check` | Headers |
+|---|---|---|---|---|
+| `piperine-api` | 13 (10 inline, 3 in `tests/`) | the 10 inline cases are `SolverConfig`/waveform-math unit tests; `smoke.rs` and `temp_sweep.rs` drive a real session | **0 violations** | both targets have `//!` scope headers |
+| `piperine-project` | 26 (22 inline, 4 in `tests/`) | 22 inline cover `git.rs`/`release.rs`/`source_map.rs`/`resolver.rs` internals; `tests/release.rs` stubs a `ReleaseClient` and drives cache+hash+pin across types | **0 violations** | header present |
+
+`cargo test -p piperine-api -p piperine-project`: 39 passed (10+2+1 api,
+22+4 project), 0 failed. Test-name lists unchanged (no moves, no deletions).
+
+The heuristic listed 7 conflicts in `piperine-project` (`release.rs`'s stubbed-
+client cases hinted `unit`); §2's reasoning applies — they exercise several
+public types together through a trait stub, which is integration.
+
 ---
 
 ## 6b. T5 — dead-suite triage (CLN-05/06/07)
