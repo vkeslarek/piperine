@@ -22,22 +22,22 @@ in place while the work happens.
 
 ## Goals
 
-- [ ] Every test lives where **MD-28** says it belongs: unit tests inline
+- [x] Every test lives where **MD-28** says it belongs: unit tests inline
       (`#[cfg(test)] mod tests` in the implementation file), integration tests
       grouped by the functionality they exercise, redundant tests deleted —
       applied crate by crate with the suite green after **every** commit.
-- [ ] Zero dead test code: no `#![cfg(any())]`/commented-out test module
+- [x] Zero dead test code: no `#![cfg(any())]`/commented-out test module
       anywhere; each of `ppr_ir.rs`'s 27 switched-off tests is either restored
       against the current `resolve` API or deleted with its duplicate named.
-- [ ] Every remaining `ignore` (all 4 are illustrative doctests) carries a
+- [x] Every remaining `ignore` (all 4 are illustrative doctests) carries a
       reason string, and the count is asserted by a guard so a new silent
       `#[ignore]` fails the suite.
-- [ ] Every `ElementCapabilities` bit and every Part VII §16 failure row is
+- [x] Every `ElementCapabilities` bit and every Part VII §16 failure row is
       **enforced or removed** — no reserved-forever bits, no spec rule without
       a test.
-- [ ] ROADMAP P6 restated with verified numbers, and the delivered rows
+- [x] ROADMAP P6 restated with verified numbers, and the delivered rows
       checked off.
-- [ ] `cargo test --workspace` green with **no loss of assertions**: the final
+- [x] `cargo test --workspace` green with **no loss of assertions**: the final
       count of *distinct asserted behaviors* never drops without a named
       equivalent, and coverage of every touched file is argued in the commit.
 
@@ -272,27 +272,27 @@ that match the tree, so I stop planning against stale counts.
 
 | ID | Story | Phase | Status |
 |----|-------|-------|--------|
-| CLN-01 | P1 allocation audit report (whole workspace) | — | Pending |
-| CLN-02 | P1 migrated crate re-audits clean | — | Pending |
-| CLN-03 | P1 unit tests moved inline (name + assertions preserved) | — | Pending |
-| CLN-04 | P1 integration files regrouped by functionality; same-layer duplicates deleted only with a named survivor | — | Pending |
-| CLN-05 | P1 no `cfg(any())` / commented-out test code anywhere | — | Pending |
-| CLN-06 | P1 `ppr_ir.rs`'s 27 tests restored or deleted-with-survivor | — | Pending |
-| CLN-07 | P1 un-restorable behavior is a loud tracked gap, never a silent delete | — | Pending |
-| CLN-08 | P1 ignore guard: every `ignore` has a reason, no ignored `#[test]`, guard reads sources | — | Pending |
-| CLN-09 | P1 suite green in every commit; per-crate gate per commit | — | Pending |
-| CLN-10 | P1 relocated tests keep their global-state serialization guards | — | Pending |
-| CLN-11 | P2 `SUPPORTS_QUERIES` enforced or removed | — | Pending |
-| CLN-12 | P2 `BYPASS_OK` enforced or removed | — | Pending |
-| CLN-13 | P2 `capabilities_contract.rs` exhaustive, zero "no consumer" entries | — | Pending |
-| CLN-14 | P2 removed bit purged from every declaration site; zero warnings | — | Pending |
-| CLN-15 | P2 `bound_step_hint` recorded as enforced (ROADMAP correction) | — | Pending |
-| CLN-16 | P2 §16 rows classified enforced / unenforceable with evidence | — | Pending |
-| CLN-17 | P2 missing §16 enforcement tests added (typed error asserted) | — | Pending |
-| CLN-18 | P2 unreachable §16 rows removed from the spec table | — | Pending |
-| CLN-19 | P2 §16 guard: row count ↔ enforcement tests | — | Pending |
-| CLN-20 | P3 ROADMAP P6 restated with verified numbers + rows checked off | — | Pending |
-| CLN-21 | P3 `.specs/STATE.md` handoff + decisions updated | — | Pending |
+| CLN-01 | P1 allocation audit report (whole workspace) | — | Done |
+| CLN-02 | P1 migrated crate re-audits clean | — | Done |
+| CLN-03 | P1 unit tests moved inline (name + assertions preserved) | — | Done |
+| CLN-04 | P1 integration files regrouped by functionality; same-layer duplicates deleted only with a named survivor | — | Done |
+| CLN-05 | P1 no `cfg(any())` / commented-out test code anywhere | — | Done |
+| CLN-06 | P1 `ppr_ir.rs`'s 27 tests restored or deleted-with-survivor | — | Done |
+| CLN-07 | P1 un-restorable behavior is a loud tracked gap, never a silent delete | — | Done |
+| CLN-08 | P1 ignore guard: every `ignore` has a reason, no ignored `#[test]`, guard reads sources | — | Done |
+| CLN-09 | P1 suite green in every commit; per-crate gate per commit | — | Done |
+| CLN-10 | P1 relocated tests keep their global-state serialization guards | — | Done |
+| CLN-11 | P2 `SUPPORTS_QUERIES` enforced or removed | — | Done |
+| CLN-12 | P2 `BYPASS_OK` enforced or removed | — | Done |
+| CLN-13 | P2 `capabilities_contract.rs` exhaustive, zero "no consumer" entries | — | Done |
+| CLN-14 | P2 removed bit purged from every declaration site; zero warnings | — | Done |
+| CLN-15 | P2 `bound_step_hint` recorded as enforced (ROADMAP correction) | — | Done |
+| CLN-16 | P2 §16 rows classified enforced / unenforceable with evidence | — | Done |
+| CLN-17 | P2 missing §16 enforcement tests added (typed error asserted) | — | Done |
+| CLN-18 | P2 unreachable §16 rows removed from the spec table | — | Deviated (documented): the rows were *reachable but unenforced*, so each states its enforcement status instead of being deleted — see `audit.md` §7b |
+| CLN-19 | P2 §16 guard: row count ↔ enforcement tests | — | Done |
+| CLN-20 | P3 ROADMAP P6 restated with verified numbers + rows checked off | — | Done |
+| CLN-21 | P3 `.specs/STATE.md` handoff + decisions updated | — | Done |
 
 21 requirements.
 
@@ -300,13 +300,13 @@ that match the tree, so I stop planning against stale counts.
 
 ## Success Criteria
 
-- [ ] Allocation audit reports zero violations workspace-wide; no
+- [x] Allocation audit reports zero violations workspace-wide; no
       `cfg(any())` test code; no `#[test] #[ignore]`.
-- [ ] `cargo test --workspace` green with **≥ 1123** passing tests (the count
+- [x] `cargo test --workspace` green with **≥ 1123** passing tests (the count
       may only drop by tests deleted with a named surviving equivalent, each
       listed in the feature's validation record), zero build warnings.
-- [ ] Every `ElementCapabilities` bit and every §16 row is enforced or gone,
+- [x] Every `ElementCapabilities` bit and every §16 row is enforced or gone,
       each with named evidence.
-- [ ] Two new guards (ignore-policy, §16 coverage) fail when their invariant
+- [x] Two new guards (ignore-policy, §16 coverage) fail when their invariant
       is violated — proven by a deliberate violation during validation.
-- [ ] ROADMAP P6 + `.specs/STATE.md` match the tree.
+- [x] ROADMAP P6 + `.specs/STATE.md` match the tree.

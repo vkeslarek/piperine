@@ -449,11 +449,88 @@ accident).
 `validation.md` findings 1–3). Makes the delivered surface match `design.md`
 §1 and `ideal.md` D9/D10.
 
+### MD-31: A policy invariant lives in the gate, not in a document
+
+Every project rule that can be checked mechanically is a test in
+`cargo test --workspace`, not a paragraph someone is supposed to remember. P6
+found two test files switched off with `#![cfg(any())]` — 38 tests, one file
+named in `CLAUDE.md` as a test of record — dark for months while reading as
+coverage, and two `ElementCapabilities` bits that nothing consumed. Both were
+already "documented"; documentation caught neither.
+
+The shape is a **registry + exhaustiveness assert** (the pattern
+`capabilities_contract.rs` established): enumerate the real surface from the
+tree or the spec file, look each item up in a table that must account for it,
+and fail naming what is unaccounted for. The guards this locks in:
+`tests/suite_hygiene.rs` (no disabled test code, no `#[ignore]`, every ignored
+doc example registered with its reason, every integration target declares its
+scope in a `//!` header), `capabilities_contract.rs`
+(`no_capability_flag_is_merely_reserved`), and
+`spec_failure_rules_guard.rs` (Part VII §16 rows bound to tests or explicitly
+marked). A guard must be proven able to fail — inject the violation, watch it
+fail, revert — or it is decoration.
+
+Extends **MD-28** with its enforcement: MD-28 says where tests live, MD-31 says
+the rule is a test.
+
+**Status:** Locked (2026-07-26 — `p6-cleanup-completeness`, CLN-05/08/13/19).
+
+### MD-32: `BYPASS_OK` is per-circuit consent
+
+The DC stamp-bypass cache applies only when **every** element in the circuit
+declares `ElementCapabilities::BYPASS_OK`. A device declares it only when its DC
+stamps are a pure function of its terminal voltages — no history-dependent
+operator slot (`delay`/`slew`/`transition`/`idt`), no runtime event, no `$limit`
+limiter, no diagnostic, no digital half. A `ddt` contribution does not
+disqualify: charge is not a DC stamp.
+
+Before P6 the flag was write-only and the cache applied to every circuit whose
+solution stopped moving, including devices that never opted in — a stale stamp
+can satisfy the convergence test and lock in a wrong operating point. One
+non-declaring element now disables the cache for the whole circuit; correctness
+outranks the bypass hit-rate. New device authors: declaring the bit is a promise
+about your stamps, and `piperine-codegen`'s predicate
+(`AnalogKernel::dc_stamps_depend_only_on_terminal_voltages`) is the reference
+reading of it.
+
+**Status:** Locked (user, 2026-07-25 — "wire it"; delivered
+`p6-cleanup-completeness` CLN-12).
+
 ---
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-25 — `plugin-interface-v2` DELIVERED (T1–T17) +
+**Last updated:** 2026-07-26 — `p6-cleanup-completeness` hygiene subset
+DELIVERED (T1–T25). `cargo test --workspace`: 1161 passed, 0 failed, 4 ignored
+(illustrative doctests), 0 rustc warnings.
+
+### Feature — `p6-cleanup-completeness` (DELIVERED 2026-07-26)
+
+Spec/design/tasks/audit/validation in
+`.specs/features/p6-cleanup-completeness/`. ROADMAP P6's hygiene subset, done
+measure-first: `tools/audit_tests.py` inventories every `#[test]` in the tree
+with the evidence that classifies it, `audit_verdicts.tsv` records a verdict per
+test, and `--check` enforces those verdicts per crate (it is the gate, not the
+heuristic — a solver test reaching the crate through `abi` is cross-module
+public-surface work, and an inline case building a fixture for its own module's
+subject is a unit test of that module).
+
+Landed: **two never-compiled suites** (`ppr_ir.rs` 27 tests, `analog_jit.rs` 11 —
+the latter listed in `CLAUDE.md` as a test of record) triaged into 20 restored
+tests against today's API plus 18 deletions with survivors named; the
+`lang-server` 1880-line `integration_test.rs` split into nine feature suites with
+a shared `tests/common/`; the plugin manifest suite moved inline; `phase3.rs`
+split into staging/hooks/scripts; four targets renamed off dead vocabulary; the
+example-elaboration gate reduced from **three** same-layer copies to one;
+`SUPPORTS_QUERIES` removed; `BYPASS_OK` wired (MD-32); Part VII §16 given an
+enforcement column with four new rule tests; and three guards added (MD-31).
+
+Corrections to the roadmap's own claims: 1123 tests not ~800; zero ignored tests
+(the "28" were dead code); `bound_step_hint` was never dead; §16 has 16 rows not
+18. Residue left post-V1: the eight §16 rules marked *not yet enforced*, and the
+language/interpreter completeness items.
+
+**Previously:** 2026-07-25 — `plugin-interface-v2` DELIVERED (T1–T17) +
 post-Execute audit (four gaps closed, see its `validation.md`).
 `cargo test --workspace`: 1123 passed, 0 failed, 0 rustc warnings.
 

@@ -9,7 +9,8 @@ path. **If the skill cannot be activated, STOP and tell the user.**
 
 **Spec:** `.specs/features/p6-cleanup-completeness/spec.md` (CLN-01..21)
 **Design:** `.specs/features/p6-cleanup-completeness/design.md`
-**Status:** Approved — Execute (started 2026-07-25, branch `feature/bench-removal`)
+**Status:** COMPLETE (T1–T25 executed 2026-07-25/26 on `feature/bench-removal`;
+evidence in `audit.md`, verdict in `validation.md`)
 
 **Sub-agents:** not used. This session's tooling policy forbids spawning
 agents without an explicit user request, so all 25 tasks run inline,
@@ -112,17 +113,17 @@ imports, global-state touches) and a `--check <crate>` regression mode.
 **Depends on:** None. **Requirement:** CLN-01.
 **Reuses:** —
 **Done when:**
-- [ ] `python3 tools/audit_tests.py --root .` emits one TSV row per test:
+- [x] `python3 tools/audit_tests.py --root .` emits one TSV row per test:
       `crate, file, test_name, kind_hint, evidence`.
-- [ ] `kind_hint` ∈ `{unit, integration, unclear}`; evidence names the entry
+- [x] `kind_hint` ∈ `{unit, integration, unclear}`; evidence names the entry
       points found (`parse_and_elaborate`, `CircuitCompiler`, `SimSession`,
       `PluginHost`, `Command::new`, …) and flags `env::set_var` /
       `set_current_dir` / `facade_lock` usage.
-- [ ] It finds **all 1123** live tests plus the dead `ppr_ir.rs` block, and
+- [x] It finds **all 1123** live tests plus the dead `ppr_ir.rs` block, and
       reports inline vs `tests/` placement per test.
-- [ ] `--check <crate>` exits non-zero when a `unit`-hinted test sits in
+- [x] `--check <crate>` exits non-zero when a `unit`-hinted test sits in
       `tests/` (proven on a crate that currently has one).
-- [ ] Script is stdlib-only and lives outside every crate (not in the build).
+- [x] Script is stdlib-only and lives outside every crate (not in the build).
 **Tests:** none (tool) · **Gate:** build
 
 ### T2: `audit.md` — the allocation verdicts
@@ -133,15 +134,15 @@ unit-vs-integration definition; every `delete` names its surviving equivalent.
 **Depends on:** T1. **Requirement:** CLN-01, CLN-04, CLN-10.
 **Reuses:** T1 output.
 **Done when:**
-- [ ] Every test in the workspace appears exactly once with a verdict.
-- [ ] Each `delete` row carries `survivor: <file::test>`; a row with no
+- [x] Every test in the workspace appears exactly once with a verdict.
+- [x] Each `delete` row carries `survivor: <file::test>`; a row with no
       survivor is instead `keep` or `move-inline`.
-- [ ] Each row that touches process-global state is flagged so T8–T16 keep
+- [x] Each row that touches process-global state is flagged so T8–T16 keep
       its serialization guard.
-- [ ] The three shared file stems (`opvar_host.rs`, `run_examples.rs`,
+- [x] The three shared file stems (`opvar_host.rs`, `run_examples.rs`,
       `session_analyses.rs`, root vs crate) each get an explicit
       same-layer-or-not verdict.
-- [ ] Per-crate summary counts (`keep/move/regroup/delete`) head the file.
+- [x] Per-crate summary counts (`keep/move/regroup/delete`) head the file.
 **Tests:** none (report) · **Gate:** build
 
 ### T3: §16 row classification
@@ -153,10 +154,10 @@ section).
 **Depends on:** T2. **Requirement:** CLN-16.
 **Reuses:** `docs/spec/part_vii_solver.md:1116-1140`; the solver suite.
 **Done when:**
-- [ ] All 16 rows classified, each with file:line evidence.
-- [ ] Every *enforced* claim verified by actually running that test (name +
+- [x] All 16 rows classified, each with file:line evidence.
+- [x] Every *enforced* claim verified by actually running that test (name +
       pass recorded), not by reading its name.
-- [ ] The untested and unenforceable sets are listed as the T21/T22 work lists.
+- [x] The untested and unenforceable sets are listed as the T21/T22 work lists.
 **Tests:** none (report) · **Gate:** build
 
 ### T4: Capability-bit verdict evidence
@@ -168,14 +169,14 @@ section).
 **Depends on:** T3. **Requirement:** CLN-11, CLN-12, CLN-15.
 **Reuses:** `crates/piperine-solver/tests/capabilities_contract.rs` registry.
 **Done when:**
-- [ ] `SUPPORTS_QUERIES`: zero declarers / zero readers confirmed by grep →
+- [x] `SUPPORTS_QUERIES`: zero declarers / zero readers confirmed by grep →
       verdict **remove**.
-- [ ] `BYPASS_OK`: the global bypass in `analyses/dc.rs` shown not to consult
+- [x] `BYPASS_OK`: the global bypass in `analyses/dc.rs` shown not to consult
       it, and the only declarer shown to be a test device → verdict **wire**,
       with the list of codegen disqualifiers the predicate must check.
-- [ ] `bound_step_hint`: its three live call sites recorded → verdict
+- [x] `bound_step_hint`: its three live call sites recorded → verdict
       **already enforced**, ROADMAP correction only.
-- [ ] Any other registry entry claiming "no consumer" is caught here (expected:
+- [x] Any other registry entry claiming "no consumer" is caught here (expected:
       none besides the two).
 **Tests:** none (report) · **Gate:** build
 
@@ -193,17 +194,17 @@ possibly new/edited `crates/piperine-codegen/tests/resolve_lowering.rs`.
 **Reuses:** `codegen_ir.rs`, `from_ir.rs`, `silent_bugs.rs`, `analog_jit.rs`
 as the coverage baseline; `resolve::lower_bodies` as the entry point.
 **Done when:**
-- [ ] Zero `#![cfg(any())]` in the crate (both files); the triaged tests
+- [x] Zero `#![cfg(any())]` in the crate (both files); the triaged tests
       compile and run.
-- [ ] Each restored test asserts the same behavior as its dead original
+- [x] Each restored test asserts the same behavior as its dead original
       (noise/flicker registration, `match` desugar, event guard, `simparam`,
       `bound_step`, string params, `transition`/`idtmod` state vars, both
       lowering-error cases, …), expressed through today's API.
-- [ ] Each deleted test is listed in the commit body with `survivor:
+- [x] Each deleted test is listed in the commit body with `survivor:
       <file::test>`.
-- [ ] Any behavior that cannot be expressed through today's `resolve` API is
+- [x] Any behavior that cannot be expressed through today's `resolve` API is
       recorded in `audit.md` as a named gap (CLN-07) — never silently dropped.
-- [ ] `cargo test -p piperine-codegen` green; passing count ≥ baseline for
+- [x] `cargo test -p piperine-codegen` green; passing count ≥ baseline for
       that crate plus the restored tests.
 **Tests:** integration · **Gate:** quick (codegen)
 
@@ -216,15 +217,15 @@ disabled test code, on an `#[ignore]` without a reason (or any ignored
 **Reuses:** `crates/piperine-lang/tests/extern_coverage_guard.rs` walk-and-
 assert shape.
 **Done when:**
-- [ ] `no_disabled_test_code` fails on `#![cfg(any())]`/`#[cfg(FALSE)]`/a
+- [x] `no_disabled_test_code` fails on `#![cfg(any())]`/`#[cfg(FALSE)]`/a
       commented-out `#[test]`; passes on the current tree.
-- [ ] `every_ignore_states_a_reason` passes for the 4 doctest `ignore =
+- [x] `every_ignore_states_a_reason` passes for the 4 doctest `ignore =
       "reason"` items and fails for a bare `#[ignore]` or an ignored `#[test]`.
-- [ ] `every_integration_target_declares_its_scope` passes only when every
+- [x] `every_integration_target_declares_its_scope` passes only when every
       `crates/*/tests/*.rs` and `tests/*.rs` starts with `//!`.
-- [ ] Each failure message names `file:line`.
-- [ ] The walk reads sources (no hardcoded test-name list) and skips `target/`.
-- [ ] `cargo test --workspace` green.
+- [x] Each failure message names `file:line`.
+- [x] The walk reads sources (no hardcoded test-name list) and skips `target/`.
+- [x] `cargo test --workspace` green.
 **Tests:** integration · **Gate:** full
 
 ### T7: Prove the guard can fail
@@ -236,9 +237,9 @@ proofs`), no production change.
 **Depends on:** T6. **Requirement:** CLN-08.
 **Reuses:** T6's guard.
 **Done when:**
-- [ ] Three violations injected one at a time; each makes exactly its guard
+- [x] Three violations injected one at a time; each makes exactly its guard
       fail (output quoted in `audit.md`).
-- [ ] Tree restored; `cargo test --workspace` green afterwards.
+- [x] Tree restored; `cargo test --workspace` green afterwards.
 **Tests:** integration (the guard itself) · **Gate:** full
 
 ### T8: Migrate `piperine-api` + `piperine-project`
@@ -248,13 +249,13 @@ inline, integration regrouped, duplicates deleted with named survivors.
 **Depends on:** T7. **Requirement:** CLN-02, CLN-03, CLN-04, CLN-09, CLN-10.
 **Reuses:** the crates' existing inline `#[cfg(test)]` modules.
 **Done when:**
-- [ ] Every `move-inline` verdict applied; test names preserved.
-- [ ] Every `regroup` verdict applied; each integration file's `//!` header
+- [x] Every `move-inline` verdict applied; test names preserved.
+- [x] Every `regroup` verdict applied; each integration file's `//!` header
       names its functionality.
-- [ ] Every `delete` applied with its survivor in the commit body.
-- [ ] `cargo test -p piperine-api -p piperine-project` green; the
+- [x] Every `delete` applied with its survivor in the commit body.
+- [x] `cargo test -p piperine-api -p piperine-project` green; the
       before/after `-- --list` diff contains only intended changes (recorded).
-- [ ] `python3 tools/audit_tests.py --check piperine-api` and
+- [x] `python3 tools/audit_tests.py --check piperine-api` and
       `--check piperine-project` exit 0.
 **Tests:** none *(relocation — verification is the list diff)* · **Gate:** quick (crate)
 
@@ -265,9 +266,9 @@ cwd/env-dependent test's isolation.
 **Depends on:** T8. **Requirement:** CLN-02..CLN-04, CLN-09, CLN-10.
 **Reuses:** existing `tests/*_cmd.rs` naming.
 **Done when:**
-- [ ] Verdicts applied; process-global-state tests keep their guards (CLN-10).
-- [ ] `cargo test -p piperine-cli` green; list diff recorded.
-- [ ] `--check piperine-cli` exits 0.
+- [x] Verdicts applied; process-global-state tests keep their guards (CLN-10).
+- [x] `cargo test -p piperine-cli` green; list diff recorded.
+- [x] `--check piperine-cli` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (crate)
 
 ### T10: Migrate `piperine-plugin` + `piperine-plugin-macros`
@@ -277,10 +278,10 @@ plugin-interface-v2 left functionality-named — expect mostly `keep`.
 **Depends on:** T9. **Requirement:** CLN-02..CLN-04, CLN-09.
 **Reuses:** the v2 suite layout.
 **Done when:**
-- [ ] Verdicts applied; `trybuild` UI tests untouched.
-- [ ] `cargo test -p piperine-plugin -p piperine-plugin-macros` green; list
+- [x] Verdicts applied; `trybuild` UI tests untouched.
+- [x] `cargo test -p piperine-plugin -p piperine-plugin-macros` green; list
       diff recorded.
-- [ ] `--check` exits 0 for both.
+- [x] `--check` exits 0 for both.
 **Tests:** none *(relocation)* · **Gate:** quick (crate)
 
 ### T11: Migrate `piperine-python`
@@ -290,10 +291,10 @@ lock makes global-state handling load-bearing.
 **Depends on:** T10. **Requirement:** CLN-02..CLN-04, CLN-09, CLN-10.
 **Reuses:** `embed::facade_lock`, `tests/facade_hygiene.rs`.
 **Done when:**
-- [ ] Verdicts applied; every relocated test that execs Python keeps the
+- [x] Verdicts applied; every relocated test that execs Python keeps the
       facade lock (CLN-10) — proven by running the crate suite twice.
-- [ ] `cargo test -p piperine-python` green; list diff recorded.
-- [ ] `--check piperine-python` exits 0.
+- [x] `cargo test -p piperine-python` green; list diff recorded.
+- [x] `--check piperine-python` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (crate)
 
 ### T12: Migrate `piperine-codegen`
@@ -302,9 +303,9 @@ lock makes global-state handling load-bearing.
 **Depends on:** T11. **Requirement:** CLN-02..CLN-04, CLN-09.
 **Reuses:** T5's triaged layout.
 **Done when:**
-- [ ] Verdicts applied; JIT-compiling tests stay integration (spec edge case).
-- [ ] `cargo test -p piperine-codegen` green; list diff recorded.
-- [ ] `--check piperine-codegen` exits 0.
+- [x] Verdicts applied; JIT-compiling tests stay integration (spec edge case).
+- [x] `cargo test -p piperine-codegen` green; list diff recorded.
+- [x] `--check piperine-codegen` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (codegen)
 
 ### T13: Migrate `piperine-lang`
@@ -315,9 +316,9 @@ most unit-shaped assertions living in integration files.
 **Reuses:** the 11 existing inline modules; frozen corpora (`headers/`,
 `tests/fixtures*`) stay untouched per CLAUDE.md.
 **Done when:**
-- [ ] Verdicts applied; no change to frozen fixtures.
-- [ ] `cargo test -p piperine-lang` green; list diff recorded.
-- [ ] `--check piperine-lang` exits 0.
+- [x] Verdicts applied; no change to frozen fixtures.
+- [x] `cargo test -p piperine-lang` green; list diff recorded.
+- [x] `--check piperine-lang` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (crate)
 
 ### T14: Migrate `piperine-lang-server`
@@ -327,10 +328,10 @@ named after a construct, not a functionality (MD-13 rule 4 / MD-28 rule 2).
 **Depends on:** T13. **Requirement:** CLN-02..CLN-04, CLN-09.
 **Reuses:** `tests/protocol.rs` as the naming model.
 **Done when:**
-- [ ] `integration_test.rs` split into functionality-named targets (hover,
+- [x] `integration_test.rs` split into functionality-named targets (hover,
       completion, goto/references, rename, diagnostics …) per `audit.md`.
-- [ ] `cargo test -p piperine-lang-server` green; list diff recorded.
-- [ ] `--check piperine-lang-server` exits 0.
+- [x] `cargo test -p piperine-lang-server` green; list diff recorded.
+- [x] `--check piperine-lang-server` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (crate)
 
 ### T15: Migrate `piperine-solver`
@@ -340,9 +341,9 @@ modules).
 **Depends on:** T14. **Requirement:** CLN-02..CLN-04, CLN-09.
 **Reuses:** the crate's already-functionality-named suites.
 **Done when:**
-- [ ] Verdicts applied; `capabilities_contract.rs` untouched (Phase 3 owns it).
-- [ ] `cargo test -p piperine-solver` green; list diff recorded.
-- [ ] `--check piperine-solver` exits 0.
+- [x] Verdicts applied; `capabilities_contract.rs` untouched (Phase 3 owns it).
+- [x] `cargo test -p piperine-solver` green; list diff recorded.
+- [x] `--check piperine-solver` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (solver)
 
 ### T16: Migrate the root `tests/` host suite
@@ -352,10 +353,10 @@ root-vs-crate shared stems per their T2 verdicts.
 **Depends on:** T15. **Requirement:** CLN-02..CLN-04, CLN-09.
 **Reuses:** `host_parity.rs`/`plugin_parity.rs` as the cross-crate model.
 **Done when:**
-- [ ] Verdicts applied; layer-distinct duplicates kept (spec edge case),
+- [x] Verdicts applied; layer-distinct duplicates kept (spec edge case),
       same-layer duplicates deleted with survivors named.
-- [ ] `cargo test -p piperine` green; list diff recorded.
-- [ ] `--check piperine` exits 0.
+- [x] `cargo test -p piperine` green; list diff recorded.
+- [x] `--check piperine` exits 0.
 **Tests:** none *(relocation)* · **Gate:** quick (crate)
 
 ### T17: Workspace re-audit is clean
@@ -367,10 +368,10 @@ accounting`).
 **Depends on:** T16. **Requirement:** CLN-02, CLN-04, CLN-09.
 **Reuses:** T1 tool.
 **Done when:**
-- [ ] `--check` exits 0 for **every** crate.
-- [ ] Final passing-test count recorded; every test not present in the
+- [x] `--check` exits 0 for **every** crate.
+- [x] Final passing-test count recorded; every test not present in the
       baseline list is either a rename (mapped) or a deletion with a survivor.
-- [ ] `cargo test --workspace` green, zero warnings.
+- [x] `cargo test --workspace` green, zero warnings.
 **Tests:** none (report) · **Gate:** full
 
 ### T18: Remove `SUPPORTS_QUERIES`
@@ -383,14 +384,14 @@ all other bit positions unchanged.
 **Reuses:** T4's evidence; the contract test's `removed_write_only_flags_stay_gone`
 list (extend it).
 **Done when:**
-- [ ] `SUPPORTS_QUERIES` gone from the bitflags; `1 << 10` left unused;
+- [x] `SUPPORTS_QUERIES` gone from the bitflags; `1 << 10` left unused;
       `HAS_DISTO2/3`/`NUMERIC_JACOBIAN` still assert `1 << 12/13/14`.
-- [ ] `removed_write_only_flags_stay_gone` includes `SUPPORTS_QUERIES` so it
+- [x] `removed_write_only_flags_stay_gone` includes `SUPPORTS_QUERIES` so it
       cannot return.
-- [ ] `documented_consumer` has no "no consumer today" entry left.
-- [ ] Grep for the name over `crates/`, `tests/`, `docs/` returns nothing but
+- [x] `documented_consumer` has no "no consumer today" entry left.
+- [x] Grep for the name over `crates/`, `tests/`, `docs/` returns nothing but
       the removal notes.
-- [ ] `cargo test --workspace` green, zero warnings.
+- [x] `cargo test --workspace` green, zero warnings.
 **Tests:** integration · **Gate:** full
 
 ### T19: Wire `BYPASS_OK` (gate + codegen predicate)
@@ -404,16 +405,16 @@ function of terminal voltages.
 **Reuses:** existing `cache_valid`/`any_limiting_report`/`invalidate_bypass`
 seams; `AnalogKernel`'s capability `Option`s.
 **Done when:**
-- [ ] The bypass applies only when **every** element in the circuit declares
+- [x] The bypass applies only when **every** element in the circuit declares
       `BYPASS_OK`; limiter suppression and `invalidate_bypass` unchanged.
-- [ ] Inline test: a circuit with one non-declaring element records
+- [x] Inline test: a circuit with one non-declaring element records
       `bypass_hits == 0` while an all-declaring circuit still records hits.
-- [ ] Codegen predicate withholds the bit for each disqualifier (runtime
+- [x] Codegen predicate withholds the bit for each disqualifier (runtime
       operator, analog event, `$limit` limiter, digital dependency) — one
       test per disqualifier — and sets it for a plain resistor-class device.
-- [ ] `piperine-solver/tests/live_params.rs`'s declaring test device still
+- [x] `piperine-solver/tests/live_params.rs`'s declaring test device still
       passes unchanged.
-- [ ] ngspice validation + solver suites still green (`cargo test --workspace`).
+- [x] ngspice validation + solver suites still green (`cargo test --workspace`).
 **Tests:** unit + integration · **Gate:** full
 
 ### T20: Capability registry has no reserved-forever bits
@@ -423,10 +424,10 @@ entry names a live consumer, and no entry may say "reserved"/"no consumer".
 **Depends on:** T19. **Requirement:** CLN-13.
 **Reuses:** the registry test's exhaustiveness assert.
 **Done when:**
-- [ ] A new `#[test]` fails if any entry's text contains "no consumer" or
+- [x] A new `#[test]` fails if any entry's text contains "no consumer" or
       starts with "reserved" (proven by temporarily reintroducing such text).
-- [ ] `BYPASS_OK`'s entry now names its consumer (`analyses/dc.rs` gate).
-- [ ] `cargo test -p piperine-solver` green.
+- [x] `BYPASS_OK`'s entry now names its consumer (`analyses/dc.rs` gate).
+- [x] `cargo test -p piperine-solver` green.
 **Tests:** integration · **Gate:** quick (solver)
 
 ### T21: Add the missing §16 enforcement tests
@@ -437,10 +438,10 @@ trips exactly that failure and asserts the typed error.
 **Reuses:** existing per-analysis error tests as the shape; `SolverDomain`
 typed errors.
 **Done when:**
-- [ ] One test per untested row, named for the rule it enforces.
-- [ ] Each asserts the typed error (not a string fragment alone) and fails if
+- [x] One test per untested row, named for the rule it enforces.
+- [x] Each asserts the typed error (not a string fragment alone) and fails if
       the guard clause is removed.
-- [ ] `cargo test -p piperine-solver` green.
+- [x] `cargo test -p piperine-solver` green.
 **Tests:** integration · **Gate:** quick (solver)
 
 ### T22: Remove unreachable §16 rows from the spec
@@ -450,9 +451,9 @@ surface, with a one-line note saying so.
 **Depends on:** T21. **Requirement:** CLN-18.
 **Reuses:** T3's classification.
 **Done when:**
-- [ ] Each removed row is justified in the section's note (why no surface
+- [x] Each removed row is justified in the section's note (why no surface
       reaches it).
-- [ ] No row remains that neither a test nor a note accounts for.
+- [x] No row remains that neither a test nor a note accounts for.
 **Tests:** none (docs) · **Gate:** build
 
 ### T23: §16 coverage guard
@@ -463,13 +464,13 @@ parsed from the spec file.
 **Reuses:** `capabilities_contract.rs` registry pattern; `include_str!` on the
 spec file.
 **Done when:**
-- [ ] `rows()` parses the §16 table (assert non-empty — a reflow fails loud).
-- [ ] `every_failure_rule_is_accounted_for` is exhaustive; an unaccounted row
+- [x] `rows()` parses the §16 table (assert non-empty — a reflow fails loud).
+- [x] `every_failure_rule_is_accounted_for` is exhaustive; an unaccounted row
       fails naming it.
-- [ ] `every_named_enforcement_test_exists` verifies each named
+- [x] `every_named_enforcement_test_exists` verifies each named
       `file::test` exists in the tree (proven by pointing one entry at a
       missing name).
-- [ ] `cargo test --workspace` green.
+- [x] `cargo test --workspace` green.
 **Tests:** integration · **Gate:** full
 
 ### T24: Restate ROADMAP P6
@@ -480,9 +481,9 @@ post-V1.
 **Depends on:** T23. **Requirement:** CLN-15, CLN-20.
 **Reuses:** T17's final accounting; T4's evidence.
 **Done when:**
-- [ ] Numbers match the tree (final count, 4 reasoned doctest ignores).
-- [ ] `bound_step_hint` recorded as enforced with its call sites, not as dead.
-- [ ] Delivered rows `[x]`; the language/interpreter completeness row stays
+- [x] Numbers match the tree (final count, 4 reasoned doctest ignores).
+- [x] `bound_step_hint` recorded as enforced with its call sites, not as dead.
+- [x] Delivered rows `[x]`; the language/interpreter completeness row stays
       `[ ]` and post-V1 with its reason.
 **Tests:** none (docs) · **Gate:** build
 
@@ -494,9 +495,9 @@ consent).
 **Depends on:** T24. **Requirement:** CLN-21.
 **Reuses:** MD-28 (extended, not superseded); the MD entry format.
 **Done when:**
-- [ ] Handoff snapshot updated with the final gate numbers.
-- [ ] Two new MD entries, each with status + rationale, referencing MD-28/MD-01.
-- [ ] `cargo test --workspace` green (final gate re-run recorded).
+- [x] Handoff snapshot updated with the final gate numbers.
+- [x] Two new MD entries, each with status + rationale, referencing MD-28/MD-01.
+- [x] `cargo test --workspace` green (final gate re-run recorded).
 **Tests:** none (docs) · **Gate:** full
 
 ---
