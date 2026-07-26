@@ -126,21 +126,22 @@ crate's tests pass with the same test names present before and after
 **User Story:** As the maintainer, I want zero switched-off test code, so what
 the suite claims to cover is what it actually runs.
 
-**Why P1:** 602 lines of `ppr_ir.rs` currently look like coverage and are not
-compiled at all — the most misleading artifact in the tree.
+**Why P1:** 602 lines of `ppr_ir.rs` plus 412 of `analog_jit.rs` look like coverage and
+are not compiled at all — the most misleading artifact in the tree.
 
 **Acceptance Criteria:**
 1. WHEN the tree is searched for disabled test code THEN there SHALL be no
    `#![cfg(any())]`, no `#[cfg(FALSE)]`-style switch, and no commented-out
    test module in any test target or `#[cfg(test)]` module.
-2. WHEN each of `ppr_ir.rs`'s 27 switched-off tests is triaged THEN it SHALL
+2. WHEN each of the 38 switched-off tests (`ppr_ir.rs` 27, `analog_jit.rs` 11
+   — the latter named in `CLAUDE.md` as a test of record) is triaged THEN it SHALL
    be either (a) restored against the current `piperine_codegen::resolve` API
    and passing, or (b) deleted with the surviving `file::test` that already
    asserts the same behavior named in the commit message — never dropped
    without one of the two.
-3. WHEN the triage is complete THEN `ppr_ir.rs` SHALL either not exist or
-   exist as a normally-compiled, fully-passing target with no `ignore`
-   attributes.
+3. WHEN the triage is complete THEN each of the two files SHALL either not
+   exist or exist as a normally-compiled, fully-passing target with no
+   `ignore` attributes.
 4. WHEN a behavior in the restored set has no current equivalent AND cannot be
    expressed through today's `resolve` API THEN the task SHALL fail loud in
    the report (a named, tracked gap), never silently delete the test.
@@ -202,7 +203,8 @@ nothing consumes, so the ABI stops carrying promises it does not keep.
 enforced by a test, so the spec table is a contract instead of a wish.
 
 **Acceptance Criteria:**
-1. WHEN the §16 table is audited THEN each of its 18 rows SHALL be marked
+1. WHEN the §16 table is audited THEN each of its 16 rows (measured count; an
+   earlier draft of this spec said 18) SHALL be marked
    *enforced* (naming the `file::test` that trips it) or *unenforceable*
    (naming why no public surface can trigger it).
 2. WHEN a row is enforced-but-untested THEN a test SHALL be added that trips

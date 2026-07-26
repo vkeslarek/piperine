@@ -6,6 +6,10 @@ The measurement this feature acts on. Produced by
 
 **Measured:** 2026-07-25, commit `dde81c2` (workspace green: 1123 passed).
 
+> **Correction (T3):** the dead-code total is **two** files, not one —
+> `analog_jit.rs` is switched off exactly like `ppr_ir.rs`, and it is named in
+> `CLAUDE.md` as a test of record. T5's scope covers both (38 tests).
+
 ---
 
 ## 1. Test inventory (CLN-01)
@@ -29,8 +33,9 @@ The measurement this feature acts on. Produced by
 
 ```
 1159  #[test] functions found in the tree
- -38  crates/piperine-codegen/tests/ppr_ir.rs — first line is #![cfg(any())],
-      so the whole file (38 tests, 27 of them also #[ignore]) never compiles
+ -38  two never-compiled files, each with #![cfg(any())] as its first line:
+        ppr_ir.rs      27 tests (all also #[ignore]d)
+        analog_jit.rs  11 tests — and CLAUDE.md lists it as a test of record
 =1121 live #[test] functions
   +2  passing doctests (piperine-lang: parse/mod.rs, lib.rs)
 =1123 exactly what `cargo test --workspace` reports
@@ -153,7 +158,55 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 ## 7. §16 failure-rule classification (CLN-16)
 
-*(T3)*
+**The table has 16 rows, not 18** — `spec.md`/`tasks.md` said 18 from a
+miscount; the measured row count (`awk` over the table in
+`docs/spec/part_vii_solver.md:1122-1140`) is 16. Corrected here and in T24.
+
+Verdicts: **E** = enforced (a test trips it), **U** = enforceable, untested
+(the failure site exists; no test reaches it) → T21, **?** = no failure site
+located → T22 decides remove-or-implement.
+
+| # | § | Rule | Site | Test | Verdict |
+|---|---|---|---|---|---|
+| 1 | §2 | Element declares no capability | none found — `CircuitInstance` iterates by capability, so a no-flag element is silently inert rather than rejected | — | **?** |
+| 2 | §3 | Unsupported analog behavior reaches the ABI | `CodegenError::Unsupported` (codegen, not solver) | `piperine-codegen/tests/disto_jit.rs:183-186` (`CodegenError::Unsupported` matched), `digital_codegen_gaps.rs` (three fail-loud gaps) — verified passing | **E** (enforced one layer earlier — the row's "device-load error" is codegen's fail-loud) |
+| 3 | §4 | Digital boundary changes during an analysis | none found | — | **?** |
+| 4 | §4 | Digital event targets a nonexistent net | none found (`digital/scheduler.rs` resolves nets by index; an unknown name cannot be constructed through the public surface) | — | **?** |
+| 5 | §5 | Plugin cannot bind required terminals/params | `PluginError::DeviceNotRegistered` + the plugin/`@device` arity checks (`piperine-plugin/src/host.rs:471-484`) | `piperine-plugin/tests/e2e.rs::unregistered_type_fails_loud`, `::device_without_host_fails_loud` | **E** |
+| 6 | §6 | Stamp references an unmapped variable | none found — `AnalogReference` is index-based, so an unmapped variable is unrepresentable | — | **?** |
+| 7 | §8 | Analysis-time loading changes matrix dimension/sparsity | `analyses/dc.rs:328` `"solution not contiguous"` is the nearest guard | — | **U** |
+| 8 | §9 | DC fails Newton + gmin + source stepping | `analyses/convergence.rs` plan exhaustion → `SolverDomain::Dc` | only the *scripted* driver test (`convergence.rs:658` inline, a fake driver) — no circuit-level test | **U** |
+| 9 | §10 | Transient reaches the minimum timestep without converging | `analyses/transient.rs` `dt_min` floor (`dt_min_floor_hits`) | — | **U** |
+| 10 | §11 | AC frequency point cannot solve its linear system | `math/faer.rs:120` → `SolverDomain::SpaceMatrix`, wrapped per point | — | **U** |
+| 11 | §12 | Noise output/reference node unresolvable | `analyses/noise.rs:335,340` | — | **U** |
+| 12 | §13 | Unsupported TF source form | `analyses/tf.rs:326` `"current-source input is not supported (D5)"` | `tests/session_tf.rs` asserts the message | **E** |
+| 13 | §14 | Digital delta cycle does not settle | `digital/scheduler.rs:77` (+ `:221` DAG back-edge) | — | **U** |
+| 14 | §15 | Linear solve returns NaN or infinity | `math/newton_raphson.rs:197,356` `!is_finite` guards | — | **U** |
+| 15 | §17 | Sensitivity param unknown/unreadable/non-real/rebuild-strength | `analyses/sens.rs:85` + the rebuild-strength check | `tests/sens.rs` (rebuild-strength + unknown-param cases) | **E** |
+| 16 | §18 | Non-positive period / negative pre-roll / non-periodic digital state | `analyses/pss.rs:105,367` | `tests/pss.rs` asserts the non-periodic case; **period/pre-roll validation is untested** | **partial E/U** |
+
+**Totals:** 4 enforced (rows 2, 5, 12, 15), 1 partial (16), 7 enforceable-but-
+untested (7, 8, 9, 10, 11, 13, 14 + the untested half of 16), 4 with no located
+site (1, 3, 4, 6).
+
+### Work lists
+
+- **T21 (add tests):** rows 7, 8, 9, 10, 11, 13, 14, and 16's period/pre-roll
+  half. Each asserts `SolverDomain` + the message fragment — the taxonomy is
+  `Error::{Simple,WithCause}{domain, detail}` (`error.rs:57-70`), so
+  domain+fragment *is* the typed assertion available.
+- **T22 (decide remove-or-implement):** rows 1, 3, 4, 6. Each looks
+  unreachable **by construction** rather than merely untested (index-based
+  references, capability-driven iteration), which is the spec's
+  "unenforceable" case — but T22 must attempt the trip before removing the
+  row, and a row that turns out reachable becomes a T21 test instead.
+
+### Note on "typed error"
+
+`SolverDomain` is the type; the detail is a string. A row's test therefore
+asserts `(domain, fragment)`. Introducing a per-rule error enum would be an
+ABI change well beyond P6's hygiene scope — recorded as a follow-up, not done
+here.
 
 ## 8. Capability-flag verdict evidence (CLN-11/12/15)
 

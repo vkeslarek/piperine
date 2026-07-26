@@ -145,7 +145,7 @@ unit-vs-integration definition; every `delete` names its surviving equivalent.
 **Tests:** none (report) · **Gate:** build
 
 ### T3: §16 row classification
-**What:** Classify all 18 Part VII §16 failure rows as *enforced* (naming the
+**What:** Classify all 16 Part VII §16 failure rows (measured; the draft said 18) as *enforced* (naming the
 existing `file::test` that trips it), *enforceable-but-untested*, or
 *unenforceable* (naming why no public surface reaches it).
 **Where:** `.specs/features/p6-cleanup-completeness/audit.md` (new `## §16`
@@ -153,7 +153,7 @@ section).
 **Depends on:** T2. **Requirement:** CLN-16.
 **Reuses:** `docs/spec/part_vii_solver.md:1116-1140`; the solver suite.
 **Done when:**
-- [ ] All 18 rows classified, each with file:line evidence.
+- [ ] All 16 rows classified, each with file:line evidence.
 - [ ] Every *enforced* claim verified by actually running that test (name +
       pass recorded), not by reading its name.
 - [ ] The untested and unenforceable sets are listed as the T21/T22 work lists.
@@ -179,18 +179,22 @@ section).
       none besides the two).
 **Tests:** none (report) · **Gate:** build
 
-### T5: Triage `ppr_ir.rs`'s 27 switched-off tests
-**What:** For each of the 27 tests in the `#![cfg(any())]` file, restore it
+### T5: Triage the 38 switched-off tests (`ppr_ir.rs` + `analog_jit.rs`)
+**What:** For each of the 38 tests in the two `#![cfg(any())]` files
+(`ppr_ir.rs` 27, `analog_jit.rs` 11 — the second found during T3 and named in
+`CLAUDE.md` as a test of record), restore it
 against the current `piperine_codegen::resolve` API or delete it naming the
 live test that already asserts the behavior; the file ends up either gone or
 normally compiled and passing.
-**Where:** `crates/piperine-codegen/tests/ppr_ir.rs` (delete or rewrite),
+**Where:** `crates/piperine-codegen/tests/{ppr_ir,analog_jit}.rs` (delete or
+rewrite),
 possibly new/edited `crates/piperine-codegen/tests/resolve_lowering.rs`.
 **Depends on:** T4. **Requirement:** CLN-05, CLN-06, CLN-07.
 **Reuses:** `codegen_ir.rs`, `from_ir.rs`, `silent_bugs.rs`, `analog_jit.rs`
 as the coverage baseline; `resolve::lower_bodies` as the entry point.
 **Done when:**
-- [ ] Zero `#![cfg(any())]` in the crate; the triaged tests compile and run.
+- [ ] Zero `#![cfg(any())]` in the crate (both files); the triaged tests
+      compile and run.
 - [ ] Each restored test asserts the same behavior as its dead original
       (noise/flicker registration, `match` desugar, event guard, `simparam`,
       `bound_step`, string params, `transition`/`idtmod` state vars, both
