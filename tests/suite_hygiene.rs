@@ -58,6 +58,26 @@ fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
     }
 }
 
+/// Every library source: each crate's `src` tree plus the root package's.
+/// Integration targets are excluded — a lint suppression in a test file hides
+/// nothing that ships.
+fn library_sources() -> Vec<(String, String)> {
+    let sources: Vec<(String, String)> = rust_sources()
+        .into_iter()
+        .filter(|(path, _)| {
+            let parts: Vec<&str> = path.split('/').collect();
+            matches!(parts.as_slice(), ["src", ..] | ["crates", _, "src", ..])
+        })
+        .collect();
+    assert!(
+        sources.len() > 100,
+        "the walk found only {} library sources — the layout moved and the \
+         source-tree guards are blind",
+        sources.len()
+    );
+    sources
+}
+
 /// Every integration-test target: `crates/*/tests/*.rs` and root `tests/*.rs`
 /// (top level only — a `tests/<dir>/` module file is a helper, not a target).
 fn integration_targets() -> Vec<(String, String)> {
@@ -118,6 +138,17 @@ fn the_detectors_recognise_what_they_forbid() {
     }
     for innocent in ["#[test]", "/// #[ignore] in a doc comment", "let ignore = 1;"] {
         assert!(!is_ignore_attribute(innocent), "must not be flagged: {innocent:?}");
+    }
+
+    for offender in [
+        "#![allow(dead_code)]",
+        "  #![allow(unused_imports)]",
+        "#![allow(clippy::all)]",
+    ] {
+        assert!(is_file_scope_allow(offender), "must be flagged as file-scope: {offender:?}");
+    }
+    for innocent in ["#[allow(dead_code)]", "    #[allow(dead_code)]", "// #![allow(dead_code)]"] {
+        assert!(!is_file_scope_allow(innocent), "must not be flagged: {innocent:?}");
     }
 }
 
@@ -229,5 +260,35 @@ fn every_integration_target_declares_its_scope() {
         headerless.is_empty(),
         "integration targets with no `//!` scope header (say what the file covers):\n  {}",
         headerless.join("\n  ")
+    );
+}
+
+// ─── 5. No file-scope lint suppression (MD-33) ────────────────────────────────
+
+/// Whether one source line switches a lint off for a whole file. A file-scope
+/// `#![allow(…)]` is invisible from the item it excuses: P6 found twelve of
+/// them hiding 22 dead items across `piperine-solver` and `piperine-codegen`,
+/// four of which were traits describing an analysis contract the solver never
+/// built. An item that truly has no consumer yet says so *at the item*, with a
+/// one-line reason a reader can check.
+fn is_file_scope_allow(line: &str) -> bool {
+    line.trim_start().starts_with("#![allow(")
+}
+
+#[test]
+fn no_file_scope_lint_suppression() {
+    let mut offences = Vec::new();
+    for (path, text) in library_sources() {
+        for (index, line) in text.lines().enumerate() {
+            if is_file_scope_allow(line) {
+                offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "file-scope lint suppression (MD-33 — move the exemption onto the item \
+         it excuses and give it a one-line reason, or delete the item):\n  {}",
+        offences.join("\n  ")
     );
 }
