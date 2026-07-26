@@ -20,7 +20,7 @@ use crate::analog::Netlist;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::config::{Schedules, StepperGains, TraceFlags};
 use crate::analyses::{Policy, Tolerances};
-use crate::result::Result;
+use crate::core::result::Result;
 
 /// Numerical caps honored across drivers. Replaces the literals that used to
 /// live inline in DC and the digital scheduler.
@@ -414,7 +414,7 @@ impl ConvergencePlan {
 }
 
 /// What the plan converged and how — the DC driver copies the strategy name
-/// into [`SolverStats`](crate::result::SolverStats).
+/// into [`SolverStats`](crate::core::result::SolverStats).
 pub struct PlanOutcome {
     pub solution: Array1<f64>,
     /// The homotopy that converged; `None` when plain Newton sufficed.

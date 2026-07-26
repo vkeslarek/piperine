@@ -98,7 +98,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency,
         };
@@ -146,7 +146,7 @@ impl<'a> AcSolver<'a> {
     ///
     /// # Returns
     /// Initialized AC solver ready for frequency sweep
-    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
+    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -189,7 +189,7 @@ impl<'a> AcSolver<'a> {
     pub fn solve_sweep(
         &mut self,
         options: AcSweepAnalysisOptions,
-    ) -> crate::result::Result<AcAnalysisResult> {
+    ) -> crate::core::result::Result<AcAnalysisResult> {
         let frequencies = options.generate_frequencies();
 
         let mut data = Vec::new();

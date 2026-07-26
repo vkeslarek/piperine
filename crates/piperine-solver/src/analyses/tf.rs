@@ -105,7 +105,7 @@ impl<'a> TransferFunctionSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: TransferFunctionAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -183,7 +183,7 @@ impl<'a> TransferFunctionSolver<'a> {
     ///
     /// # Returns
     /// Complete transfer function analysis result with gain, R_in, R_out, and transfer type
-    pub fn solve(&mut self) -> crate::result::Result<TransferFunctionAnalysisResult> {
+    pub fn solve(&mut self) -> crate::core::result::Result<TransferFunctionAnalysisResult> {
         // Determine TF type from input/output variables
         let tf_type = self.determine_tf_type();
 
@@ -212,7 +212,7 @@ impl<'a> TransferFunctionSolver<'a> {
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
         context: &Context,
-    ) -> crate::result::Result<Vec<crate::math::linear::Stamp<AnalogReference, f64>>> {
+    ) -> crate::core::result::Result<Vec<crate::math::linear::Stamp<AnalogReference, f64>>> {
         // Create state buffer with DC operating point values
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -288,7 +288,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// 2. Apply ONLY unit excitation at input (all other RHS = 0)
     /// 3. Solve linearized system
     /// 4. Read output response
-    fn calculate_gain(&mut self) -> crate::result::Result<(f64, Array1<f64>)> {
+    fn calculate_gain(&mut self) -> crate::core::result::Result<(f64, Array1<f64>)> {
         use crate::math::faer::FaerSparseLinearSystem;
         use crate::math::linear::{LinearSystem, Stamp};
 
@@ -376,7 +376,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// invariant asserted so a future refactor that reintroduces a
     /// current-source path here fails loud instead of silently resurrecting
     /// the dead branch's wrong `1e20`.
-    fn calculate_input_resistance(&self, solution: &Array1<f64>) -> crate::result::Result<f64> {
+    fn calculate_input_resistance(&self, solution: &Array1<f64>) -> crate::core::result::Result<f64> {
         debug_assert_eq!(
             self.input_is_voltage_source(),
             Some(true),
@@ -401,7 +401,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// Applies unit perturbation at output and measures response.
     /// For voltage output: Apply 1A test current, measure voltage change
     /// For current output: Apply 1V test voltage, measure current change
-    fn calculate_output_resistance(&mut self) -> crate::result::Result<f64> {
+    fn calculate_output_resistance(&mut self) -> crate::core::result::Result<f64> {
         use crate::math::faer::FaerSparseLinearSystem;
         use crate::math::linear::{LinearSystem, Stamp};
 

@@ -337,7 +337,7 @@ pub trait DigitalDevice: Send + Sync {
 
     /// Hidden digital state (module vars, edge-detection memory) as an
     /// opaque `(int, real)` carrier, snapshotted into each recorded
-    /// [`crate::result::TransientStep`] and restored verbatim on full-state
+    /// [`crate::core::result::TransientStep`] and restored verbatim on full-state
     /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
     /// shot-state contract requires register state to round-trip with the
     /// digital nets. `None` = stateless (pure combinational) element.
@@ -471,7 +471,7 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// without probing. Forgetting a flag is a visible bug, not a silent no-op.
     fn capabilities(&self) -> ElementCapabilities;
 
-    fn setup(&mut self, _ctx: &Context) -> crate::result::Result<()> { Ok(()) }
+    fn setup(&mut self, _ctx: &Context) -> crate::core::result::Result<()> { Ok(()) }
     fn destroy(&mut self) {}
 
     /// Called after each accepted solution point at time `t`. Elements that

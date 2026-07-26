@@ -27,7 +27,7 @@ pub trait SymbolicMatrix {
     fn new<A: AsIndex, E: Scalar>(
         size: usize,
         stamp: Vec<Stamp<A, E>>,
-    ) -> crate::result::Result<Self>
+    ) -> crate::core::result::Result<Self>
     where
         Self: Sized;
 }
@@ -36,5 +36,5 @@ pub trait SymbolicLinearSystem<E: Scalar>: LinearSystem<E> {
     type SymbolicType: SymbolicMatrix;
 
     fn solve_with_backend(&self, symbolic: &Self::SymbolicType)
-    -> crate::result::Result<Array1<E>>;
+    -> crate::core::result::Result<Array1<E>>;
 }

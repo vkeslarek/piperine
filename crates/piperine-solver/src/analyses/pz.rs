@@ -96,7 +96,7 @@ impl<'a> PoleZeroSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: PoleZeroOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -161,7 +161,7 @@ impl<'a> PoleZeroSolver<'a> {
     /// dynamic states than nodes), real/conjugate-paired (PZ-03). A circuit
     /// with no reactive elements has no finite poles at all — that is a
     /// fail-loud condition (PZ-05), not an empty success.
-    pub fn poles(&self) -> crate::result::Result<Vec<Complex<f64>>> {
+    pub fn poles(&self) -> crate::core::result::Result<Vec<Complex<f64>>> {
         let neg_g = self.g.mapv(|v| -v);
         let roots = Self::finite_generalized_eigenvalues(&neg_g, &self.c, self.size)?;
         if roots.is_empty() {
@@ -187,7 +187,7 @@ impl<'a> PoleZeroSolver<'a> {
     /// reference's row, when one is given). Unlike [`Self::poles`], an empty
     /// zero set is a legitimate answer (e.g. a plain RC low-pass has no
     /// transmission zero) — not a fail-loud condition.
-    pub fn zeros(&self) -> crate::result::Result<Vec<Complex<f64>>> {
+    pub fn zeros(&self) -> crate::core::result::Result<Vec<Complex<f64>>> {
         let n = self.size;
         let bordered = n + 1;
         let mut a = Array2::<f64>::zeros((bordered, bordered));
@@ -222,7 +222,7 @@ impl<'a> PoleZeroSolver<'a> {
         a: &Array2<f64>,
         b: &Array2<f64>,
         size: usize,
-    ) -> crate::result::Result<Vec<Complex<f64>>> {
+    ) -> crate::core::result::Result<Vec<Complex<f64>>> {
         if size == 0 {
             return Ok(Vec::new());
         }
@@ -322,7 +322,7 @@ impl<'a> PoleZeroSolver<'a> {
         dc_point: &DcAnalysisResult,
         context: &Context,
         size: usize,
-    ) -> crate::result::Result<Array2<f64>> {
+    ) -> crate::core::result::Result<Array2<f64>> {
         let omega0 = 1.0;
         let omega1 = 2.0;
         let y0 = Self::assemble_y(circuit, dc_point, omega0, context, size);

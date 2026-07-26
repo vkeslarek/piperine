@@ -15,7 +15,7 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<E>,
-    ) -> crate::result::Result<Vec<Stamp<A, E>>>;
+    ) -> crate::core::result::Result<Vec<Stamp<A, E>>>;
 
     /// The netlist naming this system's unknowns. The strategy solve path
     /// reads it for the per-row convergence tests; routing it through the
@@ -115,7 +115,7 @@ where
         system: &mut dyn NonLinearSystem<A, E>,
         size: usize,
         history_depth: usize,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         let state = CircularArrayBuffer2::new(history_depth, size);
         let dry_run_stamps = system.assemble(&state)?;
         let symbolic = L::SymbolicType::new(size, dry_run_stamps)?;
@@ -173,7 +173,7 @@ where
         &mut self,
         system: &mut dyn NonLinearSystem<A, E>,
         max_iter: usize,
-    ) -> crate::result::Result<Array1<E>> {
+    ) -> crate::core::result::Result<Array1<E>> {
         let guess = if let Some(prev) = self.state.latest() {
             prev.to_owned()
         } else {
@@ -319,7 +319,7 @@ where
         strategy: &dyn NewtonStrategy,
         tolerances: &Tolerances,
         policy: &Policy,
-    ) -> crate::result::Result<Array1<f64>> {
+    ) -> crate::core::result::Result<Array1<f64>> {
         // Seed: first-order extrapolation when the driver armed the
         // predictor and two history rows exist (CP-16); else the latest
         // accepted point; else zeros (cold start).

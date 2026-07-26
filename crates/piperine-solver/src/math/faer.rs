@@ -26,7 +26,7 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
     fn new<A: AsIndex, E: Scalar>(
         size: usize,
         stamps: Vec<Stamp<A, E>>,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         let mut triplets = Vec::new();
 
         for stamp in stamps {
@@ -115,7 +115,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
     fn solve_with_backend(
         &self,
         symbolic: &Self::SymbolicType,
-    ) -> crate::result::Result<Array1<E>> {
+    ) -> crate::core::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| Error::cause(crate::error::SolverDomain::SpaceMatrix,
                                "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))

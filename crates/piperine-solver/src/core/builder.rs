@@ -10,7 +10,7 @@ use crate::core::circuit::CircuitInstance;
 use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::{DigitalNet, DigitalState};
 use crate::error::{Error, SolverDomain};
-use crate::result::Result;
+use crate::core::result::Result;
 
 // ── UnknownAllocator ─────────────────────────────────────────────────────────
 

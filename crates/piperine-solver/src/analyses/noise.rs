@@ -118,7 +118,7 @@ impl<'a> NoiseSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: NoiseAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -158,7 +158,7 @@ impl<'a> NoiseSolver<'a> {
     /// - Frequency points
     /// - Output noise PSD at each frequency (V²/Hz)
     /// - Integrated RMS noise voltage (V)
-    pub fn solve(&mut self) -> crate::result::Result<NoiseAnalysisResult> {
+    pub fn solve(&mut self) -> crate::core::result::Result<NoiseAnalysisResult> {
         let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
         let mut psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)> = HashMap::new();
@@ -220,7 +220,7 @@ impl<'a> NoiseSolver<'a> {
                     integrated_sq += 0.5 * df * (psd[i] + psd[i + 1]);
                 }
             }
-            contributions.push(crate::result::NoiseContribution {
+            contributions.push(crate::core::result::NoiseContribution {
                 element,
                 source,
                 kind,
@@ -258,7 +258,7 @@ impl<'a> NoiseSolver<'a> {
     fn solve_adjoint_system(
         &self,
         stamps: Vec<Stamp<AnalogReference, Complex<f64>>>,
-    ) -> crate::result::Result<Array1<Complex<f64>>> {
+    ) -> crate::core::result::Result<Array1<Complex<f64>>> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
 
         for stamp in stamps {
@@ -293,7 +293,7 @@ impl<'a> NoiseSolver<'a> {
         dc_point: &DcAnalysisResult,
         f_hz: f64,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: f_hz,
         };
@@ -318,7 +318,7 @@ impl<'a> NoiseSolver<'a> {
     fn resolve_nodes(
         circuit: &CircuitInstance,
         opt: &NoiseAnalysisOptions,
-    ) -> crate::result::Result<(AnalogReference, AnalogReference)> {
+    ) -> crate::core::result::Result<(AnalogReference, AnalogReference)> {
         let net = circuit.netlist();
         let out = net
             .reference_for(&AnalogVariable::Node(opt.output_node.clone()))
