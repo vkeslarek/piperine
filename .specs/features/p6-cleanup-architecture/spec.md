@@ -403,9 +403,9 @@ in value.
 | CLA-03 ✅ | P1 Dead surface | CL-06 (whole files) | A | Verified |
 | CLA-04 ✅ | P1 Dead surface | CL-06 (traits/contexts, D2) | A | Verified |
 | CLA-05 ✅ | P1 Dead surface | CL-06.4 (guard, MD-33) | A | Verified |
-| CLA-06 | P1 Comments/docs | CL-08 (broken links) | A | Pending |
-| CLA-07 | P1 Comments/docs | CL-08, CL-09, CL-10 | A | Pending |
-| CLA-08 | P1 Comments/docs | CL-08 (guard, MD-35) | A | Pending |
+| CLA-06 ✅ | P1 Comments/docs | CL-08 (broken links) | A | Verified |
+| CLA-07 ✅ | P1 Comments/docs | CL-08, CL-09, CL-10 | A | Verified |
+| CLA-08 ✅ | P1 Comments/docs | CL-08 (guard, MD-35) | A | Verified |
 | CLA-09 | P1 Placement | CL-11 (`mod.rs`) | B | Pending |
 | CLA-10 | P1 Placement | CL-05, CL-04 (solver homes) | A/B | Pending |
 | CLA-11 | P1 Placement | CL-13 (python façade) | B | Pending |

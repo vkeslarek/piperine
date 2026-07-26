@@ -14,13 +14,27 @@ without it.**
 
 **Design**: `.specs/features/p6-cleanup-architecture/design.md`
 **Spec**: `.specs/features/p6-cleanup-architecture/spec.md`
-**Status**: In Progress — Phase 1 DONE (T1–T7), Phase 2 next
+**Status**: In Progress — Phases 1–2 DONE (T1–T13), Phase 3 next
 
 ## Progress log
 
 | Batch | Phase | Tasks | Commits | Result |
 |---|---|---|---|---|
 | 1 | 1 | T1–T7 ✅ | `e82e9ef`, `db2869c`, `213a9d6`, `2d25d26`, `6ca2fee`, `b9b60f3`, `c6d9cba`, `3a2a49c` | 1163 passed / 0 failed / 4 ignored (net 0: −1 deleted `Port` enum test, +1 guard). clippy clean. Guard MD-33 proven able to fail. |
+| 2 | 2 | T8–T13 ✅ | `de4ff73`, `e19bf50`, `5611b71`, `cdef36b`, `f071364`, `2ad01f7` | 1164 passed / 0 failed / 4 ignored (+1 guard). Doc warnings 47→46 (the `IrProgram` unresolved link is gone; no new ones). Guard MD-35 proven able to fail. |
+
+**Phase-2 findings:** `CLAUDE.md` carried **three false "Known gaps"** — `$limit`/
+pnjlim, `idt`'s AC `1/jω`, and multiple `ac_stim` are all implemented and recorded
+delivered in `ROADMAP.md`; `NewtonStrategy`/`StepperStrategy` likewise exist. A doc
+claiming a capability is *missing* when it ships is worse than a stale count: it
+sends the next reader to reimplement it. Also corrected: solver paths said `solver/`
+where the tree has `analyses/`. `solver-simplification` is genuinely delivered
+(Verifier PASS 18/18) — status corrected, no residue. `docs/manual/` removed with a
+`ROADMAP.md` P6 backlog line; `mkdocs.yml` nav re-validated.
+
+**Deferred (pre-existing, out of scope, surfaced by T13):** `mkdocs build` fails on
+a missing `material` theme; `docs/spec/appendix_c_host_surface.md` and
+`docs/spec/part_viii_host_api.md` are in neither mkdocs nav.
 
 **Phase-1 findings that changed later tasks:** T46's scope grew by three
 functions (the census said 4 >200-line functions, the truth is 7); the doc gate
