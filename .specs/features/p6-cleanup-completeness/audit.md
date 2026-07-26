@@ -154,6 +154,21 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T10 — `piperine-plugin` + `piperine-plugin-macros`
+
+| Change | Detail |
+|---|---|
+| **moved inline** `tests/manifest.rs` (14) → `src/manifest.rs` | pure `Manifest::parse`/`load` assertions on this module's own behaviour (MD-28 rule 1); the crate's lib target now runs 15 tests |
+| **regrouped** `tests/phase3.rs` (6) → three functionality suites | `staging.rs` (3: the rc-parasitics reference case, idempotent restaging, the two-plugin staging conflict), `hooks.rs` (1: the read-only lifecycle hooks), `scripts.rs` (1: a `#[pip::script]` under its filesystem capability) |
+| **deleted** `phase3.rs::undeclared_type_fails_loud` | survivor `inject.rs::injection_of_an_undeclared_module_fails_loud` — same layer, same assertion (`msg.contains("not declared")`), differing only in whether the staged module is a `@device` |
+
+`phase3.rs` was named after a plan phase; each new file's `//!` header names
+what it covers, and `staging.rs` states its boundary with `inject.rs` (staging
+semantics vs. the `@device` injection path).
+
+`cargo test -p piperine-plugin -p piperine-plugin-macros`: 57 tests, 0 failed.
+`--check`: 0 violations for both crates.
+
 ### T9 — `piperine-cli`
 
 | Change | Detail |
