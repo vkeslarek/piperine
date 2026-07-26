@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
@@ -41,10 +41,10 @@ mod Top() {{
     )
 }
 
-fn session(rl_ohms: &str) -> SimSession {
+fn session(rl_ohms: &str) -> Session {
     let design = piperine_lang::parse_and_elaborate(&tline_phdl(rl_ohms), &headers_source_map())
         .expect("tline design elaborates");
-    SimSession::new(design, "Top".to_string())
+    Session::compile(&design, "Top").expect("session compiles")
 }
 
 /// Matched termination: launched wave = 1 V · 50/(50+50) = 0.5 V arrives at
@@ -52,9 +52,9 @@ fn session(rl_ohms: &str) -> SimSession {
 /// td the far end is quiet.
 #[test]
 fn tline_matched_no_reflection() {
-    let sess = session("50.0");
+    let mut sess = session("50.0");
     let trace = sess
-        .run_tran((4e-9, 0.0), Some(2e-12), &SolverConfig::default(), None, false, &[])
+        .tran(4e-9, Some(2e-12), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("matched tran solves");
     let b = NetRef { name: "b".into() };
 
@@ -72,9 +72,9 @@ fn tline_matched_no_reflection() {
 /// voltage to the full launched amplitude (≈ 1 V) after the wave arrives.
 #[test]
 fn tline_open_termination_doubles() {
-    let sess = session("1.0e10");
+    let mut sess = session("1.0e10");
     let trace = sess
-        .run_tran((4e-9, 0.0), Some(2e-12), &SolverConfig::default(), None, false, &[])
+        .tran(4e-9, Some(2e-12), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("open tran solves");
     let b = NetRef { name: "b".into() };
 

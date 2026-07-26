@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use piperine::{OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, Session, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 use piperine_plugin::{
     Design, DesignStaging, HostCtx, Manifest, Plugin, PluginHost, PluginResult, SolveResultView,
@@ -126,10 +126,12 @@ fn read_only_hooks_observe_the_pipeline() {
     );
     let design = elab(DIVIDER, &host);
     host.fire_after_elaborate(&design).expect("after_elaborate");
-    let mut session = SimSession::new(design, "Top".to_string());
-    session.set_device_provider(host.clone());
-    session.set_hooks(host);
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::builder(&design, "Top")
+        .provider(host.clone())
+        .hooks(host)
+        .compile()
+        .expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     assert!((v(&op, "out") - 2.5).abs() < 0.01);
     assert_eq!(elaborated.load(Ordering::SeqCst), 1);
     assert_eq!(solved.load(Ordering::SeqCst), 1);

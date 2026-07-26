@@ -7,7 +7,7 @@
 
 use std::rc::Rc;
 
-use piperine::{OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, Session, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 use piperine_plugin::{
     DesignStaging, HostCtx, Manifest, Permissions, Plugin, PluginHost, PluginResult,
@@ -28,10 +28,11 @@ fn elab(src: &str, host: &PluginHost) -> piperine_lang::Design {
 /// device provider + lifecycle hooks.
 fn run_top_op(host: Rc<PluginHost>, src: &str) -> Result<OpResult, piperine::Error> {
     let design = elab(src, &host);
-    let mut session = SimSession::new(design, "Top".to_string());
-    session.set_device_provider(host.clone());
-    session.set_hooks(host);
-    session.run_op(&SolverConfig::default(), None)
+    // The hooks fire during the build, so a staging error surfaces from
+    // `compile()` rather than from the solve.
+    let mut session =
+        Session::builder(&design, "Top").provider(host.clone()).hooks(host).compile()?;
+    session.op(&SolverConfig::default(), None)
 }
 
 fn v(op: &OpResult, net: &str) -> f64 {

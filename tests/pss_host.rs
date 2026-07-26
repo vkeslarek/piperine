@@ -1,10 +1,10 @@
 //! SC-06 — PSS host surface: full-wave rectifier ripple vs a settled
 //! transient, tstab equivalence, and the estimated-settle-time diagnostic
-//! (all through `SimSession::run_pss`).
+//! (all through `Session::run_pss`).
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const FIXTURE: &str = r#"
@@ -67,10 +67,10 @@ fn headers_source_map() -> SourceMap {
     map
 }
 
-fn session(top: &str) -> SimSession {
+fn session(top: &str) -> Session {
     let design = piperine_lang::parse_and_elaborate(FIXTURE, &headers_source_map())
         .expect("fixture elaborates");
-    SimSession::new(design, top.to_string())
+    Session::compile(&design, top).expect("session compiles")
 }
 
 /// Full-wave rectifier: the PSS orbit's mean and ripple match the last
@@ -81,14 +81,14 @@ fn rectifier_ripple_matches_settled_transient() {
     let config = SolverConfig::default();
     let out = NetRef { name: "out".into() };
 
-    let s = session("Rectifier");
-    let pss = s.run_pss(period, 0.0, &config).expect("pss orbit");
+    let mut s = session("Rectifier");
+    let pss = s.pss(period, 0.0, &config).expect("pss orbit");
     let w_pss = pss.trace.v(&out).expect("v(out) over the orbit");
 
     // Reference: 14 periods of plain transient (tau = R*C = 2 ms = 2T, so
     // 12 periods is a 0.25% settle), statistics on the last one.
     let long = s
-        .run_tran((14.0 * period, 13.0 * period), Some(period / 100.0), &config, None, false, &[])
+        .tran(14.0 * period, Some(period / 100.0), 13.0 * period, &config, None, false, &[])
         .expect("settled tran");
     let w_ref = long.v(&out).expect("v(out) settled");
 
@@ -118,9 +118,9 @@ fn tstab_equivalence_and_settle_estimate() {
     let config = SolverConfig::default();
     let out = NetRef { name: "out".into() };
 
-    let s = session("SineRc");
-    let a = s.run_pss(period, 0.0, &config).expect("tstab=0");
-    let b = s.run_pss(period, 2.0 * period, &config).expect("tstab=2T");
+    let mut s = session("SineRc");
+    let a = s.pss(period, 0.0, &config).expect("tstab=0");
+    let b = s.pss(period, 2.0 * period, &config).expect("tstab=2T");
     let amp_a =
         a.trace.v(&out).expect("v out").max().abs();
     let amp_b =

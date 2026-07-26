@@ -2,7 +2,7 @@
 //! tasks.md's "Done when": `v("out")`/`v(("out","in"))` in Rust; no bare
 //! `NetRef { name }` needed; `cross`/`dir`/`scale` are enums on both sides.
 
-use piperine::{CrossDirection, NetRef, Scale, SimSession, SolverConfig, Waveform};
+use piperine::{CrossDirection, NetRef, Scale, Session, SolverConfig, Waveform};
 use piperine_lang::SourceMap;
 
 const DIVIDER_PHDL: &str = "\
@@ -32,8 +32,8 @@ fn elaborate(src: &str) -> piperine_lang::Design {
 #[test]
 fn v_accepts_bare_str() {
     let design = elaborate(DIVIDER_PHDL);
-    let session = SimSession::new(design, "Top".to_string());
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let mid = op.v("mid").expect("v(mid)");
     assert!((mid - 5.0).abs() < 1e-9, "mid = 10*1k/2k = 5.0, got {mid}");
 }
@@ -43,8 +43,8 @@ fn v_accepts_bare_str() {
 #[test]
 fn v_accepts_str_tuple_for_differential_read() {
     let design = elaborate(DIVIDER_PHDL);
-    let session = SimSession::new(design, "Top".to_string());
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let diff = op.v(("vin", "mid")).expect("v(vin,mid)");
     // vin = 10.0, mid = 5.0 -> vin - mid = 5.0
     assert!((diff - 5.0).abs() < 1e-9, "vin-mid = 5.0, got {diff}");
@@ -55,8 +55,8 @@ fn v_accepts_str_tuple_for_differential_read() {
 #[test]
 fn v_still_accepts_bare_netref() {
     let design = elaborate(DIVIDER_PHDL);
-    let session = SimSession::new(design, "Top".to_string());
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let net = NetRef { name: "mid".to_string() };
     let mid = op.v(net).expect("v(mid) via NetRef");
     assert!((mid - 5.0).abs() < 1e-9);

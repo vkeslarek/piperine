@@ -1,6 +1,6 @@
 //! DISTO-06 — uniform `.disto` shape (MD-22): the Python
 //! `module.disto(...)` returns the same HD2/HD3 as the Rust
-//! `SimSession::run_disto` on the same cubic VCCS design.
+//! `Session::run_disto` on the same cubic VCCS design.
 
 use piperine_python::embed::run_script;
 
@@ -46,9 +46,12 @@ fn python_disto_matches_rust_disto() {
     let design =
         piperine_lang::parse_and_elaborate(POLY_PHDL, &piperine_lang::SourceMap::dummy())
             .expect("poly stage elaborates");
-    let session = piperine_api::SimSession::new(design, "Top".to_string());
+    let mut session = piperine_api::Session::builder(&design, "Top")
+        .disto(true)
+        .compile()
+        .expect("session compiles");
     let rust = session
-        .run_disto(1e6, None, 0.1, "vout", None, &piperine_api::SolverConfig::default())
+        .disto(1e6, None, 0.1, "vout", None, &piperine_api::SolverConfig::default())
         .expect("rust disto");
 
     // Python side — same design, same call shape.

@@ -426,10 +426,10 @@ impl Session {
     }
 
     /// Run a distortion analysis (`.disto`) on the held circuit (HOST-02).
-    /// Fails loud when this session was compiled with
-    /// [`SessionBuilder::disto`]`(false)` — the 2nd/3rd-derivative kernels
-    /// `.disto` reads were never emitted, so there is nothing to solve
-    /// against.
+    /// Requires a session compiled with
+    /// [`SessionBuilder::disto`]`(true)`; otherwise the 2nd/3rd-derivative
+    /// kernels `.disto` reads were never emitted, and this fails loud rather
+    /// than solving against kernels that do not exist.
     #[allow(clippy::too_many_arguments)]
     pub fn disto(
         &mut self,
@@ -442,8 +442,8 @@ impl Session {
     ) -> Result<crate::results::DistoResult, Error> {
         if !self.opts.disto {
             return Err(Error::Measurement(
-                "`.disto` needs the 2nd/3rd-derivative kernels, and this session was \
-                 compiled with `SessionBuilder::disto(false)` — recompile without it"
+                "`.disto` needs the 2nd/3rd-derivative kernels, which are opt-in — \
+                 compile this session with `Session::builder(..).disto(true)`"
                     .to_string(),
             ));
         }
@@ -616,10 +616,12 @@ impl SessionBuilder<'_> {
         self
     }
 
-    /// Include (`true`, the default) or skip (`false`) the `.disto`
-    /// 2nd/3rd-derivative kernels. Skipping them saves a real Cranelift
-    /// compile cost on a many-branch device; [`Session::disto`] then fails
-    /// loud rather than solving against kernels that were never compiled.
+    /// Include (`true`) or leave out (`false`, the default) the `.disto`
+    /// 2nd/3rd-derivative kernels. `.disto` is the only analysis that reads
+    /// them, and they compile one Cranelift function per ordered
+    /// controlling-branch combination — enough, on a many-branch device like a
+    /// MOSFET, to overrun the JIT backend. So they are opt-in, and
+    /// [`Session::disto`] fails loud on a session that did not ask for them.
     pub fn disto(mut self, enabled: bool) -> Self {
         self.opts.disto = enabled;
         self

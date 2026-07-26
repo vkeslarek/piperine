@@ -71,7 +71,15 @@ impl _Module {
     /// call gets its own session + fork, so results never leak between calls
     /// (spec §9).
     fn session(&self) -> PyResult<Session> {
-        let mut builder = Session::builder(&self.design, &self.name);
+        self.session_with_disto(false)
+    }
+
+    /// [`Self::session`], plus the `.disto` 2nd/3rd-derivative kernels.
+    /// `disto` is the only analysis that reads them and they are opt-in
+    /// (a many-branch device overruns the JIT backend compiling them), so it
+    /// is the only caller.
+    fn session_with_disto(&self, disto: bool) -> PyResult<Session> {
+        let mut builder = Session::builder(&self.design, &self.name).disto(disto);
         for ((label, param), value) in self.staged.borrow().iter() {
             builder = builder.stage(label, param, value.clone());
         }
@@ -264,7 +272,7 @@ impl _Module {
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<DistoMetrics> {
-        let mut session = self.session()?;
+        let mut session = self.session_with_disto(true)?;
         let result = session
             .disto(f1, f2, amplitude, output, output_ref, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;

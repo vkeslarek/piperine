@@ -14,25 +14,21 @@ use crate::results::NetLookup;
 
 /// The build-time options a [`Session`] is compiled with, kept together so
 /// the compiled session can reproduce its own build (`Session::rebuild`).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(super) struct BuildOptions {
     /// Builds `@device`-annotated instances (SPEC Part VI §7).
     pub(super) provider: Option<Rc<dyn piperine_codegen::device::DeviceProvider>>,
     /// Lifecycle hooks (SPEC Part VI §8) fired around builds and solves.
     pub(super) hooks: Option<Rc<dyn crate::hooks::SimHooks>>,
     /// Whether the compiled kernels include the `.disto` 2nd/3rd-derivative
-    /// set. `true` by default — `CircuitCompiler::new`'s own default, and
-    /// what makes [`Session::disto`] usable straight after a plain
-    /// [`Session::compile`]. Those kernels are a real per-branch-combination
-    /// Cranelift cost, so a caller that will never run `.disto` on this
-    /// circuit opts out with [`SessionBuilder::disto`]`(false)`.
+    /// set. **`false` by default**, and opted into with
+    /// [`SessionBuilder::disto`](super::SessionBuilder::disto)`(true)`, which
+    /// is what `.disto` itself needs. Those kernels compile one small
+    /// Cranelift function per ordered controlling-branch combination, so a
+    /// many-branch device (a MOSFET) does not merely pay a compile cost for
+    /// them — it overruns the JIT backend outright. Every analysis but
+    /// `.disto` leaves them off.
     pub(super) disto: bool,
-}
-
-impl Default for BuildOptions {
-    fn default() -> Self {
-        Self { provider: None, hooks: None, disto: true }
-    }
 }
 
 /// The one build recipe: consume `design`'s staged overrides, lower to

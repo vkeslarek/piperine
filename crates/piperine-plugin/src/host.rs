@@ -424,8 +424,9 @@ impl PluginHost {
     }
 }
 
-/// The simulation seam (Plugin plan Phase 3): the host API's `SimSession`
-/// fires the per-analysis lifecycle hooks through this.
+/// The simulation seam (Plugin plan Phase 3): the host API's `Session` fires
+/// the build hooks from `SessionBuilder::compile` and `after_solve` from every
+/// analysis, through this.
 impl SimHooks for PluginHost {
     fn transform_design(&self, design: &Design) -> Result<(), String> {
         if self.is_empty() {

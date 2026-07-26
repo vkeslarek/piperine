@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::Value;
 use piperine_lang::SourceMap;
@@ -18,55 +18,61 @@ fn headers_source_map() -> SourceMap {
     map
 }
 
-fn diode_session() -> SimSession {
+fn diode_design() -> piperine_lang::Design {
     let phdl = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/ngspice/diode_iv.phdl"));
     let src = std::fs::read_to_string(&phdl).expect("diode_iv.phdl fixture");
-    let design =
-        piperine_lang::parse_and_elaborate(&src, &headers_source_map()).expect("elaboration");
-    SimSession::new(design, "Top".to_string())
+    piperine_lang::parse_and_elaborate(&src, &headers_source_map()).expect("elaboration")
 }
 
-/// `run_op_sweep` JITs exactly one circuit build for the whole sweep, and
-/// every point matches the staged per-point path within the validation
-/// tolerance (`|Δ| ≤ 1e-9 + 1e-3·max`).
+/// A `Session::sweep` JITs nothing at all — the whole sweep runs on the one
+/// build `Session::compile` produced — and every point matches the staged
+/// per-point path (a fresh compile per value) within the validation tolerance
+/// (`|Δ| ≤ 1e-9 + 1e-3·max`).
 #[test]
 fn sweep_compiles_once_and_matches_the_staged_path() {
-    let session = diode_session();
+    let design = diode_design();
     let source = "v1";
     let (branch_a, branch_b) = ("vin", "gnd");
     let values: Vec<f64> = (0..=12).map(|i| -0.6 + 0.1 * i as f64).collect();
     let config = SolverConfig::default();
-    let read_i = |op: &piperine::OpResult| {
-        op.i((branch_a, branch_b))
-            .expect("current readback")
-    };
+    let read_i = |op: &piperine::OpResult| op.i((branch_a, branch_b)).expect("current readback");
 
-    // Reference: the staged per-point path (build_circuit per call).
+    // Reference: the staged per-point path (one compile per point).
     let reference: Vec<f64> = values
         .iter()
         .map(|&v| {
-            session.stage(source, "dc", Value::Real(v));
-            read_i(&session.run_op(&config, None).expect("staged op"))
+            let mut staged = Session::builder(&design, "Top")
+                .stage(source, "dc", Value::Real(v))
+                .compile()
+                .expect("staged compile");
+            read_i(&staged.op(&config, None).expect("staged op"))
         })
         .collect();
 
     // One single build, for the per-build compile count.
     let before_single = AnalogKernel::compile_count();
-    session.run_op(&config, None).expect("single op");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
     let per_build = AnalogKernel::compile_count() - before_single;
     assert!(per_build > 0, "a build must JIT at least one kernel");
 
-    // The compile-once sweep.
+    // The compile-once sweep: restamp `source.dc` on the built circuit and
+    // solve an operating point per point.
     let before_sweep = AnalogKernel::compile_count();
-    let ops = session
-        .run_op_sweep(source, "dc", &values, &config, None)
-        .expect("compile-once sweep");
+    let mut ops = Vec::with_capacity(values.len());
+    {
+        let mut sweep = session.sweep(source, "dc", &values);
+        while let Some(point) = sweep.next() {
+            let mut point = point.expect("sweep point restamps");
+            ops.push(point.op(&config, None).expect("swept op"));
+        }
+    }
     let sweep_compiles = AnalogKernel::compile_count() - before_sweep;
 
     assert_eq!(ops.len(), values.len());
     assert_eq!(
-        sweep_compiles, per_build,
-        "MD-18: a {}-point sweep must JIT one build ({per_build} kernel(s)), got {sweep_compiles}",
+        sweep_compiles, 0,
+        "MD-18: a {}-point sweep restamps on the one build ({per_build} kernel(s)) and must \
+         JIT nothing more, got {sweep_compiles}",
         values.len()
     );
 
@@ -82,13 +88,15 @@ fn sweep_compiles_once_and_matches_the_staged_path() {
     // and unknown parameters both fail with the offending name. (Same test
     // body — a second `#[test]` in this file would run concurrently and
     // pollute the compile-count deltas above.)
-    let err = session
-        .run_op_sweep("nope", "dc", &[0.0], &config, None)
-        .expect_err("unknown label must fail");
+    let err = match session.sweep("nope", "dc", &[0.0]).next().expect("one point") {
+        Err(e) => e,
+        Ok(_) => panic!("unknown label must fail"),
+    };
     assert!(err.to_string().contains("nope"), "names the label: {err}");
 
-    let err = session
-        .run_op_sweep("v1", "bogus_param", &[0.0], &config, None)
-        .expect_err("unknown param must fail");
+    let err = match session.sweep("v1", "bogus_param", &[0.0]).next().expect("one point") {
+        Err(e) => e,
+        Ok(_) => panic!("unknown param must fail"),
+    };
     assert!(err.to_string().contains("bogus_param"), "names the param: {err}");
 }

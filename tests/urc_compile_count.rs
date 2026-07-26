@@ -20,12 +20,12 @@
 //!     (res + cap) — flatten neither drops nor invents leaf kernels.
 //!   - FLAT-06: a multi-value sweep restamps on ONE build's kernels; the
 //!     restamp path is loud on a flattened-leaf label (`u1.s0.r1`).
-//!   - FLAT-07 / MD-18: a 20-point sweep JITs exactly one build's worth of
-//!     kernels, not one per point — `sweep_compiles == per_build`.
+//!   - FLAT-07 / MD-18: a 20-point sweep JITs nothing at all — the build
+//!     happened at `Session::compile`, and `sweep_compiles == 0`.
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::{SourceMap, Value};
 
@@ -57,10 +57,9 @@ fn urc_top(urc_mod: &str) -> String {
     )
 }
 
-fn urc_session(urc_mod: &str) -> SimSession {
-    let design = piperine_lang::parse_and_elaborate(&urc_top(urc_mod), &headers_source_map())
-        .unwrap_or_else(|e| panic!("{urc_mod} elaborates: {e:?}"));
-    SimSession::new(design, "Top".to_string())
+fn urc_design(urc_mod: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(&urc_top(urc_mod), &headers_source_map())
+        .unwrap_or_else(|e| panic!("{urc_mod} elaborates: {e:?}"))
 }
 
 fn v_out(op: &piperine::OpResult) -> f64 {
@@ -80,15 +79,17 @@ fn flatten_preserves_kernel_keying_and_restamp_invariants() {
     // leaf-only netlist of {vsrc, res, cap}; both compile the same kernel
     // count K. If flatten dropped a leaf or invented a new leaf module
     // name, K would differ between urc5 and urc10.
-    let sess5 = urc_session("urc5");
+    let design5 = urc_design("urc5");
     let before_5 = AnalogKernel::compile_count();
-    let op5 = sess5.run_op(&config, None).expect("urc5 op");
+    let mut sess5 = Session::compile(&design5, "Top").expect("urc5 compiles");
     let delta_5 = AnalogKernel::compile_count() - before_5;
+    let op5 = sess5.op(&config, None).expect("urc5 op");
 
-    let sess10 = urc_session("urc10");
+    let design10 = urc_design("urc10");
     let before_10 = AnalogKernel::compile_count();
-    let op10 = sess10.run_op(&config, None).expect("urc10 op");
+    let mut sess10 = Session::compile(&design10, "Top").expect("urc10 compiles");
     let delta_10 = AnalogKernel::compile_count() - before_10;
+    let op10 = sess10.op(&config, None).expect("urc10 op");
 
     assert!(
         delta_5 >= 2,
@@ -120,8 +121,10 @@ fn flatten_preserves_kernel_keying_and_restamp_invariants() {
     // needed beyond the single build's worth. Also: the restamp path is
     // LOUD on a flattened label that does not exist (regression of the
     // flat-label host contract from FLAT-03).
-    let bad = sess5.run_op_sweep("nope.s0.r1", "r", &[100.0], &config, None);
-    let err = bad.expect_err("unknown flattened label must fail loud");
+    let err = match sess5.sweep("nope.s0.r1", "r", &[100.0]).next().expect("one point") {
+        Err(e) => e,
+        Ok(_) => panic!("unknown flattened label must fail loud"),
+    };
     assert!(
         err.to_string().contains("nope"),
         "FLAT-06: restamp error names the bad label: {err}"
@@ -134,35 +137,44 @@ fn flatten_preserves_kernel_keying_and_restamp_invariants() {
     // NOT 20·per_build.
     let r_values: Vec<f64> = (0..20).map(|i| 50.0 + 10.0 * i as f64).collect(); // 50Ω … 240Ω
 
-    // Reference: per-point staged single-build Vout (each point rebuilds).
+    // Reference: per-point staged Vout — one fresh compile per point.
     let reference: Vec<f64> = r_values
         .iter()
         .map(|&r| {
-            sess5.stage("u1.s0.r1", "r", Value::Real(r));
-            v_out(&sess5.run_op(&config, None).expect("staged op"))
+            let mut staged = Session::builder(&design5, "Top")
+                .stage("u1.s0.r1", "r", Value::Real(r))
+                .compile()
+                .expect("staged compile");
+            v_out(&staged.op(&config, None).expect("staged op"))
         })
         .collect();
 
     // Single-build compile count (one fresh build after the reference loop).
     let before_single = AnalogKernel::compile_count();
-    sess5.run_op(&config, None).expect("single op");
+    let _fresh = Session::compile(&design5, "Top").expect("single build");
     let per_build = AnalogKernel::compile_count() - before_single;
     assert_eq!(
         per_build, delta_5,
         "per_build kernel count is stable across urc5 builds (got {per_build}, expected {delta_5})"
     );
 
-    // The compile-once sweep.
+    // The compile-once sweep, on the build made at the top of this test.
     let before_sweep = AnalogKernel::compile_count();
-    let ops = sess5
-        .run_op_sweep("u1.s0.r1", "r", &r_values, &config, None)
-        .expect("compile-once sweep");
+    let mut ops = Vec::with_capacity(r_values.len());
+    {
+        let mut sweep = sess5.sweep("u1.s0.r1", "r", &r_values);
+        while let Some(point) = sweep.next() {
+            let mut point = point.expect("sweep point restamps");
+            ops.push(point.op(&config, None).expect("swept op"));
+        }
+    }
     let sweep_compiles = AnalogKernel::compile_count() - before_sweep;
 
     assert_eq!(ops.len(), r_values.len(), "one OpResult per sweep value");
     assert_eq!(
-        sweep_compiles, per_build,
-        "FLAT-07 / MD-18: a {}-point sweep must JIT one build ({per_build} kernel(s)), got {sweep_compiles}",
+        sweep_compiles, 0,
+        "FLAT-07 / MD-18: a {}-point sweep restamps on the one build ({per_build} kernel(s)) \
+         and must JIT nothing more, got {sweep_compiles}",
         r_values.len()
     );
 

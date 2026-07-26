@@ -1,5 +1,5 @@
 //! PZ-07 — uniform `.pz` shape (MD-22): the Python `module.pz(...)` returns
-//! the same poles/zeros as the Rust `SimSession::run_pz` on the same series
+//! the same poles/zeros as the Rust `Session::run_pz` on the same series
 //! RLC design.
 
 use piperine_python::embed::run_script;
@@ -42,9 +42,9 @@ fn python_pz_matches_rust_pz() {
     let design =
         piperine_lang::parse_and_elaborate(RLC_PHDL, &piperine_lang::SourceMap::dummy())
             .expect("RLC elaborates");
-    let session = piperine_api::SimSession::new(design, "Top".to_string());
+    let mut session = piperine_api::Session::compile(&design, "Top").expect("session compiles");
     let rust = session
-        .run_pz("v1", "b", None, &piperine_api::SolverConfig::default())
+        .pz("v1", "b", None, &piperine_api::SolverConfig::default())
         .expect("rust pz");
     let mut rust_poles = rust.poles.clone();
     rust_poles.sort_by(|a, b| a.im.partial_cmp(&b.im).unwrap());

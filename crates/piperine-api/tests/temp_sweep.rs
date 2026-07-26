@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use piperine_api::{SimSession, SolverConfig};
+use piperine_api::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// 5 V through 1 kΩ into a default-model silicon diode (IS = 1e-14): the
@@ -44,10 +44,10 @@ fn headers_source_map() -> SourceMap {
 fn vf_at(t_kelvin: f64) -> f64 {
     let design = piperine_lang::parse_and_elaborate(DIODE_BIAS, &headers_source_map())
         .expect("fixture elaborates");
-    let session = SimSession::new(design, "TempBias".to_string());
+    let mut session = Session::compile(&design, "TempBias").expect("session compiles");
     let config = SolverConfig { temperature: t_kelvin, ..Default::default() };
     session
-        .run_op(&config, None)
+        .op(&config, None)
         .expect("op solves")
         .v("vd")
         .expect("v(vd)")

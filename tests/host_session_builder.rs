@@ -75,8 +75,8 @@ fn mid() -> NetRef {
 }
 
 /// A staged override reaches the compilation: `r_top.r = 2 kΩ` turns the
-/// 3k/2k divider (`v(mid) = 2.0 V`) into a 2k/2k one (`2.5 V`) — the value
-/// `SimSession::stage` + `run_op` produced. And the write is the builder's
+/// 3k/2k divider (`v(mid) = 2.0 V`) into a 2k/2k one (`2.5 V`) — the value the
+/// staged operating point produced before the collapse. And the write is the builder's
 /// own: the caller's design still compiles to the authored `2.0 V`.
 #[test]
 fn builder_stage_reaches_the_compiled_circuit_and_leaves_the_design_alone() {
@@ -243,30 +243,30 @@ fn a_failing_hook_aborts_the_build_loudly() {
     );
 }
 
-/// The `.disto` kernels are on by default (so `Session::disto` works straight
-/// after `Session::compile`), and `disto(false)` — the opt-out that skips
-/// their Cranelift cost — makes `Session::disto` fail loud instead of solving
-/// against kernels that were never emitted.
+/// The `.disto` 2nd/3rd-derivative kernels are opt-in: `disto(true)` makes
+/// `Session::disto` solve, and the default build makes it fail loud naming the
+/// opt-in — never solve against kernels that were never emitted. Every other
+/// analysis runs either way.
 #[test]
-fn disto_kernels_default_on_and_opting_out_is_loud() {
+fn disto_kernels_are_opt_in_and_asking_without_them_is_loud() {
     let design = elaborate(POLY_PHDL);
     let config = SolverConfig::default();
 
-    let mut with = Session::builder(&design, "Top").compile().expect("default session compiles");
-    let disto = with.disto(1e6, None, 0.1, "vout", None, &config).expect("disto solves by default");
-    assert!(disto.hd2.is_some(), "the default build carries the 2nd-derivative kernels");
+    let mut with =
+        Session::builder(&design, "Top").disto(true).compile().expect("opted-in session compiles");
+    let disto = with.disto(1e6, None, 0.1, "vout", None, &config).expect("disto solves when asked for");
+    assert!(disto.hd2.is_some(), "the opted-in build carries the 2nd-derivative kernels");
 
-    let mut without =
-        Session::builder(&design, "Top").disto(false).compile().expect("opted-out session compiles");
+    let mut without = Session::builder(&design, "Top").compile().expect("default session compiles");
     let err = without
         .disto(1e6, None, 0.1, "vout", None, &config)
-        .expect_err("`.disto` on a session built without the disto kernels must fail loud");
+        .expect_err("`.disto` without the disto kernels must fail loud");
     assert!(
-        err.to_string().contains("disto(false)"),
-        "the error names the opt-out that caused it: {err}"
+        err.to_string().contains("disto(true)"),
+        "the error names the opt-in the caller needs: {err}"
     );
 
-    // The opt-out is scoped to `.disto`: every other analysis still runs.
+    // The default is scoped to `.disto`: every other analysis still runs.
     let op = without.op(&config, None).expect("op still solves without the disto kernels");
     assert!(op.v(NetRef { name: "vout".into() }).is_ok(), "v(vout) readable");
 }

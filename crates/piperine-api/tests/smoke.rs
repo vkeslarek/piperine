@@ -2,7 +2,7 @@
 //! `piperine_api` (not through the root shell), and the crate's dependency
 //! set is exactly {lang, codegen, solver}: no python, no cli, no project.
 
-use piperine_api::{SimSession, SolverConfig};
+use piperine_api::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// Self-contained divider (own discipline + devices, no prelude):
@@ -39,8 +39,8 @@ fn op_analysis_through_piperine_api() {
     let map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
     let design =
         piperine_lang::parse_and_elaborate(DIVIDER_PHDL, &map).expect("divider elaborates");
-    let session = SimSession::new(design, "Divider".to_string());
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::compile(&design, "Divider").expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let mid = op.v("mid").expect("v(mid)");
     assert!((mid - 5.0).abs() < 1e-9, "divider midpoint: {mid}");
 }

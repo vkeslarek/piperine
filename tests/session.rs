@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 
 /// Self-contained divider (defines its own discipline + devices — no prelude
@@ -41,10 +41,10 @@ fn headers_source_map() -> SourceMap {
     map
 }
 
-fn divider_session() -> SimSession {
+fn divider_session() -> Session {
     let design = piperine_lang::parse_and_elaborate(DIVIDER_PHDL, &headers_source_map())
         .expect("divider elaborates");
-    SimSession::new(design, "Divider".to_string())
+    Session::compile(&design, "Divider").expect("session compiles")
 }
 
 /// Default divider: `v(mid) = 2.0 V`; the top resistor carries
@@ -53,8 +53,8 @@ fn divider_session() -> SimSession {
 /// from terminal `a` into the device, so a delivering source is negative).
 #[test]
 fn run_op_solves_and_reads_back_by_net_name() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let mid = NetRef { name: "mid".into() };
     let vin = NetRef { name: "vin".into() };
     let gnd = NetRef { name: "gnd".into() };
@@ -64,13 +64,17 @@ fn run_op_solves_and_reads_back_by_net_name() {
     assert!((op.i((&vin, &gnd)).expect("i(vin,gnd)") + 1e-3).abs() < 1e-12);
 }
 
-/// A staged override is consumed by the next analysis: `r_top.r = 2e3` →
-/// `v(mid) = 2.5 V`.
+/// A staged override is consumed by the compilation it is staged on:
+/// `r_top.r = 2e3` → `v(mid) = 2.5 V`.
 #[test]
 fn staged_override_reaches_the_next_analysis() {
-    let session = divider_session();
-    session.stage("r_top", "r", Value::Real(2e3));
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let design = piperine_lang::parse_and_elaborate(DIVIDER_PHDL, &headers_source_map())
+        .expect("divider elaborates");
+    let mut session = Session::builder(&design, "Divider")
+        .stage("r_top", "r", Value::Real(2e3))
+        .compile()
+        .expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let mid = NetRef { name: "mid".into() };
     assert!((op.v(&mid).expect("v(mid)") - 2.5).abs() < 1e-9);
 }
@@ -78,8 +82,8 @@ fn staged_override_reaches_the_next_analysis() {
 /// An unknown net name fails loud — never a silent 0.0.
 #[test]
 fn unaddressable_net_is_a_loud_error() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let bogus = NetRef { name: "bogus".into() };
     let err = op.v(&bogus).expect_err("bogus net must fail");
     assert!(err.to_string().contains("net `bogus` is not addressable"));
@@ -115,10 +119,10 @@ mod RcCharge() {
 }
 ";
 
-fn rc_session() -> SimSession {
+fn rc_session() -> Session {
     let design = piperine_lang::parse_and_elaborate(RC_PHDL, &headers_source_map())
         .expect("rc elaborates");
-    SimSession::new(design, "RcCharge".to_string())
+    Session::compile(&design, "RcCharge").expect("session compiles")
 }
 
 /// `run_tran` `start`: the solver integrates from t=0 (state evolution
@@ -128,9 +132,9 @@ fn rc_session() -> SimSession {
 /// `>= start`, not 0.
 #[test]
 fn tran_delayed_start_records_from_start_not_zero() {
-    let session = rc_session();
+    let mut session = rc_session();
     let trace = session
-        .run_tran((5e-3, 2.5e-3), None, &SolverConfig::default(), None, false, &[])
+        .tran(5e-3, None, 2.5e-3, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let axis = trace.axis();
     assert!(axis.len() > 1, "delayed-start trace still has samples");
@@ -145,10 +149,10 @@ fn tran_delayed_start_records_from_start_not_zero() {
 /// initial guess; a linear circuit converges to the same point regardless.
 #[test]
 fn op_nodeset_hint_is_accepted() {
-    let session = rc_session();
+    let mut session = rc_session();
     let nodeset = std::collections::HashMap::from([("out".to_string(), 5.0)]);
     let op = session
-        .run_op(&SolverConfig::default(), Some(&nodeset))
+        .op(&SolverConfig::default(), Some(&nodeset))
         .expect("op with nodeset solves");
     let out = NetRef { name: "out".into() };
     assert!(op.v(&out).expect("v(out)") > 4.9);
@@ -160,9 +164,9 @@ fn op_nodeset_hint_is_accepted() {
 /// value: 5 V / (3k + 2k) = 1 mA at every sample, from t=0 on.
 #[test]
 fn trace_i_over_time_recomputes_a_resistor_current() {
-    let session = divider_session();
+    let mut session = divider_session();
     let trace = session
-        .run_tran((1e-3, 0.0), Some(1e-4), &SolverConfig::default(), None, false, &[])
+        .tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
@@ -181,9 +185,9 @@ fn trace_i_over_time_recomputes_a_resistor_current() {
 /// zero (it does not only handle ideal sources).
 #[test]
 fn trace_i_over_time_exercises_the_reactive_path() {
-    let session = rc_session();
+    let mut session = rc_session();
     let trace = session
-        .run_tran((1e-3, 0.0), Some(1e-4), &SolverConfig::default(), None, false, &[])
+        .tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let vsrc = NetRef { name: "vsrc".into() };
     let out = NetRef { name: "out".into() };
@@ -225,10 +229,10 @@ mod RlIdt() {
 }
 ";
 
-fn rl_idt_session() -> SimSession {
+fn rl_idt_session() -> Session {
     let design = piperine_lang::parse_and_elaborate(RL_IDT_PHDL, &headers_source_map())
         .expect("RL idt fixture elaborates");
-    SimSession::new(design, "RlIdt".to_string())
+    Session::compile(&design, "RlIdt").expect("session compiles")
 }
 
 /// Enabled: the recorded state bank lets `Trace.i` recompute the inductor
@@ -237,9 +241,9 @@ fn rl_idt_session() -> SimSession {
 /// analytic settled value `V/R·(1 − e^(−6))` at t = 6τ.
 #[test]
 fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
-    let session = rl_idt_session();
+    let mut session = rl_idt_session();
     let trace = session
-        .run_tran((60e-6, 0.0), Some(0.5e-6), &SolverConfig::default(), None, true, &[])
+        .tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, true, &[])
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
@@ -272,9 +276,9 @@ fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
 /// device and the opt-in.
 #[test]
 fn trace_i_on_stateful_device_fails_loud_when_recording_disabled() {
-    let session = rl_idt_session();
+    let mut session = rl_idt_session();
     let trace = session
-        .run_tran((60e-6, 0.0), Some(0.5e-6), &SolverConfig::default(), None, false, &[])
+        .tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let mid = NetRef { name: "mid".into() };
     let gnd = NetRef { name: "gnd".into() };
@@ -314,13 +318,16 @@ mod Board() {
 fn op_result_reads_digital_nets_directly() {
     let design = piperine_lang::parse_and_elaborate(DIGITAL_PHDL, &headers_source_map())
         .expect("digital elaborates");
-    let session = SimSession::new(design, "Board".to_string());
+    let mut session = Session::compile(&design, "Board").expect("session compiles");
     let na = NetRef { name: "na".into() };
     let ny = NetRef { name: "ny".into() };
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     assert!(op.v(&na).expect("v(na)").abs() < 1e-9, "driver low");
     assert!((op.v(&ny).expect("v(ny)") - 1.0).abs() < 1e-9, "inverter high");
-    session.stage("d", "level", Value::Real(1.0));
-    let op2 = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut staged = Session::builder(&design, "Board")
+        .stage("d", "level", Value::Real(1.0))
+        .compile()
+        .expect("session compiles");
+    let op2 = staged.op(&SolverConfig::default(), None).expect("op solves");
     assert!(op2.v(&ny).expect("v(ny)").abs() < 1e-9, "inverter follows the staged input");
 }

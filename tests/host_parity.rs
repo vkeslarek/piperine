@@ -103,7 +103,8 @@ _probe()
 #[test]
 fn host_parity_analyses_match_on_both_hosts() {
     let design = piperine_lang::parse_and_elaborate(RLC_PHDL, &SourceMap::dummy()).expect("RLC elaborates");
-    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let mut session =
+        Session::builder(&design, "Top").disto(true).compile().expect("session compiles");
     call_every_rust_analysis(&mut session); // fails to COMPILE if Rust drifts
 
     let out = std::env::temp_dir().join("piperine_host_parity_missing.txt");

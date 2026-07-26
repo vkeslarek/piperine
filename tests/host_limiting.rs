@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const DIVIDER_PHDL: &str = "\
@@ -85,8 +85,8 @@ fn headers_source_map() -> SourceMap {
 fn stats_limiting_is_empty_for_linear_circuit() {
     let design = piperine_lang::parse_and_elaborate(DIVIDER_PHDL, &headers_source_map())
         .expect("divider elaborates");
-    let session = SimSession::new(design, "Divider".to_string());
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::compile(&design, "Divider").expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let limiting = op.stats().limiting.as_slice();
     assert!(
         limiting.is_empty(),
@@ -102,8 +102,8 @@ fn stats_limiting_is_empty_for_linear_circuit() {
 fn stats_limiting_accessible_on_nonlinear_circuit() {
     let design = piperine_lang::parse_and_elaborate(DIODE_PHDL, &headers_source_map())
         .expect("diode elaborates");
-    let session = SimSession::new(design, "Top".to_string());
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     // The diode converges; limiting is a `&[LimitingReport]` we can read.
     // It may be empty (limiter released) or non-empty (still active) — both
     // are valid. The assertion is that the field IS readable, not its value.

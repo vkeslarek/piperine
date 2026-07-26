@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NoiseTrace, SimSession, SolverConfig};
+use piperine::{NoiseTrace, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// A resistor + output capacitor driven by a DC source — a minimal circuit
@@ -51,9 +51,9 @@ fn headers_source_map() -> SourceMap {
 fn noise_trace() -> NoiseTrace {
     let design = piperine_lang::parse_and_elaborate(NOISE_PHDL, &headers_source_map())
         .expect("noise fixture elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
     session
-        .run_noise("out", "gnd", (1.0, 1e6), 10, true, &SolverConfig::default())
+        .noise("out", "gnd", (1.0, 1e6), 10, true, &SolverConfig::default())
         .expect("noise solves")
 }
 

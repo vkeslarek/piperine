@@ -172,3 +172,35 @@ Also closed in T26 (design Risks row 3): the `info.instances` param mirror
 existed in four hand-inlined copies plus a fifth inside `SimSession`. There is
 now exactly one, the private `mirror_param(&mut CircuitBuildInfo, label, param,
 value)`, and every restamp path calls it.
+
+---
+
+## 7. T29 correction — the `disto` default is `false`, and why that matters
+
+§3.2 concluded that `SimSession`'s `compile_disto = false` "was never a
+different answer, only a compile cost", and set the builder's default to
+`true`. **That was wrong, and T29's gate caught it**: with the disto kernels on,
+eight `ngspice_validation.rs` MOSFET cases (`nmos2_*`, `nmos3_*`) panic inside
+`cranelift-jit-0.113.1/src/backend.rs:307` with
+`TryFromIntError(())`. The kernels compile one small Cranelift function per
+*ordered controlling-branch combination*, and a MOS2/MOS3 model has enough
+branches to overrun the JIT backend outright.
+
+So the flag is not a cost knob, it is a correctness gate, and `SimSession`'s
+opt-in default was load-bearing.
+
+**Resolution: `BuildOptions::disto` defaults to `false`**, `disto(true)` opts
+in, and `Session::disto` fails loud on a session that did not (the guard added
+in T25 is what makes the default safe). Call sites that run `.disto` say so:
+`tests/disto.rs`, `tests/host_result_types.rs`, `tests/session_analyses.rs`,
+`tests/host_parity.rs`, `tests/ngspice_validation.rs`'s spectral session,
+`crates/piperine-python/tests/disto_parity.rs`, and
+`_Module::session_with_disto(true)` (`crates/piperine-python/src/module.rs`) —
+the same "only the `.disto` entry point asks" rule `SimSession` had.
+
+**This is a deliberate behavior change to `Session`, recorded rather than
+silently resolved.** It is also a latent bug the collapse found:
+`Session::compile` has always compiled the disto kernels unconditionally
+(`CircuitCompiler::new` defaults the flag on), so **`Session::compile` on any
+MOS2/MOS3 circuit could not JIT at all** before this change. No test covered
+that combination, because every MOSFET test went through `SimSession`.

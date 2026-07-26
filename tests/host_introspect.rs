@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_solver::prelude::{TerminalKind, ObservableKind, Invalidation, ParamScope};
 
@@ -51,10 +51,10 @@ fn headers_source_map() -> SourceMap {
     map
 }
 
-fn introspect_session() -> SimSession {
+fn introspect_session() -> Session {
     let design = piperine_lang::parse_and_elaborate(INTROSPECT_PHDL, &headers_source_map())
         .expect("fixture elaborates");
-    SimSession::new(design, "Top".to_string())
+    Session::compile(&design, "Top").expect("session compiles")
 }
 
 /// HOST-09 AC3a: `inst.model` returns a `ModelDescriptor` whose `type_id`
@@ -62,8 +62,8 @@ fn introspect_session() -> SimSession {
 /// PIA-02 fallback — no regression for stdlib models).
 #[test]
 fn model_descriptor_echoes_module_name_when_no_at_model() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let model = r_top.model();
     assert!(
@@ -80,8 +80,8 @@ fn model_descriptor_echoes_module_name_when_no_at_model() {
 /// HOST-09-specific value-add over the pre-existing port→net connectivity.
 #[test]
 fn terminals_carry_external_kind_for_declared_ports() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let terminals = r_top.terminals();
     assert!(terminals.len() >= 2, "Resistor declares at least 2 terminals (p, n): {terminals:?}");
@@ -102,8 +102,8 @@ fn terminals_carry_external_kind_for_declared_ports() {
 /// `ObservableKind::Var` and a non-negative cost.
 #[test]
 fn observables_lists_named_var_catalog() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let observables = r_top.observables();
     assert!(!observables.is_empty(), "Resistor declares at least the `cond` observable");
@@ -122,8 +122,8 @@ fn observables_lists_named_var_catalog() {
 /// an empty view silently. Mirrors HOST-07's fail-loud shape.
 #[test]
 fn unknown_instance_label_fails_loud() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let err = op.instance("ghost").expect_err("unknown label must fail");
     assert!(
         err.to_string().contains("ghost"),
@@ -137,8 +137,8 @@ fn unknown_instance_label_fails_loud() {
 /// list the ports; observables may be empty (a source with no vars).
 #[test]
 fn introspection_works_on_opvarless_device() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let src = op.instance("src").expect("src is a labeled instance");
     let model = src.model();
     assert!(
@@ -158,8 +158,8 @@ fn introspection_works_on_opvarless_device() {
 /// (no explicit bounds declared).
 #[test]
 fn param_descriptor_reflects_bounds_scope_invalidation() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let r = r_top.param("r").expect("r_top declares param r");
     assert_eq!(r.name, "r");
@@ -171,8 +171,8 @@ fn param_descriptor_reflects_bounds_scope_invalidation() {
 /// `None` silently. The error names the param and lists available ones.
 #[test]
 fn unknown_param_fails_loud() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let err = r_top.param("bogus").expect_err("unknown param must fail");
     assert!(err.to_string().contains("bogus"), "error names the bad param: {err}");
@@ -183,8 +183,8 @@ fn unknown_param_fails_loud() {
 /// Resistor declares at least `r` and the VoltageSource declares `voltage`.
 #[test]
 fn params_lists_the_full_parameter_catalog() {
-    let session = introspect_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = introspect_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let params = r_top.params();
     assert!(!params.is_empty(), "Resistor declares at least param r");

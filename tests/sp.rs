@@ -1,8 +1,8 @@
-//! `.sp` host surface (SP-04, SP-06): `SimSession::run_sp` — a shunt-C
+//! `.sp` host surface (SP-04, SP-06): `Session::run_sp` — a shunt-C
 //! low-pass declared with `@rfport(num, z0)` ports, driven entirely through
 //! `piperine::` (no bench crate, no interpreter).
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 use num_complex::Complex64;
 
@@ -35,9 +35,9 @@ mod Top() {
 fn shunt_c_lowpass_s21_matches_closed_form_rolloff() {
     let design = piperine_lang::parse_and_elaborate(SHUNT_C_LOWPASS_PHDL, &SourceMap::dummy())
         .expect("shunt-C low-pass elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
     let result = session
-        .run_sp(1e3, 1e9, 5, true, &SolverConfig::default())
+        .sp(1e3, 1e9, 5, true, &SolverConfig::default())
         .expect(".sp solves on the shunt-C low-pass");
 
     assert_eq!(result.n_ports, 2);
@@ -78,7 +78,7 @@ discipline Electrical { potential v: Real; flow i: Real; }
 mod Top() { wire gnd : Electrical; }
 ";
     let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborates");
-    let session = SimSession::new(design, "Top".to_string());
-    let result = session.run_sp(1e3, 1e9, 5, true, &SolverConfig::default());
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let result = session.sp(1e3, 1e9, 5, true, &SolverConfig::default());
     assert!(result.is_err(), "a module with no @rfport ports must fail loud (SP-05)");
 }

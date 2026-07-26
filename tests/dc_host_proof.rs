@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_codegen::{AnalogKernel, CircuitCompiler};
 use piperine_lang::{SourceMap, Value};
 use piperine_solver::prelude::Context;
@@ -50,10 +50,12 @@ fn headers_source_map() -> SourceMap {
 fn fresh_build_v_mid(v_dc: f64, r_bot: f64) -> f64 {
     let design = piperine_lang::parse_and_elaborate(DIVIDER, &headers_source_map())
         .expect("divider elaborates");
-    let session = SimSession::new(design, "Top".to_string());
-    session.stage("v1", "dc", Value::Real(v_dc));
-    session.stage("r2", "r", Value::Real(r_bot));
-    let op = session.run_op(&SolverConfig::default(), None).expect("fresh op");
+    let mut session = Session::builder(&design, "Top")
+        .stage("v1", "dc", Value::Real(v_dc))
+        .stage("r2", "r", Value::Real(r_bot))
+        .compile()
+        .expect("session compiles");
+    let op = session.op(&SolverConfig::default(), None).expect("fresh op");
     op.v("mid").expect("v(mid)")
 }
 
