@@ -1,4 +1,10 @@
-//! Integration tests for Cranelift JIT codegen of PHDL analog modules.
+//! Analog device numerics through the whole codegen path: a PHDL module is
+//! elaborated, lowered, JIT-compiled, and its residual and Jacobian checked
+//! against the closed form (resistor, VCCS, diode).
+//!
+//! Renamed from `codegen_ir.rs` (P6 T12) — there is no IR crate; the stage is
+//! `resolve` → `kernel` → `device`. Kernel-level numerics for one module live
+//! in `analog_kernel.rs`; this file goes through `CircuitCompiler`.
 
 
 use piperine_codegen::SimCtx;

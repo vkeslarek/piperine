@@ -1,4 +1,7 @@
-//! Phase 1.6 — full POM → CircuitInstance glue, TDD style.
+//! POM `Design` → `CircuitInstance`: the structural glue.
+//!
+//! Renamed from `from_ir.rs` (P6 T12) — the IR crate is gone; `CircuitCompiler`
+//! walks the POM directly.
 //!
 //! Loads a `Design` whose top module names the root of the netlist. Walks
 //! the top module's instances, dispatches each to either

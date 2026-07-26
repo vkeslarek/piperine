@@ -43,6 +43,15 @@ crates/piperine-codegen/src/device/analog/operators.rs	transition_retargets_from
 crates/piperine-codegen/src/device/analog/operators.rs	transition_seeds_at_first_accept	keep	inline	hint:unit
 crates/piperine-codegen/src/device/analog/operators.rs	transition_zero_ramp_declares_only_the_start_edge	keep	inline	hint:unit
 crates/piperine-codegen/src/device/analog/operators.rs	transition_zero_rise_or_fall_steps_at_the_delay_edge	keep	inline	hint:unit
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_compile_resistor	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_diode_jacobian_forward_bias	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_diode_residual_forward_bias	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_jit_compiles	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_jit_two_resistors	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_resistor_jacobian_conductance	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_resistor_residual_ohms_law	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_vccs_jacobian_transconductance	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
+crates/piperine-codegen/tests/analog_device_numerics.rs	test_vccs_residual	regroup	tests	renamed from codegen_ir.rs (P6 T12): no IR crate exists
 crates/piperine-codegen/tests/analog_kernel.rs	a_capacitor_emits_charge_and_charge_jacobian_but_no_resistive_current	keep	tests	hint:integration
 crates/piperine-codegen/tests/analog_kernel.rs	a_diode_reads_its_thermal_voltage_from_the_sim_context	keep	tests	hint:integration
 crates/piperine-codegen/tests/analog_kernel.rs	a_guarded_contribution_conducts_only_above_its_threshold	keep	tests	hint:integration
@@ -59,6 +68,10 @@ crates/piperine-codegen/tests/checkpoint_limiter.rs	limiter_state_round_trips_th
 crates/piperine-codegen/tests/checkpoint_limiter.rs	piperine_device_produces_limiting_report_when_clamping	keep	tests	hint:integration
 crates/piperine-codegen/tests/checkpoint_limiter.rs	piperine_device_reports_none_when_limiter_idle	keep	tests	hint:integration
 crates/piperine-codegen/tests/checkpoint_limiter.rs	supports_rollback_flag_tracks_the_limiter	keep	tests	hint:integration
+crates/piperine-codegen/tests/circuit_from_design.rs	from_ir_ppr_resistor_yields_circuit	regroup	tests	renamed from from_ir.rs (P6 T12): CircuitCompiler walks the POM
+crates/piperine-codegen/tests/circuit_from_design.rs	from_ir_resistor_va_yields_circuit	regroup	tests	renamed from from_ir.rs (P6 T12): CircuitCompiler walks the POM
+crates/piperine-codegen/tests/circuit_from_design.rs	from_ir_unknown_top_returns_err	regroup	tests	renamed from from_ir.rs (P6 T12): CircuitCompiler walks the POM
+crates/piperine-codegen/tests/circuit_from_design.rs	jit_device_exposes_params_through_introspection	regroup	tests	renamed from from_ir.rs (P6 T12): CircuitCompiler walks the POM
 crates/piperine-codegen/tests/codegen_api.rs	ir_analog_compile_capacitor	keep	tests	hint:integration
 crates/piperine-codegen/tests/codegen_api.rs	ir_analog_compile_resistor	keep	tests	hint:integration
 crates/piperine-codegen/tests/codegen_api.rs	ir_analog_compile_tanh_builtin	keep	tests	hint:integration
@@ -66,15 +79,6 @@ crates/piperine-codegen/tests/codegen_api.rs	ir_digital_compile_dff	keep	tests	h
 crates/piperine-codegen/tests/codegen_api.rs	ppr_ir_produces_module_index	keep	tests	hint:integration
 crates/piperine-codegen/tests/codegen_api.rs	test_purely_resistive_device_capabilities	keep	tests	hint:integration
 crates/piperine-codegen/tests/codegen_api.rs	test_reactive_device_capabilities	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_compile_resistor	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_diode_jacobian_forward_bias	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_diode_residual_forward_bias	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_jit_compiles	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_jit_two_resistors	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_resistor_jacobian_conductance	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_resistor_residual_ohms_law	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_vccs_jacobian_transconductance	keep	tests	hint:integration
-crates/piperine-codegen/tests/codegen_ir.rs	test_vccs_residual	keep	tests	hint:integration
 crates/piperine-codegen/tests/digital_codegen_gaps.rs	digital_enum_pattern_match_selects_the_right_arm	keep	tests	hint:integration
 crates/piperine-codegen/tests/digital_codegen_gaps.rs	digital_fn_call_inlines_and_computes_nand	keep	tests	hint:integration
 crates/piperine-codegen/tests/digital_codegen_gaps.rs	digital_quad_real_coercion_both_directions	keep	tests	hint:integration
@@ -103,10 +107,6 @@ crates/piperine-codegen/tests/flatten_hierarchy.rs	mid_level_module_builds_throu
 crates/piperine-codegen/tests/flatten_hierarchy.rs	override_on_spliced_label_restamps_flat_instance	keep	tests	hint:integration
 crates/piperine-codegen/tests/flatten_hierarchy.rs	override_on_unknown_spliced_label_fails_loud	keep	tests	hint:integration
 crates/piperine-codegen/tests/flatten_hierarchy.rs	two_mid_level_instances_produce_distinct_spliced_labels	keep	tests	hint:integration
-crates/piperine-codegen/tests/from_ir.rs	from_ir_ppr_resistor_yields_circuit	keep	tests	hint:integration
-crates/piperine-codegen/tests/from_ir.rs	from_ir_resistor_va_yields_circuit	keep	tests	hint:integration
-crates/piperine-codegen/tests/from_ir.rs	from_ir_unknown_top_returns_err	keep	tests	hint:integration
-crates/piperine-codegen/tests/from_ir.rs	jit_device_exposes_params_through_introspection	keep	tests	hint:integration
 crates/piperine-codegen/tests/limiters.rs	fetlim_matches_ngspice_reference	keep	tests	hint:integration
 crates/piperine-codegen/tests/limiters.rs	limit_catalog_pnjlim_infers_voltage_step	keep	tests	hint:integration
 crates/piperine-codegen/tests/limiters.rs	limit_catalog_records_kind_per_slot	keep	tests	hint:integration
@@ -614,20 +614,20 @@ crates/piperine-plugin-macros/tests/script_hook.rs	each_hook_fires_with_its_phas
 crates/piperine-plugin-macros/tests/script_hook.rs	hook_registrations_cover_exactly_the_five_frozen_phases	keep	tests	hint:integration
 crates/piperine-plugin-macros/tests/script_hook.rs	script_registers_under_its_name_and_dispatches_with_args	keep	tests	hint:integration
 crates/piperine-plugin/src/capability.rs	globs	keep	inline	hint:unit
-crates/piperine-plugin/src/manifest.rs	a_dedicated_manifest_wins_over_the_inline_section	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	a_package_declaring_no_contributions_fails_loud	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	an_inline_plugin_section_is_a_manifest	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	any_other_abi_field_is_rejected	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	bare_plugin_section_infers_pure_phdl_shape	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	bench_tasks_manifest_is_a_clear_removal_error	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	device_and_python_both_parse	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	device_manifest_infers_device_shape	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	device_source_needs_exactly_one_of_path_or_release	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	empty_name_and_malformed_toml_are_bad_manifest	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	minimal_manifest_gets_default_permissions	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	python_manifest_infers_scripted_shape	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	removed_backends_are_a_targeted_error	keep	inline	moved inline from tests/manifest.rs (P6 T10)
-crates/piperine-plugin/src/manifest.rs	unknown_permission_field_is_rejected	keep	inline	moved inline from tests/manifest.rs (P6 T10)
+crates/piperine-plugin/src/manifest.rs	a_dedicated_manifest_wins_over_the_inline_section	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	a_package_declaring_no_contributions_fails_loud	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	an_inline_plugin_section_is_a_manifest	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	any_other_abi_field_is_rejected	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	bare_plugin_section_infers_pure_phdl_shape	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	bench_tasks_manifest_is_a_clear_removal_error	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	device_and_python_both_parse	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	device_manifest_infers_device_shape	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	device_source_needs_exactly_one_of_path_or_release	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	empty_name_and_malformed_toml_are_bad_manifest	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	minimal_manifest_gets_default_permissions	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	python_manifest_infers_scripted_shape	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	removed_backends_are_a_targeted_error	keep	inline	hint:unit
+crates/piperine-plugin/src/manifest.rs	unknown_permission_field_is_rejected	keep	inline	hint:unit
 crates/piperine-plugin/tests/e2e.rs	device_attribute_requires_seeded_schema	keep	tests	hint:integration
 crates/piperine-plugin/tests/e2e.rs	device_without_host_fails_loud	keep	tests	hint:integration
 crates/piperine-plugin/tests/e2e.rs	plugin_inverter_runs_through_scheduler	keep	tests	hint:integration
@@ -635,7 +635,7 @@ crates/piperine-plugin/tests/e2e.rs	plugin_resistor_honors_param_override	keep	t
 crates/piperine-plugin/tests/e2e.rs	plugin_resistor_solves_dc	keep	tests	hint:integration
 crates/piperine-plugin/tests/e2e.rs	unregistered_type_fails_loud	keep	tests	hint:integration
 crates/piperine-plugin/tests/extern_stub.rs	shipped_extern_stub_is_inert_and_only_stdlib_schemas_seed	keep	tests	hint:integration
-crates/piperine-plugin/tests/hooks.rs	read_only_hooks_observe_the_pipeline	keep	tests	regrouped out of phase3.rs (P6 T10): read-only lifecycle hooks
+crates/piperine-plugin/tests/hooks.rs	read_only_hooks_observe_the_pipeline	keep	tests	hint:integration
 crates/piperine-plugin/tests/inject.rs	authored_structure_is_never_overwritten	keep	tests	hint:integration
 crates/piperine-plugin/tests/inject.rs	injected_device_honors_staged_params	keep	tests	hint:integration
 crates/piperine-plugin/tests/inject.rs	injected_device_instance_solves_through_the_device_path	keep	tests	hint:integration
@@ -654,10 +654,10 @@ crates/piperine-plugin/tests/release_fetch.rs	a_verify_mismatch_hard_fails_witho
 crates/piperine-plugin/tests/release_fetch.rs	an_approved_asset_is_pinned_as_release_triple_hash	keep	tests	hint:unit
 crates/piperine-plugin/tests/release_fetch.rs	an_offline_second_machine_without_cache_fails_loud	keep	tests	hint:unit
 crates/piperine-plugin/tests/release_fetch.rs	an_unknown_asset_is_rejected_in_reject_mode	keep	tests	hint:unit
-crates/piperine-plugin/tests/scripts.rs	script_runs_under_its_filesystem_capability	keep	tests	regrouped out of phase3.rs (P6 T10): scripts under capability enforcement
-crates/piperine-plugin/tests/staging.rs	conflicting_specs_from_two_plugins_fail_loud	keep	tests	regrouped out of phase3.rs (P6 T10): staging semantics
-crates/piperine-plugin/tests/staging.rs	restaging_across_analyses_is_idempotent	keep	tests	regrouped out of phase3.rs (P6 T10): staging semantics
-crates/piperine-plugin/tests/staging.rs	transform_design_injects_a_declared_instance	keep	tests	regrouped out of phase3.rs (P6 T10): staging semantics
+crates/piperine-plugin/tests/scripts.rs	script_runs_under_its_filesystem_capability	keep	tests	hint:integration
+crates/piperine-plugin/tests/staging.rs	conflicting_specs_from_two_plugins_fail_loud	keep	tests	hint:integration
+crates/piperine-plugin/tests/staging.rs	restaging_across_analyses_is_idempotent	keep	tests	hint:integration
+crates/piperine-plugin/tests/staging.rs	transform_design_injects_a_declared_instance	keep	tests	hint:integration
 crates/piperine-plugin/tests/trust.rs	accept_records_and_then_never_reasks	keep	tests	hint:unit
 crates/piperine-plugin/tests/trust.rs	artifact_hash_is_stable_sha256	keep	tests	hint:unit
 crates/piperine-plugin/tests/trust.rs	changed_hash_is_a_hash_mismatch	keep	tests	hint:unit

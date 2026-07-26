@@ -154,6 +154,20 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T12 — `piperine-codegen`
+
+Placement was already correct (0 violations after T5); the change is
+vocabulary. Two targets were still named after the deleted IR crate — MD-13
+rule 4 ("files are named after what they do in the system") and MD-28 rule 2:
+
+| Renamed | To | Why |
+|---|---|---|
+| `tests/codegen_ir.rs` | `tests/analog_device_numerics.rs` | it elaborates → lowers → JITs → checks residual/Jacobian against closed forms; there is no IR stage, and the header now states its boundary with `analog_kernel.rs` |
+| `tests/from_ir.rs` | `tests/circuit_from_design.rs` | it builds a `CircuitInstance` from a POM `Design`; its header still described "Phase 1.6 … TDD style" and a `ir_analog_to_device` dispatch |
+
+All 23 targets carry `//!` headers. `cargo test -p piperine-codegen`: 146
+passed, 0 failed. `--check piperine-codegen`: 0 violations.
+
 ### T11 — `piperine-python`: nothing to move
 
 All 59 tests keep their placement. The 16 inline cases in `src/lib.rs` and
