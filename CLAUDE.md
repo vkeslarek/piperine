@@ -78,10 +78,10 @@ both a package and the workspace) — always pass `--workspace`.
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
 | `piperine-api` | The library face (MD-20): `SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine` (root) | Thin re-export shell over `piperine-api` (`pub use piperine_api::*`) — external Rust hosts keep `use piperine::…`; the tests of record live here as the shell's parity proof. The `piperine` binary target lives in `piperine-cli`. |
-| `piperine-plugin` | Plugin SDK + host: native/WASM/process backends, TOFU trust, `@device` loading, attribute schemas, CLI scripts. |
-| `piperine-plugin-wasm` | WASM guest SDK (re-exports `pom::wire` for `wasm32-unknown-unknown`). |
+| `piperine-plugin` | Plugin SDK + host (v2): native-dlopen + embedded-Python backends only, three shapes (pure-PHDL / scripted / device) inferred from the manifest keys, TOFU trust + permissions consent, `@device` loading, release-asset device binaries, CLI scripts. Plugins contribute **no** attribute schemas and no `extern`. |
+| `piperine-plugin-macros` | The `#[pip::device]` / `#[pip::script]` / `#[pip::hook(phase)]` proc-macros — declaration-coupled contributions (depend on it as `pip` so it spells like the Python `@pip.…`). |
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
-| `piperine-project` | `Piperine.toml` discovery, git dependency resolver, plugin lockfile. |
+| `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
 
 ## The analog device path
@@ -181,8 +181,10 @@ Permanent regression guard: `crates/piperine-lang/tests/extern_coverage_guard.rs
   `spice_smoke.rs` (+`spice/`), `compile_once_sweep.rs`, `run_examples.rs` (every
   `examples/*.phdl` elaborates + every `examples/*.py` runs).
 - `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`.
-- `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `process_smoke.rs`,
-  `wasm_smoke.rs`, `trust.rs`, `manifest.rs`.
+- `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `inject.rs`,
+  `release_fetch.rs`, `macro_collisions.rs`, `extern_stub.rs`, `trust.rs`, `manifest.rs`;
+  `piperine-plugin-macros/tests/` (`registration.rs`, `script_hook.rs`, `compile_fail.rs` +
+  `ui/`); root `tests/plugin_parity.rs` (Rust ≡ Python decorator names).
 
 ## Documentation
 

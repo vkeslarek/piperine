@@ -207,13 +207,57 @@ impl Manifest {
         })
     }
 
-    /// Load `piperine-plugin.toml` from a resolved plugin directory.
+    /// Load a plugin's manifest from a resolved plugin directory. Two
+    /// spellings, one schema (D9 — a plugin is a contributing dependency):
+    /// a dedicated `piperine-plugin.toml`, or the `[plugin]` section of the
+    /// package's own `Piperine.toml` (with `[plugin.permissions]`), so
+    /// `piperine add <git>` needs no second manifest file. The dedicated
+    /// file wins when both exist.
     pub fn load(name_hint: &str, plugin_root: &Path) -> Result<Self, PluginError> {
         let path = plugin_root.join("piperine-plugin.toml");
-        let text = std::fs::read_to_string(&path).map_err(|e| PluginError::BadManifest {
-            plugin: name_hint.to_string(),
-            reason: format!("{}: {e}", path.display()),
-        })?;
-        Self::parse(name_hint, &text)
+        if path.is_file() {
+            let text = std::fs::read_to_string(&path).map_err(|e| PluginError::BadManifest {
+                plugin: name_hint.to_string(),
+                reason: format!("{}: {e}", path.display()),
+            })?;
+            return Self::parse(name_hint, &text);
+        }
+        Self::from_project_manifest(name_hint, &plugin_root.join("Piperine.toml"))
+    }
+
+    /// The inline spelling: the `[plugin]` section of a package's own
+    /// `Piperine.toml`, lifted into the same schema [`Self::parse`] reads.
+    /// `plugin.name` defaults to `[project].name`, and
+    /// `[plugin.permissions]` becomes the manifest's permissions.
+    fn from_project_manifest(name_hint: &str, path: &Path) -> Result<Self, PluginError> {
+        let bad = |reason: String| PluginError::BadManifest { plugin: name_hint.to_string(), reason };
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| bad(format!("{}: {e}", path.display())))?;
+        let doc: toml::Table = toml::from_str(&text).map_err(|e| bad(e.to_string()))?;
+        let Some(toml::Value::Table(mut plugin)) = doc.get("plugin").cloned() else {
+            return Err(bad(format!(
+                "{}: no `[plugin]` section and no `piperine-plugin.toml` — a plugin declares \
+                 its contributions in one of the two",
+                path.display()
+            )));
+        };
+        let permissions = plugin.remove("permissions");
+        if !plugin.contains_key("name") {
+            let project_name = doc
+                .get("project")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| {
+                    bad(format!("{}: neither `plugin.name` nor `project.name`", path.display()))
+                })?;
+            plugin.insert("name".into(), toml::Value::String(project_name.to_string()));
+        }
+        let mut lifted = toml::Table::new();
+        lifted.insert("plugin".into(), toml::Value::Table(plugin));
+        if let Some(permissions) = permissions {
+            lifted.insert("permissions".into(), permissions);
+        }
+        let lifted = toml::to_string(&toml::Value::Table(lifted)).map_err(|e| bad(e.to_string()))?;
+        Self::parse(name_hint, &lifted)
     }
 }

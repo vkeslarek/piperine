@@ -156,10 +156,14 @@ sandboxing is impossible. It is **audit + opt-in + reproducibility**.
 
 ## §4 Plugin manifest and shapes
 
-The manifest (`piperine-plugin.toml`) lives at the root of the plugin
-repository. It is intentionally minimal — identity, contribution shape, and
-permissions. Contributions themselves are declared in code (§6), never
-duplicated in the manifest.
+The manifest lives at the root of the plugin package, in either of two
+spellings — a dedicated **`piperine-plugin.toml`**, or a `[plugin]` section
+in the package's own **`Piperine.toml`** (with `[plugin.permissions]`), which
+is what a contributing dependency uses (D9). Same schema either way; the
+dedicated file wins when both exist, and in the inline spelling `name`
+defaults to `[project].name`. It is intentionally minimal — identity,
+contribution shape, and permissions. Contributions themselves are declared in
+code (§6), never duplicated in the manifest.
 
 ```toml
 [plugin]
@@ -227,11 +231,25 @@ exactly `owner/repo` fails loud. A dependency whose `piperine-plugin.toml`
 declares `[permissions]` triggers the §3.2 permissions consent before
 anything is written.
 
+`add` writes a `[dependencies]` entry, and that entry is the whole install:
+a dependency whose package root declares contributions — a
+`piperine-plugin.toml`, or a `[plugin]` section in its own `Piperine.toml`
+(§4) — **is** a plugin (D9): its PHDL resolves via `use` and its declared
+contributions (device / scripts / hooks) load. Nothing else has to be written
+by hand. A dependency declaring neither is a plain PHDL library and
+contributes nothing.
+
 ### 5.2 Project configuration
 
-Loadable plugins are declared in a `[plugins]` section of `Piperine.toml`,
-separate from `[dependencies]` (plugins are loadable artifacts, not PHDL
-libraries, and have no transitive PHDL deps):
+A plugin is therefore declared either way:
+
+- as a **dependency** — the `piperine add` path above, and the only one
+  needed for a plugin that ships PHDL (a device's `@device pub mod` lives in
+  the plugin's own PHDL, §6);
+- in an explicit **`[plugins]`** section — for a plugin that is only a
+  loadable artifact (no PHDL to import), or to point a name at a different
+  path than the dependency copy. A name in both sections keeps its
+  `[plugins]` path. `[plugins]` entries have no transitive PHDL deps.
 
 ```toml
 [plugins.spice]
@@ -250,6 +268,10 @@ Path sources are used in place; git sources sync into
 `target/plugins/<name>/` through the same resolver PHDL dependencies use.
 `subdir` points inside the checkout; it must be a relative path with no
 `..`, and must exist in the checkout — anything else fails loud.
+
+Either way the plugin package is an **importable namespace**: `use
+<name>::…` reaches its `src/` (or its root), which is where a device
+plugin's `@device pub mod`s live.
 
 ### 5.3 Artifacts are prebuilt
 

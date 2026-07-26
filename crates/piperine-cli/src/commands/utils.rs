@@ -20,8 +20,8 @@ pub fn stamp_project_meta(design: &mut piperine_lang::Design, project_root: &Pat
 
 /// Load the project's plugin host (SPEC Part VI §5). Trust mode comes from
 /// `PIPERINE_PLUGIN_TRUST` (`accept` | `reject`), defaulting to the
-/// interactive TOFU prompt. A project without `[plugins]` yields an inert
-/// host. Scripted (`python = "…"`) plugins load through the embedded-CPython
+/// interactive TOFU prompt. A project with no `[plugins]` entry and no
+/// contributing dependency (D9) yields an inert host. Scripted (`python = "…"`) plugins load through the embedded-CPython
 /// bridge (plugin-interface v2, PLG-06/10). Load failures are fatal — a
 /// requested plugin that cannot load must never silently degrade the run.
 pub fn load_plugin_host(project_root: &Path) -> std::rc::Rc<piperine_plugin::PluginHost> {

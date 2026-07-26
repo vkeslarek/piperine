@@ -30,16 +30,31 @@ pub fn project_source_map(project_root: &Path) -> SourceMap {
         match resolver.resolve(&toml) {
             Ok(resolved_deps) => {
                 for (name, path) in resolved_deps {
-                    let dep_src = path.join("src");
-                    if dep_src.exists() {
-                        source_map.add_namespace(&name, dep_src);
-                    } else {
-                        source_map.add_namespace(&name, path);
-                    }
+                    add_package_namespace(&mut source_map, &name, path, project_root);
                 }
             }
             Err(e) => {
                 eprintln!("Warning: Failed to resolve dependencies: {}", e);
+            }
+        }
+        // A plugin's own PHDL is importable too (plugin-interface v2, D10):
+        // the author writes `@device pub mod …` in the plugin package and the
+        // user `use`s it — so a `[plugins]` entry is a namespace exactly like
+        // a dependency. A name already claimed by the project or a dependency
+        // wins (a plugin never shadows authored code).
+        if !toml.plugins.is_empty() {
+            match resolver.resolve_plugins(&toml) {
+                Ok(resolved_plugins) => {
+                    for (name, path) in resolved_plugins {
+                        if source_map.namespaces.contains_key(&name) {
+                            continue;
+                        }
+                        add_package_namespace(&mut source_map, &name, path, project_root);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to resolve plugins: {}", e);
+                }
             }
         }
     }
@@ -63,6 +78,23 @@ pub fn project_source_map(project_root: &Path) -> SourceMap {
     }
 
     source_map
+}
+
+/// Register one resolved package as a namespace: its `src/` when it has one,
+/// else its root. A manifest-relative path resolves against `project_root`.
+fn add_package_namespace(
+    source_map: &mut SourceMap,
+    name: &str,
+    path: PathBuf,
+    project_root: &Path,
+) {
+    let path = if path.is_absolute() { path } else { project_root.join(path) };
+    let src = path.join("src");
+    if src.exists() {
+        source_map.add_namespace(name, src);
+    } else {
+        source_map.add_namespace(name, path);
+    }
 }
 
 #[cfg(test)]
@@ -131,5 +163,29 @@ mod tests {
         let map = project_source_map(&scratch.0);
         let spice_dir = map.namespaces.get("spice").expect("`spice` namespace registered");
         assert_eq!(spice_dir, &src_dir, "project `spice` package must win over the builtin headers");
+    }
+
+    /// Plugin-interface v2 (D10/PLG-05): a plugin's own PHDL is importable —
+    /// `use <plugin>::…` reaches the package the `[plugins]` entry points at,
+    /// which is where its `@device pub mod`s live.
+    #[test]
+    fn a_plugins_entry_is_an_importable_namespace() {
+        let scratch = ScratchDir::new("plugin-ns");
+        let plugin_src = scratch.0.join("acme-devices").join("src");
+        std::fs::create_dir_all(&plugin_src).unwrap();
+        std::fs::write(
+            scratch.0.join("acme-devices").join("piperine-plugin.toml"),
+            "[plugin]\nname = \"acme\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            scratch.0.join("Piperine.toml"),
+            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
+             [plugins.acme]\npath = \"acme-devices\"\n",
+        )
+        .unwrap();
+
+        let map = project_source_map(&scratch.0);
+        assert_eq!(map.namespaces.get("acme"), Some(&plugin_src));
     }
 }

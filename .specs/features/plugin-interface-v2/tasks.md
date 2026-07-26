@@ -12,7 +12,8 @@ tell the user.**
 **Spec:** `.specs/features/plugin-interface-v2/spec.md` (PLG-01..26)
 **Context (locked decisions D1–D14):** `.specs/features/plugin-interface-v2/context.md`
 **Design:** `.specs/features/plugin-interface-v2/design.md`
-**Status:** In Progress (Execute started 2026-07-25, branch `feature/bench-removal`)
+**Status:** COMPLETE (T1–T17 executed 2026-07-25 on `feature/bench-removal`;
+validated + audit fixes in `validation.md`)
 
 ---
 
@@ -406,11 +407,21 @@ No violations.
 
 ---
 
-## Open before Execute
+## Closed before Execute (both resolved)
 
-- **AD-NNN Decisions-log entry** should record the MD-21 revision (no
-  imperative attribute-schema self-registration; no plugin `extern`) when
-  this feature starts — see `context.md` "Supersedes / tensions".
-- **Spike T5 first** (the `piperine-plugin-macros` collection mechanism —
-  `inventory` vs. generated impl across dlopen) — design §7 flags it as the
-  highest-risk new piece.
+- **Decisions-log entry** recording the MD-21 revision: landed as
+  **MD-29** (`.specs/STATE.md`) — contributions are declaration-coupled, no
+  imperative attribute-schema self-registration, no plugin `extern`.
+- **T5 spike** (the collection mechanism across dlopen): resolved to
+  `inventory` + a `Plugin::collect` default body compiled into the plugin's
+  own code, so a cdylib's registry is attributed without extra symbols
+  (`crates/piperine-plugin/src/registry.rs` module doc).
+
+## Post-Execute audit (2026-07-25)
+
+`validation.md` records the requirement-by-requirement evidence and the four
+gaps the audit closed — tasks.md under-specified `design.md` §1/D9–D10, so
+`piperine add` did not actually install a plugin, a plugin's own PHDL was not
+importable, only the dedicated `piperine-plugin.toml` spelling was read, and
+`CLAUDE.md`/`AGENTS.md`/`view.rs` still described the removed WASM/process
+tiers. All fixed with tests; `cargo test --workspace` green (1123 passed).

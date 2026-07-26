@@ -188,3 +188,72 @@ fn bench_tasks_manifest_is_a_clear_removal_error() {
     assert!(msg.contains("removed"), "says it is removed: {msg}");
     assert!(msg.contains("*_tb.py"), "points at python testbenches: {msg}");
 }
+
+/// D9 — a contributing dependency declares `[plugin]` inline in its own
+/// `Piperine.toml` (no second manifest file): `plugin.name` defaults to
+/// `project.name` and `[plugin.permissions]` becomes the permissions.
+#[test]
+fn an_inline_plugin_section_is_a_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Piperine.toml"),
+        r#"
+[project]
+name = "acme-bjt"
+version = "0.1.0"
+authors = []
+edition = "2024"
+
+[plugin]
+python = "plugin.py"
+
+[plugin.permissions]
+filesystem = ["read *.model"]
+"#,
+    )
+    .unwrap();
+
+    let m = Manifest::load("acme-bjt", dir.path()).expect("inline [plugin] manifest");
+    assert_eq!(m.name, "acme-bjt");
+    assert_eq!(m.shape(), PluginShape::Scripted);
+    assert_eq!(m.permissions.filesystem, vec!["read *.model".to_string()]);
+    assert!(!m.permissions.is_default());
+}
+
+/// A dedicated `piperine-plugin.toml` wins over the inline section — an
+/// artifact-only plugin vendored next to a package keeps its own manifest.
+#[test]
+fn a_dedicated_manifest_wins_over_the_inline_section() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Piperine.toml"),
+        "[project]\nname = \"pkg\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
+         [plugin]\npython = \"inline.py\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("piperine-plugin.toml"),
+        "[plugin]\nname = \"dedicated\"\npython = \"dedicated.py\"\n",
+    )
+    .unwrap();
+
+    let m = Manifest::load("pkg", dir.path()).expect("dedicated manifest");
+    assert_eq!(m.name, "dedicated");
+    assert_eq!(m.python.as_deref(), Some(std::path::Path::new("dedicated.py")));
+}
+
+/// A package with neither spelling is not a plugin — a loud manifest error
+/// naming both options, never a silent empty manifest.
+#[test]
+fn a_package_declaring_no_contributions_fails_loud() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Piperine.toml"),
+        "[project]\nname = \"plain\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n",
+    )
+    .unwrap();
+
+    let err = Manifest::load("plain", dir.path()).expect_err("no [plugin] section");
+    let msg = err.to_string();
+    assert!(msg.contains("[plugin]") && msg.contains("piperine-plugin.toml"), "{msg}");
+}

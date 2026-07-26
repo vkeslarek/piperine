@@ -18,10 +18,17 @@ pub struct PiperineToml {
     pub project: Project,
     #[serde(default)]
     pub dependencies: HashMap<String, DependencySource>,
-    /// Plugin sources (`[plugins]`) — separate from `[dependencies]`;
-    /// plugins are loadable artifacts, not PHDL libraries (SPEC Part VI §5).
+    /// Plugin sources (`[plugins]`) — artifact-only plugins, with no PHDL to
+    /// import (SPEC Part VI §5.2). A plugin that ships PHDL is an ordinary
+    /// `[dependencies]` entry that declares contributions.
     #[serde(default)]
     pub plugins: HashMap<String, DependencySource>,
+    /// This package's own `[plugin]` section — present means the package
+    /// contributes (device / scripts / hooks), i.e. it is a plugin (SPEC
+    /// Part VI §4, D9). Kept opaque here: `piperine-plugin` owns the
+    /// section's schema; the resolver only needs to know it exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<toml::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,7 +110,14 @@ impl PiperineToml {
             },
             dependencies: HashMap::new(),
             plugins: HashMap::new(),
+            plugin: None,
         }
+    }
+
+    /// Whether this package contributes plugin content — a `[plugin]`
+    /// section in its own `Piperine.toml` (D9).
+    pub fn declares_plugin(&self) -> bool {
+        self.plugin.is_some()
     }
 
     pub fn to_string_pretty(&self) -> Result<String, toml::ser::Error> {

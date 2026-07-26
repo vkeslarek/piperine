@@ -429,11 +429,55 @@ native dlopen + embedded Python only (MD-21's backend half is untouched).
 spec PLG-01..26, context D1–D14). Records the revision the feature's
 context.md ("Supersedes / tensions") prescribes.
 
+### MD-30: A plugin is a contributing dependency — one install, two spellings
+
+`piperine add <git>` is the whole install (D9). A resolved package is a
+plugin when it **declares contributions**, in either spelling: a dedicated
+`piperine-plugin.toml`, or a `[plugin]` section (with
+`[plugin.permissions]`) in its own `Piperine.toml`. `Resolver::resolve_plugins`
+therefore returns the `[plugins]` entries **plus** every `[dependencies]`
+entry that declares contributions, and a plugin package is an importable
+`SourceMap` namespace like any dependency — which is what makes D10 true
+(the author writes `@device pub mod …` in the plugin's own PHDL; the user
+`use`s it and never writes `@device`). The explicit `[plugins]` section
+survives for artifact-only plugins with no PHDL to import, and wins for a
+name declared in both. A dependency declaring neither manifest spelling is a
+plain PHDL library and contributes nothing (no dependency is a plugin by
+accident).
+
+**Status:** Locked (2026-07-25 — `plugin-interface-v2` post-Execute audit;
+`validation.md` findings 1–3). Makes the delivered surface match `design.md`
+§1 and `ideal.md` D9/D10.
+
 ---
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-23 — `phdl-introspection-attributes` DELIVERED
+**Last updated:** 2026-07-25 — `plugin-interface-v2` DELIVERED (T1–T17) +
+post-Execute audit (four gaps closed, see its `validation.md`).
+`cargo test --workspace`: 1123 passed, 0 failed, 0 rustc warnings.
+
+### Feature — `plugin-interface-v2` (DELIVERED 2026-07-25)
+
+Spec/design/tasks/validation in `.specs/features/plugin-interface-v2/`.
+ROADMAP P5: the plugin surface collapses to **native dlopen + embedded
+Python** (WASM/process backends and `piperine-plugin-wasm` deleted), three
+shapes inferred from the manifest keys (pure-PHDL / scripted / device), and
+every contribution declaration-coupled through the new
+`piperine-plugin-macros` crate (`#[pip::device]`/`#[pip::script]`/
+`#[pip::hook(phase)]`, `inventory`-collected per plugin binary) with
+name-identical Python decorators (`@pip.…`) locked by
+`tests/plugin_parity.rs`. The imperative `Registrar`, the plugin-schema
+surface, and the per-plugin `extern.phdl` stub loader are gone (MD-29);
+`@device`/`@port` from `headers/device_port.phdl` are the only plugin-facing
+schemas. Device binaries distribute as GitHub release assets matched by
+target triple, content-hash TOFU-pinned in `Piperine.lock`, with an optional
+up-front `verify` and a loud `NoAssetForTriple`; `piperine add` gates on
+explicit permissions consent. The five lifecycle hooks are frozen and
+`transform_design` staging is the sole device-injection point. The audit
+pass added the D9/D10 wiring the task list had missed (MD-30).
+
+**Previously:** 2026-07-23 — `phdl-introspection-attributes` DELIVERED
 (T1–T8); independent Verifier PASS. `cargo test --workspace`: 849 passed,
 0 failed, 5 ignored, 0 rustc warnings.
 

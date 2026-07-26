@@ -103,8 +103,11 @@ impl PluginHost {
         Ok(host)
     }
 
-    /// Discover, verify, and load every `[plugins]` entry of the project at
-    /// `root` (SPEC Part VI §5): resolve sources, parse manifests (P0006),
+    /// Discover, verify, and load every plugin of the project at `root`
+    /// (SPEC Part VI §5) — its `[plugins]` entries plus every
+    /// `[dependencies]` entry carrying a `piperine-plugin.toml` (D9: a
+    /// plugin is a contributing dependency, so `piperine add <git>` is the
+    /// whole install): resolve sources, parse manifests (P0006),
     /// hash artifacts, run TOFU (P0001/P0007), dlopen, register (P0003). A
     /// scripted (`python = "…"`) plugin needs an embedded-Python host —
     /// [`Self::load_for_project_scripted`]; without one it is a loud error,
@@ -129,7 +132,11 @@ impl PluginHost {
         let Ok(toml) = PiperineToml::load(&toml_path) else {
             return Ok(Self::empty());
         };
-        if toml.plugins.is_empty() {
+        // A project with neither section has nothing to load; a project with
+        // only `[dependencies]` may still carry contributing dependencies
+        // (D9 — `piperine add <git>` is the whole install), so the resolver
+        // decides, not the section count.
+        if toml.plugins.is_empty() && toml.dependencies.is_empty() {
             return Ok(Self::empty());
         }
 
@@ -138,6 +145,9 @@ impl PluginHost {
             plugin: "<resolver>".into(),
             message: e.to_string(),
         })?;
+        if resolved.is_empty() {
+            return Ok(Self::empty());
+        }
 
         let mut host = Self::empty();
         host.project_root = root.to_path_buf();

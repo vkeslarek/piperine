@@ -71,6 +71,18 @@ fn apply_subdir(
 /// A fully resolved dependency map, mapping package names to their local on-disk paths.
 pub type ResolvedMap = HashMap<String, PathBuf>;
 
+/// Whether the package rooted at `dir` declares plugin contributions (D9):
+/// a dedicated `piperine-plugin.toml`, or a `[plugin]` section in its own
+/// `Piperine.toml`. Either spelling makes it a loadable plugin.
+pub fn declares_contributions(dir: &Path) -> bool {
+    if dir.join("piperine-plugin.toml").is_file() {
+        return true;
+    }
+    PiperineToml::load(&dir.join("Piperine.toml"))
+        .map(|toml| toml.declares_plugin())
+        .unwrap_or(false)
+}
+
 pub struct Resolver {
     project_root: PathBuf,
     deps_dir: PathBuf,
@@ -95,10 +107,20 @@ impl Resolver {
         }
     }
 
-    /// Resolve the `[plugins]` sources of `root_manifest` into local paths.
-    /// Path sources resolve relative to the project root; git sources sync
-    /// into `target/plugins/<name>/`. Plugins have no transitive PHDL
-    /// dependencies — no recursive walk (SPEC Part VI §5).
+    /// Resolve every loadable plugin of `root_manifest` into a local path.
+    ///
+    /// Two sources, one map (plugin-interface v2, D9 — a plugin *is* a
+    /// contributing dependency):
+    ///
+    /// - the explicit `[plugins]` section — an artifact-only plugin with no
+    ///   PHDL to import. Path sources resolve relative to the project root;
+    ///   git sources sync into `target/plugins/<name>/`. Plugins have no
+    ///   transitive PHDL dependencies — no recursive walk (SPEC Part VI §5).
+    /// - every `[dependencies]` entry whose resolved root carries a
+    ///   `piperine-plugin.toml`, so `piperine add <git>` is the whole
+    ///   install: the dependency's PHDL resolves via `use` AND its declared
+    ///   contributions load. An entry listed in both sections keeps its
+    ///   `[plugins]` path.
     pub fn resolve_plugins(
         &mut self,
         root_manifest: &PiperineToml,
@@ -129,6 +151,20 @@ impl Resolver {
                     })?;
                     let dir = apply_subdir(name, &target_dir, git_dep.subdir.as_deref())?;
                     resolved.insert(name.clone(), dir);
+                }
+            }
+        }
+        if !root_manifest.dependencies.is_empty() {
+            let project_root = self.project_root.clone();
+            for (name, dir) in self.resolve(root_manifest)? {
+                if resolved.contains_key(&name) {
+                    continue;
+                }
+                // A path dependency records its manifest-relative path; the
+                // plugin host resolves artifacts against an absolute root.
+                let dir = if dir.is_absolute() { dir } else { project_root.join(dir) };
+                if declares_contributions(&dir) {
+                    resolved.insert(name, dir);
                 }
             }
         }
@@ -300,5 +336,100 @@ subdir = "piperine-spice"
             panic!("expected a git source");
         };
         assert_eq!(dep.subdir.as_deref(), Some("piperine-spice"));
+    }
+
+    /// A scratch project with two path dependencies: one carrying a plugin
+    /// manifest, one a plain PHDL library.
+    fn project_with_two_deps(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir()
+            .join(format!("piperine-plugin-dep-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for dep in ["contributor", "plain"] {
+            std::fs::create_dir_all(root.join(dep).join("src")).unwrap();
+            std::fs::write(
+                root.join(dep).join("Piperine.toml"),
+                format!(
+                    "[project]\nname = \"{dep}\"\nversion = \"0.1.0\"\nauthors = []\n\
+                     edition = \"2024\"\n"
+                ),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("contributor").join("piperine-plugin.toml"),
+            "[plugin]\nname = \"contributor\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("Piperine.toml"),
+            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n\n\
+             [dependencies.contributor]\npath = \"contributor\"\n\n\
+             [dependencies.plain]\npath = \"plain\"\n",
+        )
+        .unwrap();
+        root
+    }
+
+    /// D9: `piperine add <git>` is the whole install — a dependency whose
+    /// root carries a `piperine-plugin.toml` is a loadable plugin, with no
+    /// second `[plugins]` entry to hand-write. A plain dependency is not.
+    #[test]
+    fn a_contributing_dependency_resolves_as_a_plugin() {
+        let root = project_with_two_deps("deps");
+        let toml = crate::PiperineToml::load(&root.join("Piperine.toml")).unwrap();
+        let mut resolver = Resolver::new(&root, false);
+        let plugins = resolver.resolve_plugins(&toml).unwrap();
+
+        assert_eq!(plugins.keys().collect::<Vec<_>>(), vec!["contributor"]);
+        assert_eq!(plugins["contributor"], root.join("contributor"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The inline spelling counts too: a dependency whose own `Piperine.toml`
+    /// carries a `[plugin]` section is a plugin without a second manifest
+    /// file (D9).
+    #[test]
+    fn an_inline_plugin_section_marks_a_dependency_as_a_plugin() {
+        let root = project_with_two_deps("inline");
+        std::fs::remove_file(root.join("contributor").join("piperine-plugin.toml")).unwrap();
+        let manifest = std::fs::read_to_string(root.join("contributor").join("Piperine.toml")).unwrap();
+        std::fs::write(
+            root.join("contributor").join("Piperine.toml"),
+            format!("{manifest}\n[plugin]\npython = \"plugin.py\"\n"),
+        )
+        .unwrap();
+
+        let toml = crate::PiperineToml::load(&root.join("Piperine.toml")).unwrap();
+        let mut resolver = Resolver::new(&root, false);
+        let plugins = resolver.resolve_plugins(&toml).unwrap();
+
+        assert_eq!(plugins.keys().collect::<Vec<_>>(), vec!["contributor"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A `[plugins]` entry still wins for a name declared in both sections —
+    /// the explicit artifact path is never shadowed by the dependency copy.
+    #[test]
+    fn an_explicit_plugins_entry_wins_over_the_dependency_path() {
+        let root = project_with_two_deps("both");
+        std::fs::create_dir_all(root.join("vendored")).unwrap();
+        std::fs::write(
+            root.join("vendored").join("piperine-plugin.toml"),
+            "[plugin]\nname = \"contributor\"\n",
+        )
+        .unwrap();
+        let manifest = std::fs::read_to_string(root.join("Piperine.toml")).unwrap();
+        std::fs::write(
+            root.join("Piperine.toml"),
+            format!("{manifest}\n[plugins.contributor]\npath = \"vendored\"\n"),
+        )
+        .unwrap();
+
+        let toml = crate::PiperineToml::load(&root.join("Piperine.toml")).unwrap();
+        let mut resolver = Resolver::new(&root, false);
+        let plugins = resolver.resolve_plugins(&toml).unwrap();
+
+        assert_eq!(plugins["contributor"], root.join("vendored"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

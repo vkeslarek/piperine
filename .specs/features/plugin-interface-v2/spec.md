@@ -20,35 +20,35 @@ distribution via GitHub releases + TOFU.
 
 ## Goals
 
-- [ ] Delete the WASM and process backends and `piperine-plugin-wasm`
+- [x] Delete the WASM and process backends and `piperine-plugin-wasm`
       (MD-21); native dlopen + embedded-Python remain.
-- [ ] A plugin contributes one or more of **three shapes** under one
+- [x] A plugin contributes one or more of **three shapes** under one
       umbrella: **pure-PHDL** (code library), **scripted** (Python scripts /
       hooks, no binary), **device** (a compiled binary referenced by
       `@device`).
-- [ ] **Declaration + injection are coupled** — no imperative `Registrar`.
+- [x] **Declaration + injection are coupled** — no imperative `Registrar`.
       A device's `@device pub mod` lives in the **plugin's own PHDL** and
       importing injects it (the user never writes `@device`); a script/hook
       is a decorator that declares AND binds in one place.
-- [ ] **`add` is the unified install** — `piperine add <git>` (Go-style),
+- [x] **`add` is the unified install** — `piperine add <git>` (Go-style),
       with two explicit trust gates: permissions consent + source/binary
       TOFU. A plugin is just a dependency that declares contributions.
-- [ ] **No plugin `extern`, no plugin attribute schemas** — the
+- [x] **No plugin `extern`, no plugin attribute schemas** — the
       `extern.phdl` stub mechanism is deleted; `@device`/`@port` (stdlib)
       are the only plugin-facing schemas.
-- [ ] **Literal Rust/Python decorator parity** — `@pip.script`/`@pip.hook`/
+- [x] **Literal Rust/Python decorator parity** — `@pip.script`/`@pip.hook`/
       `@pip.device` (Python) and `#[pip::script]`/`#[pip::hook]`/
       `#[pip::device]` (Rust) — same names, same hook catalog, same `ctx`.
-- [ ] **Device binary distribution** — `device = { release =
+- [x] **Device binary distribution** — `device = { release =
       "github:owner/repo@tag", verify = "sha256" }`; the loader fetches the
       triple-matched release asset, TOFU-verifies its content hash, and pins
       it in `Piperine.lock`; an unsupported triple is a loud error.
-- [ ] The device binary is **language-agnostic** — an exported C ABI
+- [x] The device binary is **language-agnostic** — an exported C ABI
       (`type`→`Element`-constructor table + ABI-version symbol); the Rust
       macro is one way to emit it.
-- [ ] The **five lifecycle hooks are frozen**; `transform_design` (staging)
+- [x] The **five lifecycle hooks are frozen**; `transform_design` (staging)
       is the sole device-injection point.
-- [ ] `cargo test --workspace` green; one "write a plugin" doc per shape.
+- [x] `cargo test --workspace` green; one "write a plugin" doc per shape.
 
 ## Out of Scope
 
@@ -307,32 +307,32 @@ afternoon.
 
 | ID | Story | Phase | Status |
 |----|-------|-------|--------|
-| PLG-01 | P1 kill WASM/process | — | Pending |
-| PLG-02 | P1 abi=wasm/process errors loud | — | Pending |
-| PLG-03 | P1 native device no-regression | — | Pending |
-| PLG-04 | P1 no imperative Registrar | — | Pending |
-| PLG-05 | P1 device = mod + @device coupling | — | Pending |
-| PLG-06 | P1 script/hook = one decorator | — | Pending |
-| PLG-07 | P1 delete extern.phdl stub loader | — | Pending |
-| PLG-08 | P1 no plugin schema path | — | Pending |
-| PLG-09 | P1 only stdlib @device/@port seeded | — | Pending |
-| PLG-10 | P2 script parity dispatch | — | Pending |
-| PLG-11 | P2 hook parity (5 phases, same ctx) | — | Pending |
-| PLG-12 | P2 decorator/hook/ctx name parity test | — | Pending |
-| PLG-13 | P2 staging.add_instance injects | — | Pending |
-| PLG-14 | P2 injected @device solves | — | Pending |
-| PLG-15 | P2 bad-injection fails loud | — | Pending |
-| PLG-16 | P2 release→triple asset fetch | — | Pending |
-| PLG-17 | P2 TOFU hash pin in lockfile | — | Pending |
-| PLG-18 | P2 verify hash up-front | — | Pending |
-| PLG-19 | P2 unsupported triple loud error | — | Pending |
-| PLG-20 | P2 reproducible from lockfile | — | Pending |
-| PLG-21 | P2 shape inference (no abi field) | — | Pending |
-| PLG-22 | P2 git-source resolution (Go-style) | — | Pending |
-| PLG-23 | P2 permissions explicit consent at add | — | Pending |
-| PLG-24 | P2 device ABI-version check kept | — | Pending |
-| PLG-25 | P3 docs per shape + parity | — | Pending |
-| PLG-26 | P3 part_vi rewrite to v2 | — | Pending |
+| PLG-01 | P1 kill WASM/process | 1 | Done |
+| PLG-02 | P1 abi=wasm/process errors loud | 1 | Done |
+| PLG-03 | P1 native device no-regression | 2 | Done |
+| PLG-04 | P1 no imperative Registrar | 2 | Done |
+| PLG-05 | P1 device = mod + @device coupling | 2 | Done |
+| PLG-06 | P1 script/hook = one decorator | 2 | Done |
+| PLG-07 | P1 delete extern.phdl stub loader | 1 | Done |
+| PLG-08 | P1 no plugin schema path | 1 | Done |
+| PLG-09 | P1 only stdlib @device/@port seeded | 1 | Done |
+| PLG-10 | P2 script parity dispatch | 2 | Done |
+| PLG-11 | P2 hook parity (5 phases, same ctx) | 2 | Done |
+| PLG-12 | P2 decorator/hook/ctx name parity test | 2 | Done |
+| PLG-13 | P2 staging.add_instance injects | 3 | Done |
+| PLG-14 | P2 injected @device solves | 3 | Done |
+| PLG-15 | P2 bad-injection fails loud | 3 | Done |
+| PLG-16 | P2 release→triple asset fetch | 4 | Done |
+| PLG-17 | P2 TOFU hash pin in lockfile | 4 | Done |
+| PLG-18 | P2 verify hash up-front | 4 | Done |
+| PLG-19 | P2 unsupported triple loud error | 4 | Done |
+| PLG-20 | P2 reproducible from lockfile | 4 | Done |
+| PLG-21 | P2 shape inference (no abi field) | 1 | Done |
+| PLG-22 | P2 git-source resolution (Go-style) | 4 | Done |
+| PLG-23 | P2 permissions explicit consent at add | 4 | Done |
+| PLG-24 | P2 device ABI-version check kept | 2 | Done |
+| PLG-25 | P3 docs per shape + parity | 5 | Done |
+| PLG-26 | P3 part_vi rewrite to v2 | 5 | Done |
 
 26 requirements. (PLG-05 now reads "@device declared in the plugin's PHDL,
 injected on import"; the old "manifest piperine version compat" is deferred
@@ -342,10 +342,10 @@ to a roadmap follow-up per D12 — not a requirement here.)
 
 ## Success Criteria
 
-- [ ] Native device + Python scripted + pure-PHDL all work; WASM/process
+- [x] Native device + Python scripted + pure-PHDL all work; WASM/process
       gone.
-- [ ] No imperative `Registrar`; no plugin `extern`/schema.
-- [ ] Rust and Python decorator surfaces are name-identical (parity test).
-- [ ] `piperine add github:owner/repo@tag` fetches + verifies + pins a
+- [x] No imperative `Registrar`; no plugin `extern`/schema.
+- [x] Rust and Python decorator surfaces are name-identical (parity test).
+- [x] `piperine add github:owner/repo@tag` fetches + verifies + pins a
       device binary; wrong triple / bad hash fail loud.
-- [ ] `cargo test --workspace` green; docs rewritten to v2.
+- [x] `cargo test --workspace` green; docs rewritten to v2.

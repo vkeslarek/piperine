@@ -588,15 +588,20 @@ error, `verify` is optional. Two explicit trust gates at `add`: **permissions
 consent** + source/binary TOFU. The **five lifecycle hooks are frozen**;
 `transform_design` (staging) is the sole device-injection point.
 
-- [ ] Remove the WASM (wasmtime) and process JSON-RPC backends +
+**DELIVERED 2026-07-25** — all 17 tasks (T1–T17) executed and validated;
+`.specs/features/plugin-interface-v2/validation.md` is the evidence.
+
+- [x] Remove the WASM (wasmtime) and process JSON-RPC backends +
       `piperine-plugin-wasm`; native dlopen stays (MD-21).
-- [ ] Kill the imperative `Registrar` + per-plugin `extern.phdl` stubs;
+- [x] Kill the imperative `Registrar` + per-plugin `extern.phdl` stubs;
       contributions are declaration-coupled decorators / `@device`.
-- [ ] Decorator surface with literal Rust/Python parity + a parity test.
-- [ ] Device-binary distribution: git-source resolver, github-release +
+- [x] Decorator surface with literal Rust/Python parity + a parity test
+      (`tests/plugin_parity.rs`).
+- [x] Device-binary distribution: git-source resolver, github-release +
       triple match, TOFU pin, permissions-consent gate at `add`.
-- [ ] One "write a plugin" document per shape (pure-PHDL, scripted, device)
-      showing the Rust/Python decorator equivalence.
+- [x] One "write a plugin" document per shape (pure-PHDL, scripted, device)
+      showing the Rust/Python decorator equivalence
+      (`docs/spec/part_vi_plugins.md` Appendix A).
 
 **Deferred to a follow-up (D12):** a manifest `[plugin] piperine = ">=X.Y"`
 version-compat field for the source/script surface — v2 relies only on the
