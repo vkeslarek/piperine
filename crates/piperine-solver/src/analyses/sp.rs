@@ -25,7 +25,6 @@
 //!    (SP-02) — no fragile current bookkeeping, only node voltages already
 //!    solved for.
 //! 4. Repeat for every `j`, filling column `j` of `S`.
-#![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;

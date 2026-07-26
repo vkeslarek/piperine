@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Lower a POM `Design` (PPR/PHDL) straight into each module's resolved
 //! [`LoweredBody`] — no separate IR crate, no `IrModule`/`IrProgram`
 //! structural twin. Instance wiring (connections, param overrides) is left

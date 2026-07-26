@@ -43,7 +43,6 @@
 //! Devices whose nonlinearity cannot be differentiated fail loud at
 //! compile time (`CodegenError::Unsupported`, DISTO-04) — never a silent
 //! zero row.
-#![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;

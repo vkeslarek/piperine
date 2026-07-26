@@ -8,7 +8,6 @@
 //! (p6-cleanup-architecture D2). The sweep, output/reference nodes and input
 //! source travel on [`NoiseAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-#![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};

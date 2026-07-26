@@ -40,7 +40,6 @@ use crate::source_map::SourceMap;
 #[derive(Debug, Clone)]
 pub enum ResolveError {
     /// No file could be found for the given path.
-    #[allow(dead_code)]
     NotFound(Vec<String>),
     /// The resolved file contained a parse error.
     ParseError(String),

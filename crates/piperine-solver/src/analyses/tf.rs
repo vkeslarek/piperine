@@ -6,7 +6,6 @@
 //! (p6-cleanup-architecture D2). The input source and output measurement
 //! travel on [`TransferFunctionAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-#![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::dc::{DcAnalysisState, DcSolver};

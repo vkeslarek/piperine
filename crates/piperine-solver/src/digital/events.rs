@@ -83,8 +83,10 @@ mod tests {
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use std::cmp::Reverse;
 
-    #[allow(dead_code)]
     struct MockInverter {
+        // Set at construction so each mock is distinguishable in a failure
+        // dump; these tests assert on the event queue, never on the id.
+        #[allow(dead_code)]
         id: usize,
         input: DigitalNet,
         output: DigitalNet,

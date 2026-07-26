@@ -29,7 +29,6 @@
 //! `(n+1)×(n+1)` Rosenbrock system pencil `([−G, b; lᵀ, 0], [C, 0; 0, 0])` —
 //! the textbook transmission-zero definition, exact (no root-search
 //! heuristic). An empty zero set is a legitimate answer, unlike poles.
-#![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
@@ -74,6 +73,9 @@ const GUARD_ABS: f64 = 1e-12;
 /// operating point, then computes poles ([`Self::poles`]) and zeros
 /// ([`Self::zeros`]) as generalized eigenvalues of that pencil.
 pub struct PoleZeroSolver<'a> {
+    // Held, never read: the exclusive borrow is the point. `new` extracts the
+    // whole `(G, C)` pencil up front, so keeping the circuit here is what stops
+    // a caller mutating it out from under a pole/zero computation.
     #[allow(dead_code)]
     circuit: &'a mut CircuitInstance,
     size: usize,

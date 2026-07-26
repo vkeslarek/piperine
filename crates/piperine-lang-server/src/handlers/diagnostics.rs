@@ -142,7 +142,6 @@ fn severity_for_code(_code: Option<&str>) -> DiagnosticSeverity {
 
 /// Extract a byte range from an error message. Test-support surface: the
 /// integration tests are the only consumers.
-#[allow(dead_code)]
 pub fn extract_error_range(source: &str, error: &str) -> Range {
     let pe = ParseError {
         message: error.into(),

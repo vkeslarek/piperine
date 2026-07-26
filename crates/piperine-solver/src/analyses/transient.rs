@@ -8,7 +8,6 @@
 //! [`TransientAnalysisOptions`], the per-step kernel state is
 //! [`TransientAnalysisContext`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-#![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::events::{

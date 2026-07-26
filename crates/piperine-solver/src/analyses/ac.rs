@@ -6,7 +6,6 @@
 //! architecture D2). The sweep tunables travel as
 //! [`AcSweepAnalysisOptions`] arguments, and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-#![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;

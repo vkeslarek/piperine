@@ -3,7 +3,6 @@
 //! source scale an element reads while stamping) and the Newton driver
 //! (`DcSystem`/`DcSolver`): gmin/source-stepping homotopy escalation, the
 //! device-bypass stamp cache, and the mixed-signal settle loop.
-#![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::convergence::{ConvergencePlan, HomotopyDriver};
 use crate::analyses::{Context, Policy};

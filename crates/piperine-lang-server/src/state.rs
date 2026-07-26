@@ -71,7 +71,6 @@ impl ServerState {
     }
 
     /// Create a ServerState for testing (no connection needed).
-    #[allow(dead_code)]
     pub fn dummy() -> Self {
         Self { documents: HashMap::new(), projects: HashMap::new() }
     }
