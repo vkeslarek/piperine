@@ -5,8 +5,10 @@
 //! - [`PiperineDevice`] — one instance: parameter values, operator state,
 //!   register banks, netlist references. Implements the solver `Element`
 //!   trait for both domains.
-//! - [`CircuitCompiler`] — walks an [`crate::resolve::IrProgram`]'s top module and
-//!   builds a ready-to-simulate `CircuitInstance`.
+//! - [`CircuitCompiler`] — walks the POM [`piperine_lang::pom::Design`]'s top
+//!   [`piperine_lang::pom::Module`] and its
+//!   [`piperine_lang::pom::Instance`]s, and builds a ready-to-simulate
+//!   `CircuitInstance`.
 
 mod analog;
 mod builder;

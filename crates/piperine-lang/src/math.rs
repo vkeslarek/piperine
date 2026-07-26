@@ -1,5 +1,6 @@
 //! Built-in math: the table of libm intrinsics available to JIT code, plus
-//! the matching compile-time evaluator used by `IrExpr::eval_const`.
+//! the matching compile-time evaluator [`eval_const_math`], called by the const
+//! interpreter (`crate::eval`) and by codegen's constant folder.
 
 /// One built-in math function: IR name, arity, and the native symbol the JIT
 /// links against.
