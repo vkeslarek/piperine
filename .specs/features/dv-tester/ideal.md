@@ -1,409 +1,382 @@
-# dv-tester IDEAL — designing the tester library surface for implementability
+# dv-tester IDEAL — a host-language device library over the `Element` ABI
 
-**Status:** surface design document. Companion to `spec.md`/`design.md` in this
-directory; the shared vision is `../design-verification/ideal.md` §4.
-**Purpose:** the tester is the feature most likely to be *used* rather than read
-about, and the one whose API is hardest to change once written. This document
-designs that surface for two properties at once: **easy to write a test with**,
-and **easy to implement**. Where those conflict, it says so.
+**Status:** surface design document, rewritten 2026-07-27 after the first draft
+was rejected for being too narrow.
+**What this is:** a library for **writing devices in the host language** — Python
+or Rust, same contract — spanning from "place this stamp" to "ramp a sigmoid here"
+to "drive a burst on the clock edge". A tester is one kind of device you write
+with it, not the thing itself.
 
----
-
-## 0. What "easily implementable" means here, concretely
-
-Four commitments. Every design choice below is justified by one of them.
-
-1. **The ABI surface is four operation kinds.** Everything a test does reduces to:
-   let time pass, install a drive, read a value, report a finding. Only the first
-   one yields. If a proposed feature needs a fifth kind, it needs a very good
-   reason.
-2. **No waveform synthesis in the tester.** The tester sequences and checks; the
-   *design* generates shapes. `spice::sources` already has PULSE/SIN/PWL, and the
-   live-parameter path already lets a host change their parameters between steps.
-   A tester that grew its own sine generator would be reimplementing the design
-   language inside the host.
-3. **The tester never adds a breakpoint the circuit does not already have** —
-   unless the test genuinely acts at that instant. Breakpoints constrain the
-   solver's timestep (D11's accepted cost), so the design must make synchronizing
-   to *existing* events the easy path and generating new ones the deliberate one.
-4. **Nothing touches the JIT, codegen, or the solver core.** The tester is an
-   `Element` plus a host bridge. If the implementation starts editing
-   `emit/analog_expr.rs`, the design is wrong.
+**What the first draft got wrong.** It designed a test sequencer and then
+restricted the surface — two segment kinds, no waveform synthesis — in the name of
+implementability. That closes off exactly the interesting cases: an author who
+wants a sigmoid, or who wants to stamp something the library never anticipated,
+hits a wall and has no escape hatch. The correct principle is the opposite:
+**expose the whole ABI, make the cheap path convenient, and let the author choose
+the granularity of host calls.** Restriction is not the same as simplicity.
 
 ---
 
-## 1. The primitive core
+## 0. Why this is a real gap
 
-### 1.1 The one yielding operation: time
+There are four ways to get a device into a Piperine circuit today, and none of
+them lets you write one where you already are:
 
-```python
-yield t.advance(dt)            # let dt of simulated time pass
-yield t.wait_until(time)       # absolute instant
-yield t.wait_for(edge("clk"))  # resume on the next matching digital edge
-yield t.finish()               # this program is done; the analysis continues
-```
+| Path | Authoring cost | Speed | Distribution |
+|---|---|---|---|
+| **PHDL** (`analog`/`digital` body) | declarative; must be expressible in PHDL | JIT — fastest | source |
+| **Plugin cdylib** (`#[pip::device]`) | a Rust crate, `dlopen`, host and plugin built by the same toolchain (`backend/native.rs`) | native | binary artifact |
+| **OSDI** (external `piperine-osdi`) | Verilog-A + a compiler | native | `.osdi` |
+| **Host device library** ← this | a class in the script you are already writing | host-call bound, or native in Rust | a module |
 
-Only these yield. **Everything else is an immediate call** on the handle, because
-it needs no simulated time to happen. That split is what keeps the request
-protocol tiny:
+Device plugins are **native-only** — `crates/piperine-plugin/src/backend/native.rs`
+requires a compiled shared library, and `manifest.rs` shows Python plugins are
+*scripted* (CLI entries and hooks), never devices. So there is no way to write a
+device in Python at all, and no way to write one in Rust without building a
+separate crate with a matched toolchain.
 
-```
-Request  ::=  Advance(dt)  |  WaitUntil(t)  |  WaitEvent(spec)  |  Finish
-```
-
-Four variants. The element translates a `Request` into a wake registration and
-returns control to the solver. Nothing else crosses the boundary as a request.
-
-### 1.2 Install a drive (immediate)
-
-```python
-t.drive(net, value)                       # digital net → EventSink, never the MNA
-t.drive_v(net, volts, rout=50.0)          # analog: Norton source, declared impedance
-t.drive_i(net, amps)                      # analog: current source
-t.ramp_v(net, to, dur, rout=50.0)         # linear segment from the present value
-t.release(net)                            # stop driving; the net returns to the circuit
-t.force_v(net, volts)                     # ideal voltage force — explicit, never default
-t.set(label, param, value)                # restamp a design parameter (live-param path)
-```
-
-**Only two analog segment kinds exist: constant and linear ramp.** That is the
-whole waveform vocabulary, and commitment #2 is why. Anything richer is a design
-source whose parameters the tester writes with `t.set(...)` — which reuses the
-already-delivered live-parameter restamp path instead of inventing a second way
-to change a stimulus.
-
-`force_v` exists because forcing a node is a legitimate bring-up tool, and it is
-spelled differently from `drive_v` so that reading a test tells you which one is
-happening. Per D14, forcing an internal node lands in the run's findings.
-
-### 1.3 Read a value (immediate)
-
-```python
-v = t.read_v(net)              # accepted-point node voltage
-i = t.read_i(branch)           # branch current
-b = t.read(net)                # digital logic value
-x = t.opvar(label, name)       # device operating-point variable
-```
-
-Reads see the **accepted solution at the current instant**. A read is only valid
-while the program is resumed; the element does not cache values across a wake.
-
-### 1.4 Report a finding (immediate)
-
-```python
-t.expect(cond, msg)            # Error finding if cond is false
-t.warn(cond, msg)              # Warning finding if cond is false
-t.fail(msg)                    # unconditional Error
-t.note(msg)                    # informational, never a failure
-```
-
-These go into `dv-core`'s `validation_reports()` channel with the current
-simulation time and the tester's instance path. **Tester findings are always
-collected, regardless of the `checks=` posture** — `checks=` governs `require`
-margins, and a test whose expectations were silenced by a solver knob would be a
-trap. What the posture does govern is whether an `Error` *aborts* the analysis or
-merely records.
+That is the gap: **no in-process, no-build-step device authoring.** Testers need
+it most urgently, which is why it lives in this feature — but the capability is
+general, and designing it as "tester plumbing" is what produced the bad first draft.
 
 ---
 
-## 2. Wake sources — and the one that is deferred
+## 1. The `Element` surface is already the right shape
 
-Three ways a tester can be woken, with very different implementation costs:
+`crates/piperine-solver/src/core/element.rs` has ~40 methods of which **two are
+required** (`name`, `capabilities`) and the rest are defaulted. That is exactly
+the shape a host library wants: implement what your device does, inherit nothing
+for what it does not.
 
-| Wake | Mechanism | Status |
+Grouped by what an author actually reaches for:
+
+| Group | Methods | Needed by |
 |---|---|---|
-| **Time** | `Element::next_breakpoints` (`core/element.rs:187`) | **exists** — the transient driver already lands on declared breakpoints |
-| **Digital edge** | element sensitivity through the digital scheduler (`DEPENDS_ON_DIGITAL`) | **exists as a mechanism**; needs a dynamic-sensitivity path so the *host* can say what it is waiting for |
-| **Analog threshold** | a dynamically registered `cross`/`above` watch | **deferred** — PHDL's event machinery compiles static event conditions; letting a host register one at run time is a new capability |
+| Identity | `name`, `capabilities` | everything |
+| Analog stamping | `load_dc`, `load_ac`, `load_transient`, `allocate_unknowns` | sources, resistors, behavioral analog |
+| Time control | `next_breakpoints`, `bound_step_hint`, `suggest_transient_step`, `accept_timestep` | sequencers, breakpointed sources |
+| Digital | `boundary`, `init`, `evaluate`, `seq_phase`, `comb_phase`, `has_input_on` | logic, monitors, protocol drivers |
+| State | `update`, `initial_conditions`, `set_temperature` | anything with memory |
+| Introspection | `read_opvars`, `list_params`, `get_param`, `set_param`, `list_terminals`, `model_descriptor`, `list_observables` | anything a host should be able to query |
+| Validation | `validation_reports` (from `dv-core`) | checkers, testers, self-testing models |
+| Noise / disto | `noise_current_psd`, `load_disto2/3` | noise and distortion models |
 
-For analog thresholds in v1, the documented idiom is an explicit poll:
-
-```python
-while t.read_v("vout") < 0.9:
-    yield t.advance(10e-9)      # the test chooses its own resolution
-```
-
-This is honest about its cost — the test is buying breakpoints at 10 ns — and it
-keeps v1 from needing dynamic analog event registration. A native
-`wait_for(cross("vout", 0.9))` is the obvious follow-up, and the surface above is
-designed so adding it changes nothing else: it is one more `WaitEvent` spec.
-
-### 2.1 Do not generate the clock in the tester
-
-The single most important performance rule in this design, and it falls out of
-commitment #3.
-
-A tester that drives its own clock installs two breakpoints per cycle. At 100 MHz
-over 10 µs that is 2 000 forced solver landings — fine. At 1 GHz over 1 ms it is
-2 × 10⁶ — not fine, and the slowdown will be blamed on the tester rather than on
-the choice.
-
-So the clock belongs in the **design** — an ordinary `digital` oscillator or a
-`spice::sources` pulse — and the tester **synchronizes** to it:
-
-```python
-for _ in range(1000):
-    yield t.wait_for(edge("clk", rising))
-    t.drive("d", next(vectors))
-```
-
-The tester now adds breakpoints only where it acts. Generating a clock stays
-possible (`t.drive` in a loop) and is the deliberate choice, not the default one.
+The library's job is to make this surface reachable from Python and Rust, safely,
+without pretending it is smaller than it is.
 
 ---
 
-## 3. The layered library
+## 2. Three access levels that **compose**
 
-Three layers, and only the bottom one is Rust.
+Not layers you choose between — coordinates in one device. A device may stamp
+directly, install a waveform, and sequence time, all at once.
 
-```
-Layer 3 — protocol helpers, pure Python, user-extensible
-          uart_send/uart_recv, spi_xfer, i2c_*, apply_vectors(file), clock_sync
-          ── shipped as a Python module; users write their own the same way
-                          │  built only from layer 2
-Layer 2 — conveniences, pure Python
-          ramp_v (composes drive_v), pulse, settle_to(value, tol, timeout),
-          expect_within(t, cond), for_each_edge(...)
-                          │  built only from layer 1
-Layer 1 — the primitives of §1, Rust + the host bridge
-          Advance/WaitUntil/WaitEvent/Finish · drive/read/report
-```
+### Level 0 — raw: you place the stamps
 
-The layering is a delivery plan as much as a structure: **layer 1 is the whole
-Rust deliverable.** Layers 2 and 3 are Python that a user could have written, which
-is the test of whether layer 1 is complete. If a protocol helper cannot be written
-in Python over layer 1, layer 1 is missing something — and that is a much better
-signal than reviewing the API in the abstract.
-
----
-
-## 4. The element side — what must actually be tracked
-
-Deliberately small, because commitment #4 says this is the only new runtime object:
-
-```
-TesterElement {
-    program        : HostProgram,          // opaque handle; §5
-    pending_wake   : Wake,                 // Time(t) | Event(spec) | Done
-    drives         : Map<NetHandle, Segment>,
-    findings       : Vec<ValidationFinding>,   // drained by validation_reports()
-    net_cache      : Map<String, NetHandle>,   // resolved on first use, then cached
-}
-
-Segment ::= Const { v }  |  Ramp { v0, v1, t0, dt }
-```
-
-Element responsibilities, in full:
-
-1. `next_breakpoints(from, horizon)` → the pending time wake, if it is a time wake.
-2. Stamp every active `Segment` on `load_dc`/`load_transient` — evaluating a
-   segment is arithmetic on `(t, v0, v1, t0, dt)`, **with no host call**.
-3. After the solver **accepts** a step at the pending wake, resume the program,
-   apply whatever immediate calls it makes, and store the next `Request`.
-4. Drain findings through `validation_reports()`, gated by `EMITS_VALIDATION`.
-5. Declare capabilities: `ANALOG` if it drives or reads analog, `DIGITAL` if
-   digital, `SAMPLES_ANALOG` for analog reads, `EMITS_VALIDATION` always.
-
-That is the entire behavioral surface. There is no protocol knowledge, no
-waveform library, no scheduling policy — the element is a dumb executor of
-requests, which is exactly why it is implementable.
-
-**The one ordering rule that must not be got wrong:** resume happens *after* step
-acceptance, never inside the accept/reject decision. A tester resumed during a
-step that is later rejected breaks D11's guarantee with no clean repair.
-
----
-
-## 5. Two host faces, one contract
-
-The contract is: **resume the program, get back a `Request`.**
-
-```
-trait HostProgram {
-    fn resume(&mut self, ctx: &mut TesterCtx) -> Result<Request, TestError>;
-}
-```
-
-### 5.1 Python — a generator
-
-The generator protocol *is* this contract. `resume` calls `gen.send(None)`; the
-yielded object is the `Request`; immediate calls happened as ordinary method calls
-on `t` before the yield.
+The escape hatch, and the reason nothing is ever a wall.
 
 ```python
-def uart_echo(t):
-    t.drive("rst", 1)
-    yield t.advance(100e-9)
-    t.drive("rst", 0)
-    t.ramp_v("vdd", 1.8, 1e-6)
-    yield t.advance(2e-6)
+class Memristor(pip.Device):
+    caps = pip.ANALOG | pip.LOADS_DC | pip.LOADS_TRAN
 
-    for byte in (0x55, 0xAA):
-        yield from uart_send(t, "tx", byte, baud=1e6)
-        got = yield from uart_recv(t, "rx", baud=1e6)
-        t.expect(got == byte, f"echo {got:#x} != {byte:#x}")
+    def __init__(self, p, n, ron=100.0, roff=16e3):
+        self.p, self.n, self.ron, self.roff, self.x = p, n, ron, roff, 0.0
+
+    def load_dc(self, ctx, m):
+        g = 1.0 / (self.ron * self.x + self.roff * (1.0 - self.x))
+        m.g(self.p, self.p, +g);  m.g(self.p, self.n, -g)     # conductance stamps
+        m.g(self.n, self.p, -g);  m.g(self.n, self.n, +g)
+
+    def load_transient(self, ctx, m):
+        self.load_dc(ctx, m)
+
+    def update(self, state, ctx):                              # integrate state
+        v = ctx.v(self.p) - ctx.v(self.n)
+        self.x = min(1.0, max(0.0, self.x + ctx.dt * v * 1e4))
+
+    def read_opvars(self):
+        return [("x", self.x), ("r", self.ron * self.x + self.roff * (1 - self.x))]
 ```
 
-`yield from` composing sub-protocols is the property that makes layer 3 possible
-without any framework: a protocol helper is just a generator that yields requests.
+`m` is the stamp sink: `m.g(row, col, value)` for conductance, `m.i(row, value)`
+for current RHS, `m.branch(...)` for a branch unknown. Nothing is hidden. If your
+device needs something the library never anticipated, this level always works.
 
-A Python exception becomes a `TestError` carrying the simulation time, reported as
-an `Error` finding, and the analysis stops cleanly — the generator is closed so
-`finally` blocks run.
+### Level 1 — behavioral: you declare, the library stamps
 
-### 5.2 Rust — an explicit state machine
+For the common cases, with the **cheap path being the default**:
 
-Rust has no stable generators, so the same contract is implemented by hand:
+```python
+class Supply(pip.Device):
+    def build(self, b):
+        b.vsource("vdd", "gnd", wave=pip.Wave.ramp(0.0, 1.8, 1e-3), rout=0.05)
+
+class Stim(pip.Device):
+    def build(self, b):
+        b.vsource("in", "gnd", wave=pip.Wave.sigmoid(lo=0, hi=1.2, t0=1e-6, tau=50e-9))
+        b.isource("bias", "gnd", wave=pip.Wave.const(20e-6))
+```
+
+`pip.Wave` is a **descriptor**, evaluated natively with no host call in the solve
+loop. The shipped set covers what an author reaches for:
+
+```
+Wave.const(v)                      Wave.ramp(v0, v1, dur)
+Wave.pulse(lo, hi, delay, rise, width, fall, period)
+Wave.sin(offset, amp, freq, phase, damping)
+Wave.exp(v0, v1, tau, delay)       Wave.sigmoid(lo, hi, t0, tau)
+Wave.pwl([(t, v), …])              Wave.sampled(t_array, v_array)   ← numpy
+Wave.from_fn(lambda t: …)          ← arbitrary, host call per evaluation
+Wave.sum(a, b)  Wave.scaled(w, k)  Wave.shifted(w, dt)   ← composition
+```
+
+Three ways to get an arbitrary shape, and the author picks knowingly:
+
+1. `Wave.sigmoid(...)` — a built-in descriptor. **Zero host calls.**
+2. `Wave.sampled(t, v)` — precompute in numpy, stamped as native PWL.
+   **Zero host calls**, arbitrary shape. This is the right answer far more often
+   than people expect, and it is the reason the library does not need to be
+   restrictive to be fast.
+3. `Wave.from_fn(f)` — a host callback, evaluated whenever the solver asks.
+   Arbitrary and slow. Available, priced, and never the default.
+
+### Level 2 — sequencing: you advance time and react
+
+A coroutine over simulated time. This is where a *tester* lives, and where
+"drive a burst on the clock edge" is written:
+
+```python
+class LinkTest(pip.Sequencer):
+    def run(self, t):
+        t.drive("rst", 1);                yield t.advance(100e-9)
+        t.drive("rst", 0)
+        t.install("vdd", pip.Wave.ramp(0, 1.8, 1e-6))
+        yield t.advance(2e-6)
+
+        for _ in range(64):
+            yield t.wait(pip.edge("clk", pip.RISING))
+            t.drive("tx", next(self.vectors))              # a burst, per edge
+
+        t.expect(t.read_v("vout") > 1.2, f"vout = {t.read_v('vout')}")
+```
+
+A `Sequencer` **is** a `Device` — it is the same ABI object with `next_breakpoints`
+wired to the coroutine's pending wake. Which means a sequencer can also stamp
+(level 0) and install waveforms (level 1) in the same class, because those are
+just methods it inherits.
+
+---
+
+## 3. The cost model, stated per level
+
+The first draft's mistake was hiding this behind restrictions. Exposing it lets an
+author make the trade themselves.
+
+| What you write | Host calls | Per | Practical ceiling |
+|---|---|---|---|
+| `Wave.*` descriptor (except `from_fn`) | **0** | — | unlimited; native stamping |
+| `Wave.sampled(numpy)` | **0** | — | unlimited; native PWL |
+| `Sequencer` wake | 1 | tester breakpoint | ~10⁵ per run is free (~1 µs each) |
+| `load_dc`/`load_transient` in Python | 1 | **Newton iteration** | ~10⁵–10⁶ total before it dominates |
+| `Wave.from_fn` | 1 | evaluation | same as above |
+| `update` in Python | 1 | accepted step | ~10⁵–10⁶ |
+| the same in Rust | native | — | no ceiling |
+
+The rules that follow, and they are guidance rather than prohibition:
+
+- **A boundary device is cheap; a bulk device is not.** A tester or a stimulus
+  source is a handful of elements. Ten thousand Python memristors in one circuit
+  is a bad idea, and the library should say so in its docs rather than prevent it.
+- **Precompute beats callback.** `Wave.sampled` with numpy is almost always
+  available and is free in the loop.
+- **Rust is the answer for bulk.** Same contract, no per-call cost — which is what
+  makes parity worth having rather than symmetric decoration.
+- **The clock is still better off in the design.** Not a rule of the library, an
+  arithmetic fact: a sequencer-driven 1 GHz clock over 1 ms is 2 × 10⁶ forced
+  solver landings. Synchronizing to an existing clock (`t.wait(edge("clk"))`) costs
+  nothing extra. The library makes both possible and documents the difference.
+
+---
+
+## 4. Rust/Python parity — one contract, two bindings
 
 ```rust
-enum Phase { Reset, PowerUp, Send(u8), Check(u8), Done }
-
-impl HostProgram for UartEcho {
-    fn resume(&mut self, ctx: &mut TesterCtx) -> Result<Request, TestError> {
-        match self.phase {
-            Phase::Reset   => { ctx.drive("rst", 1); self.phase = Phase::PowerUp;
-                                Ok(Request::Advance(100e-9)) }
-            Phase::PowerUp => { ctx.drive("rst", 0); ctx.ramp_v("vdd", 1.8, 1e-6);
-                                self.phase = Phase::Send(0x55);
-                                Ok(Request::Advance(2e-6)) }
-            /* … */
-            Phase::Done    => Ok(Request::Finish),
-        }
-    }
+pub trait HostElement {
+    fn name(&self) -> &str;
+    fn capabilities(&self) -> ElementCapabilities;
+    // everything else defaulted, mirroring `Element` itself
+    fn load_dc(&mut self, _ctx: &Ctx, _m: &mut StampSink) {}
+    fn update(&mut self, _state: &StateView, _ctx: &Ctx) {}
+    fn next_breakpoints(&self, _from: f64, _horizon: f64) -> Vec<f64> { vec![] }
+    /* … */
 }
 ```
 
-**This is admittedly clumsier, and that is accepted** (D15): Python is the
-intended face and Rust exists for parity and for hosts that cannot embed Python.
-Being explicit about the asymmetry is better than pretending an ergonomic Rust
-story exists — and it is why layers 2 and 3 are specified as Python.
+- **Rust** implements the trait directly; a blanket adapter turns any
+  `HostElement` into an `Element`, so the solver sees no difference.
+- **Python** subclasses `pip.Device`, defining only the methods it needs; the
+  bridge dispatches on presence. Method names, argument order, and semantics are
+  **identical** to the Rust trait — the same document describes both.
+- **`Sequencer`** is a `HostElement` whose `next_breakpoints` comes from its
+  coroutine. Python uses a generator; Rust implements `resume` as an explicit state
+  machine (no stable generators). That asymmetry is real and is stated, not hidden.
+- Parity is enforced the way the project already enforces it: a
+  `host_parity.rs`-style target that enumerates the surface on both sides.
 
 ---
 
-## 6. Worked examples, increasing in difficulty
+## 5. Where the guarantees apply — and where they do not
 
-**A — analog bring-up, no digital at all.** Proves the drive path that made RNM
-unnecessary:
+D11 (no rollback protocol, because explicit `advance` is the guarantee) is a
+**sequencing-level** property. It does not extend to level 0:
 
-```python
-def supply_ramp(t):
-    t.ramp_v("vdd", 1.8, 100e-6, rout=0.1)
-    yield t.advance(100e-6)
-    t.expect(abs(t.read_v("vref") - 0.9) < 0.01, f"vref = {t.read_v('vref')}")
-    for v in (1.62, 1.8, 1.98):                 # corners of the supply
-        t.drive_v("vdd", v, rout=0.1)
-        yield t.advance(10e-6)
-        t.expect(abs(t.read_v("vref") - 0.9) < 0.02, f"vref at vdd={v}")
-```
-
-**B — vectors from a file, synchronized to the design's clock.** D12 in action:
-
-```python
-def apply_vectors(t, path):
-    with open(path) as f:                        # side effects are allowed
-        for line in f:
-            stim, expected = line.split()
-            yield t.wait_for(edge("clk", rising))
-            t.drive("d", int(stim, 2))
-            yield t.wait_for(edge("clk", falling))
-            t.expect(t.read("q") == int(expected, 2), f"vector {line.strip()}")
-```
-
-**C — a mixed-signal loop: digital control reacting to an analog measurement.**
-The case that is awkward in every other formalism:
-
-```python
-def servo_bringup(t):
-    code = 0
-    for _ in range(64):                          # successive approximation by hand
-        t.drive("dac_code", code)
-        yield t.advance(1e-6)                    # let the analog settle
-        if t.read_v("vout") < 1.0:
-            code += 1
-        else:
-            break
-    t.expect(code < 64, "servo never reached 1.0 V")
-    t.note(f"settled at code {code}")
-```
-
-**D — isolating a block by forcing an internal node.** Visible in the findings by
-construction (D14):
-
-```python
-def isolate_stage2(t):
-    t.force_v("u_stage1.out", 0.9)               # reported in r.violations
-    yield t.advance(1e-6)
-    t.expect(t.read_v("u_stage2.out") > 1.2, "stage 2 gain with forced input")
-```
-
----
-
-## 7. Implementability review
-
-Rough sizing, so the claim is checkable rather than asserted:
-
-| Piece | Language | Estimate | Depends on |
-|---|---|---|---|
-| `TesterElement` (state, breakpoints, resume, findings) | Rust | ~350 lines | `dv-core`'s findings channel |
-| `Request` + wake translation | Rust | ~100 | `next_breakpoints`, digital sensitivity |
-| Segment stamping (Const, Ramp) | Rust | ~150 | existing source-stamping patterns |
-| Net/branch resolution + cache | Rust | ~100 | the existing probe/trace resolution |
-| PyO3 bridge (generator drive, exception mapping) | Rust | ~200 | — |
-| `HostProgram` trait + Rust example | Rust | ~80 | — |
-| Layers 2 and 3 | **Python** | ~300 | layer 1 only |
-
-≈1 000 lines of Rust and ~300 of Python, and **none of it in the JIT, codegen, or
-the solver core** (commitment #4). The two genuinely new mechanisms are the
-resume callback and dynamic digital sensitivity; everything else composes existing
-machinery.
-
-### What could still go wrong
-
-| Risk | Why it is contained |
-|---|---|
-| Dynamic digital sensitivity turns out to need scheduler surgery | Time wakes alone make the feature useful (examples A, C and D need no edge wait); edge waits can land second |
-| Resume-vs-accept ordering is subtly wrong | It is a single call site, and the acceptance test is a recording tester on a fixture with rejected steps |
-| Breakpoint density makes tests slow | §2.1 makes clock-synchronization the easy path; the cost is documented (D11), not hidden |
-| Python exceptions across FFI leak or abort badly | One catch point in the bridge; generator `close()` so `finally` runs |
-| Net-name resolution differs from the probe surface | Reuse that resolution rather than writing a second one; a mismatch here would be a user-visible inconsistency |
-| Analog thresholds needed sooner than expected | The polling idiom (§2) works today and the surface accepts a native wait without other changes |
-
----
-
-## 8. Deliberately not in the library
-
-| Not included | Why | Where it goes instead |
+| Level | Rejected steps | Rule |
 |---|---|---|
-| Waveform synthesis (sine, exponential, arbitrary PWL) | Commitment #2 | design sources + `t.set(...)` |
-| Clock generation as the default pattern | Commitment #3 / §2.1 | a `digital` oscillator in the design |
-| A test-runner framework (discovery, fixtures, reporting) | `piperine test` and `*_tb.py` already exist | the CLI |
-| Randomization / constrained-random | Python has `random`; constrained-random over *parameters* is `dv-gradients`' Monte Carlo | user code / `dv-gradients` |
-| Scoreboards, transaction layers | UVM-shaped abstractions that Python data structures already express | user code, layer 3 |
-| Protocol IP beyond a couple of reference helpers | Layer 3 is a starting library, not a catalog | users and plugins |
-| Assertions about the *circuit* (SOA, spec limits) | Those are `constraint` blocks — different rhythm, different home | `dv-core` |
+| Level 2 (sequencer) | never observed — resumed only after acceptance | D11 holds; no rollback logic in the test |
+| Level 0/1 (stamping device) | **participates in them** like any element | the author handles `accept_timestep` and mutates state only on acceptance, exactly as a PHDL device must |
+
+This distinction must be loud in the documentation. A device that integrates state
+in `load_transient` instead of `accept_timestep`/`update` will be subtly wrong in
+a way that only shows up with timestep rejection — the same trap PHDL device
+authors already face, now reachable from Python.
+
+---
+
+## 6. Examples spanning the range
+
+**A — a resistor in twelve lines** (level 0; the "hello world" that proves the ABI
+is genuinely exposed):
+
+```python
+class R(pip.Device):
+    caps = pip.ANALOG | pip.LOADS_DC | pip.LOADS_AC | pip.LOADS_TRAN
+    def __init__(self, p, n, r): self.p, self.n, self.g = p, n, 1.0 / r
+    def load_dc(self, ctx, m):
+        m.g(self.p, self.p, +self.g); m.g(self.p, self.n, -self.g)
+        m.g(self.n, self.p, -self.g); m.g(self.n, self.n, +self.g)
+    load_ac = load_transient = load_dc
+```
+
+**B — a sigmoid supply ramp** (level 1, zero host calls):
+
+```python
+class SoftStart(pip.Device):
+    def build(self, b):
+        b.vsource("vdd", "gnd", rout=0.05,
+                  wave=pip.Wave.sigmoid(lo=0.0, hi=1.8, t0=200e-6, tau=40e-6))
+```
+
+**C — an arbitrary measured waveform** (level 1 via numpy, still zero host calls):
+
+```python
+t_us, v = np.loadtxt("captured_supply.csv", unpack=True)
+class Replay(pip.Device):
+    def build(self, b):
+        b.vsource("vdd", "gnd", wave=pip.Wave.sampled(t_us * 1e-6, v), rout=0.05)
+```
+
+**D — burst on the clock edge with an analog check** (level 2 + level 1 together):
+
+```python
+class BurstTest(pip.Sequencer):
+    def run(self, t):
+        yield t.advance(1e-6)
+        for burst in range(8):
+            for _ in range(16):
+                yield t.wait(pip.edge("clk", pip.RISING))
+                t.drive("data", 1)
+                yield t.wait(pip.edge("clk", pip.FALLING))
+                t.drive("data", 0)
+            t.install("vbias", pip.Wave.ramp(0.4, 0.4 + 0.05 * burst, 100e-9))
+            yield t.advance(1e-6)
+            t.expect(t.read_v("vpeak") < 1.9, f"burst {burst}: vpeak too high")
+```
+
+**E — a device that both stamps and sequences** (the composition that the first
+draft made impossible):
+
+```python
+class ActiveLoadSweep(pip.Sequencer):
+    caps = pip.ANALOG | pip.LOADS_DC | pip.LOADS_TRAN
+    def __init__(self, p, n): self.p, self.n, self.g = p, n, 1e-3
+    def load_dc(self, ctx, m):                      # its own conductance
+        m.g(self.p, self.p, +self.g); m.g(self.n, self.n, +self.g)
+        m.g(self.p, self.n, -self.g); m.g(self.n, self.p, -self.g)
+    def run(self, t):                               # …swept over time
+        for g in (1e-3, 5e-3, 2e-2):
+            self.g = g
+            yield t.advance(10e-6)
+            t.note(f"g={g}: vout={t.read_v('out'):.4f}")
+```
+
+---
+
+## 7. Implementability
+
+Honest sizing — larger than the first draft claimed, because the capability is
+larger:
+
+| Piece | Language | Estimate | Notes |
+|---|---|---|---|
+| `HostElement` trait + blanket `Element` adapter | Rust | ~400 | mirrors `element.rs`'s defaults |
+| `StampSink` / `Ctx` / `StateView` safe wrappers | Rust | ~350 | **the real work**: exposing matrix and solution references safely across FFI |
+| `Wave` descriptors + native evaluation | Rust | ~400 | ~10 kinds + composition |
+| Sequencer (coroutine driver, wakes, findings) | Rust | ~350 | breakpoints exist; edge waits need dynamic digital sensitivity |
+| PyO3 bridge (dispatch, exceptions, GIL) | Rust | ~450 | duck-typed method presence |
+| Python surface (`pip.Device`, `pip.Wave`, `pip.Sequencer`) | Python | ~300 | thin |
+| Protocol helpers (uart/spi/vectors) | Python | ~300 | user-extensible, shipped as examples |
+
+≈2 000 lines of Rust and ~600 of Python. Nothing in the JIT, codegen, or solver
+core: the blanket adapter means the solver keeps seeing `Element` and nothing else.
+
+### What could go wrong
+
+| Risk | Containment |
+|---|---|
+| Exposing the stamp matrix to Python unsoundly (dangling references, aliasing) | The sink is a narrow, index-validated API — never a raw pointer; invalid indices are loud, not undefined |
+| **The GIL**: a Python device holds it during the solve, serializing anything the solver might parallelize | Documented as a property of the Python tier; Rust devices have no such cost, which is a concrete reason parity exists |
+| Python exceptions mid-solve | One catch point in the bridge; mapped to a typed error carrying simulation time; the analysis stops cleanly |
+| Authors integrating state in `load_*` instead of `accept_timestep` | §5 is documentation *and* an example; the trap already exists for PHDL authors, so it is a known shape |
+| Dynamic digital sensitivity (edge waits) needs scheduler surgery | Time wakes alone make examples A, B, C and E work; edge waits can land second |
+| Per-call cost surprises a user who wrote a bulk Python device | §3 is published, with the Rust escape route named |
+| A third device path fragments the story | §0's table is the answer: four paths, four different authoring/speed/distribution trade-offs, one ABI underneath |
+
+---
+
+## 8. Deliberately out
+
+| Not included | Why |
+|---|---|
+| A test-runner framework | `piperine test` and `*_tb.py` already exist |
+| Randomization / constrained-random over parameters | `dv-gradients`' Monte Carlo owns statistical sampling |
+| Scoreboards, transaction layers | Python data structures already express these; ship examples, not a framework |
+| Distribution/packaging of host devices | Plugin territory (`piperine-plugin`); an open question is whether a host device can *become* a plugin contribution (§9) |
+| Circuit-level assertions (SOA, spec limits) | `dv-core`'s `constraint` blocks — different rhythm, different home |
 
 ---
 
 ## 9. Open questions
 
-1. **How does a tester get instantiated?** Two shapes: a PHDL module the design
-   instantiates (composes with hierarchy, needs a declaration), or a host-side
-   attachment to a compiled session (no PHDL at all, cannot be reused as a
-   component). The host-side attachment is simpler and matches "no grammar";
-   the PHDL instantiation is what makes an acceptance suite shippable as a part.
-   **Leaning: host attachment for v1**, with the PHDL form as the follow-up once
-   there is a real reusable suite to justify it.
-2. **DC and OP with a tester attached.** D13 defers AC loudly. DC could treat
-   installed segments as a bias, or refuse. Refusing is safer; treating them as
-   bias is what a user will expect after writing example A. Undecided.
-3. **`t.set()` and MD-18.** Writing a design parameter mid-test is the
-   live-parameter path, which is restamp-class — but a rebuild-class parameter
-   would force re-elaboration mid-transient, which cannot be allowed. Almost
-   certainly: rebuild-class `set` from a tester is a loud error.
-4. **Timeouts.** `settle_to(value, tol, timeout)` needs a failure mode when the
-   condition never holds. A missing timeout turns a bug into a hang, so layer 2
-   should probably require one rather than defaulting to forever.
-5. **Multiple testers observing each other.** Two testers driving different nets
-   is fine. Two testers where one reads what the other drives, at the same
-   instant, has an ordering question. Simplest answer: resume order within one
-   instant is instantiation order, documented — not left to chance.
+1. **Naming, and the relationship to `#[pip::device]`.** The plugin macro already
+   owns that spelling for compiled Rust devices. Options: one concept with two
+   backends (a Python `@pip.device` and a Rust `#[pip::device]` that mean the same
+   thing at different tiers), or distinct names to keep the tiers legible. Leaning
+   toward one concept, because "how do I write a device" should have one answer
+   whose *tier* is a detail — but that is a real decision about the plugin story,
+   not just a name.
+2. **How does a host device enter a circuit?** Attached to a compiled session from
+   the host (simple, no PHDL, not reusable as a component), or declared in PHDL and
+   instantiated like any module (composes with hierarchy, needs a declaration —
+   possibly the existing `@device` attribute with a new backend). The second is
+   what would let an acceptance suite ship as a part.
+3. **Can a host device be distributed?** If yes, it is a plugin contribution and
+   `piperine-plugin`'s trust/permissions model applies. If no, it is
+   script-local — which is fine for testers and limiting for models.
+4. **DC/OP with a sequencer attached.** D13 defers AC loudly. DC could treat
+   installed waveforms as their `t = 0` value, or refuse. Treating them as bias is
+   what an author will expect after writing example B.
+5. **`set_param` from a host device mid-transient.** Restamp-class is the
+   live-parameter path and fine; rebuild-class would force re-elaboration
+   mid-analysis and must be loud.
+6. **Ordering among multiple host devices at one instant.** Instantiation order,
+   documented — not left to chance.
