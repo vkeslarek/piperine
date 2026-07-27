@@ -9,7 +9,7 @@ Every claim about the current tree below is cited by `file:line`.
 PHDL  `param … tol gauss(…)`  +  `constraint Mod { … }`
   │
   ├─ parse/          ParamDecl grows a TolClause; new ConstraintBlock item
-  │                  (contextual keywords — §C1)
+  │                  (six new reserved words — §C1)
   ▼
 POM   Param.distribution()   Module::constraints           ← authored, walkable
   │   elab/: name resolution, type check, class check (§C2)
@@ -37,7 +37,7 @@ how `kernel/analog/` already organizes `forces.rs`/`limits.rs`/`operators.rs`/
 
 | Component | Home | Notes |
 |---|---|---|
-| `TolClause` parse + AST | `piperine-lang/src/parse/` | contextual keyword after a param default |
+| `TolClause` parse + AST | `piperine-lang/src/parse/` | `tol` after a param default |
 | `headers/statistics.phdl` | `piperine-lang/headers/` | `extern fn gauss(...)`, `uniform(...)`; MD-24 |
 | `Param.distribution()` | `piperine-lang/src/pom/` | additive; no `Invalidation` change |
 | `ConstraintBlock` parse + AST | `piperine-lang/src/parse/` | new top-level item, sibling of `analog`/`digital` |
@@ -56,19 +56,25 @@ how `kernel/analog/` already organizes `forces.rs`/`limits.rs`/`operators.rs`/
 
 ## C. The five decisions that shape the implementation
 
-### C1. Contextual keywords, because `target` is taken
+### C1. Six reserved keywords, and two examples get renamed
 
-`target` appears as an identifier in `crates/piperine-lang/tests/examples/ring_oscillator.phdl:5`
-and `oscillator.phdl:16` (`var target : Real = -gain * V(a, gnd);`), and CLAUDE.md
-marks `tests/fixtures*` frozen. Reserving it at the parser level breaks a frozen
-corpus for a keyword.
+`constraint`/`require`/`target`/`tol`/`cover`/`global` are reserved at the parser
+level and join the list at `docs/spec/part_i_language.md:232`. A contextual-keyword
+path was considered and rejected (user, 2026-07-27): it buys nothing but parser
+complexity in exchange for not editing two example files.
 
-So `require`/`target`/`tol`/`cover`/`global` are reserved **only** where the
-grammar expects them; `constraint` alone is a real keyword (0 corpus hits, and it
-opens a top-level item). The mechanism and the precedent already exist —
-`docs/spec/part_i_language.md:238` documents the resolve kinds as contextual
-inside a `discipline` body. Both frozen fixtures compiling is an acceptance test
-(DVC-06), not a hope.
+The only collision measured in the corpus is `target`, used as a variable in
+`crates/piperine-lang/tests/examples/ring_oscillator.phdl:5` and
+`oscillator.phdl:16` (`var target : Real = -gain * V(a, gnd);`). Both get renamed,
+and their numerics must be identical before and after (DVC-06) — a rename is not
+allowed to move a waveform.
+
+**Correction on record:** an earlier draft called these a frozen corpus, citing
+CLAUDE.md's "`headers/`, `tests/fixtures*` — frozen test corpora". Two things were
+wrong. These files live in `tests/examples/`, not `tests/fixtures*`; and **no
+`tests/fixtures*` directory exists anywhere in the tree** — CLAUDE.md's
+files-not-to-edit list names a dead path. That line should be fixed or dropped
+(tracked as a separate doc chore, not part of this feature).
 
 ### C2. Pointwise vs reduced is a property of the *declaration*
 
@@ -166,3 +172,25 @@ every instance. What is quiet by default is an *undeclared limit*, never the che
 | Lowering/kernel | `piperine-codegen/tests/` — margin sign and normalization, pointwise vs reduced classification, one-kernel-per-declared-margin |
 | Solver | `piperine-solver/tests/` — evaluation points (incl. the gmin fixture), postures, the findings channel with a recording element, `EMITS_VALIDATION` gating |
 | Host | root `tests/` — `MarginsResult` parity across hosts, SOA-on-model end to end, unedited gallery, `ngspice_validation.rs` unchanged, `compile_once_sweep.rs` unchanged |
+
+## G. Spec-document updates (`docs/spec/`)
+
+The formal spec is normative, so a grammar addition that is not written there is
+undocumented language. This feature touches five Parts and one appendix:
+
+| Document | What changes |
+|---|---|
+| `part_i_language.md` | the reserved-word list (`:232`); a new section for the `constraint` block as a third body kind beside `analog`/`digital`; the `tol` clause on `ParamDecl`; the `require`/`target`/`var` statement forms and the margin convention |
+| `appendix_b_grammar.md` | `ParamDecl` grows `TolClause`; new `ConstraintBlock`, `ConstraintStmt`, `RequireStmt`, `TargetStmt`; the `EventBlock` reuse for analysis scoping |
+| `part_ii_elaboration.md` | constraint-block resolution; the pointwise/reduced classification; monomorphized variants carrying the block; `tol` distribution resolution against `headers/statistics.phdl`; the fail-loud catalog |
+| `part_v_builtins.md` | `headers/statistics.phdl` and `headers/constraints.phdl` as declared stdlib, with each helper's class |
+| `part_vii_solver.md` | `validation_reports()` + `ValidationFinding`; `EMITS_VALIDATION`; the evaluation-point table (§C3) as normative solver behavior; the three postures and the `require`-scope default on `Context` |
+| `part_viii_host_api.md` + `appendix_c_host_surface.md` | the margins channel (D3) and `r.violations` on result objects, both hosts |
+| `part_iv_reflection_selector.md` | whether the selector reaches constraint blocks — decide and document either way |
+
+Two pre-existing problems in that directory, surfaced earlier and **not** this
+feature's to fix: `mkdocs build` fails on a missing `material` theme, and
+`appendix_c_host_surface.md` + `part_viii_host_api.md` are in neither mkdocs nav.
+Both are tracked in `p6-cleanup-architecture`'s deferred list; if the nav gap is
+still open when this feature lands, the host-surface documentation it adds will be
+invisible to the built site.

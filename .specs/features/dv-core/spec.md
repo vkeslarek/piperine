@@ -67,7 +67,7 @@ through — PHDL-compiled, plugin, or OSDI.
 | `var` names computed scalars, with mandatory type annotation | `var gain_db : Real = …`; no inference the rest of the language lacks | **y** (user, §2.1) |
 | No `minimize` statement; objective is host-side per run | Keep host-side | **y** (user) |
 | Reduced metrics computed host-side | Solver stays pointwise-pure | **y** (D7) |
-| New keywords contextual except `constraint` | `target` is already an identifier in two frozen fixtures | **y** (measured, §2.6) |
+| New keywords are reserved at the parser level | Six words: `constraint`/`require`/`target`/`tol`/`cover`/`global`. The two example files using `target` as a variable get renamed — adjusting an example is cheaper than a contextual-keyword parser path | **y** (user, 2026-07-27) |
 | SOA limits on built-in models default absent | An unset limit makes its `require` vacuously satisfied | **y** (§2.8) |
 | Findings polled only where §2.5 says | Never at a homotopy stage, never on a rejected step, skipped at `t = 0` under UIC | **y** (§2.5) |
 | `tol` restricted to `Real` params | Discrete variation rejected loud | n (agent) |
@@ -137,15 +137,19 @@ authored structure walkable in the POM like `analog`/`digital`.
    `crates/piperine-lang/tests/examples/sar_adc.phdl:29`; WHEN it reads a
    child's **internal** node THEN elaboration SHALL fail loud (§2.8).
 6. WHEN two statements in one block share a name THEN elaboration SHALL fail loud.
-7. WHEN `constraint` is used as an identifier THEN that SHALL be a parse error;
-   WHEN `target`/`tol`/`require`/`cover`/`global` appear as identifiers outside
-   their grammar positions THEN they SHALL still parse as identifiers — the
-   frozen `crates/piperine-lang/tests/examples/ring_oscillator.phdl:5` and
-   `oscillator.phdl:16` must keep compiling.
+7. WHEN `constraint`/`require`/`target`/`tol`/`cover`/`global` are used as
+   identifiers THEN that SHALL be a parse error — they are **reserved at the
+   parser level**, added to `docs/spec/part_i_language.md`'s reserved list. The
+   two existing uses of `target` as a variable
+   (`crates/piperine-lang/tests/examples/ring_oscillator.phdl:5` and
+   `oscillator.phdl:16`) SHALL be renamed as part of this work; they are ordinary
+   example sources, not a frozen corpus (there is no `tests/fixtures*` directory
+   in the tree — CLAUDE.md names a path that does not exist).
 
 **Independent Test**: `piperine check` on a constraint fixture; selector walk
 showing the authored block on a monomorphized variant; one negative fixture per
-fail-loud clause; both frozen `target` fixtures green.
+fail-loud clause; a negative fixture per reserved word used as an identifier; the
+two renamed examples producing identical numerics to before the rename.
 
 ---
 
@@ -385,7 +389,7 @@ not-exercised rather than passing.
 | DVC-03 | `tol` inert at solve; staging interaction | Pending |
 | DVC-04 | `constraint` grammar (`require`/`var`/`target`) | Pending |
 | DVC-05 | POM `Module::constraints`, authored, monomorph-carried (D4) | Pending |
-| DVC-06 | Contextual keywords; frozen `target` fixtures keep compiling | Pending |
+| DVC-06 | Six reserved keywords + the two example renames | Pending |
 | DVC-07 | Instance-port refs resolve; internal-node refs loud | Pending |
 | DVC-08 | Margin lowering (signed, normalized) | Pending |
 | DVC-09 | Pointwise/reduced classification + loud misuse (D7) | Pending |
@@ -402,8 +406,9 @@ not-exercised rather than passing.
 | DVC-20 | Event windows + window algebra + not-exercised | Pending |
 | DVC-21 | cross-cutting: fail-loud catalog (Edge Cases) | Pending |
 | DVC-22 | cross-cutting: MD-18 compile-once unchanged | Pending |
+| DVC-23 | `docs/spec/` updated: Parts I, II, V, VII, VIII + appendix B/C (design §G) | Pending |
 
-**Coverage:** 22 total, 0 mapped (tasks phase not started).
+**Coverage:** 23 total, 0 mapped (tasks phase not started).
 
 ---
 
@@ -418,5 +423,7 @@ not-exercised rather than passing.
       for reduced, and never invents a `t = 0`.
 - [ ] A circuit with no constraints and no `tol` is bit-identical in cost and
       results to pre-feature behavior.
-- [ ] Both frozen fixtures using `target` as an identifier still compile.
+- [ ] `target` is a reserved word; the two examples that used it as a variable are renamed and still elaborate and simulate identically.
+- [ ] `docs/spec/` documents every construct this feature adds — a grammar
+      addition absent from the formal spec is undocumented language.
 - [ ] `cargo build --workspace` zero warnings; `cargo test --workspace` green.

@@ -1,6 +1,9 @@
 # dv-tester Design
 
-**Spec:** `spec.md` (DVT-01..22). **Vision:** `../design-verification/ideal.md` §4.
+**Spec:** `spec.md` (DVT-01..23). **Vision:** `../design-verification/ideal.md` §4.
+**Surface design:** `ideal.md` in this directory — the library API, layer by
+layer, with an implementability review. Read it before writing any of layer 1;
+this document covers where things live, that one covers what they look like.
 **Depends on:** `dv-core` (`validation_reports()` is how a tester speaks).
 
 ## A. Shape
@@ -169,3 +172,20 @@ language smaller.
 | Monitors | a hierarchical fixture where a monitor sees what the top-level tester cannot |
 | Coverage | bins filled by a sweep with empty bins named; two runs merge rather than replace; oversized cross refused at elaboration |
 | Loud paths | tester + AC; unknown net; driver conflict; non-yielding generator |
+
+## G. Spec-document updates (`docs/spec/`)
+
+| Document | What changes |
+|---|---|
+| `part_viii_host_api.md` + `appendix_c_host_surface.md` | **the largest documentation surface in the three features** — the whole tester API: the request protocol, every primitive, the resume contract, posture interaction, and the reach rules (D14). This is a host-language API, so the host-API Part is its normative home |
+| `part_vii_solver.md` | the sequencer element's contract: wake sources (time breakpoints, digital-event wakes, analog crossings), resume-strictly-after-acceptance (D11), drive segments and their impedance requirement, and the AC refusal (D13) |
+| `part_i_language.md` | `cover` as a `constraint`-block statement kind, and `cover` joining the reserved-word list |
+| `appendix_b_grammar.md` | `CoverStmt` production, bins and set forms |
+| `part_ii_elaboration.md` | `cover` bin resolution and the elaboration-time cross-product cap (D10) |
+| `appendix_a_worked_examples.md` | a worked tester example — this is the feature most likely to be *learned* from an example rather than a grammar table |
+
+Note the asymmetry: `dv-core` and `dv-gradients` mostly extend language and
+solver Parts, while this feature's normative content is almost entirely
+host-API. That makes `part_viii_host_api.md`'s exclusion from both mkdocs navs
+(surfaced by `p6-cleanup-architecture` T13, still open) a real obstacle for this
+feature specifically — the documentation it produces would not be published.

@@ -343,8 +343,9 @@ fixture whose margin delta names the first constraint to fail.
 | DVG-20 | High-sigma importance sampling + estimator and CI | Pending |
 | DVG-21 | Aging: drift, re-verify, margin delta | Pending |
 | DVG-22 | cross-cutting: MD-18 compile-once across every loop | Pending |
+| DVG-23 | `docs/spec/` updated: Part VII (ABI + driver), Part VIII + appendix C (host), AC gap stated (design §G) | Pending |
 
-**Coverage:** 22 total, 0 mapped (tasks phase not started).
+**Coverage:** 23 total, 0 mapped (tasks phase not started).
 
 ---
 
@@ -362,4 +363,6 @@ fixture whose margin delta names the first constraint to fail.
       Carlo yield than the nominal, with the σ scheme stated.
 - [ ] Every gradient the tool cannot compute exactly fails loud — no plausible
       wrong numbers, including for AC metrics until the AC adjoint lands.
+- [ ] `docs/spec/` documents the ABI delta, the adjoint driver, and the
+      AC-gradient gap as a stated limitation with its reason.
 - [ ] `cargo build --workspace` zero warnings; `cargo test --workspace` green.

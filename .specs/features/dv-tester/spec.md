@@ -2,6 +2,8 @@
 
 **Vision:** `.specs/features/design-verification/ideal.md` §4 and §9 items 10–15.
 Decisions D1–D16 are binding; this spec cites them.
+**Surface design:** `ideal.md` in this directory — the four primitive kinds, the
+three-layer library, the two host faces, and the implementability review.
 **Depends on:** `dv-core` (the `validation_reports()` channel is how a tester
 speaks; margins are what `cover` reuses).
 **Sibling:** `dv-gradients`.
@@ -287,8 +289,9 @@ oversized cross is refused at elaboration.
 | DVT-20 | Cross bin cap loud at elaboration, raisable (D10) | Pending |
 | DVT-21 | Host merge across runs; empty-bin identification | Pending |
 | DVT-22 | cross-cutting: fail-loud catalog (Edge Cases) | Pending |
+| DVT-23 | `docs/spec/` updated: Part VIII + appendix C (the tester API), Part VII (element contract), Part I/II + appendix B (`cover`), appendix A (worked example) | Pending |
 
-**Coverage:** 22 total, 0 mapped (tasks phase not started).
+**Coverage:** 23 total, 0 mapped (tasks phase not started).
 
 ---
 
@@ -305,4 +308,6 @@ oversized cross is refused at elaboration.
 - [ ] `cover` over a sweep names its empty bins and merges across two runs; an
       oversized cross is refused at elaboration.
 - [ ] Instantiating a tester and asking for AC fails loud.
+- [ ] `docs/spec/` carries the full tester API normatively, plus a worked
+      example — this surface is learned from examples, not from grammar tables.
 - [ ] `cargo build --workspace` zero warnings; `cargo test --workspace` green.

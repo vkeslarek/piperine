@@ -146,3 +146,15 @@ claim.
 | Solver | `piperine-solver/tests/` — adjoint vs `.sens` within FD tolerance, counted linear solves, fallback coexistence and attribution |
 | Host | root `tests/` — `sensitivity`/`gradient` parity across hosts, optimize convergence with zero recompiles, MC process-vs-mismatch draw structure, `(seed, index)` replay, centering improves worst normalized margin and MC yield |
 | Numeric oracle | `.sens` for DC gradients; a long plain Monte Carlo for the high-sigma estimator's confidence interval |
+
+## G. Spec-document updates (`docs/spec/`)
+
+| Document | What changes |
+|---|---|
+| `part_vii_solver.md` | `AnalogDevice::param_stamps` + `HAS_SENSITIVITY` in the ABI section; the adjoint DC sensitivity driver beside §17's `.sens`, stating that it is a **sibling** of the noise adjoint (§12) and not a reuse; the stamp-perturbation fallback and its reporting contract; the differentiability admissibility rule in one place instead of two |
+| `part_viii_host_api.md` + `appendix_c_host_surface.md` | `sensitivity`/`gradient` on result objects; the optimize/center/monte_carlo driver and its three policies; engine attribution; the AC-gradient gap as documented behavior, not an omission |
+| `part_i_language.md` | nothing — this feature adds no grammar |
+
+The AC-adjoint gap (D6) must appear in the formal spec as a **stated limitation
+with its reason**, not be left for a reader to discover by getting a loud error.
+A gap the spec names is a decision; a gap it omits is a bug report waiting.
