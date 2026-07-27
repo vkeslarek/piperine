@@ -2,7 +2,7 @@
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!
-//! One [`DigitalKernel`] per module, shared across instances. Per-instance
+//! One [`DigitalKernel`](crate::kernel::digital::DigitalKernel) per module, shared across instances. Per-instance
 //! signal values and register banks live in the device (`crate::device`).
 //!
 //! ## Value encoding

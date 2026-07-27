@@ -335,7 +335,7 @@ impl AnalogKernel {
     }
 
     /// `true` when terminal `i` is digital-domain (never an MNA unknown —
-    /// see [`AnalogCore::digital_terminals`]).
+    /// see `AnalogCore::digital_terminals`).
     pub fn is_digital_terminal(&self, i: usize) -> bool {
         self.core.digital_terminals.get(i).copied().unwrap_or(false)
     }
@@ -523,7 +523,7 @@ impl AnalogKernel {
     }
 
     /// The max `State`/`Var` id the compiled code actually loads, as
-    /// `(params_read, state_read, vars_read)` (from [`FlatAnalog::read_bounds`]).
+    /// `(params_read, state_read, vars_read)` (from `FlatAnalog::read_bounds`).
     /// A kernel with `state_read == 0 && vars_read == 0` reads no runtime
     /// state/vars, so its residual/charge can be recomputed outside the
     /// solver from terminal voltages alone (the common R/C/nonlinear case).

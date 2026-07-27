@@ -117,7 +117,7 @@ pub trait Object: fmt::Debug {
         format!("<{}>", self.type_name())
     }
 
-    /// Value-based equality for [`Value::PartialEq`] — returns true when two
+    /// Value-based equality for `PartialEq` — returns true when two
     /// objects' data compares equal (e.g. two `NetRef`s with the same name).
     /// The default is identity (distinct objects compare unequal), which is
     /// the safe fallback; concrete object types that have meaningful value

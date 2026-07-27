@@ -352,7 +352,7 @@ impl Introspect for PiperineDevice {
     }
 
     /// Declared query catalog (ABI-31 / PIA-05): one `QueryDescriptor` per
-    /// opvar, typed [`QueryKind::OperatingVariable`]. The name is the author-
+    /// opvar, typed [`QueryKind::OperatingVariable`](piperine_solver::abi::QueryKind::OperatingVariable). The name is the author-
     /// declared `@name(value)` when present (PIA-07); `@unit`/`@description`
     /// annotate the descriptor when declared. Absent attributes → the bare
     /// `QueryDescriptor::opvar(name)` shape (PIA-08, no regression).

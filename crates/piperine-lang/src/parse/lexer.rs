@@ -11,7 +11,7 @@
 //!
 //! - It does **not** distinguish keywords from identifiers at the token level.
 //!   All identifiers (including `mod`, `fn`, `for`, …) are emitted as
-//!   `Tok::Ident`. The parser matches keyword spellings with [`eat_ident`].
+//!   `Tok::Ident`. The parser matches keyword spellings with `eat_ident`.
 //! - It does **not** validate that integer or real literals fit any particular
 //!   type — that is a semantic concern.
 //! - It does **not** track newlines for error messages (V1: byte offsets only).

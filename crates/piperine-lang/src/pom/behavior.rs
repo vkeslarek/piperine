@@ -7,7 +7,7 @@ use crate::pom::net_type::TypeRef;
 use crate::pom::node::Kind;
 use crate::pom::traits::{Kinded, Named};
 
-/// Behavior bodies are the surface [`Stmt`] type directly
+/// Behavior bodies are the surface [`Stmt`](crate::parse::ast::Stmt) type directly
 /// (SIMPLIFICATION.md P3): the elaborator const-folds structural `if`s and
 /// unrolls `for`s *in place*, and records the one thing it genuinely adds —
 /// resolved `var` types — in [`Behavior::var_types`], instead of deep-copying

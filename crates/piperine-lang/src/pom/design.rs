@@ -53,7 +53,7 @@ pub struct Project {
     /// from. Items declared in the project itself are absent.
     pub origins: HashMap<String, String>,
     /// Item-name → the real on-disk file it was declared in (BUG-1/
-    /// LSB-01..03), recorded by [`crate::resolve::Resolver::item_files`]
+    /// LSB-01..03), recorded by `crate::resolve::Resolver::item_files`
     /// during elaboration. Absence means "no textual declaration is
     /// tracked" (e.g. a native-only registry entry) — goto-definition
     /// declines rather than fabricating a location.

@@ -135,7 +135,7 @@ impl Elaborator {
     }
 
     /// Run the elaboration pipeline over `source`: every stage is an
-    /// explicit entry in [`passes::PASSES`] (SIMPLIFICATION.md P6) — read
+    /// explicit entry in `passes::PASSES` (SIMPLIFICATION.md P6) — read
     /// that array to read the phase order; this driver only loops.
     pub fn elaborate(&mut self, source: SourceFile) -> Result<Design, ElabError> {
         self.pending_items = source.items;
@@ -153,7 +153,7 @@ impl Elaborator {
     /// every module's typecheck) rather than stopping at the first
     /// failure, recording each error in `self.accumulated_errors` while
     /// still returning their *first* error to satisfy the ordinary
-    /// [`ElabPass::run`] contract other callers (`elaborate`) rely on.
+    /// `ElabPass::run` contract other callers (`elaborate`) rely on.
     /// This driver tells the two cases apart by whether
     /// `accumulated_errors` actually grew during the failing pass: if it
     /// did, the pass already recorded everything it could and the

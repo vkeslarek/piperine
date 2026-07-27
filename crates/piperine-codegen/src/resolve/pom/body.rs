@@ -46,7 +46,7 @@ impl LoweredBody {
 /// One unresolved name found while lowering `Design` → IR (SIMPLIFICATION.md
 /// P5). This phase used to paper over these with `ParamId(0)`/`GROUND`
 /// placeholders — silently mis-wiring the circuit; now every failed
-/// resolution is recorded and [`ppr_to_ir`] refuses to hand out the program.
+/// resolution is recorded and [`lower_bodies`] refuses to hand out the program.
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("in module `{module}`: unresolved {what} `{name}`")]
 pub struct LowerError {

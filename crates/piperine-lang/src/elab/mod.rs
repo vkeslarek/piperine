@@ -1,7 +1,7 @@
 //! # Elaboration phase
 //!
-//! Transforms a parsed [`SourceFile`][crate::parse::SourceFile] into a fully
-//! resolved [`Design`][crate::Design].
+//! Transforms a parsed [`SourceFile`] into a fully
+//! resolved [`Design`].
 //!
 //! ```text
 //! SourceFile (parse AST)  ──Elaborator──▶  Design (elaborated IR + POM)
@@ -16,7 +16,7 @@
 //!    prepended so they are always in scope without requiring an explicit `use`.
 //! 3. **Symbol registration** — disciplines, bundles, enums, modules, behaviors,
 //!    functions, capabilities, impls are indexed into symbol tables.
-//! 4. **Semantic validation** — [`validate`] rejects `<+` in digital blocks,
+//! 4. **Semantic validation** — the [`EventRegistry`](crate::elab::event::EventRegistry) rejects `<+` in digital blocks,
 //!    `<-`/`<+` in mod bodies, and domain-mismatched event kinds.
 //! 5. **Type resolution** — every `Type { name: String }` in the AST is
 //!    resolved to a `NetType` or `ValueType`; array dimensions are
@@ -29,7 +29,7 @@
 //!    produces `Module { name: "Foo__8", … }` with `N=8` substituted.
 //! 9. **Behavioral for unrolling** — `for` loops in `analog`/`digital` blocks
 //!    must have elaboration-constant bounds and are fully unrolled.
-//! 10. **Event validation** — event names looked up in the [`EventRegistry`].
+//! 10. **Event validation** — event names looked up in the [`EventRegistry`](crate::elab::event::EventRegistry).
 
 // hygiene-exempt: the elaboration phase contract is long-form prose (the pass list,
 // the SourceFile -> Design pipeline) plus `SourceFile`'s own impl. 72 of its 172
@@ -65,7 +65,7 @@ impl SourceFile {
     }
 
     /// Like [`elaborate_with`](Self::elaborate_with), but lets the caller
-    /// seed the [`ElabContext`] registries before elaboration runs — the
+    /// seed the [`ElabContext`](crate::elab::registry::ElabContext) registries before elaboration runs — the
     /// entry point plugin hosts use to contribute attribute schemas
     /// (SPEC Part VI §11) without `piperine-lang` knowing about plugins.
     pub fn elaborate_seeded(
@@ -136,7 +136,7 @@ impl SourceFile {
     /// (`Elaborator::elaborate_accumulating` — see its docs for exactly
     /// which passes accumulate vs. fail fast) instead of returning
     /// `Result`. `errors` is empty on a clean elaboration; a non-empty
-    /// `errors` means `design`/the returned [`ElabContext`] are
+    /// `errors` means `design`/the returned [`ElabContext`](crate::elab::registry::ElabContext) are
     /// best-effort/partial (whatever passes managed to run before a
     /// fail-fast precondition stopped the pipeline, or everything an
     /// accumulating pass could still process around its own failures).
