@@ -17,10 +17,12 @@
 
 mod descriptors;
 mod design;
+mod instance;
 mod module;
 
 pub use descriptors::{Behavior, Instance, Net, Param, Port, Terminal};
 pub use design::{Design, Node, Selection};
+pub use instance::{InstanceReadout, InstanceResolver, InstanceView};
 pub use module::Module;
 pub use piperine_solver::prelude::{
     ModelDescriptor, ObservableDescriptor, ParamDescriptor, TerminalDescriptor,
