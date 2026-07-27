@@ -223,7 +223,11 @@ fn findings_carry_the_authored_hierarchical_instance_path() {
     );
 
     let opts = TransientAnalysisOptions::new(1e-6, 1e-7);
-    let result = circuit.transient(opts, Context::default()).unwrap().solve().unwrap();
+    // Collect: the violated require must not cut the run short — the
+    // finding is read back after the last accepted step (posture
+    // behavior itself is T17's `margin_postures.rs`).
+    let collect = Context { checks: CheckPosture::Collect, ..Default::default() };
+    let result = circuit.transient(opts, collect).unwrap().solve().unwrap();
     let last = result.get(result.len() - 1).expect("accepted steps recorded");
 
     let dut = circuit

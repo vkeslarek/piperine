@@ -40,6 +40,12 @@ pub struct SolverStats {
     // one entry per device whose limiter clamped a value. Empty when no
     // device limited (the common case for linear / well-converged circuits).
     pub limiting: Vec<crate::core::element::LimitingReport>,
+    // DVC-15: validation findings recorded at the analysis's evaluation
+    // points — the collect posture accumulates the whole run; strict
+    // accumulates until the first Error aborts it. Empty when checks are
+    // off (the hook is never polled) or no element declared
+    // EMITS_VALIDATION.
+    pub validation: Vec<crate::core::validation::ValidationFinding>,
 }
 
 #[derive(Debug)]

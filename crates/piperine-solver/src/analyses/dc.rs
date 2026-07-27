@@ -358,14 +358,16 @@ impl<'a> DcSolver<'a> {
             (sol, homotopy_strategy)
         };
 
-        // Validation findings poll (DVC-14): only at the final converged
-        // solution — never at a homotopy stage (design §C3). The union
-        // check skips even the scan for a circuit with no validating
-        // elements. Posture consumption (DVC-15) is wired with the
-        // findings handling.
-        if self.system.circuit.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-            let _reports = self.system.circuit.validation_reports();
-        }
+        // Validation findings (DVC-14/15): only at the final converged
+        // solution — never at a homotopy stage (design §C3). The posture
+        // decides: off never polls, collect records every finding on the
+        // stats, strict fails loud on the first Error.
+        let mut validation = Vec::new();
+        self.system.circuit.consume_validation_reports(
+            self.system.context.checks,
+            crate::error::SolverDomain::Dc,
+            &mut validation,
+        )?;
 
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
@@ -390,6 +392,7 @@ impl<'a> DcSolver<'a> {
         result.stats.homotopy_levels = self.newton_calls.saturating_sub(1);
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
+        result.stats.validation = validation;
         // HOST-10: collect each device's final limiting state — the
         // structured diagnostics a host reads via `op.stats.limiting`.
         // Mirrors `apply_limiting_reports`'s iteration over devices.

@@ -469,6 +469,46 @@ impl CircuitInstance {
             .collect()
     }
 
+    /// Consume the findings of one evaluation point per the check posture
+    /// (DVC-15). `Off` returns before the capability scan — the hook is
+    /// never polled and nothing is reported ("off calls nothing"). Both
+    /// polling postures append every finding to `sink` (the analysis's
+    /// accumulated record, `SolverStats.validation`); `Strict` then fails
+    /// loud on the first [`ValidationSeverity::Error`](crate::core::validation::ValidationSeverity)
+    /// among *this point's* findings, naming the constraint, the instance
+    /// path, the time, and the margin value. A `Warning` never aborts,
+    /// even in strict. `domain` tags the error with the calling analysis.
+    pub fn consume_validation_reports(
+        &self,
+        posture: crate::analyses::CheckPosture,
+        domain: crate::error::SolverDomain,
+        sink: &mut Vec<crate::core::validation::ValidationFinding>,
+    ) -> crate::core::result::Result<()> {
+        use crate::analyses::CheckPosture;
+        use crate::core::validation::ValidationSeverity;
+        if posture == CheckPosture::Off
+            || !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
+        {
+            return Ok(());
+        }
+        let start = sink.len();
+        for (_, report) in self.validation_reports() {
+            sink.extend(report.findings().iter().cloned());
+        }
+        if posture == CheckPosture::Strict
+            && let Some(finding) = sink[start..].iter().find(|f| f.severity == ValidationSeverity::Error)
+        {
+            return Err(crate::error::Error::simple(
+                domain,
+                format!(
+                    "constraint `{}` violated on instance `{}` at t = {}: margin = {:.6} ({})",
+                    finding.label, finding.instance_path, finding.time, finding.value, finding.message
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     // ── Construction ─────────────────────────────────────────────────────────
     //
     // Construction stays in [`CircuitBuilder`](crate::core::builder::CircuitBuilder):
