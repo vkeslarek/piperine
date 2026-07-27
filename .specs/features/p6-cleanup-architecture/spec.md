@@ -414,8 +414,8 @@ in value.
 | CLA-14 ✅ | P1 One host entry | CL-01 (D1, D5) | C | Verified |
 | CLA-15 ✅ | P1 One host entry | CL-01 (file split) | C | Verified |
 | CLA-16 ✅ | P1 One host entry | CL-01 (python retarget, D6) | C | Verified |
-| CLA-17 ✅ | P1 Object model | CL-02 (D3, lift) | C | Verified |
-| CLA-18 ✅ | P1 Object model | CL-02 (python delegation) | C | Verified |
+| CLA-17 | P1 Object model | CL-02 (D3, lift) | C | Pending |
+| CLA-18 | P1 Object model | CL-02 (python delegation) | C | Pending |
 | CLA-19 | P1 Object model | CL-02 (Rust proof target) | C | Pending |
 | CLA-20 | P2 Codegen abstractions | CL-10.1 (builder) | D | Pending |
 | CLA-21 | P2 Codegen abstractions | CL-10.2 (query surface) | D | Pending |
