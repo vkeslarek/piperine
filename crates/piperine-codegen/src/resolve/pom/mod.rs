@@ -6,9 +6,11 @@
 
 pub mod analog_ops;
 pub mod body;
+pub mod constraints;
 pub mod expr;
 pub mod stmt;
 pub mod structure;
 
 pub use body::{LoweredBody, LowerError, LowerErrors, lower_bodies};
+pub use constraints::{LoweredMargin, MarginKind};
 pub(crate) use body::LowerCtx;

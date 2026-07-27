@@ -32,6 +32,12 @@ pub struct LoweredBody {
     pub ports: Vec<Port>,
     pub analog: Option<AnalogBody>,
     pub digital: Option<DigitalBody>,
+    /// The module's lowered constraint margins (DVC-08): one per
+    /// `require`/`target` across the module's constraint blocks, signed
+    /// and scale-normalized (`expr ≥ 0` ⟺ satisfied). `None` when the
+    /// module declares no constraint block — nothing lowered, nothing
+    /// allocated.
+    pub constraints: Option<Vec<crate::resolve::pom::LoweredMargin>>,
 }
 
 impl LoweredBody {
@@ -270,7 +276,14 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             "flat_module falls back to modules; name came from modules() so this is an internal bug",
         );
         let (symbols, ports) = build_symbols_and_ports(m, prog);
-        bodies.push(LoweredBody { name: name.clone(), symbols, ports, analog: None, digital: None });
+        bodies.push(LoweredBody {
+            name: name.clone(),
+            symbols,
+            ports,
+            analog: None,
+            digital: None,
+            constraints: None,
+        });
     }
 
     // Pass 1.5: Add non-generic functions to each module's symbol table.
@@ -468,6 +481,41 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     stmts,
                 });
             }
+        }
+
+        // Constraint margins (DVC-08): every `require`/`target` on the
+        // module lowers to its signed, scale-normalized margin expression
+        // against the same scope the module's analog bodies resolved
+        // against (instance ports, enum values, consts, fn signatures).
+        // No constraint block → `None` stays — nothing lowered, nothing
+        // allocated.
+        if !m.constraints().is_empty() {
+            let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
+            let mut cctx =
+                LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false, module_vars);
+            cctx.instance_ports = instance_ports.clone();
+            cctx.enum_values = prog.enum_value_map();
+            cctx.consts = LowerCtx::const_irs(prog);
+            cctx.fn_bundle_sigs = structure::fn_bundle_signatures(prog);
+            for p in m.params() {
+                if let Some((logical, bundle)) = &p.bundle_origin {
+                    cctx.bundle_bindings
+                        .entry(logical.clone())
+                        .or_insert_with(|| (bundle.clone(), structure::bundle_field_names(prog, bundle)));
+                }
+                if let piperine_lang::pom::ValueType::Bundle(bundle) = &p.ty {
+                    cctx.bundle_bindings
+                        .entry(p.name().to_string())
+                        .or_insert_with(|| (bundle.clone(), structure::bundle_field_names(prog, bundle)));
+                }
+            }
+            let mut margins = Vec::new();
+            for block in m.constraints() {
+                margins.extend(super::constraints::ConstraintLowering::lower(block, &mut cctx));
+            }
+            digital_shadows.append(&mut cctx.digital_shadows);
+            errors.append(&mut cctx.errors);
+            bodies[i].constraints = Some(margins);
         }
 
         if !digital_shadows.is_empty() {

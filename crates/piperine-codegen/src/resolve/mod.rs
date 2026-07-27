@@ -31,7 +31,7 @@ pub use symbols::{
     LaplaceKind, NatureId, NatureInfo, NatureKind, NodeId, NodeInfo, ParamId, ParamInfo, StateId,
     SymbolTable, TableRef, VarId, VarInfo, ZKind,
 };
-pub use pom::{lower_bodies, LowerError, LowerErrors, LoweredBody};
+pub use pom::{LoweredMargin, MarginKind, lower_bodies, LowerError, LowerErrors, LoweredBody};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

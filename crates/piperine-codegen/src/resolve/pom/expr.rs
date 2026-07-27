@@ -638,7 +638,7 @@ fn inline_fn_body(stmts: &[Stmt], subst: &mut std::collections::HashMap<String, 
     Expr::Literal(Literal::Real(0.0))
 }
 
-fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, Expr>) -> Expr {
+pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, Expr>) -> Expr {
     match expr {
         Expr::Ident(name) => {
             subst.get(name).cloned().unwrap_or_else(|| expr.clone())
