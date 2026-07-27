@@ -32,6 +32,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Python 3.13 (PyO3 0.23's max supported version)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Build the Python extension module (bundled into the CLI)
         run: cargo build --release -p piperine-python --features extension-module
 
