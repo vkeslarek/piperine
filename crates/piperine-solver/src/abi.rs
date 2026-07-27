@@ -38,7 +38,7 @@ pub use crate::digital::{DigitalEvent, DigitalNet, LogicValue};
 pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches
-pub use crate::analyses::{Context, Policy, Tolerances};
+pub use crate::analyses::{CheckPosture, Context, Policy, RequireScope, Tolerances};
 pub use crate::analyses::events::{
     EventEntry, EventKind, EventPriority, EventQueue, EventSource, EventTarget, RollbackBehavior,
 };

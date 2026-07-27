@@ -165,6 +165,7 @@ fn set_temperature_called_before_first_load() {
     let run_temperature = 325.0;
     let ctx = Context {
         tolerances: Tolerances { temperature: run_temperature, ..Tolerances::default() },
+        ..Context::default()
     };
     let mut solver = Solver::new(circuit).with_context(ctx).build();
     let _ = solver.dc().unwrap().solve().unwrap();

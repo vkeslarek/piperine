@@ -37,6 +37,14 @@ const MODEL_INSTANCE_VIEW_METHODS: &[&str] = &[
     "observables", "param", "params",
 ];
 
+/// The uniform solver-config field surface (DVC-12 / MD-22): the fields both
+/// hosts' solver config carries, spelled identically — the Rust
+/// `SolverConfig` and the Python `Solver` dataclass.
+const SOLVER_CONFIG_FIELDS: &[&str] = &[
+    "temperature", "reltol", "abstol", "gmin", "max_iter", "dc_damp_tolerance", "checks",
+    "require_scope",
+];
+
 const RLC_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
@@ -283,5 +291,73 @@ fn host_parity_model_surface_matches_on_both_hosts() {
     assert!(
         gaps.trim().is_empty(),
         "the object-model surface drifted between hosts (MD-22 breach): {gaps}"
+    );
+}
+
+/// Every name in [`SOLVER_CONFIG_FIELDS`], read on the Rust `SolverConfig`
+/// — a compile-time proof (not merely a runtime one) that the Rust host
+/// carries the full solver-config field set. The posture fields carry the
+/// DVC-12 / D2 defaults (`Strict`, `EveryAnalysis`).
+fn read_every_rust_solver_config_field() {
+    let config = SolverConfig::default();
+    let _ = config.temperature;
+    let _ = config.reltol;
+    let _ = config.abstol;
+    let _ = config.gmin;
+    let _ = config.max_iter;
+    let _ = config.dc_damp_tolerance;
+    assert_eq!(config.checks, piperine::prelude::CheckPosture::Strict, "DVC-12 default");
+    assert_eq!(
+        config.require_scope,
+        piperine::prelude::RequireScope::EveryAnalysis,
+        "D2 default"
+    );
+}
+
+/// DVC-12 / MD-22: the solver-config field set is identical on both hosts —
+/// the Rust `SolverConfig` (compile-time, see
+/// [`read_every_rust_solver_config_field`]) and the Python `Solver`
+/// dataclass (runtime `inspect.signature`, both directions: a field present
+/// on one host but not the other trips the guard).
+#[test]
+fn host_parity_solver_config_fields_match_on_both_hosts() {
+    read_every_rust_solver_config_field(); // fails to COMPILE if Rust drifts
+
+    let names_py =
+        SOLVER_CONFIG_FIELDS.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let out = std::env::temp_dir().join("piperine_host_parity_solver_config.txt");
+    let script = format!(
+        r#"
+import inspect
+import piperine
+
+def _probe():
+    names = [{names}]
+    params = set(inspect.signature(piperine.Solver).parameters.keys())
+    gaps = []
+    for n in names:
+        if n not in params:
+            gaps.append("missing:" + n)
+    for n in params:
+        if n not in names:
+            gaps.append("extra:" + n)
+    with open({out:?}, "w") as f:
+        f.write(" ".join(gaps))
+
+_probe()
+"#,
+        names = names_py,
+        out = out.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_solver_config_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python config probe runs");
+    let gaps = std::fs::read_to_string(&out).expect("read config-parity probe output");
+    for p in [&out, &script_path] {
+        let _ = std::fs::remove_file(p);
+    }
+    assert!(
+        gaps.trim().is_empty(),
+        "the solver-config field set drifted between hosts (MD-22 breach): {gaps}"
     );
 }

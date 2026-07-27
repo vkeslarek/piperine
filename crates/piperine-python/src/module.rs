@@ -81,8 +81,36 @@ impl _Module {
             sc.gmin = obj.getattr("gmin")?.extract()?;
             sc.max_iter = obj.getattr("max_iter")?.extract()?;
             sc.dc_damp_tolerance = obj.getattr("dc_damp_tolerance")?.extract()?;
+            sc.checks = Self::check_posture(&obj.getattr("checks")?.extract::<String>()?)?;
+            sc.require_scope = Self::require_scope(&obj.getattr("require_scope")?.extract::<String>()?)?;
         }
         Ok(sc)
+    }
+
+    /// The `checks` string → [`CheckPosture`] mapping (DVC-12). An unknown
+    /// spelling fails loud naming it and the valid values.
+    fn check_posture(name: &str) -> PyResult<piperine_api::prelude::CheckPosture> {
+        use piperine_api::prelude::CheckPosture;
+        match name {
+            "strict" => Ok(CheckPosture::Strict),
+            "collect" => Ok(CheckPosture::Collect),
+            "off" => Ok(CheckPosture::Off),
+            other => Err(PyValueError::new_err(format!(
+                "unknown checks posture {other:?}; expected one of \"strict\", \"collect\", \"off\""
+            ))),
+        }
+    }
+
+    /// The `require_scope` string → [`RequireScope`] mapping (D2). An
+    /// unknown spelling fails loud naming it and the valid values.
+    fn require_scope(name: &str) -> PyResult<piperine_api::prelude::RequireScope> {
+        use piperine_api::prelude::RequireScope;
+        match name {
+            "every_analysis" => Ok(RequireScope::EveryAnalysis),
+            other => Err(PyValueError::new_err(format!(
+                "unknown require_scope {other:?}; expected \"every_analysis\""
+            ))),
+        }
     }
 }
 

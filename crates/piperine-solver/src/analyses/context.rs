@@ -145,13 +145,48 @@ impl Default for Policy {
 
 // ── Context (shared, immutable) ────────────────────────────────────────────
 
-/// The shared context every analysis receives: only the immutable
-/// [`Tolerances`]. Mutable convergence state lives on [`Policy`], owned by
-/// the driver; simulation time reaches elements through their analysis
-/// context or as an explicit argument (MD-04).
+/// The check posture (DVC-12): how an analysis reacts when a validation
+/// finding fires or a `require` margin crosses zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CheckPosture {
+    /// A `require` margin below zero — or any `Error` finding — fails the
+    /// analysis loud, naming the constraint, the instance path, the time,
+    /// and the margin value. The default: a silent pass is never the
+    /// default posture.
+    #[default]
+    Strict,
+    /// Margins and findings are recorded (worst margin with its argmin);
+    /// the analysis always completes. The optimizer's inner-loop posture —
+    /// an infeasible iterate is a margin to climb out of, not an exception.
+    Collect,
+    /// Constraint kernels are never called and the findings hook is never
+    /// polled — zero cost, nothing reported.
+    Off,
+}
+
+/// Which analyses an unscoped `require` holds in (D2). The scope is a
+/// [`Context`] field, not a hard-coded rule — the default is every
+/// analysis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RequireScope {
+    /// An unscoped `require` holds in every analysis (D2's default).
+    #[default]
+    EveryAnalysis,
+}
+
+/// The shared context every analysis receives: the immutable
+/// [`Tolerances`], the check posture, and the unscoped-`require` scope.
+/// Mutable convergence state lives on [`Policy`], owned by the driver;
+/// simulation time reaches elements through their analysis context or as an
+/// explicit argument (MD-04). The posture fields are pure run data —
+/// changing them between analyses triggers no recompilation (MD-18).
 #[derive(Debug, Clone, Default)]
 pub struct Context {
     pub tolerances: Tolerances,
+    /// How the analysis reacts to findings and margin crossings (DVC-12).
+    pub checks: CheckPosture,
+    /// Which analyses an unscoped `require` holds in (D2).
+    pub require_scope: RequireScope,
 }
 
 impl Context {

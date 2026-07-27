@@ -2,7 +2,7 @@
 //! ([`Scale`]) and the tolerances + convergence tunables every analysis reads
 //! before it solves ([`SolverConfig`]).
 
-use piperine_solver::prelude::{Context, Policy};
+use piperine_solver::prelude::{CheckPosture, Context, Policy, RequireScope};
 
 /// Frequency-sweep geometry (HOST-23): `Lin` steps `points` values evenly
 /// over `[fstart, fstop]`; `Dec`/`Oct` step logarithmically (decade/octave
@@ -32,8 +32,8 @@ impl From<Scale> for bool {
     }
 }
 
-/// Analysis configuration (tolerances + convergence tunables) read before an
-/// analysis runs.
+/// Analysis configuration (tolerances + convergence tunables + the check
+/// posture) read before an analysis runs.
 #[derive(Debug, Clone)]
 pub struct SolverConfig {
     pub temperature: f64,
@@ -42,6 +42,13 @@ pub struct SolverConfig {
     pub gmin: f64,
     pub max_iter: usize,
     pub dc_damp_tolerance: f64,
+    /// The check posture (DVC-12) — identical to the Python `Solver.checks`
+    /// field (MD-22). Pure run data: changing it between analyses never
+    /// recompiles (MD-18).
+    pub checks: CheckPosture,
+    /// Which analyses an unscoped `require` holds in (D2) — identical to
+    /// the Python `Solver.require_scope` field (MD-22).
+    pub require_scope: RequireScope,
 }
 
 impl Default for SolverConfig {
@@ -55,13 +62,15 @@ impl Default for SolverConfig {
             gmin: tol.gmin,
             max_iter: policy.max_iter,
             dc_damp_tolerance: policy.dc_damp_tolerance,
+            checks: CheckPosture::default(),
+            require_scope: RequireScope::default(),
         }
     }
 }
 
 impl SolverConfig {
-    /// The shared solver [`Context`] (tolerances) this config maps to.
-    /// Public: hosts that drive `CircuitInstance` analyses directly (the
+    /// The shared solver [`Context`] (tolerances + posture) this config maps
+    /// to. Public: hosts that drive `CircuitInstance` analyses directly (the
     /// Python live session) reuse the same mapping.
     pub fn to_context(&self) -> Context {
         Context {
@@ -72,6 +81,8 @@ impl SolverConfig {
                 gmin: self.gmin,
                 ..Default::default()
             },
+            checks: self.checks,
+            require_scope: self.require_scope,
         }
     }
 

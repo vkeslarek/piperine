@@ -35,7 +35,7 @@ pub use crate::analyses::sens::{SensAnalysisOptions, SensResult};
 pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
 pub use crate::analyses::transient::TransientAnalysisOptions;
 pub use crate::analyses::Context;
-pub use crate::analyses::{Policy, Tolerances};
+pub use crate::analyses::{CheckPosture, Policy, RequireScope, Tolerances};
 pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────

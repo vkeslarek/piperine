@@ -273,9 +273,13 @@ class Solver(_ConfigMixin):
 
     Field defaults mirror ``headers/prelude.phdl`` exactly; the solver's own
     defaults (``Context::default``/``Policy::default``) are the source of
-    truth on the Rust side. ``dc_damp_tolerance`` (DC damping/homotopy
+    truth on the Rust side.     ``dc_damp_tolerance`` (DC damping/homotopy
     threshold) is the same knob the Rust ``SolverConfig`` carries — HOST-20
     canonicalizes the two hosts on one name (``Solver``) and one field set.
+    ``checks`` is the check posture (``"strict"``/``"collect"``/``"off"``,
+    DVC-12) and ``require_scope`` the unscoped-``require`` scope
+    (``"every_analysis"``, D2) — the same two fields the Rust
+    ``SolverConfig``/``Context`` carry (MD-22).
     """
 
     temperature: float = 300.15
@@ -284,6 +288,8 @@ class Solver(_ConfigMixin):
     gmin: float = 1e-12
     max_iter: int = 100
     dc_damp_tolerance: float = 0.5
+    checks: str = "strict"
+    require_scope: str = "every_analysis"
 
 
 @dataclass
