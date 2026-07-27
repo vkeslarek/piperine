@@ -26,7 +26,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, Expr, Literal, UnaryOp};
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
-    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, ValueType,
+    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, StmtClass, ValueType,
 };
 
 use super::Elaborator;
@@ -456,6 +456,7 @@ impl Elaborator {
         let env = ConstEnv::with_globals(self.syms.globals.clone());
         let mut scope = ConstraintScope::new(&decl.name, module, design, &self.ctx, &self.syms.globals);
         let mut var_types = HashMap::new();
+        let mut stmt_classes = Vec::with_capacity(decl.body.len());
 
         for stmt in &decl.body {
             match stmt {
@@ -466,6 +467,11 @@ impl Elaborator {
                         .map_err(|e| e.with_span(*span))?;
                     let info = scope.resolve_expr(value, &site).map_err(|e| e.with_span(*span))?;
                     var_types.insert(name.clone(), vt.clone());
+                    // A `var` takes its expression's class: pointwise
+                    // arithmetic over a reduced value is itself reduced
+                    // (design §C2), so a reduced initializer marks the var
+                    // reduced and any pointwise use of it fails below.
+                    stmt_classes.push(StmtClass { class: info.class, analyses: info.analyses.iter().cloned().collect() });
                     scope.define_var(name, ExprInfo { ty: vt, class: info.class, analyses: info.analyses });
                 }
                 ConstraintStmt::Require { name, pred, span } => {
@@ -479,22 +485,46 @@ impl Elaborator {
                             ))
                             .with_span(*span));
                     }
+                    // A `require` holds at every evaluation point (D2) — a
+                    // reduced quantity does not exist per point (DVC-09).
+                    if info.class == QuantityClass::Reduced {
+                        return Err(scope
+                            .fail(&site, "a reduced quantity is checkable once per analysis, not per point".into())
+                            .with_span(*span));
+                    }
+                    stmt_classes.push(StmtClass {
+                        class: QuantityClass::Pointwise,
+                        analyses: info.analyses.iter().cloned().collect(),
+                    });
                 }
                 ConstraintStmt::Target { expr, level, tol, span, .. } => {
                     let site = "`target` statement".to_string();
+                    let expr_info = scope.resolve_expr(expr, &site).map_err(|e| e.with_span(*span))?;
+                    if expr_info.ty != ValueType::Real {
+                        return Err(scope
+                            .fail(&site, format!("`target` operand must be Real, found `{:?}`", expr_info.ty))
+                            .with_span(*span));
+                    }
+                    let mut analyses = expr_info.analyses.clone();
                     for (what, operand) in
-                        [("operand", expr), ("level", level)].into_iter().chain(tol.iter().map(|t| ("tol scale", t)))
+                        [("level", level)].into_iter().chain(tol.iter().map(|t| ("tol scale", t)))
                     {
                         let info = scope.resolve_expr(operand, &site).map_err(|e| e.with_span(*span))?;
                         if info.ty != ValueType::Real {
                             return Err(scope
-                                .fail(&site, format!(
-                                    "`target` {what} must be Real, found `{:?}`",
-                                    info.ty
-                                ))
+                                .fail(&site, format!("`target` {what} must be Real, found `{:?}`", info.ty))
                                 .with_span(*span));
                         }
+                        // A pointwise target is checked per point — its
+                        // level and scale must exist per point too.
+                        if expr_info.class == QuantityClass::Pointwise && info.class == QuantityClass::Reduced {
+                            return Err(scope
+                                .fail(&site, "a reduced quantity is checkable once per analysis, not per point".into())
+                                .with_span(*span));
+                        }
+                        analyses.extend(info.analyses.iter().cloned());
                     }
+                    stmt_classes.push(StmtClass { class: expr_info.class, analyses: analyses.iter().cloned().collect() });
                 }
             }
         }
@@ -505,6 +535,7 @@ impl Elaborator {
             name: decl.name.clone(),
             stmts: decl.body.clone(),
             var_types,
+            stmt_classes,
         })
     }
 }
