@@ -16,11 +16,11 @@ grammar. The first two carry the feature:
 2. **The `constraint` block** — a third body kind whose statements evaluate
    inside the kernel at every accepted solver point.
 
-Two smaller additions follow them, in later waves of the same release:
+Three smaller additions follow them, in later waves of the same release:
 event-block **window arguments** (`after =`/`dur =`, reusing the existing
-`EventBlock` production) and the **`cover`** statement kind inside a constraint
-body. One more is still open: whether RNM needs an explicit `behavioral` body
-kind (§9.2 Q1).
+`EventBlock` production), the **`cover`** statement kind inside a constraint
+body, and the **`behavioral`** body kind for event-scheduled real-valued
+modules (D8). Five grammar additions in total, and the list is now closed.
 
 Everything else — the optimizer, Monte Carlo, centering, coverage closure,
 high-sigma methods, monitors, testers, aging — is host code or stdlib over those
@@ -1052,7 +1052,7 @@ exist in the formal spec.
     tracking). Cross coverage (`cover cross temp_x_region`) is a pair of
     expressions binned jointly; the bin space is the product, so the language
     should refuse a cross whose product exceeds a declared cap rather than
-    quietly allocating a sparse 10⁶-bin table.
+    quietly allocating a sparse 10⁶-bin table (D10).
 
     The state, though, is unlike anything else in this document: coverage
     **accumulates across runs**, which margins never do. A margin is a property
@@ -1063,11 +1063,13 @@ exist in the formal spec.
     fill them") is the actual deliverable, and it is host analysis over merged
     counters. The `m1.region` opvar it samples already landed with Wave-1 item 4.
 
-    One design consequence worth stating: coverage is the only construct here
-    that is *useless* under `checks=off`, because its value is the accumulation.
-    It needs its own posture (`cover=on|off`) rather than riding the check
-    posture, or an optimizer's 10³ inner-loop runs will pollute the coverage
-    database with iterates that were never meant to be verification runs.
+Two design consequences, both now decided. Coverage is the only construct here
+    whose value is *accumulation*, so it gets its own posture — `cover=on|off` on
+    `Context` (D9), not a ride on `checks=`, or an optimizer's 10³ inner-loop
+    iterates pollute the database with runs nobody meant as verification. And the
+    joint bin count of a cross is checked **at elaboration** against a
+    `Context`-raisable cap (D10): bin edges are literal ranges, so the product is
+    known statically and a 10⁶-bin cross is refused before anything allocates.
 
 11. **Sequential (SVA-shaped) properties = monitor modules on the validation
     channel.** Do not import SVA. A sequential property is a small ordinary
@@ -1106,11 +1108,15 @@ exist in the formal spec.
     `avg`/`max`/`min` all are by construction (unlike `last_write`, which is why
     it is not in the declared set).
 
-    (b) **An event-scheduled body for all-storage-real modules.** This is the
-    100–1000× speedup that makes system-level mixed-signal verification finish,
-    and the one remaining grammar question (§9 Q5): explicit `behavioral` kind
-    versus inferred from the module's nets. The cliff is real either way; the
-    question is whether source has to admit it.
+    (b) **An event-scheduled `behavioral` body** for all-storage-real modules
+    (D8). This is the 100–1000× speedup that makes system-level mixed-signal
+    verification finish, and it is declared, not inferred: `behavioral Divider
+    { … }` says in one word that this module leaves the MNA and is scheduled by
+    events. A module that answers a different numerical question should not
+    require a net-type audit to notice. The keyword also gives the elaborator a
+    place to enforce the rule — a `behavioral` body touching a conservative net
+    is a loud error, where inference would have silently produced a slow module
+    that looked fast.
 
     (c) **Bridging needs no keyword at all.** The declared-impedance bridge is an
     ordinary module whose `analog` body states the impedance in code:
@@ -1190,10 +1196,10 @@ gradient path for continuous sizing; revisit only for topology choices).
 |---|---|---|
 | 1 | `tol` clause on `param`; `constraint` block with `require`/`var`/`target`; analysis-scoped `@ dc`/`@ tran`/`@ ac` blocks | kernel margin evaluation, validation channel + capability bit, ∂F/∂p kernel, DC adjoint, SOA blocks on the spice models |
 | 2 | event-term `after =`/`dur =` args + window algebra (reusing `EventBlock`) | optimizer, Monte Carlo, centering — all host |
-| 3 | `cover` statement kind; **maybe** one body kind (`behavioral`, §9.2 Q1) | resolve kinds (already in the formal grammar), monitors (ordinary `digital` modules), high-sigma, aging, testers — all host or stdlib |
+| 3 | `cover` statement kind; the `behavioral` body kind (D8) | resolve kinds (already in the formal grammar), monitors (ordinary `digital` modules), high-sigma, aging, testers — all host or stdlib |
 
-Four grammar additions and one maybe, for a feature set the incumbents spread
-across five separate tools. That ratio is the No-Bloat argument in one table.
+Five grammar additions, for a feature set the incumbents spread across five
+separate tools. That ratio is the No-Bloat argument in one table.
 
 The dependency spine is short: **`tol` (1) and margins (2–3) unlock SOA (4);
 margins plus gradients (5) unlock optimization (6); those plus sampling (7)
@@ -1226,24 +1232,22 @@ is what genuinely still needs a decision.
 D2 and D3 both landed on the same instinct: make the safe thing the default,
 and give it a knob rather than a special case.
 
+| D8 | RNM bodies: explicit or inferred | **Explicit `behavioral` body kind.** Scheduling is expressed in the language, not deduced from net types. A module that leaves the MNA and becomes event-scheduled runs 100–1000× faster and answers a *different* numerical question; that is not a property a reader should have to infer from a net-type audit. Makes `behavioral` the fifth and final grammar addition. |
+| D9 | Does `cover` get its own posture | **Yes — `cover=on\|off` on `Context`,** beside D2's scoping knob. Coverage is the one construct whose value is accumulation across runs, so riding `checks=` would let an optimizer's 10³ inner-loop iterates pollute the coverage database with iterates nobody meant as verification runs. Same instinct as D2/D3: separate concern, separate knob. |
+| D10 | Cross-coverage bin cap | **Loud at elaboration against a default cap, cap raisable on `Context`** (agent's call). Bin edges are literal ranges, so the joint bin count is known statically — elaboration can refuse a 10⁶-bin cross before anything allocates. A runtime warning was the alternative and loses: this project's rule is fail loud, and an unguarded product silently allocating a sparse table surfaces much later as memory, far from its cause. Raisable rather than fixed so a legitimately large cross is one explicit line, not a fork of the compiler. |
+
+D2, D3, D9, and D10 all landed on the same instinct: make the safe thing the
+default, and give it a knob rather than a special case.
+
 ### 9.2 Still open
 
-1. **RNM bodies: explicit `behavioral` kind, or inferred from all-storage-real
-   nets?** (Wave 3, item 12b — the last place the grammar might grow.) Explicit
-   makes a 100–1000× performance cliff visible in source; inferred is friendlier
-   and needs no keyword. D5 raises the stakes: RNM is V1 now, so this is no
-   longer a question that can wait for a later release. Leaning explicit — a
-   three-orders-of-magnitude difference in what the simulator actually does
-   should be legible at the module, not deduced from its net types.
-2. **Does `cover` get its own posture?** (Wave 3, item 10.) Coverage accumulates
-   across runs, unlike every other construct here, so riding `checks=` would let
-   an optimizer's 10³ inner-loop iterates pollute the coverage database. A
-   separate `cover=on|off` looks right; whether it belongs on `Context` beside
-   D2's knob or on the host's regression driver is undecided.
-3. **What is the cross-coverage bin cap, and is it a language error or a host
-   warning?** A joint bin space is a product, so an unguarded cross can ask for
-   10⁶ bins. Refusing it at elaboration is fail-loud and rigid; warning at run
-   time is flexible and easy to ignore.
+**Nothing blocking.** One clarification worth confirming: D8's rationale was
+read as "the event-scheduling decision belongs expressed in the language". If
+"sequencing in the language" also meant an in-language **sequence syntax** for
+sequential properties (`##`-style, Wave 3 item 11), that is a different and much
+larger decision — item 11 currently argues monitors should be ordinary `digital`
+modules and that a sequence syntax needs usage evidence first. Say so and it
+becomes D11.
 
 ---
 
