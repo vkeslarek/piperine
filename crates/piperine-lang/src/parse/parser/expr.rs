@@ -123,6 +123,7 @@ impl<'a> Parser<'a> {
                     Expr::Literal(Literal::None)
                 } else {
                     let id = s.clone();
+                    self.reject_reserved(&id)?;
                     self.pos += 1;
                     if self.eat(&Tok::DoubleColon) {
                         let mut segments = vec![id];

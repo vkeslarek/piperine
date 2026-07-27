@@ -13,8 +13,8 @@ mod Inverter ( input a : Electrical, inout y : Electrical, inout gnd : Ground ) 
     param r : Real = 1.0e3;
 }
 analog Inverter {
-    var target : Real = -gain * V(a, gnd);
-    I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - target) / r;
+    var v_target : Real = -gain * V(a, gnd);
+    I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - v_target) / r;
 }
 
 mod RingOsc[N] ( inout gnd : Ground ) {

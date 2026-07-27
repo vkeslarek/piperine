@@ -2,8 +2,8 @@ mod Inverter ( input a : Electrical, inout y : Electrical, inout gnd : Ground ) 
     param gain : Real = 10.0;  param c : Real = 1.0e-15;  param r : Real = 1.0e3;
 }
 analog Inverter {
-    var target : Real = -gain * V(a, gnd);                  // inverting gain
-    I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - target) / r;   // single-pole settling
+    var v_target : Real = -gain * V(a, gnd);                // inverting gain
+    I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - v_target) / r;   // single-pole settling
 }
 
 mod RingOsc[N] ( inout gnd : Ground ) {                     // N odd

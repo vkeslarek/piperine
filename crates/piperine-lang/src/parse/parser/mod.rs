@@ -45,6 +45,24 @@ pub trait Parse: Sized {
 }
 
 impl<'a> Parser<'a> {
+    /// Words reserved at the parser level for the design-verification surface
+    /// (DVC-06): `constraint` block keywords, the `tol` clause, and `cover`/
+    /// `global` for the tester and process-variation markers. Reserving them
+    /// here — not contextually — keeps the grammar LL(1).
+    pub(crate) const RESERVED_WORDS: &'static [&'static str] =
+        &["constraint", "require", "target", "tol", "cover", "global"];
+
+    /// Rejects a reserved word used as an identifier (DVC-06).
+    pub(crate) fn reject_reserved(&self, name: &str) -> Result<(), crate::parse::error::ParseError> {
+        if Self::RESERVED_WORDS.contains(&name) {
+            Err(self.make_error(format!(
+                "`{name}` is a reserved word and cannot be used as an identifier"
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Creates a new parser over the given token slice.
     pub fn new(toks: &'a [Lexed]) -> Self {
         Self { toks, pos: 0, cursor_offset: None, expectations: Vec::new(), completion_triggered: false }
@@ -171,6 +189,7 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(Tok::Ident(s)) => {
                 let res = s.clone();
+                self.reject_reserved(&res)?;
                 self.expectations.clear();
                 self.pos += 1;
                 Ok(res)
