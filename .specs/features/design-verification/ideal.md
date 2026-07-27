@@ -6,18 +6,26 @@ implemented; nothing here is committed to. Syntax is illustrative and uses real
 PHDL grammar (`mod`/`analog`/`digital`/`bundle`/`discipline`/`param` blocks,
 `V(a, b) <- expr` contributions) so the sketches can be read against the tree.
 
-**Scope decision (2026-07-26):** of everything explored in this document,
-exactly **two** constructs pass the No-Bloat burden of proof and enter the
-grammar:
+**Scope decision (2026-07-26, revised 2026-07-27):** of everything explored in
+this document, these constructs pass the No-Bloat burden of proof and enter the
+grammar. The first two carry the feature:
 
 1. **`tol` on `param`** — statistical variation declared on the parameter it
    perturbs, visible in the POM.
 2. **The `constraint` block** — a third body kind whose statements evaluate
    inside the kernel at every accepted solver point.
 
+Two smaller additions follow them, in later waves of the same release:
+event-block **window arguments** (`after =`/`dur =`, reusing the existing
+`EventBlock` production) and the **`cover`** statement kind inside a constraint
+body. One more is still open: whether RNM needs an explicit `behavioral` body
+kind (§9.2 Q1).
+
 Everything else — the optimizer, Monte Carlo, centering, coverage closure,
-high-sigma methods — is host code, stdlib, or explicitly deferred. The rest of
-this document argues why those two, and only those two, deserve layer 0.
+high-sigma methods, monitors, testers, aging — is host code or stdlib over those
+primitives. **All of it is V1** (D5): the three waves in §8 are a delivery order,
+not a staging plan with two halves postponed. The rest of this document argues
+why these few constructs, and only these, deserve layer 0.
 
 **Expertise pass (2026-07-27).** Every checkable claim below was verified
 against the tree and is cited by `file:line`. Five inconsistencies were resolved
@@ -210,7 +218,16 @@ Three consequences that must hold in the design:
 3. **Margins therefore come in two shapes too.** A pointwise margin has an
    argmin (time or frequency + instance); a reduced margin has one value per
    analysis and no argmin. The host surface must say which it is rather than
-   reporting a fake `t = 0`.
+   reporting a fake `t = 0` — which is one of the two reasons margins get their
+   own result channel rather than being folded into waveform rows (D3).
+
+**Reduced metrics are computed host-side (D7).** The solver stays
+pointwise-pure: it evaluates and emits per-point values, and the host applies the
+declared reduction to produce `ugbw` and friends. This keeps sweep-shaped state
+out of the kernel and keeps `piperine-solver` from growing a second notion of
+what a result is. The declaration still lives in PHDL — the constraint block is
+where `ugbw` is *named* and specified — but its computation is one pass over
+points the solver already returns.
 
 Gradients inherit the split: `∂m/∂p` for a pointwise margin is the adjoint at
 the argmin point (§3.4's non-smoothness caveat); for a reduced margin it is
@@ -395,8 +412,12 @@ The design:
   *result* — "not exercised" — surfaced to the host, so a misspelled trigger
   can't masquerade as a pass. This is the coverage instinct applied to
   constraints.
-- **A top-level `require` (no enclosing block) holds in every analysis.**
-  (Whether that is the right default is open question 2.)
+- **A top-level `require` (no enclosing block) holds in every analysis** — and
+  that default is a `Context` field, not a hard-coded rule (D2). Holding
+  everywhere is the safe reading: a rule that silently applied nowhere would let
+  a real violation hide. §2.3a already removed the sources of false positives
+  that made this uncomfortable, and the knob covers whatever residue a specific
+  design has, without making the safe behavior something a user must opt into.
 
 The host gets `m_worst` plus the argmin — time and instance — because "gain
 is 3 dB low" and "gain is 3 dB low *at 1.2 µs on instance u3.m1*" differ in
@@ -523,10 +544,10 @@ Consequences that fall out for free:
   digital scheduler's accepted points — no `ok`-net indirection, no special
   assertion engine.
 - **Warnings become representable.** The `Warning` severity exists in the
-  channel whether or not Tier-1 PHDL grows a `warn name : pred;` statement
+  channel whether or not Wave-1 PHDL grows a `warn name : pred;` statement
   kind (a cheap later addition — the channel already carries it, and OSDI
   models will use it from day one).
-- **Testers are devices, not a framework.** An ATE-style test program (Tier 3,
+- **Testers are devices, not a framework.** An ATE-style test program (Wave 3,
   item 15) is an ordinary element that drives nets, wakes on its own
   breakpoints, and reports through this channel — acceptance suites compose
   with hierarchy instead of living in a separate testbench dialect.
@@ -597,9 +618,13 @@ the one noise already walks. Two consequences:
 2. The metrics a designer actually optimizes — gain, bandwidth, phase margin —
    are AC metrics anyway (§7). If AC adjoint is the closer of the two, a
    DC-only first delivery buys the harder half and postpones the useful half.
-   Whether Tier 1 lands DC-first (simpler algebra, `.sens` available as a
+   Whether Wave 1 lands DC-first (simpler algebra, `.sens` available as a
    cross-check oracle) or AC-first (closer to existing code, immediately useful
-   metrics) is open question 6 — a real fork, not a detail.
+   metrics) was the sharpest remaining fork. **Decided: DC first (D6)** — an
+   unverifiable gradient is worth less than a slower verifiable one, and `.sens`
+   only backs DC. The cost is explicit: AC-metric gradients wait for the AC
+   adjoint, and until then an optimizer finite-differences them or treats those
+   targets as feasibility filters.
 
 The existing `.sens` driver (`analyses/sens.rs:2`: central finite difference
 over the restamp path, already refusing `Invalidation::Rebuild`) is the
@@ -656,7 +681,7 @@ r.gradient("idd")                  # {"w1": ..., "w2": ..., "ibias": ...}
 a = m.ac(piperine.AcConfig(start=1e3, stop=1e9, points=201))
 a.margins["gain_db"]               # pointwise metric, per-frequency argmin
 a.margins["ugbw"]                  # reduced metric, one value, no argmin (§2.1a)
-a.sensitivity("gain_db", "w1")     # needs the AC adjoint (§3.1, open question 6)
+a.sensitivity("gain_db", "w1")     # needs the AC adjoint — not in Wave 1 (D6)
 ```
 
 Each result object serves the analysis that produced it. A metric is readable
@@ -733,10 +758,10 @@ caricature.
 | Capability | Industry answer | Where this document lands |
 |---|---|---|
 | Unified A/D simulation | Spectre X / AMS Designer (Cadence), PrimeSim (Synopsys), Symphony Pro (Siemens) — unified kernels or tight co-simulation | Already Piperine's base: one process, one `Element` ABI, A2D/D2A native (§0, asset 3) |
-| SOA / reliability checks | Model-embedded checks in foundry Verilog-A decks (`$strobe`-style **warnings**), simulator assert cards; RelXpert / MOSRA (aging: HCI/BTI), Legato | `constraint` on the model (§2.5) — same placement as the foundry deck, but margins are **first-class values**, not print warnings. Aging deferred (Tier 3) |
-| Assertions on analog behavior | SVA + Verilog-AMS event checks (`cross`/`above`), PSL; sequential properties live in the digital domain; host-side scoreboards | Scoped `require` windows (§2.4) cover the analog subset; sequential protocol properties are Tier 3 as **monitor modules on the validation channel** (§2.6) — no assertion language |
-| Coverage | SV covergroups over real/RNM signals, vManager / MDV closure dashboards | `cover` bins (Tier 3); closure reporting is host work, matching where vManager lives |
-| Real-number modeling | `wreal` / SV real vars, DMS ports; the industry's main AMS speedup — with **silent ideality** at every real→electrical boundary | Deferred (Tier 3) but with the declared-impedance bridge as the explicit fix for the industry's known accuracy leak |
+| SOA / reliability checks | Model-embedded checks in foundry Verilog-A decks (`$strobe`-style **warnings**), simulator assert cards; RelXpert / MOSRA (aging: HCI/BTI), Legato | `constraint` on the model (§2.5) — same placement as the foundry deck, but margins are **first-class values**, not print warnings. Aging is Wave 3 item 14 |
+| Assertions on analog behavior | SVA + Verilog-AMS event checks (`cross`/`above`), PSL; sequential properties live in the digital domain; host-side scoreboards | Scoped `require` windows (§2.4) cover the analog subset; sequential protocol properties are Wave 3 as **monitor modules on the validation channel** (§2.6) — no assertion language |
+| Coverage | SV covergroups over real/RNM signals, vManager / MDV closure dashboards | `cover` bins (Wave 3 item 10); closure reporting is host work, matching where vManager lives |
+| Real-number modeling | `wreal` / SV real vars, DMS ports; the industry's main AMS speedup — with **silent ideality** at every real→electrical boundary | Wave 3 item 12 — with the declared-impedance bridge as the explicit fix for the industry's known accuracy leak |
 | Corners / Monte Carlo orchestration | ADE Assembler / Maestro, PrimeWave | Host sweeps on the compiled session (already shipped: `sweep`/`sweep_grid`) + `monte_carlo` reading `tol` declarations |
 | High-sigma yield (3–6σ) | Solido (ML-guided importance sampling — the production reference), scaled-sigma, statistical blockade | Host methods over the restamp loop (§4); no language surface needed |
 | Optimization | ADE Optimizer, ASO.ai (AI/black-box), **MunEDA WiCkeD** — the production reference for gradient-based sizing and worst-case-distance centering | §4's `center` *is* WCD centering; the difference is gradients are analytic and free, not finite-differenced |
@@ -748,9 +773,15 @@ same *placement* the industry converged on (checks ship with models;
 orchestration lives in the cockpit), but with three upgrades no incumbent can
 match without reopening their numerical kernels: (1) one declaration feeds all
 three tools, (2) analytic gradients, (3) margins as typed values with
-provenance instead of warning text. The gaps against industry — SVA-sequential
-assertions, coverage closure tooling, aging, RNM — are real, all host- or
-Tier-3-shaped, and none of them blocks the Tier-1 core.
+provenance instead of warning text.
+
+Four capabilities the incumbents have and this document does not deliver in
+Wave 1 — SVA-sequential assertions, coverage closure tooling, aging, RNM — are
+real gaps, and per D5 all four are **in V1**, as Waves 2–3. What stays
+permanently out is narrow and deliberate: analog formal, RL/GNN sizing, and the
+foundry-qualified *model data* (aging coefficients, SOA limits) that no
+open-source project can fabricate — which is why §2.5 makes absent data mean an
+inert check rather than an invented number.
 
 ---
 
@@ -894,7 +925,7 @@ print(opt.params, opt.iterations)            # ~10^1-10^2 sims, not 10^3-10^5
 # The AC targets constrain that search. Gradients through them need the AC
 # adjoint (§3.1) — with DC-only sensitivity they are constraints the optimizer
 # can *evaluate* but not differentiate, so it finite-differences those or
-# treats them as feasibility filters. This is exactly what open question 6 decides.
+# treats them as feasibility filters — the accepted cost of D6's DC-first call.
 
 # 3 ─ centering: push away from every boundary, in sigmas
 c = ota.center(over=opt.bounds, corners=["tt", "ss", "ff"], temp=[-40, 27, 125])
@@ -917,9 +948,17 @@ that reads `gain_db` off `op()` is describing a language that cannot be built.
 
 ## 8. Sequencing
 
-Ordered by value ÷ effort, with the dependency structure made explicit.
+**All three waves are V1** (user decision, 2026-07-27). This is not a staging
+plan with two halves deferred to a later release — it is the delivery order of
+one release, and the reason is competitive: the whole advantage argued in §10 is
+that verification, optimization, and centering read one declaration. Ship only
+the declaration and the advantage is a claim; ship only the optimizer and it is
+another sizing tool. The waves are ordered by dependency, not by commitment.
 
-**Tier 1 — the foundation (V1 candidate)**
+"Wave" replaces the earlier "Tier" for exactly that reason — a tier reads like a
+priority, a wave reads like a sequence.
+
+**Wave 1 — the foundation (V1)**
 
 1. `tol` on `param`: grammar clause, POM `Param.distribution()`,
    `headers/statistics.phdl`. Inert at solve; readable by the host.
@@ -935,38 +974,96 @@ Ordered by value ÷ effort, with the dependency structure made explicit.
 5. The ∂F/∂p kernel (**one kernel, parameter-indexed** — §3.1's `.disto`
    lesson) + `param_stamps` into a caller sink + `HAS_SENSITIVITY`; one adjoint
    sensitivity driver; stamp-perturbation fallback for elements without the bit.
-   Whether that driver is DC or AC first is open question 6 — the noise adjoint
-   this reuses is the AC shape, not the DC one.
+   The driver is **DC** (D6); note that the noise adjoint it is often said to
+   reuse is the AC shape, so the transpose solve here is a sibling path, not a
+   reuse.
 
-**Tier 2 — optimization and centering (V1.5)**
+**Wave 2 — optimization, statistics, centering (V1)**
 
-6. Host optimizer driving the restamp loop, gradient-based, with a black-box
-   fallback (BO/CMA-ES) for the non-differentiable parts.
-7. Monte Carlo with reproducible seeds over `tol` declarations.
-8. Design centering (`min_i m_i/σ_i`), the natural consequence of 1 + 5 + 7.
-9. Scoped `require` windows (event blocks in constraint bodies, `after =`/
-   `dur =` event-term args, the `|`/`&`/`not` window algebra), reusing
-   `EventRegistry` and the existing `EventBlock` production.
+Nothing here touches the grammar except item 9. All of it is host code over the
+Wave-1 primitives, and all of it is the reason Wave 1 exists.
 
-**Tier 3 — verification scale (V2)**
+6. **Host optimizer over the restamp loop.** Gradient-based by default, using
+   the DC adjoint (D6) for differentiable objectives and constraints. Structure:
+   a feasibility phase (climb until every `require` margin ≥ 0) followed by an
+   objective phase (descend the objective while projecting onto the feasible
+   set), constraints supplied as `{m_i ≥ 0}` from the margin channel. Runs in
+   `collect` posture by definition (§2.3a) — an optimizer that aborted on its own
+   infeasible iterates could not search. Black-box fallback (CMA-ES, or Bayesian
+   optimization with a GP surrogate) for the parts the compiler cannot
+   differentiate: discrete knobs, event-detected metrics, reduced metrics whose
+   reduction is non-differentiable. The two are composable — gradient inside a
+   discrete shell — and *which* engine produced a given result is reported, never
+   inferred. `piperine-api` owns the driver so Rust and Python hosts get one
+   implementation (MD-22); scipy/BoTorch stay optional accelerators on the Python
+   side, never the source of truth.
+7. **Monte Carlo over `tol` declarations.** Sample every declared distribution
+   under one explicit seed, restamp, re-solve, collect margins. The mismatch/
+   process distinction from §1 is the whole engine: a `global` draw is shared by
+   every instance in the sample, a plain draw is independent per instance — so
+   sampling walks the *authored instance tree* to decide how many draws a
+   parameter needs. Every sample is reproducible from `(seed, index)`, which is
+   what makes `mc.worst("headroom")` a debuggable artifact instead of an anecdote:
+   the failing sample can be replayed as an ordinary session. Yield is the
+   fraction of samples with all margins ≥ 0; per-metric spread `σ_i` is the
+   by-product that Wave-2 item 8 needs. Cost is 10³ restamps on one JIT (MD-18),
+   never 10³ elaborations.
+8. **Design centering.** Maximize `min_i (m_i / σ_i)` over the design parameters
+   — worst-case distance, in sigmas. The margin convention (§2.2) already
+   normalizes; item 7 supplies `σ_i`; item 5's gradients make it a smooth-ish
+   program rather than Monte-Carlo-in-the-loop. Two honest wrinkles: `min` over
+   constraints is non-smooth, resolved the same way as `min` over time (D1 —
+   differentiate at the active constraint, documented); and `σ_i` itself depends
+   on the design point, so a rigorous formulation re-estimates spread as the
+   design moves. Cheap version: hold `σ_i` fixed within an outer iteration and
+   re-sample between them. This is the item a working analog designer would name
+   as the reason to adopt the tool.
+9. **Scoped `require` windows** — the one grammar addition in this wave: event
+   blocks inside constraint bodies (§2.4), `after =`/`dur =` event-term
+   arguments, and the `|`/`&`/`not` window algebra, all reusing the existing
+   `EventBlock` production and `EventRegistry`. Wave 1 ships analysis-scoped
+   blocks (`@ dc`/`@ tran`/`@ ac`); this adds the temporal windows that make
+   `require settle : …` expressible. The empty-scope rule (§2.4) is what keeps a
+   misspelled trigger from masquerading as a pass, and it is worth landing with
+   the windows rather than after them.
 
-Every Tier-3 item below is anchored in the margin machinery, and the audit of
-what each one *actually* costs in language surface is the surprising part:
-across the whole vision, the total grammar delta is the `tol` clause, the
-`constraint` block, and — maybe — one body kind.
+**Wave 3 — verification at scale (V1)**
+
+The audit of what each item below *actually* costs in language surface is the
+surprising part: across all three waves the total grammar delta is the `tol`
+clause, the `constraint` block, one `cover` statement kind, and one body kind.
+Everything else is host code, stdlib, or implementing declarations that already
+exist in the formal spec.
 
 10. **Operating-region coverage.** One new statement kind inside the
     `constraint` block, not a new construct:
     `cover input_cm : V(vip, gnd) bins [0.4:0.1:1.4];` and
     `cover region_m1 : m1.region in {cutoff, triode, saturation};`
+
     Kernel side it is *the same per-point expression evaluation as a margin*
-    plus a bin-mapper — no new machinery. Cross coverage (`cover cross
-    temp_x_region`) is a pair of expressions binned jointly. Accumulation,
-    merging across runs/seeds, and closure reporting ("which bins are empty,
-    which stimulus would fill them") are host state and host work — the
-    vManager role, living where vManager lives: outside the language. The
-    operating-region opvar (`m1.region`) it samples already landed with
-    Tier 1 item 4.
+    plus a bin-mapper — the pointwise path from §2.1a with a different reducer,
+    so no new machinery. A bin hit is a counter increment, which makes coverage
+    strictly cheaper per point than a margin (no signed distance, no argmin
+    tracking). Cross coverage (`cover cross temp_x_region`) is a pair of
+    expressions binned jointly; the bin space is the product, so the language
+    should refuse a cross whose product exceeds a declared cap rather than
+    quietly allocating a sparse 10⁶-bin table.
+
+    The state, though, is unlike anything else in this document: coverage
+    **accumulates across runs**, which margins never do. A margin is a property
+    of one analysis; coverage is a property of a whole regression. So the
+    counters live on the host, merge across runs and seeds, and persist between
+    sessions — the vManager role, living where vManager lives, outside the
+    language. Closure reporting ("which bins are empty, and which stimulus would
+    fill them") is the actual deliverable, and it is host analysis over merged
+    counters. The `m1.region` opvar it samples already landed with Wave-1 item 4.
+
+    One design consequence worth stating: coverage is the only construct here
+    that is *useless* under `checks=off`, because its value is the accumulation.
+    It needs its own posture (`cover=on|off`) rather than riding the check
+    posture, or an optimizer's 10³ inner-loop runs will pollute the coverage
+    database with iterates that were never meant to be verification runs.
+
 11. **Sequential (SVA-shaped) properties = monitor modules on the validation
     channel.** Do not import SVA. A sequential property is a small ordinary
     `digital` monitor module — registers, `match` on state — that reports
@@ -975,30 +1072,85 @@ across the whole vision, the total grammar delta is the `tol` clause, the
     No `ok`-net plumbing, no assertion language, no special engine — PHDL's
     `digital` grammar already expresses FSMs, hierarchy already composes them,
     and the validation channel already turns a detection into a typed failure.
-    A dedicated sequence syntax (`##`-style) is admissible later **only** if
-    real usage shows monitor modules are too verbose — evidence first, syntax
-    second.
-12. **RNM: cheaper than it looks, because the grammar slot already exists.**
-    Verified: `docs/spec/part_i_language.md:477` carries the production
+
+    What this buys over an assertion language: a monitor is an ordinary module,
+    so it is parameterizable, instantiable in an array, testable in isolation,
+    and shippable in a library. What it costs: an SVA one-liner
+    (`req |-> ##[1:3] ack`) becomes a handful of states. The honest trade is
+    that PHDL gets 80% of the value for zero grammar, and the missing 20% is
+    concision on the digital side — which is not where this project's advantage
+    lies. A dedicated sequence syntax is admissible later **only** if real usage
+    shows monitor modules are too verbose: evidence first, syntax second.
+
+    The one piece that is genuinely new is the *digital* poll site — §2.3a's
+    table defines evaluation points for analog analyses; a monitor fires on the
+    digital scheduler's accepted events, and "accepted" there means after event
+    settling, not mid-delta-cycle.
+
+12. **RNM — finishing declared language, not growing it.** Verified:
+    `docs/spec/part_i_language.md:477` carries the production
     `ResolveDecl ::= "resolve" ("tri"|"or"|"and"|"sum"|"avg"|"max"|"min") ";"`,
     and `:484` assigns `sum`/`avg`/`max`/`min` specifically to `Real` storage
     nets. Those kinds are *already* contextual keywords (`:238`). The resolution
-    vocabulary is in the spec and unimplemented — so this item is finishing
-    declared language, not growing it. Three pieces: (a) implement those declared resolve kinds in
-    the digital/event kernel; (b) an event-scheduled body for all-storage-real
-    modules (inferred, or an explicit `behavioral` kind — still the one open
-    grammar question, see §9); (c) **bridging needs no keyword at all**: the
-    declared-impedance bridge is an ordinary module whose `analog` body states
-    the impedance in code —
-    `I(out, gnd) <- (V(out, gnd) - code * lsb) / rout;` *is* the declaration.
-    What the industry hides inside wreal, PHDL writes as one explicit line.
-13. **High-sigma importance sampling** (statistical blockade, scaled-sigma):
-    host methods over the restamp loop. No language surface.
-14. **Aging/reliability (HCI/NBTI):** host-side parameter drift over a
-    declared lifetime; the model ships aging coefficients as ordinary params
-    and the host restamps them along a stress curve. No language surface —
-    the `tol` clause already proved "variation metadata on the parameter" is
-    the right shape if a future drift clause is ever wanted.
+    vocabulary is in the spec and unimplemented. Three pieces:
+
+    (a) **Implement the declared resolve kinds** in the digital/event kernel.
+    `sum` is the interesting one — it is how a real-valued current bus works, and
+    it is the reason RNM can model a summing node without MNA. Multi-driver
+    resolution needs a deterministic order-independent reduction, which `sum`/
+    `avg`/`max`/`min` all are by construction (unlike `last_write`, which is why
+    it is not in the declared set).
+
+    (b) **An event-scheduled body for all-storage-real modules.** This is the
+    100–1000× speedup that makes system-level mixed-signal verification finish,
+    and the one remaining grammar question (§9 Q5): explicit `behavioral` kind
+    versus inferred from the module's nets. The cliff is real either way; the
+    question is whether source has to admit it.
+
+    (c) **Bridging needs no keyword at all.** The declared-impedance bridge is an
+    ordinary module whose `analog` body states the impedance in code:
+    `I(out, gnd) <+ (V(out, gnd) - code * lsb) / rout;` *is* the declaration.
+    What the industry hides inside `wreal` coercion — the silent ideality at
+    every real→electrical boundary, its best-known accuracy leak — PHDL writes as
+    one explicit line that a reviewer can read and a solver can stamp. This is
+    the single place where being late to RNM is an advantage: there is no legacy
+    coercion semantics to stay compatible with.
+
+    Constraints compose with RNM for free: a `require` over a storage-real net is
+    the same margin machinery with a cheaper evaluation site, so SOA-style checks
+    on an RNM model cost almost nothing.
+
+13. **High-sigma importance sampling.** Plain Monte Carlo needs ~10⁸ samples to
+    observe a 6σ failure, which is why memory bitcells are verified with
+    importance sampling instead: **statistical blockade** (train a classifier on
+    cheap samples, then simulate only the ones predicted near the tail),
+    **scaled-sigma sampling** (sample at inflated σ, extrapolate the failure
+    probability back), and subset simulation. All three are host methods over the
+    Wave-2 item 7 restamp loop — sampling policy, not language.
+
+    Two hooks they need from earlier waves, both already present: the margin is a
+    *continuous* signed distance (§2.2), which is what makes a classifier or an
+    extrapolation possible at all — a pass/fail bit carries far less information;
+    and `(seed, index)` reproducibility (item 7), because a tail sample that
+    cannot be replayed cannot be debugged. A yield number reported without saying
+    which estimator produced it is not a yield number, so the estimator and its
+    confidence interval travel with the result.
+
+14. **Aging / reliability (HCI, NBTI, TDDB).** Host-side parameter drift over a
+    declared lifetime: the model ships aging coefficients as ordinary params, the
+    host computes stress from an operating-point or transient run, then restamps
+    the drifted parameters and re-verifies. Fresh-versus-aged is two runs of the
+    same margins, and the deliverable is the margin *delta* — "which constraint
+    goes negative first, and after how long" — which the margin channel already
+    expresses without any new type.
+
+    No language surface: `tol` already proved that variation metadata belongs on
+    the parameter, so a future `drift` clause has an obvious shape if one is ever
+    wanted, and until then aging coefficients are just params. The honest gap
+    versus MOSRA/RelXpert is the *model data*, not the mechanism — a stress
+    equation per device is model-authoring work, and the built-in ngspice-faithful
+    models have none of it (same reasoning as §2.5's absent SOA limits).
+
 15. **Tester (ATE-style) devices.** A library over the `Element` ABI for
     imperative test-programs-as-devices: declare ports, then sequence
     `advance_clock(dt)` (breakpoints/`timer` — the device declares its own
@@ -1007,15 +1159,36 @@ across the whole vision, the total grammar delta is the `tol` clause, the
     (`SAMPLES_ANALOG`), and `warn(...)`/`fail(...)` (`validation_reports`,
     §2.6 — the third consumer of the channel, after constraint kernels and
     monitor modules). Analog drive uses declared-impedance stamps or
-    storage-real nets — never a silent ideal source. Acceptance testers for
-    protocol specs (USB-phy-style suites), protocol checkers, and
-    stimulus+check pods ship as ordinary devices that compose with hierarchy
-    and run under the same posture rules as everything else. No language
-    surface: a plugin/host library.
+    storage-real nets — never a silent ideal source.
+
+    The reason this is a device and not a framework: a tester-as-element composes
+    with hierarchy, runs under the same posture rules, reports through the same
+    channel, and needs no new concept in the simulator. Acceptance suites for
+    protocol specs (USB-phy-style), protocol checkers, and stimulus+check pods all
+    become ordinary instantiable parts. It also closes the loop with the decision
+    that in-language benches die: the *orchestration* stays in Python, but a
+    reusable acceptance program ships as a component rather than as a script
+    someone must copy.
+
+    Sequencing note: this is the item most likely to expose gaps in the `Element`
+    ABI's imperative surface (a device that wants to *wait* is not how the ABI
+    reads today), so it belongs last in the wave — after monitors have exercised
+    the validation channel and RNM has exercised event-scheduled bodies.
 
 **Explicitly not planned:** analog formal/reachability (research-scale, does
 not survive contact with a real netlist), RL/GNN sizing (dominated by the
 gradient path for continuous sizing; revisit only for topology choices).
+
+**Where the grammar delta actually lands**, now that all three waves are V1:
+
+| Wave | Grammar addition | Everything else |
+|---|---|---|
+| 1 | `tol` clause on `param`; `constraint` block with `require`/`var`/`target`; analysis-scoped `@ dc`/`@ tran`/`@ ac` blocks | kernel margin evaluation, validation channel + capability bit, ∂F/∂p kernel, DC adjoint, SOA blocks on the spice models |
+| 2 | event-term `after =`/`dur =` args + window algebra (reusing `EventBlock`) | optimizer, Monte Carlo, centering — all host |
+| 3 | `cover` statement kind; **maybe** one body kind (`behavioral`, §9.2 Q1) | resolve kinds (already in the formal grammar), monitors (ordinary `digital` modules), high-sigma, aging, testers — all host or stdlib |
+
+Four grammar additions and one maybe, for a feature set the incumbents spread
+across five separate tools. That ratio is the No-Bloat argument in one table.
 
 The dependency spine is short: **`tol` (1) and margins (2–3) unlock SOA (4);
 margins plus gradients (5) unlock optimization (6); those plus sampling (7)
@@ -1024,7 +1197,7 @@ biggest one, and both stand on the same convention from §2.2.
 
 ---
 
-## 9. Open questions
+## 9. Decisions and open questions
 
 An expertise pass on 2026-07-27 closed five earlier inconsistencies in place
 (they are now design text, not questions): the two classes of measured quantity
@@ -1033,43 +1206,39 @@ against the frozen corpus (§2.3b), SOA limits defaulting to absent (§2.5), and
 the validation channel's capability bit and `Option` shape (§2.6). What follows
 is what genuinely still needs a decision.
 
-1. **Non-smooth worst-case: argmin differentiation or declared softmin?** Must
-   be explicit either way — silently smoothing a constraint changes what the
-   optimizer believes about feasibility.
-2. **Do `require`s hold in *every* analysis by default, or only where
-   scoped?** Default-on is safer and noisier; default-off is quieter and lets a
-   real violation hide. §2.3a removes the worst false-positive sources
-   (homotopy stages, rejected steps, UIC at `t = 0`), which makes default-on
-   more livable than it first looked — but the scoping default is still a call.
-3. **Are margins result rows or their own channel?** Margins are per-point
-   scalars with provenance, so a `MarginsResult` beside the nine host types is
-   the leading sketch. §2.1a adds a wrinkle: pointwise and reduced margins have
-   *different* shapes (argmin vs no argmin), so whatever carries them must
-   represent both without faking a `t = 0` for the reduced ones.
-4. **How do constraints compose through monomorphization?** A `require` on
-   `Mos1` must instantiate per device instance, and `urc__5`-style variants
-   must not multiply the *declaration*. The UNBREAKABLE RULE says the authored
-   form stays walkable; the evaluation form is a codegen side artifact. The
-   sketch is clear; the POM representation is not yet designed.
-5. **RNM bodies: explicit `behavioral` kind, or inferred from all-storage-real
-   nets?** (Tier 3, item 12b.) Explicit makes a 100–1000× performance cliff
-   visible in source; inferred is friendlier and less grammar. This is the
-   only remaining place in the whole vision where the grammar might still
-   grow.
-6. **DC adjoint first, or AC adjoint first?** (New — §3.1.) The adjoint machinery
-   that already exists (`analyses/noise.rs:240`) is complex and per-frequency:
-   it is the **AC** shape. DC needs a real transpose solve, a sibling path. But
-   DC has `.sens` (`analyses/sens.rs:2`) as a finite-difference oracle to
-   verify against, and AC does not. So: build the harder-to-reach half first
-   because it is verifiable, or the closer half first because gain/bandwidth/
-   phase-margin are what designers actually optimize? This changes what Tier 1
-   delivers and is the sharpest remaining fork.
-7. **Does a reduced metric belong in the kernel path at all?** (New — §2.1a.)
-   A sweep-reduced quantity could be computed in the solver as a post-analysis
-   pass, or handed to the host as raw points plus a declared reduction. The
-   host route is simpler and keeps the kernel pointwise-only; the solver route
-   keeps the margin surface uniform and makes reduced margins available to a
-   Rust host without reimplementation. Related to question 3.
+### 9.1 Decided (2026-07-27, user)
+
+| # | Question | Decision |
+|---|---|---|
+| D1 | Non-smooth worst case | **Differentiate at the argmin**, documented in the result object. A gradient that silently smoothed the constraint would be a plausible wrong number — the failure mode the project's fail-loud rule exists to prevent. |
+| D2 | Unscoped `require` default | **Holds in every analysis**, but the default is a **`Context` field**, not a hard-coded rule. §2.3a already removed the false-positive sources (homotopy stages, rejected steps, UIC at `t = 0`); the knob covers the residue without making the safe behavior conditional on remembering to ask for it. |
+| D3 | Margins: rows or own channel | **Own channel.** Margins are per-point scalars with provenance, and §2.1a's pointwise/reduced split gives them two shapes; hammering both onto the waveform rows would produce exactly the frankenstein the nine-type taxonomy rule exists to prevent. |
+| D4 | Constraints under monomorphization | **Variants carry them, like any body.** Monomorphization already clones a module's `analog`/`digital` behavior into `urc__5`; a `constraint` block rides the same path. The POM holds one authored block per authored module and the variant carries its copy — no special representation, no new rule. |
+| D5 | Wave staging | **All three waves are V1** (§8). The advantage is the whole loop; a partial delivery is a claim. |
+| D6 | DC adjoint or AC first | **DC.** `.sens` (`analyses/sens.rs:2`) is a finite-difference oracle to verify against, and AC has none — an unverifiable gradient is worth less than a slower verifiable one. Consequence: AC-metric gradients (gain, UGBW, phase margin) are finite-differenced or treated as feasibility filters until the AC adjoint lands. |
+| D7 | Where reduced metrics are computed | **Host.** The solver stays pointwise-pure: it emits points, the host applies the declared reduction. Keeps the kernel free of sweep-shaped state and keeps `piperine-solver` free of a second notion of "result". |
+
+D2 and D3 both landed on the same instinct: make the safe thing the default,
+and give it a knob rather than a special case.
+
+### 9.2 Still open
+
+1. **RNM bodies: explicit `behavioral` kind, or inferred from all-storage-real
+   nets?** (Wave 3, item 12b — the last place the grammar might grow.) Explicit
+   makes a 100–1000× performance cliff visible in source; inferred is friendlier
+   and needs no keyword. D5 raises the stakes: RNM is V1 now, so this is no
+   longer a question that can wait for a later release. Leaning explicit — a
+   three-orders-of-magnitude difference in what the simulator actually does
+   should be legible at the module, not deduced from its net types.
+2. **Does `cover` get its own posture?** (Wave 3, item 10.) Coverage accumulates
+   across runs, unlike every other construct here, so riding `checks=` would let
+   an optimizer's 10³ inner-loop iterates pollute the coverage database. A
+   separate `cover=on|off` looks right; whether it belongs on `Context` beside
+   D2's knob or on the host's regression driver is undecided.
+3. **What is the cross-coverage bin cap, and is it a language error or a host
+   warning?** A joint bin space is a product, so an unguarded cross can ask for
+   10⁶ bins. Refusing it at elaboration is fail-loud and rigid; warning at run
+   time is flexible and easy to ignore.
 
 ---
 
