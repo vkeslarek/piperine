@@ -16,8 +16,12 @@
 //! separate, larger decision.
 
 mod descriptors;
+mod design;
+mod module;
 
 pub use descriptors::{Behavior, Instance, Net, Param, Port, Terminal};
+pub use design::{Design, Node, Selection};
+pub use module::Module;
 pub use piperine_solver::prelude::{
     ModelDescriptor, ObservableDescriptor, ParamDescriptor, TerminalDescriptor,
 };
