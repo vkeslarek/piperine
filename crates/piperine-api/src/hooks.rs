@@ -1,5 +1,5 @@
 //! [`SimHooks`] — the simulation lifecycle hooks a plugin host (or any
-//! external observer) wires into a [`SimSession`](crate::session::SimSession)
+//! external observer) wires into a [`Session`](crate::session::Session)
 //! build/solve pipeline (SPEC Part VI §8). All hooks are optional no-ops by
 //! default; hook errors abort the analysis (fail loud).
 

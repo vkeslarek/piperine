@@ -253,7 +253,8 @@ impl AnalogKernel {
     /// non-trivial compile cost for those kernels. Callers that will never
     /// run `.disto` on this circuit (every analysis but `.disto` itself)
     /// pass `false` to skip that cost entirely — the host's `.disto` entry
-    /// point is the only caller that passes `true` (`SimSession::build_circuit`).
+    /// point is the only caller that passes `true` (the host's
+    /// `SessionBuilder::disto(true)`).
     pub fn compile_with_options(module: &LoweredBody, compile_disto: bool) -> Result<Self, CodegenError> {
         COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let flat = AnalogFlattener::new(module).flatten()?;

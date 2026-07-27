@@ -7,7 +7,7 @@
 //! embeds it; the root `piperine` crate re-exports it.
 //!
 //! ```text
-//! parse_and_elaborate ─▶ Design ─▶ SimSession ─▶ lower ─▶ CircuitCompiler ─▶ solver
+//! parse_and_elaborate ─▶ Design ─▶ Session ─▶ lower ─▶ CircuitCompiler ─▶ solver
 //!                                        │
 //!                                        ▼
 //!                            OpResult / Trace / AcTrace / NoiseTrace
@@ -34,6 +34,6 @@ pub use results::{
     DistoResult, InstanceView, NetRef, NetSelector, OpResult, PssResult, PzResult, SParamResult, SensResult,
     TfResult,
 };
-pub use session::{Grid, Nested, Scale, Session, SessionBuilder, SimSession, SolverConfig, Sweep, SweepPoint};
+pub use session::{Grid, Nested, Scale, Session, SessionBuilder, SolverConfig, Sweep, SweepPoint};
 pub use units::{Freq, Time};
 pub use waveform::{AcTrace, ComplexWaveform, CrossDirection, NoiseTrace, Trace, Waveform};

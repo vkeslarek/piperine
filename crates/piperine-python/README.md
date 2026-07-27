@@ -138,7 +138,7 @@ foo.py  ──►  piperine (facade: dataclasses + annotations)
              _piperine (native PyO3)
                   │
                   ▼
-        piperine_bench::SimSession + piperine_lang::pom::Design
+        piperine_api::Session + piperine_lang::pom::Design
 ```
 
 ## Build

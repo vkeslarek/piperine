@@ -17,26 +17,17 @@ use crate::waveform::{AcTrace, NoiseTrace, Trace, Waveform};
 use super::build::{BuildOptions, build_circuit, build_ivs, build_probe_selection, mirror_param, node_voltages, resolve_net};
 use super::config::SolverConfig;
 
-// ─── Session: the compiled center of gravity (HOST-01) ─────────────────────
+// ─── Session: the one host entry point (HOST-01, CLA-14) ───────────────────
 //
-// `SimSession` (above) elaborates + JITs fresh on every analysis call — the
-// right shape for one-shot/staged workflows (mirrors Python's `_Module`).
-// `Session` compiles **once** (`Session::compile`) and holds the built
-// circuit across every subsequent analysis; parameter writes route through
-// the solver's live-set path (`CircuitInstance::set_element_param`, MD-18:
-// restamp, never re-JIT) — the Rust equivalent of Python's `_LiveSession`
-// (spec: "Python rename `LiveSession`→`Session`; build the Rust equivalent").
-//
-// SPEC_DEVIATION: design.md's Approach Decision table describes `SimSession`
-// as folding into `Session` ("no dup concept"). `SimSession` is kept as a
-// distinct type here — Python itself has never had one concept for this:
-// `_Module` (staged, forks + rebuilds per analysis) and `_LiveSession`
-// (compiled once) are already two types serving two workflows, and the
-// spec's own Goals bullet reads "build the Rust equivalent" of the compiled
-// session, not "replace the staged one". Collapsing `SimSession` into
-// `Session` would touch ~20 existing root/python call sites for no behavior
-// change; reusing the same two-type shape Python already ships is the
-// smaller, safer move. Flagged for the Verifier/orchestrator to confirm.
+// `Session` compiles **once** (`Session::compile`, or `Session::builder` when
+// the build takes options) and holds the built circuit across every subsequent
+// analysis; parameter writes route through the solver's live-set path
+// (`CircuitInstance::set_element_param`, MD-18: restamp, never re-JIT) — the
+// Rust equivalent of Python's `_LiveSession`. A staged workflow compiles one
+// `Session` per staged configuration through `SessionBuilder`; the equivalence
+// of that shape with the per-analysis-elaboration session it replaced is
+// recorded in
+// `.specs/features/p6-cleanup-architecture/session-equivalence.md`.
 //
 // SPEC_DEVIATION: `Session::set` on a structural (`Invalidation::Rebuild`)
 // write fails loud instead of auto-re-elaborating. Python's `_LiveSession`
@@ -189,7 +180,8 @@ impl Session {
         if inv >= Invalidation::Rebuild {
             return Err(Error::Measurement(format!(
                 "structural set `{label}`.`{param}` would rebuild the circuit — \
-                 Session does not auto-rebuild (use a fresh SimSession/Session::compile)"
+                 Session does not auto-rebuild (compile a fresh Session, or use \
+                 `Session::sweep`, which rebuilds and counts it)"
             )));
         }
         mirror_param(&mut self.info, label, param, value);
@@ -277,8 +269,8 @@ impl Session {
 
     // SPEC_DEVIATION: HOST-21's "analysis args impl Into<...>" is applied
     // here (`Session::ac`'s fstart/fstop) as the representative
-    // demonstration, not to every frequency/time-shaped arg across both
-    // `Session` and `SimSession` (~12 duplicated analysis methods total).
+    // demonstration, not to every frequency/time-shaped arg across the
+    // analysis menu.
     // The change is additive/non-breaking (`f64: Into<Freq>` via the
     // blanket `From<f64>`, so every existing `f64` call site keeps
     // compiling unchanged) but touching every signature is a large,

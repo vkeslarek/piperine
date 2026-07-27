@@ -394,8 +394,9 @@ NoiseTrace = _piperine._NoiseTrace
 
 # ── Design + Module: config-bundle-aware wrappers ─────────────────────────────
 #
-# The native _Module.op/tran/ac/noise take positional args mirroring
-# SimSession::run_*; the spec (AC6) calls for `module.tran(TranConfig(...))`.
+# The native _Module.op/tran/ac/noise take positional args mirroring the host
+# `Session`'s analysis menu; the spec (AC6) calls for
+# `module.tran(TranConfig(...))`.
 # These thin wrappers accept a config-bundle dataclass, unpack it to the
 # native positional signature, and forward. Reflection methods (ports/nets/
 # instances/params/behaviors) delegate to the native; result objects come

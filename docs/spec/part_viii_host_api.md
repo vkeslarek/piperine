@@ -20,21 +20,27 @@ plain syntax error, and the interpreted context no longer exists. Everything
 it did — analyses, measurement, parameter sweeps, assertions — is done by a
 host, in Python or Rust, with no new syntax.
 
-## 1. The two-tier session model
+## 1. The session model
 
-Every analysis is available on **two** kinds of session, both hosts:
+There is exactly **one** session type in Rust — `Session` — and two ways to
+reach an analysis, both hosts:
 
-- **`Module` (Python) / `SimSession` (Rust)** — the *staged* session:
-  elaborates and JIT-compiles fresh on every analysis call, over a forked
-  design with staged overrides (`Module.set`/`SimSession::stage`) replayed.
-  The right shape for one-shot runs and simple sweeps expressed as plain
-  loops.
-- **`Session`, both hosts** — the *compiled* center of gravity (HOST-01):
+- **The staged workflow** — `Module` (Python) /
+  `Session::builder(&design, module)` (Rust): configure the build (staged
+  overrides, a device provider, lifecycle hooks), then `compile()`. Python's
+  `Module` compiles one session per analysis call over a forked design with
+  its staged overrides (`Module.set`) replayed. The right shape for one-shot
+  runs and sweeps expressed as plain loops.
+- **The compiled workflow** — `Session`, both hosts (HOST-01):
   `Module.compile()` / `Session::compile(&design, module)` elaborates and
   JITs **once**, then every subsequent analysis restamps the held circuit
   (`Session::set`/`schedule_set`, MD-18 — never re-elaborates, never
   re-JITs). This is the primitive optimization loops, sweeps, and live
   parameter studies are built on.
+
+The staged and compiled workflows are two uses of one type, not two types:
+staging is a build-time option (`SessionBuilder::stage`), because a write that
+changes what gets *built* has to precede the build.
 
 ```python
 import piperine as pip
@@ -94,8 +100,8 @@ overrides go through `Session::set`, not re-elaboration.
 
 ## 3. Analyses — the uniform set
 
-Every analysis is a method on both `Module`/`SimSession` (compile-and-run)
-and `Session` (on the already-compiled circuit), same signature on both.
+Every analysis is a method on `Module` (compile-and-run, Python) and on
+`Session` (on the already-compiled circuit), same signature on both.
 The full set, both hosts: `op`, `dc`, `tran`, `ac`, `noise`, `tf`, `sens`,
 `pss`, `pz`, `disto`, `sp`, plus `four` as post-processing on a `Trace`.
 `tests/host_parity.rs`'s `ANALYSES` constant is the canonical, executable
@@ -176,9 +182,10 @@ let spar  = sim.sp(1e6, 1e9, 201, true, &config)?;
   loud on an unaddressable net/source, a non-positive frequency/amplitude,
   or (S-parameters) a module with no `@rfport` attributes.
 
-`module.set(label, param, value)` (Python) / `SimSession::stage` (Rust)
-stages an override consumed by the next analysis on that (staged) session —
-sweeps expressed as plain loops:
+`module.set(label, param, value)` (Python) /
+`Session::builder(..).stage(label, param, value)` (Rust) stages an override
+consumed by the compilation it is staged on — sweeps expressed as plain
+loops:
 
 ```python
 for rl in [2e3, 1e3, 500.0]:
@@ -224,8 +231,8 @@ sim.rebuilds();
   `rebuilds` (the ideal.md behavior). The Rust `Session::set` instead
   **fails loud** on a structural (`Invalidation::Rebuild`) write — `rebuilds()`
   stays part of the surface (currently always `0` from `set`) for a future
-  auto-rebuild follow-up; a fresh `Session::compile`/`SimSession` is the
-  workaround today. `Session::sweep`/`sweep_grid` (§5) *do* auto-rebuild on
+  auto-rebuild follow-up; a fresh `Session::compile` (or
+  `Session::builder(..).stage(..).compile()`) is the workaround today. `Session::sweep`/`sweep_grid` (§5) *do* auto-rebuild on
   a structural knob, scoped to the sweep path only.
 
 ## 5. Sweeps — first-class, compile-once
@@ -430,8 +437,7 @@ accept `impl Into<Freq>` as the representative demonstration (every
 existing `f64` call site keeps compiling via the blanket `From<f64>`); a
 malformed SI string panics (`From` is infallible). **SPEC_DEVIATION**: the
 `Into<...>` retrofit is scoped to `Session::ac` today, not every
-frequency/time-shaped argument across `Session`/`SimSession` (~12 analysis
-methods) — the newtypes, SI-string parsing, and the Python `Hz`/`ns`/`mV`/
+frequency/time-shaped argument across the analysis menu — the newtypes, SI-string parsing, and the Python `Hz`/`ns`/`mV`/
 `C` helpers are fully delivered either way; widening the retrofit is a
 separable mechanical follow-up.
 
@@ -547,7 +553,7 @@ assert!((op.v("mid")? - 2.0).abs() < 1e-9);
 `FourierComponent`/`FourierResult`; `SimHooks`; the result types
 (`DistoResult`, `NetRef`, `NetSelector`, `OpResult`, `PssResult`,
 `PzResult`, `SParamResult`, `SensResult`, `TfResult`); the session types
-(`Grid`, `Nested`, `Scale`, `Session`, `SimSession`, `SolverConfig`,
+(`Grid`, `Nested`, `Scale`, `Session`, `SessionBuilder`, `SolverConfig`,
 `Sweep`, `SweepPoint`); the unit newtypes (`Freq`, `Time`); the waveform
 types (`AcTrace`, `ComplexWaveform`, `CrossDirection`, `NoiseTrace`,
 `Trace`, `Waveform`); plus `piperine-codegen`'s `CircuitBuildInfo`/
