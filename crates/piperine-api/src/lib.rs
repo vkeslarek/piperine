@@ -16,6 +16,7 @@
 pub mod error;
 pub mod fourier;
 pub mod hooks;
+pub mod model;
 pub mod prelude;
 pub mod results;
 pub mod session;
