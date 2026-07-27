@@ -21,6 +21,7 @@ cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
 | Batch | Phase | Tasks | Commits | Result |
 |---|---|---|---|---|
 | 1 | 1 | T1–T5 ✅ | `34880d3`, `97b0a27`, `feb8606`, `0f54b10`, `79d2181` | 1224 passed / 0 failed / 4 ignored (+20). Clippy clean, doc gate 0. Deviations: statistics.phdl wired into `resolve.rs` (same prelude path as math.phdl); `parse_ident` unknown-token error now spanned (message unchanged); T2's loud failure proven at registry level + end-to-end in T4's `tol_elab.rs`; T1 rename numerics proven via bit-identical residual+jacobian. |
+| 2 | 2 | T6–T10 ✅ | `88758ac`, `66b25b8`, `0789461`, `4a15fbb`, `41290ea` | 1253 passed / 0 failed / 4 ignored (+29; piperine-lang 370→399). Build gate clean. Deviations: `parse_primary`'s "Expected expression" now spanned; helper classes carried via `@quantity(class, analysis)` attrs on `extern fn` (new `ExternSig.attrs` + `ConstraintHelperRegistry`); `discipline_value_type` widened to `pub(crate)` and reused; constraint elaboration lives in new `ElabConstraints` pass (variant attach landed in T8, T9 adds accessor + selector axis). |
 
 ---
 
