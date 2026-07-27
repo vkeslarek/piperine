@@ -55,6 +55,9 @@ impl Elaborator {
                 Item::BehaviorDecl(b) => {
                     self.syms.behavior_decls.push(b.clone());
                 }
+                // dv-core T6 parses the block; T8 wires registration into
+                // the symbol table and elaboration.
+                Item::ConstraintDecl(_) => {}
                 Item::FnDecl(f) => {
                     self.syms.fn_decls.insert(f.sig.name.clone(), f.clone());
                     self.ctx.callables.register(f.clone());

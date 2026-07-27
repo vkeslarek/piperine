@@ -193,7 +193,10 @@ impl<'a> Parser<'a> {
                 let body = self.parse_expr()?;
                 Expr::Lambda { params, body: Box::new(body) }
             }
-            _ => return Err(format!("Expected expression, found {:?}", self.peek()).into()),
+            _ => {
+                let peeked = self.peek().cloned();
+                return Err(self.make_error(format!("Expected expression, found {peeked:?}")));
+            }
         };
 
         // Postfix: Call, Index/Slice, Field, PathSeg

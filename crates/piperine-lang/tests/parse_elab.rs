@@ -42,6 +42,9 @@ impl Document {
                 // Grammar only (declared-language-surface Phase 1) — not yet
                 // consumed by this test's flattened `Document` view.
                 Item::ExternDecl(_)     => {}
+                // dv-core T6 — covered by `constraint_parse.rs`; not part of
+                // this test's flattened `Document` view.
+                Item::ConstraintDecl(_) => {}
             }
         }
         doc

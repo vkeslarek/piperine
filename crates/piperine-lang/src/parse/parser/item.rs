@@ -44,6 +44,7 @@ impl Parse for Item {
         match ident {
             "mod" => Ok(Item::ModuleDeclaration(ModuleDeclaration::parse(parser)?)),
             "analog" | "digital" => Ok(Item::BehaviorDecl(BehaviorDecl::parse(parser)?)),
+            "constraint" => Ok(Item::ConstraintDecl(ConstraintDecl::parse(parser)?)),
             "discipline" => Ok(Item::DisciplineDecl(DisciplineDecl::parse(parser)?)),
             "bundle" => Ok(Item::BundleDecl(BundleDecl::parse(parser)?)),
             "enum" => Ok(Item::EnumDecl(EnumDecl::parse(parser)?)),

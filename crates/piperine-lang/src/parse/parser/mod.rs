@@ -238,7 +238,7 @@ impl<'a> Parser<'a> {
                     errors.push(e);
                     self.sync_until(|t| {
                         if let Tok::Ident(s) = t {
-                            matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub")
+                            matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub" | "constraint")
                         } else {
                             false
                         }
@@ -246,7 +246,7 @@ impl<'a> Parser<'a> {
                     if !self.completion_triggered && self.pos < self.toks.len() {
                         // Prevent infinite loops if we hit a sync token but parsing still fails immediately
                         if let Some(t) = self.peek()
-                            && !matches!(t, Tok::Ident(s) if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub")) {
+                            && !matches!(t, Tok::Ident(s) if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub" | "constraint")) {
                                 self.pos += 1;
                             }
                     }
@@ -273,6 +273,7 @@ mod stmt;
 pub mod attributes;
 
 mod mod_decl;
+mod constraint_decl;
 mod types;
 mod discipline_decl;
 mod bundle_decl;

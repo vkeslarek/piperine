@@ -50,6 +50,9 @@ pub enum Item {
     /// An `extern` declaration — see [`ExternDecl`]. Signature-only by
     /// construction (SPEC "declared language surface" P2).
     ExternDecl(ExternDecl),
+    /// A `constraint Name { ... }` block — see [`ConstraintDecl`] (dv-core
+    /// DVC-04). A third body kind beside `analog`/`digital`.
+    ConstraintDecl(ConstraintDecl),
 }
 
 impl Item {
@@ -70,6 +73,7 @@ impl Item {
             // `extern` declarations have no `pub` modifier (SPEC P2) — a
             // header's extern decls are always visible where the header is used.
             Item::ExternDecl(_) => false,
+            Item::ConstraintDecl(c) => c.is_pub,
         }
     }
 
@@ -87,6 +91,7 @@ impl Item {
             Item::FnDecl(f) => Some(&f.sig.name),
             Item::ConstDecl(c) => Some(&c.name),
             Item::ExternDecl(e) => Some(e.name()),
+            Item::ConstraintDecl(c) => Some(&c.name),
         }
     }
 }
@@ -815,6 +820,77 @@ pub enum BehaviorKind {
     Analog,
     /// Event-driven digital behavior.
     Digital,
+}
+
+// ─────────────────────────────── Constraints ─────────────────────────────────
+
+/// `constraint Name { ... }` (dv-core DVC-04) — a third top-level body kind
+/// beside `analog`/`digital`, attaching correctness intent to the module
+/// `Name` by name. Holds `require`/`var`/`target` statements
+/// ([`ConstraintStmt`]). Pure declaration here: name resolution, type
+/// checks, and the pointwise/reduced classification are the elaborator's
+/// job (DVC-07/09).
+#[derive(Debug, Clone)]
+pub struct ConstraintDecl {
+    pub span: Option<miette::SourceSpan>,
+    pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this block, if
+    /// any (LSP-06/07).
+    pub doc: Option<String>,
+    pub is_pub: bool,
+    /// The module this block attaches to.
+    pub name: String,
+    pub body: Vec<ConstraintStmt>,
+}
+
+/// One statement inside a `constraint` block.
+#[derive(Debug, Clone)]
+pub enum ConstraintStmt {
+    /// `require <name> : <pred>;` — a named per-point predicate; the margin
+    /// convention is `m >= 0` ⟺ satisfied (DVC-08).
+    Require {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        pred: Expr,
+    },
+    /// `var <name> : <Type> = <expr>;` — a named computed scalar. The type
+    /// annotation is mandatory, exactly as every other `var` in the
+    /// language (the parser rejects the bare form).
+    Var {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        ty: Type,
+        value: Expr,
+    },
+    /// `target <expr> <cmp> <level> [tol <scale>];` — an unlabeled
+    /// comparison; `tol <scale>` normalizes the signed margin (absent →
+    /// `scale = 1`, no implicit normalization).
+    Target {
+        span: Option<miette::SourceSpan>,
+        expr: Expr,
+        cmp: TargetCmp,
+        level: Expr,
+        tol: Option<Expr>,
+    },
+}
+
+impl ConstraintStmt {
+    pub fn span(&self) -> Option<miette::SourceSpan> {
+        match self {
+            Self::Require { span, .. } | Self::Var { span, .. } | Self::Target { span, .. } => *span,
+        }
+    }
+}
+
+/// The comparison a `target` statement makes. Only the non-strict forms
+/// exist — they are the two the signed-margin convention defines
+/// (`(b−a)/scale` / `(a−b)/scale`; DVC-08).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetCmp {
+    /// `expr <= level`.
+    Le,
+    /// `expr >= level`.
+    Ge,
 }
 
 impl EventSpec {
