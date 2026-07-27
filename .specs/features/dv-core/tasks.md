@@ -14,7 +14,13 @@ cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
 **Spec**: `.specs/features/dv-core/spec.md` (DVC-01..23)
 **Design**: `.specs/features/dv-core/design.md`
 **Vision**: `.specs/features/design-verification/ideal.md` (decisions D1–D16 binding)
-**Status**: Draft — awaiting approval
+**Status**: In Progress — Phase 1 DONE (T1–T5), Phase 2 next
+
+## Progress log
+
+| Batch | Phase | Tasks | Commits | Result |
+|---|---|---|---|---|
+| 1 | 1 | T1–T5 ✅ | `34880d3`, `97b0a27`, `feb8606`, `0f54b10`, `79d2181` | 1224 passed / 0 failed / 4 ignored (+20). Clippy clean, doc gate 0. Deviations: statistics.phdl wired into `resolve.rs` (same prelude path as math.phdl); `parse_ident` unknown-token error now spanned (message unchanged); T2's loud failure proven at registry level + end-to-end in T4's `tol_elab.rs`; T1 rename numerics proven via bit-identical residual+jacobian. |
 
 ---
 
