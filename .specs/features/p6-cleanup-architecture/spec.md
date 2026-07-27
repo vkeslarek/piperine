@@ -410,12 +410,12 @@ in value.
 | CLA-10 ✅ | P1 Placement | CL-05, CL-04 (solver homes) | A/B | Verified |
 | CLA-11 ✅ | P1 Placement | CL-13 (python façade) | B | Verified |
 | CLA-12 ✅ | P1 Placement | CL-03 (root tests) | B | Verified |
-| CLA-13 | P1 Placement | CL-11/CL-03 (guards, MD-34) | B | Pending |
-| CLA-14 | P1 One host entry | CL-01 (D1, D5) | C | Pending |
-| CLA-15 | P1 One host entry | CL-01 (file split) | C | Pending |
-| CLA-16 | P1 One host entry | CL-01 (python retarget, D6) | C | Pending |
-| CLA-17 | P1 Object model | CL-02 (D3, lift) | C | Pending |
-| CLA-18 | P1 Object model | CL-02 (python delegation) | C | Pending |
+| CLA-13 ✅ | P1 Placement | CL-11/CL-03 (guards, MD-34) | B | Verified |
+| CLA-14 ✅ | P1 One host entry | CL-01 (D1, D5) | C | Verified |
+| CLA-15 ✅ | P1 One host entry | CL-01 (file split) | C | Verified |
+| CLA-16 ✅ | P1 One host entry | CL-01 (python retarget, D6) | C | Verified |
+| CLA-17 ✅ | P1 Object model | CL-02 (D3, lift) | C | Verified |
+| CLA-18 ✅ | P1 Object model | CL-02 (python delegation) | C | Verified |
 | CLA-19 | P1 Object model | CL-02 (Rust proof target) | C | Pending |
 | CLA-20 | P2 Codegen abstractions | CL-10.1 (builder) | D | Pending |
 | CLA-21 | P2 Codegen abstractions | CL-10.2 (query surface) | D | Pending |

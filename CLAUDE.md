@@ -121,6 +121,10 @@ both a package and the workspace) — always pass `--workspace`.
 - `laplace_*`, `zi_*` — **not declared at all** (`headers/operators.phdl` has no
   `extern operator` for either), so MD-24 stops a call at elaboration; they never reach
   codegen. Language backlog, tracked in `ROADMAP.md`.
+- `.disto` on MOS2/MOS3 — the 2nd/3rd-derivative kernels emit one JIT function per
+  *ordered* controlling-branch combination and overrun Cranelift (`TryFromIntError`).
+  They are opt-in (`SessionBuilder::disto(true)`, default off) and `Session::disto`
+  fails loud without them. Open in `ROADMAP.md` P1 engine-operator gaps.
 - Everything else in that family is implemented and has a ROADMAP entry with its commit:
   `transition` and the other runtime operators (`device/analog/operators.rs`), `table`,
   `$limit`/pnjlim/fetlim (`kernel/analog/limits.rs` + `device/analog/limits.rs`),

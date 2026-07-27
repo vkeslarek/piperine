@@ -14,7 +14,7 @@ without it.**
 
 **Design**: `.specs/features/p6-cleanup-architecture/design.md`
 **Spec**: `.specs/features/p6-cleanup-architecture/spec.md`
-**Status**: In Progress — Phases 1–4 DONE (T1–T23), Phase 5 next
+**Status**: In Progress — Phases 1–5 DONE (T1–T30), Phase 6 next
 
 ## Progress log
 
@@ -94,6 +94,54 @@ where the tree has `analyses/`. `solver-simplification` is genuinely delivered
 - **T23's guard enforces both readings** of the rule (crate-scoping and naming), so
   the briefing/`tasks.md` divergence is moot. Its exemption registry is
   deliberately empty and exhaustiveness fires if an entry appears without update.
+
+| 5 | 5 | T24–T30 ✅ | `ae61ad7`, `68b0378`, `26764a0`, `ffa4fa0`, `fff0278`, `e857975`, `f6288a9` | 1169 passed / 0 failed / 4 ignored (+5 new `host_session_builder.rs`). Doc warnings 46 → **45**. `SimSession` refs in code: **0**. `git diff \| grep -c '^-.*#[test]'` = 0 — no test dropped. |
+
+**Phase-5 findings — the phase paid for itself twice over:**
+
+- **A latent bug the collapse exposed (now `ROADMAP.md` P1 + `CLAUDE.md` known
+  gaps).** `Session::compile` emitted the `.disto` 2nd/3rd-derivative kernels
+  *unconditionally*, and those kernels emit one JIT function per **ordered**
+  controlling-branch combination — enough on a MOSFET to panic `cranelift-jit`
+  with `TryFromIntError` (8 `ngspice_validation` MOSFET cases). Meaning: the host
+  entry point that survives could never JIT a MOS2/MOS3 circuit at all. Only the
+  *deleted* `SimSession`, which gated the kernels off, could. Nothing caught it
+  because no test drove MOS2/MOS3 through `Session`. Resolution: `SessionBuilder::
+  disto(bool)` defaulting **false**, opted into by the 7 real call sites, and
+  `Session::disto` fails loud without it (`session/entry.rs:436`). This is a
+  recorded behavior change to `Session`, not a silent one. The real fix — stop
+  emitting the symmetric cross-product — is now an open ROADMAP item.
+- **T24's equivalence matrix earned its place as a no-code task.** 21 methods
+  classified, **5 same-role/different-behavior**, and two of the five would have
+  been silent corruption under a naive rewrite: (a) `Design::fork` *clears* the
+  override map, so a `new`→`compile` rewrite would have dropped every staged
+  value; (b) only `sweep` + `point.op()` clones per-point `info`, which the
+  ngspice current readback depends on — retargeting `run_op_sweep` onto `dc`
+  would have broken it. Matrix at `session-equivalence.md`.
+- **The MD-18 assertions were strengthened, not relaxed** (orchestrator verified
+  the diff): `sweep_compiles == per_build` → `sweep_compiles == 0`, because the
+  build now happens at `Session::compile`, *before* the measurement window.
+  `per_build` stays live — `compile_once_sweep.rs:56` asserts `per_build > 0` and
+  `urc_compile_count.rs:157` still compares it across urc5/urc10 for FLAT-05.
+- **`session/entry.rs`, not `session/session.rs`**: the task's suggested filename
+  trips `clippy::module_inception` under `-D warnings`, and an `#[allow]` would
+  trade a filename for exactly the suppression MD-33 forbids. CLA-15 AC3 names the
+  entry object by role, not by filename. `sim.rs`/`build.rs` were added for the
+  same ~700-line criterion.
+- **`Session` fired no hooks at all** before this phase; `fire_after_solve` is now
+  wired into all 11 analyses with the staged path's exact name strings. Six plugin
+  tests moved their `expect_err` from solve to `compile()`, which is where hooks
+  now fire — `staging.rs::restaging_across_analyses_is_idempotent` changed
+  mechanism (a hook firing twice per build replaces two analyses per staged
+  session) but not strength.
+- **Scope extended past declared `Where` in three places**, all forced: `piperine-api`
+  and `piperine-python` test dirs (7 session-constructing files that would have
+  blocked T30), `piperine-python/src/module.rs` (the disto opt-in), and
+  `docs/spec/{part_viii_host_api,appendix_c_host_surface}.md` + `CLAUDE.md` —
+  leaving the formal spec describing a deleted type is the staleness CLA-07 exists
+  to remove.
+- One behavior deliberately **not** carried over: `run_op_sweep` discarded its
+  `Invalidation`; `Session` rebuilds and counts. Recorded in `session-equivalence.md` §3.5.
 
 **Deferred (pre-existing, out of scope, surfaced by T13):** `mkdocs build` fails on
 a missing `material` theme; `docs/spec/appendix_c_host_surface.md` and
