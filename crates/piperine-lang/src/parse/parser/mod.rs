@@ -194,7 +194,10 @@ impl<'a> Parser<'a> {
                 self.pos += 1;
                 Ok(res)
             }
-            _ => Err(format!("Expected identifier, found {:?}", self.peek()).into()),
+            _ => {
+                let peeked = self.peek().cloned();
+                Err(self.make_error(format!("Expected identifier, found {peeked:?}")))
+            }
         }
     }
 

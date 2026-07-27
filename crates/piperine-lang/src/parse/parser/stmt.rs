@@ -18,6 +18,32 @@ impl<'a> Parser<'a> {
     //              | PortArgs [ParamArgs] ";"                  -- anon
     //              | "=" Expr ";"                              -- connection
 
+    /// Parses the optional `tol <dist>(<keyed args>) [global]` clause on a
+    /// `param` (dv-core DVC-01). Returns `None` when no `tol` follows the
+    /// default. The distribution name is stored unresolved — elaboration
+    /// resolves it against `headers/statistics.phdl`.
+    pub(crate) fn parse_tol_clause(&mut self) -> Result<Option<crate::parse::ast::TolClause>, crate::parse::error::ParseError> {
+        if !matches!(self.peek(), Some(Tok::Ident(s)) if s == "tol") {
+            return Ok(None);
+        }
+        let start = self.current_span_start();
+        self.eat_ident("tol");
+        let dist = self.parse_ident()?;
+        self.expect(&Tok::LParen)?;
+        let mut args = Vec::new();
+        if !self.eat(&Tok::RParen) {
+            args.push(self.parse_keyed_arg()?);
+            while self.eat(&Tok::Comma) {
+                if self.peek() == Some(&Tok::RParen) { break; }
+                args.push(self.parse_keyed_arg()?);
+            }
+            self.expect(&Tok::RParen)?;
+        }
+        let global = self.eat_ident("global");
+        let end = self.previous_span_end();
+        Ok(Some(crate::parse::ast::TolClause { span: Some((start, end - start).into()), dist, args, global }))
+    }
+
     /// Parses a single statement inside a `mod` body: `param`, `wire`, `var`, `for`, `if`, instance, or connection.
     pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModuleStatement, crate::parse::error::ParseError> {
         let start = self.current_span_start();
@@ -39,9 +65,10 @@ impl<'a> Parser<'a> {
             self.expect(&Tok::Colon)?;
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
+            let tol = self.parse_tol_clause()?;
             self.expect(&Tok::Semi)?;
             let end = self.previous_span_end();
-            return Ok(ModuleStatement::ParamDecl { span: Some((start, end - start).into()), attrs, doc, name, ty, default });
+            return Ok(ModuleStatement::ParamDecl { span: Some((start, end - start).into()), attrs, doc, name, ty, default, tol });
         }
         if self.eat_ident("wire") {
             let name = self.parse_ident()?;

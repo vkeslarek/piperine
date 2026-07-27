@@ -303,9 +303,24 @@ impl ModuleStatement {
     }
 }
 
+/// A `tol <dist>(args) [global]` clause on a `param` (dv-core DVC-01).
+/// Pure declaration — resolved against `headers/statistics.phdl` and
+/// evaluated as elaboration constants at elaboration; inert at solve.
+#[derive(Debug, Clone)]
+pub struct TolClause {
+    pub span: Option<miette::SourceSpan>,
+    /// The distribution name (`gauss`, `uniform`, …).
+    pub dist: String,
+    /// Keyed arguments (`sigma = 0.005`), the attribute-argument shape.
+    pub args: Vec<AttrArg>,
+    /// `global` marker: process variation when present, mismatch (per
+    /// instance) when absent.
+    pub global: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum ModuleStatement {
-    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr> },
+    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr>, tol: Option<TolClause> },
     WireDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type },
     VarDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr> },
     StructuralFor { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModuleStatement> },

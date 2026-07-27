@@ -18,10 +18,10 @@ impl<'a> ParseAttributesExt for Parser<'a> {
             let mut args = Vec::new();
             if self.eat(&Tok::LParen)
                 && !self.eat(&Tok::RParen) {
-                    args.push(self.parse_attr_arg()?);
+                    args.push(self.parse_keyed_arg()?);
                     while self.eat(&Tok::Comma) {
                         if self.peek() == Some(&Tok::RParen) { break; }
-                        args.push(self.parse_attr_arg()?);
+                        args.push(self.parse_keyed_arg()?);
                     }
                     self.expect(&Tok::RParen)?;
                 }
@@ -35,12 +35,12 @@ impl<'a> ParseAttributesExt for Parser<'a> {
         let mut attrs = Vec::new();
         if self.eat(&Tok::LParen)
             && !self.eat(&Tok::RParen) {
-                attrs.push(self.parse_attr_arg()?);
+                attrs.push(self.parse_keyed_arg()?);
                 while self.eat(&Tok::Comma) {
                     if self.peek() == Some(&Tok::RParen) {
                         break;
                     }
-                    attrs.push(self.parse_attr_arg()?);
+                    attrs.push(self.parse_keyed_arg()?);
                 }
                 self.expect(&Tok::RParen)?;
             }
@@ -49,8 +49,9 @@ impl<'a> ParseAttributesExt for Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    /// One `name = expr` attribute argument, with its own span (T19/LSP-21).
-    fn parse_attr_arg(&mut self) -> Result<AttrArg, ParseError> {
+    /// One `name = expr` keyed argument, with its own span (T19/LSP-21) —
+    /// the shape attribute lists and the `tol` clause's arguments share.
+    pub(crate) fn parse_keyed_arg(&mut self) -> Result<AttrArg, ParseError> {
         let start = self.current_span_start();
         let name = self.parse_ident()?;
         self.expect(&Tok::Assign)?;
