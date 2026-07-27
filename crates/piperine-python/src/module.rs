@@ -1,19 +1,20 @@
-//! `_Module` and its reflected children — read-only views over one POM
-//! module's ports/nets/instances/params/behaviors (PY-03), plus the four
-//! analyses (`op/tran/ac/noise`, PY-04) and `stage` (PY-12) that turn a
-//! reflected module into a runnable one.
+//! `_Module` and its reflected children — thin wrappers over
+//! [`piperine_api::model::Module`] and its descriptors (CLA-18). Every
+//! method forwards to the api model (navigation, the analysis menu, `set`,
+//! `compile`) and maps its error onto the documented Python exception; the
+//! only logic left here is string rendering for the reflected children and
+//! the `Solver` dataclass → `SolverConfig` mapping.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use piperine_api::{Session, SolverConfig};
+use piperine_api::SolverConfig;
 use piperine_lang::parse::ast::{BehaviorKind, Direction};
-use piperine_lang::{Behavior, Design, Instance, Module, Param, Port, Value, ValueType, Wire};
+use piperine_lang::ValueType;
 
+use crate::instance::InstanceResolver;
 use crate::results::_AcTrace;
 use crate::results::_NoiseTrace;
 use crate::results::_OpResult;
@@ -25,71 +26,28 @@ type DistoMetrics = (Option<f64>, Option<f64>, Option<f64>, Option<f64>);
 /// Return type for `.sp`: `(frequencies, s_matrix, opvars, n_ports)`.
 type SpParams = (Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize);
 
-/// `_Module` — a reflected view of a named module in a shared [`Design`].
-/// Stores `(Rc<Design>, name)` and re-looks the module up on each call so the
-/// GIL-bound lifetime never fights the POM borrow (design
-/// `python-bindings/design.md` — POM borrow-lifetime risk).
+/// `_Module` — a reflected view of a named module in a shared design,
+/// delegating to the api model's [`Module`](piperine_api::model::Module).
+/// Staged overrides (`set`, PY-12) live in the api module's isolated map and
+/// replay onto a fresh fork per analysis — the held parent `_Design` is
+/// never mutated (spec AC11), and no state carries between analyses.
 ///
-/// Staged overrides (`stage`, PY-12) are held in an isolated map and applied
-/// to a fresh [`Design::fork`] per analysis call — the held parent `Design`
-/// is never mutated (spec AC11), and each analysis is a pure function of the
-/// design + currently-staged overrides + config — every analysis is
-/// isolated (no state carries between calls). A re-stage of the same `(label, param)` overwrites the
-/// previous value (last write wins).
-///
-/// `unsendable`: shares an `Rc<Design>` whose interior is not `Sync` (see
-/// [`crate::_Design`]); single-interpreter use only.
+/// `unsendable`: the api module shares an `Rc` design whose interior is not
+/// `Sync` (see [`crate::_Design`]); single-interpreter use only.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Module {
-    design: Rc<Design>,
-    name: String,
-    /// `(instance label, param name) → staged value`. Isolated from the
-    /// parent design so the user's `_Design` is untouched (AC11). Applied to
-    /// each analysis's fork before solving.
-    staged: RefCell<HashMap<(String, String), Value>>,
+    inner: piperine_api::model::Module,
 }
 
 impl _Module {
-    pub(crate) fn new(design: Rc<Design>, name: String) -> Self {
-        Self {
-            design,
-            name,
-            staged: RefCell::new(HashMap::new()),
-        }
-    }
-
-    /// Re-resolve the live module from the shared POM.
-    fn module(&self) -> PyResult<&Module> {
-        self.design.module(&self.name).ok_or_else(|| {
-            PyValueError::new_err(format!("module `{}` is no longer present", self.name))
-        })
-    }
-
-    /// Compile a fresh [`Session`] for one analysis: hand every staged
-    /// override to a [`SessionBuilder`](piperine_api::SessionBuilder), which
-    /// forks the parent design and replays them onto the fork. Each analysis
-    /// call gets its own session + fork, so results never leak between calls
-    /// (spec §9).
-    fn session(&self) -> PyResult<Session> {
-        self.session_with_disto(false)
-    }
-
-    /// [`Self::session`], plus the `.disto` 2nd/3rd-derivative kernels.
-    /// `disto` is the only analysis that reads them and they are opt-in
-    /// (a many-branch device overruns the JIT backend compiling them), so it
-    /// is the only caller.
-    fn session_with_disto(&self, disto: bool) -> PyResult<Session> {
-        let mut builder = Session::builder(&self.design, &self.name).disto(disto);
-        for ((label, param), value) in self.staged.borrow().iter() {
-            builder = builder.stage(label, param, value.clone());
-        }
-        builder.compile().map_err(Self::analysis_err)
+    pub(crate) fn new(inner: piperine_api::model::Module) -> Self {
+        Self { inner }
     }
 
     /// Surface a host analysis error as the right Python exception:
     /// net-not-addressable reads as `KeyError` (spec edge case — fail loud,
     /// never a silent NaN); everything else as `RuntimeError` carrying the
-    /// diagnostic. Both error types implement `Display` via `thiserror`.
+    /// diagnostic.
     fn analysis_err<E: std::fmt::Display>(e: E) -> PyErr {
         let msg = format!("{e}");
         if msg.contains("is not addressable") {
@@ -99,12 +57,14 @@ impl _Module {
         }
     }
 
-    /// Build the [`InstanceResolver`] handed to result objects so they can
-    /// detect instance paths in `__getitem__` (PY-13). The resolver shares
-    /// this module's design handle — a fresh clone per call so each result
-    /// owns its own (cheap `Rc` bump).
-    fn instance_resolver(&self) -> crate::instance::InstanceResolver {
-        crate::instance::InstanceResolver::new(Rc::clone(&self.design), self.name.clone())
+    /// The [`InstanceResolver`] handed to result objects so they can detect
+    /// instance paths in `__getitem__` (PY-13), rooted at this module's
+    /// design.
+    fn instance_resolver(&self) -> PyResult<InstanceResolver> {
+        Ok(InstanceResolver::new(
+            self.inner.design().shared(),
+            self.inner.name().map_err(|e| PyValueError::new_err(format!("{e}")))?.to_string(),
+        ))
     }
 
     /// Map the facade's `Solver` dataclass onto the host [`SolverConfig`].
@@ -131,41 +91,55 @@ impl _Module {
     /// The module's declared name (re-resolved against the live POM).
     #[getter]
     fn name(&self) -> PyResult<String> {
-        Ok(self.module()?.name().to_string())
+        self.inner.name().map(str::to_string).map_err(|e| PyValueError::new_err(format!("{e}")))
     }
 
     /// The module's ports (PY-03 / spec AC14).
     fn ports(&self) -> PyResult<Vec<_Port>> {
-        Ok(self.module()?.ports().iter().map(_Port::of).collect())
+        self.inner
+            .ports()
+            .map(|ports| ports.iter().map(_Port::of).collect())
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
     }
 
     /// The module's nets (its `wire` declarations) (PY-03 / spec AC14).
     fn nets(&self) -> PyResult<Vec<_Net>> {
-        Ok(self.module()?.wires().iter().map(_Net::of).collect())
+        self.inner
+            .nets()
+            .map(|nets| nets.iter().map(_Net::of).collect())
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
     }
 
     /// The module's submodule instances (PY-03 / spec AC14).
     fn instances(&self) -> PyResult<Vec<_Instance>> {
-        Ok(self.module()?.instances().iter().map(_Instance::of).collect())
+        self.inner
+            .instances()
+            .map(|instances| instances.iter().map(_Instance::of).collect())
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
     }
 
     /// The module's params (PY-03 / spec AC14).
     fn params(&self) -> PyResult<Vec<_Param>> {
-        Ok(self.module()?.params().iter().map(_Param::of).collect())
+        self.inner
+            .params()
+            .map(|params| params.iter().map(_Param::of).collect())
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
     }
 
     /// The module's `analog`/`digital` behavior blocks (PY-03 / spec AC14).
     fn behaviors(&self) -> PyResult<Vec<_Behavior>> {
-        Ok(self.module()?.behaviors().iter().map(_Behavior::of).collect())
+        self.inner
+            .behaviors()
+            .map(|behaviors| behaviors.iter().map(_Behavior::of).collect())
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
     }
 
     // ── analyses (PY-04) + staging (PY-12) ─────────────────────────────────
     //
-    // Each analysis compiles a fresh `Session` over a forked design with the
-    // staged overrides replayed (see [`_Module::session`]); solver config
-    // defaults to [`SolverConfig::default`]. The signatures mirror
-    // `Session`'s analysis menu positionally — the facade (P10) wraps these with
-    // typed dataclasses (`OpConfig`/`TranConfig`/...).
+    // Each analysis delegates to the api module, which compiles a fresh
+    // `Session` over a forked design with the staged overrides replayed. The
+    // signatures mirror `Session`'s analysis menu positionally — the facade
+    // (P10) wraps these with typed dataclasses (`OpConfig`/`TranConfig`/...).
 
     /// Run a DC operating-point analysis (PY-04 / spec AC3). Returns the
     /// solved node voltages + branch currents as an [`_OpResult`].
@@ -177,11 +151,11 @@ impl _Module {
         nodeset: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_OpResult> {
-        let mut session = self.session()?;
-        let result = session
-            .op(&Self::solver_config(solver)?, nodeset.as_ref())
+        let result = self
+            .inner
+            .op(nodeset.as_ref(), Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
-        Ok(_OpResult::new(result).with_resolver(self.instance_resolver()))
+        Ok(_OpResult::new(result).with_resolver(self.instance_resolver()?))
     }
 
     /// Run a DC sensitivity analysis (`.sens`): `∂V(output)/∂(param)` at the
@@ -196,10 +170,10 @@ impl _Module {
         dp_rel: f64,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<HashMap<(String, String), f64>> {
-        let mut session = self.session()?;
         let outs: Vec<&str> = outputs.iter().map(|s| s.as_str()).collect();
-        let result = session
-            .sens(&outs, &params, dp_rel, &Self::solver_config(solver)?)
+        let result = self
+            .inner
+            .sens(&outs, &params, dp_rel, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         Ok(result.d)
     }
@@ -215,12 +189,12 @@ impl _Module {
         tstab: f64,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(_Trace, usize, f64, Option<f64>)> {
-        let mut session = self.session()?;
-        let result = session
-            .pss(period, tstab, &Self::solver_config(solver)?)
+        let result = self
+            .inner
+            .pss(period, tstab, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         Ok((
-            _Trace::new(result.trace).with_resolver(self.instance_resolver()),
+            _Trace::new(result.trace).with_resolver(self.instance_resolver()?),
             result.stats.shoot_iterations,
             result.stats.residual,
             result.stats.estimated_settle_time,
@@ -244,9 +218,9 @@ impl _Module {
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Vec<num_complex::Complex64>, Vec<num_complex::Complex64>)> {
-        let mut session = self.session()?;
-        let result = session
-            .pz(input_source, output, output_ref, &Self::solver_config(solver)?)
+        let result = self
+            .inner
+            .pz(input_source, output, output_ref, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         Ok((result.poles, result.zeros))
     }
@@ -272,9 +246,9 @@ impl _Module {
         output_ref: Option<&str>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<DistoMetrics> {
-        let mut session = self.session_with_disto(true)?;
-        let result = session
-            .disto(f1, f2, amplitude, output, output_ref, &Self::solver_config(solver)?)
+        let result = self
+            .inner
+            .disto(f1, f2, amplitude, output, output_ref, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         Ok((result.hd2, result.hd3, result.im2, result.im3))
     }
@@ -298,9 +272,9 @@ impl _Module {
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<SpParams> {
-        let mut session = self.session()?;
-        let result = session
-            .sp(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
+        let result = self
+            .inner
+            .sp(fstart, fstop, points, logarithmic, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         let s: Vec<Vec<Vec<num_complex::Complex64>>> = result
             .s
@@ -332,12 +306,20 @@ impl _Module {
         record_device_state: bool,
         probe: Vec<String>,
     ) -> PyResult<_Trace> {
-        let mut session = self.session()?;
         let probe_refs: Vec<&str> = probe.iter().map(String::as_str).collect();
-        let result = session
-            .tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref(), record_device_state, &probe_refs)
+        let result = self
+            .inner
+            .tran(
+                stop,
+                step,
+                start,
+                ic.as_ref(),
+                Some(&Self::solver_config(solver)?),
+                record_device_state,
+                &probe_refs,
+            )
             .map_err(Self::analysis_err)?;
-        Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
+        Ok(_Trace::new(result).with_resolver(self.instance_resolver()?))
     }
 
     /// Run an AC small-signal sweep (PY-04 / spec AC8). `logarithmic` defaults
@@ -351,9 +333,9 @@ impl _Module {
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_AcTrace> {
-        let mut session = self.session()?;
-        let result = session
-            .ac(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
+        let result = self
+            .inner
+            .ac(fstart, fstop, points, logarithmic, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         Ok(_AcTrace::new(result))
     }
@@ -372,15 +354,15 @@ impl _Module {
         logarithmic: bool,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_NoiseTrace> {
-        let mut session = self.session()?;
-        let result = session
+        let result = self
+            .inner
             .noise(
                 out,
                 reference,
                 (fstart, fstop),
                 points,
                 logarithmic,
-                &Self::solver_config(solver)?,
+                Some(&Self::solver_config(solver)?),
             )
             .map_err(Self::analysis_err)?;
         Ok(_NoiseTrace::new(result))
@@ -393,28 +375,28 @@ impl _Module {
     /// same `(label, param)` overwrites. Sweeps are native Python `for` loops
     /// (spec AC12).
     fn set(&self, label: &str, param: &str, value: f64) {
-        self.staged
-            .borrow_mut()
-            .insert((label.to_string(), param.to_string()), Value::Real(value));
+        self.inner.set(label, param, value);
     }
 
     /// Compile this module **once** into a live session (LIVE-10): the
     /// returned [`crate::live::_Session`] holds the elaborated design and
     /// the JIT-compiled circuit; `set` + re-run analyses never recompile
     /// (MD-18). Currently staged overrides are baked into the compilation
-    /// (same replay as [`Self::session`]); the parent `_Design` stays
+    /// (same replay as the per-analysis path); the parent `_Design` stays
     /// untouched.
     fn compile(&self) -> PyResult<crate::live::_Session> {
-        crate::live::_Session::from_design(&self.design, &self.name, &self.staged.borrow())
+        crate::live::_Session::from_design(
+            &self.inner.design().shared(),
+            self.inner.name().map_err(|e| PyValueError::new_err(format!("{e}")))?,
+            &self.inner.staged(),
+        )
     }
 }
 
 // ── reflected children ───────────────────────────────────────────────────────
 //
-// Each child snapshots its attributes at construction (when `_Module::ports()`
-// / etc. enumerate the POM). The binding is read-only, so a snapshot is both
-// lifetime-safe across the FFI boundary and an honest reflection of the POM
-// at enumeration time.
+// Each child wraps the api descriptor of the same name, rendering the typed
+// fields (`Direction`, `ValueType`, `BehaviorKind`) as the documented strings.
 
 /// A reflected port — name, direction, and net (discipline) type.
 #[pyclass(module = "piperine")]
@@ -425,7 +407,7 @@ pub struct _Port {
 }
 
 impl _Port {
-    fn of(port: &Port) -> Self {
+    fn of(port: &piperine_api::model::Port) -> Self {
         Self {
             name: port.name().to_string(),
             direction: match port.direction() {
@@ -434,7 +416,7 @@ impl _Port {
                 Direction::Inout => "inout",
             }
             .to_string(),
-            ty: port.net_type().discipline_name().to_string(),
+            ty: port.ty().to_string(),
         }
     }
 }
@@ -464,11 +446,8 @@ pub struct _Net {
 }
 
 impl _Net {
-    fn of(wire: &Wire) -> Self {
-        Self {
-            name: wire.name().to_string(),
-            ty: wire.net_type().discipline_name().to_string(),
-        }
+    fn of(net: &piperine_api::model::Net) -> Self {
+        Self { name: net.name().to_string(), ty: net.ty().to_string() }
     }
 }
 
@@ -493,11 +472,8 @@ pub struct _Instance {
 }
 
 impl _Instance {
-    fn of(inst: &Instance) -> Self {
-        Self {
-            name: inst.name().to_string(),
-            module: inst.module_name().to_string(),
-        }
+    fn of(inst: &piperine_api::model::Instance) -> Self {
+        Self { name: inst.name().to_string(), module: inst.module().to_string() }
     }
 }
 
@@ -524,10 +500,10 @@ pub struct _Param {
 }
 
 impl _Param {
-    fn of(param: &Param) -> Self {
+    fn of(param: &piperine_api::model::Param) -> Self {
         Self {
             name: param.name().to_string(),
-            ty: match param.value_type() {
+            ty: match param.ty() {
                 ValueType::Real => "Real",
                 ValueType::Natural => "Natural",
                 ValueType::Integer => "Integer",
@@ -575,7 +551,7 @@ pub struct _Behavior {
 }
 
 impl _Behavior {
-    fn of(beh: &Behavior) -> Self {
+    fn of(beh: &piperine_api::model::Behavior) -> Self {
         Self {
             name: beh.name().to_string(),
             kind: match beh.kind() {

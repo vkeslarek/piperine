@@ -260,7 +260,7 @@ impl _OpResult {
                 self.shared(),
                 resolver.shared(),
                 label,
-            );
+            )?;
             return Ok(Py::new(py, view)?.into_any());
         }
         let f = self.v(name, None)?;

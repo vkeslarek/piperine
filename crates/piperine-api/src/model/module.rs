@@ -66,6 +66,20 @@ impl Module {
         Ok(self.pom()?.name())
     }
 
+    /// The design this module belongs to (a cheap `Rc` bump — the same
+    /// shared handle [`Design::shared`](crate::model::Design::shared) hands
+    /// out).
+    pub fn design(&self) -> crate::model::Design {
+        crate::model::Design::from_shared(Rc::clone(&self.design))
+    }
+
+    /// The staged overrides, cloned — the map the next analysis replays onto
+    /// its fork. Reflection over [`Self::set`]'s state, never a mutation
+    /// channel.
+    pub fn staged(&self) -> HashMap<(String, String), Value> {
+        self.staged.borrow().clone()
+    }
+
     /// The module's ports.
     pub fn ports(&self) -> Result<Vec<Port>, Error> {
         Ok(self.pom()?.ports().iter().map(Port::of).collect())
