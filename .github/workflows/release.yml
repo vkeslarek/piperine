@@ -38,7 +38,13 @@ jobs:
           python-version: "3.13"
 
       - name: Build the Python extension module (bundled into the CLI)
+        # macOS: Python symbols resolve at load time, so the cdylib links with
+        # `-undefined dynamic_lookup`. PyO3 emits those flags only for its own
+        # package (maturin adds them for you); a plain cargo build needs them
+        # set explicitly, or the link fails with undefined `_Py*` symbols.
         run: cargo build --release -p piperine-python --features extension-module
+        env:
+          RUSTFLAGS: ${{ runner.os == 'macOS' && '-C link-args=-undefined -C link-args=dynamic_lookup' || '' }}
 
       - name: Build release binary
         run: cargo build --release -p piperine-cli -p piperine-lang-server
