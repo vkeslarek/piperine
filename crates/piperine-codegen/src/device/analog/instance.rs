@@ -23,6 +23,7 @@ use crate::kernel::analog::{AnalogKernel, RuntimeState};
 use crate::error::CodegenError;
 use crate::emit::abi::SimCtx;
 
+use super::constraints::MarginTracker;
 use super::events::EventSystem;
 use super::forces::ForceStamper;
 use super::limits::Limiter;
@@ -103,6 +104,14 @@ pub struct AnalogInstance {
     /// device-author surface for overrides that compute temperature-dependent
     /// constants at the seam rather than at eval time.
     cached_temperature: Option<f64>,
+    /// Constraints capability (DVC-10): margin evaluation runtime — the
+    /// running worst + argmin per declared margin and the findings of the
+    /// latest accepted point. Empty when the module declares no margins.
+    margins: MarginTracker,
+    /// The run's check posture (DVC-12), stashed from the `Context` each
+    /// assemble via [`set_check_posture`](Self::set_check_posture) — run
+    /// data, not structure (MD-18: a posture change recompiles nothing).
+    check_posture: piperine_solver::abi::CheckPosture,
 }
 
 impl AnalogInstance {
@@ -231,6 +240,7 @@ impl AnalogInstance {
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
         let num_limits = kernel.num_limits();
+        let num_margins = kernel.num_margins();
         let mut instance = Self {
             state,
             kernel,
@@ -246,6 +256,8 @@ impl AnalogInstance {
             limiter: Limiter::new(num_limits),
             limit_report: None,
             cached_temperature: None,
+            margins: MarginTracker::new(num_margins),
+            check_posture: piperine_solver::abi::CheckPosture::default(),
         };
         instance.fire_initial_events();
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
@@ -1194,7 +1206,54 @@ impl AnalogInstance {
             }
         }
         self.detect_events(&volts, t);
+        self.evaluate_margins(&volts, t);
         self.last_volts = volts;
+    }
+
+    /// Stash the run's check posture (DVC-12). The solver hands every
+    /// element the `Context` each assemble (`Element::update`);
+    /// `PiperineDevice` forwards it here so the accept hook knows whether
+    /// the margin kernels run at all. Pure run data — a posture change
+    /// between analyses re-stamps and recompiles nothing (MD-18).
+    pub fn set_check_posture(&mut self, posture: piperine_solver::abi::CheckPosture) {
+        self.check_posture = posture;
+    }
+
+    /// Evaluate the constraint margins at one accepted point (DVC-10):
+    /// the running worst + argmin per declared margin advances, and a
+    /// `require` crossing zero — or a non-finite margin — is recorded as
+    /// an `Error` finding. Called from `accept_timestep` (accepted steps
+    /// only — never a rejected attempt, design §C3); `checks=off` never
+    /// calls a kernel function.
+    pub fn evaluate_margins(&mut self, volts: &[f64], time: f64) {
+        if self.kernel.num_margins() == 0 {
+            return;
+        }
+        let cx = LoadCtx {
+            kernel: &self.kernel,
+            node_refs: &self.node_refs,
+            params: &self.params,
+            state: &self.state,
+            vars: &self.vars,
+            sim: &self.sim,
+        };
+        self.margins.evaluate(&cx, volts, time, self.check_posture);
+    }
+
+    /// The running worst value + argmin per declared margin (DVC-10), in
+    /// kernel catalog order — the device's half of the margin channel the
+    /// host reduces into `MarginsResult` (design §D).
+    pub fn margin_extrema(&self) -> &[super::constraints::MarginExtremum] {
+        self.margins.extrema()
+    }
+
+    /// The validation findings of the latest accepted point (DVC-13/15):
+    /// `Some` when a `require` margin crossed zero or a margin evaluated
+    /// non-finite there, `None` when the point was clean (the
+    /// `limiting_report()` shape). The instance path on each finding is
+    /// stamped by the element seam (`PiperineDevice::validation_reports`).
+    pub fn validation_report(&self) -> Option<piperine_solver::abi::ValidationReport> {
+        self.margins.report()
     }
 
 

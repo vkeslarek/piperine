@@ -61,6 +61,13 @@ impl ValidationReport {
         &self.findings
     }
 
+    /// The findings mutably, in emission order — for the element seam
+    /// that stamps the authored instance path onto findings its analog
+    /// half produced (the `LimitingReport.device` pattern).
+    pub fn findings_mut(&mut self) -> &mut [ValidationFinding] {
+        &mut self.findings
+    }
+
     /// Whether any finding is an [`ValidationSeverity::Error`] — the
     /// strict-posture abort gate (DVC-15).
     pub fn has_errors(&self) -> bool {

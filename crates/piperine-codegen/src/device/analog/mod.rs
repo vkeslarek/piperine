@@ -6,11 +6,13 @@
 //! `instance.rs` holds `AnalogInstance` and the two contracts the capability
 //! modules implement against; each capability lives in the file named for it.
 
+mod constraints;
 mod events;
 mod forces;
 mod instance;
 mod limits;
 mod operators;
 
+pub use constraints::MarginExtremum;
 pub use instance::AnalogInstance;
 use instance::{LoadCtx, Stamps};

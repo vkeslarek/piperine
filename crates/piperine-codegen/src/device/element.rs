@@ -176,6 +176,16 @@ impl AnalogDevice for PiperineDevice {
             .map_or(f64::INFINITY, AnalogInstance::bound_step_hint)
     }
 
+    /// Forward the run's check posture to the analog half (DVC-12): the
+    /// solver calls `update` with the `Context` each assemble, so the
+    /// accept hook always sees the current posture — run data, not
+    /// structure; a posture change recompiles nothing (MD-18).
+    fn update(&mut self, _state: &CircularArrayBuffer2<f64>, ctx: &Context) {
+        if let Some(analog) = self.analog.as_mut() {
+            analog.set_check_posture(ctx.checks);
+        }
+    }
+
     fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
         self.analog
             .as_ref()
@@ -651,6 +661,13 @@ impl Element for PiperineDevice {
             if kernel.has_disto3() {
                 caps |= ElementCapabilities::HAS_DISTO3;
             }
+            // DVC-14: a device with declared constraint margins asks to be
+            // polled at the analysis's evaluation points — the bit is what
+            // makes the poll happen at all ("costs nothing when unused"
+            // means *not called*, design §C4).
+            if kernel.has_margins() {
+                caps |= ElementCapabilities::EMITS_VALIDATION;
+            }
             // P6/CLN-12: opt into the DC stamp bypass only when this device's
             // stamps are a pure function of its terminal voltages. A digital
             // half disqualifies it — its stamps follow the digital snapshot,
@@ -693,6 +710,24 @@ impl Element for PiperineDevice {
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
     }
+
+    /// The validation findings channel (DVC-13/15): the analog half's
+    /// findings from the latest accepted point, with the authored
+    /// hierarchical instance path (this element's label — the flatten
+    /// pass's spliced `x.r1` form, never a codegen-internal name) stamped
+    /// onto each finding, the same seam that stamps `LimitingReport.device`.
+    fn validation_reports(&self) -> Option<piperine_solver::abi::ValidationReport> {
+        self.analog
+            .as_ref()
+            .and_then(AnalogInstance::validation_report)
+            .map(|mut report| {
+                for finding in report.findings_mut() {
+                    finding.instance_path = self.label.clone();
+                }
+                report
+            })
+    }
+
 
     /// Checkpoint the device's mutable non-accept-gated state (ABI-04/05):
     /// the limiter (active, seeds, vold) from the analog instance and the

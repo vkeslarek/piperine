@@ -19,7 +19,7 @@ mod element;
 mod fusion;
 mod plugin;
 
-pub use analog::AnalogInstance;
+pub use analog::{AnalogInstance, MarginExtremum};
 pub use circuit::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler};
 pub use compiled::CompiledModule;
 pub use digital::DigitalInstance;
