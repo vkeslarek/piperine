@@ -14,6 +14,7 @@ use crate::error::CodegenError;
 use super::compile::AnalogCompiler;
 
 use super::ac_stim::AcStim;
+use super::constraints::Constraints;
 use super::forces::Forces;
 use super::limits::Limits;
 use super::noise::Noise;
@@ -168,6 +169,9 @@ pub struct AnalogKernel {
     pub(super) noise: Option<Noise>,
     /// `ac_stim` contributions.
     pub(super) ac_stim: Option<AcStim>,
+    /// Constraint margin functions (DVC-10): one per declared **pointwise**
+    /// margin; `has_margins()` is `self.constraints.is_some()`.
+    pub(super) constraints: Option<Constraints>,
     /// Resistive Jacobian with every `idt`/`idtmod` state load replaced by
     /// its input expression — the linear-operator view of the integrator.
     /// `load_ac` scales it by 1/(jω). `None` without integrator states.
@@ -488,6 +492,47 @@ impl AnalogKernel {
 
     pub fn num_ac_stims(&self) -> usize {
         self.ac_stim.as_ref().map_or(0, AnalogCapability::count)
+    }
+
+    /// Number of declared pointwise constraint margins (DVC-10).
+    pub fn num_margins(&self) -> usize {
+        self.constraints.as_ref().map_or(0, AnalogCapability::count)
+    }
+
+    /// Whether the module declares any pointwise constraint margins.
+    pub fn has_margins(&self) -> bool {
+        self.constraints.is_some()
+    }
+
+    /// The declared pointwise margins' provenance (DVC-10), in authored
+    /// order — parallel to the indices [`eval_margin`](Self::eval_margin)
+    /// takes.
+    pub fn margin_catalog(&self) -> &[super::constraints::MarginInfo] {
+        self.constraints.as_ref().map_or(&[], |c| &c.catalog)
+    }
+
+    /// Evaluate margin `index` at the given point, returning its signed
+    /// value (`m ≥ 0` ⟺ satisfied). Panics on out-of-range `index` — every
+    /// caller is internal and bounds the index via
+    /// [`num_margins`](Self::num_margins) first (same contract as
+    /// [`terminal_name`](Self::terminal_name)).
+    pub fn eval_margin(&self, index: usize, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx) -> f64 {
+        let f = self
+            .constraints
+            .as_ref()
+            .and_then(|c| c.margins.get(index))
+            .unwrap_or_else(|| {
+                panic!(
+                    "kernel `{}`: margin #{index} out of range ({} margin(s))",
+                    self.core.name,
+                    self.num_margins()
+                )
+            })
+            .eval;
+        self.check_input_lens(volts, params, state, vars);
+        let mut out = [0.0];
+        Self::call(f, volts, params, state, vars, sim, &mut out);
+        out[0]
     }
 
     /// Terminals `(plus, minus)` per `ac_stim` source.

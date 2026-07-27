@@ -553,6 +553,44 @@ impl<'m> AnalogCompiler<'m> {
             (Some(self.compile_rows("opvars", &rows)?), names)
         };
 
+        // Constraint margin kernels (DVC-10): one compiled function per
+        // declared **pointwise** margin — never per instance (the kernel
+        // is `Arc`-shared across every instance of the module; the
+        // `.disto` function-count wall is the standing proof of what
+        // per-instance emission costs, design §E). Module-var references
+        // resolve through the same `__temp` tape the residual reads, so
+        // the margin functions CSE the shared subexpressions per
+        // evaluation instead of re-inlining them. Reduced-class margins
+        // never reach the kernel (D7 — host-side reductions); no
+        // pointwise margin → nothing compiled, the capability stays
+        // `None`.
+        let mut margin_ids: Vec<(super::constraints::MarginInfo, FuncId)> = Vec::new();
+        if let Some(margins) = &self.module.constraints {
+            let scope: HashMap<&str, u32> =
+                module_var_temps.iter().map(|(n, id)| (n.as_str(), *id)).collect();
+            for (i, margin) in margins
+                .iter()
+                .filter(|m| m.class == piperine_lang::pom::QuantityClass::Pointwise)
+                .enumerate()
+            {
+                let expr = crate::flatten::analog::rewrite_expr(&margin.expr, &mut |e| match e {
+                    PomExpr::Ident(name) if scope.contains_key(name.as_str()) => {
+                        temp_ref(scope[name.as_str()])
+                    }
+                    _ => e.clone(),
+                });
+                let func = self.compile_rows(&format!("margin_{i}"), std::slice::from_ref(&expr))?;
+                margin_ids.push((
+                    super::constraints::MarginInfo {
+                        label: margin.label.clone(),
+                        kind: margin.kind,
+                        analyses: margin.analyses.clone(),
+                    },
+                    func,
+                ));
+            }
+        }
+
         let events = std::mem::take(&mut self.flat.events);
         let (event_triggers_id, event_actions_id) = if events.is_empty() {
             (None, None)
@@ -685,6 +723,16 @@ impl<'m> AnalogCompiler<'m> {
             mag: get(&self.jit, m),
             phase: get(&self.jit, p),
         });
+        let constraints_cap = if margin_ids.is_empty() {
+            None
+        } else {
+            Some(super::constraints::Constraints::new(
+                margin_ids
+                    .into_iter()
+                    .map(|(info, id)| super::constraints::CompiledMargin { info, eval: get(&self.jit, id) })
+                    .collect(),
+            ))
+        };
 
         // Remaining top-level (ungrouped) fields — resolved to native function
         // pointers before `self.jit` moves into `core` below.
@@ -775,6 +823,7 @@ impl<'m> AnalogCompiler<'m> {
             limits: limits_cap,
             noise: noise_cap,
             ac_stim: ac_stim_cap,
+            constraints: constraints_cap,
             ac_idt_jacobian,
             runtime_states,
             events: compiled_events,

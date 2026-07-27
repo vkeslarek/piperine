@@ -24,12 +24,14 @@
 
 mod ac_stim;
 mod compile;
+mod constraints;
 mod forces;
 mod kernel;
 mod limits;
 mod noise;
 mod reactive;
 
+pub use constraints::MarginInfo;
 pub use kernel::{
     AnalogKernel, Branch, CompiledEvent, CompiledTrigger, Disto2Pair, Disto3Triple, RuntimeState,
     RuntimeStateSpec,
