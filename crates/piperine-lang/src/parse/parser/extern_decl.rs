@@ -12,6 +12,7 @@
 use crate::parse::ast::*;
 use crate::parse::error::ParseError;
 use crate::parse::lexer::Tok;
+use super::attributes::ParseAttributesExt;
 use super::{Parse, Parser};
 
 /// `extern type Name;`
@@ -31,10 +32,13 @@ pub(crate) fn parse_extern_type(parser: &mut Parser) -> Result<ExternDecl, Parse
     Ok(ExternDecl::Type { span: Some((start, end - start).into()), name, doc })
 }
 
-/// `extern fn name(params) -> RetType;`
+/// `extern fn name(params) -> RetType;` — may carry leading `@name(...)`
+/// attributes (dv-core T7: a constraint helper's `@quantity(class, analysis)`
+/// class marker is how the elaborator reads the helper's class).
 pub(crate) fn parse_extern_fn(parser: &mut Parser) -> Result<ExternDecl, ParseError> {
     let start = parser.current_span_start();
     let doc = parser.current_doc();
+    let attrs = parser.parse_attributes()?;
     parser.expect_ident_str("extern")?;
     parser.expect_ident_str("fn")?;
     let name = parser.parse_ident()?;
@@ -46,7 +50,7 @@ pub(crate) fn parse_extern_fn(parser: &mut Parser) -> Result<ExternDecl, ParseEr
     }
     parser.expect(&Tok::Semi)?;
     let end = parser.previous_span_end();
-    Ok(ExternDecl::Fn(ExternSig { span: Some((start, end - start).into()), name, params, ret, doc }))
+    Ok(ExternDecl::Fn(ExternSig { span: Some((start, end - start).into()), attrs, name, params, ret, doc }))
 }
 
 /// `extern task $name(params) -> RetType;`
@@ -64,7 +68,7 @@ pub(crate) fn parse_extern_task(parser: &mut Parser) -> Result<ExternDecl, Parse
     }
     parser.expect(&Tok::Semi)?;
     let end = parser.previous_span_end();
-    Ok(ExternDecl::Task(ExternSig { span: Some((start, end - start).into()), name, params, ret, doc }))
+    Ok(ExternDecl::Task(ExternSig { span: Some((start, end - start).into()), attrs: Vec::new(), name, params, ret, doc }))
 }
 
 /// `extern operator name(params) -> RetType;`
@@ -82,7 +86,7 @@ pub(crate) fn parse_extern_operator(parser: &mut Parser) -> Result<ExternDecl, P
     }
     parser.expect(&Tok::Semi)?;
     let end = parser.previous_span_end();
-    Ok(ExternDecl::Operator(ExternSig { span: Some((start, end - start).into()), name, params, ret, doc }))
+    Ok(ExternDecl::Operator(ExternSig { span: Some((start, end - start).into()), attrs: Vec::new(), name, params, ret, doc }))
 }
 
 /// `extern attribute name { field: Type, ... }`
@@ -137,7 +141,7 @@ pub(crate) fn parse_extern_impl(parser: &mut Parser) -> Result<ExternDecl, Parse
         }
         parser.expect(&Tok::Semi)?;
         let m_end = parser.previous_span_end();
-        methods.push(ExternSig { span: Some((m_start, m_end - m_start).into()), name: m_name, params, ret, doc: m_doc });
+        methods.push(ExternSig { span: Some((m_start, m_end - m_start).into()), attrs: Vec::new(), name: m_name, params, ret, doc: m_doc });
     }
     let end = parser.previous_span_end();
     Ok(ExternDecl::Impl { span: Some((start, end - start).into()), capability, target: ident1, methods, doc })

@@ -291,6 +291,111 @@ fn undeclared_distribution_resolution_fails_loud_naming_it() {
     assert!(msg.contains("normal"), "error should name the undeclared distribution: {msg}");
 }
 
+// ── Constraint helpers ───────────────────────────────────────────────────────
+
+/// dv-core T7 (DVC-09): every constraint helper must be declared as an
+/// `extern fn` in `headers/constraints.phdl` *carrying its class in the
+/// text* — a `@quantity(class = "…", analysis = "…")` attribute, not a
+/// comment — and that class must reach the elaborator's
+/// `ConstraintHelperRegistry` unchanged. A helper added without its class
+/// marker (or with a class the registry does not reproduce) fails this
+/// test by name.
+#[test]
+fn every_declared_constraint_helper_carries_its_class_to_the_registry() {
+    // The declared (name, class, analysis) triples the spec fixes (design
+    // §C2): `ac_gain`/`ac_phase` are pointwise, `ac_unity_gain_freq`/
+    // `ac_phase_margin`/`ac_gain_margin` are reduced.
+    let declared = [
+        ("ac_gain", "pointwise", "ac"),
+        ("ac_phase", "pointwise", "ac"),
+        ("ac_unity_gain_freq", "reduced", "ac"),
+        ("ac_phase_margin", "reduced", "ac"),
+        ("ac_gain_margin", "reduced", "ac"),
+    ];
+
+    // Textual half: the header itself carries each declaration with a
+    // `@quantity(class, analysis)` marker — the class must be readable
+    // from the parsed attribute, never from a comment.
+    let source = parse_str(include_str!("../headers/constraints.phdl"))
+        .expect("headers/constraints.phdl must parse");
+    let mut markers: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    for item in &source.items {
+        if let Item::ExternDecl(ExternDecl::Fn(sig)) = item {
+            let quantity = sig.attrs.iter().find(|a| a.name == "quantity");
+            let arg = |attr: &piperine_lang::parse::ast::Attribute, key: &str| {
+                attr.args.iter().find(|a| a.name == key).and_then(|a| match &a.expr {
+                    piperine_lang::parse::ast::Expr::Literal(
+                        piperine_lang::parse::ast::Literal::String(s),
+                    ) => Some(s.clone()),
+                    _ => None,
+                })
+            };
+            let (class, analysis) = match quantity {
+                Some(attr) => (arg(attr, "class"), arg(attr, "analysis")),
+                None => (None, None),
+            };
+            markers.insert(
+                sig.name.clone(),
+                (
+                    class.unwrap_or_else(|| panic!("helper `{}` has no `@quantity(class = …)` marker — the class must be carried by an attribute, not a comment", sig.name)),
+                    analysis.unwrap_or_else(|| panic!("helper `{}` has no `@quantity(analysis = …)` marker", sig.name)),
+                ),
+            );
+        }
+    }
+    for (name, class, analysis) in &declared {
+        let found = markers.get(*name).unwrap_or_else(|| {
+            panic!("constraint helper `{name}` has no `extern fn` declaration in headers/constraints.phdl — DVC-09 requires it")
+        });
+        assert_eq!(
+            found,
+            &((*class).to_string(), (*analysis).to_string()),
+            "helper `{name}` must declare `@quantity(class = \"{class}\", analysis = \"{analysis}\")`",
+        );
+    }
+
+    // Registry half: each helper resolves through `CallableRegistry` (the
+    // signature) and through `ConstraintHelperRegistry` with the *same*
+    // class the text declares.
+    let ctx = stdlib_ctx();
+    for (name, class, analysis) in &declared {
+        assert!(
+            ctx.callables.lookup(name).is_some(),
+            "constraint helper `{name}` does not resolve through CallableRegistry",
+        );
+        let helper = ctx.constraint_helpers.lookup(name).unwrap_or_else(|| {
+            panic!("constraint helper `{name}` is missing from ConstraintHelperRegistry")
+        });
+        let expected_class = match *class {
+            "pointwise" => piperine_lang::pom::QuantityClass::Pointwise,
+            "reduced" => piperine_lang::pom::QuantityClass::Reduced,
+            other => panic!("test bug: unknown class `{other}`"),
+        };
+        assert_eq!(helper.class, expected_class, "helper `{name}`'s class changed between text and registry");
+        assert_eq!(helper.analysis, *analysis, "helper `{name}`'s analysis changed between text and registry");
+    }
+}
+
+/// dv-core T7 (DVC-09): an undeclared helper name cannot pass — the
+/// registry's loud lookup fails naming it. (The end-to-end fixture, an
+/// undeclared helper *used in a constraint*, lands with constraint
+/// elaboration in T8.)
+#[test]
+fn undeclared_constraint_helper_fails_loud_naming_it() {
+    let ctx = stdlib_ctx();
+    assert!(
+        ctx.constraint_helpers.lookup("unity_gain").is_none(),
+        "`unity_gain` is not a declared constraint helper and must not resolve",
+    );
+    let err = ctx
+        .constraint_helpers
+        .require("unity_gain")
+        .expect_err("an undeclared constraint helper must fail loud");
+    let msg = err.to_string();
+    assert!(msg.contains("unity_gain"), "error should name the undeclared helper: {msg}");
+}
+
 // ── Cast associated functions ────────────────────────────────────────────────
 
 /// The four primitive target types that previously had bare-name cast

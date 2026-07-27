@@ -203,6 +203,10 @@ pub struct ExternAttrField {
 #[derive(Debug, Clone)]
 pub struct ExternSig {
     pub span: Option<miette::SourceSpan>,
+    /// `@name(...)` attributes attached immediately before the declaration
+    /// (dv-core T7: the constraint helpers' `@quantity(class, analysis)`
+    /// class marker). Empty for declarations that carry none.
+    pub attrs: Vec<Attribute>,
     pub name: String,
     pub params: Vec<FnParam>,
     pub ret: Type,

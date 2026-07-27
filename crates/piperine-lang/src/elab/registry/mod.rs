@@ -5,6 +5,7 @@
 pub mod types;
 pub mod components;
 pub mod callables;
+pub mod constraint_helpers;
 pub mod impls;
 pub mod schemas;
 pub mod operators;
@@ -13,6 +14,7 @@ pub mod impl_methods;
 pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
 pub use callables::{CallableRegistry, CallableDef, ExternFnDecl};
+pub use constraint_helpers::{ConstraintHelper, ConstraintHelperRegistry};
 pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
 pub use operators::{OperatorRegistry, ExternOperatorDecl};
 pub use impl_methods::ImplMethodTable;
@@ -34,6 +36,9 @@ pub struct ElabContext {
     /// keyed by `(type_name, method_name)` — T10 groundwork; the first real
     /// consumer is the cast migration (T17).
     pub impl_methods: ImplMethodTable,
+    /// The constraint helpers `headers/constraints.phdl` declares, each
+    /// with its pointwise/reduced class and analysis (dv-core T7, DVC-09).
+    pub constraint_helpers: ConstraintHelperRegistry,
 }
 
 impl Default for ElabContext {
@@ -81,6 +86,7 @@ impl ElabContext {
             schemas,
             operators: OperatorRegistry::new(),
             impl_methods: ImplMethodTable::new(),
+            constraint_helpers: ConstraintHelperRegistry::new(),
         }
     }
 

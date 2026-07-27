@@ -202,6 +202,16 @@ impl<'a> Resolver<'a> {
             items.extend(source.items);
         }
 
+        // `constraints` (dv-core DVC-09) — the constraint helpers and their
+        // pointwise/reduced classes, textually declared (MD-24). Embedded
+        // the same way as `statistics` above: a helper reference inside a
+        // `constraint` block must resolve regardless of the caller's
+        // working directory.
+        if let Ok(source) = parse_str(include_str!("../headers/constraints.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/constraints.phdl"));
+            items.extend(source.items);
+        }
+
         // Load the standard library built-ins dynamically if they resolve.
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];

@@ -104,6 +104,7 @@ impl Elaborator {
                         sig: sig.clone(),
                         param_types,
                     });
+                    self.register_constraint_helper(sig)?;
                 }
                 // `extern operator name(...) -> Ret;` registers into the
                 // dedicated `OperatorRegistry` (T10). Carrying real
@@ -162,6 +163,52 @@ impl Elaborator {
             }
         }
         Ok(())
+    }
+
+    /// Reads an `extern fn`'s `@quantity(class = "…", analysis = "…")`
+    /// marker (dv-core T7, DVC-09) into the constraint-helper registry — no
+    /// marker, no entry. Both arguments are mandatory string literals whose
+    /// values are the declared spellings: `class` is `pointwise` or
+    /// `reduced`; anything else fails loud naming the helper.
+    fn register_constraint_helper(
+        &mut self,
+        sig: &crate::parse::ast::ExternSig,
+    ) -> Result<(), ElabError> {
+        let Some(attr) = sig.attrs.iter().find(|a| a.name == "quantity") else {
+            return Ok(());
+        };
+        let arg = |key: &str| -> Result<&str, ElabError> {
+            attr.args
+                .iter()
+                .find(|a| a.name == key)
+                .and_then(|a| match &a.expr {
+                    crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) => Some(s.as_str()),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    ElabError::from(crate::pom::ElabErrorKind::Other(format!(
+                        "constraint helper `{}`: `@quantity` requires a `{key} = \"…\"` string argument",
+                        sig.name
+                    )))
+                    .with_span(attr.span)
+                })
+        };
+        let class = match arg("class")? {
+            "pointwise" => crate::pom::QuantityClass::Pointwise,
+            "reduced" => crate::pom::QuantityClass::Reduced,
+            other => {
+                return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
+                    "constraint helper `{}`: `@quantity` class must be `pointwise` or `reduced`, found `{other}`",
+                    sig.name
+                )))
+                .with_span(attr.span));
+            }
+        };
+        let analysis = arg("analysis")?.to_string();
+        self.ctx
+            .constraint_helpers
+            .register(&sig.name, crate::elab::registry::ConstraintHelper { class, analysis })
+            .map_err(|e| e.with_span(sig.span))
     }
 
     /// Resolves an `extern fn`/`extern task`/`extern impl` method
