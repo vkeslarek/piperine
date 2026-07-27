@@ -358,6 +358,15 @@ impl<'a> DcSolver<'a> {
             (sol, homotopy_strategy)
         };
 
+        // Validation findings poll (DVC-14): only at the final converged
+        // solution — never at a homotopy stage (design §C3). The union
+        // check skips even the scan for a circuit with no validating
+        // elements. Posture consumption (DVC-15) is wired with the
+        // findings handling.
+        if self.system.circuit.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+            let _reports = self.system.circuit.validation_reports();
+        }
+
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
 

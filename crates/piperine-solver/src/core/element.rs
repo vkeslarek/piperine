@@ -104,6 +104,14 @@ bitflags::bitflags! {
         /// on these devices (ABI-25): the method of nonlinear currents
         /// needs the exact Hessian, never a numeric perturbation.
         const NUMERIC_JACOBIAN = 1 << 14;
+        /// The model has validation findings to report (DVC-14): constraint
+        /// violations, model self-checks, monitor hits. The solver polls
+        /// [`Element::validation_reports`] **only** on elements declaring
+        /// this bit, and only at the evaluation points design §C3 defines —
+        /// "costs nothing when unused" means *not called*, not *returns
+        /// empty*. Declaring the bit and returning `None` is legal: the bit
+        /// promises capability, not content.
+        const EMITS_VALIDATION = 1 << 15;
     }
 }
 
@@ -524,8 +532,8 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// analog notion). Shaped after [`limiting_report`](AnalogDevice::limiting_report):
     /// `Option`, not `Vec`, because `None` (nothing to say) is the common
     /// case. The solver polls only at the evaluation points design §C3
-    /// defines, and only elements declaring the `EMITS_VALIDATION`
-    /// capability are ever asked — the default
+    /// defines, and only elements declaring
+    /// [`ElementCapabilities::EMITS_VALIDATION`] are ever asked — the default
     /// `None` here is what an element *without* something to say returns.
     fn validation_reports(&self) -> Option<crate::core::validation::ValidationReport> { None }
 }

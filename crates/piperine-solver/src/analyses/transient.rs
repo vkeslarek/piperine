@@ -15,7 +15,7 @@ use crate::analyses::events::{
 };
 use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
-use crate::core::element::ElementCheckpoint;
+use crate::core::element::{ElementCapabilities, ElementCheckpoint};
 use crate::digital::{DigitalNet, LogicValue};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -966,6 +966,13 @@ impl<'a> TransientSolver<'a> {
         self.event_queue.commit();
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
+        // Validation findings poll (DVC-14): accepted steps only — never a
+        // rejected attempt (design §C3). The union check skips even the
+        // scan for a circuit with no validating elements. Posture
+        // consumption (DVC-15) is wired with the findings handling.
+        if self.system.circuit.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+            let _reports = self.system.circuit.validation_reports();
+        }
         if self.apply_scheduled_sets(st, steps, dt_actual)? {
             // The value jump is a discontinuity: the next TR stage
             // must not re-derive a previous current across it.

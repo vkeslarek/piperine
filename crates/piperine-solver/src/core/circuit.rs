@@ -450,6 +450,25 @@ impl CircuitInstance {
         }
     }
 
+    /// Poll the validation findings channel (DVC-14): every element
+    /// declaring [`ElementCapabilities::EMITS_VALIDATION`] is asked for its
+    /// [`ValidationReport`](crate::core::validation::ValidationReport);
+    /// elements without the bit are **never polled** — "costs nothing when
+    /// unused" means *not called*, not *returns empty* (design §C4). Each
+    /// non-`None` report is paired with its element's name. Drivers call
+    /// this only at the evaluation points design §C3 defines, behind a
+    /// [`capabilities`](Self::capabilities) union check so a circuit with no
+    /// validating elements skips even the scan.
+    pub fn validation_reports(
+        &self,
+    ) -> Vec<(String, crate::core::validation::ValidationReport)> {
+        self.devices
+            .iter()
+            .filter(|d| d.capabilities().contains(ElementCapabilities::EMITS_VALIDATION))
+            .filter_map(|d| d.validation_reports().map(|r| (d.name().to_string(), r)))
+            .collect()
+    }
+
     // ── Construction ─────────────────────────────────────────────────────────
     //
     // Construction stays in [`CircuitBuilder`](crate::core::builder::CircuitBuilder):

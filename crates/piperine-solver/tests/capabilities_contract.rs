@@ -68,6 +68,12 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
              this has a finite-difference Jacobian and cannot provide the \
              analytic Hessian .disto requires; the driver errors (analyses/disto.rs, ABI-25)"
         }
+        "EMITS_VALIDATION" => {
+            "consumed: validation findings poll — CircuitInstance::validation_reports \
+             (core/circuit.rs) asks only elements declaring it, called at the DC final \
+             converged solution (analyses/dc.rs) and on each accepted transient step \
+             (analyses/transient.rs) (DVC-14)"
+        }
         _ => return None,
     })
 }
