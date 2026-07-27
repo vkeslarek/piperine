@@ -33,6 +33,7 @@ pub enum Kind {
     Wire,
     Var,
     Behavior,
+    Constraint,
     Discipline,
     Enum,
     Bundle,
@@ -50,6 +51,7 @@ impl fmt::Display for Kind {
             Self::Wire => write!(f, "wire"),
             Self::Var => write!(f, "var"),
             Self::Behavior => write!(f, "behavior"),
+            Self::Constraint => write!(f, "constraint"),
             Self::Discipline => write!(f, "discipline"),
             Self::Enum => write!(f, "enum"),
             Self::Bundle => write!(f, "bundle"),
@@ -77,6 +79,7 @@ pub enum Node<'a> {
     Param(&'a crate::pom::Param),
     Wire(&'a crate::pom::Wire),
     Behavior(&'a crate::pom::Behavior),
+    Constraint(&'a crate::pom::ConstraintBlock),
     Attribute(&'a crate::pom::module::Attribute),
 }
 
@@ -89,6 +92,7 @@ impl<'a> PartialEq for Node<'a> {
             (Node::Param(a), Node::Param(b)) => std::ptr::eq(*a, *b),
             (Node::Wire(a), Node::Wire(b)) => std::ptr::eq(*a, *b),
             (Node::Behavior(a), Node::Behavior(b)) => std::ptr::eq(*a, *b),
+            (Node::Constraint(a), Node::Constraint(b)) => std::ptr::eq(*a, *b),
             (Node::Attribute(a), Node::Attribute(b)) => std::ptr::eq(*a, *b),
             _ => false,
         }
@@ -104,6 +108,7 @@ impl<'a> Kinded for Node<'a> {
             Node::Param(_) => Kind::Param,
             Node::Wire(_) => Kind::Wire,
             Node::Behavior(_) => Kind::Behavior,
+            Node::Constraint(_) => Kind::Constraint,
             Node::Attribute(_) => Kind::Attribute,
         }
     }
@@ -150,6 +155,12 @@ impl<'a> From<&'a crate::pom::Wire> for Node<'a> {
 impl<'a> From<&'a crate::pom::Behavior> for Node<'a> {
     fn from(b: &'a crate::pom::Behavior) -> Self {
         Node::Behavior(b)
+    }
+}
+
+impl<'a> From<&'a crate::pom::ConstraintBlock> for Node<'a> {
+    fn from(c: &'a crate::pom::ConstraintBlock) -> Self {
+        Node::Constraint(c)
     }
 }
 
@@ -220,6 +231,17 @@ impl<'a> TryFrom<Node<'a>> for &'a crate::pom::Behavior {
     }
 }
 
+impl<'a> TryFrom<Node<'a>> for &'a crate::pom::ConstraintBlock {
+    type Error = &'static str;
+    fn try_from(node: Node<'a>) -> Result<Self, Self::Error> {
+        if let Node::Constraint(c) = node {
+            Ok(c)
+        } else {
+            Err("Node is not a ConstraintBlock")
+        }
+    }
+}
+
 impl<'a> Named for Node<'a> {
     fn name(&self) -> &str {
         match self {
@@ -229,6 +251,9 @@ impl<'a> Named for Node<'a> {
             Node::Param(p) => p.name(),
             Node::Wire(w) => w.name(),
             Node::Behavior(_) => "", // Behaviors do not have a name
+            // A constraint block's authored name is the module it attaches
+            // to (`constraint Top { … }`), same convention as BehaviorDecl.
+            Node::Constraint(c) => c.name(),
             Node::Attribute(_) => "", // Attributes do not have a name
         }
     }

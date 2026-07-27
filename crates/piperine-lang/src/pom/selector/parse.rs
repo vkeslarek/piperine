@@ -54,6 +54,7 @@ impl FromStr for Selector {
                         "param" => Axis::Param,
                         "attr" => Axis::Attr,
                         "behavior" => Axis::Behavior,
+                        "constraint" => Axis::Constraint,
                         "driver" => Axis::Driver,
                         "load" => Axis::Load,
                         "parent" => Axis::Parent,

@@ -22,6 +22,7 @@ pub enum Axis {
     Param,
     Attr,
     Behavior,
+    Constraint,
     Driver,
     Load,
     Parent,

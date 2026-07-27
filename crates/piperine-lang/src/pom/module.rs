@@ -309,6 +309,11 @@ impl Module {
     pub fn connections(&self) -> &[Connection] { &self.connections }
     /// All behavior blocks of the module.
     pub fn behaviors(&self) -> &[Behavior] { &self.behaviors }
+    /// All constraint blocks attached to the module (dv-core DVC-05), in
+    /// authored form. Monomorphized variants carry the block as they carry
+    /// their behavior bodies (D4); the accessor reads only the authored
+    /// hierarchy — never `flat_modules` (MD-25, UNBREAKABLE).
+    pub fn constraints(&self) -> &[crate::pom::ConstraintBlock] { &self.constraints }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {
