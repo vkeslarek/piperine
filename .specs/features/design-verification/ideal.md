@@ -4,7 +4,8 @@
 P7 (Optimizer) and a future P8 (Design Verification). Nothing here is
 implemented; nothing here is committed to. Syntax is illustrative and uses real
 PHDL grammar (`mod`/`analog`/`digital`/`bundle`/`discipline`/`param` blocks,
-`V(a, b) <- expr` contributions) so the sketches can be read against the tree.
+`I(a, b) <+ expr` contributions and `V(a, b) <- expr` forces — two distinct
+operators, per `part_i_language.md:242`) so the sketches read against the tree.
 
 **Scope decision (2026-07-26, revised 2026-07-27):** of everything explored in
 this document, these constructs pass the No-Bloat burden of proof and enter the
@@ -150,10 +151,12 @@ constraint Amplifier {
     require no_fwd_bulk: V(m1.b, m1.s) <= 0.3;
 
     // ── named scalars the host can read and the optimizer can use ──
-    var gain_db  = 20.0 * log10(abs(ac_gain(vout, vin)));
-    var ugbw     = ac_unity_gain_freq(vout, vin);
-    var phase_m  = ac_phase_margin(vout, vin);
-    var power    = abs(I(vdd)) * V(vdd, gnd);
+    // pointwise (§2.1a) — one value per accepted solver point
+    var power    : Real = abs(I(vdd)) * V(vdd, gnd);
+    var gain_db  : Real = 20.0 * log10(abs(ac_gain(vout, vin)));
+    // reduced (§2.1a) — properties of the whole AC sweep
+    var ugbw     : Real = ac_unity_gain_freq(vout, vin);
+    var phase_m  : Real = ac_phase_margin(vout, vin);
 
     // ── spec: soft constraints with a scale, giving normalized margins ──
     target gain_db >= 60.0  tol 3.0;
@@ -698,12 +701,14 @@ underneath — and the difference is reported, not hidden.
 - **Transient adjoint runs backwards in time** and needs the forward
   trajectory stored (or checkpointed). Memory cost is real and must be a
   design input, not a surprise.
-- **`min` over time and over corners is non-smooth.** The worst-case margin
-  has a kink where the argmin switches. Options: differentiate at the located
-  argmin (correct almost everywhere, standard practice), or use a softmin with
-  a declared sharpness. Both are defensible; the choice must be explicit and
-  documented, because silently smoothing a constraint changes what the
-  optimizer believes.
+- **`min` over time and over corners is non-smooth.** The worst-case margin has
+  a kink where the argmin switches. **Decided (D1): differentiate at the located
+  argmin** — correct almost everywhere, standard practice, and reported as such
+  in the result object. The rejected alternative was a declared-sharpness
+  softmin, which would have silently changed what the optimizer believes about
+  feasibility. The kink remains real: an optimizer stepping across an argmin
+  switch sees a gradient discontinuity, so the step control has to tolerate one
+  rather than assume smoothness.
 - **Discrete parameters are not differentiable.** Device multipliers, topology
   choices, and segment counts need a hybrid: gradient inside a discrete shell.
 - **Not every metric is differentiable through the solver.** A metric defined
