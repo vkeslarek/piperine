@@ -9,6 +9,28 @@ speaks; margins are what `cover` reuses).
 **Sibling:** `dv-gradients`.
 **Scope tier:** Large/Complex. **ROADMAP:** feeds the new P8.
 
+> ## ⚠️ STATUS: DEFERRED (2026-07-27)
+>
+> **This spec is on hold and must not be broken into tasks yet.** The framing
+> changed after it was written: `ideal.md` in this directory now designs a
+> **host-language device library over the `Element` ABI** — Python or Rust, same
+> contract, spanning "place this stamp" to "ramp a sigmoid" to "burst on the clock
+> edge" — of which a tester is one use. This spec still describes the narrower
+> "programmatic tester", so its scope, requirements, and success criteria are all
+> undersized relative to the accepted design.
+>
+> **Rewrite it against `ideal.md` before planning tasks.** What changes:
+> the three composing access levels (raw stamping / `Wave` descriptors /
+> sequencing) rather than one sequencer; `HostElement` and its blanket `Element`
+> adapter; the published cost model per level; the GIL cost of the Python tier;
+> where D11's no-rollback guarantee applies (sequencing only — a level-0 device
+> participates in rejected steps); and the six open questions in `ideal.md` §9,
+> led by the relationship to the existing `#[pip::device]` spelling.
+>
+> **Sequencing decision:** `dv-core` and `dv-gradients` are planned and go first.
+> Building them will settle several of the open questions by contact — especially
+> how the findings channel behaves in practice, which this feature depends on.
+
 The third mechanism, and the one that adds **no grammar**: a tester is an element
 that advances time and reacts imperatively in Python (or Rust). Adopting it is
 what let RNM leave V1 (D16) and shrank in-language verification to what only the
