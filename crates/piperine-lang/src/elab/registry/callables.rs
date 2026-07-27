@@ -12,6 +12,13 @@ pub trait CallableDef: Send + Sync {
     /// any `CallableDef` that hasn't opted into typed signatures.
     fn param_types(&self) -> Option<&[ValueType]> { None }
 
+    /// Declared parameter names, in call order — `None` for candidates
+    /// with no structural signature (same opt-in as [`Self::param_types`]).
+    /// Keyed-argument resolution (the `tol` clause's `gauss(sigma = …)` vs
+    /// `gauss(sigma_rel = …)` spelling choice, dv-core DVC-02) matches on
+    /// these; type-based overload resolution does not consult them.
+    fn param_names(&self) -> Option<Vec<&str>> { None }
+
     /// Whether `arg_types` structurally match this candidate's declared
     /// signature — exact match, no implicit widening (mirrors the existing
     /// "no implicit Integer→Real cast" rule proven in `type_casts.rs`).
@@ -156,6 +163,12 @@ pub struct ExternFnDecl {
 impl CallableDef for ExternFnDecl {
     fn name(&self) -> &str { &self.sig.name }
     fn param_types(&self) -> Option<&[ValueType]> { Some(&self.param_types) }
+    fn param_names(&self) -> Option<Vec<&str>> {
+        Some(self.sig.params.iter().filter_map(|p| match p {
+            crate::parse::ast::FnParam::Typed { name, .. } => Some(name.as_str()),
+            crate::parse::ast::FnParam::SelfParam => None,
+        }).collect())
+    }
     fn is_extern(&self) -> bool { true }
     fn decl_span(&self) -> Option<miette::SourceSpan> { self.sig.span }
     fn doc(&self) -> Option<&str> { self.sig.doc.as_deref() }

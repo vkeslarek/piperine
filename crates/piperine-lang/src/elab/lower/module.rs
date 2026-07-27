@@ -4,11 +4,11 @@
 
 use std::collections::HashMap;
 
-use crate::parse::ast::{Expr, ModuleDeclaration};
+use crate::parse::ast::{Expr, ModuleDeclaration, TolClause};
 use crate::parse::ast::ModuleStatement;
 use crate::elab::const_eval::ConstEnv;
 use crate::value::Value;
-use crate::pom::{Connection, ElabError, ElabErrorKind, Instance, Module, Param, Var, Wire};
+use crate::pom::{Connection, Distribution, ElabError, ElabErrorKind, Instance, Module, Param, ValueType, Var, Wire};
 
 use super::Elaborator;
 
@@ -94,6 +94,7 @@ impl Elaborator {
                 ty: vt,
                 default: Some(val),
                 bundle_origin: Some((pname.to_string(), bundle_name.to_string())),
+                distribution: None,
             }));
         }
         Ok(())
@@ -119,6 +120,70 @@ impl Elaborator {
                 Ok((format!("{pname}_{fname}"), val))
             })
             .collect()
+    }
+
+    // ─────────────────────────── `tol` clauses (dv-core DVC-02) ───────────────
+
+    /// Lowers a `tol <dist>(<keyed args>) [global]` clause into a POM
+    /// [`Distribution`]: the distribution name resolves against the
+    /// declarations in `headers/statistics.phdl` (an undeclared name fails
+    /// loud naming it), the keyed-argument names pick the declared spelling
+    /// (`gauss(sigma = …)` vs `gauss(sigma_rel = …)`), and the argument
+    /// expressions evaluate as elaboration constants in module param scope
+    /// — the same `ConstEnv` the param defaults evaluate in, so sibling
+    /// params (`sigma = 0.005 / sqrt(w * l)`) resolve. `tol` on a
+    /// non-`Real` param fails loud (DVC-02 AC3).
+    fn lower_tol_clause(
+        &self,
+        param: &str,
+        vt: &ValueType,
+        clause: &TolClause,
+        env: &ConstEnv,
+    ) -> Result<Distribution, ElabError> {
+        if *vt != ValueType::Real {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "`tol` on param `{param}` requires a `Real` param, found `{vt:?}`"
+            ))));
+        }
+
+        let arg_names: Vec<&str> = clause.args.iter().map(|a| a.name.as_str()).collect();
+        let candidates = self.ctx.callables.candidates(&clause.dist);
+        if candidates.is_empty() {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "`tol` on param `{param}` names undeclared distribution `{}` \
+                 — the declared distributions live in headers/statistics.phdl",
+                clause.dist
+            ))));
+        }
+        let spelling_matches = candidates.iter().any(|c| {
+            c.param_names().is_some_and(|names| names == arg_names)
+        });
+        if !spelling_matches {
+            let declared = candidates
+                .iter()
+                .map(|c| match c.param_names() {
+                    Some(names) => format!("{}({})", clause.dist, names.join(", ")),
+                    None => format!("{}(..)", clause.dist),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "`tol` on param `{param}`: no spelling of `{}` matches arguments ({}); \
+                 declared spellings: [{declared}]",
+                clause.dist,
+                arg_names.join(", "),
+            ))));
+        }
+
+        let mut args = Vec::with_capacity(clause.args.len());
+        for arg in &clause.args {
+            let value = env.eval(&arg.expr).map_err(|e| ElabErrorKind::ConstEval {
+                context: format!("param `{param}` tol argument `{}`", arg.name),
+                source: e,
+            })?;
+            args.push((arg.name.clone(), value));
+        }
+        Ok(Distribution { kind: clause.dist.clone(), args, global: clause.global })
     }
 
     // ─────────────────────────── Module elaboration ───────────────────────────
@@ -204,7 +269,19 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModuleStatement::ParamDecl { name, ty, default, span, attrs, doc, .. } => {
+            ModuleStatement::ParamDecl { name, ty, default, span, attrs, doc, tol, .. } => {
+                // A `tol` clause belongs on a scalar `Real` param only
+                // (DVC-02 AC3) — never on a bundle-typed param (flattened
+                // below) or a discrete one (checked after type resolution).
+                if tol.is_some() && ty.dimensions.is_empty()
+                    && (self.syms.bundles.contains_key(&ty.name)
+                        || self.syms.capability_decls.contains_key(&ty.name))
+                {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "`tol` on param `{name}` requires a `Real` param, found bundle-typed `{}`",
+                        ty.name
+                    ))));
+                }
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
@@ -249,6 +326,10 @@ impl Elaborator {
                 }
 
                 let vt = self.resolve_value_type(ty, env)?;
+                let distribution = tol
+                    .as_ref()
+                    .map(|clause| self.lower_tol_clause(name, &vt, clause, env))
+                    .transpose()?;
                 let def = if let Some(e) = default {
                     Some(env.eval(e).map_err(|e| ElabErrorKind::ConstEval {
                         context: format!("param `{}` default", name),
@@ -268,6 +349,7 @@ impl Elaborator {
                     ty: vt,
                     default: def,
                     bundle_origin: None,
+                    distribution,
                 }));
             }
 

@@ -58,6 +58,21 @@ impl Kinded for Port { fn kind(&self) -> Kind { Kind::Port } }
 
 // ─────────────────────────────── Param ───────────────────────────────────────
 
+/// A `tol`-declared statistical distribution on a [`Param`] (dv-core DVC-02).
+/// Declaration only — sampling the distribution is dv-gradients' scope.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Distribution {
+    /// The distribution kind, resolved against `headers/statistics.phdl`
+    /// (`gauss`, `uniform`).
+    pub kind: String,
+    /// The keyed arguments, evaluated as elaboration constants in module
+    /// param scope (e.g. `sigma = 0.005 / sqrt(w * l)`).
+    pub args: Vec<(String, Value)>,
+    /// `true` for process variation (the `global` marker), `false` for
+    /// mismatch (the default).
+    pub global: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Param {
     #[serde(skip)]
@@ -73,6 +88,10 @@ pub struct Param {
     /// `(logical param name, bundle type)` — e.g. `model_rsh` carries
     /// `("model", "ResModel")`. Lets the lowering resolve `model.method()`.
     pub bundle_origin: Option<(String, String)>,
+    /// The `tol`-declared statistical distribution, if any (dv-core
+    /// DVC-01/02) — additive, inert at solve.
+    #[serde(default)]
+    pub distribution: Option<Distribution>,
 }
 
 impl Param {
@@ -82,6 +101,10 @@ impl Param {
     pub fn default(&self) -> Option<&Value> { self.default.as_ref() }
     /// The param's attached `///` doc comment, if any.
     pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
+    /// The `tol`-declared statistical distribution — kind, evaluated
+    /// arguments, and the process (`global`) vs mismatch marker — if the
+    /// param carries a `tol` clause (dv-core DVC-02).
+    pub fn distribution(&self) -> Option<&Distribution> { self.distribution.as_ref() }
 
     /// Returns the param's default value, cloned, if it has one. (With the
     /// unified [`Value`] there is no conversion — kept for the existing
