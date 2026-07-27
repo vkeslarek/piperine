@@ -96,6 +96,27 @@ where the tree has `analyses/`. `solver-simplification` is genuinely delivered
   deliberately empty and exhaustiveness fires if an entry appears without update.
 
 | 5 | 5 | T24–T30 ✅ | `ae61ad7`, `68b0378`, `26764a0`, `ffa4fa0`, `fff0278`, `e857975`, `f6288a9` | 1169 passed / 0 failed / 4 ignored (+5 new `host_session_builder.rs`). Doc warnings 46 → **45**. `SimSession` refs in code: **0**. `git diff \| grep -c '^-.*#[test]'` = 0 — no test dropped. |
+| 6 | 6 | T31–T36 ✅ | `7dc1bed`, `357022e`, `ca5b833`, `1fb6093`, `724d6ef`, `3b98407` | 1204 passed / 0 failed / 4 ignored (+7 descriptors, +11 design, +7 module, +6 instance, +3 object-model proof, +1 parity guard). piperine-python stays at **59** (D6). Clippy clean. Model-parity guard proven able to fail (`missing:parity_probe_injected`). |
+
+**Phase-6 findings and accepted deviations:**
+
+- **`OpResult::i` cannot read a var-bearing kernel (latent, recorded, not
+  fixed).** `results.rs` recomputes the branch with an empty var bank; a
+  kernel reading module-level vars panics (`kernel/analog/kernel.rs:584`).
+  Surfaced by T34's fixture; the fixture keeps `v`/`i` on a plain resistor
+  and documents the gap. Fix is a separate ROADMAP item.
+- **The catalog accessors stayed infallible** (`model()/terminals()/
+  observables()/params()/opvars()`), because existing host call sites use
+  them without `?`; the trace-view guard lives on the fallible `opvar`/
+  `param` and on the Python wrapper's own `trace` flag (documented
+  `RuntimeError` messages preserved byte-identically).
+- **api `Module` gained `design()` and `staged()`** in T35 so Python's
+  `compile()` can keep producing the live `_Session` (auto-rebuild is tested
+  Python behavior, D6) while delegating the fork+replay recipe.
+- **`results.rs` (python) touched minimally:** the two `_InstanceView::new_op`
+  call sites gained a `?` (the api view validates the label eagerly).
+- **`_Design::shared()` removed** — orphaned by the delegation (its only
+  consumers were the pre-delegation `top`/`module`/`modules`).
 
 **Phase-5 findings — the phase paid for itself twice over:**
 
