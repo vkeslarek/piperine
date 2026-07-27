@@ -30,6 +30,7 @@ pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &ElabFns,
     &ElabModules,
     &AttachBehaviors,
+    &ElabConstraints,
     &ResolveCalls,
     &Typecheck,
     &FlattenHierarchy,
@@ -196,6 +197,16 @@ impl ElabPass for AttachBehaviors {
             }
         }
         Ok(())
+    }
+}
+
+/// Attach `constraint` blocks to their modules by name — including
+/// monomorphized variants (dv-core T8, DVC-04/05). Runs after
+/// `AttachBehaviors` so the drained mono cache's variants are visible.
+struct ElabConstraints;
+impl ElabPass for ElabConstraints {
+    fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        elab.elab_constraints(design)
     }
 }
 

@@ -12,6 +12,7 @@
 //! | `resolve.rs` | type/net-type resolution, net references, port expansion |
 //! | `module.rs` | `mod` body → `Module` (ports/params/wires/instances) |
 //! | `behavior.rs` | `analog`/`digital` body → `Behavior` |
+//! | `constraint.rs` | `constraint` block → `ConstraintBlock` (dv-core) |
 //! | `mono.rs` | `fn`/`impl` elaboration, generic monomorphization |
 
 // hygiene-exempt: holds `SymbolTable` and the `Elaborator` god struct whose methods
@@ -29,6 +30,7 @@ use crate::value::Value;
 use crate::pom::{ElabError, ElabErrorKind, Design, Module};
 
 mod behavior;
+mod constraint;
 mod flatten;
 mod module;
 mod mono;
@@ -46,6 +48,9 @@ pub struct SymbolTable {
     pub enums: HashMap<String, EnumDecl>,
     pub module_decls: HashMap<String, ModuleDeclaration>,
     pub behavior_decls: Vec<BehaviorDecl>,
+    /// `constraint` blocks (dv-core DVC-04) — attached to their modules by
+    /// name, variants included, by the `ElabConstraints` pass.
+    pub constraint_decls: Vec<crate::parse::ast::ConstraintDecl>,
     pub fn_decls: HashMap<String, FnDecl>,
     pub capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
     pub impl_decls: Vec<ImplDecl>,
@@ -62,6 +67,7 @@ impl SymbolTable {
             enums: HashMap::new(),
             module_decls: HashMap::new(),
             behavior_decls: Vec::new(),
+            constraint_decls: Vec::new(),
             fn_decls: HashMap::new(),
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),

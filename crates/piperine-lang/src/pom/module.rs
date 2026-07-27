@@ -262,6 +262,11 @@ pub struct Module {
     /// do not cross a serialization boundary (SPEC Part IV §7).
     #[serde(skip)]
     pub behaviors: Vec<Behavior>,
+    /// Constraint blocks attached to this module (dv-core DVC-05) —
+    /// authored form, carried through monomorphization exactly like
+    /// `behaviors`. Compiled ASTs: skipped on serialize, same rule.
+    #[serde(skip)]
+    pub constraints: Vec<crate::pom::ConstraintBlock>,
     pub origin: Option<String>,
 }
 
@@ -280,7 +285,7 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { span: None, attributes: Vec::new(), doc: None, name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, origin: None }
+        Self { span: None, attributes: Vec::new(), doc: None, name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, constraints: Vec::new(), origin: None }
     }
 
     /// The module's name.

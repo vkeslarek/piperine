@@ -282,8 +282,10 @@ fn resolve_connection_end(
 }
 
 /// The value type a discipline carries: its `storage` type for storage
-/// disciplines, `Real` (the potential) for conservative ones.
-fn discipline_value_type(discipline: &str, design: &crate::pom::Design) -> ValueType {
+/// disciplines, `Real` (the potential) for conservative ones. Shared with
+/// constraint elaboration (dv-core T8), which reads nets through the same
+/// rule.
+pub(crate) fn discipline_value_type(discipline: &str, design: &crate::pom::Design) -> ValueType {
     use crate::parse::ast::DisciplineItem;
     let Some(decl) = design.discipline(discipline) else {
         // Ground and unknown disciplines read as a potential.
