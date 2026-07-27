@@ -32,8 +32,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build the Python extension module (bundled into the CLI)
+        run: cargo build --release -p piperine-python --features extension-module
+
       - name: Build release binary
-        run: cargo build --release -p piperine -p piperine-lang-server
+        run: cargo build --release -p piperine-cli -p piperine-lang-server
 
       - name: Package binary
         shell: bash
