@@ -16,15 +16,19 @@ grammar. The first two carry the feature:
 2. **The `constraint` block** — a third body kind whose statements evaluate
    inside the kernel at every accepted solver point.
 
-Three smaller additions follow them, in later waves of the same release:
+Two smaller additions follow them, in later waves of the same release:
 event-block **window arguments** (`after =`/`dur =`, reusing the existing
-`EventBlock` production), the **`cover`** statement kind inside a constraint
-body, and the **`behavioral`** body kind for event-scheduled real-valued
-modules (D8). Five grammar additions in total, and the list is now closed.
+`EventBlock` production) and the **`cover`** statement kind inside a constraint
+body. **Four grammar additions in total, and the list is closed.**
+
+The third mechanism is not a language addition at all: the **programmatic
+tester** (§4), an element that advances time and reacts imperatively in Python
+or Rust. It carries functional verification, and adopting it *removed* a
+grammar addition — RNM and its `behavioral` body kind left with it (D16).
 
 Everything else — the optimizer, Monte Carlo, centering, coverage closure,
 high-sigma methods, monitors, testers, aging — is host code or stdlib over those
-primitives. **All of it is V1** (D5): the three waves in §8 are a delivery order,
+primitives. **All of it is V1** (D5): the three waves in §9 are a delivery order,
 not a staging plan with two halves postponed. The rest of this document argues
 why these few constructs, and only these, deserve layer 0.
 
@@ -33,7 +37,7 @@ against the tree and is cited by `file:line`. Five inconsistencies were resolved
 into design text — the pointwise/reduced split (§2.2), evaluation points
 (§2.5), contextual keywords (§2.6), absent-by-default SOA limits (§2.8), and
 the validation channel's shape and capability bit (§2.9) — and two new forks
-were added to §9 (adjoint DC-vs-AC ordering, where reduced metrics are
+were added to §10 (adjoint DC-vs-AC ordering, where reduced metrics are
 computed). Three claims turned out **stronger** than written: the RNM resolve
 kinds are already in the formal grammar, `AnalogDevice` already exists as the
 home for `param_stamps`, and hierarchical instance-port refs already work.
@@ -84,6 +88,19 @@ SPICE-derived flow has:
 3. **Analog and digital in one process, no tool boundary.** `06_flash_adc.phdl`
    already reads `V(vin, gnd)` inside a `digital` body. The A/D boundary is an
    internal detail, not an integration between two simulators.
+
+Three mechanisms spend those assets, and only two of them touch the language:
+
+1. **The `constraint` block** (§2) — invariants and spec, evaluated at the
+   solver's rhythm, compiled into the kernel.
+2. **Parameter gradients** (§3) — the adjoint path that makes margins actionable
+   instead of merely observable.
+3. **The programmatic tester** (§4) — imperative time in the host language,
+   evaluated at the *test's* rhythm. No grammar at all.
+
+The third one is what keeps the first two small: because functional testing lives
+in the host, the language only has to carry what the host cannot do at the
+solver's rhythm.
 
 Everything below is an attempt to spend those three assets well — and to spend
 *nothing else*.
@@ -211,7 +228,7 @@ the single easiest way to make this feature unimplementable**:
 
 | Class | Example | Exists at | Lowers to |
 |---|---|---|---|
-| **Pointwise** | `abs(I(vdd))`, `V(vout, gnd)`, `m1.region` | every accepted solver point | a margin kernel, evaluated per point (§6) |
+| **Pointwise** | `abs(I(vdd))`, `V(vout, gnd)`, `m1.region` | every accepted solver point | a margin kernel, evaluated per point (§7) |
 | **Reduced** | `ac_unity_gain_freq(vout, vip)`, `ac_phase_margin(…)`, settling time, overshoot | only after a whole sweep is known | a post-analysis reduction over the collected points |
 
 Unity-gain frequency is not a property of a frequency point; it is a property
@@ -222,7 +239,7 @@ settling time, overshoot instant, and every "where did the curve do X" metric.
 Three consequences that must hold in the design:
 
 1. **Each declared helper carries its class.** `headers/constraints.phdl`
-   declares `ac_gain` as pointwise and `ac_unity_gain_freq` as reduced (§6's
+   declares `ac_gain` as pointwise and `ac_unity_gain_freq` as reduced (§7's
    MD-24 note). The class is part of the declaration, not folklore.
 2. **A `require` cannot read a reduced quantity inside a pointwise scope.**
    `@ tran { require settle : ac_phase_margin(…) >= 60.0; }` is a loud
@@ -327,7 +344,7 @@ margin is evaluated at, and only at:
 
 The sweep row is not a detail: `sweep`/`sweep_grid` over a compiled session is
 the loop that optimization, corner runs, and Monte Carlo are all built from
-(§4). "Worst margin over the sweep, and at which point" is the quantity those
+(§5). "Worst margin over the sweep, and at which point" is the quantity those
 three consume, so it is a first-class result, not something the host
 reconstructs by scraping per-point results.
 
@@ -500,7 +517,7 @@ to say about correctness. Three sources exist, and they must converge:
 
 1. **Constraint kernels** (PHDL `require`s) — margins crossing zero.
 2. **Monitor modules** — ordinary `digital` (or mixed) modules evaluating
-   sequential properties (the SVA story, §8 item 11).
+   sequential properties (the SVA story, §9 item 11).
 3. **Plugin/OSDI devices** — model-embedded checks, which is exactly how
    industry foundry decks emit SOA warnings today. A Verilog-A model wrapped
    behind the `Element` ABI has no PHDL constraint block; without an ABI
@@ -567,16 +584,40 @@ Consequences that fall out for free:
 
 ### 2.10 Where it does *not* go
 
-| In PHDL | In Python |
-|---|---|
-| what "correct" and "in-spec" mean for this circuit | stimulus, test orchestration |
-| SOA, ERC, spec limits, objectives | which corners to run, how many MC samples |
-| anything evaluated per timestep inside the kernel | regression, coverage closure, reporting |
+**PHDL describes the design and its invariants. The host gives the commands.**
+That is the whole division, and it is not a matter of taste — it follows from
+who chooses the evaluation instants (§4.1):
 
-The dividing line is not taste, it is cost: a constraint is evaluated at every
-accepted solver point, and crossing FFI per timestep to ask Python whether a
-voltage is legal would dominate the simulation. Constraints compile into the
-kernel. Everything that runs once per analysis lives in the host.
+| In PHDL | In the host (Python, or Rust) |
+|---|---|
+| what "correct" and "in-spec" mean for this circuit | stimulus of every kind — including analog drive (§4.2) |
+| SOA, ERC, spec limits, `target`s | test sequencing: drive, wait, sample, compare (§4.3) |
+| anything the **solver's** rhythm evaluates — every accepted point | anything the **test's** rhythm evaluates — its own breakpoints |
+| — | the objective, corner lists, sample counts, regression, coverage closure, reporting |
+
+A `constraint` is evaluated at every accepted solver point, so a host crossing
+per point would dominate the run — it compiles into the kernel. A tester wakes
+at its own breakpoints, 10⁴–10⁵ times per test, so it stays imperative in the
+host where it is easy to reason about.
+
+**What this division buys: the in-language verification surface stays small.**
+Functional testing — drive vectors, expect responses — is host work and stays
+host work; `piperine test` and `*_tb.py` are the right shape for it. The
+language adds only what the host provably cannot do at the solver's rhythm.
+
+**One consequence worth stating plainly: margins are an analog notion.** The
+signed distance of §2.3 is real-valued and differentiable, and no such quantity
+exists for a `Bit` or a `Quad` — a digital obligation is pass/fail, not "3 dB of
+room". So:
+
+- **Analog** verification rides **both** channels — margins (continuous,
+  differentiable, feeds the optimizer) and findings (discrete, postural).
+- **Digital** verification rides **findings only** — no margin, no gradient, no
+  centering.
+
+That makes the validation channel (§2.9) the *primary* mechanism for digital
+verification rather than an accessory, and it is why a monitor or a tester needs
+no margin to be first-class.
 
 ---
 
@@ -629,7 +670,7 @@ the one noise already walks. Two consequences:
 1. "Reuse the noise solve shape" is accurate for **AC** sensitivity and
    optimistic for **DC**. Say which one is being reused.
 2. The metrics a designer actually optimizes — gain, bandwidth, phase margin —
-   are AC metrics anyway (§7). If AC adjoint is the closer of the two, a
+   are AC metrics anyway (§8). If AC adjoint is the closer of the two, a
    DC-only first delivery buys the harder half and postpones the useful half.
    Whether Wave 1 lands DC-first (simpler algebra, `.sens` available as a
    cross-check oracle) or AC-first (closer to existing code, immediately useful
@@ -728,7 +769,134 @@ underneath — and the difference is reported, not hidden.
 
 ---
 
-## 4. Optimization, centering, Monte Carlo — host-side, on the two additions
+## 4. The programmatic tester — imperative time, in the host language
+
+The third mechanism, and the one that decides how much verification needs to be
+in the language at all. PHDL describes the design and its invariants; the host
+gives the commands. A tester is an **ordinary element that advances time and
+reacts programmatically**, written in Python (or Rust — same contract, and
+Python is simply better at it).
+
+### 4.1 The rule that separates it from `constraint`
+
+Not "inside the time loop versus outside" — that reading is too coarse and would
+have put testers in the kernel. The dividing line is **who chooses the
+evaluation instants**:
+
+| Instants chosen by | Must live | Why |
+|---|---|---|
+| **the solver** — every accepted point | compiled, in-kernel (`constraint`) | 10⁶–10⁹ evaluations; a host crossing per point would dominate the run |
+| **the test** — its own breakpoints | the host, imperative (tester) | 10⁴–10⁵ wake-ups per test; at ~1 µs a crossing, that is noise |
+
+A `constraint` is in the kernel because the *solver* dictates its rhythm. A
+tester can be Python because **it** dictates its own. Same time loop, different
+rate, and the rate is what decides the language.
+
+**The mechanism already exists in the ABI.** `Element::next_breakpoints(&self,
+from, horizon) -> Vec<f64>` (`core/element.rs:187`) is how an element declares
+its own wake-up times, and the transient driver already lands on them. A tester
+is that method plus a host callback. `SimHooks` is *not* the right hook — it is
+coarse-grained (`transform_design`, `before_lower`, `after_solve`), with nothing
+per-step; a tester is an `Element`.
+
+### 4.2 Analog drive without a host crossing inside Newton
+
+The interesting engineering problem: a stamp value must exist during every
+Newton iteration, and calling Python from inside the iteration loop is exactly
+what §4.1 says not to do.
+
+Resolution: **the host writes segments; the element stamps them.**
+`t.ramp("vin", 0.0, 1.2, 50e-9)` installs a segment at the current breakpoint,
+and the element stamps from that description until the next one — no host
+crossing in between. This is how a PWL source already behaves. Python decides
+*what* to drive; the element decides *how* to stamp.
+
+Drive carries a **declared impedance**, which is where this meets §2.8's bridge
+argument: `t.drive_voltage("vin", 1.2, rout=50.0)` stamps a Norton source, not
+an ideal one. Without that, the tester reintroduces exactly the silent ideality
+this document criticizes `wreal` for. An ideal force stays available — it is a
+legitimate bring-up tool — but it is spelled explicitly, never defaulted.
+
+Discontinuities are the solver's ordinary business (the digital path already
+lives on them), so an ideal step is allowed; the requirement is that its
+breakpoint be registered so the integrator sees the edge instead of
+interpolating across it.
+
+### 4.3 The programming model: a generator
+
+Imperative state lives in the generator frame, so nothing hand-rolls an FSM:
+
+```python
+def uart_echo(t):
+    t.drive("rst", 1);                yield t.advance(100e-9)
+    t.drive("rst", 0)
+    t.ramp("vdd", 0.0, 1.8, 1e-6);    yield t.advance(2e-6)
+    for byte in (0x55, 0xAA):
+        yield from t.uart_send("tx", byte, baud=1e6)
+        got = yield from t.uart_recv("rx", baud=1e6)
+        t.expect(got == byte, f"echo {got:#x} != {byte:#x}")
+```
+
+`advance(dt)` returns control to the solver, which runs to the breakpoint and
+resumes the function there. `t.expect(...)` reports through the same
+`validation_reports()` channel as everything else (§2.9), so a tester failure is
+a typed finding with time and instance — not a print.
+
+This is the "easy to reason about" property that makes the whole approach worth
+it: a designer reads a test as a sequence of actions in time, which is how they
+already think about bring-up.
+
+### 4.4 Rollback, and why the simple answer is the right one for now
+
+The hard problem: the solver rejects timesteps, and a Python generator cannot
+un-advance.
+
+The answer (user decision, D11): **explicit time advance is itself the
+guarantee.** `advance(dt)` inserts a breakpoint at `t + dt` and asserts that
+nothing the tester cares about changes inside that window; the tester is
+resumed only at that breakpoint, which is an accepted point by construction. No
+rollback protocol, no speculative state, no un-advancing.
+
+The cost is honest and accepted: forcing the solver to land on every tester
+breakpoint constrains its timestep, so a fine-grained tester makes the
+transient slower than it would otherwise be. That is a known inefficiency, not
+an unknown one, and it buys a programming model with no failure mode.
+
+### 4.5 Side effects are allowed
+
+A tester may read a vector file, consult a golden model, log to disk, or import
+anything — it is a testbench, not a device model, and forbidding that would kill
+the main use case (D12).
+
+The consequence must be stated rather than policed: **reproducibility becomes
+the tester author's responsibility.** A tester that reads a file whose contents
+change does not reproduce, and the framework will not detect it. This matters
+most where reproducibility is otherwise guaranteed by construction: Monte Carlo
+draws are reproducible from `(seed, index)` (§5), and a side-effecting tester in
+the same run is the one link in that chain the seed does not cover.
+
+### 4.6 Reach: read anywhere, drive with a declaration
+
+- **Reading internal nets is allowed** — `t.read_voltage("u3.core.bus")` is what
+  the existing probe/trace surface already does, and refusing it would make a
+  tester weaker than the debugger.
+- **Driving an internal net is allowed but never quiet** (agent default, D14):
+  forcing a node changes the circuit, so it is reported in the run's findings.
+  A test that "passes" while forcing an internal node must be visibly doing so;
+  real ATE only reaches package pins, and the gap between that and a simulation
+  force is worth surfacing rather than hiding.
+
+### 4.7 Known gap: the tester is transient-only
+
+A tester sequences time, so it has no meaning in AC (D13, deliberate gap for
+now). DC could reasonably treat installed drive segments as a fixed bias, but
+that is unspecified too. Until it is: instantiating a tester and requesting an
+AC analysis **fails loud** rather than silently ignoring the tester or silently
+freezing it at `t = 0`. This is recorded as a known gap, not solved here.
+
+---
+
+## 5. Optimization, centering, Monte Carlo — host policies over the primitives
 
 Nothing in this section touches the grammar. All of it is Python (and Rust
 parity) driving the compiled session. Reached via `Module` or `Session`, these
@@ -738,7 +906,7 @@ is 10³ restamps on one JIT, never 10³ elaborations (MD-18).
 This section fixes the **shape** of that surface and the one definition
 (centering) the rest of the document leans on. The per-item delivery detail —
 how the optimizer phases its search, how sampling walks the instance tree, what
-each item needs from earlier waves — lives once, in §8's waves, and is not
+each item needs from earlier waves — lives once, in §9's waves, and is not
 repeated here.
 
 ```python
@@ -762,7 +930,7 @@ designer**, and the margin convention plus the gradients is most of what it
 needs.
 
 **One engine, three policies — not three features.** Optimization, centering,
-and high-sigma sampling look like three items in §8 and are one driver:
+and high-sigma sampling look like three items in §9 and are one driver:
 
 | Policy | Objective | Over | Sampling |
 |---|---|---|---|
@@ -773,7 +941,7 @@ and high-sigma sampling look like three items in §8 and are one driver:
 All three walk the same restamp loop, consume the same margin channel, and use
 the same gradients where they exist. Building them as one driver with a policy
 parameter is the difference between one tested engine and three that drift.
-§8 items 6, 8, and 13 are that driver's three policies, delivered in order.
+§9 items 6, 8, and 13 are that driver's three policies, delivered in order.
 
 The honest cost note, since "host-side" is doing a lot of load-bearing work in
 this document: *no language surface* is not *no cost*. This driver, the margin
@@ -785,7 +953,7 @@ additions it stands on. The argument for putting it in the host is that it is
 
 ---
 
-## 5. What industry does today — and whether this covers it
+## 6. What industry does today — and whether this covers it
 
 An honest read of the production AMS verification landscape, so the two
 additions are judged against what designers actually use, not against a
@@ -797,10 +965,11 @@ caricature.
 | SOA / reliability checks | Model-embedded checks in foundry Verilog-A decks (`$strobe`-style **warnings**), simulator assert cards; RelXpert / MOSRA (aging: HCI/BTI), Legato | `constraint` on the model (§2.8) — same placement as the foundry deck, but margins are **first-class values**, not print warnings. Aging is Wave 3 item 14 |
 | Assertions on analog behavior | SVA + Verilog-AMS event checks (`cross`/`above`), PSL; sequential properties live in the digital domain; host-side scoreboards | Scoped `require` windows (§2.7) cover the analog subset; sequential protocol properties are Wave 3 as **monitor modules on the validation channel** (§2.9) — no assertion language |
 | Coverage | SV covergroups over real/RNM signals, vManager / MDV closure dashboards | `cover` bins (Wave 3 item 10); closure reporting is host work, matching where vManager lives |
-| Real-number modeling | `wreal` / SV real vars, DMS ports; the industry's main AMS speedup — with **silent ideality** at every real→electrical boundary | Wave 3 item 12 — with the declared-impedance bridge as the explicit fix for the industry's known accuracy leak |
+| Real-number modeling | `wreal` / SV real vars, DMS ports; the industry's main AMS speedup — with **silent ideality** at every real→electrical boundary | **Not in V1** (D16). The programmatic tester covers RNM's testbench role; simple ordinary modules cover most of its abstraction role. What is left is throughput |
+| Functional / acceptance testing | UVM(-AMS) testbenches, SV classes and sequences; a separate verification language and methodology from the design language | **The programmatic tester** (§4) — imperative Python or Rust advancing time on its own breakpoints. No verification language, no class library: the host language already has loops, files, and golden models |
 | Corners / Monte Carlo orchestration | ADE Assembler / Maestro, PrimeWave | Host sweeps on the compiled session (already shipped: `sweep`/`sweep_grid`) + `monte_carlo` reading `tol` declarations |
-| High-sigma yield (3–6σ) | Solido (ML-guided importance sampling — the production reference), scaled-sigma, statistical blockade | Host methods over the restamp loop (§4); no language surface needed |
-| Optimization | ADE Optimizer, ASO.ai (AI/black-box), **MunEDA WiCkeD** — the production reference for gradient-based sizing and worst-case-distance centering | §4's `center` *is* WCD centering; the difference is gradients are analytic and free, not finite-differenced |
+| High-sigma yield (3–6σ) | Solido (ML-guided importance sampling — the production reference), scaled-sigma, statistical blockade | Host methods over the restamp loop (§5); no language surface needed |
+| Optimization | ADE Optimizer, ASO.ai (AI/black-box), **MunEDA WiCkeD** — the production reference for gradient-based sizing and worst-case-distance centering | §5's `center` *is* WCD centering; the difference is gradients are analytic and free, not finite-differenced |
 | Differentiable simulation | **Absent commercially.** Academic differentiable SPICE (JAX-based inverse design) and photonic adjoint design (Lumerical-style) prove the value; no production SPICE exposes it | §3 — the defensible differentiator |
 
 **Verdict.** The two additions cover the industry's core needs — SOA on every
@@ -821,7 +990,7 @@ inert check rather than an invented number.
 
 ---
 
-## 6. How the two additions map onto the architecture that exists
+## 7. How the additions map onto the architecture that exists
 
 ```
 param tol  ──────────────────────────────────────────────►
@@ -849,9 +1018,18 @@ solver  reports margins + argmin (time, instance); HAS_SENSITIVITY gates
         findings channel (constraint kernels, monitors, OSDI all emit here)
    ▼
 piperine-api  margins/sensitivities on results; optimize/center/monte_carlo
+
+tester (no grammar at all) ────────────────────────────────────────────────►
+   host generator (§4.3)  →  sequencer `Element`: `next_breakpoints`
+   (`core/element.rs:187`, already exists) + a resume callback
+   →  drive installs stamp *segments*; the element stamps them between
+      breakpoints, so no host crossing enters a Newton iteration (§4.2)
+   →  `expect(...)` reports into the same `validation_reports()` channel
 ```
 
-Every arrow lands on a file or pattern that already exists. The new capability
+Every arrow lands on a file or pattern that already exists — the tester most of
+all, since `next_breakpoints` was in the ABI before anyone designed a tester for
+it. The new capability
 sub-struct behind `Option` is exactly how `forces.rs`/`limits.rs`/
 `operators.rs`/`events.rs` are already organized — a circuit with no
 constraints pays nothing.
@@ -888,7 +1066,7 @@ constraints pays nothing.
 
 ---
 
-## 7. A complete worked example
+## 8. A complete worked example
 
 One file, one Python driver, all three tools reading one declaration.
 
@@ -982,11 +1160,11 @@ that reads `gain_db` off `op()` is describing a language that cannot be built.
 
 ---
 
-## 8. Sequencing
+## 9. Sequencing
 
 **All three waves are V1** (user decision, 2026-07-27). This is not a staging
 plan with two halves deferred to a later release — it is the delivery order of
-one release, and the reason is competitive: the whole advantage argued in §10 is
+one release, and the reason is competitive: the whole advantage argued in §11 is
 that verification, optimization, and centering read one declaration. Ship only
 the declaration and the advantage is a claim; ship only the optimizer and it is
 another sizing tool. The waves are ordered by dependency, not by commitment.
@@ -1044,7 +1222,7 @@ Wave-1 primitives, and all of it is the reason Wave 1 exists.
    fraction of samples with all margins ≥ 0; per-metric spread `σ_i` is the
    by-product that Wave-2 item 8 needs. Cost is 10³ restamps on one JIT (MD-18),
    never 10³ elaborations.
-8. **Design centering** — the `center` policy of item 6's driver (§4), not a
+8. **Design centering** — the `center` policy of item 6's driver (§5), not a
    separate engine. Maximize `min_i (m_i / σ_i)`: the margin convention (§2.3)
    already normalizes, item 7 supplies `σ_i`, item 5's gradients make it a
    smooth-ish program rather than Monte-Carlo-in-the-loop. Two honest wrinkles: `min` over
@@ -1102,68 +1280,50 @@ Two design consequences, both now decided. Coverage is the only construct here
     `Context`-raisable cap (D10): bin edges are literal ranges, so the product is
     known statically and a 10⁶-bin cross is refused before anything allocates.
 
-11. **Sequential (SVA-shaped) properties = monitor modules on the validation
-    channel.** Do not import SVA. A sequential property is a small ordinary
-    `digital` monitor module — registers, `match` on state — that reports
-    failures through `validation_reports()` (§2.9): a finding with time and
-    instance provenance, emitted from the digital scheduler's accepted points.
-    No `ok`-net plumbing, no assertion language, no special engine — PHDL's
-    `digital` grammar already expresses FSMs, hierarchy already composes them,
-    and the validation channel already turns a detection into a typed failure.
+11. **Sequential properties — what is left after the tester.** Most protocol
+    checking happens at clock edges, which is the *tester's* rhythm (§4.1), so
+    the tester checks it imperatively in Python and no language construct is
+    needed. What remains for an in-language monitor is the narrow case: an
+    obligation that must be watched **continuously at the solver's rhythm**, or
+    one buried deep enough in the hierarchy that it should ship with the block
+    rather than with the test.
 
-    What this buys over an assertion language: a monitor is an ordinary module,
-    so it is parameterizable, instantiable in an array, testable in isolation,
-    and shippable in a library. What it costs: an SVA one-liner
-    (`req |-> ##[1:3] ack`) becomes a handful of states. The honest trade is
-    that PHDL gets 80% of the value for zero grammar, and the missing 20% is
-    concision on the digital side — which is not where this project's advantage
-    lies. A dedicated sequence syntax is admissible later **only** if real usage
-    shows monitor modules are too verbose: evidence first, syntax second.
+    For that residue: a monitor is a small ordinary `digital` module — registers,
+    `match` on state — reporting through `validation_reports()` (§2.9). No SVA
+    import, no assertion engine, no `ok`-net plumbing: PHDL's `digital` grammar
+    already expresses FSMs and hierarchy already composes them. A monitor is
+    parameterizable, instantiable in an array, and shippable in a library, which
+    an assertion one-liner is not; the cost is that `req |-> ##[1:3] ack` becomes
+    a handful of states.
 
-    The one piece that is genuinely new is the *digital* poll site — §2.5's
-    table defines evaluation points for analog analyses; a monitor fires on the
-    digital scheduler's accepted events, and "accepted" there means after event
-    settling, not mid-delta-cycle.
+    A dedicated sequence syntax stays inadmissible until usage proves it: with
+    the tester covering the common case, the evidence bar for growing the grammar
+    here is now higher, not lower.
 
-12. **RNM — finishing declared language, not growing it.** Verified:
+    The one genuinely new piece is the **digital poll site** — §2.5's table
+    defines evaluation points for analog analyses; a monitor fires on the digital
+    scheduler's accepted events, where "accepted" means after event settling, not
+    mid-delta-cycle.
+
+12. **Implement the declared `resolve` kinds for `Real` storage nets.** Not RNM
+    (dropped — see below); this is closing a gap in *declared* language.
     `docs/spec/part_i_language.md:477` carries the production
-    `ResolveDecl ::= "resolve" ("tri"|"or"|"and"|"sum"|"avg"|"max"|"min") ";"`,
-    and `:484` assigns `sum`/`avg`/`max`/`min` specifically to `Real` storage
-    nets. Those kinds are *already* contextual keywords (`:238`). The resolution
-    vocabulary is in the spec and unimplemented. Three pieces:
+    `ResolveDecl ::= "resolve" ("tri"|"or"|"and"|"sum"|"avg"|"max"|"min") ";"`
+    and `:484` assigns `sum`/`avg`/`max`/`min` to `Real` storage nets; `:238`
+    already makes those kinds contextual keywords. The grammar promises them and
+    the implementation does not deliver, which is precisely the kind of debt MD-24
+    exists to prevent.
 
-    (a) **Implement the declared resolve kinds** in the digital/event kernel.
-    `sum` is the interesting one — it is how a real-valued current bus works, and
-    it is the reason RNM can model a summing node without MNA. Multi-driver
-    resolution needs a deterministic order-independent reduction, which `sum`/
-    `avg`/`max`/`min` all are by construction (unlike `last_write`, which is why
-    it is not in the declared set).
+    `sum` is the one that earns its place: it is how a real-valued summing node
+    works. All four declared kinds are order-independent reductions by
+    construction, which is why `last_write` is *not* in the set — multi-driver
+    resolution must not depend on evaluation order.
 
-    (b) **An event-scheduled `behavioral` body** for all-storage-real modules
-    (D8). This is the 100–1000× speedup that makes system-level mixed-signal
-    verification finish, and it is declared, not inferred: `behavioral Divider
-    { … }` says in one word that this module leaves the MNA and is scheduled by
-    events. A module that answers a different numerical question should not
-    require a net-type audit to notice. The keyword also gives the elaborator a
-    place to enforce the rule — a `behavioral` body touching a conservative net
-    is a loud error, where inference would have silently produced a slow module
-    that looked fast.
-
-    (c) **Bridging needs no keyword at all.** The declared-impedance bridge is an
-    ordinary module whose `analog` body states the impedance in code:
-    `I(out, gnd) <+ (V(out, gnd) - code * lsb) / rout;` *is* the declaration.
-    What the industry hides inside `wreal` coercion — the silent ideality at
-    every real→electrical boundary, its best-known accuracy leak — PHDL writes as
-    one explicit line that a reviewer can read and a solver can stamp. This is
-    the single place where being late to RNM is an advantage: there is no legacy
-    coercion semantics to stay compatible with.
-
-    Constraints compose with RNM for free: a `require` over a storage-real net is
-    the same margin machinery with a cheaper evaluation site, so SOA-style checks
-    on an RNM model cost almost nothing.
+    No new keyword, no new body kind, no methodology. This is finishing what the
+    spec already says.
 
 13. **High-sigma importance sampling** — the third policy of item 6's driver
-    (§4). Plain Monte Carlo needs ~10⁸ samples to
+    (§5). Plain Monte Carlo needs ~10⁸ samples to
     observe a 6σ failure, which is why memory bitcells are verified with
     importance sampling instead: **statistical blockade** (train a classifier on
     cheap samples, then simulate only the ones predicted near the tail),
@@ -1194,29 +1354,54 @@ Two design consequences, both now decided. Coverage is the only construct here
     equation per device is model-authoring work, and the built-in ngspice-faithful
     models have none of it (same reasoning as §2.8's absent SOA limits).
 
-15. **Tester (ATE-style) devices.** A library over the `Element` ABI for
-    imperative test-programs-as-devices: declare ports, then sequence
-    `advance_clock(dt)` (breakpoints/`timer` — the device declares its own
-    wake-up times), `read_port` (`EvalCtx`), `write_port` (`EventSink` —
-    digital drive never touches the MNA by construction), `read_voltage`
-    (`SAMPLES_ANALOG`), and `warn(...)`/`fail(...)` (`validation_reports`,
-    §2.9 — the third consumer of the channel, after constraint kernels and
-    monitor modules). Analog drive uses declared-impedance stamps or
-    storage-real nets — never a silent ideal source.
+15. **The tester library.** §4 is the design; this is the delivery. A sequencer
+    element (`next_breakpoints` + a host resume callback) plus the host-side API:
+    `advance(dt)`, `drive_voltage`/`drive_current`/`ramp` with declared impedance,
+    `drive` for digital nets (through the `EventSink`, never the MNA),
+    `read_voltage`/`read_port`, and `expect(...)`/`warn(...)` into
+    `validation_reports()` (§2.9). Python and Rust implement one contract (D15),
+    with the generator form of §4.3 as Python's ergonomic face.
 
-    The reason this is a device and not a framework: a tester-as-element composes
-    with hierarchy, runs under the same posture rules, reports through the same
-    channel, and needs no new concept in the simulator. Acceptance suites for
-    protocol specs (USB-phy-style), protocol checkers, and stimulus+check pods all
-    become ordinary instantiable parts. It also closes the loop with the decision
-    that in-language benches die: the *orchestration* stays in Python, but a
-    reusable acceptance program ships as a component rather than as a script
-    someone must copy.
+    **This item moved earlier in the wave, and it is why RNM left.** A tester with
+    analog drive covers every use of RNM-as-testbench-component: any stimulus at
+    all, expressed imperatively where a designer can reason about it. Note the
+    scope shift from the original sketch — this is not merely "acceptance suites
+    become instantiable parts". It is the primary functional-verification path,
+    and the reason items 11 and 12 shrank.
 
-    Sequencing note: this is the item most likely to expose gaps in the `Element`
-    ABI's imperative surface (a device that wants to *wait* is not how the ABI
-    reads today), so it belongs last in the wave — after monitors have exercised
-    the validation channel and RNM has exercised event-scheduled bodies.
+    It remains the item most likely to expose gaps in the `Element` ABI's
+    imperative surface: a device that wants to *wait* is not how the ABI reads
+    today, even though `next_breakpoints` provides the scheduling half.
+
+**Dropped from V1: real-number modeling** (user decision, D16). RNM is a
+throughput play, and two mechanisms already cover what it was here to do:
+
+- **RNM as a testbench component** — abstract neighbor, stimulus generator,
+  boundary checker — is fully replaced by the programmatic tester (§4), which
+  does the same job imperatively, in the host, with declared drive impedance.
+- **RNM as internal block abstraction** is mostly covered by writing the abstract
+  model as an ordinary simple `analog` or `digital` module. The large speedup
+  comes from *not simulating transistors*, which a simple module already gets.
+
+What leaving the MNA additionally buys — no Newton iterations, no LTE-limited
+timesteps, a smaller matrix — is real but the smaller factor, and unquantified
+for this codebase. Against that: the `behavioral` body kind (D8, now reverted),
+and a model-versus-SPICE **correlation methodology** that RNM requires and this
+document never had. A real-valued model can be wrong while the simulation passes;
+industry answers that with correlation decks and acceptance criteria as
+first-class activity. Inventing that in V1 is a whole feature hidden inside a
+wave item.
+
+Also decisive: a whole design is already verifiable today, in one process,
+without RNM. RNM would make that faster; it does not make it possible. Piperine's
+defensible ground is differentiability, not throughput — competing on speed
+against Spectre X and PrimeSim is choosing their terrain.
+
+Recorded as **V2, with reasons** — a good idea at the wrong time, which is worth
+writing down rather than quietly omitting. The declared `resolve` kinds (item 12)
+stay in V1 because they are declared-language debt, independent of RNM; the
+declared-impedance bridge stays as an ordinary module pattern (§2.8), which it
+always was.
 
 **Explicitly not planned:** analog formal/reachability (research-scale, does
 not survive contact with a real netlist), RL/GNN sizing (dominated by the
@@ -1228,10 +1413,12 @@ gradient path for continuous sizing; revisit only for topology choices).
 |---|---|---|
 | 1 | `tol` clause on `param`; `constraint` block with `require`/`var`/`target`; analysis-scoped `@ dc`/`@ tran`/`@ ac` blocks | kernel margin evaluation, validation channel + capability bit, ∂F/∂p kernel, DC adjoint, SOA blocks on the spice models |
 | 2 | event-term `after =`/`dur =` args + window algebra (reusing `EventBlock`) | optimizer, Monte Carlo, centering — all host |
-| 3 | `cover` statement kind; the `behavioral` body kind (D8) | resolve kinds (already in the formal grammar), monitors (ordinary `digital` modules), high-sigma, aging, testers — all host or stdlib |
+| 3 | `cover` statement kind | declared `resolve` kinds (grammar already exists), monitors (ordinary `digital` modules), the tester library, high-sigma, aging — all host or stdlib |
 
-Five grammar additions, for a feature set the incumbents spread across five
-separate tools. That ratio is the No-Bloat argument in one table.
+**Four grammar additions**, for a feature set the incumbents spread across five
+separate tools. It was five before the tester displaced RNM (D16) and took the
+`behavioral` body kind with it — the strongest possible No-Bloat outcome, since a
+*capability* decision made the language *smaller*.
 
 The dependency spine is short: **`tol` (1) and margins (2–3) unlock SOA (4);
 margins plus gradients (5) unlock optimization (6); those plus sampling (7)
@@ -1240,7 +1427,7 @@ biggest one, and both stand on the same convention from §2.3.
 
 ---
 
-## 9. Decisions and open questions
+## 10. Decisions and open questions
 
 An expertise pass on 2026-07-27 closed five earlier inconsistencies in place
 (they are now design text, not questions): the two classes of measured quantity
@@ -1249,7 +1436,7 @@ against the frozen corpus (§2.6), SOA limits defaulting to absent (§2.8), and
 the validation channel's capability bit and `Option` shape (§2.9). What follows
 is what genuinely still needs a decision.
 
-### 9.1 Decided (2026-07-27, user)
+### 10.1 Decided (2026-07-27, user)
 
 | # | Question | Decision |
 |---|---|---|
@@ -1257,33 +1444,49 @@ is what genuinely still needs a decision.
 | D2 | Unscoped `require` default | **Holds in every analysis**, but the default is a **`Context` field**, not a hard-coded rule. §2.5 already removed the false-positive sources (homotopy stages, rejected steps, UIC at `t = 0`); the knob covers the residue without making the safe behavior conditional on remembering to ask for it. |
 | D3 | Margins: rows or own channel | **Own channel.** Margins are per-point scalars with provenance, and §2.2's pointwise/reduced split gives them two shapes; hammering both onto the waveform rows would produce exactly the frankenstein the nine-type taxonomy rule exists to prevent. |
 | D4 | Constraints under monomorphization | **Variants carry them, like any body.** Monomorphization already clones a module's `analog`/`digital` behavior into `urc__5`; a `constraint` block rides the same path. The POM holds one authored block per authored module and the variant carries its copy — no special representation, no new rule. |
-| D5 | Wave staging | **All three waves are V1** (§8). The advantage is the whole loop; a partial delivery is a claim. |
+| D5 | Wave staging | **All three waves are V1** (§9). The advantage is the whole loop; a partial delivery is a claim. |
 | D6 | DC adjoint or AC first | **DC.** `.sens` (`analyses/sens.rs:2`) is a finite-difference oracle to verify against, and AC has none — an unverifiable gradient is worth less than a slower verifiable one. Consequence: AC-metric gradients (gain, UGBW, phase margin) are finite-differenced or treated as feasibility filters until the AC adjoint lands. |
 | D7 | Where reduced metrics are computed | **Host.** The solver stays pointwise-pure: it emits points, the host applies the declared reduction. Keeps the kernel free of sweep-shaped state and keeps `piperine-solver` free of a second notion of "result". |
 
 D2 and D3 both landed on the same instinct: make the safe thing the default,
 and give it a knob rather than a special case.
 
-| D8 | RNM bodies: explicit or inferred | **Explicit `behavioral` body kind.** Scheduling is expressed in the language, not deduced from net types. A module that leaves the MNA and becomes event-scheduled runs 100–1000× faster and answers a *different* numerical question; that is not a property a reader should have to infer from a net-type audit. Makes `behavioral` the fifth and final grammar addition. |
+| D8 | RNM bodies: explicit or inferred | **Superseded by D16.** Was: explicit `behavioral` body kind, so that leaving the MNA is declared rather than inferred. The reasoning held; the premise did not survive — with RNM dropped there is no event-scheduled body to declare. Kept in the log because the *rule* it established still applies to any future construct that changes what numerical question a module answers: declare it, do not infer it. |
 | D9 | Does `cover` get its own posture | **Yes — `cover=on\|off` on `Context`,** beside D2's scoping knob. Coverage is the one construct whose value is accumulation across runs, so riding `checks=` would let an optimizer's 10³ inner-loop iterates pollute the coverage database with iterates nobody meant as verification runs. Same instinct as D2/D3: separate concern, separate knob. |
 | D10 | Cross-coverage bin cap | **Loud at elaboration against a default cap, cap raisable on `Context`** (agent's call). Bin edges are literal ranges, so the joint bin count is known statically — elaboration can refuse a 10⁶-bin cross before anything allocates. A runtime warning was the alternative and loses: this project's rule is fail loud, and an unguarded product silently allocating a sparse table surfaces much later as memory, far from its cause. Raisable rather than fixed so a legitimately large cross is one explicit line, not a fork of the compiler. |
 
+| D11 | Tester rollback | **Explicit time advance is the guarantee** (§4.4). `advance(dt)` inserts a breakpoint and asserts nothing the tester cares about changes inside the window; the tester resumes only at that breakpoint, accepted by construction. No rollback protocol. Accepted cost: landing on every tester breakpoint constrains the solver's timestep, so a fine-grained tester runs slower — a known inefficiency rather than an unknown failure mode. |
+| D12 | Tester side effects | **Allowed** (§4.5). Reading a vector file, consulting a golden model, logging — a testbench is not a device model, and forbidding this kills the use case. Consequence stated, not policed: reproducibility becomes the tester author's responsibility, and it is the one link a Monte Carlo seed does not cover. |
+| D13 | Tester in AC | **Known gap, fails loud** (§4.7). A tester sequences time and has no AC meaning; DC treatment of installed drive segments is also unspecified. Refuse the combination rather than silently freezing or ignoring the tester. |
+| D14 | Tester reach into hierarchy | **Read internal nets freely; drive them loudly** (agent default). Reading is what the probe/trace surface already does. Forcing an internal node changes the circuit, so it lands in the run's findings — a test that passes while forcing a node must be visibly doing so. |
+| D15 | Tester language | **One contract, two implementations.** A sequencer `Element` driven by a host resume callback; Python and Rust both implement it (MD-22 parity falls out). Python gets the generator ergonomics (§4.3) because it is better at this. |
+| D16 | RNM | **Dropped from V1, recorded as V2 with reasons** (§9 item 15). The tester replaces RNM-as-testbench-component outright; ordinary simple modules cover most of RNM-as-internal-abstraction. What remains is throughput, and throughput is the incumbents' terrain. Takes D8's `behavioral` body kind with it and drops the grammar delta from five to four. The declared `resolve` kinds stay in V1 as declared-language debt. |
+
 D2, D3, D9, and D10 all landed on the same instinct: make the safe thing the
-default, and give it a knob rather than a special case.
+default, and give it a knob rather than a special case. D11–D16 landed on a
+different one, and it is the more surprising result of this pass: **the strongest
+capability decision in the document made the language smaller.**
 
-### 9.2 Still open
+### 10.2 Still open
 
-**Nothing blocking.** One clarification worth confirming: D8's rationale was
-read as "the event-scheduling decision belongs expressed in the language". If
-"sequencing in the language" also meant an in-language **sequence syntax** for
-sequential properties (`##`-style, Wave 3 item 11), that is a different and much
-larger decision — item 11 currently argues monitors should be ordinary `digital`
-modules and that a sequence syntax needs usage evidence first. Say so and it
-becomes D11.
+**Nothing blocking.** Two things to revisit once there is usage rather than
+argument:
 
----
+1. **An imperative sequencing syntax, if the generator form proves awkward.**
+   §4.3's generator carries imperative state in a frame, which is the cheapest
+   possible answer and needs no grammar. If real testers show it reads badly —
+   deeply nested protocol phases, or Rust's version being much clumsier than
+   Python's — that is evidence for sugar. Not before.
+2. **An in-language sequence syntax for monitors** (`##`-style) stays
+   inadmissible for now, and the bar went *up*: with the tester covering
+   clock-edge checking (§9 item 11), the residue that needs an in-language
+   monitor is narrow, so growing the grammar for it would need a strong case.
 
-## 10. Why this is worth doing
+The AC/DC semantics of a tester (D13) is a recorded known gap rather than an open
+question — it is deliberately unspecified, and refusing the combination loudly is
+the interim behavior.---
+
+## 11. Why this is worth doing
 
 The honest competitive read: commercial AMS tools have better device models,
 better layout integration, and decades of foundry qualification. Piperine will
