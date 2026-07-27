@@ -7,6 +7,7 @@ pub use crate::core::element::{
     ElementCheckpoint, Introspect, LimitReason, LimitingReport,
 };
 pub use crate::core::circuit::CircuitInstance;
+pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
     ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,

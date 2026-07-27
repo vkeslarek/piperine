@@ -21,6 +21,7 @@ pub use crate::core::introspect::{
     SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
+pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
 pub use crate::digital::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────

@@ -515,4 +515,17 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// from the last accepted device state — not the dirty rejected-attempt
     /// state. Default: no-op (stateless device).
     fn restore_state(&mut self, _checkpoint: &ElementCheckpoint) {}
+
+    /// Structured validation findings (DVC-13): constraint violations, model
+    /// self-checks, and monitor hits, each carrying severity, label, message,
+    /// value, time, and the authored instance path. Cross-cutting — analog
+    /// and digital elements alike speak through this one channel (it is the
+    /// *primary* mechanism for digital verification, since margins are an
+    /// analog notion). Shaped after [`limiting_report`](AnalogDevice::limiting_report):
+    /// `Option`, not `Vec`, because `None` (nothing to say) is the common
+    /// case. The solver polls only at the evaluation points design §C3
+    /// defines, and only elements declaring the `EMITS_VALIDATION`
+    /// capability are ever asked — the default
+    /// `None` here is what an element *without* something to say returns.
+    fn validation_reports(&self) -> Option<crate::core::validation::ValidationReport> { None }
 }
