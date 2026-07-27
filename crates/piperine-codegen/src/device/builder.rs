@@ -82,9 +82,8 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     }
 
     /// Resolve one instance's port bindings (parent-scope net names) into
-    /// this module's `NodeId`s — the structural work `lower_bodies` used to
-    /// do once for every module's `IrInstance.connections`; now done here,
-    /// once per instantiation, directly from the POM.
+    /// this module's `NodeId`s — structural work done here, once per
+    /// instantiation, directly from the POM.
     pub(super) fn resolve_connections(&self, instance: &Instance) -> Result<Vec<NodeId>, CodegenError> {
         instance
             .ports()

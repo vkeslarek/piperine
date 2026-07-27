@@ -1,8 +1,8 @@
-//! `.pz` host surface (PZ-07): `SimSession::run_pz` — an RC low-pass's
+//! `.pz` host surface (PZ-07): `Session::run_pz` — an RC low-pass's
 //! single real pole and a series RLC's complex-conjugate pole pair, driven
 //! entirely through `piperine::` (no bench crate, no interpreter).
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const RC_PHDL: &str = "\
@@ -57,9 +57,9 @@ mod Top() {
 #[test]
 fn rc_low_pass_has_one_real_pole_at_minus_one_over_rc() {
     let design = piperine_lang::parse_and_elaborate(RC_PHDL, &SourceMap::dummy()).expect("RC elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
     let result = session
-        .run_pz("v1", "vout", None, &SolverConfig::default())
+        .pz("v1", "vout", None, &SolverConfig::default())
         .expect(".pz solves on the RC low-pass");
 
     assert_eq!(result.poles.len(), 1, "{:?}", result.poles);
@@ -74,9 +74,9 @@ fn rc_low_pass_has_one_real_pole_at_minus_one_over_rc() {
 #[test]
 fn series_rlc_has_the_analytic_complex_conjugate_pole_pair() {
     let design = piperine_lang::parse_and_elaborate(RLC_PHDL, &SourceMap::dummy()).expect("RLC elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
     let result = session
-        .run_pz("v1", "b", None, &SolverConfig::default())
+        .pz("v1", "b", None, &SolverConfig::default())
         .expect(".pz solves on the series RLC");
 
     assert_eq!(result.poles.len(), 2, "{:?}", result.poles);
@@ -98,7 +98,7 @@ fn series_rlc_has_the_analytic_complex_conjugate_pole_pair() {
 #[test]
 fn unknown_input_source_fails_loud() {
     let design = piperine_lang::parse_and_elaborate(RC_PHDL, &SourceMap::dummy()).expect("RC elaborates");
-    let session = SimSession::new(design, "Top".to_string());
-    let result = session.run_pz("no_such_source", "vout", None, &SolverConfig::default());
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let result = session.pz("no_such_source", "vout", None, &SolverConfig::default());
     assert!(result.is_err(), "an unknown input source must fail loud");
 }

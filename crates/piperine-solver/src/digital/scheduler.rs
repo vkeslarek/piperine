@@ -25,7 +25,7 @@ impl DigitalState {
         devices: &mut [Box<dyn Element>],
         limits: crate::analyses::convergence::PlanLimits,
         analog_slice: &[f64],
-    ) -> crate::result::Result<()> {
+    ) -> crate::core::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;
         let max_delta_cycles = limits.max_delta_cycles;
         let mut delta_count = 0;
@@ -102,7 +102,7 @@ impl DigitalState {
         topology: &DigitalTopology,
         limits: crate::analyses::convergence::PlanLimits,
         analog_slice: &[f64],
-    ) -> crate::result::Result<()> {
+    ) -> crate::core::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;
         let max_iters = limits.max_delta_cycles;
         let n = topology.topo_order.len();

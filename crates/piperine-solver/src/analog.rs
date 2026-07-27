@@ -1,4 +1,5 @@
-//! The analog netlist: node/branch identity (`NodeIdentifier`,
+//! Analog naming: the `Netlist` mapping nodes and branch currents to MNA
+//! unknown indices — node/branch identity (`NodeIdentifier`,
 //! `BranchIdentifier`, `AnalogVariable`), the `AnalogReference` → MNA
 //! unknown-index map, and DC initial values — the analog view of the
 //! circuit handed to MNA assembly.

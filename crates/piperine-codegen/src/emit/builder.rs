@@ -141,21 +141,6 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
     }
 
-    // ── Digital-context accessors ──
-
-    #[allow(dead_code)]
-    fn layout(&self) -> &DigitalLayout {
-        self.layout.expect("digital context")
-    }
-    #[allow(dead_code)]
-    fn ptrs(&self) -> Pointers {
-        self.pointers.expect("digital context")
-    }
-    #[allow(dead_code)]
-    fn reads(&self) -> VarReads {
-        self.reads.expect("digital context")
-    }
-
     // ── Analog-context accessors ──
 
     pub(crate) fn state_ptr(&self) -> Value {

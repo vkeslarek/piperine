@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// A resistor that exports its conductance under the display name `cond`
@@ -56,10 +56,10 @@ fn headers_source_map() -> SourceMap {
     map
 }
 
-fn probe_session() -> SimSession {
+fn probe_session() -> Session {
     let design = piperine_lang::parse_and_elaborate(PROBE_PHDL, &headers_source_map())
         .expect("probe fixture elaborates");
-    SimSession::new(design, "Top".to_string())
+    Session::compile(&design, "Top").expect("session compiles")
 }
 
 /// HOST-08 AC1 + AC3: `tran(probe = ["r1.cond"])` records the opvar per step,
@@ -68,10 +68,10 @@ fn probe_session() -> SimSession {
 /// (5 V steady source → `cond = 1/r = 1e-3 S` for every step).
 #[test]
 fn recorded_opvar_over_time_matches_dc_opvar_at_a_held_point() {
-    let session = probe_session();
+    let mut session = probe_session();
 
     let dc_opvar = session
-        .run_op(&SolverConfig::default(), None)
+        .op(&SolverConfig::default(), None)
         .expect("op solves")
         .instance("r1")
         .expect("r1 exists")
@@ -83,7 +83,7 @@ fn recorded_opvar_over_time_matches_dc_opvar_at_a_held_point() {
     );
 
     let trace = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &["r1.cond"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.cond"])
         .expect("tran with probe solves");
     let wf = trace.opvar("r1.cond").expect("recorded opvar reads back as a Waveform");
 
@@ -104,9 +104,9 @@ fn recorded_opvar_over_time_matches_dc_opvar_at_a_held_point() {
 /// offending observable so a host can pinpoint the typo.
 #[test]
 fn unknown_observable_fails_loud_at_setup() {
-    let session = probe_session();
+    let mut session = probe_session();
     let err = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &["r1.bogus"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.bogus"])
         .expect_err("unknown observable must fail loud");
     let msg = format!("{err}");
     assert!(
@@ -119,9 +119,9 @@ fn unknown_observable_fails_loud_at_setup() {
 /// "device not found"-shaped message.
 #[test]
 fn unknown_device_fails_loud_at_setup() {
-    let session = probe_session();
+    let mut session = probe_session();
     let err = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &["ghost.cond"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["ghost.cond"])
         .expect_err("unknown device must fail loud");
     let msg = format!("{err}");
     assert!(
@@ -134,9 +134,9 @@ fn unknown_device_fails_loud_at_setup() {
 /// "must be `instance.name`" hint — never silently parses to `(path, "")`.
 #[test]
 fn malformed_probe_path_fails_loud() {
-    let session = probe_session();
+    let mut session = probe_session();
     let err = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &["no-dot-here"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["no-dot-here"])
         .expect_err("malformed probe path must fail loud");
     let msg = format!("{err}");
     assert!(
@@ -152,9 +152,9 @@ fn malformed_probe_path_fails_loud() {
 /// `probe = [...]` opt-in.
 #[test]
 fn opvar_read_fails_loud_when_not_recorded() {
-    let session = probe_session();
+    let mut session = probe_session();
     let trace = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &[])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran without probe solves");
     let err = trace.opvar("r1.cond").expect_err("unrecorded opvar read must fail loud");
     let msg = format!("{err}");
@@ -170,9 +170,9 @@ fn opvar_read_fails_loud_when_not_recorded() {
 /// `OpResult::instance(label).opvar(name)`'s not-found shape.
 #[test]
 fn opvar_read_fails_loud_on_unknown_name() {
-    let session = probe_session();
+    let mut session = probe_session();
     let trace = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &["r1.cond"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.cond"])
         .expect("tran with probe solves");
     let err = trace.opvar("r1.bogus").expect_err("unknown opvar name must fail loud");
     let msg = format!("{err}");
@@ -188,9 +188,9 @@ fn opvar_read_fails_loud_on_unknown_name() {
 /// documented equivalence in `probe_selection.rs`'s contract comment.
 #[test]
 fn record_device_state_true_enables_opvar_read_without_explicit_probe() {
-    let session = probe_session();
+    let mut session = probe_session();
     let trace = session
-        .run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, true, &[])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, true, &[])
         .expect("tran with full recording solves");
     let wf = trace.opvar("r1.cond").expect("record_device_state records every observable");
     let mean = wf.mean();

@@ -11,7 +11,6 @@ use std::collections::HashSet;
 /// A bundle parameter's field names, for call-site expansion.
 #[derive(Clone, Debug)]
 pub(crate) struct BundleParamFields {
-    pub(crate) bundle_name: String,
     pub(crate) fields: Vec<String>,
 }
 
@@ -233,10 +232,7 @@ pub(crate) fn fn_bundle_signatures(
             .iter()
             .map(|(_, ty)| match ty.as_value() {
                 Some(piperine_lang::pom::ValueType::Bundle(b)) => {
-                    Some(BundleParamFields {
-                        bundle_name: b.clone(),
-                        fields: bundle_field_names(prog, b),
-                    })
+                    Some(BundleParamFields { fields: bundle_field_names(prog, b) })
                 }
                 _ => None,
             })
@@ -251,7 +247,6 @@ pub(crate) fn fn_bundle_signatures(
     for ib in prog.impls() {
         for m in &ib.methods {
             let mut sig = vec![Some(BundleParamFields {
-                bundle_name: ib.ty.clone(),
                 fields: bundle_field_names(prog, &ib.ty),
             })];
             sig.extend(sig_of(&m.params));

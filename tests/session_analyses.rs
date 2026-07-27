@@ -111,7 +111,7 @@ fn elaborate(src: &str) -> piperine_lang::Design {
 }
 
 /// `tran`/`ac`/`noise` on `Session` return the same typed containers as
-/// `SimSession`'s (`Trace<Waveform>`/`Trace<ComplexWaveform>`/
+/// `Session`'s (`Trace<Waveform>`/`Trace<ComplexWaveform>`/
 /// `Trace<NoiseSample>`), read the same way.
 #[test]
 fn session_tran_ac_noise_return_typed_traces() {
@@ -132,7 +132,7 @@ fn session_tran_ac_noise_return_typed_traces() {
 }
 
 /// `sens`/`pss`/`pz`/`disto`/`sp` on `Session` return the same typed results
-/// `SimSession` does (HOST-04's uniform shape), on the same fixtures.
+/// `Session` does (HOST-04's uniform shape), on the same fixtures.
 #[test]
 fn session_sens_pss_pz_disto_sp_return_typed_results() {
     let rc_design = elaborate(RC_AC_PHDL);
@@ -151,7 +151,8 @@ fn session_sens_pss_pz_disto_sp_return_typed_results() {
     assert_eq!(pz.poles.len(), 2);
 
     let poly_design = elaborate(POLY_PHDL);
-    let mut poly_session = Session::compile(&poly_design, "Top").expect("session compiles");
+    let mut poly_session =
+        Session::builder(&poly_design, "Top").disto(true).compile().expect("session compiles");
     let disto: DistoResult =
         poly_session.disto(1e6, None, 0.1, "vout", None, &SolverConfig::default()).expect("disto solves");
     assert!(disto.hd2.is_some());

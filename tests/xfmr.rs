@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
@@ -33,8 +33,8 @@ mod Top() {
 }";
     let design = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect("xfmr design elaborates");
-    let trace = SimSession::new(design, "Top".to_string())
-        .run_ac(1.0e3, 1.0e6, 20, true, &SolverConfig::default())
+    let trace = Session::compile(&design, "Top").expect("session compiles")
+        .ac(1.0e3, 1.0e6, 20, true, &SolverConfig::default())
         .unwrap_or_else(|e| panic!("xfmr ac failed: {e}"));
 
     let vsec = trace.v("sec").expect("v(sec)").mag();
@@ -96,8 +96,8 @@ mod Top() {
     let design = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect("coupled tanks elaborate");
     let ic = std::collections::HashMap::from([("v1".to_string(), 1.0)]);
-    let trace = SimSession::new(design, "Top".to_string())
-        .run_tran((12.0e-6, 0.0), Some(1.0e-8), &SolverConfig::default(), Some(&ic), false, &[])
+    let trace = Session::compile(&design, "Top").expect("session compiles")
+        .tran(12.0e-6, Some(1.0e-8), 0.0, &SolverConfig::default(), Some(&ic), false, &[])
         .unwrap_or_else(|e| panic!("coupled tanks tran failed: {e}"));
 
     let v1 = trace.v("v1").expect("v(v1)");

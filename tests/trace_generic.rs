@@ -3,7 +3,7 @@
 //! `cargo test -p piperine` (Phase 1 / T1 quick gate).
 
 use piperine::waveform::NoiseSample;
-use piperine::{AcTrace, NetRef, NoiseTrace, SimSession, SolverConfig, Trace, Waveform};
+use piperine::{AcTrace, NetRef, NoiseTrace, Session, SolverConfig, Trace, Waveform};
 use piperine_lang::SourceMap;
 
 const RC_PHDL: &str = "\
@@ -28,9 +28,9 @@ mod Top() {
 }
 ";
 
-fn session() -> SimSession {
+fn session() -> Session {
     let design = piperine_lang::parse_and_elaborate(RC_PHDL, &SourceMap::dummy()).expect("RC elaborates");
-    SimSession::new(design, "Top".to_string())
+    Session::compile(&design, "Top").expect("session compiles")
 }
 
 /// `AcTrace` is literally `Trace<ComplexWaveform>` — the same generic
@@ -69,14 +69,14 @@ fn noise_trace_is_the_same_generic_container_as_trace() {
 /// (HOST-13 AC1's independent test).
 #[test]
 fn transient_is_real_and_ac_is_complex_on_the_same_container() {
-    let s = session();
+    let mut s = session();
     let out = NetRef { name: "out".into() };
 
-    let tran = s.run_tran((1e-3, 0.0), Some(1e-5), &SolverConfig::default(), None, false, &[]).expect("tran solves");
+    let tran = s.tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &[]).expect("tran solves");
     let w = tran.v(&out).expect("v(out) real");
     assert!(w.len() > 1);
 
-    let ac = s.run_ac(1.0, 1e6, 5, true, &SolverConfig::default()).expect("ac solves");
+    let ac = s.ac(1.0, 1e6, 5, true, &SolverConfig::default()).expect("ac solves");
     let cw = ac.v(&out).expect("v(out) complex");
     assert!(cw.len() > 1);
     // A genuinely complex sample away from DC (nonzero imaginary part
@@ -88,8 +88,8 @@ fn transient_is_real_and_ac_is_complex_on_the_same_container() {
 /// The noise trace still exposes `psd`/`total` after the fold (HOST-13 AC2).
 #[test]
 fn noise_trace_still_exposes_psd_and_total() {
-    let s = session();
-    let nz = s.run_noise("out", "gnd", (1.0, 1e6), 5, true, &SolverConfig::default()).expect("noise solves");
+    let mut s = session();
+    let nz = s.noise("out", "gnd", (1.0, 1e6), 5, true, &SolverConfig::default()).expect("noise solves");
     let psd = nz.psd();
     assert!(!psd.is_empty());
     assert!(nz.total() >= 0.0);

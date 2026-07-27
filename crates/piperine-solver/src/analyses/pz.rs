@@ -29,7 +29,6 @@
 //! `(n+1)×(n+1)` Rosenbrock system pencil `([−G, b; lᵀ, 0], [C, 0; 0, 0])` —
 //! the textbook transmission-zero definition, exact (no root-search
 //! heuristic). An empty zero set is a legitimate answer, unlike poles.
-#![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
@@ -74,9 +73,11 @@ const GUARD_ABS: f64 = 1e-12;
 /// operating point, then computes poles ([`Self::poles`]) and zeros
 /// ([`Self::zeros`]) as generalized eigenvalues of that pencil.
 pub struct PoleZeroSolver<'a> {
+    // Held, never read: the exclusive borrow is the point. `new` extracts the
+    // whole `(G, C)` pencil up front, so keeping the circuit here is what stops
+    // a caller mutating it out from under a pole/zero computation.
     #[allow(dead_code)]
     circuit: &'a mut CircuitInstance,
-    options: PoleZeroOptions,
     size: usize,
     g: Array2<f64>,
     c: Array2<f64>,
@@ -95,7 +96,7 @@ impl<'a> PoleZeroSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: PoleZeroOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -136,7 +137,7 @@ impl<'a> PoleZeroSolver<'a> {
         let g = Self::assemble_g(circuit, &dc_point, &context, size);
         let c = Self::assemble_c(circuit, &dc_point, &context, size)?;
 
-        Ok(Self { circuit, options, size, g, c, input_ref, output_ref, output_ref_node })
+        Ok(Self { circuit, size, g, c, input_ref, output_ref, output_ref_node })
     }
 
     /// The real DC Jacobian `G` (n×n), read-only — exposed for testing and
@@ -160,7 +161,7 @@ impl<'a> PoleZeroSolver<'a> {
     /// dynamic states than nodes), real/conjugate-paired (PZ-03). A circuit
     /// with no reactive elements has no finite poles at all — that is a
     /// fail-loud condition (PZ-05), not an empty success.
-    pub fn poles(&self) -> crate::result::Result<Vec<Complex<f64>>> {
+    pub fn poles(&self) -> crate::core::result::Result<Vec<Complex<f64>>> {
         let neg_g = self.g.mapv(|v| -v);
         let roots = Self::finite_generalized_eigenvalues(&neg_g, &self.c, self.size)?;
         if roots.is_empty() {
@@ -186,7 +187,7 @@ impl<'a> PoleZeroSolver<'a> {
     /// reference's row, when one is given). Unlike [`Self::poles`], an empty
     /// zero set is a legitimate answer (e.g. a plain RC low-pass has no
     /// transmission zero) — not a fail-loud condition.
-    pub fn zeros(&self) -> crate::result::Result<Vec<Complex<f64>>> {
+    pub fn zeros(&self) -> crate::core::result::Result<Vec<Complex<f64>>> {
         let n = self.size;
         let bordered = n + 1;
         let mut a = Array2::<f64>::zeros((bordered, bordered));
@@ -221,7 +222,7 @@ impl<'a> PoleZeroSolver<'a> {
         a: &Array2<f64>,
         b: &Array2<f64>,
         size: usize,
-    ) -> crate::result::Result<Vec<Complex<f64>>> {
+    ) -> crate::core::result::Result<Vec<Complex<f64>>> {
         if size == 0 {
             return Ok(Vec::new());
         }
@@ -321,7 +322,7 @@ impl<'a> PoleZeroSolver<'a> {
         dc_point: &DcAnalysisResult,
         context: &Context,
         size: usize,
-    ) -> crate::result::Result<Array2<f64>> {
+    ) -> crate::core::result::Result<Array2<f64>> {
         let omega0 = 1.0;
         let omega1 = 2.0;
         let y0 = Self::assemble_y(circuit, dc_point, omega0, context, size);

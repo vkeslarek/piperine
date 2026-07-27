@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// A divider whose resistors compute an opvar `g = 1/r` in their analog
@@ -46,18 +46,18 @@ fn headers_source_map() -> SourceMap {
     map
 }
 
-fn divider_session() -> SimSession {
+fn divider_session() -> Session {
     let design = piperine_lang::parse_and_elaborate(DIVIDER_PHDL, &headers_source_map())
         .expect("divider elaborates");
-    SimSession::new(design, "Divider".to_string())
+    Session::compile(&design, "Divider").expect("session compiles")
 }
 
 /// `op.instance("r_top").opvar("g")` returns the post-solve `1/r` value —
 /// the read-only bridge over the shipped `read_opvars` ABI (HOST-07 AC1).
 #[test]
 fn opvar_returns_the_devices_computed_operating_point_variable() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
 
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let g_top = r_top.opvar("g").expect("r_top declares opvar g");
@@ -71,8 +71,8 @@ fn opvar_returns_the_devices_computed_operating_point_variable() {
 /// `opvars()` returns every declared opvar as `(name, value)` pairs.
 #[test]
 fn opvars_lists_every_declared_operating_point_variable() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let vars = op.instance("r_top").expect("labeled instance").opvars();
     assert_eq!(vars.len(), 1, "Resistor declares exactly one opvar (g): {vars:?}");
     assert_eq!(vars[0].0, "g");
@@ -82,8 +82,8 @@ fn opvars_lists_every_declared_operating_point_variable() {
 /// An unknown opvar name fails loud (HOST-07 edge case) — never `None`/NaN.
 #[test]
 fn unknown_opvar_fails_loud() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("labeled instance");
     let err = r_top.opvar("bogus").expect_err("unknown opvar must fail");
     assert!(err.to_string().contains("bogus"), "error names the bad opvar: {err}");
@@ -94,8 +94,8 @@ fn unknown_opvar_fails_loud() {
 /// view.
 #[test]
 fn unknown_instance_label_fails_loud() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let err = op.instance("nope").expect_err("unknown label must fail");
     assert!(err.to_string().contains("nope"), "error names the bad label: {err}");
 }
@@ -105,8 +105,8 @@ fn unknown_instance_label_fails_loud() {
 /// rather than failing.
 #[test]
 fn a_device_with_no_opvars_returns_an_empty_list() {
-    let session = divider_session();
-    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let mut session = divider_session();
+    let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let src = op.instance("src").expect("src is a labeled instance");
     assert!(src.opvars().is_empty(), "VoltageSource declares no opvars");
 }

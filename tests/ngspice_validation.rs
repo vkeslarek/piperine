@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use piperine::{OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// The piperine-vs-ngspice comparison harness. Owns detection of the ngspice
@@ -112,9 +112,9 @@ impl NgspiceHarness {
             .map_err(|e| format!("{circuit}: {}: {e}", phdl.display()))?;
         let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
             .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))?;
-        let session = SimSession::new(design, "Top".to_string());
+        let mut session = Session::compile(&design, "Top").expect("session compiles");
         session
-            .run_op(&SolverConfig::default(), None)
+            .op(&SolverConfig::default(), None)
             .map_err(|e| format!("{circuit}: piperine DC solve failed: {e}"))
     }
 
@@ -235,12 +235,26 @@ impl NgspiceHarness {
             .unwrap_or_else(|e| panic!("{circuit}: {}: {e}", phdl.display()));
         let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
             .unwrap_or_else(|e| panic!("{circuit}: elaboration failed: {e:?}"));
-        let session = SimSession::new(design, "Top".to_string());
+        let mut session = Session::compile(&design, "Top").expect("session compiles");
 
         let values: Vec<f64> = golden.iter().map(|(x, _)| *x).collect();
-        let ops = session
-            .run_op_sweep(source, "dc", &values, &SolverConfig::default(), None)
-            .unwrap_or_else(|e| panic!("{circuit}: piperine DC sweep failed: {e}"));
+        // Compile-once sweep (MD-18): one build, restamped per point, with a
+        // full `OpResult` at each — `Session::sweep` clones the build info per
+        // point, which is what makes the device-internal current readback
+        // below read that point's parameter value.
+        let mut ops = Vec::with_capacity(values.len());
+        {
+            let mut sweep = session.sweep(source, "dc", &values);
+            while let Some(point) = sweep.next() {
+                let mut point = point
+                    .unwrap_or_else(|e| panic!("{circuit}: piperine DC sweep failed: {e}"));
+                ops.push(
+                    point
+                        .op(&SolverConfig::default(), None)
+                        .unwrap_or_else(|e| panic!("{circuit}: piperine DC sweep failed: {e}")),
+                );
+            }
+        }
 
         let mut mismatches = Vec::new();
         for ((x, i_golden), op) in golden.iter().zip(&ops) {
@@ -266,13 +280,15 @@ impl NgspiceHarness {
 
     /// Piperine side shared by the spectral cross-checks: elaborate
     /// `<circuit>.phdl` into a session.
-    fn piperine_session(&self, circuit: &str) -> Result<SimSession, String> {
+    fn piperine_session(&self, circuit: &str) -> Result<Session, String> {
         let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
         let src = std::fs::read_to_string(&phdl)
             .map_err(|e| format!("{circuit}: {}: {e}", phdl.display()))?;
         let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
             .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))?;
-        Ok(SimSession::new(design, "Top".to_string()))
+        // `.disto(true)`: the spectral cases include `.disto`, the one analysis
+        // whose 2nd/3rd-derivative kernels are opt-in.
+        Ok(Session::builder(&design, "Top").disto(true).compile().expect("session compiles"))
     }
 
     // ── Spectral analyses (.disto/.four/.pz) ─────────────────────────────
@@ -347,9 +363,9 @@ impl NgspiceHarness {
         assert!(fund > 0.0, "{circuit}: ngspice fundamental must be positive");
         let (ng_hd2, ng_hd3) = (ng_hd2 / fund, ng_hd3 / fund);
 
-        let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
+        let mut session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
         let result = session
-            .run_disto(f1, None, 1.0, "out", None, &SolverConfig::default())
+            .disto(f1, None, 1.0, "out", None, &SolverConfig::default())
             .unwrap_or_else(|e| panic!("{circuit}: piperine .disto failed: {e}"));
         let pp_hd2 = result.hd2.expect("single-tone reports HD2");
         let pp_hd3 = result.hd3.expect("single-tone reports HD3");
@@ -417,9 +433,9 @@ impl NgspiceHarness {
     fn four_case(&self, circuit: &str, f0: f64, stop: f64, reltol: f64) {
         let (ng_thd, ng_norms) = self.ngspice_fourier(circuit).unwrap_or_else(|e| panic!("{e}"));
 
-        let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
+        let mut session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
         let trace = session
-            .run_tran((stop, 0.0), None, &SolverConfig::default(), None, false, &[])
+            .tran(stop, None, 0.0, &SolverConfig::default(), None, false, &[])
             .unwrap_or_else(|e| panic!("{circuit}: piperine transient failed: {e}"));
         let wf = trace
             .v("out".to_string())
@@ -493,9 +509,9 @@ impl NgspiceHarness {
     fn pz_case(&self, circuit: &str, reltol: f64) {
         let ng_poles = self.ngspice_poles(circuit).unwrap_or_else(|e| panic!("{e}"));
 
-        let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
+        let mut session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
         let result = session
-            .run_pz("v1", "out", None, &SolverConfig::default())
+            .pz("v1", "out", None, &SolverConfig::default())
             .unwrap_or_else(|e| panic!("{circuit}: piperine .pz failed: {e}"));
 
         assert_eq!(

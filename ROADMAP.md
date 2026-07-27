@@ -145,6 +145,22 @@ Remaining:
       −20 dB/dec and −90° across 4 decades.
 - [x] Multiple `ac_stim` per contribution — DONE (T10, `660af1c`): phasor
       sum, superposition-proven.
+- [ ] **`.disto` kernels overrun Cranelift on MOS2/MOS3 — OPEN, found
+      2026-07-26** (p6-cleanup-architecture Phase 5, T29). The
+      2nd/3rd-derivative kernels emit one JIT function per *ordered*
+      controlling-branch combination, so a MOSFET's branch count makes the
+      count explode and `cranelift-jit` panics with `TryFromIntError`
+      (8 `ngspice_validation` MOSFET cases). Masked, not fixed: the kernels
+      are now opt-in (`SessionBuilder::disto(true)`, default `false`) and
+      `Session::disto` fails loud without them, so no host can solve against
+      kernels that were never emitted. The real fix is to stop emitting the
+      ordered cross-product — combinations are symmetric, and the derivative
+      kernels should be one function with an index, not N functions. Until
+      then `.disto` works on small-signal devices and is unavailable for
+      MOS2/MOS3. The collapse found this because `Session::compile` used to
+      emit these kernels *unconditionally*, so the surviving host entry point
+      could never JIT a MOS2/MOS3 circuit at all; only the deleted
+      `SimSession` path (which gated them off) could.
 - [x] `@initial` branch force — DONE (T11, `b9f47af`; see UIC hold above).
 - [x] `Trace.i` on state-reading devices — DONE 2026-07-18 (`e8f1ff4`):
       opt-in `record_device_state` records per-step runtime banks; off, the
@@ -684,6 +700,12 @@ quote were stale; corrected below.
       floor untested), §11 (singular AC point untested), §14 (non-settling delta
       cycle untested). Each is a behaviour addition or a fixture that P6's
       hygiene scope deliberately did not take on.
+- [ ] **User manual** — `docs/manual/` held a single placeholder `index.md`
+      promising guides nobody wrote, and was removed with its `mkdocs.yml` nav
+      entry (P6/T13, 2026-07-26). Writing the manual (CLI walkthrough, library
+      usage, toolchain guide) is a real deliverable and lives here until it is
+      scheduled; recreate the directory *with content* when it is. Today's usage
+      documentation is `README.md`, `CLAUDE.md`, and spec Appendix A.
 - [ ] **Non-blocking language/interpreter completeness** — slice expressions
       outside analog/digital bodies (`eval/interp.rs:448`); `for` in a digital
       body (`emit/stmt.rs:98`); selector complex-exprs / field-less match

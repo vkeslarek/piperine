@@ -21,9 +21,8 @@ use crate::emit::cse::*;
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
     /// Emit a POM `Expr` as a scalar `f64` Cranelift `Value` in analog context.
-    /// This is the analog counterpart of the digital `Codegen::emit` trait —
-    /// same role as the former `AnalogEmitter::emit` but dispatching on POM
-    /// `Expr` instead of `IrExpr`.
+    /// This is the analog counterpart of the digital `Codegen::emit` trait,
+    /// dispatching on POM `Expr`.
     pub fn emit_analog(&mut self, expr: &Expr) -> Result<Value, CodegenError> {
         match expr {
             Expr::Literal(Literal::Real(v)) => Ok(self.cse_const(*v)),

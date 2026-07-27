@@ -1,12 +1,12 @@
 //! spice-stdlib SPICE-03: the smoke circuits (junction + validate, ported
 //! from the retired external package) converge and measure correctly
 //! in-process through the builtin `use spice::…` namespace — driven through
-//! the root host API ([`SimSession`]), with the same assertions the
+//! the root host API ([`Session`]), with the same assertions the
 //! bench-block fixtures carried.
 
 use std::path::PathBuf;
 
-use piperine::{OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, Session, SolverConfig};
 use piperine_lang::{Design, SourceMap};
 
 /// A source map rooted at the real stdlib headers, mirroring what
@@ -29,8 +29,8 @@ fn elaborate(name: &str) -> Design {
 
 /// DC operating point of one module in the design.
 fn op(design: &Design, module: &str) -> OpResult {
-    SimSession::new(design.fork(), module.to_string())
-        .run_op(&SolverConfig::default(), None)
+    Session::compile(&design.fork(), module).expect("session compiles")
+        .op(&SolverConfig::default(), None)
         .unwrap_or_else(|e| panic!("{module}: op failed: {e}"))
 }
 
@@ -87,8 +87,8 @@ fn spice_divider_ratio() {
 #[test]
 fn spice_rc_lowpass_corner() {
     let design = elaborate("validate.phdl");
-    let trace = SimSession::new(design.fork(), "RcLowpass".to_string())
-        .run_ac(1.0e3, 1.0e6, 40, true, &SolverConfig::default())
+    let trace = Session::compile(&design.fork(), "RcLowpass").expect("session compiles")
+        .ac(1.0e3, 1.0e6, 40, true, &SolverConfig::default())
         .unwrap_or_else(|e| panic!("RcLowpass: ac failed: {e}"));
     let mag = trace
         .v("out".to_string())

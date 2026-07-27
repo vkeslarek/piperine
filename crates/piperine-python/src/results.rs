@@ -168,7 +168,7 @@ pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
 }
 
 /// `_OpResult` — the typed operating-point result (PY-06). Holds the immutable DC
-/// snapshot produced by [`piperine_api::session::SimSession::run_op`] behind
+/// snapshot produced by [`piperine_api::Session::op`] behind
 /// `Rc` so a PY-13 instance sub-view can share it cheaply. `.v/.i` (PY-06) and
 /// `__getitem__` (PY-11 / spec AC5) resolve nets by name through the host's
 /// own typed readout — the same call the host makes (uniform-shape proof).
@@ -180,7 +180,7 @@ pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
 /// tests that wrap a host `OpResult` directly).
 #[pyclass(module = "piperine", unsendable)]
 pub struct _OpResult {
-    pub(crate) inner: Rc<OpResult>,
+    pub inner: Rc<OpResult>,
     resolver: Option<InstanceResolver>,
 }
 
@@ -260,7 +260,7 @@ impl _OpResult {
                 self.shared(),
                 resolver.shared(),
                 label,
-            );
+            )?;
             return Ok(Py::new(py, view)?.into_any());
         }
         let f = self.v(name, None)?;
@@ -376,7 +376,7 @@ impl _Trace {
 /// host computes (PY-17). P7 introduced the wrapper; P8 lands numpy + stats.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Waveform {
-    pub(crate) inner: Waveform,
+    pub inner: Waveform,
 }
 
 impl _Waveform {

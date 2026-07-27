@@ -1,5 +1,5 @@
 //! SP-06 — uniform `.sp` shape (MD-22): the Python `module.sp(...)` returns
-//! the same S matrix as the Rust `SimSession::run_sp` on the same shunt-C
+//! the same S matrix as the Rust `Session::run_sp` on the same shunt-C
 //! low-pass design (ports declared via `@rfport(num, z0)`).
 
 use piperine_python::embed::run_script;
@@ -34,9 +34,9 @@ fn python_sp_matches_rust_sp() {
     // Rust side.
     let design = piperine_lang::parse_and_elaborate(SHUNT_C_LOWPASS_PHDL, &piperine_lang::SourceMap::dummy())
         .expect("shunt-C low-pass elaborates");
-    let session = piperine_api::SimSession::new(design, "Top".to_string());
+    let mut session = piperine_api::Session::compile(&design, "Top").expect("session compiles");
     let rust = session
-        .run_sp(1e3, 1e9, 5, true, &piperine_api::SolverConfig::default())
+        .sp(1e3, 1e9, 5, true, &piperine_api::SolverConfig::default())
         .expect("rust sp");
 
     // Python side — same design, same call shape.

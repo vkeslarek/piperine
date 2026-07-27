@@ -1,10 +1,10 @@
 //! HOST-02/HOST-04 — the api result types that were previously either
 //! re-exported solver structs or missing entirely: `PzResult`, `DistoResult`,
-//! `SParamResult` are now constructed by `SimSession::run_pz`/`run_disto`/
+//! `SParamResult` are now constructed by `Session::run_pz`/`run_disto`/
 //! `run_sp`; `TfResult` is exercised once `Session::tf` lands (T5).
 //! `cargo test -p piperine` (Phase 1 / T2 quick gate).
 
-use piperine::{DistoResult, PzResult, SParamResult, SimSession, SolverConfig};
+use piperine::{DistoResult, PzResult, SParamResult, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const RLC_PHDL: &str = "\
@@ -91,8 +91,8 @@ mod Top() {
 #[test]
 fn pz_result_is_the_typed_api_struct() {
     let design = piperine_lang::parse_and_elaborate(RLC_PHDL, &SourceMap::dummy()).expect("RLC elaborates");
-    let session = SimSession::new(design, "Top".to_string());
-    let result: PzResult = session.run_pz("v1", "b", None, &SolverConfig::default()).expect("pz solves");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let result: PzResult = session.pz("v1", "b", None, &SolverConfig::default()).expect("pz solves");
     assert_eq!(result.poles.len(), 2, "{:?}", result.poles);
     assert!(result.zeros.is_empty());
 }
@@ -104,8 +104,8 @@ fn pz_result_is_the_typed_api_struct() {
 fn sparam_result_is_the_typed_api_struct_with_named_accessor() {
     let design =
         piperine_lang::parse_and_elaborate(SHUNT_C_LOWPASS, &SourceMap::dummy()).expect("shunt-C elaborates");
-    let session = SimSession::new(design, "Top".to_string());
-    let result: SParamResult = session.run_sp(1e3, 1e9, 5, true, &SolverConfig::default()).expect("sp solves");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let result: SParamResult = session.sp(1e3, 1e9, 5, true, &SolverConfig::default()).expect("sp solves");
     assert_eq!(result.n_ports, 2);
     assert_eq!(result.frequencies.len(), 5);
     for k in 0..result.frequencies.len() {
@@ -119,9 +119,9 @@ fn sparam_result_is_the_typed_api_struct_with_named_accessor() {
 #[test]
 fn disto_result_is_the_typed_api_struct() {
     let design = piperine_lang::parse_and_elaborate(POLY_PHDL, &SourceMap::dummy()).expect("poly elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::builder(&design, "Top").disto(true).compile().expect("session compiles");
     let result: DistoResult =
-        session.run_disto(1e6, None, 0.1, "vout", None, &SolverConfig::default()).expect("disto solves");
+        session.disto(1e6, None, 0.1, "vout", None, &SolverConfig::default()).expect("disto solves");
     assert!(result.hd2.is_some());
     assert!(result.hd3.is_some());
     assert!(result.im2.is_none());

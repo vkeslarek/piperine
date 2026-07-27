@@ -1,0 +1,6 @@
+# Third-party deps of the example gallery (`examples/*.py`).
+# `piperine` itself is not listed: the examples run inside the embedded
+# CPython host (`piperine run`, `tests/run_examples.rs`), where the module is
+# provided by the linked Rust binary, not by pip.
+numpy
+matplotlib

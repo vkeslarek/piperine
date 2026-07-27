@@ -4,10 +4,10 @@
 //! The top module is structural — a netlist of instances. Each instantiated
 //! module compiles once ([`CompiledModule`], cached) and wraps per-instance
 //! into a [`super::PiperineDevice`]. Instance structure (connections, param
-//! overrides) is read straight from the POM `Design`/`Module`/`Instance` —
-//! there is no `IrModule`/`IrInstance`/`IrProgram` structural twin; only a
-//! module's *own* resolved body ([`crate::resolve::pom::LoweredBody`]) is
-//! precomputed, by `crate::resolve::pom::lower_bodies`.
+//! overrides) is read straight from the POM `Design`/`Module`/`Instance`.
+//! The only precomputed input is each module's *own* resolved body
+//! ([`crate::resolve::pom::LoweredBody`]), produced by
+//! `crate::resolve::pom::lower_bodies`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -248,9 +248,8 @@ impl<'p> CircuitCompiler<'p> {
 
     /// Resolve a net name in `body`'s own node namespace: ground aliases,
     /// then the module's node table. Instance connections and named-port
-    /// access (`load.p`) both funnel through this at circuit-build time —
-    /// the same resolution `lower_bodies` used to do for the (now deleted)
-    /// `IrInstance.connections` structural twin.
+    /// access (`load.p`) both funnel through this at circuit-build time: this
+    /// is the single place instance-level net resolution happens.
     pub(super) fn resolve_node(body: &LoweredBody, name: &str) -> Option<NodeId> {
         if piperine_lang::pom::is_ground(name) {
             return Some(NodeId::GROUND);

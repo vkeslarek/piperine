@@ -203,6 +203,8 @@ impl SensResult {
     }
 }
 
+pub use crate::model::InstanceView;
+
 /// PSS result: one converged period as a [`Trace`](crate::waveform::Trace)
 /// plus the shooting diagnostics — the uniform host shape (MD-22).
 pub struct PssResult {
@@ -213,91 +215,6 @@ pub struct PssResult {
 impl std::fmt::Debug for PssResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PssResult").field("stats", &self.stats).finish_non_exhaustive()
-    }
-}
-
-/// A per-instance introspection view (HOST-07/09): one device's computed
-/// operating-point variables AND its static reflection catalogs (model
-/// identity, terminal descriptors, observable catalog), addressed by
-/// instance label — `op.instance("x1")?.opvar("gm")` / `.opvars()` /
-/// `.model()` / `.terminals()` / `.observables()`. Borrows the opvar
-/// snapshot from [`OpResult::instance`] (taken eagerly at solve time);
-/// the model/terminals/observables catalogs are cloned (they are small
-/// static descriptors and this is a reflection API, not a hot path).
-#[derive(Debug)]
-pub struct InstanceView<'a> {
-    label: &'a str,
-    opvars: &'a [(String, f64)],
-    model: ModelDescriptor,
-    terminals: Vec<TerminalDescriptor>,
-    observables: Vec<ObservableDescriptor>,
-    params: Vec<ParamDescriptor>,
-}
-
-impl InstanceView<'_> {
-    /// The instance label this view projects.
-    pub fn label(&self) -> &str {
-        self.label
-    }
-
-    /// The device's model identity (ABI-46 / HOST-09): `type_id` and
-    /// `version`. An author-declared `@model(type, version)` populates both;
-    /// absent `@model` falls back to the module name as `type_id` with empty
-    /// version — never panics.
-    pub fn model(&self) -> &ModelDescriptor {
-        &self.model
-    }
-
-    /// The device's declared terminals with their kind (ABI-27 / HOST-09):
-    /// name, domain, direction, and `TerminalKind` (external/internal/
-    /// auxiliary). Ports default to `External`; internal wires to `Internal`;
-    /// an author-declared `@kind(value)` overrides either.
-    pub fn terminals(&self) -> &[TerminalDescriptor] {
-        &self.terminals
-    }
-
-    /// The device's observable catalog (ABI-32 / HOST-09): each entry is
-    /// `(name, kind, cost)` — what CAN be probed via `probe=["inst.name"]`.
-    /// The name matches the observable name a `ProbeSelection` request uses.
-    pub fn observables(&self) -> &[ObservableDescriptor] {
-        &self.observables
-    }
-
-    /// The device's parameter descriptor catalog (ABI / HOST-12):
-    /// `bounds`/`unit`/`scope`/`invalidation` for each declared parameter.
-    pub fn params(&self) -> &[ParamDescriptor] {
-        &self.params
-    }
-
-    /// The parameter descriptor for `name` (HOST-12): `bounds`, `unit`,
-    /// `scope`, `invalidation`. Fails loud when the device declares no such
-    /// parameter, naming the instance and listing available params.
-    pub fn param(&self, name: &str) -> Result<&ParamDescriptor, Error> {
-        self.params.iter().find(|p| p.name == name).ok_or_else(|| {
-            Error::Measurement(format!(
-                "instance `{}` has no param `{name}`; available: {}",
-                self.label,
-                self.params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
-            ))
-        })
-    }
-
-    /// The device's computed operating-point variable `name` (ABI-30). Fails
-    /// loud — never `None`/`NaN` — when the device declares no such opvar,
-    /// naming the instance and listing the opvars it does have.
-    pub fn opvar(&self, name: &str) -> Result<f64, Error> {
-        self.opvars.iter().find(|(n, _)| n == name).map(|(_, v)| *v).ok_or_else(|| {
-            Error::Measurement(format!(
-                "instance `{}` has no opvar `{name}`; available: {}",
-                self.label,
-                self.opvars.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")
-            ))
-        })
-    }
-
-    /// Every opvar this device declared, as `(name, value)` pairs.
-    pub fn opvars(&self) -> Vec<(String, f64)> {
-        self.opvars.to_vec()
     }
 }
 
@@ -356,7 +273,7 @@ impl OpResult {
     /// The introspection view over instance `label` (HOST-07/09):
     /// `op.instance("x1")?.opvar("gm")` / `.model()` / `.terminals()` /
     /// `.observables()`. Fails loud when no device carries that label.
-    pub fn instance(&self, label: &str) -> Result<InstanceView<'_>, Error> {
+    pub fn instance(&self, label: &str) -> Result<InstanceView, Error> {
         let (name, vars) = self
             .opvars
             .get_key_value(label)
@@ -371,14 +288,7 @@ impl OpResult {
         let terminals = self.terminals.get(name).cloned().unwrap_or_default();
         let observables = self.observables.get(name).cloned().unwrap_or_default();
         let params = self.params.get(name).cloned().unwrap_or_default();
-        Ok(InstanceView {
-            label: name.as_str(),
-            opvars: vars.as_slice(),
-            model,
-            terminals,
-            observables,
-            params,
-        })
+        Ok(InstanceView::catalog(name, vars, model, terminals, observables, params))
     }
 
     /// Resolve a host-visible net name to a solver node.

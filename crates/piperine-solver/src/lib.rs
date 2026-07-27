@@ -6,6 +6,5 @@ pub(crate) mod error;
 pub(crate) mod math;
 pub mod abi;
 pub mod prelude;
-pub(crate) mod result;
 
 pub use prelude::*;

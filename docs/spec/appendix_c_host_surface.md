@@ -123,19 +123,19 @@ inherits the matching builtin type it previously surfaced as, so existing
 
 ## 2. Rust surface (`piperine-api`; root `piperine` re-exports it)
 
-### `session` — `SimSession`, `Session`, `SolverConfig`, `Scale`, sweeps
+### `session` — `Session`, `SessionBuilder`, `SolverConfig`, `Scale`, sweeps
 
 | Item | Signature |
 |---|---|
-| `SimSession::new` | `(Design, module: String) -> Self` |
-| `set_device_provider` | `(Rc<dyn DeviceProvider>)` — plugin `@device` builds |
-| `set_hooks` | `(Rc<dyn SimHooks>)` — lifecycle hooks |
-| `design()` / `module()` | accessors |
-| `stage` | `(&self, label, param, Value)` — staged override, consumed by the next analysis |
-| `run_op` / `run_op_sweep` / `run_tran` / `run_ac` / `run_noise` / `run_sens` / `run_pss` / `run_pz` / `run_sp` / `run_disto` | one method per analysis, positional args + `&SolverConfig` — see Part VIII §3 for full signatures |
-| `snapshot_digital` / `snapshot_opvars` / `snapshot_introspect` | pub for host reuse (same snapshot the Python live session builds) |
-| `Session::compile` | `(&Design, module: &str) -> Result<Self, Error>` — **compiles once** (HOST-01) |
-| `Session::{module, rebuilds}` | accessors |
+| `Session::compile` | `(&Design, module: &str) -> Result<Self, Error>` — **compiles once** (HOST-01); the no-options shorthand for `builder(..).compile()` |
+| `Session::builder` | `(&Design, module: &str) -> SessionBuilder` — the build-time options |
+| `SessionBuilder::provider` | `(Rc<dyn DeviceProvider>) -> Self` — plugin `@device` builds |
+| `SessionBuilder::hooks` | `(Rc<dyn SimHooks>) -> Self` — lifecycle hooks |
+| `SessionBuilder::disto` | `(bool) -> Self` — include the `.disto` 2nd/3rd-derivative kernels (default `false`; `Session::disto` fails loud without them) |
+| `SessionBuilder::stage` | `(label, param, Value) -> Self` — staged override, applied to the builder's own fork |
+| `SessionBuilder::compile` | `(self) -> Result<Session, Error>` |
+| `Session::{design, module, rebuilds}` | accessors |
+| `Session::{snapshot_digital, snapshot_opvars, snapshot_introspect}` | pub for host reuse (same snapshot the Python live session builds) |
 | `Session::set` | `(&mut self, label, param, value: f64) -> Result<(), Error>` — restamp; fails loud on a structural write (SPEC_DEVIATION, see Part VIII §4) |
 | `Session::schedule_set` | `(&mut self, t, label, param, value: f64)` |
 | `Session::{op, tran, ac, noise, sens, pss, pz, disto, sp, tf, dc}` | one method per analysis on the held circuit (HOST-02/03/05) |
@@ -204,7 +204,7 @@ inherits the matching builtin type it previously surfaced as, so existing
 | Item | Contents |
 |---|---|
 | `trait SimHooks` | `transform_design(&Design)` · `before_lower(&Design)` · `after_solve(analysis: &str, node_voltages: &[(String, f64)])` — all `Result<(), String>` |
-| `prelude` | `Error`; `FourierComponent`/`FourierResult`; `SimHooks`; `DistoResult`/`NetRef`/`NetSelector`/`OpResult`/`PssResult`/`PzResult`/`SParamResult`/`SensResult`/`TfResult`; `Grid`/`Nested`/`Scale`/`Session`/`SimSession`/`SolverConfig`/`Sweep`/`SweepPoint`; `Freq`/`Time`; `AcTrace`/`ComplexWaveform`/`CrossDirection`/`NoiseTrace`/`Trace`/`Waveform`; plus `piperine-codegen`'s `CircuitBuildInfo`/`CircuitCompiler`/`DeviceProvider`, `piperine-lang`'s `Design`/`SourceMap`/`parse_and_elaborate[_seeded]`, and `piperine_solver::prelude::*` in full (introspection types `Bounds`/`Invalidation`/`ModelDescriptor`/`ObservableDescriptor`/`ObservableKind`/`ParamDescriptor`/`ParamScope`/`TerminalDescriptor`/`TerminalKind`, `NoiseContribution`, `CircuitInstance`, `Net`, `LogicValue`, analysis options/results) |
+| `prelude` | `Error`; `FourierComponent`/`FourierResult`; `SimHooks`; `DistoResult`/`NetRef`/`NetSelector`/`OpResult`/`PssResult`/`PzResult`/`SParamResult`/`SensResult`/`TfResult`; `Grid`/`Nested`/`Scale`/`Session`/`SessionBuilder`/`SolverConfig`/`Sweep`/`SweepPoint`; `Freq`/`Time`; `AcTrace`/`ComplexWaveform`/`CrossDirection`/`NoiseTrace`/`Trace`/`Waveform`; plus `piperine-codegen`'s `CircuitBuildInfo`/`CircuitCompiler`/`DeviceProvider`, `piperine-lang`'s `Design`/`SourceMap`/`parse_and_elaborate[_seeded]`, and `piperine_solver::prelude::*` in full (introspection types `Bounds`/`Invalidation`/`ModelDescriptor`/`ObservableDescriptor`/`ObservableKind`/`ParamDescriptor`/`ParamScope`/`TerminalDescriptor`/`TerminalKind`, `NoiseContribution`, `CircuitInstance`, `Net`, `LogicValue`, analysis options/results) |
 
 ---
 

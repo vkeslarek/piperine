@@ -70,7 +70,7 @@ impl<'a> SensSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: SensAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Ok(Self { circuit, options, context, policy: Policy::default() })
     }
 
@@ -79,7 +79,7 @@ impl<'a> SensSolver<'a> {
     /// whose write would invalidate the compiled structure
     /// ([`Invalidation::Rebuild`]) — a finite difference across a rebuild
     /// boundary is not a sensitivity.
-    fn param_value(&self, label: &str, param: &str) -> crate::result::Result<f64> {
+    fn param_value(&self, label: &str, param: &str) -> crate::core::result::Result<f64> {
         let device =
             self.circuit.devices.iter().find(|d| d.name() == label).ok_or_else(|| {
                 Error::simple(SolverDomain::Sens, format!("no element labeled `{label}`"))
@@ -118,13 +118,13 @@ impl<'a> SensSolver<'a> {
         }
     }
 
-    fn solve_op(&mut self) -> crate::result::Result<crate::result::DcAnalysisResult> {
+    fn solve_op(&mut self) -> crate::core::result::Result<crate::core::result::DcAnalysisResult> {
         let mut dc = DcSolver::new(self.circuit, self.context.clone())?;
         dc.policy = self.policy.clone();
         dc.solve()
     }
 
-    pub fn solve(mut self) -> crate::result::Result<SensResult> {
+    pub fn solve(mut self) -> crate::core::result::Result<SensResult> {
         // Validate everything up front — no partial writes on a bad request.
         let mut currents = Vec::with_capacity(self.options.params.len());
         for (label, param) in &self.options.params {

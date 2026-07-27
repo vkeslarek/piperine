@@ -6,28 +6,30 @@ diagram, crate table, known gaps) — read both before making changes.
 ## What Piperine is
 
 A hardware-description language (PHDL, `.phdl`) and simulator for analog and mixed-signal
-circuits. The frontend elaborates to a POM `Design`, which codegen lowers (private resolved
-form — no separate IR crate) and compiles via Cranelift JIT (analog) + an event-driven
-interpreter (digital) into the solver's **`Element`** ABI. Verilog-A device models load as
-compiled OSDI (v0.4) shared libraries through an external plugin. Simulations are driven by
-**hosts**: Python (`import piperine`, the scripting host) or Rust (the root `piperine`
-crate — MD-19, the complete external view).
+circuits. The frontend elaborates to a POM `Design`, which codegen resolves into its own
+private form and compiles via Cranelift JIT (analog) + an event-driven interpreter
+(digital) into the solver's **`Element`** ABI. Verilog-A device models load as compiled
+OSDI (v0.4) shared libraries through an external plugin. Simulations are driven by
+**hosts**: Python (`import piperine`, the scripting host) or Rust (`piperine-api`, the
+library face — MD-20; the root `piperine` crate is a thin re-export shell over it).
 
 ```
-.phdl ──► piperine-lang (parse/elab) ──► Design (POM)
+.phdl ──► piperine-lang (parse/ elab/) ──► Design (POM)
                                            │
                                            ▼
-                              piperine-codegen (lower/ + jit/ + device/)
+                    piperine-codegen (resolve/ → flatten/ → emit/ → kernel/ → device/)
                                            │
                                            ▼
                               piperine-solver (Element ABI, DC/AC/tran/noise/TF)
                                            │
                                            ▼
-                              hosts: root `piperine` lib (Rust) / `import piperine` (Python)
+                              hosts: `piperine-api` (Rust) / `import piperine` (Python)
 ```
 
-Dependency direction: **`piperine-solver` never depends on `piperine-codegen`** — the
-codegen lowers *into* the solver's types. Breaking the arrow is a regression.
+Dependency direction (MD-20): `api → {lang, codegen, solver}`; `python → api`;
+`root(shell) → api`; `cli → {python, api, project}`. And
+**`piperine-solver` never depends on `piperine-codegen`** — the codegen lowers *into* the
+solver's types. Breaking either arrow is a regression.
 
 ## Build and verify
 
@@ -35,21 +37,26 @@ Always build and test before declaring work done:
 
 ```sh
 cargo build --workspace     # zero warnings is the bar
-cargo test  --workspace     # 51 green targets; bare `cargo test` only runs the root package
+cargo test  --workspace     # the whole suite; bare `cargo test` only runs the root package
 ```
 
 ## Workspace map
 
 ```
-src/                      root `piperine` lib (MD-19): session, results, waveform, hooks,
-│                         prelude — the external Rust host API; tests/ = host suites
+src/lib.rs                root `piperine` shell (MD-20): `pub use piperine_api::*`
+│                         and nothing else; root tests/ = host + cross-crate suites
 crates/
 ├── piperine-lang/          PHDL frontend: parse/ elab/ pom/ eval/ (+ headers/)
-├── piperine-codegen/       POM → devices: lower/ (private resolved form), jit/ (analog +
-│                           digital kernels), device/ (AnalogInstance, DigitalInstance,
-│                           CircuitCompiler → PiperineDevice)
-├── piperine-solver/        Element ABI, Net naming, ConvergencePlan, IntegrationMethod,
-│                           DC/AC/tran/noise/TF drivers, digital scheduler, prelude
+├── piperine-codegen/       POM → devices, one module per pipeline stage (MD-23):
+│                           resolve/ (private resolved form + diff) → flatten/ → emit/
+│                           (Cranelift) → kernel/ (AnalogKernel, DigitalKernel) →
+│                           device/ (AnalogInstance, CircuitCompiler → PiperineDevice)
+├── piperine-solver/        Element ABI (core/), analyses/ (DC/AC/tran/noise/TF, PSS, PZ,
+│                           SP, disto, sens, ConvergencePlan), math/ (MNA, integration),
+│                           digital/ (scheduler), Net naming, prelude
+├── piperine-api/           the library face (MD-20): session, results, waveform, fourier,
+│                           units, hooks, error, prelude
+├── piperine-python/        the `import piperine` binding layer over piperine-api
 ├── piperine-plugin/        plugin SDK + host: native dlopen + embedded Python, TOFU +
 │                         permissions consent, @device, release-asset device binaries
 ├── piperine-plugin-macros/ #[pip::device] / #[pip::script] / #[pip::hook(phase)]
@@ -101,15 +108,21 @@ violates any of them is not ready.
 
 ## Test placement
 
+A target lives in the crate it exercises (MD-28); root `tests/` is for the host surface
+and cross-crate proofs. Do not maintain a file list anywhere — enumerate with
+`ls crates/*/tests/*.rs tests/*.rs` and read each target's `//!` scope header.
+`tests/suite_hygiene.rs` enforces the mechanical half of the rule.
+
 | What | Where |
 |------|-------|
-| host API (session/results/waveform) | root `tests/session.rs` |
+| host API (session/results/waveform) | root `tests/session*.rs`, `tests/host_*.rs` |
 | example gallery (dual contract) | root `tests/run_examples.rs` (every `.phdl` elaborates + every `.py` runs) |
+| ngspice cross-validation | root `tests/ngspice_validation.rs` (+ `tests/ngspice/`) |
 | syntax/elaboration gates | `piperine-lang/tests/{parse_elab,elab,bench_removed}.rs` |
-| POM → resolved + circuit | `piperine-codegen/tests/{codegen_ir,codegen_api,from_ir,silent_bugs}.rs` |
-| JIT kernels | `piperine-codegen/tests/{analog_jit,digital_jit}.rs` |
+| POM → resolved + circuit | `piperine-codegen/tests/{resolve_lowering,codegen_api,circuit_from_design,silent_bugs}.rs` |
+| JIT kernels | `piperine-codegen/tests/{analog_kernel,digital_jit}.rs` |
 | solver analyses / mixed-signal | `piperine-solver/tests/{digital_topology,mixed_signal}.rs` |
-| plugin e2e | `piperine-plugin/tests/{e2e,native_smoke,phase3,inject,release_fetch,macro_collisions,extern_stub,trust,manifest}.rs`, `piperine-plugin-macros/tests/`, root `tests/plugin_parity.rs` |
+| plugin e2e | `piperine-plugin/tests/{e2e,native_smoke,inject,staging,hooks,scripts,release_fetch,macro_collisions,extern_stub,trust}.rs`, `piperine-plugin-macros/tests/`, root `tests/plugin_parity.rs` |
 
 ## Documentation
 

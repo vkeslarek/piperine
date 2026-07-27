@@ -25,7 +25,6 @@
 //!    (SP-02) — no fragile current bookkeeping, only node voltages already
 //!    solved for.
 //! 4. Repeat for every `j`, filling column `j` of `S`.
-#![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
@@ -38,7 +37,7 @@ use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
-use crate::result::SpResult;
+use crate::core::result::SpResult;
 
 use ndarray::Array2;
 use num_complex::Complex;
@@ -89,7 +88,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext { frequency: self.frequency };
         let mut stamps = Vec::new();
         for dev in &mut self.circuit.devices {
@@ -130,7 +129,7 @@ impl<'a> SpSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: SpOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -195,7 +194,7 @@ impl<'a> SpSolver<'a> {
 
     /// Sweeps every frequency, driving one port at a time, filling the `S`
     /// matrix column by column (SP-02).
-    pub fn solve_sweep(&mut self) -> crate::result::Result<SpResult> {
+    pub fn solve_sweep(&mut self) -> crate::core::result::Result<SpResult> {
         let n_ports = self.ports.len();
         let frequencies = self.sweep.generate_frequencies();
         let max_iter = self.policy.max_iter;

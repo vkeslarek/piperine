@@ -22,7 +22,6 @@
 //! T27 per-entry rollback). Until then the types live here with
 //! `dead_code` allowed.
 
-#![allow(dead_code)]
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;

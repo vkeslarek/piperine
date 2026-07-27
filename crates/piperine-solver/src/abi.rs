@@ -41,7 +41,7 @@ pub use crate::analyses::{Context, Policy, Tolerances};
 pub use crate::analyses::events::{
     EventEntry, EventKind, EventPriority, EventQueue, EventSource, EventTarget, RollbackBehavior,
 };
-pub use crate::result::{NoiseContribution, Result, SolverStats};
+pub use crate::core::result::{NoiseContribution, Result, SolverStats};
 pub use crate::error::{Error, SolverDomain};
 // Element lifecycle allocator (ABI-09)
 pub use crate::core::builder::UnknownAllocator;

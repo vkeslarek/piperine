@@ -2,7 +2,7 @@
 //! `Trace<Waveform>` (not a bare `Vec<OpResult>`), restamping on the one
 //! compilation (MD-18). `cargo test -p piperine` (Phase 1 / T6 quick gate).
 
-use piperine::{NetRef, Session, SimSession, SolverConfig};
+use piperine::{NetRef, Session, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::SourceMap;
 
@@ -55,10 +55,12 @@ fn dc_sweep_returns_a_trace_over_the_swept_axis_matching_fresh_builds() {
     assert_eq!(w.len(), values.len());
     for (i, &v_dc) in values.iter().enumerate() {
         let live = w.points()[i].1;
-        let fresh_session = SimSession::new(design(), "Top".to_string());
-        fresh_session.stage("v1", "dc", piperine_lang::Value::Real(v_dc));
+        let mut fresh_session = Session::builder(&design(), "Top")
+            .stage("v1", "dc", piperine_lang::Value::Real(v_dc))
+            .compile()
+            .expect("session compiles");
         let fresh = fresh_session
-            .run_op(&SolverConfig::default(), None)
+            .op(&SolverConfig::default(), None)
             .expect("fresh op")
             .v(&mid)
             .expect("v(mid)");

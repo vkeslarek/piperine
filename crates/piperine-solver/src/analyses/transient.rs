@@ -2,7 +2,12 @@
 //! clamps (ngspice `CKTsetIC`), and the adaptive TR-BDF2 driver: unified
 //! breakpoint table, Milne-LTE accept gate, PI timestep control, and live
 //! scheduled parameter sets.
-#![allow(dead_code)]
+//!
+//! There is no per-analysis `TransientContext`: MD-03 is superseded
+//! (p6-cleanup-architecture D2). The step tunables stay on
+//! [`TransientAnalysisOptions`], the per-step kernel state is
+//! [`TransientAnalysisContext`], and the shared
+//! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use crate::analog::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::events::{
@@ -160,30 +165,6 @@ impl TransientAnalysisOptions {
     }
 }
 
-/// Per-analysis config for transient. Built from
-/// [`TransientAnalysisOptions`] via `From`. Carries the tunables that
-/// used to be on the global `Context` (MD-03).
-#[derive(Debug, Clone)]
-pub struct TransientContext {
-    pub dt: f64,
-    pub dt_min: f64,
-    pub dt_max: f64,
-    pub record_from: f64,
-    pub stop_time: f64,
-}
-
-impl From<TransientAnalysisOptions> for TransientContext {
-    fn from(opts: TransientAnalysisOptions) -> Self {
-        Self {
-            dt: opts.dt,
-            dt_min: opts.dt_min,
-            dt_max: opts.dt_max,
-            record_from: opts.record_from,
-            stop_time: opts.stop_time,
-        }
-    }
-}
-
 /// Per-step transient context handed to the kernel. Carries the TR-BDF2
 /// phase being stamped and the step sizes; the kernel calls
 /// `TrBdf2::phase_coeffs(phase, h)` for the reactive companion — there is no
@@ -206,30 +187,6 @@ pub struct TransientAnalysisContext {
     pub prev_h: f64,
 }
 
-pub trait TransientAnalysis {
-    fn load_transient(
-        &mut self,
-        circuit_states: &TransientAnalysisState<'_>,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>>;
-
-    fn load_transient_dynamic(
-        &mut self,
-        _circuit_states: &TransientAnalysisState<'_>,
-        _transient_analysis_context: &TransientAnalysisContext,
-        _context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![]
-    }
-
-    fn initial_transient_values(
-        &mut self,
-        _context: &Context,
-    ) -> Vec<InitialValue<AnalogReference, f64>> {
-        Vec::new()
-    }
-}
 
 
 
@@ -327,7 +284,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         // TR-BDF2 is the sole integration scheme — no Gear order ramp. The
         // kernel derives the companion from `phase` + `h` via the centralised
         // `TrBdf2::phase_coeffs` (MD-07); the TR stage's previous-current
@@ -456,7 +413,7 @@ struct StepPrediction {
 struct StepAttempt {
     prediction: StepPrediction,
     /// The TR-BDF2 solve: `Ok(Some(snapshot))` when both phases converged.
-    outcome: crate::result::Result<Option<TransientStep>>,
+    outcome: crate::core::result::Result<Option<TransientStep>>,
     /// Analog history checkpoint, restored on rejection.
     analog_history: CircularArrayBuffer2<f64>,
     /// Per-element device-state checkpoints (ABI-02): restored on rejection,
@@ -549,7 +506,7 @@ impl<'a> TransientSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: TransientAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Self::with_plan(circuit, options, context, crate::analyses::convergence::ConvergencePlan::default())
     }
 
@@ -561,7 +518,7 @@ impl<'a> TransientSolver<'a> {
         options: TransientAnalysisOptions,
         context: Context,
         plan: crate::analyses::convergence::ConvergencePlan,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
         Self::validate_probe_selection(circuit, &options.probe_selection)?;
@@ -614,7 +571,7 @@ impl<'a> TransientSolver<'a> {
     fn validate_probe_selection(
         circuit: &CircuitInstance,
         selection: &crate::core::introspect::ProbeSelection,
-    ) -> crate::result::Result<()> {
+    ) -> crate::core::result::Result<()> {
         for (label, observable) in &selection.requests {
             let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
                 return Err(crate::error::Error::simple(
@@ -678,7 +635,7 @@ impl<'a> TransientSolver<'a> {
     /// companion-history rows from the captured solution and restore the
     /// digital snapshot — no DC solve, no device/user seeds (the captured
     /// state is the whole story).
-    fn apply_reentry_state(&mut self, state: TransientStep) -> crate::result::Result<TransientStep> {
+    fn apply_reentry_state(&mut self, state: TransientStep) -> crate::core::result::Result<TransientStep> {
         let ivs: Vec<InitialValue<AnalogReference, f64>> = {
             let netlist = self.system.circuit.netlist();
             netlist
@@ -734,7 +691,7 @@ impl<'a> TransientSolver<'a> {
         device_ic
     }
 
-    fn compute_initial_conditions(&mut self) -> crate::result::Result<TransientStep> {
+    fn compute_initial_conditions(&mut self) -> crate::core::result::Result<TransientStep> {
         if let Some(state) = self.reentry_state.take() {
             return self.apply_reentry_state(state);
         }
@@ -793,7 +750,7 @@ impl<'a> TransientSolver<'a> {
         t_n: f64,
         dt: f64,
         use_predictor: bool,
-    ) -> crate::result::Result<Option<TransientStep>> {
+    ) -> crate::core::result::Result<Option<TransientStep>> {
         let strategy = crate::analyses::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances;
@@ -927,7 +884,7 @@ impl<'a> TransientSolver<'a> {
         &mut self,
         st: &TimeLoop,
         prediction: StepPrediction,
-    ) -> crate::result::Result<StepAttempt> {
+    ) -> crate::core::result::Result<StepAttempt> {
         self.system.circuit.digital_state.checkpoint();
         // Per-element checkpoint (ABI-01): snapshot each device's mutable
         // non-accept-gated state BEFORE the digital settle + Newton solve can
@@ -989,7 +946,7 @@ impl<'a> TransientSolver<'a> {
         snapshot: TransientStep,
         milne: f64,
         post_set_step: bool,
-    ) -> crate::result::Result<()> {
+    ) -> crate::core::result::Result<()> {
         let StepPrediction {
             t_next,
             dt_actual,
@@ -1036,7 +993,7 @@ impl<'a> TransientSolver<'a> {
         st: &mut TimeLoop,
         steps: &mut [TransientStep],
         dt_actual: f64,
-    ) -> crate::result::Result<bool> {
+    ) -> crate::core::result::Result<bool> {
         let due = self.sets.drain_due(st.current_time);
         st.sets_just_applied = !due.is_empty();
         if due.is_empty() {
@@ -1075,7 +1032,7 @@ impl<'a> TransientSolver<'a> {
     /// queue from the converged solution and the scheduler runs to
     /// quiescence, then the digital checkpoint is committed (the one
     /// mixed-signal seam on the accept path).
-    fn settle_digital(&mut self, t_next: f64) -> crate::result::Result<()> {
+    fn settle_digital(&mut self, t_next: f64) -> crate::core::result::Result<()> {
         let solution = self.solver.current_guess().unwrap().to_owned();
         let _changed = self
             .system
@@ -1154,7 +1111,7 @@ impl<'a> TransientSolver<'a> {
     /// point, record the start snapshot when in the window, seed runtime
     /// operators at the operating point, and build the Milne gate's
     /// node-index list.
-    fn begin_run(&mut self) -> crate::result::Result<(Vec<TransientStep>, Vec<usize>)> {
+    fn begin_run(&mut self) -> crate::core::result::Result<(Vec<TransientStep>, Vec<usize>)> {
         let start_time = self.options.start_time;
         for set in self.sets.drain_due(start_time) {
             self.system.circuit.set_element_param(&set.label, &set.param, set.value)?;
@@ -1287,7 +1244,7 @@ impl<'a> TransientSolver<'a> {
         self.event_queue.rollback();
     }
 
-    pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
+    pub fn solve(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
         let (mut steps, node_indices) = self.begin_run()?;
         let mut st = TimeLoop::new(self.options.start_time, self.options.dt);
 

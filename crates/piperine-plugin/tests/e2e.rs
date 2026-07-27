@@ -1,12 +1,12 @@
 //! End-to-end: PHDL `@device` instances built by the fixture plugin through
 //! an in-process host — analog (`Fixture::Resistor` in a DC solve) and
 //! digital (`Fixture::Inverter` through the event scheduler) — driven
-//! through the root host API (`SimSession`). This is the Phase-2 gate of
+//! through the root host API (`Session`). This is the Phase-2 gate of
 //! `Plugin plan.md`.
 
 use std::rc::Rc;
 
-use piperine::{NetRef, OpResult, SimSession, SolverConfig};
+use piperine::{NetRef, OpResult, Session, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_plugin::PluginHost;
 
@@ -26,13 +26,14 @@ fn elab(src: &str, host: &PluginHost) -> piperine_lang::Design {
 }
 
 /// An operating point of `module` through a session wired with the host's
-/// device provider (no lifecycle hooks — this gate is about `@device`).
+/// device provider (no lifecycle hooks — this gate is about `@device`). The
+/// `@device` instances are built when the session compiles, so a device error
+/// surfaces from `compile()`, not from the solve.
 fn run_op(src: &str, module: &str) -> Result<OpResult, piperine::Error> {
     let host = host();
     let design = elab(src, &host);
-    let mut session = SimSession::new(design, module.to_string());
-    session.set_device_provider(host);
-    session.run_op(&SolverConfig::default(), None)
+    let mut session = Session::builder(&design, module).provider(host).compile()?;
+    session.op(&SolverConfig::default(), None)
 }
 
 fn net(name: &str) -> NetRef {
@@ -118,11 +119,10 @@ fn device_without_host_fails_loud() {
         host().seed_schemas(ctx);
     })
     .expect("elaborate");
-    let session = SimSession::new(design, "Top".to_string());
-    let msg = session
-        .run_op(&SolverConfig::default(), None)
-        .expect_err("must fail")
-        .to_string();
+    let msg = match Session::compile(&design, "Top") {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("a @device instance with no provider must fail the build"),
+    };
     assert!(msg.contains("plugin"), "unexpected message: {msg}");
 }
 

@@ -55,7 +55,7 @@ const RC: &str = r#"
 
 fn headers_source_map() -> SourceMap {
     let headers =
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
+        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
     let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));

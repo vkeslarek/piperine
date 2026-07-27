@@ -1,13 +1,17 @@
-//! The resolved lowering layer — formerly the standalone `piperine-ir`
-//! crate. Verilog-AMS (the IR's other former producer) is gone; PHDL/PPR is
-//! the only frontend, so this is no longer a cross-crate contract, just
-//! codegen's private resolved form. Pure data plus the POM→resolved pass
+//! The resolved lowering layer — codegen's private resolved form of a module
+//! body. PHDL/PPR is the only frontend, so this is codegen's internal shape
+//! rather than a cross-crate contract. Pure data plus the POM→resolved pass
 //! (`pom/`): no JIT, no solver.
 //!
 //! Everything here is *resolved*: names are interned ids into a per-module
 //! [`SymbolTable`]; ground is the reserved [`NodeId::GROUND`]. No generics,
 //! lambdas, bundles, or structural control — those are elaborated away
 //! before this layer.
+
+// hygiene-exempt: the resolved form's own vocabulary — `Type`, `AnalogBody`,
+// `DigitalBody`, `Direction`, `Port` — declared where the layer is introduced.
+// `crates/piperine-codegen/src/resolve/` is correctness-critical and named in
+// CLAUDE.md's "files not to edit casually"; no p6 task splits it.
 
 mod expr;
 mod stmt;
@@ -79,10 +83,10 @@ pub enum Direction {
 }
 
 /// A module port: a resolved node plus a direction. The node's domain
-/// (analog/digital) lives on its `NodeInfo`. Instance-level structure
-/// (connections, param overrides) is resolved directly from the POM by
-/// `device::circuit` at circuit-build time — there is no `IrModule`/
-/// `IrInstance` structural twin.
+/// (analog/digital) lives on its `NodeInfo`. This resolved form describes a
+/// module's *own* body only; instance-level structure (connections, param
+/// overrides) is resolved directly from the POM by `device::circuit` at
+/// circuit-build time.
 #[derive(Debug, Clone)]
 pub struct Port {
     pub node: NodeId,

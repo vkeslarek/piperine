@@ -1,10 +1,14 @@
 //! AC small-signal sweep (`.ac`) — the sweep options and the element-facing
 //! `AcAnalysisContext`, plus the driver that linearizes the circuit around
 //! the DC operating point and solves the complex system at each frequency.
-#![allow(dead_code)]
+//!
+//! There is no per-analysis `AcContext`: MD-03 is superseded (p6-cleanup-
+//! architecture D2). The sweep tunables travel as
+//! [`AcSweepAnalysisOptions`] arguments, and the shared
+//! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use crate::analog::AnalogReference;
 use crate::analyses::Context;
-use crate::analyses::dc::{DcAnalysis, DcSolver};
+use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -20,15 +24,6 @@ use std::collections::HashMap;
 
 pub struct AcAnalysisContext {
     pub frequency: f64,
-}
-
-pub trait AcAnalysis: DcAnalysis {
-    fn load_ac(
-        &mut self,
-        dc_analysis_result: &DcAnalysisResult,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex<f64>>>;
 }
 
 #[derive(Clone, Debug)]
@@ -80,13 +75,6 @@ impl AcSweepAnalysisOptions {
 }
 
 
-
-/// Per-analysis config for AC. Thin wrapper over the sweep options.
-#[derive(Debug, Clone)]
-pub struct AcContext {
-    pub sweep: AcSweepAnalysisOptions,
-}
-
 // ── driver ───────────────────────────────────────────────────────────────
 
 /// Linear system representation for AC small-signal analysis.
@@ -110,7 +98,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency,
         };
@@ -158,7 +146,7 @@ impl<'a> AcSolver<'a> {
     ///
     /// # Returns
     /// Initialized AC solver ready for frequency sweep
-    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
+    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -201,7 +189,7 @@ impl<'a> AcSolver<'a> {
     pub fn solve_sweep(
         &mut self,
         options: AcSweepAnalysisOptions,
-    ) -> crate::result::Result<AcAnalysisResult> {
+    ) -> crate::core::result::Result<AcAnalysisResult> {
         let frequencies = options.generate_frequencies();
 
         let mut data = Vec::new();

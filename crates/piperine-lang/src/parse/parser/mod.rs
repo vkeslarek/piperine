@@ -22,6 +22,11 @@
 //! inline at each non-terminal. The grammar is LL(1) — every choice is
 //! resolved by one token of lookahead.
 
+// hygiene-exempt: holds `Parser` (the shared recursive-descent state) and the
+// `Parse` trait every syntax module implements. `crates/piperine-lang/src/parse/`
+// is a frozen tree (CLAUDE.md "files not to edit casually") — a split here ripples
+// through all parsing. Not scheduled: no task in p6-cleanup-architecture splits it.
+
 use super::ast::*;
 use super::lexer::{Lexed, Tok};
 pub use attributes::ParseAttributesExt;

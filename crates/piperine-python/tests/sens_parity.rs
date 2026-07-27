@@ -1,5 +1,5 @@
 //! SC-03 — uniform `.sens` shape (MD-22): the Python `module.sens(...)`
-//! returns the same values as the Rust `SimSession::run_sens` on the same
+//! returns the same values as the Rust `Session::run_sens` on the same
 //! design, keyed the same way (`(output, "label.param")`).
 
 use piperine_python::embed::run_script;
@@ -40,9 +40,9 @@ fn python_sens_matches_rust_sens() {
         &piperine_lang::SourceMap::dummy(),
     )
     .expect("divider elaborates");
-    let session = piperine_api::SimSession::new(design, "Divider".to_string());
+    let mut session = piperine_api::Session::compile(&design, "Divider").expect("session compiles");
     let rust = session
-        .run_sens(
+        .sens(
             &["mid"],
             &[("r2".to_string(), "r".to_string()), ("v1".to_string(), "dc".to_string())],
             1.0e-6,
@@ -111,9 +111,9 @@ mod Top() {
     let design =
         piperine_lang::parse_and_elaborate(SINE_RC, &piperine_lang::SourceMap::dummy())
             .expect("elaborates");
-    let session = piperine_api::SimSession::new(design, "Top".to_string());
+    let mut session = piperine_api::Session::compile(&design, "Top").expect("session compiles");
     let rust = session
-        .run_pss(1.0e-3, 0.0, &piperine_api::SolverConfig::default())
+        .pss(1.0e-3, 0.0, &piperine_api::SolverConfig::default())
         .expect("rust pss");
     let rust_max = rust
         .trace

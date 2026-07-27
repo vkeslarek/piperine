@@ -3,7 +3,6 @@
 //! source scale an element reads while stamping) and the Newton driver
 //! (`DcSystem`/`DcSolver`): gmin/source-stepping homotopy escalation, the
 //! device-bypass stamp cache, and the mixed-signal settle loop.
-#![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::convergence::{ConvergencePlan, HomotopyDriver};
 use crate::analyses::{Context, Policy};
@@ -60,18 +59,6 @@ impl Deref for DcAnalysisState<'_> {
     }
 }
 
-pub trait DcAnalysis {
-    fn load_dc(
-        &mut self,
-        dc_circuit_state: &DcAnalysisState<'_>,
-        context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>>;
-
-    fn initial_dc_values(&mut self, _context: &Context) -> Vec<InitialValue<AnalogReference, f64>> {
-        Vec::new()
-    }
-}
-
 // ── driver ───────────────────────────────────────────────────────────────
 
 /// Non-linear system representation for DC analysis.
@@ -119,7 +106,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         // Device bypass: if the solution barely moved since the last
         // evaluation, reuse cached stamps instead of re-evaluating every
         // device model. Gated on `bypass_allowed` — every element must have
@@ -258,7 +245,7 @@ pub struct DcSolver<'a> {
 }
 
 impl<'a> DcSolver<'a> {
-    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
+    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
         let netlist = circuit.netlist();
@@ -310,13 +297,13 @@ impl<'a> DcSolver<'a> {
         label: &str,
         param: &str,
         value: crate::core::introspect::Value,
-    ) -> crate::result::Result<crate::core::introspect::Invalidation> {
+    ) -> crate::core::result::Result<crate::core::introspect::Invalidation> {
         let invalidation = self.system.circuit.set_element_param(label, param, value)?;
         self.system.invalidate_bypass();
         Ok(invalidation)
     }
 
-    pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
+    pub fn solve(&mut self) -> crate::core::result::Result<DcAnalysisResult> {
         let plan = ConvergencePlan::default().with_trace(self.policy.trace);
         let max_ms_iter = plan.limits().max_mixed_signal_iter;
         self.solver.reset_iteration_counter();
@@ -409,7 +396,7 @@ impl<'a> DcSolver<'a> {
 }
 
 impl HomotopyDriver for DcSolver<'_> {
-    fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
+    fn newton(&mut self) -> crate::core::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
         let strategy = crate::analyses::convergence::DampedNewton;
         let policy = self.policy.clone();

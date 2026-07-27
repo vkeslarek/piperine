@@ -1,7 +1,9 @@
 //! SC-04/SC-05 — PSS single shooting: a sine-driven RC converges to the
 //! analytic steady-state phasor amplitude, the returned orbit is periodic
-//! to the shooting tolerance, and the loud paths (bad period,
-//! non-convergent/non-periodic circuit) fail with `PSS` errors.
+//! to the shooting tolerance, a digital divider reports `k`·period, and a
+//! non-periodic circuit fails loud instead of returning a fake orbit.
+//! (Options validation — bad period, negative pre-roll — is `failure_rules.rs`'s
+//! §18 rows.)
 
 use std::path::PathBuf;
 
@@ -91,7 +93,7 @@ const FIXTURE: &str = r#"
 
 fn headers_source_map() -> SourceMap {
     let headers =
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
+        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
     let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
@@ -138,23 +140,12 @@ fn sine_rc_converges_to_the_analytic_phasor() {
     );
 }
 
-/// `period <= 0` → loud options error.
-#[test]
-fn non_positive_period_is_loud() {
-    let (mut circuit, _info) = build("Top");
-    let err = circuit.pss(PssAnalysisOptions::new(0.0), Context::default()).expect_err("bad period");
-    assert!(err.to_string().contains("period"), "names the period: {err}");
-}
-
-/// `tstab < 0` → loud options error.
-#[test]
-fn negative_tstab_is_loud() {
-    let (mut circuit, _info) = build("Top");
-    let mut opts = PssAnalysisOptions::new(1.0e-3);
-    opts.tstab = -1.0;
-    let err = circuit.pss(opts, Context::default()).expect_err("bad tstab");
-    assert!(err.to_string().contains("tstab"), "names tstab: {err}");
-}
+// The two options-validation cases this target used to carry
+// (`period <= 0`, `tstab < 0`) are proven by `failure_rules.rs`'s
+// `section_18_a_non_positive_period_is_an_analysis_error` and
+// `section_18_a_negative_pre_roll_is_an_analysis_error`, which assert the
+// typed `SolverDomain::Pss` as well as the message fragment — deleted here
+// per MD-28.3 (delete the weaker of two tests asserting one behavior).
 
 /// A ramp-driven circuit is not periodic at any T: shooting must fail loud
 /// (never return a fake orbit).

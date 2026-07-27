@@ -44,12 +44,12 @@ pub use crate::analyses::convergence::{
 };
 
 // ── Results ────────────────────────────────────────────────────────────────
-pub use crate::result::{
+pub use crate::core::result::{
     AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, DistoResult, NoiseAnalysisResult, NoiseContribution,
     PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
 };
 
 // ── Errors ─────────────────────────────────────────────────────────────────
 pub use crate::error::Error;
-pub use crate::result::Result;
-pub use crate::result::SolverStats;
+pub use crate::core::result::Result;
+pub use crate::core::result::SolverStats;

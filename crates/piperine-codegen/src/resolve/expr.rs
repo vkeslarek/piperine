@@ -1,5 +1,5 @@
-//! Operator types shared by digital and analog codegen. The old `IrExpr`
-//! type is gone — the codegen now dispatches on POM `Expr` directly.
+//! Operator types shared by digital and analog codegen. Codegen dispatches on
+//! POM `Expr` directly; these are the operator enums that form carries.
 
 /// A resolved analysis kind returned by `$analysis`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

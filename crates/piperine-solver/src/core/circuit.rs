@@ -117,11 +117,11 @@ impl CircuitInstance {
     // one line each — the analysis itself lives in its driver under
     // `crate::analyses`.
 
-    pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver<'_>> {
+    pub fn dc(&mut self, context: Context) -> crate::core::result::Result<DcSolver<'_>> {
         DcSolver::new(self, context)
     }
 
-    pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
+    pub fn ac(&mut self, context: Context) -> crate::core::result::Result<AcSolver<'_>> {
         AcSolver::new(self, context)
     }
 
@@ -129,7 +129,7 @@ impl CircuitInstance {
         &mut self,
         transient_options: TransientAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<TransientSolver<'_>> {
+    ) -> crate::core::result::Result<TransientSolver<'_>> {
         TransientSolver::new(self, transient_options, context)
     }
 
@@ -137,7 +137,7 @@ impl CircuitInstance {
         &mut self,
         options: NoiseAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<NoiseSolver<'_>> {
+    ) -> crate::core::result::Result<NoiseSolver<'_>> {
         NoiseSolver::new(self, options, context)
     }
 
@@ -145,7 +145,7 @@ impl CircuitInstance {
         &mut self,
         options: TransferFunctionAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<TransferFunctionSolver<'_>> {
+    ) -> crate::core::result::Result<TransferFunctionSolver<'_>> {
         TransferFunctionSolver::new(self, options, context)
     }
 
@@ -156,7 +156,7 @@ impl CircuitInstance {
         &mut self,
         options: crate::analyses::sens::SensAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<crate::analyses::sens::SensSolver<'_>> {
+    ) -> crate::core::result::Result<crate::analyses::sens::SensSolver<'_>> {
         crate::analyses::sens::SensSolver::new(self, options, context)
     }
 
@@ -166,7 +166,7 @@ impl CircuitInstance {
         &mut self,
         options: crate::analyses::pss::PssAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<crate::analyses::pss::PssSolver<'_>> {
+    ) -> crate::core::result::Result<crate::analyses::pss::PssSolver<'_>> {
         crate::analyses::pss::PssSolver::new(self, options, context)
     }
 
@@ -177,7 +177,7 @@ impl CircuitInstance {
         &mut self,
         options: crate::analyses::pz::PoleZeroOptions,
         context: Context,
-    ) -> crate::result::Result<crate::analyses::pz::PoleZeroSolver<'_>> {
+    ) -> crate::core::result::Result<crate::analyses::pz::PoleZeroSolver<'_>> {
         crate::analyses::pz::PoleZeroSolver::new(self, options, context)
     }
 
@@ -187,7 +187,7 @@ impl CircuitInstance {
         &mut self,
         options: crate::analyses::sp::SpOptions,
         context: Context,
-    ) -> crate::result::Result<crate::analyses::sp::SpSolver<'_>> {
+    ) -> crate::core::result::Result<crate::analyses::sp::SpSolver<'_>> {
         crate::analyses::sp::SpSolver::new(self, options, context)
     }
 
@@ -198,7 +198,7 @@ impl CircuitInstance {
         &mut self,
         options: crate::analyses::disto::DistoOptions,
         context: Context,
-    ) -> crate::result::Result<crate::analyses::disto::DistoSolver<'_>> {
+    ) -> crate::core::result::Result<crate::analyses::disto::DistoSolver<'_>> {
         crate::analyses::disto::DistoSolver::new(self, options, context)
     }
 
@@ -236,7 +236,7 @@ impl CircuitInstance {
     /// initial events from every device's `init`, schedules them into
     /// `digital_state`, then runs propagation at t=0 so all downstream logic
     /// reflects its power-on state.
-    pub fn init_digital(&mut self) -> crate::result::Result<()> {
+    pub fn init_digital(&mut self) -> crate::core::result::Result<()> {
         use std::cmp::Reverse;
         use crate::digital::DigitalEvent;
         use crate::digital::interface::QueueSink;
@@ -265,7 +265,7 @@ impl CircuitInstance {
     /// Fused combinational cones are transparent here: codegen emits a fused
     /// cone as a single `Element`, so the scheduler still only sees one device
     /// at the event boundary — no fused-specific arm lives in this method.
-    pub fn run_digital_at(&mut self, t: f64) -> crate::result::Result<()> {
+    pub fn run_digital_at(&mut self, t: f64) -> crate::core::result::Result<()> {
         self.run_digital_at_with_analog(t, &[])
     }
 
@@ -277,7 +277,7 @@ impl CircuitInstance {
         &mut self,
         t: f64,
         analog_slice: &[f64],
-    ) -> crate::result::Result<()> {
+    ) -> crate::core::result::Result<()> {
         let limits = crate::analyses::convergence::PlanLimits::default();
         match &self.digital_topology {
             Some(topo) => self.digital_state.evaluate_dag_ordered(
@@ -303,7 +303,7 @@ impl CircuitInstance {
     /// register updates need to propagate back (D2A bridge).
     ///
     /// Returns `true` if any digital output net changed value.
-    pub fn accept_and_run_digital(&mut self, solution: &[f64], t: f64) -> crate::result::Result<bool> {
+    pub fn accept_and_run_digital(&mut self, solution: &[f64], t: f64) -> crate::core::result::Result<bool> {
         let state = self.build_accept_state(solution);
         let before = self.digital_state.nets.clone();
         self.seed_digital_from_accept_hooks(&state, t);
@@ -344,7 +344,7 @@ impl CircuitInstance {
     // circuit, per-iteration convergence steering, and the setup/update
     // lifecycle the drivers re-enter each solve.
 
-    pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::result::Result<()> {
+    pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::core::result::Result<()> {
         if self.is_set_up { return Ok(()); }
         for d in self.devices.iter_mut() { d.setup(ctx)?; }
         // ABI-19: seed every element with the run's nominal temperature during
@@ -388,7 +388,7 @@ impl CircuitInstance {
         label: &str,
         param: &str,
         value: crate::core::introspect::Value,
-    ) -> crate::result::Result<crate::core::introspect::Invalidation> {
+    ) -> crate::core::result::Result<crate::core::introspect::Invalidation> {
         let device = self.devices.iter_mut().find(|d| d.name() == label).ok_or_else(|| {
             crate::error::Error::simple(
                 crate::error::SolverDomain::Element,

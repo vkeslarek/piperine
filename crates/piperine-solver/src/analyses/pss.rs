@@ -16,11 +16,11 @@ use std::sync::Arc;
 use crate::analyses::transient::{TransientAnalysisOptions, TransientSolver};
 use crate::core::circuit::CircuitInstance;
 use crate::error::{Error, SolverDomain};
-use crate::result::TransientAnalysisResult;
-use crate::result::TransientStep;
+use crate::core::result::TransientAnalysisResult;
+use crate::core::result::TransientStep;
 use crate::analyses::Policy;
 use crate::Context;
-use crate::analog::netlist::AnalogVariable;
+use crate::analog::AnalogVariable;
 
 // ── request/state ────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ impl<'a> PssSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: PssAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         if options.period <= 0.0 {
             return Err(Error::simple(
                 SolverDomain::Pss,
@@ -156,7 +156,7 @@ impl<'a> PssSolver<'a> {
         state: &TransientStep,
         t0: f64,
         span: f64,
-    ) -> crate::result::Result<crate::result::TransientAnalysisResult> {
+    ) -> crate::core::result::Result<crate::core::result::TransientAnalysisResult> {
         let dt = self.options.dt.unwrap_or(self.options.period / 100.0);
         let opts = TransientAnalysisOptions::new(t0 + span, dt).with_start(t0);
         let mut solver = TransientSolver::new(self.circuit, opts, self.context.clone())?;
@@ -165,7 +165,7 @@ impl<'a> PssSolver<'a> {
         solver.solve()
     }
 
-    pub fn solve(mut self) -> crate::result::Result<PssResult> {
+    pub fn solve(mut self) -> crate::core::result::Result<PssResult> {
         let period = self.options.period;
         let t0 = self.options.tstab;
         let vars = self.variables();
@@ -332,7 +332,7 @@ impl<'a> PssSolver<'a> {
         arrival: &TransientStep,
         t0: f64,
         period: f64,
-    ) -> crate::result::Result<()> {
+    ) -> crate::core::result::Result<()> {
         let matches = |a: &TransientStep, b: &TransientStep| -> bool {
             (0..usize::MAX)
                 .map_while(|i| match (a.digital(i), b.digital(i)) {

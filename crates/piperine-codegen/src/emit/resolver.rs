@@ -29,8 +29,8 @@ impl Resolver {
 
     /// `$param_given("name")` resolution: exact param name first, then a
     /// unique flattened bundle field (`narrow` → `model_narrow`) — the
-    /// syscall's argument predates bundle flattening. Mirrors
-    /// `LowerCtx::require_param_given`; keep the two in sync.
+    /// syscall's argument predates bundle flattening. This is the only
+    /// implementation of that rule.
     pub fn param_given(&self, name: &str) -> Option<ParamId> {
         if let Some(&id) = self.params.get(name) {
             return Some(id);

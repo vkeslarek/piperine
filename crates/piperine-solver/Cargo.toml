@@ -19,3 +19,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Dev-only edges (MD-28): the analysis-level suites drive real PHDL devices, so
+# they elaborate with `piperine-lang` and JIT with `piperine-codegen`. The solver
+# itself depends on neither — this is a dev-dependency cycle cargo resolves
+# separately from the normal graph.
+piperine-lang = { path = "../piperine-lang" }
+piperine-codegen = { path = "../piperine-codegen" }

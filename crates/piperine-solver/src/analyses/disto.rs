@@ -43,7 +43,6 @@
 //! Devices whose nonlinearity cannot be differentiated fail loud at
 //! compile time (`CodegenError::Unsupported`, DISTO-04) — never a silent
 //! zero row.
-#![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
@@ -57,7 +56,7 @@ use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
-use crate::result::DistoResult;
+use crate::core::result::DistoResult;
 
 use num_complex::{Complex, Complex64};
 
@@ -148,7 +147,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for DistoSystem<'a> {
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
-    ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
+    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext { frequency: self.frequency };
         let mut stamps = Vec::new();
         for dev in &mut self.circuit.devices {
@@ -196,7 +195,7 @@ impl<'a> DistoSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: DistoOptions,
         context: Context,
-    ) -> crate::result::Result<Self> {
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
@@ -271,7 +270,7 @@ impl<'a> DistoSolver<'a> {
     /// `2·F1`, third order at `3·F1`, returning `HD2`/`HD3` (DISTO-01).
     /// Two-tone mode ([`DistoOptions::f2`]) computes the intermodulation
     /// products instead, returning `IM2`/`IM3` (DISTO-02).
-    pub fn solve(&mut self) -> crate::result::Result<DistoResult> {
+    pub fn solve(&mut self) -> crate::core::result::Result<DistoResult> {
         if self.options.f2.is_some() {
             return self.solve_two_tone();
         }
@@ -321,7 +320,7 @@ impl<'a> DistoSolver<'a> {
     /// named warning: a fully linear circuit legitimately yields zero
     /// HD2/HD3, but the host must see *why* the result is zero rather than
     /// read a silent no-op.
-    fn capability_prescan(circuit: &CircuitInstance) -> crate::result::Result<Vec<String>> {
+    fn capability_prescan(circuit: &CircuitInstance) -> crate::core::result::Result<Vec<String>> {
         let mut has_disto2 = false;
         let mut has_disto3 = false;
         for dev in &circuit.devices {
@@ -361,7 +360,7 @@ impl<'a> DistoSolver<'a> {
         f_hz: f64,
         stim_scale: f64,
         extra: Vec<Stamp<AnalogReference, Complex64>>,
-    ) -> crate::result::Result<ndarray::Array1<Complex64>> {
+    ) -> crate::core::result::Result<ndarray::Array1<Complex64>> {
         self.system.frequency = f_hz;
         self.system.stim_scale = stim_scale;
         self.system.nonlinear_rhs = extra;
@@ -371,7 +370,7 @@ impl<'a> DistoSolver<'a> {
     /// Two-tone distortion (DISTO-02): first order per tone, second-order
     /// mixes at `F1+F2` (reported as IM2) and `|F1−F2|`, third-order at
     /// `2F1−F2` (reported as IM3).
-    fn solve_two_tone(&mut self) -> crate::result::Result<DistoResult> {
+    fn solve_two_tone(&mut self) -> crate::core::result::Result<DistoResult> {
         let f1 = self.options.f1;
         let f2 = self.options.f2.expect("two-tone mode checked by solve");
         let (w1, w2) = (

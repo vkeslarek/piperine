@@ -24,8 +24,9 @@ fn write_temp(name: &str, body: &str) -> String {
 }
 
 /// The divider circuit — same shape the root host tests solve. `mid` sits at
-/// `5·2/(3+2) = 2.0 V`; staging is not exercised here (P6's unit test covers
-/// it). Mirrors `piperine-python/src/lib.rs::ANALYSIS_PHDL`.
+/// `5·2/(3+2) = 2.0 V`; staging is not exercised here (`analyses.rs`'s
+/// `stage_overrides_next_analysis` covers it). Mirrors `tests/common`'s
+/// `ANALYSIS_PHDL`.
 const DIVIDER_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 

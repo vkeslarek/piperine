@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, Session, SimSession, SolverConfig};
+use piperine::{NetRef, Session, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::SourceMap;
 
@@ -50,7 +50,7 @@ fn divider_design() -> piperine_lang::Design {
 }
 
 /// `Session::compile` holds the built circuit: the baseline `op` reads the
-/// same value a fresh `SimSession` would, `rebuilds()` starts at `0`, and a
+/// same value a fresh `Session` would, `rebuilds()` starts at `0`, and a
 /// restamp `set` + re-run loop matches independent fresh builds — one
 /// compilation total (MD-18), never a re-JIT per `set`.
 #[test]
@@ -76,10 +76,12 @@ fn session_compiles_once_and_set_op_matches_fresh_builds() {
     // Independent fresh-build references, computed AFTER the sweep so their
     // JITs don't pollute the compile-count window above.
     for (r, live) in [1e3, 2e3, 4e3, 6e3].into_iter().zip(live_values) {
-        let fresh_session = SimSession::new(divider_design(), "Divider".to_string());
-        fresh_session.stage("r_top", "r", piperine_lang::Value::Real(r));
+        let mut fresh_session = Session::builder(&divider_design(), "Divider")
+            .stage("r_top", "r", piperine_lang::Value::Real(r))
+            .compile()
+            .expect("session compiles");
         let fresh = fresh_session
-            .run_op(&SolverConfig::default(), None)
+            .op(&SolverConfig::default(), None)
             .expect("fresh op")
             .v(&mid)
             .expect("v(mid)");

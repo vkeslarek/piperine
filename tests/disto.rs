@@ -1,9 +1,9 @@
-//! `.disto` host surface (DISTO-06): `SimSession::run_disto` — the cubic
+//! `.disto` host surface (DISTO-06): `Session::run_disto` — the cubic
 //! VCCS stage's HD2/HD3 against the closed-form Volterra predictions,
 //! driven entirely through `piperine::` (real PHDL → JIT disto2/disto3
 //! kernels → solver → host).
 
-use piperine::{SimSession, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const POLY_PHDL: &str = "\
@@ -40,10 +40,10 @@ mod Top() {
 #[test]
 fn cubic_stage_hd2_hd3_match_closed_form_through_the_host() {
     let design = piperine_lang::parse_and_elaborate(POLY_PHDL, &SourceMap::dummy()).expect("poly stage elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::builder(&design, "Top").disto(true).compile().expect("session compiles");
     let amplitude = 0.1;
     let result = session
-        .run_disto(1e6, None, amplitude, "vout", None, &SolverConfig::default())
+        .disto(1e6, None, amplitude, "vout", None, &SolverConfig::default())
         .expect(".disto solves on the cubic stage");
 
     // Zero bias: HD2 = ½·(g2/g1)·A, HD3 = ¼·(g3/g1)·A² (DISTO-05).
@@ -67,9 +67,9 @@ fn cubic_stage_hd2_hd3_match_closed_form_through_the_host() {
 #[test]
 fn cubic_stage_two_tone_reports_im2_im3() {
     let design = piperine_lang::parse_and_elaborate(POLY_PHDL, &SourceMap::dummy()).expect("poly stage elaborates");
-    let session = SimSession::new(design, "Top".to_string());
+    let mut session = Session::builder(&design, "Top").disto(true).compile().expect("session compiles");
     let result = session
-        .run_disto(1e6, Some(1.1e6), 0.1, "vout", None, &SolverConfig::default())
+        .disto(1e6, Some(1.1e6), 0.1, "vout", None, &SolverConfig::default())
         .expect("two-tone .disto solves");
 
     // The controlling node is pinned by the ideal source (no second-order
