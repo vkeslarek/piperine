@@ -13,7 +13,7 @@ use piperine_solver::abi::{
     ElementCapabilities, Introspect, Netlist, NodeIdentifier, Stamp, TransientAnalysisContext,
     TransientAnalysisState, ValidationFinding, ValidationReport, ValidationSeverity,
 };
-use piperine_solver::prelude::{CircuitInstance, Context, Solver, TransientAnalysisOptions};
+use piperine_solver::prelude::{CircuitInstance, Context, TransientAnalysisOptions};
 
 /// A linear conductance (g = 1 S to ground) carrying a validation hook that
 /// counts its polls and replays a canned report. `emits_bit` controls
