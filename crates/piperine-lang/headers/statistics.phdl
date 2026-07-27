@@ -1,0 +1,10 @@
+// dv-core T2 (DVC-02) — the statistical distributions a `tol` clause on a
+// `param` may name, textually declared (MD-24) so the clause resolves a real
+// declaration instead of a magic string. `gauss`/`uniform` each carry two
+// spellings — absolute and relative — distinguished by the keyed argument
+// name at the use site (`gauss(sigma = …)` vs `gauss(sigma_rel = …)`).
+// Declarations only: sampling the distributions is dv-gradients' scope.
+extern fn gauss(sigma: Real) -> Real;
+extern fn gauss(sigma_rel: Real) -> Real;
+extern fn uniform(half: Real) -> Real;
+extern fn uniform(rel: Real) -> Real;

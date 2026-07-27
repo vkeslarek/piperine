@@ -214,6 +214,83 @@ fn device_port_attribute_schemas_have_textual_extern_declarations() {
     }
 }
 
+// ── Statistical distributions ────────────────────────────────────────────────
+
+/// dv-core T2 (DVC-02): every distribution a `tol` clause may name must be
+/// declared as an `extern fn` in `headers/statistics.phdl` with the argument
+/// spelling the spec uses — `gauss(sigma)`, `gauss(sigma_rel)`,
+/// `uniform(half)`, `uniform(rel)` — and must resolve through
+/// `CallableRegistry`. Adding a distribution name to a `tol` code path
+/// without authoring the matching declaration fails this test by name; so
+/// does renaming a declared argument (the keyed-argument spelling at the
+/// use site is part of the contract).
+#[test]
+fn every_declared_distribution_resolves_through_the_callable_registry() {
+    // The declared (name, argument-spelling) pairs the spec fixes.
+    let declared = [
+        ("gauss", "sigma"),
+        ("gauss", "sigma_rel"),
+        ("uniform", "half"),
+        ("uniform", "rel"),
+    ];
+
+    // Textual half: the header itself carries each declaration with the
+    // exact argument spelling (the registry's CallableDef does not retain
+    // parameter names, so the spelling is asserted on the parsed text).
+    let source = parse_str(include_str!("../headers/statistics.phdl"))
+        .expect("headers/statistics.phdl must parse");
+    let mut spellings: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+    for item in &source.items {
+        if let Item::ExternDecl(ExternDecl::Fn(sig)) = item {
+            for param in &sig.params {
+                if let piperine_lang::parse::ast::FnParam::Typed { name, .. } = param {
+                    spellings.insert((sig.name.clone(), name.clone()));
+                }
+            }
+        }
+    }
+    for (dist, arg) in &declared {
+        assert!(
+            spellings.contains(&((*dist).to_string(), (*arg).to_string())),
+            "distribution `{dist}({arg})` has no matching `extern fn {dist}({arg}: Real) -> Real;` \
+             declaration in headers/statistics.phdl — DVC-02 requires it",
+        );
+    }
+
+    // Registry half: each declared name resolves through CallableRegistry
+    // (both `gauss` overloads present), and an undeclared distribution name
+    // does not resolve — it cannot pass.
+    let ctx = stdlib_ctx();
+    for dist in ["gauss", "uniform"] {
+        assert_eq!(
+            ctx.callables.candidates(dist).len(),
+            2,
+            "distribution `{dist}` must have its two declared spellings (absolute and relative) \
+             registered from headers/statistics.phdl",
+        );
+    }
+    assert!(
+        ctx.callables.lookup("normal").is_none(),
+        "`normal` is not a declared distribution and must not resolve",
+    );
+}
+
+/// dv-core T2 (DVC-02, AC2): resolving a distribution name that
+/// `headers/statistics.phdl` does not declare fails loud, naming it — the
+/// same `CallableRegistry::resolve` path the `tol` clause's elaboration
+/// consults (T4). The end-to-end `tol normal(...)` fixture lives in T4.
+#[test]
+fn undeclared_distribution_resolution_fails_loud_naming_it() {
+    let ctx = stdlib_ctx();
+    let err = match ctx.callables.resolve("normal", &[piperine_lang::pom::ValueType::Real]) {
+        Ok(_) => panic!("`normal` is not declared in headers/statistics.phdl and must fail loud"),
+        Err(err) => err,
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("normal"), "error should name the undeclared distribution: {msg}");
+}
+
 // ── Cast associated functions ────────────────────────────────────────────────
 
 /// The four primitive target types that previously had bare-name cast

@@ -193,6 +193,15 @@ impl<'a> Resolver<'a> {
             items.extend(source.items);
         }
 
+        // `statistics` (dv-core DVC-02) — the statistical distributions a
+        // `tol` clause may name (`gauss`, `uniform`), textually declared
+        // (MD-24). Embedded the same way as `math` above: a `tol` clause
+        // must resolve regardless of the caller's working directory.
+        if let Ok(source) = parse_str(include_str!("../headers/statistics.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/statistics.phdl"));
+            items.extend(source.items);
+        }
+
         // Load the standard library built-ins dynamically if they resolve.
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];
