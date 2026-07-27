@@ -5,7 +5,7 @@
 //!
 //! ## Phase contract
 //!
-//! **Input**: `&[Lexed]` — the output of [`Lexer::tokenize`].
+//! **Input**: `&[Lexed]` — the output of [`Lexer::tokenize`](crate::parse::lexer::Lexer::tokenize).
 //! **Output**: [`SourceFile`] — the root of the parse AST.
 //!
 //! ## What the parser does NOT check

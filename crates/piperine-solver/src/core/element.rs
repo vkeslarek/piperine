@@ -196,10 +196,10 @@ pub trait AnalogDevice: Send + Sync {
         Vec::new()
     }
 
-    /// Pre-freeze internal-unknown allocation. Called by [`CircuitBuilder::build`]
+    /// Pre-freeze internal-unknown allocation. Called by `CircuitBuilder::build`
     /// once per element, in insertion order, before the matrix shape freezes.
     /// Elements that allocate internal MNA unknowns (auxiliary branch currents,
-    /// hidden states) do so here via [`UnknownAllocator::branch`] and MUST
+    /// hidden states) do so here via `UnknownAllocator::branch` and MUST
     /// declare [`ElementCapabilities::HAS_INTERNAL_UNKNOWNS`]. Default: no-op.
     fn allocate_unknowns(&mut self, _alloc: &mut crate::core::builder::UnknownAllocator<'_>) {}
 
@@ -377,7 +377,7 @@ pub trait Introspect: Send + Sync {
     }
 
     /// Declared queries (operating variables, terminal quantities, internal
-    /// state, counters). Defaults to one [`QueryKind::OperatingVariable`] per
+    /// state, counters). Defaults to one [`QueryKind::OperatingVariable`](crate::prelude::QueryKind::OperatingVariable) per
     /// [`read_opvars`](Introspect::read_opvars) entry.
     fn list_queries(&self) -> Vec<QueryDescriptor> {
         self.read_opvars()

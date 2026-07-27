@@ -227,12 +227,10 @@ impl Netlist {
         self.circuit_map.get_by_right(variable)
     }
 
-    /// Map a solved-variable → value map (e.g. a [`DcAnalysisResult`]'s
-    /// `values()`) into [`InitialValue`] rows by resolving each variable to
+    /// Map a solved-variable → value map (e.g. a `DcAnalysisResult`'s
+    /// `values()`) into `InitialValue` rows by resolving each variable to
     /// its dense [`AnalogReference`]. Variables with no reference in this
     /// netlist are skipped, mirroring the previous `as_iv` behavior.
-    ///
-    /// [`DcAnalysisResult`]: crate::analyses::dc::DcAnalysisResult
     pub fn initial_values(
         &self,
         values: &std::collections::HashMap<std::sync::Arc<AnalogVariable>, f64>,

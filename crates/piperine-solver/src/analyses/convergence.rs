@@ -49,7 +49,7 @@ impl Default for PlanLimits {
 // ── NewtonStrategy ─────────────────────────────────────────────────────────
 
 /// Newton iteration policy: damping, convergence test, iteration cap.
-/// The [`ConvergencePlan`] owns one; [`NewtonRaphsonSolver`] consults it
+/// The [`ConvergencePlan`] owns one; `NewtonRaphsonSolver` consults it
 /// instead of calling `NonLinearSystem::apply_limit`/`converged`/
 /// `residual_converged` directly (MD-05, MD-13 rule 2).
 pub trait NewtonStrategy: Send + Sync {
@@ -257,7 +257,7 @@ pub trait HomotopyDriver {
 
 /// One homotopy: reshapes a hard operating-point problem into an easy one and
 /// tracks the solution back to full strength. Stateless — all mutable state is
-/// behind the [`HomotopyDriver`]; the numeric schedule it ramps is owned by
+/// behind the `HomotopyDriver`; the numeric schedule it ramps is owned by
 /// the plan and handed in as [`Schedules`].
 pub trait HomotopyStrategy: Send + Sync {
     /// Short name for diagnostics/tracing.
@@ -295,8 +295,8 @@ pub struct ConvergencePlan {
 }
 
 impl Default for ConvergencePlan {
-    /// SPICE's standard escalation: [`GminStepping`] first (cheap, robust), then
-    /// [`SourceStepping`] (finds the correct solution branch where gmin stepping
+    /// SPICE's standard escalation: `GminStepping` first (cheap, robust), then
+    /// `SourceStepping` (finds the correct solution branch where gmin stepping
     /// can settle on the wrong one — BJT/MOS amplifiers). The default stepper
     /// is the [`PiController`] (TR-BDF2 adaptive timestep, ngspice-lineage
     /// gains).

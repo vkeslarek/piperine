@@ -95,7 +95,7 @@ pub enum Nested<R> {
 /// A named multi-axis sweep grid (HOST-19, [`Session::sweep_grid`]): each
 /// axis is `(label, param, values)`; [`Grid::map`] visits the cartesian
 /// product in row-major (outer-axis-first) order, restamping (or
-/// rebuilding, per axis write — same [`Session::set_or_rebuild`] escape
+/// rebuilding, per axis write — same `Session::set_or_rebuild` escape
 /// hatch [`Sweep`] uses) each axis's value before calling the mapped
 /// function, and collects the results into a [`Nested`] tree shaped like
 /// [`Grid::shape`].

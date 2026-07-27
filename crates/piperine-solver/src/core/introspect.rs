@@ -221,7 +221,7 @@ pub enum ObservableKind {
     /// A flux-storing reactive state (inductor companion).
     Flux,
     /// A runtime state slot (delay/transition/idt operator, `$limit` vold).
-    /// The `name` is the slot name from [`Introspect::list_state_slot_names`].
+    /// The `name` is the slot name from `Introspect::list_state_slot_names`.
     State,
     /// A module-level persistent variable slot. The `name` is the var name
     /// (or a synthesized `var[k]` when the kernel does not surface names).

@@ -16,7 +16,7 @@
 //! |------------------|---------------------|
 //! | Type names resolved | [`crate::elab`] |
 //! | Array dimensions are const | [`crate::elab::const_eval`] |
-//! | `<+` only in `analog` | [`crate::elab::validate`] |
+//! | `<+` only in `analog` | [`crate::elab::event::EventRegistry`] |
 //! | Event names are valid | [`crate::elab::event`] |
 //! | Bundle ports are net-capable | [`crate::elab::lower`] |
 //! | Generic params substituted | [`crate::elab::lower`] |

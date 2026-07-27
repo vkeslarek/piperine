@@ -94,7 +94,7 @@ impl DigitalState {
     /// `analog_slice` is forwarded to elements that declared
     /// [`ElementCapabilities::SAMPLES_ANALOG`] via `EvalCtx.analog`.
     /// Returns `Err` if the iteration cap is reached instead of warning; the
-    /// cap is shared with [`evaluate_until_stable`] through `limits`.
+    /// cap is shared with [`Self::evaluate_until_stable`] through `limits`.
     pub fn evaluate_dag_ordered(
         &mut self,
         t: f64,

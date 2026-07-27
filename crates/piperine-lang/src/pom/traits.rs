@@ -12,7 +12,7 @@
 //!
 //! [`Kinded`] is the "which concrete node type is this" axis of the
 //! `Node` capability in `docs/reflection_api.md` §1.1. The other axis,
-//! stable identity (`id()`), needs the elaborator to assign [`Id`]s to
+//! stable identity (`id()`), needs the elaborator to assign [`Id`](crate::pom::node::Id)s to
 //! every node — deferred until the selector work lands (see the refactor
 //! plan's out-of-scope list).
 

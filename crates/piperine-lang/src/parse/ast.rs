@@ -21,7 +21,7 @@
 //! - `use` declarations are collected but not resolved.
 //!
 //! Semantic constraints (e.g. "contribution must not appear in a mod body")
-//! are NOT checked here; they are checked by [`crate::elab::validate`].
+//! are NOT checked here; they are checked by [`crate::elab::event::EventRegistry`].
 
 // ─────────────────────────────── Compilation unit ────────────────────────────
 

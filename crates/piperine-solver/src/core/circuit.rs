@@ -58,7 +58,7 @@ impl CircuitInstance {
     pub fn netlist(&self) -> &Netlist { &self.netlist }
 
     /// Every solved signal in the circuit — analog nodes, analog branch
-    /// currents, and digital nets — as one unified [`Net`] list. This is the
+    /// currents, and digital nets — as one unified `Net` list. This is the
     /// symmetric naming layer a host, result mapper, or diagnostic uses instead
     /// of walking the analog netlist and the digital net array separately.
     ///
@@ -78,7 +78,7 @@ impl CircuitInstance {
 
     /// Look up the digital net's stable source-level label, defaulting to
     /// `d{idx}` when no label was attached. Convenience for diagnostics and
-    /// result mapping that don't want to construct a full [`Net`].
+    /// result mapping that don't want to construct a full `Net`.
     pub fn digital_label(&self, net: crate::digital::DigitalNet) -> String {
         self.digital_state.label_or_default(net)
     }
@@ -151,7 +151,7 @@ impl CircuitInstance {
 
     /// DC sensitivity analysis (`.sens`): `∂(output)/∂(param)` at the
     /// operating point over the restamp path — see
-    /// [`SensSolver`](crate::analyses::sens::SensSolver).
+    /// `SensSolver`.
     pub fn sens(
         &mut self,
         options: crate::analyses::sens::SensAnalysisOptions,
@@ -161,7 +161,7 @@ impl CircuitInstance {
     }
 
     /// Periodic steady state via single shooting — see
-    /// [`PssSolver`](crate::analyses::pss::PssSolver).
+    /// `PssSolver`.
     pub fn pss(
         &mut self,
         options: crate::analyses::pss::PssAnalysisOptions,
@@ -232,7 +232,7 @@ impl CircuitInstance {
 
     /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
     ///
-    /// Must be called once before the first [`run_digital_at`] call.  Collects
+    /// Must be called once before the first [`Self::run_digital_at`] call.  Collects
     /// initial events from every device's `init`, schedules them into
     /// `digital_state`, then runs propagation at t=0 so all downstream logic
     /// reflects its power-on state.
@@ -363,7 +363,7 @@ impl CircuitInstance {
     /// Set the instance temperature on every element (ABI-19/20): each
     /// element's `set_temperature` recomputes its temperature-dependent
     /// constants; the next load restamps naturally. The return value is
-    /// always [`Invalidation::Temperature`] — temperature changes never
+    /// always [`Invalidation::Temperature`](crate::abi::Invalidation::Temperature) — temperature changes never
     /// leave the matrix shape untouched at a higher level than restamp
     /// (a structural `Rebuild` from a temperature change is the same
     /// fail-loud path as a parameter `Rebuild`, surfaced by `set_param`).
@@ -380,7 +380,7 @@ impl CircuitInstance {
     /// Solver-level restamp path (MD-18): set a parameter on the built
     /// element labeled `label` — no re-elaboration, no re-compilation. The
     /// element reports how much solve state the change invalidates
-    /// (numeric-only changes are [`Invalidation::Restamp`]); a sweep loop
+    /// (numeric-only changes are [`Invalidation::Restamp`](crate::abi::Invalidation::Restamp)); a sweep loop
     /// re-runs the analysis on the same compiled circuit. Unknown labels
     /// and parameter errors are loud.
     pub fn set_element_param(

@@ -1,4 +1,4 @@
-//! [`Error`] — everything that can fail while driving a simulation through
+//! [`enum@Error`] — everything that can fail while driving a simulation through
 //! the host API: applying staged overrides, lowering, building the circuit,
 //! or solving.
 

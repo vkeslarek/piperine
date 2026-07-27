@@ -4,7 +4,7 @@
 /// Live simulator state threaded through every JIT-compiled analog function.
 ///
 /// `#[repr(C)]` keeps the layout stable across the JIT ABI; the emitter reads
-/// fields by their byte offsets (see [`crate::emit`]).
+/// fields by their byte offsets (see the `emit` module).
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct SimCtx {
