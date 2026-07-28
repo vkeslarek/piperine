@@ -86,6 +86,22 @@ pub bundle BjtModel {
     // ── Noise ─────────────────────────────────────────────────────────────────
     kf   : Real = 0.0,            // flicker noise coefficient
     af   : Real = 1.0,            // flicker noise exponent
+
+    // ── SOA (DVC-16, T27) ─────────────────────────────────────────────────────
+    // Headline BJT SOA caps — V_CEO (collector-emitter breakdown), V_EBO
+    // (emitter-base reverse, the most fragile junction), V_CBO
+    // (collector-base reverse), and I_C (max collector current). ngspice
+    // itself has no SOA data (design §C5), so these are Piperine's
+    // foundry-deck placement layer with the same sentinel-default pattern
+    // as Mos1Model (T26 deviation note): the 1e99 default keeps each
+    // `require` vacuously satisfied at the value level until a card sets
+    // the limit. The C-E power dissipation is the SOA-avalanche envelope
+    // (secondary breakdown); it rides a `require` over V(c,e)·I(c,e).
+    vce_max : Real = 1.0e99,    // collector-emitter breakdown SOA cap (V)
+    vbe_max : Real = 1.0e99,    // base-emitter forward SOA cap (V)
+    vcb_max : Real = 1.0e99,    // collector-base reverse SOA cap (V)
+    ic_max  : Real = 1.0e99,    // collector current SOA cap (A)
+    pd_max  : Real = 1.0e99,    // power dissipation SOA cap (W)
 }
 
 pub mod bjt (
@@ -530,4 +546,33 @@ pub analog bjt {
     if (model.kf > 0.0) {
         I(bp, ep) <+ flicker_noise(m * model.kf * pow(abs(cb), model.af), 1.0);
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SOA constraint (dv-core T27, DVC-16): V_CEO/V_EBO/V_CBO breakdown limits
+//  on `bjt`, plus I_C and the C-E power dissipation (the secondary-
+//  breakdown envelope). Each `require` reads the flattened model-card
+//  param (`model_<field>` — bundle-typed `param model : BjtModel`
+//  flattens per GAPS §I.14, same as Mos1Model in T26 and DioModel above).
+//  Defaults are the 1e99 sentinel documented on `BjtModel`, so every
+//  require is trivially satisfied until a foundry card overrides the
+//  limit. The reads use `abs(...)` so a single block rates NPN and PNP
+//  identically — `|V_CE|` for an NPN in forward-active and for a PNP in
+//  forward-active are both the positive operating voltage the SOA
+//  envelope cares about (mirrors `constraint mos1`'s abs treatment of
+//  NMOS/PMOS). Voltage reads are over the *external* terminals (c/b/e):
+//  the SOA envelope is rated at the package pins, not after the series
+//  resistances. A card that sets `vce_max` and a fixture driven past it
+//  fail loud in `strict` posture naming the device instance and the
+//  constraint.
+//
+//  `pub` is required so the block survives the `use spice::bjt;` privacy
+//  filter (resolve.rs:333 — same as the mos1 block in T26).
+// ════════════════════════════════════════════════════════════════════════════
+pub constraint bjt {
+    require vce   : abs(V(c, e)) <= model_vce_max;
+    require vbe   : abs(V(b, e)) <= model_vbe_max;
+    require vcb   : abs(V(c, b)) <= model_vcb_max;
+    require ic    : abs(I(c, e)) <= model_ic_max;
+    require pdiss : abs(V(c, e)) * abs(I(c, e)) <= model_pd_max;
 }

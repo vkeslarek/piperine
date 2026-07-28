@@ -490,8 +490,15 @@ pub analog mos1 {
 //  so every require is trivially satisfied until a foundry card overrides
 //  the limit. A card that sets `vds_max` and a fixture driven past it fail
 //  loud in `strict` posture naming the device instance and the constraint.
+//
+//  `pub` is required so the block survives the `use spice::mos;` privacy
+//  filter (resolve.rs:333 — non-`pub` items from a used source are
+//  dropped, and `spice` is not the stdlib package). Without it the
+//  constraint is silently stripped on import and never attaches to mos1
+//  instances in user designs — the SOA-on-model contract is invisible
+//  from the host. Same applies to the dio/bjt blocks (T27).
 // ════════════════════════════════════════════════════════════════════════════
-constraint mos1 {
+pub constraint mos1 {
     require vgs_ox   : abs(V(g, s)) <= model_vgs_max;
     require vgb_ox   : abs(V(g, b)) <= model_vgb_max;
     require vds_ox   : abs(V(d, s)) <= model_vds_max;

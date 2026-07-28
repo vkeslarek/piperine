@@ -75,9 +75,19 @@ pub bundle DioModel {
     kf     : Real = 0.0,        // flicker noise coefficient
     af     : Real = 1.0,        // flicker noise exponent
 
-    // ── SOA ──────────────────────────────────────────────────────────────────
-    fv_max : Real? = none,    // none = no forward SOA limit
-    bv_max : Real? = none,    // none = no reverse SOA limit
+    // ── SOA (DVC-16, T27) ─────────────────────────────────────────────────────
+    // Forward/reverse voltage and forward current SOA caps. Same sentinel-
+    // default pattern as Mos1Model (T26 deviation note): design §C5 wanted
+    // `Real? = none` so an unset limit makes its `require` vacuously
+    // satisfied, but the constraint runtime cannot yet evaluate an absent
+    // optional as vacuous — `none` would propagate as a NaN margin and trip
+    // T16's non-finite-is-a-violation rule. The 1e99 sentinel preserves the
+    // inert-by-default intent at the value level; a foundry card that sets
+    // `bv_max` etc. overrides the sentinel and the require binds to the
+    // real limit.
+    fv_max : Real = 1.0e99,    // forward voltage SOA cap (V)
+    bv_max : Real = 1.0e99,    // reverse breakdown SOA cap (V)
+    if_max : Real = 1.0e99,    // forward current SOA cap (A)
 }
 
 pub mod dio ( inout p : Electrical, inout n : Electrical ) {
@@ -464,4 +474,26 @@ pub analog dio {
     // ── Initial condition (diogetic.c) ───────────────────────────────────────
     // `ic` seeds the UIC start voltage. Reserved until the JIT can force a
     // branch inside `@ initial` (see piperine ROADMAP).
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SOA constraint (dv-core T27, DVC-16): forward/reverse voltage and forward
+//  current limits on `dio`. Each `require` reads the flattened model-card
+//  param (`model_<field>` — bundle-typed `param model : DioModel` flattens
+//  per GAPS §I.14, same as Mos1Model in T26). Defaults are the 1e99
+//  sentinel documented on `DioModel`, so every require is trivially
+//  satisfied until a foundry card overrides the limit. A card that sets
+//  `bv_max` and a fixture driven past it fail loud in `strict` posture
+//  naming the device instance and the constraint.
+//  The reverse breakdown read uses `-V(p, n)` rather than `abs(V)` so each
+//  require binds to its own physical direction (forward vs reverse) and a
+//  single abs would mask the asymmetric SOA envelope of a junction.
+//
+//  `pub` is required so the block survives the `use spice::diode;`
+//  privacy filter (resolve.rs:333 — same as the mos1 block in T26).
+// ════════════════════════════════════════════════════════════════════════════
+pub constraint dio {
+    require vf : V(p, n) <= model_fv_max;
+    require vr : 0.0 - V(p, n) <= model_bv_max;
+    require ifwd : I(p, n) <= model_if_max;
 }
