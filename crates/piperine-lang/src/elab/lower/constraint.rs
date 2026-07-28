@@ -23,12 +23,13 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, Expr, Literal, UnaryOp};
+use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, EventSpec, Expr, Literal, UnaryOp};
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
-    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, StmtClass, StmtClassNode,
+    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, ResolvedWindow, StmtClass, StmtClassNode,
     ValueType,
 };
+use crate::value::Value;
 
 use super::Elaborator;
 
@@ -428,7 +429,10 @@ impl Elaborator {
     /// Elaborate one `constraint` block against its module: duplicate
     /// labels, name resolution, and the `require`-Boolean / `target`-Real
     /// type checks (DVC-04 AC4/AC6, DVC-07). Event blocks (`@ dc { … }`,
-    /// DVC-19) recurse with an augmented analyses scope.
+    /// DVC-19) recurse with an augmented analyses scope; an event block
+    /// with a temporal window (`@ tran(after = …, dur = …)`, DVC-20)
+    /// recurses with the window as well — a leaf inside such a block
+    /// carries both on its `StmtClass`.
     fn elab_constraint(
         &self,
         decl: &ConstraintDecl,
@@ -444,7 +448,10 @@ impl Elaborator {
         let env = ConstEnv::with_globals(self.syms.globals.clone());
         let mut scope = ConstraintScope::new(&decl.name, module, design, &self.ctx, &self.syms.globals);
         let mut var_types = HashMap::new();
-        let stmt_classes = self.elab_stmts(&decl.body, &env, &mut scope, &mut var_types, &BTreeSet::new(), decl, module)?;
+        let stmt_classes = self.elab_stmts(
+            &decl.body, &env, &mut scope, &mut var_types,
+            &BTreeSet::new(), None, decl, module,
+        )?;
 
         Ok(ConstraintBlock {
             span: decl.span,
@@ -459,9 +466,12 @@ impl Elaborator {
     /// Recursive statement elaboration: threads the enclosing event blocks'
     /// analyses (`scope_analyses`) so a leaf's `StmtClass.analyses` carries
     /// the union of its helpers' analyses and every enclosing `@ dc { … }`'s
-    /// scope (DVC-19). `var_types` accumulates across the whole block — a
-    /// `var` declared in an outer scope is visible to a `require` in an
-    /// inner event block, exactly as it is to a later top-level statement.
+    /// scope (DVC-19); threads the enclosing event blocks' temporal windows
+    /// (`scope_window`) so a leaf inside `@ tran(after = …, dur = …) { … }`
+    /// carries the resolved window too (DVC-20). `var_types` accumulates
+    /// across the whole block — a `var` declared in an outer scope is
+    /// visible to a `require` in an inner event block, exactly as it is to
+    /// a later top-level statement.
     #[allow(clippy::too_many_arguments)]
     fn elab_stmts(
         &self,
@@ -470,6 +480,7 @@ impl Elaborator {
         scope: &mut ConstraintScope<'_>,
         var_types: &mut HashMap<String, ValueType>,
         scope_analyses: &BTreeSet<String>,
+        scope_window: Option<ResolvedWindow>,
         decl: &ConstraintDecl,
         module: &Module,
     ) -> Result<Vec<StmtClassNode>, ElabError> {
@@ -491,6 +502,7 @@ impl Elaborator {
                     out.push(StmtClassNode::Leaf(StmtClass {
                         class: info.class,
                         analyses,
+                        window: scope_window,
                     }));
                     scope.define_var(name, ExprInfo { ty: vt, class: info.class, analyses: info.analyses });
                 }
@@ -515,6 +527,7 @@ impl Elaborator {
                     out.push(StmtClassNode::Leaf(StmtClass {
                         class: QuantityClass::Pointwise,
                         analyses: union_analyses(scope_analyses, &info.analyses),
+                        window: scope_window,
                     }));
                 }
                 ConstraintStmt::Target { expr, level, tol, span, .. } => {
@@ -547,6 +560,7 @@ impl Elaborator {
                     out.push(StmtClassNode::Leaf(StmtClass {
                         class: expr_info.class,
                         analyses: union_analyses(scope_analyses, &analyses),
+                        window: scope_window,
                     }));
                 }
                 ConstraintStmt::Event { spec, body, span } => {
@@ -554,8 +568,11 @@ impl Elaborator {
                     // analysis-scope event (`dc`/`tran`/`ac`) registered
                     // in the existing `EventRegistry`. Other event kinds
                     // (cross/above/timer/posedge/…) belong to behavior
-                    // bodies or T29's event windows; in a constraint event
-                    // block they fail loud naming the term and the scope.
+                    // bodies; in a constraint event block they fail loud
+                    // naming the term and the scope. The spec may also
+                    // open a temporal window (`tran(after = …, dur = …)`,
+                    // DVC-20) and compose scopes with `&` (intersection)
+                    // and `not` (complement) — DVC-20.
                     let analyses = analyses_of_spec(spec, &self.ctx.events).map_err(|e| {
                         ElabError::from(ElabErrorKind::Other(format!(
                             "constraint `{}` on module `{}` (@ event block): {e}",
@@ -564,7 +581,13 @@ impl Elaborator {
                         )))
                         .with_span(*span)
                     })?;
-                    if analyses.is_empty() {
+                    // Reject an event block whose spec names no analysis
+                    // kinds at all (e.g. `@ ()` or `@ initial`). A `&`
+                    // intersection may legitimately resolve to an empty
+                    // set (`dc & tran` — the analyses are disjoint), so
+                    // the gate is "did the spec name any analysis kind",
+                    // not "is the resolved set non-empty" (DVC-20 AC2).
+                    if !names_any_analysis(spec, &self.ctx.events) {
                         return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "constraint `{}` on module `{}`: an `@` event block must name at least one \
                              analysis (`dc`, `tran`, `ac`) — none found",
@@ -573,11 +596,31 @@ impl Elaborator {
                         )))
                         .with_span(*span));
                     }
+                    let window = resolve_window(spec, env).map_err(|e| {
+                        ElabError::from(ElabErrorKind::Other(format!(
+                            "constraint `{}` on module `{}` (@ event block window): {e}",
+                            decl.name,
+                            module.name()
+                        )))
+                        .with_span(*span)
+                    })?;
+                    // An inner event block's window narrows the outer's
+                    // (a window inside another window is their
+                    // intersection). The common case is one window on the
+                    // innermost block.
+                    let merged_window = match (scope_window, window) {
+                        (None, w) => w,
+                        (w, None) => w,
+                        (Some(outer), Some(inner)) => Some(intersect_windows(outer, inner)),
+                    };
                     let mut child_scope = scope_analyses.clone();
                     child_scope.extend(analyses.iter().cloned());
-                    let children = self.elab_stmts(body, env, scope, var_types, &child_scope, decl, module)?;
+                    let children = self.elab_stmts(
+                        body, env, scope, var_types, &child_scope, merged_window, decl, module,
+                    )?;
                     out.push(StmtClassNode::Event {
                         analyses: analyses.into_iter().collect(),
+                        window: merged_window,
                         children,
                     });
                 }
@@ -628,30 +671,55 @@ fn union_analyses(scope: &BTreeSet<String>, helper: &BTreeSet<String>) -> Vec<St
     v
 }
 
-/// Resolve an `EventSpec` (dv-core T28, DVC-19) used inside a constraint
-/// `@ … { … }` block to the set of analyses it scopes its body to. Every
-/// named term must be an analysis-scope event (`dc`/`tran`/`ac`)
-/// registered in the existing [`EventRegistry`]; `(a | b)` unions. Any
-/// other term — an analog crossing (`cross`/`above`), a digital edge
-/// (`posedge`), `initial`/`final`, or an unknown name — fails loud
-/// naming it.
+/// Resolve an `EventSpec` (dv-core T28, DVC-19; T29, DVC-20) used inside
+/// a constraint `@ … { … }` block to the set of analyses it scopes its
+/// body to. Every named term must be an analysis-scope event
+/// (`dc`/`tran`/`ac`) registered in the existing [`EventRegistry`];
+/// `(a | b)` unions (DVC-19); `(a & b)` intersects; `not a` complements
+/// against the universe `{dc, tran, ac}` (DVC-20). Any other term — an
+/// analog crossing (`cross`/`above`), a digital edge (`posedge`),
+/// `initial`/`final`, or an unknown name — fails loud naming it.
 fn analyses_of_spec(
-    spec: &crate::parse::ast::EventSpec,
+    spec: &EventSpec,
     registry: &crate::elab::event::EventRegistry,
 ) -> Result<BTreeSet<String>, String> {
-    let mut set = BTreeSet::new();
-    collect_analyses(spec, registry, &mut set)?;
-    Ok(set)
+    // `not` produces the complement against the analysis-kind universe
+    // inside `collect_analyses`; the returned set is the final analyses
+    // set the drivers gate evaluation on (the runtime matches against a
+    // single `running` analysis name).
+    collect_analyses(spec, registry)
 }
 
-fn collect_analyses(
-    spec: &crate::parse::ast::EventSpec,
-    registry: &crate::elab::event::EventRegistry,
-    set: &mut BTreeSet<String>,
-) -> Result<(), String> {
-    use crate::parse::ast::EventSpec;
+/// `true` iff the spec names at least one analysis-scope kind
+/// (`dc`/`tran`/`ac`). Used to gate "an `@` event block must name at
+/// least one analysis" — `&` intersections may legitimately resolve to
+/// an empty set (`dc & tran` is disjoint), but the spec still names
+/// analyses and is therefore not the "block names no analyses at all"
+/// failure mode (DVC-20 AC2).
+fn names_any_analysis(spec: &EventSpec, registry: &crate::elab::event::EventRegistry) -> bool {
     match spec {
-        EventSpec::Named { name, args } => {
+        EventSpec::Named { name, .. } => {
+            registry.lookup(name).map(|e| e.is_analysis_scope()).unwrap_or(false)
+        }
+        EventSpec::Or(specs) | EventSpec::And(specs) => {
+            specs.iter().any(|s| names_any_analysis(s, registry))
+        }
+        EventSpec::Not(inner) => names_any_analysis(inner, registry),
+        EventSpec::Initial | EventSpec::Final => false,
+    }
+}
+
+/// The fixed universe of analysis kinds a `not` term complements against
+/// (DVC-20). The analyses are kinds, not names — the host may run any
+/// subset; `not dc` means "every analysis that is not DC".
+const ANALYSIS_UNIVERSE: &[&str] = &["dc", "tran", "ac"];
+
+fn collect_analyses(
+    spec: &EventSpec,
+    registry: &crate::elab::event::EventRegistry,
+) -> Result<BTreeSet<String>, String> {
+    match spec {
+        EventSpec::Named { name, args, window } => {
             let Some(ev) = registry.lookup(name) else {
                 return Err(format!(
                     "unknown event `{name}` — analysis scoping accepts `dc`/`tran`/`ac` only"
@@ -664,19 +732,140 @@ fn collect_analyses(
             }
             if !args.is_empty() {
                 return Err(format!(
-                    "the analysis-scope event `{name}` takes no arguments — wrote `{name}({args:?})`"
+                    "the analysis-scope event `{name}` takes no positional arguments — wrote `{name}({args:?})`"
                 ));
             }
+            // A window's named-args (`after`/`dur`) are legal here (DVC-20);
+            // `resolve_window` evaluates them. The analyses set is the
+            // bare name; the window is a separate filter the runtime
+            // applies at evaluation time.
+            let _ = window;
+            let mut set = BTreeSet::new();
             set.insert(name.clone());
+            Ok(set)
         }
         EventSpec::Or(specs) => {
+            let mut set = BTreeSet::new();
             for s in specs {
-                collect_analyses(s, registry, set)?;
+                let part = collect_analyses(s, registry)?;
+                set.extend(part);
             }
+            Ok(set)
+        }
+        EventSpec::And(specs) => {
+            // Set intersection over the analyses sets. Each Named carries
+            // one analysis kind, so `dc & tran` is empty (the analyses are
+            // disjoint); `(dc | tran) & (tran | ac)` is `{tran}`. The
+            // empty result is meaningful: a `require` inside such a block
+            // is never exercised (DVC-20 AC3).
+            let mut iter = specs.iter();
+            let first = match iter.next() {
+                Some(s) => collect_analyses(s, registry)?,
+                None => return Ok(BTreeSet::new()),
+            };
+            let mut set = first;
+            for s in iter {
+                let part = collect_analyses(s, registry)?;
+                set.retain(|a| part.contains(a));
+            }
+            Ok(set)
+        }
+        EventSpec::Not(inner) => {
+            let inner_set = collect_analyses(inner, registry)?;
+            let universe: BTreeSet<String> = ANALYSIS_UNIVERSE.iter().map(|s| s.to_string()).collect();
+            Ok(universe.into_iter().filter(|a| !inner_set.contains(a)).collect())
         }
         EventSpec::Initial | EventSpec::Final => {
-            return Err("`initial`/`final` are not analysis-scope markers — `dc`/`tran`/`ac` only".into());
+            Err("`initial`/`final` are not analysis-scope markers — `dc`/`tran`/`ac` only".into())
         }
     }
+}
+
+/// Resolve the temporal window a constraint event block's spec opens
+/// (dv-core T29, DVC-20). Walks the spec; the **innermost** `Named` term
+/// carrying a window sets the bounds. `Or`/`And`/`Not` are descended
+/// (their inner terms may carry windows); at most one window per spec is
+/// accepted — composing windows across branches requires the runtime
+/// predicate the spec defers to a later task. Returns `Ok(None)` when no
+/// term carries a window. Both `after` and `dur` evaluate as elaboration
+/// constants (Real); an event-term `after` (e.g. `cross(...)`) fails loud
+/// naming it.
+fn resolve_window(spec: &EventSpec, env: &ConstEnv) -> Result<Option<ResolvedWindow>, String> {
+    let mut acc: Option<ResolvedWindow> = None;
+    collect_window(spec, env, &mut acc)?;
+    Ok(acc)
+}
+
+fn collect_window(spec: &EventSpec, env: &ConstEnv, acc: &mut Option<ResolvedWindow>) -> Result<(), String> {
+    match spec {
+        EventSpec::Named { name, window, .. } => {
+            if let Some(w) = window {
+                let after = match &w.after {
+                    Some(e) => eval_window_bound(e, env, "after")?,
+                    None => 0.0,
+                };
+                let dur = match &w.dur {
+                    Some(e) => Some(eval_window_bound(e, env, "dur")?),
+                    None => None,
+                };
+                if let Some(d) = dur
+                    && (d.is_nan() || d < 0.0) {
+                    return Err(format!(
+                        "the `{name}` window's `dur` must be non-negative — elaborated to {d}"
+                    ));
+                }
+                match acc {
+                    None => *acc = Some(ResolvedWindow { after, dur }),
+                    Some(_) => return Err(format!(
+                        "at most one `after`/`dur` window per event block — `{name}` carries a second \
+                         window (composing windows across branches is a later task, dv-core DVC-20)"
+                    )),
+                }
+            }
+        }
+        EventSpec::Or(specs) | EventSpec::And(specs) => {
+            for s in specs {
+                collect_window(s, env, acc)?;
+            }
+        }
+        EventSpec::Not(inner) => collect_window(inner, env, acc)?,
+        EventSpec::Initial | EventSpec::Final => {}
+    }
     Ok(())
+}
+
+/// Evaluate one window bound (`after`/`dur`) as a Real elaboration
+/// constant. The spec AC1 allows an event term too — for T29's runtime
+/// scope, only Real constants fold (an event-term `after` is recorded as
+/// a loud "not yet supported" pointing at the spec's deferral).
+fn eval_window_bound(expr: &Expr, env: &ConstEnv, what: &str) -> Result<f64, String> {
+    match env.eval(expr) {
+        Ok(Value::Real(r)) => Ok(r),
+        Ok(Value::Int(n)) if n >= 0 => Ok(n as f64),
+        Ok(Value::Nat(n)) => Ok(n as f64),
+        Ok(other) => Err(format!(
+            "window `{what}` must evaluate to a Real time, got `{other:?}`"
+        )),
+        Err(e) => Err(format!(
+            "window `{what}` must be a compile-time Real time; event-term windows are not yet \
+             supported (dv-core DVC-20): {e}"
+        )),
+    }
+}
+
+/// Intersect two resolved windows — the innermost enclosing block's
+/// window narrows the outer's. With both windows half-open `[after,
+/// after+dur]`, the intersection's `after` is the max of the lowers and
+/// its close is the min of the uppers. A `None` `dur` is `+∞`.
+fn intersect_windows(a: ResolvedWindow, b: ResolvedWindow) -> ResolvedWindow {
+    let after = a.after.max(b.after);
+    let upper = |w: ResolvedWindow| -> Option<f64> {
+        w.dur.map(|d| w.after + d)
+    };
+    let dur = match (upper(a), upper(b)) {
+        (Some(u1), Some(u2)) => Some((u1.min(u2) - after).max(0.0)),
+        (Some(u), None) | (None, Some(u)) => Some((u - after).max(0.0)),
+        (None, None) => None,
+    };
+    ResolvedWindow { after, dur }
 }

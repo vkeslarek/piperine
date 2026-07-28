@@ -352,15 +352,25 @@ pub(crate) fn resolve_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Stmt {
 fn resolve_event_spec(spec: &piperine_lang::parse::ast::EventSpec, ctx: &mut LowerCtx) -> piperine_lang::parse::ast::EventSpec {
     use piperine_lang::parse::ast::EventSpec;
     match spec {
-        EventSpec::Named { name, args } => EventSpec::Named {
+        EventSpec::Named { name, args, window } => EventSpec::Named {
             name: name.clone(),
             args: args.iter().map(|a| resolve_expr(a, ctx)).collect(),
+            window: window.as_ref().map(|w| {
+                Box::new(piperine_lang::parse::ast::EventWindow {
+                    after: w.after.as_ref().map(|e| resolve_expr(e, ctx)),
+                    dur: w.dur.as_ref().map(|e| resolve_expr(e, ctx)),
+                })
+            }),
         },
         EventSpec::Initial => EventSpec::Initial,
         EventSpec::Final => EventSpec::Final,
         EventSpec::Or(specs) => EventSpec::Or(
             specs.iter().map(|s| resolve_event_spec(s, ctx)).collect(),
         ),
+        EventSpec::And(specs) => EventSpec::And(
+            specs.iter().map(|s| resolve_event_spec(s, ctx)).collect(),
+        ),
+        EventSpec::Not(inner) => EventSpec::Not(Box::new(resolve_event_spec(inner, ctx))),
     }
 }
 

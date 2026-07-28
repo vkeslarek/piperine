@@ -585,6 +585,7 @@ impl<'m> AnalogCompiler<'m> {
                         label: margin.label.clone(),
                         kind: margin.kind,
                         analyses: margin.analyses.clone(),
+                        window: margin.window,
                     },
                     func,
                 ));

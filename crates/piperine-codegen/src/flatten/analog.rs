@@ -22,11 +22,16 @@ use crate::error::CodegenError;
 
 /// Convert an `EventSpec` (AST) to `EventSource`(s) for the flattener.
 /// Expressions are NOT substituted here — `add_event` does that.
+///
+/// Behavior-body event specs only — the constraint-side filter (windows,
+/// `&`, `not`) never reaches this path. `And`/`Not` and any window on
+/// `Named` are elaboration-rejected for behavior bodies (T29), so the
+/// arms are present only to keep the match exhaustive.
 fn event_spec_to_sources(spec: &EventSpec) -> Vec<EventSource> {
     match spec {
         EventSpec::Initial => vec![EventSource::InitialStep],
         EventSpec::Final => vec![EventSource::FinalStep],
-        EventSpec::Named { name, args } => match name.as_str() {
+        EventSpec::Named { name, args, window: _ } => match name.as_str() {
             // First arg is the watched expression; a missing arg defaults to a
             // zero literal (the elaborator rejects genuinely arg-less events).
             "cross" => vec![EventSource::Cross {
@@ -54,6 +59,12 @@ fn event_spec_to_sources(spec: &EventSpec) -> Vec<EventSource> {
                 all.extend(event_spec_to_sources(s));
             }
             all
+        }
+        EventSpec::And(_) | EventSpec::Not(_) => {
+            // Constraint-only forms (DVC-20) — the behavior-body validator
+            // rejects them before flattening. Defensive empty list keeps
+            // the flattener total rather than panicking.
+            Vec::new()
         }
     }
 }

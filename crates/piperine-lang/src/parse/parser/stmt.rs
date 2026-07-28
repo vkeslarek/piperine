@@ -7,6 +7,14 @@ use crate::parse::lexer::Tok;
 
 use super::{Parse, Parser};
 
+/// Internal helper for [`Parser::parse_window_arg`]: which window named-
+/// arg was parsed. Lives in the parser only — the AST stores it as
+/// [`crate::parse::ast::EventWindow`].
+enum WindowArg {
+    After(crate::parse::ast::Expr),
+    Dur(crate::parse::ast::Expr),
+}
+
 impl<'a> Parser<'a> {
 
     // ─────────────────────────── §3.2  Instances and connections ─────────────
@@ -423,22 +431,69 @@ impl<'a> Parser<'a> {
     // EventSpec is open: any identifier becomes `Named { name, arg }`.
     // The elaborator resolves it against the EventRegistry.
 
-    /// Parses an event specification: a bare event term, or a parenthesized `|`-separated list of event terms.
+    /// Parses an event specification. Forms (dv-core T28/T29):
+    ///
+    /// - `name` / `name(args)` — a bare event term.
+    /// - `name(after = …, dur = …)` — a term with a temporal window
+    ///   (DVC-20). The window named-args may follow positional args.
+    /// - `(spec | spec | …)` — set union (Or).
+    /// - `(spec & spec & …)` — set intersection (And, DVC-20).
+    /// - `not spec` — set complement (Not, DVC-20).
+    ///
+    /// Precedence inside the parens (loosest to tightest): `|`, `&`,
+    /// `not`. The top-level production accepts a single term (a window
+    /// attaches to it), or a parenthesized union/intersection. `not` is a
+    /// prefix operator on the next term.
     pub(crate) fn parse_event_spec(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
         if self.eat(&Tok::LParen) {
-            let spec = self.parse_event_term()?;
-            let mut specs = vec![spec];
-            while self.eat(&Tok::BitOr) || self.eat_ident("or") {
-                specs.push(self.parse_event_term()?);
-            }
+            let spec = self.parse_event_or()?;
             self.expect(&Tok::RParen)?;
-            Ok(EventSpec::Or(specs))
+            Ok(spec)
         } else {
-            self.parse_event_term()
+            self.parse_event_unary()
         }
     }
 
-    /// Parses a single event term: `initial`, `final`, `name`, or `name(args)`.
+    /// `spec | spec | …` (loosest inside the parens). Falls through to
+    /// `&`-level when no `|` follows.
+    fn parse_event_or(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
+        let first = self.parse_event_and()?;
+        if !self.eat(&Tok::BitOr) && !self.eat_ident("or") {
+            return Ok(first);
+        }
+        let mut specs = vec![first, self.parse_event_and()?];
+        while self.eat(&Tok::BitOr) || self.eat_ident("or") {
+            specs.push(self.parse_event_and()?);
+        }
+        Ok(EventSpec::Or(specs))
+    }
+
+    /// `spec & spec & …` (tighter than `|`).
+    fn parse_event_and(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
+        let first = self.parse_event_unary()?;
+        if !self.eat(&Tok::BitAnd) && !self.eat_ident("and") {
+            return Ok(first);
+        }
+        let mut specs = vec![first, self.parse_event_unary()?];
+        while self.eat(&Tok::BitAnd) || self.eat_ident("and") {
+            specs.push(self.parse_event_unary()?);
+        }
+        Ok(EventSpec::And(specs))
+    }
+
+    /// `not spec` (prefix) or fall through to a primary term.
+    fn parse_event_unary(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
+        if self.eat_ident("not") {
+            let inner = self.parse_event_unary()?;
+            return Ok(EventSpec::Not(Box::new(inner)));
+        }
+        self.parse_event_term()
+    }
+
+    /// Parses a single event term: `initial`, `final`, `name`, `name(args)`,
+    /// or `name(args, after = …, dur = …)` (DVC-20 window named-args). The
+    /// positional and named args may mix: positionals come first, then any
+    /// keyed window args.
     pub(crate) fn parse_event_term(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
         if self.eat_ident("initial") {
             return Ok(EventSpec::Initial);
@@ -452,18 +507,52 @@ impl<'a> Parser<'a> {
         // terms like `@ dc { … }` parse through the same production
         // (dv-core T28, DVC-19) — the registry resolves the name.
         if !self.eat(&Tok::LParen) {
-            return Ok(EventSpec::Named { name, args: Vec::new() });
+            return Ok(EventSpec::Named { name, args: Vec::new(), window: None });
         }
-        let mut args = if self.peek() == Some(&Tok::RParen) {
-            Vec::new()
-        } else {
-            vec![self.parse_expr()?]
-        };
-        while self.eat(&Tok::Comma) {
-            args.push(self.parse_expr()?);
+        let mut args = Vec::new();
+        let mut window_after = None;
+        let mut window_dur = None;
+        if self.peek() != Some(&Tok::RParen) {
+            loop {
+                // A leading `ident =` is the start of a window named-arg
+                // (`after = …` / `dur = …`); anything else is a positional.
+                if matches!(self.peek(), Some(Tok::Ident(_))) && self.peek_at(1) == Some(&Tok::Assign) {
+                    let arg = self.parse_window_arg()?;
+                    match arg {
+                        WindowArg::After(e) => window_after = Some(e),
+                        WindowArg::Dur(e) => window_dur = Some(e),
+                    }
+                } else {
+                    args.push(self.parse_expr()?);
+                }
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+                if self.peek() == Some(&Tok::RParen) {
+                    break;
+                }
+            }
         }
         self.expect(&Tok::RParen)?;
-        Ok(EventSpec::Named { name, args })
+        let window = (window_after.is_some() || window_dur.is_some())
+            .then_some(Box::new(EventWindow { after: window_after, dur: window_dur }));
+        Ok(EventSpec::Named { name, args, window })
+    }
+
+    /// Parses one window named-arg: `after = expr` or `dur = expr`. Fails
+    /// loud on any other keyed name — only `after`/`dur` are legal.
+    fn parse_window_arg(&mut self) -> Result<WindowArg, crate::parse::error::ParseError> {
+        let name = self.parse_ident()?;
+        self.expect(&Tok::Assign)?;
+        let expr = self.parse_expr()?;
+        match name.as_str() {
+            "after" => Ok(WindowArg::After(expr)),
+            "dur" => Ok(WindowArg::Dur(expr)),
+            other => Err(self.make_error(format!(
+                "unknown window argument `{other}` — `after`/`dur` are the only legal names \
+                 (dv-core DVC-20)"
+            ))),
+        }
     }
 
     // ─────────────────────────── §8.1  Statements ────────────────────────────

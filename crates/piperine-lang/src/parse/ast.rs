@@ -914,23 +914,40 @@ pub enum TargetCmp {
 }
 
 impl EventSpec {
-    /// Immutable visit of every expression in this event spec (`Named` args,
-    /// recursively through `Or`).
+    /// Immutable visit of every expression in this event spec (`Named`
+    /// args and window, recursively through `Or`/`And`/`Not`).
     pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
         match self {
-            EventSpec::Named { args, .. } => args.iter().for_each(|a| a.walk(f)),
+            EventSpec::Named { args, window, .. } => {
+                args.iter().for_each(|a| a.walk(f));
+                if let Some(w) = window {
+                    if let Some(a) = &w.after { a.walk(f); }
+                    if let Some(d) = &w.dur { d.walk(f); }
+                }
+            }
             EventSpec::Initial | EventSpec::Final => {}
-            EventSpec::Or(specs) => specs.iter().for_each(|s| s.walk_exprs(f)),
+            EventSpec::Or(specs) | EventSpec::And(specs) => {
+                specs.iter().for_each(|s| s.walk_exprs(f));
+            }
+            EventSpec::Not(inner) => inner.walk_exprs(f),
         }
     }
 
-    /// Mutable visit of every expression in this event spec (`Named` args,
-    /// recursively through `Or`).
+    /// Mutable counterpart of [`EventSpec::walk_exprs`].
     pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
         match self {
-            EventSpec::Named { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
+            EventSpec::Named { args, window, .. } => {
+                args.iter_mut().for_each(|a| a.walk_mut(f));
+                if let Some(w) = window {
+                    if let Some(a) = &mut w.after { a.walk_mut(f); }
+                    if let Some(d) = &mut w.dur { d.walk_mut(f); }
+                }
+            }
             EventSpec::Initial | EventSpec::Final => {}
-            EventSpec::Or(specs) => specs.iter_mut().for_each(|s| s.walk_exprs_mut(f)),
+            EventSpec::Or(specs) | EventSpec::And(specs) => {
+                specs.iter_mut().for_each(|s| s.walk_exprs_mut(f));
+            }
+            EventSpec::Not(inner) => inner.walk_exprs_mut(f),
         }
     }
 }
@@ -963,23 +980,50 @@ pub enum Pattern {
 ///
 /// ## Extensible event model
 ///
-/// `Named { name, arg }` carries any identifier as the event name. The
-/// elaborator resolves `name` against the [`EventRegistry`][crate::elab::event::EventRegistry],
-/// which means new event kinds can be added at any time without changing the
-/// parser or AST. Built-in names: `posedge`, `negedge`, `change`, `cross`,
+/// `Named { name, args, window }` carries any identifier as the event
+/// name. The elaborator resolves `name` against the
+/// [`EventRegistry`][crate::elab::event::EventRegistry], which means new
+/// event kinds can be added at any time without changing the parser or
+/// AST. Built-in names: `posedge`, `negedge`, `change`, `cross`,
 /// `name(arg)` or `name(arg, arg, ...)` — any identifier looked up in the
 /// event registry at elaboration. Multiple arguments support events like
 /// `@timer(period, phase)`; single-arg events (`cross`, `above`) use
-/// `args[0]`.
+/// `args[0]`. The optional [`EventWindow`] (dv-core T29, DVC-20) attaches
+/// `after = …` / `dur = …` named args to a term, scoping it to a
+/// temporal window — meaningful inside `constraint` event blocks only.
 #[derive(Debug, Clone)]
 pub enum EventSpec {
-    Named { name: String, args: Vec<Expr> },
+    Named { name: String, args: Vec<Expr>, window: Option<Box<EventWindow>> },
     /// `initial` — fires once at simulation start.
     Initial,
     /// `final` — fires once at simulation end.
     Final,
-    /// `(spec | spec | ...)` — fires when any constituent event fires.
+    /// `(spec | spec | ...)` — fires when any constituent event fires
+    /// (set union over evaluation points, dv-core T29).
     Or(Vec<EventSpec>),
+    /// `(spec & spec & ...)` — set intersection over evaluation points
+    /// (dv-core T29, DVC-20). Meaningful inside `constraint` event blocks
+    /// only; rejected by the behavior-body validator.
+    And(Vec<EventSpec>),
+    /// `not spec` — set complement over evaluation points (dv-core T29,
+    /// DVC-20). Meaningful inside `constraint` event blocks only; rejected
+    /// by the behavior-body validator.
+    Not(Box<EventSpec>),
+}
+
+/// `after = …` / `dur = …` named-arg window on an event term (dv-core
+/// T29, DVC-20). `after` opens a temporal window; `dur` closes it. Both
+/// are elaboration-constant `Expr`s (a time literal, or an expression
+/// over params/constants). Stored on the [`EventSpec::Named`] variant;
+/// the elaborator resolves the bounds to f64 and threads them through to
+/// the runtime evaluator, which filters evaluation points by the window.
+#[derive(Debug, Clone)]
+pub struct EventWindow {
+    /// `after = …` — the window's lower bound. `None` means "from t = 0".
+    pub after: Option<Expr>,
+    /// `dur = …` — the window's duration. `None` means "open-ended after
+    /// `after`".
+    pub dur: Option<Expr>,
 }
 
 // ─────────────────────────────── Expressions ─────────────────────────────────

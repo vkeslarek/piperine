@@ -9,19 +9,24 @@
 //! pointwise margin; reduced-class margins never reach the kernel (D7 —
 //! host-side reductions).
 
+use piperine_lang::pom::ResolvedWindow;
+
 use crate::resolve::MarginKind;
 
 use super::{AnalogCapability, AnalogFn};
 
 /// The provenance one declared margin carries: its authored label (a
 /// `require`'s name, a `target`'s `target#<index>` position), its
-/// statement kind, and the analyses its helpers belong to (DVC-09 — the
-/// record a later cross-analysis read refuses on).
+/// statement kind, the analyses its helpers belong to (DVC-09 — the
+/// record a later cross-analysis read refuses on), and the temporal
+/// window an enclosing event block scopes it to (DVC-20 — `None` is
+/// every evaluation point of an in-scope analysis).
 #[derive(Debug, Clone)]
 pub struct MarginInfo {
     pub label: String,
     pub kind: MarginKind,
     pub analyses: Vec<String>,
+    pub window: Option<ResolvedWindow>,
 }
 
 /// One compiled margin: its provenance plus the JIT function evaluating

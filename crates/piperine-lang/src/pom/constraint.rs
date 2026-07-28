@@ -6,14 +6,65 @@ use std::collections::HashMap;
 pub use crate::parse::ast::{ConstraintStmt, TargetCmp};
 use crate::pom::net_type::ValueType;
 
+/// A resolved temporal window on a constraint scope (dv-core T29,
+/// DVC-20): the result of evaluating an [`crate::parse::ast::EventWindow`]'s
+/// `after` / `dur` expressions as elaboration constants. `after` opens
+/// the window at `t = after`; `dur` (when present) closes it at
+/// `t = after + dur`. A margin whose evaluation coordinate falls outside
+/// the window is not evaluated — never a silent pass.
+///
+/// `Eq` is bit-for-bit on the `f64` bounds so the surrounding
+/// `PartialEq`/`Eq` derives on [`StmtClass`] keep working (no approximate
+/// float comparison).
+#[derive(Debug, Clone, Copy)]
+pub struct ResolvedWindow {
+    /// Lower bound (`after = …`). The window opens at `t = after`.
+    pub after: f64,
+    /// Window duration (`dur = …`). `None` is open-ended — every point
+    /// with `t >= after` is inside.
+    pub dur: Option<f64>,
+}
+
+impl ResolvedWindow {
+    /// `true` iff `time` is inside `[after, after + dur]` (or `[after, ∞)`
+    /// when `dur` is `None`).
+    pub fn contains(&self, time: f64) -> bool {
+        if time < self.after {
+            return false;
+        }
+        match self.dur {
+            Some(d) => time <= self.after + d,
+            None => true,
+        }
+    }
+}
+
+impl PartialEq for ResolvedWindow {
+    fn eq(&self, other: &Self) -> bool {
+        self.after.to_bits() == other.after.to_bits()
+            && match (self.dur, other.dur) {
+                (Some(a), Some(b)) => a.to_bits() == b.to_bits(),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+impl Eq for ResolvedWindow {}
+
 /// What elaboration proved about one **leaf** constraint statement's
-/// quantity (dv-core T10, DVC-09): its pointwise/reduced class, and the
+/// quantity (dv-core T10, DVC-09): its pointwise/reduced class, the
 /// analyses its helpers belong to — recorded so a later pass can refuse a
-/// cross-analysis read (DVC-08 AC6). For a statement inside an event
-/// block (`@ dc { … }`, DVC-19), this is the **union** of the helper
-/// analyses and every enclosing event block's scope analyses — so a
-/// `require` in `@ dc { … }` records `["dc"]` here regardless of what
-/// its helpers belong to.
+/// cross-analysis read (DVC-08 AC6) — and the temporal window an
+/// enclosing `@ tran(after = …, dur = …) { … }` block scopes it to
+/// (DVC-20). For a statement inside an event block (`@ dc { … }`,
+/// DVC-19), `analyses` is the **union** of the helper analyses and every
+/// enclosing event block's scope analyses — so a `require` in
+/// `@ dc { … }` records `["dc"]` here regardless of what its helpers
+/// belong to. The runtime evaluator gates each evaluation point on both
+/// `analyses` (the running analysis must match) and `window` (the
+/// evaluation coordinate must fall inside); a margin that never matches
+/// stays at its never-evaluated sentinel — "not exercised".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StmtClass {
     /// The statement's class. A `require` is always `Pointwise` (a reduced
@@ -28,6 +79,11 @@ pub struct StmtClass {
     /// the running analysis matches; an analysis that never ran leaves
     /// the margin "not exercised" (never a silent vacuous pass).
     pub analyses: Vec<String>,
+    /// The temporal window an enclosing event block scopes this leaf to
+    /// (DVC-20). `None` is "every evaluation point of an in-scope
+    /// analysis"; `Some(w)` filters points to those inside `w`. Propagated
+    /// from the innermost enclosing event block that carries a window.
+    pub window: Option<ResolvedWindow>,
 }
 
 /// One node in a constraint block's per-statement classification tree
@@ -40,11 +96,17 @@ pub enum StmtClassNode {
     /// `ConstraintStmt::Require`/`Var`/`Target`.
     Leaf(StmtClass),
     /// An event block (`@ dc { … }`, DVC-19): the analyses this scope
-    /// applies to and the per-child classification tree.
+    /// applies to, the temporal window it opens (DVC-20), and the
+    /// per-child classification tree.
     Event {
         /// Analyses this event block scopes its body to (e.g. `["dc"]`,
         /// `["dc", "tran"]`), sorted and deduplicated.
         analyses: Vec<String>,
+        /// Temporal window opened by the scope (DVC-20). `None` is the
+        /// common case (`@ dc { … }` has no window); `Some` opens a
+        /// window that filters evaluation points in addition to the
+        /// analyses filter.
+        window: Option<ResolvedWindow>,
         /// Classification tree parallel to the event block's body
         /// statements.
         children: Vec<StmtClassNode>,

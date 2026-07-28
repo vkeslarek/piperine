@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 
 use piperine_lang::parse::ast::{BinaryOp, ConstraintStmt, Expr as PomExpr, Literal, TargetCmp};
-use piperine_lang::pom::{ConstraintBlock, QuantityClass};
+use piperine_lang::pom::{ConstraintBlock, QuantityClass, ResolvedWindow};
 
 use super::LowerCtx;
 use super::expr::{resolve_expr, subst_expr};
@@ -39,14 +39,16 @@ pub enum MarginKind {
 
 /// One lowered constraint margin: the signed, scale-normalized expression
 /// (`expr ≥ 0` ⟺ satisfied) with its provenance — the authored label, the
-/// statement kind, the pointwise/reduced class, and the analyses its
-/// helpers belong to (DVC-09).
+/// statement kind, the pointwise/reduced class, the analyses its helpers
+/// belong to (DVC-09), and the temporal window an enclosing event block
+/// scopes it to (DVC-20).
 #[derive(Debug, Clone)]
 pub struct LoweredMargin {
     pub label: String,
     pub kind: MarginKind,
     pub class: QuantityClass,
     pub analyses: Vec<String>,
+    pub window: Option<ResolvedWindow>,
     pub expr: PomExpr,
 }
 
@@ -89,6 +91,7 @@ impl<'a> ConstraintLowering<'a> {
                         kind: MarginKind::Require,
                         class: class.class,
                         analyses: class.analyses.clone(),
+                        window: class.window,
                         expr,
                     });
                 }
@@ -99,6 +102,7 @@ impl<'a> ConstraintLowering<'a> {
                         kind: MarginKind::Target,
                         class: class.class,
                         analyses: class.analyses.clone(),
+                        window: class.window,
                         expr: margin,
                     });
                 }

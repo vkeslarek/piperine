@@ -62,7 +62,9 @@ impl MarginTracker {
     /// non-empty `analyses` set is evaluated only when the running
     /// analysis matches; one whose scope never matches stays at its
     /// never-evaluated sentinel (`+inf`, no argmin) — "not exercised",
-    /// never a vacuous pass.
+    /// never a vacuous pass. A temporal window (DVC-20) further filters
+    /// by `time`: a margin whose window excludes every evaluated point is
+    /// also "not exercised".
     pub(super) fn evaluate(
         &mut self,
         cx: &LoadCtx<'_>,
@@ -81,6 +83,17 @@ impl MarginTracker {
             // is evaluated only when the running analysis matches its
             // scope. An empty analyses set holds in every analysis (D2).
             if !info.analyses.is_empty() && !info.analyses.iter().any(|a| a == running) {
+                continue;
+            }
+            // DVC-20: a temporal-window-scoped margin is evaluated only
+            // when the evaluation coordinate falls inside the window. A
+            // window that selects no points leaves the margin at its
+            // never-evaluated sentinel ("not exercised", never a vacuous
+            // pass). DC has time = 0 (or `−1.0` as the analysis's
+            // convention for "no time"); we evaluate it only when the
+            // window contains 0.
+            if let Some(w) = info.window
+                && !w.contains(time) {
                 continue;
             }
             let margin = cx.kernel.eval_margin(i, volts, cx.params, cx.state, cx.vars, cx.sim);

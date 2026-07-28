@@ -203,10 +203,14 @@ impl EventRegistry {
     /// Validates an `EventSpec` against the behavior kind. Rejects analog
     /// events in digital blocks and digital edge events in analog blocks.
     /// Recursively validates `Or` composite specs and passes through
-    /// `Initial`/`Final`.
+    /// `Initial`/`Final`. The constraint-only forms — `And` (set
+    /// intersection), `Not` (complement), and a window on `Named`
+    /// (`after`/`dur`, dv-core T29, DVC-20) — are rejected here: a
+    /// behavior body's `@` block fires once when its runtime trigger
+    /// fires; it has no evaluation-point set to filter.
     fn validate_event_spec(&self, kind: BehaviorKind, spec: &EventSpec) -> Result<(), ElabError> {
         match spec {
-            EventSpec::Named { name, .. } => {
+            EventSpec::Named { name, window, .. } => {
                 let ev = self.lookup(name).ok_or_else(|| ElabError::from(ElabErrorKind::UnknownEvent(name.clone())))?;
                 // Analysis-scope events (`dc`/`tran`/`ac`, dv-core T28)
                 // are not runtime events — they live in constraint event
@@ -224,11 +228,26 @@ impl EventRegistry {
                 if kind == BehaviorKind::Analog && ev.is_digital_edge() {
                     return Err(ElabError::from(ElabErrorKind::DigitalEventInAnalog(name.clone())));
                 }
+                if window.is_some() {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "event `{name}` carries a temporal window (`after`/`dur`) — windows are \
+                         valid only inside a `constraint` block's `@` event block, not a runtime \
+                         behavior body (dv-core DVC-20)"
+                    ))));
+                }
             }
             EventSpec::Or(specs) => {
                 for s in specs {
                     self.validate_event_spec(kind.clone(), s)?;
                 }
+            }
+            EventSpec::And(_) | EventSpec::Not(_) => {
+                return Err(ElabError::from(ElabErrorKind::Other(
+                    "set intersection (`&`) / complement (`not`) over event scopes are valid only \
+                     inside a `constraint` block's `@` event block, not a runtime behavior body \
+                     (dv-core DVC-20)"
+                        .to_string(),
+                )));
             }
             EventSpec::Initial | EventSpec::Final => {}
         }

@@ -334,9 +334,12 @@ impl<'m> DigitalCompiler<'m> {
 
 /// Walk an `EventSpec` and collect `(edge_name, arg)` pairs for each atomic
 /// `Named { name, arg }` term. `Initial`/`Final` contribute no terms.
+/// `And`/`Not` are constraint-only forms (DVC-20) and reach this path
+/// only defensively (the behavior-body validator rejects them); they
+/// contribute no digital watch terms.
 fn extract_event_terms(spec: &EventSpec, terms: &mut Vec<(String, Expr)>) {
     match spec {
-        EventSpec::Named { name, args } => {
+        EventSpec::Named { name, args, window: _ } => {
             // Digital edge events (`posedge(net)`, …) carry a single net arg.
             if let Some(arg) = args.first() {
                 terms.push((name.clone(), arg.clone()));
@@ -348,6 +351,7 @@ fn extract_event_terms(spec: &EventSpec, terms: &mut Vec<(String, Expr)>) {
                 extract_event_terms(s, terms);
             }
         }
+        EventSpec::And(_) | EventSpec::Not(_) => {}
     }
 }
 
