@@ -53,7 +53,7 @@ session) + `OpResult`, `Trace`, `AcTrace`, `NoiseTrace`, `PssResult`,
 
 | Class | Fields | Notes |
 |---|---|---|
-| `Solver` | `temperature=300.15`, `reltol=1e-3`, `abstol=1e-12`, `gmin=1e-12`, `max_iter=100`, `dc_damp_tolerance=0.5` | canonical knob set, identical on both hosts |
+| `Solver` | `temperature=300.15`, `reltol=1e-3`, `abstol=1e-12`, `gmin=1e-12`, `max_iter=100`, `dc_damp_tolerance=0.5`, `checks="strict"`, `require_scope="every_analysis"` | canonical knob set, identical on both hosts; `checks` ∈ `{"strict","collect","off"}` (DVC-12) |
 | `OpConfig` | `solver`, `nodeset={}` | |
 | `TranConfig` | `stop`, `step=0.0` (auto), `start=0.0`, `ic={}`, `solver`, `record_device_state=False` | |
 | `AcConfig` | `fstart`, `fstop`, `points=100`, `scale=Scale.Dec`, `solver` | |
@@ -70,7 +70,7 @@ to `inspect.signature(TranConfig)` (plain dataclass `__init__`, HOST-20).
 
 | Object | Members |
 |---|---|
-| `OpResult` | `v(a, b=None)` · `i(a, b=None)` · `op["instance.path"] -> InstanceView` · `stats -> SolverStats` |
+| `OpResult` | `v(a, b=None)` · `i(a, b=None)` · `op["instance.path"] -> InstanceView` · `stats -> SolverStats` · `margins -> MarginsResult` (DVC-18) · `violations -> list[ValidationFinding]` (DVC-15) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` |
 | `InstanceView` | `label` (prop) · `v(port_a, port_b=None)` · `i(port_a, port_b=None)` · `terminal_connections()` · `opvar(name) -> float` (HOST-07) · `opvars() -> list[(str, float)]` · `model -> ModelDescriptor` (prop) · `terminals -> list[TerminalDescriptor]` (prop) · `observables() -> list[ObservableDescriptor]` (HOST-09) · `params() -> list[ParamDescriptor]` · `param(name) -> ParamDescriptor` (HOST-12) |
 | `ModelDescriptor` | `type_id`, `version` |
 | `TerminalDescriptor` | `name`, `kind` (`"external"`/`"internal"`/`"auxiliary"`), `domain`, `direction` |
@@ -78,8 +78,8 @@ to `inspect.signature(TranConfig)` (plain dataclass `__init__`, HOST-20).
 | `ParamDescriptor` | `name`, `bounds` (`(lo, hi)` tuple, either side `None`), `unit`, `scope`, `invalidation` |
 | `LimitingReport` | `device`, `net`, `proposed`, `limited_value`, `limiter_name`, `reason` (HOST-10) |
 | `NoiseContribution` | `element`, `source`, `kind`, `integrated_sq` (HOST-11) |
-| `Trace` (tran/dc) | `v(a, b=None) -> Waveform` · `i(a, b=None) -> Waveform` · `axis()` · `stats` · `opvar(path) -> Waveform` (HOST-08) · `four(f0, harmonics) -> FourierResult` |
-| `AcTrace` | `v(a, b=None) -> ComplexWaveform` · `axis()` — distinct native pyclass wrapping `Trace<ComplexWaveform>`, same method shape (SPEC_DEVIATION, T7: PyO3 pyclasses cannot be generic) |
+| `Trace` (tran/dc) | `v(a, b=None) -> Waveform` · `i(a, b=None) -> Waveform` · `axis()` · `stats` · `opvar(path) -> Waveform` (HOST-08) · `four(f0, harmonics) -> FourierResult` · `margins -> MarginsResult` (DVC-18) · `violations -> list[ValidationFinding]` (DVC-15) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` |
+| `AcTrace` | `v(a, b=None) -> ComplexWaveform` · `axis()` — distinct native pyclass wrapping `Trace<ComplexWaveform>`, same method shape (SPEC_DEVIATION, T7: PyO3 pyclasses cannot be generic) · `margins -> MarginsResult` (DVC-18) · `violations -> list[ValidationFinding]` (DVC-15) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` |
 | `NoiseTrace` | `psd() -> Waveform` · `total() -> float` · `by_source() -> dict[str, Waveform]` (HOST-11) · `contributions() -> list[NoiseContribution]` (HOST-11) — distinct native pyclass wrapping `Trace<NoiseSample>`, same SPEC_DEVIATION reason |
 | `Waveform` | `values`/`axis` (numpy) · `at(x)` · `cross(level, dir=CrossDirection.Either)` (HOST-23 enum, legacy `str` still accepted) · `min()/max()/mean()/rms()/peak_to_peak()` (time-weighted) · `plot(**kwargs)` (HOST-17, matplotlib-guarded) · `len()`/`__len__` (HOST-24) |
 | `ComplexWaveform` | `values`/`axis` (numpy complex) · `mag`/`phase`/`db` (properties → `Waveform`) · `at(x)` · `plot(**kwargs)` (Bode, HOST-17) · `len()`/`__len__` |
@@ -91,7 +91,10 @@ to `inspect.signature(TranConfig)` (plain dataclass `__init__`, HOST-20).
 | `SpResult` | `frequencies`, `s` (matrix), `z0`, `n_ports` (`.sp`) |
 | `DistoResult` | `hd2`, `hd3`, `im2`, `im3` (`.disto`) |
 | `TfResult` | `gain`, `z_in`, `z_out` (`.tf`) |
-| `SolverStats` | `converged` · `newton_iterations` · `homotopy_strategy`/`homotopy_levels` · `steps_accepted`/`steps_rejected` · `dt_min`/`dt_max`/`dt_min_floor_hits` · `bypass_hits`/`bypass_misses` · `assembly_time_ns`/`solve_time_ns` · `limiting: list[LimitingReport]` (HOST-10) |
+| `SolverStats` | `converged` · `newton_iterations` · `homotopy_strategy`/`homotopy_levels` · `steps_accepted`/`steps_rejected` · `dt_min`/`dt_max`/`dt_min_floor_hits` · `bypass_hits`/`bypass_misses` · `assembly_time_ns`/`solve_time_ns` · `limiting: list[LimitingReport]` (HOST-10) · `validation: list[ValidationFinding]` (DVC-15) · `margins: list[ReportedMargin]` (DVC-18, raw solver-side per-instance per-margin reports) |
+| `ValidationFinding` | `severity` (`"warning"`/`"error"`) · `label` · `message` · `value` · `time` · `instance_path` (DVC-13) |
+| `MarginsResult` | `entries() -> list[MarginEntry]` · `get(name) -> MarginEntry` (loud: unknown/ambiguous/not-defined/digital) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` · `first_not_exercised -> MarginEntry \| None` · `len()`/`is_empty()` (DVC-18) |
+| `MarginEntry` | `label` · `instance_path` · `kind` (`"require"`/`"target"`) · `shape -> MarginShape` (`"pointwise"`/`"reduced"`) · `scalar() -> float` · `argmin() -> float \| None` · `is_satisfied() -> bool` · `is_not_exercised() -> bool` (DVC-18) |
 
 ### Errors (HOST-22)
 
@@ -146,7 +149,7 @@ inherits the matching builtin type it previously surfaced as, so existing
 | `Grid` | `shape()` · `len()`/`is_empty()` · `map<R>(fn) -> Nested<R>` |
 | `Nested<R>` | `Branch(Vec<Nested<R>>)` / `Leaf(R)` tree shaped like `Grid::shape()` |
 | `Scale` | `Lin`/`Dec`/`Oct` enum; `impl From<Scale> for bool` (`is_logarithmic`) |
-| `SolverConfig` | `{ temperature, reltol, abstol, gmin, max_iter, dc_damp_tolerance }` + `to_context()` / `to_policy()` |
+| `SolverConfig` | `{ temperature, reltol, abstol, gmin, max_iter, dc_damp_tolerance, checks: CheckPosture, require_scope: RequireScope }` + `to_context()` / `to_policy()` — the two posture knobs (DVC-12) thread into the solver's `Context` |
 
 ### `results` — `NetRef`, `NetSelector`, `OpResult`, `InstanceView`, structured results
 

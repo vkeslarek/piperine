@@ -20,6 +20,15 @@ plain syntax error, and the interpreted context no longer exists. Everything
 it did — analyses, measurement, parameter sweeps, assertions — is done by a
 host, in Python or Rust, with no new syntax.
 
+> **Publication status (dv-core T32 note).** This Part and
+> `appendix_c_host_surface.md` are **not** in `mkdocs.yml`'s `nav:` today —
+> the `p6-cleanup-architecture` deferred item owns that wiring. Until it
+> lands, the documentation added here (the margins channel, `r.violations`,
+> the three postures) is unpublished in the built site even though it is
+> normative in the repository. The same is not true of the design-verification
+> additions in Part II, Part V, Part VII, and Appendix B — those four *are*
+> in the nav, so they publish normally.
+
 ## 1. The session model
 
 There is exactly **one** session type in Rust — `Session` — and two ways to
@@ -366,6 +375,7 @@ has a type the other lacks):
 | `TfResult` | `gain`/`z_in`/`z_out` scalars |
 | `SensResult` | `(output, "label.param") → value` map |
 | `PssResult`/`PoleZeroResult`(`PzResult`)/`DistoResult`/`SpResult`(`SParamResult`) | structured, analysis-specific fields — kept distinct rather than merged into a bag of `Optional` fields |
+| `MarginsResult` | the margins channel (D3, dv-core DVC-18) — pointwise and reduced margins live here, never as waveform rows. Separate because it carries an argmin-or-not shape a waveform cannot model without inventing a `t = 0` for the reduced kind |
 
 ```python
 wf: Waveform
@@ -401,12 +411,39 @@ tf:   TfResult      -> .gain · .z_in · .z_out
 dist: DistoResult   -> .hd2 · .hd3 · .im2 · .im3
 spar: SpResult      -> .s (matrix) · .z0 · .frequencies · .n_ports  (Rust: SParamResult.s(k, i, j))
 pss:  PssResult     -> .trace (one period, a Trace) · .stats (PssStats: shoot_iterations/residual/estimated_settle_time)
+
+# Every analysis result that carries margins exposes the same channel
+# (dv-core DVC-15/18, design §C3): OpResult, Trace (tran/dc sweep), AcTrace.
+r.margins                  -> MarginsResult
+r.margins["head"]          -> MarginEntry  (bare name if unique, else "inst.path.label")
+r.margins["x1.head"]       -> MarginEntry  (qualified form disambiguates)
+r.margins.get(name)        -> MarginEntry  # loud: unknown/ambiguous/not-defined/digital
+r.margins.requires_ok      -> bool         # every require satisfied AND exercised
+r.margins.first_violation  -> MarginEntry | None
+r.margins.first_not_exercised -> MarginEntry | None   # scoped require whose analysis never ran
+r.violations               -> list[ValidationFinding]  # severity, label, message, value, time, instance_path
+r.first_violation          -> MarginEntry | None       # the common "show me what failed" read
+
+# MarginEntry shapes (D3): pointwise carries worst + argmin; reduced carries
+# one value and NO argmin — the channel states which kind it is.
+entry.shape                -> MarginShape  # Pointwise | Reduced
+entry.scalar()             -> float        # worst (pointwise) | value (reduced)
+entry.argmin()             -> float | None # time/freq/swept coord (pointwise) | None (reduced)
+entry.is_satisfied()       -> bool         # m >= 0  ⟺  satisfied
+entry.is_not_exercised()   -> bool         # scoped require whose analysis never ran
 ```
 
 Unknown nets/opvars/params raise `UnknownNet`/`Error::Measurement` —
 measurement failures are loud, never a silent `0.0` or NaN. Digital nets
 read their logic value (0/1, X/Z as NaN) directly from `OpResult.v`/
 `Trace.v`.
+
+The margins channel is identical on both hosts (`r.margins`, `r.violations`,
+`r.requires_ok`, `r.first_violation`) — see Appendix C for the full surface
+and `tests/host_parity.rs` for the executable proof. Reduced margins
+(`ac_unity_gain_freq`, `ac_phase_margin`, …) are computed host-side as
+reductions over the points the solver returns (D7) — the solver stays
+pointwise-pure, which is the reason it can.
 
 ## 8. Configs, units, `Solver`
 
@@ -416,7 +453,24 @@ Python dataclasses with `.with_(**overrides)` (immutable copy,
 (`inspect.signature(TranConfig)`). `Solver` (Python dataclass) and
 `SolverConfig` (Rust struct) carry the identical canonical knob set
 (HOST-20): `temperature`, `reltol`, `abstol`, `gmin`, `max_iter`,
-`dc_damp_tolerance`.
+`dc_damp_tolerance`. Two posture knobs (dv-core DVC-12) ride on the same
+config and thread into the solver's `Context`:
+
+- **`checks: Strict | Collect | Off`** — how an analysis reacts when a
+  validation finding fires or a `require` margin crosses zero. Default
+  `Strict` (a silent pass is never the default posture). `Collect` records
+  the worst margin + argmin and always completes — the optimizer's
+  inner-loop posture, where an infeasible iterate is a margin to climb out
+  of rather than an exception. `Off` is zero-cost: the constraint kernels
+  are not called and the findings hook is not polled.
+- **`require_scope`** — which analyses an unscoped `require` holds in. The
+  default is `EveryAnalysis` (D2); a `require` inside `@ dc { … }` is
+  scoped by the block, not by this knob (it is "DC only" regardless).
+
+Changing the posture between analyses in one session triggers no
+recompilation (MD-18) — the posture fields are pure run data on `Context`.
+The same two fields exist with identical spelling on Python `Solver` and
+Rust `SolverConfig`, and `host_parity.rs` covers them.
 
 SI helpers (HOST-21, Python) — never magic-parse a raw `float`/`int`, only a
 `str` argument:

@@ -17,6 +17,8 @@ plugin device, and an external model are equivalent once they present the one
 - §1 Position and governing rules
 - §2 Circuit instance
 - §3 Element ABI — analog operations
+- §3.5 Validation ABI — the findings channel (dv-core)
+- §3.6 Evaluation points — the normative table (dv-core)
 - §4 Element ABI — digital operations
 - §5 Element loading and external models
 - §6 Analog variable and node labels
@@ -158,6 +160,7 @@ to select behavior: capability flags gate, as before.
 | `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
 | `BYPASS_OK` | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
 | `SUPPORTS_ROLLBACK` | The element overrides `checkpoint_state`/`restore_state` to snapshot/restore its mutable non-accept-gated state around rejected timesteps and DC homotopy retries (§3.1, §15.8). Default `checkpoint_state() = None` = stateless = zero cost. |
+| `EMITS_VALIDATION` | The model has validation findings to report (DVC-14): constraint violations, model self-checks, monitor hits. The solver polls `validation_reports()`/`evaluate_constraints()`/`margin_report()` **only** on elements declaring this bit, and only at the evaluation points §3.6 defines. Default off — a no-constraint circuit pays nothing. |
 
 An element must declare its capabilities accurately; the solver gates analysis
 and scheduling on this descriptor rather than on which methods are overridden.
@@ -235,7 +238,7 @@ All times, frequencies, values, and step sizes crossing this ABI are plain
 | `AnalogReference` | Reference to one analog variable. Ground has no MNA index; every other solved variable has one dense index. |
 | `Stamp<Ref, Scalar>` | Either `Matrix(row, col, value)` or `Rhs(row, value)`. The scalar is real for DC/transient and complex for AC/noise. |
 | `Noise` | A current-noise source between two analog references with PSD in A²/Hz. |
-| `Context` | The shared, immutable run context: only the `Tolerances` (gmin, reltol, vntol, abstol, min_res, trtol, chgtol, temperature, tnom, gshunt). Immutable for a run; carries no time, no integration controls, and no per-solve homotopy or convergence state. |
+| `Context` | The shared, immutable run context: the `Tolerances` (gmin, reltol, vntol, abstol, min_res, trtol, chgtol, temperature, tnom, gshunt) plus the validation posture — `checks: Strict \| Collect \| Off` (DVC-12) and `require_scope` (D2). Immutable for a run; carries no time, no integration controls, and no per-solve homotopy or convergence state. The posture fields are pure run data — changing them between analyses triggers no recompilation (MD-18). |
 | `Policy` | The driver-owned convergence tunables: the Newton iteration cap, the damping threshold, and the diagnostic trace toggles. Each analysis driver carries its own. |
 | `DcAnalysisState` | The DC loading state: the analog solution history (row 0 latest), the digital net snapshot (D2A), and the source-stepping scale. Derefs to the history. |
 | `TransientAnalysisState` | The transient loading state: the analog solution history and the digital net snapshot. Derefs to the history. |
@@ -280,6 +283,76 @@ direction, required) for diagnostics, current queries, and external-model
 wrapping.
 
 Values carried by parameters and queries are real, integer, boolean, or text.
+
+### 3.5 Validation ABI — the findings channel (dv-core DVC-13/14/15)
+
+The element contract carries one cross-cutting channel for self-reported
+findings: constraint violations, model self-checks, monitor hits. Analog and
+digital elements speak through the same hook — and because there is no signed
+distance for a `Bit` or a `Quad`, this channel is the **primary** mechanism
+for digital verification (design §C4).
+
+| Type | Meaning |
+|------|---------|
+| `ValidationSeverity` | `Warning` (always recorded, never aborts) or `Error` (aborts the analysis under the strict posture, DVC-15). |
+| `ValidationFinding` | One structured finding: `{ severity, label, message, value, time, instance_path }`. `label` is the check's authored name (a `require`/`target` name, a model self-check name); `value` is the offending value (e.g. the margin that crossed zero); `time` is the evaluation coordinate (time in transient, `0.0` at a DC point, frequency in AC); `instance_path` is the authored hierarchical path, never a flattened label. |
+| `ValidationReport` | A container wrapping a `Vec<ValidationFinding>` in emission order; `has_errors()` is the strict-posture abort gate. |
+
+| Method | Contract |
+|--------|----------|
+| `Element::validation_reports()` | `Option<ValidationReport>` — shaped after `AnalogDevice::limiting_report()` (§3.1): `Option`, not `Vec`, because `None` (nothing to say) is the common case. Default `None`. |
+| `Element::evaluate_constraints(state, t, analysis)` | Evaluate the element's declared constraint margins at one accepted solution point (DVC-10/11). Default no-op. Distinct from `accept_timestep` — the accept hook seeds operators and digital events at points that are *not* margin evaluation points (a transient's `t = 0` operator seeding, the DC mixed-signal settle). |
+| `Element::margin_report()` | `Option<MarginReport>` — the run's pointwise margins (worst value + argmin per declared margin per instance), read at the end of an analysis. Default `None`. |
+| `Element::reset_margin_tracking()` | Reset worst + argmin so the next analysis starts clean — margins are a per-run channel; one analysis's extrema never leak into the next. Default no-op. |
+
+**`EMITS_VALIDATION = 1 << 15`** gates polling. The solver asks
+`validation_reports()`/`evaluate_constraints()`/`margin_report()` **only** on
+elements declaring the bit, and only at the evaluation points §C3 defines —
+"costs nothing when unused" means *not called*, not *returns empty*. Declaring
+the bit and returning `None` is legal: the bit promises capability, not
+content. The bit sits above `NUMERIC_JACOBIAN = 1 << 14` (the prior highest
+used) and follows the `EMITS_NOISE = 1 << 6` gating pattern.
+
+**Margins are values; findings are events (design §C4).** A `require` margin
+crossing zero *generates* an `Error` finding here; the continuous margin
+itself travels its own channel (`margin_report`/`SolverStats.margins`,
+§3.5/MarginReport). The posture decides what happens to a finding:
+
+| Posture | On `Error` finding | On `Warning` finding | Kernels polled |
+|---------|--------------------|----------------------|----------------|
+| `Strict` (default) | the analysis fails loud naming constraint, instance path, time, and value | recorded, never aborts | yes |
+| `Collect` | recorded (worst margin + argmin tracked); the analysis always completes | recorded | yes |
+| `Off` | nothing is called and nothing is reported | nothing | no — `EMITS_VALIDATION` is not even asked |
+
+A `Warning` never aborts, even in `Strict`. `Off` is zero cost — the
+constraint kernels are not called, the findings hook is not polled, and the
+end-of-run `margin_report` returns nothing.
+
+### 3.6 Evaluation points — the normative table (DVC-11, design §C3)
+
+Margins and findings are evaluated only at the points below; every other
+solution is deliberately excluded. This is what keeps the default `strict`
+posture honest — a check evaluated on a non-physical intermediate would fire
+on a solve that is converging correctly.
+
+| Analysis | Evaluate at | Never at |
+|---|---|---|
+| DC / OP | the **final converged solution**, exactly once | any homotopy stage — gmin-stepping adds shunt conductance and source-stepping scales sources; each converges, and each intermediate is non-physical |
+| Transient | each **accepted** step | rejected steps (the `SUPPORTS_ROLLBACK` snapshot/restore pair, `accept_timestep`) |
+| Transient `t = 0` | the operating point, if **computed** | the UIC/`@initial` state — a forced initial condition may legitimately sit outside SOA |
+| AC / noise | each frequency point (pointwise); once per completed sweep (reduced) | the DC solve underneath — covered by the DC row |
+| `sweep` / `sweep_grid` | each swept point, reduced to worst-across-sweep with the swept coordinate in the argmin | — |
+
+The sweep row is load-bearing: `sweep`/`sweep_grid` over a compiled session
+is the loop `dv-gradients`' optimizer, corner runs, and Monte Carlo are all
+built from, so "worst margin over the sweep, and where" is a first-class
+result (Part VIII §7) rather than something the host reconstructs.
+
+A scoped `require` whose analysis never ran (DVC-19) — e.g. a `require`
+inside `@ dc { … }` read from a transient-only result — is reported **not
+exercised** by the margins channel (Part VIII §7): never a silent vacuous
+pass. The check itself was never the wrong kind of evaluated; it was never
+evaluated, and the result says so.
 
 ---
 
@@ -1143,6 +1216,7 @@ neither bound to a test nor marked.
 | §13 | Unsupported transfer-function source form is requested | Analysis error. | root: `session_tf.rs::tf_current_source_input_fails_loud` |
 | §14 | Digital delta cycle does not settle within the iteration cap | Digital convergence failure. | **not yet enforced** — `digital/scheduler.rs` raises it; no test builds a non-settling loop |
 | §15 | Linear solve returns NaN or infinity | Convergence failure. | `failure_rules.rs::section_15_a_non_finite_stamp_is_a_convergence_failure` |
+| §3.5 | A `require` margin crosses zero under the `Strict` posture | Analysis error naming constraint, instance path, time, and value. Recorded under `Collect`; never raised under `Off`. | `crates/piperine-solver/tests/posture.rs`, `crates/piperine-codegen/tests/margin_*.rs`, `tests/host_*.rs` (SOA-on-model) |
 | §17 | Sensitivity parameter is unknown, unreadable, non-real, or rebuild-strength | Analysis error. | root: `sens.rs` |
 | §18 | Non-positive period or negative pre-roll requested; digital state not periodic after convergence | Analysis error. | `failure_rules.rs::section_18_a_non_positive_period_is_an_analysis_error`, `::section_18_a_negative_pre_roll_is_an_analysis_error`; root `pss.rs` (non-periodic) |
 
