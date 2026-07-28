@@ -8,7 +8,7 @@ use std::rc::Rc;
 use piperine_codegen::device::CircuitBuildInfo;
 use piperine_solver::prelude::{
     BranchIdentifier, DcAnalysisResult, ModelDescriptor, NodeIdentifier, ObservableDescriptor,
-    ParamDescriptor, TerminalDescriptor,
+    ParamDescriptor, TerminalDescriptor, ValidationFinding,
 };
 
 use crate::error::Error;
@@ -280,6 +280,25 @@ impl OpResult {
     /// path — read by name through [`MarginsResult::get`].
     pub fn margins(&self) -> &crate::margins::MarginsResult {
         &self.margins
+    }
+
+    /// Attach the declared-constraint catalog (DVC-15/18) to the margins
+    /// channel — the session computes it at solve time so
+    /// [`MarginsResult::get`] fails loud with the real reason a declared
+    /// name has no entry (reduced quantity from another analysis, or a
+    /// digital instance — margins are an analog notion).
+    pub fn with_margin_catalogs(mut self, catalog: &crate::margins::ConstraintCatalog) -> Self {
+        self.margins = self.margins.with_catalogs(catalog);
+        self
+    }
+
+    /// The validation findings recorded at the analysis's evaluation
+    /// points (DVC-15): every finding with its severity, label, message,
+    /// offending value, evaluation coordinate, and authored instance
+    /// path. The collect posture accumulates the whole run; strict
+    /// accumulates until the first `Error` aborts it.
+    pub fn violations(&self) -> &[ValidationFinding] {
+        &self.dc.stats.validation
     }
 
     /// `true` when every `require` margin is satisfied (DVC-18) — the

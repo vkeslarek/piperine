@@ -211,13 +211,15 @@ impl Session {
         let opvars = Session::snapshot_opvars(&self.circuit);
         let introspect = Session::snapshot_introspect(&self.circuit);
         self.fire_after_solve("op", &node_voltages(&self.info, &result))?;
+        let catalog = crate::margins::ConstraintCatalog::compute(&self.design, &self.info, &self.module);
         Ok(OpResult::new(
             result,
             digital,
             opvars,
             introspect,
             Rc::new(self.info.clone()),
-        ))
+        )
+        .with_margin_catalogs(&catalog))
     }
 
     /// Run a transient analysis on the held circuit (HOST-02). Pending
@@ -264,7 +266,8 @@ impl Session {
             mirror_param(&mut self.info, label, param, *value);
         }
         self.fire_after_solve("tran", &[])?;
-        Ok(Trace::<Waveform>::new(result, Rc::new(self.info.clone())))
+        let catalog = crate::margins::ConstraintCatalog::compute(&self.design, &self.info, &self.module);
+        Ok(Trace::<Waveform>::new(result, Rc::new(self.info.clone())).with_margin_catalogs(catalog))
     }
 
     // SPEC_DEVIATION: HOST-21's "analysis args impl Into<...>" is applied
@@ -307,7 +310,10 @@ impl Session {
         // over the sweep's points — the solver stays pointwise-pure.
         let reduced = crate::reduced::ReducedEvaluation::new(&self.design, &self.info).evaluate(&result)?;
         self.fire_after_solve("ac", &[])?;
-        Ok(AcTrace::new(result, Rc::new(self.info.clone())).with_reduced_margins(reduced))
+        let catalog = crate::margins::ConstraintCatalog::compute(&self.design, &self.info, &self.module);
+        Ok(AcTrace::new(result, Rc::new(self.info.clone()))
+            .with_reduced_margins(reduced)
+            .with_margin_catalogs(catalog))
     }
 
     /// Run an output-referred noise analysis on the held circuit (HOST-02).
@@ -556,7 +562,9 @@ impl Session {
         // swept points with the swept coordinate in its argmin — the row
         // the optimizer/corner/Monte Carlo loops all consume (design §C3).
         let margins = crate::margins::MarginsResult::worst_across(&margins);
-        Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats, margins))
+        let catalog = crate::margins::ConstraintCatalog::compute(&self.design, &self.info, &self.module);
+        Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats, margins)
+            .with_margin_catalogs(catalog))
     }
 
     /// Write `label.param` on the compiled circuit, restamping when the

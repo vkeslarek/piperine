@@ -28,7 +28,7 @@ pub mod waveform;
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
 pub use hooks::SimHooks;
-pub use margins::{MarginEntry, MarginShape, MarginValue, MarginsResult};
+pub use margins::{ConstraintCatalog, MarginEntry, MarginShape, MarginValue, MarginsResult};
 pub use piperine_solver::prelude::{
     Bounds, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind, ParamDescriptor,
     ParamScope, TerminalDescriptor, TerminalKind,

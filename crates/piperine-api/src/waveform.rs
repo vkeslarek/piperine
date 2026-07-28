@@ -470,7 +470,14 @@ pub struct NoiseSample;
 /// produces a swept result. `Trace<T>`'s public methods are implemented per
 /// `T` (below), each reading only the variant its `T` was constructed from.
 enum TraceBackend {
-    Transient { result: TransientAnalysisResult, info: Rc<CircuitBuildInfo> },
+    Transient {
+        result: TransientAnalysisResult,
+        info: Rc<CircuitBuildInfo>,
+        /// The declared-constraint catalog (DVC-15/18), attached by the
+        /// session so `margins().get(..)` fails loud with the real reason
+        /// a declared name has no entry.
+        catalog: crate::margins::ConstraintCatalog,
+    },
     Ac {
         result: AcAnalysisResult,
         info: Rc<CircuitBuildInfo>,
@@ -478,6 +485,9 @@ enum TraceBackend {
         /// reduced entries of the margins channel, computed by
         /// `Session::ac` (empty for traces built without them).
         reduced: Vec<crate::margins::MarginEntry>,
+        /// The declared-constraint catalog (DVC-15/18) — same role as the
+        /// transient backend's.
+        catalog: crate::margins::ConstraintCatalog,
     },
     /// A compile-once DC sweep (`Session::dc`, HOST-05/MD-18): one
     /// [`DcAnalysisResult`] + digital snapshot per swept axis value, over the
@@ -525,7 +535,22 @@ impl Trace<Waveform> {
     /// Build a transient trace (the pre-HOST-13 `Trace::new` shape, kept for
     /// existing call sites).
     pub fn new(result: TransientAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { backend: TraceBackend::Transient { result, info }, _marker: PhantomData }
+        Self {
+            backend: TraceBackend::Transient { result, info, catalog: crate::margins::ConstraintCatalog::default() },
+            _marker: PhantomData,
+        }
+    }
+
+    /// Attach the declared-constraint catalog (DVC-15/18): the transient
+    /// backend stores it for the per-read margins channel; a DC sweep
+    /// attaches it to the worst-across-sweep channel it already carries.
+    pub fn with_margin_catalogs(mut self, catalog: crate::margins::ConstraintCatalog) -> Self {
+        match &mut self.backend {
+            TraceBackend::Transient { catalog: slot, .. } => *slot = catalog,
+            TraceBackend::DcSweep { margins, .. } => *margins = margins.clone().with_catalogs(&catalog),
+            _ => unreachable!("Trace<Waveform> is only built from Transient/DcSweep data"),
+        }
+        self
     }
 
     /// Build a DC-sweep trace (`Session::dc`, HOST-05): one point per swept
@@ -552,10 +577,23 @@ impl Trace<Waveform> {
     /// argmin. Margins never appear as waveform rows.
     pub fn margins(&self) -> crate::margins::MarginsResult {
         match &self.backend {
-            TraceBackend::Transient { result, .. } => {
+            TraceBackend::Transient { result, catalog, .. } => {
                 crate::margins::MarginsResult::from_reported(result.stats.margins.clone())
+                    .with_catalogs(catalog)
             }
             TraceBackend::DcSweep { margins, .. } => margins.clone(),
+            _ => unreachable!("Trace<Waveform> is only built from Transient/DcSweep data"),
+        }
+    }
+
+    /// The validation findings recorded at the analysis's evaluation
+    /// points (DVC-15): every finding with its severity, label, message,
+    /// offending value, evaluation coordinate (time, or the swept value
+    /// for a DC sweep), and authored instance path.
+    pub fn violations(&self) -> &[piperine_solver::prelude::ValidationFinding] {
+        match &self.backend {
+            TraceBackend::Transient { result, .. } => &result.stats.validation,
+            TraceBackend::DcSweep { stats, .. } => &stats.validation,
             _ => unreachable!("Trace<Waveform> is only built from Transient/DcSweep data"),
         }
     }
@@ -590,7 +628,7 @@ impl Trace<Waveform> {
         let (a, b) = sel.resolve();
         let (a, b) = (&a, b.as_ref());
         match &self.backend {
-            TraceBackend::Transient { result, info } => Self::v_transient(result, info, a, b),
+            TraceBackend::Transient { result, info, .. } => Self::v_transient(result, info, a, b),
             TraceBackend::DcSweep { axis, points, digital, info, .. } => {
                 Self::v_dc_sweep(axis, points, digital, info, a, b)
             }
@@ -687,7 +725,7 @@ impl Trace<Waveform> {
         let (a, b) = sel.resolve();
         let (a, b) = (&a, b.as_ref());
         match &self.backend {
-            TraceBackend::Transient { result, info } => Self::i_transient(result, info, a, b),
+            TraceBackend::Transient { result, info, .. } => Self::i_transient(result, info, a, b),
             TraceBackend::DcSweep { axis, points, info, .. } => Self::i_dc_sweep(axis, points, info, a, b),
             TraceBackend::Ac { .. } | TraceBackend::Noise { .. } => {
                 unreachable!("Trace<Waveform> is only built from Transient/DcSweep data")
@@ -817,7 +855,7 @@ impl Trace<Waveform> {
     /// loud, mirroring [`Self::i`]'s state-reading-device error.
     pub fn opvar(&self, path: &str) -> Result<Waveform, Error> {
         match &self.backend {
-            TraceBackend::Transient { result, info } => Self::opvar_transient(result, info, path),
+            TraceBackend::Transient { result, info, .. } => Self::opvar_transient(result, info, path),
             TraceBackend::DcSweep { .. } => Err(Error::Measurement(
                 "opvar() over time is a transient-only feature; a DC sweep has no per-step \
                  device-state recording — read `OpResult::instance(label).opvar(name)` per point instead"
@@ -1020,7 +1058,15 @@ impl Trace<ComplexWaveform> {
     /// pointwise reports only; [`Self::with_reduced_margins`] attaches the
     /// host-side reduced entries (D7).
     pub fn new(result: AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { backend: TraceBackend::Ac { result, info, reduced: Vec::new() }, _marker: PhantomData }
+        Self {
+            backend: TraceBackend::Ac {
+                result,
+                info,
+                reduced: Vec::new(),
+                catalog: crate::margins::ConstraintCatalog::default(),
+            },
+            _marker: PhantomData,
+        }
     }
 
     /// Attach the host-side reduced margin entries (D7) — the reduced
@@ -1030,6 +1076,17 @@ impl Trace<ComplexWaveform> {
             unreachable!("Trace<ComplexWaveform> is only built from AC data")
         };
         *slot = reduced;
+        self
+    }
+
+    /// Attach the declared-constraint catalog (DVC-15/18) so
+    /// `margins().get(..)` fails loud with the real reason a declared
+    /// name has no entry.
+    pub fn with_margin_catalogs(mut self, catalog: crate::margins::ConstraintCatalog) -> Self {
+        let TraceBackend::Ac { catalog: slot, .. } = &mut self.backend else {
+            unreachable!("Trace<ComplexWaveform> is only built from AC data")
+        };
+        *slot = catalog;
         self
     }
 
@@ -1079,11 +1136,19 @@ impl Trace<ComplexWaveform> {
     pub fn margins(&self) -> crate::margins::MarginsResult {
         let (result, _) = self.ac_parts();
         let mut channel = crate::margins::MarginsResult::from_reported(result.stats.margins.clone());
-        let TraceBackend::Ac { reduced, .. } = &self.backend else {
+        let TraceBackend::Ac { reduced, catalog, .. } = &self.backend else {
             unreachable!("Trace<ComplexWaveform> is only built from AC data")
         };
         channel.extend(reduced.iter().cloned());
-        channel
+        channel.with_catalogs(catalog)
+    }
+
+    /// The validation findings recorded at the sweep's frequency points
+    /// (DVC-15): every finding with its severity, label, message,
+    /// offending value, frequency coordinate, and authored instance path.
+    pub fn violations(&self) -> &[piperine_solver::prelude::ValidationFinding] {
+        let (result, _) = self.ac_parts();
+        &result.stats.validation
     }
 
     /// `true` when every `require` margin is satisfied (DVC-18).

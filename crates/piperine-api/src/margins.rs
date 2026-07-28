@@ -12,6 +12,9 @@
 //! [`MarginsResult::requires_ok`] / [`MarginsResult::first_violation`]
 //! read.
 
+use piperine_codegen::device::CircuitBuildInfo;
+use piperine_lang::parse::ast::ConstraintStmt;
+use piperine_lang::pom::{Design, QuantityClass};
 use piperine_solver::prelude::{MarginKind, ReportedMargin};
 
 use crate::error::Error;
@@ -98,6 +101,79 @@ impl MarginEntry {
     }
 }
 
+/// The declared-constraint catalog one analysis result reads against
+/// (DVC-15/18): every constraint label the compiled design declares that is
+/// **absent** from the result's margins channel, split by *why* it is
+/// absent, so [`MarginsResult::get`] fails loud with the real reason
+/// instead of a misleading "unknown constraint":
+///
+/// - `not_defined` — a reduced `var`/`target`, computed once per completed
+///   AC sweep (D7): defined on AC results, "not defined in this analysis"
+///   everywhere else.
+/// - `digital` — a statement whose instance has no analog half: margins are
+///   an analog notion (design §C4), so there is no margin to read.
+///
+/// Names are stored qualified (`"instance.path.label"`), the same form
+/// [`MarginsResult::get`]'s candidate listing uses.
+#[derive(Debug, Clone, Default)]
+pub struct ConstraintCatalog {
+    not_defined: Vec<String>,
+    digital: Vec<String>,
+}
+
+impl ConstraintCatalog {
+    /// Walk the flat top module's instances and classify every declared
+    /// constraint label that produces no entry in a pointwise margins
+    /// channel. An instance absent from `info.instances` has no analog
+    /// kernel (digital-only — the builder registers analog instances only),
+    /// so its statements are digital; an analog instance's reduced
+    /// `var`/`target` is host-computed on AC results only. Pointwise
+    /// `var`s travel inside the margins that read them and are never
+    /// readable by name — they stay "unknown", catalogued nowhere.
+    pub fn compute(design: &Design, info: &CircuitBuildInfo, top: &str) -> Self {
+        let mut catalog = Self::default();
+        let Some(flat) = design.flat_module(top) else { return catalog };
+        for instance in flat.instances() {
+            let Some(module) = design.module(instance.module_name()) else { continue };
+            if module.constraints().is_empty() {
+                continue;
+            }
+            let analog = info.instances.iter().find(|i| i.label == instance.name());
+            for block in module.constraints() {
+                for (index, (stmt, class)) in block.stmts().iter().zip(block.classes()).enumerate() {
+                    let label = match stmt {
+                        ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => {
+                            name.clone()
+                        }
+                        ConstraintStmt::Target { .. } => format!("target#{index}"),
+                    };
+                    let qualified = format!("{}.{}", instance.name(), label);
+                    let Some(built) = analog else {
+                        catalog.digital.push(qualified);
+                        continue;
+                    };
+                    let in_kernel = built.kernel.margin_catalog().iter().any(|m| m.label == label);
+                    if in_kernel {
+                        continue;
+                    }
+                    let reduced_entry = class.class == QuantityClass::Reduced
+                        && !matches!(stmt, ConstraintStmt::Require { .. });
+                    if reduced_entry {
+                        catalog.not_defined.push(qualified);
+                    }
+                }
+            }
+        }
+        catalog
+    }
+
+    /// `true` when `name` — qualified (`"x1.ugbw"`) or bare (`"ugbw"`) —
+    /// matches a catalogued qualified name.
+    fn declares(list: &[String], name: &str) -> bool {
+        list.iter().any(|q| q == name || q.rsplit_once('.').is_some_and(|(_, label)| label == name))
+    }
+}
+
 /// The margins channel of one analysis result (D3): every declared
 /// margin on every instance, pointwise and reduced, keyed by authored
 /// label. Margins never appear as waveform rows — this channel is the
@@ -105,6 +181,13 @@ impl MarginEntry {
 #[derive(Debug, Clone, Default)]
 pub struct MarginsResult {
     entries: Vec<MarginEntry>,
+    /// Declared reduced `var`/`target` names not defined by this result's
+    /// analysis (DVC-15/18) — the [`ConstraintCatalog`] half that turns a
+    /// cross-analysis read into "not defined in this analysis".
+    not_defined: Vec<String>,
+    /// Declared names whose instance has no analog half — asking for one
+    /// is loud: margins are an analog notion.
+    digital: Vec<String>,
 }
 
 impl MarginsResult {
@@ -119,13 +202,13 @@ impl MarginsResult {
                 value: MarginValue::Pointwise { worst: m.worst, argmin: m.argmin },
             })
             .collect();
-        Self { entries }
+        Self { entries, ..Self::default() }
     }
 
     /// Build the channel from ready entries — the host-side reductions
     /// (D7) construct their reduced entries directly.
     pub fn from_entries(entries: Vec<MarginEntry>) -> Self {
-        Self { entries }
+        Self { entries, ..Self::default() }
     }
 
     /// The worst-across-sweep reduction (DVC-11): one entry per declared
@@ -159,7 +242,16 @@ impl MarginsResult {
                 }
             }
         }
-        Self { entries }
+        Self { entries, ..Self::default() }
+    }
+
+    /// Attach the declared-constraint catalog (DVC-15/18) — the session
+    /// computes it once per analysis so [`Self::get`] fails loud with the
+    /// real reason a declared name has no entry here.
+    pub fn with_catalogs(mut self, catalog: &ConstraintCatalog) -> Self {
+        self.not_defined = catalog.not_defined.clone();
+        self.digital = catalog.digital.clone();
+        self
     }
 
     /// Merge additional entries into the channel (host-side reductions
@@ -187,7 +279,11 @@ impl MarginsResult {
     /// it is unique across instances, or the qualified
     /// `"instance.path.label"` form. An unknown name fails loud listing
     /// the candidates; an ambiguous bare name fails loud listing the
-    /// qualified forms.
+    /// qualified forms. A declared name the design carries but this
+    /// analysis does not define fails loud with the reason (DVC-15/18):
+    /// a reduced quantity is "not defined in this analysis", and a
+    /// constraint on a digital-only instance has no margin at all —
+    /// margins are an analog notion.
     pub fn get(&self, name: &str) -> Result<&MarginEntry, Error> {
         let candidates = || {
             self.entries
@@ -206,14 +302,28 @@ impl MarginsResult {
         let mut bare = self.entries.iter().filter(|e| e.label == name);
         match (bare.next(), bare.next()) {
             (Some(entry), None) => Ok(entry),
-            (None, _) => Err(Error::Measurement(format!(
-                "unknown constraint `{name}` (candidates: {})",
-                candidates()
-            ))),
             (Some(_), Some(_)) => Err(Error::Measurement(format!(
                 "constraint `{name}` is ambiguous — qualify it: {}",
                 candidates()
             ))),
+            (None, _) => {
+                if ConstraintCatalog::declares(&self.not_defined, name) {
+                    return Err(Error::Measurement(format!(
+                        "constraint `{name}` is not defined in this analysis — it is a reduced \
+                         quantity, evaluated once per completed AC sweep"
+                    )));
+                }
+                if ConstraintCatalog::declares(&self.digital, name) {
+                    return Err(Error::Measurement(format!(
+                        "constraint `{name}` has no margin — margins are an analog notion \
+                         (its instance has no analog half)"
+                    )));
+                }
+                Err(Error::Measurement(format!(
+                    "unknown constraint `{name}` (candidates: {})",
+                    candidates()
+                )))
+            }
         }
     }
 
