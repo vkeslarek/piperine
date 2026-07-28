@@ -23,6 +23,7 @@ it. The full consolidated grammar is in Appendix B.
 - §8 Attributes (metadata)
 - §9 Functions
 - §10 Behavior
+- §10.6 Constraints (`constraint` blocks) — design verification
 - §11 System tasks (`$`-syscalls) — overview
 - §12 Phase model
 - §13 No-Magic rule
@@ -229,11 +230,21 @@ The following identifiers are reserved at the parser level — they cannot be us
 variable, field, or type names because the parser interprets them as keywords in the
 positions where they are expected:
 
-`above`, `analog`, `bundle`, `capability`, `change`, `const`, `cross`,
-`digital`, `discipline`, `else`, `enum`, `final`, `flow`, `fn`, `for`, `if`, `impl`,
-`in`, `initial`, `inout`, `input`, `match`, `mod`, `negedge`, `none`, `output`,
-`param`, `posedge`, `potential`, `pub`, `resolve`, `return`, `self`, `Self`,
-`storage`, `use`, `var`, `when`, `wire`.
+`above`, `analog`, `bundle`, `capability`, `change`, `const`, `constraint`,
+`cover`, `cross`, `digital`, `discipline`, `else`, `enum`, `final`, `flow`,
+`fn`, `for`, `global`, `if`, `impl`, `in`, `initial`, `inout`, `input`,
+`match`, `mod`, `negedge`, `none`, `output`, `param`, `posedge`,
+`potential`, `pub`, `require`, `resolve`, `return`, `self`, `Self`,
+`storage`, `target`, `tol`, `use`, `var`, `when`, `wire`.
+
+The design-verification surface (DVC-06) contributes six of these —
+`constraint`, `require`, `target`, `tol`, `cover`, `global`. They are
+reserved at the parser level rather than treated as contextual keywords so
+that the grammar stays LL(1) without a keyword/context disambiguation in
+the identifier production (a contextual-keyword path was considered and
+rejected at design time). `cover` is reserved ahead of the `cover` block
+(dv-core future work); `global` marks the process-variation kind of a `tol`
+clause (§7.2).
 
 Contextual keywords (reserved only where the grammar expects them): the resolve kinds
 `tri`, `or`, `and`, `sum`, `avg`, `max`, `min` (inside a `discipline` body); `and` /
@@ -631,7 +642,9 @@ Vectors: `NetType[N]` for a bus of width N.
 ### 7.2 Storage classes
 
 ```
-ParamDecl ::= "param" Ident ":" Type [ "=" Expr ] ";"
+ParamDecl ::= "param" Ident ":" Type [ "=" Expr ] [ TolClause ] ";"
+TolClause ::= "tol" Ident "(" KeyedArg {"," KeyedArg} ")" [ "global" ]
+KeyedArg  ::= Ident "=" Expr
 WireDecl  ::= "wire" Ident ":" Type ";"
 VarDecl   ::= "var" Ident [ ":" Type ] [ "=" Expr ] ";"
 AssertStmt::= "$assert" "(" Expr "," Expr ")" ";"
@@ -644,6 +657,38 @@ AssertStmt::= "$assert" "(" Expr "," Expr ")" ";"
   a value across cycles (read on a path where it was not assigned), it infers memory
   (§10.3). An initialized `var` infers its type (`var acc = 0.0;` → `Real`); `param`,
   ports, and fields require explicit types.
+
+#### The `tol` clause (DVC-01)
+
+An optional `tol <dist>(keyed = args) [global]` trailer attaches a statistical
+distribution to a `Real` param. The clause is **pure declaration** — it never
+changes the param's nominal value, never participates in the solve, and never
+moves a waveform. Resolving the distribution name against
+`headers/statistics.phdl` (Part V §6.2) and evaluating its arguments as
+elaboration constants in the param's scope is the elaborator's job (Part II §3);
+sampling is `dv-gradients`' scope, not this feature's.
+
+```phdl
+param vto : Real = 0.7 tol gauss(sigma = 0.005);
+param vth : Real = 0.5 tol gauss(sigma = 0.005 / sqrt(w * l)) global;
+```
+
+- `<dist>` names a distribution declared in `headers/statistics.phdl` — `gauss`
+  or `uniform`, each with absolute and relative spellings distinguished by the
+  keyed argument name (`gauss(sigma = …)` vs `gauss(sigma_rel = …)`). An
+  undeclared name fails loud at elaboration.
+- The keyed arguments evaluate as elaboration constants against the param's
+  already-bound siblings — `sigma = 0.005 / sqrt(w * l)` references the
+  instance's `w` and `l` params.
+- `global` (absent) selects the variation kind: **process** variation when
+  present (one draw per parameter, shared across instances); **mismatch**
+  variation when absent (one draw per instance). The marker is recorded on the
+  POM; the runtime meaning belongs to `dv-gradients`.
+- A `tol` on an `Integer` or `Natural` param fails loud — only `Real` carries
+  statistical variation.
+
+**Validation.** A `tol` on a non-`Real` param → elaboration error. An
+undeclared distribution name → elaboration error naming it (DVC-02).
 
 ### 7.3 Instances and connectivity
 
@@ -1001,6 +1046,92 @@ is normative in Part V §3.
 
 ---
 
+## §10.6 Constraints (`constraint` blocks) — design verification
+
+A `constraint Name { ... }` block is a third top-level body kind beside
+`analog`/`digital`, attaching **correctness intent** to the module named `Name`
+rather than behavior. It is named after the module it attaches to, exactly as
+an `analog`/`digital` block is. The block holds three statement kinds —
+`require`, `var`, `target` — and analysis-scoped `@ … { … }` event blocks that
+restrict a rule to one analysis or window.
+
+```
+ConstraintDecl ::= [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
+ConstraintStmt ::= RequireStmt | VarDecl | TargetStmt | ScopedBlock
+RequireStmt    ::= "require" Ident ":" Expr ";"
+TargetStmt     ::= "target" Expr ("<="|">=") Expr [ "tol" Expr ] ";"
+ScopedBlock    ::= "@" EventSpec "{" { ConstraintStmt } "}"
+```
+
+The three leaf statement kinds:
+
+- **`require <name> : <pred>;`** — a named predicate that must hold at every
+  evaluation point (Part VII §16, design §C3). The predicate is `Boolean`
+  (typical: `abs(V(m1.d, m1.s)) <= vds_max`, `m1.region == Region::Saturation`).
+  `name` is the label a host reads the margin by.
+- **`var <name> : <Type> = <expr>;`** — a named computed scalar. The type
+  annotation is **mandatory**, exactly as every other `var` in the language
+  (§7.2); the parser rejects the bare `var x = expr;` form.
+- **`target <expr> <cmp> <level> [tol <scale>];`** — an unlabeled comparison.
+  `<cmp>` is one of `<=` or `>=` (the strict `<`/`>` have no signed-margin
+  semantics, DVC-08, and fail loud at the comparison token). `tol <scale>`
+  normalizes the resulting margin (see the margin convention below); absent
+  it, `scale = 1` — no implicit normalization. A `target` is a soft goal: it
+  never fails the analysis, only its margin is read.
+
+`@ … { … }` reuses the behavior-body `EventBlock` production (§10.4) —
+`@ dc { … }`/`@ tran { … }`/`@ ac { … }` scope the body to one analysis; `|`
+composes (`@ (dc | tran) { … }`); `after = …`/`dur = …` window named-args open
+and close a temporal window on a term. The terms are resolved against the same
+`EventRegistry` as behavior-body events (the analysis-scope kinds `dc`/`tran`/
+`ac` are registered analysis names). See Part II §9 for the resolution rules.
+
+```phdl
+constraint Amplifier {
+    require headroom : V(out, gnd) >= 0.2;
+    var     ugbw     : Real = ac_unity_gain_freq(V(out, gnd));
+    target  gain_db  >= 60 tol 1.0;
+    @ tran(after = 5u, dur = 10u) {
+        require settled : abs(V(out, gnd) - vfinal) <= vtol;
+    }
+}
+```
+
+`pub constraint Name { … }` is required for the block to survive a `use` (the
+privacy filter drops non-`pub` items from used sources, even in the `spice`
+namespace — Part II §10). The shipped SOA blocks (`constraint mos1`, `dio`,
+`bjt` in `headers/spice/`) are all `pub` for this reason.
+
+**The margin convention (DVC-08).** Every `require`/`target` lowers to a
+signed, scale-normalized scalar `m` such that **`m ≥ 0` ⟺ satisfied**. The
+lowering is normative:
+
+| Authored form | Margin `m` |
+|---------------|------------|
+| `a <= b` (or a `require` predicate) | `(b − a) / scale` |
+| `a >= b` | `(a − b) / scale` |
+| `l <= a && a <= u` (the interval form) | `min(u − a, a − l) / scale` |
+| compound predicate `P && Q` | `min(m_P, m_Q)` |
+
+`scale = 1` when no `tol` is authored — the division is not emitted, so the
+margin is the raw signed difference with no implicit normalization. A
+`require` carries no `tol` (its scale is always 1); only a `target` may
+normalize. Margins are evaluated only at the points design §C3 (Part VII
+§16) defines — never at a homotopy stage, a rejected step, or UIC `t = 0`.
+
+**Validation.** A non-`Boolean` `require` predicate → elaboration error. A
+non-`Real` `target` operand → elaboration error. A missing `var` annotation
+→ elaboration error. A duplicate statement label inside one block →
+elaboration error. A `require`/`target` reading a **reduced** quantity (Part
+V §6.2) inside a pointwise scope → elaboration error ("a reduced quantity is
+checkable once per analysis, not per point"). A strict `<`/`>` in a `target`
+→ parse error at the comparison token. The complete catalog is Part II §11.
+
+The host-side surface — `r.margins`, `r.violations`, `r.requires_ok`,
+`r.first_violation`, the three postures — is Part VIII §7 and Appendix C.
+
+---
+
 ## §11 System tasks (`$`-syscalls) — overview
 
 A `$`-syscall is the surface syntax for every runtime-valued or effectful operation.
@@ -1165,3 +1296,7 @@ with error codes is Part II §11.
 | §10.3 | non-exhaustive `match` | E2024 `NonExhaustiveMatch` |
 | §10.4 | unknown event name | E2008 `UnknownEvent` |
 | §10.4 | event/block domain mismatch | E2009 / E2010 |
+| §10.6 | `tol` on a non-`Real` param; undeclared distribution name | elaboration error (DVC-02) |
+| §10.6 | non-`Boolean` `require` predicate; non-`Real` `target` operand; missing `var` annotation; duplicate statement label | elaboration error (DVC-04/07) |
+| §10.6 | `require`/`target` reading a reduced quantity in a pointwise scope | elaboration error (DVC-09) |
+| §10.6 | strict `<` / `>` in a `target` | parse error at the comparison token |

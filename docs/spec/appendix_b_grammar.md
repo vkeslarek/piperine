@@ -43,10 +43,14 @@ CompilationUnit ::= { UseDecl | Item }
 UseDecl   ::= "use" Path ";"
 Path      ::= Ident { "::" Ident }
 Item      ::= { Attribute } [ "pub" ] ItemKind
-ItemKind  ::= ModDecl | BehaviorDecl | DisciplineDecl | BundleDecl | EnumDecl
-             | CapabilityDecl | ImplDecl | FnDecl | ConstDecl
+ItemKind  ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl | BundleDecl
+             | EnumDecl | CapabilityDecl | ImplDecl | FnDecl | ConstDecl
+             | ExternDecl
 ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 ```
+
+`ConstraintDecl` is defined in §B.9; `BehaviorDecl` in §B.7; `ExternDecl`
+(signature-only declarations, MD-24) in Part I §5.4.
 
 ## B.3 Attributes
 
@@ -70,7 +74,9 @@ Direction   ::= "input" | "output" | "inout"
 ModBody     ::= "{" { ModStmt } "}"
 ModStmt     ::= { Attribute } ( ParamDecl | WireDecl | VarDecl | StructuralFor
                                 | StructuralIf | AssertStmt | InstanceOrConnect )
-ParamDecl  ::= "param" Ident ":" Type [ "=" Expr ] ";"
+ParamDecl  ::= "param" Ident ":" Type [ "=" Expr ] [ TolClause ] ";"
+TolClause  ::= "tol" Ident "(" KeyedArg {"," KeyedArg} ")" [ "global" ]
+KeyedArg    ::= Ident "=" Expr
 WireDecl   ::= "wire" Ident ":" Type ";"
 VarDecl    ::= "var" Ident [ ":" Type ] [ "=" Expr ] ";"
 AssertStmt ::= "$assert" "(" Expr "," Expr ")" ";"
@@ -217,8 +223,58 @@ Lambda    ::= "|" [ Ident {"," Ident} ] "|" Expr
 A `BundleLit` in statement position (where it might collide with a block) must be
 parenthesized or appear in value position (after `=`, `<-`, or `return`).
 
-Native canonical spellings only: `|` (not `or`) for event OR; one diagnostic per
+Native canonical spellings only: `|` (not `or`) for event OR, one diagnostic per
 severity. Verilog-AMS aliases are accepted only in the AMS ingestion front end.
+
+## B.9 Constraints (`constraint` blocks)
+
+A third top-level body kind beside `analog`/`digital` (Part I §10.6), attaching
+correctness intent to a module by name. `ItemKind` (B.2) admits it as an
+alternative top-level item:
+
+```
+ItemKind       ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl
+                 | BundleDecl | EnumDecl | CapabilityDecl | ImplDecl | FnDecl
+                 | ConstDecl
+
+ConstraintDecl ::= { Attribute } [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
+ConstraintStmt ::= RequireStmt | TargetStmt | ConstraintVar | ScopedBlock
+RequireStmt    ::= "require" Ident ":" Expr ";"
+ConstraintVar  ::= "var" Ident ":" Type "=" Expr ";"     -- annotation mandatory
+TargetStmt     ::= "target" TargetExpr ("<="|">=") TargetExpr [ "tol" Expr ] ";"
+ScopedBlock    ::= "@" EventSpec "{" { ConstraintStmt } "}"
+```
+
+`TargetExpr` is the `Expr` production of B.8 parsed at minimum precedence 7
+(BitXor and above), so a following `<=`/`>=` is the statement's comparison
+rather than a binary operator inside the operand. Only the non-strict
+comparisons parse: the strict `<`/`>` have no signed-margin semantics and fail
+loud at the comparison token.
+
+**The `EventSpec` reuse (DVC-19/20).** `ScopedBlock` reuses the behavior-body
+`EventSpec` production of B.7 unchanged — `@ dc { … }`/`@ tran { … }`/`@ ac { … }`
+scope the body to one analysis, `|` composes (`@ (dc | tran) { … }`), `&`/`not`
+intersect and complement evaluation-point sets, and `after = …`/`dur = …`
+keyed window args open and close a temporal window on a term. The terms are
+resolved against the same `EventRegistry` as behavior-body events (Part II §9);
+the analysis-scope kinds (`dc`/`tran`/`ac`) are registered analysis names. The
+`when (cond)` clause is not allowed in a constraint scope (only behavior bodies
+accept it); a temporal window serves the same role.
+
+```
+EventSpec      ::= EventTerm | "(" EventOr ")" | EventAnd | "not" EventSpec
+EventOr        ::= EventAnd { ("|"|"or") EventAnd }
+EventAnd       ::= EventUnary { ("&"|"and") EventUnary }
+EventUnary     ::= "not" EventUnary | EventTerm
+EventTerm      ::= "initial" | "final"
+                 | Ident [ "(" [ TermArg {"," TermArg} ] ")" ]
+TermArg        ::= Expr | "after" "=" Expr | "dur" "=" Expr
+```
+
+A top-level `require` holds in every analysis (subject to `Context::require_scope`,
+Part VII §3.3); one inside `@ dc { … }` holds in DC analyses only; an analysis
+that never ran leaves a scoped `require` **not exercised** — never a silent
+vacuous pass (DVC-19).
 
 ## B.10 Selector
 
