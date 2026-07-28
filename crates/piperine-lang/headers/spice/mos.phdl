@@ -62,6 +62,25 @@ pub bundle Mos1Model {
     // ── Noise ─────────────────────────────────────────────────────────────────
     kf     : Real = 0.0,
     af     : Real = 1.0,
+
+    // ── SOA (DVC-16, T26) ─────────────────────────────────────────────────────
+    // Oxide and bulk-junction breakdown limits. DEV NOTE (T26 deviation):
+    // design §C5 specifies `Real? = none` so an unset limit makes its
+    // `require` vacuously satisfied. PHDL has `Real?`, but the constraint
+    // runtime cannot yet evaluate an absent optional limit as vacuously
+    // satisfied — `none` would propagate as a NaN margin and trip T16's
+    // non-finite-is-a-violation rule. The 1e99 sentinel preserves the
+    // inert-by-default intent at the value level: the margin
+    // `(1e99 − |V|)` is always positive, so the gallery is unaffected in
+    // default `strict` posture. A foundry card that sets `vds_max` etc.
+    // overrides the sentinel; the require then binds to the real limit.
+    // Migrate to `Real? = none` when the constraint runtime grows
+    // first-class optional-limit support.
+    vgs_max : Real = 1.0e99,    // gate-source oxide breakdown (V)
+    vds_max : Real = 1.0e99,    // drain-source breakdown (V)
+    vgb_max : Real = 1.0e99,    // gate-bulk oxide breakdown (V)
+    vbs_max : Real = 1.0e99,    // bulk-source junction breakdown (V)
+    vbd_max : Real = 1.0e99,    // bulk-drain junction breakdown (V)
 }
 
 pub mod mos1 (
@@ -461,6 +480,23 @@ pub analog mos1 {
             1.0
         );
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SOA constraint (dv-core T26, DVC-16): oxide and bulk-junction breakdown
+//  limits on mos1. Each `require` reads the flattened model-card param
+//  (`model_<field>` — bundle-typed `param model : Mos1Model` flattens per
+//  GAPS §I.14). Defaults are the 1e99 sentinel documented on `Mos1Model`,
+//  so every require is trivially satisfied until a foundry card overrides
+//  the limit. A card that sets `vds_max` and a fixture driven past it fail
+//  loud in `strict` posture naming the device instance and the constraint.
+// ════════════════════════════════════════════════════════════════════════════
+constraint mos1 {
+    require vgs_ox   : abs(V(g, s)) <= model_vgs_max;
+    require vgb_ox   : abs(V(g, b)) <= model_vgb_max;
+    require vds_ox   : abs(V(d, s)) <= model_vds_max;
+    require vbs_junc : abs(V(b, s)) <= model_vbs_max;
+    require vbd_junc : abs(V(b, d)) <= model_vbd_max;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
