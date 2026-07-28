@@ -264,12 +264,17 @@ impl TransientStep {
 
 pub struct AcAnalysisResult {
     values: Vec<AcAnalysisStep>,
+    /// Per-analysis statistics: the validation findings recorded at the
+    /// sweep's frequency points (DVC-15) and the margin channel's
+    /// worst-with-argmin per declared margin (DVC-18, argmin = frequency).
+    pub stats: SolverStats,
 }
 
 impl AcAnalysisResult {
     pub fn new(values: Vec<AcAnalysisStep>) -> Self {
         Self {
             values,
+            stats: SolverStats::default(),
         }
     }
 

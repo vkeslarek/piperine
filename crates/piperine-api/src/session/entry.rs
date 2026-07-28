@@ -528,6 +528,7 @@ impl Session {
         use piperine_solver::abi::Value;
         let mut points = Vec::with_capacity(values.len());
         let mut digital = Vec::with_capacity(values.len());
+        let mut margins = Vec::with_capacity(values.len());
         let mut stats = SolverStats { converged: true, ..Default::default() };
         for &v in values {
             self.circuit.set_element_param(label, param, Value::Real(v))?;
@@ -540,11 +541,17 @@ impl Session {
             drop(dc);
             stats.converged &= result.stats.converged;
             stats.newton_iterations += result.stats.newton_iterations;
+            stats.validation.extend(result.stats.validation.iter().cloned());
+            margins.push((v, crate::margins::MarginsResult::from_reported(result.stats.margins.clone())));
             digital.push(Session::snapshot_digital(&self.info, &self.circuit));
             self.fire_after_solve("op", &node_voltages(&self.info, &result))?;
             points.push(result);
         }
-        Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats))
+        // DVC-11: the sweep result carries the worst margin across the
+        // swept points with the swept coordinate in its argmin — the row
+        // the optimizer/corner/Monte Carlo loops all consume (design §C3).
+        let margins = crate::margins::MarginsResult::worst_across(&margins);
+        Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats, margins))
     }
 
     /// Write `label.param` on the compiled circuit, restamping when the

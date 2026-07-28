@@ -153,6 +153,12 @@ impl<'a> AcSolver<'a> {
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
         let dc_point = dc_solver.solve()?;
 
+        // The DC solve underneath the sweep is covered by the DC row of
+        // the evaluation-point table (design §C3) — its margin evaluation
+        // must not leak into the AC run's channel, so the sweep starts
+        // from a clean slate (DVC-11: not double-counted).
+        circuit.reset_margin_tracking();
+
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 
@@ -193,6 +199,7 @@ impl<'a> AcSolver<'a> {
         let frequencies = options.generate_frequencies();
 
         let mut data = Vec::new();
+        let mut validation = Vec::new();
 
         for &f_hz in frequencies.iter() {
             self.system.frequency = f_hz;
@@ -201,6 +208,28 @@ impl<'a> AcSolver<'a> {
             let solution = self
                 .solver
                 .solve(&mut self.system, max_iter)?;
+
+            // Constraint margins + validation findings (DVC-11/14/15):
+            // each frequency point is an evaluation point, with the
+            // frequency as the argmin coordinate. The pointwise margin
+            // kernels are real-valued, so they read the small-signal
+            // *amplitudes* — the phasor magnitudes of the solved unknowns
+            // (a phasor's phase reference is arbitrary; the magnitude is
+            // the coordinate-invariant point value). The posture decides:
+            // off never evaluates and never polls, collect records every
+            // finding on the run, strict aborts the sweep at the first
+            // Error.
+            let mags: Vec<f64> = solution.iter().map(|c| c.norm()).collect();
+            self.system.circuit.evaluate_constraints_at(
+                self.system.context.checks,
+                &mags,
+                f_hz,
+            );
+            self.system.circuit.consume_validation_reports(
+                self.system.context.checks,
+                crate::error::SolverDomain::Ac,
+                &mut validation,
+            )?;
 
             let mut values = HashMap::new();
             for reference in self.system.circuit.netlist().all_references() {
@@ -211,8 +240,15 @@ impl<'a> AcSolver<'a> {
             data.push(AcAnalysisStep::new(f_hz, values));
         }
 
-        Ok(AcAnalysisResult::new(
-            data,
-        ))
+        let mut result = AcAnalysisResult::new(data);
+        result.stats.validation = validation;
+        // The margin channel (DVC-18): empty under `checks=off` — nothing
+        // was evaluated, so there is nothing honest to report.
+        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
+            Vec::new()
+        } else {
+            self.system.circuit.margin_reports()
+        };
+        Ok(result)
     }
 }

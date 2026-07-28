@@ -838,6 +838,7 @@ impl _Session {
         let config = crate::module::_Module::solver_config(solver)?;
         let mut points = Vec::with_capacity(values.len());
         let mut digital = Vec::with_capacity(values.len());
+        let mut margins = Vec::with_capacity(values.len());
         let mut stats = piperine_solver::abi::SolverStats { converged: true, ..Default::default() };
         for &v in &values {
             self.circuit.set_element_param(label, param, Value::Real(v)).map_err(Self::set_err)?;
@@ -850,15 +851,22 @@ impl _Session {
             drop(dc);
             stats.converged &= result.stats.converged;
             stats.newton_iterations += result.stats.newton_iterations;
+            stats.validation.extend(result.stats.validation.iter().cloned());
+            margins.push((v, piperine_api::MarginsResult::from_reported(result.stats.margins.clone())));
             digital.push(Session::snapshot_digital(&self.info, &self.circuit));
             points.push(result);
         }
+        // DVC-11: the sweep carries the worst margin across swept points
+        // with the swept coordinate in its argmin — identical to the Rust
+        // host's `Session::dc` (MD-22).
+        let margins = piperine_api::MarginsResult::worst_across(&margins);
         let trace = piperine_api::Trace::<piperine_api::Waveform>::from_dc_sweep(
             values,
             points,
             digital,
             Rc::new(self.info.clone()),
             stats,
+            margins,
         );
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }

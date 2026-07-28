@@ -16,26 +16,18 @@ use piperine_solver::abi::{
 };
 use piperine_solver::prelude::{CircuitInstance, Context, Policy};
 
-/// A linear conductance (g = 1 S to ground) that counts its
-/// `evaluate_constraints` calls and records the last evaluation coordinate.
+/// A stamp-free observer that counts its `evaluate_constraints` calls and
+/// records the last evaluation coordinate. It declares `EMITS_VALIDATION`
+/// (so the drivers evaluate it) but loads nothing into the MNA system —
+/// the circuit it rides solves exactly as if it were absent.
 struct CountingConstraints {
-    node: AnalogReference,
     calls: Arc<AtomicUsize>,
     last_t: Arc<std::sync::Mutex<f64>>,
 }
 
-impl CountingConstraints {
-    fn stamps(&self) -> Vec<Stamp<AnalogReference, f64>> {
-        vec![
-            Stamp::Matrix(self.node.clone(), self.node.clone(), 1.0),
-            Stamp::Rhs(self.node.clone(), 0.5),
-        ]
-    }
-}
-
 impl AnalogDevice for CountingConstraints {
     fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        self.stamps()
+        Vec::new()
     }
 }
 impl DigitalDevice for CountingConstraints {}
@@ -168,7 +160,7 @@ fn dc_evaluates_constraints_exactly_once_at_the_final_solution() {
     let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
     let elements: Vec<Box<dyn Element>> = vec![
         Box::new(Vdc { volts: 1.0, n1: node.clone(), n2: gnd, branch }),
-        Box::new(CountingConstraints { node, calls: calls.clone(), last_t: last_t.clone() }),
+        Box::new(CountingConstraints { calls: calls.clone(), last_t: last_t.clone() }),
     ];
     let mut circuit = CircuitInstance::from_devices_and_netlist("gate", elements, netlist);
     circuit.dc(Context::default()).unwrap().solve().expect("DC solves");
@@ -192,7 +184,7 @@ fn dc_homotopy_stages_are_never_evaluated() {
         Box::new(Vdc { volts: 1.0, n1: src.clone(), n2: gnd.clone(), branch: vb }),
         Box::new(Res { r: 1000.0, n1: src, n2: anode.clone() }),
         Box::new(Diode { is: 1e-14, vt: 0.025_852, n1: anode.clone(), n2: gnd }),
-        Box::new(CountingConstraints { node: anode, calls: calls.clone(), last_t: Arc::new(std::sync::Mutex::new(0.0)) }),
+        Box::new(CountingConstraints { calls: calls.clone(), last_t: Arc::new(std::sync::Mutex::new(0.0)) }),
     ];
     let mut circuit = CircuitInstance::from_devices_and_netlist("diode-homotopy", elements, netlist);
 
@@ -224,7 +216,7 @@ fn dc_off_posture_never_evaluates() {
     let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
     let elements: Vec<Box<dyn Element>> = vec![
         Box::new(Vdc { volts: 1.0, n1: node.clone(), n2: gnd, branch }),
-        Box::new(CountingConstraints { node, calls: calls.clone(), last_t: Arc::new(std::sync::Mutex::new(0.0)) }),
+        Box::new(CountingConstraints { calls: calls.clone(), last_t: Arc::new(std::sync::Mutex::new(0.0)) }),
     ];
     let mut circuit = CircuitInstance::from_devices_and_netlist("gate", elements, netlist);
     let off = Context { checks: CheckPosture::Off, ..Default::default() };

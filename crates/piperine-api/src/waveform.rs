@@ -483,6 +483,9 @@ enum TraceBackend {
         digital: Vec<HashMap<String, f64>>,
         info: Rc<CircuitBuildInfo>,
         stats: SolverStats,
+        /// The worst margin across the swept points with the swept
+        /// coordinate in its argmin (DVC-11, design §C3's sweep row).
+        margins: crate::margins::MarginsResult,
     },
     Noise { result: NoiseAnalysisResult },
 }
@@ -520,16 +523,33 @@ impl Trace<Waveform> {
 
     /// Build a DC-sweep trace (`Session::dc`, HOST-05): one point per swept
     /// axis value, produced on the same compiled circuit (MD-18 restamp).
+    /// `margins` is the worst-across-sweep reduction of the per-point
+    /// margin channels (DVC-11).
     pub fn from_dc_sweep(
         axis: Vec<f64>,
         points: Vec<DcAnalysisResult>,
         digital: Vec<HashMap<String, f64>>,
         info: Rc<CircuitBuildInfo>,
         stats: SolverStats,
+        margins: crate::margins::MarginsResult,
     ) -> Self {
         Self {
-            backend: TraceBackend::DcSweep { axis, points, digital, info, stats },
+            backend: TraceBackend::DcSweep { axis, points, digital, info, stats, margins },
             _marker: PhantomData,
+        }
+    }
+
+    /// The margins channel (DVC-18, D3): a transient trace reads the run's
+    /// per-analysis channel (worst + argmin in time); a DC sweep reads the
+    /// worst-across-sweep reduction with the swept coordinate as the
+    /// argmin. Margins never appear as waveform rows.
+    pub fn margins(&self) -> crate::margins::MarginsResult {
+        match &self.backend {
+            TraceBackend::Transient { result, .. } => {
+                crate::margins::MarginsResult::from_reported(result.stats.margins.clone())
+            }
+            TraceBackend::DcSweep { margins, .. } => margins.clone(),
+            _ => unreachable!("Trace<Waveform> is only built from Transient/DcSweep data"),
         }
     }
 
