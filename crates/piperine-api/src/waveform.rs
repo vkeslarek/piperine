@@ -553,6 +553,18 @@ impl Trace<Waveform> {
         }
     }
 
+    /// `true` when every `require` margin is satisfied (DVC-18).
+    pub fn requires_ok(&self) -> bool {
+        self.margins().requires_ok()
+    }
+
+    /// The first violated `require` margin, if any (DVC-18). Owned — the
+    /// transient channel is computed per read, so the entry cannot be
+    /// borrowed.
+    pub fn first_violation(&self) -> Option<crate::margins::MarginEntry> {
+        self.margins().first_violation().cloned()
+    }
+
     /// Per-analysis convergence + performance statistics.
     pub fn stats(&self) -> &SolverStats {
         match &self.backend {
@@ -1040,6 +1052,24 @@ impl Trace<ComplexWaveform> {
         let (result, _) = self.ac_parts();
         let points = result.iter().map(|s| (s.frequency, s.frequency)).collect();
         Waveform::new(points)
+    }
+
+    /// The margins channel (DVC-18, D3): every declared margin's worst +
+    /// argmin (frequency coordinates) — never folded into waveform rows.
+    pub fn margins(&self) -> crate::margins::MarginsResult {
+        let (result, _) = self.ac_parts();
+        crate::margins::MarginsResult::from_reported(result.stats.margins.clone())
+    }
+
+    /// `true` when every `require` margin is satisfied (DVC-18).
+    pub fn requires_ok(&self) -> bool {
+        self.margins().requires_ok()
+    }
+
+    /// The first violated `require` margin, if any (DVC-18). Owned — the
+    /// channel is computed per read, so the entry cannot be borrowed.
+    pub fn first_violation(&self) -> Option<crate::margins::MarginEntry> {
+        self.margins().first_violation().cloned()
     }
 }
 

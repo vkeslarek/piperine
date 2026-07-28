@@ -16,6 +16,16 @@ use piperine_solver::prelude::{MarginKind, ReportedMargin};
 
 use crate::error::Error;
 
+/// Which shape a margin carries (design §C2 — the channel states the
+/// kind rather than inventing an argmin for a reduced quantity).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarginShape {
+    /// Evaluable at every evaluation point — worst + argmin.
+    Pointwise,
+    /// Exists once per completed analysis — one value, no argmin.
+    Reduced,
+}
+
 /// One margin's value, stating its shape (D3): a pointwise margin has a
 /// worst value and the argmin it occurred at; a reduced margin has one
 /// value per analysis and no argmin.
@@ -66,6 +76,26 @@ impl MarginEntry {
             MarginValue::Reduced { value } => value,
         }
     }
+
+    /// Which shape this margin carries (design §C2) — a reader never has
+    /// to guess whether an argmin exists.
+    pub fn shape(&self) -> MarginShape {
+        match self.value {
+            MarginValue::Pointwise { .. } => MarginShape::Pointwise,
+            MarginValue::Reduced { .. } => MarginShape::Reduced,
+        }
+    }
+
+    /// The evaluation coordinate the worst occurred at (time, frequency,
+    /// or swept coordinate). `None` for a reduced margin — a reduced
+    /// quantity exists once per analysis, so no argmin exists and none is
+    /// invented (never a fake `t = 0`).
+    pub fn argmin(&self) -> Option<f64> {
+        match self.value {
+            MarginValue::Pointwise { argmin, .. } => argmin,
+            MarginValue::Reduced { .. } => None,
+        }
+    }
 }
 
 /// The margins channel of one analysis result (D3): every declared
@@ -89,6 +119,12 @@ impl MarginsResult {
                 value: MarginValue::Pointwise { worst: m.worst, argmin: m.argmin },
             })
             .collect();
+        Self { entries }
+    }
+
+    /// Build the channel from ready entries — the host-side reductions
+    /// (D7) construct their reduced entries directly.
+    pub fn from_entries(entries: Vec<MarginEntry>) -> Self {
         Self { entries }
     }
 

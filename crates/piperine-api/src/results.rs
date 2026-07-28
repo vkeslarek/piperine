@@ -244,6 +244,10 @@ pub struct OpResult {
     /// (HOST-12) — parameter descriptors carrying `bounds`/`unit`/`scope`/
     /// `invalidation`.
     params: HashMap<String, Vec<ParamDescriptor>>,
+    /// The margins channel (DVC-18, D3): every declared constraint
+    /// margin's worst + argmin (or reduced value), built from the run's
+    /// per-analysis reports — never folded into waveform rows.
+    margins: crate::margins::MarginsResult,
     info: Rc<CircuitBuildInfo>,
 }
 
@@ -262,12 +266,31 @@ impl OpResult {
         info: Rc<CircuitBuildInfo>,
     ) -> Self {
         let (models, terminals, observables, params) = introspect;
-        Self { dc, digital, opvars, models, terminals, observables, params, info }
+        let margins = crate::margins::MarginsResult::from_reported(dc.stats.margins.clone());
+        Self { dc, digital, opvars, models, terminals, observables, params, margins, info }
     }
 
     /// Per-analysis convergence + performance statistics.
     pub fn stats(&self) -> &piperine_solver::abi::SolverStats {
         &self.dc.stats
+    }
+
+    /// The margins channel (DVC-18, D3): every declared margin's worst +
+    /// argmin (pointwise) or single value (reduced), with the instance
+    /// path — read by name through [`MarginsResult::get`].
+    pub fn margins(&self) -> &crate::margins::MarginsResult {
+        &self.margins
+    }
+
+    /// `true` when every `require` margin is satisfied (DVC-18) — the
+    /// common assertion shape.
+    pub fn requires_ok(&self) -> bool {
+        self.margins.requires_ok()
+    }
+
+    /// The first violated `require` margin, if any (DVC-18).
+    pub fn first_violation(&self) -> Option<&crate::margins::MarginEntry> {
+        self.margins.first_violation()
     }
 
     /// The introspection view over instance `label` (HOST-07/09):
