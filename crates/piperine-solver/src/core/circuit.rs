@@ -118,10 +118,12 @@ impl CircuitInstance {
     // `crate::analyses`.
 
     pub fn dc(&mut self, context: Context) -> crate::core::result::Result<DcSolver<'_>> {
+        self.reset_margin_tracking();
         DcSolver::new(self, context)
     }
 
     pub fn ac(&mut self, context: Context) -> crate::core::result::Result<AcSolver<'_>> {
+        self.reset_margin_tracking();
         AcSolver::new(self, context)
     }
 
@@ -130,6 +132,7 @@ impl CircuitInstance {
         transient_options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::core::result::Result<TransientSolver<'_>> {
+        self.reset_margin_tracking();
         TransientSolver::new(self, transient_options, context)
     }
 
@@ -507,6 +510,74 @@ impl CircuitInstance {
             ));
         }
         Ok(())
+    }
+
+    /// Evaluate every validating element's declared constraint margins at
+    /// one accepted solution point (DVC-10/11). The analysis drivers call
+    /// this **only** at the evaluation points design §C3 defines — DC at
+    /// the final converged solution (never a homotopy stage), transient at
+    /// each accepted step (never a rejected attempt), AC at each frequency
+    /// point. `solution` is the accepted point's full unknown vector; `t`
+    /// is the evaluation coordinate (`0.0` at a DC point, time in
+    /// transient, frequency in AC). `Off` returns before any element is
+    /// touched — the margin kernels are never called ("off calls
+    /// nothing"), and a circuit with no validating elements skips even the
+    /// state build, exactly the `consume_validation_reports` gate.
+    pub fn evaluate_constraints_at(
+        &mut self,
+        posture: crate::analyses::CheckPosture,
+        solution: &[f64],
+        t: f64,
+    ) {
+        if posture == crate::analyses::CheckPosture::Off
+            || !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
+        {
+            return;
+        }
+        let state = self.build_accept_state(solution);
+        for device in self.devices.iter_mut() {
+            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+                device.evaluate_constraints(&state, t);
+            }
+        }
+    }
+
+    /// Collect the run's margin reports (DVC-18): every element declaring
+    /// [`ElementCapabilities::EMITS_VALIDATION`] is asked for its
+    /// [`MarginReport`](crate::core::margin::MarginReport); elements
+    /// without the bit are never polled — the same gate as
+    /// [`validation_reports`](Self::validation_reports). The returned
+    /// margins are flattened into [`SolverStats.margins`](crate::core::result::SolverStats)
+    /// by the drivers at end of run.
+    pub fn margin_reports(&self) -> Vec<crate::core::margin::ReportedMargin> {
+        if !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+            return Vec::new();
+        }
+        let mut margins = Vec::new();
+        for device in &self.devices {
+            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
+                && let Some(report) = device.margin_report()
+            {
+                margins.extend(report.margins().iter().cloned());
+            }
+        }
+        margins
+    }
+
+    /// Reset every element's margin tracking so the next analysis starts
+    /// from a clean slate (DVC-18 — margins are a per-run channel). The
+    /// public analysis entries ([`Self::dc`], [`Self::transient`],
+    /// [`Self::ac`]) call this before a run; the internal solves an
+    /// analysis drives underneath itself do not.
+    pub fn reset_margin_tracking(&mut self) {
+        if !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+            return;
+        }
+        for device in self.devices.iter_mut() {
+            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+                device.reset_margin_tracking();
+            }
+        }
     }
 
     // ── Construction ─────────────────────────────────────────────────────────

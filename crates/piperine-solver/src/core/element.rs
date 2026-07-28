@@ -536,4 +536,41 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// [`ElementCapabilities::EMITS_VALIDATION`] are ever asked — the default
     /// `None` here is what an element *without* something to say returns.
     fn validation_reports(&self) -> Option<crate::core::validation::ValidationReport> { None }
+
+    /// Evaluate the element's declared constraint margins at one accepted
+    /// solution point (DVC-10/11). The analysis drivers call this **only**
+    /// at the evaluation points design §C3 defines — the final converged
+    /// DC solution (never a homotopy stage), each accepted transient step
+    /// (never a rejected attempt, never the UIC/`@initial` t = 0), each AC
+    /// frequency point — through
+    /// [`CircuitInstance::evaluate_constraints_at`](crate::core::circuit::CircuitInstance::evaluate_constraints_at),
+    /// and only on elements declaring
+    /// [`ElementCapabilities::EMITS_VALIDATION`]. Distinct from
+    /// [`accept_timestep`](Element::accept_timestep): the accept hook
+    /// seeds operators and digital events at points that are *not* margin
+    /// evaluation points (a transient's t = 0 operator seeding, the DC
+    /// mixed-signal settle), so margins do not ride it. `state` carries
+    /// the accepted solution as its latest row; `t` is the evaluation
+    /// coordinate (time in transient, `0.0` at a DC point, frequency in
+    /// AC). The default is no margins to evaluate — zero cost.
+    fn evaluate_constraints(&mut self, _state: &CircularArrayBuffer2<f64>, _t: f64) {}
+
+    /// The run's margin report (DVC-18): every declared pointwise margin's
+    /// worst value with its argmin, read at the end of an analysis into
+    /// [`SolverStats.margins`](crate::core::result::SolverStats). Shaped
+    /// after [`validation_reports`](Element::validation_reports) —
+    /// `Option`, not `Vec`, because an element with no declared margins
+    /// (the common case) has nothing to say.
+    fn margin_report(&self) -> Option<crate::core::margin::MarginReport> { None }
+
+    /// Reset the margin tracking (worst + argmin) so the next analysis
+    /// starts from a clean slate — margins are a per-run channel, and one
+    /// analysis's extrema must never leak into the next run on the same
+    /// circuit. Called by the public analysis entries
+    /// ([`CircuitInstance::dc`](crate::core::circuit::CircuitInstance::dc)
+    /// and siblings) before the run; the internal solves an analysis
+    /// drives underneath itself (a transient's t = 0 OP, the DC point
+    /// under an AC sweep) do **not** reset — they are part of the run.
+    /// Default no-op (nothing tracked).
+    fn reset_margin_tracking(&mut self) {}
 }

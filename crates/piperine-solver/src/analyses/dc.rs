@@ -358,11 +358,31 @@ impl<'a> DcSolver<'a> {
             (sol, homotopy_strategy)
         };
 
-        // Validation findings (DVC-14/15): only at the final converged
-        // solution — never at a homotopy stage (design §C3). The posture
-        // decides: off never polls, collect records every finding on the
+        // Constraint margins + validation findings (DVC-11/14/15): only at
+        // the final converged solution — never at a homotopy stage, whose
+        // intermediates are non-physical by construction (design §C3: gmin
+        // stepping adds shunt conductance, source stepping scales sources;
+        // a headroom require checked there fails on a solve that is
+        // converging correctly). A transient's t = 0 solve under UIC
+        // (`uic_clamps` non-empty — a forced `@initial` condition may
+        // legitimately sit outside SOA) skips the evaluation; a computed
+        // operating point is evaluated. The posture decides: off never
+        // evaluates and never polls, collect records every finding on the
         // stats, strict fails loud on the first Error.
         let mut validation = Vec::new();
+        if self.system.uic_clamps.is_empty() {
+            let sol = raw_solution.as_slice().ok_or_else(|| {
+                crate::error::Error::simple(
+                    crate::error::SolverDomain::Dc,
+                    "solution not contiguous",
+                )
+            })?;
+            self.system.circuit.evaluate_constraints_at(
+                self.system.context.checks,
+                sol,
+                0.0,
+            );
+        }
         self.system.circuit.consume_validation_reports(
             self.system.context.checks,
             crate::error::SolverDomain::Dc,
@@ -393,6 +413,13 @@ impl<'a> DcSolver<'a> {
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
         result.stats.validation = validation;
+        // The margin channel (DVC-18): empty under `checks=off` — nothing
+        // was evaluated, so there is nothing honest to report.
+        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
+            Vec::new()
+        } else {
+            self.system.circuit.margin_reports()
+        };
         // HOST-10: collect each device's final limiting state — the
         // structured diagnostics a host reads via `op.stats.limiting`.
         // Mirrors `apply_limiting_reports`'s iteration over devices.

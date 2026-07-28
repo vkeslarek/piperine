@@ -981,10 +981,21 @@ impl<'a> TransientSolver<'a> {
         self.event_queue.commit();
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
-        // Validation findings (DVC-14/15): accepted steps only — never a
-        // rejected attempt (design §C3). The posture decides: off never
-        // polls, collect records every finding on the run's stats, strict
-        // fails loud on the first Error — aborting the analysis here.
+        // Constraint margins + validation findings (DVC-11/14/15):
+        // accepted steps only — never a rejected attempt (design §C3).
+        // Evaluation is decoupled from the accept hook (`accept_timestep`
+        // seeds operators at points that are not evaluation points, like
+        // the t = 0 operator seeding); the driver evaluates at the just-
+        // accepted solution, then the posture decides: off never
+        // evaluates and never polls, collect records every finding on the
+        // run's stats, strict fails loud on the first Error — aborting
+        // the analysis here.
+        let accepted = self.solver.current_guess().unwrap().to_owned();
+        self.system.circuit.evaluate_constraints_at(
+            self.system.context.checks,
+            accepted.as_slice().unwrap(),
+            t_next,
+        );
         self.system.circuit.consume_validation_reports(
             self.system.context.checks,
             crate::error::SolverDomain::Transient,
@@ -1195,6 +1206,13 @@ impl<'a> TransientSolver<'a> {
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
         result.stats.validation = st.validation.clone();
+        // The margin channel (DVC-18): empty under `checks=off` — nothing
+        // was evaluated, so there is nothing honest to report.
+        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
+            Vec::new()
+        } else {
+            self.system.circuit.margin_reports()
+        };
         result
     }
 

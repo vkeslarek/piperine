@@ -728,6 +728,42 @@ impl Element for PiperineDevice {
             })
     }
 
+    /// Constraint margin evaluation (DVC-10/11): the analysis drivers call
+    /// this at exactly the evaluation points design §C3 defines, decoupled
+    /// from `accept_timestep` (which seeds operators at points that are
+    /// not evaluation points). Forwards to the analog half; a digital-only
+    /// device has no margins (margins are an analog notion) and inherits
+    /// the default no-op.
+    fn evaluate_constraints(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
+        if let Some(analog) = self.analog.as_mut() {
+            analog.evaluate_constraints(state, t);
+        }
+    }
+
+    /// The margin channel (DVC-18): the analog half's run report — every
+    /// declared pointwise margin's worst + argmin — with the authored
+    /// hierarchical instance path stamped onto each entry, the same seam
+    /// that stamps the findings' instance paths.
+    fn margin_report(&self) -> Option<piperine_solver::abi::MarginReport> {
+        self.analog
+            .as_ref()
+            .and_then(AnalogInstance::margin_report)
+            .map(|mut report| {
+                for margin in report.margins_mut() {
+                    margin.instance_path = self.label.clone();
+                }
+                report
+            })
+    }
+
+    /// Reset the margin tracking for the next analysis (DVC-18 — margins
+    /// are a per-run channel).
+    fn reset_margin_tracking(&mut self) {
+        if let Some(analog) = self.analog.as_mut() {
+            analog.reset_margin_tracking();
+        }
+    }
+
 
     /// Checkpoint the device's mutable non-accept-gated state (ABI-04/05):
     /// the limiter (active, seeds, vold) from the analog instance and the

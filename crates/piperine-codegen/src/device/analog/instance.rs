@@ -1206,7 +1206,6 @@ impl AnalogInstance {
             }
         }
         self.detect_events(&volts, t);
-        self.evaluate_margins(&volts, t);
         self.last_volts = volts;
     }
 
@@ -1222,9 +1221,13 @@ impl AnalogInstance {
     /// Evaluate the constraint margins at one accepted point (DVC-10):
     /// the running worst + argmin per declared margin advances, and a
     /// `require` crossing zero — or a non-finite margin — is recorded as
-    /// an `Error` finding. Called from `accept_timestep` (accepted steps
-    /// only — never a rejected attempt, design §C3); `checks=off` never
-    /// calls a kernel function.
+    /// an `Error` finding. Called by the analysis drivers through
+    /// [`PiperineDevice::evaluate_constraints`](crate::device::PiperineDevice)
+    /// at exactly the evaluation points design §C3 defines (the final
+    /// converged DC solution, each accepted transient step, each AC
+    /// frequency point) — decoupled from `accept_timestep`, which seeds
+    /// operators at points that are not evaluation points; `checks=off`
+    /// never calls a kernel function.
     pub fn evaluate_margins(&mut self, volts: &[f64], time: f64) {
         if self.kernel.num_margins() == 0 {
             return;
@@ -1245,6 +1248,52 @@ impl AnalogInstance {
     /// host reduces into `MarginsResult` (design §D).
     pub fn margin_extrema(&self) -> &[super::constraints::MarginExtremum] {
         self.margins.extrema()
+    }
+
+    /// Evaluate the constraint margins at one accepted solution point,
+    /// collecting the terminal voltages from the state buffer's latest row
+    /// — the [`Element::evaluate_constraints`](piperine_solver::abi::Element)
+    /// hook's analog half, called by the drivers at design §C3's points.
+    pub fn evaluate_constraints(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
+        let volts = self.collect_volts(&|k| {
+            state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
+        });
+        self.evaluate_margins(&volts, t);
+        self.last_volts = volts;
+    }
+
+    /// The run's margin report (DVC-18): every declared pointwise margin's
+    /// worst + argmin with its catalog provenance, `None` when the module
+    /// declares no margins (the `Option` channel shape). The instance path
+    /// on each entry is stamped by the element seam.
+    pub fn margin_report(&self) -> Option<piperine_solver::abi::MarginReport> {
+        if self.kernel.num_margins() == 0 {
+            return None;
+        }
+        let margins = self
+            .kernel
+            .margin_catalog()
+            .iter()
+            .zip(self.margins.extrema())
+            .map(|(info, extremum)| piperine_solver::abi::ReportedMargin {
+                label: info.label.clone(),
+                kind: match info.kind {
+                    crate::resolve::MarginKind::Require => piperine_solver::abi::MarginKind::Require,
+                    crate::resolve::MarginKind::Target => piperine_solver::abi::MarginKind::Target,
+                },
+                worst: extremum.worst,
+                argmin: extremum.argmin,
+                instance_path: String::new(),
+            })
+            .collect();
+        Some(piperine_solver::abi::MarginReport::new(margins))
+    }
+
+    /// Reset the margin tracking (worst + argmin back to never-evaluated)
+    /// so the next analysis starts clean — margins are a per-run channel
+    /// (DVC-18).
+    pub fn reset_margin_tracking(&mut self) {
+        self.margins.reset();
     }
 
     /// The validation findings of the latest accepted point (DVC-13/15):

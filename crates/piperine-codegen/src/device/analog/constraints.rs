@@ -112,4 +112,16 @@ impl MarginTracker {
     pub(super) fn report(&self) -> Option<ValidationReport> {
         (!self.pending.is_empty()).then(|| ValidationReport::new(self.pending.clone()))
     }
+
+    /// Reset every extremum to its never-evaluated state and drain the
+    /// pending findings — margins are a per-run channel (DVC-18), so one
+    /// analysis's extrema must never leak into the next run on the same
+    /// circuit.
+    pub(super) fn reset(&mut self) {
+        for extremum in &mut self.extrema {
+            extremum.worst = f64::INFINITY;
+            extremum.argmin = None;
+        }
+        self.pending.clear();
+    }
 }

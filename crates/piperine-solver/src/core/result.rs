@@ -46,6 +46,11 @@ pub struct SolverStats {
     // off (the hook is never polled) or no element declared
     // EMITS_VALIDATION.
     pub validation: Vec<crate::core::validation::ValidationFinding>,
+    // DVC-18: the run's margin channel — every declared pointwise
+    // constraint margin's worst value with its argmin, collected from the
+    // elements at end of run. Empty when checks are off (nothing was
+    // evaluated) or no element declared EMITS_VALIDATION.
+    pub margins: Vec<crate::core::margin::ReportedMargin>,
 }
 
 #[derive(Debug)]
