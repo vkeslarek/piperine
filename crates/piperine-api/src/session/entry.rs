@@ -301,8 +301,13 @@ impl Session {
         let mut ac = self.circuit.ac(config.to_context())?;
         ac.policy = config.to_policy();
         let result = ac.solve_sweep(opts)?;
+        drop(ac);
+        // D7: the reduced constraint quantities (`ac_unity_gain_freq`,
+        // `ac_phase_margin`, `ac_gain_margin`) are host-side reductions
+        // over the sweep's points — the solver stays pointwise-pure.
+        let reduced = crate::reduced::ReducedEvaluation::new(&self.design, &self.info).evaluate(&result)?;
         self.fire_after_solve("ac", &[])?;
-        Ok(AcTrace::new(result, Rc::new(self.info.clone())))
+        Ok(AcTrace::new(result, Rc::new(self.info.clone())).with_reduced_margins(reduced))
     }
 
     /// Run an output-referred noise analysis on the held circuit (HOST-02).

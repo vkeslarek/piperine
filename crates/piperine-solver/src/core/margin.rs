@@ -16,13 +16,19 @@
 
 /// What kind of statement a reported margin came from — a `require` names
 /// a hard invariant (its crossing zero is an `Error` finding), a `target`
-/// is a soft goal (tracked, never a finding).
+/// is a soft goal (tracked, never a finding), a `var` is a named computed
+/// scalar (readable by name, never a finding).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarginKind {
     /// A `require <label> : <pred>;` margin.
     Require,
     /// A `target <expr> <cmp> <level> [tol <scale>];` margin.
     Target,
+    /// A `var <name> : <Type> = <expr>;` computed scalar. Device-reported
+    /// margins are never vars (a pointwise var travels inside the
+    /// require/target margins that read it); the host's reduced
+    /// reductions (D7) report reduced vars with this kind.
+    Var,
 }
 
 /// One declared pointwise margin's run report: the worst (minimum) signed

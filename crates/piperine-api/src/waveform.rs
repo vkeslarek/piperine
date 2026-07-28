@@ -471,7 +471,14 @@ pub struct NoiseSample;
 /// `T` (below), each reading only the variant its `T` was constructed from.
 enum TraceBackend {
     Transient { result: TransientAnalysisResult, info: Rc<CircuitBuildInfo> },
-    Ac { result: AcAnalysisResult, info: Rc<CircuitBuildInfo> },
+    Ac {
+        result: AcAnalysisResult,
+        info: Rc<CircuitBuildInfo>,
+        /// The host-side reductions (D7) over the sweep's points — the
+        /// reduced entries of the margins channel, computed by
+        /// `Session::ac` (empty for traces built without them).
+        reduced: Vec<crate::margins::MarginEntry>,
+    },
     /// A compile-once DC sweep (`Session::dc`, HOST-05/MD-18): one
     /// [`DcAnalysisResult`] + digital snapshot per swept axis value, over the
     /// same [`CircuitBuildInfo`] as a transient trace — `v`/`i` read exactly
@@ -1009,14 +1016,26 @@ impl ComplexWaveform {
 
 impl Trace<ComplexWaveform> {
     /// Build an AC-sweep trace (the pre-HOST-13 `AcTrace::new` shape, kept
-    /// for existing call sites).
+    /// for existing call sites). The margins channel carries the solver's
+    /// pointwise reports only; [`Self::with_reduced_margins`] attaches the
+    /// host-side reduced entries (D7).
     pub fn new(result: AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { backend: TraceBackend::Ac { result, info }, _marker: PhantomData }
+        Self { backend: TraceBackend::Ac { result, info, reduced: Vec::new() }, _marker: PhantomData }
+    }
+
+    /// Attach the host-side reduced margin entries (D7) — the reduced
+    /// half of the margins channel.
+    pub fn with_reduced_margins(mut self, reduced: Vec<crate::margins::MarginEntry>) -> Self {
+        let TraceBackend::Ac { reduced: slot, .. } = &mut self.backend else {
+            unreachable!("Trace<ComplexWaveform> is only built from AC data")
+        };
+        *slot = reduced;
+        self
     }
 
     fn ac_parts(&self) -> (&AcAnalysisResult, &CircuitBuildInfo) {
         match &self.backend {
-            TraceBackend::Ac { result, info } => (result, info),
+            TraceBackend::Ac { result, info, .. } => (result, info),
             _ => unreachable!("Trace<ComplexWaveform> is only built from AC data"),
         }
     }
@@ -1055,10 +1074,16 @@ impl Trace<ComplexWaveform> {
     }
 
     /// The margins channel (DVC-18, D3): every declared margin's worst +
-    /// argmin (frequency coordinates) — never folded into waveform rows.
+    /// argmin (frequency coordinates) for pointwise margins, plus the
+    /// host-side reduced entries (D7) — never folded into waveform rows.
     pub fn margins(&self) -> crate::margins::MarginsResult {
         let (result, _) = self.ac_parts();
-        crate::margins::MarginsResult::from_reported(result.stats.margins.clone())
+        let mut channel = crate::margins::MarginsResult::from_reported(result.stats.margins.clone());
+        let TraceBackend::Ac { reduced, .. } = &self.backend else {
+            unreachable!("Trace<ComplexWaveform> is only built from AC data")
+        };
+        channel.extend(reduced.iter().cloned());
+        channel
     }
 
     /// `true` when every `require` margin is satisfied (DVC-18).

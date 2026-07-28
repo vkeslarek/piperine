@@ -162,6 +162,12 @@ impl MarginsResult {
         Self { entries }
     }
 
+    /// Merge additional entries into the channel (host-side reductions
+    /// append their reduced entries after the solver's pointwise ones).
+    pub(crate) fn extend(&mut self, extra: impl IntoIterator<Item = MarginEntry>) {
+        self.entries.extend(extra);
+    }
+
     /// Every entry, pointwise and reduced, in catalog order.
     pub fn entries(&self) -> &[MarginEntry] {
         &self.entries
