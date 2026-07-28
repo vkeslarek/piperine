@@ -22,6 +22,8 @@ dead-ends.
 | §3 `$`-syscalls (the value-returning analog-context set) | `crates/piperine-lang/headers/tasks.phdl` | `extern task` |
 | §4 Diagnostic / control tasks | `crates/piperine-lang/headers/tasks.phdl` | `extern task` |
 | `@device`/`@port` attribute schemas | `crates/piperine-lang/headers/device_port.phdl` | `extern attribute` (parsed by `PluginHost::seed_schemas`, not part of every project's prelude) |
+| Statistical distributions (dv-core DVC-02) | `crates/piperine-lang/headers/statistics.phdl` | `extern fn` — the names a `tol` clause may name |
+| Constraint helpers (dv-core DVC-09) | `crates/piperine-lang/headers/constraints.phdl` | `extern fn` — each carrying its `@quantity(class, analysis)` class |
 | Primitive value types (Part I §6.1) | `crates/piperine-lang/headers/types.phdl` | `extern type` |
 | Cast associated functions (`Real::from` etc.) | `crates/piperine-lang/headers/types.phdl` | `extern impl TypeName { fn from(...) -> TypeName; ... }` |
 | Plugin-contributed attribute schemas | each plugin's `extern.phdl` stub | `extern attribute` (auto-imported at load time; a schema-contributing plugin that publishes no stub fails loud `PluginError::MissingExternStub`) |
@@ -48,6 +50,7 @@ native PHDL.
 - §4 Diagnostic / control tasks (statement)
 - §5 `@`-events
 - §6 Prelude / stdlib
+- §6.2 Design-verification headers (dv-core)
 - §7 System-task availability matrix
 
 ---
@@ -235,6 +238,55 @@ file sees.
 `map<T,U>(xs: T[N], f: fn(T)->U) -> U[N]`,
 `reduce<T>(xs: T[N], op: fn(T,T)->T) -> T`,
 `concat(...)`. The bundles `UInt[N]`, `SInt[N]`, `Complex`.
+
+### §6.2 Design-verification headers (dv-core)
+
+Two stdlib headers back the design-verification surface (DVC-02/09). Both are
+`extern` declarations, marked `extern` per MD-24 — the implementation backing
+each name lives in a Rust table consulted *only after* the declaration resolves
+the call, and the `extern_coverage_guard.rs` regression test fails if a
+runtime-impl entry lacks a matching declaration.
+
+**`headers/statistics.phdl` — the distribution declarations (DVC-02).** The
+distributions a `tol` clause on a `param` may name. Each distribution carries
+two spellings, absolute and relative, distinguished by the keyed-argument name
+at the use site — `gauss(sigma = …)` (absolute) vs `gauss(sigma_rel = …)`
+(relative). Declarations only: sampling is `dv-gradients`' scope, not this
+feature's.
+
+| Declaration | Argument spelling | Computes |
+|---|---|---|
+| `gauss(sigma: Real) -> Real` | `sigma = …` | a Gaussian draw with absolute std-dev `sigma` |
+| `gauss(sigma_rel: Real) -> Real` | `sigma_rel = …` | a Gaussian draw with std-dev `sigma_rel · nominal` |
+| `uniform(half: Real) -> Real` | `half = …` | a uniform draw on `[−half, +half]` |
+| `uniform(rel: Real) -> Real` | `rel = …` | a uniform draw on `[−rel·nominal, +rel·nominal]` |
+
+A `tol` clause naming a distribution not in this table fails loud at
+elaboration (Part II §11.1).
+
+**`headers/constraints.phdl` — the helper declarations (DVC-09).** The
+helpers a `var`/`target` expression in a `constraint` block may call, each
+carrying its **pointwise/reduced class** and the **analysis it belongs to**
+in a `@quantity(class, analysis)` marker the elaborator reads (design §C2:
+the class is a property of the *declaration*, never inferred from a use site).
+Pointwise helpers exist at every evaluation point and lower to a per-point
+margin kernel; reduced helpers exist once per completed analysis and are
+computed host-side (Part VIII §7). The schema declaration is
+`extern attribute quantity { class: String, analysis: String }`.
+
+| Declaration | Class | Analysis | Computes |
+|---|---|---|---|
+| `ac_gain(x: Real) -> Real` | pointwise | ac | magnitude of the probed quantity at the current analysis point |
+| `ac_phase(x: Real) -> Real` | pointwise | ac | phase of the probed quantity at the current analysis point |
+| `ac_unity_gain_freq(x: Real) -> Real` | reduced | ac | the frequency at which the probed magnitude crosses unity |
+| `ac_phase_margin(x: Real) -> Real` | reduced | ac | the loop's phase margin, reduced over the sweep |
+| `ac_gain_margin(x: Real) -> Real` | reduced | ac | the loop's gain margin, reduced over the sweep |
+
+A `var`/`target` calling a helper not in this table fails loud at
+elaboration (Part II §11.1). A `require` reading a reduced helper fails loud
+— `require` is a per-point check (Part I §10.6, Part II §8.1). The class
+propagates over arithmetic: any reduced subexpression makes the whole
+expression reduced.
 
 ### The `spice` namespace
 

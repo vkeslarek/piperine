@@ -20,6 +20,7 @@ branch over a static netlist, not structural change.
 - §6 Monomorphization
 - §7 Bundle expansion
 - §8 Behavior elaboration
+- §8.1 Constraint elaboration
 - §9 Event system
 - §10 Standard library (injected)
 - §11 Validation catalog (master)
@@ -173,6 +174,91 @@ per-block rules:
   warning by default (`InferredLatch`). Register inference (a `var` updated in a
   clocked `@` block) is silent — it is the intended idiom.
 
+### §8.1 Constraint elaboration (dv-core DVC-04/05/07/09)
+
+A `constraint Name { … }` block (Part I §10.6) is elaborated against the module
+named `Name` with the same name-resolution machinery as a behavior body, then
+**attached** to that module on the POM. Like a behavior body, the block stays
+in its *authored* surface form on the POM — the parse AST's `ConstraintStmt`s
+plus side tables the elaborator adds (resolved `var` value types, per-statement
+classification). Nothing about the constraint crosses a flattening boundary
+(MD-25): the POM holds exactly one authored block per authored module.
+
+**Resolution order.** Constraint blocks register at step 2 of the pipeline
+(§2) and elaborate at step 4, after their target module is fully lowered:
+
+1. **Attach** — every registered `constraint Name { … }` resolves `Name`
+   against the authored-module table. A constraint naming a non-existent
+   module fails loud; a constraint on a module that has no `analog`/`digital`
+   body is legal (a structural module can carry SOA intent).
+2. **Resolve references** — every name inside the block (nets, ports,
+   instance paths, `var`s, helpers, callables) resolves through the same scope
+   as a behavior body, plus `headers/constraints.phdl`'s helpers (§10). An
+   instance path `m1.d` reaches the *port* net of child instance `m1` through
+   the authored tree; a child's *internal* node fails loud — it crosses
+   encapsulation and depends on optional parameters (DVC-07 AC3).
+3. **Type-check** — a `require` predicate must be `Boolean`; a `target`'s
+   operands must be `Real`; a `var`'s annotation must resolve to a value type.
+   Duplicate statement labels inside one block fail loud.
+4. **Classify** — every leaf statement (§10 of the helpers' classes) is
+   classified `Pointwise` or `Reduced` from the **declarations** in
+   `headers/constraints.phdl` (§10), never inferred from a use site.
+
+**The pointwise/reduced classification (DVC-09).** A constraint quantity
+exists either at every evaluation point of an analysis (*pointwise*) or only
+once the analysis has run to completion (*reduced*) — design §C2. The class is
+a property of the **declaration**, carried by `headers/constraints.phdl`'s
+`@quantity(class, analysis)` marker; the elaborator reads it transitively over
+every expression. The rules:
+
+- A `var`/`target` expression's class is the class of its subexpressions:
+  pointwise arithmetic over pointwise terms stays pointwise; **any** reduced
+  subexpression makes the whole expression reduced.
+- A `require` is always classified pointwise — a reduced predicate is a loud
+  elaboration error ("a reduced quantity is checkable once per analysis, not
+  per point"), because `require` is a per-point check by definition.
+- The analysis a helper belongs to (`ac`, `dc`, `tran`) is recorded on the
+  statement, so a later pass can refuse a cross-analysis read.
+
+Only pointwise quantities lower to a per-point margin kernel (Part VII §3.5);
+reduced ones are computed host-side as reductions over the points the solver
+returns (Part VIII §7).
+
+**Monomorphized carriage (DVC-05).** A const-param module (`mod Dac[N]`)
+elaborates on each instantiation, and a `constraint Dac { … }` block attaches
+to every monomorphized variant (`Dac[8]` → `Dac__8`) exactly as an
+`analog`/`digital` body does — the block is authored once, carried by every
+variant. The POM holds exactly one authored block per authored module; a
+selector walk (Part IV) reaches it on both. No accessor reads a flattened
+structure.
+
+**`tol` distribution resolution (DVC-02).** A `param`'s optional `tol` clause
+(Part I §7.2) is resolved against `headers/statistics.phdl` (§10): the
+distribution name must match a declared `extern fn`, the keyed arguments
+evaluate as elaboration constants in the param's scope (sibling params
+already bound), and the `global` marker is recorded on the POM as the
+process-vs-mismatch kind. A `tol` on a non-`Real` param, or an undeclared
+distribution name, fails loud at elaboration. The clause is inert at solve —
+sampling is `dv-gradients`' scope.
+
+**Event-block scoping (DVC-19/20).** A `@ … { … }` block inside a constraint
+reuses the behavior-body `EventSpec` production and `EventRegistry` (§9). The
+elaborator resolves each term and rejects names that are not analysis-scope
+kinds inside a constraint scope (`posedge`/`cross`/`timer` belong in a
+behavior body, not a constraint scope). `after = …`/`dur = …` window named-args
+evaluate as elaboration-constant `f64`s; a non-constant window expression fails
+loud. The scope's analyses and window are unioned into every enclosed leaf's
+classification, so a `require` inside `@ tran(after = 5u, dur = 10u) { … }`
+records `["tran"]` and the resolved window — the runtime evaluator gates each
+evaluation point on both.
+
+**Validation.** Every constraint-elaboration failure surfaces today as a
+descriptive `ElabErrorKind::Other` (E2999 in the catalog below) — the
+constraint block is the one place where the parse/elaboration surface grew
+without an assigned E20xx code, deliberately, because every check names the
+constraint, the module, and the offending site in its message. The full list
+of fail-loud clauses is in §11.1.
+
 ## §9 Event system
 
 Events are resolved against an extensible registry. The parser emits an `EventSpec`
@@ -225,8 +311,18 @@ Conservative: `Electrical`, `Magnetic`, `Thermal`, `Kinematic`, `KinematicV`,
 
 **Numeric bundles:** `UInt[N]`, `SInt[N]`, `Complex`.
 
-All stdlib items are elaboration-time generators — called with concrete `N`, they
-unroll to fixed structure.
+**Statistical distributions (DVC-02):** `headers/statistics.phdl` declares the
+four distribution spellings a `tol` clause (Part I §7.2) may name — `gauss`
+and `uniform`, each with absolute and relative argument forms distinguished by
+the keyed-argument name. The full table is Part V §6.2.
+
+**Constraint helpers (DVC-09):** `headers/constraints.phdl` declares the
+helpers a `var`/`target` expression may call, each carrying its
+pointwise/reduced class and its analysis in a `@quantity(class, analysis)`
+marker the elaborator reads. The full table is Part V §6.2.
+
+All stdlib items are elaboration-time generators — called with concrete `N`,
+they unroll to fixed structure.
 
 ## §11 Validation catalog (master)
 
@@ -263,6 +359,42 @@ explained.
 | E2023 | `AttrSchemaField { schema, field, reason }` | attribute argument does not match the schema's bundle field | I §8 |
 | E2024 | `NonExhaustiveMatch { module, missing }` | a `match` does not cover every variant | I §10.3 |
 | E2999 | `Other(String)` | catch-all for custom diagnostics | — |
+
+### §11.1 Constraint-elaboration fail-loud catalog (dv-core)
+
+Every constraint-related failure surfaces as `E2999 Other(…)` today. Each
+message names the constraint, the module, and the offending site explicitly,
+so the catch-all carries the descriptive load an E20xx code would. Gathered
+in one place for cross-reference (the rule column points to the spec section
+that defines the rule):
+
+| Rule | Trigger wording | Section |
+|------|-----------------|---------|
+| `tol` on a non-`Real` param | `` `tol` on param `{p}` requires a `Real` param, found `{ty}` `` | I §7.2, II §8.1 |
+| `tol` on a bundle-typed param | `` `tol` on param `{p}` … found bundle-typed `{ty}` `` | I §7.2 |
+| `tol` names an undeclared distribution | `` `tol` on param `{p}` names undeclared distribution `{d}` … `` | I §7.2, II §8.1 |
+| `constraint` on a non-existent module | `` constraint `{name}` names a module that does not exist in the design `` | II §8.1 |
+| unknown net/port/var inside a constraint | `` constraint `{c}` on module `{m}` (site): unknown name `{n}` `` | I §10.6, II §8.1 |
+| unknown instance-path segment | `` constraint `{c}` on module `{m}` (site): unknown instance `{i}` `` | I §10.6 |
+| child internal node read | `` `{inst}.{field}` is an internal node of `{child}` — a constraint reads a child port, not its internals `` | II §8.1 |
+| instance path deeper than one level | `` unsupported instance path — a constraint reaches one level: `instance.port` `` | II §8.1 |
+| undeclared helper or function | `` undeclared helper or function `{n}` — constraint helpers are declared in headers/constraints.phdl, math functions in headers/math.phdl `` | I §10.6, V §6.2 |
+| missing `@quantity` argument | `` constraint helper `{h}`: `@quantity` requires a `{key} = "…"` string argument `` | V §6.2 |
+| bad `@quantity` class | `` constraint helper `{h}`: `@quantity` class must be `pointwise` or `reduced`, found `{x}` `` | V §6.2 |
+| duplicate helper declaration | `` constraint helper `{n}` is declared more than once `` | V §6.2 |
+| non-`Boolean` `require` predicate | `` constraint `{c}` on module `{m}`: `require` predicate must be `Boolean`, found `{ty}` `` | I §10.6 |
+| non-`Real` `target` operand | `` constraint `{c}` on module `{m}`: `target` operand must be `Real`, found `{ty}` `` | I §10.6 |
+| missing `var` annotation | `` constraint `{c}` on module `{m}`: `var` `{n}` requires a type annotation `` | I §10.6 |
+| duplicate statement label | `` constraint `{c}` on module `{m}`: duplicate statement label `{n}` `` | I §10.6 |
+| reduced quantity in a pointwise scope | `` constraint `{c}` on module `{m}`: a reduced quantity is checkable once per analysis, not per point `` | I §10.6, II §8.1 |
+| bad cast or call form in a constraint | `` unsupported {form} `{x}` in a constraint `` | II §8.1 |
+| `none` literal where a value type is required | `` `none` has no value type in a constraint `` | II §8.1 |
+| `@` block names no analyses | `` constraint `{c}` on module `{m}`: an `@` event block must name at least one analysis `` | I §10.6 |
+| `@` block term illegal in a constraint scope | `` `{term}` is valid only inside a `constraint` block's `@` event block, not a runtime behavior body `` (and the reverse) | I §10.6 |
+| non-const `after`/`dur` window expression | `` constraint `{c}` on module `{m}` (@ event block window): {e} `` | I §10.6 |
+
+A constraint block that survives elaboration has cleared every check above;
+the device-compile stage assumes a well-classified, well-typed block.
 
 ### Reflection errors
 
