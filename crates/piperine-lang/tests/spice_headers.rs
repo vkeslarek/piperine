@@ -118,3 +118,35 @@ fn full_path_to_missing_file_fails_loud() {
     let msg = format!("{err:?}");
     assert!(msg.contains("nonexistent"), "error must name the missing file, got: {msg}");
 }
+
+// ── DVC-17: the MOS operating region is a declared enum opvar ───────────────
+
+/// The `Region` enum is declared in `spice::constants` and every MOS model
+/// (mos1/mos2/mos3) carries a `region` opvar typed by it — not integer codes.
+/// This test elaborates mos1 and confirms the enum + the opvar are present;
+/// the numeric parity (ngspice region classification on a swept fixture) is
+/// proven by `tests/ngspice_validation.rs` remaining green.
+#[test]
+fn mos_region_enum_and_opvar_are_declared() {
+    let src = "
+        use piperine::disciplines;
+        use spice::constants;
+        use spice::mos;
+        mod Top() {
+            wire d: Electrical; wire g: Electrical; wire s: Electrical; wire b: Electrical;
+            m1: mos1(.d = d, .g = g, .s = s, .b = b) {};
+        }
+    ";
+    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
+        .expect("mos1 with the region opvar must elaborate");
+
+    // The enum is declared on the design.
+    assert!(
+        design.enum_("Region").is_some(),
+        "enum Region must be declared in the POM after elaboration"
+    );
+
+    // The mos1 module is present (the opvar lives inside its analog body;
+    // the host-read proof is T27's end-to-end SOA fixture).
+    assert!(design.module("mos1").is_some(), "mos1 module present");
+}

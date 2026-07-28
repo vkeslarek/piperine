@@ -260,6 +260,17 @@ pub analog mos1 {
         }
     }
 
+    // Operating region (DVC-17): a declared enum opvar, not an integer code.
+    // Mirrors ngspice's own classification — Cutoff when below threshold,
+    // Saturation when vds >= vdsat, Triode in between.
+    var region : Region = if (vgst <= 0.0) {
+        Region::Cutoff
+    } else if (vds_eff >= vgst) {
+        Region::Saturation
+    } else {
+        Region::Triode
+    };
+
     // ════════════════════════════════════════════════════════════════════════
     //  §7  Bulk junction diodes  (mos1load.c:433-448)
     // ════════════════════════════════════════════════════════════════════════
@@ -999,6 +1010,15 @@ pub analog mos2 {
         // else cutoff: cdrain = 0.
     }
 
+    // Operating region (DVC-17) — declared enum, not integer codes.
+    var region : Region = if (lvgs <= von) {
+        Region::Cutoff
+    } else if (lvds >= vdsat) {
+        Region::Saturation
+    } else {
+        Region::Triode
+    };
+
     // ════════════════════════════════════════════════════════════════════════
     //  §9  Bulk junction diodes  (mos2load.c:397-412 — same shape as mos1)
     // ════════════════════════════════════════════════════════════════════════
@@ -1545,6 +1565,15 @@ pub analog mos3 {
         // vdsx == 0 → cdrain stays 0 (mos3load.c:857-866).
     }
     // else cutoff (nfs == 0, lvgs <= von): cdrain = 0.
+
+    // Operating region (DVC-17) — declared enum, not integer codes.
+    var region : Region = if (lvgs <= von) {
+        Region::Cutoff
+    } else if (lvds >= vdsat) {
+        Region::Saturation
+    } else {
+        Region::Triode
+    };
 
     // ════════════════════════════════════════════════════════════════════════
     //  §8  Bulk junction diodes  (mos3load.c:414-433 — cubic continuation

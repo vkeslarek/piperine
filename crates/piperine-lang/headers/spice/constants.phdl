@@ -59,3 +59,16 @@ pub fn ng_sign(x: Real) -> Real {
 pub fn ng_clamp(x: Real, lo: Real, hi: Real) -> Real {
     return min(max(x, lo), hi);
 }
+
+// ── MOS operating region (DVC-17) ───────────────────────────────────────────
+// ngspice reports the operating region as an integer code (0..5); we expose it
+// as a declared enum so a `constraint` reads `m1.region == Region::Saturation`
+// rather than `m1.region == 2`. The three classical Shichman-Hodges regions
+// cover mos1/mos2/mos3; subthreshold/breakdown codes map to the nearest region
+// until the model language can name them.
+pub enum Region {
+    Cutoff,
+    Triode,
+    Saturation,
+}
+
