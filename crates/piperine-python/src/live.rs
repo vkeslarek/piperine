@@ -202,6 +202,13 @@ impl _Session {
         InstanceResolver::new(Rc::clone(&self.design), self.module.clone())
     }
 
+    /// The declared-constraint catalog (DVC-15/18) for result
+    /// construction — the same walk the api session runs, so the loud
+    /// margin reads fail identically on both hosts (MD-22).
+    fn constraint_catalog(&self) -> piperine_api::ConstraintCatalog {
+        piperine_api::ConstraintCatalog::compute(&self.design, &self.info, &self.module)
+    }
+
     /// Auto re-elaboration on a structural set (LIVE-14): replay every live
     /// write applied since the last build (the `dirty` ledger — a rebuild
     /// must never silently revert them) plus the structural write onto a
@@ -423,7 +430,8 @@ impl _Session {
             opvars,
             introspect,
             Rc::new(self.info.clone()),
-        );
+        )
+        .with_margin_catalogs(&self.constraint_catalog());
         Ok(_OpResult::new(op).with_resolver(self.instance_resolver()))
     }
 
@@ -554,6 +562,22 @@ impl _Session {
             agg.dt_max = agg.dt_max.max(result.stats.dt_max);
             agg.assembly_time_ns += result.stats.assembly_time_ns;
             agg.solve_time_ns += result.stats.solve_time_ns;
+            // DVC-15/18: the dv channels stitch too — findings accumulate
+            // across segments; margins merge to the worst (minimum) per
+            // declared margin with its argmin, the same reduction
+            // `MarginsResult::worst_across` applies over a sweep.
+            agg.validation.extend(result.stats.validation.iter().cloned());
+            for margin in &result.stats.margins {
+                match agg
+                    .margins
+                    .iter_mut()
+                    .find(|e| e.label == margin.label && e.instance_path == margin.instance_path)
+                {
+                    Some(e) if margin.worst < e.worst => *e = margin.clone(),
+                    Some(_) => {}
+                    None => agg.margins.push(margin.clone()),
+                }
+            }
 
             let Some(t_split) = split else { break };
             // Apply every structural set landing exactly at the split (in
@@ -578,7 +602,8 @@ impl _Session {
         let mut result = piperine_solver::prelude::TransientAnalysisResult::new(steps);
         result.set_stats(agg);
         let trace =
-            piperine_api::Trace::<piperine_api::Waveform>::new(result, Rc::new(self.info.clone()));
+            piperine_api::Trace::<piperine_api::Waveform>::new(result, Rc::new(self.info.clone()))
+                .with_margin_catalogs(self.constraint_catalog());
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
 
@@ -604,7 +629,15 @@ impl _Session {
         ac.policy = config.to_policy();
         let result = ac.solve_sweep(opts).map_err(Self::analysis_err)?;
         drop(ac);
-        let trace = piperine_api::AcTrace::new(result, Rc::new(self.info.clone()));
+        // D7: the reduced constraint quantities are host-side reductions
+        // over the sweep's points — the identical host pass the Rust
+        // session runs (MD-22).
+        let reduced = piperine_api::reduced::ReducedEvaluation::new(&self.design, &self.info)
+            .evaluate(&result)
+            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        let trace = piperine_api::AcTrace::new(result, Rc::new(self.info.clone()))
+            .with_reduced_margins(reduced)
+            .with_margin_catalogs(self.constraint_catalog());
         Ok(_AcTrace::new(trace))
     }
 
@@ -867,7 +900,8 @@ impl _Session {
             Rc::new(self.info.clone()),
             stats,
             margins,
-        );
+        )
+        .with_margin_catalogs(self.constraint_catalog());
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
 

@@ -277,14 +277,14 @@ impl OpResult {
 
     /// The margins channel (DVC-18, D3): every declared margin's worst +
     /// argmin (pointwise) or single value (reduced), with the instance
-    /// path — read by name through [`MarginsResult::get`].
+    /// path — read by name through [`MarginsResult::get`](crate::margins::MarginsResult::get).
     pub fn margins(&self) -> &crate::margins::MarginsResult {
         &self.margins
     }
 
     /// Attach the declared-constraint catalog (DVC-15/18) to the margins
     /// channel — the session computes it at solve time so
-    /// [`MarginsResult::get`] fails loud with the real reason a declared
+    /// [`MarginsResult::get`](crate::margins::MarginsResult::get) fails loud with the real reason a declared
     /// name has no entry (reduced quantity from another analysis, or a
     /// digital instance — margins are an analog notion).
     pub fn with_margin_catalogs(mut self, catalog: &crate::margins::ConstraintCatalog) -> Self {

@@ -34,19 +34,22 @@ struct EvalScope<'a> {
 /// sweep's points. No state escapes an [`evaluate`](Self::evaluate) call
 /// — sweep-shaped state never enters the solver (D7), and none lingers
 /// here either.
-pub(crate) struct ReducedEvaluation<'a> {
+pub struct ReducedEvaluation<'a> {
     design: &'a Design,
     info: &'a CircuitBuildInfo,
 }
 
 impl<'a> ReducedEvaluation<'a> {
-    pub(crate) fn new(design: &'a Design, info: &'a CircuitBuildInfo) -> Self {
+    /// The reduction engine over one compiled design + build info. Public
+    /// so hosts driving a `CircuitInstance` directly (the Python live
+    /// session) run the identical reductions the session does (D7).
+    pub fn new(design: &'a Design, info: &'a CircuitBuildInfo) -> Self {
         Self { design, info }
     }
 
     /// Evaluate every reduced `var`/`target` declared on every instance's
     /// module over the sweep's points, in catalog order.
-    pub(crate) fn evaluate(&self, result: &AcAnalysisResult) -> Result<Vec<MarginEntry>, Error> {
+    pub fn evaluate(&self, result: &AcAnalysisResult) -> Result<Vec<MarginEntry>, Error> {
         let mut entries = Vec::new();
         for instance in &self.info.instances {
             let Some(module) = self.design.module(&instance.module) else { continue };

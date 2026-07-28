@@ -61,6 +61,9 @@ __all__ = [
     "SolverStats",
     "LimitingReport",
     "NoiseContribution",
+    "MarginsResult",
+    "MarginEntry",
+    "ValidationFinding",
     # live session (compile once, set, re-run)
     "Session",
     "Sweep",
@@ -383,6 +386,9 @@ ParamDescriptor = _piperine._ParamDescriptor
 SolverStats = _piperine._SolverStats
 LimitingReport = _piperine._LimitingReport
 NoiseContribution = _piperine._NoiseContribution
+MarginsResult = _piperine._MarginsResult
+MarginEntry = _piperine._MarginEntry
+ValidationFinding = _piperine._ValidationFinding
 
 # Analysis-result types — no config-bundle translation needed, so they are
 # plain re-exports of the native pyclasses. Their methods (.v/.i/.values/

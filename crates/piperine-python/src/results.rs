@@ -160,10 +160,180 @@ impl _SolverStats {
 /// contract — host errors implement `Display` via `thiserror`.
 pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
     let msg = format!("{e}");
-    if msg.contains("is not addressable") {
+    if msg.contains("is not addressable") || msg.contains("unknown constraint") {
         PyKeyError::new_err(msg)
     } else {
         PyRuntimeError::new_err(msg)
+    }
+}
+
+/// `_ValidationFinding` — one structured validation finding (DVC-13/15):
+/// what fired (`label`), a human-readable `message`, the offending `value`,
+/// the evaluation coordinate (`time`), and the authored `instance_path`.
+/// Uniform-shape (MD-22): mirrors the solver's `ValidationFinding` field
+/// names; `severity` reads as `"warning"` / `"error"` (the
+/// `_LimitingReport.reason` string precedent).
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _ValidationFinding {
+    #[pyo3(get)]
+    pub severity: String,
+    #[pyo3(get)]
+    pub label: String,
+    #[pyo3(get)]
+    pub message: String,
+    #[pyo3(get)]
+    pub value: f64,
+    #[pyo3(get)]
+    pub time: f64,
+    #[pyo3(get)]
+    pub instance_path: String,
+}
+
+impl _ValidationFinding {
+    pub(crate) fn from_solver(f: &piperine_solver::prelude::ValidationFinding) -> Self {
+        use piperine_solver::prelude::ValidationSeverity;
+        let severity = match f.severity {
+            ValidationSeverity::Warning => "warning",
+            ValidationSeverity::Error => "error",
+        };
+        Self {
+            severity: severity.to_string(),
+            label: f.label.clone(),
+            message: f.message.clone(),
+            value: f.value,
+            time: f.time,
+            instance_path: f.instance_path.clone(),
+        }
+    }
+}
+
+/// `_MarginEntry` — one declared constraint margin on one instance
+/// (DVC-18): its authored `label`, the `instance_path`, the statement
+/// `kind` (`"require"` / `"target"` / `"var"`), and the margin `shape`
+/// (`"pointwise"` / `"reduced"`). `.scalar()` is the margin's value
+/// (worst for pointwise, the value for reduced); `.argmin()` is the
+/// evaluation coordinate the worst occurred at — `None` for a reduced
+/// margin, which has no argmin (design §C2, never an invented `t = 0`).
+/// Uniform-shape (MD-22): the same reads the api's `MarginEntry` offers.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _MarginEntry {
+    #[pyo3(get)]
+    pub label: String,
+    #[pyo3(get)]
+    pub instance_path: String,
+    #[pyo3(get)]
+    pub kind: String,
+    #[pyo3(get)]
+    pub shape: String,
+    scalar: f64,
+    argmin: Option<f64>,
+    satisfied: bool,
+}
+
+impl _MarginEntry {
+    pub(crate) fn from_api(e: &piperine_api::MarginEntry) -> Self {
+        use piperine_api::MarginShape;
+        use piperine_solver::prelude::MarginKind;
+        let kind = match e.kind {
+            MarginKind::Require => "require",
+            MarginKind::Target => "target",
+            MarginKind::Var => "var",
+        };
+        let shape = match e.shape() {
+            MarginShape::Pointwise => "pointwise",
+            MarginShape::Reduced => "reduced",
+        };
+        Self {
+            label: e.label.clone(),
+            instance_path: e.instance_path.clone(),
+            kind: kind.to_string(),
+            shape: shape.to_string(),
+            scalar: e.scalar(),
+            argmin: e.argmin(),
+            satisfied: e.is_satisfied(),
+        }
+    }
+}
+
+#[pymethods]
+impl _MarginEntry {
+    /// The margin's scalar value (worst for pointwise, the value for
+    /// reduced) — `m >= 0` means satisfied.
+    fn scalar(&self) -> f64 {
+        self.scalar
+    }
+
+    /// The evaluation coordinate the worst occurred at (time, frequency,
+    /// or swept coordinate); `None` for a reduced margin — a reduced
+    /// quantity exists once per analysis, so no argmin is invented.
+    fn argmin(&self) -> Option<f64> {
+        self.argmin
+    }
+
+    /// `True` when the margin is satisfied (`m >= 0`).
+    fn is_satisfied(&self) -> bool {
+        self.satisfied
+    }
+}
+
+/// `_MarginsResult` — the margins channel of one analysis result (DVC-18,
+/// D3): every declared margin, pointwise and reduced, read by name through
+/// `.get(name)`. Margins never appear as waveform rows. Uniform-shape
+/// (MD-22): delegates to the api's `MarginsResult` — no reimplemented
+/// logic.
+#[pyclass(module = "piperine", unsendable)]
+pub struct _MarginsResult {
+    inner: piperine_api::MarginsResult,
+}
+
+impl _MarginsResult {
+    pub(crate) fn new(inner: piperine_api::MarginsResult) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl _MarginsResult {
+    /// Read one margin by name (bare label or qualified
+    /// `"instance.path.label"`). An unknown name raises `KeyError`
+    /// listing the candidates; a reduced quantity read outside AC fails
+    /// loud ("not defined in this analysis"); a constraint on a
+    /// digital-only instance fails loud (margins are an analog notion).
+    fn get(&self, name: &str) -> PyResult<_MarginEntry> {
+        self.inner.get(name).map(_MarginEntry::from_api).map_err(readout_err)
+    }
+
+    /// Every entry, pointwise and reduced, in catalog order.
+    fn entries(&self) -> Vec<_MarginEntry> {
+        self.inner.entries().iter().map(_MarginEntry::from_api).collect()
+    }
+
+    /// The number of margins in the channel.
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Python `len(margins)` — same as [`len`](Self::len).
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// `True` when no margins were declared (or checks were off).
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// `True` when every `require` margin is satisfied — the common
+    /// assertion shape (`target`s are soft goals and never gate this).
+    fn requires_ok(&self) -> bool {
+        self.inner.requires_ok()
+    }
+
+    /// The first violated `require` margin in catalog order, if any.
+    fn first_violation(&self) -> Option<_MarginEntry> {
+        self.inner.first_violation().map(_MarginEntry::from_api)
     }
 }
 
@@ -241,6 +411,30 @@ impl _OpResult {
     #[getter]
     fn stats(&self) -> _SolverStats {
         _SolverStats::from_solver(self.inner.stats())
+    }
+
+    /// The margins channel (DVC-18, D3): every declared constraint
+    /// margin's worst + argmin (pointwise) or single value (reduced) —
+    /// read by name through `_MarginsResult.get`. Uniform-shape (MD-22):
+    /// the host `OpResult::margins` channel itself, not a recompute.
+    fn margins(&self) -> _MarginsResult {
+        _MarginsResult::new(self.inner.margins().clone())
+    }
+
+    /// Every validation finding recorded at the analysis's evaluation
+    /// points (DVC-15), with severity and provenance.
+    fn violations(&self) -> Vec<_ValidationFinding> {
+        self.inner.violations().iter().map(_ValidationFinding::from_solver).collect()
+    }
+
+    /// `True` when every `require` margin is satisfied (DVC-18).
+    fn requires_ok(&self) -> bool {
+        self.inner.requires_ok()
+    }
+
+    /// The first violated `require` margin, if any (DVC-18).
+    fn first_violation(&self) -> Option<_MarginEntry> {
+        self.inner.first_violation().map(_MarginEntry::from_api)
     }
 
     /// `op[name]` (spec AC5 / PY-11 + PY-13):
@@ -339,6 +533,30 @@ impl _Trace {
     #[getter]
     fn stats(&self) -> _SolverStats {
         _SolverStats::from_solver(self.inner.stats())
+    }
+
+    /// The margins channel (DVC-18, D3): worst + argmin in time
+    /// (transient) or the worst-across-sweep reduction with the swept
+    /// coordinate (DC sweep). Uniform-shape (MD-22): the host
+    /// `Trace::margins` channel itself.
+    fn margins(&self) -> _MarginsResult {
+        _MarginsResult::new(self.inner.margins())
+    }
+
+    /// Every validation finding recorded at the analysis's evaluation
+    /// points (DVC-15), with severity and provenance.
+    fn violations(&self) -> Vec<_ValidationFinding> {
+        self.inner.violations().iter().map(_ValidationFinding::from_solver).collect()
+    }
+
+    /// `True` when every `require` margin is satisfied (DVC-18).
+    fn requires_ok(&self) -> bool {
+        self.inner.requires_ok()
+    }
+
+    /// The first violated `require` margin, if any (DVC-18).
+    fn first_violation(&self) -> Option<_MarginEntry> {
+        self.inner.first_violation().as_ref().map(_MarginEntry::from_api)
     }
 
     /// `trace[name]` (spec AC10 / PY-11 + PY-13):
@@ -638,6 +856,29 @@ impl _AcTrace {
     /// The frequency-axis `_Waveform` (spec AC8 `.axis()`).
     fn axis(&self) -> _Waveform {
         _Waveform::new(self.inner.axis())
+    }
+
+    /// The margins channel (DVC-18, D3): pointwise margins with frequency
+    /// argmins plus the host-side reduced entries (D7). Uniform-shape
+    /// (MD-22): the host `AcTrace::margins` channel itself.
+    fn margins(&self) -> _MarginsResult {
+        _MarginsResult::new(self.inner.margins())
+    }
+
+    /// Every validation finding recorded at the sweep's frequency points
+    /// (DVC-15), with severity and provenance.
+    fn violations(&self) -> Vec<_ValidationFinding> {
+        self.inner.violations().iter().map(_ValidationFinding::from_solver).collect()
+    }
+
+    /// `True` when every `require` margin is satisfied (DVC-18).
+    fn requires_ok(&self) -> bool {
+        self.inner.requires_ok()
+    }
+
+    /// The first violated `require` margin, if any (DVC-18).
+    fn first_violation(&self) -> Option<_MarginEntry> {
+        self.inner.first_violation().as_ref().map(_MarginEntry::from_api)
     }
 }
 
