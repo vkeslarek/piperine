@@ -20,6 +20,15 @@ use piperine_solver::prelude::{AcAnalysisResult, MarginKind, NodeIdentifier};
 use crate::error::Error;
 use crate::margins::{MarginEntry, MarginValue};
 
+/// The evaluation scope one reduced statement reads: the `var`s evaluated
+/// before it (in authored order), the instance its module was compiled
+/// from, and the sweep being reduced.
+struct EvalScope<'a> {
+    env: &'a [(String, f64)],
+    instance: &'a piperine_codegen::device::BuiltInstanceInfo,
+    result: &'a AcAnalysisResult,
+}
+
 /// The reduction engine: walks every instance's constraint block on the
 /// compiled design and evaluates each reduced statement over one AC
 /// sweep's points. No state escapes an [`evaluate`](Self::evaluate) call
@@ -49,7 +58,8 @@ impl<'a> ReducedEvaluation<'a> {
                     }
                     match stmt {
                         ConstraintStmt::Var { name, value, .. } => {
-                            let v = self.scalar(value, &env, instance, result)?;
+                            let scope = EvalScope { env: &env, instance, result };
+                            let v = self.scalar(value, &scope)?;
                             env.push((name.clone(), v));
                             entries.push(MarginEntry {
                                 label: name.clone(),
@@ -59,7 +69,8 @@ impl<'a> ReducedEvaluation<'a> {
                             });
                         }
                         ConstraintStmt::Target { expr, cmp, level, tol, .. } => {
-                            let margin = self.target_margin(expr, *cmp, level, tol.as_ref(), &env, instance, result)?;
+                            let scope = EvalScope { env: &env, instance, result };
+                            let margin = self.target_margin(expr, *cmp, level, tol.as_ref(), &scope)?;
                             entries.push(MarginEntry {
                                 label: format!("target#{index}"),
                                 instance_path: instance.label.clone(),
@@ -85,15 +96,13 @@ impl<'a> ReducedEvaluation<'a> {
         cmp: TargetCmp,
         level: &Expr,
         tol: Option<&Expr>,
-        env: &[(String, f64)],
-        instance: &piperine_codegen::device::BuiltInstanceInfo,
-        result: &AcAnalysisResult,
+        scope: &EvalScope<'_>,
     ) -> Result<f64, Error> {
-        let value = self.scalar(expr, env, instance, result)?;
-        let level = self.constant(level, env)?;
+        let value = self.scalar(expr, scope)?;
+        let level = self.constant(level, scope.env)?;
         let scale = match tol {
             None => 1.0,
-            Some(scale) => self.constant(scale, env)?,
+            Some(scale) => self.constant(scale, scope.env)?,
         };
         let diff = match cmp {
             TargetCmp::Le => level - value,
@@ -131,26 +140,21 @@ impl<'a> ReducedEvaluation<'a> {
     /// Evaluate a reduced scalar expression: literals, earlier reduced
     /// `var`s, real arithmetic, and the declared reduced helpers over a
     /// probe. Anything outside that vocabulary fails loud.
-    fn scalar(
-        &self,
-        expr: &Expr,
-        env: &[(String, f64)],
-        instance: &piperine_codegen::device::BuiltInstanceInfo,
-        result: &AcAnalysisResult,
-    ) -> Result<f64, Error> {
+    fn scalar(&self, expr: &Expr, scope: &EvalScope<'_>) -> Result<f64, Error> {
         match expr {
             Expr::Literal(lit) => Self::literal(lit),
-            Expr::Ident(name) => env
+            Expr::Ident(name) => scope
+                .env
                 .iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, v)| *v)
                 .ok_or_else(|| Error::Measurement(format!(
                     "unknown reduced quantity `{name}` — reduced vars evaluate in authored order"
                 ))),
-            Expr::Unary(UnaryOp::Neg, e) => Ok(-self.scalar(e, env, instance, result)?),
+            Expr::Unary(UnaryOp::Neg, e) => Ok(-self.scalar(e, scope)?),
             Expr::Binary(l, op, r) => {
-                let l = self.scalar(l, env, instance, result)?;
-                let r = self.scalar(r, env, instance, result)?;
+                let l = self.scalar(l, scope)?;
+                let r = self.scalar(r, scope)?;
                 Self::arith(l, op, r)
             }
             Expr::Call(func, args) => {
@@ -162,7 +166,7 @@ impl<'a> ReducedEvaluation<'a> {
                         "reduced helper `{helper}` takes exactly one probe argument"
                     )));
                 };
-                let probe = self.probe(arg, instance, result)?;
+                let probe = self.probe(arg, scope.instance, scope.result)?;
                 Self::reduce(helper, &probe)
             }
             other => Err(Error::Measurement(format!(
