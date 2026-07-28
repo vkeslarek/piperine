@@ -39,7 +39,12 @@ impl Element for CountingConstraints {
     fn capabilities(&self) -> ElementCapabilities {
         ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::EMITS_VALIDATION
     }
-    fn evaluate_constraints(&mut self, _state: &piperine_solver::abi::CircularArrayBuffer2<f64>, t: f64) {
+    fn evaluate_constraints(
+        &mut self,
+        _state: &piperine_solver::abi::CircularArrayBuffer2<f64>,
+        t: f64,
+        _analysis: piperine_solver::abi::AnalysisKind,
+    ) {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.last_t.lock().unwrap() = t;
     }

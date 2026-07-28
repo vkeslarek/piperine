@@ -6,12 +6,15 @@
 //! ConstraintStmt ::= "require" Ident ":" Expr ";"
 //!                  | "var" Ident ":" Type "=" Expr ";"
 //!                  | "target" Expr ("<=" | ">=") Expr [ "tol" Expr ] ";"
+//!                  | "@" EventSpec "{" { ConstraintStmt } "}"        // DVC-19
 //! ```
 //!
 //! The `var` type annotation is mandatory — the parser rejects the bare
 //! `var x = expr;` form, exactly like a `mod`-body `var`. Only the
 //! non-strict comparisons parse: `<`/`>` have no signed-margin semantics
-//! (DVC-08) and fail loud at the offending token.
+//! (DVC-08) and fail loud at the offending token. The `@` form reuses the
+//! behavior-body `EventSpec` production (dv-core T28, DVC-19); its terms
+//! are validated against the `EventRegistry` at elaboration.
 
 use crate::parse::ast::*;
 use crate::parse::lexer::Tok;
@@ -66,9 +69,24 @@ impl<'a> Parser<'a> {
             let end = self.previous_span_end();
             return Ok(ConstraintStmt::Target { span: Some((start, end - start).into()), expr, cmp, level, tol });
         }
+        // Analysis-scoped event block (dv-core T28, DVC-19): `@ dc { … }`,
+        // `@ (dc | tran) { … }`. Reuses the behavior-body `EventSpec`
+        // production — the elaborator resolves the terms against the
+        // `EventRegistry` and rejects anything that is not an
+        // analysis-scope kind.
+        if self.eat(&Tok::At) {
+            let spec = self.parse_event_spec()?;
+            self.expect(&Tok::LBrace)?;
+            let mut body = Vec::new();
+            while !self.eat(&Tok::RBrace) {
+                body.push(self.parse_constraint_stmt()?);
+            }
+            let end = self.previous_span_end();
+            return Ok(ConstraintStmt::Event { span: Some((start, end - start).into()), spec, body });
+        }
         let peeked = self.peek().cloned();
         Err(self.make_error(format!(
-            "expected `require`, `var`, or `target` in a constraint block, found {peeked:?}"
+            "expected `require`, `var`, `target`, or `@` in a constraint block, found {peeked:?}"
         )))
     }
 }

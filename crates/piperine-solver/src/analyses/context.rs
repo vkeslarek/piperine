@@ -174,6 +174,31 @@ pub enum RequireScope {
     EveryAnalysis,
 }
 
+/// Which analysis is currently running, used to gate scoped requires
+/// (dv-core T28, DVC-19). A `require` inside `@ dc { … }` is evaluated
+/// only when the running analysis is `Dc`; an analysis that never runs
+/// leaves the scoped require "not exercised" (never a silent vacuous
+/// pass). The names match the constraint event-term names (`dc`/`tran`/`ac`)
+/// exactly — the `as_str` is the comparison key the device reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnalysisKind {
+    Dc,
+    Tran,
+    Ac,
+}
+
+impl AnalysisKind {
+    /// The analysis's event-term name — the comparison key the device
+    /// matches against a margin's `analyses` set.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dc => "dc",
+            Self::Tran => "tran",
+            Self::Ac => "ac",
+        }
+    }
+}
+
 /// The shared context every analysis receives: the immutable
 /// [`Tolerances`], the check posture, and the unscoped-`require` scope.
 /// Mutable convergence state lives on [`Policy`], owned by the driver;

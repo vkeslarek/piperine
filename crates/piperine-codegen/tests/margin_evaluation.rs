@@ -47,13 +47,15 @@ fn instance(label: &str, kernel: Arc<AnalogKernel>, params: Vec<f64>) -> AnalogI
 /// Drive one accepted point: `V(p, n) = v` at time `t`. Margin evaluation
 /// is decoupled from the accept hook (dv-core T18 — the drivers call
 /// `evaluate_constraints` at design §C3's points, never the operator-
-/// seeding accept), so an accepted *evaluation* point is the pair.
+/// seeding accept), so an accepted *evaluation* point is the pair. The
+/// default analysis kind is `Dc` (no `@ … { … }` scope in these fixtures
+/// — every margin applies).
 fn accept(inst: &mut AnalogInstance, v: f64, t: f64) {
     let mut state = CircularArrayBuffer2::new(1, 2);
     let row = ndarray::Array1::from_vec(vec![v, 0.0]);
     state.push(&row.view());
     inst.accept_timestep(&state, t);
-    inst.evaluate_constraints(&state, t);
+    inst.evaluate_constraints(&state, t, piperine_solver::abi::AnalysisKind::Dc);
 }
 
 fn extremum(inst: &AnalogInstance, index: usize) -> (f64, Option<f64>) {

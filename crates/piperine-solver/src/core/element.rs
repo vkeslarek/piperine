@@ -552,8 +552,16 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// mixed-signal settle), so margins do not ride it. `state` carries
     /// the accepted solution as its latest row; `t` is the evaluation
     /// coordinate (time in transient, `0.0` at a DC point, frequency in
-    /// AC). The default is no margins to evaluate — zero cost.
-    fn evaluate_constraints(&mut self, _state: &CircularArrayBuffer2<f64>, _t: f64) {}
+    /// AC). `analysis` is the running analysis kind (DVC-19) — a `require`
+    /// scoped to `@ dc { … }` is evaluated only when the running analysis
+    /// is `Dc`. The default is no margins to evaluate — zero cost.
+    fn evaluate_constraints(
+        &mut self,
+        _state: &CircularArrayBuffer2<f64>,
+        _t: f64,
+        _analysis: crate::analyses::AnalysisKind,
+    ) {
+    }
 
     /// The run's margin report (DVC-18): every declared pointwise margin's
     /// worst value with its argmin, read at the end of an analysis into

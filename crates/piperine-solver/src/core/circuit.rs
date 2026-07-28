@@ -519,7 +519,9 @@ impl CircuitInstance {
     /// each accepted step (never a rejected attempt), AC at each frequency
     /// point. `solution` is the accepted point's full unknown vector; `t`
     /// is the evaluation coordinate (`0.0` at a DC point, time in
-    /// transient, frequency in AC). `Off` returns before any element is
+    /// transient, frequency in AC). `analysis` is the running analysis
+    /// kind (DVC-19) — a `require` scoped to `@ dc { … }` is evaluated
+    /// only when `analysis == Dc`. `Off` returns before any element is
     /// touched — the margin kernels are never called ("off calls
     /// nothing"), and a circuit with no validating elements skips even the
     /// state build, exactly the `consume_validation_reports` gate.
@@ -528,6 +530,7 @@ impl CircuitInstance {
         posture: crate::analyses::CheckPosture,
         solution: &[f64],
         t: f64,
+        analysis: crate::analyses::AnalysisKind,
     ) {
         if posture == crate::analyses::CheckPosture::Off
             || !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
@@ -537,7 +540,7 @@ impl CircuitInstance {
         let state = self.build_accept_state(solution);
         for device in self.devices.iter_mut() {
             if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
-                device.evaluate_constraints(&state, t);
+                device.evaluate_constraints(&state, t, analysis);
             }
         }
     }

@@ -14,8 +14,14 @@ pub trait EventKind: Send + Sync {
     /// Returns `true` if this is an analog crossing event (`cross`, `above`).
     /// Defaults to `false`.
     fn is_analog_crossing(&self) -> bool { false }
-    /// Returns `true` if this event is level-sensitive. Defaults to `false`.
+    /// Returns `true` if this is a level-sensitive event. Defaults to `false`.
     fn is_level(&self) -> bool { false }
+    /// Returns `true` if this is an analysis-scope event — `dc`/`tran`/`ac`
+    /// (dv-core T28, DVC-19). Used inside `constraint` blocks' `@` event
+    /// blocks to scope requires to a specific analysis; rejected by the
+    /// behavior-body validator (a runtime `analog`/`digital` body has no
+    /// notion of an analysis kind). Defaults to `false`.
+    fn is_analysis_scope(&self) -> bool { false }
     /// Validates the argument expression supplied with the event spec.
     /// Returns `Ok(())` by default.
     fn validate_arg(&self, _arg: &Expr) -> Result<(), String> { Ok(()) }
@@ -69,6 +75,31 @@ impl EventKind for AnalogTimer {
     fn is_analog_crossing(&self) -> bool { true }
 }
 
+/// Analysis-scope event: `@ dc { … }` (dv-core T28, DVC-19). Not a runtime
+/// event — selects the DC analysis as the scope of every `require` inside
+/// the block. Rejected in behavior bodies (a runtime body has no notion
+/// of an analysis kind).
+pub struct AnalysisScopeDc;
+/// Analysis-scope event: `@ tran { … }` (dv-core T28, DVC-19).
+pub struct AnalysisScopeTran;
+/// Analysis-scope event: `@ ac { … }` (dv-core T28, DVC-19).
+pub struct AnalysisScopeAc;
+
+impl EventKind for AnalysisScopeDc {
+    fn name(&self) -> &str { "dc" }
+    fn is_analysis_scope(&self) -> bool { true }
+}
+
+impl EventKind for AnalysisScopeTran {
+    fn name(&self) -> &str { "tran" }
+    fn is_analysis_scope(&self) -> bool { true }
+}
+
+impl EventKind for AnalysisScopeAc {
+    fn name(&self) -> &str { "ac" }
+    fn is_analysis_scope(&self) -> bool { true }
+}
+
 pub struct EventRegistry {
     events: HashMap<String, Box<dyn EventKind>>,
 }
@@ -76,7 +107,8 @@ pub struct EventRegistry {
 impl EventRegistry {
     /// Creates a new `EventRegistry` pre-registered with the built-in event
     /// kinds: `RisingEdge`, `FallingEdge`, `AnyChange`, `AnalogCross`,
-    /// `AnalogAbove`, and `AnalogTimer`.
+    /// `AnalogAbove`, `AnalogTimer`, and the three analysis-scope kinds
+    /// `AnalysisScopeDc`/`Tran`/`Ac` (dv-core T28).
     pub fn with_builtins() -> Self {
         let mut r = Self { events: HashMap::new() };
         r.register(RisingEdge);
@@ -85,6 +117,9 @@ impl EventRegistry {
         r.register(AnalogCross);
         r.register(AnalogAbove);
         r.register(AnalogTimer);
+        r.register(AnalysisScopeDc);
+        r.register(AnalysisScopeTran);
+        r.register(AnalysisScopeAc);
         r
     }
 
@@ -173,6 +208,16 @@ impl EventRegistry {
         match spec {
             EventSpec::Named { name, .. } => {
                 let ev = self.lookup(name).ok_or_else(|| ElabError::from(ElabErrorKind::UnknownEvent(name.clone())))?;
+                // Analysis-scope events (`dc`/`tran`/`ac`, dv-core T28)
+                // are not runtime events — they live in constraint event
+                // blocks only; a behavior body has no analysis kind to
+                // select.
+                if ev.is_analysis_scope() {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "event `{name}` is an analysis-scope marker, not a runtime event — \
+                         it is valid only inside a `constraint` block's `@` event block"
+                    ))));
+                }
                 if kind == BehaviorKind::Digital && ev.is_analog_crossing() {
                     return Err(ElabError::from(ElabErrorKind::AnalogEventInDigital(name.clone())));
                 }

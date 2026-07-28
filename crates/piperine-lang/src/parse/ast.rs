@@ -876,12 +876,28 @@ pub enum ConstraintStmt {
         level: Expr,
         tol: Option<Expr>,
     },
+    /// `@ EventSpec { … }` — an analysis-scoped event block (dv-core T28,
+    /// DVC-19). Reuses the behavior-body [`EventSpec`] production and the
+    /// [`EventRegistry`](crate::elab::event::EventRegistry); the terms
+    /// allowed here are the analysis-scope kinds (`dc`/`tran`/`ac`). The
+    /// body is a nested list of constraint statements, recursively. A
+    /// top-level `require` holds in every analysis; one inside
+    /// `@ dc { … }` holds in DC analyses only (D2's `Context` default
+    /// still governs unscoped requires).
+    Event {
+        span: Option<miette::SourceSpan>,
+        spec: EventSpec,
+        body: Vec<ConstraintStmt>,
+    },
 }
 
 impl ConstraintStmt {
     pub fn span(&self) -> Option<miette::SourceSpan> {
         match self {
-            Self::Require { span, .. } | Self::Var { span, .. } | Self::Target { span, .. } => *span,
+            Self::Require { span, .. }
+            | Self::Var { span, .. }
+            | Self::Target { span, .. }
+            | Self::Event { span, .. } => *span,
         }
     }
 }

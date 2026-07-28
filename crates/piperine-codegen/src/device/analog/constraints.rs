@@ -58,12 +58,31 @@ impl MarginTracker {
     /// evaluation coordinate (time in transient, frequency in AC).
     /// `checks=off` returns before any kernel function runs — "kernels
     /// are never called" is this early return, not a skipped report.
-    pub(super) fn evaluate(&mut self, cx: &LoadCtx<'_>, volts: &[f64], time: f64, posture: CheckPosture) {
+    /// `analysis` is the running analysis kind (DVC-19): a margin with a
+    /// non-empty `analyses` set is evaluated only when the running
+    /// analysis matches; one whose scope never matches stays at its
+    /// never-evaluated sentinel (`+inf`, no argmin) — "not exercised",
+    /// never a vacuous pass.
+    pub(super) fn evaluate(
+        &mut self,
+        cx: &LoadCtx<'_>,
+        volts: &[f64],
+        time: f64,
+        posture: CheckPosture,
+        analysis: piperine_solver::abi::AnalysisKind,
+    ) {
         self.pending.clear();
         if posture == CheckPosture::Off {
             return;
         }
+        let running = analysis.as_str();
         for (i, info) in cx.kernel.margin_catalog().iter().enumerate() {
+            // DVC-19: an analysis-scoped margin (info.analyses non-empty)
+            // is evaluated only when the running analysis matches its
+            // scope. An empty analyses set holds in every analysis (D2).
+            if !info.analyses.is_empty() && !info.analyses.iter().any(|a| a == running) {
+                continue;
+            }
             let margin = cx.kernel.eval_margin(i, volts, cx.params, cx.state, cx.vars, cx.sim);
             if !margin.is_finite() {
                 // Loud, never clamped: the finding carries the raw

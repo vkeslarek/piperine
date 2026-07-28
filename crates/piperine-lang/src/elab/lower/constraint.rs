@@ -26,7 +26,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, Expr, Literal, UnaryOp};
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
-    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, StmtClass, ValueType,
+    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, StmtClass, StmtClassNode,
+    ValueType,
 };
 
 use super::Elaborator;
@@ -426,7 +427,8 @@ impl Elaborator {
 
     /// Elaborate one `constraint` block against its module: duplicate
     /// labels, name resolution, and the `require`-Boolean / `target`-Real
-    /// type checks (DVC-04 AC4/AC6, DVC-07).
+    /// type checks (DVC-04 AC4/AC6, DVC-07). Event blocks (`@ dc { … }`,
+    /// DVC-19) recurse with an augmented analyses scope.
     fn elab_constraint(
         &self,
         decl: &ConstraintDecl,
@@ -434,36 +436,50 @@ impl Elaborator {
         design: &Design,
     ) -> Result<ConstraintBlock, ElabError> {
         // One namespace per block: a `require` and a `var` may not share a
-        // label (DVC-04 AC6).
-        let mut seen: HashSet<&str> = HashSet::new();
-        for stmt in &decl.body {
-            let label = match stmt {
-                ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => Some(name.as_str()),
-                ConstraintStmt::Target { .. } => None,
-            };
-            if let Some(label) = label
-                && !seen.insert(label)
-            {
-                return Err(ElabError::from(ElabErrorKind::Other(format!(
-                    "constraint `{}` on module `{}`: duplicate statement label `{label}`",
-                    decl.name,
-                    module.name()
-                )))
-                .with_span(stmt.span()));
-            }
-        }
+        // label (DVC-04 AC6) — across the whole tree, including nested
+        // event blocks.
+        let mut seen: HashSet<String> = HashSet::new();
+        collect_labels(&decl.body, &mut seen, decl, module)?;
 
         let env = ConstEnv::with_globals(self.syms.globals.clone());
         let mut scope = ConstraintScope::new(&decl.name, module, design, &self.ctx, &self.syms.globals);
         let mut var_types = HashMap::new();
-        let mut stmt_classes = Vec::with_capacity(decl.body.len());
+        let stmt_classes = self.elab_stmts(&decl.body, &env, &mut scope, &mut var_types, &BTreeSet::new(), decl, module)?;
 
-        for stmt in &decl.body {
+        Ok(ConstraintBlock {
+            span: decl.span,
+            doc: decl.doc.clone(),
+            name: decl.name.clone(),
+            stmts: decl.body.clone(),
+            var_types,
+            stmt_classes,
+        })
+    }
+
+    /// Recursive statement elaboration: threads the enclosing event blocks'
+    /// analyses (`scope_analyses`) so a leaf's `StmtClass.analyses` carries
+    /// the union of its helpers' analyses and every enclosing `@ dc { … }`'s
+    /// scope (DVC-19). `var_types` accumulates across the whole block — a
+    /// `var` declared in an outer scope is visible to a `require` in an
+    /// inner event block, exactly as it is to a later top-level statement.
+    #[allow(clippy::too_many_arguments)]
+    fn elab_stmts(
+        &self,
+        stmts: &[ConstraintStmt],
+        env: &ConstEnv,
+        scope: &mut ConstraintScope<'_>,
+        var_types: &mut HashMap<String, ValueType>,
+        scope_analyses: &BTreeSet<String>,
+        decl: &ConstraintDecl,
+        module: &Module,
+    ) -> Result<Vec<StmtClassNode>, ElabError> {
+        let mut out = Vec::with_capacity(stmts.len());
+        for stmt in stmts {
             match stmt {
                 ConstraintStmt::Var { name, ty, value, span } => {
                     let site = format!("var `{name}`");
                     let vt = self
-                        .resolve_value_type(ty, &env)
+                        .resolve_value_type(ty, env)
                         .map_err(|e| e.with_span(*span))?;
                     let info = scope.resolve_expr(value, &site).map_err(|e| e.with_span(*span))?;
                     var_types.insert(name.clone(), vt.clone());
@@ -471,7 +487,11 @@ impl Elaborator {
                     // arithmetic over a reduced value is itself reduced
                     // (design §C2), so a reduced initializer marks the var
                     // reduced and any pointwise use of it fails below.
-                    stmt_classes.push(StmtClass { class: info.class, analyses: info.analyses.iter().cloned().collect() });
+                    let analyses = union_analyses(scope_analyses, &info.analyses);
+                    out.push(StmtClassNode::Leaf(StmtClass {
+                        class: info.class,
+                        analyses,
+                    }));
                     scope.define_var(name, ExprInfo { ty: vt, class: info.class, analyses: info.analyses });
                 }
                 ConstraintStmt::Require { name, pred, span } => {
@@ -492,10 +512,10 @@ impl Elaborator {
                             .fail(&site, "a reduced quantity is checkable once per analysis, not per point".into())
                             .with_span(*span));
                     }
-                    stmt_classes.push(StmtClass {
+                    out.push(StmtClassNode::Leaf(StmtClass {
                         class: QuantityClass::Pointwise,
-                        analyses: info.analyses.iter().cloned().collect(),
-                    });
+                        analyses: union_analyses(scope_analyses, &info.analyses),
+                    }));
                 }
                 ConstraintStmt::Target { expr, level, tol, span, .. } => {
                     let site = "`target` statement".to_string();
@@ -524,18 +544,139 @@ impl Elaborator {
                         }
                         analyses.extend(info.analyses.iter().cloned());
                     }
-                    stmt_classes.push(StmtClass { class: expr_info.class, analyses: analyses.iter().cloned().collect() });
+                    out.push(StmtClassNode::Leaf(StmtClass {
+                        class: expr_info.class,
+                        analyses: union_analyses(scope_analyses, &analyses),
+                    }));
+                }
+                ConstraintStmt::Event { spec, body, span } => {
+                    // Validate the spec: every term must be an
+                    // analysis-scope event (`dc`/`tran`/`ac`) registered
+                    // in the existing `EventRegistry`. Other event kinds
+                    // (cross/above/timer/posedge/…) belong to behavior
+                    // bodies or T29's event windows; in a constraint event
+                    // block they fail loud naming the term and the scope.
+                    let analyses = analyses_of_spec(spec, &self.ctx.events).map_err(|e| {
+                        ElabError::from(ElabErrorKind::Other(format!(
+                            "constraint `{}` on module `{}` (@ event block): {e}",
+                            decl.name,
+                            module.name()
+                        )))
+                        .with_span(*span)
+                    })?;
+                    if analyses.is_empty() {
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
+                            "constraint `{}` on module `{}`: an `@` event block must name at least one \
+                             analysis (`dc`, `tran`, `ac`) — none found",
+                            decl.name,
+                            module.name()
+                        )))
+                        .with_span(*span));
+                    }
+                    let mut child_scope = scope_analyses.clone();
+                    child_scope.extend(analyses.iter().cloned());
+                    let children = self.elab_stmts(body, env, scope, var_types, &child_scope, decl, module)?;
+                    out.push(StmtClassNode::Event {
+                        analyses: analyses.into_iter().collect(),
+                        children,
+                    });
                 }
             }
         }
-
-        Ok(ConstraintBlock {
-            span: decl.span,
-            doc: decl.doc.clone(),
-            name: decl.name.clone(),
-            stmts: decl.body.clone(),
-            var_types,
-            stmt_classes,
-        })
+        Ok(out)
     }
+}
+
+/// Walk the authored statement tree (descending into event blocks) and
+/// fail loud on the first duplicate `require`/`var` label — names are
+/// block-scoped, not scope-scoped, so a top-level `var x` and an
+/// `@ dc { var x : … }` shadow each other (DVC-04 AC6, DVC-19).
+fn collect_labels(
+    stmts: &[ConstraintStmt],
+    seen: &mut HashSet<String>,
+    decl: &ConstraintDecl,
+    module: &Module,
+) -> Result<(), ElabError> {
+    for stmt in stmts {
+        match stmt {
+            ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => {
+                if !seen.insert(name.clone()) {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "constraint `{}` on module `{}`: duplicate statement label `{name}`",
+                        decl.name,
+                        module.name()
+                    )))
+                    .with_span(stmt.span()));
+                }
+            }
+            ConstraintStmt::Target { .. } => {}
+            ConstraintStmt::Event { body, .. } => {
+                collect_labels(body, seen, decl, module)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Union a leaf's helper analyses with the enclosing scope's analyses,
+/// sorted and deduplicated — what the lowering / drivers read on
+/// [`StmtClass`] (DVC-19).
+fn union_analyses(scope: &BTreeSet<String>, helper: &BTreeSet<String>) -> Vec<String> {
+    let mut v: Vec<String> = scope.iter().chain(helper.iter()).cloned().collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// Resolve an `EventSpec` (dv-core T28, DVC-19) used inside a constraint
+/// `@ … { … }` block to the set of analyses it scopes its body to. Every
+/// named term must be an analysis-scope event (`dc`/`tran`/`ac`)
+/// registered in the existing [`EventRegistry`]; `(a | b)` unions. Any
+/// other term — an analog crossing (`cross`/`above`), a digital edge
+/// (`posedge`), `initial`/`final`, or an unknown name — fails loud
+/// naming it.
+fn analyses_of_spec(
+    spec: &crate::parse::ast::EventSpec,
+    registry: &crate::elab::event::EventRegistry,
+) -> Result<BTreeSet<String>, String> {
+    let mut set = BTreeSet::new();
+    collect_analyses(spec, registry, &mut set)?;
+    Ok(set)
+}
+
+fn collect_analyses(
+    spec: &crate::parse::ast::EventSpec,
+    registry: &crate::elab::event::EventRegistry,
+    set: &mut BTreeSet<String>,
+) -> Result<(), String> {
+    use crate::parse::ast::EventSpec;
+    match spec {
+        EventSpec::Named { name, args } => {
+            let Some(ev) = registry.lookup(name) else {
+                return Err(format!(
+                    "unknown event `{name}` — analysis scoping accepts `dc`/`tran`/`ac` only"
+                ));
+            };
+            if !ev.is_analysis_scope() {
+                return Err(format!(
+                    "event `{name}` is not an analysis-scope marker — `dc`/`tran`/`ac` only"
+                ));
+            }
+            if !args.is_empty() {
+                return Err(format!(
+                    "the analysis-scope event `{name}` takes no arguments — wrote `{name}({args:?})`"
+                ));
+            }
+            set.insert(name.clone());
+        }
+        EventSpec::Or(specs) => {
+            for s in specs {
+                collect_analyses(s, registry, set)?;
+            }
+        }
+        EventSpec::Initial | EventSpec::Final => {
+            return Err("`initial`/`final` are not analysis-scope markers — `dc`/`tran`/`ac` only".into());
+        }
+    }
+    Ok(())
 }

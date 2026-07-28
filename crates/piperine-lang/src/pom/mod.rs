@@ -18,7 +18,7 @@ pub mod traits;
 pub use crate::value;
 
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
-pub use constraint::{ConstraintBlock, ConstraintStmt, QuantityClass, StmtClass, TargetCmp};
+pub use constraint::{ConstraintBlock, ConstraintStmt, QuantityClass, StmtClass, StmtClassNode, TargetCmp};
 pub use design::{Design, Project, RfPort};
 pub use introspection::{IntrospectionMeta, ModelId, TermMeta, VarMeta, VAR_KINDS, TERMINAL_KINDS};
 pub use error::{ElabError, ElabErrorKind, ReflectError};

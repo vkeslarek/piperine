@@ -55,8 +55,11 @@ impl<'a> ReducedEvaluation<'a> {
             let Some(module) = self.design.module(&instance.module) else { continue };
             for block in module.constraints() {
                 let mut env: Vec<(String, f64)> = Vec::new();
-                for (index, (stmt, class)) in block.stmts().iter().zip(block.classes()).enumerate() {
+                for (leaf_index, (stmt, class)) in block.leaves().enumerate() {
                     if class.class != QuantityClass::Reduced {
+                        // Pointwise vars never reach the host reduction
+                        // (the kernel evaluates them); skip all
+                        // non-reduced leaves entirely here.
                         continue;
                     }
                     match stmt {
@@ -75,13 +78,13 @@ impl<'a> ReducedEvaluation<'a> {
                             let scope = EvalScope { env: &env, instance, result };
                             let margin = self.target_margin(expr, *cmp, level, tol.as_ref(), &scope)?;
                             entries.push(MarginEntry {
-                                label: format!("target#{index}"),
+                                label: format!("target#{leaf_index}"),
                                 instance_path: instance.label.clone(),
                                 kind: MarginKind::Target,
                                 value: MarginValue::Reduced { value: margin },
                             });
                         }
-                        ConstraintStmt::Require { .. } => {}
+                        ConstraintStmt::Require { .. } | ConstraintStmt::Event { .. } => {}
                     }
                 }
             }

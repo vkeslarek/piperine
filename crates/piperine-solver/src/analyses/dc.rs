@@ -242,9 +242,24 @@ pub struct DcSolver<'a> {
     /// homotopy attempt, restored on strategy fallthrough so the limiter and
     /// other non-accept-gated state start clean on the next retry.
     device_checkpoint: Vec<Option<crate::core::element::ElementCheckpoint>>,
+    /// The analysis kind margin evaluations at the converged solution are
+    /// tagged with (DVC-19). Defaults to `Dc`; an outer analysis driving a
+    /// DC solve underneath itself (a transient's t = 0 OP, the bias point
+    /// under an AC sweep) overrides it via [`Self::set_analysis_kind`] so a
+    /// `@ dc`-scoped `require` does not fire during tran startup — the
+    /// outer analysis owns the evaluation point.
+    analysis_kind: crate::analyses::AnalysisKind,
 }
 
 impl<'a> DcSolver<'a> {
+    /// Tag this DC solve's margin evaluations with a different analysis
+    /// kind (DVC-19). Used by outer analyses driving a DC solve underneath
+    /// themselves — a transient's t = 0 OP, the bias point under an AC
+    /// sweep — so a `@ dc`-scoped `require` does not fire during tran
+    /// startup. Defaults to `Dc` at [`Self::new`].
+    pub(crate) fn set_analysis_kind(&mut self, kind: crate::analyses::AnalysisKind) {
+        self.analysis_kind = kind;
+    }
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
@@ -274,7 +289,14 @@ impl<'a> DcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, policy: Policy::default(), newton_calls: 0, device_checkpoint: Vec::new() })
+        Ok(Self {
+            system,
+            solver,
+            policy: Policy::default(),
+            newton_calls: 0,
+            device_checkpoint: Vec::new(),
+            analysis_kind: crate::analyses::AnalysisKind::Dc,
+        })
     }
 
     /// Seed the DC Newton initial guess with node-voltage hints (the host
@@ -381,6 +403,7 @@ impl<'a> DcSolver<'a> {
                 self.system.context.checks,
                 sol,
                 0.0,
+                self.analysis_kind,
             );
         }
         self.system.circuit.consume_validation_reports(

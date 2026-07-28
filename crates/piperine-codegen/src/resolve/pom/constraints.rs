@@ -70,7 +70,12 @@ impl<'a> ConstraintLowering<'a> {
     fn lower_stmts(&self, ctx: &mut LowerCtx) -> Vec<LoweredMargin> {
         let mut bindings: HashMap<String, PomExpr> = HashMap::new();
         let mut margins = Vec::new();
-        for (index, (stmt, class)) in self.block.stmts().iter().zip(self.block.classes()).enumerate() {
+        // Leaves are yielded depth-first in authored order (event blocks
+        // descend). The positional `target#<index>` label uses the leaf
+        // index — the same scheme the host catalog uses, so a target keeps
+        // its label whether read from a margin entry or the catalog
+        // (DVC-19: a target inside `@ dc { … }` is still the Nth leaf).
+        for (leaf_index, (stmt, class)) in self.block.leaves().enumerate() {
             match stmt {
                 ConstraintStmt::Var { name, value, .. } => {
                     let bound = subst_expr(value, &bindings);
@@ -90,13 +95,14 @@ impl<'a> ConstraintLowering<'a> {
                 ConstraintStmt::Target { expr, cmp, level, tol, .. } => {
                     let margin = self.margin_of_target(expr, *cmp, level, tol.as_ref(), &bindings, ctx);
                     margins.push(LoweredMargin {
-                        label: format!("target#{index}"),
+                        label: format!("target#{leaf_index}"),
                         kind: MarginKind::Target,
                         class: class.class,
                         analyses: class.analyses.clone(),
                         expr: margin,
                     });
                 }
+                ConstraintStmt::Event { .. } => {}
             }
         }
         margins

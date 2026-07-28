@@ -62,12 +62,26 @@ pub struct MarginEntry {
 impl MarginEntry {
     /// `true` when the margin is satisfied (`m ≥ 0`). A never-evaluated
     /// pointwise margin (`worst = +inf`, no argmin) reads as satisfied
-    /// here — "not exercised" is a separate, louder signal the scoping
-    /// work (DVC-19/20) reports; it is never a violation.
+    /// here — "not exercised" is a separate, louder signal
+    /// ([`Self::is_not_exercised`], DVC-19/20) reports; it is never a
+    /// violation.
     pub fn is_satisfied(&self) -> bool {
         match self.value {
             MarginValue::Pointwise { worst, .. } => worst >= 0.0,
             MarginValue::Reduced { value } => value >= 0.0,
+        }
+    }
+
+    /// `true` when the margin was never evaluated across this result —
+    /// `worst = +inf` and no argmin. The case (DVC-19): a `require`
+    /// scoped to `@ dc { … }` read from a transient-only result. Never a
+    /// silent vacuous pass: [`MarginsResult::requires_ok`] returns `false`
+    /// when any `require` is not exercised, and
+    /// [`MarginsResult::first_not_exercised`] finds it.
+    pub fn is_not_exercised(&self) -> bool {
+        match self.value {
+            MarginValue::Pointwise { worst, argmin } => worst.is_infinite() && argmin.is_none(),
+            MarginValue::Reduced { .. } => false,
         }
     }
 
@@ -140,12 +154,13 @@ impl ConstraintCatalog {
             }
             let analog = info.instances.iter().find(|i| i.label == instance.name());
             for block in module.constraints() {
-                for (index, (stmt, class)) in block.stmts().iter().zip(block.classes()).enumerate() {
+                for (leaf_index, (stmt, class)) in block.leaves().enumerate() {
                     let label = match stmt {
                         ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => {
                             name.clone()
                         }
-                        ConstraintStmt::Target { .. } => format!("target#{index}"),
+                        ConstraintStmt::Target { .. } => format!("target#{leaf_index}"),
+                        ConstraintStmt::Event { .. } => continue,
                     };
                     let qualified = format!("{}.{}", instance.name(), label);
                     let Some(built) = analog else {
@@ -327,13 +342,18 @@ impl MarginsResult {
         }
     }
 
-    /// `true` when every `require` margin is satisfied — the common
-    /// assertion shape (`target`s are soft goals and never gate this).
+    /// `true` when every `require` margin is satisfied **and** every
+    /// `require` margin was exercised — the common assertion shape
+    /// (`target`s are soft goals and never gate this). A scoped
+    /// `require` whose analysis never ran (DVC-19) makes this `false`:
+    /// never a silent vacuous pass. Use
+    /// [`first_violation`](Self::first_violation) /
+    /// [`first_not_exercised`](Self::first_not_exercised) to see why.
     pub fn requires_ok(&self) -> bool {
         self.entries
             .iter()
             .filter(|e| e.kind == MarginKind::Require)
-            .all(MarginEntry::is_satisfied)
+            .all(|e| e.is_satisfied() && !e.is_not_exercised())
     }
 
     /// The first violated `require` margin in catalog order, if any —
@@ -342,5 +362,15 @@ impl MarginsResult {
         self.entries
             .iter()
             .find(|e| e.kind == MarginKind::Require && !e.is_satisfied())
+    }
+
+    /// The first `require` margin that was never exercised across this
+    /// result (DVC-19) — a scoped `require` whose analysis never ran.
+    /// Such a margin is never a silent vacuous pass: `requires_ok`
+    /// returns `false` when one exists.
+    pub fn first_not_exercised(&self) -> Option<&MarginEntry> {
+        self.entries
+            .iter()
+            .find(|e| e.kind == MarginKind::Require && e.is_not_exercised())
     }
 }

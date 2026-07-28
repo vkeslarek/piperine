@@ -38,12 +38,14 @@ fn vars_and_targets_carry_their_class_in_the_pom() {
     .expect("classified block must elaborate");
     let block = &design.module("Amp").expect("Amp elaborated").constraints()[0];
 
-    assert_eq!(block.classes().len(), 5, "one class entry per statement");
+    let leaves: Vec<_> = block.leaves().collect();
+    assert_eq!(leaves.len(), 5, "one class entry per leaf statement");
+    let class_at = |i: usize| leaves[i].1;
     assert_eq!(block.class_of("g").map(|c| c.class), Some(QuantityClass::Pointwise));
     assert_eq!(block.class_of("pm").map(|c| c.class), Some(QuantityClass::Reduced));
-    // Targets are unlabeled — read them positionally, parallel to stmts.
-    assert_eq!(block.classes()[2].class, QuantityClass::Pointwise, "a pointwise target");
-    assert_eq!(block.classes()[3].class, QuantityClass::Reduced, "a reduced target");
+    // Targets are unlabeled — read them positionally by leaf index.
+    assert_eq!(class_at(2).class, QuantityClass::Pointwise, "a pointwise target");
+    assert_eq!(class_at(3).class, QuantityClass::Reduced, "a reduced target");
     assert_eq!(block.class_of("no_clip").map(|c| c.class), Some(QuantityClass::Pointwise));
 }
 

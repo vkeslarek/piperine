@@ -726,6 +726,11 @@ impl<'a> TransientSolver<'a> {
             ..Default::default()
         };
         let mut dc_solver = DcSolver::new(self.system.circuit, op_context)?;
+        // The t = 0 OP belongs to the transient run (DVC-19): a `@ dc`-
+        // scoped require must not fire here even though a DC solver is
+        // what computes the point. The DC analysis owns DC points; tran
+        // owns its own startup.
+        dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
         dc_solver.system.uic_clamps = uic_clamps.clone();
         let dc_result = dc_solver.solve()?;
         self.system.uic_clamps = uic_clamps;
@@ -995,6 +1000,7 @@ impl<'a> TransientSolver<'a> {
             self.system.context.checks,
             accepted.as_slice().unwrap(),
             t_next,
+            crate::analyses::AnalysisKind::Tran,
         );
         self.system.circuit.consume_validation_reports(
             self.system.context.checks,

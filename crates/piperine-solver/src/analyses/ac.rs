@@ -151,6 +151,11 @@ impl<'a> AcSolver<'a> {
         circuit.setup_all(&context)?;
 
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
+        // The DC bias under an AC sweep belongs to the AC run (DVC-19):
+        // a `@ dc`-scoped require must not fire here even though a DC
+        // solver is what computes the bias. (The reset below would wipe
+        // the channel anyway — this just keeps the analysis kind honest.)
+        dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Ac);
         let dc_point = dc_solver.solve()?;
 
         // The DC solve underneath the sweep is covered by the DC row of
@@ -224,6 +229,7 @@ impl<'a> AcSolver<'a> {
                 self.system.context.checks,
                 &mags,
                 f_hz,
+                crate::analyses::AnalysisKind::Ac,
             );
             self.system.circuit.consume_validation_reports(
                 self.system.context.checks,

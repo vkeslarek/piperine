@@ -1227,8 +1227,17 @@ impl AnalogInstance {
     /// converged DC solution, each accepted transient step, each AC
     /// frequency point) — decoupled from `accept_timestep`, which seeds
     /// operators at points that are not evaluation points; `checks=off`
-    /// never calls a kernel function.
-    pub fn evaluate_margins(&mut self, volts: &[f64], time: f64) {
+    /// never calls a kernel function. `analysis` is the running analysis
+    /// kind (DVC-19): a `require` scoped to `@ dc { … }` is evaluated
+    /// only when the running analysis matches its scope; an analysis that
+    /// never ran leaves the margin "not exercised" (worst = +inf, no
+    /// argmin) — never a silent vacuous pass.
+    pub fn evaluate_margins(
+        &mut self,
+        volts: &[f64],
+        time: f64,
+        analysis: piperine_solver::abi::AnalysisKind,
+    ) {
         if self.kernel.num_margins() == 0 {
             return;
         }
@@ -1240,7 +1249,7 @@ impl AnalogInstance {
             vars: &self.vars,
             sim: &self.sim,
         };
-        self.margins.evaluate(&cx, volts, time, self.check_posture);
+        self.margins.evaluate(&cx, volts, time, self.check_posture, analysis);
     }
 
     /// The running worst value + argmin per declared margin (DVC-10), in
@@ -1254,11 +1263,16 @@ impl AnalogInstance {
     /// collecting the terminal voltages from the state buffer's latest row
     /// — the [`Element::evaluate_constraints`](piperine_solver::abi::Element)
     /// hook's analog half, called by the drivers at design §C3's points.
-    pub fn evaluate_constraints(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
+    pub fn evaluate_constraints(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        t: f64,
+        analysis: piperine_solver::abi::AnalysisKind,
+    ) {
         let volts = self.collect_volts(&|k| {
             state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
-        self.evaluate_margins(&volts, t);
+        self.evaluate_margins(&volts, t, analysis);
         self.last_volts = volts;
     }
 

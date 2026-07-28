@@ -734,9 +734,14 @@ impl Element for PiperineDevice {
     /// not evaluation points). Forwards to the analog half; a digital-only
     /// device has no margins (margins are an analog notion) and inherits
     /// the default no-op.
-    fn evaluate_constraints(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
+    fn evaluate_constraints(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        t: f64,
+        analysis: piperine_solver::abi::AnalysisKind,
+    ) {
         if let Some(analog) = self.analog.as_mut() {
-            analog.evaluate_constraints(state, t);
+            analog.evaluate_constraints(state, t, analysis);
         }
     }
 

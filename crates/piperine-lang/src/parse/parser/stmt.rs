@@ -438,7 +438,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a single event term: `initial`, `final`, or `name(arg)`.
+    /// Parses a single event term: `initial`, `final`, `name`, or `name(args)`.
     pub(crate) fn parse_event_term(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
         if self.eat_ident("initial") {
             return Ok(EventSpec::Initial);
@@ -447,9 +447,18 @@ impl<'a> Parser<'a> {
             return Ok(EventSpec::Final);
         }
         let name = self.parse_ident()?;
-        self.expect(&Tok::LParen)?;
         // `name(arg)` or `name(arg, arg, ...)` — e.g. `@timer(period, phase)`.
-        let mut args = vec![self.parse_expr()?];
+        // A bare `name` (no parens) is also accepted so analysis-scope
+        // terms like `@ dc { … }` parse through the same production
+        // (dv-core T28, DVC-19) — the registry resolves the name.
+        if !self.eat(&Tok::LParen) {
+            return Ok(EventSpec::Named { name, args: Vec::new() });
+        }
+        let mut args = if self.peek() == Some(&Tok::RParen) {
+            Vec::new()
+        } else {
+            vec![self.parse_expr()?]
+        };
         while self.eat(&Tok::Comma) {
             args.push(self.parse_expr()?);
         }
