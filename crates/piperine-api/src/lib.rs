@@ -15,6 +15,7 @@
 
 pub mod error;
 pub mod fourier;
+pub mod gradient;
 pub mod hooks;
 pub mod margins;
 pub mod model;
@@ -27,6 +28,7 @@ pub mod waveform;
 
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
+pub use gradient::{MarginDifferentiability, MarginGradientResult, classify_margin_gradient};
 pub use hooks::SimHooks;
 pub use margins::{ConstraintCatalog, MarginEntry, MarginShape, MarginValue, MarginsResult};
 pub use piperine_solver::prelude::{

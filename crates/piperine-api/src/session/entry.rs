@@ -345,6 +345,94 @@ impl Session {
         Ok(NoiseTrace::new(result))
     }
 
+    /// Differentiate a declared margin w.r.t. `params` (dv-gradients T10,
+    /// DVG-11/12). Returns the gradient at the located argmin for a
+    /// pointwise DC margin; fails loud for every metric the driver cannot
+    /// differentiate through the solver, naming the gap (the AC adjoint
+    /// for AC-defined metrics, the event for event-detected metrics, the
+    /// IFT for non-differentiable reductions). Never a silent
+    /// finite-difference substitution.
+    pub fn margin_gradient(
+        &mut self,
+        margin_name: &str,
+        params: &[(String, String)],
+        config: &SolverConfig,
+    ) -> Result<crate::gradient::MarginGradientResult, Error> {
+        use crate::gradient::MarginDifferentiability;
+        let differentiability =
+            crate::gradient::classify_margin_gradient(&self.design, &self.info, &self.module, margin_name)?;
+        match differentiability {
+            MarginDifferentiability::AcDefined => Err(Error::Measurement(format!(
+                "margin `{margin_name}` is AC-defined — the AC adjoint is a documented gap (D6); \
+                 the host may finite-difference explicitly, but the driver never substitutes \
+                 silently"
+            ))),
+            MarginDifferentiability::EventDetected => Err(Error::Measurement(format!(
+                "margin `{margin_name}` is event-detected (settling time, overshoot instant) — \
+                 differentiable only through the event, which has no adjoint today"
+            ))),
+            MarginDifferentiability::NonDifferentiableReduction => Err(Error::Measurement(format!(
+                "margin `{margin_name}` is a reduced metric whose defining reduction is not \
+                 differentiable through the implicit function theorem in this delivery"
+            ))),
+            MarginDifferentiability::PointwiseDc { output, output_ref, argmin, .. } => {
+                // Translate NodeIdentifier → Net through the circuit's
+                // netlist (the adjoint addresses outputs by Net).
+                let out_net = self.node_to_net(&output, margin_name)?;
+                let out_label = out_net.label().to_string();
+                let opts = match output_ref {
+                    Some(r) => {
+                        let ref_net = self.node_to_net(&r, margin_name)?;
+                        piperine_solver::prelude::AdjointOptions::new_diff(out_net, ref_net, params.to_vec())
+                    }
+                    None => piperine_solver::prelude::AdjointOptions::new(out_net, params.to_vec()),
+                };
+                let mut solver = self.circuit.adjoint(opts, config.to_context())?;
+                solver.policy = config.to_policy();
+                let inner = solver.solve()?;
+                let mut d = std::collections::HashMap::new();
+                for (label, param) in params {
+                    // The adjoint keys its result by `(output.label(), "label.param")`;
+                    // the output label is the Net's source-level label, not the
+                    // margin name — look it up under that key.
+                    if let Some(v) = inner.get(&out_label, label, param) {
+                        d.insert(format!("{label}.{param}"), v);
+                    }
+                }
+                Ok(crate::gradient::MarginGradientResult {
+                    name: margin_name.to_string(),
+                    argmin,
+                    d,
+                    fallback_users: inner.fallback_users,
+                })
+            }
+        }
+    }
+
+    /// Resolve a `NodeIdentifier` to the solver's `Net` (the adjoint's
+    /// output addressing) via the circuit's unified net list. Ground
+    /// resolves to the canonical pseudo-net (no MNA row); the adjoint
+    /// treats an index-less reference as "no contribution", which is
+    /// mathematically correct (V(gnd) = 0).
+    fn node_to_net(
+        &self,
+        node: &piperine_solver::prelude::NodeIdentifier,
+        margin_name: &str,
+    ) -> Result<piperine_solver::prelude::Net, Error> {
+        use piperine_solver::abi::AnalogVariable;
+        if *node == piperine_solver::prelude::NodeIdentifier::Gnd {
+            return Ok(piperine_solver::prelude::Net::ground());
+        }
+        let var = AnalogVariable::Node(node.clone());
+        self.circuit
+            .nets()
+            .into_iter()
+            .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
+            .ok_or_else(|| Error::Measurement(format!(
+                "margin `{margin_name}`: the probe end is not a solved analog net"
+            )))
+    }
+
     /// Run a DC sensitivity analysis (`.sens`) on the held circuit
     /// (HOST-02): `∂V(output)/∂(param)` at the operating point for every
     /// requested `(label, param)` pair, by central finite difference.

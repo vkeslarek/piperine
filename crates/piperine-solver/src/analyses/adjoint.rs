@@ -37,19 +37,31 @@ use crate::prelude::DcAnalysisResult;
 use ndarray::Array1;
 
 /// One DC adjoint request: a scalar output (solved node voltage or branch
-/// current) and the parameters to differentiate w.r.t. Mirrors
+/// current, optionally differential) and the parameters to differentiate
+/// w.r.t. Mirrors
 /// [`SensAnalysisOptions`](crate::analyses::sens::SensAnalysisOptions)'s
 /// shape so a host can swap `.sens` for `.adjoint` without re-articulating
 /// the request.
 #[derive(Debug, Clone)]
 pub struct AdjointOptions {
     pub output: Net,
+    /// Optional reference for a differential read `output − output_ref`
+    /// (ground-referenced when `None`). The transpose solve places `+1`
+    /// at `output`'s row and `−1` at `output_ref`'s row in `∂f/∂x` —
+    /// still one solve, regardless.
+    pub output_ref: Option<Net>,
     pub params: Vec<(String, String)>,
 }
 
 impl AdjointOptions {
     pub fn new(output: Net, params: Vec<(String, String)>) -> Self {
-        Self { output, params }
+        Self { output, output_ref: None, params }
+    }
+
+    /// Differential output `output − output_ref` — the shape a margin on
+    /// `V(a, b)` needs. One transpose solve still serves every parameter.
+    pub fn new_diff(output: Net, output_ref: Net, params: Vec<(String, String)>) -> Self {
+        Self { output, output_ref: Some(output_ref), params }
     }
 }
 
@@ -149,20 +161,32 @@ impl<'a> AdjointSolver<'a> {
 
         let symbolic = FaerSymbolicMatrix::new(size, matrix_stamps.clone())?;
 
-        // 5. The output unknown's row index — where ∂f/∂x places its `1`.
+        // 5. The output unknown's row index — where ∂f/∂x places its `+1`
+        //    (and `−1` at the optional differential reference). Loud when
+        //    the primary output is not a solved analog unknown; the
+        //    optional reference is allowed to be ground (no MNA row),
+        //    treated as "no `−1` contribution" — mathematically correct,
+        //    since V(gnd) = 0 differentiates to zero.
         let out_idx =
             output_index(self.circuit, &self.options.output, &dc_result, &op, size)?;
+        let out_ref_idx = match &self.options.output_ref {
+            Some(r) => output_index(self.circuit, r, &dc_result, &op, size).ok(),
+            None => None,
+        };
 
-        // 6. ONE transpose solve: Jᵀλ = ∂f/∂x, where ∂f/∂x = e_out.
+        // 6. ONE transpose solve: Jᵀλ = ∂f/∂x, where ∂f/∂x = e_out for a
+        //    ground-referenced output or e_out − e_ref for a differential.
         let mut system: FaerSparseLinearSystem<f64> = LinearSystem::new(size);
         system.apply_stamps(matrix_stamps);
-        // The RHS is ∂f/∂x = e_out — overwrite anything apply_stamps wrote
-        // into b_vec, since the device residual Rhs is not part of this
-        // system.
+        // The RHS is ∂f/∂x — overwrite anything apply_stamps wrote into
+        // b_vec, since the device residual Rhs is not part of this system.
         for v in &mut system.b_vec {
             *v = 0.0;
         }
         system.b_vec[out_idx] = 1.0;
+        if let Some(r) = out_ref_idx {
+            system.b_vec[r] = -1.0;
+        }
         let lambda = system.solve_transpose_with_backend(&symbolic)?;
         let transpose_solves = 1;
 
