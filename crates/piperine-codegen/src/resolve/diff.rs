@@ -43,7 +43,7 @@ pub fn d_dv_named(
         } else {
             lit(0.0)
         }
-    }, resolve_node, &[("__temp", deriv_marker)])
+    }, &|_| lit(0.0), resolve_node, &[("__temp", deriv_marker)])
 }
 
 /// `∂expr / ∂V(node)` — the `ddx` derivative w.r.t. a single node potential.
@@ -55,7 +55,32 @@ pub fn d_dnode(
     differentiate(expr, &|p, m| {
         let sign = f64::from(p == node) - f64::from(m == node);
         lit(sign)
-    }, resolve_node, TAPE_D1)
+    }, &|_| lit(0.0), resolve_node, TAPE_D1)
+}
+
+/// `∂expr / ∂param` — the parameter derivative (DVG-01). Same chain-rule
+/// walk as [`d_dv`] / [`d_dnode`], but the differentiation variable is a
+/// *parameter* (a bare `Expr::Ident`), not a branch voltage: an ident leaf
+/// matching `param` seeds `1.0`, every other ident (and every `V`/`I` branch
+/// read) seeds `0.0`.
+///
+/// Temp leaves map to `__dtemp` exactly as in [`d_dv`] — the caller (the
+/// `∂F/∂p` kernel compiler) installs the parameter-derivative tape
+/// (`d_dp(temps[id], param)` per slot) as the `__dtemp` tape before emitting
+/// the result, so multi-level temp chains resolve self-consistently through
+/// one shared mechanism rather than a second differentiator.
+///
+/// `resolve_node` is not a parameter here: parameter differentiation never
+/// touches a branch read (their seed is always zero), so node resolution is
+/// irrelevant and a constant `None` closure is used internally.
+pub fn d_dp(expr: &Expr, param: &str) -> Expr {
+    differentiate(
+        expr,
+        &|_p, _m| lit(0.0),
+        &|name| if name == param { lit(1.0) } else { lit(0.0) },
+        &|_| None,
+        TAPE_D1,
+    )
 }
 
 /// `∂²expr / ∂V(a,b)∂V(c,d)` — the `.disto` 2nd-derivative kernel's core
@@ -121,11 +146,11 @@ pub fn d_dv_twice_named(
     let seed1 = |p: NodeId, m: NodeId| {
         if p == a && m == b { lit(1.0) } else { lit(0.0) }
     };
-    let inner = differentiate(expr, &seed1, resolve_node, &[("__temp", d1)]);
+    let inner = differentiate(expr, &seed1, &|_| lit(0.0), resolve_node, &[("__temp", d1)]);
     let seed2 = |p: NodeId, m: NodeId| {
         if p == c && m == d { lit(1.0) } else { lit(0.0) }
     };
-    differentiate(&inner, &seed2, resolve_node, &[("__temp", d2), (d1, d12)])
+    differentiate(&inner, &seed2, &|_| lit(0.0), resolve_node, &[("__temp", d2), (d1, d12)])
 }
 
 /// Completes [`d_dv_twice_named`]'s second pass on an *already-computed*
@@ -148,7 +173,7 @@ pub fn d_dv_once_more_named(
     let seed2 = |p: NodeId, m: NodeId| {
         if p == c && m == d { lit(1.0) } else { lit(0.0) }
     };
-    differentiate(inner, &seed2, resolve_node, &[("__temp", d2), (d1, d12)])
+    differentiate(inner, &seed2, &|_| lit(0.0), resolve_node, &[("__temp", d2), (d1, d12)])
 }
 
 /// `∂³expr / ∂V(a,b)∂V(c,d)∂V(e,f)` — the `.disto` 3rd-derivative kernel's
@@ -179,13 +204,13 @@ pub fn d_dv_thrice(
     let (e, f) = branch3;
     let pass1 = differentiate(expr, &|p, m| {
         if p == a && m == b { lit(1.0) } else { lit(0.0) }
-    }, resolve_node, &[("__temp", "__dtemp1")]);
+    }, &|_| lit(0.0), resolve_node, &[("__temp", "__dtemp1")]);
     let pass2 = differentiate(&pass1, &|p, m| {
         if p == c && m == d { lit(1.0) } else { lit(0.0) }
-    }, resolve_node, &[("__temp", "__dtemp2"), ("__dtemp1", "__ddtemp12")]);
+    }, &|_| lit(0.0), resolve_node, &[("__temp", "__dtemp2"), ("__dtemp1", "__ddtemp12")]);
     differentiate(&pass2, &|p, m| {
         if p == e && m == f { lit(1.0) } else { lit(0.0) }
-    }, resolve_node, &[
+    }, &|_| lit(0.0), resolve_node, &[
         ("__temp", "__dtemp3"),
         ("__dtemp1", "__ddtemp13"),
         ("__dtemp2", "__ddtemp23"),
@@ -211,7 +236,7 @@ pub fn d_dv_thrice_from_twice(
 ) -> Expr {
     differentiate(pass2, &|p, m| {
         if p == e && m == f { lit(1.0) } else { lit(0.0) }
-    }, resolve_node, &[
+    }, &|_| lit(0.0), resolve_node, &[
         ("__temp", "__dtemp3"),
         ("__dtemp1", "__ddtemp13"),
         ("__dtemp2", "__ddtemp23"),
@@ -219,22 +244,26 @@ pub fn d_dv_thrice_from_twice(
     ])
 }
 
-/// Core chain-rule walk; `seed` gives the derivative of a branch read.
-/// `tapes` is an ordered list of `(leaf_marker, derivative_marker)` pairs —
-/// a `__leaf_marker(id)` call becomes `Call(derivative_marker, [id])` rather
-/// than being treated as an opaque zero-derivative constant. Every existing
-/// (single-order) caller passes [`TAPE_D1`]; [`d_dv_twice`] additionally
-/// activates a second pair to resolve leaves surviving from its first pass.
+/// Core chain-rule walk; `seed` gives the derivative of a branch read and
+/// `ident_seed` gives the derivative of an identifier leaf (a parameter, when
+/// differentiating by parameter — `lit(0.0)` for the unknown-differentiation
+/// callers). `tapes` is an ordered list of `(leaf_marker, derivative_marker)`
+/// pairs — a `__leaf_marker(id)` call becomes `Call(derivative_marker, [id])`
+/// rather than being treated as an opaque zero-derivative constant. Every
+/// existing (single-order) caller passes [`TAPE_D1`]; [`d_dv_twice`]
+/// additionally activates a second pair to resolve leaves surviving from its
+/// first pass.
 fn differentiate(
     expr: &Expr,
     seed: &impl Fn(NodeId, NodeId) -> Expr,
+    ident_seed: &impl Fn(&str) -> Expr,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
     tapes: &[(&str, &str)],
 ) -> Expr {
     match expr {
         // $limit is transparent to differentiation: d(vnew)/dV.
         Expr::SysCall(name, args) if name.trim_start_matches('$') == "limit" => {
-            args.get(1).map(|vnew| differentiate(vnew, seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0))
+            args.get(1).map(|vnew| differentiate(vnew, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0))
         }
 
         Expr::Literal(Literal::Real(_))
@@ -281,23 +310,23 @@ fn differentiate(
                 }
                 // Math builtins: chain rule.
                 if super::math::math_fn(name).is_some() {
-                    return d_math(name, args, seed, resolve_node, tapes);
+                    return d_math(name, args, seed, ident_seed, resolve_node, tapes);
                 }
             }
             lit(0.0)
         }
 
-        Expr::Ident(_) => lit(0.0),
+        Expr::Ident(name) => ident_seed(name),
         Expr::Path(_) => lit(0.0),
 
-        Expr::Unary(UnaryOp::Neg, x) => neg(differentiate(x, seed, resolve_node, tapes)),
+        Expr::Unary(UnaryOp::Neg, x) => neg(differentiate(x, seed, ident_seed, resolve_node, tapes)),
         Expr::Unary(UnaryOp::Not, _) => lit(0.0),
 
-        Expr::Binary(lhs, op, rhs) => d_binary(op.clone(), lhs, rhs, seed, resolve_node, tapes),
+        Expr::Binary(lhs, op, rhs) => d_binary(op.clone(), lhs, rhs, seed, ident_seed, resolve_node, tapes),
 
         Expr::If { cond, then_body, else_body } => {
-            let t = block_deriv(then_body, seed, resolve_node, tapes);
-            let e = block_deriv(else_body, seed, resolve_node, tapes);
+            let t = block_deriv(then_body, seed, ident_seed, resolve_node, tapes);
+            let e = block_deriv(else_body, seed, ident_seed, resolve_node, tapes);
             Expr::If {
                 cond: cond.clone(),
                 then_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(t)) },
@@ -307,17 +336,17 @@ fn differentiate(
 
         Expr::Block(b) => {
             if let Some(e) = &b.expr {
-                return differentiate(e, seed, resolve_node, tapes);
+                return differentiate(e, seed, ident_seed, resolve_node, tapes);
             }
             for s in b.stmts.iter().rev() {
                 if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
-                    return differentiate(e, seed, resolve_node, tapes);
+                    return differentiate(e, seed, ident_seed, resolve_node, tapes);
                 }
             }
             lit(0.0)
         }
 
-        Expr::Cast(_, inner) => differentiate(inner, seed, resolve_node, tapes),
+        Expr::Cast(_, inner) => differentiate(inner, seed, ident_seed, resolve_node, tapes),
         Expr::Field(_, _) => lit(0.0),
 
         _ => lit(0.0),
@@ -327,15 +356,16 @@ fn differentiate(
 fn block_deriv(
     block: &piperine_lang::parse::ast::Block,
     seed: &impl Fn(NodeId, NodeId) -> Expr,
+    ident_seed: &impl Fn(&str) -> Expr,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
     tapes: &[(&str, &str)],
 ) -> Expr {
     if let Some(e) = &block.expr {
-        return differentiate(e, seed, resolve_node, tapes);
+        return differentiate(e, seed, ident_seed, resolve_node, tapes);
     }
     for s in block.stmts.iter().rev() {
         if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
-            return differentiate(e, seed, resolve_node, tapes);
+            return differentiate(e, seed, ident_seed, resolve_node, tapes);
         }
     }
     lit(0.0)
@@ -346,11 +376,12 @@ fn d_binary(
     a: &Expr,
     b: &Expr,
     seed: &impl Fn(NodeId, NodeId) -> Expr,
+    ident_seed: &impl Fn(&str) -> Expr,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
     tapes: &[(&str, &str)],
 ) -> Expr {
-    let da = differentiate(a, seed, resolve_node, tapes);
-    let db = differentiate(b, seed, resolve_node, tapes);
+    let da = differentiate(a, seed, ident_seed, resolve_node, tapes);
+    let db = differentiate(b, seed, ident_seed, resolve_node, tapes);
     match op {
         BinaryOp::Add => add(da, db),
         BinaryOp::Sub => sub(da, db),
@@ -387,11 +418,12 @@ fn d_math(
     name: &str,
     args: &[Expr],
     seed: &impl Fn(NodeId, NodeId) -> Expr,
+    ident_seed: &impl Fn(&str) -> Expr,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
     tapes: &[(&str, &str)],
 ) -> Expr {
     let u = args.first().cloned().unwrap_or_else(|| lit(0.0));
-    let du = args.first().map(|a| differentiate(a, seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
+    let du = args.first().map(|a| differentiate(a, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
     match name {
         "exp" | "limexp" => mul(math1(name, u), du),
         "ln" | "log" => div(du, u),
@@ -416,12 +448,12 @@ fn d_math(
         ),
         "pow" => {
             let v = args.get(1).cloned().unwrap_or_else(|| lit(1.0));
-            let dv = args.get(1).map(|a| differentiate(a, seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
+            let dv = args.get(1).map(|a| differentiate(a, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
             binary(super::BinOp::Pow, u, v).d_via_pow(du, dv)
         }
         "min" | "max" => {
             let v = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
-            let dv = args.get(1).map(|a| differentiate(a, seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
+            let dv = args.get(1).map(|a| differentiate(a, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
             let pick_first = if name == "min" {
                 binary(super::BinOp::Le, u, v)
             } else {
