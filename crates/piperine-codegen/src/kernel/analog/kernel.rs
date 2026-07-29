@@ -35,6 +35,22 @@ use piperine_lang::parse::ast::Expr as PomExpr;
 /// this bank). Unused when the module has no module-level vars.
 pub(super) type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, *mut f64);
 
+/// The parameter-indexed `∂F/∂p` kernel ABI (DVG-02): one extra `usize`
+/// argument selects the parameter, and the function writes
+/// `∂(contrib.expr)/∂param` per resistive contribution into `out` — **one
+/// function regardless of parameter count**, the per-index design the
+/// `.disto` per-combination wall (`TryFromIntError` on MOS2/MOS3 with ~60
+/// model-card params) proved untenable.
+///
+/// ```c
+/// void fn(const f64 *volts, const f64 *params, const f64 *state,
+///         const f64 *vars, const SimCtx *sim, usize param_idx, f64 *out);
+/// ```
+///
+/// `out` must be pre-zeroed and hold one `f64` per resistive contribution
+/// (see [`AnalogKernel::param_jacobian_contribs`]).
+pub(super) type AnalogParamFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, usize, *mut f64);
+
 /// An ordered branch (node pair) in the analog netlist.
 pub type Branch = (NodeId, NodeId);
 /// An ordered pair of branches for second-derivative disto.
@@ -231,6 +247,21 @@ pub struct AnalogKernel {
     /// entry to its var-bank slot; absent `@name` keeps the positional
     /// `var[k]` fallback (PIA-08, no regression).
     pub(super) var_names: Vec<String>,
+    /// The `∂F/∂p` parameter-indexed kernel (DVG-02): `None` when the body
+    /// declares no differentiable parameter (zero cost — no function
+    /// compiled). One function regardless of parameter count; the parameter
+    /// index selects which derivative to compute.
+    pub(super) param_jacobian: Option<AnalogParamFn>,
+    /// Resistive contribution terminals `(plus, minus)` in `out` row order —
+    /// the stamp targets the ABI method reads to turn each scalar the kernel
+    /// writes into a residual-shaped `∂F/∂param`. Empty when
+    /// [`param_jacobian`](Self::param_jacobian) is `None`.
+    pub(super) param_contribs: Vec<(NodeId, NodeId)>,
+    /// The parameter indices (into [`param_names`](AnalogCore::param_names))
+    /// the kernel differentiates analytically — `Real`-typed restamp-class
+    /// parameters (admissibility, DVG-03). A request for any other index
+    /// writes nothing and the driver fails loud.
+    pub(super) param_indices: Vec<usize>,
 }
 
 // The JITModule is frozen after `finalize_definitions`; the function pointers
@@ -881,6 +912,71 @@ impl AnalogKernel {
         if let Some(f) = self.opvars {
             self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    // ── Parameter Jacobian ∂F/∂p (DVG-02) ─────────────────────────────────────
+
+    /// Whether this kernel compiled a `∂F/∂p` function (one or more
+    /// differentiable parameters). `false` for a body with no `Real`-typed
+    /// restamp-class parameter — no function is compiled (zero cost).
+    pub fn has_param_jacobian(&self) -> bool {
+        self.param_jacobian.is_some()
+    }
+
+    /// How many `∂F/∂p` JIT functions this kernel compiled: `0` when
+    /// [`has_param_jacobian`](Self::has_param_jacobian) is false, `1`
+    /// otherwise — **never one per parameter**, the design invariant that
+    /// keeps a ~60-parameter model card off the Cranelift function-count
+    /// wall `.disto` hits on MOS2/MOS3.
+    pub fn num_param_jacobian_functions(&self) -> usize {
+        self.param_jacobian.is_some() as usize
+    }
+
+    /// The parameter indices the kernel differentiates analytically (into
+    /// [`param_names`](Self::param_names)). A driver refuses any index not in
+    /// this slice (DVG-03 admissibility).
+    pub fn param_jacobian_indices(&self) -> &[usize] {
+        &self.param_indices
+    }
+
+    /// Resistive contribution terminals `(plus, minus)` in `out` row order —
+    /// the stamp targets for the ABI method that turns each kernel scalar
+    /// into a residual-shaped `∂F/∂param`. Empty without a kernel.
+    pub fn param_jacobian_contribs(&self) -> &[(NodeId, NodeId)] {
+        &self.param_contribs
+    }
+
+    /// Write `∂(contrib.expr)/∂param` per resistive contribution to
+    /// `out[0..num_contribs]` for the given parameter index (DVG-02).
+    /// `out` must be pre-zeroed and sized to
+    /// [`param_jacobian_contribs`](Self::param_jacobian_contribs). A
+    /// non-differentiable index writes nothing (the driver fails loud
+    /// before calling — DVG-03). No-op when the kernel compiled no function.
+    #[allow(clippy::too_many_arguments)]
+    pub fn eval_param_jacobian(
+        &self,
+        param_idx: usize,
+        volts: &[f64],
+        params: &[f64],
+        state: &[f64],
+        vars: &[f64],
+        sim: &SimCtx,
+        out: &mut [f64],
+    ) {
+        if let Some(f) = self.param_jacobian {
+            self.check_input_lens(volts, params, state, vars);
+            unsafe {
+                f(
+                    volts.as_ptr(),
+                    params.as_ptr(),
+                    state.as_ptr(),
+                    vars.as_ptr(),
+                    sim as *const SimCtx,
+                    param_idx,
+                    out.as_mut_ptr(),
+                )
+            }
         }
     }
 }

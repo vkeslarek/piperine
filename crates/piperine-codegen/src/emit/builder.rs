@@ -187,6 +187,18 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         self.tapes.insert(marker, Tape { exprs, values });
     }
 
+    /// Clear the common-subexpression cache. Needed by emitters that span
+    /// multiple Cranelift blocks (the `∂F/∂p` kernel's per-parameter
+    /// dispatch): a cached `f64const` or load is block-scoped SSA, so reusing
+    /// it across non-dominating blocks violates SSA. Call at the start of each
+    /// block, alongside `set_value_tape`/`set_deriv_tape`. Single-block
+    /// emitters (the residual, Jacobian) never need this.
+    pub(crate) fn clear_cse(&mut self) {
+        if let Some(cse) = self.cse.as_mut() {
+            cse.clear();
+        }
+    }
+
     /// Whether `name` is a tape-marker call (`__temp`, `__dtemp`,
     /// `__ddtemp12`, …) rather than another `__`-intrinsic.
     pub(crate) fn is_tape_marker(name: &str) -> bool {

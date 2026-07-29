@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cranelift_codegen::ir::{types, AbiParam, InstBuilder, MemFlags, Signature, Value};
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
@@ -15,7 +16,7 @@ use piperine_lang::math;
 use piperine_lang::parse::ast::Expr as PomExpr;
 
 use super::{
-    AnalogCore, AnalogFn, AnalogKernel, CompiledEvent, CompiledTrigger, RuntimeState, RuntimeStateSpec,
+    AnalogCore, AnalogFn, AnalogKernel, AnalogParamFn, CompiledEvent, CompiledTrigger, RuntimeState, RuntimeStateSpec,
 };
 use super::ac_stim::AcStim;
 use super::forces::Forces;
@@ -128,6 +129,16 @@ pub(super) struct AnalogCompiler<'m> {
     limits: Vec<PomExpr>,
     /// State-bank slot where `$limit` vold slots begin (= module state count).
     limit_base: usize,
+}
+
+/// The compiled `∂F/∂p` kernel and its stamp targets (DVG-02): the one
+/// parameter-indexed function (or `None` when nothing was differentiable),
+/// the resistive contribution terminals `(plus, minus)` the ABI method stamps,
+/// and the parameter indices the function differentiates analytically.
+struct ParamJacobianCompile {
+    func: Option<FuncId>,
+    contribs: Vec<(NodeId, NodeId)>,
+    indices: Vec<usize>,
 }
 
 impl<'m> AnalogCompiler<'m> {
@@ -326,6 +337,14 @@ impl<'m> AnalogCompiler<'m> {
                 Some(self.compile_jacobian("charge_jacobian", &charge, &temps)?),
             )
         };
+
+        // The `∂F/∂p` parameter-indexed kernel (DVG-02): one JIT function
+        // regardless of parameter count, emitted once at compile time over the
+        // resistive residual (at DC, reactive parts are open — the adjoint is
+        // DC-first, D6). Returns `None` (no function, zero cost) when the body
+        // declares no differentiable parameter.
+        let param_jac = self.compile_param_jacobian("param_jacobian", &resistive, &temps)?;
+        let ParamJacobianCompile { func: param_jac_id, contribs: param_contribs, indices: param_indices } = param_jac;
 
         // `.disto` second/third derivatives over the resistive + charge
         // contributions (DISTO-03); skipped entirely (empty, zero compile
@@ -653,6 +672,11 @@ impl<'m> AnalogCompiler<'m> {
             // signature built by `begin_fn`.
             unsafe { std::mem::transmute(jit.get_finalized_function(id)) }
         };
+        let get_param = |jit: &JITModule, id: FuncId| -> AnalogParamFn {
+            // SAFETY: the `∂F/∂p` kernel is compiled with the 7-argument
+            // parameter-indexed signature built by `build_indexed_fn`.
+            unsafe { std::mem::transmute(jit.get_finalized_function(id)) }
+        };
 
         let runtime_states = runtime_inputs
             .iter()
@@ -741,6 +765,9 @@ impl<'m> AnalogCompiler<'m> {
         let event_triggers = event_triggers_id.map(|id| get(&self.jit, id));
         let event_actions = event_actions_id.map(|id| get(&self.jit, id));
         let bound_step = bound_step_id.map(|id| get(&self.jit, id));
+        // Extracted before `self.jit` moves into `core` (same pattern as every
+        // other finalized function pointer above).
+        let param_jacobian = param_jac_id.map(|id| get_param(&self.jit, id));
         let disto2: Vec<AnalogFn> = disto2_ids.iter().map(|&id| get(&self.jit, id)).collect();
         let disto3: Vec<AnalogFn> = disto3_ids.iter().map(|&id| get(&self.jit, id)).collect();
         let disto2_contribs: Vec<(NodeId, NodeId)> = resistive
@@ -844,6 +871,9 @@ impl<'m> AnalogCompiler<'m> {
             opvars,
             opvar_names,
             var_names,
+            param_jacobian,
+            param_contribs,
+            param_indices,
         })
     }
 
@@ -931,7 +961,122 @@ impl<'m> AnalogCompiler<'m> {
         })
     }
 
-    /// DISTO-04 guard shared by the `.disto` kernels: fail loud, naming the
+    /// The `∂F/∂p` kernel (DVG-02): compile ONE parameter-indexed function
+    /// that, for a given param index, writes `∂(contrib.expr)/∂param` per
+    /// resistive contribution into `out[0..num_contribs]`. The per-parameter
+    /// derivatives are precomputed symbolically with
+    /// [`crate::resolve::diff::d_dp`] (T1); the function dispatches on the
+    /// index with a `brif` chain — one Cranelift function regardless of
+    /// parameter count, never one per parameter (the `.disto` wall's design).
+    ///
+    /// Returns a `None` function (zero cost — nothing compiled) when the body
+    /// declares no differentiable parameter. The compile-time gate is
+    /// `Type::Real`; the per-instance restamp/rebuild refinement and the loud
+    /// driver refusal land in T3/T6.
+    fn compile_param_jacobian(
+        &mut self,
+        name: &str,
+        contribs: &[FlatContrib],
+        temps: &[PomExpr],
+    ) -> Result<ParamJacobianCompile, CodegenError> {
+        use crate::resolve::{ParamId, Type};
+        use crate::resolve::diff::d_dp;
+
+        let diff_params: Vec<usize> = (0..self.module.symbols.num_params())
+            .filter(|&i| self.module.symbols.param(ParamId(i as u32)).ty == Type::Real)
+            .collect();
+        if diff_params.is_empty() || contribs.is_empty() {
+            return Ok(ParamJacobianCompile { func: None, contribs: Vec::new(), indices: Vec::new() });
+        }
+
+        let param_names: Vec<String> =
+            self.module.symbols.params().map(|(_, p)| p.name.clone()).collect();
+
+        // Per differentiable param: the param-derivative tape
+        // (`d(temps[id])/dparam`) and the contribution derivatives
+        // (`d(contrib.expr)/dparam`). Both use `d_dp`'s `__temp`→`__dtemp`
+        // mapping, so installing the tape as `__dtemp` resolves multi-level
+        // temp chains self-consistently through the same mechanism as `d_dv`.
+        let per_param: Vec<(usize, Vec<PomExpr>, Vec<PomExpr>)> = diff_params
+            .iter()
+            .map(|&k| {
+                let pname = &param_names[k];
+                let dtemps: Vec<PomExpr> = temps.iter().map(|t| d_dp(t, pname)).collect();
+                let dcontribs: Vec<PomExpr> = contribs.iter().map(|c| d_dp(&c.expr, pname)).collect();
+                (k, dtemps, dcontribs)
+            })
+            .collect();
+
+        let contribs_owned: Vec<(NodeId, NodeId)> =
+            contribs.iter().map(|c| (c.plus, c.minus)).collect();
+
+        // The value tape (original temps): `d_dp`'s product/quotient/power rules
+        // keep undifferentiated `__temp` operands (exactly like `d_dv`), so the
+        // derivative references BOTH `__temp` and `__dtemp` leaves. The Jacobian
+        // emits every branch in one block; the param kernel dispatches across
+        // blocks, so each block reinstalls BOTH tapes (fresh memo caches) to
+        // keep its Cranelift values block-local — SSA-correct.
+        let value_tape: Vec<PomExpr> = temps.to_vec();
+
+        // Branch collection scans the original contributions (same V
+        // dependence as their derivatives) — borrowing `contribs` rather than
+        // `per_param`, so `per_param` can move into the dispatch closure.
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
+
+        let func_id = self.build_indexed_fn(name, &exprs, move |b, _slot, param_idx, out_ptr| {
+            // Compare chain: each block tests one index and branches to that
+            // param's block or the next comparison. Cranelift blocks carry a
+            // single terminator, so the chain is one `brif` per block (entry
+            // holds comparison 0; fresh blocks hold the rest). A non-matching
+            // index falls through to the default block (writes nothing — the
+            // driver refuses it loud, DVG-03).
+            let n = per_param.len();
+            let param_blocks: Vec<_> = (0..n).map(|_| b.builder.create_block()).collect();
+            let next_compare: Vec<_> = (0..n.saturating_sub(1)).map(|_| b.builder.create_block()).collect();
+            let default_block = b.builder.create_block();
+            let merge_block = b.builder.create_block();
+
+            for (i, (k, _dtemps, _dcontribs)) in per_param.iter().enumerate() {
+                // Comparison `i` runs in `entry` for i==0 (the current block)
+                // or in `next_compare[i-1]` for i>0.
+                if i > 0 {
+                    b.builder.switch_to_block(next_compare[i - 1]);
+                    b.builder.seal_block(next_compare[i - 1]);
+                }
+                let is_k = b.builder.ins().icmp_imm(IntCC::Equal, param_idx, *k as i64);
+                let else_target = if i + 1 < n { next_compare[i] } else { default_block };
+                b.builder.ins().brif(is_k, param_blocks[i], &[], else_target, &[]);
+            }
+
+            b.builder.switch_to_block(default_block);
+            b.builder.seal_block(default_block);
+            b.builder.ins().jump(merge_block, &[]);
+
+            for (i, (_k, dtemps, dcontribs)) in per_param.iter().enumerate() {
+                b.builder.switch_to_block(param_blocks[i]);
+                b.builder.seal_block(param_blocks[i]);
+                // Fresh value AND derivative tapes plus a cleared CSE cache:
+                // every memoized Value is block-scoped SSA, so reusing one
+                // across non-dominating dispatch blocks violates SSA. Reset
+                // all three so this block's Cranelift values stay block-local.
+                b.set_value_tape(value_tape.clone());
+                b.set_deriv_tape(dtemps.clone());
+                b.clear_cse();
+                for (c, dexpr) in dcontribs.iter().enumerate() {
+                    let g = b.emit_analog(dexpr)?;
+                    b.accumulate_f64(g, out_ptr, c);
+                }
+                b.builder.ins().jump(merge_block, &[]);
+            }
+            b.builder.switch_to_block(merge_block);
+            b.builder.seal_block(merge_block);
+            Ok(())
+        })?;
+
+        Ok(ParamJacobianCompile { func: Some(func_id), contribs: contribs_owned, indices: diff_params })
+    }
+
+
     /// device, when any contribution or temp reads a branch current
     /// `I(...)` — the Volterra bookkeeping is over controlling *voltages*;
     /// a current-controlled nonlinearity has no voltage-pair higher
@@ -1410,6 +1555,122 @@ impl<'m> AnalogCompiler<'m> {
         );
         b.set_value_tape(temps);
         body(&mut b, &self.slot, out_ptr)?;
+
+        builder.ins().return_(&[]);
+        builder.finalize();
+
+        self.jit
+            .define_function(func_id, &mut ctx)
+            .map_err(|e| CodegenError::Module(e.to_string()))?;
+        Ok(func_id)
+    }
+
+    /// [`build_fn`]'s sibling for the parameter-indexed `∂F/∂p` kernel
+    /// (DVG-02): identical setup (parameter values, branch voltages, value
+    /// tape, resolver) but a 7th pointer-sized integer argument — the
+    /// parameter index — handed to `body` so it can dispatch one block per
+    /// differentiable parameter. One function regardless of parameter count.
+    #[allow(clippy::type_complexity)]
+    fn build_indexed_fn(
+        &mut self,
+        name: &str,
+        exprs: &[&PomExpr],
+        body: impl FnOnce(
+            &mut Builder,
+            &HashMap<NodeId, usize>,
+            Value,
+            Value,
+        ) -> Result<(), CodegenError>,
+    ) -> Result<FuncId, CodegenError> {
+        let ptr_ty = self.jit.target_config().pointer_type();
+        let mut sig = Signature::new(self.jit.isa().default_call_conv());
+        for _ in 0..7 {
+            sig.params.push(AbiParam::new(ptr_ty));
+        }
+
+        let func_id = self
+            .jit
+            .declare_function(name, Linkage::Export, &sig)
+            .map_err(|e| CodegenError::Module(e.to_string()))?;
+
+        let mut ctx = self.jit.make_context();
+        ctx.func.signature = sig;
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut self.fb_ctx);
+
+        let math: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
+            .math_ids
+            .iter()
+            .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
+            .collect();
+
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        builder.seal_block(entry);
+
+        let volts_ptr = builder.block_params(entry)[0];
+        let params_ptr = builder.block_params(entry)[1];
+        let state_ptr = builder.block_params(entry)[2];
+        let vars_ptr = builder.block_params(entry)[3];
+        let sim_ptr = builder.block_params(entry)[4];
+        // ABI order (`AnalogParamFn`): arg 5 = param_idx, arg 6 = out.
+        let param_idx = builder.block_params(entry)[5];
+        let out_ptr = builder.block_params(entry)[6];
+
+        // Parameter values, indexed by ParamId.
+        let params: Vec<Value> = (0..self.module.symbols.num_params())
+            .map(|i| {
+                builder
+                    .ins()
+                    .load(types::F64, MemFlags::trusted(), params_ptr, (i * 8) as i32)
+            })
+            .collect();
+
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
+        let temps = self.flat.temps.clone();
+        let mut pairs = Vec::new();
+        for expr in exprs {
+            crate::resolve::diff::collect_branches(expr, &mut pairs, &resolve_node);
+        }
+        for temp in &temps {
+            crate::resolve::diff::collect_branches(temp, &mut pairs, &resolve_node);
+        }
+        let mut branch_voltages = HashMap::new();
+        for (plus, minus) in pairs {
+            let load = |builder: &mut FunctionBuilder, node: NodeId| match self.slot.get(&node) {
+                Some(&i) => {
+                    builder
+                        .ins()
+                        .load(types::F64, MemFlags::trusted(), volts_ptr, (i * 8) as i32)
+                }
+                None => builder.ins().f64const(0.0),
+            };
+            let vp = load(&mut builder, plus);
+            let vm = load(&mut builder, minus);
+            let v = builder.ins().fsub(vp, vm);
+            branch_voltages.insert((plus, minus), v);
+        }
+
+        let resolver = Resolver::from_symbols(&self.module.symbols);
+        let mut b = Builder::new_analog(
+            &mut builder,
+            self.module,
+            &resolver,
+            &math,
+            branch_voltages,
+            params,
+            state_ptr,
+            vars_ptr,
+            sim_ptr,
+            self.limits.clone(),
+            self.limit_base,
+        );
+        b.set_value_tape(temps);
+        body(&mut b, &self.slot, param_idx, out_ptr)?;
 
         builder.ins().return_(&[]);
         builder.finalize();

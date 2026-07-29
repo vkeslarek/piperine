@@ -36,4 +36,4 @@ pub use kernel::{
     AnalogKernel, Branch, CompiledEvent, CompiledTrigger, Disto2Pair, Disto3Triple, RuntimeState,
     RuntimeStateSpec,
 };
-use kernel::{AnalogCapability, AnalogCore, AnalogFn};
+use kernel::{AnalogCapability, AnalogCore, AnalogFn, AnalogParamFn};
