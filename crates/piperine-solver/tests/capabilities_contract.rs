@@ -74,6 +74,12 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
              converged solution (analyses/dc.rs) and on each accepted transient step \
              (analyses/transient.rs) (DVC-14)"
         }
+        "HAS_SENSITIVITY" => {
+            "consumed: the DC adjoint driver asks only elements declaring this for \
+             analytic `AnalogDevice::param_stamps`; an element without it falls back to \
+             stamp perturbation at the same operating point (analyses/sensitivity.rs, \
+             DVG-05/06/07)"
+        }
         _ => return None,
     })
 }

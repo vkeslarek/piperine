@@ -677,6 +677,13 @@ impl Element for PiperineDevice {
             if kernel.has_disto3() {
                 caps |= ElementCapabilities::HAS_DISTO3;
             }
+            // DVG-05: declare the analytic ∂F/∂p kernel the JIT compiled
+            // (DVG-02). Cleared for a PHDL device whose body has no
+            // differentiable parameter (no kernel emitted) — being PHDL-JIT
+            // is necessary but not sufficient. Plugin/OSDI never set it.
+            if kernel.has_param_jacobian() {
+                caps |= ElementCapabilities::HAS_SENSITIVITY;
+            }
             // DVC-14: a device with declared constraint margins asks to be
             // polled at the analysis's evaluation points — the bit is what
             // makes the poll happen at all ("costs nothing when unused"

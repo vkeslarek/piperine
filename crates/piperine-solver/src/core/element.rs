@@ -112,6 +112,13 @@ bitflags::bitflags! {
         /// empty*. Declaring the bit and returning `None` is legal: the bit
         /// promises capability, not content.
         const EMITS_VALIDATION = 1 << 15;
+        /// The model provides an analytic `∂F/∂p` kernel (DVG-05): a JIT
+        /// device that compiled the parameter-indexed sensitivity function
+        /// (DVG-02). The adjoint driver asks the element for analytic
+        /// [`AnalogDevice::param_stamps`] only when this bit is set; an
+        /// element without it falls back to stamp perturbation (DVG-06).
+        /// Plugin/OSDI elements default clear — they expose no JIT `∂F/∂p`.
+        const HAS_SENSITIVITY = 1 << 16;
     }
 }
 
