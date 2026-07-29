@@ -203,6 +203,22 @@ impl AnalogDevice for PiperineDevice {
         }
     }
 
+    /// Analytic `∂F/∂p` stamps from the JIT `∂F/∂p` kernel (DVG-04): forwards
+    /// to the analog instance, which evaluates the parameter-indexed kernel
+    /// at the last accepted operating point and pushes `Stamp::Rhs` entries.
+    /// A device without an analog half, or one whose kernel compiled no
+    /// differentiable parameter, writes nothing (the driver falls back to
+    /// stamp perturbation — DVG-06).
+    fn param_stamps(
+        &mut self,
+        param_index: usize,
+        sink: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) {
+        if let Some(analog) = self.analog.as_mut() {
+            analog.param_stamps(param_index, sink);
+        }
+    }
+
     fn load_ac(
         &mut self,
         dc_op: &DcAnalysisResult,

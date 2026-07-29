@@ -245,6 +245,29 @@ pub trait AnalogDevice: Send + Sync {
         Vec::new()
     }
 
+    /// Parameter-derivative stamps at the current operating point (DVG-04):
+    /// push `∂F/∂param` into the caller-owned `sink` as residual-shaped
+    /// [`Stamp::Rhs`] entries (`+dp` at each contribution's `plus` terminal,
+    /// `−dp` at its `minus`). The adjoint combines these for every requested
+    /// parameter from one transpose solve.
+    ///
+    /// `param_index` is the parameter's positional index into
+    /// [`Introspect::list_params`]. An element that does not own the
+    /// parameter, or that has no analytic `∂F/∂p` kernel (plugin/OSDI, or a
+    /// rebuild-class / discrete parameter), writes nothing and is **not an
+    /// error** — the driver falls back to stamp perturbation (DVG-06) or
+    /// refuses loud (DVG-03) based on capability, never by crashing here.
+    ///
+    /// The `sink` is caller-owned and reused across calls (cleared between
+    /// parameters by the caller); this method allocates nothing per call —
+    /// the contract is the `&mut Vec` shape, not a benchmark.
+    fn param_stamps(
+        &mut self,
+        _param_index: usize,
+        _sink: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) {
+    }
+
     fn noise_current_psd(
         &mut self,
         _dc_point: &DcAnalysisResult,

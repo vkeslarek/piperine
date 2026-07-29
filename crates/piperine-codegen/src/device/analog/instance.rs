@@ -112,6 +112,11 @@ pub struct AnalogInstance {
     /// assemble via [`set_check_posture`](Self::set_check_posture) — run
     /// data, not structure (MD-18: a posture change recompiles nothing).
     check_posture: piperine_solver::abi::CheckPosture,
+    /// Scratch buffer for `param_stamps` (DVG-04): one `f64` per resistive
+    /// contribution, allocated once at construction and reused every call so
+    /// the adjoint's inner loop allocates nothing. Empty for a kernel that
+    /// compiled no `∂F/∂p` function.
+    param_scratch: Vec<f64>,
 }
 
 impl AnalogInstance {
@@ -241,6 +246,7 @@ impl AnalogInstance {
         let num_vars = kernel.num_vars();
         let num_limits = kernel.num_limits();
         let num_margins = kernel.num_margins();
+        let num_param_contribs = kernel.param_jacobian_contribs().len();
         let mut instance = Self {
             state,
             kernel,
@@ -258,6 +264,7 @@ impl AnalogInstance {
             cached_temperature: None,
             margins: MarginTracker::new(num_margins),
             check_posture: piperine_solver::abi::CheckPosture::default(),
+            param_scratch: vec![0.0; num_param_contribs],
         };
         instance.fire_initial_events();
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
@@ -397,6 +404,59 @@ impl AnalogInstance {
     /// on `is_some()` and applies `limited_value` to `net`.
     pub fn limiting_report(&self) -> Option<piperine_solver::abi::LimitingReport> {
         self.limit_report.clone()
+    }
+
+    /// Parameter-derivative stamps at the last accepted operating point
+    /// (DVG-04): evaluate the `∂F/∂p` kernel for `param_index` and push
+    /// `Stamp::Rhs(+dp, −dp)` per resistive contribution into `sink`. Uses
+    /// the cached `param_scratch` (no per-call allocation) and the instance's
+    /// last-accepted voltages/banks — the adjoint calls this after the DC
+    /// solve has cached the operating point.
+    ///
+    /// A non-differentiable index (no kernel, or an index the kernel excludes
+    /// — rebuild-class / discrete) writes nothing and is not an error; the
+    /// driver gates admissibility separately (DVG-03/06).
+    pub fn param_stamps(
+        &mut self,
+        param_index: usize,
+        sink: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) {
+        let n = self.kernel.param_jacobian_contribs().len();
+        if n == 0 || self.param_scratch.len() < n {
+            return;
+        }
+        // Phase 1 — evaluate the kernel into the scratch slice. The mutable
+        // borrow of `param_scratch` is scoped to this block so the stamping
+        // loop below can borrow `self` (terminal lookup) freely.
+        {
+            let out = &mut self.param_scratch[..n];
+            for slot in out.iter_mut() {
+                *slot = 0.0;
+            }
+            self.kernel.eval_param_jacobian(
+                param_index,
+                &self.last_volts,
+                &self.params,
+                &self.state,
+                &self.vars,
+                &self.sim,
+                out,
+            );
+        }
+        // Phase 2 — turn each scalar into a residual-shaped stamp.
+        let contribs = self.kernel.param_jacobian_contribs();
+        for (c, &(plus, minus)) in contribs.iter().enumerate() {
+            let dp = self.param_scratch[c];
+            if dp == 0.0 {
+                continue;
+            }
+            if let Some(p) = self.terminal_ref(plus) {
+                sink.push(Stamp::Rhs(p, dp));
+            }
+            if let Some(m) = self.terminal_ref(minus) {
+                sink.push(Stamp::Rhs(m, -dp));
+            }
+        }
     }
 
     /// Rebuild the cached limiting report from the current limiter state +
