@@ -17,7 +17,13 @@ cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
 **Depends on**: `dv-core` — margins are the functions being differentiated. Phases
 1–3 here need only `dv-core` Phase 4 (margin lowering); Phase 4 onward needs
 `dv-core` complete.
-**Status**: Draft — awaiting approval
+**Status**: In Progress — Phases 1–2 DONE (T1–T6), Phase 3 next
+
+## Progress log
+
+| Batch | Phase | Tasks | Commits | Result |
+|---|---|---|---|---|
+| 1 | 1–2 | T1–T6 ✅ | `395ab04`, `c33f5cf`, `e85759d`, `3934687`, `7d4a787`, `544d422` | 1381 passed / 0 failed / 4 ignored (+20). Clippy clean. Notes: ∂F/∂p kernel is one parameter-indexed function (60-param Mos1 compiles, count asserted); adjoint must seed OP into device last_volts before reading param_stamps (documented). |
 
 ---
 
