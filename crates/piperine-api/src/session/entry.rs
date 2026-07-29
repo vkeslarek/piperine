@@ -345,6 +345,160 @@ impl Session {
         Ok(NoiseTrace::new(result))
     }
 
+    /// `∂(metric)/∂(param)` at the operating point, with engine
+    /// attribution (dv-gradients T11, DVG-13). The adjoint path serves
+    /// every metric the DC driver can differentiate through the solver;
+    /// the result names [`crate::SensitivityMethod::Adjoint`] and the
+    /// per-element fallback list. AC-defined metrics fail loud naming
+    /// the AC-adjoint gap (D6); an unknown metric fails loud listing
+    /// both the addressable nets and the declared margins.
+    ///
+    /// `metric` resolves in this order: a declared margin name (qualified
+    /// or bare, as [`MarginsResult::get`](crate::MarginsResult::get) does)
+    /// → a solved analog net name (`"mid"` → `V(mid)`). A metric read
+    /// from the wrong analysis (a reduced AC quantity on a DC result)
+    /// fails loud reusing `dv-core`'s "not defined in this analysis".
+    pub fn sensitivity(
+        &mut self,
+        metric: &str,
+        param: &(String, String),
+        config: &SolverConfig,
+    ) -> Result<crate::gradient::Sensitivity, Error> {
+        let mut g = self.gradient(metric, std::slice::from_ref(param), config)?;
+        let value = g.d.remove(&format!("{}.{}", param.0, param.1)).ok_or_else(|| {
+            Error::Measurement(format!(
+                "sensitivity: param `{}.{}` was not in the request",
+                param.0, param.1
+            ))
+        })?;
+        Ok(crate::gradient::Sensitivity {
+            value,
+            method: g.method,
+            fallback_users: g.fallback_users,
+        })
+    }
+
+    /// `∂(metric)/∂(param)` for every requested parameter, with engine
+    /// attribution (dv-gradients T11, DVG-13). One adjoint solve serves
+    /// the whole parameter list (DVG-08); the result names
+    /// [`crate::SensitivityMethod::Adjoint`] and the per-element fallback
+    /// list.
+    ///
+    /// `metric` resolves the same way [`Self::sensitivity`] does: a
+    /// declared margin name first, then a solved analog net name. An
+    /// unknown metric fails loud listing candidates.
+    pub fn gradient(
+        &mut self,
+        metric: &str,
+        params: &[(String, String)],
+        config: &SolverConfig,
+    ) -> Result<crate::gradient::Gradient, Error> {
+        use crate::gradient::MarginDifferentiability;
+        // 1. Try the margin-name path first — a declared constraint whose
+        //    label matches. Reuses T10's classifier and refusal messages.
+        if let Ok(diff) =
+            crate::gradient::classify_margin_gradient(&self.design, &self.info, &self.module, metric)
+        {
+            return match diff {
+                MarginDifferentiability::PointwiseDc { output, output_ref, .. } => {
+                    let out_net = self.node_to_net(&output, metric)?;
+                    let opts = match output_ref {
+                        Some(r) => {
+                            let ref_net = self.node_to_net(&r, metric)?;
+                            piperine_solver::prelude::AdjointOptions::new_diff(
+                                out_net,
+                                ref_net,
+                                params.to_vec(),
+                            )
+                        }
+                        None => piperine_solver::prelude::AdjointOptions::new(out_net, params.to_vec()),
+                    };
+                    let out_label = opts.output.label().to_string();
+                    let mut solver = self.circuit.adjoint(opts, config.to_context())?;
+                    solver.policy = config.to_policy();
+                    let inner = solver.solve()?;
+                    let mut d = HashMap::new();
+                    for (label, param) in params {
+                        if let Some(v) = inner.get(&out_label, label, param) {
+                            d.insert(format!("{label}.{param}"), v);
+                        }
+                    }
+                    Ok(crate::gradient::Gradient {
+                        d,
+                        method: crate::gradient::SensitivityMethod::Adjoint,
+                        fallback_users: inner.fallback_users,
+                    })
+                }
+                MarginDifferentiability::AcDefined => Err(Error::Measurement(format!(
+                    "metric `{metric}` is AC-defined — the AC adjoint is a documented gap (D6); \
+                     the host may finite-difference explicitly, but the driver never substitutes \
+                     silently"
+                ))),
+                MarginDifferentiability::EventDetected => Err(Error::Measurement(format!(
+                    "metric `{metric}` is event-detected — differentiable only through the event, \
+                     which has no adjoint today"
+                ))),
+                MarginDifferentiability::NonDifferentiableReduction => Err(Error::Measurement(format!(
+                    "metric `{metric}` is a reduced quantity not differentiable through the \
+                     implicit function theorem in this delivery"
+                ))),
+            };
+        }
+
+        // 2. Fall through to the net-name path — `V(metric)` at the DC
+        //    operating point. Loud with both candidate lists when the
+        //    name matches neither a margin nor a net.
+        use piperine_lang::parse::ast::ConstraintStmt;
+        let node = crate::session::build::resolve_net(&self.info, metric).map_err(|_| {
+            let nets: Vec<String> = self.info.nets.keys().cloned().collect();
+            let margins: Vec<String> = self
+                .design
+                .flat_module(&self.module)
+                .map(|flat| {
+                    flat.instances()
+                        .iter()
+                        .filter_map(|inst| self.design.module(inst.module_name()))
+                        .flat_map(|m| m.constraints().iter())
+                        .flat_map(|b| b.leaves())
+                        .filter_map(|(s, _)| match s {
+                            ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => Some(name.clone()),
+                            ConstraintStmt::Target { .. } => Some("target#…".to_string()),
+                            ConstraintStmt::Event { .. } => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Error::Measurement(format!(
+                "unknown metric `{metric}` — addressable nets: [{}]; declared margins: [{}]",
+                nets.join(", "),
+                margins.join(", ")
+            ))
+        })?;
+        let var = piperine_solver::abi::AnalogVariable::Node(node);
+        let out_net = self
+            .circuit
+            .nets()
+            .into_iter()
+            .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
+            .ok_or_else(|| Error::Measurement(format!("net `{metric}` is not a solved analog net")))?;
+        let opts = piperine_solver::prelude::AdjointOptions::new(out_net.clone(), params.to_vec());
+        let out_label = out_net.label().to_string();
+        let mut solver = self.circuit.adjoint(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve()?;
+        let mut d = HashMap::new();
+        for (label, param) in params {
+            if let Some(v) = inner.get(&out_label, label, param) {
+                d.insert(format!("{label}.{param}"), v);
+            }
+        }
+        Ok(crate::gradient::Gradient {
+            d,
+            method: crate::gradient::SensitivityMethod::Adjoint,
+            fallback_users: inner.fallback_users,
+        })
+    }
+
     /// Differentiate a declared margin w.r.t. `params` (dv-gradients T10,
     /// DVG-11/12). Returns the gradient at the located argmin for a
     /// pointwise DC margin; fails loud for every metric the driver cannot

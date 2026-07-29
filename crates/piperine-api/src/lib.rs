@@ -28,7 +28,10 @@ pub mod waveform;
 
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
-pub use gradient::{MarginDifferentiability, MarginGradientResult, classify_margin_gradient};
+pub use gradient::{
+    classify_margin_gradient, Gradient, MarginDifferentiability, MarginGradientResult,
+    Sensitivity, SensitivityMethod,
+};
 pub use hooks::SimHooks;
 pub use margins::{ConstraintCatalog, MarginEntry, MarginShape, MarginValue, MarginsResult};
 pub use piperine_solver::prelude::{

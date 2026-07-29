@@ -21,6 +21,20 @@
 //! V(p, n) <= hi;` shape). The DC adjoint (DVG-08) computes its gradient
 //! at the located argmin (the single DC operating point — `argmin = 0.0`,
 //! the result states this rather than implying a sweep).
+//!
+//! # Host sensitivity surface (T11, DVG-13)
+//!
+//! [`Session::sensitivity`](crate::Session::sensitivity) and
+//! [`Session::gradient`](crate::Session::gradient) expose the adjoint path
+//! at the host boundary with engine attribution: each result names
+//! [`SensitivityMethod::Adjoint`] (one transpose solve) or
+//! [`SensitivityMethod::FiniteDifference`] (the `.sens` baseline) and
+//! carries the per-element fallback list (DVG-07). A `metric` argument
+//! resolves to either a solved analog net name (`"mid"` → `V(mid)`) or a
+//! declared margin name (`"head"` → the `require`'s expression); anything
+//! else fails loud listing the candidates.
+
+use std::collections::{HashMap, HashSet};
 
 use piperine_codegen::device::CircuitBuildInfo;
 use piperine_lang::parse::ast::{BinaryOp, ConstraintStmt, Expr};
@@ -195,6 +209,75 @@ pub struct MarginGradientResult {
     /// Which elements used the stamp-perturbation fallback (DVG-07),
     /// propagated from the underlying adjoint.
     pub fallback_users: std::collections::HashSet<String>,
+}
+
+// ── host sensitivity surface (T11, DVG-13) ────────────────────────────────
+
+/// How a host-requested sensitivity was computed (DVG-13). The result
+/// names the engine so a reader never has to guess whether a number came
+/// from the analytic adjoint (one transpose solve, exact on linear
+/// circuits) or the central finite-difference baseline (`.sens`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SensitivityMethod {
+    /// Analytic adjoint (DVG-08): one transpose solve of `Jᵀλ = ∂f/∂x`,
+    /// combined with per-element `∂F/∂p`. Per-element stamps are analytic
+    /// where the element declares `HAS_SENSITIVITY` (DVG-04/05) and
+    /// stamp-perturbation (DVG-06) otherwise — see the result's
+    /// [`Sensitivity::fallback_users`].
+    Adjoint,
+    /// Central finite difference (`.sens`, two re-solves per parameter) —
+    /// the verifiable oracle the adjoint is cross-checked against (T9).
+    FiniteDifference,
+}
+
+impl SensitivityMethod {
+    /// The stable, host-visible name (Python and Rust agree — MD-22).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Adjoint => "adjoint",
+            Self::FiniteDifference => "finite-difference",
+        }
+    }
+}
+
+impl std::fmt::Display for SensitivityMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One sensitivity value with engine attribution (DVG-13).
+#[derive(Debug, Clone)]
+pub struct Sensitivity {
+    /// `∂(metric)/∂(label.param)` at the operating point.
+    pub value: f64,
+    /// The engine that produced the value — adjoint or finite-difference.
+    pub method: SensitivityMethod,
+    /// Elements that used the stamp-perturbation fallback (DVG-07).
+    /// Empty for [`SensitivityMethod::FiniteDifference`] (no fallback
+    /// path) and for an all-analytic adjoint.
+    pub fallback_users: HashSet<String>,
+}
+
+/// A multi-parameter gradient with engine attribution (DVG-13) —
+/// [`Session::gradient`](crate::Session::gradient)'s result type. One
+/// engine for the whole call (the adjoint serves every parameter from
+/// one transpose solve); the per-element fallback list is shared.
+#[derive(Debug, Clone)]
+pub struct Gradient {
+    /// `∂(metric)/∂(label.param)` keyed by `"label.param"`.
+    pub d: HashMap<String, f64>,
+    /// The engine that produced the gradient.
+    pub method: SensitivityMethod,
+    /// Elements that used the stamp-perturbation fallback (DVG-07).
+    pub fallback_users: HashSet<String>,
+}
+
+impl Gradient {
+    /// `∂(metric)/∂(label.param)`, if computed.
+    pub fn get(&self, label: &str, param: &str) -> Option<f64> {
+        self.d.get(&format!("{label}.{param}")).copied()
+    }
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────
