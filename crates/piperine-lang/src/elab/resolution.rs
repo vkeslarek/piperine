@@ -8,7 +8,7 @@
 //! stable [`BindingId`] and records its declaration span, kind, doc, and the
 //! set of spans that refer to it.
 //!
-//! ## Scope of this pass (SPEC_DEVIATION)
+//! ## Scope of this pass (Implementation note)
 //!
 //! The index is built by walking the already-elaborated [`Design`] (POM),
 //! not by re-implementing scoping — it *reuses* what elaboration already

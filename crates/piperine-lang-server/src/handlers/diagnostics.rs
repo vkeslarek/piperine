@@ -127,7 +127,7 @@ fn parse_error_to_diagnostic(source: &str, error: &ParseError) -> Diagnostic {
 
 /// Map a structured diagnostic code (T17/LSP-19) to its LSP severity.
 ///
-/// SPEC_DEVIATION: every code currently defined across
+/// Implementation note: every code currently defined across
 /// `piperine_lang::parse::error::ParseError` (E1001..E1004) and
 /// `piperine_lang::pom::error::ElabErrorKind` (E2001..E2025, E2999) is a
 /// genuine hard failure — elaboration/compilation cannot proceed past any

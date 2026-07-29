@@ -384,31 +384,31 @@ not-exercised rather than passing.
 
 | ID | Story | Status |
 |---|---|---|
-| DVC-01 | `tol` grammar clause + parse | Pending |
-| DVC-02 | `headers/statistics.phdl` + POM `Param.distribution()` | Pending |
-| DVC-03 | `tol` inert at solve; staging interaction | Pending |
-| DVC-04 | `constraint` grammar (`require`/`var`/`target`) | Pending |
-| DVC-05 | POM `Module::constraints`, authored, monomorph-carried (D4) | Pending |
-| DVC-06 | Six reserved keywords + the two example renames | Pending |
-| DVC-07 | Instance-port refs resolve; internal-node refs loud | Pending |
-| DVC-08 | Margin lowering (signed, normalized) | Pending |
-| DVC-09 | Pointwise/reduced classification + loud misuse (D7) | Pending |
-| DVC-10 | Kernel evaluation + argmin provenance (time/freq/sweep) | Pending |
-| DVC-11 | Evaluation points: no homotopy stage, no rejected step, no UIC `t=0` | Pending |
-| DVC-12 | Postures strict/collect/off + D2 scope default, both hosts | Pending |
-| DVC-13 | `validation_reports()` + `ValidationFinding` shape | Pending |
-| DVC-14 | `EMITS_VALIDATION` gates polling | Pending |
-| DVC-15 | Findings on results; strict aborts, collect records, warning continues | Pending |
-| DVC-16 | Spice-model SOA blocks, limits absent by default | Pending |
-| DVC-17 | Region opvar as a declared `enum Region` | Pending |
-| DVC-18 | Host margin/violation surface, both hosts (D3) | Pending |
-| DVC-19 | Analysis-scoped event blocks | Pending |
-| DVC-20 | Event windows + window algebra + not-exercised | Pending |
-| DVC-21 | cross-cutting: fail-loud catalog (Edge Cases) | Pending |
-| DVC-22 | cross-cutting: MD-18 compile-once unchanged | Pending |
-| DVC-23 | `docs/spec/` updated: Parts I, II, V, VII, VIII + appendix B/C (design §G) | Pending |
+| DVC-01 | `tol` grammar clause + parse | ✅ Verified |
+| DVC-02 | `headers/statistics.phdl` + POM `Param.distribution()` | ✅ Verified |
+| DVC-03 | `tol` inert at solve; staging interaction | ✅ Verified |
+| DVC-04 | `constraint` grammar (`require`/`var`/`target`) | ✅ Verified |
+| DVC-05 | POM `Module::constraints`, authored, monomorph-carried (D4) | ✅ Verified |
+| DVC-06 | Six reserved keywords + the two example renames | ✅ Verified |
+| DVC-07 | Instance-port refs resolve; internal-node refs loud | ✅ Verified |
+| DVC-08 | Margin lowering (signed, normalized) | ✅ Verified |
+| DVC-09 | Pointwise/reduced classification + loud misuse (D7) | ✅ Verified |
+| DVC-10 | Kernel evaluation + argmin provenance (time/freq/sweep) | ✅ Verified |
+| DVC-11 | Evaluation points: no homotopy stage, no rejected step, no UIC `t=0` | ✅ Verified |
+| DVC-12 | Postures strict/collect/off + D2 scope default, both hosts | ✅ Verified |
+| DVC-13 | `validation_reports()` + `ValidationFinding` shape | ✅ Verified |
+| DVC-14 | `EMITS_VALIDATION` gates polling | ✅ Verified |
+| DVC-15 | Findings on results; strict aborts, collect records, warning continues | ✅ Verified |
+| DVC-16 | Spice-model SOA blocks, limits absent by default | ✅ Verified |
+| DVC-17 | Region opvar as a declared `enum Region` | ✅ Verified |
+| DVC-18 | Host margin/violation surface, both hosts (D3) | ✅ Verified |
+| DVC-19 | Analysis-scoped event blocks | ✅ Verified |
+| DVC-20 | Event windows + window algebra + not-exercised | ✅ Verified |
+| DVC-21 | cross-cutting: fail-loud catalog (Edge Cases) | ⚠️ Verified w/ minor spec-precision note (see validation.md) |
+| DVC-22 | cross-cutting: MD-18 compile-once unchanged | ✅ Verified |
+| DVC-23 | `docs/spec/` updated: Parts I, II, V, VII, VIII + appendix B/C (design §G) | ✅ Verified |
 
-**Coverage:** 23 total, 0 mapped (tasks phase not started).
+**Coverage:** 23 total, 23 mapped (22 verified clean, 1 with minor spec-precision note). Validated in `.specs/features/dv-core/validation.md`.
 
 ---
 

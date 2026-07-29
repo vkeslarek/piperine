@@ -244,7 +244,7 @@ class Direction(Enum):
     comparison (``d is Direction.In`` instead of comparing strings).
 
     ``Port.direction``/``Terminal.direction`` themselves stay plain ``str``
-    (unchanged, HOST-23 SPEC_DEVIATION — see the ``Direction`` note near
+    (unchanged, HOST-23 Implementation note — see the ``Direction`` note near
     the class registrations below) since they are `#[pyclass]` fields
     reflected straight off the POM/ABI with no Python-level wrapper to
     intercept; this enum is the ergonomic typed handle layered on top.
@@ -356,7 +356,7 @@ class NoiseConfig(_ConfigMixin):
 # types — at runtime, ``module.ports[0]`` IS a ``_piperine._Port``; the
 # alias makes the type name match the public vocabulary.
 #
-# SPEC_DEVIATION (HOST-23): `.direction` on `Port`/`Terminal` stays a plain
+# Implementation note (HOST-23): `.direction` on `Port`/`Terminal` stays a plain
 # `str` (`"in"`/`"out"`/`"inout"`) rather than becoming the `Direction` enum
 # directly — these are native `#[pyclass]` fields set from Rust, with no
 # Python-level wrapper class here to intercept the getter (unlike

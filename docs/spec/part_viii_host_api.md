@@ -20,15 +20,6 @@ plain syntax error, and the interpreted context no longer exists. Everything
 it did — analyses, measurement, parameter sweeps, assertions — is done by a
 host, in Python or Rust, with no new syntax.
 
-> **Publication status (dv-core T32 note).** This Part and
-> `appendix_c_host_surface.md` are **not** in `mkdocs.yml`'s `nav:` today —
-> the `p6-cleanup-architecture` deferred item owns that wiring. Until it
-> lands, the documentation added here (the margins channel, `r.violations`,
-> the three postures) is unpublished in the built site even though it is
-> normative in the repository. The same is not true of the design-verification
-> additions in Part II, Part V, Part VII, and Appendix B — those four *are*
-> in the nav, so they publish normally.
-
 ## 1. The session model
 
 There is exactly **one** session type in Rust — `Session` — and two ways to
@@ -234,7 +225,7 @@ sim.rebuilds();
   own message.
 - `schedule_set` lands exactly on its timestamp (forced breakpoint);
   same-parameter sets apply in scheduling order (last write wins).
-- **SPEC_DEVIATION** (both hosts document this differently — see T3's
+- **Design note** (both hosts document this differently — see T3's
   status note in `.specs/features/host-library/tasks.md`): Python's
   `Session.set` auto-rebuilds on a structural write and counts it in
   `rebuilds` (the ideal.md behavior). The Rust `Session::set` instead
@@ -353,7 +344,7 @@ p.invalidation     # "restamp" | "rebuild" | ...
 `bypass_hits`/`bypass_misses`, `assembly_time_ns`/`solve_time_ns`,
 `limiting`.
 
-**SPEC_DEVIATION** (ideal.md §6.5 vs. delivered, HOST-12): the ideal access
+**Design decision** (ideal.md §6.5 vs. delivered, HOST-12): the ideal access
 path is module-level (`amp.param("m1.w")`); the delivered path is
 instance-scoped (`op.instance("m1").param("w")` /
 `op["m1"].param("w")`) — `ParamDescriptor` is per-device and only available
@@ -370,7 +361,7 @@ has a type the other lacks):
 |------|-----------------------|
 | `Waveform` | real-signal ops: time-weighted `rms`/`mean`, `slew_rate`, `overshoot`, `cross` |
 | `ComplexWaveform` | complex-only ops: `mag`/`phase`/`db`, `bandwidth_3db`, margins |
-| `Trace<T>` | **one generic container** for every swept signal set — `tran`/`dc` → `Trace<Waveform>`, `ac` → `Trace<ComplexWaveform>`, `noise` → `Trace` + noise methods. Same `.v()`/`.i()`/`.axis()`/`.stats`/`.four()`; the sample type is the only difference. On the **Rust** side `AcTrace`/`NoiseTrace` are now genuine **type aliases** (`Trace<ComplexWaveform>`, `Trace<NoiseSample>` — `NoiseSample` a zero-sized discriminator, since noise has no per-net `v`/`i`, only `psd`/`total`/`by_source`/`contributions`), not separate types — `HOST-13` folded them in. **SPEC_DEVIATION** (Python, T7): `_AcTrace`/`_NoiseTrace` stay distinct native `#[pyclass]` types in `piperine-python` (PyO3 pyclasses cannot be generic over a Rust type parameter the way `Trace<T>` is), each wrapping the corresponding Rust `Trace<ComplexWaveform>`/`Trace<NoiseSample>` internally and exposing the same method surface a caller would see through a generic `Trace` — the *shape* is uniform even though the Python class identity is not literally one generic class. |
+| `Trace<T>` | **one generic container** for every swept signal set — `tran`/`dc` → `Trace<Waveform>`, `ac` → `Trace<ComplexWaveform>`, `noise` → `Trace` + noise methods. Same `.v()`/`.i()`/`.axis()`/`.stats`/`.four()`; the sample type is the only difference. On the **Rust** side `AcTrace`/`NoiseTrace` are now genuine **type aliases** (`Trace<ComplexWaveform>`, `Trace<NoiseSample>` — `NoiseSample` a zero-sized discriminator, since noise has no per-net `v`/`i`, only `psd`/`total`/`by_source`/`contributions`), not separate types — `HOST-13` folded them in. **Implementation note** (Python, T7): `_AcTrace`/`_NoiseTrace` stay distinct native `#[pyclass]` types in `piperine-python` (PyO3 pyclasses cannot be generic over a Rust type parameter the way `Trace<T>` is), each wrapping the corresponding Rust `Trace<ComplexWaveform>`/`Trace<NoiseSample>` internally and exposing the same method surface a caller would see through a generic `Trace` — the *shape* is uniform even though the Python class identity is not literally one generic class. |
 | `OpResult` | point values + `InstanceView` indexing + opvars |
 | `TfResult` | `gain`/`z_in`/`z_out` scalars |
 | `SensResult` | `(output, "label.param") → value` map |
@@ -489,7 +480,9 @@ Rust typed-unit `Into` (HOST-21): `Freq`/`Time` newtypes in
 `Freq::from(1e7)` (bare `f64`, already Hz). `Session::ac`'s `fstart`/`fstop`
 accept `impl Into<Freq>` as the representative demonstration (every
 existing `f64` call site keeps compiling via the blanket `From<f64>`); a
-malformed SI string panics (`From` is infallible). **SPEC_DEVIATION**: the
+malformed SI string panics (`From` is infallible); `Freq::parse` /
+`Time::parse` are the fallible alternatives (`Result<Freq, String>`).
+**Implementation note**: the
 `Into<...>` retrofit is scoped to `Session::ac` today, not every
 frequency/time-shaped argument across the analysis menu — the newtypes, SI-string parsing, and the Python `Hz`/`ns`/`mV`/
 `C` helpers are fully delivered either way; widening the retrofit is a

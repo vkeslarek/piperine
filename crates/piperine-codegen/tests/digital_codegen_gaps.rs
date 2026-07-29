@@ -206,7 +206,7 @@ fn digital_quad_real_coercion_both_directions() {
 /// (nonzero), proving the coercion checks the real value directly and does
 /// not truncate toward zero first (the literal `Real -> Int -> Quad` route
 /// the spec suggested would wrongly truncate `0.5` to Int `0`; see the
-/// `SPEC_DEVIATION` at the fix site in `emit/builder.rs::coerce`).
+/// `Implementation note` at the fix site in `emit/builder.rs::coerce`).
 #[test]
 fn digital_real_to_quad_coercion_does_not_truncate_fractional_nonzero() {
     use piperine_codegen::resolve::{DigitalBody, Domain, Type};

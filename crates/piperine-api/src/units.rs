@@ -9,9 +9,9 @@
 //! literals unchanged (`f64: Into<Freq>` via the blanket `From<f64>`).
 //!
 //! `From<&str>` cannot return a `Result` (the trait is infallible), so
-//! malformed input panics — fail loud, just via a panic rather than a typed
-//! `Error` (this constructor is meant for literal/validated strings; a
-//! runtime-computed value that might be invalid should stay a plain `f64`).
+//! malformed input panics. For a fallible parse use
+//! [`Freq::parse`] / [`Time::parse`], which return
+//! `Result<Freq, String>` / `Result<Time, String>`.
 
 /// SI magnitude prefixes recognized by [`parse_scaled`], smallest to
 /// largest.
@@ -69,6 +69,14 @@ impl From<&str> for Freq {
     }
 }
 
+impl Freq {
+    /// Fallible parse from an SI-suffixed string — the `Result` alternative
+    /// to the panicking `From<&str>`. `Freq::parse("10MHz") == Ok(Freq(1e7))`.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        parse_scaled(s, "Hz").map(Freq)
+    }
+}
+
 impl From<Freq> for f64 {
     fn from(f: Freq) -> f64 {
         f.0
@@ -89,6 +97,14 @@ impl From<f64> for Time {
 impl From<&str> for Time {
     fn from(s: &str) -> Self {
         Time(parse_scaled(s, "s").unwrap_or_else(|e| panic!("invalid Time: {e}")))
+    }
+}
+
+impl Time {
+    /// Fallible parse from an SI-suffixed string — the `Result` alternative
+    /// to the panicking `From<&str>`. `Time::parse("5ns") == Ok(Time(5e-9))`.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        parse_scaled(s, "s").map(Time)
     }
 }
 
@@ -120,6 +136,18 @@ mod tests {
     #[should_panic(expected = "invalid Freq")]
     fn freq_garbage_string_fails_loud() {
         let _: Freq = "banana".into();
+    }
+
+    #[test]
+    fn freq_parse_returns_result() {
+        assert_eq!(Freq::parse("10MHz").unwrap().0, 1e7);
+        assert!(Freq::parse("banana").is_err());
+    }
+
+    #[test]
+    fn time_parse_returns_result() {
+        assert_eq!(Time::parse("5ns").unwrap().0, 5e-9);
+        assert!(Time::parse("banana").is_err());
     }
 
     #[test]

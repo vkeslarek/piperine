@@ -29,7 +29,7 @@ use super::config::SolverConfig;
 // recorded in
 // `.specs/features/p6-cleanup-architecture/session-equivalence.md`.
 //
-// SPEC_DEVIATION: `Session::set` on a structural (`Invalidation::Rebuild`)
+// Implementation note: `Session::set` on a structural (`Invalidation::Rebuild`)
 // write fails loud instead of auto-re-elaborating. Python's `_LiveSession`
 // auto-rebuild (LIVE-14/15/16/17) is ~150 lines of dirty-ledger/carry/
 // mid-transient-split machinery; HOST-01's "Done when" only asks for
@@ -41,7 +41,7 @@ use super::config::SolverConfig;
 /// (`Session::compile`), then run every analysis against the held circuit.
 /// `set` restamps a parameter on the already-compiled circuit (MD-18); a
 /// structural write (`Invalidation::Rebuild`) fails loud (see the
-/// SPEC_DEVIATION note above `Session::set`).
+/// Implementation note note above `Session::set`).
 pub struct Session {
     design: Design,
     module: String,
@@ -164,7 +164,7 @@ impl Session {
     }
 
     /// How many automatic structural rebuilds this session has performed
-    /// (`0` — see the SPEC_DEVIATION note above [`Session`]: a structural
+    /// (`0` — see the Implementation note note above [`Session`]: a structural
     /// write fails loud today rather than auto-rebuilding).
     pub fn rebuilds(&self) -> usize {
         self.rebuilds
@@ -225,7 +225,7 @@ impl Session {
     /// Run a transient analysis on the held circuit (HOST-02). Pending
     /// `schedule_set` entries at `t <= 0` are idle sets applied before the
     /// run; entries at `t > 0` land on the solver's own forced breakpoints.
-    /// A *structural* scheduled set fails loud (see the SPEC_DEVIATION note
+    /// A *structural* scheduled set fails loud (see the Implementation note note
     /// above [`Session`] — no mid-run auto-rebuild in this session type).
     #[allow(clippy::too_many_arguments)]
     pub fn tran(
@@ -270,7 +270,7 @@ impl Session {
         Ok(Trace::<Waveform>::new(result, Rc::new(self.info.clone())).with_margin_catalogs(catalog))
     }
 
-    // SPEC_DEVIATION: HOST-21's "analysis args impl Into<...>" is applied
+    // Implementation note: HOST-21's "analysis args impl Into<...>" is applied
     // here (`Session::ac`'s fstart/fstop) as the representative
     // demonstration, not to every frequency/time-shaped arg across the
     // analysis menu.

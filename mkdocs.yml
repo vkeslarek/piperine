@@ -25,5 +25,7 @@ nav:
       - Builtins Reference: spec/part_v_builtins.md
       - Plugins: spec/part_vi_plugins.md
       - Solver: spec/part_vii_solver.md
+      - Host API: spec/part_viii_host_api.md
       - Worked Examples: spec/appendix_a_worked_examples.md
       - Complete Grammar (EBNF): spec/appendix_b_grammar.md
+      - Host Surface Reference: spec/appendix_c_host_surface.md

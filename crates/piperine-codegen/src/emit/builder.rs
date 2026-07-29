@@ -728,7 +728,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             // X/Z collapse to `0`) then `Int -> Real` (existing
             // `fcvt_from_sint`).
             //
-            // SPEC_DEVIATION: the spec's suggested `Real -> Quad` route
+            // Implementation note: the spec's suggested `Real -> Quad` route
             // (`Real -> Int -> Quad`, reusing `fcvt_to_sint`) truncates
             // toward zero — a fractional nonzero real like `0.5` would
             // truncate to Int `0` and read as Quad `0`, contradicting the

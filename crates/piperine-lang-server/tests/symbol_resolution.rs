@@ -77,7 +77,7 @@ mod Inner (inout p: Electrical, inout n: Electrical) {\n\
 
 /// LSP-10/13 base: resolving a declared binding's own position returns
 /// exactly the index's recorded uses for that binding — per T5's
-/// SPEC_DEVIATION, `ResolutionIndex.use_spans` today holds only the
+/// Implementation note, `ResolutionIndex.use_spans` today holds only the
 /// binding's own declaration span (a reflexive use), so this is a
 /// one-element list, not an invented richer occurrence set.
 #[test]

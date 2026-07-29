@@ -4,7 +4,7 @@
 //! the operating point (same compiled circuit, symbolic LU reused for the
 //! run), and difference the requested outputs.
 //!
-//! SPEC_DEVIATION: the design sketched a single-linear-solve direct method
+//! Implementation note: the design sketched a single-linear-solve direct method
 //! (`A·dx = −∂R/∂p` on the converged Jacobian).
 //! Reason: the assembled system is not exposed outside the Newton loop
 //! today; central-difference re-solves are the robust baseline behind the

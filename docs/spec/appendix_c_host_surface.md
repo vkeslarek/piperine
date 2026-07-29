@@ -79,8 +79,8 @@ to `inspect.signature(TranConfig)` (plain dataclass `__init__`, HOST-20).
 | `LimitingReport` | `device`, `net`, `proposed`, `limited_value`, `limiter_name`, `reason` (HOST-10) |
 | `NoiseContribution` | `element`, `source`, `kind`, `integrated_sq` (HOST-11) |
 | `Trace` (tran/dc) | `v(a, b=None) -> Waveform` · `i(a, b=None) -> Waveform` · `axis()` · `stats` · `opvar(path) -> Waveform` (HOST-08) · `four(f0, harmonics) -> FourierResult` · `margins -> MarginsResult` (DVC-18) · `violations -> list[ValidationFinding]` (DVC-15) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` |
-| `AcTrace` | `v(a, b=None) -> ComplexWaveform` · `axis()` — distinct native pyclass wrapping `Trace<ComplexWaveform>`, same method shape (SPEC_DEVIATION, T7: PyO3 pyclasses cannot be generic) · `margins -> MarginsResult` (DVC-18) · `violations -> list[ValidationFinding]` (DVC-15) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` |
-| `NoiseTrace` | `psd() -> Waveform` · `total() -> float` · `by_source() -> dict[str, Waveform]` (HOST-11) · `contributions() -> list[NoiseContribution]` (HOST-11) — distinct native pyclass wrapping `Trace<NoiseSample>`, same SPEC_DEVIATION reason |
+| `AcTrace` | `v(a, b=None) -> ComplexWaveform` · `axis()` — distinct native pyclass wrapping `Trace<ComplexWaveform>`, same method shape (implementation note: PyO3 pyclasses cannot be generic over a Rust type parameter) · `margins -> MarginsResult` (DVC-18) · `violations -> list[ValidationFinding]` (DVC-15) · `requires_ok -> bool` · `first_violation -> MarginEntry \| None` |
+| `NoiseTrace` | `psd() -> Waveform` · `total() -> float` · `by_source() -> dict[str, Waveform]` (HOST-11) · `contributions() -> list[NoiseContribution]` (HOST-11) — distinct native pyclass wrapping `Trace<NoiseSample>`, same implementation note (PyO3 generic limitation) |
 | `Waveform` | `values`/`axis` (numpy) · `at(x)` · `cross(level, dir=CrossDirection.Either)` (HOST-23 enum, legacy `str` still accepted) · `min()/max()/mean()/rms()/peak_to_peak()` (time-weighted) · `plot(**kwargs)` (HOST-17, matplotlib-guarded) · `len()`/`__len__` (HOST-24) |
 | `ComplexWaveform` | `values`/`axis` (numpy complex) · `mag`/`phase`/`db` (properties → `Waveform`) · `at(x)` · `plot(**kwargs)` (Bode, HOST-17) · `len()`/`__len__` |
 | `FourierComponent` / `FourierResult` | harmonic decomposition of a `Trace` (`.four(f0, harmonics)`) |
@@ -139,7 +139,7 @@ inherits the matching builtin type it previously surfaced as, so existing
 | `SessionBuilder::compile` | `(self) -> Result<Session, Error>` |
 | `Session::{design, module, rebuilds}` | accessors |
 | `Session::{snapshot_digital, snapshot_opvars, snapshot_introspect}` | pub for host reuse (same snapshot the Python live session builds) |
-| `Session::set` | `(&mut self, label, param, value: f64) -> Result<(), Error>` — restamp; fails loud on a structural write (SPEC_DEVIATION, see Part VIII §4) |
+| `Session::set` | `(&mut self, label, param, value: f64) -> Result<(), Error>` — restamp; fails loud on a structural write (design note — see Part VIII §4 for the dual-host behavior) |
 | `Session::schedule_set` | `(&mut self, t, label, param, value: f64)` |
 | `Session::{op, tran, ac, noise, sens, pss, pz, disto, sp, tf, dc}` | one method per analysis on the held circuit (HOST-02/03/05) |
 | `Session::sweep` | `(&mut self, label, param, values: &[f64]) -> Sweep` — lending iterator (HOST-18) |

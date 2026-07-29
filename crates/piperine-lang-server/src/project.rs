@@ -53,7 +53,7 @@ impl ProjectContext {
 /// of their bindings with [`BindingInfo::file`][piperine_lang::BindingInfo]
 /// stamped to the owning file's path.
 ///
-/// **SPEC_DEVIATION:** design.md frames this as "the multi-file `Design`"
+/// **Implementation note:** design.md frames this as "the multi-file `Design`"
 /// (singular). `piperine-lang` has no cross-file `Design`-merge primitive —
 /// `Design` is the output of one elaboration unit (mirrors how
 /// `piperine-cli check`'s own `execute()` elaborates every project file

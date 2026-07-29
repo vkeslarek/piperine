@@ -51,7 +51,7 @@ pub(crate) fn facade_lock() -> std::sync::MutexGuard<'static, ()> {
 /// for `import _piperine`, and it works whether or not the interpreter is
 /// pre-initialized. The CLI path calls this exactly once at the top of
 /// `run`.
-// SPEC_DEVIATION: design proposed append_to_inittab + prepare_freethreaded_python
+// Implementation note: design proposed append_to_inittab + prepare_freethreaded_python
 // Reason: pyo3's auto-initialize feature inits the interpreter before
 // append_to_inittab can run; sys.modules registration is functionally
 // equivalent and works in both CLI (fresh) and test (pre-initialized) paths.

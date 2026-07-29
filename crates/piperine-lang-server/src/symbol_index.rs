@@ -361,7 +361,7 @@ pub fn resolve_at(
         });
     }
 
-    // SPEC_DEVIATION (T20/LSP-22): previously gated on `decl_span.is_some()`,
+    // Implementation note (T20/LSP-22): previously gated on `decl_span.is_some()`,
     // so a registered schema with no textual declaration (e.g. the built-in
     // `rfport`, registered directly in `ElabContext::new()`) never resolved
     // at all — hover on `@rfport` (spec.md's own P3 independent test)

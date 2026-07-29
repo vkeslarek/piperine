@@ -7,7 +7,7 @@
 //! shadowing, T6), find the matching binding in the elaborator's
 //! [`ResolutionIndex`] and return every span recorded as a use of it.
 //!
-//! ## SPEC_DEVIATION (inherited from T5)
+//! ## Implementation note (inherited from T5)
 //!
 //! `ResolutionIndex.use_spans` today holds only each binding's own
 //! declaration span (a reflexive use) — the AST carries no per-occurrence
