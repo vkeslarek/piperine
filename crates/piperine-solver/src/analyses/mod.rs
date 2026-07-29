@@ -20,6 +20,7 @@ pub mod noise;
 pub mod pss;
 pub mod pz;
 pub mod sens;
+pub mod sensitivity;
 pub mod solver;
 pub mod sp;
 pub mod tf;
