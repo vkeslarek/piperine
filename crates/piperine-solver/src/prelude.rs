@@ -33,6 +33,7 @@ pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analyses::pz::{PoleZeroOptions, PoleZeroSolver};
 pub use crate::analyses::sens::{SensAnalysisOptions, SensResult};
+pub use crate::analyses::adjoint::{AdjointOptions, AdjointResult, AdjointSolver};
 pub use crate::analyses::sensitivity::{
     ParamDerivative, ParamRequest, ParamStampCollector, SensitivityEngine,
 };

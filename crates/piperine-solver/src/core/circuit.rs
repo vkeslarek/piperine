@@ -163,6 +163,17 @@ impl CircuitInstance {
         crate::analyses::sens::SensSolver::new(self, options, context)
     }
 
+    /// DC adjoint sensitivity (dv-gradients DVG-08): `∂(output)/∂(param)`
+    /// at the operating point from **one** transpose solve of `Jᵀλ = ∂f/∂x`,
+    /// combined with each parameter's `∂F/∂p` — see [`AdjointSolver`](crate::analyses::adjoint::AdjointSolver).
+    pub fn adjoint(
+        &mut self,
+        options: crate::analyses::adjoint::AdjointOptions,
+        context: Context,
+    ) -> crate::core::result::Result<crate::analyses::adjoint::AdjointSolver<'_>> {
+        crate::analyses::adjoint::AdjointSolver::new(self, options, context)
+    }
+
     /// Periodic steady state via single shooting — see
     /// `PssSolver`.
     pub fn pss(

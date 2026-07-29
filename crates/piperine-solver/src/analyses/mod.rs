@@ -10,6 +10,7 @@
 //! analysis, never up into the host.
 
 pub mod ac;
+pub mod adjoint;
 pub mod config;
 pub mod context;
 pub mod convergence;
