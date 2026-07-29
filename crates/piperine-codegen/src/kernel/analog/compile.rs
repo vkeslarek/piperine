@@ -342,10 +342,12 @@ impl<'m> AnalogCompiler<'m> {
         // regardless of parameter count, emitted once at compile time over the
         // resistive residual (at DC, reactive parts are open — the adjoint is
         // DC-first, D6). Returns `None` (no function, zero cost) when the body
-        // declares no differentiable parameter.
-        let param_jac = self.compile_param_jacobian("param_jacobian", &resistive, &temps)?;
-        let ParamJacobianCompile { func: param_jac_id, contribs: param_contribs, indices: param_indices } = param_jac;
-
+        // declares no differentiable parameter. Admissibility (DVG-03): only
+        // `Real`-typed, restamp-class parameters — `presence_mask` excludes
+        // presence-queried params (rebuild-class) so a later request for one
+        // finds no block and the driver fails loud.
+        let ParamJacobianCompile { func: param_jac_id, contribs: param_contribs, indices: param_indices } =
+            self.compile_param_jacobian("param_jacobian", &resistive, &temps, presence_mask)?;
         // `.disto` second/third derivatives over the resistive + charge
         // contributions (DISTO-03); skipped entirely (empty, zero compile
         // cost) unless the caller requested `.disto` support — a
@@ -978,12 +980,21 @@ impl<'m> AnalogCompiler<'m> {
         name: &str,
         contribs: &[FlatContrib],
         temps: &[PomExpr],
+        presence_mask: u64,
     ) -> Result<ParamJacobianCompile, CodegenError> {
         use crate::resolve::{ParamId, Type};
         use crate::resolve::diff::d_dp;
 
+        // Admissibility (DVG-03): only `Real`-typed restamp-class parameters.
+        // A presence-queried param (`$param_given`) is rebuild-class for an
+        // instance that does not give it — the kernel is module-level and
+        // cannot tell, so it is excluded from the analytic path (the driver
+        // fails loud / uses the fallback). Reuses `.sens`'s rule, not a copy.
         let diff_params: Vec<usize> = (0..self.module.symbols.num_params())
-            .filter(|&i| self.module.symbols.param(ParamId(i as u32)).ty == Type::Real)
+            .filter(|&i| {
+                self.module.symbols.param(ParamId(i as u32)).ty == Type::Real
+                    && (presence_mask >> i.min(63)) & 1 == 0
+            })
             .collect();
         if diff_params.is_empty() || contribs.is_empty() {
             return Ok(ParamJacobianCompile { func: None, contribs: Vec::new(), indices: Vec::new() });
