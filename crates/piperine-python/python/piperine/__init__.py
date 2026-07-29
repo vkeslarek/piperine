@@ -537,6 +537,63 @@ class SensResult:
         return self._d.items()
 
 
+class Sensitivity:
+    """Adjoint sensitivity ``∂(metric)/∂(param)`` with engine attribution
+    (dv-gradients DVG-13). The uniform host shape (MD-22): same field
+    names as the Rust ``Sensitivity``.
+
+    ``method`` is ``"adjoint"`` (the analytic adjoint, one transpose solve)
+    or ``"finite-difference"`` (the ``.sens`` baseline). ``fallback_users``
+    names the elements whose ``∂F/∂p`` was approximated by stamp
+    perturbation (DVG-07) — empty for an all-analytic adjoint.
+    """
+
+    def __init__(self, native):
+        self._native = native
+
+    @property
+    def value(self) -> float:
+        return self._native.value
+
+    @property
+    def method(self) -> str:
+        return self._native.method
+
+    @property
+    def fallback_users(self) -> list[str]:
+        return list(self._native.fallback_users)
+
+
+class Gradient:
+    """Multi-parameter adjoint gradient with engine attribution
+    (dv-gradients DVG-13). The uniform host shape (MD-22): same field
+    names as the Rust ``Gradient``.
+
+    ``d`` maps ``"label.param"`` → ``∂(metric)/∂(param)`` for every
+    requested parameter. ``method`` and ``fallback_users`` are shared
+    across the whole call (one adjoint solve serves every parameter).
+    """
+
+    def __init__(self, native):
+        self._native = native
+
+    @property
+    def d(self) -> dict[str, float]:
+        return dict(self._native.d)
+
+    def get(self, label: str, param: str) -> float | None:
+        """``∂(metric)/∂(label.param)``, or ``None`` if not computed."""
+        return self._native.d.get(f"{label}.{param}")
+
+    @property
+    def method(self) -> str:
+        return self._native.method
+
+    @property
+    def fallback_users(self) -> list[str]:
+        return list(self._native.fallback_users)
+
+
 @dataclass
 class PoleZeroResult:
     """``.pz`` result: poles and transmission zeros of the linearized
@@ -673,6 +730,44 @@ class Module:
         rebuild-class parameters fail loud.
         """
         return SensResult(self._native.sens(outputs, params, dp_rel, solver))
+
+    @_wrap_analysis_errors
+    def sensitivity(
+        self,
+        metric: str,
+        param: tuple[str, str],
+        solver: Solver | None = None,
+    ) -> Sensitivity:
+        """``∂(metric)/∂(param)`` at the operating point, with engine
+        attribution (dv-gradients DVG-13).
+
+        Dispatches to the analytic adjoint (one transpose solve) for any
+        DC-differentiable metric — a solved net name (``"out"`` →
+        ``V(out)``) or a declared margin name (``"head"`` → the
+        ``require``'s expression). AC-defined metrics fail loud naming
+        the AC-adjoint gap (D6); an unknown metric fails loud listing the
+        addressable nets and declared margins.
+
+        ``metric``: net name or declared margin name.
+        ``param``: ``(label, param)`` pair.
+        """
+        return Sensitivity(self._native.sensitivity(metric, param, solver))
+
+    @_wrap_analysis_errors
+    def gradient(
+        self,
+        metric: str,
+        params: list[tuple[str, str]],
+        solver: Solver | None = None,
+    ) -> Gradient:
+        """``∂(metric)/∂(param)`` for every requested parameter, with
+        engine attribution (dv-gradients DVG-13).
+
+        One adjoint solve serves the whole parameter list (DVG-08) — the
+        economic heart of the adjoint. ``metric`` resolves the same way
+        :meth:`sensitivity` resolves it.
+        """
+        return Gradient(self._native.gradient(metric, params, solver))
 
     @_wrap_analysis_errors
     def pss(

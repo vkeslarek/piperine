@@ -204,6 +204,32 @@ impl Module {
         session.sens(outputs, params, dp_rel, &Self::solver_config(config))
     }
 
+    /// `∂(metric)/∂(param)` at the operating point, with engine attribution
+    /// (dv-gradients T11, DVG-13). Forwards to
+    /// [`Session::sensitivity`](crate::Session::sensitivity).
+    pub fn sensitivity(
+        &self,
+        metric: &str,
+        param: &(String, String),
+        config: Option<&SolverConfig>,
+    ) -> Result<crate::gradient::Sensitivity, Error> {
+        let mut session = self.session()?;
+        session.sensitivity(metric, param, &Self::solver_config(config))
+    }
+
+    /// `∂(metric)/∂(param)` for every requested parameter, with engine
+    /// attribution (dv-gradients T11, DVG-13). Forwards to
+    /// [`Session::gradient`](crate::Session::gradient).
+    pub fn gradient(
+        &self,
+        metric: &str,
+        params: &[(String, String)],
+        config: Option<&SolverConfig>,
+    ) -> Result<crate::gradient::Gradient, Error> {
+        let mut session = self.session()?;
+        session.gradient(metric, params, &Self::solver_config(config))
+    }
+
     /// Run a periodic-steady-state analysis (single shooting): one converged
     /// period as a transient trace plus the shooting stats. The drive period
     /// is user-supplied; non-periodic circuits fail loud.

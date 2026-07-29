@@ -43,7 +43,9 @@ use results::_AcTrace;
 use results::_ComplexWaveform;
 use results::_FourierComponent;
 use results::_FourierResult;
+use results::_Gradient;
 use results::_NoiseTrace;
+use results::_Sensitivity;
 use results::_SolverStats;
 use results::_LimitingReport;
 use results::_MarginEntry;
@@ -111,6 +113,8 @@ pub fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Sweep>()?;
     m.add_class::<_Grid>()?;
     m.add_class::<_TfResult>()?;
+    m.add_class::<_Sensitivity>()?;
+    m.add_class::<_Gradient>()?;
     m.add_class::<_Ctx>()?;
     m.add_class::<_Staging>()?;
     Ok(())

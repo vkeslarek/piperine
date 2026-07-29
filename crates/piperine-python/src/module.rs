@@ -16,8 +16,10 @@ use piperine_lang::ValueType;
 
 use crate::instance::InstanceResolver;
 use crate::results::_AcTrace;
+use crate::results::_Gradient;
 use crate::results::_NoiseTrace;
 use crate::results::_OpResult;
+use crate::results::_Sensitivity;
 use crate::results::_Trace;
 use crate::value_bridge::PyValue;
 
@@ -204,6 +206,43 @@ impl _Module {
             .sens(&outs, &params, dp_rel, Some(&Self::solver_config(solver)?))
             .map_err(Self::analysis_err)?;
         Ok(result.d)
+    }
+
+    /// `∂(metric)/∂(param)` at the operating point, with engine attribution
+    /// (dv-gradients DVG-13). Returns a `_Sensitivity` (`value`, `method`,
+    /// `fallback_users`) — uniform shape with the Rust host. AC-defined
+    /// metrics fail loud naming the AC-adjoint gap (D6); an unknown metric
+    /// fails loud listing the addressable nets and declared margins.
+    #[pyo3(signature = (metric, param, solver=None))]
+    fn sensitivity(
+        &self,
+        metric: &str,
+        param: (String, String),
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<_Sensitivity> {
+        let result = self
+            .inner
+            .sensitivity(metric, &param, Some(&Self::solver_config(solver)?))
+            .map_err(Self::analysis_err)?;
+        Ok(_Sensitivity::from_api(result))
+    }
+
+    /// `∂(metric)/∂(param)` for every requested parameter, with engine
+    /// attribution (dv-gradients DVG-13). One adjoint solve serves the
+    /// whole list (DVG-08). Returns a `_Gradient` (`d`, `method`,
+    /// `fallback_users`) — uniform shape with the Rust host.
+    #[pyo3(signature = (metric, params, solver=None))]
+    fn gradient(
+        &self,
+        metric: &str,
+        params: Vec<(String, String)>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<_Gradient> {
+        let result = self
+            .inner
+            .gradient(metric, &params, Some(&Self::solver_config(solver)?))
+            .map_err(Self::analysis_err)?;
+        Ok(_Gradient::from_api(result))
     }
 
     /// Run a periodic-steady-state analysis (single shooting): one converged

@@ -30,7 +30,7 @@ const ANALYSES: &[&str] = &["op", "tran", "ac", "noise", "sens", "pss", "pz", "d
 const MODEL_DESIGN_METHODS: &[&str] = &["top", "module", "modules", "const_", "select"];
 const MODEL_MODULE_METHODS: &[&str] = &[
     "name", "ports", "nets", "instances", "params", "behaviors", "op", "tran", "ac", "noise",
-    "sens", "pss", "pz", "disto", "sp", "set", "compile",
+    "sens", "pss", "pz", "disto", "sp", "set", "compile", "sensitivity", "gradient",
 ];
 const MODEL_INSTANCE_VIEW_METHODS: &[&str] = &[
     "label", "terminal_connections", "v", "i", "opvar", "opvars", "model", "terminals",
@@ -204,6 +204,8 @@ fn call_every_rust_model_method(design: &piperine::model::Design) {
     let _ = module.pz("V1", "b", None, None);
     let _ = module.disto(1e6, None, 0.1, "a", None, None);
     let _ = module.sp(1e3, 1e9, 5, true, None);
+    let _ = module.sensitivity("a", &("r1".to_string(), "r".to_string()), None);
+    let _ = module.gradient("a", &[("r1".to_string(), "r".to_string())], None);
     module.set("r1", "r", 20.0);
     let _ = module.compile();
 
@@ -642,4 +644,220 @@ _probe()
         let got = python.get(key).unwrap_or_else(|| panic!("python probe missing key {key}"));
         assert_eq!(*got, want, "dv value `{key}` differs between hosts (MD-22 breach)");
     }
+}
+
+// ── dv-gradients T12 (DVG-13): sensitivity/gradient surface on both hosts ─
+
+/// The sensitivity-surface method names every host must carry, spelled
+/// identically (MD-22). Rust proves this at compile time in
+/// [`call_every_rust_sensitivity_surface`]; Python is probed at runtime
+/// against the same list.
+const SENSITIVITY_METHODS: &[&str] = &["sensitivity", "gradient"];
+
+/// `_Sensitivity` field names — uniform shape (MD-22).
+const SENSITIVITY_RESULT_FIELDS: &[&str] = &["value", "method", "fallback_users"];
+/// `_Gradient` field names — uniform shape (MD-22).
+const GRADIENT_RESULT_FIELDS: &[&str] = &["d", "method", "fallback_users"];
+
+/// Compile-time proof the Rust host carries the full sensitivity surface.
+/// If `Session::sensitivity`/`gradient` or any field on the result types
+/// drifts, this function fails to compile.
+fn call_every_rust_sensitivity_surface(session: &mut Session) {
+    use piperine::{Gradient, Sensitivity};
+    let config = SolverConfig::default();
+    let s: Sensitivity = session
+        .sensitivity("a", &("r1".into(), "r".into()), &config)
+        .expect("rust sensitivity");
+    let _ = s.value;
+    let _ = s.method;
+    let _ = s.fallback_users;
+    let g: Gradient = session
+        .gradient("a", &[("r1".into(), "r".into())], &config)
+        .expect("rust gradient");
+    let _ = g.d;
+    let _ = g.method;
+    let _ = g.fallback_users;
+    let _ = g.get("r1", "r");
+}
+
+/// Reflect the Python side of the sensitivity surface — names that exist
+/// on `_Module` and on the result pyclasses — into `out_path` as
+/// `missing:<name>` / `extra:<name>` tokens (empty = parity).
+fn python_sensitivity_surface_gaps(out_path: &std::path::Path) {
+    let phdl_path = std::env::temp_dir().join("piperine_host_parity_sensitivity.phdl");
+    std::fs::write(&phdl_path, RLC_PHDL).expect("write phdl fixture");
+
+    let module_names: Vec<String> =
+        SENSITIVITY_METHODS.iter().map(|n| format!("{n:?}")).collect();
+    let sens_fields: Vec<String> =
+        SENSITIVITY_RESULT_FIELDS.iter().map(|n| format!("{n:?}")).collect();
+    let grad_fields: Vec<String> =
+        GRADIENT_RESULT_FIELDS.iter().map(|n| format!("{n:?}")).collect();
+
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    design = piperine.load({phdl:?})
+    module = design.module("Top")
+    solver = piperine.Solver()
+    s = module.sensitivity("a", ("r1", "r"), solver=solver)
+    g = module.gradient("a", [("r1", "r")], solver=solver)
+    gaps = []
+    # The Module surface.
+    for n in [{module_names}]:
+        if not hasattr(module, n):
+            gaps.append("missing:module." + n)
+    for n in ("sensitivity", "gradient"):
+        if hasattr(module, n) and n not in [{module_names}]:
+            gaps.append("extra:module." + n)
+    # The result-class fields.
+    for n in [{sens_fields}]:
+        if not hasattr(s, n):
+            gaps.append("missing:sensitivity." + n)
+    for n in [{grad_fields}]:
+        if not hasattr(g, n):
+            gaps.append("missing:gradient." + n)
+    with open({out:?}, "w") as f:
+        f.write(" ".join(gaps))
+
+_probe()
+"#,
+        phdl = phdl_path.to_str().unwrap(),
+        module_names = module_names.join(", "),
+        sens_fields = sens_fields.join(", "),
+        grad_fields = grad_fields.join(", "),
+        out = out_path.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_sensitivity_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap())
+        .expect("python sensitivity probe runs");
+    let _ = std::fs::remove_file(&phdl_path);
+    let _ = std::fs::remove_file(&script_path);
+}
+
+/// DVG-13 / MD-22: the sensitivity surface (names + result-class fields)
+/// is identical on both hosts — Rust proven at compile time, Python probed
+/// at runtime in both directions.
+#[test]
+fn host_parity_sensitivity_surface_matches_on_both_hosts() {
+    let mut session = rlc_session();
+    call_every_rust_sensitivity_surface(&mut session); // fails to COMPILE on drift
+
+    let out = std::env::temp_dir().join("piperine_host_parity_sensitivity_gaps.txt");
+    python_sensitivity_surface_gaps(&out);
+    let gaps = std::fs::read_to_string(&out).expect("read sensitivity-parity probe output");
+    let _ = std::fs::remove_file(&out);
+    assert!(
+        gaps.trim().is_empty(),
+        "the sensitivity surface drifted between hosts (MD-22 breach): {gaps}"
+    );
+}
+
+/// DVG-13's value-parity test: one fixture driven through both hosts
+/// asserts identical gradient values AND identical engine attribution
+/// (the `method` field — `adjoint` on both). Python writes its reads as
+/// `key=value` lines; Rust asserts each against its own.
+#[test]
+fn host_parity_sensitivity_values_match_on_both_hosts() {
+    let mut session = rlc_session();
+    let config = SolverConfig::default();
+    let rust_s = session
+        .sensitivity("a", &("r1".into(), "r".into()), &config)
+        .expect("rust sensitivity");
+    let rust_g = session
+        .gradient("a", &[("r1".into(), "r".into()), ("V1".into(), "dc".into())], &config)
+        .expect("rust gradient");
+
+    let phdl_path = std::env::temp_dir().join("piperine_host_parity_sens_values.phdl");
+    std::fs::write(&phdl_path, RLC_PHDL).expect("write phdl fixture");
+    let out = std::env::temp_dir().join("piperine_host_parity_sens_values.txt");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    design = piperine.load({phdl:?})
+    module = design.module("Top")
+    solver = piperine.Solver()
+    s = module.sensitivity("a", ("r1", "r"), solver=solver)
+    g = module.gradient("a", [("r1", "r"), ("V1", "dc")], solver=solver)
+    lines = [
+        "s_value=" + repr(s.value),
+        "s_method=" + s.method,
+        "s_fallback=" + repr(sorted(s.fallback_users)),
+        "g_r1r=" + repr(g.d["r1.r"]),
+        "g_V1dc=" + repr(g.d["V1.dc"]),
+        "g_method=" + g.method,
+        "g_fallback=" + repr(sorted(g.fallback_users)),
+    ]
+    with open({out:?}, "w") as f:
+        f.write("\n".join(lines))
+
+_probe()
+"#,
+        phdl = phdl_path.to_str().unwrap(),
+        out = out.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_sens_values_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap())
+        .expect("python sens values probe runs");
+    for p in [&phdl_path, &script_path] {
+        let _ = std::fs::remove_file(p);
+    }
+    let python: std::collections::HashMap<String, String> = std::fs::read_to_string(&out)
+        .expect("read sens values probe output")
+        .lines()
+        .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+        .collect();
+    let _ = std::fs::remove_file(&out);
+
+    // Value parity (within FD noise of itself, since both hosts run the
+    // same analytic adjoint — exact equality is the bar).
+    let py_s = python["s_value"].trim_end_matches("_0").parse::<f64>().unwrap_or_else(|_| {
+        // Python `repr(0.001)` is `'0.001'`; trim any trailing junk.
+        python["s_value"].parse::<f64>().unwrap()
+    });
+    assert!(
+        (py_s - rust_s.value).abs() < 1.0e-12,
+        "sensitivity value differs: rust {} vs python {}",
+        rust_s.value,
+        py_s
+    );
+    // Engine attribution is a string — must match exactly.
+    assert_eq!(
+        python["s_method"], rust_s.method.to_string(),
+        "sensitivity method differs between hosts (MD-22 breach)"
+    );
+    assert_eq!(
+        python["s_fallback"], "[]",
+        "sensitivity fallback_users differs: rust [] vs python {}",
+        python["s_fallback"]
+    );
+
+    let py_g_r1r = python["g_r1r"].parse::<f64>().unwrap();
+    let py_g_v1dc = python["g_V1dc"].parse::<f64>().unwrap();
+    let rust_g_r1r = rust_g.get("r1", "r").expect("rust gradient r1.r");
+    let rust_g_v1dc = rust_g.get("V1", "dc").expect("rust gradient V1.dc");
+    assert!(
+        (py_g_r1r - rust_g_r1r).abs() < 1.0e-12,
+        "gradient r1.r differs: rust {} vs python {}", rust_g_r1r, py_g_r1r
+    );
+    assert!(
+        (py_g_v1dc - rust_g_v1dc).abs() < 1.0e-12,
+        "gradient V1.dc differs: rust {} vs python {}", rust_g_v1dc, py_g_v1dc
+    );
+    assert_eq!(
+        python["g_method"], rust_g.method.to_string(),
+        "gradient method differs between hosts (MD-22 breach)"
+    );
+}
+
+fn rlc_session() -> Session {
+    let design =
+        piperine_lang::parse_and_elaborate(RLC_PHDL, &SourceMap::dummy()).expect("rlc elaborates");
+    Session::compile(&design, "Top").expect("session compiles")
 }

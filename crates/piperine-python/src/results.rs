@@ -13,6 +13,7 @@
 //! MD-13 note: the wrappers are pyclasses — every function is a method on
 //! the struct. No loose module-level functions.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
@@ -948,5 +949,64 @@ pub struct _TfResult {
 impl _TfResult {
     pub(crate) fn from_solver(r: piperine_api::TfResult) -> Self {
         Self { gain: r.gain, z_in: r.z_in, z_out: r.z_out }
+    }
+}
+
+// ── dv-gradients: sensitivity surface (T11/12, DVG-13) ────────────────────
+
+/// `_Sensitivity` — one sensitivity value with engine attribution
+/// (dv-gradients DVG-13). Uniform-shape (MD-22): mirrors the api's
+/// `Sensitivity` field names — `value`, `method`, `fallback_users`.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _Sensitivity {
+    #[pyo3(get)]
+    pub value: f64,
+    /// `"adjoint"` or `"finite-difference"` — the engine that produced
+    /// `value` (DVG-13).
+    #[pyo3(get)]
+    pub method: String,
+    /// Element labels whose `∂F/∂p` was approximated by stamp
+    /// perturbation (DVG-07). Empty for `finite-difference` and for an
+    /// all-analytic adjoint.
+    #[pyo3(get)]
+    pub fallback_users: Vec<String>,
+}
+
+impl _Sensitivity {
+    pub(crate) fn from_api(s: piperine_api::Sensitivity) -> Self {
+        let mut users: Vec<String> = s.fallback_users.into_iter().collect();
+        users.sort();
+        Self {
+            value: s.value,
+            method: s.method.to_string(),
+            fallback_users: users,
+        }
+    }
+}
+
+/// `_Gradient` — the multi-parameter gradient with engine attribution
+/// (dv-gradients DVG-13). `d` maps `"label.param"` → `∂(metric)/∂(param)`.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _Gradient {
+    /// `"label.param"` → sensitivity value.
+    #[pyo3(get)]
+    pub d: HashMap<String, f64>,
+    #[pyo3(get)]
+    pub method: String,
+    #[pyo3(get)]
+    pub fallback_users: Vec<String>,
+}
+
+impl _Gradient {
+    pub(crate) fn from_api(g: piperine_api::Gradient) -> Self {
+        let mut users: Vec<String> = g.fallback_users.into_iter().collect();
+        users.sort();
+        Self {
+            d: g.d,
+            method: g.method.to_string(),
+            fallback_users: users,
+        }
     }
 }
