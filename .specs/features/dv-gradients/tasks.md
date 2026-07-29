@@ -17,13 +17,14 @@ cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
 **Depends on**: `dv-core` — margins are the functions being differentiated. Phases
 1–3 here need only `dv-core` Phase 4 (margin lowering); Phase 4 onward needs
 `dv-core` complete.
-**Status**: In Progress — Phases 1–2 DONE (T1–T6), Phase 3 next
+**Status**: In Progress — Phases 1–4 DONE (T1–T12), Phase 5 next
 
 ## Progress log
 
 | Batch | Phase | Tasks | Commits | Result |
 |---|---|---|---|---|
 | 1 | 1–2 | T1–T6 ✅ | `395ab04`, `c33f5cf`, `e85759d`, `3934687`, `7d4a787`, `544d422` | 1381 passed / 0 failed / 4 ignored (+20). Clippy clean. Notes: ∂F/∂p kernel is one parameter-indexed function (60-param Mos1 compiles, count asserted); adjoint must seed OP into device last_volts before reading param_stamps (documented). |
+| 2 | 3–4 | T7–T12 ✅ | `b16556a`, `dacc9e3`, `a3f1331`, `afd2391`, `38f013d`, `d4c86a6` | 1406 passed / 0 failed / 4 ignored (+25, zero regressions). Clippy + doc gate clean. Notes: real transpose solve reuses J's symbolic LU and refuses singular J through the existing SolverDomain::SpaceMatrix family via a finiteness gate mirroring Newton's NaN/Inf guard; the adjoint driver proves 20 params → exactly one transpose solve, cross-checked against .sens on linear (divider, RC), nonlinear (diode), and DC-invisible (cap) fixtures; margin gradients refuse AC-defined (D6), event-detected, and non-differentiable reductions loud, naming the gap; Session::sensitivity/gradient expose the adjoint path with engine attribution and candidate listing; Python parity asserted end-to-end (identical values + identical 'adjoint' engine string) through host_parity.rs. |
 
 ---
 
