@@ -36,7 +36,7 @@ session) + `OpResult`, `Trace`, `AcTrace`, `NoiseTrace`, `PssResult`,
 | `load(path) -> Design` | Load + elaborate `.phdl`/`.ppr` (raises `ElaborationError`) |
 | `load_str(src) -> Design` | Elaborate inline source, no filesystem read |
 | `Design` | `compile(module=None) -> Session` · `const(name)` · `module(name) -> Module` (raises `UnknownModule`) · `__getitem__(name) -> Module` · `modules()` · `select(path) -> Selection` · `top -> Module \| None` (property) |
-| `Module` | analyses `op(cfg=None)`, `sens(...)`, `pss(...)`, `pz(...)`, `disto(...)`, `sp(...)`, `tran(cfg)`, `ac(cfg)`, `noise(cfg)` · `compile() -> Session` · `set(label, param, value)` (staged override) · reflection properties `name`, `ports`, `params`, `nets`, `instances`, `behaviors` |
+| `Module` | analyses `op(cfg=None)`, `sens(...)`, `pss(...)`, `pz(...)`, `disto(...)`, `sp(...)`, `tran(cfg)`, `ac(cfg)`, `noise(cfg)` · `sensitivity(metric, param, solver=None)` / `gradient(metric, params, solver=None)` (dv-gradients, engine attribution — Part VIII §14) · `compile() -> Session` · `set(label, param, value)` (staged override) · reflection properties `name`, `ports`, `params`, `nets`, `instances`, `behaviors` |
 | `Selection` | `nodes() -> list[Node]` · `len()` · `is_empty()` |
 | `Node` / `Instance` / `Net` / `Port` / `Param` / `Behavior` | plain reflected records (`name`, `kind`/`ty`/`direction`/`default`/`module`) |
 
@@ -44,7 +44,7 @@ session) + `OpResult`, `Trace`, `AcTrace`, `NoiseTrace`, `PssResult`,
 
 | Object | Members |
 |---|---|
-| `Session` | `op(cfg=None)` · `tran(cfg)` · `ac(cfg)` · `noise(cfg)` · `sens(...)` · `pss(...)` · `pz(...)` · `disto(...)` · `sp(...)` · `tf(...)` · `dc(label, param, values, nodeset=None, solver=None)` · `set(label, param, value)` (restamp, no re-JIT) · `schedule_set(t, label, param, value)` (mid-transient, breakpoint-exact) · `sweep(label, param, values) -> Sweep` · `sweep_grid({"label.param": values, ...}) -> Grid` · `rebuilds` (prop: auto structural rebuild count) |
+| `Session` | `op(cfg=None)` · `tran(cfg)` · `ac(cfg)` · `noise(cfg)` · `sens(...)` · `pss(...)` · `pz(...)` · `disto(...)` · `sp(...)` · `tf(...)` · `dc(label, param, values, nodeset=None, solver=None)` · `sensitivity(metric, param, solver=None)` / `gradient(metric, params, solver=None)` (dv-gradients, engine attribution — Part VIII §14) · `set(label, param, value)` (restamp, no re-JIT) · `schedule_set(t, label, param, value)` (mid-transient, breakpoint-exact) · `sweep(label, param, values) -> Sweep` · `sweep_grid({"label.param": values, ...}) -> Grid` · `rebuilds` (prop: auto structural rebuild count) |
 | `Sweep` | iterable of `SweepPoint` (single-knob, HOST-18) |
 | `SweepPoint` | a `Session` view at one sweep value — every `Session` method available |
 | `Grid` | iterable of `SweepPoint` over the cartesian product of named axes (HOST-19) · `map(fn) -> numpy.ndarray` shaped like the axes · `shape()` |
@@ -184,6 +184,36 @@ inherits the matching builtin type it previously surfaced as, so existing
 | `Trace<ComplexWaveform>` = `AcTrace` | `new(AcAnalysisResult, info)` — type alias, not a separate type (HOST-13) |
 | `Trace<NoiseSample>` = `NoiseTrace` | `new(NoiseAnalysisResult)` · `psd()` · `total()` · `by_source() -> HashMap<String, Waveform>` (HOST-11) · `contributions() -> &[NoiseContribution]` (HOST-11) — type alias, not a separate type |
 
+### `gradient`, `driver`, `sampling`, `aging` (dv-gradients — Part VIII §14–16)
+
+| Item | Signature |
+|---|---|
+| `Session::sensitivity` | `(&mut self, metric: &str, param: &(String, String), config: &SolverConfig) -> Result<Sensitivity, Error>` — both hosts (MD-22) |
+| `Session::gradient` | `(&mut self, metric: &str, params: &[(String, String)], config: &SolverConfig) -> Result<Gradient, Error>` — one adjoint solve for every requested parameter; both hosts |
+| `Sensitivity` / `Gradient` | `{ value \| d: HashMap<String, f64>, method: SensitivityMethod, fallback_users: HashSet<String> }` — `Gradient::get(label, param) -> Option<f64>` |
+| `SensitivityMethod` | `Adjoint` (`"adjoint"`) / `FiniteDifference` (`"finite-difference"`) — `.as_str()` |
+| `Driver` | `new(Policy) -> Self` · `posture() -> CheckPosture` (always `Collect`) · `run(&mut Session, &SolverConfig) -> Result<DriverOutcome, Error>` — **Rust-only**, see the coverage note below |
+| `Policy` | `Optimize(OptimizeSpec)` / `Center(CenterSpec)` / `HighSigma(HighSigmaSpec)` — one enum, three policies (design §C4) |
+| `DriverOutcome` | `Optimize(OptimizeResult)` / `Center(CenterResult)` / `HighSigma(HighSigmaResult)` |
+| `OptimizeSpec` / `OptimizeResult` | `{ objective, minimize, over, max_iter, step }` / `{ params, objective_value, feasible, iterations, engines: HashSet<Engine> }` |
+| `Engine` | `Gradient` (`"gradient"`) / `BlackBox` (`"black-box"`) — `.as_str()` |
+| `CenterSpec` / `CenterResult` | `{ constraints, over, samples_per_outer, seed, outer_iters, inner_iters, step }` / `{ params, worst_normalized_margin, sigma_scheme: SigmaScheme, outer_iterations }` |
+| `SigmaScheme` | `FixedWithinOuterIteration` — the only scheme this delivery implements |
+| `HighSigmaSpec` / `HighSigmaResult` | `{ n, seed, shift_sigmas, confidence }` / `{ yield_estimate, ci: (f64, f64), estimator: HighSigmaEstimator, confidence, n, seed, shift_sigmas, failing_indices: Vec<usize> }` |
+| `HighSigmaEstimator` | `MeanShiftImportanceSampling` (`"mean-shift-importance-sampling"`) — the only estimator this delivery implements |
+| `SamplePlan` | `collect(&Design, top: &str) -> Result<Self, Error>` (authored-tree walk, MD-25) · `draws`/`draws_around`/`draws_importance(seed, index, ...)` · `apply`/`apply_around`/`apply_importance(&mut Session, seed, index, ...)` · `reset`/`reset_to(&mut Session, ...)` · `monte_carlo`/`monte_carlo_around(&mut Session, n, seed, &SolverConfig, ...) -> Result<MonteCarloResult, Error>` — **Rust-only** |
+| `SampleEntry` / `SampleDraw` / `SampleScope` | `{ label, module, param, default, distribution }` / `{ label, param, value }` / `Global \| Mismatch` |
+| `MonteCarloResult` | `{ seed, n, outcomes: Vec<SampleOutcome> }` — `yield_fraction()` · `sigma(name) -> Option<f64>` · `worst(name) -> Option<(usize, f64)>` · `failed_indices() -> Vec<usize>` |
+| `SampleOutcome` | `Converged { margins: HashMap<String, f64> }` / `Failed { error: String }` — `is_converged()` |
+| `age` | `(&mut Session, &AgingSpec, &SolverConfig) -> Result<AgingResult, Error>` — **Rust-only** |
+| `AgingSpec` / `AgingResult` | `{ stress: StressSource, drifts: Vec<DriftRate>, constraints, lifetime, steps }` / `{ stress, baseline: MarginsResult, aged: MarginsResult, first_violation: Option<(String, f64)>, lifetime }` — `AgingResult::delta(name) -> Option<f64>` |
+| `StressSource` / `DriftRate` | `Op { metric }` / `TranPeak { net, stop, step }` · `{ label, param, from, rate_per_stress }` |
+
+Every name above is a crate-root re-export (`piperine_api::Sensitivity`,
+`piperine_api::Driver`, `piperine_api::SamplePlan`, `piperine_api::age`, …) —
+none of them are in `piperine_api::prelude` (Part VIII §13's prelude list is
+unchanged by this feature).
+
 ### `units` — `Freq`, `Time` (HOST-21)
 
 | Item | Signature |
@@ -236,6 +266,13 @@ covers analyses, not every `Waveform` method): `Waveform` measurements
 (HOST-14), transforms (HOST-15), and `ComplexWaveform` margins (HOST-16)
 are Rust-only (`piperine-api`); no native Python binding exists yet. See
 Part VIII §9.
+
+**Second tracked gap (dv-gradients):** `sensitivity`/`gradient` (§14) are on
+both hosts and covered by `ANALYSES`-style parity today, but `Driver`/
+`Policy`/`SamplePlan`/`age` (Part VIII §15–16) are Rust-only as of this
+delivery — no Python binding, and not yet part of `ANALYSES` or any parity
+test. A Python binding for the driver/sampling/aging surface is a follow-up
+task, same status as the `Waveform` gap above.
 
 ---
 

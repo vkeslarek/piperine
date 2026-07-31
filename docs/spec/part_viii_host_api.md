@@ -609,3 +609,159 @@ types (`AcTrace`, `ComplexWaveform`, `CrossDirection`, `NoiseTrace`,
 (introspection types: `Bounds`, `Invalidation`, `ModelDescriptor`,
 `ObservableDescriptor`, `ObservableKind`, `ParamDescriptor`, `ParamScope`,
 `TerminalDescriptor`, `TerminalKind`, `NoiseContribution`).
+
+## 14. Sensitivity and gradients — the adjoint surface (dv-gradients)
+
+`sensitivity(metric, param)` (one parameter) and `gradient(metric, params)`
+(many parameters, one adjoint solve) sit on `Session` (Rust) and `Module`/
+`Session` (Python) — identical names, shapes, and values on both hosts
+(`tests/host_parity.rs`), per MD-22. `metric` resolves to either a declared
+`dv-core` margin name or a solved analog net name, the same resolution order
+`Session::gradient` uses everywhere; an unknown name fails loud listing the
+candidates it tried against.
+
+```python
+s = sim.sensitivity("idd", ("r1", "r"))       # -> value, method, fallback_users
+g = sim.gradient("idd", [("r1", "r"), ("r2", "r")])   # one adjoint solve, both params
+print(g.method, g.d)                          # "adjoint", {"r1.r": ..., "r2.r": ...}
+```
+
+```rust
+let s: Sensitivity = session.sensitivity("idd", &("r1".into(), "r".into()), &config)?;
+let g: Gradient = session.gradient("idd", &[("r1".into(), "r".into()), ("r2".into(), "r".into())], &config)?;
+assert_eq!(g.method, SensitivityMethod::Adjoint);
+let d_r1 = g.get("r1", "r").unwrap();
+```
+
+Every result names the **engine** that produced it — `SensitivityMethod::Adjoint`
+("adjoint": one transpose solve, Part VII §17.2) or
+`SensitivityMethod::FiniteDifference` ("finite-difference": the `.sens`
+baseline, Part VII §17.1) — and carries `fallback_users`, the set of element
+labels that used stamp-perturbation instead of an analytic `∂F/∂p` kernel
+(Part VII §3.2's `HAS_SENSITIVITY` note); a fully analytic circuit reports an
+empty set. A gradient the solver genuinely cannot compute — an AC-defined
+metric (Part VII §17.2's stated D6 gap), an event-detected metric, or a
+non-differentiable reduction — fails loud naming the reason, never a
+plausible wrong number.
+
+## 15. The policy driver — optimize / center / high-sigma (dv-gradients)
+
+`optimize`, `center`, and high-sigma yield estimation are **three policies of
+one driver**, not three separate features (design §C4) — they share the same
+restamp loop, the same `dv-core` margin channel, and the same gradient path
+where one exists. Concretely, on the Rust side this is one type,
+`piperine_api::driver::Driver`, built from one enum, `Policy`:
+
+```rust
+use piperine_api::{Driver, Policy, OptimizeSpec, CenterSpec, HighSigmaSpec, DriverOutcome};
+
+let driver = Driver::new(Policy::Optimize(OptimizeSpec {
+    objective: "idd".into(),
+    minimize: true,
+    over: vec![("m1".into(), "w".into())],
+    ..Default::default()
+}));
+let outcome = driver.run(&mut session, &config)?;
+let DriverOutcome::Optimize(result) = outcome else { unreachable!() };
+println!("{:?} engines={:?}", result.params, result.engines);
+```
+
+`Driver::run` **always** solves in `CheckPosture::Collect`
+(`Driver::posture()` reports it unconditionally), regardless of the
+`checks` field on the `SolverConfig` passed in — an optimizer that aborted
+on its own infeasible iterates could not search. `Driver::run` never
+recompiles across the whole run (MD-18) — every step restamps the one
+compiled circuit.
+
+- **`Policy::Optimize(OptimizeSpec)`** — a feasibility phase (climb every
+  `require` margin to ≥ 0) followed by an objective phase (descend/ascend
+  `objective` while projecting back onto the feasible set on a rejected
+  step). `OptimizeResult.engines` is a set of `Engine::Gradient`/
+  `Engine::BlackBox` — a run that composed gradient feasibility with a
+  black-box (Nelder–Mead) objective phase, because the objective was not
+  analytically differentiable, names **both**; a purely gradient-driven run
+  never spuriously reports `BlackBox`. `Engine::as_str()` gives the
+  host-visible names `"gradient"`/`"black-box"`.
+- **`Policy::Center(CenterSpec)`** — worst-case-distance centering: maximize
+  `min_i (m_i / σ_i)` over `over`'s design parameters, where `σ_i` comes
+  from an inner Monte Carlo run (§16) around the current search point.
+  `CenterResult.sigma_scheme` (`SigmaScheme::FixedWithinOuterIteration`,
+  the only scheme this delivery implements) names how `σ_i` was estimated
+  — held fixed within one outer iteration, re-sampled between outer
+  iterations — because the number means something different under another
+  scheme. `CenterResult.worst_normalized_margin` is the centered point's
+  worst-case distance, in sigmas.
+- **`Policy::HighSigma(HighSigmaSpec)`** — mean-shift importance-sampling
+  tail estimation (Part VII's noise-adjoint analogy does not apply here;
+  this is a host-side sampling technique, not a solver analysis). Every
+  `HighSigmaResult` carries `estimator`
+  (`HighSigmaEstimator::MeanShiftImportanceSampling` — a yield without its
+  estimator is not a yield), `ci: (f64, f64)` (the two-sided confidence
+  interval at `confidence`), and `failing_indices` — the drawn samples that
+  were a failure under the shifted distribution, each replayable (§16).
+
+**Coverage note:** the driver (`Driver`/`Policy`/all three specs/results) is
+Rust-only (`piperine-api`) as of this delivery — it has not yet been bound
+into `piperine-python`, unlike `sensitivity`/`gradient` (§14), which are on
+both hosts today. This mirrors §9's existing tracked-asymmetry pattern: a
+Python binding is a follow-up task, not part of this feature's scope.
+
+## 16. Monte Carlo sampling and aging drift (dv-gradients)
+
+`piperine_api::SamplePlan` (Rust-only, same coverage note as §15) walks the
+**authored** instance tree (never the flattened form — MD-25) to find every
+`tol`-carrying parameter, and `SamplePlan::monte_carlo` restamps `n` draws on
+the one compiled session (MD-18 — a 1000-sample run costs zero additional
+compiles):
+
+```rust
+let plan = SamplePlan::collect(&design, "Top")?;
+let mc: MonteCarloResult = plan.monte_carlo(&mut session, 1000, /* seed */ 7, &config)?;
+println!("yield={} sigma={:?}", mc.yield_fraction(), mc.sigma("dut1.head"));
+let (worst_index, worst_value) = mc.worst("dut1.head").unwrap();
+```
+
+- **Reproducibility contract.** A sample is fully determined by `(seed,
+  index)`: the same pair produces byte-identical draws across runs and
+  across processes, and a named failing sample (`mc.worst(name)`'s index, or
+  a `HighSigmaResult::failing_indices` entry, §15) replays as an ordinary
+  session — `plan.apply(&mut session, seed, index)` on a freshly compiled
+  `Session` reproduces the exact original failure. **A sample index is NOT a
+  stable name across design edits**: `SamplePlan::collect` re-derives the
+  entry list from the design's current authored hierarchy every time it
+  runs, so an edit that adds, removes, renames, or re-hierarchizes a
+  `tol`-carrying instance changes the plan's entry set — the same `(seed,
+  index)` against a plan collected from an edited design is not guaranteed
+  to reproduce the same physical sample. Treat `(seed, index)` as valid only
+  against the specific `SamplePlan` (and hence the specific design) it was
+  drawn from.
+- **Process vs. mismatch draws.** A `tol … global` declaration is process
+  variation — one draw shared by every instance of the same
+  `(module, param)` group; a plain `tol` declaration is mismatch
+  variation — one independent draw per instance (`SampleScope::Global` /
+  `SampleScope::Mismatch`).
+- A sample that fails to converge is a reported `SampleOutcome::Failed`
+  outcome, never a crash that aborts the run; `mc.failed_indices()` names
+  them so a caller does not trust `yield_fraction`/`sigma`/`worst` blindly
+  on a run with non-convergent samples. `SamplePlan::reset` (called
+  automatically at the end of `monte_carlo`) returns the session to
+  declared nominal values — sampling never leaves residue for a later
+  nominal analysis.
+
+**Aging as parameter drift.** `piperine_api::age(session, &AgingSpec,
+&config)` computes a scalar stress proxy from an OP or transient run
+(`StressSource::Op`/`StressSource::TranPeak`), drifts declared parameters
+linearly with `stress · time` through the same restamp path
+(`Session::set`), re-verifies at each scanned point, and returns an
+`AgingResult` — no new result type: `AgingResult::delta(name)` reads the
+existing margins channel (`baseline`/`aged`, both `MarginsResult`) rather
+than carrying a dedicated delta type. `AgingResult.first_violation` names
+which declared constraint went negative first and after how long, or `None`
+if the scanned `lifetime` never crosses it. A drift that would carry a
+parameter across a rebuild-class boundary fails loud (propagated straight
+from `Session::set`'s existing `Invalidation::Rebuild` refusal — Part VII
+§3.4), rather than silently re-elaborating. This is a placeholder linear
+drift model, not a calibrated aging tool (MOSRA/RelXpert): the gap is the
+per-device stress-equation *data*, which the shipped ngspice-faithful
+models do not carry — the same documented gap `dv-core` states for SOA
+limits.
