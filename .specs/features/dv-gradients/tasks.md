@@ -17,12 +17,13 @@ cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
 **Depends on**: `dv-core` — margins are the functions being differentiated. Phases
 1–3 here need only `dv-core` Phase 4 (margin lowering); Phase 4 onward needs
 `dv-core` complete.
-**Status**: In Progress — Phases 1–4 DONE (T1–T12), Phase 5 next
+**Status**: In Progress — Phases 1–6 DONE (T1–T19), Phase 7 (T20–T21) next
 
 ## Progress log
 
 | Batch | Phase | Tasks | Commits | Result |
 |---|---|---|---|---|
+| 3 | 5–6 | T14–T19 ✅ | `d60ebea`, `4f70abc`, `3ed7501`, `9fd5884`, `e072ec4`, `6e42602` | 1433 passed / 0 failed / 4 ignored (+27, zero regressions). Clippy + doc gate clean. Notes: SamplePlan::reset + (seed,index) replay proof (named failing sample reproduces exactly, nominal-after-sampling has no residue, index instability under design edits documented); SamplePlan::monte_carlo reports yield/σ_i/worst-sample with per-sample convergence-failure-as-outcome (own isolated compile-count test); one policy-parameterized Driver (Policy::Optimize/Center/HighSigma) forcing `collect` posture by construction regardless of caller config; optimize policy (feasibility climb + gradient-descent objective phase with backtracking line search, bounded iteration — never stalls on a D1 discontinuity) converges a two-parameter known-optimum fixture with zero recompiles; a pure-Rust Nelder–Mead black-box engine composes with the gradient path for non-differentiable objectives (mixed fixture names both engines, purely-differentiable runs never spuriously attribute black-box); center policy maximizes min_i(m_i/σ_i) using SamplePlan::monte_carlo_around (new: samples AROUND the current search point, not the design's static declared nominal) — a two-competing-constraint fixture shows the centered point raises the worst normalized margin and Monte-Carlo yield above nominal. Deviation: driver/optimize.rs and driver/center.rs shipped their T17/T19 algorithm bodies in T16's commit (Rust requires the dispatched-into module tree to compile as a unit); T17/T19's own commits added the dedicated tests against that already-landed logic. Also split driver/mod.rs into entry.rs/support.rs to satisfy the repo's mod.rs line-count hygiene guard (MD-34), discovered at the Phase 6 build gate. |
 | 2 | 3–4 | T7–T12 ✅ | `b16556a`, `dacc9e3`, `a3f1331`, `afd2391`, `38f013d`, `d4c86a6` | 1406 passed / 0 failed / 4 ignored (+25). Clippy clean. Adjoint DC driver: one transpose solve for all params (count asserted); cross-checked against `.sens` on linear + nonlinear fixtures; margin gradients at argmin; reduced-gradient via IFT; AC fails loud; host surface on both hosts with engine attribution + parity guard. |
 
 | 1 | 1–2 | T1–T6 ✅ | `395ab04`, `c33f5cf`, `e85759d`, `3934687`, `7d4a787`, `544d422` | 1381 passed / 0 failed / 4 ignored (+20). Clippy clean. Notes: ∂F/∂p kernel is one parameter-indexed function (60-param Mos1 compiles, count asserted); adjoint must seed OP into device last_volts before reading param_stamps (documented). |
@@ -397,10 +398,10 @@ ordinary session.
 **Requirement**: DVG-17
 
 **Done when**:
-- [ ] the same `(seed, index)` produces byte-identical parameter values across runs and across processes
-- [ ] a named failing sample can be replayed as an ordinary session and reproduces its failure exactly
-- [ ] a nominal analysis after sampling returns to declared values — sampling leaves no residue
-- [ ] sample index is stable under an unrelated design edit? **No** — document that it is not, so nobody treats an index as a permanent name
+- [x] the same `(seed, index)` produces byte-identical parameter values across runs and across processes
+- [x] a named failing sample can be replayed as an ordinary session and reproduces its failure exactly
+- [x] a nominal analysis after sampling returns to declared values — sampling leaves no residue
+- [x] sample index is stable under an unrelated design edit? **No** — document that it is not, so nobody treats an index as a permanent name
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): make every Monte Carlo sample replayable`
@@ -416,11 +417,11 @@ ordinary session.
 **Requirement**: DVG-18
 
 **Done when**:
-- [ ] yield = fraction of samples with all margins ≥ 0
-- [ ] per-metric `σ_i` reported (the input centering needs)
-- [ ] the worst sample per constraint is named and replayable
-- [ ] 10³ samples cost **one** compile — `compile_once_sweep.rs`-style count asserted
-- [ ] a sample that fails to converge is reported as a sample outcome, not an analysis crash, and the run continues
+- [x] yield = fraction of samples with all margins ≥ 0
+- [x] per-metric `σ_i` reported (the input centering needs)
+- [x] the worst sample per constraint is named and replayable
+- [x] 10³ samples cost **one** compile — `compile_once_sweep.rs`-style count asserted
+- [x] a sample that fails to converge is reported as a sample outcome, not an analysis crash, and the run continues
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `feat(api): report Monte Carlo yield, spread, and worst samples`
@@ -437,10 +438,10 @@ and high-sigma from becoming three engines that drift.
 **Requirement**: DVG-14
 
 **Done when**:
-- [ ] a policy-parameterized driver exists, with `optimize`/`center`/`high_sigma` as its three policies
-- [ ] the driver runs in `collect` posture by construction — an optimizer that aborted on its own infeasible iterates could not search
-- [ ] it lives in `piperine-api` so both hosts share one implementation (MD-22)
-- [ ] a fixture proves the posture is `collect` even when the session default is `strict`
+- [x] a policy-parameterized driver exists, with `optimize`/`center`/`high_sigma` as its three policies
+- [x] the driver runs in `collect` posture by construction — an optimizer that aborted on its own infeasible iterates could not search
+- [x] it lives in `piperine-api` so both hosts share one implementation (MD-22)
+- [x] a fixture proves the posture is `collect` even when the session default is `strict`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add the policy-driven optimization driver`
@@ -456,11 +457,11 @@ and high-sigma from becoming three engines that drift.
 **Requirement**: DVG-14
 
 **Done when**:
-- [ ] feasibility phase climbs until every `require` margin ≥ 0; objective phase descends while projecting onto the feasible set
-- [ ] an objective naming an unknown `var` fails loud at the host boundary
-- [ ] a two-parameter fixture with a known optimum converges in ~10¹–10² solves
-- [ ] the compile count across the entire optimization is **1** (MD-18)
-- [ ] step control tolerates a gradient discontinuity where the argmin switches (D1) rather than stalling
+- [x] feasibility phase climbs until every `require` margin ≥ 0; objective phase descends while projecting onto the feasible set
+- [x] an objective naming an unknown `var` fails loud at the host boundary
+- [x] a two-parameter fixture with a known optimum converges in ~10¹–10² solves
+- [x] the compile count across the entire optimization is **1** (MD-18)
+- [x] step control tolerates a gradient discontinuity where the argmin switches (D1) rather than stalling
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add the gradient-based optimize policy`
@@ -477,10 +478,10 @@ composed with the gradient path — and always attributed.
 **Requirement**: DVG-15
 
 **Done when**:
-- [ ] a derivative-free engine (CMA-ES or Bayesian) handles a non-differentiable objective
-- [ ] gradient and black-box compose — gradient inside a discrete shell — on a mixed fixture
-- [ ] every result names which engine produced it; a mixed run names both
-- [ ] scipy/BoTorch, if used on the Python side, are optional accelerators and never the source of truth (the Rust host gets the same answers)
+- [x] a derivative-free engine (CMA-ES or Bayesian) handles a non-differentiable objective
+- [x] gradient and black-box compose — gradient inside a discrete shell — on a mixed fixture
+- [x] every result names which engine produced it; a mixed run names both
+- [x] scipy/BoTorch, if used on the Python side, are optional accelerators and never the source of truth (the Rust host gets the same answers)
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add a derivative-free fallback engine`
@@ -496,10 +497,10 @@ composed with the gradient path — and always attributed.
 **Requirement**: DVG-19
 
 **Done when**:
-- [ ] `center` returns the centered parameters and the worst-case distance in sigmas
-- [ ] `σ_i` is held fixed within an outer iteration and re-sampled between them, and the result **states which scheme it used** (the number means different things under each)
-- [ ] the `min` over constraints differentiates at the active constraint (D1)
-- [ ] on a fixture with two competing constraints: the centered point raises the worst normalized margin **and** a Monte Carlo at that point shows higher yield than nominal
+- [x] `center` returns the centered parameters and the worst-case distance in sigmas
+- [x] `σ_i` is held fixed within an outer iteration and re-sampled between them, and the result **states which scheme it used** (the number means different things under each)
+- [x] the `min` over constraints differentiates at the active constraint (D1)
+- [x] on a fixture with two competing constraints: the centered point raises the worst normalized margin **and** a Monte Carlo at that point shows higher yield than nominal
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `feat(api): add worst-case-distance design centering`
