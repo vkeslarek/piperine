@@ -100,10 +100,18 @@ impl InstallSite {
 
     /// Stamp the active wave's Norton contribution at `ctx.t()`, if one is
     /// installed. A site with nothing installed stamps nothing (zero cost).
+    ///
+    /// At the **DC operating point** (T25, DVT-36) — signaled by `ctx.dt()
+    /// == 0.0`, the same way `Ctx::dt`'s own doc states "0.0 at DC, where
+    /// there is none," and the one field distinguishing a real transient's
+    /// own `t = 0` step (`dt` already the first nonzero step size) from a
+    /// DC solve — the wave contributes its declared SPICE-convention
+    /// [`Wave::dc_value`], not `value(0.0)`: for a `sigmoid` or `sin`
+    /// wave those genuinely differ (`ideal.md` §12.10).
     pub fn stamp(&self, ctx: &Ctx<'_>, sink: &mut StampSink) {
         let Some(wave) = &self.current else { return };
         let g = 1.0 / self.rout;
-        let v = wave.value(ctx.t());
+        let v = if ctx.dt() == 0.0 { wave.dc_value() } else { wave.value(ctx.t()) };
         sink.g(&self.plus, &self.plus, g);
         sink.g(&self.plus, &self.minus, -g);
         sink.g(&self.minus, &self.plus, -g);

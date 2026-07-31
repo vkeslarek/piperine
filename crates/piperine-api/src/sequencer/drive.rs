@@ -87,12 +87,21 @@ pub fn drive_current(ctl: &mut SequencerControl, drive: &mut CurrentDrive, insta
     }
 }
 
+/// The digital drive itself — `net`/`value`/`delay` bundled into one
+/// argument so `drive_digital` stays under the project's arg-count lint
+/// alongside its reporting parameters.
+pub struct DigitalDrive {
+    pub net: DigitalNet,
+    pub value: LogicValue,
+    pub delay: f64,
+}
+
 /// `drive_digital`: queues a digital drive through [`SequencerControl`],
 /// which the blanket adapter forwards to the real `EventSink` after this
 /// accept — never touches [`StampSink`]/the MNA (DVT-33, asserted by a
 /// digital-only test in this module's own suite).
-pub fn drive_digital(ctl: &mut SequencerControl, net: DigitalNet, value: LogicValue, delay: f64, instance: &str, net_label: &str, t: f64, internal: bool) {
-    ctl.drive_digital(net, value, delay);
+pub fn drive_digital(ctl: &mut SequencerControl, drive: DigitalDrive, instance: &str, net_label: &str, t: f64, internal: bool) {
+    ctl.drive_digital(drive.net, drive.value, drive.delay);
     if internal {
         note_internal_drive(ctl, instance, net_label, t);
     }

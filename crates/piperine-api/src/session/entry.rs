@@ -295,6 +295,18 @@ impl Session {
         logarithmic: impl Into<bool>,
         config: &SolverConfig,
     ) -> Result<AcTrace, Error> {
+        // D13 (T25): a sequencer's coroutine has no small-signal meaning —
+        // AC never silently freezes it. Refused loud, before the solver
+        // ever sees the circuit, rather than a hang or a quietly-wrong
+        // sweep.
+        if self.opts.host_registry.as_ref().is_some_and(|r| r.has_sequencer()) {
+            return Err(Error::Model(
+                "AC analysis does not support a circuit with a Sequencer attached (D13): \
+                 a coroutine has no small-signal meaning — run a transient instead, or \
+                 compile without the sequencer-bearing device provider"
+                    .to_string(),
+            ));
+        }
         let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
             start_frequency: fstart.into().0,
             stop_frequency: fstop.into().0,
@@ -859,6 +871,17 @@ impl SessionBuilder<'_> {
     /// (`@device` instances, SPEC Part VI §7).
     pub fn provider(mut self, provider: Rc<dyn piperine_codegen::device::DeviceProvider>) -> Self {
         self.opts.provider = Some(provider);
+        self
+    }
+
+    /// Wire a [`crate::device::HostDeviceRegistry`] as this session's
+    /// device provider (T25, D13) — like [`Self::provider`], but also
+    /// remembered in its concrete type so [`Session::ac`] can refuse loud
+    /// when the registry declared any sequencer type via
+    /// [`crate::device::HostDeviceRegistry::register_sequencer`].
+    pub fn host_registry(mut self, registry: Rc<crate::device::HostDeviceRegistry>) -> Self {
+        self.opts.provider = Some(registry.clone());
+        self.opts.host_registry = Some(registry);
         self
     }
 

@@ -8,7 +8,7 @@
 //! mechanism.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec, PortBinding};
@@ -47,6 +47,11 @@ type HostFactory = dyn Fn(HostDeviceSpec) -> Result<Box<dyn Element>, String>;
 pub struct HostDeviceRegistry {
     plugin: Option<Rc<dyn DeviceProvider>>,
     hosts: RefCell<HashMap<String, Rc<HostFactory>>>,
+    /// Type ids registered via [`Self::register_sequencer`] (T25, D13): a
+    /// session built against a registry with any entry here refuses AC
+    /// loud rather than silently freezing the coroutine — see
+    /// [`Self::has_sequencer`].
+    sequencer_ids: RefCell<HashSet<String>>,
 }
 
 impl HostDeviceRegistry {
@@ -60,7 +65,7 @@ impl HostDeviceRegistry {
     /// coexist (`ideal.md` §8.7's promotion path: a device can move from
     /// this registry into `plugin` with no PHDL change).
     pub fn with_plugin(plugin: Rc<dyn DeviceProvider>) -> Self {
-        Self { plugin: Some(plugin), hosts: RefCell::new(HashMap::new()) }
+        Self { plugin: Some(plugin), hosts: RefCell::new(HashMap::new()), sequencer_ids: RefCell::new(HashSet::new()) }
     }
 
     /// Register a host device factory for `@device(type = "type_id")`, an
@@ -71,6 +76,26 @@ impl HostDeviceRegistry {
         factory: impl Fn(HostDeviceSpec) -> Result<Box<dyn Element>, String> + 'static,
     ) {
         self.hosts.borrow_mut().insert(type_id.into(), Rc::new(factory));
+    }
+
+    /// [`Self::register`], additionally marking `type_id` as
+    /// sequencer-bearing (T25, D13) — a `Session` built with this registry
+    /// as its [`Self::has_sequencer`]-checked provider refuses AC loud
+    /// rather than silently freezing the coroutine.
+    pub fn register_sequencer(
+        &self,
+        type_id: impl Into<String>,
+        factory: impl Fn(HostDeviceSpec) -> Result<Box<dyn Element>, String> + 'static,
+    ) {
+        let type_id = type_id.into();
+        self.sequencer_ids.borrow_mut().insert(type_id.clone());
+        self.register(type_id, factory);
+    }
+
+    /// True once any type registered through [`Self::register_sequencer`]
+    /// exists in this registry.
+    pub fn has_sequencer(&self) -> bool {
+        !self.sequencer_ids.borrow().is_empty()
     }
 }
 

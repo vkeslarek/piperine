@@ -29,6 +29,11 @@ pub(super) struct BuildOptions {
     /// them — it overruns the JIT backend outright. Every analysis but
     /// `.disto` leaves them off.
     pub(super) disto: bool,
+    /// The concrete host registry, if the session was built with one
+    /// (T25, D13): kept alongside the type-erased `provider` purely so
+    /// `Session::ac` can ask `HostDeviceRegistry::has_sequencer()` — the
+    /// generic `DeviceProvider` trait carries no such query.
+    pub(super) host_registry: Option<Rc<crate::device::HostDeviceRegistry>>,
 }
 
 /// The one build recipe: consume `design`'s staged overrides, lower to
