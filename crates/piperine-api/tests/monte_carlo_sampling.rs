@@ -211,7 +211,7 @@ fn draws_apply_through_the_ordinary_restamp_path() {
     );
 
     // Apply sample (seed, index) = (42, 0).
-    let plan = SamplePlan::collect(&session.design(), "Top").expect("plan collects");
+    let plan = SamplePlan::collect(session.design(), "Top").expect("plan collects");
     plan.apply(&mut session, 42, 0).expect("draws apply through Session::set");
 
     // The operating point now reflects the drawn resistor values — it

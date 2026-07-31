@@ -19,6 +19,7 @@ pub mod gradient;
 pub mod hooks;
 pub mod margins;
 pub mod model;
+pub mod monte_carlo;
 pub mod prelude;
 pub mod reduced;
 pub mod results;
@@ -35,6 +36,7 @@ pub use gradient::{
 };
 pub use hooks::SimHooks;
 pub use margins::{ConstraintCatalog, MarginEntry, MarginShape, MarginValue, MarginsResult};
+pub use monte_carlo::{MonteCarloResult, SampleOutcome};
 pub use piperine_solver::prelude::{
     Bounds, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind, ParamDescriptor,
     ParamScope, TerminalDescriptor, TerminalKind,
