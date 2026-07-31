@@ -23,7 +23,33 @@
 //! draw_group_id)`, where the group id is `(module, param)` for a `global`
 //! draw and `(label, param)` for a mismatch draw. The same `(seed, index)`
 //! produces byte-identical draws across runs and across processes; a named
-//! failing sample replays as an ordinary session.
+//! failing sample replays as an ordinary session: build a fresh
+//! [`SamplePlan`] for the same design, call [`SamplePlan::apply`] with the
+//! same `(seed, index)` on a freshly compiled [`Session`], and the
+//! resulting operating point reproduces the original failure exactly —
+//! no hidden state beyond the plan and the `(seed, index)` pair.
+//!
+//! [`SamplePlan::reset`] writes every entry's *nominal* (declared) value
+//! back through the same restamp path — "no residue" (DVG-18 AC5): a
+//! nominal analysis run after a sample was applied and then reset reads
+//! identically to a session that was never sampled. There is no separate
+//! mutation route; nominal and sampled values both travel through
+//! `Session::set`.
+//!
+//! # Index stability is NOT a permanent name (documented limitation)
+//!
+//! A sample index is a coordinate into *this* [`SamplePlan`], not a
+//! permanent identifier for a physical draw. [`SamplePlan::collect`]
+//! re-derives the entry list from the design's current authored
+//! hierarchy every time it runs; an edit that adds, removes, renames, or
+//! re-hierarchizes a `tol`-carrying instance changes the plan's entry
+//! set (and, for a mismatch draw, the `label` half of its group key —
+//! §"The authored-tree walk" above), so the same `(seed, index)` against
+//! a plan collected from an edited design is **not guaranteed** to
+//! reproduce the same physical sample. Treat `(seed, index)` as valid
+//! only against the specific `SamplePlan` (and hence the specific
+//! design) it was drawn from — never as a durable name for a design
+//! point across edits.
 
 use std::collections::HashMap;
 
@@ -196,6 +222,17 @@ impl SamplePlan {
     pub fn apply(&self, session: &mut Session, seed: u64, index: usize) -> Result<(), Error> {
         for draw in self.draws(seed, index) {
             session.set(&draw.label, &draw.param, draw.value)?;
+        }
+        Ok(())
+    }
+
+    /// Reset `session` to every entry's nominal (declared) value, through
+    /// the ordinary restamp path ([`Session::set`]) — no new mutation
+    /// route (T14, DVG-17 "no residue"). A nominal analysis run after
+    /// this call reads identically to a session that was never sampled.
+    pub fn reset(&self, session: &mut Session) -> Result<(), Error> {
+        for entry in &self.entries {
+            session.set(&entry.label, &entry.param, entry.default)?;
         }
         Ok(())
     }

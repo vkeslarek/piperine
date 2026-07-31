@@ -4,6 +4,12 @@
 //! shared by every instance of the same `(module, param)` group while a
 //! plain (mismatch) parameter gets an INDEPENDENT draw per instance.
 //!
+//! Also covers T14 (DVG-17): `(seed, index)` reproducibility across
+//! independent constructions, a named failing sample replayed as an
+//! ordinary session reproducing its failure exactly, and a nominal
+//! analysis after sampling returning to declared values via
+//! `SamplePlan::reset` (no residue).
+//!
 //! The walk reads the authored POM (`design.module`) — never
 //! `design.flat_module` (MD-25, the UNBREAKABLE rule). The flat form is a
 //! codegen concern the sampler must never read; the mismatch/process
@@ -266,5 +272,150 @@ fn the_walk_descends_the_authored_instance_tree() {
     assert!(
         rest.iter().all(|v| v == first),
         "global draw is shared across every Leaf instance (m1.l1, m1.l2, m2.l1, m2.l2): {values:?}"
+    );
+}
+
+// ── T14 (DVG-17): (seed, index) reproducibility and replay ────────────────
+
+/// A resistive divider with a `require` and a mismatch `tol` on `r1`:
+/// nominal `V(out) = dc·1e3/(r1+1e3) = 0.5 V` (dc=1, r1=r=1e3), and
+/// `require head : V(out) <= hi` (hi=0.55) is violated whenever `r1`
+/// draws low enough to push `V(out)` above 0.55 — giving a fixture with
+/// both a passing nominal and reachable failing samples.
+const DIVIDER_TOL_PHDL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
+analog Vsrc { V(p, n) <- dc; }
+
+mod R(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1e3 tol gauss(sigma_rel = 0.3);
+}
+analog R { I(p, n) <+ V(p, n) / r; }
+
+mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.55; }
+analog Dut { I(p, n) <+ V(p, n) / 1e3; }
+constraint Dut { require head : V(p, n) <= hi; }
+
+mod Top() {
+    wire gnd : Electrical;
+    wire in  : Electrical;
+    wire out : Electrical;
+    v1   : Vsrc(.p = in,  .n = gnd);
+    r1   : R(.p = in,     .n = out);
+    dut1 : Dut(.p = out,  .n = gnd);
+}
+";
+
+/// `(seed, index)` fully determines a draw: two `SamplePlan`s collected
+/// from two INDEPENDENT parses of the same design (simulating "a
+/// different run/process" — no shared state beyond the design text)
+/// produce byte-identical draws for the same `(seed, index)`.
+#[test]
+fn seed_index_produce_byte_identical_draws_across_independent_constructions() {
+    let plan_a = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan a collects");
+    let plan_b = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan b collects");
+
+    let draws_a = plan_a.draws(123, 7);
+    let draws_b = plan_b.draws(123, 7);
+    assert_eq!(draws_a.len(), draws_b.len(), "same entry count");
+    for (a, b) in draws_a.iter().zip(&draws_b) {
+        assert_eq!(a.label, b.label);
+        assert_eq!(a.param, b.param);
+        assert_eq!(
+            a.value.to_bits(),
+            b.value.to_bits(),
+            "byte-identical draw for {}.{} from independent plan constructions",
+            a.label,
+            a.param
+        );
+    }
+}
+
+/// A named failing sample — found by scanning indices for one whose
+/// applied draws violate `head` — replays as an ordinary session (a
+/// freshly compiled `Session`, a freshly collected `SamplePlan`, the
+/// same `(seed, index)`) and reproduces the exact same failure: the
+/// same `requires_ok() == false`, the same `V(out)`, and the same
+/// margin value, bit for bit.
+#[test]
+fn a_named_failing_sample_replays_as_an_ordinary_session_and_reproduces_the_failure() {
+    let phdl_design = design(DIVIDER_TOL_PHDL);
+    let config = collect_config();
+    let seed = 99u64;
+
+    // Nominal sanity: the require is satisfied at the declared values.
+    let mut nominal_session = Session::compile(&phdl_design, "Top").expect("nominal compiles");
+    let nominal_op = nominal_session.op(&config, None).expect("nominal op solves");
+    assert!(nominal_op.requires_ok(), "nominal design satisfies `head`");
+
+    // Scan for a failing (seed, index) — deterministic for this seed.
+    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let mut found: Option<(usize, f64, f64)> = None;
+    for index in 0..200usize {
+        let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+        plan.apply(&mut session, seed, index).expect("draws apply");
+        let op = session.op(&config, None).expect("op solves");
+        if !op.requires_ok() {
+            let out_v = op.v("out").expect("v(out)");
+            let margin_v = op.margins().get("head").expect("head margin").scalar();
+            found = Some((index, out_v, margin_v));
+            break;
+        }
+    }
+    let (index, out_v, margin_v) =
+        found.expect("a failing sample exists for seed 99 within 200 draws");
+
+    // Replay: an independent session and an independently collected plan,
+    // driven by ONLY (seed, index) — no other shared state.
+    let mut replay = Session::compile(&phdl_design, "Top").expect("replay compiles");
+    let replay_plan =
+        SamplePlan::collect(&design(DIVIDER_TOL_PHDL), "Top").expect("replay plan collects");
+    replay_plan.apply(&mut replay, seed, index).expect("replay applies");
+    let replay_op = replay.op(&config, None).expect("replay op solves");
+
+    assert!(
+        !replay_op.requires_ok(),
+        "the replayed sample must reproduce the exact failure (seed={seed}, index={index})"
+    );
+    assert_eq!(
+        replay_op.v("out").expect("v(out)").to_bits(),
+        out_v.to_bits(),
+        "byte-identical V(out) on replay"
+    );
+    assert_eq!(
+        replay_op.margins().get("head").expect("head margin").scalar(),
+        margin_v,
+        "byte-identical margin value on replay"
+    );
+}
+
+/// After a sample is applied, `SamplePlan::reset` returns the session to
+/// its declared nominal values — a nominal analysis afterwards is
+/// byte-identical to a session that was never sampled (DVG-18 AC5, "no
+/// residue").
+#[test]
+fn a_nominal_analysis_after_sampling_returns_to_declared_values() {
+    let phdl_design = design(TWO_INSTANCE_PHDL);
+    let config = collect_config();
+
+    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let nominal_before = session.op(&config, None).expect("nominal op solves").v("out").expect("v(out)");
+
+    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    plan.apply(&mut session, 55, 2).expect("sample applies");
+    let sampled = session.op(&config, None).expect("sampled op solves").v("out").expect("v(out)");
+    assert_ne!(
+        sampled.to_bits(),
+        nominal_before.to_bits(),
+        "applying a sample must perturb the operating point"
+    );
+
+    plan.reset(&mut session).expect("reset applies nominal values");
+    let nominal_after = session.op(&config, None).expect("post-reset op solves").v("out").expect("v(out)");
+    assert_eq!(
+        nominal_after.to_bits(),
+        nominal_before.to_bits(),
+        "reset returns to the declared nominal — sampling leaves no residue"
     );
 }
