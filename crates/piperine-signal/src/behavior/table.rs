@@ -108,8 +108,7 @@ impl Table {
 
     /// The derivative: the segment slope inside the breakpoints, `0` in a
     /// clamp region (a flat extrapolation has no slope) — read from the
-    /// same [`segment`](Self::segment) lookup `value` uses, never
-    /// hand-derived.
+    /// same `segment` lookup `value` uses, never hand-derived.
     pub fn derivative(&self, x: f64) -> f64 {
         match self.segment(x) {
             Some(i) => self.slope(i),
