@@ -12,6 +12,7 @@
 //! T13) build on top of the catalog here (`kinds.rs`, T11) without
 //! changing this trait.
 
+pub mod gate;
 pub mod kinds;
 
 /// A streaming reduction: fed one accepted `(t, v)` per call, with the
