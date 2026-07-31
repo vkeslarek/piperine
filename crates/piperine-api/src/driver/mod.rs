@@ -29,6 +29,7 @@
 //!   driver's three-policy shape is complete (T16 AC1); running it fails
 //!   loud naming the gap rather than silently doing nothing.
 
+mod blackbox;
 mod center;
 mod optimize;
 

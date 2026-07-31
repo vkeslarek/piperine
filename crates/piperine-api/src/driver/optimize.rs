@@ -173,13 +173,19 @@ pub(super) fn run(
                 engines.insert(Engine::Gradient);
                 run_gradient_objective(session, spec, &mut current, config, &mut iterations)?;
             }
-            Err(e) => {
-                return Err(Error::Measurement(format!(
-                    "optimize: objective `{}` is not analytically differentiable ({e}) — a \
-                     derivative-free fallback is not composed in this delivery yet \
-                     (dv-gradients T18)",
-                    spec.objective
-                )));
+            Err(_) => {
+                // T18: the objective is not analytically differentiable —
+                // fall back to the black-box engine for the objective
+                // phase, composed with the gradient path that already ran
+                // (or would run) the feasibility phase.
+                super::blackbox::compose_objective(
+                    session,
+                    spec,
+                    &mut current,
+                    config,
+                    &mut iterations,
+                    &mut engines,
+                )?;
             }
         }
     }
