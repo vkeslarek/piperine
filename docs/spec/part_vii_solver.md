@@ -32,7 +32,7 @@ plugin device, and an external model are equivalent once they present the one
 - §14 Mixed-signal execution
 - §15 Convergence aids
 - §16 Validation and failure rules
-- §17 Sensitivity analysis
+- §17 Sensitivity analysis (§17.1 `.sens` finite difference, §17.2 the DC adjoint driver — dv-gradients)
 - §18 Periodic steady state
 - §19 Lifecycle contract — per-analysis hook chart
 
@@ -215,6 +215,7 @@ threshold, trace toggles) live on the separate driver-owned `Policy`.
 | `load_transient(state, transient_context, context)` | Time-domain analysis | Real MNA stamps for the implicit companion model at the current timestep. |
 | `load_ac(dc_point, ac_context, context)` | Small-signal AC/noise | Complex MNA stamps linearized about the DC operating point. |
 | `noise_current_psd(dc_point, ac_context)` | Noise | Current-noise sources as terminal pairs plus one-sided PSD values. |
+| `param_stamps(param_index, sink)` | DC adjoint sensitivity (dv-gradients, §17.2) | `∂F/∂param` pushed into the caller-owned `sink` as `Stamp::Rhs` entries — one call per requested parameter in the adjoint's inner loop, no allocation per call. |
 
 The DC and transient `state` is **bidirectional**: it is the analog solution
 history *and* the digital net snapshot being solved against. A mixed-signal
@@ -227,6 +228,21 @@ An element that does not participate in an analysis may return an empty stamp
 list only when the physical model genuinely has no contribution in that analysis.
 An unsupported construct must fail before this ABI is reached or must raise a loud
 element-construction/load error.
+
+**`param_stamps` and `HAS_SENSITIVITY = 1 << 16` (dv-gradients ABI-27).** A
+JIT-compiled device that carries a compiled `∂F/∂p` kernel (one function taking
+a parameter index, never one function per parameter — §17.2) declares
+`HAS_SENSITIVITY` and implements `param_stamps(param_index, sink)` by calling
+that kernel; a device without the bit — plugin or OSDI — inherits the trait's
+default no-op. `param_index` addresses the parameter positionally through
+`Introspect::list_params` (§3.4). An element that does not own the requested
+parameter, or that owns it but has no analytic kernel for it (a rebuild-class
+or discrete parameter never gets one — §17.2's admissibility rule), writes
+nothing and this is **not an error**: absence of the bit changes which engine
+the adjoint driver uses for that element (analytic vs. stamp perturbation,
+§17.2), never whether the request succeeds. The bit sits directly above
+`EMITS_VALIDATION = 1 << 15` in the same `ElementCapabilities` bitflags set
+(§3 preamble).
 
 ### 3.3 Analog ABI types
 
@@ -1224,6 +1240,17 @@ neither bound to a test nor marked.
 
 ## §17 Sensitivity analysis
 
+Two engines compute DC sensitivities today: §17.1's finite difference
+(`.sens`, the original and only oracle) and §17.2's analytic adjoint
+(dv-gradients) — one transpose solve serving every requested parameter
+instead of two re-solves per parameter. Both share **one** admissibility rule
+(§17.1 step 1, referenced rather than restated in §17.2): a parameter is
+differentiable only when it is `Real`-typed and its write does not invalidate
+the compiled structure (restamp-class); a rebuild-class or discrete parameter
+fails loud on either engine.
+
+### 17.1 Finite-difference sensitivity (`.sens`)
+
 DC sensitivity analysis (`.sens`) computes `∂(output)/∂(param)` at the
 operating point over the restamp path (§10.5).
 
@@ -1244,6 +1271,82 @@ The algorithm is:
 
 The result is keyed by `(output label, "element.param")`. Sensitivities are
 defined only for restampable parameters; every addressing failure is loud.
+
+### 17.2 The DC adjoint sensitivity driver (dv-gradients)
+
+`.sens` costs two DC re-solves per requested parameter — fifty sizing knobs
+cost a hundred simulations. The adjoint driver computes the gradient of a
+**single scalar output** with respect to **every** requested parameter from
+**one** extra linear solve, by exploiting the reverse-mode identity
+`∂f/∂p = −λᵀ(∂F/∂p)` where `λ` solves the transposed system `Jᵀλ = ∂f/∂x` at
+the converged DC operating point.
+
+**A sibling of the noise adjoint, not a reuse of it.** §12's noise analysis
+already solves an adjoint system — but it is **complex-valued and
+per-frequency** (a fresh transpose solve at every point of the AC sweep),
+built to combine with `noise_current_psd` PSD sources. The DC adjoint here is
+**real-valued and solved once** at a single converged operating point, built
+to combine with `param_stamps` (§3.2) instead. The two share an idea (transpose
+the linearized system, apply an excitation, read off a transfer quantity) but
+not code, not a type, and not a solve count — implementing one by literally
+generalizing the other was tried in design and rejected (design §C2) because
+the shapes diverge too far to share a code path without contorting both. Stating
+this explicitly here is deliberate: "reuse the noise adjoint" is the natural
+optimistic first guess, and it is wrong.
+
+The algorithm is:
+
+1. Solve the DC operating point (§9); the request names one differentiable
+   scalar output `f` (a solved net, or a `dv-core` margin whose expression
+   reduces to a `V(a)`/`V(a, b)` probe) and a set of `(label, param)` pairs.
+   Every named parameter is checked against §17's shared admissibility rule
+   before any solve happens — no partial work on a bad request, same
+   discipline as §17.1 step 1.
+2. Build `∂f/∂x` — the output's derivative with respect to every solved
+   unknown (a unit entry at the output's own row/rows for a `V()` probe).
+3. **One** real transpose solve: `Jᵀλ = ∂f/∂x`, reusing the DC Jacobian's
+   already-computed symbolic factorization (no re-factorization). A
+   singular/ill-conditioned system fails loud through the same `SolverDomain`
+   family the forward solve uses — never a garbage gradient.
+4. For each requested parameter, ask every element for `param_stamps` at the
+   converged operating point (§3.2) and accumulate
+   `∂f/∂p = −λᵀ(∂F/∂p)`. An element that declares `HAS_SENSITIVITY`
+   contributes analytic stamps; an element that does not falls back to
+   **stamp perturbation** — see below.
+
+**Stamp-perturbation fallback and its reporting contract.** An element
+without `HAS_SENSITIVITY` (a plugin, an OSDI-wrapped model) still
+participates: the driver differences its `load_dc` stamps at **two** nearby
+parameter values, both evaluated at the **same, already-converged** operating
+point — no re-solve, so the adjoint's one-extra-solve economy survives
+regardless of how many elements in the circuit take the fallback path. The
+result **always names which elements used it**, by instance label — a
+fallback element changes accuracy for that element's contribution, never
+silently, and never changes the linear-solve count (still exactly one
+transpose solve for the whole circuit, analytic and fallback elements alike).
+
+**Pointwise vs. reduced margins (`dv-core` gradients).** A **pointwise**
+margin's gradient is taken at the located argmin (design-verification D1 —
+the single DC operating point, `argmin = 0.0`, and the result states this
+rather than implying a sweep exists). A **reduced** margin's gradient is
+delivered only when the reduction itself is differentiable through the
+implicit function theorem (a unity-gain frequency differentiates through
+`|gain(f)| = 1`); otherwise it fails loud rather than guessing. An
+event-detected metric (settling time, overshoot instant) has no adjoint
+today and fails loud rather than returning a plausible wrong number.
+
+**The AC-gradient gap (D6) — a stated limitation, not an omission.** This
+driver is DC-only; AC-defined metrics (gain, unity-gain frequency, phase
+margin) have **no** adjoint gradient in this delivery, and a request for one
+fails loud naming the gap rather than silently substituting a finite
+difference. The reason is deliberate, not a scheduling accident: `.sens`
+(§17.1) is a **verifiable finite-difference oracle** for DC sensitivities —
+every DC adjoint result is cross-checked against it. AC has no equivalent
+oracle in the tree today. An unverifiable gradient is worth less than a
+slower, verifiable one, and a plausible-but-wrong gradient is exactly what
+this project's fail-loud rule exists to prevent (CLAUDE.md). A host that
+wants an AC-metric gradient anyway may finite-difference it explicitly — the
+driver simply never does that substitution *for* the caller, silently.
 
 ---
 
