@@ -459,18 +459,18 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-22 | Python exception mid-solve → typed error with time, clean stop | Pending |
 | DVT-23 | `set_param` mid-transient: restamp fine, rebuild loud | Done (T14, `fa4f78d`) |
 | DVT-24 | Level-1 convergence veto surfaced as a limiting report | Done (T16, `962c1a7`) |
-| DVT-25 | Coroutine resumed exactly once per accepted breakpoint, never on rejection | Pending |
-| DVT-26 | One `wait`, three wake sources, mapped to existing `EventKind`s | Pending |
-| DVT-27 | Digital edge wait resumes only after settling | Pending |
-| DVT-28 | Multiple sequencers union breakpoints; authored POM order at a tie | Pending |
-| DVT-29 | `expect`/`warn` into the findings channel, posture-honoring | Pending |
+| DVT-25 | Coroutine resumed exactly once per accepted breakpoint, never on rejection | Done (T19, `4aa4ef2`) |
+| DVT-26 | One `wait`, three wake sources, mapped to existing `EventKind`s | Done (T19, T23, T24, `4aa4ef2`, `81147be`, `8ff01af`) |
+| DVT-27 | Digital edge wait resumes only after settling | Done (T23, `81147be`) |
+| DVT-28 | Multiple sequencers union breakpoints; authored POM order at a tie | Done (T26, `cf1c791`) |
+| DVT-29 | `expect`/`warn` into the findings channel, posture-honoring | Done (T22, `880ee8c`) |
 | DVT-30 | Levels compose in one class | Done (T18, `6b4c04b`) |
-| DVT-31 | Zero host crossings inside Newton, counted | Pending |
-| DVT-32 | `install` is install-relative; replacement registers its edge | Pending |
-| DVT-33 | Declared impedance; explicit ideal force | Pending |
-| DVT-34 | Internal-net drive allowed and always reported (D14) | Pending |
-| DVT-35 | Digital drive via `EventSink`, never the MNA | Pending |
-| DVT-36 | AC loud; DC runs no coroutine and uses per-kind `Wave` DC values | Pending |
+| DVT-31 | Zero host crossings inside Newton, counted | Done (T21, `a6a2319`, `abe5049`) |
+| DVT-32 | `install` is install-relative; replacement registers its edge | Done (T20, `b04f58b`) |
+| DVT-33 | Declared impedance; explicit ideal force | Done (T21, `a6a2319`) |
+| DVT-34 | Internal-net drive allowed and always reported (D14) | Done (T21, `a6a2319`) |
+| DVT-35 | Digital drive via `EventSink`, never the MNA | Done (T21, `a6a2319`) |
+| DVT-36 | AC loud; DC runs no coroutine and uses per-kind `Wave` DC values | Done (T25, `3f5b26c`) |
 | DVT-37 | Capability parity proven on four twinned devices | Pending |
 | DVT-38 | Python/Rust surface parity enforced by a guard | Pending |
 | DVT-39 | Monitors as ordinary `digital` modules firing at settled events | Pending |
@@ -478,7 +478,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-41 | `cover=on\|off` own posture (D9) | Pending |
 | DVT-42 | Cross bin cap loud at elaboration, raisable (D10) | Pending |
 | DVT-43 | Host merge across runs; empty-bin identification | Pending |
-| DVT-44 | cross-cutting: the fail-loud catalog (Edge Cases) | Pending |
+| DVT-44 | cross-cutting: the fail-loud catalog (Edge Cases) | Done (T26, `cf1c791`) |
 | DVT-45 | `docs/spec/` updated: Part VII, Part VIII + appendix C, Part I/II + appendix B (`cover`), appendix A (worked example) | Pending |
 
 **Coverage:** 45 total, **45 mapped** to T1–T37 (`tasks.md` Check 4).

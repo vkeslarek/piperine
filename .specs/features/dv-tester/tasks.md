@@ -22,7 +22,7 @@ level taxonomy, the four level-1 families, the cost model, and the decision log
 **Follow-on**: `.specs/features/codegen-simplification/` — this feature
 **extracts** into `piperine-signal`; that one **delegates** codegen to it. The
 cross-check fixtures of T6 are this feature's obligation to that one.
-**Status**: Phase 3 complete — Phase 4 next
+**Status**: Phase 4 complete — Phase 5 next
 
 ## Progress log
 
@@ -31,6 +31,7 @@ cross-check fixtures of T6 are this feature's obligation to that one.
 | 1 | Phase 1 | T1–T6 | T1 `2a114e8`, T2 `1447cde`, T3 `35a13ba`, T4 `afda1af`, T5 `4ed9569`, T6 `996045e` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings) |
 | 2 | Phase 2 | T7–T13 | T7 `52b131c`, T8 `be11a05`, T9 `dda2c96`, T10 `419aa55`, T11 `564f88f`, T12 `e6c15d4`, T13 `3bbdc6c` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings) |
 | 3 | Phase 3 | T14–T18 | T14 `fa4f78d`, T15 `b603132`, T16 `962c1a7`, T17 `b93cbc5`, T18 `6b4c04b` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). SPEC_DEVIATION: `HostAdapter<T>` local newtype anchors the blanket `Element` impl (Rust orphan rule); `piperine-signal`'s `Wave`/`Hysteresis`/`BehaviorKind` gained `Send + Sync` (Rc→Arc, Cell→AtomicBool, a supertrait) so a `Behavior`/`Wave`-holding `HostElement` can satisfy `Element`'s unconditional `Send + Sync` bound — pure marker-trait/representation changes, no logic change, all of `piperine-signal`'s own tests unchanged and green. |
+| 4 | Phase 4 | T19–T26 | T19 `4aa4ef2`, T20 `b04f58b`, T21 `a6a2319`/`abe5049`, T22 `880ee8c`, T23 `81147be`, T24 `8ff01af`, T25 `3f5b26c`, T26 `cf1c791` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). `piperine-api/src/sequencer/` split into `driver.rs`/`control.rs`/`findings.rs`/`install.rs`/`drive.rs`/`wait.rs`/`crossing.rs`/`conflicts.rs` (mod.rs stays declarations-only, MD-34). SPEC_DEVIATION: `HostElement` gained three narrow additive hooks beyond T14's original mirror — `drain_digital_drives` (T21), `validation_reports` (T22), `on_digital_settled` (T23) — each independently defaulted, extending the documented "mirror grows when a task gives a method bearing" rule rather than widening `accept_timestep`'s signature. T23 is the one task touching `piperine-solver`: `Element::on_digital_settled`, a defaulted no-op dispatched from `CircuitInstance::accept_and_run_digital` strictly after digital settle, not a new `EventKind` variant (mechanically verified). T25's AC refusal (D13) needed a small `Session`/`HostDeviceRegistry` extension (`register_sequencer`/`host_registry`) rather than a solver capability bit, since neither downcasting (MD-01) nor a second solver touch was available. |
 
 ---
 
@@ -560,13 +561,13 @@ accept/reject decision (D11, `design.md` §C4). A sequencer resumed during a ste
 later rejected breaks the model with no clean repair.
 
 **Done when**:
-- [ ] a `Sequencer` is a `HostElement` whose `next_breakpoints` comes from its pending wake
-- [ ] the host is resumed **exactly once** per accepted breakpoint
-- [ ] a rejected step containing a sequencer breakpoint resumes **nothing** — proven by a recording sequencer
-- [ ] `advance(0)` is legal but bounded: a limited number of zero-advance resumes per instant, then loud
-- [ ] a coroutine that never yields is loud, not an infinite hang
-- [ ] `advance` past the stop time clamps and tells the sequencer the run ended
-- [ ] `SimHooks` is **not** involved — asserted by its absence from the path
+- [x] a `Sequencer` is a `HostElement` whose `next_breakpoints` comes from its pending wake
+- [x] the host is resumed **exactly once** per accepted breakpoint
+- [x] a rejected step containing a sequencer breakpoint resumes **nothing** — proven by a recording sequencer
+- [x] `advance(0)` is legal but bounded: a limited number of zero-advance resumes per instant, then loud
+- [x] a coroutine that never yields is loud, not an infinite hang
+- [x] `advance` past the stop time clamps and tells the sequencer the run ended
+- [x] `SimHooks` is **not** involved — asserted by its absence from the path
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add the sequencer coroutine driver with time wakes`
@@ -587,10 +588,10 @@ a result impossible to explain. Both rules are counter-intuitive enough to need
 a test each.
 
 **Done when**:
-- [ ] a wave installed at `t_i` has its time origin at `t_i` — a ramp installed mid-run ramps over `[t_i, t_i + dur]`, asserted numerically
-- [ ] replacing an active wave takes effect **immediately** and registers its discontinuity as an `Exact` breakpoint
-- [ ] the replacement is **not** re-anchored from the current value — `const(100e-3)` over `const(10e-3)` steps, because that is what was asked for
-- [ ] continuity is expressible explicitly, and the documented idiom is shown in a test
+- [x] a wave installed at `t_i` has its time origin at `t_i` — a ramp installed mid-run ramps over `[t_i, t_i + dur]`, asserted numerically
+- [x] replacing an active wave takes effect **immediately** and registers its discontinuity as an `Exact` breakpoint
+- [x] the replacement is **not** re-anchored from the current value — `const(100e-3)` over `const(10e-3)` steps, because that is what was asked for
+- [x] continuity is expressible explicitly, and the documented idiom is shown in a test
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): define install-relative wave semantics`
@@ -609,11 +610,11 @@ internal-net forcing that always reports itself.
 always reported**, so a passing test that forces a node is visibly doing so.
 
 **Done when**:
-- [ ] `drive_voltage`/`drive_current` require a declared impedance; an ideal force is available but spelled explicitly and never defaulted
-- [ ] a digital drive goes through the `EventSink` and **never** touches the MNA — asserted
-- [ ] driving an internal net is allowed and **appears in the run's findings**
-- [ ] host calls between breakpoints are **counted and asserted zero** — the invariant the whole design exists to protect
-- [ ] a ramp into an RC follows the analytic segment response
+- [x] `drive_voltage`/`drive_current` require a declared impedance; an ideal force is available but spelled explicitly and never defaulted
+- [x] a digital drive goes through the `EventSink` and **never** touches the MNA — asserted
+- [x] driving an internal net is allowed and **appears in the run's findings**
+- [x] host calls between breakpoints are **counted and asserted zero** — the invariant the whole design exists to protect
+- [x] a ramp into an RC follows the analytic segment response
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add analog and digital drive with declared impedance`
@@ -629,12 +630,12 @@ always reported**, so a passing test that forces a node is visibly doing so.
 **Requirement**: DVT-29
 
 **Done when**:
-- [ ] `expect(cond, msg)` failing emits an `Error` finding with **time and instance provenance** — not a print
-- [ ] `warn(...)` emits a `Warning` that never aborts
-- [ ] posture is honored: `strict` aborts on the first failure, `collect` records all of them
-- [ ] an `expect` against a `Measure` compares against the **error bound**, not the point estimate (`ideal.md` §4.3)
-- [ ] a coroutine raising an exception surfaces as a test failure carrying the simulation time, with the analysis stopped cleanly
-- [ ] the interaction with `checks=off` is defined explicitly rather than inherited by accident
+- [x] `expect(cond, msg)` failing emits an `Error` finding with **time and instance provenance** — not a print
+- [x] `warn(...)` emits a `Warning` that never aborts
+- [x] posture is honored: `strict` aborts on the first failure, `collect` records all of them
+- [x] an `expect` against a `Measure` compares against the **error bound**, not the point estimate (`ideal.md` §4.3)
+- [x] a coroutine raising an exception surfaces as a test failure carrying the simulation time, with the analysis stopped cleanly
+- [x] the interaction with `checks=off` is defined explicitly rather than inherited by accident
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): report sequencer findings through the dv-core channel`
@@ -656,11 +657,11 @@ move when an unrelated edit reorders the graph. Not a new event kind and not a
 new scheduling concept: a registration point plus a post-settle dispatch.
 
 **Done when**:
-- [ ] a waiter registers on a digital net at runtime and is resumed on the matching edge
-- [ ] resumption happens **only after settling** — proven by a fixture whose mid-delta-cycle value differs from its settled one
-- [ ] the mechanism is a subscriber list, not a new `EventKind` — asserted by the absence of a new variant
-- [ ] a rejected step does not resume a waiter (D11 holds for edge waits too)
-- [ ] the seam's other plausible consumers are named in its `//!` header (`design.md` §C5), so a future reader knows it is not tester-only
+- [x] a waiter registers on a digital net at runtime and is resumed on the matching edge
+- [x] resumption happens **only after settling** — proven by a fixture whose mid-delta-cycle value differs from its settled one
+- [x] the mechanism is a subscriber list, not a new `EventKind` — asserted by the absence of a new variant
+- [x] a rejected step does not resume a waiter (D11 holds for edge waits too)
+- [x] the seam's other plausible consumers are named in its `//!` header (`design.md` §C5), so a future reader knows it is not tester-only
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(solver): add a post-settle digital subscriber for edge waits`
@@ -676,10 +677,10 @@ new scheduling concept: a registration point plus a post-settle dispatch.
 **Requirement**: DVT-26 (analog source)
 
 **Done when**:
-- [ ] `wait(above(net, level))` resumes at the predicted crossing, within the published bound
-- [ ] the reported wake instant carries its error bound — the sequencer never claims an exactness it does not have
-- [ ] all three wake forms compose in one coroutine, and the mapping to `Digital`/`Breakpoint`/`Crossing` is asserted
-- [ ] a crossing that never occurs before the stop time ends the run cleanly, telling the sequencer
+- [x] `wait(above(net, level))` resumes at the predicted crossing, within the published bound
+- [x] the reported wake instant carries its error bound — the sequencer never claims an exactness it does not have
+- [x] all three wake forms compose in one coroutine, and the mapping to `Digital`/`Breakpoint`/`Crossing` is asserted
+- [x] a crossing that never occurs before the stop time ends the run cleanly, telling the sequencer
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): wait on analog crossings with a reported bound`
@@ -698,10 +699,10 @@ transient.
 (`ideal.md` §12.10).
 
 **Done when**:
-- [ ] an **AC** analysis with a sequencer present fails loud naming the gap (D13) — never silently freezes it
-- [ ] at **DC/OP** the coroutine does not run; `run()` begins with the transient
-- [ ] each installed `Wave` contributes its declared DC value at the operating point, per kind
-- [ ] a soft-start example's DC bias matches the documented convention, asserted numerically
+- [x] an **AC** analysis with a sequencer present fails loud naming the gap (D13) — never silently freezes it
+- [x] at **DC/OP** the coroutine does not run; `run()` begins with the transient
+- [x] each installed `Wave` contributes its declared DC value at the operating point, per kind
+- [x] a soft-start example's DC bias matches the documented convention, asserted numerically
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): define DC behavior and refuse AC for sequencers`
@@ -717,10 +718,10 @@ transient.
 **Requirement**: DVT-28, DVT-44
 
 **Done when**:
-- [ ] several sequencers union their breakpoints and are each resumed independently at their own instants
-- [ ] at a shared instant they act in **authored POM instantiation order** — deterministic and visible to the designer, asserted
-- [ ] two devices driving the **same net** is a **loud conflict** regardless of order — never last-writer-wins
-- [ ] the feature's fail-loud catalog is complete and each entry has a test: unknown net (listing candidates), driver conflict, non-yielding coroutine, rebuild-class `set_param`, unfed measure, AC with a sequencer
+- [x] several sequencers union their breakpoints and are each resumed independently at their own instants
+- [x] at a shared instant they act in **authored POM instantiation order** — deterministic and visible to the designer, asserted
+- [x] two devices driving the **same net** is a **loud conflict** regardless of order — never last-writer-wins
+- [x] the feature's fail-loud catalog is complete and each entry has a test: unknown net (listing candidates), driver conflict, non-yielding coroutine, rebuild-class `set_param`, unfed measure, AC with a sequencer
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `feat(api): order host devices and refuse drive conflicts`
