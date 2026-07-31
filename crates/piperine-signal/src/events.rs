@@ -112,6 +112,105 @@ impl EventDetector {
     }
 }
 
+// ── Crossing tier 2: predicted + bounded (T10, DVT-10) ─────────────────────
+//
+// The detector above is **tier 1**: it fires reactively at the first
+// accepted point after a sign change, up to one full timestep late, with
+// no interpolation and unreported error — today's PHDL `@cross` (audited
+// 2026-07-31, `ideal.md` §3.4). What follows is **tier 2**: extrapolate
+// `t_cross` from the bracketing samples, publish an error bound, and (via
+// [`refine_crossing`]) iterate the bracket narrower using the same
+// `bound_step_hint`/`$bound_step` seam PHDL devices already have — no
+// solver change, because both seams already exist end to end. This module
+// needs no `piperine-solver` dependency: the crate never calls the solver,
+// it only computes the instant and the bound a consumer (the host-device
+// adapter, later) hands to the step-hint path.
+//
+// **Tier 3** (exact) is out of scope here: it needs `EventKind::Crossing`
+// promoted from `Advisory` to `Exact`, plus reject-and-retry-at-`t*` — a
+// real solver feature with its own spec. Tier 2 converges to the caller's
+// step floor and reports that bound honestly; it never claims machine
+// precision it did not pay for.
+
+/// A predicted crossing instant with its error bound — `t_cross` is inside
+/// `[t0, t1]`, the bracket that produced it, and `error_bound` is the width
+/// of that bracket (never smaller than what the caller actually resolved).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Prediction {
+    /// The interpolated (secant) crossing instant.
+    pub t_cross: f64,
+    /// How far `t_cross` could still be off — the bracket width. Shrinks
+    /// as the bracket narrows; never claims better than it has.
+    pub error_bound: f64,
+}
+
+impl Prediction {
+    /// A next-step cap that walks the integrator toward `t_cross` — the
+    /// value a consumer hands to `bound_step_hint`/`$bound_step` (`ideal.md`
+    /// §3.9 F): the distance from `from` to the predicted instant, or the
+    /// full step if the prediction is already behind `from`.
+    pub fn next_step_bound(&self, from: f64) -> f64 {
+        (self.t_cross - from).max(0.0)
+    }
+}
+
+/// One secant prediction from a bracketing pair of accepted samples whose
+/// sign change matches `dir` (`Rising`: `v0 <= 0 < v1`; `Falling`: `v0 >= 0
+/// > v1`; `Either`: any sign change). `None` when `(t0, v0)`–`(t1, v1)`
+/// does not actually bracket a crossing in that direction.
+pub fn predict_crossing(dir: CrossDir, t0: f64, v0: f64, t1: f64, v1: f64) -> Option<Prediction> {
+    let brackets = match dir {
+        CrossDir::Rising => v0 <= 0.0 && v1 > 0.0,
+        CrossDir::Falling => v0 >= 0.0 && v1 < 0.0,
+        CrossDir::Either => (v0 <= 0.0 && v1 > 0.0) || (v0 >= 0.0 && v1 < 0.0),
+    };
+    if !brackets || v1 == v0 {
+        return None;
+    }
+    let t_cross = t0 + (t1 - t0) * (-v0) / (v1 - v0);
+    Some(Prediction { t_cross, error_bound: (t1 - t0).abs() })
+}
+
+/// Iteratively narrows a bracketing pair toward the crossing instant by
+/// bisection, probing `sample` at each midpoint and re-bracketing — the
+/// pure-math shape of what a real driver does by capping the next step via
+/// `bound_step_hint` and re-detecting. Stops once the bracket width reaches
+/// `step_floor` (or `max_iters` is spent) and **reports** rather than
+/// stalling: the returned [`Prediction`]'s `error_bound` is the final
+/// bracket width, floored at `step_floor` — it never claims a precision the
+/// loop did not actually reach.
+pub fn refine_crossing(
+    mut t0: f64,
+    mut v0: f64,
+    mut t1: f64,
+    mut v1: f64,
+    step_floor: f64,
+    max_iters: usize,
+    mut sample: impl FnMut(f64) -> f64,
+) -> Prediction {
+    for _ in 0..max_iters {
+        if (t1 - t0) <= step_floor {
+            break;
+        }
+        let t_mid = 0.5 * (t0 + t1);
+        let v_mid = sample(t_mid);
+        // Re-bracket: keep whichever half still straddles zero (same
+        // convention as CrossDir::Either — bisection needs only "opposite
+        // signs", the caller already established which direction matters
+        // by handing in a bracket of that direction to begin with).
+        if (v0 <= 0.0) == (v_mid <= 0.0) {
+            t0 = t_mid;
+            v0 = v_mid;
+        } else {
+            t1 = t_mid;
+            v1 = v_mid;
+        }
+    }
+    let width = (t1 - t0).max(step_floor);
+    let t_cross = if v1 != v0 { t0 + (t1 - t0) * (-v0) / (v1 - v0) } else { 0.5 * (t0 + t1) };
+    Prediction { t_cross, error_bound: width }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,5 +307,68 @@ mod tests {
         let mut out = Vec::new();
         d.next_breakpoints(0.0, 0.0, 10.0, &mut out);
         assert!(out.is_empty());
+    }
+
+    // ---- tier 2: predicted + bounded ----
+
+    #[test]
+    fn predict_crossing_interpolates_a_linear_bracket_exactly() {
+        // v(t) = t - 0.5, bracketed by [0, 1]: the secant is exact for a
+        // linear function.
+        let p = predict_crossing(CrossDir::Rising, 0.0, -0.5, 1.0, 0.5).unwrap();
+        assert!((p.t_cross - 0.5).abs() < 1e-15);
+        assert_eq!(p.error_bound, 1.0, "bracket width, unrefined");
+    }
+
+    #[test]
+    fn predict_crossing_rejects_a_non_bracketing_pair() {
+        assert!(predict_crossing(CrossDir::Rising, 0.0, 0.5, 1.0, 1.0).is_none(), "no sign change");
+        assert!(predict_crossing(CrossDir::Falling, 0.0, -0.5, 1.0, 0.5).is_none(), "wrong direction");
+    }
+
+    #[test]
+    fn next_step_bound_walks_toward_the_prediction() {
+        let p = predict_crossing(CrossDir::Rising, 0.0, -1.0, 1.0, 1.0).unwrap();
+        assert_eq!(p.t_cross, 0.5);
+        assert_eq!(p.next_step_bound(0.2), 0.3, "distance from `from` to t_cross");
+        assert_eq!(p.next_step_bound(0.9), 0.0, "already past the prediction: no further cap");
+    }
+
+    #[test]
+    fn refine_crossing_converges_on_an_analytically_known_instant_and_the_error_shrinks_toward_the_floor() {
+        // v(t) = t - 0.37, crossing exactly at t = 0.37 (analytically
+        // known). Coarser floor first, then finer — the published error
+        // must shrink as the floor drops, per DVT-10.
+        let sample = |t: f64| t - 0.37;
+        let coarse = refine_crossing(0.0, sample(0.0), 1.0, sample(1.0), 1e-2, 100, sample);
+        let fine = refine_crossing(0.0, sample(0.0), 1.0, sample(1.0), 1e-8, 100, sample);
+
+        assert!((coarse.t_cross - 0.37).abs() <= coarse.error_bound + 1e-12);
+        assert!((fine.t_cross - 0.37).abs() <= fine.error_bound + 1e-12);
+        assert!(fine.error_bound < coarse.error_bound, "a smaller step floor yields a tighter published bound");
+        assert!((fine.t_cross - 0.37).abs() < 1e-6, "converges close to the true instant");
+    }
+
+    #[test]
+    fn refine_crossing_handles_a_nonlinear_analytically_known_crossing() {
+        // v(t) = sin(t - 0.5), crossing exactly at t = 0.5. Bisection is
+        // curvature-agnostic, unlike a single secant guess.
+        let sample = |t: f64| (t - 0.5).sin();
+        let p = refine_crossing(0.0, sample(0.0), 1.0, sample(1.0), 1e-9, 200, sample);
+        assert!((p.t_cross - 0.5).abs() < 1e-6);
+        assert!((p.t_cross - 0.5).abs() <= p.error_bound + 1e-6);
+    }
+
+    #[test]
+    fn refine_crossing_terminates_at_the_step_floor_and_reports_rather_than_stalling() {
+        let sample = |t: f64| t - 0.37;
+        let step_floor = 1e-3;
+        let p = refine_crossing(0.0, sample(0.0), 1.0, sample(1.0), step_floor, 1000, sample);
+        // Must stop (not loop until max_iters chews arbitrary precision)
+        // once the bracket reaches the floor, and the reported bound
+        // reflects exactly that — never smaller than what was actually
+        // resolved.
+        assert!(p.error_bound >= step_floor - 1e-15);
+        assert!(p.error_bound < 1.0, "actually narrowed from the initial bracket");
     }
 }
