@@ -2,4 +2,5 @@
 //! running reductions. It never stamps, never sees a matrix, never sees an
 //! `Element`, and depends on no other crate in the tree.
 
+pub mod events;
 pub mod ops;
