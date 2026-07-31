@@ -69,7 +69,7 @@ impl<T: HostElement> AnalogDevice for HostAdapter<T> {
     fn load_dc(&mut self, state: &DcAnalysisState<'_>, _context: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         let history = state.history();
         let ctx = Ctx::new(history, 0.0, 0.0);
-        let mut sink = StampSink::new();
+        let mut sink = StampSink::new(history.size());
         HostElement::load_dc(&mut self.0, &ctx, &mut sink);
         sink.into_stamps()
     }
@@ -82,7 +82,7 @@ impl<T: HostElement> AnalogDevice for HostAdapter<T> {
     ) -> Vec<Stamp<AnalogReference, f64>> {
         let history = states.history();
         let ctx = Ctx::new(history, tran_ctx.time, tran_ctx.h);
-        let mut sink = StampSink::new();
+        let mut sink = StampSink::new(history.size());
         HostElement::load_transient(&mut self.0, &ctx, &mut sink);
         sink.into_stamps()
     }

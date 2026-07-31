@@ -20,4 +20,4 @@ pub mod stamp;
 
 pub use adapter::HostAdapter;
 pub use host_element::HostElement;
-pub use stamp::{Ctx, StampSink, StateView};
+pub use stamp::{Ctx, StampError, StampSink, StateView};

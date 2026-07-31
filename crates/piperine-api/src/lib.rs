@@ -36,7 +36,7 @@ pub use driver::{
     CenterResult, CenterSpec, Driver, DriverOutcome, Engine, HighSigmaEstimator, HighSigmaResult,
     HighSigmaSpec, OptimizeResult, OptimizeSpec, Policy, SigmaScheme,
 };
-pub use device::{Ctx, HostAdapter, HostElement, StampSink, StateView};
+pub use device::{Ctx, HostAdapter, HostElement, StampError, StampSink, StateView};
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
 pub use gradient::{
