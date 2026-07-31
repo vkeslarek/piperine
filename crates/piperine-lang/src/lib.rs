@@ -83,6 +83,40 @@ pub fn parse_and_elaborate_seeded(
         .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
 }
 
+/// Register the `@device`/`@port` schemas (`headers/device_port.phdl`) into
+/// an elaboration context — the plugin system's own attribute schemas
+/// (declared-language-surface DLS-21), needed by any `@device`-declared
+/// module regardless of which binding mode (plugin or host, dv-tester T17)
+/// resolves it at circuit-build time. `piperine_plugin::PluginHost::seed_schemas`
+/// calls the equivalent registration gated on a loaded plugin; this is the
+/// same declarations, callable directly by a caller (`piperine-api`'s host
+/// binding path) that has no plugin host at all.
+pub fn seed_device_port_schemas(ctx: &mut elab::registry::ElabContext) {
+    if let Ok(source) = parse::parse_str(include_str!("../headers/device_port.phdl")) {
+        for item in &source.items {
+            if let parse::ast::Item::ExternDecl(parse::ast::ExternDecl::Attribute {
+                span,
+                name,
+                fields,
+                doc,
+            }) = item
+            {
+                let attr_fields = fields
+                    .iter()
+                    .map(|f| elab::registry::AttrField {
+                        name: f.name.clone(),
+                        ty: f.ty.name.clone(),
+                        required: !f.ty.optional,
+                        default: None,
+                        decl_span: f.span,
+                    })
+                    .collect();
+                ctx.schemas.register_declared(name, attr_fields, *span, doc.clone());
+            }
+        }
+    }
+}
+
 /// Like [`parse_and_elaborate`], but also returns a [`ResolutionIndex`]
 /// built over the resulting `Design` (LSP-03/05) — see
 /// [`parse::SourceFile::elaborate_with_index`].

@@ -16,13 +16,18 @@
 //! - [`level1`] (T16) — turns a `piperine-signal` `Wave`/`Behavior` into
 //!   native stamps and feeds a `Measure` from accepted points, surfacing
 //!   the limiter's convergence veto alongside them.
+//! - [`registry`] (T17) — the second `@device` binding mode: a host
+//!   registration resolved at circuit-build time, tried alongside (never
+//!   instead of) the existing plugin binding.
 
 pub mod adapter;
 pub mod host_element;
 pub mod level1;
+pub mod registry;
 pub mod stamp;
 
 pub use adapter::HostAdapter;
 pub use host_element::HostElement;
 pub use level1::{limiting_report, BehaviorStamp, MeasureFeed, WaveStamp};
+pub use registry::{HostDeviceRegistry, HostDeviceSpec};
 pub use stamp::{Ctx, StampError, StampSink, StateView};
