@@ -13,6 +13,7 @@
 //! changing this trait.
 
 pub mod gate;
+pub mod handle;
 pub mod kinds;
 
 /// A streaming reduction: fed one accepted `(t, v)` per call, with the
