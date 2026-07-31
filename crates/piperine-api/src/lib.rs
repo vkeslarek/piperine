@@ -22,6 +22,7 @@ pub mod model;
 pub mod prelude;
 pub mod reduced;
 pub mod results;
+pub mod sampling;
 pub mod session;
 pub mod units;
 pub mod waveform;
@@ -43,6 +44,7 @@ pub use results::{
     DistoResult, InstanceView, NetRef, NetSelector, OpResult, PssResult, PzResult, SParamResult, SensResult,
     TfResult,
 };
+pub use sampling::{SampleDraw, SampleEntry, SamplePlan, SampleScope};
 pub use session::{Grid, Nested, Scale, Session, SessionBuilder, SolverConfig, Sweep, SweepPoint};
 pub use units::{Freq, Time};
 pub use waveform::{AcTrace, ComplexWaveform, CrossDirection, NoiseTrace, Trace, Waveform};
