@@ -131,10 +131,17 @@ impl<T: HostElement> Element for HostAdapter<T> {
         state: &CircularArrayBuffer2<f64>,
         t: f64,
         _nets: &[LogicValue],
-        _sink: &mut dyn EventSink,
+        sink: &mut dyn EventSink,
     ) {
         let view = StateView::new(state);
-        HostElement::accept_timestep(&mut self.0, &view, t)
+        HostElement::accept_timestep(&mut self.0, &view, t);
+        // T21/DVT-33: a digital drive queued during that accept (e.g. a
+        // sequencer's `t.drive(net, value)`) is forwarded to the real
+        // scheduler here — the one place `HostElement`'s narrow digital
+        // hook meets the raw `EventSink` ABI.
+        for (net, value, delay) in HostElement::drain_digital_drives(&mut self.0) {
+            sink.emit(net, value, delay);
+        }
     }
 
     fn checkpoint_state(&self) -> Option<ElementCheckpoint> {

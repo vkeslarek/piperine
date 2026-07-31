@@ -24,12 +24,51 @@
 //! entirely through `HostElement`/`Element`, not the session lifecycle
 //! hooks `Session` wires around a build/solve.
 
+pub mod drive;
+pub mod findings;
 pub mod install;
 
-use piperine_solver::abi::{ElementCapabilities, LimitingReport};
+use piperine_solver::abi::{DigitalNet, ElementCapabilities, LimitingReport, LogicValue};
 
 use crate::device::host_element::HostElement;
 use crate::device::stamp::StateView;
+
+pub use findings::Findings;
+
+/// The mutable handle a [`SequencerProgram`] drives side effects through —
+/// the Rust mirror of `t` in `ideal.md`'s `def run(self, t):` examples,
+/// minus the drive/wait verbs themselves (those are free functions in
+/// [`drive`] taking `&mut SequencerControl` explicitly, since a program's
+/// analog drive sites and install sites are its own struct fields, not
+/// something `Sequencer` owns on its behalf).
+#[derive(Default)]
+pub struct SequencerControl {
+    digital_drives: Vec<(DigitalNet, LogicValue, f64)>,
+    findings: Findings,
+}
+
+impl SequencerControl {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queue a digital drive: forwarded to the real `EventSink` once this
+    /// accept's `accept_timestep` returns (never touches the MNA — T21,
+    /// DVT-33).
+    pub fn drive_digital(&mut self, net: DigitalNet, value: LogicValue, delay: f64) {
+        self.digital_drives.push((net, value, delay));
+    }
+
+    /// The findings buffer `expect`/`warn` (T22) and internal-net drive
+    /// notices (T21) record into.
+    pub fn findings(&mut self) -> &mut Findings {
+        &mut self.findings
+    }
+
+    fn take_digital_drives(&mut self) -> Vec<(DigitalNet, LogicValue, f64)> {
+        std::mem::take(&mut self.digital_drives)
+    }
+}
 
 /// What a [`Sequencer`] is waiting for. `t.advance(dt)` is the only form
 /// this task adds; `Edge`/`Crossing` wake sources arrive in T23/T24
@@ -51,13 +90,13 @@ pub enum Wake {
 /// and calls back in exactly once that instant is accepted.
 pub trait SequencerProgram: Send + Sync {
     /// The first wake, before any step has run.
-    fn start(&mut self) -> Wake;
+    fn start(&mut self, ctl: &mut SequencerControl) -> Wake;
     /// Called once, exactly when the wake most recently returned lands on
     /// an accepted step, at the (possibly clamped) time it landed.
-    fn resume(&mut self, t: f64) -> Wake;
+    fn resume(&mut self, t: f64, ctl: &mut SequencerControl) -> Wake;
     /// Notified once if a pending wake would land past the run's stop
     /// time: the run ends here, and no further resume happens.
-    fn on_run_end(&mut self, _t: f64) {}
+    fn on_run_end(&mut self, _t: f64, _ctl: &mut SequencerControl) {}
 }
 
 /// Advance(0) is legal (the coroutine may want to re-check something at
@@ -76,6 +115,7 @@ pub struct Sequencer<P: SequencerProgram> {
     ended: bool,
     zero_advance_at: f64,
     zero_advance_count: usize,
+    control: SequencerControl,
 }
 
 impl<P: SequencerProgram> Sequencer<P> {
@@ -83,7 +123,8 @@ impl<P: SequencerProgram> Sequencer<P> {
     /// (`program.start()` is called immediately) and never wakes past
     /// `stop_time`.
     pub fn new(label: impl Into<String>, mut program: P, start_time: f64, stop_time: f64) -> Self {
-        let wake = program.start();
+        let mut control = SequencerControl::new();
+        let wake = program.start(&mut control);
         let mut me = Self {
             label: label.into(),
             program,
@@ -92,6 +133,7 @@ impl<P: SequencerProgram> Sequencer<P> {
             ended: false,
             zero_advance_at: f64::NAN,
             zero_advance_count: 0,
+            control,
         };
         me.apply_wake(start_time, wake);
         me
@@ -107,6 +149,13 @@ impl<P: SequencerProgram> Sequencer<P> {
         self.pending.is_none()
     }
 
+    /// Findings recorded so far (T21's internal-net-drive notices, T22's
+    /// `expect`/`warn`) — the same buffer [`HostElement::validation_reports`]
+    /// (wired in T22) drains through `dv-core`'s channel.
+    pub fn findings(&self) -> &Findings {
+        &self.control.findings
+    }
+
     fn apply_wake(&mut self, from: f64, wake: Wake) {
         match wake {
             Wake::Advance(dt) => {
@@ -119,7 +168,7 @@ impl<P: SequencerProgram> Sequencer<P> {
                 if t > self.stop_time {
                     if !self.ended {
                         self.ended = true;
-                        self.program.on_run_end(self.stop_time);
+                        self.program.on_run_end(self.stop_time, &mut self.control);
                     }
                     self.pending = None;
                     return;
@@ -173,10 +222,14 @@ impl<P: SequencerProgram> HostElement for Sequencer<P> {
             let tol = 1e-9 * pending.abs().max(f64::MIN_POSITIVE);
             if (t - pending).abs() <= tol {
                 self.pending = None; // consumed before resume: a panic inside resume leaves no stale pending
-                let wake = self.program.resume(pending);
+                let wake = self.program.resume(pending, &mut self.control);
                 self.apply_wake(pending, wake);
             }
         }
+    }
+
+    fn drain_digital_drives(&mut self) -> Vec<(DigitalNet, LogicValue, f64)> {
+        self.control.take_digital_drives()
     }
 }
 
@@ -191,10 +244,10 @@ mod tests {
         remaining: usize,
     }
     impl SequencerProgram for FixedAdvances {
-        fn start(&mut self) -> Wake {
-            self.resume(0.0)
+        fn start(&mut self, ctl: &mut SequencerControl) -> Wake {
+            self.resume(0.0, ctl)
         }
-        fn resume(&mut self, _t: f64) -> Wake {
+        fn resume(&mut self, _t: f64, _ctl: &mut SequencerControl) -> Wake {
             if self.remaining == 0 {
                 Wake::Done
             } else {
@@ -215,10 +268,10 @@ mod tests {
     fn advance_negative_dt_panics() {
         struct Bad;
         impl SequencerProgram for Bad {
-            fn start(&mut self) -> Wake {
+            fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
                 Wake::Advance(-1.0)
             }
-            fn resume(&mut self, _t: f64) -> Wake {
+            fn resume(&mut self, _t: f64, _ctl: &mut SequencerControl) -> Wake {
                 Wake::Done
             }
         }
@@ -236,13 +289,13 @@ mod tests {
             notified_at: Arc<std::sync::Mutex<f64>>,
         }
         impl SequencerProgram for OverrunsStop {
-            fn start(&mut self) -> Wake {
+            fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
                 Wake::Advance(100e-6) // stop_time is 10e-6 below
             }
-            fn resume(&mut self, _t: f64) -> Wake {
+            fn resume(&mut self, _t: f64, _ctl: &mut SequencerControl) -> Wake {
                 panic!("must never resume: the wake never lands before stop_time")
             }
-            fn on_run_end(&mut self, t: f64) {
+            fn on_run_end(&mut self, t: f64, _ctl: &mut SequencerControl) {
                 self.notified.store(true, Ordering::SeqCst);
                 *self.notified_at.lock().unwrap() = t;
             }
@@ -270,10 +323,10 @@ mod tests {
         // silently spin the accept-hook forever.
         struct NeverAdvances;
         impl SequencerProgram for NeverAdvances {
-            fn start(&mut self) -> Wake {
+            fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
                 Wake::Advance(0.0)
             }
-            fn resume(&mut self, _t: f64) -> Wake {
+            fn resume(&mut self, _t: f64, _ctl: &mut SequencerControl) -> Wake {
                 Wake::Advance(0.0)
             }
         }

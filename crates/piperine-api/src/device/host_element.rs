@@ -24,8 +24,8 @@
 //! // them is additive and does not change this shape.
 
 use piperine_solver::abi::{
-    ElementCapabilities, ElementCheckpoint, Invalidation, LimitingReport, ParamDescriptor, ParamError,
-    UnknownAllocator, Value,
+    DigitalNet, ElementCapabilities, ElementCheckpoint, Invalidation, LimitingReport, LogicValue, ParamDescriptor,
+    ParamError, UnknownAllocator, Value,
 };
 
 use super::stamp::{Ctx, StampSink, StateView};
@@ -88,6 +88,29 @@ pub trait HostElement: Send + Sync {
     /// under timestep rejection (`ideal.md` §7) — the same trap PHDL
     /// authors already face.
     fn accept_timestep(&mut self, _state: &StateView<'_>, _t: f64) {}
+
+    /// Digital events queued during this accept (T21, DVT-33: a sequencer's
+    /// `t.drive(net, value)` goes through here) — drained once, immediately
+    /// after [`Self::accept_timestep`] returns, by the blanket adapter and
+    /// forwarded into the solver's real `EventSink`. `HostElement` itself
+    /// never touches `EventSink` directly, keeping the raw digital-
+    /// scheduling ABI out of this trait's day-to-day surface; a device
+    /// with nothing to drive (the overwhelming common case) pays nothing.
+    ///
+    /// // SPEC_DEVIATION: `Element::accept_timestep`'s real ABI already
+    /// // carries an `EventSink` parameter; the original T14 mirror
+    /// // dropped it (documented as "digital participation... not
+    /// // mirrored"). T21 needs exactly one digital capability — driving a
+    /// // net from a sequencer — so rather than widening
+    /// // `accept_timestep`'s signature (a breaking change to every
+    /// // existing `HostElement` impl, including this trait's own T18
+    /// // proof devices), this adds one narrow, independently-defaulted
+    /// // hook. A device that needs the full digital surface still
+    /// // implements `Element` directly (the documented level-0 escape
+    /// // hatch).
+    fn drain_digital_drives(&mut self) -> Vec<(DigitalNet, LogicValue, f64)> {
+        Vec::new()
+    }
 
     /// Snapshot mutable non-accept-gated state for rollback on a rejected
     /// step. `None` (default) = stateless, zero cost — mirrors

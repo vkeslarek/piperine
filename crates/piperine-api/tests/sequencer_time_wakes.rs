@@ -13,6 +13,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use piperine_api::sequencer::SequencerControl;
 use piperine_api::{HostAdapter, Sequencer, SequencerProgram, Wake};
 use piperine_solver::abi::{
     AnalogDevice, AnalogReference, BranchIdentifier, Context, DcAnalysisState, DigitalDevice, Element,
@@ -183,10 +184,10 @@ struct Recording {
     resumes: Arc<AtomicUsize>,
 }
 impl SequencerProgram for Recording {
-    fn start(&mut self) -> Wake {
+    fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
         Wake::Advance(self.first_dt)
     }
-    fn resume(&mut self, t: f64) -> Wake {
+    fn resume(&mut self, t: f64, _ctl: &mut SequencerControl) -> Wake {
         self.resumes.fetch_add(1, Ordering::SeqCst);
         self.log.lock().unwrap().push(t);
         if self.remaining == 0 {
@@ -240,10 +241,10 @@ fn next_breakpoints_tracks_the_coroutines_pending_wake_across_resumes() {
         first: bool,
     }
     impl SequencerProgram for TwoStep {
-        fn start(&mut self) -> Wake {
+        fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
             Wake::Advance(1e-6)
         }
-        fn resume(&mut self, _t: f64) -> Wake {
+        fn resume(&mut self, _t: f64, _ctl: &mut SequencerControl) -> Wake {
             if self.first {
                 self.first = false;
                 Wake::Advance(2e-6)
