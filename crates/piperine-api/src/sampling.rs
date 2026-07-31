@@ -134,6 +134,21 @@ pub struct SamplePlan {
     entries: Vec<SampleEntry>,
 }
 
+/// One importance-sampled draw with its likelihood-ratio weight (T20,
+/// DVG-20): the draws come from a MEAN-SHIFTED sampling distribution
+/// ([`SamplePlan::draws_importance`]), and `weight` is `∏ᵢ f(xᵢ)/g(xᵢ)` —
+/// the ratio of the original (declared) density to the shifted sampling
+/// density — the factor an unbiased importance-sampling estimator
+/// multiplies the sample's outcome by.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportanceDraw {
+    /// The `(label, param, value)` writes to apply, same shape as
+    /// [`SampleDraw`].
+    pub draws: Vec<SampleDraw>,
+    /// The sample's total likelihood-ratio weight.
+    pub weight: f64,
+}
+
 impl SamplePlan {
     /// Walk the authored instance tree of `top` and collect every param
     /// carrying a `tol` declaration (DVG-16). Reads `design.module(...)`
@@ -260,6 +275,83 @@ impl SamplePlan {
         Ok(())
     }
 
+    /// Draw sample `index`'s values from a MEAN-SHIFTED sampling
+    /// distribution (T20, DVG-20's high-sigma policy): every
+    /// `gauss`-distributed entry with a resolvable `σ` (`sigma` or
+    /// `sigma_rel`) is drawn from `N(default + shift_sigmas·σ, σ)` instead
+    /// of `N(default, σ)` — shifting sampling mass toward the tail
+    /// `shift_sigmas` names, the whole point of importance-sampling a rare
+    /// event without an astronomical `n`. Every other entry (a `uniform`
+    /// declaration, or a `gauss` declaration missing both `sigma`/
+    /// `sigma_rel`) is drawn UNSHIFTED, exactly as [`Self::draws`] would —
+    /// its likelihood ratio is exactly `1`, contributing no bias, only
+    /// ordinary sampling variance on that entry (SPEC_DEVIATION: a full
+    /// multivariate shift, or statistical blockade's classifier, would
+    /// cover every distribution kind; this delivery implements the
+    /// simpler Gaussian mean-shift per the task's own guidance — see the
+    /// [`crate::driver`] high-sigma module docs).
+    ///
+    /// Deterministic in `(seed, index, shift_sigmas, plan)`, same as
+    /// [`Self::draws`] — a tail sample found through this method is
+    /// replayable from `(seed, index)` given the same `shift_sigmas`
+    /// (T14's replay contract, carried forward: `shift_sigmas` is part of
+    /// the sampling CAMPAIGN, same as the plan itself, not part of the
+    /// `(seed, index)` coordinate).
+    pub fn draws_importance(&self, seed: u64, index: usize, shift_sigmas: f64) -> ImportanceDraw {
+        // First pass: one shifted draw per `global` group (mirrors
+        // `draws_around`'s two-pass structure), accumulating its log
+        // likelihood ratio once per group regardless of how many
+        // instances share it.
+        let mut global_draws: HashMap<String, (f64, f64)> = HashMap::new();
+        for entry in &self.entries {
+            if entry.scope() == SampleScope::Global {
+                let key = group_key(entry);
+                if !global_draws.contains_key(&key) {
+                    let group_seed = mix(seed, index, &key);
+                    global_draws.insert(key, entry.draw_shifted(group_seed, shift_sigmas));
+                }
+            }
+        }
+        let mut log_weight: f64 = global_draws.values().map(|(_, lw)| lw).sum();
+
+        let draws = self
+            .entries
+            .iter()
+            .map(|entry| {
+                let value = match entry.scope() {
+                    SampleScope::Global => global_draws[&group_key(entry)].0,
+                    SampleScope::Mismatch => {
+                        let inst_key = instance_key(entry);
+                        let inst_seed = mix(seed, index, &inst_key);
+                        let (v, lw) = entry.draw_shifted(inst_seed, shift_sigmas);
+                        log_weight += lw;
+                        v
+                    }
+                };
+                SampleDraw { label: entry.label.clone(), param: entry.param.clone(), value }
+            })
+            .collect();
+        ImportanceDraw { draws, weight: log_weight.exp() }
+    }
+
+    /// Apply sample `index`'s importance-shifted draws
+    /// ([`Self::draws_importance`]) to `session` through the ordinary
+    /// restamp path ([`Session::set`]) — no new mutation route. Returns
+    /// the sample's likelihood-ratio weight.
+    pub fn apply_importance(
+        &self,
+        session: &mut Session,
+        seed: u64,
+        index: usize,
+        shift_sigmas: f64,
+    ) -> Result<f64, Error> {
+        let sample = self.draws_importance(seed, index, shift_sigmas);
+        for draw in &sample.draws {
+            session.set(&draw.label, &draw.param, draw.value)?;
+        }
+        Ok(sample.weight)
+    }
+
     /// Reset `session` to every entry's nominal (declared) value, through
     /// the ordinary restamp path ([`Session::set`]) — no new mutation
     /// route (T14, DVG-17 "no residue"). A nominal analysis run after
@@ -325,6 +417,46 @@ impl SampleEntry {
             _ => return base,
         };
         base + delta
+    }
+
+    /// This entry's effective Gaussian `σ` at `base` — `sigma` if
+    /// declared, else `base·sigma_rel`, else `None`. Factors out the
+    /// lookup [`Self::draw_from`]'s `"gauss"` branch already does, so
+    /// T20's shift/weight math (which needs `σ` on its own, not just a
+    /// drawn delta) shares one resolution instead of re-deriving it.
+    fn gauss_sigma(&self, base: f64) -> Option<f64> {
+        let args = &self.distribution.args;
+        let arg = |name: &str| -> Option<f64> {
+            args.iter().find(|(n, _)| n == name).and_then(|(_, v)| v.as_real())
+        };
+        arg("sigma").or_else(|| arg("sigma_rel").map(|rel| base * rel))
+    }
+
+    /// Draw from the MEAN-SHIFTED distribution for T20's importance
+    /// sampling: a `gauss` entry with a resolvable `σ` draws from
+    /// `N(default + shift_sigmas·σ, σ)` and returns `(value, log(f(x)/g(x)))`
+    /// where `f = N(default, σ)` (the ORIGINAL declared density) and
+    /// `g = N(default + shift_sigmas·σ, σ)` (the SHIFTED sampling
+    /// density) — the log likelihood ratio an importance-sampling
+    /// estimator needs. Anything else (uniform, or a `gauss` entry
+    /// missing both `sigma`/`sigma_rel`) draws UNSHIFTED via
+    /// [`Self::draw_from`], with `log_weight = 0.0` (weight `1`, no
+    /// correction needed because nothing was shifted).
+    fn draw_shifted(&self, seed: u64, shift_sigmas: f64) -> (f64, f64) {
+        if self.distribution.kind == "gauss"
+            && let Some(sigma) = self.gauss_sigma(self.default)
+            && sigma > 0.0
+        {
+            let mu0 = self.default;
+            let mu1 = mu0 + shift_sigmas * sigma;
+            let mut rng = SplitMix64::new(seed);
+            let x = mu1 + sigma * rng.next_std_normal();
+            // log(f(x)/g(x)) for f = N(mu0, sigma), g = N(mu1, sigma):
+            // -[(x-mu0)^2 - (x-mu1)^2] / (2 sigma^2).
+            let log_w = -((x - mu0).powi(2) - (x - mu1).powi(2)) / (2.0 * sigma * sigma);
+            return (x, log_w);
+        }
+        (self.draw_from(seed, self.default), 0.0)
     }
 }
 

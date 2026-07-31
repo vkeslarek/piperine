@@ -18,18 +18,19 @@
 //!   `optimize.rs`/`blackbox.rs`.
 //! - [`Policy::Center`] (T19, DVG-19): maximize `min_i (m_i / σ_i)`. See
 //!   `center.rs`.
-//! - [`Policy::HighSigma`]: importance-sampling tail estimation (T20) —
-//!   out of this delivery's scope; a structural placeholder that fails
-//!   loud.
+//! - [`Policy::HighSigma`] (T20, DVG-20): mean-shift importance-sampling
+//!   tail estimation. See `high_sigma.rs`.
 
 mod blackbox;
 mod center;
 mod entry;
+mod high_sigma;
 mod optimize;
 mod support;
 
 pub use center::{CenterResult, CenterSpec, SigmaScheme};
 pub use entry::{Driver, DriverOutcome, Policy};
+pub use high_sigma::{HighSigmaEstimator, HighSigmaResult, HighSigmaSpec};
 pub use optimize::{Engine, OptimizeResult, OptimizeSpec};
 
 pub(crate) use support::{nominal_param_value, read_metric};

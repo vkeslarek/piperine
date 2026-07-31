@@ -6,6 +6,7 @@ use crate::session::{Session, SolverConfig};
 use piperine_solver::prelude::CheckPosture;
 
 use super::center::{self, CenterResult, CenterSpec};
+use super::high_sigma::{self, HighSigmaResult, HighSigmaSpec};
 use super::optimize::{self, OptimizeResult, OptimizeSpec};
 
 /// One of the driver's three policies (design §C4).
@@ -15,9 +16,8 @@ pub enum Policy {
     Optimize(OptimizeSpec),
     /// Worst-case-distance centering (T19).
     Center(CenterSpec),
-    /// Importance-sampling tail estimation (T20) — not implemented in
-    /// this delivery; running it fails loud.
-    HighSigma,
+    /// Mean-shift importance-sampling tail estimation (T20).
+    HighSigma(HighSigmaSpec),
 }
 
 /// One [`Driver::run`] call's typed result — which policy ran decides
@@ -26,6 +26,7 @@ pub enum Policy {
 pub enum DriverOutcome {
     Optimize(OptimizeResult),
     Center(CenterResult),
+    HighSigma(HighSigmaResult),
 }
 
 /// The one driver type (T16, DVG-14): built from a [`Policy`], shared by
@@ -62,11 +63,9 @@ impl Driver {
             Policy::Center(spec) => {
                 center::run(session, spec, &collect_config).map(DriverOutcome::Center)
             }
-            Policy::HighSigma => Err(Error::Measurement(
-                "the high-sigma policy is not implemented in this delivery (dv-gradients T20) — \
-                 optimize and center are available"
-                    .to_string(),
-            )),
+            Policy::HighSigma(spec) => {
+                high_sigma::run(session, spec, &collect_config).map(DriverOutcome::HighSigma)
+            }
         }
     }
 }

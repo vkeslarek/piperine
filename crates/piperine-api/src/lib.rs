@@ -30,8 +30,8 @@ pub mod units;
 pub mod waveform;
 
 pub use driver::{
-    CenterResult, CenterSpec, Driver, DriverOutcome, Engine, OptimizeResult, OptimizeSpec, Policy,
-    SigmaScheme,
+    CenterResult, CenterSpec, Driver, DriverOutcome, Engine, HighSigmaEstimator, HighSigmaResult,
+    HighSigmaSpec, OptimizeResult, OptimizeSpec, Policy, SigmaScheme,
 };
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};

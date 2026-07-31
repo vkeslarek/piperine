@@ -5,7 +5,7 @@
 //! called with (T16 AC2/AC4).
 
 use piperine_api::prelude::CheckPosture;
-use piperine_api::{Driver, OptimizeSpec, Policy, Session, SolverConfig};
+use piperine_api::{Driver, HighSigmaSpec, OptimizeSpec, Policy, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// A divider whose NOMINAL point violates `require head` — under
@@ -96,25 +96,28 @@ fn the_driver_forces_collect_posture_even_under_a_strict_config() {
 
 /// T16 AC1: the driver exposes all three named policies as one type —
 /// `Policy::Optimize`/`Policy::Center`/`Policy::HighSigma` — not three
-/// separate engine types.
+/// separate engine types. (T20 gave `HighSigma` its spec payload;
+/// `Policy` is still one type with three variants.)
 #[test]
 fn the_three_policies_are_variants_of_one_type() {
     fn accepts_policy(_: Policy) {}
     accepts_policy(Policy::Optimize(OptimizeSpec::default()));
     accepts_policy(Policy::Center(piperine_api::CenterSpec::default()));
-    accepts_policy(Policy::HighSigma);
+    accepts_policy(Policy::HighSigma(HighSigmaSpec::default()));
 }
 
-/// T16: `Policy::HighSigma` is a structural placeholder (T20 is out of
-/// this delivery's scope) — running it fails loud naming the gap rather
-/// than silently doing nothing.
+/// T20 landed `Policy::HighSigma` (dedicated coverage in
+/// `high_sigma_sampling.rs`); this file keeps only the loud-refusal shape
+/// T16 established — a design with no declared `tol` distributions has
+/// nothing to importance-sample, so it fails loud naming the reason
+/// rather than reporting a meaningless yield.
 #[test]
-fn high_sigma_policy_fails_loud_as_not_yet_implemented() {
+fn high_sigma_policy_fails_loud_with_no_tol_declarations() {
     let phdl_design = design(INFEASIBLE_DIVIDER_PHDL);
     let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
-    let driver = Driver::new(Policy::HighSigma);
+    let driver = Driver::new(Policy::HighSigma(HighSigmaSpec::default()));
     let err = driver
         .run(&mut session, &SolverConfig::default())
-        .expect_err("high-sigma is not implemented in this delivery");
-    assert!(err.to_string().contains("high-sigma"), "names the gap: {err}");
+        .expect_err("the fixture declares no `tol` distributions to sample");
+    assert!(err.to_string().contains("tol"), "names the reason: {err}");
 }
