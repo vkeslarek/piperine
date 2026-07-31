@@ -13,6 +13,7 @@
 //!                            OpResult / Trace / AcTrace / NoiseTrace
 //! ```
 
+pub mod aging;
 pub mod driver;
 pub mod error;
 pub mod fourier;
@@ -29,6 +30,7 @@ pub mod session;
 pub mod units;
 pub mod waveform;
 
+pub use aging::{age, AgingResult, AgingSpec, DriftRate, StressSource};
 pub use driver::{
     CenterResult, CenterSpec, Driver, DriverOutcome, Engine, HighSigmaEstimator, HighSigmaResult,
     HighSigmaSpec, OptimizeResult, OptimizeSpec, Policy, SigmaScheme,
