@@ -1645,6 +1645,7 @@ dependencies = [
  "num-complex",
  "piperine-codegen",
  "piperine-lang",
+ "piperine-signal",
  "piperine-solver",
  "thiserror 2.0.18",
 ]

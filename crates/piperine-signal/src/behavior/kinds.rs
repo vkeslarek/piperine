@@ -10,11 +10,15 @@
 //! the edge itself is not differentiated: it is reported through
 //! [`BehaviorKind::crossings`] so the integrator lands on it instead).
 //! [`Hysteresis`] needs one bit of memory (which side of its band it is on)
-//! — held in a [`std::cell::Cell`] so `value`/`jacobian` can stay `&self`,
-//! matching the trait; that memory is exactly the "value from circuit
+//! — held in an [`std::sync::atomic::AtomicBool`] so `value`/`jacobian` can
+//! stay `&self` (matching the trait) while still satisfying `Send + Sync`
+//! (dv-tester T16/T18 SPEC_DEVIATION: a `HostElement` embedding a `Behavior`
+//! reaches the solver as `Box<dyn Element>`, which requires it unconditionally
+//! — `Cell` is `!Sync`, `AtomicBool` is the same interior-mutability shape
+//! with no logic change); that memory is exactly the "value from circuit
 //! state" a comparator-with-memory is.
 
-use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::{BehaviorKind, Crossing};
 use crate::events::CrossDir;
@@ -52,26 +56,26 @@ impl BehaviorKind for Comparator {
 pub struct Hysteresis {
     pub vth_hi: f64,
     pub vth_lo: f64,
-    high: Cell<bool>,
+    high: AtomicBool,
 }
 
 impl Hysteresis {
     pub fn new(vth_hi: f64, vth_lo: f64) -> Self {
-        Self { vth_hi, vth_lo, high: Cell::new(false) }
+        Self { vth_hi, vth_lo, high: AtomicBool::new(false) }
     }
 }
 
 impl BehaviorKind for Hysteresis {
     fn value(&self, inputs: &[f64]) -> f64 {
         let diff = inputs[0] - inputs[1];
-        if self.high.get() {
+        if self.high.load(Ordering::Relaxed) {
             if diff < self.vth_lo {
-                self.high.set(false);
+                self.high.store(false, Ordering::Relaxed);
             }
         } else if diff > self.vth_hi {
-            self.high.set(true);
+            self.high.store(true, Ordering::Relaxed);
         }
-        if self.high.get() { 1.0 } else { 0.0 }
+        if self.high.load(Ordering::Relaxed) { 1.0 } else { 0.0 }
     }
     fn jacobian(&self, inputs: &[f64], out: &mut [f64]) {
         let _ = inputs;
@@ -80,8 +84,8 @@ impl BehaviorKind for Hysteresis {
     }
     fn crossings(&self, inputs: &[f64]) -> Option<Crossing> {
         let diff = inputs[0] - inputs[1];
-        let threshold = if self.high.get() { self.vth_lo } else { self.vth_hi };
-        let dir = if self.high.get() { CrossDir::Falling } else { CrossDir::Rising };
+        let threshold = if self.high.load(Ordering::Relaxed) { self.vth_lo } else { self.vth_hi };
+        let dir = if self.high.load(Ordering::Relaxed) { CrossDir::Falling } else { CrossDir::Rising };
         Some(Crossing { value: diff, threshold, dir })
     }
 }

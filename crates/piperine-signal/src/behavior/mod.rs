@@ -40,7 +40,12 @@ pub struct Crossing {
 /// `tanh`-shaped `comparator` is differentiable and convergence-friendly);
 /// a genuinely discontinuous kind overrides [`crossings`](Self::crossings)
 /// instead of faking a derivative across its own jump.
-pub trait BehaviorKind {
+// SPEC_DEVIATION (dv-tester T16/T18): `Send + Sync` supertrait — a
+// `Behavior` in a `HostElement` reaches the solver as `Box<dyn Element>`,
+// which requires it unconditionally; declaring it here (the `Box<dyn Error
+// + Send + Sync>` idiom) makes `Box<dyn BehaviorKind>` satisfy it too.
+// `Hysteresis`'s memory cell (`kinds.rs`) was the one non-conforming kind.
+pub trait BehaviorKind: Send + Sync {
     /// `f(inputs)`.
     fn value(&self, inputs: &[f64]) -> f64;
     /// `∂f/∂inputs[i]`, written into `out` (same length as `inputs`).

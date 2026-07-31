@@ -19,7 +19,7 @@
 //!   `pwl`/`sampled`'s DC value is their *first point*, not necessarily the
 //!   value at `t = 0`.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// A discontinuity-free time-domain descriptor. Composition kinds
 /// ([`Wave::Sum`], [`Wave::Scaled`], [`Wave::Shifted`]) hold their operands
@@ -57,7 +57,21 @@ pub enum Wave {
     Sampled { t: Vec<f64>, v: Vec<f64> },
     /// `Wave.from_fn(f)` — a host callback, evaluated whenever the solver
     /// asks. The one kind that is not zero-cost.
-    FromFn(Rc<dyn Fn(f64) -> f64>),
+    ///
+    // SPEC_DEVIATION (dv-tester T16/T18): `Arc<dyn Fn + Send + Sync>`
+    // rather than the `Rc<dyn Fn>` this crate started with. Reason: once a
+    // `Wave` is installed inside a `HostElement` (T14/T16) and reaches the
+    // solver as `Box<dyn Element>`, it inherits `Element`'s own
+    // unconditional `Send + Sync` bound (`AnalogDevice: Send + Sync`,
+    // `piperine-solver/src/core/element.rs`) — a bound `piperine-signal`
+    // had no reason to anticipate before level 1 met level 0. `Rc` fails
+    // that bound structurally regardless of which `Wave` variant is
+    // actually constructed (Rust's auto-trait analysis is type-wide, not
+    // value-wide), which made every `HostElement` embedding *any* `Wave` —
+    // even a plain `Wave::constant` — fail to compile. The fix is a pure
+    // marker-trait tightening: same external API (`.clone()`, call-through
+    // `f(t)`), no behavior change, no new logic.
+    FromFn(Arc<dyn Fn(f64) -> f64 + Send + Sync>),
     /// `Wave.sum(a, b)` — `a(t) + b(t)`.
     Sum(Box<Wave>, Box<Wave>),
     /// `Wave.scaled(w, k)` — `k * w(t)`.
@@ -92,7 +106,7 @@ impl Wave {
     pub fn sampled(t: Vec<f64>, v: Vec<f64>) -> Self {
         Wave::Sampled { t, v }
     }
-    pub fn from_fn(f: Rc<dyn Fn(f64) -> f64>) -> Self {
+    pub fn from_fn(f: Arc<dyn Fn(f64) -> f64 + Send + Sync>) -> Self {
         Wave::FromFn(f)
     }
     pub fn sum(a: Wave, b: Wave) -> Self {
@@ -452,20 +466,21 @@ mod tests {
 
     #[test]
     fn from_fn_costs_exactly_one_host_call_per_evaluation() {
-        let calls = Rc::new(Cell::new(0u32));
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let calls = Arc::new(AtomicU32::new(0));
         let counted = calls.clone();
-        let w = Wave::from_fn(Rc::new(move |t: f64| {
-            counted.set(counted.get() + 1);
+        let w = Wave::from_fn(Arc::new(move |t: f64| {
+            counted.fetch_add(1, Ordering::Relaxed);
             t * 2.0
         }));
-        assert_eq!(calls.get(), 0, "constructing must not evaluate");
+        assert_eq!(calls.load(Ordering::Relaxed), 0, "constructing must not evaluate");
         assert_eq!(w.value(3.0), 6.0);
-        assert_eq!(calls.get(), 1, "one call per value() evaluation");
+        assert_eq!(calls.load(Ordering::Relaxed), 1, "one call per value() evaluation");
         w.value(1.0);
         w.value(2.0);
-        assert_eq!(calls.get(), 3, "each evaluation costs exactly one call");
+        assert_eq!(calls.load(Ordering::Relaxed), 3, "each evaluation costs exactly one call");
         assert_eq!(w.dc_value(), 0.0, "from_fn dc -> evaluated at t=0");
-        assert_eq!(calls.get(), 4, "dc_value pays its own one call, per §12.10");
+        assert_eq!(calls.load(Ordering::Relaxed), 4, "dc_value pays its own one call, per §12.10");
     }
 
     #[test]
@@ -476,7 +491,7 @@ mod tests {
         // callback at all; this is provable at the type level (no `Fn`
         // field exists on these variants), and this test demonstrates it
         // operationally too.
-        let calls = Rc::new(Cell::new(0u32));
+        let calls = Cell::new(0u32);
         let kinds: Vec<Wave> = vec![
             Wave::constant(1.0),
             Wave::ramp(0.0, 1.0, 1.0),
