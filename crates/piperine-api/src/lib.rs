@@ -13,6 +13,7 @@
 //!                            OpResult / Trace / AcTrace / NoiseTrace
 //! ```
 
+pub mod driver;
 pub mod error;
 pub mod fourier;
 pub mod gradient;
@@ -28,6 +29,10 @@ pub mod session;
 pub mod units;
 pub mod waveform;
 
+pub use driver::{
+    CenterResult, CenterSpec, Driver, DriverOutcome, Engine, OptimizeResult, OptimizeSpec, Policy,
+    SigmaScheme,
+};
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
 pub use gradient::{
