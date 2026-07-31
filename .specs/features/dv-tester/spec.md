@@ -453,18 +453,18 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-16 | `refine=True` narrows the bound and terminates at the floor with a report | Done (T11, `564f88f`) |
 | DVT-17 | Gating: time, analog, digital (settled only) | Done (T12, `e6c15d4`) |
 | DVT-18 | Read-before-sample / never-gated is loud | Done (T13, `3bbdc6c`) |
-| DVT-19 | `HostElement` + blanket `Element` adapter, no new solver concept | Pending |
-| DVT-20 | Host device declared in PHDL via `@device`, composes with hierarchy | Pending |
-| DVT-21 | Same declaration serves plugin and host binding; Rust device graduates | Pending |
+| DVT-19 | `HostElement` + blanket `Element` adapter, no new solver concept | Done (T14, T15, `fa4f78d`, `b603132`) |
+| DVT-20 | Host device declared in PHDL via `@device`, composes with hierarchy | Done (T17, `b93cbc5`) |
+| DVT-21 | Same declaration serves plugin and host binding; Rust device graduates | Done (T17, `b93cbc5`) |
 | DVT-22 | Python exception mid-solve → typed error with time, clean stop | Pending |
-| DVT-23 | `set_param` mid-transient: restamp fine, rebuild loud | Pending |
-| DVT-24 | Level-1 convergence veto surfaced as a limiting report | Pending |
+| DVT-23 | `set_param` mid-transient: restamp fine, rebuild loud | Done (T14, `fa4f78d`) |
+| DVT-24 | Level-1 convergence veto surfaced as a limiting report | Done (T16, `962c1a7`) |
 | DVT-25 | Coroutine resumed exactly once per accepted breakpoint, never on rejection | Pending |
 | DVT-26 | One `wait`, three wake sources, mapped to existing `EventKind`s | Pending |
 | DVT-27 | Digital edge wait resumes only after settling | Pending |
 | DVT-28 | Multiple sequencers union breakpoints; authored POM order at a tie | Pending |
 | DVT-29 | `expect`/`warn` into the findings channel, posture-honoring | Pending |
-| DVT-30 | Levels compose in one class | Pending |
+| DVT-30 | Levels compose in one class | Done (T18, `6b4c04b`) |
 | DVT-31 | Zero host crossings inside Newton, counted | Pending |
 | DVT-32 | `install` is install-relative; replacement registers its edge | Pending |
 | DVT-33 | Declared impedance; explicit ideal force | Pending |

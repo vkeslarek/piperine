@@ -22,7 +22,7 @@ level taxonomy, the four level-1 families, the cost model, and the decision log
 **Follow-on**: `.specs/features/codegen-simplification/` — this feature
 **extracts** into `piperine-signal`; that one **delegates** codegen to it. The
 cross-check fixtures of T6 are this feature's obligation to that one.
-**Status**: Phase 2 complete — Phase 3 next
+**Status**: Phase 3 complete — Phase 4 next
 
 ## Progress log
 
@@ -30,6 +30,7 @@ cross-check fixtures of T6 are this feature's obligation to that one.
 |---|---|---|---|---|
 | 1 | Phase 1 | T1–T6 | T1 `2a114e8`, T2 `1447cde`, T3 `35a13ba`, T4 `afda1af`, T5 `4ed9569`, T6 `996045e` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings) |
 | 2 | Phase 2 | T7–T13 | T7 `52b131c`, T8 `be11a05`, T9 `dda2c96`, T10 `419aa55`, T11 `564f88f`, T12 `e6c15d4`, T13 `3bbdc6c` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings) |
+| 3 | Phase 3 | T14–T18 | T14 `fa4f78d`, T15 `b603132`, T16 `962c1a7`, T17 `b93cbc5`, T18 `6b4c04b` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). SPEC_DEVIATION: `HostAdapter<T>` local newtype anchors the blanket `Element` impl (Rust orphan rule); `piperine-signal`'s `Wave`/`Hysteresis`/`BehaviorKind` gained `Send + Sync` (Rc→Arc, Cell→AtomicBool, a supertrait) so a `Behavior`/`Wave`-holding `HostElement` can satisfy `Element`'s unconditional `Send + Sync` bound — pure marker-trait/representation changes, no logic change, all of `piperine-signal`'s own tests unchanged and green. |
 
 ---
 
@@ -446,11 +447,11 @@ mirrors it method for method
 devices exist.
 
 **Done when**:
-- [ ] `HostElement` has two required methods (`name`, `capabilities`) and defaults the rest, mirroring `Element`
-- [ ] a blanket `impl<T: HostElement> Element for T` presents it to the solver
-- [ ] a trivial Rust host device (a resistor) stamps into a real circuit and solves
-- [ ] a host device's `set_param` mid-transient goes through the live-parameter path for restamp-class and fails **loud** for rebuild-class (MD-18)
-- [ ] no `Any`, no downcast, no new solver-side concept — asserted by the absence of solver changes in this task's diff
+- [x] `HostElement` has two required methods (`name`, `capabilities`) and defaults the rest, mirroring `Element`
+- [x] a blanket `impl<T: HostElement> Element for HostAdapter<T>` presents it to the solver (a local newtype anchor — the orphan rule forbids `impl<T> Element for T` directly across crates; see adapter.rs's SPEC_DEVIATION)
+- [x] a trivial Rust host device (a resistor) stamps into a real circuit and solves
+- [x] a host device's `set_param` mid-transient goes through the live-parameter path for restamp-class and fails **loud** for rebuild-class (MD-18) — inherited for free: `Session::set` already dispatches through `Introspect::set_param` generically
+- [x] no `Any`, no downcast, no new solver-side concept — asserted by the absence of solver changes in this task's diff
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add HostElement and its blanket Element adapter`
@@ -469,10 +470,10 @@ values across an FFI boundary.
 failure this task exists to prevent.
 
 **Done when**:
-- [ ] the sink exposes only operations (`g(row, col, v)`, `i(row, v)`, `branch(...)`) — never a `&mut` to the matrix
-- [ ] an out-of-range index is a **loud typed error**, never undefined behavior
-- [ ] views are borrow-scoped to one call; nothing a device holds can outlive the step
-- [ ] no allocation per call on the stamping path — asserted by shape, not by benchmark
+- [x] the sink exposes only operations (`g(row, col, v)`, `i(row, v)`) — never a `&mut` to the matrix (a branch row is just another `AnalogReference`, so `g`/`i` cover `branch(...)` too)
+- [x] an out-of-range index is a **loud typed error**, never undefined behavior
+- [x] views are borrow-scoped to one call; nothing a device holds can outlive the step
+- [x] no allocation per call on the stamping path — asserted by shape, not by benchmark
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): add index-validated stamp and state views`
@@ -492,10 +493,10 @@ failure this task exists to prevent.
 non-solution.
 
 **Done when**:
-- [ ] an installed `Wave` stamps as a source with its declared impedance and its breakpoints reach `next_breakpoints`
-- [ ] an installed `Behavior` stamps value **and** cross-Jacobian entries every Newton iteration, with zero host calls — counted
-- [ ] `Measure` accumulators are fed **only on accepted steps**, proven by a rejected-step test that contributes nothing
-- [ ] a limiter's still-clamping state surfaces as a `limiting_report`, gating convergence exactly as a PHDL device's does
+- [x] an installed `Wave` stamps as a source with its declared impedance and its breakpoints reach `next_breakpoints`
+- [x] an installed `Behavior` stamps value **and** cross-Jacobian entries every Newton iteration, with zero host calls — counted
+- [x] `Measure` accumulators are fed **only on accepted steps**, proven by a rejected-step test that contributes nothing
+- [x] a limiter's still-clamping state surfaces as a `limiting_report`, gating convergence exactly as a PHDL device's does
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): stamp level-1 descriptors and surface the limiting veto`
@@ -516,11 +517,11 @@ not change between them; the mode is inferred from where the implementation is
 registered. **No new macro** (MD-13 r5).
 
 **Done when**:
-- [ ] a host device is declared in PHDL with `@device` and instantiated like any module — in a hierarchy, with parameters, **more than once**
-- [ ] circuit build resolves an `@device` module to a plugin binding **or** a host registration, failing loud naming both when neither is found
-- [ ] the same PHDL declaration serves either mode unchanged — proven by binding one module both ways in one test
-- [ ] a Rust host device registers without a macro; the registration is an explicit call
-- [ ] the graduation path (host → plugin, no PHDL change) is documented, and the Python limitation (cannot graduate) is stated
+- [x] a host device is declared in PHDL with `@device` and instantiated like any module — in a hierarchy, with parameters, **more than once**
+- [x] circuit build resolves an `@device` module to a plugin binding **or** a host registration, failing loud naming both when neither is found
+- [x] the same PHDL declaration serves either mode unchanged — proven by binding one module both ways in one test
+- [x] a Rust host device registers without a macro; the registration is an explicit call
+- [x] the graduation path (host → plugin, no PHDL change) is documented, and the Python limitation (cannot graduate) is stated
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(api): resolve @device modules to in-process host implementations`
@@ -537,10 +538,10 @@ levels.
 **Requirement**: DVT-30
 
 **Done when**:
-- [ ] one class stamps directly (level 0), installs a `Wave` and a `Behavior` (level 1) — the composition `ideal.md` example G describes
-- [ ] the hysteretic PWM of `ideal.md` example D runs end to end in a real circuit
-- [ ] a rejected timestep leaves level-1 operator state untouched while the level-0 half participates normally (`ideal.md` §7's table, proven per row)
-- [ ] host-call count inside Newton is **zero** for the level-1 parts, counted
+- [x] one class stamps directly (level 0), installs a `Wave` and a `Behavior` (level 1) — the composition `ideal.md` example G describes
+- [x] the hysteretic PWM of `ideal.md` example D runs end to end in a real circuit
+- [x] a rejected timestep leaves level-1 operator state untouched while the level-0 half participates normally (`ideal.md` §7's table, proven per row)
+- [x] host-call count inside Newton is **zero** for the level-1 parts, counted
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `test(api): prove a Rust host device composing all three levels`
