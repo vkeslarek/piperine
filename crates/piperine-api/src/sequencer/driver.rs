@@ -23,18 +23,21 @@
 //! entirely through `HostElement`/`Element`, not the session lifecycle
 //! hooks `Session` wires around a build/solve.
 
-use piperine_solver::abi::{DigitalNet, ElementCapabilities, LimitingReport, LogicValue};
+use piperine_solver::abi::{AnalogReference, DigitalNet, ElementCapabilities, LimitingReport, LogicValue};
+
+use piperine_signal::events::CrossDir;
 
 use crate::device::host_element::HostElement;
 use crate::device::stamp::StateView;
 
 use super::control::SequencerControl;
+use super::crossing::CrossingWait;
 use super::wait::{EdgeDirection, EdgeWait};
 
 /// What a [`Sequencer`] is waiting for — `ideal.md` §4.1's "one `wait`,
 /// three wake sources" table: `Advance` (T19), `WaitEdge` (T23), `Crossing`
 /// (T24).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Wake {
     /// Wake at absolute time `t + dt` from the instant this was returned
     /// (`dt < 0.0` is a program error — panics rather than traveling
@@ -45,6 +48,11 @@ pub enum Wake {
     /// dispatched from [`HostElement::on_digital_settled`] instead of
     /// `next_breakpoints`.
     WaitEdge(DigitalNet, EdgeDirection),
+    /// `t.wait(above(net, level))`: resume once an accepted point brackets
+    /// `net` crossing `level` in `direction` (T24) — tier 2 (predict +
+    /// bound, `piperine_signal::events`), never a time breakpoint. Read
+    /// `SequencerControl::last_crossing` from `resume` for the bound.
+    WaitCrossing(AnalogReference, f64, CrossDir),
     /// The coroutine has nothing further to do.
     Done,
 }
@@ -93,6 +101,14 @@ pub struct Sequencer<P: SequencerProgram> {
     /// is `Wake::WaitEdge` (T23) — mutually exclusive with `pending` (a
     /// coroutine blocks on exactly one wake source at a time).
     edge_wait: Option<EdgeWait>,
+    /// The one outstanding analog crossing wait (T24) — mutually
+    /// exclusive with `pending`/`edge_wait` for the same reason.
+    crossing_wait: Option<CrossingWait>,
+    /// The most recent instant any wake-source hook observed — used only
+    /// to report a still-pending wait honestly if the run ends first
+    /// (`destroy`, T24's "a crossing that never occurs ends the run
+    /// cleanly").
+    last_t: f64,
 }
 
 impl<P: SequencerProgram> Sequencer<P> {
@@ -114,6 +130,8 @@ impl<P: SequencerProgram> Sequencer<P> {
             reported_up_to: 0,
             pending_report: None,
             edge_wait: None,
+            crossing_wait: None,
+            last_t: start_time,
         };
         me.apply_wake(start_time, wake);
         me.refresh_pending_report();
@@ -155,9 +173,10 @@ impl<P: SequencerProgram> Sequencer<P> {
     }
 
     /// True once the coroutine returned `Wake::Done` or the run ended —
-    /// false while any wake source (time or digital edge) is outstanding.
+    /// false while any wake source (time, digital edge, or analog
+    /// crossing) is outstanding.
     pub fn finished(&self) -> bool {
-        self.pending.is_none() && self.edge_wait.is_none()
+        self.pending.is_none() && self.edge_wait.is_none() && self.crossing_wait.is_none()
     }
 
     /// Findings recorded so far (T21's internal-net-drive notices, T22's
@@ -165,6 +184,12 @@ impl<P: SequencerProgram> Sequencer<P> {
     /// (wired below) drains through `dv-core`'s channel.
     pub fn findings(&self) -> &super::Findings {
         &self.control.findings
+    }
+
+    /// The most recent instant any accept-hook observed — diagnostic only
+    /// (e.g. a still-outstanding `wait` at the end of a run, T24).
+    pub fn last_observed_time(&self) -> f64 {
+        self.last_t
     }
 
     /// Resume the coroutine right now at `t` (the wake source, whichever
@@ -200,11 +225,17 @@ impl<P: SequencerProgram> Sequencer<P> {
                 // Stop the sequencer: nothing further pending.
                 self.pending = None;
                 self.edge_wait = None;
+                self.crossing_wait = None;
             }
         }
     }
 
     fn apply_wake(&mut self, from: f64, wake: Wake) {
+        // Exactly one wake source is ever outstanding — clear the other
+        // two before setting whichever this wake asks for.
+        self.pending = None;
+        self.edge_wait = None;
+        self.crossing_wait = None;
         match wake {
             Wake::Advance(dt) => {
                 assert!(
@@ -218,7 +249,6 @@ impl<P: SequencerProgram> Sequencer<P> {
                         self.ended = true;
                         self.program.on_run_end(self.stop_time, &mut self.control);
                     }
-                    self.pending = None;
                     return;
                 }
                 if dt == 0.0 && (t - self.zero_advance_at).abs() < 1e-15 {
@@ -239,13 +269,14 @@ impl<P: SequencerProgram> Sequencer<P> {
             }
             Wake::WaitEdge(net, direction) => {
                 self.zero_advance_count = 0;
-                self.pending = None;
                 self.edge_wait = Some(EdgeWait::new(net, direction));
+            }
+            Wake::WaitCrossing(net, level, direction) => {
+                self.zero_advance_count = 0;
+                self.crossing_wait = Some(CrossingWait::new(net, level, direction));
             }
             Wake::Done => {
                 self.zero_advance_count = 0;
-                self.pending = None;
-                self.edge_wait = None;
             }
         }
     }
@@ -274,17 +305,30 @@ impl<P: SequencerProgram> HostElement for Sequencer<P> {
         }
     }
 
-    fn accept_timestep(&mut self, _state: &StateView<'_>, t: f64) {
+    fn accept_timestep(&mut self, state: &StateView<'_>, t: f64) {
         // Note: `refresh_pending_report` is NOT called here — it runs once
         // at the end of `on_digital_settled`, the last hook the solver
-        // calls per accepted step (T23), so a resume triggered by either
-        // wake source (time here, digital edge there) is captured by
-        // exactly one poll-facing refresh, never two competing ones.
+        // calls per accepted step (T23), so a resume triggered by any
+        // wake source is captured by exactly one poll-facing refresh,
+        // never two competing ones.
+        self.last_t = t;
         if let Some(pending) = self.pending {
             let tol = 1e-9 * pending.abs().max(f64::MIN_POSITIVE);
             if (t - pending).abs() <= tol {
                 self.pending = None; // consumed before resume: a panic inside resume leaves no stale pending
                 self.resume_now(pending);
+                return;
+            }
+        }
+        // T24: the analog half of `wait` — fed from this accept hook
+        // (StateView already carries the accepted solution), unlike the
+        // digital edge half which needs the post-settle value.
+        if let Some(crossing_wait) = &mut self.crossing_wait {
+            let v = state.v(&crossing_wait.net);
+            if let Some(pred) = crossing_wait.observe(t, v) {
+                self.crossing_wait = None;
+                self.control.set_last_crossing(pred);
+                self.resume_now(t);
             }
         }
     }

@@ -22,6 +22,7 @@
 //!   built on the solver's post-settle dispatch.
 
 pub mod control;
+pub mod crossing;
 pub mod drive;
 pub mod driver;
 pub mod findings;
