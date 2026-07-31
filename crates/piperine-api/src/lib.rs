@@ -14,6 +14,7 @@
 //! ```
 
 pub mod aging;
+pub mod device;
 pub mod driver;
 pub mod error;
 pub mod fourier;
@@ -35,6 +36,7 @@ pub use driver::{
     CenterResult, CenterSpec, Driver, DriverOutcome, Engine, HighSigmaEstimator, HighSigmaResult,
     HighSigmaSpec, OptimizeResult, OptimizeSpec, Policy, SigmaScheme,
 };
+pub use device::{Ctx, HostAdapter, HostElement, StampSink, StateView};
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
 pub use gradient::{
