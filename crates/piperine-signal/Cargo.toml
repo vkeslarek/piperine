@@ -1,0 +1,6 @@
+[package]
+name = "piperine-signal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

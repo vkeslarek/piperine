@@ -83,6 +83,7 @@ both a package and the workspace) — always pass `--workspace`.
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
+| `piperine-signal` | Pure mechanism crate for the `dv-tester` host device library (MD-36): no `Element`, no MNA/matrix, no Cranelift, **no in-tree dependency** — a purity guard (`tests/purity.rs`) proves it mechanically. Four families: runtime operators (`ops.rs`: `delay`/`slew`/`transition`/`idt`/`idtmod`), event detectors (`events.rs`: `cross`/`above`/`timer`), `table` (`behavior/table.rs`), the junction limiter (`limit.rs`: pnjlim/fetlim). Extracted from `piperine-codegen`'s copies with semantics intact; codegen keeps its own copies until `codegen-simplification` delegates to this crate. |
 
 ## The analog device path
 

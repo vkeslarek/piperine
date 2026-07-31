@@ -1775,6 +1775,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-signal"
+version = "0.2.0"
+
+[[package]]
 name = "piperine-solver"
 version = "0.2.0"
 dependencies = [
