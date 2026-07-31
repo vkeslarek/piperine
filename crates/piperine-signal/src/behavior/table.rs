@@ -117,9 +117,27 @@ impl Table {
     }
 }
 
+// ── `Table` as a `Behavior` kind (T8) ───────────────────────────────────
+//
+// `Behavior.table(x, xs, ys)` — PWL in voltage, a member of the `Behavior`
+// family by construction: `value`/`jacobian` are exactly [`Table::value`]/
+// [`Table::derivative`], which is the whole point of extracting `table` as
+// a pure piecewise function first (`ideal.md` §3.9 C) — its derivative was
+// already free before `Behavior` existed to consume it.
+
+impl super::BehaviorKind for Table {
+    fn value(&self, inputs: &[f64]) -> f64 {
+        Table::value(self, inputs[0])
+    }
+    fn jacobian(&self, inputs: &[f64], out: &mut [f64]) {
+        out[0] = self.derivative(inputs[0]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::behavior::BehaviorKind;
 
     #[test]
     fn linear_interpolation_between_points() {
@@ -181,5 +199,14 @@ mod tests {
             Table::with_mode(vec![0.0, 1.0], vec![0.0, 1.0], "cubic").unwrap_err(),
             TableError::UnsupportedMode("cubic".to_string())
         );
+    }
+
+    #[test]
+    fn table_is_a_behavior_kind_whose_jacobian_is_the_segment_slope() {
+        let t = Table::new(vec![0.0, 2.0, 4.0], vec![0.0, 10.0, 0.0]).unwrap();
+        assert_eq!(BehaviorKind::value(&t, &[1.0]), 5.0);
+        let mut out = [0.0];
+        BehaviorKind::jacobian(&t, &[1.0], &mut out);
+        assert_eq!(out[0], 5.0, "same segment slope as Table::derivative");
     }
 }
