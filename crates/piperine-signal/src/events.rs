@@ -155,9 +155,10 @@ impl Prediction {
 }
 
 /// One secant prediction from a bracketing pair of accepted samples whose
-/// sign change matches `dir` (`Rising`: `v0 <= 0 < v1`; `Falling`: `v0 >= 0
-/// > v1`; `Either`: any sign change). `None` when `(t0, v0)`–`(t1, v1)`
-/// does not actually bracket a crossing in that direction.
+/// sign change matches `dir` (`Rising`: `v0 <= 0` and `v1 > 0`; `Falling`:
+/// `v0 >= 0` and `v1 < 0`; `Either`: any sign change). `None` when
+/// `(t0, v0)`-`(t1, v1)` does not actually bracket a crossing in that
+/// direction.
 pub fn predict_crossing(dir: CrossDir, t0: f64, v0: f64, t1: f64, v1: f64) -> Option<Prediction> {
     let brackets = match dir {
         CrossDir::Rising => v0 <= 0.0 && v1 > 0.0,

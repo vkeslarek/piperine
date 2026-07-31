@@ -232,6 +232,7 @@ fn push_in(out: &mut Vec<f64>, t: f64, from: f64, end: f64) {
 
 /// ngspice-faithful `PULSE(V1 V2 TD TR TF PW PER)`, matching `ng_pulse` in
 /// `headers/spice/sources.phdl` — periodic when `period > 0`.
+#[allow(clippy::too_many_arguments)]
 fn pulse_value(t: f64, lo: f64, hi: f64, delay: f64, rise: f64, width: f64, fall: f64, period: f64) -> f64 {
     let mut tp = t - delay;
     if period > 0.0 && tp > period {
