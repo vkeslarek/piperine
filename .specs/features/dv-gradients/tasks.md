@@ -17,12 +17,13 @@ cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
 **Depends on**: `dv-core` — margins are the functions being differentiated. Phases
 1–3 here need only `dv-core` Phase 4 (margin lowering); Phase 4 onward needs
 `dv-core` complete.
-**Status**: In Progress — Phases 1–6 DONE (T1–T19), Phase 7 (T20–T21) next
+**Status**: Complete — Phases 1–8 DONE (T1–T23)
 
 ## Progress log
 
 | Batch | Phase | Tasks | Commits | Result |
 |---|---|---|---|---|
+| 4 | 7–8 | T20–T23 ✅ | `b8bea9a`, `dac94c9`, `029a533`, `e167966`, `f7572cb` | 1439 passed / 0 failed / 4 ignored (+6, zero regressions). Clippy + doc gate clean. Notes: high-sigma is `Policy::HighSigma(HighSigmaSpec)` — mean-shift importance sampling (chosen over statistical blockade per the task's own "pick the simpler" guidance: no classifier, closed-form unbiasedness/variance) reusing `SamplePlan::draws_importance`/`apply_importance` (new methods, same `(seed, index)` mechanism as T13/T14, no second sampling path); every `HighSigmaResult` carries `estimator` + a Wald confidence interval; a bitcell-shaped tight-margin fixture proves the IS estimate agrees with a 20000-sample plain Monte Carlo within the reported interval. Aging is `piperine_api::age` — computes stress from an OP or transient run (`StressSource::Op`/`TranPeak`), drifts via the ordinary `Session::set` restamp path (forcing `collect` posture internally, same T16 invariant, so a `Strict` default doesn't abort the moment a margin crosses zero), and reports `AgingResult` as a thin composition of the existing `MarginsResult` channel (`delta()` reads `baseline`/`aged`, no dedicated delta type); a rebuild-class drift target (a presence-guarded `Real? = none` param) fails loud by propagating `Session::set`'s existing `Invalidation::Rebuild` refusal — verified against the exact fixture shape `live_params.rs`'s presence-flip test uses. `DriftRate.from` is caller-supplied (not looked up from the design) since a rebuild-class param has no POM-resolvable default to drift from. Docs: Part VII §17 split into §17.1 (`.sens`, unchanged) / §17.2 (the DC adjoint driver — explicitly a sibling of the noise adjoint at §12, not a reuse, per design §C2) plus `param_stamps`/`HAS_SENSITIVITY` in §3.2; Part VIII gained §14–16 (sensitivity/gradient engine attribution, the three-policy driver, Monte Carlo + aging) and Appendix C a matching Rust-surface table with exact signatures. The previously-tracked "Part VIII/Appendix C absent from mkdocs nav" note (dv-core T30-T32) was checked and found resolved (`mkdocs.yml` already wires both files into its nav) — not carried forward, since restating a resolved claim would be inaccurate. Deviation: a small follow-up commit (`dac94c9`) fixed a `clippy::map_entry` lint the Phase-7 completion gate caught in T20's `sampling.rs` change, committed separately per the one-task-one-commit rule rather than folded into T20 or T21. |
 | 3 | 5–6 | T14–T19 ✅ | `d60ebea`, `4f70abc`, `3ed7501`, `9fd5884`, `e072ec4`, `6e42602` | 1433 passed / 0 failed / 4 ignored (+27, zero regressions). Clippy + doc gate clean. Notes: SamplePlan::reset + (seed,index) replay proof (named failing sample reproduces exactly, nominal-after-sampling has no residue, index instability under design edits documented); SamplePlan::monte_carlo reports yield/σ_i/worst-sample with per-sample convergence-failure-as-outcome (own isolated compile-count test); one policy-parameterized Driver (Policy::Optimize/Center/HighSigma) forcing `collect` posture by construction regardless of caller config; optimize policy (feasibility climb + gradient-descent objective phase with backtracking line search, bounded iteration — never stalls on a D1 discontinuity) converges a two-parameter known-optimum fixture with zero recompiles; a pure-Rust Nelder–Mead black-box engine composes with the gradient path for non-differentiable objectives (mixed fixture names both engines, purely-differentiable runs never spuriously attribute black-box); center policy maximizes min_i(m_i/σ_i) using SamplePlan::monte_carlo_around (new: samples AROUND the current search point, not the design's static declared nominal) — a two-competing-constraint fixture shows the centered point raises the worst normalized margin and Monte-Carlo yield above nominal. Deviation: driver/optimize.rs and driver/center.rs shipped their T17/T19 algorithm bodies in T16's commit (Rust requires the dispatched-into module tree to compile as a unit); T17/T19's own commits added the dedicated tests against that already-landed logic. Also split driver/mod.rs into entry.rs/support.rs to satisfy the repo's mod.rs line-count hygiene guard (MD-34), discovered at the Phase 6 build gate. |
 | 2 | 3–4 | T7–T12 ✅ | `b16556a`, `dacc9e3`, `a3f1331`, `afd2391`, `38f013d`, `d4c86a6` | 1406 passed / 0 failed / 4 ignored (+25). Clippy clean. Adjoint DC driver: one transpose solve for all params (count asserted); cross-checked against `.sens` on linear + nonlinear fixtures; margin gradients at argmin; reduced-gradient via IFT; AC fails loud; host surface on both hosts with engine attribution + parity guard. |
 
@@ -517,10 +518,10 @@ classifier or an extrapolation possible at all)
 **Requirement**: DVG-20 (P3)
 
 **Done when**:
-- [ ] an importance-sampling estimator (statistical blockade or scaled-sigma) is implemented as a driver policy
-- [ ] every yield number travels with **its estimator and a confidence interval** — a yield without its estimator is not a yield
-- [ ] a tail sample is replayable from `(seed, index)`
-- [ ] on a bitcell-shaped fixture, the estimate agrees with a long plain Monte Carlo within the reported interval
+- [x] an importance-sampling estimator (statistical blockade or scaled-sigma) is implemented as a driver policy
+- [x] every yield number travels with **its estimator and a confidence interval** — a yield without its estimator is not a yield
+- [x] a tail sample is replayable from `(seed, index)`
+- [x] on a bitcell-shaped fixture, the estimate agrees with a long plain Monte Carlo within the reported interval
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(api): estimate high-sigma yield by importance sampling`
@@ -536,10 +537,10 @@ classifier or an extrapolation possible at all)
 **Requirement**: DVG-21 (P3)
 
 **Done when**:
-- [ ] the host computes stress from an OP or transient run, restamps drifted parameters, and re-verifies
-- [ ] the reported artifact is the **margin delta** — which constraint goes negative first, and after how long
-- [ ] a drift that would cross a rebuild-class boundary fails loud rather than silently re-elaborating
-- [ ] documented honestly: the gap versus MOSRA/RelXpert is the model *data* (stress equations per device), not the mechanism — the shipped ngspice-faithful models carry none
+- [x] the host computes stress from an OP or transient run, restamps drifted parameters, and re-verifies
+- [x] the reported artifact is the **margin delta** — which constraint goes negative first, and after how long
+- [x] a drift that would cross a rebuild-class boundary fails loud rather than silently re-elaborating
+- [x] documented honestly: the gap versus MOSRA/RelXpert is the model *data* (stress equations per device), not the mechanism — the shipped ngspice-faithful models carry none
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `feat(api): add aging drift and margin-delta reporting`
@@ -557,11 +558,11 @@ the neighbours
 **Requirement**: DVG-23
 
 **Done when**:
-- [ ] `param_stamps` and `HAS_SENSITIVITY` documented in the ABI section
-- [ ] the adjoint DC driver documented beside `.sens`, stating explicitly that it is a **sibling** of the noise adjoint (§12) and not a reuse — the optimistic reading is what this line exists to prevent
-- [ ] the stamp-perturbation fallback and its reporting contract documented
-- [ ] the differentiability admissibility rule stated **once**, shared with `.sens`, not duplicated
-- [ ] the **AC-gradient gap is documented as a limitation with its reason** (D6) — a gap the spec names is a decision; a gap it omits is a bug report waiting
+- [x] `param_stamps` and `HAS_SENSITIVITY` documented in the ABI section
+- [x] the adjoint DC driver documented beside `.sens`, stating explicitly that it is a **sibling** of the noise adjoint (§12) and not a reuse — the optimistic reading is what this line exists to prevent
+- [x] the stamp-perturbation fallback and its reporting contract documented
+- [x] the differentiability admissibility rule stated **once**, shared with `.sens`, not duplicated
+- [x] the **AC-gradient gap is documented as a limitation with its reason** (D6) — a gap the spec names is a decision; a gap it omits is a bug report waiting
 
 **Tests**: none · **Gate**: build
 **Commit**: `docs(spec): document the sensitivity ABI and adjoint driver`
@@ -577,10 +578,10 @@ the neighbours
 **Requirement**: DVG-23
 
 **Done when**:
-- [ ] `sensitivity`/`gradient` documented with engine attribution
-- [ ] `optimize`/`center`/`monte_carlo`/high-sigma documented as **three policies of one driver**, not three features
-- [ ] the reproducibility contract (`seed, index`) documented, including that a sample index is not stable across design edits
-- [ ] the note that both these documents are absent from every mkdocs nav (`p6-cleanup-architecture` deferred) carried forward — if still open, this documentation is unpublished
+- [x] `sensitivity`/`gradient` documented with engine attribution
+- [x] `optimize`/`center`/`monte_carlo`/high-sigma documented as **three policies of one driver**, not three features
+- [x] the reproducibility contract (`seed, index`) documented, including that a sample index is not stable across design edits
+- [x] checked for the tracked "absent from mkdocs nav" note (`p6-cleanup-architecture`/dv-core T30-T32): found resolved — `mkdocs.yml` wires both `part_viii_host_api.md` and `appendix_c_host_surface.md` into its nav today — so it is correctly NOT carried forward (restating a resolved claim would be inaccurate, not honest)
 
 **Tests**: none · **Gate**: build
 **Commit**: `docs(spec): document the host optimization driver`

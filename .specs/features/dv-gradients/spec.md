@@ -321,31 +321,31 @@ fixture whose margin delta names the first constraint to fail.
 
 | ID | Story | Status |
 |---|---|---|
-| DVG-01 | `∂F/∂p` kernel, emitted once at compile time | Pending |
-| DVG-02 | One kernel, parameter-indexed (no per-parameter explosion) | Pending |
-| DVG-03 | Differentiability admissibility + loud refusal | Pending |
-| DVG-04 | `param_stamps` into a caller sink | Pending |
-| DVG-05 | `HAS_SENSITIVITY` capability bit | Pending |
-| DVG-06 | Stamp-perturbation fallback, no re-solve | Pending |
-| DVG-07 | Fallback reported by element | Pending |
-| DVG-08 | DC adjoint: one transpose solve for all parameters | Pending |
-| DVG-09 | Adjoint vs `.sens` agreement within FD tolerance | Pending |
-| DVG-10 | Solve-count proof (20 params = 1 extra solve) | Pending |
-| DVG-11 | Pointwise gradient at argmin (D1); reduced only if differentiable | Pending |
-| DVG-12 | AC-metric gradient fails loud naming the gap (D6) | Pending |
-| DVG-13 | Host `sensitivity`/`gradient`, both hosts, engine attribution | Pending |
-| DVG-14 | Optimize policy: feasibility then objective, `collect` posture | Pending |
-| DVG-15 | Black-box fallback composed and attributed | Pending |
-| DVG-16 | Monte Carlo: process vs mismatch draws over the instance tree | Pending |
-| DVG-17 | `(seed, index)` reproducibility and replay | Pending |
-| DVG-18 | Yield, `σ_i`, worst sample reporting | Pending |
-| DVG-19 | Center policy: `min_i (m_i/σ_i)`, σ scheme stated | Pending |
-| DVG-20 | High-sigma importance sampling + estimator and CI | Pending |
-| DVG-21 | Aging: drift, re-verify, margin delta | Pending |
-| DVG-22 | cross-cutting: MD-18 compile-once across every loop | Pending |
-| DVG-23 | `docs/spec/` updated: Part VII (ABI + driver), Part VIII + appendix C (host), AC gap stated (design §G) | Pending |
+| DVG-01 | `∂F/∂p` kernel, emitted once at compile time | Covered — `crates/piperine-codegen/tests/param_kernel.rs:38` (`395ab04`, `c33f5cf`) |
+| DVG-02 | One kernel, parameter-indexed (no per-parameter explosion) | Covered — `crates/piperine-codegen/tests/param_kernel.rs:38` (60-param `Mos1` compile, function count asserted) (`c33f5cf`) |
+| DVG-03 | Differentiability admissibility + loud refusal | Covered — `crates/piperine-codegen/tests/param_admissibility.rs:40,70,103` (`e85759d`) |
+| DVG-04 | `param_stamps` into a caller sink | Covered — `crates/piperine-solver/src/core/element.rs:271` + `crates/piperine-solver/tests/param_stamps.rs` (`3934687`) |
+| DVG-05 | `HAS_SENSITIVITY` capability bit | Covered — `crates/piperine-solver/src/core/element.rs:121` + `crates/piperine-solver/tests/has_sensitivity.rs` (`7d4a787`) |
+| DVG-06 | Stamp-perturbation fallback, no re-solve | Covered — `crates/piperine-solver/src/analyses/sensitivity.rs`, `crates/piperine-solver/tests/sensitivity_fallback.rs` (`544d422`) |
+| DVG-07 | Fallback reported by element | Covered — `crates/piperine-solver/tests/sensitivity_fallback.rs::analytic_and_fallback_paths_coexist_and_the_fallback_is_named` (`544d422`) |
+| DVG-08 | DC adjoint: one transpose solve for all parameters | Covered — `crates/piperine-solver/src/analyses/adjoint.rs`, `crates/piperine-solver/tests/adjoint_dc.rs:94,132` (`b16556a`, `dacc9e3`) |
+| DVG-09 | Adjoint vs `.sens` agreement within FD tolerance | Covered — `crates/piperine-solver/tests/adjoint_vs_sens.rs:133,172` (linear + nonlinear + DC-invisible fixtures) (`a3f1331`) |
+| DVG-10 | Solve-count proof (20 params = 1 extra solve) | Covered — `crates/piperine-solver/tests/adjoint_dc.rs:94` (`dacc9e3`) |
+| DVG-11 | Pointwise gradient at argmin (D1); reduced only if differentiable | Covered — `crates/piperine-api/src/gradient.rs`, `crates/piperine-api/tests/margin_gradients.rs` (`afd2391`) |
+| DVG-12 | AC-metric gradient fails loud naming the gap (D6) | Covered — `crates/piperine-api/src/gradient.rs::MarginDifferentiability::AcDefined`, `crates/piperine-api/tests/sensitivity_surface.rs::ac_defined_metric_fails_loud_on_the_unified_surface` (`afd2391`, `38f013d`) |
+| DVG-13 | Host `sensitivity`/`gradient`, both hosts, engine attribution | Covered — `crates/piperine-api/src/session/entry.rs:361,390`, `crates/piperine-python/src/module.rs:217,235`, `crates/piperine-python/tests/sensitivity_parity.rs` (`38f013d`, `d4c86a6`) |
+| DVG-14 | Optimize policy: feasibility then objective, `collect` posture | Covered — `crates/piperine-api/src/driver/optimize.rs`, `crates/piperine-api/tests/optimize_policy.rs`, `crates/piperine-api/tests/driver_posture.rs` (`3ed7501`, `9fd5884`) |
+| DVG-15 | Black-box fallback composed and attributed | Covered — `crates/piperine-api/src/driver/blackbox.rs`, `crates/piperine-api/tests/optimize_blackbox.rs` (`e072ec4`) |
+| DVG-16 | Monte Carlo: process vs mismatch draws over the instance tree | Covered — `crates/piperine-api/src/sampling.rs`, `crates/piperine-api/tests/monte_carlo_sampling.rs` (`615d03f`) |
+| DVG-17 | `(seed, index)` reproducibility and replay | Covered — `crates/piperine-api/src/sampling.rs::SamplePlan::draws`, `crates/piperine-api/tests/monte_carlo_sampling.rs` (`d60ebea`) |
+| DVG-18 | Yield, `σ_i`, worst sample reporting | Covered — `crates/piperine-api/src/monte_carlo.rs`, `crates/piperine-api/tests/monte_carlo_report.rs` (`4f70abc`) |
+| DVG-19 | Center policy: `min_i (m_i/σ_i)`, σ scheme stated | Covered — `crates/piperine-api/src/driver/center.rs`, `crates/piperine-api/tests/center_policy.rs` (`6e42602`) |
+| DVG-20 | High-sigma importance sampling + estimator and CI | Covered — `crates/piperine-api/src/driver/high_sigma.rs`, `crates/piperine-api/tests/high_sigma_sampling.rs` (`b8bea9a`) |
+| DVG-21 | Aging: drift, re-verify, margin delta | Covered — `crates/piperine-api/src/aging.rs`, `crates/piperine-api/tests/aging_drift.rs` (`029a533`) |
+| DVG-22 | cross-cutting: MD-18 compile-once across every loop | Covered — `crates/piperine-api/tests/monte_carlo_compile_once.rs`, `crates/piperine-api/tests/optimize_compile_once.rs`, `crates/piperine-codegen/tests/param_admissibility.rs::AnalogKernel::compile_count` (`4f70abc`, `3ed7501`, `e85759d`) |
+| DVG-23 | `docs/spec/` updated: Part VII (ABI + driver), Part VIII + appendix C (host), AC gap stated (design §G) | Covered — `docs/spec/part_vii_solver.md` §3.2/§17.1–17.2, `docs/spec/part_viii_host_api.md` §14–16, `docs/spec/appendix_c_host_surface.md` (`e167966`, `f7572cb`) |
 
-**Coverage:** 23 total, 0 mapped (tasks phase not started).
+**Coverage:** 23 total, 23 mapped — feature complete (T1–T23).
 
 ---
 
