@@ -89,6 +89,15 @@ pub trait HostElement: Send + Sync {
     /// authors already face.
     fn accept_timestep(&mut self, _state: &StateView<'_>, _t: f64) {}
 
+    /// The dynamic digital subscriber's post-settle dispatch (T23,
+    /// DVT-27) — mirrors
+    /// [`Element::on_digital_settled`](piperine_solver::abi::Element::on_digital_settled)
+    /// exactly. Called once per accepted step, strictly after the
+    /// scheduler has settled every net for this instant, with the final
+    /// settled values (never a mid-delta-cycle one). A `Sequencer`'s
+    /// `wait(edge(...))` (T24) is built on this.
+    fn on_digital_settled(&mut self, _nets: &[piperine_solver::abi::LogicValue], _t: f64) {}
+
     /// Digital events queued during this accept (T21, DVT-33: a sequencer's
     /// `t.drive(net, value)` goes through here) — drained once, immediately
     /// after [`Self::accept_timestep`] returns, by the blanket adapter and

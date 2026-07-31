@@ -144,6 +144,10 @@ impl<T: HostElement> Element for HostAdapter<T> {
         }
     }
 
+    fn on_digital_settled(&mut self, nets: &[LogicValue], t: f64) {
+        HostElement::on_digital_settled(&mut self.0, nets, t)
+    }
+
     fn checkpoint_state(&self) -> Option<ElementCheckpoint> {
         HostElement::checkpoint_state(&self.0)
     }

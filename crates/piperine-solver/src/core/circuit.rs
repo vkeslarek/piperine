@@ -322,6 +322,14 @@ impl CircuitInstance {
         let before = self.digital_state.nets.clone();
         self.seed_digital_from_accept_hooks(&state, t);
         self.run_digital_at_with_analog(t, solution)?;
+        // T23/DVT-27: the dynamic digital subscriber's post-settle
+        // dispatch — strictly after the scheduler above reached
+        // quiescence, using the final settled net values. See
+        // `Element::on_digital_settled`'s doc header for the full
+        // contract (settled-only, no new EventKind, D11 still holds).
+        for device in self.devices.iter_mut() {
+            device.on_digital_settled(&self.digital_state.nets, t);
+        }
         Ok(before != self.digital_state.nets)
     }
 

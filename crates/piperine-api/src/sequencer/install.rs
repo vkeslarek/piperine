@@ -77,7 +77,7 @@ impl InstallSite {
     /// Continuity, when wanted, is explicit — the idiom is to read the
     /// current value first and bake it into the new wave:
     ///
-    /// ```ignore
+    /// ```text
     /// let now = ctx.v(&site_plus) - ctx.v(&site_minus); // or a Measure/read_v
     /// site.install(Wave::ramp(now, 1.8, 100e-6), t_i);   // continuous, because asked for
     /// ```

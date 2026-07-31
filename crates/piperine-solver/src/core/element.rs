@@ -526,6 +526,34 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     ) {
     }
 
+    /// The dynamic digital subscriber seam (T23, DVT-27,
+    /// `.specs/features/dv-tester/design.md` §C5): called once per
+    /// accepted step, **strictly after** the digital scheduler has
+    /// settled to quiescence for this instant —
+    /// `CircuitInstance::accept_and_run_digital` calls this immediately
+    /// after `run_digital_at_with_analog` returns, using the final
+    /// settled net values, never a mid-delta-cycle value (a mid-cycle
+    /// value can be an artifact of DAG evaluation order rather than a
+    /// signal the circuit had — the same rationale `Measure`'s digital
+    /// gate already documents). Not a new [`crate::analyses::events::EventKind`]
+    /// variant and not a new scheduling concept: every element implicitly
+    /// "subscribes" simply by overriding this hook (the default is a
+    /// zero-cost no-op), and this call site *is* the post-settle dispatch
+    /// — no separate registration list is threaded through the scheduler.
+    ///
+    /// Reached from the same call chain as [`Self::accept_timestep`]
+    /// (`accept_and_run_digital` ← `TransientDriver::accept_step`, only
+    /// once a step is already accepted), so a rejected step never calls
+    /// this either — D11 holds here too.
+    ///
+    /// Other plausible consumers besides a test sequencer's `wait(edge(...))`
+    /// (design.md §C5): a future in-language `monitor` module wanting to
+    /// react to a settled protocol edge without re-deriving it from
+    /// `accept_timestep`'s pre-settle view, and a live-plotting host
+    /// wanting exactly the values a waveform viewer would show (settled,
+    /// never a transient mid-cycle glitch).
+    fn on_digital_settled(&mut self, _nets: &[LogicValue], _t: f64) {}
+
     /// Runtime state/var banks for opt-in per-step recording
     /// (`TransientAnalysisOptions::record_device_state`). Devices whose
     /// analog residual reads runtime banks (`delay`/`transition`/`idt`
