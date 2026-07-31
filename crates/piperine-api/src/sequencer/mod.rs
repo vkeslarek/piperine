@@ -68,6 +68,62 @@ impl SequencerControl {
     fn take_digital_drives(&mut self) -> Vec<(DigitalNet, LogicValue, f64)> {
         std::mem::take(&mut self.digital_drives)
     }
+
+    /// `t.expect(cond, msg)` (T22, DVT-29): a failing `cond` records an
+    /// `Error` finding with `t`/`instance` provenance — never a print.
+    /// Posture (strict aborts on the first `Error`, collect records all) is
+    /// enforced by the existing `dv-core` channel
+    /// (`CircuitInstance::consume_validation_reports`) once this finding is
+    /// polled — `expect` itself only ever records; it never decides to
+    /// abort.
+    pub fn expect(&mut self, cond: bool, msg: impl Into<String>, t: f64, instance: &str) {
+        if !cond {
+            self.findings
+                .push(piperine_solver::abi::ValidationSeverity::Error, "expect", msg, 0.0, t, instance);
+        }
+    }
+
+    /// `t.warn(msg)`: always records a `Warning`, which never aborts under
+    /// any posture (DVC-15's existing rule).
+    pub fn warn(&mut self, msg: impl Into<String>, t: f64, instance: &str) {
+        self.findings
+            .push(piperine_solver::abi::ValidationSeverity::Warning, "warn", msg, 0.0, t, instance);
+    }
+
+    /// `expect` against a [`Measure`](piperine_signal::measure::handle::Measure)'s
+    /// **lower** bound (`ideal.md` §4.3): compares `value - error_bound`
+    /// against `threshold`, not the point estimate alone — a borderline
+    /// pass whose bound-adjusted worst case would fail the threshold is
+    /// still an `expect` failure.
+    pub fn expect_measure_at_least<K: piperine_signal::measure::MeasureKind>(
+        &mut self,
+        measure: &piperine_signal::measure::handle::Measure<K>,
+        threshold: f64,
+        msg: impl Into<String>,
+        t: f64,
+        instance: &str,
+    ) -> Result<(), piperine_signal::measure::handle::MeasureError> {
+        let value = measure.value()?;
+        let bound = measure.error_bound()?;
+        self.expect(value - bound >= threshold, msg, t, instance);
+        Ok(())
+    }
+
+    /// The upper-bound twin of [`Self::expect_measure_at_least`]: compares
+    /// `value + error_bound` against `threshold`.
+    pub fn expect_measure_at_most<K: piperine_signal::measure::MeasureKind>(
+        &mut self,
+        measure: &piperine_signal::measure::handle::Measure<K>,
+        threshold: f64,
+        msg: impl Into<String>,
+        t: f64,
+        instance: &str,
+    ) -> Result<(), piperine_signal::measure::handle::MeasureError> {
+        let value = measure.value()?;
+        let bound = measure.error_bound()?;
+        self.expect(value + bound <= threshold, msg, t, instance);
+        Ok(())
+    }
 }
 
 /// What a [`Sequencer`] is waiting for. `t.advance(dt)` is the only form
@@ -116,6 +172,13 @@ pub struct Sequencer<P: SequencerProgram> {
     zero_advance_at: f64,
     zero_advance_count: usize,
     control: SequencerControl,
+    /// How much of `control.findings` has already been handed to the
+    /// solver's poll (T22) — `validation_reports` reports only the delta
+    /// since the last poll, never the whole accumulated history again,
+    /// since the solver's own `consume_validation_reports` appends every
+    /// non-`None` report it reads into the run's accumulated record.
+    reported_up_to: usize,
+    pending_report: Option<piperine_solver::abi::ValidationReport>,
 }
 
 impl<P: SequencerProgram> Sequencer<P> {
@@ -134,9 +197,40 @@ impl<P: SequencerProgram> Sequencer<P> {
             zero_advance_at: f64::NAN,
             zero_advance_count: 0,
             control,
+            reported_up_to: 0,
+            pending_report: None,
         };
         me.apply_wake(start_time, wake);
+        me.refresh_pending_report();
         me
+    }
+
+    /// Recompute the delta report from whatever `control.findings` gained
+    /// since the last poll — called at the end of every `accept_timestep`
+    /// (T22), so a poll immediately following sees exactly this step's new
+    /// findings, never a repeat of an earlier step's.
+    fn refresh_pending_report(&mut self) {
+        let all = self.control.findings.as_slice();
+        self.pending_report = if self.reported_up_to < all.len() {
+            let fresh = piperine_solver::abi::ValidationReport::new(all[self.reported_up_to..].to_vec());
+            self.reported_up_to = all.len();
+            Some(fresh)
+        } else {
+            None
+        };
+    }
+
+    /// Extract a human-readable message from a caught coroutine panic
+    /// payload (T22: "a coroutine exception surfaces as a test failure
+    /// carrying the simulation time").
+    fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+        if let Some(s) = payload.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "sequencer coroutine panicked with a non-string payload".to_string()
+        }
     }
 
     /// The pending time wake's absolute instant, if any.
@@ -203,7 +297,10 @@ impl<P: SequencerProgram> HostElement for Sequencer<P> {
     }
 
     fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::empty()
+        // EMITS_VALIDATION (T22, DVT-29): expect/warn record into `control.
+        // findings`, and only elements declaring this flag are ever polled
+        // for `validation_reports` — see `HostElement::validation_reports`.
+        ElementCapabilities::EMITS_VALIDATION
     }
 
     fn limiting_report(&self) -> Option<LimitingReport> {
@@ -222,14 +319,45 @@ impl<P: SequencerProgram> HostElement for Sequencer<P> {
             let tol = 1e-9 * pending.abs().max(f64::MIN_POSITIVE);
             if (t - pending).abs() <= tol {
                 self.pending = None; // consumed before resume: a panic inside resume leaves no stale pending
-                let wake = self.program.resume(pending, &mut self.control);
-                self.apply_wake(pending, wake);
+                // T22: a coroutine exception must not unwind straight
+                // through the solver's call stack — caught here, turned
+                // into an Error finding carrying the simulation time, and
+                // the sequencer stops (no further resume): the analysis
+                // itself then stops cleanly through the ordinary
+                // Strict-posture Err() path once this finding is polled.
+                let result = {
+                    let program = &mut self.program;
+                    let control = &mut self.control;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| program.resume(pending, control)))
+                };
+                match result {
+                    Ok(wake) => self.apply_wake(pending, wake),
+                    Err(payload) => {
+                        let msg = Self::panic_message(&*payload);
+                        let label = self.label.clone();
+                        self.control.findings.push(
+                            piperine_solver::abi::ValidationSeverity::Error,
+                            "coroutine_exception",
+                            format!("sequencer coroutine panicked at t={pending:.6e}: {msg}"),
+                            0.0,
+                            pending,
+                            label,
+                        );
+                        // Stop the sequencer: nothing further pending.
+                        self.pending = None;
+                    }
+                }
             }
         }
+        self.refresh_pending_report();
     }
 
     fn drain_digital_drives(&mut self) -> Vec<(DigitalNet, LogicValue, f64)> {
         self.control.take_digital_drives()
+    }
+
+    fn validation_reports(&self) -> Option<piperine_solver::abi::ValidationReport> {
+        self.pending_report.clone()
     }
 }
 
@@ -361,5 +489,75 @@ mod tests {
             })
             .collect();
         assert!(offending.is_empty(), "code (non-doc) lines must never reference SimHooks: {offending:?}");
+    }
+
+    // ── T22: expect/warn, the measure error-bound comparison ───────────────
+
+    #[test]
+    fn expect_true_records_nothing() {
+        let mut ctl = SequencerControl::new();
+        ctl.expect(true, "fine", 0.0, "seq0");
+        assert!(ctl.findings().to_report().is_none());
+    }
+
+    #[test]
+    fn expect_false_records_an_error_with_time_and_instance() {
+        let mut ctl = SequencerControl::new();
+        ctl.expect(false, "vout too low", 5e-6, "seq0");
+        let report = ctl.findings().to_report().expect("a failing expect must record");
+        let f = &report.findings()[0];
+        assert_eq!(f.severity, piperine_solver::abi::ValidationSeverity::Error);
+        assert_eq!(f.time, 5e-6);
+        assert_eq!(f.instance_path, "seq0");
+        assert_eq!(f.message, "vout too low");
+    }
+
+    #[test]
+    fn warn_always_records_a_warning_never_an_error() {
+        let mut ctl = SequencerControl::new();
+        ctl.warn("just a note", 1e-6, "seq0");
+        let report = ctl.findings().to_report().unwrap();
+        assert_eq!(report.findings()[0].severity, piperine_solver::abi::ValidationSeverity::Warning);
+    }
+
+    /// DVT-29 / `ideal.md` §4.3: `expect` against a `Measure` compares
+    /// against the error bound, not the point estimate. A peak of 5.0 with
+    /// a published bound of 0.3 passes a naive `value >= 4.8` check, but
+    /// its bound-adjusted worst case (4.7) does not — `expect_measure_at_least`
+    /// must catch the case the naive check would silently let through.
+    #[test]
+    fn expect_measure_at_least_uses_the_error_bound_not_the_point_estimate() {
+        use piperine_signal::measure::handle::Measure;
+        use piperine_signal::measure::kinds::Peak;
+
+        let mut peak = Measure::arm(Peak::new());
+        peak.feed(0.0, 5.0, 0.3);
+        assert_eq!(peak.value().unwrap(), 5.0);
+        assert_eq!(peak.error_bound().unwrap(), 0.3);
+
+        // The naive check the bound-aware form must NOT reduce to:
+        assert!(peak.value().unwrap() >= 4.8, "sanity: the naive point-estimate check would pass");
+
+        let mut ctl = SequencerControl::new();
+        ctl.expect_measure_at_least(&peak, 4.8, "peak must clear 4.8 with margin", 3e-6, "seq0").unwrap();
+        let report = ctl.findings().to_report().expect(
+            "the bound-adjusted worst case (5.0 - 0.3 = 4.7) is below 4.8 — expect_measure_at_least must fail",
+        );
+        assert_eq!(report.findings()[0].severity, piperine_solver::abi::ValidationSeverity::Error);
+    }
+
+    /// The contrast case: a threshold the bound-adjusted worst case still
+    /// clears records nothing.
+    #[test]
+    fn expect_measure_at_least_passes_when_the_bound_adjusted_value_clears_the_threshold() {
+        use piperine_signal::measure::handle::Measure;
+        use piperine_signal::measure::kinds::Peak;
+
+        let mut peak = Measure::arm(Peak::new());
+        peak.feed(0.0, 5.0, 0.3);
+
+        let mut ctl = SequencerControl::new();
+        ctl.expect_measure_at_least(&peak, 4.5, "peak must clear 4.5", 3e-6, "seq0").unwrap();
+        assert!(ctl.findings().to_report().is_none(), "4.7 (bound-adjusted) clears 4.5 — no finding");
     }
 }

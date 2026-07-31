@@ -152,11 +152,20 @@ impl<T: HostElement> Element for HostAdapter<T> {
         HostElement::restore_state(&mut self.0, checkpoint)
     }
 
-    // `validation_reports`, `evaluate_constraints`, `margin_report`,
-    // `reset_margin_tracking`, `runtime_banks`, `setup`/`destroy`: not
-    // mirrored — inherited at `Element`'s own defaults (DVC-13/DVC-18
-    // reach a host device the same way `.disto` does: implement `Element`
-    // directly for that surface).
+    /// T22, DVT-29: a `Sequencer`'s `expect`/`warn` findings reach
+    /// `dv-core`'s channel through here — the one `HostElement` hook this
+    /// batch mirrors from the "not mirrored" list below, because T22 gives
+    /// it bearing for the first time (T14's host_element.rs header already
+    /// documents that an omitted method is extended additively once a
+    /// task needs it).
+    fn validation_reports(&self) -> Option<piperine_solver::abi::ValidationReport> {
+        HostElement::validation_reports(&self.0)
+    }
+
+    // `evaluate_constraints`, `margin_report`, `reset_margin_tracking`,
+    // `runtime_banks`, `setup`/`destroy`: not mirrored — inherited at
+    // `Element`'s own defaults (DVC-18 reaches a host device the same way
+    // `.disto` does: implement `Element` directly for that surface).
 }
 
 #[cfg(test)]

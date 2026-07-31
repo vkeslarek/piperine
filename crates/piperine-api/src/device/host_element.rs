@@ -129,6 +129,17 @@ pub trait HostElement: Send + Sync {
         None
     }
 
+    /// Structured validation findings (T22, DVT-29): a `Sequencer`'s
+    /// `expect`/`warn` route here, through `dv-core`'s channel — never a
+    /// print. Mirrors
+    /// [`Element::validation_reports`](piperine_solver::abi::Element::validation_reports)
+    /// exactly (`Option`, drained by the solver only on elements declaring
+    /// [`ElementCapabilities::EMITS_VALIDATION`]); `None` is the default,
+    /// zero-cost for every `HostElement` that never reports anything.
+    fn validation_reports(&self) -> Option<piperine_solver::abi::ValidationReport> {
+        None
+    }
+
     // ── Introspection ────────────────────────────────────────────────────
 
     /// Operating-point variables as flat name/value pairs.
