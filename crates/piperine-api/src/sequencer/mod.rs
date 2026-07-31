@@ -20,7 +20,11 @@
 //!   functions, declared-impedance and reach-reporting (T21).
 //! - [`wait::{EdgeDirection, EdgeWait}`] — the digital half of `wait` (T23),
 //!   built on the solver's post-settle dispatch.
+//! - [`conflicts::DriveRegistry`] — the host-side pre-flight that turns two
+//!   devices driving the same net into a loud conflict (T26); instantiation
+//!   ordering itself needs no new code (`ideal.md` §12.12).
 
+pub mod conflicts;
 pub mod control;
 pub mod crossing;
 pub mod drive;
@@ -29,6 +33,7 @@ pub mod findings;
 pub mod install;
 pub mod wait;
 
+pub use conflicts::{DriveConflict, DriveRegistry};
 pub use control::SequencerControl;
 pub use driver::{Sequencer, SequencerProgram, Wake};
 pub use findings::Findings;

@@ -1,8 +1,8 @@
 //! `wait(edge(...))` (T23, DVT-27): the digital half of the sequencer's one
-//! `wait` verb, built on [`HostElement::on_digital_settled`]'s post-settle
-//! dispatch (`crate::device::host_element`) — never a mid-delta-cycle read.
-//! `wait(above(...))`'s analog twin arrives in T24 (`crate::sequencer::wait`
-//! gains `Wake::WaitCrossing` there).
+//! `wait` verb, built on
+//! [`HostElement::on_digital_settled`](crate::device::HostElement::on_digital_settled)'s
+//! post-settle dispatch — never a mid-delta-cycle read. `wait(above(...))`'s
+//! analog twin is `crossing::CrossingWait` (T24).
 
 use piperine_solver::abi::{DigitalNet, LogicValue};
 
