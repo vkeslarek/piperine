@@ -173,6 +173,24 @@ impl SamplePlan {
     /// INDEPENDENT draw per instance. Deterministic in
     /// `(seed, index, plan)` — replays produce byte-identical draws (T14).
     pub fn draws(&self, seed: u64, index: usize) -> Vec<SampleDraw> {
+        self.draws_around(seed, index, |entry| entry.default)
+    }
+
+    /// Compute the draws for sample `index` given `seed`, perturbing
+    /// around a CALLER-SUPPLIED baseline instead of each entry's declared
+    /// nominal (T19, DVG-19 AC2: "σ_i depends on the design point" — the
+    /// center policy needs to estimate spread around its current search
+    /// point, not the design's original declared values). `base_of` is
+    /// called once per entry; [`Self::draws`] is the special case
+    /// `|entry| entry.default`. Otherwise identical to [`Self::draws`]:
+    /// same global/mismatch grouping, same `(seed, index)`
+    /// reproducibility.
+    pub fn draws_around(
+        &self,
+        seed: u64,
+        index: usize,
+        base_of: impl Fn(&SampleEntry) -> f64,
+    ) -> Vec<SampleDraw> {
         // First pass: compute ONE draw per `global` group — every entry
         // in the group will read this same value. The PRNG stream is
         // keyed by `(seed, sample_index, "module.param")`, so two
@@ -184,7 +202,7 @@ impl SamplePlan {
                 let key = group_key(entry);
                 if !global_draws.contains_key(&key) {
                     let group_seed = mix(seed, index, &key);
-                    global_draws.insert(key.clone(), entry.draw_from(group_seed));
+                    global_draws.insert(key.clone(), entry.draw_from(group_seed, base_of(entry)));
                 }
             }
         }
@@ -203,7 +221,7 @@ impl SamplePlan {
                         // "label.param") — every instance gets its own.
                         let inst_key = instance_key(entry);
                         let inst_seed = mix(seed, index, &inst_key);
-                        entry.draw_from(inst_seed)
+                        entry.draw_from(inst_seed, base_of(entry))
                     }
                 };
                 SampleDraw {
@@ -226,6 +244,22 @@ impl SamplePlan {
         Ok(())
     }
 
+    /// Apply sample `index`'s draws, perturbing around `base_of`
+    /// (T19, [`Self::draws_around`]) instead of each entry's declared
+    /// nominal.
+    pub fn apply_around(
+        &self,
+        session: &mut Session,
+        seed: u64,
+        index: usize,
+        base_of: impl Fn(&SampleEntry) -> f64,
+    ) -> Result<(), Error> {
+        for draw in self.draws_around(seed, index, base_of) {
+            session.set(&draw.label, &draw.param, draw.value)?;
+        }
+        Ok(())
+    }
+
     /// Reset `session` to every entry's nominal (declared) value, through
     /// the ordinary restamp path ([`Session::set`]) — no new mutation
     /// route (T14, DVG-17 "no residue"). A nominal analysis run after
@@ -236,12 +270,32 @@ impl SamplePlan {
         }
         Ok(())
     }
+
+    /// Reset `session` to a caller-supplied baseline (T19): every entry's
+    /// value in `baseline` (keyed `"label.param"`) if present, else that
+    /// entry's declared nominal. Used after [`Self::draws_around`]-driven
+    /// sampling to return to the search point that was being sampled
+    /// AROUND (the center policy's current design point), not the
+    /// design's original declared values ([`Self::reset`]'s job).
+    pub fn reset_to(&self, session: &mut Session, baseline: &HashMap<String, f64>) -> Result<(), Error> {
+        for entry in &self.entries {
+            let key = format!("{}.{}", entry.label, entry.param);
+            let value = baseline.get(&key).copied().unwrap_or(entry.default);
+            session.set(&entry.label, &entry.param, value)?;
+        }
+        Ok(())
+    }
 }
 
 impl SampleEntry {
-    /// Draw one value from this entry's distribution, seeded by `seed`.
-    /// The nominal is the baseline; the drawn perturbation is added to it.
-    fn draw_from(&self, seed: u64) -> f64 {
+    /// Draw one value from this entry's distribution, seeded by `seed`,
+    /// perturbing around `base` (the ordinary case: `base ==
+    /// self.default`, T19's centering case: `base` is the design's
+    /// current search point — a relative tolerance like `sigma_rel`
+    /// scales with `base`, which physically makes more sense for a
+    /// centered design than always scaling with the ORIGINAL declared
+    /// value).
+    fn draw_from(&self, seed: u64, base: f64) -> f64 {
         let mut rng = SplitMix64::new(seed);
         let args = &self.distribution.args;
         let arg = |name: &str| -> Option<f64> {
@@ -254,23 +308,23 @@ impl SampleEntry {
                 if let Some(sigma) = arg("sigma") {
                     sigma * rng.next_std_normal()
                 } else if let Some(sigma_rel) = arg("sigma_rel") {
-                    self.default * sigma_rel * rng.next_std_normal()
+                    base * sigma_rel * rng.next_std_normal()
                 } else {
-                    return self.default;
+                    return base;
                 }
             }
             "uniform" => {
                 if let Some(half) = arg("half") {
                     half * (2.0 * rng.next_f64() - 1.0)
                 } else if let Some(rel) = arg("rel") {
-                    self.default * rel * (2.0 * rng.next_f64() - 1.0)
+                    base * rel * (2.0 * rng.next_f64() - 1.0)
                 } else {
-                    return self.default;
+                    return base;
                 }
             }
-            _ => return self.default,
+            _ => return base,
         };
-        self.default + delta
+        base + delta
     }
 }
 

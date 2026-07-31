@@ -107,9 +107,21 @@ pub(super) fn run(
 
     for outer in 0..spec.outer_iters.max(1) {
         outer_run = outer + 1;
-        // Re-sample sigma at the top of every outer iteration (fixed
-        // within it, refreshed between them — DVG-19 AC2).
-        let mc = plan.monte_carlo(session, spec.samples_per_outer.max(2), spec.seed.wrapping_add(outer as u64), config)?;
+        // Re-sample sigma AROUND THE CURRENT DESIGN POINT at the top of
+        // every outer iteration (fixed within it, refreshed between them
+        // — DVG-19 AC2: sigma depends on the design point, not the
+        // design's original declared nominal).
+        let baseline: HashMap<String, f64> = current
+            .iter()
+            .map(|((label, param), v)| (format!("{label}.{param}"), *v))
+            .collect();
+        let mc = plan.monte_carlo_around(
+            session,
+            spec.samples_per_outer.max(2),
+            spec.seed.wrapping_add(outer as u64),
+            config,
+            &baseline,
+        )?;
         let sigmas: HashMap<String, f64> = spec
             .constraints
             .iter()
@@ -137,17 +149,20 @@ pub(super) fn run(
                 .expect("non-empty");
             worst_normalized_margin = worst_normalized_margin.max(active_value);
 
-            // Ascend the ACTIVE constraint's normalized margin — D1: the
-            // `min` differentiates at the currently active member.
+            // Ascend the ACTIVE constraint's RAW margin (its gradient's
+            // SIGN/DIRECTION is what matters here — D1: the `min`
+            // differentiates at the currently active member) with a step
+            // sized independently of `sigma`; `sigma` normalizes the
+            // TRACKED value, not the step (a small sigma must not blow
+            // the step size up).
             let grad = super::optimize::finite_diff_metric(session, &spec.over, &current, &active_name, config)?;
-            let sigma = *sigmas.get(&active_name).unwrap_or(&1.0);
             let norm = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
             if norm < 1e-12 {
                 break;
             }
             for ((label, param), g) in spec.over.iter().zip(&grad) {
                 let base = current[&(label.clone(), param.clone())];
-                let delta = spec.step * base.abs().max(1e-6) * (g / sigma / norm);
+                let delta = spec.step * base.abs().max(1e-6) * (g / norm);
                 let new_v = base + delta;
                 current.insert((label.clone(), param.clone()), new_v);
                 session.set(label, param, new_v)?;

@@ -143,9 +143,50 @@ impl SamplePlan {
         seed: u64,
         config: &SolverConfig,
     ) -> Result<MonteCarloResult, Error> {
+        let outcomes = self.run_samples(session, n, seed, config, |e| e.default)?;
+        self.reset(session)?;
+        Ok(MonteCarloResult { seed, n, outcomes })
+    }
+
+    /// [`Self::monte_carlo`], perturbing around `baseline` (keyed
+    /// `"label.param"`, falling back to an entry's declared nominal when
+    /// absent) instead of each entry's declared nominal — T19, DVG-19
+    /// AC2: `σ_i` depends on the design point, so the center policy
+    /// estimates spread AROUND its current search point rather than the
+    /// design's original declared values. `session` is left at
+    /// `baseline` ([`SamplePlan::reset_to`]) when this returns, not the
+    /// design's original nominal.
+    pub fn monte_carlo_around(
+        &self,
+        session: &mut Session,
+        n: usize,
+        seed: u64,
+        config: &SolverConfig,
+        baseline: &HashMap<String, f64>,
+    ) -> Result<MonteCarloResult, Error> {
+        let base_of = |e: &crate::sampling::SampleEntry| {
+            baseline.get(&format!("{}.{}", e.label, e.param)).copied().unwrap_or(e.default)
+        };
+        let outcomes = self.run_samples(session, n, seed, config, base_of)?;
+        self.reset_to(session, baseline)?;
+        Ok(MonteCarloResult { seed, n, outcomes })
+    }
+
+    /// Shared sampling loop for [`Self::monte_carlo`] /
+    /// [`Self::monte_carlo_around`]: apply `n` samples' draws (perturbing
+    /// around `base_of`) and record each one's outcome. Does NOT reset —
+    /// callers reset to their own baseline afterward.
+    fn run_samples(
+        &self,
+        session: &mut Session,
+        n: usize,
+        seed: u64,
+        config: &SolverConfig,
+        base_of: impl Fn(&crate::sampling::SampleEntry) -> f64,
+    ) -> Result<Vec<SampleOutcome>, Error> {
         let mut outcomes = Vec::with_capacity(n);
         for index in 0..n {
-            self.apply(session, seed, index)?;
+            self.apply_around(session, seed, index, &base_of)?;
             match session.op(config, None) {
                 Ok(op) => {
                     let margins = op
@@ -159,7 +200,6 @@ impl SamplePlan {
                 Err(e) => outcomes.push(SampleOutcome::Failed { error: e.to_string() }),
             }
         }
-        self.reset(session)?;
-        Ok(MonteCarloResult { seed, n, outcomes })
+        Ok(outcomes)
     }
 }
