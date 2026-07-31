@@ -10,3 +10,4 @@ ndarray.workspace = true
 piperine-lang = { path = "../piperine-lang" }
 piperine-codegen = { path = "../piperine-codegen" }
 piperine-solver = { path = "../piperine-solver" }
+piperine-signal = { path = "../piperine-signal" }

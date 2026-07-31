@@ -13,11 +13,16 @@
 //! - [`stamp::{Ctx, StateView, StampSink}`] (T14 groundwork, hardened in
 //!   T15) — the borrow-scoped wrappers a `HostElement` reads/writes
 //!   through, so no raw matrix pointer ever crosses into device code.
+//! - [`level1`] (T16) — turns a `piperine-signal` `Wave`/`Behavior` into
+//!   native stamps and feeds a `Measure` from accepted points, surfacing
+//!   the limiter's convergence veto alongside them.
 
 pub mod adapter;
 pub mod host_element;
+pub mod level1;
 pub mod stamp;
 
 pub use adapter::HostAdapter;
 pub use host_element::HostElement;
+pub use level1::{limiting_report, BehaviorStamp, MeasureFeed, WaveStamp};
 pub use stamp::{Ctx, StampError, StampSink, StateView};
