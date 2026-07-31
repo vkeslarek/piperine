@@ -306,10 +306,10 @@ impl SamplePlan {
         for entry in &self.entries {
             if entry.scope() == SampleScope::Global {
                 let key = group_key(entry);
-                if !global_draws.contains_key(&key) {
+                global_draws.entry(key.clone()).or_insert_with(|| {
                     let group_seed = mix(seed, index, &key);
-                    global_draws.insert(key, entry.draw_shifted(group_seed, shift_sigmas));
-                }
+                    entry.draw_shifted(group_seed, shift_sigmas)
+                });
             }
         }
         let mut log_weight: f64 = global_draws.values().map(|(_, lw)| lw).sum();
