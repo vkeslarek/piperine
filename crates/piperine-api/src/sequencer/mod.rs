@@ -24,6 +24,8 @@
 //! entirely through `HostElement`/`Element`, not the session lifecycle
 //! hooks `Session` wires around a build/solve.
 
+pub mod install;
+
 use piperine_solver::abi::{ElementCapabilities, LimitingReport};
 
 use crate::device::host_element::HostElement;
