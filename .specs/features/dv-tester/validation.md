@@ -273,3 +273,237 @@ All mutations discarded via `git checkout --` immediately after each run; `git s
 4. Four spec-precision gaps (DVT-14, DVT-16 unreached branch, DVT-26 no `EventKind`-name assertion, DVT-35 structural-only MNA-absence proof) — none is a functional defect, but each is weaker than the spec's literal wording asks.
 
 **Next steps**: Route Fix 1 and Fix 2 back to an implementer as the two Major items (both are within the 3-fix-task budget); Fix 3 optional/Minor. Re-run the discrimination sensor on the same two mutation points after the fix to confirm they now kill.
+
+---
+
+## Re-verification (round 2)
+
+**Date**: 2026-08-01
+**Diff range**: `ae65570..HEAD` (round-1 base) plus fix-round commits
+`793c42c`, `9734788`, `3aa97f7`, `cb4644a`, `3566afe`
+**Verifier**: independent sub-agent (fresh session, author ≠ verifier)
+
+### Gate re-run (clean, single-writer — see note below)
+
+Run in four sequential stages (the combined one-liner hit a **disk-full**
+condition on this host unrelated to the code under test — `/home` was at
+100% before this session started from unrelated user data; `cargo clean`
+freed ~50 GiB twice during this pass and the four stages below were run
+one at a time to keep `target/` under the available headroom):
+
+| Stage | Result |
+|---|---|
+| `CARGO_PROFILE_DEV_DEBUG=0 cargo build --workspace` | ✅ exit 0 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | ✅ exit 0, zero warnings |
+| `cargo test --workspace` | ✅ exit 0 — 279 test binaries, 0 failed, 1675 passed, 4 pre-existing `0 passed`/`N ignored` placeholder targets unchanged from round 1 |
+| `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` | ✅ exit 0, clean |
+
+Working tree confirmed clean (`git status --short crates/`) before and
+after — no source left mutated by this pass.
+
+### Fix round 1 — gap-by-gap re-verification
+
+**1. DVT-30 (Major, levels compose) — ✅ genuinely fixed.**
+`crates/piperine-api/tests/host_device_e2e.rs:633`
+(`all_three_levels_compose_in_one_class_end_to_end`, commit `793c42c`).
+Read in full: one `ActiveLoadSweep` struct (`host_device_e2e.rs:577-628`)
+stamps a conductance directly in `load_dc`/`load_transient` (level 0),
+installs a `WaveStamp` into an independent node in the same stamp call
+(level 1), and owns a `Sequencer<SweepProgram>` field it delegates
+`next_breakpoints`/`accept_timestep`/`on_digital_settled`/
+`drain_digital_drives`/`validation_reports` to (level 2). The test builds
+a real `CircuitBuilder` circuit (`Vsrc` + series resistor + this composed
+device), runs a real `Solver::tran()`, and checks `v(mid)` at each of 3
+sequencer-driven sweep boundaries against the analytic resistor-divider
+value for that step's conductance (`(v_mid - expected).abs() < 1e-2`) —
+proving the level-2 coroutine genuinely mutated the level-0 stamp's shared
+state (`Arc<Mutex<f64>>`) at real, sequencer-forced breakpoints in a real
+transient solve, not a stub. Also checks the level-1 `Wave` still drives
+1.8 V at its own node at the end, undisturbed. This is a real, non-trivial
+composition proof. Delegation pattern (composition-over-inheritance, since
+`Sequencer<P>`'s own `HostElement` impl never overrides `load_dc`) is
+legitimate given MD-01 (no downcast) and Rust's lack of inheritance.
+
+**2. Settled-only dispatch mutant (Major) — ✅ confirmed killed, re-run
+myself.** Mutated `crates/piperine-solver/src/core/circuit.rs:328`
+(`device.on_digital_settled(&self.digital_state.nets, t)` →
+`device.on_digital_settled(&before, t)`), ran
+`cargo test -p piperine-solver --test digital_settle_subscriber`:
+`the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_accept_snapshot`
+(added in `9734788`) failed exactly as expected (`left: (0.0, Zero) right:
+(0.0, One)`), the other 3 tests in that file still passed. Reverted the
+mutation; `git diff` on the file confirmed empty afterward.
+
+**3. `Wave::pending_edges` boundary mutant (Minor) — ✅ confirmed killed,
+re-run myself.** Mutated `crates/piperine-signal/src/wave.rs:242`
+(`t > from && t <= end` → `t > from && t < end`), ran `cargo test -p
+piperine-signal --lib wave::`:
+`wave::tests::an_edge_exactly_at_the_window_right_boundary_is_included`
+(added in `3aa97f7`) failed (`left: [] right: [2.0]`), all 16 other wave
+tests still passed. Reverted; `git diff` confirmed empty afterward.
+
+**4. DVT-14 replay identity — ✅ adequately strengthened, spirit
+satisfied.** `crates/piperine-signal/tests/measure_replay_identity.rs`
+(commit `cb4644a`). Spec's literal AC (`spec.md` P1 Measure story, AC #2):
+"the same reduction is applied to a stored `Waveform` post-run and to a
+live transient online THEN both SHALL produce identical results — **the
+crate's own regression test**." The spec does not require two
+independently-coded reduction paths — `Measure` is architected (by design,
+confirmed by reading `measure/handle.rs`/`measure/kinds.rs`) as a single
+streaming accumulator with one entry point (`feed`), so no second
+implementation exists to diverge from. Given that architecture, the
+online loops now poll `value()`/`error_bound()` after every sample (lines
+57-58, 85-86, 108-109) — a real, distinguishing property (an accumulator
+with observer side effects, e.g. an accidental reset or stale cache in
+`value()`, would fail this and pass a bare double-`feed` comparison). This
+is the strongest test the actual architecture supports and matches the
+spec's literal wording (a regression test proving identical results across
+usage patterns, not a mandate for two independent code paths). Judged
+adequate.
+
+**5. DVT-16 refine floor-termination — ✅ genuinely forces the floor
+branch.** `crates/piperine-signal/src/measure/kinds.rs:554`
+(`refine_terminates_at_the_step_floor_and_honestly_reports_tol_unmet`).
+Traced `Peak::refine` (`kinds.rs:48-77`): `h = self.bound.max(step_floor);
+if h <= step_floor { break; }` only fires once `self.bound` has shrunk to
+or below `step_floor`. The test sets `tol = 1e-9` (unreachable) and
+`step_floor = 0.05` (coarse relative to the fixture's curvature), then
+asserts `met == false`, `error_bound() > tol`, `error_bound() <=
+coarse_bound` (never widens), and — critically — `probes_taken <
+max_iters * 2 / 10`, which rules out the false-positive of merely
+exhausting the iteration budget without ever exercising the floor `break`.
+This is a genuine, targeted branch-forcing test, not a smoke test.
+
+**6. DVT-26 EventKind mapping — ❌ NOT fixed; real remaining gap,
+confirmed by careful re-reading.** `crates/piperine-api/tests/
+sequencer_wake_event_kind_mapping.rs` (commit `cb4644a`) asserts
+Advance → `EventKind::Breakpoint` and WaitEdge → `EventKind::Digital` by
+name (both genuinely correct, traced to the literal constructor calls in
+`transient.rs`). For WaitCrossing, the test explicitly proves and
+documents the **negative** — `Wake::WaitCrossing` never constructs or
+touches any `EventEntry`/`EventKind` at all (confirmed independently by
+reading `crates/piperine-api/src/sequencer/driver.rs:274-277,308-334` and
+`crates/piperine-api/src/sequencer/crossing.rs`: `CrossingWait::observe`
+is polled from `accept_timestep`'s `StateView`, resumes at the current
+accepted `t`, and never builds an `EventQueue`/`EventEntry` of any kind).
+The fixer's commit message and test comment frame this as "`EventKind::
+Crossing` is an unrelated A2D-comparator feature" and treat the gap as
+closed. **This framing is not supported by the feature's own formal spec
+docs**, which were written in this same feature's Phase 7 (T35-T37,
+commits `1c7049a`/`3dc8018`, prior to the fix round) and explicitly claim
+the opposite:
+- `docs/spec/part_viii_host_api.md:915-919`'s table literally states
+  `t.wait(above(net, level, direction))` → **`EventKind` column: `Crossing`**
+  → "tier 2, error reported (Part VII §20.5)."
+- `.specs/features/dv-tester/ideal.md:558-568`'s §4.1 table makes the
+  identical claim, calling the one-to-one mapping "not a coincidence to be
+  pleased about; it is the argument that the sequencer needs no new
+  scheduling concept."
+- `docs/spec/part_vii_solver.md:1878-1904` (§20.5) gives the more careful
+  technical picture — tier 2 is "built entirely on seams that already
+  existed" and needs "**none**" solver change — which is consistent with
+  the actual implementation's behavior (resume at the current accepted
+  `t`, report an honest bound) but never claims literal `EventQueue`
+  dispatch either. This section does NOT contradict the implementation.
+
+So there is a real, unreconciled inconsistency: Part VIII §17.5's table
+and `ideal.md` §4.1's table both name `EventKind::Crossing` as the
+mechanism for the third wake source, but the code — confirmed by direct
+reading, not the fixer's prose — never constructs or dispatches through
+that variant, and no `SPEC_DEVIATION` marker (the precedent used
+elsewhere in this same feature, e.g. `docs/spec/part_vii_solver.md:1742,
+1766` and `part_viii_host_api.md:893`) was added to either doc to
+reconcile the discrepancy. `tasks.md`'s T24 "Done when" bullet — "all
+three wake forms compose in one coroutine, and the mapping to `Digital`/
+`Breakpoint`/`Crossing` is asserted" — is checked `[x]` but the assertion
+for the third form is an honest negative, not the positive mapping the
+bullet's own wording (and the spec docs it traces to) describe.
+
+**Verdict on item 6**: this is a genuine remaining gap, but it is a
+**documentation/spec-consistency** gap, not a functional defect — the
+underlying tier-2 crossing-wait mechanism works correctly (proven
+separately by `sequencer_crossing_waits.rs`, unchanged this round) and
+matches Part VII §20.5's careful technical description. The fix is
+docs-only: add a `SPEC_DEVIATION` note at `docs/spec/part_viii_host_api.md:919`
+and `ideal.md`'s §4.1 table (and correct spec.md's Sequencer AC #3
+one-to-one claim) stating plainly that `WaitCrossing` does not dispatch
+through `EventKind::Crossing` — that variant remains reserved for the
+tier-1 PHDL `@cross`/A2D-comparator path — the tier-2 sequencer wait rides
+`accept_timestep` polling instead. Ranked **Minor** (doc-only, no runtime
+behavior at risk), below Blocker/Major.
+
+**7. DVT-35 digital-drive-never-touches-MNA — ✅ genuinely verified.**
+`crates/piperine-api/tests/sequencer_drive.rs:261`
+(`a_digital_drive_never_perturbs_the_analog_solve`). Read in full: a real
+`CircuitBuilder` transient run (ramp-driven RC + a second `Sequencer` whose
+only action is `ctl.drive_digital(...)`, no `StampSink`/`AnalogReference`
+anywhere in its program) is solved with `Solver`/`circuit.transient(...)`,
+and `v(vout)` is compared at multiple accepted points against the
+identical closed-form ramp-RC segment response used by the pre-existing
+`a_ramp_drive_into_an_rc_follows_the_analytic_segment_response` test, same
+tolerance (`0.02`, not loosened for this new test — verified by grep, both
+occurrences identical). `saw_driven` is asserted true so the test cannot
+pass vacuously (the digital net must actually have been observed at
+`One`). This is a real runtime circuit proof, not a mock, with a
+tolerance consistent with (not weaker than) the existing precedent test.
+
+### Summary of the 5 original gaps + new scrutiny item
+
+| # | Item | Verdict |
+|---|---|---|
+| 1 | DVT-30 (Major) | ✅ Fixed |
+| 2 | Settled-only dispatch mutant (Major) | ✅ Fixed, re-killed myself |
+| 3 | `pending_edges` boundary mutant (Minor) | ✅ Fixed, re-killed myself |
+| 4 | DVT-14 spec-precision | ✅ Adequately strengthened |
+| 5 | DVT-16 spec-precision | ✅ Genuinely forces the floor branch |
+| 6 | DVT-26 spec-precision | ❌ Still open — doc/spec inconsistency (Minor) |
+| 7 | DVT-35 spec-precision | ✅ Genuinely verified at runtime |
+
+### Overall verdict: ❌ FAIL (one Minor gap remaining)
+
+Six of seven items are genuinely resolved with hard evidence (file:line,
+re-run mutations, traced code paths). One item (DVT-26) is not resolved
+as claimed: the fix round added an honest test proving the current
+negative but left the feature's own formal spec docs (`part_viii_host_api.md`,
+`ideal.md`) asserting a positive mapping that does not hold, with no
+`SPEC_DEVIATION` reconciling the two — a real, if Minor, unclosed loop on
+a "Done when" bullet that literally says "the mapping ... is asserted."
+Per this feature's own established practice (multiple `SPEC_DEVIATION`
+markers already exist for comparable discoveries), the correct closure is
+a documentation-only fix, not a code change: annotate the discrepancy
+where it was overclaimed rather than leave test-comment prose as the only
+record of it.
+
+**Ranked remaining gap**:
+1. **DVT-26 doc/spec inconsistency (Minor)** — `docs/spec/part_viii_host_api.md:919`
+   and `.specs/features/dv-tester/ideal.md:558-568` both claim
+   `WaitCrossing` maps onto `EventKind::Crossing`; the implementation
+   (`crates/piperine-api/src/sequencer/{driver.rs,crossing.rs}`) does not
+   and was never intended to (confirmed against Part VII §20.5's own
+   tier-2 description). Fix: add a `SPEC_DEVIATION` note at both doc
+   locations (and adjust `spec.md`'s Sequencer story AC #3 wording) stating
+   this plainly, following the precedent already set elsewhere in this
+   feature's docs. No runtime code change needed.
+
+## Fix round 2
+
+DVT-26 doc/spec inconsistency closed, docs-only:
+
+- `docs/spec/part_viii_host_api.md` §17.5's wake-source table: the
+  `WaitCrossing` row no longer claims `EventKind::Crossing`; a note now
+  explains the analog crossing wait is resumed via tier-2 prediction +
+  `accept_timestep`/`StateView` polling (`sequencer/driver.rs`,
+  `crossing.rs`), never touching `EventQueue`/`EventKind::Crossing`, which
+  belongs to PHDL `@cross`'s tier-1 path (Part VII §20.5).
+- `.specs/features/dv-tester/ideal.md` §4.1's table and prose corrected the
+  same way — no longer claims a one-to-one mapping across all three wake
+  forms.
+- `.specs/features/dv-tester/spec.md`'s Sequencer story acceptance
+  criterion #3 reworded: time/digital waits map onto `Breakpoint`/`Digital`
+  `EventKind`s, the analog crossing wait explicitly does not ride
+  `EventKind::Crossing`. The DVT-26 traceability row updated to match.
+- `docs/spec/part_vii_solver.md` §20.5 required no change — it already
+  described tier 1 vs. tier 2 correctly; only Part VIII and `ideal.md`
+  overclaimed.
+- Gate: `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` clean. No Rust source touched.
+- Commit: see repo log, `docs(dv-tester): correct the crossing-wait EventKind claim in host API and design docs`.

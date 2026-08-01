@@ -275,8 +275,12 @@ leaving that straight line.
    the host SHALL be resumed exactly once for it; WHEN a step containing one is
    **rejected** THEN the host SHALL NOT be resumed (D11).
 3. WHEN `yield t.wait(...)` is used THEN it SHALL accept three wake sources —
-   a **time** advance, a **digital edge**, and an **analog crossing** — mapping
-   onto the `EventQueue`'s existing `Digital`/`Breakpoint`/`Crossing` kinds.
+   a **time** advance, a **digital edge**, and an **analog crossing**. The time
+   advance and digital edge SHALL map onto the `EventQueue`'s existing
+   `Breakpoint`/`Digital` kinds respectively; the analog crossing SHALL NOT ride
+   `EventKind::Crossing` (that kind is `@cross`'s tier-1 path) — it SHALL be
+   resumed by the sequencer's own tier-2 prediction, polled every accepted step
+   through `accept_timestep`/`StateView`.
 4. WHEN a digital edge wait is armed THEN the scheduler SHALL resume the waiter
    only after the net has **settled**, never mid-delta-cycle.
 5. WHEN several sequencers are instantiated THEN their breakpoint sets SHALL
@@ -460,7 +464,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-23 | `set_param` mid-transient: restamp fine, rebuild loud | Done (T14, `fa4f78d`) |
 | DVT-24 | Level-1 convergence veto surfaced as a limiting report | Done (T16, `962c1a7`) |
 | DVT-25 | Coroutine resumed exactly once per accepted breakpoint, never on rejection | Done (T19, `4aa4ef2`) |
-| DVT-26 | One `wait`, three wake sources, mapped to existing `EventKind`s | Done (T19, T23, T24, `4aa4ef2`, `81147be`, `8ff01af`) |
+| DVT-26 | One `wait`, three wake sources — two mapped to existing `EventKind`s (`Breakpoint`, `Digital`), the analog crossing resumed via tier-2 prediction/polling, not `EventKind::Crossing` | Done (T19, T23, T24, `4aa4ef2`, `81147be`, `8ff01af`) |
 | DVT-27 | Digital edge wait resumes only after settling | Done (T23, `81147be`) |
 | DVT-28 | Multiple sequencers union breakpoints; authored POM order at a tie | Done (T26, `cf1c791`) |
 | DVT-29 | `expect`/`warn` into the findings channel, posture-honoring | Done (T22, `880ee8c`) |

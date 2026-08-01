@@ -909,14 +909,27 @@ a hand-written `resume` state machine; Python uses a real generator
 same findings, same resume ordering — is identical; only the authoring
 mechanism differs (Part VII §20.3 states why the resume site is safe).
 
-`wait` has exactly one blocking verb and three forms, mapped one-to-one
-onto the solver's existing event kinds:
+`wait` has exactly one blocking verb and three forms. Two of the three ride
+the solver's existing event kinds; the third does not — it is resumed by
+the sequencer's own polling, not by an `EventKind`:
 
 | The test writes | Wakes on | `EventKind` | Fidelity |
 |---|---|---|---|
 | `t.advance(dt)` | a time the test named | `Breakpoint` | `Exact` |
 | `t.wait(edge(net, direction))` | a digital net settling to a matching transition | `Digital` | `Exact`, settled-only (Part VII §20.2) |
-| `t.wait(above(net, level, direction))` | an analog crossing | `Crossing` | tier 2, error reported (Part VII §20.5) |
+| `t.wait(above(net, level, direction))` | an analog crossing | none — resumed via tier-2 prediction, not `EventKind::Crossing` (see note) | tier 2, error reported (Part VII §20.5) |
+
+> **Note — `WaitCrossing` does not use `EventKind::Crossing`.** The
+> `EventQueue`/`EventKind` machinery exists for events the *solver*
+> schedules and lands on (breakpoints, digital settling). A crossing wait
+> is different: the sequencer itself predicts the crossing instant from
+> the bracketing accepted pair (`piperine_signal::events::predict_crossing`,
+> Part VII §20.5's tier 2) and polls for it every accepted step through
+> `HostElement::accept_timestep`'s `StateView` (`Sequencer::accept_timestep`,
+> `crates/piperine-api/src/sequencer/driver.rs`, `crossing.rs`) — it never
+> reads or produces an `EventKind::Crossing` entry. `EventKind::Crossing`
+> is what PHDL's `@cross` reads (Part VII §20.5's tier 1); the two crossing
+> paths are independent, and only `@cross` touches the event queue.
 
 `t.expect(cond, msg)` records an `Error` finding with time and instance
 provenance through `dv-core`'s channel when `cond` is false — never a
