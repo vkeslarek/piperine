@@ -54,16 +54,16 @@ crossings. Nothing is wired to a host. And codegen holds correct, tested,
       intact (§3.9).
 - [ ] **`HostElement`** + a blanket `Element` adapter, so the solver sees no
       difference between a host device and any other.
-- [ ] **A `Sequencer`**: one `wait` verb over three wake sources (time, digital
+- [x] **A `Sequencer`**: one `wait` verb over three wake sources (time, digital
       edge, analog crossing), written as a coroutine.
-- [ ] **`@device` gains a host binding mode** — a host device is declared in PHDL
+- [x] **`@device` gains a host binding mode** — a host device is declared in PHDL
       and instantiated like any module (§8.6/§8.7).
-- [ ] **Capability parity**: a host-written device reaches the same vocabulary a
+- [x] **Capability parity**: a host-written device reaches the same vocabulary a
       PHDL device does, provably.
-- [ ] Python and Rust as one surface, with one deliberate asymmetry: the level-1
+- [x] Python and Rust as one surface, with one deliberate asymmetry: the level-1
       catalog is closed in Python, open in Rust (§3.7).
-- [ ] `cover` bins with host-side accumulation and their own posture (D9, D10).
-- [ ] Monitors for the residue a tester cannot reach.
+- [x] `cover` bins with host-side accumulation and their own posture (D9, D10).
+- [x] Monitors for the residue a tester cannot reach.
 
 ## Out of Scope
 
@@ -445,7 +445,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-08 | `Wave` publishes its own breakpoints | Done (T7, `52b131c`) |
 | DVT-09 | `Behavior` contributes cross-Jacobian entries; PWM fixture, zero host calls | Done (T8, `be11a05`) |
 | DVT-10 | Discontinuous `Behavior` registers a crossing | Done (T8, T10, `be11a05`, `419aa55`) |
-| DVT-11 | Catalog closed in Python, open in Rust (`Behavior` + `Measure`) | Partial — Rust half done (T8, T11 `be11a05`, `564f88f`); Python half pending T28 |
+| DVT-11 | Catalog closed in Python, open in Rust (`Behavior` + `Measure`) | Done — Rust half (T8, T11 `be11a05`, `564f88f`); Python half (T28, `ea6be69`) |
 | DVT-12 | `verify_derivatives` FD oracle catches a wrong Jacobian | Done (T9, `dda2c96`) |
 | DVT-13 | `Measure` is an O(1) streaming accumulator on accepted points | Done (T11, `564f88f`) |
 | DVT-14 | Online and post-run reductions agree | Done (T13, `3bbdc6c`) |
@@ -456,7 +456,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-19 | `HostElement` + blanket `Element` adapter, no new solver concept | Done (T14, T15, `fa4f78d`, `b603132`) |
 | DVT-20 | Host device declared in PHDL via `@device`, composes with hierarchy | Done (T17, `b93cbc5`) |
 | DVT-21 | Same declaration serves plugin and host binding; Rust device graduates | Done (T17, `b93cbc5`) |
-| DVT-22 | Python exception mid-solve → typed error with time, clean stop | Pending |
+| DVT-22 | Python exception mid-solve → typed error with time, clean stop | Done (T27, `5e1f1eb`) |
 | DVT-23 | `set_param` mid-transient: restamp fine, rebuild loud | Done (T14, `fa4f78d`) |
 | DVT-24 | Level-1 convergence veto surfaced as a limiting report | Done (T16, `962c1a7`) |
 | DVT-25 | Coroutine resumed exactly once per accepted breakpoint, never on rejection | Done (T19, `4aa4ef2`) |
@@ -471,13 +471,13 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-34 | Internal-net drive allowed and always reported (D14) | Done (T21, `a6a2319`) |
 | DVT-35 | Digital drive via `EventSink`, never the MNA | Done (T21, `a6a2319`) |
 | DVT-36 | AC loud; DC runs no coroutine and uses per-kind `Wave` DC values | Done (T25, `3f5b26c`) |
-| DVT-37 | Capability parity proven on four twinned devices | Pending |
-| DVT-38 | Python/Rust surface parity enforced by a guard | Pending |
-| DVT-39 | Monitors as ordinary `digital` modules firing at settled events | Pending |
-| DVT-40 | `cover` bins reuse the pointwise path + bin-mapper | Pending |
-| DVT-41 | `cover=on\|off` own posture (D9) | Pending |
-| DVT-42 | Cross bin cap loud at elaboration, raisable (D10) | Pending |
-| DVT-43 | Host merge across runs; empty-bin identification | Pending |
+| DVT-37 | Capability parity proven on four twinned devices | Done (T30, `5c73083`) |
+| DVT-38 | Python/Rust surface parity enforced by a guard | Done (T29, `32f6016`) |
+| DVT-39 | Monitors as ordinary `digital` modules firing at settled events | Done (T31, `ea6ec22`) |
+| DVT-40 | `cover` bins reuse the pointwise path + bin-mapper | Done (T33, `be43d3b`) |
+| DVT-41 | `cover=on\|off` own posture (D9) | Done (T33, `be43d3b`) |
+| DVT-42 | Cross bin cap loud at elaboration, raisable (D10) | Done (T32, `35873da`) |
+| DVT-43 | Host merge across runs; empty-bin identification | Done (T34, `00aa576`) |
 | DVT-44 | cross-cutting: the fail-loud catalog (Edge Cases) | Done (T26, `cf1c791`) |
 | DVT-45 | `docs/spec/` updated: Part VII, Part VIII + appendix C, Part I/II + appendix B (`cover`), appendix A (worked example) | Pending |
 
@@ -495,7 +495,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 - [ ] A **UART-echo test** written as a coroutine drives and checks bytes over
       thousands of clock edges, findings carrying real simulation times, **zero**
       host calls inside any Newton iteration.
-- [ ] The **same device written in PHDL and in the host language produces
+- [x] The **same device written in PHDL and in the host language produces
       identical results**, for one device per level-1 family.
 - [ ] A test that **forces an internal node still passes, and the findings say it
       forced one**.
@@ -505,7 +505,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 - [ ] Every measurement the tool cannot make exactly **reports its bound**; every
       gradient-shaped guess it cannot make **fails loud** — no plausible wrong
       numbers, including AC (D13) and unrefined peaks.
-- [ ] `cover` over a sweep names its empty bins and merges across two runs; an
+- [x] `cover` over a sweep names its empty bins and merges across two runs; an
       oversized cross is refused at elaboration.
 - [ ] `docs/spec/` carries the tester API normatively, plus a worked example.
 - [ ] `cargo build --workspace` zero warnings; `cargo test --workspace` green.

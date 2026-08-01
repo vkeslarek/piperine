@@ -22,7 +22,7 @@ level taxonomy, the four level-1 families, the cost model, and the decision log
 **Follow-on**: `.specs/features/codegen-simplification/` — this feature
 **extracts** into `piperine-signal`; that one **delegates** codegen to it. The
 cross-check fixtures of T6 are this feature's obligation to that one.
-**Status**: Phase 4 complete — Phase 5 next
+**Status**: Phase 6 complete — Phase 7 next
 
 ## Progress log
 
@@ -32,6 +32,7 @@ cross-check fixtures of T6 are this feature's obligation to that one.
 | 2 | Phase 2 | T7–T13 | T7 `52b131c`, T8 `be11a05`, T9 `dda2c96`, T10 `419aa55`, T11 `564f88f`, T12 `e6c15d4`, T13 `3bbdc6c` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings) |
 | 3 | Phase 3 | T14–T18 | T14 `fa4f78d`, T15 `b603132`, T16 `962c1a7`, T17 `b93cbc5`, T18 `6b4c04b` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). SPEC_DEVIATION: `HostAdapter<T>` local newtype anchors the blanket `Element` impl (Rust orphan rule); `piperine-signal`'s `Wave`/`Hysteresis`/`BehaviorKind` gained `Send + Sync` (Rc→Arc, Cell→AtomicBool, a supertrait) so a `Behavior`/`Wave`-holding `HostElement` can satisfy `Element`'s unconditional `Send + Sync` bound — pure marker-trait/representation changes, no logic change, all of `piperine-signal`'s own tests unchanged and green. |
 | 4 | Phase 4 | T19–T26 | T19 `4aa4ef2`, T20 `b04f58b`, T21 `a6a2319`/`abe5049`, T22 `880ee8c`, T23 `81147be`, T24 `8ff01af`, T25 `3f5b26c`, T26 `cf1c791` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). `piperine-api/src/sequencer/` split into `driver.rs`/`control.rs`/`findings.rs`/`install.rs`/`drive.rs`/`wait.rs`/`crossing.rs`/`conflicts.rs` (mod.rs stays declarations-only, MD-34). SPEC_DEVIATION: `HostElement` gained three narrow additive hooks beyond T14's original mirror — `drain_digital_drives` (T21), `validation_reports` (T22), `on_digital_settled` (T23) — each independently defaulted, extending the documented "mirror grows when a task gives a method bearing" rule rather than widening `accept_timestep`'s signature. T23 is the one task touching `piperine-solver`: `Element::on_digital_settled`, a defaulted no-op dispatched from `CircuitInstance::accept_and_run_digital` strictly after digital settle, not a new `EventKind` variant (mechanically verified). T25's AC refusal (D13) needed a small `Session`/`HostDeviceRegistry` extension (`register_sequencer`/`host_registry`) rather than a solver capability bit, since neither downcasting (MD-01) nor a second solver touch was available. |
+| 5+6 | Phase 5+6 | T27–T34 | T27 `5e1f1eb`, T28 `ea6be69`, T29 `32f6016`, T30 `5c73083`, T31 `ea6ec22`, T32 `35873da`, T33 `be43d3b`, T34 `00aa576` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). SPEC_DEVIATION (T27/T28): `crates/piperine-python`'s `HostBehavior` facade name diverges from `ideal.md`'s `pip.Behavior` sketch — the bare name `Behavior` was already taken by the pre-existing POM `analog`/`digital`-block reflection type (`module.rs`'s `_Behavior`); documented in `signal_bridge.rs`'s header, same precedent class as `Wave.const`. SPEC_DEVIATION (T28): `ideal.md` §9's `build(self, b)` circuit-construction sketch (`b.vsource`/`b.switch`) has no concrete backing in `design.md` or any prior phase's delivered Rust API; `tests/host_device_library.rs` exercises the actually-delivered surface instead (`b.wave`/`b.behavior` installing Rust-native `WaveStamp`/`BehaviorStamp`, direct `load_dc` for level 0) — translated, not transcribed, per the batch brief's own wording. SPEC_DEVIATION (T31): `PiperineDevice::evaluate_constraints`/`validation_reports` (`crates/piperine-codegen/src/device/element.rs`) forward only through `self.analog` — a pure-digital-only module's `constraint` block produces zero findings through this channel today (confirmed by direct experiment), a pre-existing dv-core gap outside T31's declared "no new code" scope; `monitor_composition.rs`'s fixtures give the monitor module a trivial analog half (a leakage conductance) to exercise the same channel honestly. T32/T33 add `piperine_lang::elab::registry::ElabContext::cover_bin_cap` (default 4096, D10's "agent's call") and `piperine_solver::analyses::context::CoverPosture` (mirroring `CheckPosture`); T33's coverage capability is a full parallel compiled-kernel path (`kernel/analog/coverage.rs`, `device/analog/coverage.rs`) reusing `compile_rows` exactly as margins do, kept structurally separate from `MarginKind` per D9. T34's `Element::coverage_report()` rides the existing `EMITS_VALIDATION` bit rather than a new capability flag. |
 
 ---
 
@@ -738,10 +739,10 @@ stated.
 **Requirement**: DVT-22
 
 **Done when**:
-- [ ] a Python class subclassing `pip.Device` is dispatched on **method presence** — it implements only what it needs
-- [ ] a Python exception mid-solve maps to a **typed error carrying the simulation time**, and the analysis stops cleanly
-- [ ] the GIL cost is documented as a property of the Python tier, with level 1 named as the way to avoid it
-- [ ] a Python device and a Rust device coexist in one circuit
+- [x] a Python class subclassing `pip.Device` is dispatched on **method presence** — it implements only what it needs
+- [x] a Python exception mid-solve maps to a **typed error carrying the simulation time**, and the analysis stops cleanly
+- [x] the GIL cost is documented as a property of the Python tier, with level 1 named as the way to avoid it
+- [x] a Python device and a Rust device coexist in one circuit
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(python): bridge host devices into the embedded interpreter`
@@ -760,10 +761,10 @@ stated.
 level 0, not an extension point (`ideal.md` §3.7).
 
 **Done when**:
-- [ ] every level-1 catalog entry is reachable from Python with **identical spelling** to Rust
-- [ ] the catalog is closed: no Python-side registration of a new `Behavior`/`Measure` kind, and attempting it fails with a message naming level 0 and the Rust route
-- [ ] `@pip.device` registers a Python host device; the generator form of `Sequencer.run` works
-- [ ] `ideal.md`'s examples A–G all run as written
+- [x] every level-1 catalog entry is reachable from Python with **identical spelling** to Rust
+- [x] the catalog is closed: no Python-side registration of a new `Behavior`/`Measure` kind, and attempting it fails with a message naming level 0 and the Rust route
+- [x] `@pip.device` registers a Python host device; the generator form of `Sequencer.run` works
+- [x] `ideal.md`'s examples A–G all run as written
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(python): expose the host device library surface`
@@ -779,10 +780,10 @@ level 0, not an extension point (`ideal.md` §3.7).
 **Requirement**: DVT-38
 
 **Done when**:
-- [ ] every name added by this feature exists on both hosts with identical spelling and shape
-- [ ] one fixture through both hosts asserts identical findings **and** identical measure values with identical bounds
-- [ ] the closed-Python/open-Rust catalog asymmetry is the **only** divergence, and it is declared in the guard rather than silently tolerated
-- [ ] the guard is proven able to fail: add a Rust-only name, watch it fail, revert
+- [x] every name added by this feature exists on both hosts with identical spelling and shape
+- [x] one fixture through both hosts asserts identical findings **and** identical measure values with identical bounds
+- [x] the closed-Python/open-Rust catalog asymmetry is the **only** divergence, and it is declared in the guard rather than silently tolerated
+- [x] the guard is proven able to fail: add a Rust-only name, watch it fail, revert
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(host): enforce parity across the device library surface`
@@ -801,10 +802,10 @@ ways gives the same answer.
 (`ideal.md` §2 of that feature). Without it "capability parity" is a claim.
 
 **Done when**:
-- [ ] four twinned devices — a `transition`-driven source, a pnjlim junction, a `table` nonlinearity, a `cross`-triggered element — each written in PHDL **and** as a host device
-- [ ] each pair produces **identical** results on the same fixture, asserted on values
-- [ ] any PHDL capability **not** reachable from the host is named in the documentation — a scoped promise, not an eroding one
-- [ ] the test's header states that `codegen-simplification` extends this set rather than replacing it
+- [x] four twinned devices — a `transition`-driven source, a pnjlim junction, a `table` nonlinearity, a `cross`-triggered element — each written in PHDL **and** as a host device
+- [x] each pair produces **identical** results on the same fixture, asserted on values
+- [x] any PHDL capability **not** reachable from the host is named in the documentation — a scoped promise, not an eroding one
+- [x] the test's header states that `codegen-simplification` extends this set rather than replacing it
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `test(host): prove capability parity between PHDL and host devices`
@@ -821,11 +822,11 @@ that ship with a block.
 **Requirement**: DVT-39
 
 **Done when**:
-- [ ] a monitor is an ordinary `digital` module with **no new grammar**, reporting through `validation_reports()`
-- [ ] it fires at the scheduler's **settled** events, never mid-delta-cycle
-- [ ] it composes in an array and under parameterization, as any module does
-- [ ] a hierarchical fixture: a monitor detects a violation the top-level tester cannot see, reporting with instance provenance
-- [ ] documentation prefers the tester where the obligation could be checked at the tester's rhythm
+- [x] a monitor is an ordinary `digital` module with **no new grammar**, reporting through `validation_reports()`
+- [x] it fires at the scheduler's **settled** events, never mid-delta-cycle
+- [x] it composes in an array and under parameterization, as any module does
+- [x] a hierarchical fixture: a monitor detects a violation the top-level tester cannot see, reporting with instance provenance
+- [x] documentation prefers the tester where the obligation could be checked at the tester's rhythm
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(api): prove monitors as ordinary digital modules`
@@ -844,10 +845,10 @@ anything allocates.
 changes ripple (CLAUDE.md).
 
 **Done when**:
-- [ ] `cover <name> : <expr> bins [lo:step:hi];` and `… in {…};` parse inside a `constraint` block
-- [ ] `cover` joins the reserved-word list
-- [ ] a `cover cross`'s joint bin count is checked at **elaboration** against a `Context`-raisable cap and refused loudly (D10) — bin edges are literal, so the product is known statically
-- [ ] the refusal names the declared count and the cap
+- [x] `cover <name> : <expr> bins [lo:step:hi];` and `… in {…};` parse inside a `constraint` block
+- [x] `cover` joins the reserved-word list
+- [x] a `cover cross`'s joint bin count is checked at **elaboration** against a `Context`-raisable cap and refused loudly (D10) — bin edges are literal, so the product is known statically
+- [x] the refusal names the declared count and the cap
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): add the cover statement and its elaboration bin cap`
@@ -866,10 +867,10 @@ the coverage database.
 coverage with 10³ inner-loop iterates nobody meant as verification runs.
 
 **Done when**:
-- [ ] a bin hit reuses the pointwise path with a bin-mapper — a counter increment, with no signed distance and no argmin
-- [ ] `cover=on|off` is a posture on `Context`, **separate** from `checks=`
-- [ ] with `cover=off` no coverage kernel is called — asserted by count, not by output
-- [ ] an optimizer loop with `cover=off` leaves the database untouched
+- [x] a bin hit reuses the pointwise path with a bin-mapper — a counter increment, with no signed distance and no argmin
+- [x] `cover=on|off` is a posture on `Context`, **separate** from `checks=`
+- [x] with `cover=off` no coverage kernel is called — asserted by count, not by output
+- [x] an optimizer loop with `cover=off` leaves the database untouched
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(codegen): map cover bins with their own posture`
@@ -885,11 +886,11 @@ coverage with 10³ inner-loop iterates nobody meant as verification runs.
 **Requirement**: DVT-43
 
 **Done when**:
-- [ ] counters merge across runs and seeds on the host, rather than replacing
-- [ ] merged data **identifies empty bins** by name
-- [ ] coverage persists across runs — unlike a margin, which belongs to one analysis
-- [ ] a run with zero accepted points reports all bins as not-exercised, never a vacuous 100%
-- [ ] a sweep filling a known subset: the empty bins are named, and a second run merges
+- [x] counters merge across runs and seeds on the host, rather than replacing
+- [x] merged data **identifies empty bins** by name
+- [x] coverage persists across runs — unlike a margin, which belongs to one analysis
+- [x] a run with zero accepted points reports all bins as not-exercised, never a vacuous 100%
+- [x] a sweep filling a known subset: the empty bins are named, and a second run merges
 
 **Tests**: integration · **Gate**: build (phase completion)
 **Commit**: `feat(api): merge coverage across runs and name empty bins`
