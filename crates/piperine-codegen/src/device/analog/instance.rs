@@ -1434,6 +1434,42 @@ impl AnalogInstance {
         self.margins.reset();
     }
 
+    /// The run's coverage report (T33/T34, DVT-40/43): every declared
+    /// `cover` point's + `cover cross`'s **this-run-only** hit counts,
+    /// `None` when the module declares no `cover`. The instance path on
+    /// each entry is stamped by the element seam. Merging across runs is
+    /// the host's job (T34) — this is always exactly one run's raw
+    /// counters, never accumulated here.
+    pub fn coverage_report(&self) -> Option<piperine_solver::abi::CoverageReport> {
+        if self.kernel.num_cover_points() == 0 {
+            return None;
+        }
+        let points = self
+            .kernel
+            .cover_catalog()
+            .iter()
+            .zip(self.coverage.counts())
+            .map(|(info, counts)| piperine_solver::abi::ReportedCoverPoint {
+                label: info.label.clone(),
+                counts: counts.clone(),
+                instance_path: String::new(),
+            })
+            .collect();
+        let crosses = self
+            .kernel
+            .cover_cross_catalog()
+            .iter()
+            .zip(self.coverage.cross_counts())
+            .map(|(info, counts)| piperine_solver::abi::ReportedCoverCross {
+                label: info.label.clone(),
+                points: info.points.clone(),
+                counts: counts.clone(),
+                instance_path: String::new(),
+            })
+            .collect();
+        Some(piperine_solver::abi::CoverageReport::new(points, crosses))
+    }
+
     /// The validation findings of the latest accepted point (DVC-13/15):
     /// `Some` when a `require` margin crossed zero or a margin evaluated
     /// non-finite there, `None` when the point was clean (the

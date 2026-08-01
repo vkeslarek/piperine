@@ -629,6 +629,13 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// (the common case) has nothing to say.
     fn margin_report(&self) -> Option<crate::core::margin::MarginReport> { None }
 
+    /// The `cover` channel's per-run report (dv-tester T33/T34, DVT-40/43):
+    /// every declared `cover` point's + `cover cross`'s raw hit counters
+    /// for *this run only* — `None` for an element with no declared
+    /// `cover` (the common case). Merging across runs is host state
+    /// (T34), never tracked here.
+    fn coverage_report(&self) -> Option<crate::core::coverage::CoverageReport> { None }
+
     /// Reset the margin tracking (worst + argmin) so the next analysis
     /// starts from a clean slate — margins are a per-run channel, and one
     /// analysis's extrema must never leak into the next run on the same

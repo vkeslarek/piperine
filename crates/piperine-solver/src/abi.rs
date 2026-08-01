@@ -8,6 +8,7 @@ pub use crate::core::element::{
 };
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
+pub use crate::core::coverage::{CoverageReport, ReportedCoverCross, ReportedCoverPoint};
 pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,

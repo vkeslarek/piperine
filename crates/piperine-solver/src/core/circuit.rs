@@ -586,6 +586,33 @@ impl CircuitInstance {
         margins
     }
 
+    /// Collect the run's coverage reports (T33/T34, DVT-40/43): every
+    /// element declaring [`ElementCapabilities::EMITS_VALIDATION`] is
+    /// asked for its [`CoverageReport`](crate::core::coverage::CoverageReport)
+    /// — the same gate `margin_reports` uses (coverage rides the same
+    /// bit, `device/element.rs` sets it for either `has_margins()` or
+    /// `has_coverage()`). Returns `(points, crosses)` flattened across
+    /// every reporting device, for the host to merge across runs (T34 —
+    /// this crate never accumulates across runs itself).
+    pub fn coverage_reports(
+        &self,
+    ) -> (Vec<crate::core::coverage::ReportedCoverPoint>, Vec<crate::core::coverage::ReportedCoverCross>) {
+        if !self.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
+            return (Vec::new(), Vec::new());
+        }
+        let mut points = Vec::new();
+        let mut crosses = Vec::new();
+        for device in &self.devices {
+            if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION)
+                && let Some(report) = device.coverage_report()
+            {
+                points.extend(report.points().iter().cloned());
+                crosses.extend(report.crosses().iter().cloned());
+            }
+        }
+        (points, crosses)
+    }
+
     /// Reset every element's margin tracking so the next analysis starts
     /// from a clean slate (DVC-18 — margins are a per-run channel). The
     /// public analysis entries ([`Self::dc`], [`Self::transient`],

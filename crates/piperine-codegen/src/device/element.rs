@@ -692,6 +692,12 @@ impl Element for PiperineDevice {
             if kernel.has_margins() {
                 caps |= ElementCapabilities::EMITS_VALIDATION;
             }
+            // T34, DVT-43: a device with declared `cover` points is polled
+            // the same way and through the same bit — coverage rides the
+            // existing end-of-run poll, no new capability flag.
+            if kernel.has_coverage() {
+                caps |= ElementCapabilities::EMITS_VALIDATION;
+            }
             // P6/CLN-12: opt into the DC stamp bypass only when this device's
             // stamps are a pure function of its terminal voltages. A digital
             // half disqualifies it — its stamps follow the digital snapshot,
@@ -791,6 +797,21 @@ impl Element for PiperineDevice {
         if let Some(analog) = self.analog.as_mut() {
             analog.reset_margin_tracking();
         }
+    }
+
+    /// The coverage channel (T33/T34, DVT-40/43): the analog half's
+    /// this-run coverage report, with the authored hierarchical instance
+    /// path stamped onto each entry — the same seam `margin_report` uses.
+    fn coverage_report(&self) -> Option<piperine_solver::abi::CoverageReport> {
+        self.analog.as_ref().and_then(AnalogInstance::coverage_report).map(|mut report| {
+            for point in report.points_mut() {
+                point.instance_path = self.label.clone();
+            }
+            for cross in report.crosses_mut() {
+                cross.instance_path = self.label.clone();
+            }
+            report
+        })
     }
 
 

@@ -14,6 +14,7 @@
 //! ```
 
 pub mod aging;
+pub mod coverage;
 pub mod device;
 pub mod driver;
 pub mod error;
@@ -33,6 +34,7 @@ pub mod units;
 pub mod waveform;
 
 pub use aging::{age, AgingResult, AgingSpec, DriftRate, StressSource};
+pub use coverage::{CoverageDatabase, CoverageEntry};
 pub use driver::{
     CenterResult, CenterSpec, Driver, DriverOutcome, Engine, HighSigmaEstimator, HighSigmaResult,
     HighSigmaSpec, OptimizeResult, OptimizeSpec, Policy, SigmaScheme,

@@ -8,6 +8,7 @@
 
 pub mod builder;
 pub mod circuit;
+pub mod coverage;
 pub mod element;
 pub mod introspect;
 pub mod margin;
