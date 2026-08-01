@@ -25,20 +25,37 @@
 //!   the count is asserted, not inspected (T8's pattern), and by
 //!   construction (no FFI, no dynamic Python dispatch anywhere in this
 //!   crate) every one of those calls is the native closed form.
+//! - `all_three_levels_compose_in_one_class_end_to_end` (DVT-30 fix-round
+//!   gap closure) — `ideal.md` example G's full shape, sequencer half
+//!   included: one `HostElement` stamps its own conductance directly
+//!   (level 0), installs a `Wave` into an independent node (level 1), and
+//!   owns a `Sequencer` (level 2) that sweeps that same conductance over
+//!   time. `Sequencer<P>`'s own `HostElement` impl (`sequencer/driver.rs`)
+//!   never overrides `load_dc` — nothing in the ABI requires it to: a
+//!   composed device wraps a `Sequencer<P>` as a field and delegates the
+//!   time/lifecycle methods (`next_breakpoints`/`accept_timestep`/
+//!   `on_digital_settled`/`drain_digital_drives`/`validation_reports`) to
+//!   it through the same `HostElement` trait, exactly the composition-over-
+//!   inheritance shape Rust uses in place of the Python example's
+//!   subclassing. No change to `sequencer/driver.rs` was needed or made.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use piperine_api::{BehaviorStamp, Ctx, HostAdapter, HostElement, StampSink, WaveStamp};
+use piperine_api::sequencer::SequencerControl;
+use piperine_api::{
+    BehaviorStamp, Ctx, HostAdapter, HostElement, Sequencer, SequencerProgram, StampSink, StateView, Wake, WaveStamp,
+};
 use piperine_signal::behavior::kinds::{Comparator, Composed, Hysteresis, Switch};
 use piperine_signal::behavior::{BehaviorKind, Crossing};
 use piperine_signal::ops::Operator;
 use piperine_signal::wave::Wave;
 use piperine_solver::abi::{
-    AnalogDevice, AnalogReference, AnalogVariable, Context, DcAnalysisState, DigitalDevice, Element,
-    ElementCapabilities, Introspect, NodeIdentifier, Stamp, UnknownAllocator,
+    AnalogDevice, AnalogReference, AnalogVariable, Context, DcAnalysisState, DigitalDevice, DigitalNet, Element,
+    ElementCapabilities, Introspect, LogicValue, NodeIdentifier, Stamp, TransientAnalysisContext,
+    TransientAnalysisState, UnknownAllocator,
 };
-use piperine_solver::prelude::CircuitBuilder;
+use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 
 /// An ideal DC voltage source — level 0, no `HostElement` needed — used
 /// only to bias the circuits below so this file proves the *host devices*,
@@ -431,4 +448,247 @@ fn behavior_evaluation_is_the_closed_form_rust_path_not_a_host_call() {
         calls.load(Ordering::Relaxed) > 0,
         "the closed-form Behavior was evaluated at least once while stamping DC — counted, not inspected"
     );
+}
+
+// ── Test 5 (DVT-30 fix-round gap closure): all three levels, one class ─────
+
+/// An ideal voltage source usable in both DC and transient — the bias rail
+/// for the composed-device fixture below. A separate type from `Vsrc`
+/// (which is DC-only, matching Test 1's purely-DC circuit) because this
+/// fixture needs the same ideal source to hold through a transient run.
+struct TranVsrc {
+    p: AnalogReference,
+    n: AnalogReference,
+    branch: Option<AnalogReference>,
+    v: f64,
+}
+impl AnalogDevice for TranVsrc {
+    fn allocate_unknowns(&mut self, alloc: &mut UnknownAllocator<'_>) {
+        self.branch = Some(alloc.branch("tvsrc", "i"));
+    }
+    fn load_dc(&mut self, _state: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+        self.stamps()
+    }
+    fn load_transient(
+        &mut self,
+        _state: &TransientAnalysisState<'_>,
+        _t: &TransientAnalysisContext,
+        _ctx: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        self.stamps()
+    }
+}
+impl TranVsrc {
+    fn stamps(&self) -> Vec<Stamp<AnalogReference, f64>> {
+        let b = self.branch.clone().unwrap();
+        vec![
+            Stamp::Matrix(self.p.clone(), b.clone(), 1.0),
+            Stamp::Matrix(self.n.clone(), b.clone(), -1.0),
+            Stamp::Matrix(b.clone(), self.p.clone(), 1.0),
+            Stamp::Matrix(b.clone(), self.n.clone(), -1.0),
+            Stamp::Rhs(b, self.v),
+        ]
+    }
+}
+impl DigitalDevice for TranVsrc {}
+impl Introspect for TranVsrc {}
+impl Element for TranVsrc {
+    fn name(&self) -> &str {
+        "tvsrc"
+    }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
+            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
+    }
+}
+
+/// A plain series resistor — the divider partner that makes the composed
+/// device's conductance sweep (level 2, below) observable as a changing
+/// node voltage rather than an inert internal number.
+struct SeriesResistor {
+    r: f64,
+    n1: AnalogReference,
+    n2: AnalogReference,
+}
+impl AnalogDevice for SeriesResistor {
+    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+        self.stamps()
+    }
+    fn load_transient(
+        &mut self,
+        _s: &TransientAnalysisState<'_>,
+        _t: &TransientAnalysisContext,
+        _c: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        self.stamps()
+    }
+}
+impl SeriesResistor {
+    fn stamps(&self) -> Vec<Stamp<AnalogReference, f64>> {
+        let g = 1.0 / self.r;
+        vec![
+            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+        ]
+    }
+}
+impl DigitalDevice for SeriesResistor {}
+impl Introspect for SeriesResistor {}
+impl Element for SeriesResistor {
+    fn name(&self) -> &str {
+        "rseries"
+    }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_TRAN
+    }
+}
+
+/// The level-2 program: sweeps a shared conductance through a fixed list
+/// of values, holding each for `dt` — `ideal.md` example G's `for g in
+/// (...): self.g = g; yield t.advance(dt)`, translated to the hand-written
+/// coroutine shape (`SequencerProgram`) this crate uses in place of Python
+/// generators. Mutates `shared_g` (owned jointly with the composed
+/// device's `load_dc`/`load_transient`) rather than a field of its own,
+/// since a `SequencerProgram` has no way to reach back into the outer
+/// `HostElement` that embeds it.
+struct SweepProgram {
+    steps: Vec<f64>,
+    idx: usize,
+    dt: f64,
+    shared_g: Arc<Mutex<f64>>,
+}
+impl SequencerProgram for SweepProgram {
+    fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
+        *self.shared_g.lock().unwrap() = self.steps[0];
+        Wake::Advance(self.dt)
+    }
+    fn resume(&mut self, _t: f64, _ctl: &mut SequencerControl) -> Wake {
+        self.idx += 1;
+        if self.idx >= self.steps.len() {
+            return Wake::Done;
+        }
+        *self.shared_g.lock().unwrap() = self.steps[self.idx];
+        Wake::Advance(self.dt)
+    }
+}
+
+/// `ideal.md` example G, in full: one class that (a) stamps its own
+/// conductance directly — level 0 — (b) installs a `Wave` into an
+/// independent node — level 1 — and (c) owns a `Sequencer` that sweeps
+/// that conductance over simulated time — level 2. The `Sequencer` field
+/// is composed, not inherited (Rust has no class inheritance); the
+/// time/lifecycle `HostElement` methods below simply delegate to it.
+struct ActiveLoadSweep {
+    p: AnalogReference,
+    n: AnalogReference,
+    g: Arc<Mutex<f64>>,
+    wave: WaveStamp,
+    seq: Sequencer<SweepProgram>,
+}
+impl ActiveLoadSweep {
+    fn stamp(&self, ctx: &Ctx<'_>, sink: &mut StampSink) {
+        let g = *self.g.lock().unwrap();
+        sink.g(&self.p, &self.p, g);
+        sink.g(&self.p, &self.n, -g);
+        sink.g(&self.n, &self.p, -g);
+        sink.g(&self.n, &self.n, g);
+        self.wave.stamp(ctx, sink);
+    }
+}
+impl HostElement for ActiveLoadSweep {
+    fn name(&self) -> &str {
+        "active_load_sweep"
+    }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_TRAN | self.seq.capabilities()
+    }
+    fn load_dc(&mut self, ctx: &Ctx<'_>, sink: &mut StampSink) {
+        self.stamp(ctx, sink);
+    }
+    fn load_transient(&mut self, ctx: &Ctx<'_>, sink: &mut StampSink) {
+        self.stamp(ctx, sink);
+    }
+    fn next_breakpoints(&self, from: f64, horizon: f64) -> Vec<f64> {
+        self.seq.next_breakpoints(from, horizon)
+    }
+    fn accept_timestep(&mut self, state: &StateView<'_>, t: f64) {
+        self.seq.accept_timestep(state, t);
+    }
+    fn on_digital_settled(&mut self, nets: &[LogicValue], t: f64) {
+        self.seq.on_digital_settled(nets, t);
+    }
+    fn drain_digital_drives(&mut self) -> Vec<(DigitalNet, LogicValue, f64)> {
+        self.seq.drain_digital_drives()
+    }
+    fn validation_reports(&self) -> Option<piperine_solver::abi::ValidationReport> {
+        self.seq.validation_reports()
+    }
+}
+
+#[test]
+fn all_three_levels_compose_in_one_class_end_to_end() {
+    // R_series divides against the composed device's own swept
+    // conductance g: v(mid) = v_in / (1 + g * r_series) — a resistive
+    // divider, so each g step produces a distinct, predictable v(mid).
+    let v_in = 5.0;
+    let r_series = 1e3;
+    let dt = 20e-6;
+    let steps = vec![1e-3, 5e-3, 2e-2];
+    let shared_g = Arc::new(Mutex::new(steps[0]));
+
+    let mut builder = CircuitBuilder::new("active_load_sweep");
+    let gnd = builder.ground();
+    let top = builder.node("top");
+    let mid = builder.node("mid");
+    let wave_node = builder.node("wout");
+
+    builder.element(Box::new(TranVsrc { p: top.clone(), n: gnd.clone(), branch: None, v: v_in }));
+    builder.element(Box::new(SeriesResistor { r: r_series, n1: top, n2: mid.clone() }));
+
+    let program = SweepProgram { steps: steps.clone(), idx: 0, dt, shared_g: shared_g.clone() };
+    let seq = Sequencer::new("sweep", program, 0.0, (steps.len() as f64) * dt + 1e-6);
+    builder.element(Box::new(HostAdapter(ActiveLoadSweep {
+        p: mid.clone(),
+        n: gnd.clone(),
+        g: shared_g,
+        wave: WaveStamp::new(Wave::constant(1.8), wave_node.clone(), gnd, 100.0),
+        seq,
+    })));
+
+    let circuit = builder.build().expect("all three levels build into a circuit");
+    let opts = TransientAnalysisOptions::new((steps.len() as f64) * dt + 1e-6, 1e-6);
+    let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
+    let res = solver.tran().expect("tran setup").solve().expect("all three levels solve together");
+
+    // Level 2: the sequencer's breakpoints force exact landings at each
+    // sweep boundary — read v(mid) at each and confirm it matches the
+    // resistor-divider value for that step's conductance, proving the
+    // level-0 stamp in this same class really did change value under the
+    // level-2 coroutine's control.
+    let tol_t = 1e-9;
+    for (i, g) in steps.iter().enumerate() {
+        let target_t = ((i + 1) as f64) * dt;
+        let step = res
+            .iter()
+            .find(|s| (s.time() - target_t).abs() < tol_t)
+            .unwrap_or_else(|| panic!("no accepted step landed exactly at sweep boundary t={target_t:e}"));
+        let v_mid = step.get(mid.clone()).expect("mid is solved at this step");
+        let expected = v_in / (1.0 + g * r_series);
+        assert!(
+            (v_mid - expected).abs() < 1e-2,
+            "step {i} (g={g:e}): v(mid) = {v_mid}, expected {expected} from the divider with this class's own \
+             level-0 conductance"
+        );
+    }
+
+    // Level 1: the installed Wave, in the very same class, still drives its
+    // declared constant into its own independent node throughout — level 2
+    // sweeping level 0 did not disturb level 1.
+    let last = res.last().expect("the run produced at least one step");
+    let v_wave = last.get(wave_node.clone()).expect("wout is solved");
+    assert!((v_wave - 1.8).abs() < 1e-2, "the installed Wave still drives its declared value: v(wout) = {v_wave}");
 }
