@@ -105,6 +105,31 @@ impl Element for AndGate {
     }
 }
 
+struct OrGate {
+    inputs: [DigitalNet; 2],
+    output: DigitalNet,
+}
+impl AnalogDevice for OrGate {}
+impl DigitalDevice for OrGate {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
+    }
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let out =
+            if self.inputs.iter().any(|n| ctx.nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
+        sink.emit(self.output, out, 0.0);
+    }
+}
+impl Introspect for OrGate {}
+impl Element for OrGate {
+    fn name(&self) -> &str {
+        "or_gate"
+    }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::DIGITAL
+    }
+}
+
 /// Records every value `probed` takes on during **each `comb_phase`
 /// evaluation** (mid-delta-cycle, before quiescence) — the ground truth for
 /// "did a glitch actually occur," independent of the new subscriber seam.
@@ -180,6 +205,64 @@ fn build_glitch_circuit(
     circuit.devices.push(Box::new(Probe { probed: c, other_input: a, mid_cycle_values: mid_cycle }));
     circuit.devices.push(Box::new(Subscriber { watch: c, calls: settled_calls }));
     circuit
+}
+
+/// A two-stage double-inverter feeding an OR gate: `c = a OR NOT(NOT(a))`.
+/// At rest this is consistent (`b2` always catches up to `NOT(NOT(a))`), so
+/// `c` tracks `a` — but only after the two inverter stages settle, meaning
+/// the **pre-accept snapshot of `c` differs from its post-settle value**
+/// whenever `a` flips: before the flip, `c = a_old`; after the flip and full
+/// settle, `c = a_new`. This is the fixture that catches a dispatch bug
+/// where `on_digital_settled` is fed the pre-accept snapshot instead of the
+/// post-settle nets — the AND-gate glitch fixture above cannot catch that
+/// bug because its `c` is tautologically `Zero` both before and after every
+/// settle (`a AND NOT(a)` is always `Zero`), so a pre- vs. post-settle mixup
+/// is invisible to it.
+fn build_before_after_differs_circuit(
+    flip_at: f64,
+    settled_calls: Arc<Mutex<Vec<(f64, LogicValue)>>>,
+) -> CircuitInstance {
+    let a = DigitalNet(0);
+    let b1 = DigitalNet(1); // b1 = NOT(a)
+    let b2 = DigitalNet(2); // b2 = NOT(b1) = NOT(NOT(a)), one delta cycle behind a
+    let c = DigitalNet(3); // c = a OR b2 — settles to a's new value, differing from its own pre-flip value
+
+    let mut circuit = CircuitInstance::from_devices_and_netlist("before_after", vec![], Netlist::new());
+    circuit.digital_state = DigitalState::new(4);
+    circuit.digital_state.nets[a.0] = LogicValue::Zero;
+    circuit.digital_state.nets[b1.0] = LogicValue::One; // NOT(Zero)
+    circuit.digital_state.nets[b2.0] = LogicValue::Zero; // NOT(One)
+    circuit.digital_state.nets[c.0] = LogicValue::Zero; // Zero OR Zero
+    circuit.devices.push(Box::new(InputDriver { a, flip_at, fired: false }));
+    circuit.devices.push(Box::new(Inverter { input: a, output: b1, delay: 0.0 }));
+    circuit.devices.push(Box::new(Inverter { input: b1, output: b2, delay: 0.0 }));
+    circuit.devices.push(Box::new(OrGate { inputs: [a, b2], output: c }));
+    circuit.devices.push(Box::new(Subscriber { watch: c, calls: settled_calls }));
+    circuit
+}
+
+#[test]
+fn the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_accept_snapshot() {
+    let settled_calls = Arc::new(Mutex::new(Vec::new()));
+    let mut circuit = build_before_after_differs_circuit(0.0, settled_calls.clone());
+
+    // Read the pre-accept snapshot ourselves, exactly like the dispatch
+    // site's own `before` local — proves the fixture's premise that this
+    // snapshot genuinely differs from the settled value asserted below.
+    let before_c = circuit.digital_state.nets[3];
+    assert_eq!(before_c, LogicValue::Zero, "c starts at Zero (a=Zero OR b2=Zero) before the flip");
+
+    let _ = circuit.accept_and_run_digital(&[], 0.0).expect("settles");
+
+    let settled = settled_calls.lock().unwrap().clone();
+    assert_eq!(settled.len(), 1, "on_digital_settled must fire exactly once for this one settle: {settled:?}");
+    assert_eq!(
+        settled[0],
+        (0.0, LogicValue::One),
+        "the subscriber must see c's SETTLED value (One, once a=One propagates through both inverters), \
+         not the pre-accept snapshot (Zero) — a dispatch bug that fed the pre-accept snapshot instead of \
+         the post-settle nets would report Zero here instead"
+    );
 }
 
 #[test]
