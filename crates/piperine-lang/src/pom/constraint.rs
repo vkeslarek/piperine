@@ -6,6 +6,39 @@ use std::collections::HashMap;
 pub use crate::parse::ast::{ConstraintStmt, TargetCmp};
 use crate::pom::net_type::ValueType;
 
+/// A `cover` point's bin partition, resolved to literal `f64` edges at
+/// elaboration (dv-tester T32/T33, DVT-42): the same shape as
+/// [`crate::parse::ast::CoverBins`] but folded, so a consumer (the
+/// elaboration-time cap check, T33's bin-mapper) never re-evaluates the
+/// authored expressions.
+///
+/// `Eq` is bit-for-bit on the `f64` fields (same rationale as
+/// [`ResolvedWindow`]'s manual impl below — keeps `StmtClassNode`'s
+/// `#[derive(Eq)]` working without approximate float comparison).
+#[derive(Debug, Clone)]
+pub enum ResolvedCoverBins {
+    /// `bins [lo:step:hi]`.
+    Range { lo: f64, step: f64, hi: f64 },
+    /// `in {e1, e2, …}`.
+    Set(Vec<f64>),
+}
+
+impl PartialEq for ResolvedCoverBins {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Range { lo: l0, step: s0, hi: h0 }, Self::Range { lo: l1, step: s1, hi: h1 }) => {
+                l0.to_bits() == l1.to_bits() && s0.to_bits() == s1.to_bits() && h0.to_bits() == h1.to_bits()
+            }
+            (Self::Set(a), Self::Set(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ResolvedCoverBins {}
+
 /// A resolved temporal window on a constraint scope (dv-core T29,
 /// DVC-20): the result of evaluating an [`crate::parse::ast::EventWindow`]'s
 /// `after` / `dur` expressions as elaboration constants. `after` opens
@@ -112,13 +145,18 @@ pub enum StmtClassNode {
         children: Vec<StmtClassNode>,
     },
     /// A `cover` point (dv-tester T32, DVT-42): the elaborator's proof
-    /// that its expression is `Real`/pointwise, plus the bin count folded
-    /// from its literal edges — the count T33's bin-mapper allocates
-    /// against and T32's own `cover cross` cap check reads.
+    /// that its expression is `Real`/pointwise, plus the bin partition
+    /// folded from its literal edges — what T33's bin-mapper allocates
+    /// and maps against, and what T32's own `cover cross` cap check reads
+    /// the count of.
     Cover {
         class: StmtClass,
         /// The number of bins this point's partition declares.
         bin_count: usize,
+        /// The partition's literal edges, folded to `f64` at elaboration
+        /// (D10's premise: bin edges are literal, so this is knowable
+        /// statically).
+        bins: ResolvedCoverBins,
     },
     /// A `cover cross` (dv-tester T32, DVT-42): the joint (product) bin
     /// count of the named points, already checked against the
@@ -198,6 +236,34 @@ impl ConstraintBlock {
             ConstraintStmt::Require { name: n, .. } | ConstraintStmt::Var { name: n, .. } => n == name,
             _ => false,
         }).map(|(_, c)| c)
+    }
+    /// Walk every `cover`/`cover cross` statement, depth-first in authored
+    /// order (descending into event blocks) — the T33 bin-mapper's own
+    /// catalog source, parallel to [`Self::leaves`] but for the two node
+    /// kinds `leaves()` does not yield (`Cover`/`CoverCross` classify to
+    /// their own [`StmtClassNode`] variants, not `Leaf`).
+    pub fn cover_points(&self) -> Vec<(&ConstraintStmt, &StmtClassNode)> {
+        fn walk<'a>(
+            stmts: &'a [ConstraintStmt],
+            classes: &'a [StmtClassNode],
+            out: &mut Vec<(&'a ConstraintStmt, &'a StmtClassNode)>,
+        ) {
+            for (stmt, node) in stmts.iter().zip(classes) {
+                match (stmt, node) {
+                    (ConstraintStmt::Event { body, .. }, StmtClassNode::Event { children, .. }) => {
+                        walk(body, children, out);
+                    }
+                    (ConstraintStmt::Cover { .. }, StmtClassNode::Cover { .. })
+                    | (ConstraintStmt::CoverCross { .. }, StmtClassNode::CoverCross { .. }) => {
+                        out.push((stmt, node));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&self.stmts, &self.stmt_classes, &mut out);
+        out
     }
 }
 

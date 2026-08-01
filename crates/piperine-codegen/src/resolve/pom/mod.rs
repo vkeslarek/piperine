@@ -12,5 +12,5 @@ pub mod stmt;
 pub mod structure;
 
 pub use body::{LoweredBody, LowerError, LowerErrors, lower_bodies};
-pub use constraints::{LoweredMargin, MarginKind};
+pub use constraints::{LoweredCoverCross, LoweredCoverPoint, LoweredMargin, MarginKind};
 pub(crate) use body::LowerCtx;

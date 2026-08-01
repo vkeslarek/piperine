@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 
 use piperine_lang::parse::ast::{BinaryOp, ConstraintStmt, Expr as PomExpr, Literal, TargetCmp};
-use piperine_lang::pom::{ConstraintBlock, QuantityClass, ResolvedWindow};
+use piperine_lang::pom::{ConstraintBlock, QuantityClass, ResolvedCoverBins, ResolvedWindow, StmtClassNode};
 
 use super::LowerCtx;
 use super::expr::{resolve_expr, subst_expr};
@@ -52,6 +52,29 @@ pub struct LoweredMargin {
     pub expr: PomExpr,
 }
 
+/// A `cover` point lowered to its evaluable (resolved) expression (D9: a
+/// **separate** lowering from [`LoweredMargin`] — coverage is not a
+/// margin, no signed distance, no argmin, so it gets its own catalog
+/// entry rather than a `MarginKind` variant riding the margin machinery).
+#[derive(Debug, Clone)]
+pub struct LoweredCoverPoint {
+    pub label: String,
+    pub bins: ResolvedCoverBins,
+    pub analyses: Vec<String>,
+    pub window: Option<ResolvedWindow>,
+    pub expr: PomExpr,
+}
+
+/// A `cover cross` lowered — no expression of its own (T33's bin-mapper
+/// combines the *already-mapped* bin indices of its named points
+/// host-side; nothing here needs JIT compilation).
+#[derive(Debug, Clone)]
+pub struct LoweredCoverCross {
+    pub label: String,
+    pub points: Vec<String>,
+    pub joint_bin_count: usize,
+}
+
 /// The margin lowering over one [`ConstraintBlock`]: `var` statements bind
 /// into a substitution map (authored order — elaboration already proved
 /// every reference resolves), `require`/`target` statements become
@@ -67,6 +90,44 @@ impl<'a> ConstraintLowering<'a> {
     /// `&&`) record a [`super::LowerError`] — never a silent `0.0` margin.
     pub(crate) fn lower(block: &'a ConstraintBlock, ctx: &mut LowerCtx) -> Vec<LoweredMargin> {
         Self { block }.lower_stmts(ctx)
+    }
+
+    /// Lower every `cover`/`cover cross` of `block` (T33, DVT-40): a
+    /// `cover` point's expression resolves exactly like a `require`'s
+    /// predicate operand (same scope, same `ctx`); `cover cross` carries
+    /// no expression of its own, just its already-elaborated joint count
+    /// and the names it joins.
+    pub(crate) fn lower_cover(block: &'a ConstraintBlock, ctx: &mut LowerCtx) -> (Vec<LoweredCoverPoint>, Vec<LoweredCoverCross>) {
+        let mut points = Vec::new();
+        let mut crosses = Vec::new();
+        // `var` bindings are irrelevant here — a `cover` point's `bins`
+        // are literal by construction (D10), and its `expr` is resolved
+        // fresh against `ctx` the same way a `require`'s probe operand is,
+        // with no substitution needed (a `cover` expression does not
+        // reference a preceding block `var`, per the elaborator's own
+        // scope rules for `require`/`target`).
+        for (stmt, node) in block.cover_points() {
+            match (stmt, node) {
+                (ConstraintStmt::Cover { name, expr, .. }, StmtClassNode::Cover { class, bins, .. }) => {
+                    points.push(LoweredCoverPoint {
+                        label: name.clone(),
+                        bins: bins.clone(),
+                        analyses: class.analyses.clone(),
+                        window: class.window,
+                        expr: resolve_expr(expr, ctx),
+                    });
+                }
+                (ConstraintStmt::CoverCross { name, points: pts, .. }, StmtClassNode::CoverCross { joint_bin_count, .. }) => {
+                    crosses.push(LoweredCoverCross {
+                        label: name.clone(),
+                        points: pts.clone(),
+                        joint_bin_count: *joint_bin_count,
+                    });
+                }
+                _ => {}
+            }
+        }
+        (points, crosses)
     }
 
     fn lower_stmts(&self, ctx: &mut LowerCtx) -> Vec<LoweredMargin> {

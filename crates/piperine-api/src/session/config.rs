@@ -83,6 +83,14 @@ impl SolverConfig {
             },
             checks: self.checks,
             require_scope: self.require_scope,
+            // `cover`'s own posture (dv-tester T33, D9) is not yet exposed
+            // on `SolverConfig` — this task's scope is the solver/codegen
+            // mechanism (`piperine-codegen/src/kernel/analog/`,
+            // `piperine-solver/src/analyses/`), not the host config
+            // surface; `Context::cover` defaults to `On` (coverage
+            // collection is normal verification behavior) until a later
+            // task threads a host-facing dial through.
+            cover: piperine_solver::abi::CoverPosture::default(),
         }
     }
 

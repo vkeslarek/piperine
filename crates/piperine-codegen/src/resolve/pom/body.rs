@@ -38,6 +38,12 @@ pub struct LoweredBody {
     /// module declares no constraint block — nothing lowered, nothing
     /// allocated.
     pub constraints: Option<Vec<crate::resolve::pom::LoweredMargin>>,
+    /// The module's lowered `cover` catalog (T33, DVT-40): every `cover`
+    /// point's resolved expression + literal bin partition, and every
+    /// `cover cross`'s already-elaborated joint bin count. `None` when the
+    /// module declares no `cover` — separate from [`Self::constraints`]
+    /// (D9: coverage is not a margin).
+    pub cover: Option<(Vec<crate::resolve::pom::LoweredCoverPoint>, Vec<crate::resolve::pom::LoweredCoverCross>)>,
 }
 
 impl LoweredBody {
@@ -283,6 +289,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             analog: None,
             digital: None,
             constraints: None,
+            cover: None,
         });
     }
 
@@ -510,12 +517,18 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 }
             }
             let mut margins = Vec::new();
+            let mut cover_points = Vec::new();
+            let mut cover_crosses = Vec::new();
             for block in m.constraints() {
                 margins.extend(super::constraints::ConstraintLowering::lower(block, &mut cctx));
+                let (points, crosses) = super::constraints::ConstraintLowering::lower_cover(block, &mut cctx);
+                cover_points.extend(points);
+                cover_crosses.extend(crosses);
             }
             digital_shadows.append(&mut cctx.digital_shadows);
             errors.append(&mut cctx.errors);
             bodies[i].constraints = Some(margins);
+            bodies[i].cover = if cover_points.is_empty() { None } else { Some((cover_points, cover_crosses)) };
         }
 
         if !digital_shadows.is_empty() {

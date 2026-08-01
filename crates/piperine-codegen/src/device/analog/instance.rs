@@ -112,6 +112,12 @@ pub struct AnalogInstance {
     /// assemble via [`set_check_posture`](Self::set_check_posture) — run
     /// data, not structure (MD-18: a posture change recompiles nothing).
     check_posture: piperine_solver::abi::CheckPosture,
+    /// `cover` bin-mapper runtime (T33, DVT-40/41): per-bin hit counters,
+    /// empty when the module declares no `cover`.
+    coverage: super::coverage::CoverTracker,
+    /// `cover`'s own posture (D9), separate from [`Self::check_posture`] —
+    /// stashed from `Context.cover` the same way (MD-18).
+    cover_posture: piperine_solver::abi::CoverPosture,
     /// Scratch buffer for `param_stamps` (DVG-04): one `f64` per resistive
     /// contribution, allocated once at construction and reused every call so
     /// the adjoint's inner loop allocates nothing. Empty for a kernel that
@@ -246,6 +252,18 @@ impl AnalogInstance {
         let num_vars = kernel.num_vars();
         let num_limits = kernel.num_limits();
         let num_margins = kernel.num_margins();
+        let cover_bin_counts: Vec<usize> = kernel
+            .cover_catalog()
+            .iter()
+            .map(|info| match &info.bins {
+                piperine_lang::pom::ResolvedCoverBins::Range { lo, step, hi } => {
+                    ((hi - lo) / step + 1e-9).floor() as usize + 1
+                }
+                piperine_lang::pom::ResolvedCoverBins::Set(v) => v.len(),
+            })
+            .collect();
+        let cover_cross_joint_counts: Vec<usize> =
+            kernel.cover_cross_catalog().iter().map(|c| c.joint_bin_count).collect();
         let num_param_contribs = kernel.param_jacobian_contribs().len();
         let mut instance = Self {
             state,
@@ -264,6 +282,8 @@ impl AnalogInstance {
             cached_temperature: None,
             margins: MarginTracker::new(num_margins),
             check_posture: piperine_solver::abi::CheckPosture::default(),
+            coverage: super::coverage::CoverTracker::new(&cover_bin_counts, &cover_cross_joint_counts),
+            cover_posture: piperine_solver::abi::CoverPosture::default(),
             param_scratch: vec![0.0; num_param_contribs],
         };
         instance.fire_initial_events();
@@ -1278,6 +1298,12 @@ impl AnalogInstance {
         self.check_posture = posture;
     }
 
+    /// Set `cover`'s own posture (T33, D9) — separate from
+    /// [`Self::set_check_posture`].
+    pub fn set_cover_posture(&mut self, posture: piperine_solver::abi::CoverPosture) {
+        self.cover_posture = posture;
+    }
+
     /// Evaluate the constraint margins at one accepted point (DVC-10):
     /// the running worst + argmin per declared margin advances, and a
     /// `require` crossing zero — or a non-finite margin — is recorded as
@@ -1312,6 +1338,43 @@ impl AnalogInstance {
         self.margins.evaluate(&cx, volts, time, self.check_posture, analysis);
     }
 
+    /// Evaluate every declared `cover` point + `cover cross` at one
+    /// accepted point (T33): a counter increment per bin hit, never a
+    /// signed distance or argmin. `cover=off` returns before any kernel
+    /// function runs.
+    pub fn evaluate_coverage(&mut self, volts: &[f64], time: f64, analysis: piperine_solver::abi::AnalysisKind) {
+        if self.kernel.num_cover_points() == 0 {
+            return;
+        }
+        let cx = LoadCtx {
+            kernel: &self.kernel,
+            node_refs: &self.node_refs,
+            params: &self.params,
+            state: &self.state,
+            vars: &self.vars,
+            sim: &self.sim,
+        };
+        self.coverage.evaluate(&cx, volts, time, self.cover_posture, analysis);
+    }
+
+    /// The running per-bin hit counts (T33), one `Vec<u64>` per declared
+    /// `cover` point, in kernel catalog order.
+    pub fn cover_counts(&self) -> &[Vec<u64>] {
+        self.coverage.counts()
+    }
+
+    /// The running per-joint-bin hit counts (T33), one `Vec<u64>` per
+    /// declared `cover cross`, in kernel catalog order.
+    pub fn cover_cross_counts(&self) -> &[Vec<u64>] {
+        self.coverage.cross_counts()
+    }
+
+    /// How many times `eval_cover` has actually been called (T33's
+    /// "asserted by count, not by output" proof surface).
+    pub fn cover_eval_calls(&self) -> u64 {
+        self.coverage.eval_calls()
+    }
+
     /// The running worst value + argmin per declared margin (DVC-10), in
     /// kernel catalog order — the device's half of the margin channel the
     /// host reduces into `MarginsResult` (design §D).
@@ -1333,6 +1396,7 @@ impl AnalogInstance {
             state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
         self.evaluate_margins(&volts, t, analysis);
+        self.evaluate_coverage(&volts, t, analysis);
         self.last_volts = volts;
     }
 

@@ -15,6 +15,7 @@ use super::compile::AnalogCompiler;
 
 use super::ac_stim::AcStim;
 use super::constraints::Constraints;
+use super::coverage::Coverage;
 use super::forces::Forces;
 use super::limits::Limits;
 use super::noise::Noise;
@@ -188,6 +189,11 @@ pub struct AnalogKernel {
     /// Constraint margin functions (DVC-10): one per declared **pointwise**
     /// margin; `has_margins()` is `self.constraints.is_some()`.
     pub(super) constraints: Option<Constraints>,
+    /// `cover` bin-mapper functions (T33, DVT-40): one per declared
+    /// `cover` point, plus the module's `cover cross` catalog (no
+    /// compiled function of its own). `has_coverage()` is
+    /// `self.coverage.is_some()`.
+    pub(super) coverage: Option<Coverage>,
     /// Resistive Jacobian with every `idt`/`idtmod` state load replaced by
     /// its input expression — the linear-operator view of the integrator.
     /// `load_ac` scales it by 1/(jω). `None` without integrator states.
@@ -557,6 +563,51 @@ impl AnalogKernel {
                     "kernel `{}`: margin #{index} out of range ({} margin(s))",
                     self.core.name,
                     self.num_margins()
+                )
+            })
+            .eval;
+        self.check_input_lens(volts, params, state, vars);
+        let mut out = [0.0];
+        Self::call(f, volts, params, state, vars, sim, &mut out);
+        out[0]
+    }
+
+    /// Number of declared `cover` points (T33, DVT-40).
+    pub fn num_cover_points(&self) -> usize {
+        self.coverage.as_ref().map_or(0, AnalogCapability::count)
+    }
+
+    /// Whether the module declares any `cover` points.
+    pub fn has_coverage(&self) -> bool {
+        self.coverage.is_some()
+    }
+
+    /// The declared `cover` points' provenance, in authored order —
+    /// parallel to the indices [`eval_cover`](Self::eval_cover) takes.
+    pub fn cover_catalog(&self) -> &[super::coverage::CoverInfo] {
+        self.coverage.as_ref().map_or(&[], |c| &c.catalog)
+    }
+
+    /// The module's declared `cover cross` catalog — no compiled function;
+    /// the device combines the named points' already-mapped bin indices.
+    pub fn cover_cross_catalog(&self) -> &[super::coverage::CoverCrossInfo] {
+        self.coverage.as_ref().map_or(&[], |c| &c.crosses)
+    }
+
+    /// Evaluate `cover` point `index` at the given point, returning its
+    /// raw pointwise value (the caller maps it to a bin index — this
+    /// function has no notion of bins). Same panic contract as
+    /// [`eval_margin`](Self::eval_margin).
+    pub fn eval_cover(&self, index: usize, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx) -> f64 {
+        let f = self
+            .coverage
+            .as_ref()
+            .and_then(|c| c.points.get(index))
+            .unwrap_or_else(|| {
+                panic!(
+                    "kernel `{}`: cover point #{index} out of range ({} cover point(s))",
+                    self.core.name,
+                    self.num_cover_points()
                 )
             })
             .eval;

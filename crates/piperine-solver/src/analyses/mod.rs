@@ -27,5 +27,5 @@ pub mod sp;
 pub mod tf;
 pub mod transient;
 
-pub use context::{AnalysisKind, CheckPosture, Context, Policy, RequireScope, Tolerances};
+pub use context::{AnalysisKind, CheckPosture, Context, CoverPosture, Policy, RequireScope, Tolerances};
 pub use solver::Solver;

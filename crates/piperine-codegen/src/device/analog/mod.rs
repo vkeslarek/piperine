@@ -7,6 +7,7 @@
 //! modules implement against; each capability lives in the file named for it.
 
 mod constraints;
+mod coverage;
 mod events;
 mod forces;
 mod instance;

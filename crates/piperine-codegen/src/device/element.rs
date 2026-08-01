@@ -183,6 +183,7 @@ impl AnalogDevice for PiperineDevice {
     fn update(&mut self, _state: &CircularArrayBuffer2<f64>, ctx: &Context) {
         if let Some(analog) = self.analog.as_mut() {
             analog.set_check_posture(ctx.checks);
+            analog.set_cover_posture(ctx.cover);
         }
     }
 

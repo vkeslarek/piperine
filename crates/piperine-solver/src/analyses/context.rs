@@ -164,6 +164,22 @@ pub enum CheckPosture {
     Off,
 }
 
+/// `cover`'s own posture (dv-tester T33, DVT-41, D9) — separate from
+/// [`CheckPosture`] so an optimizer's inner loop (`checks=Collect`, treating
+/// an infeasible iterate as a margin to climb out of) does not also pollute
+/// the coverage database with iterates nobody meant as verification runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CoverPosture {
+    /// `cover` bins are evaluated and their counters incremented on every
+    /// accepted point. The default: coverage collection is normal
+    /// verification behavior, not opt-in.
+    #[default]
+    On,
+    /// No coverage kernel is called at all — zero cost, the database is
+    /// left completely untouched.
+    Off,
+}
+
 /// Which analyses an unscoped `require` holds in (D2). The scope is a
 /// [`Context`] field, not a hard-coded rule — the default is every
 /// analysis.
@@ -212,6 +228,9 @@ pub struct Context {
     pub checks: CheckPosture,
     /// Which analyses an unscoped `require` holds in (D2).
     pub require_scope: RequireScope,
+    /// `cover`'s own posture (dv-tester T33, DVT-41, D9) — separate from
+    /// [`Self::checks`].
+    pub cover: CoverPosture,
 }
 
 impl Context {

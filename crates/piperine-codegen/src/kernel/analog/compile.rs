@@ -613,6 +613,47 @@ impl<'m> AnalogCompiler<'m> {
             }
         }
 
+        // `cover` bin-mapper kernels (T33, DVT-40): one compiled function
+        // per declared `cover` point, through the exact same
+        // `compile_rows` pointwise-evaluation path as margins — reused,
+        // not reinvented (a `cover` point is elaboration-proved pointwise
+        // already, no filter needed). `cover cross` entries carry no
+        // compiled function of their own (they combine already-mapped
+        // bin indices device-side), so they pass through as static
+        // catalog data alongside the compiled points.
+        let mut cover_ids: Vec<(super::coverage::CoverInfo, FuncId)> = Vec::new();
+        let mut cover_crosses: Vec<super::coverage::CoverCrossInfo> = Vec::new();
+        if let Some((points, crosses)) = &self.module.cover {
+            let scope: HashMap<&str, u32> =
+                module_var_temps.iter().map(|(n, id)| (n.as_str(), *id)).collect();
+            for (i, point) in points.iter().enumerate() {
+                let expr = crate::flatten::analog::rewrite_expr(&point.expr, &mut |e| match e {
+                    PomExpr::Ident(name) if scope.contains_key(name.as_str()) => {
+                        temp_ref(scope[name.as_str()])
+                    }
+                    _ => e.clone(),
+                });
+                let func = self.compile_rows(&format!("cover_{i}"), std::slice::from_ref(&expr))?;
+                cover_ids.push((
+                    super::coverage::CoverInfo {
+                        label: point.label.clone(),
+                        bins: point.bins.clone(),
+                        analyses: point.analyses.clone(),
+                        window: point.window,
+                    },
+                    func,
+                ));
+            }
+            cover_crosses = crosses
+                .iter()
+                .map(|c| super::coverage::CoverCrossInfo {
+                    label: c.label.clone(),
+                    points: c.points.clone(),
+                    joint_bin_count: c.joint_bin_count,
+                })
+                .collect();
+        }
+
         let events = std::mem::take(&mut self.flat.events);
         let (event_triggers_id, event_actions_id) = if events.is_empty() {
             (None, None)
@@ -760,6 +801,17 @@ impl<'m> AnalogCompiler<'m> {
                     .collect(),
             ))
         };
+        let coverage_cap = if cover_ids.is_empty() {
+            None
+        } else {
+            Some(super::coverage::Coverage::new(
+                cover_ids
+                    .into_iter()
+                    .map(|(info, id)| super::coverage::CompiledCover { info, eval: get(&self.jit, id) })
+                    .collect(),
+                cover_crosses,
+            ))
+        };
 
         // Remaining top-level (ungrouped) fields — resolved to native function
         // pointers before `self.jit` moves into `core` below.
@@ -854,6 +906,7 @@ impl<'m> AnalogCompiler<'m> {
             noise: noise_cap,
             ac_stim: ac_stim_cap,
             constraints: constraints_cap,
+            coverage: coverage_cap,
             ac_idt_jacobian,
             runtime_states,
             events: compiled_events,

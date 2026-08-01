@@ -723,6 +723,7 @@ impl<'a> TransientSolver<'a> {
         let op_context = Context {
             checks: self.system.context.checks,
             require_scope: self.system.context.require_scope,
+            cover: self.system.context.cover,
             ..Default::default()
         };
         let mut dc_solver = DcSolver::new(self.system.circuit, op_context)?;

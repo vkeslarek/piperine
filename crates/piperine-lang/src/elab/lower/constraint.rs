@@ -26,8 +26,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, CoverBins, EventSpec, Expr, Literal, UnaryOp};
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
-    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, ResolvedWindow, StmtClass, StmtClassNode,
-    ValueType,
+    ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, ResolvedCoverBins, ResolvedWindow,
+    StmtClass, StmtClassNode, ValueType,
 };
 use crate::value::Value;
 
@@ -639,7 +639,8 @@ impl Elaborator {
                             .fail(&site, "a reduced quantity is checkable once per analysis, not per point".into())
                             .with_span(*span));
                     }
-                    let bin_count = cover_bin_count(bins, env, &site).map_err(|e| e.with_span(*span))?;
+                    let (bin_count, resolved_bins) =
+                        cover_bin_count(bins, env, &site).map_err(|e| e.with_span(*span))?;
                     cover_bin_counts.insert(name.clone(), bin_count);
                     out.push(StmtClassNode::Cover {
                         class: StmtClass {
@@ -648,6 +649,7 @@ impl Elaborator {
                             window: scope_window,
                         },
                         bin_count,
+                        bins: resolved_bins,
                     });
                 }
                 ConstraintStmt::CoverCross { name, points, span } => {
@@ -702,23 +704,23 @@ impl Elaborator {
 /// as elaboration-constant `Real`s (a non-literal edge is a loud
 /// elaboration error, not a runtime one — D10's premise is that the count
 /// is known statically); `Set` is simply its length.
-fn cover_bin_count(bins: &CoverBins, env: &ConstEnv, site: &str) -> Result<usize, ElabError> {
+fn cover_bin_count(bins: &CoverBins, env: &ConstEnv, site: &str) -> Result<(usize, ResolvedCoverBins), ElabError> {
+    let fold = |label: &str, e: &Expr| -> Result<f64, ElabError> {
+        match env.eval(e) {
+            Ok(Value::Real(v)) => Ok(v),
+            Ok(other) => Err(ElabError::from(ElabErrorKind::Other(format!(
+                "{site}: {label} must be a literal Real, found `{other:?}`"
+            )))),
+            Err(e) => Err(ElabError::from(ElabErrorKind::Other(format!(
+                "{site}: {label} must be an elaboration-constant literal: {e}"
+            )))),
+        }
+    };
     match bins {
         CoverBins::Range { lo, step, hi } => {
-            let fold = |label: &str, e: &Expr| -> Result<f64, ElabError> {
-                match env.eval(e) {
-                    Ok(Value::Real(v)) => Ok(v),
-                    Ok(other) => Err(ElabError::from(ElabErrorKind::Other(format!(
-                        "{site}: `bins [lo:step:hi]`'s {label} must be a literal Real, found `{other:?}`"
-                    )))),
-                    Err(e) => Err(ElabError::from(ElabErrorKind::Other(format!(
-                        "{site}: `bins [lo:step:hi]`'s {label} must be an elaboration-constant literal: {e}"
-                    )))),
-                }
-            };
-            let lo = fold("lo", lo)?;
-            let step = fold("step", step)?;
-            let hi = fold("hi", hi.as_ref())?;
+            let lo = fold("`bins [lo:step:hi]`'s lo", lo)?;
+            let step = fold("`bins [lo:step:hi]`'s step", step)?;
+            let hi = fold("`bins [lo:step:hi]`'s hi", hi.as_ref())?;
             if step <= 0.0 {
                 return Err(ElabError::from(ElabErrorKind::Other(format!(
                     "{site}: `bins [lo:step:hi]`'s step must be positive, found {step}"
@@ -733,9 +735,17 @@ fn cover_bin_count(bins: &CoverBins, env: &ConstEnv, site: &str) -> Result<usize
             // floating-point round-off on the division so a boundary that
             // lands exactly on `hi` counts as one more bin, not one short.
             let count = ((hi - lo) / step + 1e-9).floor() as usize + 1;
-            Ok(count)
+            Ok((count, ResolvedCoverBins::Range { lo, step, hi }))
         }
-        CoverBins::Set(values) => Ok(values.len()),
+        CoverBins::Set(values) => {
+            let folded: Vec<f64> = values
+                .iter()
+                .enumerate()
+                .map(|(i, e)| fold(&format!("`in {{…}}`'s value #{i}"), e))
+                .collect::<Result<_, _>>()?;
+            let count = folded.len();
+            Ok((count, ResolvedCoverBins::Set(folded)))
+        }
     }
 }
 
