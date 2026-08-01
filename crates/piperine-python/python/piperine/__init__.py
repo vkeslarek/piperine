@@ -1514,6 +1514,16 @@ arguments."""
 Ctx = _piperine._Ctx
 Staging = _piperine._Staging
 
+# T27 (DVT-22): the PyO3 bridge's internal FFI wrappers — a `pip.Device`'s
+# `load_dc`/`load_transient`/`accept_timestep` receive these, never
+# constructs them directly. Aliased here (not in `__all__`) purely for the
+# facade/native parity guard (BRM-12/14); the public entry point is
+# `pip.Device` (T28), not these plumbing types.
+NetRef = _piperine._NetRef
+DeviceCtx = _piperine._DeviceCtx
+DeviceStampSink = _piperine._DeviceStampSink
+DeviceStateView = _piperine._DeviceStateView
+
 _registry = {"scripts": {}, "hooks": {phase: [] for phase in HOOK_PHASES}, "devices": {}}
 
 

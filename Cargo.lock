@@ -1764,6 +1764,7 @@ dependencies = [
 name = "piperine-python"
 version = "0.2.0"
 dependencies = [
+ "ndarray 0.17.2",
  "num-complex",
  "numpy",
  "piperine-api",

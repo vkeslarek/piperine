@@ -25,6 +25,7 @@
 
 pub mod embed;
 mod design;
+pub mod device;
 mod instance;
 mod live;
 mod module;
@@ -35,6 +36,7 @@ mod value_bridge;
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
+use device::{_DeviceCtx, _DeviceStampSink, _DeviceStateView, _NetRef};
 use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _ParamDescriptor, _Terminal, _TerminalDescriptor};
 use live::{_Grid, _Session, _Sweep};
 use module::_Module;
@@ -117,5 +119,9 @@ pub fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Gradient>()?;
     m.add_class::<_Ctx>()?;
     m.add_class::<_Staging>()?;
+    m.add_class::<_NetRef>()?;
+    m.add_class::<_DeviceCtx>()?;
+    m.add_class::<_DeviceStampSink>()?;
+    m.add_class::<_DeviceStateView>()?;
     Ok(())
 }
