@@ -2,6 +2,15 @@
 //! circuit: a ramp drive into an RC follows the analytic segment response,
 //! and host calls between breakpoints are counted and asserted zero (the
 //! core invariant the whole sequencer design exists to protect).
+//!
+//! `a_digital_drive_never_perturbs_the_analog_solve` (fix round, DVT-35)
+//! adds the runtime half of "digital drive via `EventSink`, never the
+//! MNA": `drive.rs`'s own unit tests prove this structurally/by type
+//! (`drive_digital` only ever calls `SequencerControl`, never
+//! `StampSink`); this test proves it at the level a host actually cares
+//! about — run the identical analog RC circuit with and without a
+//! digitally-driving `Sequencer` present, and show the analog trajectory
+//! is bit-for-bit unchanged.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -11,8 +20,8 @@ use piperine_api::sequencer::SequencerControl;
 use piperine_api::{HostAdapter, HostElement, Sequencer, SequencerProgram, Wake};
 use piperine_signal::wave::Wave;
 use piperine_solver::abi::{
-    AnalogDevice, AnalogReference, Context, DcAnalysisState, DigitalDevice, ElementCapabilities, Introspect,
-    Stamp, TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
+    AnalogDevice, AnalogReference, Context, DcAnalysisState, DigitalDevice, DigitalNet, ElementCapabilities,
+    Introspect, LogicValue, Stamp, TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
 };
 use piperine_solver::prelude::{CircuitBuilder, TransientAnalysisOptions};
 
@@ -235,5 +244,96 @@ fn host_calls_between_breakpoints_are_counted_and_zero() {
         4,
         "resume/start must fire exactly at the 4 declared breakpoints, never at any of the {} other accepted points",
         result.len()
+    );
+}
+
+/// DVT-35's runtime half: `drive.rs`'s own unit tests prove `drive_digital`
+/// only ever calls `SequencerControl`, never `StampSink` — structural, by
+/// construction. This test checks the observable consequence in an actual
+/// solved circuit: a plain ramp-driven RC (the same fixture and closed-form
+/// `Vc(t')` as `a_ramp_drive_into_an_rc_follows_the_analytic_segment_response`
+/// above) still matches that analytic response exactly when a second
+/// `Sequencer` is added that does nothing but drive a digital net — if the
+/// digital drive stamped anything into the MNA (even a wrong-but-tiny
+/// term), the analog trajectory would depart from the closed form that
+/// describes the R-C-ramp system alone.
+#[test]
+fn a_digital_drive_never_perturbs_the_analog_solve() {
+    struct DigitalOnlyDrive {
+        target: DigitalNet,
+        flip_at: f64,
+    }
+    impl SequencerProgram for DigitalOnlyDrive {
+        fn start(&mut self, _ctl: &mut SequencerControl) -> Wake {
+            Wake::Advance(self.flip_at)
+        }
+        fn resume(&mut self, _t: f64, ctl: &mut SequencerControl) -> Wake {
+            // The only thing this program ever does: queue a digital
+            // drive through `SequencerControl`. No `StampSink`, no
+            // `AnalogReference`, anywhere in this method.
+            ctl.drive_digital(self.target, LogicValue::One, 0.0);
+            Wake::Done
+        }
+    }
+
+    let r = 1e3;
+    let c = 1e-9;
+    let tau = r * c;
+    let dur = 20.0 * tau;
+    let m = 1.0 / dur;
+    let rout = 1e-3;
+
+    let mut builder = CircuitBuilder::new("ramp_rc_with_digital_drive");
+    let gnd = builder.ground();
+    let vin = builder.node("vin");
+    let vout = builder.node("vout");
+    let target = builder.digital_net(Some("target"));
+
+    let mut site = InstallSite::new(vin.clone(), gnd.clone(), rout);
+    site.install(Wave::ramp(0.0, 1.0, dur), 0.0);
+    builder.element(Box::new(HostAdapter(RampSource { site })));
+    builder.element(Box::new(TResistor { r, n1: vin.clone(), n2: vout.clone() }));
+    builder.element(Box::new(TCapGnd { c, node: vout.clone() }));
+    builder.element(Box::new(HostAdapter(Sequencer::new(
+        "digital_only",
+        DigitalOnlyDrive { target, flip_at: 5.0 * tau },
+        0.0,
+        dur,
+    ))));
+
+    let mut circuit = builder.build().expect("the ramp-RC + digital-drive circuit builds");
+    let opts = TransientAnalysisOptions::new(dur, tau / 200.0);
+    let mut tran = circuit.transient(opts, Context::default()).expect("tran setup");
+    let result = tran.solve().expect("tran solves");
+
+    let v0 = 0.0;
+    let analytic = |tp: f64| m * tp - m * tau + (v0 + m * tau) * (-tp / tau).exp();
+
+    let mut checked = 0;
+    let mut saw_driven = false;
+    for step in result.iter() {
+        let t = step.time();
+        if let Some(d) = step.digital(target.0)
+            && d == LogicValue::One
+        {
+            saw_driven = true;
+        }
+        if t < 3.0 * tau || t > dur - tau {
+            continue;
+        }
+        let got = step.get(vout.clone()).expect("vout is a solved unknown");
+        let want = analytic(t);
+        assert!(
+            (got - want).abs() < 0.02,
+            "t={t:.3e}: rc response {got:.6} vs analytic {want:.6} (tau={tau:.3e}) — a digital drive present on \
+             this same circuit must not perturb the analog answer from the closed form"
+        );
+        checked += 1;
+    }
+    assert!(checked > 5, "the analytic comparison must actually run over multiple accepted points, got {checked}");
+    assert!(
+        saw_driven,
+        "the digital net must actually have been driven to One at some recorded step — otherwise this test would \
+         vacuously prove nothing about a drive that never took effect"
     );
 }

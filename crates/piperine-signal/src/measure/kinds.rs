@@ -550,6 +550,55 @@ mod tests {
         assert!((p.value() - 1.0).abs() < 1e-3, "converges toward the true peak value 1.0");
     }
 
+    #[test]
+    fn refine_terminates_at_the_step_floor_and_honestly_reports_tol_unmet() {
+        // DVT-16's other half: a `step_floor` coarser than what `tol`
+        // demands must stop refinement AT the floor — never silently
+        // stall past it burning the whole iteration budget, and never
+        // claim `tol` was met when it was not (`kinds.rs:66-68`'s `break`).
+        let true_peak_t = 0.5;
+        let curvature = 8.0;
+        let f = |t: f64| 1.0 - curvature * (t - true_peak_t).powi(2);
+        let lte_for = |t: f64| 0.6 * (t - true_peak_t).abs().max(1e-9);
+
+        let mut p = Peak::new();
+        p.update(0.2, f(0.2), lte_for(0.2));
+        p.update(0.6, f(0.6), lte_for(0.6));
+        let coarse_bound = p.error_bound();
+
+        // `tol` is unreachably tight; `step_floor` is coarse enough that
+        // the achievable bound near the true peak (~0.6 * step_floor)
+        // stays well above it — refinement must hit the floor, not `tol`.
+        let tol = 1e-9;
+        let step_floor = 0.05;
+        let max_iters = 10_000; // generous: if this is exhausted instead of
+        // breaking at the floor, that is itself the bug this test exists
+        // to catch (a stall that burns the whole budget rather than
+        // stopping cleanly).
+        let probes_taken = std::cell::Cell::new(0usize);
+        let met = p.refine(tol, step_floor, max_iters, |t| {
+            probes_taken.set(probes_taken.get() + 1);
+            (f(t), lte_for(t))
+        });
+
+        assert!(!met, "a step_floor coarser than tol demands must report tol NOT met, not a false success");
+        assert!(
+            p.error_bound() > tol,
+            "the reported bound must honestly reflect what the floor could achieve, not claim tol: {}",
+            p.error_bound()
+        );
+        assert!(p.error_bound() <= coarse_bound, "refine never widens the bound even when it terminates at the floor");
+        // Terminated via the floor `break`, not by exhausting the iteration
+        // budget: at most two probes per iteration, so running the full
+        // budget would cost max_iters * 2 probes — this must stop far
+        // short of that.
+        assert!(
+            probes_taken.get() < max_iters * 2 / 10,
+            "must terminate at the step floor well before exhausting the iteration budget: {} probes taken",
+            probes_taken.get()
+        );
+    }
+
     // ---- O(1) streaming: structural proof, not just output ----
 
     #[test]
