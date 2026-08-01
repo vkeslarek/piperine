@@ -1634,6 +1634,7 @@ dependencies = [
  "piperine-plugin",
  "piperine-plugin-macros",
  "piperine-python",
+ "piperine-signal",
  "piperine-solver",
 ]
 

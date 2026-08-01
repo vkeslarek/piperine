@@ -39,6 +39,10 @@ pip = { package = "piperine-plugin-macros", path = "crates/piperine-plugin-macro
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-codegen = { path = "crates/piperine-codegen" }
 piperine-solver = { path = "crates/piperine-solver" }
+# dv-tester T29/T30: the host-parity/capability-parity fixtures reach
+# piperine-signal's catalog directly (the Rust half of the comparison) and
+# piperine-api's device/sequencer modules (HostElement, HostDeviceRegistry).
+piperine-signal = { path = "crates/piperine-signal" }
 num-complex = { workspace = true }
 
 [profile.dev.package.faer]

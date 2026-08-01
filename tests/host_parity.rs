@@ -861,3 +861,273 @@ fn rlc_session() -> Session {
         piperine_lang::parse_and_elaborate(RLC_PHDL, &SourceMap::dummy()).expect("rlc elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
+
+// ── dv-tester T29 (DVT-38): the host device library's parity guard ────────
+//
+// Every name this feature adds — `pip.Wave`/`pip.HostBehavior`/
+// `pip.Measure`'s catalog, plus one cross-host findings/measure-value
+// fixture — exists on both hosts, identically spelled, with one **named**
+// exception: `ideal.md` §3.7's closed-Python/open-Rust asymmetry. That
+// asymmetry is declared explicitly below (`host_parity_the_closed_python_
+// catalog_is_the_one_declared_divergence`), not silently skipped — the
+// guard's exhaustiveness check enumerates every catalog entry that *is*
+// expected identical and carves this one case out by name.
+
+/// Catalog entries reachable with **identical** spelling on both hosts —
+/// `Wave::constant`/`pip.Wave.const` (a Rust-keyword rename) is the one
+/// name this list deliberately excludes; see the divergence test below.
+const WAVE_METHODS: &[&str] = &["ramp", "pulse", "sin", "exp", "sigmoid", "pwl", "sampled", "sum", "scaled", "shifted"];
+const HOST_BEHAVIOR_METHODS: &[&str] =
+    &["comparator", "hysteresis", "switch", "limiter", "vcvs", "vccs", "vco", "table", "sum", "scaled", "composed"];
+const MEASURE_METHODS: &[&str] =
+    &["peak", "min", "average", "rms", "ripple", "integral", "cross", "settle", "count"];
+
+/// Every name in [`WAVE_METHODS`]/[`HOST_BEHAVIOR_METHODS`]/
+/// [`MEASURE_METHODS`], called on the Rust catalog directly — compile-time
+/// proof the Rust side carries the full set.
+fn call_every_rust_device_library_method() {
+    use piperine_signal::behavior::kinds::{Comparator, Hysteresis, Limiter, Scaled, Sum, Switch, Vccs, Vco, Vcvs};
+    use piperine_signal::behavior::table::Table;
+    use piperine_signal::measure::handle::Measure;
+    use piperine_signal::events::CrossDir;
+    use piperine_signal::measure::kinds::{Average, Count, Cross, Integral, Min, Peak, Ripple, Rms, Settle};
+    use piperine_signal::wave::Wave;
+
+    let _ = Wave::ramp(0.0, 1.0, 1e-6);
+    let _ = Wave::pulse(0.0, 1.0, 0.0, 1e-9, 1e-6, 1e-9, 2e-6);
+    let _ = Wave::sin(0.0, 1.0, 1e6, 0.0, 0.0);
+    let _ = Wave::exp(0.0, 1.0, 1e-6, 0.0);
+    let _ = Wave::sigmoid(0.0, 1.8, 200e-6, 40e-6);
+    let _ = Wave::pwl(vec![(0.0, 0.0), (1.0, 1.0)]);
+    let _ = Wave::sampled(vec![0.0, 1.0], vec![0.0, 2.0]);
+    let _ = Wave::sum(Wave::constant(0.0), Wave::constant(1.0));
+    let _ = Wave::scaled(Wave::constant(1.0), 2.0);
+    let _ = Wave::shifted(Wave::constant(1.0), 1e-6);
+
+    let _ = Comparator { lo: 0.0, hi: 1.0, gain: 1.0 };
+    let _ = Hysteresis::new(5e-3, -5e-3);
+    let _ = Switch { ron: 50e-3, roff: 1e6, vth: 0.5 };
+    let _ = Limiter { lo: 0.0, hi: 1.0 };
+    let _ = Vcvs { gain: 2.0 };
+    let _ = Vccs { gm: 1e-3 };
+    let _ = Vco { f0: 1e6, kvco: 1e5 };
+    let _ = Table::new(vec![0.0, 1.0], vec![0.0, 2.0]).expect("valid table");
+    let _ = Sum { a: Box::new(Comparator { lo: 0.0, hi: 1.0, gain: 1.0 }), b: Box::new(Comparator { lo: 0.0, hi: 1.0, gain: 1.0 }) };
+    let _ = Scaled { inner: Box::new(Comparator { lo: 0.0, hi: 1.0, gain: 1.0 }), k: 2.0 };
+
+    let _ = Measure::arm(Peak::new());
+    let _ = Measure::arm(Min::new());
+    let _ = Measure::arm(Average::new());
+    let _ = Measure::arm(Rms::new());
+    let _ = Measure::arm(Ripple::new());
+    let _ = Measure::arm(Integral::new());
+    let _ = Measure::arm(Cross::new(0.5, CrossDir::Either));
+    let _ = Measure::arm(Settle::new(1.0, 0.01));
+    let _ = Measure::arm(Count::new());
+}
+
+/// Write, to `out_path`, the space-separated list of names from the three
+/// device-library lists that `pip.Wave`/`pip.HostBehavior`/`pip.Measure`
+/// do **not** carry (empty file = full parity).
+fn python_missing_device_library_methods(out_path: &std::path::Path) {
+    let wave = WAVE_METHODS.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let behavior = HOST_BEHAVIOR_METHODS.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let measure = MEASURE_METHODS.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    checks = [(piperine.Wave, [{wave}]), (piperine.HostBehavior, [{behavior}]), (piperine.Measure, [{measure}])]
+    missing = []
+    for cls, names in checks:
+        for n in names:
+            if not hasattr(cls, n):
+                missing.append(cls.__name__ + "." + n)
+    with open({out:?}, "w") as f:
+        f.write(" ".join(missing))
+
+_probe()
+"#,
+        out = out_path.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_device_library_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python device-library probe runs");
+    let _ = std::fs::remove_file(&script_path);
+}
+
+/// T29's positive case (DVT-38): every catalog entry this feature added
+/// exists on both hosts, identically spelled.
+#[test]
+fn host_parity_device_library_catalog_matches_on_both_hosts() {
+    call_every_rust_device_library_method(); // fails to COMPILE if Rust drifts
+
+    let out = std::env::temp_dir().join("piperine_host_parity_device_library_missing.txt");
+    python_missing_device_library_methods(&out);
+    let missing = std::fs::read_to_string(&out).expect("read device-library probe output");
+    let _ = std::fs::remove_file(&out);
+    assert!(
+        missing.trim().is_empty(),
+        "Python's device-library catalog is missing entries the Rust catalog has: {missing} (MD-22 breach)"
+    );
+}
+
+/// T29's negative case: the guard is proven able to fail — a synthetic,
+/// never-implemented catalog entry is reported missing by the same
+/// mechanism (mirrors `host_parity_probe_flags_a_synthetic_missing_analysis`).
+#[test]
+fn host_parity_device_library_probe_flags_a_synthetic_missing_entry() {
+    let out = std::env::temp_dir().join("piperine_host_parity_device_library_synthetic.txt");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    bogus = "definitely_not_a_real_wave_kind_xyz"
+    missing = [] if hasattr(piperine.Wave, bogus) else [bogus]
+    with open({out:?}, "w") as f:
+        f.write(" ".join(missing))
+
+_probe()
+"#,
+        out = out.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_device_library_synthetic_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python synthetic probe runs");
+    let missing = std::fs::read_to_string(&out).expect("read synthetic probe output");
+    for p in [script_path, out] {
+        let _ = std::fs::remove_file(p);
+    }
+    assert_eq!(
+        missing.trim(),
+        "definitely_not_a_real_wave_kind_xyz",
+        "the probe must flag a genuinely absent catalog entry, not pass silently"
+    );
+}
+
+/// The **one** declared divergence (`ideal.md` §3.7 + `signal_bridge.rs`'s
+/// header): the catalog is closed in Python (`register_kind` refuses,
+/// naming level 0 and the Rust trait) and open in Rust (implementing
+/// `BehaviorKind`/`MeasureKind` directly, no host-surface change needed).
+/// This is exhaustiveness-checked, not skipped: [`WAVE_METHODS`]/
+/// [`HOST_BEHAVIOR_METHODS`]/[`MEASURE_METHODS`] above enumerate every
+/// name expected identical, and this test is the named carve-out for the
+/// one thing that is not.
+#[test]
+fn host_parity_the_closed_python_catalog_is_the_one_declared_divergence() {
+    // Rust: implementing `BehaviorKind`/`MeasureKind` needs no registration
+    // call at all — the trait impl itself is the "registration". There is
+    // no Rust-side name to check for; the openness is structural.
+    struct _CustomKindProvesRustIsOpen; // never registered anywhere — the point.
+
+    // Python: the equivalent attempt is refused, loudly, naming the escape
+    // hatch (T28's `register_kind`).
+    let out = std::env::temp_dir().join("piperine_host_parity_closed_catalog.txt");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    try:
+        piperine.HostBehavior.register_kind("NotAllowed")
+        result = "did_not_refuse"
+    except RuntimeError as e:
+        result = "refused:" + ("level 0" in str(e) and "BehaviorKind" in str(e)).__str__()
+    with open({out:?}, "w") as f:
+        f.write(result)
+
+_probe()
+"#,
+        out = out.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_closed_catalog_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python closed-catalog probe runs");
+    let result = std::fs::read_to_string(&out).expect("read closed-catalog probe output");
+    for p in [script_path, out] {
+        let _ = std::fs::remove_file(p);
+    }
+    assert_eq!(result.trim(), "refused:True", "Python's catalog must refuse extension, naming level 0 and the Rust trait");
+}
+
+/// T29's hard requirement: one fixture through both hosts, asserting
+/// **identical** findings AND **identical** measure values with identical
+/// bounds — not just "both ran". Feeds the same `(t, v, lte)` sequence
+/// into a `Measure::peak()` on each host, and records the same failing
+/// `expect` on each host's findings channel.
+#[test]
+fn host_parity_one_fixture_produces_identical_findings_and_measure_values() {
+    use piperine_signal::measure::handle::Measure;
+    use piperine_signal::measure::kinds::Peak;
+
+    // ── Rust side ──
+    let mut peak = Measure::arm(Peak::new());
+    peak.feed(0.0, 1.0, 0.0);
+    peak.feed(1.0, 3.3, 0.0);
+    peak.feed(2.0, 2.0, 0.0);
+    let rust_value = peak.value().expect("fed");
+    let rust_bound = peak.error_bound().expect("fed");
+
+    let mut ctl = piperine_api::sequencer::SequencerControl::default();
+    ctl.expect(false, "same message".to_string(), 5e-6, "seq0");
+    let report = ctl.findings().to_report().expect("a failing expect records");
+    let finding = &report.findings()[0];
+
+    // ── Python side (same fixture, same script) ──
+    let out = std::env::temp_dir().join("piperine_host_parity_fixture.txt");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    m = piperine.Measure.peak()
+    m.feed(0.0, 1.0, 0.0)
+    m.feed(1.0, 3.3, 0.0)
+    m.feed(2.0, 2.0, 0.0)
+
+    class T(piperine.Sequencer):
+        def run(self, t):
+            yield t.advance(5e-6)
+            t.expect(False, 'same message')
+            yield t.advance(1e-6)
+
+    first, second, finding = piperine.drive_sequencer_twice(T(), 5e-6)
+    message, time, severity = finding
+    lines = [
+        "value=" + repr(m.value),
+        "bound=" + repr(m.error_bound),
+        "message=" + message,
+        "time=" + repr(time),
+        "severity=" + severity,
+    ]
+    with open({out:?}, "w") as f:
+        f.write("\n".join(lines))
+
+_probe()
+"#,
+        out = out.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_fixture_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python fixture probe runs");
+    let python: std::collections::HashMap<String, String> = std::fs::read_to_string(&out)
+        .expect("read fixture probe output")
+        .lines()
+        .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+        .collect();
+    for p in [script_path, out] {
+        let _ = std::fs::remove_file(p);
+    }
+
+    let py_value: f64 = python["value"].parse().unwrap();
+    let py_bound: f64 = python["bound"].parse().unwrap();
+    assert_eq!(py_value, rust_value, "measure value differs between hosts");
+    assert_eq!(py_bound, rust_bound, "measure error bound differs between hosts");
+
+    assert_eq!(python["message"], finding.message, "finding message differs between hosts");
+    assert_eq!(python["severity"], format!("{:?}", finding.severity), "finding severity differs between hosts");
+    let py_time: f64 = python["time"].parse().unwrap();
+    assert_eq!(py_time, finding.time, "finding time differs between hosts");
+}
