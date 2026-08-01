@@ -496,11 +496,239 @@ reading of it.
 **Status:** Locked (user, 2026-07-25 — "wire it"; delivered
 `p6-cleanup-completeness` CLN-12).
 
+### MD-36: Runtime semantics live in `piperine-signal`, a pure crate
+
+Piperine holds two categories of logic that had been sharing files: **compile-time
+machinery** (symbolic differentiation, Cranelift emission, CSE, the `SimCtx` ABI,
+POM lowering) and **runtime semantics** (what `transition` means, how pnjlim
+converges a junction, what `table` interpolates, how a reduction accumulates).
+The first is `piperine-codegen`'s job. The second is not — it lives there only
+because codegen was its first consumer, and it is why the crate reads as mystery
+rather than machinery.
+
+Runtime semantics move to **`piperine-signal`**, governed by one load-bearing
+invariant:
+
+> `piperine-signal` computes values, derivatives, event predicates and running
+> reductions. It **never stamps, never sees a matrix, never sees an `Element`,
+> and depends on no other crate in the tree.**
+
+That purity is the sorting rule (if it needs a matrix or a compiler, it stays in
+codegen), the reuse argument (the same accumulator reduces a stored `Waveform`
+and a live transient), and a **mechanical gate** — a test asserts the empty
+in-tree dependency list, not a reviewer (MD-31).
+
+Consequences:
+
+- **Extraction, not invention.** The runtime operators
+  (`device/analog/operators.rs`), the event detectors (`events.rs`), `table`
+  (`resolve/pom/analog_ops.rs`) and the junction limiter (`limits.rs`) are
+  *already pure*; they move with their tests intact. Rules like `transition`'s
+  re-anchor, the `above`-vs-`cross` seeding asymmetry, and the five pnjlim rules
+  were each learned from a failure — rewriting from an operator's *name* would
+  silently drop them.
+- **Capability parity becomes testable.** A host-written device reaches the same
+  vocabulary a PHDL device does, proven by writing the same device both ways and
+  asserting identical results. That is the success criterion, not the slogan.
+- **Two features, sequenced.** `dv-tester` **extracts** and pays the interim cost
+  (per-family cross-check fixtures, both paths asserted equal);
+  `codegen-simplification` **delegates**, deleting codegen's copies. Splitting
+  them keeps a correctness-critical refactor off the critical path of a feature
+  whose value is elsewhere.
+
+**Status:** Locked (user, 2026-07-31 — `dv-tester` design;
+`.specs/features/dv-tester/ideal.md` §3, §8.5 and
+`.specs/features/codegen-simplification/ideal.md`).
+
+### MD-37: One device concept, two binding modes
+
+There is **one** way to answer "how do I write a device": declare it in PHDL with
+`@device`, which already exists (MD-24) as a module that declares its ports and
+params and defers its implementation. What varies is only *where the
+implementation is bound*:
+
+| Binding mode | Implementation | Bound at | Distribution |
+|---|---|---|---|
+| **plugin** | a dlopen'd cdylib, `#[pip::device]` + `inventory` | plugin load, TOFU-pinned (MD-30) | a release artifact |
+| **host** | a class/impl in the running process | session build | the script itself |
+
+Both converge on `Element` through a blanket adapter, so the solver cannot tell
+them apart (MD-01). The PHDL never changes between modes; circuit build resolves
+an `@device` module to a plugin binding or a host registration and fails loud
+naming both when neither exists.
+
+- **No new macro.** A Rust host device implements `HostElement` and registers
+  explicitly; `#[pip::device]`'s `inventory` collection is a plugin-binary
+  mechanism with no meaning in-process, and MD-13 rule 5 makes not adding one the
+  correct answer rather than a compromise. Python's `@pip.device` performs the
+  same registration in that language's idiom.
+- **Promotion is the distribution story.** A Rust host device becomes a plugin
+  device with **no change to the PHDL** — prototype in-process, promote when it
+  stabilizes, and the circuits using it never notice. A Python host device cannot
+  graduate (there is no Python cdylib) and stays script-local: fine for testers,
+  limiting for models, and stated rather than discovered.
+
+**Status:** Locked (2026-07-31 — user chose PHDL-declared host devices and
+delegated the `#[pip::device]` relationship to the agent;
+`.specs/features/dv-tester/ideal.md` §8.6–§8.7).
+
 ---
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-26 — `p6-cleanup-completeness` hygiene subset
+**Last updated:** 2026-08-01 — `dv-tester` DELIVERED (T1–T37, Verifier PASS
+after 2 fix→re-verify rounds); `dv-gradients` DELIVERED 2026-07-31;
+`codegen-simplification` sketched as `dv-tester`'s follow-on, now unblocked.
+
+### Feature — `dv-tester` (DELIVERED 2026-08-01)
+
+`ideal.md` / `spec.md` / `design.md` / `tasks.md` in
+`.specs/features/dv-tester/`. Scope grew from "a programmatic tester" to **a
+host-language device library** — Python or Rust, same contract — of which a
+tester is one use. Two rejected drafts are recorded in `ideal.md`'s header; the
+second failed on a question as ordinary as *"a PWM comparator reading two
+terminals"*, which had no home because its levels conflated abstraction with
+rate. The corrected axis is **where the code runs**: level 0 = raw solver ABI
+(host call per Newton iteration), level 1 = `piperine-signal` (zero host calls,
+MD-36), level 2 = the host library (one host call per test breakpoint) — and the
+three **compose in one device**.
+
+A codegen audit replaced two guesses with facts. **`SUPPORTS_ROLLBACK` is live**
+(`element-abi-maturity` implemented what `solver-simplification` had removed as a
+phantom doc): checkpoint before every attempt, restore on both rejection paths.
+**But crossings are not exact and PHDL's own `@cross` is not either** — the
+detector compares the *previous accepted* trigger value, `next_breakpoints`
+excludes crossings outright, and `EventKind::Crossing` is `priority: Advisory`.
+So `@cross` fires at the first accepted point after the crossing, late by up to a
+timestep, unreported. Three fidelity tiers are now named; level 1 ships **tier 2**
+(predict + `bound_step`, error published) with **no solver change**, and tier 3
+(promote `Crossing` to `Exact` + retry) is a scoped solver feature on scaffolding
+that already has the right shape.
+
+Decisions taken (full log, `ideal.md` §12): settled-events-only observation
+because a mid-delta-cycle value can be a **DAG-evaluation-order artifact** rather
+than a signal the circuit had; host devices declared in PHDL (MD-37); digital
+edge waits in V1 (a tester that cannot synchronize to a clock is not a tester);
+`install` is install-relative with discontinuities **registered, never smoothed**;
+`Measure` publishes an **error bound** and `expect` compares against the bound,
+with `refine=True` buying exactness; reading an unfed measure is loud. `Measure`
+stays a **separate engine** from `dv-core`'s `constraint` (deliberate, cost named
+— two definitions of "peak", mitigated by one written semantics + a cross-check
+fixture + a shared findings channel), revisited by `codegen-simplification`.
+
+37 tasks over 7 phases; Phase 6 (`cover`) is the declared split point.
+
+**Delivered** via 6 sequential phase-batch sub-agents (T1–T6, T7–T13, T14–T18,
+T19–T26, T27–T34, T35–T37) + an independent Verifier, 43 commits
+(`ae65570..HEAD` before fixes). New crate `piperine-signal` (pure, zero
+in-tree deps, mechanically guarded — MD-36's extraction half) ships `ops`
+(delay/slew/transition/idt), `events` (cross/above/timer + tier-2 crossing
+prediction), `Behavior`+`BehaviorKind` (closed-form value+Jacobian,
+`verify_derivatives` FD oracle), `Measure`+`MeasureKind` (O(1) streaming
+accumulators, published error bounds), `Wave`, and the junction limiter —
+all extracted from codegen's existing pure copies with semantics intact,
+codegen's copies untouched (delegation is `codegen-simplification`'s job).
+`piperine-api/src/device/` adds `HostElement` + a `HostAdapter<T>` newtype
+blanket-`Element` adapter (Rust orphan-rule workaround, SPEC_DEVIATION from
+ideal.md §6's direct-impl sketch), `StampSink`/`Ctx`/`StateView`, and
+`@device`'s host binding mode (one PHDL declaration, two binding sites —
+plugin or host, MD-37). `piperine-api/src/sequencer/` adds the coroutine
+driver (resume strictly after acceptance, D11), `install` semantics, drive
+with declared impedance, `expect`/`warn` via `dv-core`'s findings channel,
+and the one solver-touching change — `Element::on_digital_settled`, a
+broadcast dispatch (not literally a registration list per design.md's
+original sketch, but mechanically proven to add no new `EventKind`
+variant) consulted strictly after digital net settling. `piperine-python`
+bridges via `pip.HostBehavior`/`Wave`/`Measure`/`Sequencer` (closed catalog
+in Python, open trait in Rust, §3.7); `tests/host_parity.rs` +
+`host_capability_parity.rs` prove name parity and PHDL/host value identity
+for four twinned devices. `cover` lands as a `constraint`-block statement
+(grammar → elaboration bin-count cap → codegen bin-mapping with its own
+`cover=on|off` posture, separate from `checks=` per D9 → host-side merge
+across runs naming empty bins).
+
+**Verifier:** FAIL on round 1 (40/45 ACs matched spec outcome cleanly, 4
+spec-precision gaps, 1 hard gap; sensor 3/5 killed, 2 survived) — ranked
+gaps: DVT-30 (no fixture proved all three levels compose in one class), a
+settled-only-dispatch mutant survived (the fixture's glitch net started and
+ended at the same value, so pre/post-settle were indistinguishable to the
+assertion), a `Wave::pending_edges` right-boundary (`t == end`) mutant
+survived, plus DVT-14/16/26/35 spec-precision gaps. Fix round 1 (5 commits)
+closed all of them — DVT-30 needed no driver change, only a fixture proving
+one `HostElement` stamping directly + installing a `Wave` + owning a
+`Sequencer` all at once; both mutants were re-run against the strengthened
+fixtures and confirmed killed. Re-verification round 2 found one new Minor
+gap: DVT-26's fix correctly proved `WaitCrossing` resumes via tier-2
+polling (`accept_timestep`/`StateView`), never through
+`EventKind::Crossing` — but `docs/spec/part_viii_host_api.md` and
+`ideal.md` §4.1 still claimed the one-to-one `EventKind` mapping. Fix round
+2 (docs-only, `6c7b547`) corrected both tables and reworded spec.md's
+Sequencer AC #3. **Final: PASS**, 3 lessons distilled (L-018..L-021,
+candidates) on settled-only fixture discrimination, window-boundary test
+coverage, N-way composition claims needing an actual N-way test, and specs
+staying honest when a fix proves a claimed mapping false. `cargo test
+--workspace`: 1675 tests across 279 binaries, 0 failed, 0 rustc/clippy
+warnings, doc gate clean.
+
+### Feature — `codegen-simplification` (SKETCHED 2026-07-31)
+
+`.specs/features/codegen-simplification/ideal.md`. The follow-on that
+**delegates** codegen to `piperine-signal` and deletes its copies (MD-36).
+Distinct from `codegen-architecture` (delivered, MD-23), which reshaped the
+module tree — this one moves a category of content out of the crate entirely.
+Codegen is 16 144 lines with four god-files (`compile.rs` 1 694,
+`instance.rs` 1 416, `flatten/analog.rs` 1 329, `kernel.rs` 982); the tree is
+already right, so the remaining illegibility is *what is inside*. Hard goal:
+**capability parity**, proven by writing the same device in PHDL and in the host
+language and asserting identical results. Explicitly does **not** buy
+performance. Next priority after `dv-tester` (user).
+
+### Feature — `dv-gradients` (DELIVERED 2026-07-31)
+
+Spec/design/tasks/validation in `.specs/features/dv-gradients/`. Vision:
+`.specs/features/design-verification/ideal.md` §3–§5. The analytic sensitivity
++ host policy driver: `resolve/diff.rs` differentiates by parameter (`∂F/∂p`,
+additive to the existing Jacobian pass) → codegen emits it as **one**
+parameter-indexed JIT function (a `Mos1`-sized ~60-param model card compiles;
+this is `.disto`'s function-count wall avoided by construction, §C1) →
+`AnalogDevice::param_stamps` + `HAS_SENSITIVITY` is the whole ABI delta (stamp-
+perturbation fallback for elements without the bit, always reported by label)
+→ a DC adjoint driver (`piperine-solver/src/analyses/`) solves `Jᵀλ = ∂f/∂x`
+**once** for all requested parameters (20 params ⇒ 1 extra solve, counted) —
+explicitly a **sibling** of the noise adjoint (§12), not a reuse; DC-first
+(D6) because `.sens` central-FD is the only verifiable oracle, AC-metric
+gradients fail loud naming the gap. Host surface: `sensitivity`/`gradient`
+with engine attribution on both hosts (`host_parity.rs`); `SamplePlan`
+(`piperine-api/src/sampling.rs`) walks the **authored** instance tree (never
+`flat_modules`, MD-25) for Monte Carlo — `global` params share one draw,
+mismatch params draw independently, `(seed, index)` fully reproducible and
+replayable; `monte_carlo()` reports yield/σ_i/worst-sample, 10³ samples cost
+one compile (MD-18); one policy-parameterized `Driver`
+(`piperine-api/src/driver/`) — `optimize` (gradient + Nelder-Mead black-box
+fallback, engine-attributed), `center` (`min_i(m_i/σ_i)`, σ-scheme stated),
+`high_sigma` (mean-shift importance sampling, always reports its estimator +
+CI) — forced to `collect` posture regardless of session default; aging as
+parameter drift (`piperine-api`) reports the margin delta, refuses loud on a
+rebuild-class drift target, and documents honestly that the gap versus
+MOSRA/RelXpert is model *data*, not mechanism. `docs/spec/part_vii_solver.md`
++ `part_viii_host_api.md` + `appendix_c_host_surface.md` updated.
+
+Delivered via 4 sequential phase-batch sub-agents (T1–T6, T7–T12, T13–T19,
+T20–T23) + an independent Verifier. **Verifier: PASS** — 23/23 ACs
+spec-anchored (counted solve numbers, exact draw equality/inequality, exact
+compile-count deltas — not just "an assertion exists"), 3/3 discrimination
+mutations killed (adjoint solve-count economy, sampling global/mismatch
+sharing, driver's forced `collect` posture), one minor non-blocking note (the
+`optimize` + `tol`-carrying-param edge case is plausible by construction but
+not independently traced to a named test). Two SPEC_DEVIATIONs distilled into
+lessons L-016/L-017 (candidates): a policy dispatcher shipping a sibling
+policy's real implementation early because Rust needs the whole module tree
+to compile as a unit; high-sigma importance sampling scoped to
+Gaussian-with-resolvable-σ entries only, documented rather than silently
+approximated. `cargo test --workspace`: 1439 passed, 0 failed, 4 ignored,
+0 rustc warnings, clippy clean, doc gate clean.
+
+**Previously:** 2026-07-26 — `p6-cleanup-completeness` hygiene subset
 DELIVERED (T1–T25). `cargo test --workspace`: 1161 passed, 0 failed, 4 ignored
 (illustrative doctests), 0 rustc warnings.
 
