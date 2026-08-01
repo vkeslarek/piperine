@@ -238,12 +238,28 @@ ItemKind       ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl
                  | ConstDecl
 
 ConstraintDecl ::= { Attribute } [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
-ConstraintStmt ::= RequireStmt | TargetStmt | ConstraintVar | ScopedBlock
+ConstraintStmt ::= RequireStmt | TargetStmt | ConstraintVar | CoverStmt | ScopedBlock
 RequireStmt    ::= "require" Ident ":" Expr ";"
 ConstraintVar  ::= "var" Ident ":" Type "=" Expr ";"     -- annotation mandatory
 TargetStmt     ::= "target" TargetExpr ("<="|">=") TargetExpr [ "tol" Expr ] ";"
+CoverStmt      ::= "cover" Ident ":" Expr "bins" "[" Expr ":" Expr ":" Expr "]" ";"
+                 | "cover" Ident ":" Expr "in" "{" Expr { "," Expr } "}" ";"
+                 | "cover" "cross" Ident ":" Ident { "," Ident } ";"
 ScopedBlock    ::= "@" EventSpec "{" { ConstraintStmt } "}"
 ```
+
+**`CoverStmt` (dv-tester DVT-42, `crates/piperine-lang/src/parse/parser/
+constraint_decl.rs`).** The bin form after `bins` is a literal-edged range
+partition `[lo:step:hi]`; the set form after `in` is an explicit, literal
+list of bin values — both lower to `piperine_lang::parse::ast::CoverBins`
+(`Range { lo, step, hi }` / `Set(points)`). The third form, `cover cross
+<name> : <point1>, <point2>, …;`, names two or more `cover` points already
+declared **earlier in the same block** by their own labels — it carries no
+`Expr`/`CoverBins` of its own, only the label list. `ConstraintStmt::Cover`
+and `ConstraintStmt::CoverCross` are the two POM variants; a `cover` point
+carries no margin and no signed distance (unlike `RequireStmt`/`TargetStmt`)
+— it lowers to a bin-mapper counter, not a `Boolean`/comparison expression
+(Part I §10.6, Part II §11 for the elaboration-time bin-count check).
 
 `TargetExpr` is the `Expr` production of B.8 parsed at minimum precedence 7
 (BitXor and above), so a following `<=`/`>=` is the statement's comparison

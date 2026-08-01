@@ -254,3 +254,155 @@ assert r.v("signal") < 1e-6, "open switch pulls the node to ground"
 ```
 
 Run with `piperine test` (discovers `*_tb.py`) or `piperine run switch_open_tb.py`.
+
+## A.4 Host devices and testers (dv-tester)
+
+The host device library (Part VII §20, Part VIII §17) writes a device *in*
+the host language rather than in PHDL. Both examples below reflect the
+actually-delivered surface — `crates/piperine-api/src/device/`,
+`crates/piperine-python/src/sequencer_bridge.rs`/`signal_bridge.rs` — not
+`ideal.md`'s aspirational sketches (`t.arm`/`t.install`/`b.vsource` are not
+literally what shipped; see Part VIII §17.5's stated Rust/Python
+asymmetry).
+
+### A.4.1 A host device — Rust, level 0 + level 1 composed
+
+The declaration is ordinary PHDL — `@device` with a plugin binding and a
+host registration both able to satisfy it (Part I §10.7):
+
+```phdl
+discipline Electrical { potential v : Real; flow i : Real; }
+
+@device(plugin = "none", type = "SoftStartLoad")
+mod SoftStartLoad ( inout p : Electrical, inout n : Electrical ) {
+    param r : Real = 1e3;
+}
+```
+
+The implementation is a Rust `HostElement`: a resistive load stamped
+directly (level 0) in series with a `Wave`-driven soft-start ramp installed
+once at construction (level 1, zero host calls per Newton iteration):
+
+```rust
+use piperine_api::{Ctx, HostAdapter, HostDeviceRegistry, HostElement, StampSink, WaveStamp};
+use piperine_codegen::device::PortBinding;
+use piperine_signal::wave::Wave;
+use piperine_solver::abi::{AnalogReference, ElementCapabilities};
+
+struct SoftStartLoad {
+    p: AnalogReference,
+    n: AnalogReference,
+    g: f64,                 // level 0: the resistive load, r's conductance
+    ramp: WaveStamp,         // level 1: a soft-start Wave in series with p/n
+}
+
+impl HostElement for SoftStartLoad {
+    fn name(&self) -> &str { "SoftStartLoad" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+    }
+    fn load_dc(&mut self, ctx: &Ctx<'_>, sink: &mut StampSink) {
+        sink.g(&self.p, &self.p, self.g);
+        sink.g(&self.p, &self.n, -self.g);
+        sink.g(&self.n, &self.p, -self.g);
+        sink.g(&self.n, &self.n, self.g);
+        self.ramp.stamp(ctx, sink);           // native, zero host calls
+    }
+}
+
+fn analog_node(binding: &PortBinding) -> AnalogReference {
+    match binding {
+        PortBinding::Analog(r) => r.clone(),
+        PortBinding::Digital(_) => panic!("SoftStartLoad has no digital ports"),
+    }
+}
+
+let registry = HostDeviceRegistry::new();
+registry.register("SoftStartLoad", |spec| {
+    let p = analog_node(&spec.ports[0]);
+    let n = analog_node(&spec.ports[1]);
+    Ok(Box::new(HostAdapter(SoftStartLoad {
+        p: p.clone(), n: n.clone(),
+        g: 1.0 / 1e3,
+        ramp: WaveStamp::new(Wave::sigmoid(0.0, 1.8, 200e-6, 40e-6), p, n, 0.05),
+    })))
+});
+```
+
+`SessionBuilder::host_registry(Rc::new(registry))` wires it; the same
+`@device` declaration would resolve to a plugin binding instead if one were
+wired with `SessionBuilder::provider(...)` — the PHDL never changes between
+the two modes (Part I §10.7's graduation path).
+
+### A.4.2 A tester — Python `Sequencer`
+
+A `pip.Sequencer` subclass is the coroutine-shaped tester itself —
+`run(self, t)` is a generator, `yield t.advance(dt)`/`yield
+t.wait(pip.edge(...))` are the wake forms, `t.expect`/`t.warn` report
+findings. `@pip.device(type_id)` declares which `@device(plugin = "none",
+type = type_id)` PHDL instance it binds to, exactly as a plain host device
+does (Part I §10.7):
+
+```python
+# regulator_tb.py
+import piperine as pip
+
+PHDL = """
+discipline Electrical { potential v : Real; flow i : Real; }
+
+mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+analog VSource { V(p, n) <- dc; }
+
+mod Regulator ( inout vin : Electrical, inout vout : Electrical, inout gnd : Electrical );
+analog Regulator { V(vout, gnd) <+ min(V(vin, gnd), 1.8); }
+
+@device(plugin = "none", type = "RegulatorTest")
+mod RegulatorTest ( inout vout : Electrical, inout gnd : Electrical );
+
+mod Top () {
+    wire vin : Electrical; wire vout : Electrical; wire gnd : Electrical;
+    src : VSource ( vin, gnd ) { .dc = 3.3 };
+    reg : Regulator ( vin, vout, gnd );
+    tst : RegulatorTest ( vout, gnd );
+}
+"""
+
+@pip.device('RegulatorTest')
+class RegulatorTest(pip.Sequencer):
+    """`t` (`SeqCtl`) exposes advance/wait/expect/warn today (Part VIII
+    §17.5) — no `t.read_v` yet, so a pure-observer device reads its own
+    input through `accept_timestep`, the same pattern `ideal.md` example G
+    composes level 0 (observation) with level 2 (sequencing)."""
+
+    caps = pip.ANALOG
+
+    def __init__(self, ports, params):
+        self.p, self.n = ports
+        self.last_vout = None
+
+    def load_dc(self, ctx, m):
+        pass  # a pure observer: no stamps of its own
+
+    def accept_timestep(self, state, t):
+        self.last_vout = state.v(self.p) - state.v(self.n)
+
+    def run(self, t):
+        yield t.advance(50e-6)                      # let the operating point settle
+        t.expect(self.last_vout is not None, "never observed vout")
+        t.expect(abs(self.last_vout - 1.8) < 1e-3,
+                  f"regulator output {self.last_vout:.4f} V, want 1.8 V")
+        yield t.advance(50e-6)
+
+# `Module.compile()`'s ordinary path does not yet auto-wire `@pip.device`
+# registrations (that is `piperine_python::registration::
+# register_python_devices` + `Session::builder(..).provider(registry)`,
+# `crates/piperine-python/tests/host_device_library.rs`'s established
+# idiom) — a Python tester is driven from a script that builds its own
+# `HostDeviceRegistry` today, not yet a one-line `pip.load(...).compile()`
+# call. This is the honest state of the wiring, not the aspirational one.
+```
+
+A failing `t.expect` records an `Error` finding with the resume time and
+the sequencer's own instance path — never a print — and the coroutine
+keeps running past it (posture `collect`) or aborts there (posture
+`strict`, Part VIII §8/§17.7).

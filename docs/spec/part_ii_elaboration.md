@@ -241,6 +241,36 @@ process-vs-mismatch kind. A `tol` on a non-`Real` param, or an undeclared
 distribution name, fails loud at elaboration. The clause is inert at solve —
 sampling is `dv-gradients`' scope.
 
+**`cover` bin resolution and the elaboration-time cross cap (dv-tester
+DVT-42, D10).** A `cover <name> : <expr> bins […]` / `… in {…}` statement
+resolves and classifies exactly like a `var`/`target` expression (steps 2–4
+above): `<expr>` must be `Real` and **pointwise** — the same reduced-quantity
+restriction `require` carries, for the same reason ("a reduced quantity is
+checkable once per analysis, not per point"). Its `CoverBins` (a literal-edged
+range `[lo:step:hi]` or an explicit literal set `{e1, e2, …}`) resolve to a
+`ResolvedCoverBins` and a concrete **bin count**, both computed at
+elaboration since every bin edge is a literal — nothing about a `cover`
+point's own bin count needs a solve. The point's name and bin count are
+recorded in the block's local scope so a later `cover cross` in the same
+block can look them up by label.
+
+A `cover cross <name> : <point1>, <point2>, …;` names two or more
+previously-declared `cover` points, in the same block, by label — naming an
+undeclared point fails loud, listing the undeclared label and the points
+that must be declared first. Its **joint bin count is the product of each
+named point's own bin count**, and because every factor is already known
+statically, the product is checked **at elaboration, before anything
+allocates**: exceeding `ElabContext::cover_bin_cap` (a field on the
+elaboration context an embedding host may raise, defaulting to 4096 — an
+agent-decided default, since `spec.md`/`ideal.md` D10 left the exact number
+open) is a loud elaboration error naming the declared joint count and the
+cap, rather than a runtime allocation of however many bins the product
+turned out to be. This is the whole point of resolving bin counts at
+elaboration rather than at the first solve: a combinatorially oversized
+`cover cross` (crossing several fine-grained ranges) is refused before a
+single coverage counter exists, not discovered as a multi-gigabyte
+allocation mid-run.
+
 **Event-block scoping (DVC-19/20).** A `@ … { … }` block inside a constraint
 reuses the behavior-body `EventSpec` production and `EventRegistry` (§9). The
 elaborator resolves each term and rejects names that are not analysis-scope
@@ -387,6 +417,8 @@ that defines the rule):
 | missing `var` annotation | `` constraint `{c}` on module `{m}`: `var` `{n}` requires a type annotation `` | I §10.6 |
 | duplicate statement label | `` constraint `{c}` on module `{m}`: duplicate statement label `{n}` `` | I §10.6 |
 | reduced quantity in a pointwise scope | `` constraint `{c}` on module `{m}`: a reduced quantity is checkable once per analysis, not per point `` | I §10.6, II §8.1 |
+| `cover cross` names an undeclared point | `` `cover cross `{name}`` names undeclared cover point `{point}` — every crossed point must be declared with `cover {point} : … bins […]` or `… in {…}` earlier in the same block `` | I §10.6, II §8.1 (DVT-42) |
+| `cover cross` joint bin count exceeds the cap | `` `cover cross {name}`'s joint bin count ({n}) exceeds the elaboration cap ({cap}) — cross fewer points, coarsen a range, or raise `ElabContext::cover_bin_cap` `` | I §10.6, II §8.1 (DVT-42, D10) |
 | bad cast or call form in a constraint | `` unsupported {form} `{x}` in a constraint `` | II §8.1 |
 | `none` literal where a value type is required | `` `none` has no value type in a constraint `` | II §8.1 |
 | `@` block names no analyses | `` constraint `{c}` on module `{m}`: an `@` event block must name at least one analysis `` | I §10.6 |

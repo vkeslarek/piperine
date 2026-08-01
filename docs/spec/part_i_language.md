@@ -24,6 +24,7 @@ it. The full consolidated grammar is in Appendix B.
 - §9 Functions
 - §10 Behavior
 - §10.6 Constraints (`constraint` blocks) — design verification
+- §10.7 `@device` — the host binding mode (dv-tester)
 - §11 System tasks (`$`-syscalls) — overview
 - §12 Phase model
 - §13 No-Magic rule
@@ -242,9 +243,9 @@ The design-verification surface (DVC-06) contributes six of these —
 reserved at the parser level rather than treated as contextual keywords so
 that the grammar stays LL(1) without a keyword/context disambiguation in
 the identifier production (a contextual-keyword path was considered and
-rejected at design time). `cover` is reserved ahead of the `cover` block
-(dv-core future work); `global` marks the process-variation kind of a `tol`
-clause (§7.2).
+rejected at design time). `cover` introduces a `constraint`-block coverage
+point (§10.6, dv-tester DVT-42); `global` marks the process-variation kind
+of a `tol` clause (§7.2).
 
 Contextual keywords (reserved only where the grammar expects them): the resolve kinds
 `tri`, `or`, `and`, `sum`, `avg`, `max`, `min` (inside a `discipline` body); `and` /
@@ -1057,13 +1058,16 @@ restrict a rule to one analysis or window.
 
 ```
 ConstraintDecl ::= [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
-ConstraintStmt ::= RequireStmt | VarDecl | TargetStmt | ScopedBlock
+ConstraintStmt ::= RequireStmt | VarDecl | TargetStmt | CoverStmt | ScopedBlock
 RequireStmt    ::= "require" Ident ":" Expr ";"
 TargetStmt     ::= "target" Expr ("<="|">=") Expr [ "tol" Expr ] ";"
+CoverStmt      ::= "cover" Ident ":" Expr CoverBins ";"
+                  | "cover" "cross" Ident ":" Ident { "," Ident } ";"
+CoverBins      ::= "bins" "[" Expr ":" Expr ":" Expr "]" | "in" "{" Expr { "," Expr } "}"
 ScopedBlock    ::= "@" EventSpec "{" { ConstraintStmt } "}"
 ```
 
-The three leaf statement kinds:
+The four leaf statement kinds:
 
 - **`require <name> : <pred>;`** — a named predicate that must hold at every
   evaluation point (Part VII §16, design §C3). The predicate is `Boolean`
@@ -1078,6 +1082,21 @@ The three leaf statement kinds:
   normalizes the resulting margin (see the margin convention below); absent
   it, `scale = 1` — no implicit normalization. A `target` is a soft goal: it
   never fails the analysis, only its margin is read.
+- **`cover <name> : <expr> bins [lo:step:hi];`** or **`cover <name> :
+  <expr> in {e1, e2, …};`** (dv-tester DVT-42) — a named coverage point:
+  which bin the pointwise value of `<expr>` fell into, at every evaluation
+  point. Unlike `require`/`target`, a `cover` point carries **no margin and
+  no signed distance** — a bin hit is a counter increment (Part VII/VIII
+  document the host-side accumulation this reuses `dv-core`'s pointwise
+  path for). `bins [lo:step:hi]` partitions a literal range into equal
+  steps; `in {…}` names an explicit, literal set of bin values.
+- **`cover cross <name> : <point1>, <point2>, …;`** — joint coverage over
+  two or more previously-declared `cover` points **in the same block**,
+  named by their own labels. The joint bin count is the product of each
+  named point's own bin count — since bin edges are literal, that product
+  is known statically at elaboration, before anything allocates, and is
+  checked there against a raisable cap (§10.6's Validation paragraph
+  below; Part II documents the cap and its error).
 
 `@ … { … }` reuses the behavior-body `EventBlock` production (§10.4) —
 `@ dc { … }`/`@ tran { … }`/`@ ac { … }` scope the body to one analysis; `|`
@@ -1091,6 +1110,9 @@ constraint Amplifier {
     require headroom : V(out, gnd) >= 0.2;
     var     ugbw     : Real = ac_unity_gain_freq(V(out, gnd));
     target  gain_db  >= 60 tol 1.0;
+    cover   vin_swept : V(inp, inn) bins [-1.0:0.1:1.0];
+    cover   temp_pt   : temp in {-40.0, 27.0, 125.0};
+    cover cross corner : vin_swept, temp_pt;
     @ tran(after = 5u, dur = 10u) {
         require settled : abs(V(out, gnd) - vfinal) <= vtol;
     }
@@ -1125,10 +1147,74 @@ non-`Real` `target` operand → elaboration error. A missing `var` annotation
 elaboration error. A `require`/`target` reading a **reduced** quantity (Part
 V §6.2) inside a pointwise scope → elaboration error ("a reduced quantity is
 checkable once per analysis, not per point"). A strict `<`/`>` in a `target`
-→ parse error at the comparison token. The complete catalog is Part II §11.
+→ parse error at the comparison token. A `cover`'s expression must be `Real`
+and pointwise (the same reduced-quantity restriction as `require`/`target`)
+→ elaboration error. A `cover cross` naming an undeclared point → elaboration
+error, listing the undeclared label. **A `cover cross`'s joint bin count is
+checked at elaboration against `ElabContext::cover_bin_cap`** (default 4096,
+an agent-decided default per dv-tester D10 — `spec.md` left the exact number
+open) **and refused loudly, naming the declared count and the cap**, when it
+is exceeded — bin edges are literal, so the product is known before any
+coverage state allocates (Part II §11 documents the check site). The
+complete catalog is Part II §11.
 
 The host-side surface — `r.margins`, `r.violations`, `r.requires_ok`,
 `r.first_violation`, the three postures — is Part VIII §7 and Appendix C.
+`cover`'s own host-side merge/closure surface (`CoverageDatabase`) is Part
+VIII §17 and Appendix C.
+
+---
+
+## §10.7 `@device` — the host binding mode (dv-tester)
+
+`@device` already declares a module whose *implementation* comes from
+outside PHDL (§5.4, `headers/device_port.phdl`) — a plugin cdylib,
+TOFU-pinned at load. dv-tester adds a **second binding mode for the same
+attribute**: an implementation registered **in-process**, from the host's
+own script or crate, with no compiled binary and no `dlopen`. There is one
+concept, `@device`, not two — the PHDL never spells which mode it will
+resolve to:
+
+```phdl
+@device(plugin = "none", type = "MyRegulator")
+mod Regulator ( inout vout : Electrical, inout gnd : Electrical ) {
+    param iload : Real = 10e-3;
+}
+```
+
+The same declaration, instantiated the same way (composing with hierarchy,
+parameterized, instantiated more than once) resolves at circuit-build time
+by trying a wired plugin binding first and a host registration second,
+failing loud and naming both when neither has the type id (Part VII §20.1,
+Part VIII §17 — `HostDeviceRegistry`). The binding mode is **inferred from
+where the implementation is registered**, never spelled differently in
+source.
+
+**No new macro.** A Rust host device implements `HostElement` and registers
+with an explicit call (`HostDeviceRegistry::register`/`register_sequencer`)
+— not `#[pip::device]`'s `inventory`-collection mechanism, which is
+plugin-binary-only and has no meaning for an in-process implementation.
+Python spells the registration with `@pip.device("MyRegulator")`, the idiom
+that language already uses for declaration-coupled registration — the
+*concept* is identical to the Rust call, only the spelling follows each
+language's own grain (this reuses the same `device(type_id)` decorator
+`#[pip::device]`'s Python-glue binding marker already used for plugin
+scripting glue, not a second decorator).
+
+**The graduation path.** A Rust host device can become a plugin device with
+**no change to the PHDL**: the same `@device` declaration, the same
+`HostElement` implementation, moved from a script/crate into a distributed
+`cdylib`. Prototype in-process, promote when it stabilizes; the circuits
+that instantiate it never notice, because the resolution order (plugin
+first, host second) means a newly-wired plugin binding simply wins.
+
+**The Python limitation, stated rather than discovered.** A Python host
+device **cannot graduate** — there is no Python `cdylib` for the native
+plugin backend to load (`crates/piperine-plugin/src/backend/native.rs`
+requires a compiled shared library). A Python host device stays
+script-local: fine for a tester or a one-off prototype, a real limitation
+for a model meant to be distributed. The Rust route is the one that reaches
+a plugin.
 
 ---
 
