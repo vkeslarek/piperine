@@ -122,6 +122,27 @@ inherits the matching builtin type it previously surfaced as, so existing
 `--list`, explicit file, `PIPERINE_TEST_TIMEOUT_SECS`) · `piperine check`/
 `piperine build`.
 
+### Host device library (dv-tester — Part VIII §17)
+
+Not in the `~55`-name `__all__` count above; listed separately because it
+is this feature's own surface. `crates/piperine-python/python/piperine/
+__init__.py` (the `Wave = _piperine.Wave` block) is the source.
+
+| Object | Members |
+|---|---|
+| `Device` | base class; declare `caps` (int, OR of the capability flags below) and any subset of `name`/`load_dc`/`load_transient`/`accept_timestep`/`build(self, b)` — dispatch is on method presence, not required subclassing |
+| `Sequencer(Device)` | define `run(self, t)` as a **generator**: `yield t.advance(dt)` / `yield t.wait(pip.edge(...))` / `yield t.wait(pip.above(...))` |
+| `device(type_id)` (`@pip.device(...)`) | registers a Python class as the host binding for `@device(type = type_id)` (Part VII §20.1, Part VIII §17) |
+| `Wave` | `.const`/`.ramp`/`.pulse`/`.sin`/`.exp`/`.sigmoid`/`.pwl`/`.sampled`/`.from_fn`/`.sum`/`.scaled`/`.shifted` · `.value(t)` |
+| `HostBehavior` | `.comparator`/`.hysteresis`/`.switch`/`.limiter`/`.vcvs`/`.vccs`/`.vco`/`.table`/`.sum`/`.scaled`/`.composed` · `.value(inputs)` · `.register_kind(...)` (always raises, names level 0 + Rust) — **not** `pip.Behavior`, which is the pre-existing POM reflection type |
+| `Measure` | `.peak`/`.min`/`.average`/`.rms`/`.ripple`/`.integral`/`.cross(level, dir)`/`.settle(target, tol)`/`.count()` · `.feed(t, v, lte)` · `.value` (property, raises when never sampled) · `.register_kind(...)` (always raises) |
+| `DelayMeasure` | `.delay(level, dir)` · `.feed(t, a, b)` (two-channel — its own `feed`, not `MeasureKind`-shaped) |
+| `Builder` (`b` in `build(self, b)`) | `.wave(p, n, wave, rout)` · `.behavior(force_p, force_n, controls, behavior)` |
+| `SeqCtl` (`t` in `run(self, t)`) | `.advance(dt)` · `.wait(spec)` · `.expect(cond, msg)` · `.warn(msg)` · `.t` (property) — see Part VIII §17.5 for what is **not** yet bridged here (`install`/`drive_*`/`arm`/read-back) |
+| `edge(net, direction)` / `above(net, level, direction="either")` | `t.wait(...)` spec constructors — `RISING`/`FALLING`/`EITHER` string constants |
+| `NetRef`, `DigitalNetRef` | resolved port handles a device receives; retained for the device's lifetime |
+| Capability flags | `ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`, `LOADS_DC`, `LOADS_AC`, `LOADS_TRAN`, `EMITS_NOISE`, `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `BYPASS_OK`, `EMITS_VALIDATION` — `int` bit values, OR'd into `caps` |
+
 ---
 
 ## 2. Rust surface (`piperine-api`; root `piperine` re-exports it)
@@ -214,6 +235,42 @@ Every name above is a crate-root re-export (`piperine_api::Sensitivity`,
 none of them are in `piperine_api::prelude` (Part VIII §13's prelude list is
 unchanged by this feature).
 
+### `device`, `sequencer` — the host device library (dv-tester — Part VIII §17)
+
+| Item | Signature |
+|---|---|
+| `HostElement` | trait: `name`/`capabilities` required; `load_dc`/`load_transient`/`allocate_unknowns`/`set_temperature`/`update`/`next_breakpoints`/`bound_step_hint`/`accept_timestep`/`on_digital_settled`/`drain_digital_drives`/`checkpoint_state`/`restore_state`/`limiting_report`/`validation_reports`/`read_opvars`/`list_params`/`get_param`/`set_param` defaulted |
+| `HostAdapter<T>` | `pub struct HostAdapter<T>(pub T)` — `impl<T: HostElement> Element for HostAdapter<T>` (Part VII §20.1) |
+| `Ctx<'_>` / `StampSink` / `StateView<'_>` | the FFI-safe wrappers `HostElement` methods receive — `StampSink::g(row, col, v)`/`i(row, v)`/`branch(...)`, index-validated, borrow-scoped to one call |
+| `WaveStamp` | `new(Wave, plus, minus, rout) -> Self` · `.stamp(ctx, sink)` — level-1 `Wave` installed as a two-terminal force |
+| `BehaviorStamp` | `new(Box<dyn BehaviorKind>, controls: Vec<AnalogReference>, force_p, force_n) -> Self` · `.stamp(ctx, sink)` — level-1 `Behavior` with cross-Jacobian entries |
+| `HostDeviceRegistry` | `new()` · `with_plugin(Rc<dyn DeviceProvider>)` · `.register(type_id, factory)` · `.register_sequencer(type_id, factory)` (also marks `has_sequencer()`, Part VII §20.6) — a `DeviceProvider`; tries the wired plugin binding first, the host registration second, failing loud naming both |
+| `Sequencer<P>` | a `HostElement` whose `next_breakpoints` is its program's pending wake; `SequencerProgram` trait: `start`/`resume(t, &mut SequencerControl) -> Wake` |
+| `Wake` | `Advance(f64)` / `WaitEdge(DigitalNet, EdgeDirection)` / `WaitCrossing(AnalogReference, f64, CrossDir)` / `Done` |
+| `SequencerControl` | `.drive_digital(net, value, delay)` · `.findings() -> &mut Findings` · `.expect(cond, msg, t, instance)` · `.warn(msg, t, instance)` · `.expect_measure_at_least`/`.expect_measure_at_most(measure, threshold, msg, t, instance)` · `.last_crossing() -> Option<Prediction>` |
+| `InstallSite` | `new(plus, minus, rout) -> Self` · `.install(wave, t)` — install-relative time origin, registers an `Exact` breakpoint on replacement (Part VIII §17.5) |
+| `CurrentDrive` | `new(plus, minus, rout, current) -> Self` · `.set_current(current)` · `.stamp(sink)` |
+| `drive_voltage` | `(ctl, site: &mut InstallSite, instance, net_label, wave, t, internal: bool)` — `internal=true` records the drive in `ctl`'s findings (D14) |
+| `EdgeDirection` | `Rising`/`Falling`/`Either` |
+
+`piperine_signal` (the pure mechanism crate — no dependency on
+`piperine-api`/`piperine-solver`, CLAUDE.md's crate table):
+
+| Item | Signature |
+|---|---|
+| `wave::Wave` | `constant`/`ramp`/`pulse`/`sin`/`exp`/`sigmoid`/`pwl`/`sampled`/`from_fn`/`sum`/`scaled`/`shifted` · `.value(t)` · `.dc_value()` · `.pending_edges(from, end, out)` |
+| `behavior::BehaviorKind` | trait: `value(inputs)` · `jacobian(inputs, out)` · `crossings(inputs) -> Option<Crossing>` (`Send + Sync` supertrait — a `Behavior` reaches the solver as `Box<dyn Element>`) |
+| `behavior::kinds::{Comparator, Hysteresis, Switch, Limiter, Vcvs, Vccs, Vco, Sum, Scaled, Composed}` | the shipped catalog |
+| `behavior::table::Table` | `new(xs, ys)`/`with_mode(xs, ys, mode)` · `.value(x)` · `.derivative(x)` — pure piecewise, no hand-written derivative |
+| `measure::MeasureKind` | trait: `update(t, v, lte)` · `value()` · `error_bound()` |
+| `measure::kinds::{Peak, Min, Average, Rms, Ripple, Integral, Cross, Settle, Count, Delay}` | the shipped catalog (`Delay::feed(t, a, b)`, two-channel) |
+| `measure::handle::Measure<K>` | `arm(kind)` · `arm_gated(kind, gate)` · `.feed(t, v, lte)` · `.disarm()` · `MeasureError::NeverSampled` |
+| `measure::gate::Gate` / `GateTracker` / `Gated<K>` | time/analog/digital gating |
+| `events::predict_crossing` | tier-2 crossing prediction (Part VII §20.5): `(dir, t0, v0, t1, v1) -> Option<Prediction>` |
+| `verify_derivatives` | analytic-vs-central-FD oracle for a `BehaviorKind` |
+| `ops::Operator` | `Delay`/`Slew`/`Transition`/`Integrate` — the extracted runtime operators |
+| `limit::Limiter` | the extracted pnjlim/fetlim junction limiter |
+
 ### `units` — `Freq`, `Time` (HOST-21)
 
 | Item | Signature |
@@ -256,6 +313,16 @@ unchanged by this feature).
 - `host_parity_probe_flags_a_synthetic_missing_analysis` proves the probe
   actually discriminates (a bogus name is correctly reported missing, not
   vacuously "all present").
+
+**The host device library's own guard (dv-tester T29/T30, Part VIII §17.8):**
+`tests/host_parity.rs`'s later section checks every `Wave`/`HostBehavior`/
+`Measure` catalog entry on both hosts, with the closed-Python/open-Rust
+catalog asymmetry (§17.6) declared as the only divergence rather than
+silently tolerated; `tests/host_capability_parity.rs` separately proves
+capability parity itself — the same device written in PHDL and as a host
+device produces identical results, for one device per level-1 family
+(a `transition` source, a pnjlim junction, a `table` nonlinearity, a
+`cross`-triggered element).
 
 `cargo test -p piperine host_parity` runs both checks; `crates/
 piperine-python/tests/pyi_stub.rs` separately cross-checks every declared

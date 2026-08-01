@@ -748,6 +748,265 @@ let (worst_index, worst_value) = mc.worst("dut1.head").unwrap();
   declared nominal values — sampling never leaves residue for a later
   nominal analysis.
 
+## 17. The host device library (dv-tester)
+
+A fifth way to get a device into a circuit, alongside PHDL, a compiled
+plugin, an OSDI model, and (via §14–16) the driver/sampling surface: write
+the device in the host language itself — Rust or Python, in-process, no
+`dlopen`, no matched toolchain, no Verilog-A compiler. `HostElement` +
+`HostAdapter<T>` (Part VII §20.1) is what makes the solver unable to tell a
+host device from any other; this section is the library built on top of
+it.
+
+### 17.1 Three levels, one cost table
+
+Where the code runs, not how it looks, is the axis. The three compose in
+one device — a class may stamp directly *and* install a `Wave`/`Behavior`
+*and* sequence time, all at once:
+
+| Level | What it is | Home | Host calls |
+|---|---|---|---|
+| **0** | the raw solver ABI — stamps, unknowns, `Element` itself | `piperine-solver` (Rust) / `pip.Device` (Python) | one per **Newton iteration** in Python; native in Rust |
+| **1** | native signal mechanism — `Wave`, `Behavior`, events, `Measure` | `piperine-signal` | **zero** — closed-form value + derivative, evaluated every Newton iteration for free |
+| **2** | the sequencer — declares level 1, sequences time, checks | `piperine-api::sequencer` / `pip.Sequencer` | one per **declared wake** (`t.advance`/`t.wait`), never per Newton iteration |
+
+The delivered cost model, concretely:
+
+| What you write | Level | Host calls | Ceiling |
+|---|---|---|---|
+| `Wave.*` (any kind but `from_fn`) | 1 | **0** | unlimited |
+| `Wave.sampled(...)` (precomputed, e.g. from numpy) | 1 | **0** | unlimited |
+| `HostBehavior.*` (catalog or Rust-authored `BehaviorKind`) | 1 | **0** | unlimited |
+| `Measure.*` accumulation | 1 | **0** (fed natively on accepted points) | unlimited |
+| `Sequencer` wake (`t.advance`/`t.wait`) | 2 | 1 | ~10⁵ wakes per run is cheap |
+| `Wave.from_fn` | 1→host | 1 per evaluation | large but not free |
+| `load_dc`/`load_transient`/`update` in Python | 0 | 1 per Newton iteration / accepted step | expensive at scale |
+
+A boundary device (a tester, a stimulus source) is a handful of elements —
+cheap regardless of level. A bulk device (thousands of instances) written
+at level 0 in Python is a bad idea the docs say so about, never silently
+prevented; the same device in Rust, or reached for at level 1, has no
+per-call cost at all.
+
+### 17.2 `Wave` — value from time
+
+`piperine_signal::wave::Wave` (Rust) / `pip.Wave` (Python, identical
+spelling except `Wave.const` vs. `Wave.constant` in Rust — `const` is a
+Rust keyword): `const`/`ramp`/`pulse`/`sin`/`exp`/`sigmoid`/`pwl`/`sampled`/
+`from_fn`, plus `sum`/`scaled`/`shifted` for composition. Every kind but
+`from_fn` evaluates natively with **zero** host calls; `sampled(t, v)`
+accepts an arbitrary precomputed array (e.g. built with numpy) at the same
+zero cost. A `Wave` with known discontinuities (a `pulse`'s edges, a
+`pwl`'s breakpoints) publishes them through the same `pending_edges`-shaped
+contract the runtime operators use (Part VII), so the integrator lands on
+each edge instead of interpolating across it.
+
+**Every `Wave` kind declares its own DC value** (SPICE convention, so a
+reader arriving from that background is not surprised):
+
+| Kind | DC value |
+|---|---|
+| `const(v)` | `v` |
+| `ramp(v0, v1, dur)` | `v0` (the start) |
+| `pulse(lo, hi, ...)` | `lo` (the initial level) |
+| `sin(offset, ...)` | `offset` — **not** `value(0.0)` |
+| `exp(v0, v1, ...)` | `v0` (the initial level) |
+| `sigmoid(lo, hi, ...)` | `lo` |
+| `pwl(points)` / `sampled(t, v)` | the first point |
+| `from_fn(f)` | `f(0.0)` — this is the one kind whose DC value pays its own host call |
+
+An installed `Wave` contributes exactly this value at the operating point;
+a sequencer-bearing session's coroutine does not run at DC (`run()` begins
+with the transient — Part VII's D13 companion rule), so DC is defined by
+this table rather than by whatever the coroutine happened to install first.
+
+### 17.3 `Behavior` — value from circuit state
+
+`piperine_signal::behavior::kinds` (Rust) / `pip.HostBehavior` (Python —
+**not** `pip.Behavior`; that name already names the pre-existing POM
+`analog`/`digital`-block reflection type returned by `Module.behaviors()`,
+so the host-device catalog is exposed under a different name to avoid
+silently shadowing it, the same precedent `Wave.const`/`Design.const`
+already set): `comparator`/`hysteresis`/`switch`/`limiter`/`vcvs`/`vccs`/
+`vco`/`table`, plus `sum`/`scaled`/`composed`. Unlike `Wave`, a `Behavior`
+is `f(v₁ … vₙ)` — it depends on the solution, so it contributes **cross
+Jacobian entries** (`∂f/∂vᵢ`) from a closed form, reacting at every Newton
+iteration for **zero** host calls. `comparator` is `tanh`-shaped and smooth
+by default (differentiable, convergence-friendly); a genuinely
+discontinuous kind (`switch`, `hysteresis`) registers a crossing instead of
+faking a derivative across its own jump, so the integrator lands on the
+edge (Part VII §20.5's tier-2 machinery).
+
+`BehaviorKind` (Rust trait: `value`, `jacobian`, `crossings`) is the
+extension point — closed in Python (`pip.HostBehavior.register_kind(...)`
+fails loud, naming level 0 and the Rust route), open in Rust: implementing
+the trait outside `piperine-signal` composes exactly like a shipped kind.
+`piperine_signal::verify_derivatives` is the guard every hand-written
+`jacobian` is checked against — a central-finite-difference comparison,
+the same oracle pattern `dv-gradients` used for `.sens` — and a
+deliberately wrong Jacobian is what proves the guard can fail.
+
+### 17.4 `Measure` — reductions at the solver's rate, with a published bound
+
+`piperine_signal::measure::kinds` / `pip.Measure` (+ `pip.DelayMeasure`,
+the two-channel `delay(a, b, level)` kind, which ships its own inherent
+`feed(t, a, b)` rather than conforming to the single-`(t, v)`
+`MeasureKind` trait every other kind implements — propagation delay is
+inherently a two-signal reduction): `peak`/`min`/`average`/`rms`/`ripple`/
+`integral`/`cross`/`settle`/`count`/`delay`. Each is an **O(1) streaming
+accumulator**, fed one `(t, v)` per **accepted** point, never storing a
+waveform — the same accumulator reduces a stored `Waveform` post-run and a
+live transient online, and both agree (the crate's own regression test).
+
+**Every value travels with an error bound.** `Measure.peak` over accepted
+points can miss the true peak when it falls between two of them — for
+overshoot, the archetypal analog check, that would be a plausible wrong
+number, exactly what this project's fail-loud rule exists to prevent. The
+default mode reduces over accepted points and reports its own bound
+(`peak ∈ [v, v + ε]`, `ε` from the local LTE); `refine=True` drives step
+refinement near the extremum until `ε` is under a requested tolerance,
+terminating **at the step floor with a report** rather than stalling
+forever. `t.expect(...)` against a measure compares **against the bound**
+(`value - error_bound` / `value + error_bound`, `SequencerControl::
+expect_measure_at_least`/`expect_measure_at_most`), never the point
+estimate alone — a borderline pass whose bound-adjusted worst case would
+fail the threshold is still a failure.
+
+Gating: `window=(t0, t1)` by time; an analog gate opens/closes on a
+crossing predicate (the same tier-2 machinery, Part VII §20.5); a digital
+gate opens/closes on the digital scheduler's **settled** events only,
+never mid-delta-cycle — a mid-cycle value can be an artifact of DAG
+evaluation order rather than a signal the circuit ever had (the identical
+rule Part VII §20.2 states for the subscriber). A measure whose window
+opens more than once accumulates across every open interval, not just the
+first.
+
+**Lifecycle.** `arm(kind)` creates a fresh accumulator starting at the arm
+instant — arming the same measure twice yields two independent handles, a
+measure is a handle, not a name in a global table. `.value`/
+`.error_bound` before any accepted point has fed the accumulator — or when
+a gated measure's window never opened — fails **loud** with one named
+reason (`MeasureError::NeverSampled`, `"never sampled: no accepted point
+has fed this measure yet"`), never `NaN`, zero, or a nominal. `disarm()`
+freezes the accumulator: `.value` stays readable and stops moving.
+
+> **SPEC_DEVIATION**: `ideal.md` §4.3 describes the "gate never opened"
+> case as a distinct message from "never fed at all". The delivered
+> `MeasureError` has exactly **one** variant, `NeverSampled`, covering
+> both — per `ideal.md`'s own literal wording ("names both causes
+> identically"), the two are the same fact from the accumulator's point of
+> view: zero accepted points reached it, for whatever reason.
+
+### 17.5 The `Sequencer`, one `wait`, three wake sources
+
+A `Sequencer` (`piperine_api::sequencer::Sequencer<P>` / `pip.Sequencer`,
+a `pip.Device` subclass) is a coroutine over simulated time: `yield
+t.advance(dt)` reads as a straight-line program; `yield t.wait(...)`
+expresses event-driven waiting without leaving that line. Rust has no
+stable generators, so a Rust `Sequencer`'s program (`SequencerProgram`) is
+a hand-written `resume` state machine; Python uses a real generator
+(`def run(self, t): yield ...`). The **contract** — same wake sources,
+same findings, same resume ordering — is identical; only the authoring
+mechanism differs (Part VII §20.3 states why the resume site is safe).
+
+`wait` has exactly one blocking verb and three forms, mapped one-to-one
+onto the solver's existing event kinds:
+
+| The test writes | Wakes on | `EventKind` | Fidelity |
+|---|---|---|---|
+| `t.advance(dt)` | a time the test named | `Breakpoint` | `Exact` |
+| `t.wait(edge(net, direction))` | a digital net settling to a matching transition | `Digital` | `Exact`, settled-only (Part VII §20.2) |
+| `t.wait(above(net, level, direction))` | an analog crossing | `Crossing` | tier 2, error reported (Part VII §20.5) |
+
+`t.expect(cond, msg)` records an `Error` finding with time and instance
+provenance through `dv-core`'s channel when `cond` is false — never a
+print; `t.warn(msg)` always records a `Warning`, never aborts. Posture
+(`strict`/`collect`, §8) governs whether a recorded `Error` aborts the run
+the same way it governs any other finding.
+
+**`install` semantics (D — `ideal.md` §4.2).** A `Wave` installed mid-run
+has its time origin at the **install instant**, not absolute zero — a ramp
+installed at `t = 5 µs` ramps over `[5 µs, 5 µs + dur]`. Replacing an
+active wave takes effect **immediately** and its discontinuity is
+registered as an `Exact` breakpoint — never smoothed. Continuity is
+available, but explicit: the caller reads the current value and bakes it
+into the replacement wave's own parameters.
+
+**Drive** goes through the same declared-impedance path Part VII §20.4
+describes; a digital drive is queued (`SequencerControl::drive_digital`)
+and forwarded into the real `EventSink`, never touching the MNA.
+
+**Delivered Rust/Python asymmetry beyond the closed/open catalog.** In
+Rust, `t` (`SequencerControl`) itself carries only `drive_digital`/
+`findings`/`expect`/`warn`/`expect_measure_at_least`/
+`expect_measure_at_most`/`last_crossing` — `install`/`drive_voltage`/
+`drive_current`/`arm` are **free functions** (`sequencer::install::
+InstallSite`, `sequencer::drive::*`) that take `&mut SequencerControl`
+plus the device's own struct fields (its install sites, its `Measure`
+handles) explicitly, because those sites belong to the device, not to the
+sequencer. **In Python, `t` (`SeqCtl`) exposes only `advance`/`wait`/
+`expect`/`warn`/`.t`** as of this delivery — `install`/`drive_*`/`arm`/
+reading a solved net back through `t` are not yet bridged into the Python
+`SeqCtl` surface. A Python tester today installs level-1 descriptors once,
+at construction, through `build(self, b)` (`b.wave(p, n, wave, rout)` /
+`b.behavior(force_p, force_n, controls, behavior)`, §17.3's zero-host-call
+path); reading circuit state back into the running coroutine goes through
+the device's own instance attributes, set from `load_dc`/`accept_timestep`
+— exactly the pattern `ideal.md` example G composes, and the honest
+description of what a Python tester can do today rather than the aspirational
+`t.arm`/`t.install`/`t.read_v` sketch in `ideal.md` §4/§9's examples E and
+F. Extending the Python `SeqCtl` bridge to cover `arm`/`install`/`drive`/
+read-back is a natural, named follow-up, not part of this delivery.
+
+### 17.6 Closed in Python, open in Rust (§3.7's asymmetry, stated as a decision)
+
+`BehaviorKind`/`MeasureKind` are Rust traits; the Python catalogs
+(`pip.HostBehavior.*`/`pip.Measure.*`) are exactly what ships, and
+attempting to register a new kind from Python fails loud, naming level 0
+(raw stamps, priced per Newton iteration) and the Rust trait as the
+escape hatch. This is deliberate, not an oversight: a hand-written
+Jacobian or accumulator wants `verify_derivatives` and native speed, both
+of which mean Rust. The **surface** is identical either way — same
+spelling, same argument order, same semantics — the asymmetry is only in
+who may add a new kind, and it is the one asymmetry `tests/host_parity.rs`
+(§17.8) declares rather than silently tolerates.
+
+### 17.7 Reach rules and posture interaction (D14)
+
+Reading any net — internal or external — from a host device or sequencer
+is free. **Driving an internal net is allowed, but always reported**
+(Part VII §20.4): the sequencer's findings buffer records every
+internal-net drive unconditionally, so a passing test that forces a node
+is visibly doing so in the run's findings rather than passing silently.
+Two devices driving the **same** net — regardless of which one is a
+sequencer — is a loud conflict, never last-writer-wins, checked
+host-side before the solver ever sees the stamps.
+
+`checks=off` does not exempt a `Sequencer`'s own `expect`/`warn` findings
+— those are unconditional (never gated by the `checks` posture, which
+instead governs `require` margins, §8). A host device present with
+`checks=off` still has its `expect` findings recorded and still aborts on
+posture `strict`; the interaction is stated here explicitly rather than
+left to be inferred from `dv-core`'s general posture rules.
+
+### 17.8 Parity, and the guard that proves it
+
+`tests/host_parity.rs` and `tests/host_capability_parity.rs` extend the
+existing parity oracle (§7) to the device library: every name this feature
+added exists on both hosts with identical spelling and shape, one fixture
+runs through both hosts asserting identical findings **and** identical
+measure values with identical bounds, and the closed-Python/open-Rust
+catalog asymmetry (§17.6) is the **only** declared divergence — the guard
+is proven able to fail (add a Rust-only name, watch it fail, revert) the
+same way every other mechanical guard in this project is.
+`tests/host_capability_parity.rs` additionally proves the harder claim:
+four devices — a `transition`-driven source, a pnjlim junction, a `table`
+nonlinearity, and a `cross`-triggered element — each written once in PHDL
+and once as a host device, produce **identical** results on the same
+fixture. Any PHDL capability not reachable from the host device library
+is named there rather than silently missing — a scoped promise, not an
+eroding one.
+
 **Aging as parameter drift.** `piperine_api::age(session, &AgingSpec,
 &config)` computes a scalar stress proxy from an OP or transient run
 (`StressSource::Op`/`StressSource::TranPeak`), drifts declared parameters
