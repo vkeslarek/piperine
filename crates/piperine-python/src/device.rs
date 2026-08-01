@@ -41,8 +41,10 @@ use std::sync::Mutex;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use piperine_api::device::{Ctx, HostElement, StampSink, StateView};
+use piperine_api::device::{BehaviorStamp, Ctx, HostElement, StampSink, StateView, WaveStamp};
 use piperine_solver::abi::{AnalogReference, ElementCapabilities};
+
+use crate::signal_bridge::_Builder;
 
 /// A Python exception raised from inside a dispatched `HostElement` method
 /// (DVT-22): the message plus the simulation time it happened at. The one
@@ -100,13 +102,23 @@ pub struct PyHostElement {
     /// [`Self::call`] if the dispatched method raises, so the resulting
     /// [`PySolveError`] carries it.
     current_t: Mutex<f64>,
+    /// `build(self, b)`'s installed `Wave`/`Behavior` stamps (T28) —
+    /// collected **once**, at construction, and stamped by this struct's
+    /// own Rust `load_dc`/`load_transient` below, never by dispatching
+    /// back into Python. This is what makes a Python device's level-1
+    /// catalog usage genuinely zero-host-call inside Newton, not merely
+    /// spelled the same as Rust's.
+    waves: Vec<WaveStamp>,
+    behaviors: Vec<BehaviorStamp>,
 }
 
 impl PyHostElement {
     /// Build a bridge over `obj`. `obj.name` (optional, falls back to the
     /// Python class name) and `obj.caps` (optional, falls back to no
     /// capabilities — a device that declares none does nothing, safely)
-    /// are read once here, never per call.
+    /// are read once here, never per call. If `obj` defines `build(self,
+    /// b)`, it is called exactly once, here, and its installed `Wave`/
+    /// `Behavior` stamps become native Rust state (T28).
     pub fn new(py: Python<'_>, obj: Py<PyAny>) -> PyResult<Self> {
         let bound = obj.bind(py);
         let name: String = match bound.getattr("name") {
@@ -122,7 +134,15 @@ impl PyHostElement {
             load_transient: bound.hasattr("load_transient")?,
             accept_timestep: bound.hasattr("accept_timestep")?,
         };
-        Ok(Self { obj, name, caps, methods, current_t: Mutex::new(0.0) })
+        let (waves, behaviors) = if bound.hasattr("build")? {
+            let builder = Py::new(py, _Builder::default())?;
+            bound.call_method1("build", (builder.clone_ref(py),))?;
+            let mut b = builder.borrow_mut(py);
+            (std::mem::take(&mut b.waves), std::mem::take(&mut b.behaviors))
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        Ok(Self { obj, name, caps, methods, current_t: Mutex::new(0.0), waves, behaviors })
     }
 
     /// The one catch point (DVT-22 — see this module's header). `f` runs
@@ -174,17 +194,31 @@ impl HostElement for PyHostElement {
     }
 
     fn load_dc(&mut self, ctx: &Ctx<'_>, sink: &mut StampSink) {
-        if !self.methods.load_dc {
-            return;
+        for w in &self.waves {
+            w.stamp(ctx, sink);
         }
-        self.dispatch_stamp("load_dc", ctx, sink);
+        for b in &self.behaviors {
+            b.stamp(ctx, sink);
+        }
+        if self.methods.load_dc {
+            self.dispatch_stamp("load_dc", ctx, sink);
+        }
     }
 
     fn load_transient(&mut self, ctx: &Ctx<'_>, sink: &mut StampSink) {
-        if !self.methods.load_transient {
-            return;
+        for w in &self.waves {
+            w.stamp(ctx, sink);
         }
-        self.dispatch_stamp("load_transient", ctx, sink);
+        for b in &self.behaviors {
+            b.stamp(ctx, sink);
+        }
+        if self.methods.load_transient {
+            self.dispatch_stamp("load_transient", ctx, sink);
+        }
+    }
+
+    fn next_breakpoints(&self, from: f64, horizon: f64) -> Vec<f64> {
+        self.waves.iter().flat_map(|w| w.breakpoints(from, horizon)).collect()
     }
 
     fn accept_timestep(&mut self, state: &StateView<'_>, t: f64) {

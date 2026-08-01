@@ -1772,6 +1772,7 @@ dependencies = [
  "piperine-lang",
  "piperine-plugin",
  "piperine-project",
+ "piperine-signal",
  "piperine-solver",
  "pyo3",
 ]

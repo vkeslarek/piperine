@@ -93,6 +93,32 @@ __all__ = [
     "TranConfig",
     "AcConfig",
     "NoiseConfig",
+    # host device library (dv-tester T28, DVT-11 Python half)
+    "Device",
+    "Sequencer",
+    "Wave",
+    "HostBehavior",
+    "Measure",
+    "DelayMeasure",
+    "Builder",
+    "NetRef",
+    "edge",
+    "above",
+    "RISING",
+    "FALLING",
+    "EITHER",
+    "ANALOG",
+    "DIGITAL",
+    "SAMPLES_ANALOG",
+    "LOADS_DC",
+    "LOADS_AC",
+    "LOADS_TRAN",
+    "EMITS_NOISE",
+    "DEPENDS_ON_DIGITAL",
+    "HAS_INTERNAL_UNKNOWNS",
+    "SUPPORTS_ROLLBACK",
+    "BYPASS_OK",
+    "EMITS_VALIDATION",
     # plotting (HOST-17, matplotlib-guarded)
     "plot",
     "bode",
@@ -1516,13 +1542,114 @@ Staging = _piperine._Staging
 
 # T27 (DVT-22): the PyO3 bridge's internal FFI wrappers — a `pip.Device`'s
 # `load_dc`/`load_transient`/`accept_timestep` receive these, never
-# constructs them directly. Aliased here (not in `__all__`) purely for the
-# facade/native parity guard (BRM-12/14); the public entry point is
-# `pip.Device` (T28), not these plumbing types.
+# constructs them directly. `NetRef` is public (`__all__`, T28): a Python
+# device receives one per resolved port, and retains it for its lifetime
+# (unlike `DeviceCtx`/`DeviceStampSink`/`DeviceStateView`, which stay
+# unlisted plumbing — call-scoped, never retained).
 NetRef = _piperine._NetRef
 DeviceCtx = _piperine._DeviceCtx
 DeviceStampSink = _piperine._DeviceStampSink
 DeviceStateView = _piperine._DeviceStateView
+
+# ── Host device library (dv-tester T28, DVT-11 Python half) ────────────────
+#
+# `ideal.md` §3.7's closed-Python/open-Rust rule: `Wave`/`HostBehavior`/
+# `Measure` are exactly `piperine-signal`'s Rust catalog (T7/T8/T11),
+# reachable with identical spelling — `HostBehavior` is the one facade name
+# that differs from `ideal.md`'s `pip.Behavior` sketch, because `Behavior`
+# already names the unrelated POM `analog`/`digital`-block reflection type
+# above (`Module.behaviors()`); this is a documented, deliberate rename to
+# avoid silently shadowing existing public API, the same kind of divergence
+# `Wave.const`/`Design.const_` already establish a precedent for.
+Wave = _piperine.Wave
+HostBehavior = _piperine.HostBehavior
+Measure = _piperine.Measure
+DelayMeasure = _piperine.DelayMeasure
+Builder = _piperine.Builder
+DigitalNetRef = _piperine.DigitalNetRef
+edge = _piperine.edge
+above = _piperine.above
+
+# Internal plumbing (not in `__all__`, matching `DeviceCtx`'s precedent
+# above): `Wake`/`EdgeSpec`/`CrossingSpec` are values `t.advance`/`t.wait`/
+# `pip.edge`/`pip.above` return and a `run(self, t)` generator yields —
+# never constructed directly; `SeqCtl` is `t` itself, handed in by the
+# bridge, never built by a device author.
+Wake = _piperine.Wake
+EdgeSpec = _piperine.EdgeSpec
+CrossingSpec = _piperine.CrossingSpec
+SeqCtl = _piperine.SeqCtl
+
+# Test/script seams (T28) — not part of the public device-library surface;
+# aliased (stripped of the leading underscore, matching the parity guard's
+# own `n.lstrip("_")` rule) only so the facade/native parity guard passes,
+# same precedent as `DeviceCtx` above. Scripts call them through
+# `_piperine` directly (`pip._solve_with_python_devices(...)`).
+solve_with_python_devices = _piperine._solve_with_python_devices
+drive_sequencer_twice = _piperine._drive_sequencer_twice
+_solve_with_python_devices = _piperine._solve_with_python_devices
+_drive_sequencer_twice = _piperine._drive_sequencer_twice
+
+RISING = "rising"
+"""A rising edge/crossing direction — `pip.edge(net, pip.RISING)` / `pip.above(net, level, pip.RISING)`."""
+FALLING = "falling"
+"""A falling edge/crossing direction."""
+EITHER = "either"
+"""Either direction — the default for `pip.above`."""
+
+ANALOG = 1 << 0
+"""`ElementCapabilities::ANALOG` — contributes to the analog system."""
+DIGITAL = 1 << 1
+"""`ElementCapabilities::DIGITAL` — participates in the digital scheduler."""
+SAMPLES_ANALOG = 1 << 2
+"""`ElementCapabilities::SAMPLES_ANALOG` — digital logic samples analog voltages."""
+LOADS_DC = 1 << 3
+"""`ElementCapabilities::LOADS_DC` — `load_dc` contributes to the DC operating point."""
+LOADS_AC = 1 << 4
+"""`ElementCapabilities::LOADS_AC` — `load_ac` contributes to the small-signal AC sweep."""
+LOADS_TRAN = 1 << 5
+"""`ElementCapabilities::LOADS_TRAN` — `load_transient` contributes to time-domain integration."""
+EMITS_NOISE = 1 << 6
+"""`ElementCapabilities::EMITS_NOISE` — `noise_current_psd` returns non-empty sources."""
+DEPENDS_ON_DIGITAL = 1 << 7
+"""`ElementCapabilities::DEPENDS_ON_DIGITAL` — analog load reads the digital net snapshot."""
+HAS_INTERNAL_UNKNOWNS = 1 << 8
+"""`ElementCapabilities::HAS_INTERNAL_UNKNOWNS` — the model allocated internal MNA unknowns."""
+SUPPORTS_ROLLBACK = 1 << 9
+"""`ElementCapabilities::SUPPORTS_ROLLBACK` — the model checkpoints state for rejected-step rollback."""
+BYPASS_OK = 1 << 11
+"""`ElementCapabilities::BYPASS_OK` — eligible for stamp bypass when terminal voltages are unchanged."""
+EMITS_VALIDATION = 1 << 15
+"""`ElementCapabilities::EMITS_VALIDATION` — `validation_reports` is polled (a `Sequencer`'s `expect`/`warn`)."""
+
+
+class Device:
+    """A host device (T14/T27/T28, DVT-19/22): subclass this and define
+    only the methods you need — dispatch is on **method presence**, not on
+    subclassing this base (a plain duck-typed class works identically).
+    Declare `caps` as a class or instance attribute (an `int`, OR'd from
+    `pip.ANALOG`/`pip.LOADS_DC`/…), and any subset of `name`, `load_dc`,
+    `load_transient`, `accept_timestep`, `build(self, b)`.
+
+    `load_dc`/`load_transient` cost one GIL acquisition per Newton
+    iteration (the Python tier's GIL cost, `ideal.md` §5) — `build(self,
+    b)` installing a `pip.Wave`/`pip.HostBehavior` through `b.wave(...)`/
+    `b.behavior(...)` costs **zero** host calls instead, evaluated natively
+    in Rust exactly like the Rust host-device path.
+    """
+
+    caps = 0
+
+
+class Sequencer(Device):
+    """A coroutine over simulated time (T19-T26/T28, `ideal.md` §4): define
+    `run(self, t)` as a Python **generator** — `yield t.advance(dt)` /
+    `yield t.wait(pip.edge(...))` / `yield t.wait(pip.above(...))` are the
+    three wake forms, spelled identically to the Rust `Wake` enum.
+    `t.expect(cond, msg)`/`t.warn(msg)` report through `dv-core`'s findings
+    channel. A `Sequencer` **is** a `Device` — the same class may also
+    define `load_dc`/`build` (`ideal.md` example G's composition).
+    """
 
 _registry = {"scripts": {}, "hooks": {phase: [] for phase in HOOK_PHASES}, "devices": {}}
 
@@ -1626,3 +1753,12 @@ def _registered_hooks(phase: str) -> list:
     """The functions declared for hook `phase` in this load, in declaration
     order (embedded-host dispatch protocol)."""
     return list(_registry["hooks"][phase])
+
+
+def _python_devices() -> dict:
+    """T28 (DVT-20/21 Python half): the `@pip.device(type_id)` table,
+    read **without** clearing it (unlike `_take_registry`, which is the
+    scripted-plugin load protocol) — `piperine_python::device` reads this
+    once at session-build time to populate a `HostDeviceRegistry`, reusing
+    T17's registration point rather than a parallel inventory."""
+    return dict(_registry["devices"])

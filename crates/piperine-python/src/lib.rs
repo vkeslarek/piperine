@@ -30,17 +30,22 @@ mod instance;
 mod live;
 mod module;
 pub mod results;
+pub mod registration;
 pub mod scripted;
+pub mod sequencer_bridge;
+pub mod signal_bridge;
 mod value_bridge;
 
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
 use device::{_DeviceCtx, _DeviceStampSink, _DeviceStateView, _NetRef};
+use sequencer_bridge::{_CrossingSpec, _DigitalNetRef, _EdgeSpec, _PyWake, _SeqCtl};
+use signal_bridge::{_Builder, _DelayMeasure, _HostBehavior, _Measure, _Wave};
 use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _ParamDescriptor, _Terminal, _TerminalDescriptor};
 use live::{_Grid, _Session, _Sweep};
 use module::_Module;
-use module::{_Behavior, _Instance, _Net, _Param, _Port};
+use module::{_Behavior as _ModuleBehavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
 use results::_ComplexWaveform;
 use results::_FourierComponent;
@@ -88,7 +93,7 @@ pub fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Net>()?;
     m.add_class::<_Instance>()?;
     m.add_class::<_Param>()?;
-    m.add_class::<_Behavior>()?;
+    m.add_class::<_ModuleBehavior>()?;
     m.add_class::<_Selection>()?;
     m.add_class::<_Node>()?;
     m.add_class::<_OpResult>()?;
@@ -123,5 +128,19 @@ pub fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_DeviceCtx>()?;
     m.add_class::<_DeviceStampSink>()?;
     m.add_class::<_DeviceStateView>()?;
+    m.add_class::<_Wave>()?;
+    m.add_class::<_HostBehavior>()?;
+    m.add_class::<_Measure>()?;
+    m.add_class::<_DelayMeasure>()?;
+    m.add_class::<_Builder>()?;
+    m.add_class::<_DigitalNetRef>()?;
+    m.add_class::<_EdgeSpec>()?;
+    m.add_class::<_CrossingSpec>()?;
+    m.add_class::<_PyWake>()?;
+    m.add_class::<_SeqCtl>()?;
+    m.add_function(wrap_pyfunction!(sequencer_bridge::edge_fn, m)?)?;
+    m.add_function(wrap_pyfunction!(sequencer_bridge::above_fn, m)?)?;
+    m.add_function(wrap_pyfunction!(sequencer_bridge::_drive_sequencer_twice, m)?)?;
+    m.add_function(wrap_pyfunction!(registration::_solve_with_python_devices, m)?)?;
     Ok(())
 }
