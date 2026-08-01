@@ -455,6 +455,19 @@ mod tests {
     }
 
     #[test]
+    fn an_edge_exactly_at_the_window_right_boundary_is_included() {
+        // `push_in`'s window test is inclusive on the right (`t <= end`):
+        // an edge landing exactly on `end` must still be reported, not
+        // dropped. Isolate the right-boundary case from the left-boundary
+        // exclusion (`t > from`) by starting the window just after the
+        // ramp's other edge (t=0.0) so only the t=2.0 edge is in range.
+        let w = Wave::ramp(0.0, 1.0, 2.0);
+        let mut out = Vec::new();
+        w.pending_edges(1.0, 2.0, &mut out);
+        assert_eq!(out, vec![2.0], "an edge exactly at the window's right boundary (end) must be included");
+    }
+
+    #[test]
     fn shifted_edges_carry_the_shift() {
         let w = Wave::shifted(Wave::ramp(0.0, 1.0, 2.0), 5.0);
         let mut out = Vec::new();
