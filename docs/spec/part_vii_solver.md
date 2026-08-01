@@ -35,6 +35,7 @@ plugin device, and an external model are equivalent once they present the one
 - §17 Sensitivity analysis (§17.1 `.sens` finite difference, §17.2 the DC adjoint driver — dv-gradients)
 - §18 Periodic steady state
 - §19 Lifecycle contract — per-analysis hook chart
+- §20 Host device ABI and the sequencer contract (dv-tester)
 
 ---
 
@@ -1177,7 +1178,11 @@ scheduled live sets, `$bound_step` hints) flow through one **unified event
 queue** (`EventQueue<EventEntry>`). Each entry carries its kind
 (`Digital`/`Breakpoint`/`StepHint`/`Crossing`), its target, its time, its
 priority (`Exact`/`Advisory`), its source, and its `RollbackBehavior`
-(`Restore`/`RePoll`/`Discard`). `predict_step` reads the earliest time from
+(`Restore`/`RePoll`/`Discard`). `Crossing` entries always carry `priority:
+Advisory` — the integrator notes the time but does not land on it exactly;
+§20.5 states what that means for `@cross` precisely, since "the integrator
+notes the time" reads more exact than it is on its own. `predict_step` reads
+the earliest time from
 `EventQueue::peek_next_time()` rather than merging the four sources by hand;
 the queue is checkpointed in `attempt_step` and rolled back on rejection so
 each entry's rollback behavior is honored (§15.8). The target time is the
@@ -1704,3 +1709,214 @@ scratch on each side of the central difference.
 | 7 | `set_param(name, v)` | After differencing | Parameter restored to nominal |
 | 8 | `opvars()` | After final operating point | Operating variables readable |
 | 9 | `destroy()` | Circuit dropped | Element torn down |
+
+---
+
+## §20 Host device ABI and the sequencer contract (dv-tester)
+
+A host device — one written in Rust or Python, in-process, no `dlopen` and no
+Verilog-A — presents through the same `Element` ABI as every other device in
+this Part. This section is the solver-side half of that story: what changed
+at the ABI boundary (nothing, by construction — §20.1), the one seam the
+solver actually gained (§20.2), the contract that keeps a rolled-back step
+invisible to a test (§20.3), how a host device drives a net without
+inventing a second stamping path (§20.4), what fidelity a crossing wait can
+honestly claim (§20.5), and the one analysis a sequencer refuses (§20.6).
+
+### 20.1 `HostElement` and the blanket `Element` adapter
+
+`HostElement` (`piperine-api`'s `crates/piperine-api/src/device/
+host_element.rs`) mirrors `Element`'s own defaulted shape (§3): two required
+methods (`name`, `capabilities`), everything else defaulted — analog
+stamping, time control, checkpoint/restore, limiting/validation,
+introspection. It does **not** mirror the full ABI: digital multi-phase
+participation (`seq_phase`/`comb_phase`/`boundary`), `noise_current_psd`,
+and `.disto`'s 2nd/3rd-derivative kernels are not on `HostElement` — a
+device that needs them implements `Element` directly, the same level-0
+escape hatch available to every other author in this Part.
+
+A blanket `impl<T: HostElement> Element for HostAdapter<T>` (`adapter.rs`)
+is what the solver actually sees. `HostAdapter<T>` is a transparent
+single-field newtype (`HostAdapter(device)`), not a new solver-side concept:
+
+> **SPEC_DEVIATION** from the surface design's `impl<T: HostElement> Element
+> for T` sketch — Rust's orphan rule forbids that literally, since neither
+> `Element` (defined in `piperine-solver`) nor a bare `T` is local to
+> `piperine-api`. `HostAdapter<T>` is the local anchor the blanket impl
+> needs; it carries no state of its own and every method forwards straight
+> through to `T`'s `HostElement` implementation. The property this Part
+> cares about — the solver sees exactly one `Element` per device, no `Any`,
+> no downcast (MD-01) — holds regardless of the anchor.
+
+Each `AnalogDevice`/`DigitalDevice`/`Introspect` method the adapter
+implements either forwards to its `HostElement` mirror (through the safe
+`Ctx`/`StampSink`/`StateView` wrappers §3's raw types are translated into)
+or falls back to the supertrait's own inert default when `HostElement` does
+not mirror it. A compiled circuit holding a host device, a JIT-compiled
+PHDL device, and an external OSDI model side by side is, from every solver
+call site, three `Box<dyn Element>`s — indistinguishable.
+
+### 20.2 The dynamic digital subscriber
+
+`Element::on_digital_settled(&mut self, nets: &[LogicValue], t: f64)`
+(defaulted no-op) is the one method this feature added to the `Element`
+trait itself — not a new `EventKind` variant, and not a registration list
+threaded through the scheduler:
+
+> **SPEC_DEVIATION** from the design's "a subscriber list consulted after
+> net settling" framing — what shipped is simpler than a list: every
+> element already implicitly subscribes by overriding this one hook (the
+> default is a zero-cost no-op), and `CircuitInstance::
+> accept_and_run_digital` dispatches it to **every** device after digital
+> settling, not to a filtered registration set. The observable contract —
+> settled-only, no new event kind, D11 still holds — is identical either
+> way; the difference is only that "subscriber list" reads as more
+> machinery than the broadcast dispatch that was actually built.
+
+The call site is exact and singular: `accept_and_run_digital`
+(`piperine-solver/src/core/circuit.rs`) calls `run_digital_at_with_analog`
+to reach quiescence, then loops over every device calling
+`on_digital_settled` with the **final settled** net snapshot — never a
+mid-delta-cycle value. This is a correctness rule, not a style preference:
+a digital network settles by propagating through an evaluation graph, and a
+value observed partway through that traversal is an artifact of the
+graph's evaluation order rather than a signal the circuit had. Waking (or
+gating, or firing) on an unsettled value would produce a result that moves
+when an unrelated edit reorders the graph — a wrong answer that looks
+stable until it doesn't. `Measure`'s digital gate (Part VIII) states the
+identical rule for the same reason.
+
+`on_digital_settled` is reached from the same call chain as
+`accept_timestep` (`accept_and_run_digital` ← `TransientDriver::
+accept_step`, only once a step is already accepted), so a rejected step
+never dispatches it — §20.3's D11 contract holds for edge waits exactly as
+it holds for time waits.
+
+The seam is deliberately not tester-only, and its header names two other
+plausible consumers so a future reader does not mistake it for
+special-cased plumbing: a future in-language `monitor` module wanting to
+react to a settled protocol edge without re-deriving it from
+`accept_timestep`'s pre-settle view, and a live-plotting host wanting
+exactly the values a waveform viewer would show.
+
+### 20.3 Resume-strictly-after-acceptance (D11) — a contract, not an implementation note
+
+**A sequencer is resumed exactly once per accepted breakpoint it declared,
+and never for a step that is later rejected.** This is not a property that
+happens to hold today; it is the contract the whole coroutine model rests
+on — a sequencer resumed mid-attempt, before the accept/reject decision, has
+no clean repair once the attempt is rejected (there is no "un-resuming" a
+Python generator that has already run side-effecting code).
+
+The contract is enforced structurally, not by convention: the resume call
+lives inside `HostElement::accept_timestep`, which the solver reaches from
+exactly one call site — `CircuitInstance::accept_and_run_digital`, itself
+reached only from `TransientDriver::accept_step` after `assess_step` has
+already decided to accept the candidate. `reject_step`/`reject_lte_step`
+never call `accept_step`, so `accept_timestep` — and therefore a
+sequencer's resume — is never called on a step that ends up rejected. The
+same holds for `on_digital_settled` (§20.2), so D11 covers edge waits and
+crossing waits identically to time waits: **level 2 (the sequencer) never
+observes a rejected step.**
+
+This is a **level-2** guarantee specifically, not a solver-wide one. Levels
+0 and 1 participate in rejected steps like any other device: a level-0
+device's `load_dc`/`load_transient` are called (and re-called) during
+rejected attempts exactly as a PHDL device's are, so a level-0 author must
+mutate state only in `accept_timestep`/`update`, never inside a load
+method — the same trap PHDL device authors already navigate, now reachable
+from a host language too. Level 1 (`Wave`/`Behavior`/`Measure`) is pure, so
+re-evaluating it during a rejected attempt is free and side-effect-free by
+construction; a `Measure` accumulates only on the accepted points it is
+actually fed (§20.2's caller filters that, not the accumulator).
+
+The cost D11 buys is accepted rather than hidden: forcing the integrator to
+land on every sequencer breakpoint constrains its timestep, so a
+fine-grained tester runs the transient at a finer grain than the circuit
+alone would need. A known, named inefficiency beats an unknown failure
+mode.
+
+### 20.4 Drive segments and the declared-impedance requirement
+
+A host device drives an analog net the same way any two-terminal analog
+device does: through the ordinary stamp path (§8), reached through
+`StampSink`'s `g`/`i` operations (§3), never through a second, host-only
+stamping mechanism. `piperine-api`'s `InstallSite`
+(`crates/piperine-api/src/sequencer/install.rs`) is the built-in shape for
+this — a `Wave` pinned to an install-relative time origin, driven through a
+**declared** series impedance `rout`, replaced as a whole at `install`
+time — but it is a convenience over the same `g`/`i` calls a level-0 author
+would write by hand.
+
+The impedance is never implicitly ideal. `drive_voltage`/`drive_current`
+and `InstallSite::new`/`CurrentDrive::new` all take `rout` as a mandatory
+constructor argument; an ideal (zero-impedance / infinite-impedance) force
+is available but must be spelled explicitly (`rout = 0.0` for a voltage
+force, `rout = f64::INFINITY` for a current force) — there is no
+zero-argument "ideal by default" constructor to reach for, so an ideal
+drive is always a visible authoring choice, not an accident.
+
+A digital drive is a different mechanism entirely, by design: it goes
+through the solver's real `EventSink` — the same queue every digital event
+in this Part flows through (§4, §14.3) — and never touches the MNA system
+at all. A `HostElement`'s `drain_digital_drives` hook is polled once per
+accept, immediately after `accept_timestep` returns, and its entries are
+forwarded straight into `EventSink`; a device with nothing to drive pays
+nothing (`Vec::new()`'s default).
+
+Driving an **internal** net — one the circuit's own topology also drives —
+is allowed, not refused, but it is never silent: the sequencer layer
+records it in the run's findings (`SequencerControl`'s findings buffer,
+Part VIII), so a passing test that forces a node is visibly doing so rather
+than passing by accident. Two independent devices driving the **same** net
+is the opposite case and is refused loud regardless of instantiation order
+— never a last-writer-wins race (Part VIII documents the host-side
+conflict registry that enforces this; the solver itself has no special
+knowledge of "conflict", it simply receives whichever stamps were sent to
+it, so the refusal happens before the solver ever sees the circuit).
+
+### 20.5 Crossing fidelity — three tiers, and what `@cross` actually delivers today
+
+An analog crossing — the instant a controlled quantity's sign flips — has
+never been reproduced *exactly* anywhere in this tree, and this section
+states that plainly rather than leaving §15.9's `Crossing`/`Advisory`
+mention to be over-read. There are three tiers of fidelity, one already
+built, one this feature adds, and one still a scoped solver feature:
+
+| Tier | Mechanism | Solver change | Error |
+|---|---|---|---|
+| **1 — reactive** (PHDL's `@cross`, today, unchanged by this feature) | `EventDetector` (`piperine-signal::events`, extracted unchanged from codegen) compares the previous **accepted** trigger value against the current one; it fires at the **first accepted point after** the sign change | none | up to one full timestep, **unreported** — the detector and the `EventKind::Crossing` entry it produces (`priority: Advisory`, §15.9) carry no error estimate at all |
+| **2 — predicted + bounded** (this feature's `Sequencer::wait(above(...))`, `piperine_signal::events::predict_crossing`) | extrapolate the crossing instant from the bracketing accepted pair, resume the sequencer at the current accepted `t` (the earliest instant it can act), and report the prediction's `error_bound` honestly rather than claiming an exact landing | **none** — built entirely on seams that already existed (`$bound_step`/`bound_step_hint`, §15.9's step-hint entries) | converges toward the step floor as the surrounding steps shrink; always **reported** |
+| **3 — exact** (not built; a scoped future solver feature) | promote `EventKind::Crossing` from `Advisory` to `Exact` and add reject-and-retry at the predicted instant, the way a `Breakpoint` entry already lands exactly | yes — a real solver feature, its own spec | machine precision |
+
+The tier-1/tier-2 line is a fact about what the *solver* guarantees, not a
+grading of code quality: `EventKind::Crossing` is `Advisory` because
+nothing in the retry machinery can force a landing at a computed instant —
+`SUPPORTS_ROLLBACK`'s checkpoint/restore (§15.8) is fully live and used for
+DC homotopy and LTE rejection, but no caller asks it to retry at a
+crossing-predicted time today. A PHDL `@cross` event body, and any host
+device that only reads `EventKind::Crossing` directly, gets tier 1: late by
+up to a timestep, with no way to know how late. `Sequencer::wait(above(net,
+level))` (Part VIII) is what buys tier 2 — the wake instant it reports
+always carries the bound that produced it, so a test built on it never
+claims an exactness the mechanism does not have. Tier 3's promotion is a
+small diff on scaffolding (`EventPriority`, `EventKind::Crossing`) that is
+already the right shape to receive it; it is out of scope here.
+
+### 20.6 AC refusal for a sequencer-bearing session (D13)
+
+A coroutine has no small-signal meaning: `wait`'s three wake sources are
+all time-domain concepts (a time advance, a settled digital edge, an
+accepted-point crossing), and none of them map onto anything an AC sweep
+computes. Rather than silently freezing the coroutine at whatever point it
+last reached, or running it once per frequency point (which would be a
+meaningless op the caller never asked for), `Session::ac` refuses loud,
+before the solver ever sees the circuit, whenever the session's device
+provider is a `HostDeviceRegistry` that has registered at least one
+sequencer type (`HostDeviceRegistry::register_sequencer` marks a type id
+as sequencer-bearing; `Session::ac` checks `has_sequencer()` before
+building the AC analysis at all). A transient (`Session::tran`) is
+unaffected — that is the analysis a sequencer is defined over. This is a
+stated, permanent limitation of the sequencer model, not a temporary gap:
+a coroutine over simulated time is not a concept an AC sweep has room for,
+so there is nothing to build toward here beyond the loud refusal.
