@@ -479,7 +479,7 @@ second run merges rather than replaces; an oversized cross refused at elaboratio
 | DVT-42 | Cross bin cap loud at elaboration, raisable (D10) | Done (T32, `35873da`) |
 | DVT-43 | Host merge across runs; empty-bin identification | Done (T34, `00aa576`) |
 | DVT-44 | cross-cutting: the fail-loud catalog (Edge Cases) | Done (T26, `cf1c791`) |
-| DVT-45 | `docs/spec/` updated: Part VII, Part VIII + appendix C, Part I/II + appendix B (`cover`), appendix A (worked example) | Pending |
+| DVT-45 | `docs/spec/` updated: Part VII, Part VIII + appendix C, Part I/II + appendix B (`cover`), appendix A (worked example) | Done (T35, T36, T37, `1c7049a`, `b3b9242`, `3dc8018`) |
 
 **Coverage:** 45 total, **45 mapped** to T1–T37 (`tasks.md` Check 4).
 

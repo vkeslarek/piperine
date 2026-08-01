@@ -22,7 +22,7 @@ level taxonomy, the four level-1 families, the cost model, and the decision log
 **Follow-on**: `.specs/features/codegen-simplification/` — this feature
 **extracts** into `piperine-signal`; that one **delegates** codegen to it. The
 cross-check fixtures of T6 are this feature's obligation to that one.
-**Status**: Phase 6 complete — Phase 7 next
+**Status**: All 37 tasks (T1–T37) complete — feature fully executed. Feature-level validation (Verifier) next.
 
 ## Progress log
 
@@ -33,6 +33,7 @@ cross-check fixtures of T6 are this feature's obligation to that one.
 | 3 | Phase 3 | T14–T18 | T14 `fa4f78d`, T15 `b603132`, T16 `962c1a7`, T17 `b93cbc5`, T18 `6b4c04b` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). SPEC_DEVIATION: `HostAdapter<T>` local newtype anchors the blanket `Element` impl (Rust orphan rule); `piperine-signal`'s `Wave`/`Hysteresis`/`BehaviorKind` gained `Send + Sync` (Rc→Arc, Cell→AtomicBool, a supertrait) so a `Behavior`/`Wave`-holding `HostElement` can satisfy `Element`'s unconditional `Send + Sync` bound — pure marker-trait/representation changes, no logic change, all of `piperine-signal`'s own tests unchanged and green. |
 | 4 | Phase 4 | T19–T26 | T19 `4aa4ef2`, T20 `b04f58b`, T21 `a6a2319`/`abe5049`, T22 `880ee8c`, T23 `81147be`, T24 `8ff01af`, T25 `3f5b26c`, T26 `cf1c791` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). `piperine-api/src/sequencer/` split into `driver.rs`/`control.rs`/`findings.rs`/`install.rs`/`drive.rs`/`wait.rs`/`crossing.rs`/`conflicts.rs` (mod.rs stays declarations-only, MD-34). SPEC_DEVIATION: `HostElement` gained three narrow additive hooks beyond T14's original mirror — `drain_digital_drives` (T21), `validation_reports` (T22), `on_digital_settled` (T23) — each independently defaulted, extending the documented "mirror grows when a task gives a method bearing" rule rather than widening `accept_timestep`'s signature. T23 is the one task touching `piperine-solver`: `Element::on_digital_settled`, a defaulted no-op dispatched from `CircuitInstance::accept_and_run_digital` strictly after digital settle, not a new `EventKind` variant (mechanically verified). T25's AC refusal (D13) needed a small `Session`/`HostDeviceRegistry` extension (`register_sequencer`/`host_registry`) rather than a solver capability bit, since neither downcasting (MD-01) nor a second solver touch was available. |
 | 5+6 | Phase 5+6 | T27–T34 | T27 `5e1f1eb`, T28 `ea6be69`, T29 `32f6016`, T30 `5c73083`, T31 `ea6ec22`, T32 `35873da`, T33 `be43d3b`, T34 `00aa576` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). SPEC_DEVIATION (T27/T28): `crates/piperine-python`'s `HostBehavior` facade name diverges from `ideal.md`'s `pip.Behavior` sketch — the bare name `Behavior` was already taken by the pre-existing POM `analog`/`digital`-block reflection type (`module.rs`'s `_Behavior`); documented in `signal_bridge.rs`'s header, same precedent class as `Wave.const`. SPEC_DEVIATION (T28): `ideal.md` §9's `build(self, b)` circuit-construction sketch (`b.vsource`/`b.switch`) has no concrete backing in `design.md` or any prior phase's delivered Rust API; `tests/host_device_library.rs` exercises the actually-delivered surface instead (`b.wave`/`b.behavior` installing Rust-native `WaveStamp`/`BehaviorStamp`, direct `load_dc` for level 0) — translated, not transcribed, per the batch brief's own wording. SPEC_DEVIATION (T31): `PiperineDevice::evaluate_constraints`/`validation_reports` (`crates/piperine-codegen/src/device/element.rs`) forward only through `self.analog` — a pure-digital-only module's `constraint` block produces zero findings through this channel today (confirmed by direct experiment), a pre-existing dv-core gap outside T31's declared "no new code" scope; `monitor_composition.rs`'s fixtures give the monitor module a trivial analog half (a leakage conductance) to exercise the same channel honestly. T32/T33 add `piperine_lang::elab::registry::ElabContext::cover_bin_cap` (default 4096, D10's "agent's call") and `piperine_solver::analyses::context::CoverPosture` (mirroring `CheckPosture`); T33's coverage capability is a full parallel compiled-kernel path (`kernel/analog/coverage.rs`, `device/analog/coverage.rs`) reusing `compile_rows` exactly as margins do, kept structurally separate from `MarginKind` per D9. T34's `Element::coverage_report()` rides the existing `EMITS_VALIDATION` bit rather than a new capability flag. |
+| 7 | Phase 7 | T35–T37 | T35 `1c7049a`, T36 `b3b9242`, T37 `3dc8018` | All green: `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (0 failures), `cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` (0 warnings). Docs-only, no `crates/` source touched except `CLAUDE.md`'s crate table. T35 corrected Part VII §15.9's `Crossing`/`Advisory` mention (which read more exact than today's tier-1 `@cross` is) and documented the dynamic digital subscriber accurately as a broadcast dispatch to every device's `on_digital_settled`, not the literal "subscriber list" `design.md` §C5 sketches — a SPEC_DEVIATION noted in Part VII §20.2. T36 documented a real, previously-undocumented Rust/Python asymmetry beyond §3.7's closed/open catalog: Python's `SeqCtl` (`t`) bridges only `advance`/`wait`/`expect`/`warn`, not `install`/`drive_*`/`arm`/read-back (those exist only as Rust free functions over `&mut SequencerControl` plus the device's own struct-held sites) — Part VIII §17.5 states this as the honest current surface rather than transcribing `ideal.md`'s `t.arm`/`t.install`/`t.read_v` examples E/F as if delivered. T37's Appendix A.4.2 tester example similarly notes that `Module.compile()`'s ordinary path does not yet auto-wire `@pip.device` registrations (only the `register_python_devices` + `HostDeviceRegistry` glue `host_device_library.rs` exercises does) — a real wiring gap stated plainly rather than papered over. |
 
 ---
 
@@ -909,12 +910,12 @@ what the code does. This task **corrects** it — a gap the spec names is a
 decision; a gap it omits is a bug report waiting.
 
 **Done when**:
-- [ ] `HostElement` and the blanket `Element` adapter documented
-- [ ] the dynamic digital subscriber documented **with its settled-only rule and the DAG-artifact reason**
-- [ ] resume-strictly-after-acceptance (D11) documented as a contract, not an implementation note
-- [ ] drive segments and the declared-impedance requirement documented
-- [ ] the **three crossing fidelity tiers** documented, stating plainly that today's `@cross` is tier 1 (fires at the first accepted point after, unreported) — correcting the existing text
-- [ ] the AC refusal (D13) documented as a stated limitation with its reason
+- [x] `HostElement` and the blanket `Element` adapter documented
+- [x] the dynamic digital subscriber documented **with its settled-only rule and the DAG-artifact reason**
+- [x] resume-strictly-after-acceptance (D11) documented as a contract, not an implementation note
+- [x] drive segments and the declared-impedance requirement documented
+- [x] the **three crossing fidelity tiers** documented, stating plainly that today's `@cross` is tier 1 (fires at the first accepted point after, unreported) — correcting the existing text
+- [x] the AC refusal (D13) documented as a stated limitation with its reason
 
 **Tests**: none · **Gate**: build
 **Commit**: `docs(spec): document the host element ABI and crossing tiers`
@@ -930,12 +931,12 @@ decision; a gap it omits is a bug report waiting.
 **Requirement**: DVT-45
 
 **Done when**:
-- [ ] the three levels documented **with their costs**, as the table that lets an author choose
-- [ ] `Wave`, `Behavior`, `Measure` catalogs documented, including per-kind DC values
-- [ ] the `Sequencer`, its one `wait` with three wake sources, and `install` semantics documented
-- [ ] the measure lifecycle and **error bounds** documented, including that `expect` compares against the bound
-- [ ] the closed-Python/open-Rust asymmetry documented as a decision with its reason
-- [ ] the reach rules (D14) and posture interaction documented
+- [x] the three levels documented **with their costs**, as the table that lets an author choose
+- [x] `Wave`, `Behavior`, `Measure` catalogs documented, including per-kind DC values
+- [x] the `Sequencer`, its one `wait` with three wake sources, and `install` semantics documented
+- [x] the measure lifecycle and **error bounds** documented, including that `expect` compares against the bound
+- [x] the closed-Python/open-Rust asymmetry documented as a decision with its reason
+- [x] the reach rules (D14) and posture interaction documented
 
 **Tests**: none · **Gate**: build
 **Commit**: `docs(spec): document the host device library surface`
@@ -953,11 +954,11 @@ will actually be learned from.
 **Requirement**: DVT-45
 
 **Done when**:
-- [ ] `@device`'s **host binding mode** documented in Part I, with the graduation path and the Python limitation
-- [ ] `cover` documented as a `constraint`-block statement kind and added to the reserved words
-- [ ] `CoverStmt` added to the grammar appendix; bin resolution and the cross cap added to Part II
-- [ ] appendix A gains **two** worked examples: a host device and a tester
-- [ ] `CLAUDE.md`'s crate table carries `piperine-signal` (from T1) and the entry is accurate at close
+- [x] `@device`'s **host binding mode** documented in Part I, with the graduation path and the Python limitation
+- [x] `cover` documented as a `constraint`-block statement kind and added to the reserved words
+- [x] `CoverStmt` added to the grammar appendix; bin resolution and the cross cap added to Part II
+- [x] appendix A gains **two** worked examples: a host device and a tester
+- [x] `CLAUDE.md`'s crate table carries `piperine-signal` (from T1) and the entry is accurate at close
 
 **Tests**: none · **Gate**: build
 **Commit**: `docs(spec): document @device host binding, cover, and worked examples`
