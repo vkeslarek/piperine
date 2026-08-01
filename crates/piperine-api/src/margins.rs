@@ -160,7 +160,9 @@ impl ConstraintCatalog {
                             name.clone()
                         }
                         ConstraintStmt::Target { .. } => format!("target#{leaf_index}"),
-                        ConstraintStmt::Event { .. } => continue,
+                        ConstraintStmt::Event { .. } | ConstraintStmt::Cover { .. } | ConstraintStmt::CoverCross { .. } => {
+                            continue
+                        }
                     };
                     let qualified = format!("{}.{}", instance.name(), label);
                     let Some(built) = analog else {

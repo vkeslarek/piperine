@@ -39,6 +39,17 @@ pub struct ElabContext {
     /// The constraint helpers `headers/constraints.phdl` declares, each
     /// with its pointwise/reduced class and analysis (dv-core T7, DVC-09).
     pub constraint_helpers: ConstraintHelperRegistry,
+    /// The elaboration-time cap on a `cover cross`'s joint (product) bin
+    /// count (dv-tester T32, DVT-42, D10) — bin edges are literal, so the
+    /// product is known statically; a declared cross exceeding this cap
+    /// fails loud naming both numbers. `Context`-raisable: a caller sets
+    /// this field on the `ElabContext` it passes to elaboration before
+    /// raising it above the default, exactly as it would seed any other
+    /// registry here (`seed_device_port_schemas`'s own calling
+    /// convention). The default (4096) is deliberately generous for a
+    /// hand-authored `cover cross` while still catching an accidental
+    /// combinatorial explosion (a handful of ranges crossed together).
+    pub cover_bin_cap: usize,
 }
 
 impl Default for ElabContext {
@@ -87,6 +98,7 @@ impl ElabContext {
             operators: OperatorRegistry::new(),
             impl_methods: ImplMethodTable::new(),
             constraint_helpers: ConstraintHelperRegistry::new(),
+            cover_bin_cap: 4096,
         }
     }
 

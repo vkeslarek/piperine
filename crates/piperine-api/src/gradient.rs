@@ -112,7 +112,12 @@ pub fn classify_margin_gradient(
                         name.clone()
                     }
                     ConstraintStmt::Target { .. } => format!("target#{leaf_index}"),
-                    ConstraintStmt::Event { .. } => continue,
+                    // `leaves()` never yields these (they classify to
+                    // their own `StmtClassNode` kind, not `Leaf`) —
+                    // exhaustiveness only.
+                    ConstraintStmt::Event { .. } | ConstraintStmt::Cover { .. } | ConstraintStmt::CoverCross { .. } => {
+                        continue
+                    }
                 };
                 if label != margin_name
                     && format!("{}.{}", instance.name(), label) != margin_name
@@ -300,7 +305,7 @@ fn margin_value_expr(stmt: &ConstraintStmt) -> Option<&Expr> {
         }
         ConstraintStmt::Var { value, .. } => Some(value),
         ConstraintStmt::Target { expr, .. } => Some(expr),
-        ConstraintStmt::Event { .. } => None,
+        ConstraintStmt::Event { .. } | ConstraintStmt::Cover { .. } | ConstraintStmt::CoverCross { .. } => None,
     }
 }
 

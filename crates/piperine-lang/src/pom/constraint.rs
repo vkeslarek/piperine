@@ -111,6 +111,27 @@ pub enum StmtClassNode {
         /// statements.
         children: Vec<StmtClassNode>,
     },
+    /// A `cover` point (dv-tester T32, DVT-42): the elaborator's proof
+    /// that its expression is `Real`/pointwise, plus the bin count folded
+    /// from its literal edges — the count T33's bin-mapper allocates
+    /// against and T32's own `cover cross` cap check reads.
+    Cover {
+        class: StmtClass,
+        /// The number of bins this point's partition declares.
+        bin_count: usize,
+    },
+    /// A `cover cross` (dv-tester T32, DVT-42): the joint (product) bin
+    /// count of the named points, already checked against the
+    /// elaboration-time cap (a `CoverCross` node only exists once that
+    /// check has passed — the cap refusal is a hard elaboration error,
+    /// never a node carrying an over-cap count).
+    CoverCross {
+        class: StmtClass,
+        /// The named points this cross joins, in authored order.
+        points: Vec<String>,
+        /// The product of each named point's own bin count.
+        joint_bin_count: usize,
+    },
 }
 
 impl StmtClassNode {
@@ -118,7 +139,7 @@ impl StmtClassNode {
     pub fn as_leaf(&self) -> Option<&StmtClass> {
         match self {
             Self::Leaf(c) => Some(c),
-            Self::Event { .. } => None,
+            Self::Event { .. } | Self::Cover { .. } | Self::CoverCross { .. } => None,
         }
     }
 }

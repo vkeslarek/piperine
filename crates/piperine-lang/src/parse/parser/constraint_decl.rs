@@ -1,5 +1,6 @@
 //! `constraint Name { ... }` (dv-core DVC-04) — a third top-level body kind
-//! beside `analog`/`digital`, holding `require`/`var`/`target` statements.
+//! beside `analog`/`digital`, holding `require`/`var`/`target`/`cover`
+//! statements.
 //!
 //! ```text
 //! ConstraintDecl ::= "constraint" Ident "{" { ConstraintStmt } "}"
@@ -7,6 +8,9 @@
 //!                  | "var" Ident ":" Type "=" Expr ";"
 //!                  | "target" Expr ("<=" | ">=") Expr [ "tol" Expr ] ";"
 //!                  | "@" EventSpec "{" { ConstraintStmt } "}"        // DVC-19
+//!                  | "cover" Ident ":" Expr "bins" "[" Expr ":" Expr ":" Expr "]" ";"   // T32
+//!                  | "cover" Ident ":" Expr "in" "{" Expr { "," Expr } "}" ";"          // T32
+//!                  | "cover" "cross" Ident ":" Ident { "," Ident } ";"                  // T32
 //! ```
 //!
 //! The `var` type annotation is mandatory — the parser rejects the bare
@@ -14,7 +18,13 @@
 //! non-strict comparisons parse: `<`/`>` have no signed-margin semantics
 //! (DVC-08) and fail loud at the offending token. The `@` form reuses the
 //! behavior-body `EventSpec` production (dv-core T28, DVC-19); its terms
-//! are validated against the `EventRegistry` at elaboration.
+//! are validated against the `EventRegistry` at elaboration. `cover`
+//! mirrors `require`'s own `<name> : <expr>` shape with a bin-partition
+//! suffix (dv-tester T32, DVT-42) — `cover cross` instead names two or
+//! more already-declared `cover` points by their labels; the elaborator
+//! checks the joint (product) bin count against a raisable cap (D10),
+//! since bin edges are literal and the product is therefore known
+//! statically, before anything allocates.
 
 use crate::parse::ast::*;
 use crate::parse::lexer::Tok;
@@ -68,6 +78,56 @@ impl<'a> Parser<'a> {
             self.expect(&Tok::Semi)?;
             let end = self.previous_span_end();
             return Ok(ConstraintStmt::Target { span: Some((start, end - start).into()), expr, cmp, level, tol });
+        }
+        // `cover <name> : <expr> bins [lo:step:hi];` / `… in {…};`, or
+        // `cover cross <name> : <point1>, <point2>, …;` (dv-tester T32,
+        // DVT-42). Mirrors `require`'s own shape (`<name> : <expr>`) with
+        // a bin-partition suffix instead of a bare predicate.
+        if self.eat_ident("cover") {
+            if self.eat_ident("cross") {
+                let name = self.parse_ident()?;
+                self.expect(&Tok::Colon)?;
+                let mut points = vec![self.parse_ident()?];
+                while self.eat(&Tok::Comma) {
+                    points.push(self.parse_ident()?);
+                }
+                self.expect(&Tok::Semi)?;
+                let end = self.previous_span_end();
+                return Ok(ConstraintStmt::CoverCross {
+                    span: Some((start, end - start).into()),
+                    name,
+                    points,
+                });
+            }
+            let name = self.parse_ident()?;
+            self.expect(&Tok::Colon)?;
+            let expr = self.parse_binary_expr(7, false)?;
+            let bins = if self.eat_ident("bins") {
+                self.expect(&Tok::LBrack)?;
+                let lo = self.parse_binary_expr(7, false)?;
+                self.expect(&Tok::Colon)?;
+                let step = self.parse_binary_expr(7, false)?;
+                self.expect(&Tok::Colon)?;
+                let hi = self.parse_binary_expr(7, false)?;
+                self.expect(&Tok::RBrack)?;
+                CoverBins::Range { lo, step, hi: Box::new(hi) }
+            } else if self.eat_ident("in") {
+                self.expect(&Tok::LBrace)?;
+                let mut values = vec![self.parse_binary_expr(7, false)?];
+                while self.eat(&Tok::Comma) {
+                    values.push(self.parse_binary_expr(7, false)?);
+                }
+                self.expect(&Tok::RBrace)?;
+                CoverBins::Set(values)
+            } else {
+                let peeked = self.peek().cloned();
+                return Err(self.make_error(format!(
+                    "expected `bins [lo:step:hi]` or `in {{…}}` after a `cover` point's expression, found {peeked:?}"
+                )));
+            };
+            self.expect(&Tok::Semi)?;
+            let end = self.previous_span_end();
+            return Ok(ConstraintStmt::Cover { span: Some((start, end - start).into()), name, expr, bins });
         }
         // Analysis-scoped event block (dv-core T28, DVC-19): `@ dc { … }`,
         // `@ (dc | tran) { … }`. Reuses the behavior-body `EventSpec`

@@ -84,7 +84,10 @@ impl<'a> ReducedEvaluation<'a> {
                                 value: MarginValue::Reduced { value: margin },
                             });
                         }
-                        ConstraintStmt::Require { .. } | ConstraintStmt::Event { .. } => {}
+                        ConstraintStmt::Require { .. }
+                        | ConstraintStmt::Event { .. }
+                        | ConstraintStmt::Cover { .. }
+                        | ConstraintStmt::CoverCross { .. } => {}
                     }
                 }
             }

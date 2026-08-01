@@ -889,6 +889,37 @@ pub enum ConstraintStmt {
         spec: EventSpec,
         body: Vec<ConstraintStmt>,
     },
+    /// `cover <name> : <expr> bins [lo:step:hi];` or
+    /// `cover <name> : <expr> in {e1, e2, …};` (dv-tester T32, DVT-42): a
+    /// named coverage point — a bin-mapper over the pointwise value of
+    /// `expr`, distinct from `require`/`target` (no margin, no signed
+    /// distance — a bin hit is a counter increment, T33).
+    Cover {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        expr: Expr,
+        bins: CoverBins,
+    },
+    /// `cover cross <name> : <point1>, <point2>, …;` — joint coverage over
+    /// two or more previously-declared `cover` points in the same block,
+    /// named by their own labels. The joint bin count (the product of each
+    /// named point's own bin count) is checked at **elaboration** against
+    /// a raisable cap (D10) — bin edges are literal, so the product is
+    /// known statically, before anything allocates.
+    CoverCross {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        points: Vec<String>,
+    },
+}
+
+/// A `cover` statement's bin partition (dv-tester T32).
+#[derive(Debug, Clone)]
+pub enum CoverBins {
+    /// `bins [lo:step:hi]` — a literal-edged range partition.
+    Range { lo: Expr, step: Expr, hi: Box<Expr> },
+    /// `in {e1, e2, …}` — an explicit, literal set of bin values.
+    Set(Vec<Expr>),
 }
 
 impl ConstraintStmt {
@@ -897,7 +928,9 @@ impl ConstraintStmt {
             Self::Require { span, .. }
             | Self::Var { span, .. }
             | Self::Target { span, .. }
-            | Self::Event { span, .. } => *span,
+            | Self::Event { span, .. }
+            | Self::Cover { span, .. }
+            | Self::CoverCross { span, .. } => *span,
         }
     }
 }

@@ -106,7 +106,15 @@ impl<'a> ConstraintLowering<'a> {
                         expr: margin,
                     });
                 }
-                ConstraintStmt::Event { .. } => {}
+                // `cover`/`cover cross` never become margins (D9): they
+                // are not `require`/`target` predicates, and `leaves()`
+                // never actually yields one here in the first place (only
+                // `StmtClassNode::Leaf`-classified statements are —
+                // `Cover`/`CoverCross` classify to their own node kinds,
+                // see `pom/constraint.rs`). T33's bin-mapper reads
+                // `ConstraintBlock::stmts` directly for the cover catalog,
+                // parallel to but separate from this margin lowering.
+                ConstraintStmt::Event { .. } | ConstraintStmt::Cover { .. } | ConstraintStmt::CoverCross { .. } => {}
             }
         }
         margins

@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, EventSpec, Expr, Literal, UnaryOp};
+use crate::parse::ast::{BinaryOp, ConstraintDecl, ConstraintStmt, CoverBins, EventSpec, Expr, Literal, UnaryOp};
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
     ConstraintBlock, Design, ElabError, ElabErrorKind, Module, QuantityClass, ResolvedWindow, StmtClass, StmtClassNode,
@@ -448,8 +448,9 @@ impl Elaborator {
         let env = ConstEnv::with_globals(self.syms.globals.clone());
         let mut scope = ConstraintScope::new(&decl.name, module, design, &self.ctx, &self.syms.globals);
         let mut var_types = HashMap::new();
+        let mut cover_bin_counts: HashMap<String, usize> = HashMap::new();
         let stmt_classes = self.elab_stmts(
-            &decl.body, &env, &mut scope, &mut var_types,
+            &decl.body, &env, &mut scope, &mut var_types, &mut cover_bin_counts,
             &BTreeSet::new(), None, decl, module,
         )?;
 
@@ -479,6 +480,7 @@ impl Elaborator {
         env: &ConstEnv,
         scope: &mut ConstraintScope<'_>,
         var_types: &mut HashMap<String, ValueType>,
+        cover_bin_counts: &mut HashMap<String, usize>,
         scope_analyses: &BTreeSet<String>,
         scope_window: Option<ResolvedWindow>,
         decl: &ConstraintDecl,
@@ -616,7 +618,7 @@ impl Elaborator {
                     let mut child_scope = scope_analyses.clone();
                     child_scope.extend(analyses.iter().cloned());
                     let children = self.elab_stmts(
-                        body, env, scope, var_types, &child_scope, merged_window, decl, module,
+                        body, env, scope, var_types, cover_bin_counts, &child_scope, merged_window, decl, module,
                     )?;
                     out.push(StmtClassNode::Event {
                         analyses: analyses.into_iter().collect(),
@@ -624,9 +626,116 @@ impl Elaborator {
                         children,
                     });
                 }
+                ConstraintStmt::Cover { name, expr, bins, span } => {
+                    let site = format!("cover `{name}`");
+                    let info = scope.resolve_expr(expr, &site).map_err(|e| e.with_span(*span))?;
+                    if info.ty != ValueType::Real {
+                        return Err(scope
+                            .fail(&site, format!("a `cover` point's expression must be Real, found `{:?}`", info.ty))
+                            .with_span(*span));
+                    }
+                    if info.class == QuantityClass::Reduced {
+                        return Err(scope
+                            .fail(&site, "a reduced quantity is checkable once per analysis, not per point".into())
+                            .with_span(*span));
+                    }
+                    let bin_count = cover_bin_count(bins, env, &site).map_err(|e| e.with_span(*span))?;
+                    cover_bin_counts.insert(name.clone(), bin_count);
+                    out.push(StmtClassNode::Cover {
+                        class: StmtClass {
+                            class: QuantityClass::Pointwise,
+                            analyses: union_analyses(scope_analyses, &info.analyses),
+                            window: scope_window,
+                        },
+                        bin_count,
+                    });
+                }
+                ConstraintStmt::CoverCross { name, points, span } => {
+                    let site = format!("cover cross `{name}`");
+                    let mut joint_bin_count: usize = 1;
+                    for point in points {
+                        let count = cover_bin_counts.get(point).copied().ok_or_else(|| {
+                            scope
+                                .fail(
+                                    &site,
+                                    format!(
+                                        "`cover cross` names undeclared cover point `{point}` — every \
+                                         crossed point must be declared with `cover {point} : … bins […]` \
+                                         or `… in {{…}}` earlier in the same block"
+                                    ),
+                                )
+                                .with_span(*span)
+                        })?;
+                        joint_bin_count = joint_bin_count.saturating_mul(count);
+                    }
+                    if joint_bin_count > self.ctx.cover_bin_cap {
+                        return Err(scope
+                            .fail(
+                                &site,
+                                format!(
+                                    "`cover cross {name}`'s joint bin count ({joint_bin_count}) exceeds the \
+                                     elaboration cap ({}) — cross fewer points, coarsen a range, or raise \
+                                     `ElabContext::cover_bin_cap`",
+                                    self.ctx.cover_bin_cap
+                                ),
+                            )
+                            .with_span(*span));
+                    }
+                    out.push(StmtClassNode::CoverCross {
+                        class: StmtClass {
+                            class: QuantityClass::Pointwise,
+                            analyses: scope_analyses.iter().cloned().collect(),
+                            window: scope_window,
+                        },
+                        points: points.clone(),
+                        joint_bin_count,
+                    });
+                }
             }
         }
         Ok(out)
+    }
+}
+
+/// Fold a `cover` point's literal bin edges and return the partition's bin
+/// count (dv-tester T32, DVT-42): `Range { lo, step, hi }` folds all three
+/// as elaboration-constant `Real`s (a non-literal edge is a loud
+/// elaboration error, not a runtime one — D10's premise is that the count
+/// is known statically); `Set` is simply its length.
+fn cover_bin_count(bins: &CoverBins, env: &ConstEnv, site: &str) -> Result<usize, ElabError> {
+    match bins {
+        CoverBins::Range { lo, step, hi } => {
+            let fold = |label: &str, e: &Expr| -> Result<f64, ElabError> {
+                match env.eval(e) {
+                    Ok(Value::Real(v)) => Ok(v),
+                    Ok(other) => Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "{site}: `bins [lo:step:hi]`'s {label} must be a literal Real, found `{other:?}`"
+                    )))),
+                    Err(e) => Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "{site}: `bins [lo:step:hi]`'s {label} must be an elaboration-constant literal: {e}"
+                    )))),
+                }
+            };
+            let lo = fold("lo", lo)?;
+            let step = fold("step", step)?;
+            let hi = fold("hi", hi.as_ref())?;
+            if step <= 0.0 {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "{site}: `bins [lo:step:hi]`'s step must be positive, found {step}"
+                ))));
+            }
+            if hi < lo {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "{site}: `bins [lo:step:hi]`'s hi ({hi}) must be >= lo ({lo})"
+                ))));
+            }
+            // Inclusive of both `lo` and `hi` — a small epsilon absorbs
+            // floating-point round-off on the division so a boundary that
+            // lands exactly on `hi` counts as one more bin, not one short.
+            let count = ((hi - lo) / step + 1e-9).floor() as usize + 1;
+            Ok(count)
+        }
+        CoverBins::Set(values) => Ok(values.len()),
     }
 }
 
@@ -642,7 +751,10 @@ fn collect_labels(
 ) -> Result<(), ElabError> {
     for stmt in stmts {
         match stmt {
-            ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => {
+            ConstraintStmt::Require { name, .. }
+            | ConstraintStmt::Var { name, .. }
+            | ConstraintStmt::Cover { name, .. }
+            | ConstraintStmt::CoverCross { name, .. } => {
                 if !seen.insert(name.clone()) {
                     return Err(ElabError::from(ElabErrorKind::Other(format!(
                         "constraint `{}` on module `{}`: duplicate statement label `{name}`",

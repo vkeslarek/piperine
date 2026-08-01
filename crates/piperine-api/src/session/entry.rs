@@ -475,7 +475,9 @@ impl Session {
                         .filter_map(|(s, _)| match s {
                             ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => Some(name.clone()),
                             ConstraintStmt::Target { .. } => Some("target#…".to_string()),
-                            ConstraintStmt::Event { .. } => None,
+                            ConstraintStmt::Event { .. }
+                            | ConstraintStmt::Cover { .. }
+                            | ConstraintStmt::CoverCross { .. } => None,
                         })
                         .collect()
                 })
