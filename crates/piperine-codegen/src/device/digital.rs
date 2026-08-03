@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(Quad::to_signal(out_of_range), piperine_signal::logic::Logic::X);
         assert_eq!(Quad::to_logic(out_of_range), LogicValue::X);
 
-        // Identical to today's `prev != 1 && cur == 1` for prev = X.
+        // Identical to today's rule: not-One before, One after, for prev = X.
         let fired = EdgeKind::Rising
             .to_signal()
             .fires(Quad::to_signal(out_of_range), Quad::to_signal(1));
