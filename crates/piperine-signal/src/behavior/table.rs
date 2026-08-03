@@ -15,6 +15,12 @@
 //! [`Table::derivative`] locate the same segment and read from the same
 //! per-segment slope. Reserve hand-written Jacobians for kinds that
 //! genuinely need state (`ideal.md` §3.9 C).
+//!
+//! [`Table::points`] and [`Table::segment_slope`] exist for a second
+//! **renderer** (codegen's nested-`If` lowering) to walk the validated
+//! segment geometry at compile time — they are not an evaluation path.
+//! `value`/`derivative` remain the only way to evaluate a `Table` at a
+//! given `x`.
 
 /// Why a `Table` could not be constructed.
 #[derive(Debug, Clone, PartialEq)]
@@ -79,8 +85,17 @@ impl Table {
         Ok(Self { xs, ys })
     }
 
-    /// The segment slope `(ys[i+1] - ys[i]) / (xs[i+1] - xs[i])`.
-    fn slope(&self, i: usize) -> f64 {
+    /// The validated `(xs, ys)` arrays, for a second **renderer** to walk —
+    /// never for a caller to re-derive interpolation from. The only
+    /// evaluation path remains [`Table::value`]/[`Table::derivative`].
+    pub fn points(&self) -> (&[f64], &[f64]) {
+        (&self.xs, &self.ys)
+    }
+
+    /// The segment slope `(ys[i+1] - ys[i]) / (xs[i+1] - xs[i])`, public so a
+    /// renderer can build every segment at compile time — the same value
+    /// [`Table::derivative`] reads for an `x` inside that segment.
+    pub fn segment_slope(&self, i: usize) -> f64 {
         (self.ys[i + 1] - self.ys[i]) / (self.xs[i + 1] - self.xs[i])
     }
 
@@ -100,7 +115,7 @@ impl Table {
     /// `ys[n-1]` at/above `xs[n-1]`, else `ys[i] + (x - xs[i]) * slope_i`.
     pub fn value(&self, x: f64) -> f64 {
         match self.segment(x) {
-            Some(i) => self.ys[i] + (x - self.xs[i]) * self.slope(i),
+            Some(i) => self.ys[i] + (x - self.xs[i]) * self.segment_slope(i),
             None if x <= self.xs[0] => self.ys[0],
             None => self.ys[self.ys.len() - 1],
         }
@@ -111,7 +126,7 @@ impl Table {
     /// same `segment` lookup `value` uses, never hand-derived.
     pub fn derivative(&self, x: f64) -> f64 {
         match self.segment(x) {
-            Some(i) => self.slope(i),
+            Some(i) => self.segment_slope(i),
             None => 0.0,
         }
     }
@@ -199,6 +214,21 @@ mod tests {
             Table::with_mode(vec![0.0, 1.0], vec![0.0, 1.0], "cubic").unwrap_err(),
             TableError::UnsupportedMode("cubic".to_string())
         );
+    }
+
+    #[test]
+    fn points_returns_the_validated_arrays() {
+        let xs = vec![0.0, 1.0, 2.0];
+        let ys = vec![0.0, 10.0, 30.0];
+        let t = Table::new(xs.clone(), ys.clone()).unwrap();
+        assert_eq!(t.points(), (xs.as_slice(), ys.as_slice()));
+    }
+
+    #[test]
+    fn segment_slope_equals_derivative_for_an_x_inside_that_segment() {
+        let t = Table::new(vec![0.0, 2.0, 4.0], vec![0.0, 10.0, 0.0]).unwrap();
+        assert_eq!(t.segment_slope(0), t.derivative(1.0), "segment 0 contains x=1.0");
+        assert_eq!(t.segment_slope(1), t.derivative(3.0), "segment 1 contains x=3.0");
     }
 
     #[test]
