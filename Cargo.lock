@@ -1679,6 +1679,7 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex",
  "piperine-lang",
+ "piperine-signal",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",
