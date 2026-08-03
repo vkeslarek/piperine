@@ -5,6 +5,7 @@
 pub mod behavior;
 pub mod events;
 pub mod limit;
+pub mod logic;
 pub mod measure;
 pub mod ops;
 pub mod verify;
