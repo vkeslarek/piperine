@@ -6,21 +6,21 @@
 
 use piperine_solver::abi::{DigitalNet, LogicValue};
 
-/// Which transition a `wait(edge(net, direction))` is watching for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EdgeDirection {
-    Rising,
-    Falling,
-    Either,
-}
+/// Which transition a `wait(edge(net, direction))` is watching for — the
+/// shared IEEE 1364 detector (`piperine_signal::logic`), re-exported under
+/// this crate's existing name/path (`pub use wait::EdgeDirection` in
+/// `sequencer/mod.rs`) so Python bindings keep compiling unchanged.
+pub use piperine_signal::logic::EdgeDirection;
 
-impl EdgeDirection {
-    fn matches(self, before: LogicValue, after: LogicValue) -> bool {
-        match self {
-            EdgeDirection::Rising => before == LogicValue::Zero && after == LogicValue::One,
-            EdgeDirection::Falling => before == LogicValue::One && after == LogicValue::Zero,
-            EdgeDirection::Either => before != after,
-        }
+/// `LogicValue` (`piperine-solver`) → `signal::logic::Logic`: both four-state
+/// types share discriminants, but the conversion stays an explicit `match`,
+/// never a transmute.
+fn to_signal(value: LogicValue) -> piperine_signal::logic::Logic {
+    match value {
+        LogicValue::Zero => piperine_signal::logic::Logic::Zero,
+        LogicValue::One => piperine_signal::logic::Logic::One,
+        LogicValue::X => piperine_signal::logic::Logic::X,
+        LogicValue::Z => piperine_signal::logic::Logic::Z,
     }
 }
 
@@ -50,7 +50,7 @@ impl EdgeWait {
                 false
             }
             Some(before) => {
-                if self.direction.matches(before, current) {
+                if self.direction.fires(to_signal(before), to_signal(current)) {
                     true
                 } else {
                     if before != current {
@@ -74,11 +74,43 @@ mod tests {
     }
 
     #[test]
-    fn rising_matches_zero_to_one_only() {
+    fn rising_fires_on_ieee_1364_transitions_into_one_not_only_zero_to_one() {
+        // Rewritten (not deleted, AC 32/CGS-14): the previous test name
+        // ("...zero_to_one_only") named the narrow rule that was the bug
+        // this feature fixes. Zero -> One still fires; no-change still does
+        // not — the rewrite is the rule, not the zero/one case itself.
         let mut w = EdgeWait::new(DigitalNet(0), EdgeDirection::Rising);
         w.observe(&[LogicValue::Zero]);
         assert!(!w.observe(&[LogicValue::Zero]), "no change is not a rising edge");
         assert!(w.observe(&[LogicValue::One]), "Zero -> One is a rising edge");
+    }
+
+    #[test]
+    fn rising_fires_on_x_to_one() {
+        let mut w = EdgeWait::new(DigitalNet(0), EdgeDirection::Rising);
+        w.observe(&[LogicValue::X]);
+        assert!(w.observe(&[LogicValue::One]), "X -> One satisfies a Rising wait (AC 32)");
+    }
+
+    #[test]
+    fn rising_fires_on_z_to_one() {
+        let mut w = EdgeWait::new(DigitalNet(0), EdgeDirection::Rising);
+        w.observe(&[LogicValue::Z]);
+        assert!(w.observe(&[LogicValue::One]), "Z -> One satisfies a Rising wait");
+    }
+
+    #[test]
+    fn falling_fires_on_x_to_zero() {
+        let mut w = EdgeWait::new(DigitalNet(0), EdgeDirection::Falling);
+        w.observe(&[LogicValue::X]);
+        assert!(w.observe(&[LogicValue::Zero]), "X -> Zero satisfies a Falling wait");
+    }
+
+    #[test]
+    fn falling_fires_on_z_to_zero() {
+        let mut w = EdgeWait::new(DigitalNet(0), EdgeDirection::Falling);
+        w.observe(&[LogicValue::Z]);
+        assert!(w.observe(&[LogicValue::Zero]), "Z -> Zero satisfies a Falling wait");
     }
 
     #[test]
