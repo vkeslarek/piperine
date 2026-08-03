@@ -1,6 +1,18 @@
 //! Limits capability (device side): `$limit` (pnjlim/fetlim) vold-slot
 //! bookkeeping — the pre-stamp voltage transform and the seed/update
 //! machinery that makes junction devices converge.
+//!
+//! The `active`/`active_slots`/`seeds` bookkeeping (rules 2 and 4 — seed
+//! preservation, convergence veto) delegates to
+//! `piperine_signal::limit::Limiter::advance_precomputed`. Rule 3's formula
+//! itself (pnjlim/fetlim/limvds) is **not** recomputed here: since T4/T5 the
+//! JIT already calls `signal::limit::{pnjlim,fetlim,limvds}` directly
+//! (`kernel.eval_limit_update`), so `vlim` arrives pre-computed. `vold`
+//! stays in this instance's shared analog `state` bank (the JIT's own
+//! `$limit` calls read it from there — `advance_precomputed` never keeps a
+//! copy of its own), which is also why checkpointing splits across two
+//! places: `Limiter::pack`/`unpack` carry `active`+`seeds`, the caller packs
+//! the `state` bank's vold slots alongside it (unchanged by this file).
 
 use crate::kernel::analog::AnalogKernel;
 use crate::emit::abi::SimCtx;
@@ -9,21 +21,12 @@ use super::LoadCtx;
 
 /// Per-instance `$limit` runtime state: whether limiting is still moving,
 /// and the critical-voltage seeds used to tell an unbiased (still-seeded)
-/// junction from a tracked one.
+/// junction from a tracked one. A thin wrapper: `piperine_signal::limit::
+/// Limiter` owns `active`/`active_slots`/`seeds`; `vold` lives in the
+/// instance's `state` bank, passed in by every call (never inside the
+/// wrapped type).
 pub(super) struct Limiter {
-    /// Whether junction voltage limiting was still moving at the last load
-    /// (vetoes Newton convergence — see [`Limiter::update`]). The OR of
-    /// [`active_slots`](Self::active_slots).
-    active: bool,
-    /// Per-slot "still clamping" flags (phdl-introspection-attributes PIA-15/
-    /// 17), parallel to the kernel's limit slots. Read by
-    /// [`active_slot`](Self::active_slot) to name the limiter that actually
-    /// fired in `limiting_report`. Transient — recomputed each `update`, so
-    /// not checkpointed (the vold slots in the state bank are the durable
-    /// state; the flags are re-derived on the next load after a restore).
-    active_slots: Vec<bool>,
-    /// Per-`$limit` seed voltage `vcrit`.
-    seeds: Vec<f64>,
+    inner: piperine_signal::limit::Limiter,
 }
 
 impl Limiter {
@@ -33,7 +36,7 @@ impl Limiter {
     /// same point in `AnalogInstance::new` as before this split — after
     /// `@initial` events, matching the original construction order exactly).
     pub(super) fn new(num_limits: usize) -> Self {
-        Self { active: false, active_slots: vec![false; num_limits], seeds: vec![0.0; num_limits] }
+        Self { inner: piperine_signal::limit::Limiter::new(vec![0.0; num_limits]) }
     }
 
     /// Seed each `$limit` vold slot (in `state`) with its critical voltage
@@ -52,18 +55,18 @@ impl Limiter {
         for (i, s) in seeds.iter().enumerate() {
             state[base + i] = *s;
         }
-        self.seeds = seeds;
+        self.inner = piperine_signal::limit::Limiter::new(seeds);
     }
 
     pub(super) fn active(&self) -> bool {
-        self.active
+        self.inner.active()
     }
 
     /// The first slot still clamping at the last [`update`](Self::update), for
     /// naming the limiter that actually fired in `limiting_report` (PIA-15/17).
     /// `None` when no slot is active (the report is then suppressed).
     pub(super) fn active_slot(&self) -> Option<usize> {
-        self.active_slots.iter().position(|&a| a)
+        self.inner.active_slot()
     }
 
     /// Pack the limiter's own state (the `active` flag + the vcrit `seeds`)
@@ -71,9 +74,10 @@ impl Limiter {
     /// instance's `state` bank and are packed by the caller alongside this.
     /// Layout: `[active_as_f64, seed_0, seed_1, …]`.
     pub(super) fn pack(&self) -> Vec<f64> {
-        let mut v = Vec::with_capacity(1 + self.seeds.len());
-        v.push(if self.active { 1.0 } else { 0.0 });
-        v.extend_from_slice(&self.seeds);
+        let seeds = self.inner.seeds();
+        let mut v = Vec::with_capacity(1 + seeds.len());
+        v.push(if self.inner.active() { 1.0 } else { 0.0 });
+        v.extend_from_slice(seeds);
         v
     }
 
@@ -81,9 +85,8 @@ impl Limiter {
     /// [`pack`](Self::pack) (ABI-04). No-op when the layout is too short.
     pub(super) fn unpack(&mut self, packed: &[f64]) {
         let Some((&a, rest)) = packed.split_first() else { return };
-        self.active = a != 0.0;
-        if rest.len() == self.seeds.len() {
-            self.seeds.clone_from_slice(rest);
+        if rest.len() == self.inner.seeds().len() {
+            self.inner.restore_seeds(rest.to_vec(), a != 0.0);
         }
     }
 
@@ -128,6 +131,13 @@ impl Limiter {
     /// stiff exponential overshoots and stalls. Called each iteration of DC
     /// and transient loads; AC/noise reuse the converged DC vold (limiter
     /// inactive there).
+    ///
+    /// `vlim` (the JIT's already-limited value — rule 3, "limit against the
+    /// previous limited value", is applied by the JIT reading `vold` from
+    /// `state` on its own next call) and `vnew` (the raw unlimited value)
+    /// both come from the compiled kernel; rules 2 (seed preservation) and 4
+    /// (convergence veto) are `signal::limit::Limiter::advance_precomputed`'s
+    /// job, applied directly over this instance's own `state` slice.
     pub(super) fn update(&mut self, kernel: &AnalogKernel, volts: &[f64], params: &[f64], state: &mut [f64], vars: &[f64], sim: &SimCtx) {
         let nl = kernel.num_limits();
         if nl == 0 {
@@ -138,33 +148,6 @@ impl Limiter {
         kernel.eval_limit_update(volts, params, state, vars, sim, &mut vlim);
         let mut vnew = vec![0.0; nl];
         kernel.eval_limit_vnew(volts, params, state, vars, sim, &mut vnew);
-        // A junction is "still limiting" iff pnjlim actually clamped this
-        // iteration — the limited value differs from the raw branch voltage
-        // (ngspice's `Check == 1`). While that holds, the Newton loop must not
-        // declare convergence (see PiperineDevice::limiting_report): a clamped
-        // junction can momentarily satisfy KCL at a non-solution voltage. Tiny
-        // Newton jitter once limiting is off (vnew ≈ vlim) must NOT veto, hence
-        // the tolerance below. Per-slot tracking (PIA-15/17) names the limiter
-        // that fired; the aggregate `active` (OR of slots) keeps the veto gate.
-        for slot in self.active_slots.iter_mut() {
-            *slot = false;
-        }
-        let mut active = false;
-        for (i, v) in vlim.into_iter().enumerate() {
-            let old = state[base + i];
-            // Preserve the vcrit seed until the junction is first biased:
-            // `pnjlim(0, vcrit) = 0` on the opening iterations would discard the
-            // seed and let the node float to the supply (ngspice MODEINITJCT).
-            let seeded = (old - self.seeds[i]).abs() <= 1e-12;
-            if seeded && v < old {
-                continue;
-            }
-            if (vnew[i] - v).abs() > 1e-6 + 1e-4 * vnew[i].abs() {
-                self.active_slots[i] = true;
-                active = true;
-            }
-            state[base + i] = v;
-        }
-        self.active = active;
+        self.inner.advance_precomputed(&vlim, &vnew, &mut state[base..base + nl]);
     }
 }

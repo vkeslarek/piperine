@@ -174,17 +174,63 @@ impl Limiter {
         &self.vold
     }
 
+    /// The per-slot critical-voltage seeds (rule 1) — for a caller that
+    /// checkpoints its own copy alongside this type's `active` flag (ABI-04:
+    /// codegen's device-side wrapper packs `[active, seeds…]`, leaving
+    /// `vold` in its own externally-owned state bank).
+    pub fn seeds(&self) -> &[f64] {
+        &self.seeds
+    }
+
+    /// Restore `seeds` and the aggregate `active` flag from a checkpoint
+    /// (ABI-04). `active_slots` is intentionally not restored — it is
+    /// transient, fully recomputed by the next `update`/
+    /// [`advance_precomputed`](Self::advance_precomputed) call. `vold` is
+    /// untouched: an externally-owned-`vold` caller (codegen) restores it
+    /// separately into its own state, never through this type.
+    pub fn restore_seeds(&mut self, seeds: Vec<f64>, active: bool) {
+        self.active_slots = vec![false; seeds.len()];
+        self.seeds = seeds;
+        self.active = active;
+    }
+
     /// Advance every slot given this iteration's raw branch voltages
     /// `vnew` (rules 2–4), storing the limited value for the next
     /// iteration to limit against (rule 3). Returns the limited values.
+    /// Computes the formula itself (`kinds[i].limit`) — for a caller with no
+    /// JIT of its own (e.g. a host device). A caller whose `vlim` is already
+    /// computed elsewhere (codegen's JIT, since T4/T5) wants
+    /// [`advance_precomputed`](Self::advance_precomputed) instead, which
+    /// applies the same rules 2+4 without recomputing the formula.
     pub fn update(&mut self, vnew: &[f64], kinds: &[LimitKind]) -> &[f64] {
+        let vlim: Vec<f64> = (0..self.vold.len())
+            .map(|i| kinds[i].limit(vnew[i], self.vold[i], self.seeds[i]))
+            .collect();
+        let mut vold = std::mem::take(&mut self.vold);
+        self.advance_precomputed(&vlim, vnew, &mut vold);
+        self.vold = vold;
+        &self.vold
+    }
+
+    /// Advance every slot given an **already-computed** limited value
+    /// `vlim` (rules 2 and 4 only — rule 3's "limit against the previous
+    /// limited value" and the formula dispatch itself are the caller's
+    /// job, e.g. a JIT that already calls this module's own `pnjlim`/
+    /// `fetlim`/`limvds`, per-slot, against `vold`). `vnew` is the raw
+    /// (unlimited) value, used only for the convergence-veto comparison.
+    /// `vold` is caller-owned state (codegen's shared analog state bank,
+    /// checkpointed separately) — this method does not keep its own copy,
+    /// only writes the new limited values back into it and updates
+    /// `active`/`active_slots` (this type's own bookkeeping, `seeds` stays
+    /// here too).
+    pub fn advance_precomputed(&mut self, vlim: &[f64], vnew: &[f64], vold: &mut [f64]) {
         for slot in self.active_slots.iter_mut() {
             *slot = false;
         }
         let mut active = false;
-        for i in 0..self.vold.len() {
-            let old = self.vold[i];
-            let v = kinds[i].limit(vnew[i], old, self.seeds[i]);
+        for i in 0..vold.len() {
+            let old = vold[i];
+            let v = vlim[i];
             // Rule 2: preserve the vcrit seed until the junction is first
             // biased — `pnjlim(0, vcrit) = 0` on the opening iterations
             // would otherwise discard the seed and let the node float.
@@ -198,10 +244,9 @@ impl Limiter {
                 self.active_slots[i] = true;
                 active = true;
             }
-            self.vold[i] = v;
+            vold[i] = v;
         }
         self.active = active;
-        &self.vold
     }
 }
 
@@ -300,6 +345,76 @@ mod tests {
         let settled = limiter.limited()[0];
         limiter.update(&[settled], &kinds);
         assert!(!limiter.active(), "no clamping once vnew matches the limited value: veto releases");
+    }
+
+    // ── advance_precomputed: rules 2+4 over an externally-owned vold ───────
+    // (codegen's device-side Limiter, since T4/T5's JIT already computes
+    // vlim itself — see device/analog/limits.rs)
+
+    #[test]
+    fn advance_precomputed_preserves_the_seed_while_still_seeded() {
+        let mut limiter = Limiter::new(vec![0.7]);
+        let mut vold = [0.7];
+        // A precomputed vlim below the seed on an unbiased junction must be
+        // skipped (rule 2), same as `update`'s internal formula path.
+        limiter.advance_precomputed(&[0.5], &[0.0], &mut vold);
+        assert_eq!(vold, [0.7], "seed preserved: v < old while still seeded");
+    }
+
+    #[test]
+    fn advance_precomputed_veto_fires_while_clamping_and_releases_within_tolerance() {
+        let mut limiter = Limiter::new(vec![0.7]);
+        let mut vold = [0.7];
+        // A precomputed vlim far from vnew is still clamping: vetoes convergence.
+        limiter.advance_precomputed(&[1.5], &[2.0], &mut vold);
+        assert!(limiter.active(), "vlim far from vnew vetoes convergence");
+        assert_eq!(limiter.active_slot(), Some(0));
+        assert_eq!(vold, [1.5], "the caller's vold slice advances to the precomputed vlim");
+
+        // Feed vnew == vlim back: no further clamping, so the veto releases.
+        limiter.advance_precomputed(&[1.5], &[1.5], &mut vold);
+        assert!(!limiter.active(), "no clamping once vnew matches vlim: veto releases");
+    }
+
+    #[test]
+    fn seeds_reports_the_construction_time_critical_voltages() {
+        let limiter = Limiter::new(vec![0.7, 1.1]);
+        assert_eq!(limiter.seeds(), &[0.7, 1.1]);
+    }
+
+    #[test]
+    fn restore_seeds_reinstates_seeds_and_active_but_not_vold() {
+        let mut limiter = Limiter::new(vec![0.7]);
+        let mut vold = [0.7];
+        limiter.advance_precomputed(&[1.5], &[2.0], &mut vold);
+        assert!(limiter.active());
+        assert_eq!(limiter.seeds(), &[0.7]);
+
+        // Restoring different seeds/active (as a checkpoint round-trip would)
+        // takes effect immediately...
+        limiter.restore_seeds(vec![0.3], false);
+        assert_eq!(limiter.seeds(), &[0.3]);
+        assert!(!limiter.active());
+        // ...and does not touch the internal vold cache — it was never
+        // written by `advance_precomputed` in the first place (an
+        // externally-owned-vold caller never reads it through this type),
+        // so it is still `new`'s original seed.
+        assert_eq!(limiter.limited(), &[0.7]);
+    }
+
+    #[test]
+    fn advance_precomputed_does_not_keep_its_own_vold_copy() {
+        let mut limiter = Limiter::new(vec![0.0]);
+        let mut vold = [3.0]; // caller's own state, already advanced elsewhere
+        limiter.advance_precomputed(&[3.0], &[3.0], &mut vold);
+        assert_eq!(vold, [3.0]);
+        // `limited()` (the internal `vold` set by `new`/`update`) is
+        // untouched — proving `advance_precomputed` never wrote to
+        // `self.vold`, only to the caller-supplied slice.
+        assert_eq!(
+            limiter.limited(), &[0.0],
+            "advance_precomputed must not mutate the internal vold cache"
+        );
     }
 
     #[test]
