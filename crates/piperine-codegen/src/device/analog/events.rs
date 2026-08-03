@@ -1,5 +1,12 @@
 //! Events capability: runtime analog event detection (`cross`/`above`/
-//! `@timer`) and the `@initial`/fired-event variable-action dispatch.
+//! `@timer`) and the `@initial`/fired-event variable-action dispatch. The
+//! fire decision itself comes from `piperine_signal::events::EventDetector`;
+//! this file keeps everything that is not a detector — the period table,
+//! `CompiledTrigger` -> `signal::events::Trigger` mapping (`Initial` has no
+//! counterpart, it is `@initial` dispatch, not a detector), and the
+//! `@initial`/fired-event variable-action dispatch.
+
+use piperine_signal::events::{CrossDir as SignalCrossDir, EventDetector, Trigger};
 
 use crate::emit::abi::SimCtx;
 use crate::error::CodegenError;
@@ -8,48 +15,14 @@ use crate::resolve::CrossDir;
 
 use super::AnalogInstance;
 
-/// Per-event transition detector: remembers the previous accepted trigger
-/// value (crossings) or the next fire time (timers).
-struct EventDetector {
-    /// A trigger value has been observed (crossing detection is armed).
-    seeded: bool,
-    prev: f64,
-    next_fire: f64,
-}
-
-impl EventDetector {
-    /// Whether the event fires given the trigger value at the accepted
-    /// solution, updating the detector state.
-    fn fired(&mut self, trigger: &CompiledTrigger, value: f64, time: f64, period: f64) -> bool {
-        let fired = match trigger {
-            // Fired once at instance creation, never here.
-            CompiledTrigger::Initial => false,
-            CompiledTrigger::Above => {
-                let rose = if self.seeded { self.prev <= 0.0 } else { true };
-                rose && value > 0.0
-            }
-            CompiledTrigger::Cross(dir) => {
-                let rising = self.seeded && self.prev <= 0.0 && value > 0.0;
-                let falling = self.seeded && self.prev >= 0.0 && value < 0.0;
-                match dir {
-                    CrossDir::Rising => rising,
-                    CrossDir::Falling => falling,
-                    CrossDir::Either => rising || falling,
-                }
-            }
-            CompiledTrigger::Timer { .. } => {
-                let fires = period > 0.0 && time >= self.next_fire;
-                if fires {
-                    while self.next_fire <= time {
-                        self.next_fire += period;
-                    }
-                }
-                fires
-            }
-        };
-        self.prev = value;
-        self.seeded = true;
-        fired
+/// Codegen's `CrossDir` (`resolve::stmt`) to the signal crate's own —
+/// distinct types by design (the purity guard forbids `piperine-signal`
+/// depending on codegen's resolved form), same three variants.
+fn to_signal_cross_dir(dir: CrossDir) -> SignalCrossDir {
+    match dir {
+        CrossDir::Rising => SignalCrossDir::Rising,
+        CrossDir::Falling => SignalCrossDir::Falling,
+        CrossDir::Either => SignalCrossDir::Either,
     }
 }
 
@@ -88,7 +61,7 @@ impl EventSystem {
             .events()
             .iter()
             .zip(&periods)
-            .map(|(_, &(_period, first_fire))| EventDetector { seeded: false, prev: 0.0, next_fire: first_fire })
+            .map(|(_, &(_period, first_fire))| EventDetector::new(first_fire))
             .collect();
         Ok(Self { detectors, periods })
     }
@@ -99,19 +72,7 @@ impl EventSystem {
     /// are detected reactively and contribute no static breakpoints here.
     pub(super) fn next_breakpoints(&self, from: f64, end: f64, out: &mut Vec<f64>) {
         for (det, &(period, _first_fire)) in self.detectors.iter().zip(&self.periods) {
-            if period <= 0.0 || !period.is_finite() {
-                continue;
-            }
-            // First fire strictly after `from` (next_fire may lag if the timer
-            // hasn't been advanced past the current step yet).
-            let mut t = det.next_fire;
-            while t <= from {
-                t += period;
-            }
-            while t <= end {
-                out.push(t);
-                t += period;
-            }
+            det.next_breakpoints(period, from, end, out);
         }
     }
 
@@ -137,7 +98,18 @@ impl EventSystem {
         kernel.eval_event_triggers(volts, params, state, vars, sim, &mut triggers);
         let mut fired = vec![false; num_events];
         for (i, detector) in self.detectors.iter_mut().enumerate() {
-            let trigger = &kernel.events()[i].trigger;
+            // `Initial` is `@initial` dispatch (handled once, at construction,
+            // by `fire_initial_events`), not a detector — short-circuited
+            // here exactly as the old inline `Initial => false` arm did,
+            // never given a `signal::events::Trigger` counterpart.
+            let Some(trigger) = (match &kernel.events()[i].trigger {
+                CompiledTrigger::Initial => None,
+                CompiledTrigger::Above => Some(Trigger::Above),
+                CompiledTrigger::Cross(dir) => Some(Trigger::Cross(to_signal_cross_dir(*dir))),
+                CompiledTrigger::Timer { .. } => Some(Trigger::Timer),
+            }) else {
+                continue;
+            };
             fired[i] = detector.fired(trigger, triggers[i], time, self.periods[i].0);
         }
         fired
