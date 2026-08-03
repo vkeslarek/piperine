@@ -56,3 +56,36 @@ impl AnalogCapability for Limits {
         self.branches.len()
     }
 }
+
+/// One `$limit` kind's JIT-linkable symbol: IR name, arity, and the native
+/// symbol the JIT links against — the `MathFn` shape
+/// (`piperine-lang/src/math.rs`), applied to a second table.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LimitFn {
+    pub(crate) name: &'static str,
+    pub(crate) arity: usize,
+    pub(crate) symbol: *const u8,
+}
+
+// The table is read-only function pointers; sharing across threads is safe.
+unsafe impl Sync for LimitFn {}
+
+mod wrappers {
+    pub extern "C" fn pnjlim(vnew: f64, vold: f64, vte: f64, vcrit: f64) -> f64 {
+        piperine_signal::limit::pnjlim(vnew, vold, vte, vcrit)
+    }
+    pub extern "C" fn fetlim(vnew: f64, vold: f64, vto: f64) -> f64 {
+        piperine_signal::limit::fetlim(vnew, vold, vto)
+    }
+    pub extern "C" fn limvds(vnew: f64, vold: f64) -> f64 {
+        piperine_signal::limit::limvds(vnew, vold)
+    }
+}
+
+/// The three `$limit` kinds' JIT-linkable symbols, registered alongside
+/// `MATH_FNS` in the analog JIT only — `$limit` is an analog-only construct.
+pub(crate) const LIMIT_FNS: &[LimitFn] = &[
+    LimitFn { name: "pnjlim", arity: 4, symbol: wrappers::pnjlim as *const u8 },
+    LimitFn { name: "fetlim", arity: 3, symbol: wrappers::fetlim as *const u8 },
+    LimitFn { name: "limvds", arity: 2, symbol: wrappers::limvds as *const u8 },
+];

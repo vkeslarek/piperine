@@ -20,7 +20,7 @@ use super::{
 };
 use super::ac_stim::AcStim;
 use super::forces::Forces;
-use super::limits::Limits;
+use super::limits::{Limits, LIMIT_FNS};
 use super::noise::Noise;
 use super::reactive::Reactive;
 
@@ -124,6 +124,10 @@ pub(super) struct AnalogCompiler<'m> {
     slot: HashMap<NodeId, usize>,
     jit: JITModule,
     math_ids: HashMap<&'static str, FuncId>,
+    /// `$limit` (pnjlim/fetlim/limvds) symbols, registered in the analog JIT
+    /// only (`$limit` is an analog-only construct).
+    #[allow(dead_code)] // consumed once $limit emits a call (codegen-simplification T5)
+    limit_ids: HashMap<&'static str, FuncId>,
     fb_ctx: FunctionBuilderContext,
     /// Unique `$limit` expressions, in slot order.
     limits: Vec<PomExpr>,
@@ -148,6 +152,9 @@ impl<'m> AnalogCompiler<'m> {
         for f in math::MATH_FNS {
             jit_builder.symbol(f.name, f.symbol);
         }
+        for f in LIMIT_FNS {
+            jit_builder.symbol(f.name, f.symbol);
+        }
         let mut jit = JITModule::new(jit_builder);
 
         let mut math_ids = HashMap::new();
@@ -161,6 +168,19 @@ impl<'m> AnalogCompiler<'m> {
                 .declare_function(f.name, Linkage::Import, &sig)
                 .map_err(|e| CodegenError::Module(e.to_string()))?;
             math_ids.insert(f.name, id);
+        }
+
+        let mut limit_ids = HashMap::new();
+        for f in LIMIT_FNS {
+            let mut sig = jit.make_signature();
+            for _ in 0..f.arity {
+                sig.params.push(AbiParam::new(types::F64));
+            }
+            sig.returns.push(AbiParam::new(types::F64));
+            let id = jit
+                .declare_function(f.name, Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            limit_ids.insert(f.name, id);
         }
 
         let (terminals, num_ports) = Self::terminal_order(module, &flat);
@@ -181,6 +201,7 @@ impl<'m> AnalogCompiler<'m> {
             slot,
             jit,
             math_ids,
+            limit_ids,
             fb_ctx: FunctionBuilderContext::new(),
             limits,
             limit_base,
