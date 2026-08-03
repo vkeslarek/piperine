@@ -3,7 +3,6 @@
 //! kernel, netlist references and banks handed to each stamp) and `Stamps`
 //! (the per-capability stamp contribution `load_dc`/`load_transient` fold).
 
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use num_complex::Complex64;
@@ -27,7 +26,7 @@ use super::constraints::MarginTracker;
 use super::events::EventSystem;
 use super::forces::ForceStamper;
 use super::limits::Limiter;
-use super::operators::Operator;
+use super::operators::SlottedOperator;
 
 
 /// Read-only context shared by every capability's stamp: the compiled
@@ -80,7 +79,7 @@ pub struct AnalogInstance {
     pub(super) sim: SimCtx,
     /// Runtime-state values read by the kernel (`state[StateId]`).
     pub(super) state: Vec<f64>,
-    operators: Vec<Operator>,
+    operators: Vec<SlottedOperator>,
     /// Events capability: per-event trigger detectors + timer periods.
     pub(super) events: EventSystem,
     /// Module-level persistent variable values read by the kernel through
@@ -203,35 +202,30 @@ impl AnalogInstance {
                     crate::resolve::pom_eval_const(expr, &resolve)
                         .map_err(CodegenError::ConstEval)
                 };
+                let slot = spec.id.0 as usize;
                 Ok(match &spec.kind {
-                    RuntimeState::Delay { delay } => Operator::Delay {
-                        slot: spec.id.0 as usize,
-                        delay: value(delay)?,
-                        history: VecDeque::new(),
-                    },
-                    RuntimeState::Slew { rise, fall } => Operator::Slew {
-                        slot: spec.id.0 as usize,
-                        rise: value(rise)?.abs(),
-                        fall: value(fall)?.abs(),
-                        output: 0.0,
-                        time: 0.0,
-                    },
-                    RuntimeState::Transition { delay, rise, fall } => Operator::Transition {
-                        slot: spec.id.0 as usize,
-                        delay: value(delay)?,
-                        rise: value(rise)?.abs(),
-                        fall: value(fall)?.abs(),
-                        start: 0.0,
-                        target: 0.0,
-                        t_change: 0.0,
-                        seeded: false,
-                    },
-                    RuntimeState::Integrator { ic, modulus } => Operator::Integrate {
-                        slot: spec.id.0 as usize,
-                        modulus: modulus.as_ref().map(&value).transpose()?,
-                        value: value(ic)?,
-                        time: 0.0,
-                    },
+                    RuntimeState::Delay { delay } => {
+                        SlottedOperator::new(slot, piperine_signal::ops::Operator::delay(value(delay)?))
+                    }
+                    RuntimeState::Slew { rise, fall } => SlottedOperator::new(
+                        slot,
+                        piperine_signal::ops::Operator::slew(value(rise)?.abs(), value(fall)?.abs()),
+                    ),
+                    RuntimeState::Transition { delay, rise, fall } => SlottedOperator::new(
+                        slot,
+                        piperine_signal::ops::Operator::transition(
+                            value(delay)?,
+                            value(rise)?.abs(),
+                            value(fall)?.abs(),
+                        ),
+                    ),
+                    RuntimeState::Integrator { ic, modulus } => SlottedOperator::new(
+                        slot,
+                        piperine_signal::ops::Operator::integrate(
+                            value(ic)?,
+                            modulus.as_ref().map(&value).transpose()?,
+                        ),
+                    ),
                 })
             })
             .collect::<Result<Vec<_>, CodegenError>>()?;
@@ -240,7 +234,7 @@ impl AnalogInstance {
         // slot starts at 0.
         let mut state = vec![0.0; kernel.num_state_slots()];
         for op in &operators {
-            if let Operator::Integrate { slot, value, .. } = op {
+            if let SlottedOperator { slot, op: piperine_signal::ops::Operator::Integrate { value, .. } } = op {
                 state[*slot] = *value;
             }
         }
