@@ -146,16 +146,29 @@ impl Table {
         });
         Expr::Literal(Literal::Real(0.0))
     }
+
+    /// Map a `signal::Table` validation failure onto the existing loud-error
+    /// path, keeping today's user-facing text unchanged (AC 17) — the value
+    /// carried by `TableError::UnsupportedMode` is not echoed today either.
+    fn err_from(e: piperine_signal::behavior::table::TableError, ctx: &mut LowerCtx) -> Expr {
+        use piperine_signal::behavior::table::TableError;
+        let what: &'static str = match e {
+            TableError::TooFewPoints => "table needs at least 2 points",
+            TableError::LengthMismatch => "table xs and ys must have the same length",
+            TableError::NotStrictlyIncreasing => {
+                "table breakpoints (xs) must be strictly increasing"
+            }
+            TableError::UnsupportedMode(_) => {
+                "table interpolation mode: only \"linear\" is supported"
+            }
+        };
+        Self::err(ctx, what)
+    }
 }
 impl AnalogOp for Table {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 3 {
             return Self::err(ctx, "table(x, xs, ys) needs at least 3 arguments");
-        }
-        if let Some(mode) = args.get(3)
-            && !matches!(mode, Expr::Literal(Literal::String(s)) if s == "linear")
-        {
-            return Self::err(ctx, "table interpolation mode: only \"linear\" is supported");
         }
         let Some(xs) = Self::const_array(&args[1], ctx) else {
             return Self::err(ctx, "table breakpoints (xs) must be a constant real array");
@@ -163,15 +176,18 @@ impl AnalogOp for Table {
         let Some(ys) = Self::const_array(&args[2], ctx) else {
             return Self::err(ctx, "table data (ys) must be a constant real array");
         };
-        if xs.len() != ys.len() {
-            return Self::err(ctx, "table xs and ys must have the same length");
-        }
-        if xs.len() < 2 {
-            return Self::err(ctx, "table needs at least 2 points");
-        }
-        if !xs.windows(2).all(|w| w[0] < w[1]) {
-            return Self::err(ctx, "table breakpoints (xs) must be strictly increasing");
-        }
+        // Any mode argument that is not the "linear" string literal fails
+        // through `Table::with_mode` below with the same message as today,
+        // regardless of what the argument actually was.
+        let mode = match args.get(3) {
+            None => "linear".to_string(),
+            Some(Expr::Literal(Literal::String(s))) => s.clone(),
+            Some(_) => "?".to_string(),
+        };
+        let table = match piperine_signal::behavior::table::Table::with_mode(xs, ys, &mode) {
+            Ok(t) => t,
+            Err(e) => return Self::err_from(e, ctx),
+        };
         let x = resolve_expr(&args[0], ctx);
 
         let real = |v: f64| Expr::Literal(Literal::Real(v));
@@ -179,9 +195,10 @@ impl AnalogOp for Table {
             stmts: Vec::new(),
             expr: Some(Box::new(e)),
         };
+        let (xs, ys) = table.points();
         // Segment i: ys[i] + (x − xs[i]) · slope_i.
         let seg = |i: usize, x: &Expr| {
-            let slope = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+            let slope = table.segment_slope(i);
             Expr::Binary(
                 Box::new(real(ys[i])),
                 piperine_lang::parse::ast::BinaryOp::Add,
