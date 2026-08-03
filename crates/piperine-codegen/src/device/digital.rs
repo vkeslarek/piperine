@@ -31,6 +31,29 @@ impl Quad {
             _ => LogicValue::X,
         }
     }
+
+    /// The same fold as [`Quad::to_logic`], into `signal`'s four-state
+    /// type — the input to [`EdgeDirection::fires`].
+    fn to_signal(value: i64) -> piperine_signal::logic::Logic {
+        match value {
+            0 => piperine_signal::logic::Logic::Zero,
+            1 => piperine_signal::logic::Logic::One,
+            3 => piperine_signal::logic::Logic::Z,
+            _ => piperine_signal::logic::Logic::X,
+        }
+    }
+}
+
+impl EdgeKind {
+    /// Map codegen's clocked-block edge kind onto the shared detector's
+    /// direction — `Any` and `Either` name the same thing.
+    fn to_signal(self) -> piperine_signal::logic::EdgeDirection {
+        match self {
+            EdgeKind::Rising => piperine_signal::logic::EdgeDirection::Rising,
+            EdgeKind::Falling => piperine_signal::logic::EdgeDirection::Falling,
+            EdgeKind::Any => piperine_signal::logic::EdgeDirection::Either,
+        }
+    }
 }
 
 /// Evaluate a POM `Expr` as a compile-time/param constant. `param_lookup`
@@ -282,11 +305,7 @@ impl DigitalInstance {
         s.fired.extend(self.kernel.clocked_blocks().iter().map(|block| {
             let fired = block.terms.iter().any(|&(term, edge)| {
                 let (prev, cur) = (self.prev_watch[term], s.watch[term]);
-                match edge {
-                    EdgeKind::Rising => prev != 1 && cur == 1,
-                    EdgeKind::Falling => prev != 0 && cur == 0,
-                    EdgeKind::Any => prev != cur,
-                }
+                edge.to_signal().fires(Quad::to_signal(prev), Quad::to_signal(cur))
             });
             i64::from(fired)
         }));
@@ -325,11 +344,7 @@ impl DigitalInstance {
         s.fired.extend(self.kernel.clocked_blocks().iter().map(|block| {
             let fired = block.terms.iter().any(|&(term, edge)| {
                 let (prev, cur) = (self.prev_watch[term], s.watch[term]);
-                match edge {
-                    EdgeKind::Rising => prev != 1 && cur == 1,
-                    EdgeKind::Falling => prev != 0 && cur == 0,
-                    EdgeKind::Any => prev != cur,
-                }
+                edge.to_signal().fires(Quad::to_signal(prev), Quad::to_signal(cur))
             });
             i64::from(fired)
         }));
@@ -495,3 +510,25 @@ impl DigitalInstance {
 // `eval_comb_phase` methods by the composite [`PiperineDevice`], which is the
 // `Element` the solver sees. There is no separate digital-device trait: the
 // unified `Element` contract carries digital evaluation directly.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `s.watch` is a `Vec<i64>` filled by JIT-emitted `eval_watch` code and
+    // can in principle hold values outside `0..=3`; `Quad::to_logic`'s
+    // `_ => X` arm already folds those to `X` today, and the same fold must
+    // hold through `Quad::to_signal` so delegation changes nothing here.
+    #[test]
+    fn an_out_of_range_watch_value_folds_to_x_and_still_fires_rising_into_one() {
+        let out_of_range = 99_i64;
+        assert_eq!(Quad::to_signal(out_of_range), piperine_signal::logic::Logic::X);
+        assert_eq!(Quad::to_logic(out_of_range), LogicValue::X);
+
+        // Identical to today's `prev != 1 && cur == 1` for prev = X.
+        let fired = EdgeKind::Rising
+            .to_signal()
+            .fires(Quad::to_signal(out_of_range), Quad::to_signal(1));
+        assert!(fired, "X (folded from an out-of-range watch value) -> 1 is a rising edge");
+    }
+}
