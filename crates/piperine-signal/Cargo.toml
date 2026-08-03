@@ -5,13 +5,9 @@ edition.workspace = true
 
 [dependencies]
 
-# Dev-only edges (MD-28), same pattern piperine-solver uses for its own
-# analysis suites: the T6 cross-check fixtures drive real PHDL devices
-# through codegen's JIT to prove this crate's extracted copies agree with
-# it (design.md §C1). This crate itself depends on nothing — the purity
-# guard (tests/purity.rs) only inspects [dependencies], never
-# [dev-dependencies].
-[dev-dependencies]
-piperine-lang = { path = "../piperine-lang" }
-piperine-codegen = { path = "../piperine-codegen" }
-piperine-solver = { path = "../piperine-solver" }
+# The T6 cross-check fixtures (dev-dependencies on piperine-lang/-codegen/
+# -solver, MD-28) were dropped in codegen-simplification T13: their
+# two-implementations-agree purpose is moot now that piperine-codegen
+# delegates to this crate instead of holding a second copy. This crate
+# itself depends on nothing — the purity guard (tests/purity.rs) only
+# inspects [dependencies], never [dev-dependencies].
