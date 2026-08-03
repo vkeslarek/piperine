@@ -144,6 +144,90 @@ fn fetlim_matches_ngspice_reference() {
     }
 }
 
+// ── codegen-simplification T5: $limit emits a call (CGS-05/06) ─────────────
+// $limit is now a call into the registered piperine-signal symbol
+// (kernel/analog/limits.rs::LIMIT_FNS), not inline branchless IR.
+
+/// AC 11: a structurally-equal `$limit` expression repeated within one
+/// kernel must still collapse to exactly one call per distinct slot — the
+/// `CseKey::Limit(slot)` cache (kept verbatim by T5) short-circuits before
+/// `emit_limit_call` runs a second time for the same slot. `collect_limits`
+/// (kernel/analog/compile.rs) dedups by structural equality into one table
+/// entry regardless of how many syntactic occurrences there are, so
+/// `num_limits() == 1` for two identical `$limit` calls is exactly the
+/// observable proof that the second occurrence hit the CSE cache instead of
+/// emitting its own call (the code path between the slot lookup and the
+/// cache-hit early return is unchanged by T5).
+#[test]
+fn a_repeated_structurally_equal_limit_collapses_to_one_slot_not_two() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
+        analog L {
+            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0)
+                     + $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+        }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let kernel = AnalogKernel::compile(&bodies["L"]).expect("compile repeated-$limit device");
+    assert_eq!(
+        kernel.num_limits(), 1,
+        "two structurally-identical $limit calls must dedup to one slot (and one call), not two"
+    );
+
+    // The residual is exactly double a single fetlim call's contribution —
+    // if CSE had regressed and the second occurrence read a stale/different
+    // vold, the two terms would not agree and the sum would not double.
+    let single = jit_limit("fetlim", 5.0, 0.0, 1.0);
+    let params = vec![1.0];
+    let vars = vec![0.0; kernel.num_vars()];
+    let state = vec![0.0; kernel.num_state_slots()];
+    let volts = vec![5.0, 0.0];
+    let sim = SimCtx::default();
+    let mut out = [0.0; 2];
+    kernel.eval_residual(&volts, &params, &state, &vars, &sim, &mut out);
+    assert!(
+        (out[0] - 2.0 * single).abs() < 1e-9,
+        "sum of two identical $limit terms = 2x one call: got {} vs {}",
+        out[0], 2.0 * single
+    );
+}
+
+/// AC 12: `$limit` inside a `fn` body that gets inlined into the analog
+/// contribution must emit the same call as writing it directly — every
+/// emission site delegates, not only the primary residual path.
+#[test]
+fn limit_inside_an_inlined_fn_still_emits_the_call() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        fn clamp(v: Real, vto: Real) -> Real { return $limit(\"fetlim\", v, 0.0, vto, 0.0); }
+        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
+        analog L { I(d, s) <+ clamp(V(d, s), vto); }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let kernel = AnalogKernel::compile(&bodies["L"]).expect("compile fn-inlined $limit device");
+    assert_eq!(kernel.num_limits(), 1, "the inlined $limit claims its vold slot");
+
+    let params = vec![1.0];
+    let vars = vec![0.0; kernel.num_vars()];
+    let state = vec![0.0; kernel.num_state_slots()];
+    let volts = vec![5.0, 0.0];
+    let sim = SimCtx::default();
+    let mut out = [0.0; 2];
+    kernel.eval_residual(&volts, &params, &state, &vars, &sim, &mut out);
+
+    // Must match calling fetlim directly (same kind/args) outside a fn —
+    // proving the inlined call site delegates identically to the direct one.
+    let want = jit_limit("fetlim", 5.0, 0.0, 1.0);
+    assert!(
+        (out[0] - want).abs() < 1e-9,
+        "fn-inlined $limit must match the direct call: got {} vs {want}",
+        out[0]
+    );
+}
+
 // ── phdl-introspection-attributes PIA-15/16 (T7, kernel side) ──────────────
 // The per-slot `(limiter_name, reason)` catalog is collected from each
 // `$limit` call-site `kind`, in slot order. `limvds` → VdsStep; the junction

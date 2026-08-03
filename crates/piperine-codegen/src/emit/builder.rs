@@ -51,6 +51,9 @@ pub struct Builder<'a, 'f, 'm> {
     pub limits: Option<Vec<Expr>>,
     /// State-bank offset where `$limit` vold slots begin.
     pub limit_base: usize,
+    /// `pnjlim`/`fetlim`/`limvds` symbols (`piperine_signal::limit`), imported
+    /// into the current function — analog context only.
+    pub limit_fns: Option<&'a HashMap<&'static str, FuncRef>>,
     /// Common-subexpression cache for analog emission.
     pub cse: Option<HashMap<CseKey, Value>>,
     /// Marker tapes: a `__marker(id)` leaf evaluates `tapes[marker].exprs[id]`
@@ -98,6 +101,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             sim_ptr: None,
             limits: None,
             limit_base: 0,
+            limit_fns: None,
             cse: None,
             tapes: HashMap::new(),
         }
@@ -119,6 +123,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         sim_ptr: Value,
         limits: Vec<Expr>,
         limit_base: usize,
+        limit_fns: &'a HashMap<&'static str, FuncRef>,
     ) -> Self {
         Self {
             builder,
@@ -136,6 +141,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             sim_ptr: Some(sim_ptr),
             limits: Some(limits),
             limit_base,
+            limit_fns: Some(limit_fns),
             cse: Some(HashMap::new()),
             tapes: HashMap::new(),
         }

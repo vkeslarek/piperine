@@ -126,7 +126,6 @@ pub(super) struct AnalogCompiler<'m> {
     math_ids: HashMap<&'static str, FuncId>,
     /// `$limit` (pnjlim/fetlim/limvds) symbols, registered in the analog JIT
     /// only (`$limit` is an analog-only construct).
-    #[allow(dead_code)] // consumed once $limit emits a call (codegen-simplification T5)
     limit_ids: HashMap<&'static str, FuncId>,
     fb_ctx: FunctionBuilderContext,
     /// Unique `$limit` expressions, in slot order.
@@ -1570,6 +1569,11 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
             .collect();
+        let limit_fns: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
+            .limit_ids
+            .iter()
+            .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
+            .collect();
 
         let entry = builder.create_block();
         builder.append_block_params_for_function_params(entry);
@@ -1637,6 +1641,7 @@ impl<'m> AnalogCompiler<'m> {
             sim_ptr,
             self.limits.clone(),
             self.limit_base,
+            &limit_fns,
         );
         b.set_value_tape(temps);
         body(&mut b, &self.slot, out_ptr)?;
@@ -1684,6 +1689,11 @@ impl<'m> AnalogCompiler<'m> {
 
         let math: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
             .math_ids
+            .iter()
+            .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
+            .collect();
+        let limit_fns: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
+            .limit_ids
             .iter()
             .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
             .collect();
@@ -1753,6 +1763,7 @@ impl<'m> AnalogCompiler<'m> {
             sim_ptr,
             self.limits.clone(),
             self.limit_base,
+            &limit_fns,
         );
         b.set_value_tape(temps);
         body(&mut b, &self.slot, param_idx, out_ptr)?;
