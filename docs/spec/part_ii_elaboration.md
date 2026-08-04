@@ -5,7 +5,7 @@ generic parameters, no unresolved constants, no structural `for`/`if`, no bundle
 references in port lists. This Part defines how each kind of construct is resolved and
 what is rejected along the way.
 
-Elaboration is the first of PHDL's three execution contexts (§I-12). It is **pure and
+Elaboration is the first of PHDL's two execution contexts (Part I §12). It is **pure and
 total**: the same source plus the same staged overrides always produce the same design.
 A solve value never controls elaboration structure — runtime topology is a switch
 branch over a static netlist, not structural change.
@@ -33,9 +33,11 @@ branch over a static netlist, not structural change.
 Elaboration takes a parsed AST and produces a fully-resolved design graph. After
 elaboration, every generic has been substituted with a concrete type, every structural
 loop has been unrolled, every const expression has been evaluated, and every bundle
-port has been expanded into individual nets. The result is a flat, concrete structure
-that the codegen and the interpreted context (Part III) can consume without further
-resolution.
+port has been expanded into individual nets. The result is a concrete structure the
+codegen (Part X) and the hosts (Part VIII) consume without further resolution. It is
+not a *flattened* structure: the authored `instance → submodule → sub-instances` tree
+stays walkable on the POM (Part IV), and any collapsed form a transform needs is a
+separate side artifact (MD-25).
 
 The contract is one-directional: elaboration reads the source and produces structure;
 it never reads runtime values. A voltage, a current, a digital state — none of these
@@ -54,8 +56,8 @@ The elaborator runs a fixed pipeline:
 4. **Elaborate in dependency order** — resolve types, unroll structure, monomorphize,
    expand bundles, elaborate behavior bodies.
 
-The output feeds the codegen (which lowers it to JIT-compiled analog kernels and
-event-driven digital models); host APIs (Part VIII) drive analyses over it.
+The output feeds the codegen (Part X, which lowers it to JIT-compiled analog kernels
+and event-driven digital models); host APIs (Part VIII) drive analyses over it.
 
 ## §3 Constant evaluation
 
@@ -94,7 +96,8 @@ ConstPrimary   ::= Literal | Ident | "(" ConstExpr ")" | BlockWithValue
 Every type annotation in the source is resolved to either a value type
 (`ElabValueType`) or a net type (`ElabNetType`).
 
-**Primitive value types:** `Real`, `Natural`, `Integer`, `Boolean`, `Quad`, `String`.
+**Primitive value types:** `Real`, `Natural`, `Integer`, `Boolean`, `Quad`, `Complex`,
+`String` — the seven `extern type` declarations of `headers/types.phdl` (Part I §6.1).
 
 **Net types** resolve as disciplines of one of the two kinds (Part I §6.2):
 conservative (potential + flow, KCL) or storage (`storage T` + optional `resolve`).
@@ -307,9 +310,11 @@ registry and validates that the event class is legal in the enclosing block's do
 | `timer(period)` / `timer(period, phase)` | analog | periodic, every `period` seconds; optional `phase` offsets the first fire (see Part V) |
 | `initial` | lifecycle | once, at the start of the analysis |
 | `final` | lifecycle | once, at the end (diagnostics only) |
+| `dc` / `tran` / `ac` | analysis scope | every evaluation point of that analysis — **`constraint` blocks only** (Part I §10.6); an analysis-scope kind inside a behavior body, or a behavior-body kind inside a constraint scope, fails loud |
 
 Events combine via OR: `@ (posedge(a) | posedge(b)) { ... }`. The `when (cond)` clause
-gates the event body on a level condition.
+gates the event body on a level condition — behavior bodies only; a constraint scope
+uses a temporal window (`after =`/`dur =`) instead and rejects `when` (Appendix B §B.9).
 
 **Custom events** can be registered by plugins through the layer-2 extension mechanism
 (Part I §14). A custom event implements the `EventKind` trait, declaring its name and
@@ -339,7 +344,8 @@ Conservative: `Electrical`, `Magnetic`, `Thermal`, `Kinematic`, `KinematicV`,
 **Collections:** `map<T,U>(xs: T[N], f: fn(T)->U) -> U[N]`,
 `reduce<T>(xs: T[N], op: fn(T,T)->T) -> T`, `concat(...)`.
 
-**Numeric bundles:** `UInt[N]`, `SInt[N]`, `Complex`.
+**Numeric bundles:** `UInt[N]`, `SInt[N]`. (`Complex` is a primitive `extern type`,
+not a bundle — Part I §6.1.)
 
 **Statistical distributions (DVC-02):** `headers/statistics.phdl` declares the
 four distribution spellings a `tol` clause (Part I §7.2) may name — `gauss`

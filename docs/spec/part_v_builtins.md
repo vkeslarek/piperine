@@ -14,6 +14,13 @@ the call — so LSP go-to-definition (ctrl+click) on `sin`, `$temperature`, `ddt
 `@device`, `Real`, or `Real::from` lands on a real declaration line, never silently
 dead-ends.
 
+**One stated exception.** Four analog operators — `idtmod`, `absdelay`, `table`, and
+`ac_stim` — carry **no** `extern operator` declaration today; they resolve through
+codegen's operator registry rather than through a header, so ctrl+click on them
+dead-ends. This is a known MD-24 gap, not a second sanctioned mechanism; §2's table
+marks each operator's declaration status explicitly, and `ROADMAP.md` tracks closing
+it. The `laplace_*`/`zi_*` family is undeclared *and* unreachable — see §2.
+
 | Section | Header | Form |
 |---------|--------|------|
 | §1 Math functions | `crates/piperine-lang/headers/math.phdl` | `extern fn` |
@@ -24,9 +31,13 @@ dead-ends.
 | `@device`/`@port` attribute schemas | `crates/piperine-lang/headers/device_port.phdl` | `extern attribute` (parsed by `PluginHost::seed_schemas`, not part of every project's prelude) |
 | Statistical distributions (dv-core DVC-02) | `crates/piperine-lang/headers/statistics.phdl` | `extern fn` — the names a `tol` clause may name |
 | Constraint helpers (dv-core DVC-09) | `crates/piperine-lang/headers/constraints.phdl` | `extern fn` — each carrying its `@quantity(class, analysis)` class |
-| Primitive value types (Part I §6.1) | `crates/piperine-lang/headers/types.phdl` | `extern type` |
+| Primitive value types (Part I §6.1 — the seven) | `crates/piperine-lang/headers/types.phdl` | `extern type` |
 | Cast associated functions (`Real::from` etc.) | `crates/piperine-lang/headers/types.phdl` | `extern impl TypeName { fn from(...) -> TypeName; ... }` |
-| Plugin-contributed attribute schemas | each plugin's `extern.phdl` stub | `extern attribute` (auto-imported at load time; a schema-contributing plugin that publishes no stub fails loud `PluginError::MissingExternStub`) |
+
+Plugins contribute **no** declarations of any kind — no `extern`, no attribute
+schemas, no per-plugin stub file (Part VI §6). The `@device`/`@port` schemas above are
+seeded by the plugin *system*, not by any one plugin, precisely so two device plugins
+cannot collide on them.
 
 A permanent regression guard
 (`crates/piperine-lang/tests/extern_coverage_guard.rs`) iterates every native
@@ -87,29 +98,41 @@ Callable bare-name (`sqrt(x)`) or `$`-prefixed (`$sqrt(x)`) in any context.
 `analog`-body only. Each operator allocates a state variable and lowers to a companion
 model in the device compiler.
 
-| Operator | Args (defaults) | Semantics |
-|----------|-----------------|-----------|
-| `ddt(x)` | | time derivative; reactive stamp `α = 1/dt` |
-| `idt(x, ic=0)` | | time integral from initial condition `ic` |
-| `idtmod(x, ic=0, modulus=1)` | | integral wrapped modulo `modulus` (phase accumulators) |
-| `ddx(x, node)` | | partial derivative of `x` with respect to a node's potential/flow |
-| `delay` / `absdelay(x, dt=0)` | | ideal time delay of `dt` seconds |
-| `transition(x, td=0, tr=0, tf=0, tol=0)` | | smooth a digital-like signal: delay `td`, rise `tr`, fall `tf` |
-| `slew(x, rise=0, fall=0)` | | slew-rate limit: `rise` V/s on rising, `fall` on falling |
-| `table(x, xs, ys, mode)` | value, breakpoints, data, interp mode | measured-data lookup with interpolation (1-D; N-D planned) |
-| `laplace_np` / `laplace_zp` / `laplace_pm` / `laplace_nm` / `laplace_npm(x, num, den)` | | continuous-time Laplace filter H(s) = num/den; suffix selects coefficient convention (numerator/poles form) |
-| `zi_zd` / `zi_zp` / `zi_nd` / `zi_np(x, num, den, sample_dt)` | | discrete-time Z-domain filter, sampled every `sample_dt` |
-| `ac_stim(mag=1, phase=0)` | | AC small-signal stimulus (`.ac` analysis only) |
-| `white_noise(psd, "label")` | | flat-spectrum noise source, extracted from a `<+` RHS |
-| `flicker_noise(psd, exp=1, "label")` | | 1/f^exp noise source |
+The **Declared** column is the MD-24 status (§0): *yes* = an `extern operator` line in
+`headers/operators.phdl` backs the name; *no* = the name resolves through codegen's
+operator registry with no header declaration (a tracked gap); *unreachable* = neither
+declared nor resolvable, so a call fails loud at elaboration.
+
+| Operator | Args (defaults) | Declared | Semantics |
+|----------|-----------------|----------|-----------|
+| `ddt(x)` | | yes | time derivative; reactive stamp `α = 1/dt` |
+| `idt(x, ic=0)` | | yes | time integral from initial condition `ic` |
+| `idtmod(x, ic=0, modulus=1)` | | **no** | integral wrapped modulo `modulus` (phase accumulators) |
+| `ddx(x, node)` | | yes | partial derivative of `x` with respect to a node's potential/flow |
+| `delay(x, dt=0)` | | yes | ideal time delay of `dt` seconds |
+| `absdelay(x, dt=0)` | | **no** | alias of `delay` |
+| `transition(x, td=0, tr=0, tf=0, tol=0)` | | yes | smooth a digital-like signal: delay `td`, rise `tr`, fall `tf` |
+| `slew(x, rise=0, fall=0)` | | yes | slew-rate limit: `rise` V/s on rising, `fall` on falling |
+| `table(x, xs, ys, mode)` | value, breakpoints, data, interp mode | **no** | measured-data lookup with interpolation (1-D linear only — Part IX §5) |
+| `ac_stim(mag=1, phase=0)` | | **no** | AC small-signal stimulus (`.ac` analysis only) |
+| `white_noise(psd, "label")` | | yes | flat-spectrum noise source, extracted from a `<+` RHS |
+| `flicker_noise(psd, exp=1, "label")` | | yes | 1/f^exp noise source |
+| `laplace_np` / `laplace_zp` / `laplace_pm` / `laplace_nm` / `laplace_npm(x, num, den)` | | **unreachable** | continuous-time Laplace filter H(s) = num/den; suffix selects coefficient convention |
+| `zi_zd` / `zi_zp` / `zi_nd` / `zi_np(x, num, den, sample_dt)` | | **unreachable** | discrete-time Z-domain filter, sampled every `sample_dt` |
 
 The noise sources (`white_noise`, `flicker_noise`) are extracted from the right-hand
 side of a contribution before lowering and stamped as spectral density contributions in
 the noise analysis. The `ac_stim` operator marks a contribution as the AC drive source
-for small-signal analysis.
+for small-signal analysis; multiple `ac_stim` calls on one contribution sum as phasors.
+
+**The `laplace_*`/`zi_*` family is specified but not available.** No `extern operator`
+declares either family, so MD-24 (Part I §13.1) stops a call at elaboration — it never
+reaches codegen. The rows above document the intended contract for when the family
+lands; they are not a claim that it works today. This is a language backlog item
+tracked in `ROADMAP.md`, and the failure is loud, never a silent zero.
 
 The analog-operator set is open: new operators register through the layer-2 extension
-mechanism (Part I §14) and appear in this table.
+mechanism (Part I §14), declare an `extern operator` line, and appear in this table.
 
 ---
 
@@ -186,6 +209,7 @@ events. An unrecognized event name is a compile error — there is no silent fal
 | `initial` | lifecycle | once, at the start |
 | `final` | lifecycle | once, at the end (diagnostics only) |
 | `A \| B` | composite | either `A` or `B` fires |
+| `dc` / `tran` / `ac` | analysis scope | every evaluation point of that analysis — **`constraint` blocks only** (Part I §10.6, Part II §9), never a behavior body |
 
 An analog event body (`@ cross`, `@ above`) updating module state is the ngspice switch
 idiom: the analog kernel detects the crossing at each accepted solution and updates a
@@ -237,7 +261,8 @@ file sees.
 
 `map<T,U>(xs: T[N], f: fn(T)->U) -> U[N]`,
 `reduce<T>(xs: T[N], op: fn(T,T)->T) -> T`,
-`concat(...)`. The bundles `UInt[N]`, `SInt[N]`, `Complex`.
+`concat(...)`. The bundles `UInt[N]`, `SInt[N]`. (`Complex` is a primitive `extern
+type`, not a bundle — Part I §6.1.)
 
 ### §6.2 Design-verification headers (dv-core)
 
@@ -322,7 +347,8 @@ marked "—" in a column is an elaboration error if used there.
 | `ddt` / `idt` / `idtmod` | ✓ | — |
 | `ddx` | ✓ | — |
 | `delay` / `absdelay` / `slew` | ✓ | — |
-| `transition` / `table` / `laplace_*` / `zi_*` | ✓ | — |
+| `transition` / `table` | ✓ | — |
+| `laplace_*` / `zi_*` | — (undeclared; fails loud at elaboration, §2) | — |
 | `white_noise` / `flicker_noise` | ✓ | — |
 | `ac_stim` | ✓ (`.ac` only) | — |
 | `$temperature` / `$vt` / `$abstime` / `$mfactor` / `$xposition` / ... | ✓ | ✓ |
@@ -338,5 +364,10 @@ marked "—" in a column is an elaboration error if used there.
 | `=` (assign) | — | ✓ |
 | `@` events | ✓ | ✓ |
 
-Measurement from a host uses the result objects (Part VIII §4), not the analog
+A `constraint` block (Part I §10.6) is a third column this matrix does not carry: it
+admits `require`/`target`/`var`/`cover` statements and analysis-scoped `@` blocks, the
+math catalog, and the declared helpers of §6.2 — but no contribution, no force, no
+assignment, and no runtime operator.
+
+Measurement from a host uses the result objects (Part VIII §7), not the analog
 `V`/`I` access functions.

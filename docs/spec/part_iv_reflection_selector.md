@@ -3,7 +3,7 @@
 The Piperine Object Model (POM) and the selector query language are one surface: the
 selector's axes *are* POM relations, and its predicates *are* POM attributes. The POM
 exposes an elaborated design as a graph of typed runtime nodes — the single interface
-for the interpreted context (Part III), Python, Rust, and the plugin ABI.
+for the Python host, the Rust host (Part VIII), and the plugin ABI (Part VI).
 
 POM is **read-first**: querying has no effect; assigning a parameter **stages an
 override** consumed by a later pure elaboration (Part II). The selector adds no model of
@@ -17,7 +17,7 @@ its own — it is a query language layered over the POM's existing structure.
 - §4 Elaborated-structure nodes
 - §5 Definition nodes
 - §6 Leaf enums
-- §7 One model, three languages, one ABI
+- §7 One model, two languages, one ABI
 - §8 Selector — model
 - §9 Selector — grammar
 - §10 Selector — axes
@@ -35,7 +35,7 @@ There is no generic "node" that you must downcast — a `Module` has `ports()`, 
 `Instance` has `of()`, a `Net` has `discipline()`. The node types are:
 
 - **Elaborated-structure:** `Module`, `Instance`, `Net`, `Port`, `Param`, `Attribute`,
-  `Behavior`.
+  `Behavior`, `ConstraintBlock`.
 - **Definition:** `Bundle`, `Enum`, `Discipline`, `Capability`.
 - **Leaf:** `Field` (of a bundle), `Variant` (of an enum), `Nature` (of a discipline),
   `Signature` (of a capability).
@@ -56,8 +56,9 @@ source is unchanged. `Net` also exposes `NetId`, the anchor for parasitic extrac
 LVS across the design-closure loop.
 
 **Value.** The value layer of the POM: primitives (`Real`, `Natural`, `Integer`,
-`Boolean`, `Quad`, `String`), a node reference, or a value-layer collection (`Vec`,
-`Map`, `Set`, `Option`, `Result`). `Complex` is a `Bundle`, not a primitive.
+`Boolean`, `Quad`, `Complex`, `String` — the seven of Part I §6.1), a node reference,
+or a value-layer collection (`Vec`, `Map`, `Set`, `Option`, `Result`). `UInt[N]` and
+`SInt[N]` are `Bundle`s, not primitives.
 
 **Selection\<T\>** — the universal navigation result. An ordered, duplicate-free set:
 
@@ -92,7 +93,8 @@ Design
   bundles() / enums() / disciplines() / capabilities() -> Selection<...>
 ```
 
-In a bench `fn`, the root is the bench's module; `select` is rooted there (Part III §2).
+A host reaches the root through `pip.load(...)` / `parse_and_elaborate(...)`
+(Part VIII §2); `module.select(path)` re-roots a query at any module.
 
 ---
 
@@ -119,7 +121,7 @@ there is no escape hatch.
 ## §4 Elaborated-structure nodes
 
 **Module** — `name`; `is_generic`; `ports()`, `params()`, `nets()`, `instances()`,
-`behaviors()` → `Selection`; `attributes()` → `Selection<Attribute>`;
+`behaviors()`, `constraints()` → `Selection`; `attributes()` → `Selection<Attribute>`;
 `port(n)`, `net(n)`, `instance(n)`, `param(n)` → `Option`; `attribute(schema)` →
 `Option<Attribute>`; `select(path)`. `instances()` returns direct children; `nets()`
 returns port nets plus internal wires.
@@ -145,6 +147,38 @@ stages an override scoped to the instance path.
 overlay (selector-applied) attributes appear identically here; overlay wins on conflict.
 
 **Behavior** — `domain()` → `Domain` (`Analog` | `Digital`); `owner()` → `Module`.
+
+**ConstraintBlock** — the authored `constraint Name { … }` block (Part I §10.6),
+attached to the module it names: `name()` (the module it attaches to); `doc()` →
+`Option<String>`; `stmts()` → `&[ConstraintStmt]` (authored order); `var_type(n)` →
+`Option<Type>` and `classes()` → `&[StmtClassNode]`, the two side tables elaboration
+adds on top of the surface AST (mirroring `Behavior::var_types`).
+
+The block stays in its **authored** surface form (Part II §8.1) — one block per
+authored module, carried unchanged onto every monomorphized variant, so a walk
+reaches it on `Dac` and on `Dac__8` alike, and never a flattened structure (MD-25).
+A `Behavior` and a `ConstraintBlock` are distinct node kinds: a constraint carries
+correctness intent, not behavior, so it has no `Domain`.
+
+Two walks address the leaves, because they yield different node kinds:
+
+- `leaves()` — every `require`/`var`/`target`, depth-first in authored order,
+  yielding `(stmt, class)`. The class's `analyses` set is the **union** of the
+  leaf's own helper analyses and every enclosing `@` block's scope analyses
+  (DVC-19); the analysis drivers gate evaluation on exactly that set.
+  `class_of(name)` is the by-label lookup over the same walk.
+- `cover_points()` — every `cover`/`cover cross`, the two kinds `leaves()`
+  deliberately does not yield (they classify to their own node variants, carrying
+  bins and counters rather than a margin).
+
+**ConstraintStmt** — one statement: `Require` | `Var` | `Target` | `Cover` |
+`CoverCross` | a nested `@` scope block. A leaf's `StmtClass` carries its
+`QuantityClass` (`Pointwise` | `Reduced`, Part II §8.1) and its analyses.
+
+*Host coverage.* The POM side is complete (`Module::constraints()`); the **Python
+binding does not expose it yet** — `Module.behaviors` has no `constraints` twin, and
+the `constraint::` axis below is reachable from Rust and the selector, not from
+`import piperine`. Tracked in Appendix C §3 alongside the other host-parity gaps.
 
 ---
 
@@ -178,13 +212,15 @@ overlay (selector-applied) attributes appear identically here; overlay wins on c
 ## §6 Leaf enums
 
 ```
-Direction      ::= Input | Output | Inout
-Domain         ::= Analog | Digital
-DisciplineKind ::= Conservative | Storage
-Resolution     ::= Single | Tri | Or | And | Sum | Avg | Max | Min | Kcl
-NatureKind     ::= Potential | Flow
-ReflectError   ::= NotFound | NotSettable | TypeMismatch | OutOfRange
-                 | MultipleDrivers | Other
+Direction          ::= Input | Output | Inout
+Domain             ::= Analog | Digital
+DisciplineKind     ::= Conservative | Storage
+Resolution         ::= Single | Tri | Or | And | Sum | Avg | Max | Min | Kcl
+NatureKind         ::= Potential | Flow
+ConstraintStmt     ::= Require | Var | Target | Cover | CoverCross | ScopeBlock
+QuantityClass      ::= Pointwise | Reduced
+ReflectError       ::= NotFound | NotSettable | TypeMismatch | OutOfRange
+                     | MultipleDrivers | Other
 ```
 
 `Node` is the supertype of every node kind; `Node.kind()` discriminates it, allowing an
@@ -192,14 +228,14 @@ untyped host to recover the concrete type.
 
 ---
 
-## §7 One model, three languages, one ABI
+## §7 One model, two languages, one ABI
 
 The POM is uniform underneath and idiomatic on top. The wire protocol is a serialized
 node carrying `kind`, `id`, scalar attributes, and relation axes. Every host rebuilds
 the same typed objects from this one ABI:
 
-- **Piperine (bench)** — built-in node objects with assignment sugar (`inst.r = ...`).
-- **Python** — classes with `__getattr__` / `__setattr__`.
+- **Python** — classes with `__getattr__` / `__setattr__`, with assignment sugar
+  (`inst.r = ...`).
 - **Rust** — structs and traits with explicit calls (`inst.param("r")?.set(...)?`).
 
 Compiled plugins (Rust or Python) load like OSDI compact models — a shared library
@@ -229,7 +265,8 @@ design), `module.select(path)` (rooted at a module), or `selection.where(path)`
 ```
 Selector  ::= [ "/" | "//" ] Step { ( "/" | "//" ) Step }
 Step      ::= [ Axis "::" ] NodeTest { Predicate }
-Axis      ::= "inst"|"net"|"port"|"param"|"attr"|"behavior"|"driver"|"load"|"parent"|"ancestor"
+Axis      ::= "inst"|"net"|"port"|"param"|"attr"|"behavior"|"constraint"
+             |"driver"|"load"|"parent"|"ancestor"
 NodeTest  ::= Name | "*"
 Predicate ::= "[" ( Index | PredExpr ) "]"
 Index     ::= NatLit | "last" "(" ")"
@@ -261,6 +298,7 @@ Literal   ::= NumberLit | StringLit | BoolLit | Ident
 | `param::` | `params()` |
 | `attr::` | `attributes()` |
 | `behavior::` | `behaviors()` |
+| `constraint::` | `constraints()` |
 | `driver::` | net `drivers()` |
 | `load::` | net `loads()` |
 | `parent::` | reverse of `instances()` — the containing instance |
@@ -332,20 +370,25 @@ same selector on the same state always returns the same nodes.
 
 ## §14 Selector — integration
 
-```piperine
-// Read every resistor's value
-for r in select("//Resistor") { $info("{}", r.param("r").value()); }
+```python
+# Read every resistor's value
+for r in design.select("//Resistor").nodes():
+    print(r.param("r").value())
 
-// Set a param on every matched instance
-select("//dac/param::vref").set(1.8);
-select("//leg").set("w", 2.0);
+# Set a param on every matched instance
+design.select("//dac/param::vref").set(1.8)
+design.select("//leg").set("w", 2.0)
 
-// Filter into a local
-var big = select("//Resistor").where("[param::r > 1k]");
+# Filter into a local
+big = design.select("//Resistor").where("[param::r > 1k]")
 
-// Attach a parasitic (extensibility layer 4)
-select("//*/net::*[@layout.layer == \"m3\"]").attach( Capacitor { .c = 4.2f } );
+# Reach a module's declared correctness intent
+soa = design.select("//mos1/constraint::*")
 ```
+
+A plugin's `transform_design` hook stages structural additions over the same model
+(`staging.add_instance(...)` — Part VI §8.2); the selector itself is read-only apart
+from the staged parameter writes of §3.
 
 Adding a POM node type or attribute extends what the selector addresses, with no
 grammar change — the new relation or attribute is immediately available as an axis or

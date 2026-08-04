@@ -83,7 +83,7 @@ contracted responsibilities; every public method belongs to exactly one:
 | Responsibility | Contents |
 |----------------|----------|
 | Circuit state | Read-only views of the built circuit: the analog netlist, the unified net list, digital labels, the capability union (the OR of every element's `ElementCapabilities`), and device access. |
-| Analysis entry | One uniform entry point per analysis — `dc`, `ac`, `transient`, `noise`, `transfer_function`, `sens`, `pss` — each handing a driver a borrow of the circuit plus a `Context`. |
+| Analysis entry | One uniform entry point per analysis — `dc`, `ac`, `transient`, `noise`, `transfer_function`, `sens`, `pss`, `pz`, `disto`, `sp` — each handing a driver a borrow of the circuit plus a `Context`. The last three (pole-zero, small-signal distortion, N-port S-parameters) are host-facing analyses whose numerical contracts this Part does not yet specify section-by-section; their host surface is Part VIII §3 and their failure rules are in §16. |
 | Mixed-signal seam | The one place analog acceptance seeds digital events and the scheduler runs (§14): `init_digital`, `run_digital_at[_with_analog]`, `accept_and_run_digital`, `rebuild_digital_topology`. |
 | Live mutation | The restamp path (`set_element_param`, §10.5) plus the per-solve hooks (`setup_all`, `update_all`, `apply_limiting_reports`). |
 | Construction | None — construction stays in the `CircuitBuilder`. |
@@ -99,7 +99,8 @@ constructor.
 
 The circuit instance offers analyses over the same topology. A DC analysis,
 transient analysis, AC sweep, noise analysis, transfer-function analysis,
-sensitivity analysis, and periodic-steady-state analysis all consume the same
+sensitivity analysis, periodic-steady-state analysis, pole-zero analysis,
+distortion analysis, and S-parameter analysis all consume the same
 device set and analog/digital namespaces. The `Solver` facade is the host entry
 point: it owns the circuit plus the shared run configuration (`Context` and
 `Policy`) and hands out each analysis driver with that configuration applied.
@@ -137,6 +138,7 @@ not purely one concern:
 | `setup(context)` | One-time initialization before the first solve, with the run context. |
 | `destroy()` | Teardown when the circuit instance is dropped. |
 | `accept_timestep(state, t, nets, sink)` | The analog→digital bridge hook: called after each accepted solution point at time `t`; a mixed-signal element may emit digital events through `sink`. |
+| `on_digital_settled(nets, t)` | The digital-settling observer hook: dispatched to **every** element after the scheduler reaches quiescence at time `t`, with the **final settled** net snapshot — never a mid-delta-cycle value (§20.2). Reached from the same accepted-step call chain as `accept_timestep`, so a rejected step never dispatches it. Default no-op. |
 | `runtime_banks()` | Runtime state/var banks for opt-in per-step recording; default empty. |
 
 All supertrait methods default to a no-op, so a pure-analog element overrides
@@ -159,17 +161,27 @@ to select behavior: capability flags gate, as before.
 | `EMITS_NOISE` | `noise_current_psd` returns non-empty sources. |
 | `DEPENDS_ON_DIGITAL` | Analog load reads the digital net snapshot (D2A). Implies `ANALOG`; a D2A-ordering descriptor for the DC and transient drivers. |
 | `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
-| `BYPASS_OK` | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
-| `SUPPORTS_ROLLBACK` | The element overrides `checkpoint_state`/`restore_state` to snapshot/restore its mutable non-accept-gated state around rejected timesteps and DC homotopy retries (§3.1, §15.8). Default `checkpoint_state() = None` = stateless = zero cost. |
-| `EMITS_VALIDATION` | The model has validation findings to report (DVC-14): constraint violations, model self-checks, monitor hits. The solver polls `validation_reports()`/`evaluate_constraints()`/`margin_report()` **only** on elements declaring this bit, and only at the evaluation points §3.6 defines. Default off — a no-constraint circuit pays nothing. |
+| `SUPPORTS_ROLLBACK` (`1 << 9`) | The element overrides `checkpoint_state`/`restore_state` to snapshot/restore its mutable non-accept-gated state around rejected timesteps and DC homotopy retries (§3.1, §15.8). Default `checkpoint_state() = None` = stateless = zero cost. |
+| `BYPASS_OK` (`1 << 11`) | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
+| `HAS_DISTO2` (`1 << 12`) | The model provides analytic **second** derivatives — the `.disto` Hessian compiled from symbolic differentiation. The `.disto` driver checks this before solving for HD2; a device without it contributes no second-order nonlinear current. |
+| `HAS_DISTO3` (`1 << 13`) | The model provides analytic **third** derivatives, same contract, for HD3. |
+| `NUMERIC_JACOBIAN` (`1 << 14`) | The model's Jacobian is finite-difference, not analytic (e.g. a plugin that perturbs its own residual). Analyses that require exact derivatives (`.disto`) fail loud on these devices — the method of nonlinear currents needs the exact Hessian, never a numeric perturbation. |
+| `EMITS_VALIDATION` (`1 << 15`) | The model has validation findings to report (DVC-14): constraint violations, model self-checks, monitor hits. The solver polls `validation_reports()`/`evaluate_constraints()`/`margin_report()` **only** on elements declaring this bit, and only at the evaluation points §3.6 defines. Default off — a no-constraint circuit pays nothing. |
+| `HAS_SENSITIVITY` (`1 << 16`) | The model carries a compiled parameter-indexed `∂F/∂p` kernel and implements `param_stamps` (§3.2, §17.2). An element without it falls back to stamp perturbation; plugin and OSDI elements default clear. |
+
+Bit `1 << 10` is **vacant**: it held `SUPPORTS_QUERIES`, retired because nothing
+declared it and nothing read it (both `list_queries`/`query` have working
+`read_opvars`-derived defaults, so the hint gated nothing). The position is left
+unassigned rather than renumbering the flags above it.
 
 An element must declare its capabilities accurately; the solver gates analysis
 and scheduling on this descriptor rather than on which methods are overridden.
 Two flags gate solver control flow directly — `DIGITAL` (the mixed-signal loop,
 the scheduler, digital initialization) and `HAS_INTERNAL_UNKNOWNS` (the
-builder's allocation check). The remaining live flags are participation
-descriptors consumed by the loaders and result mapping; the three reserved bits
-name their owning follow-up and promise nothing today.
+builder's allocation check). The remaining live flags are participation or
+derivative-capability descriptors consumed by the loaders, the `.disto`/adjoint
+drivers, and result mapping. `BYPASS_OK` is the one reserved bit: it names its
+owning follow-up and promises nothing today.
 
 The analog operations in this section and the digital operations in §4 are all
 methods of the one element. Analog methods default to contributing no stamps;
@@ -265,7 +277,7 @@ All times, frequencies, values, and step sizes crossing this ABI are plain
 ### 3.4 Introspection: parameters, queries, terminals
 
 Introspection is the third supertrait, `Introspect`. An element may expose
-OSDI-style metadata so hosts — bench sweeps, optimization
+OSDI-style metadata so hosts — parameter sweeps, optimization
 loops, plugins, CLI/UI — discover and poke a model without knowing its family.
 Every method here is optional; an element exposes as much or as little as it has.
 
@@ -320,6 +332,7 @@ for digital verification (design §C4).
 | `Element::validation_reports()` | `Option<ValidationReport>` — shaped after `AnalogDevice::limiting_report()` (§3.1): `Option`, not `Vec`, because `None` (nothing to say) is the common case. Default `None`. |
 | `Element::evaluate_constraints(state, t, analysis)` | Evaluate the element's declared constraint margins at one accepted solution point (DVC-10/11). Default no-op. Distinct from `accept_timestep` — the accept hook seeds operators and digital events at points that are *not* margin evaluation points (a transient's `t = 0` operator seeding, the DC mixed-signal settle). |
 | `Element::margin_report()` | `Option<MarginReport>` — the run's pointwise margins (worst value + argmin per declared margin per instance), read at the end of an analysis. Default `None`. |
+| `Element::coverage_report()` | `Option<CoverageReport>` — the run's `cover`/`cover cross` bin counters (Part I §10.6), read at the end of an analysis and merged host-side into a `CoverageDatabase` (Part VIII §17). A coverage point carries no margin and no signed distance: a bin hit is a counter increment. Default `None`. |
 | `Element::reset_margin_tracking()` | Reset worst + argmin so the next analysis starts clean — margins are a per-run channel; one analysis's extrema never leak into the next. Default no-op. |
 
 **`EMITS_VALIDATION = 1 << 15`** gates polling. The solver asks
@@ -1240,6 +1253,9 @@ neither bound to a test nor marked.
 | §3.5 | A `require` margin crosses zero under the `Strict` posture | Analysis error naming constraint, instance path, time, and value. Recorded under `Collect`; never raised under `Off`. | `crates/piperine-solver/tests/posture.rs`, `crates/piperine-codegen/tests/margin_*.rs`, `tests/host_*.rs` (SOA-on-model) |
 | §17 | Sensitivity parameter is unknown, unreadable, non-real, or rebuild-strength | Analysis error. | root: `sens.rs` |
 | §18 | Non-positive period or negative pre-roll requested; digital state not periodic after convergence | Analysis error. | `failure_rules.rs::section_18_a_non_positive_period_is_an_analysis_error`, `::section_18_a_negative_pre_roll_is_an_analysis_error`; root `pss.rs` (non-periodic) |
+| §2 | Pole-zero, distortion, or S-parameter analysis is requested with an unaddressable net/source, a non-positive frequency or amplitude, or (S-parameters) a module carrying no `@rfport` attributes | Analysis error. | root: `pz.rs`, `disto.rs`, `sp.rs` |
+| §2 | `.disto` is requested on a device declaring `NUMERIC_JACOBIAN`, or on a session built without the 2nd/3rd-derivative kernels (`SessionBuilder::disto(false)`, the default) | Analysis error naming the missing capability — never a silently zeroed harmonic. | root: `session_disto.rs` |
+| §20.6 | `Session::ac` is called on a session whose device provider has a registered sequencer type | Analysis error, raised before the circuit is built (§20.6). | root: `host_device_library.rs` |
 
 ---
 
@@ -1419,7 +1435,7 @@ The chart below uses these abbreviations for the hook methods documented in
 | Abbreviation | Hook | Supertrait |
 |--------------|------|------------|
 | `setup` | `setup(context)` | `Element` |
-| `alloc` | `allocate_unknowns(alloc)` | `Element` (builder phase) |
+| `alloc` | `allocate_unknowns(alloc)` | `AnalogDevice` (builder phase) |
 | `temp` | `set_temperature(t)` | `AnalogDevice` |
 | `update` | `update(state, context)` | `AnalogDevice` |
 | `load_dc` | `load_dc(state, context)` | `AnalogDevice` |
@@ -1435,6 +1451,9 @@ The chart below uses these abbreviations for the hook methods documented in
 | `noise_psd` | `noise_current_psd(dc_point, ac_ctx)` | `AnalogDevice` |
 | `bp` | `next_breakpoints(from, horizon)` | `AnalogDevice` |
 | `suggest_dt` | `suggest_transient_step(...)` | `AnalogDevice` |
+| `settled` | `on_digital_settled(nets, t)` | `Element` |
+| `restore_hidden` | `digital_hidden_restore(state)` | `DigitalDevice` |
+| `set_param` | `set_param(name, value)` | `Introspect` |
 | `opvars` | `read_opvars()` | `Introspect` |
 | `destroy` | `destroy()` | `Element` |
 
@@ -1490,6 +1509,7 @@ next strategy) before the next strategy starts.
 | — | **mixed-signal settle loop** (§14.1) | | |
 | 9 | `accept(state, t, nets, sink)` | Analog converged | A2D events seeded |
 | 10 | `seq(ctx)` / `comb(ctx, sink)` | After accept, per delta cycle | Digital nets updated |
+| 10b | `settled(nets, t)` | After the delta cycles reach quiescence | Every element sees the final settled snapshot (§20.2) |
 | 11 | `opvars()` | After final operating point | Operating variables readable |
 | 12 | `destroy()` | Circuit dropped | Element torn down |
 
@@ -1605,6 +1625,7 @@ acceptance (`accept_step`).
 | — | *(TR + BDF2 converged? yes → assess; no → reject)* | | |
 | 11 | `restore(ckpt)` | On reject (LTE or Newton), before retry | Pre-attempt state rewound |
 | 12 | `accept(state, t, nets, sink)` | On accept, after settle | A2D events seeded; accept-gated state advanced |
+| 12b | `settled(nets, t)` | After the post-accept digital settle reaches quiescence | Final settled snapshot dispatched; never fires on a rejected step (§20.3) |
 | 13 | `suggest_dt(...)` | After accept, before next predict | Per-element dt floor contributed |
 | 14 | `destroy()` | Circuit dropped | Element torn down |
 
@@ -1670,7 +1691,7 @@ only).
 | 1 | `setup(ctx)` | Circuit built | Element initialized |
 | 2 | `temp(t_nom)` | After `setup`, before first shot | Temperature constants seeded |
 | 3 | `init(sink)` | After `setup`; digital devices | Initial digital events emitted |
-| 4 | `restore_hidden(state)` | Per shot, before transient run | Hidden register state + snapshot seeded for re-entry |
+| 4 | `restore_hidden(state)` (`digital_hidden_restore`) | Per shot, before transient run | Hidden register state + snapshot seeded for re-entry |
 | — | **per-shot transient run** (§19.4 steps 4–13, one period) | | |
 | — | *(monodromy converged? yes → verify; no → damped Newton update → next shot)* | | |
 | 5 | `destroy()` | Circuit dropped | Element torn down |

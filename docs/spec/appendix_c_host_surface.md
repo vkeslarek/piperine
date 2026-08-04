@@ -1,7 +1,8 @@
 # Appendix C — Host API surface reference (Python + Rust)
 
-Complete inventory of the two host surfaces as of 2026-07-24 (post
-`host-library`, T1–T28). The Python side was extracted mechanically
+Complete inventory of the two host surfaces: the `host-library` baseline
+(T1–T28, 2026-07-24) plus the `dv-core`, `dv-gradients`, and `dv-tester`
+surfaces layered on it. The Python side was extracted mechanically
 (`__all__` in `crates/piperine-python/python/piperine/__init__.py` +
 `_piperine.pyi`); the Rust side is the `piperine-api` public surface
 (`crates/piperine-api/src/{session,results,waveform,units,error}.rs`, all
@@ -21,9 +22,11 @@ checked against both surfaces by `cargo test -p piperine host_parity`.
 `ParamDescriptor`, `SolverStats`, `LimitingReport`, `NoiseContribution`
 (introspection) + `Session`, `Sweep`, `SweepPoint`, `Grid` (compiled
 session) + `OpResult`, `Trace`, `AcTrace`, `NoiseTrace`, `PssResult`,
-`PssStats`, `SensResult`, `PoleZeroResult`, `SpResult`, `TfResult`,
-`Waveform`, `ComplexWaveform`, `FourierComponent`, `FourierResult`
-(results) + `Scale`, `CrossDirection`, `Direction`, `Solver`, `OpConfig`,
+`PssStats`, `SensResult`, `PoleZeroResult`, `SpResult`, `DistoResult`,
+`TfResult`, `Waveform`, `ComplexWaveform`, `FourierComponent`, `FourierResult`
+(results) + `MarginsResult`, `MarginEntry`, `MarginShape`,
+`ValidationFinding` (the dv-core margins/findings channel, DVC-15/18)
++ `Scale`, `CrossDirection`, `Direction`, `Solver`, `OpConfig`,
 `TranConfig`, `AcConfig`, `NoiseConfig` (configs/enums) + `plot`, `bode`,
 `extract`, `Hz`, `ns`, `mV`, `C` (host helpers) + `SimulationError`,
 `ElaborationError`, `UnknownModule`, `UnknownNet`, `ConvergenceError`
@@ -39,6 +42,11 @@ session) + `OpResult`, `Trace`, `AcTrace`, `NoiseTrace`, `PssResult`,
 | `Module` | analyses `op(cfg=None)`, `sens(...)`, `pss(...)`, `pz(...)`, `disto(...)`, `sp(...)`, `tran(cfg)`, `ac(cfg)`, `noise(cfg)` · `sensitivity(metric, param, solver=None)` / `gradient(metric, params, solver=None)` (dv-gradients, engine attribution — Part VIII §14) · `compile() -> Session` · `set(label, param, value)` (staged override) · reflection properties `name`, `ports`, `params`, `nets`, `instances`, `behaviors` |
 | `Selection` | `nodes() -> list[Node]` · `len()` · `is_empty()` |
 | `Node` / `Instance` / `Net` / `Port` / `Param` / `Behavior` | plain reflected records (`name`, `kind`/`ty`/`direction`/`default`/`module`) |
+
+**Not on the Python surface:** `Module` has no `constraints` property — the
+`ConstraintBlock` POM nodes (Part IV §4) are reachable from Rust
+(`Module::constraints()`) and through the selector's `constraint::` axis, but the
+binding does not expose them. Third tracked gap, §3 below.
 
 ### Compiled session
 
@@ -141,7 +149,7 @@ __init__.py` (the `Wave = _piperine.Wave` block) is the source.
 | `SeqCtl` (`t` in `run(self, t)`) | `.advance(dt)` · `.wait(spec)` · `.expect(cond, msg)` · `.warn(msg)` · `.t` (property) — see Part VIII §17.5 for what is **not** yet bridged here (`install`/`drive_*`/`arm`/read-back) |
 | `edge(net, direction)` / `above(net, level, direction="either")` | `t.wait(...)` spec constructors — `RISING`/`FALLING`/`EITHER` string constants |
 | `NetRef`, `DigitalNetRef` | resolved port handles a device receives; retained for the device's lifetime |
-| Capability flags | `ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`, `LOADS_DC`, `LOADS_AC`, `LOADS_TRAN`, `EMITS_NOISE`, `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `BYPASS_OK`, `EMITS_VALIDATION` — `int` bit values, OR'd into `caps` |
+| Capability flags | `ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`, `LOADS_DC`, `LOADS_AC`, `LOADS_TRAN`, `EMITS_NOISE`, `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `BYPASS_OK`, `HAS_DISTO2`, `HAS_DISTO3`, `NUMERIC_JACOBIAN`, `EMITS_VALIDATION`, `HAS_SENSITIVITY` — `int` bit values, OR'd into `caps` (the full set and bit positions are Part VII §3) |
 
 ---
 
@@ -154,6 +162,7 @@ __init__.py` (the `Wave = _piperine.Wave` block) is the source.
 | `Session::compile` | `(&Design, module: &str) -> Result<Self, Error>` — **compiles once** (HOST-01); the no-options shorthand for `builder(..).compile()` |
 | `Session::builder` | `(&Design, module: &str) -> SessionBuilder` — the build-time options |
 | `SessionBuilder::provider` | `(Rc<dyn DeviceProvider>) -> Self` — plugin `@device` builds |
+| `SessionBuilder::host_registry` | `(Rc<HostDeviceRegistry>) -> Self` — in-process `@device` bindings (dv-tester, Part I §10.7); a registry with a registered sequencer type makes `Session::ac` refuse loud (Part VII §20.6) |
 | `SessionBuilder::hooks` | `(Rc<dyn SimHooks>) -> Self` — lifecycle hooks |
 | `SessionBuilder::disto` | `(bool) -> Self` — include the `.disto` 2nd/3rd-derivative kernels (default `false`; `Session::disto` fails loud without them) |
 | `SessionBuilder::stage` | `(label, param, Value) -> Self` — staged override, applied to the builder's own fork |
@@ -227,6 +236,8 @@ __init__.py` (the `Wave = _piperine.Wave` block) is the source.
 | `MonteCarloResult` | `{ seed, n, outcomes: Vec<SampleOutcome> }` — `yield_fraction()` · `sigma(name) -> Option<f64>` · `worst(name) -> Option<(usize, f64)>` · `failed_indices() -> Vec<usize>` |
 | `SampleOutcome` | `Converged { margins: HashMap<String, f64> }` / `Failed { error: String }` — `is_converged()` |
 | `age` | `(&mut Session, &AgingSpec, &SolverConfig) -> Result<AgingResult, Error>` — **Rust-only** |
+| `CoverageDatabase` | `new()` · `merge_run(&[ReportedCoverPoint], &[ReportedCoverCross])` (counters sum, never replace) · `points()`/`crosses() -> &HashMap<String, CoverageEntry>` · `empty_bins() -> Vec<String>` — **Rust-only**, persists across runs and seeds (dv-tester DVT-43, Part VIII §17.9) |
+| `CoverageEntry` | `counts: Vec<u64>` · `empty_bin_indices() -> Vec<usize>` · `fully_covered() -> bool` |
 | `AgingSpec` / `AgingResult` | `{ stress: StressSource, drifts: Vec<DriftRate>, constraints, lifetime, steps }` / `{ stress, baseline: MarginsResult, aged: MarginsResult, first_violation: Option<(String, f64)>, lifetime }` — `AgingResult::delta(name) -> Option<f64>` |
 | `StressSource` / `DriftRate` | `Op { metric }` / `TranPeak { net, stop, step }` · `{ label, param, from, rate_per_stress }` |
 
@@ -268,8 +279,10 @@ unchanged by this feature).
 | `measure::gate::Gate` / `GateTracker` / `Gated<K>` | time/analog/digital gating |
 | `events::predict_crossing` | tier-2 crossing prediction (Part VII §20.5): `(dir, t0, v0, t1, v1) -> Option<Prediction>` |
 | `verify_derivatives` | analytic-vs-central-FD oracle for a `BehaviorKind` |
-| `ops::Operator` | `Delay`/`Slew`/`Transition`/`Integrate` — the extracted runtime operators |
-| `limit::Limiter` | the extracted pnjlim/fetlim junction limiter |
+| `ops::Operator` | `Delay`/`Slew`/`Transition`/`Integrate` — the extracted runtime operators (`Integrate` covers both `idt` and `idtmod`, the modulus being a field; Part IX §2 names the five language-level operators) |
+| `limit::Limiter` | the extracted junction limiter — all three formulas (`pnjlim`/`fetlim`/`limvds`) plus the five bookkeeping rules (Part IX §4) |
+| `events::EventDetector` | the tier-1 `Above`/`Cross`/`Timer` detectors (Part IX §3) |
+| `digital` edge rule | the IEEE 1364 `Rising`/`Falling`/`Either` predicate shared with the compiled digital kernel (Part IX §10) |
 
 ### `units` — `Freq`, `Time` (HOST-21)
 
@@ -334,12 +347,21 @@ covers analyses, not every `Waveform` method): `Waveform` measurements
 are Rust-only (`piperine-api`); no native Python binding exists yet. See
 Part VIII §9.
 
-**Second tracked gap (dv-gradients):** `sensitivity`/`gradient` (§14) are on
-both hosts and covered by `ANALYSES`-style parity today, but `Driver`/
-`Policy`/`SamplePlan`/`age` (Part VIII §15–16) are Rust-only as of this
+**Second tracked gap (dv-gradients / dv-tester):** `sensitivity`/`gradient` (§14)
+are on both hosts and covered by `ANALYSES`-style parity today, but `Driver`/
+`Policy`/`SamplePlan`/`age` (Part VIII §15–16) and `CoverageDatabase` (Part VIII
+§17.9) are Rust-only as of this
 delivery — no Python binding, and not yet part of `ANALYSES` or any parity
-test. A Python binding for the driver/sampling/aging surface is a follow-up
-task, same status as the `Waveform` gap above.
+test. A Python binding for the driver/sampling/aging/coverage surface is a
+follow-up task, same status as the `Waveform` gap above.
+
+**Third tracked gap (dv-core reflection):** the `ConstraintBlock` POM nodes
+(Part IV §4) have no Python binding — `Module.behaviors` exists,
+`Module.constraints` does not. The POM side is complete
+(`Module::constraints()`, `ConstraintBlock::leaves`/`cover_points`), so this is
+a binding gap, not a model gap; the margins channel (`r.margins`) already
+carries the *results* of those constraints on both hosts, which is why the
+reflection gap has not blocked anything yet.
 
 ---
 

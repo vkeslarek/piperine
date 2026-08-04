@@ -75,7 +75,7 @@ both a package and the workspace) — always pass `--workspace`.
 |-------|------|
 | `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), const evaluator (`eval/`: `Interpreter`, `Host` trait, pure system tasks in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
 | `piperine-codegen` | POM → devices, one module per pipeline stage: `pom::Design ─▶ resolve ─▶ flatten ─▶ emit ─▶ kernel ─▶ device`. `resolve/` (resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `flatten/` (resolved analog → `FlatAnalog`, crate-private). `emit/` (Cranelift emission machinery: `Builder`, `Codegen` trait, CSE, `SimCtx` ABI, crate-private). `kernel/`: `analog/` (`AnalogKernel`, capability sub-structs behind `Option`), `digital/`. `device/`: `analog/` (`AnalogInstance`, capability files `forces.rs`/`limits.rs`/`operators.rs`/`events.rs`), `digital.rs`, `circuit.rs`/`builder.rs`/`fusion.rs`/`plugin.rs` (`CircuitCompiler`) → `PiperineDevice` (implements `Element`). Public surface is a single `lib.rs` façade (MD-23) — `resolve`/`kernel`/`device` stay `pub`, `emit`/`flatten`/`error` are crate-private. |
-| `piperine-solver` | Native solver: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`analyses/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
+| `piperine-solver` | Native solver: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`analyses/convergence.rs`), `TrBdf2` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
 | `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine` (root) | Thin re-export shell over `piperine-api` (`pub use piperine_api::*`) — external Rust hosts keep `use piperine::…`; the tests of record live here as the shell's parity proof. The `piperine` binary target lives in `piperine-cli`. |
 | `piperine-plugin` | Plugin SDK + host (v2): native-dlopen + embedded-Python backends only, three shapes (pure-PHDL / scripted / device) inferred from the manifest keys, TOFU trust + permissions consent, `@device` loading, release-asset device binaries, CLI scripts. Plugins contribute **no** attribute schemas and no `extern`. |
@@ -110,9 +110,10 @@ both a package and the workspace) — always pass `--workspace`.
 - **Convergence:** `ConvergencePlan` (`analyses/convergence.rs`) composes `HomotopyStrategy`
   (gmin stepping, source stepping), `NewtonStrategy`, `StepperStrategy`, and `PlanLimits`
   (caps extracted from magic numbers).
-- **Integration:** `IntegrationMethod` (`math/integration.rs`) — Trapezoidal and Gear/BDF
-  with unified `coeffs(dt, dt_prev, order)`. LTE-driven timestep via
-  `Element::suggest_transient_step`.
+- **Integration:** `TrBdf2` (`math/integration.rs`) — the sole transient scheme (a
+  Trapezoidal stage over `γh` then a BDF2 stage over `(1−γ)h`, γ = 2−√2); no
+  method-selection surface. LTE-driven timestep via
+  `Element::suggest_transient_step` + the plan's PI controller.
 - **Errors:** `SolverDomain` enum — typed domains, no free strings.
 - **Scheduler:** Returns `Result<(), Error>` instead of `log::warn!`.
 - **Prelude:** `prelude.rs` exports the host-facing surface.
@@ -143,8 +144,7 @@ both a package and the workspace) — always pass `--workspace`.
 ## Declared language surface (MD-24)
 
 Every referenceable PHDL name resolves to a **textual declaration** in
-`crates/piperine-lang/headers/` (or a plugin's published `extern.phdl`
-stub). Name lookup that finds no declaration is a fail-loud compile error,
+`crates/piperine-lang/headers/`. Name lookup that finds no declaration is a fail-loud compile error,
 never a silent fallback into a Rust-native registry. The seven `extern`
 forms cover every previously-magic surface:
 
@@ -161,10 +161,17 @@ forms cover every previously-magic surface:
   (reserved for future native capability dispatch on primitives; binary
   operators are pure grammar, not dispatched through capabilities today).
 
-A loaded plugin publishes its own attribute schemas via an `extern.phdl`
-stub auto-imported at load time; a schema-contributing plugin that
-publishes no stub fails loud at `PluginHost::load_for_project`
-(`PluginError::MissingExternStub`).
+**Plugins contribute no declarations** — no `extern`, no attribute schemas,
+no per-plugin stub (MD-21/D2). The per-plugin `extern.phdl` stub mechanism is
+deleted: a plugin shipping such a file is inert and cannot mint a schema name
+(`crates/piperine-plugin/tests/extern_stub.rs` is the guard). The
+`@device`/`@port` schemas are seeded by the plugin *system* itself
+(`PluginHost::seed_schemas`), so two device plugins never collide on them.
+
+Known MD-24 gap: four analog operators (`idtmod`, `absdelay`, `table`,
+`ac_stim`) carry no `extern operator` declaration and resolve through codegen's
+operator registry instead — see `docs/spec/part_v_builtins.md` §2's declaration
+column and `ROADMAP.md`.
 
 Permanent regression guard: `crates/piperine-lang/tests/extern_coverage_guard.rs`.
 
@@ -201,7 +208,7 @@ no list here — the tree is the list, and a guard keeps it honest.
 
 ## Documentation
 
-- Formal spec: `docs/spec/` (Parts I–VII + appendices A/B)
+- Formal spec: `docs/spec/` (Parts I–X + appendices A/B/C; `index.md` is the map)
 - Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

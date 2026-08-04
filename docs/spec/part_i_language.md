@@ -93,9 +93,9 @@ physical meaning. Value types live in:
 The primitive value types are `Real`, `Natural` (indices, widths, counts), `Integer`,
 `Boolean` (2-state), `Quad` (4-state: `0`/`1`/`X`/`Z`), and `String` (diagnostics).
 Composite value types — tuples, lists (`Vec<T>`), maps (`Map<K,V>`), sets (`Set<T>`),
-options (`T?`), and results (`Result<T,E>`) — exist in the value layer for interpreted
-computation (Part III) and const evaluation (the full catalog is §6.1).
-`UInt[N]`, `SInt[N]`, and `Complex` are standard-library bundles (§6.5), not primitives.
+options (`T?`), and results (`Result<T,E>`) — exist in the value layer for const
+evaluation and the `fn` body layer (the full catalog is §6.1).
+`UInt[N]` and `SInt[N]` are standard-library bundles (§6.5), not primitives.
 
 A value can be stored, indexed, mapped, reduced — all the ordinary operations of a
 pure functional layer. What a value *cannot* do is carry a signal between modules, or
@@ -249,7 +249,9 @@ of a `tol` clause (§7.2).
 
 Contextual keywords (reserved only where the grammar expects them): the resolve kinds
 `tri`, `or`, `and`, `sum`, `avg`, `max`, `min` (inside a `discipline` body); `and` /
-`or` / `not` inside selector predicates and const boolean expressions.
+`or` / `not` inside selector predicates and const boolean expressions; `bins` (inside
+a `constraint` block's `cover` statement); `after` / `dur` (inside a `constraint`
+block's `@` event-block window arguments).
 
 Lexer-level sigils: `$`, `@`, `<+` (contribution), `<-` (force), `?` (optional type;
 pattern wildcard), `..` / `..=` (ranges), `::` (path), `=>` (match arm), `->` (fn
@@ -268,7 +270,8 @@ return), `|` (lambda; event OR), `=` (assignment).
   of 8 bits.
 
 `Boolean` widens to `Quad` implicitly (a 2-state value is a special case of 4-state);
-all other casts are explicit (`real(x)`, `int(x)`, `bit(x)`).
+all other casts are explicit associated-function calls (`Real::from(x)`,
+`Integer::from(x)`, `Quad::from(x)`, `Boolean::from(x)` — §5.4).
 
 ---
 
@@ -281,8 +284,8 @@ CompilationUnit ::= { UseDecl | Item }
 UseDecl   ::= "use" Path ";"
 Path      ::= Ident { "::" Ident }
 Item      ::= { Attribute } [ "pub" ] ItemKind
-ItemKind  ::= ModDecl | BehaviorDecl | DisciplineDecl | BundleDecl | EnumDecl
-             | CapabilityDecl | ImplDecl | FnDecl | ConstDecl | BenchDecl
+ItemKind  ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl | BundleDecl
+             | EnumDecl | CapabilityDecl | ImplDecl | FnDecl | ConstDecl
              | ExternDecl
 ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 ```
@@ -299,6 +302,7 @@ ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 | `const` | global compile-time constant |
 | `mod` | module shape (§7) |
 | `analog`/`digital` | module behavior (§10) |
+| `constraint` | module correctness intent (§10.6) |
 | `impl` | bundle methods / capability impl (§6.5–§6.6) |
 | `extern` | signature-only native declaration (§5.4, MD-24) |
 
@@ -358,7 +362,7 @@ forms, one keyword:
 | `extern fn sin(x: Real) -> Real;` | libm intrinsic | `headers/math.phdl` |
 | `extern task $display() -> Unit;` | system task (`$`-prefixed name) | `headers/tasks.phdl` |
 | `extern operator ddt(x: Real) -> Real;` | runtime operator | `headers/operators.phdl` |
-| `extern attribute device { plugin: String, type: String }` | attribute schema | `headers/device_port.phdl` (+ plugin `extern.phdl` stubs) |
+| `extern attribute device { plugin: String, type: String }` | attribute schema | `headers/device_port.phdl` (stdlib only — plugins contribute no schemas, Part VI §6) |
 | `extern impl TypeName { fn method(self, ...) -> Ret; ... }` | type methods (signature only per method) | `headers/types.phdl` (casts) |
 | `extern impl Capability for TypeName { ... }` | capability impl (reserved for future primitive capability dispatch) | (none today) |
 
@@ -373,6 +377,9 @@ candidates matching → fail loud naming every candidate tried; more than one ma
 → fail loud as ambiguous. This is the surface that replaced the former bare-name cast
 exception (`real(x)`/`int(x)`/`bit(x)`/`Boolean(x)`/`Quad(x)` — deleted, not migrated;
 casts are now ordinary declared `Real::from(x)`-shaped associated-function calls).
+The four cast targets declared in `headers/types.phdl` are `Real`, `Integer`,
+`Quad`, and `Boolean`; a cast performs no value conversion (it never did — it is a
+type-system annotation, a no-op at runtime and at codegen).
 
 **Validation.** An unresolved `use` import is stored and deferred; a reference to an
 unknown item at a use-site is E2002 (`UndefinedType`) or E2003 (`UndefinedModule`).
@@ -395,15 +402,19 @@ The primitive value types:
 | `Integer` | signed integer | |
 | `Boolean` | `0` / `1` | 2-state logic |
 | `Quad` | `0q0` / `0q1` / `0qX` / `0qZ` | 4-state logic, standard propagation |
+| `Complex` | a complex pair | AC/frequency-domain values |
 | `String` | text | diagnostics only |
 
-`UInt[N]`, `SInt[N]`, and `Complex` are **standard-library bundles** (§6.5), not
-primitives — they are built from the same `bundle` + `capability` + `impl` machinery
-available to any user. Primitives carry built-in operators via the capability system
-(§6.6).
+These seven are exactly the `extern type` declarations in `headers/types.phdl`
+(§5.4), and the regression guard
+(`crates/piperine-lang/tests/extern_coverage_guard.rs`) asserts that list.
+`UInt[N]` and `SInt[N]` are **standard-library bundles** (§6.5), not primitives —
+they are built from the same `bundle` + `capability` + `impl` machinery available to
+any user. Primitives carry built-in operators via the capability system (§6.6).
 
 **Implicit widening.** A small closed set of widenings is implicit; everything else is
-an explicit cast (`real(x)`, `int(x)`, `bit(x)`):
+an explicit cast (`Real::from(x)`, `Integer::from(x)`, `Quad::from(x)`,
+`Boolean::from(x)` — §5.4):
 
 | From | To | Rationale |
 |------|----|-----------|
@@ -414,7 +425,7 @@ an explicit cast (`real(x)`, `int(x)`, `bit(x)`):
 
 The literal-coercion consequence: `code = 0;` on a `Bit[N]` var, `if (start == 1)` on
 a `Bit`, and `param w : Natural = 4` all type-check without casts. There is no implicit
-narrowing and no implicit `Integer`/`Natural` → `Real` — write `real(x)`.
+narrowing and no implicit `Integer`/`Natural` → `Real` — write `Real::from(x)`.
 
 *Note (roadmap):* the widening table is intended to become explicit `impl From<T>`
 capability declarations in the prelude, replacing the compiler-internal table.
@@ -443,8 +454,8 @@ capability declarations in the prelude, replacing the compiler-internal table.
   `.unwrap_or(default) -> T`, `.ok() -> Option<T>`, `.err() -> Option<E>`.
 - **Maps** — `Map<K, V>` with literal `Map { key: value, ... }` (`Map {}` is empty),
   `.insert(k, v)`, `.get(k) -> Option<V>`, `.len()`. Keys compare by value (structural
-  equality, small-N association list). Backs the `ic:`/`nodeset:` fields of analysis
-  config bundles (Part III §7.1).
+  equality, small-N association list). Backs the `ic:`/`nodeset:` fields of the host
+  analysis configs (Part VIII §3).
 
 **Validation.** Using a collection literal in an `analog`/`digital` body where lowering
 is not implemented fails loud at device-compile (never a silent stub).
@@ -588,7 +599,7 @@ mod Adder <T: Add + Net> ( input a : T, input b : T, output y : T );
 digital Adder { y <- a + b; }
 ```
 
-`UInt`/`SInt`/`Complex` are library bundles built this way — fixed-width arithmetic in
+`UInt`/`SInt` are library bundles built this way — fixed-width arithmetic in
 PHDL, not compiler magic. `Bit`-vector concatenation is the library `fn concat`, not an
 operator.
 
@@ -805,8 +816,8 @@ defaults are filled in automatically.
 metadata store:
 
 - **Inline** — design intent, written in source next to the declaration.
-- **Overlay** — flow intent, applied from the interpreted context (Part III §9) via the
-  selector: `select("//pll//net::*").meta(layout, spacing = 2u)`. This annotates in bulk
+- **Overlay** — flow intent, applied from a host or plugin (Part VI §8.2, Part VIII)
+  via the selector: `select("//pll//net::*").meta(layout, spacing = 2u)`. This annotates in bulk
   without touching source, like SDC/UPF constraints in ASIC flow. Overlay wins over
   inline on conflict, with a diagnostic.
 
@@ -890,8 +901,8 @@ Lambda ::= "|" [ Ident {"," Ident} ] "|" Expr
 ```
 
 **Validation.** An effectful syscall inside a pure `fn` body is rejected
-(`TaskUnavailable`, Part III §3) — purity is enforced by the interpreter's effect-
-gating mechanism.
+(`TaskUnavailable`) — purity is enforced by the const evaluator's effect-gating
+mechanism. The per-context availability tables are Part V §3 and §7.
 
 ---
 
@@ -929,7 +940,8 @@ Conservative quantities are read through accessors. A node pair is a branch:
 available: `Temp(th)`, `Pwr(th)`, etc.
 
 Built-in analog operators include `ddt` (time derivative), `idt` (time integral), the
-full math catalog (Part V §1), and explicit casts (`real`, `int`, `bit`). The analog-
+full math catalog (Part V §1), and explicit casts (`Real::from`, `Integer::from`,
+`Quad::from`, `Boolean::from` — §5.4). The analog-
 operator set is open — new operators register through the layer-2 extension mechanism
 (§14, Part V §2).
 
@@ -1057,10 +1069,11 @@ an `analog`/`digital` block is. The block holds three statement kinds —
 restrict a rule to one analysis or window.
 
 ```
-ConstraintDecl ::= [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
-ConstraintStmt ::= RequireStmt | VarDecl | TargetStmt | CoverStmt | ScopedBlock
+ConstraintDecl ::= { Attribute } [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
+ConstraintStmt ::= RequireStmt | ConstraintVar | TargetStmt | CoverStmt | ScopedBlock
 RequireStmt    ::= "require" Ident ":" Expr ";"
-TargetStmt     ::= "target" Expr ("<="|">=") Expr [ "tol" Expr ] ";"
+ConstraintVar  ::= "var" Ident ":" Type "=" Expr ";"     -- annotation mandatory
+TargetStmt     ::= "target" TargetExpr ("<="|">=") TargetExpr [ "tol" Expr ] ";"
 CoverStmt      ::= "cover" Ident ":" Expr CoverBins ";"
                   | "cover" "cross" Ident ":" Ident { "," Ident } ";"
 CoverBins      ::= "bins" "[" Expr ":" Expr ":" Expr "]" | "in" "{" Expr { "," Expr } "}"
@@ -1074,8 +1087,10 @@ The four leaf statement kinds:
   (typical: `abs(V(m1.d, m1.s)) <= vds_max`, `m1.region == Region::Saturation`).
   `name` is the label a host reads the margin by.
 - **`var <name> : <Type> = <expr>;`** — a named computed scalar. The type
-  annotation is **mandatory**, exactly as every other `var` in the language
-  (§7.2); the parser rejects the bare `var x = expr;` form.
+  annotation is **mandatory** here — unlike the ordinary `var` of §7.2, which
+  may infer its type from an initializer, a constraint `var` is a declared
+  quantity a host reads by name, so the parser rejects the bare
+  `var x = expr;` form.
 - **`target <expr> <cmp> <level> [tol <scale>];`** — an unlabeled comparison.
   `<cmp>` is one of `<=` or `>=` (the strict `<`/`>` have no signed-margin
   semantics, DVC-08, and fail loud at the comparison token). `tol <scale>`
@@ -1098,7 +1113,13 @@ The four leaf statement kinds:
   checked there against a raisable cap (§10.6's Validation paragraph
   below; Part II documents the cap and its error).
 
-`@ … { … }` reuses the behavior-body `EventBlock` production (§10.4) —
+`TargetExpr` is the ordinary `Expr` production parsed at minimum precedence 7
+(BitXor and above), so a following `<=`/`>=` is the statement's own comparison
+rather than a binary operator inside the operand (Appendix B §B.9).
+
+`@ … { … }` reuses the behavior-body `EventBlock` production (§10.4), extended
+for constraint scopes with `&`/`not` composition and the `after =`/`dur =`
+window arguments — the full production is Appendix B §B.9 —
 `@ dc { … }`/`@ tran { … }`/`@ ac { … }` scope the body to one analysis; `|`
 composes (`@ (dc | tran) { … }`); `after = …`/`dur = …` window named-args open
 and close a temporal window on a term. The terms are resolved against the same
@@ -1224,7 +1245,7 @@ A `$`-syscall is the surface syntax for every runtime-valued or effectful operat
 The `$` prefix makes it visually distinct from user-defined functions and signals that
 the call may depend on simulation state, not just its arguments.
 
-PHDL has three layers of `$`-syscall availability, depending on context (full tables in
+PHDL has two layers of `$`-syscall availability, depending on context (full tables in
 Part V):
 
 1. **Everywhere (pure tasks):** diagnostics (`$assert`, `$info`, `$warn`, `$error`,
@@ -1274,7 +1295,7 @@ because no single net crosses a boundary — the coupling happens inside the dev
 A companion rule, locked as project decision MD-24, governs *name resolution*: every
 referenceable PHDL name — primitive type, math function, system task, runtime operator,
 attribute schema, type method — resolves to a **textual declaration** in the project's
-headers/source (or a loaded plugin's published `extern.phdl` stub). Name lookup that
+headers/source. Name lookup that
 finds no textual declaration is a compile error, never a silent fallback into a
 Rust-native registry. A declaration marked `extern` (§5.4) is the only case allowed to
 defer its *implementation* to a native registry — its full *shape* (params, types,
@@ -1287,7 +1308,10 @@ to the entire name-resolution surface. A regression guard
 implementation table (`MATH_FNS`, `TaskRegistry`, the operator contract, the 7
 primitive types, the `@device`/`@port` schemas) and asserts a matching `extern`
 declaration exists, so the mechanism can't silently regress back into "magic" after a
-future change.
+future change. The rule's one open gap today is the analog-operator surface: four
+operators (`idtmod`, `absdelay`, `table`, `ac_stim`) carry no `extern operator`
+declaration and resolve through codegen's operator registry instead — see Part V §2's
+declaration column and `ROADMAP.md`.
 
 **Validation.** E2013 (`WidthMismatch`); E2014 (`DisciplineCrossing`); an unresolved
 identifier at any reference site is a fail-loud `ElabErrorKind::Other` naming the
@@ -1329,8 +1353,8 @@ reason.
 
 **Digital `#` delays.** Rejected because they are a source of race semantics and delta
 cycles. RTL in PHDL is zero-delay combinational logic plus registers. Timing belongs to
-analog (the `transition` and `absdelay` operators) or to verification (the interpreted
-context), not to the RTL itself.
+analog (the `transition` and `absdelay` operators) or to host-side verification
+(Part VIII), not to the RTL itself.
 
 **Connect modules / connectrules (auto-insertion).** Rejected by No-Magic (§13). If you
 need to cross a discipline boundary, you write an explicit converter module. The
@@ -1371,6 +1395,7 @@ with error codes is Part II §11.
 | §6.2 | multiple drivers on single-driver storage | E2020 `MultipleDrivers` |
 | §6.5 | bundle type/field errors | E2015–E2019 |
 | §7.3 | const-arg count mismatch | E2011 `MissingConstParam` |
+| §7.3 | a name that does not resolve to a net | E2012 `NotANetRef` |
 | §7.3 | width mismatch on connection | E2013 `WidthMismatch` |
 | §7.3 | discipline crossing | E2014 `DisciplineCrossing` |
 | §7.4 | non-const structural control | E2001 `ConstEval` |

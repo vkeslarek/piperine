@@ -351,11 +351,12 @@ instance-scoped (`op.instance("m1").param("w")` /
 after compilation, matching the shipped `Introspect::list_params` ABI and
 the same instance-scoped pattern `opvar` already uses.
 
-## 7. Return types — the nine-type taxonomy
+## 7. Return types — the taxonomy
 
 *Separate a type when it changes the available operations; unify when only
-the data values differ.* Nine types, identical set on both hosts (no host
-has a type the other lacks):
+the data values differ.* Eight rows below, eleven named types (the fourth-from-last
+row groups the four structured analysis-specific results, which share one rationale).
+The set is identical on both hosts — no host has a type the other lacks:
 
 | Type | Stands alone because |
 |------|-----------------------|
@@ -447,16 +448,20 @@ Python dataclasses with `.with_(**overrides)` (immutable copy,
 `dc_damp_tolerance`. Two posture knobs (dv-core DVC-12) ride on the same
 config and thread into the solver's `Context`:
 
-- **`checks: Strict | Collect | Off`** — how an analysis reacts when a
+- **`checks: CheckPosture`** (`Strict | Collect | Off`) — how an analysis reacts when a
   validation finding fires or a `require` margin crosses zero. Default
   `Strict` (a silent pass is never the default posture). `Collect` records
   the worst margin + argmin and always completes — the optimizer's
   inner-loop posture, where an infeasible iterate is a margin to climb out
   of rather than an exception. `Off` is zero-cost: the constraint kernels
   are not called and the findings hook is not polled.
-- **`require_scope`** — which analyses an unscoped `require` holds in. The
+- **`require_scope: RequireScope`** — which analyses an unscoped `require` holds in. The
   default is `EveryAnalysis` (D2); a `require` inside `@ dc { … }` is
   scoped by the block, not by this knob (it is "DC only" regardless).
+
+Both spell identically on Python `Solver` (as the strings `"strict"`/`"collect"`/
+`"off"` and `"every_analysis"`) and on Rust `SolverConfig` (as the `CheckPosture`
+and `RequireScope` enums); Part VII §3.3 receives them on `Context`.
 
 Changing the posture between analyses in one session triggers no
 recompilation (MD-18) — the posture fields are pure run data on `Context`.
@@ -574,6 +579,11 @@ detail), `Plugin(String)`.
 | `piperine run -i [design.phdl]` | interactive REPL; with a file, pre-loads it as `design` |
 | `piperine test [file]` | discover and run `**/*_tb.py` under the project root (skipping `.venv`/`target`); per-file PASS/FAIL with tracebacks, per-file timeout (default 300 s, `PIPERINE_TEST_TIMEOUT_SECS`), exit 1 on any failure, exit 0 with a notice when none exist |
 
+The table covers the commands that *are* a host surface. The CLI's remaining
+subcommands — `fmt`, `new`, `clean`, `add`, `remove`, `tree`, `plugin` — are
+project/tooling concerns, not simulation hosting: `add`/`remove`/`plugin` are
+specified in Part VI §5, the rest are outside this specification.
+
 A testbench is plain Python with asserts:
 
 ```python
@@ -650,7 +660,9 @@ plausible wrong number.
 one driver**, not three separate features (design §C4) — they share the same
 restamp loop, the same `dv-core` margin channel, and the same gradient path
 where one exists. Concretely, on the Rust side this is one type,
-`piperine_api::driver::Driver`, built from one enum, `Policy`:
+`piperine_api::driver::Driver`, built from one enum, `Policy` (unrelated to Part VII
+§3.3's solver-side `Policy`, which names a driver's convergence tunables — two
+different crates, two different concepts, one unfortunate spelling):
 
 ```rust
 use piperine_api::{Driver, Policy, OptimizeSpec, CenterSpec, HighSigmaSpec, DriverOutcome};
@@ -748,6 +760,25 @@ let (worst_index, worst_value) = mc.worst("dut1.head").unwrap();
   declared nominal values — sampling never leaves residue for a later
   nominal analysis.
 
+**Aging as parameter drift.** `piperine_api::age(session, &AgingSpec,
+&config)` (Rust-only, same coverage note) computes a scalar stress proxy from an
+OP or transient run
+(`StressSource::Op`/`StressSource::TranPeak`), drifts declared parameters
+linearly with `stress · time` through the same restamp path
+(`Session::set`), re-verifies at each scanned point, and returns an
+`AgingResult` — no new result type: `AgingResult::delta(name)` reads the
+existing margins channel (`baseline`/`aged`, both `MarginsResult`) rather
+than carrying a dedicated delta type. `AgingResult.first_violation` names
+which declared constraint went negative first and after how long, or `None`
+if the scanned `lifetime` never crosses it. A drift that would carry a
+parameter across a rebuild-class boundary fails loud (propagated straight
+from `Session::set`'s existing `Invalidation::Rebuild` refusal — Part VII
+§3.4), rather than silently re-elaborating. This is a placeholder linear
+drift model, not a calibrated aging tool (MOSRA/RelXpert): the gap is the
+per-device stress-equation *data*, which the shipped ngspice-faithful
+models do not carry — the same documented gap `dv-core` states for SOA
+limits.
+
 ## 17. The host device library (dv-tester)
 
 A fifth way to get a device into a circuit, alongside PHDL, a compiled
@@ -797,9 +828,10 @@ Rust keyword): `const`/`ramp`/`pulse`/`sin`/`exp`/`sigmoid`/`pwl`/`sampled`/
 `from_fn` evaluates natively with **zero** host calls; `sampled(t, v)`
 accepts an arbitrary precomputed array (e.g. built with numpy) at the same
 zero cost. A `Wave` with known discontinuities (a `pulse`'s edges, a
-`pwl`'s breakpoints) publishes them through the same `pending_edges`-shaped
-contract the runtime operators use (Part VII), so the integrator lands on
-each edge instead of interpolating across it.
+`pwl`'s breakpoints) publishes them through `pending_edges(from, end)` — the same
+declared-breakpoint contract the runtime operators use (Part IX §2.3, §8.4), which
+the device layer forwards to the solver as `Element::next_breakpoints` (Part VII
+§15.9) — so the integrator lands on each edge instead of interpolating across it.
 
 **Every `Wave` kind declares its own DC value** (SPICE convention, so a
 reader arriving from that background is not surprised):
@@ -1020,20 +1052,40 @@ fixture. Any PHDL capability not reachable from the host device library
 is named there rather than silently missing — a scoped promise, not an
 eroding one.
 
-**Aging as parameter drift.** `piperine_api::age(session, &AgingSpec,
-&config)` computes a scalar stress proxy from an OP or transient run
-(`StressSource::Op`/`StressSource::TranPeak`), drifts declared parameters
-linearly with `stress · time` through the same restamp path
-(`Session::set`), re-verifies at each scanned point, and returns an
-`AgingResult` — no new result type: `AgingResult::delta(name)` reads the
-existing margins channel (`baseline`/`aged`, both `MarginsResult`) rather
-than carrying a dedicated delta type. `AgingResult.first_violation` names
-which declared constraint went negative first and after how long, or `None`
-if the scanned `lifetime` never crosses it. A drift that would carry a
-parameter across a rebuild-class boundary fails loud (propagated straight
-from `Session::set`'s existing `Invalidation::Rebuild` refusal — Part VII
-§3.4), rather than silently re-elaborating. This is a placeholder linear
-drift model, not a calibrated aging tool (MOSRA/RelXpert): the gap is the
-per-device stress-equation *data*, which the shipped ngspice-faithful
-models do not carry — the same documented gap `dv-core` states for SOA
-limits.
+### 17.9 `CoverageDatabase` — merge and closure (dv-tester DVT-43)
+
+A `cover`/`cover cross` point (Part I §10.6) produces per-bin hit counters, not
+a margin. The solver returns one run's raw counters as a `CoverageReport`
+(Part VII §3.5's `coverage_report()`); `piperine_api::CoverageDatabase` is the
+host-side structure they merge into.
+
+**Coverage persists across runs and seeds — margins do not.** A margin belongs
+to one analysis and is discarded at the next (`reset_margin_tracking`, DVC-18);
+a coverage database is state a caller deliberately keeps for an entire
+regression, calling `merge_run` once per run:
+
+```rust
+let mut cov = CoverageDatabase::new();
+for seed in 0..100 {
+    let r = session.tran(...)?;
+    cov.merge_run(r.cover_points(), r.cover_crosses());
+}
+assert!(cov.empty_bins().is_empty(), "unexercised bins: {:?}", cov.empty_bins());
+```
+
+| Member | Contract |
+|---|---|
+| `merge_run(points, crosses)` | Counters **sum**, never replace. A point not seen before starts from an all-zero vector sized to this run's report, so a run with zero accepted points still *creates* the entry — its bins are then reported as not-exercised rather than silently omitted. |
+| `points()` / `crosses()` | The accumulated entries, keyed `"<instance_path>.<label>"` (bare `<label>` when the instance path is empty, matching `ValidationFinding`'s convention), so two instances of the same monitor module accumulate independently. |
+| `empty_bins()` | Every never-hit bin across every declared `cover` point, named `"<key>[<bin index>]"`, sorted for determinism. |
+| `CoverageEntry::fully_covered()` / `::empty_bin_indices()` | Per-entry closure, same rule. |
+
+**An empty database is not "100% covered".** `empty_bins()` on a database with
+no runs merged names nothing — because there is nothing to report yet, which is
+a different fact from "ran and found no gaps". A caller checking closure reads
+`points()` being empty as its own signal; `fully_covered()` is likewise `false`
+for a zero-bin entry. The whole point is that a regression cannot pass coverage
+by never having run.
+
+`CoverageDatabase`/`CoverageEntry` are Rust-only as of this delivery, the same
+tracked-asymmetry status as §15's driver surface.

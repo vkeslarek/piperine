@@ -49,8 +49,24 @@ ItemKind  ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl | BundleD
 ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 ```
 
-`ConstraintDecl` is defined in §B.9; `BehaviorDecl` in §B.7; `ExternDecl`
-(signature-only declarations, MD-24) in Part I §5.4.
+`ConstraintDecl` is defined in §B.9; `BehaviorDecl` in §B.7; `ExternDecl` below.
+
+```
+ExternDecl     ::= "extern" ( ExternType | ExternFn | ExternTask
+                            | ExternOperator | ExternAttribute | ExternImpl )
+ExternType     ::= "type" Ident ";"
+ExternFn       ::= "fn" Ident ParamList "->" Type ";"
+ExternTask     ::= "task" SysCall [ ParamList ] "->" Type ";"
+ExternOperator ::= "operator" Ident ParamList "->" Type ";"
+ExternAttribute::= "attribute" Ident "{" [ AttrField {"," AttrField} [","] ] "}"
+AttrField      ::= Ident ":" Type
+ExternImpl     ::= "impl" [ Ident "for" ] Ident "{" { FnSig } "}"
+```
+
+Every `extern` form is **signature-only**: a body on the declaration, or on any
+method inside an `extern impl` block, is a parse error (Part I §5.4). `FnSig` is
+B.6's production. `extern impl` methods participate in overload resolution by
+argument type.
 
 ## B.3 Attributes
 
@@ -175,10 +191,28 @@ BehaviorStmt  ::= VarDecl | BindStmt | IfStmt | MatchStmt | ForStmt | EventBlock
                 | Diagnostic | ExprStmt
 BindStmt      ::= Expr BindOp Expr ";"     ;   BindOp ::= "<+" | "<-" | "="
 EventBlock    ::= "@" EventSpec [ "when" "(" Expr ")" ] Block
-EventSpec     ::= EventTerm | "(" EventTerm { ("|"|"or") EventTerm } ")"
-EventTerm     ::= Ident "(" [Expr] ")" | "initial" | "final"
 Diagnostic    ::= SysCall "(" [ Expr {"," Expr} ] ")" ";"
 ```
+
+`EventSpec` is **one** production, shared by behavior bodies and `constraint`
+scopes (§B.9), defined once here:
+
+```
+EventSpec      ::= EventTerm | "(" EventOr ")" | EventAnd | "not" EventSpec
+EventOr        ::= EventAnd { ("|"|"or") EventAnd }
+EventAnd       ::= EventUnary { ("&"|"and") EventUnary }
+EventUnary     ::= "not" EventUnary | EventTerm
+EventTerm      ::= "initial" | "final"
+                 | Ident [ "(" [ TermArg {"," TermArg} ] ")" ]
+TermArg        ::= Expr | "after" "=" Expr | "dur" "=" Expr
+```
+
+The grammar is shared; what differs is which **terms** resolve in which scope,
+which the `EventRegistry` decides, not the parser (Part II §9). A behavior body
+admits the edge/crossing/lifecycle/timer kinds and the `when (cond)` clause; a
+constraint scope admits the analysis-scope kinds (`dc`/`tran`/`ac`) and the
+`after =`/`dur =` window arguments, and rejects `when`. Using a term in the wrong
+scope is a loud elaboration error, never a parse error.
 
 The left-hand side of `<+` / `<-` must be an access expression (type-checked); the
 left-hand side of `=` must be an lvalue.
@@ -229,14 +263,10 @@ severity. Verilog-AMS aliases are accepted only in the AMS ingestion front end.
 ## B.9 Constraints (`constraint` blocks)
 
 A third top-level body kind beside `analog`/`digital` (Part I §10.6), attaching
-correctness intent to a module by name. `ItemKind` (B.2) admits it as an
-alternative top-level item:
+correctness intent to a module by name. `ItemKind` (B.2) already admits it as an
+alternative top-level item — it is not restated here:
 
 ```
-ItemKind       ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl
-                 | BundleDecl | EnumDecl | CapabilityDecl | ImplDecl | FnDecl
-                 | ConstDecl
-
 ConstraintDecl ::= { Attribute } [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
 ConstraintStmt ::= RequireStmt | TargetStmt | ConstraintVar | CoverStmt | ScopedBlock
 RequireStmt    ::= "require" Ident ":" Expr ";"
@@ -267,25 +297,16 @@ rather than a binary operator inside the operand. Only the non-strict
 comparisons parse: the strict `<`/`>` have no signed-margin semantics and fail
 loud at the comparison token.
 
-**The `EventSpec` reuse (DVC-19/20).** `ScopedBlock` reuses the behavior-body
-`EventSpec` production of B.7 unchanged — `@ dc { … }`/`@ tran { … }`/`@ ac { … }`
+**The `EventSpec` reuse (DVC-19/20).** `ScopedBlock` reuses the one `EventSpec`
+production defined in B.7, unchanged — `@ dc { … }`/`@ tran { … }`/`@ ac { … }`
 scope the body to one analysis, `|` composes (`@ (dc | tran) { … }`), `&`/`not`
 intersect and complement evaluation-point sets, and `after = …`/`dur = …`
 keyed window args open and close a temporal window on a term. The terms are
 resolved against the same `EventRegistry` as behavior-body events (Part II §9);
 the analysis-scope kinds (`dc`/`tran`/`ac`) are registered analysis names. The
 `when (cond)` clause is not allowed in a constraint scope (only behavior bodies
-accept it); a temporal window serves the same role.
-
-```
-EventSpec      ::= EventTerm | "(" EventOr ")" | EventAnd | "not" EventSpec
-EventOr        ::= EventAnd { ("|"|"or") EventAnd }
-EventAnd       ::= EventUnary { ("&"|"and") EventUnary }
-EventUnary     ::= "not" EventUnary | EventTerm
-EventTerm      ::= "initial" | "final"
-                 | Ident [ "(" [ TermArg {"," TermArg} ] ")" ]
-TermArg        ::= Expr | "after" "=" Expr | "dur" "=" Expr
-```
+accept it); a temporal window serves the same role. The scope distinction is
+enforced at elaboration, not in the grammar.
 
 A top-level `require` holds in every analysis (subject to `Context::require_scope`,
 Part VII §3.3); one inside `@ dc { … }` holds in DC analyses only; an analysis
@@ -297,7 +318,8 @@ vacuous pass (DVC-19).
 ```
 Selector  ::= [ "/" | "//" ] Step { ( "/" | "//" ) Step }
 Step      ::= [ Axis "::" ] NodeTest { Predicate }
-Axis      ::= "inst"|"net"|"port"|"param"|"attr"|"behavior"|"driver"|"load"|"parent"|"ancestor"
+Axis      ::= "inst"|"net"|"port"|"param"|"attr"|"behavior"|"constraint"
+             |"driver"|"load"|"parent"|"ancestor"
 NodeTest  ::= Name | "*"
 Predicate ::= "[" ( Index | PredExpr ) "]"
 Index     ::= NatLit | "last" "(" ")"
@@ -320,13 +342,15 @@ semantics: Part IV §8–§14.
 ## B.11 Leaf enums
 
 ```
-Direction      ::= Input | Output | Inout
-Domain         ::= Analog | Digital
-DisciplineKind ::= Conservative | Storage
-Resolution     ::= Single | Tri | Or | And | Sum | Avg | Max | Min | Kcl
-NatureKind     ::= Potential | Flow
-ReflectError   ::= NotFound | NotSettable | TypeMismatch | OutOfRange
-                 | MultipleDrivers | Other
+Direction          ::= Input | Output | Inout
+Domain             ::= Analog | Digital
+DisciplineKind     ::= Conservative | Storage
+Resolution         ::= Single | Tri | Or | And | Sum | Avg | Max | Min | Kcl
+NatureKind         ::= Potential | Flow
+ConstraintStmt     ::= Require | Var | Target | Cover | CoverCross | ScopeBlock
+QuantityClass      ::= Pointwise | Reduced
+ReflectError       ::= NotFound | NotSettable | TypeMismatch | OutOfRange
+                     | MultipleDrivers | Other
 ```
 
 ## B.12 Const-expression subset

@@ -34,8 +34,8 @@ The POM is the reflection contract; the codegen-private IR is never exposed.
 Plugins are the layer-4 extension mechanism (Part I §14). They open three
 extension surfaces without breaking the core pipeline's invariants:
 
-1. **Devices** — custom analog or digital devices loaded through the
-   existing device traits. The solver sees them as any other device.
+1. **Devices** — custom analog or digital devices loaded through the one
+   existing `Element` contract. The solver sees them as any other device.
 2. **Hooks** — five frozen lifecycle points that read (and in one case,
    stage mutations to) the POM at specific stages of the pipeline.
 3. **Scripts** — custom CLI subcommands (Cargo-style) for importers,
@@ -64,11 +64,12 @@ codegen-private IR is never exposed to plugins — the POM is the only
 reflection surface.
 
 **What stays independent.** `piperine-solver` still does not depend on
-`piperine-codegen`. Plugins talk to the solver only through the existing
-device traits.
+`piperine-codegen`. Plugins talk to the solver only through the one `Element`
+contract.
 
-**The ABI is Piperine's own.** The plugin device contract is the native
-`AnalogDevice` / `DigitalDevice` trait pair — designed for mixed-signal
+**The ABI is Piperine's own.** The plugin device contract is the one native
+`Element` trait (Part VII §3 — the conjunction of `AnalogDevice`,
+`DigitalDevice`, and `Introspect`), designed for mixed-signal
 simulation and Piperine semantics. It is **not** OSDI and does not track any
 external model ABI. OSDI compatibility is itself a plugin: the
 `piperine-osdi` repository wraps compiled OSDI v0.4 models behind the native
@@ -113,7 +114,9 @@ serialization tier, and no imperative registration API.
 
 ### 3.2 The two trust gates
 
-Trust is **two explicit consents**, independent of each other (D11):
+Trust is **two explicit consents**, independent of each other (plugin-interface
+D11 — unrelated to Part VII §20.3's dv-tester D11, which numbers a different
+feature's decision log):
 
 1. **Permissions consent — at `piperine add`.** Adding a dependency whose
    `piperine-plugin.toml` declares `[permissions]` prints them and requires
@@ -354,7 +357,11 @@ name added on one side without the other fails the suite.
 (D2). The `@device`/`@port` schemas are registered by the plugin *system*
 itself whenever at least one plugin is loaded — they belong to no single
 plugin, so two device plugins never collide on them. A plugin shipping an
-`extern.phdl` gets no special treatment: there is no stub loader.
+`extern.phdl` gets no special treatment: there is no stub loader, the file is
+inert, and it cannot mint a schema name
+(`crates/piperine-plugin/tests/extern_stub.rs` is the guard). This is the
+normative statement of MD-24's plugin boundary — Part I §5.4 and Part V §0
+describe only the stdlib headers, and no plugin extends that set.
 
 **Collisions.** Two plugins declaring the same device type ID or script
 name fail at load with `PluginError::SchemaConflict` (P0003), naming both
@@ -368,6 +375,10 @@ Plugin devices bind to the solver through the same device ABI as compiled
 PHDL devices and external model wrappers. The normative solver-side
 device-loading contract, including factory inputs, terminal bindings, and
 solver validation rules, is Part VII §5.
+
+A plugin device is one `Element` (Part VII §3): a single flat object presenting
+whatever analog and/or digital surface it needs, declaring its
+`ElementCapabilities`, with no downcast and no analog/digital wrapper pair.
 
 **The ABI is Rust, same-compiler (D13).** A device binary is a prebuilt
 shared library (`.so`/`.dll`/`.dylib`) loaded via dlopen, exporting two C
@@ -496,8 +507,13 @@ mod Top() {
 ```
 
 ```python
-op = session.run_op(&SolverConfig::default(), None)?;   # host API (Part VIII §7)
-assert 2.49 < op.v("out") < 2.51                        # divider at 2.5 V
+op = session.op()                       # host API (Part VIII §3)
+assert 2.49 < op.v("out") < 2.51        # divider at 2.5 V
+```
+
+```rust
+let op = session.op(&SolverConfig::default(), None)?;   // the Rust twin
+assert!((2.49..2.51).contains(&op.v("out")?));
 ```
 
 ---
@@ -618,6 +634,7 @@ elaboration (`E2xxx`), and reflection (`E3xxx`).
 | P0007 | `HashMismatch` | lockfile content hash does not match a path-sourced artifact |
 | P0008 | `StagingConflict` | two writers staged different specs at one path — names both plugins and the path |
 | P0009 | `UnknownScript` | CLI subcommand not registered by any plugin |
+| P0010 | — | vacant: the retired per-plugin `extern.phdl` stub error (`MissingExternStub`). Plugins contribute no schemas (§6), so the condition no longer exists; the code is left unassigned rather than reused, so an old lockfile or log naming P0010 stays unambiguous |
 | P0011 | `RemovedBackend` | manifest declares `abi = "wasm"` or `abi = "process"` — backends are native + Python only |
 | P0012 | `NoAssetForTriple` | no release asset matches the host target triple — names triple + release |
 | P0013 | `VerifyMismatch` | fetched asset hash does not match the manifest's `verify` hash — hard fail, no prompt |

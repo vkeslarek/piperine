@@ -1,7 +1,7 @@
 # Appendix A — Worked Examples
 
 Each example stresses a corner of the model. Together they cover analog, digital,
-mixed-signal, and the interpreted context.
+and mixed-signal design, plus the host surfaces that drive them (Part VIII).
 
 ## A.1 Core library (excerpt)
 
@@ -51,7 +51,11 @@ mod Dac[N] ( input code : Bit[N], inout out : Electrical, inout gnd : Electrical
 }
 analog Dac {
     var acc = 0.0;
-    for i in 0..N { if (code[i] == 1) { acc = acc + vref * pow(2.0, real(i)) / pow(2.0, real(N)); } }
+    for i in 0..N {
+        if (code[i] == 1) {
+            acc = acc + vref * pow(2.0, Real::from(i)) / pow(2.0, Real::from(N));
+        }
+    }
     V(out, gnd) <- acc;
 }
 
@@ -329,7 +333,7 @@ registry.register("SoftStartLoad", |spec| {
 });
 ```
 
-`SessionBuilder::host_registry(Rc::new(registry))` wires it; the same
+`SessionBuilder::host_registry(Rc::new(registry))` (Appendix C §2) wires it; the same
 `@device` declaration would resolve to a plugin binding instead if one were
 wired with `SessionBuilder::provider(...)` — the PHDL never changes between
 the two modes (Part I §10.7's graduation path).

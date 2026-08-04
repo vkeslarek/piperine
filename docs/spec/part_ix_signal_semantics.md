@@ -173,9 +173,12 @@ branch above returns `target` directly whenever `ramp <= 0`).
 ### 2.3 Declared breakpoints
 
 `transition` publishes its own future discontinuities so the integrator can
-land on them exactly (Part VII §15.9's breakpoint mechanism) rather than
-stepping past them and interpolating across a kink. Given a query window
-`(from, end]`:
+land on them exactly rather than stepping past them and interpolating across a
+kink. The publishing method is `pending_edges(from, end)` — this crate's own
+name, since it knows nothing of elements or breakpoints; the device layer
+forwards what it returns to the solver as `Element::next_breakpoints` (Part VII
+§15.9). `Wave` publishes through the identical shape (§8.4). Given a query
+window `(from, end]`:
 
 - A settled operator (unseeded, or `start == target`) contributes nothing —
   it has no pending edge.
