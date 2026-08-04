@@ -1,0 +1,12 @@
+// ac_rc — the same RC lowpass as ac_rc.cir. The AC stimulus is a unit
+// magnitude at 0°, so v(out) IS the transfer function H(f) = 1/(1 + j·2πfRC)
+// and the -3 dB corner sits at exactly 100 kHz.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+mod Top() {
+    wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
+    v1: vsrc (.p = vin, .n = gnd) { .dc = 0.0, .ac_mag = 1.0 };
+    r1: res  (.p = vin, .n = out) { .r = 1000.0 };
+    c1: cap  (.p = out, .n = gnd) { .c = 1.5915494309189535e-9 };
+}

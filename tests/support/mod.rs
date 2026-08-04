@@ -6,4 +6,8 @@
 //! the machinery several golden targets share lives here instead of being
 //! re-typed per target.
 
+// Each target compiles the whole module but consumes only the domain it
+// covers, so the parts it does not call are "dead" from that target's point of
+// view. The exemption sits on the item it excuses (MD-33), not on the file.
+#[allow(dead_code)]
 pub mod ngspice;

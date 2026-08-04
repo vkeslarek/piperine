@@ -197,13 +197,13 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `//!` scope header present (suite_hygiene)
-- [ ] Magnitude and phase compared per frequency; failure names node, frequency, both values, Δ and the contract rationale
-- [ ] Phase skipped where magnitude < floor, and a fixture where *every* point skips fails as vacuous
-- [ ] ngspice-absent takes the SKIP branch (NGP-06)
-- [ ] The RC fixture's analytic response is verified independently (known −3 dB point), so the test is not merely self-consistent
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥4 tests (happy, vacuous guard, skip branch, tolerance-miss message)
+- [x] `//!` scope header present (suite_hygiene)
+- [x] Magnitude and phase compared per frequency; failure names node, frequency, both values, Δ and the contract rationale
+- [x] Phase skipped where magnitude < floor, and a fixture where *every* point skips fails as vacuous
+- [x] ngspice-absent takes the SKIP branch (NGP-06)
+- [x] The RC fixture's analytic response is verified independently (known −3 dB point), so the test is not merely self-consistent
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥4 tests (happy, vacuous guard, skip branch, tolerance-miss message)
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ngspice): cross-check AC magnitude and phase per frequency`

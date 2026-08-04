@@ -1,0 +1,13 @@
+* ac_rc — RC lowpass AC cross-check (magnitude + phase per frequency).
+* R = 1 kΩ, C = 1.5915494309189535 nF places the -3 dB corner at exactly
+* 1/(2*pi*R*C) = 100 kHz, which is a grid point of the `dec 10` sweep below
+* (1k * 10^(i/10), i = 20). That makes the analytic anchor exact rather than
+* interpolated.
+V1 vin 0 DC 0 AC 1
+R1 vin out 1000
+C1 out 0 1.5915494309189535e-9
+.control
+ac dec 10 1k 10Meg
+wrdata ac_rc_ac v(out)
+.endc
+.end

@@ -345,14 +345,28 @@ impl NgspiceHarness {
         Ok(vals)
     }
 
-    /// Piperine side: elaborate `<circuit>.phdl` and solve the DC operating
-    /// point in-process, returning the result object.
-    pub(crate) fn piperine_op(&self, circuit: &str) -> Result<OpResult, String> {
+    /// Elaborate `<circuit>.phdl` against the real stdlib headers.
+    fn elaborate(circuit: &str) -> Result<piperine_lang::Design, String> {
         let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
         let src = std::fs::read_to_string(&phdl)
             .map_err(|e| format!("{circuit}: {}: {e}", phdl.display()))?;
-        let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
-            .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))?;
+        piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
+            .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))
+    }
+
+    /// The piperine side of a domain cross-check: `<circuit>.phdl` compiled
+    /// into a session. Deliberately **not** `.disto(true)` — the 2nd/3rd
+    /// derivative kernels are opt-in, costly, and overrun Cranelift on
+    /// MOS2/MOS3, so only the spectral target (which needs them) asks.
+    pub(crate) fn session(&self, circuit: &str) -> Result<Session, String> {
+        let design = Self::elaborate(circuit)?;
+        Ok(Session::compile(&design, "Top").expect("session compiles"))
+    }
+
+    /// Piperine side: elaborate `<circuit>.phdl` and solve the DC operating
+    /// point in-process, returning the result object.
+    pub(crate) fn piperine_op(&self, circuit: &str) -> Result<OpResult, String> {
+        let design = Self::elaborate(circuit)?;
         let mut session = Session::compile(&design, "Top").expect("session compiles");
         session
             .op(&SolverConfig::default(), None)
@@ -518,11 +532,7 @@ impl NgspiceHarness {
     /// Piperine side shared by the spectral cross-checks: elaborate
     /// `<circuit>.phdl` into a session.
     fn piperine_session(&self, circuit: &str) -> Result<Session, String> {
-        let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
-        let src = std::fs::read_to_string(&phdl)
-            .map_err(|e| format!("{circuit}: {}: {e}", phdl.display()))?;
-        let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
-            .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))?;
+        let design = Self::elaborate(circuit)?;
         // `.disto(true)`: the spectral cases include `.disto`, the one analysis
         // whose 2nd/3rd-derivative kernels are opt-in.
         Ok(Session::builder(&design, "Top").disto(true).compile().expect("session compiles"))
