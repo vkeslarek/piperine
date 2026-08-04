@@ -593,12 +593,18 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// **Empty, deliberately.** Every root target today is a shell proof or a
-/// cross-crate proof. This file — the one root target that links no workspace
-/// crate — needs no entry because the walk already skips it as [`SELF`]. An
-/// entry added here must move the count in [`root_targets_match_the_naming_rule`]
-/// with it, so the exemption cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 0] = [];
+/// One entry. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// coverage registry (NGP-15/MD-31): a repo-policy proof in the
+/// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
+/// `tests/ngspice/` and the golden targets — so it links no workspace crate,
+/// the same standing this file has (skipped as [`SELF`]). An entry added here
+/// must move the expected set in [`root_targets_match_the_naming_rule`] with
+/// it, so the exemption cannot be granted quietly.
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 1] = [(
+    "ngspice_parity_matrix.rs",
+    "NGP-15/MD-31 parity registry over the whole ngspice corpus — a repo-policy proof \
+     (data table + filesystem walk), not a host-surface or cross-crate one",
+)];
 
 fn registered_root_exemption(file: &str) -> Option<&'static str> {
     ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
@@ -658,10 +664,11 @@ fn root_targets_match_the_naming_rule() {
          exercising one crate alone lives in that crate):\n  {}",
         offences.join("\n  ")
     );
-    assert!(
-        exempted.is_empty(),
-        "the exempted root-target set grew — record the new exemption's reason in \
-         `ROOT_TARGET_EXEMPTIONS` and move this assertion's expected set with it: \
-         {exempted:?}"
+    let expected: Vec<String> =
+        ROOT_TARGET_EXEMPTIONS.iter().map(|(name, _)| (*name).to_string()).collect();
+    assert_eq!(
+        exempted, expected,
+        "the exempted root-target set changed — record the exemption's reason in \
+         `ROOT_TARGET_EXEMPTIONS` and move this assertion's expected set with it"
     );
 }

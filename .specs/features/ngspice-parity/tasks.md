@@ -245,12 +245,12 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `//!` header present
-- [ ] Comparison is on ngspice's print times via interpolation — **never** raw adaptive samples
-- [ ] A non-convergent fixture reports "failed to converge" distinctly from a tolerance miss (spec Edge Cases)
-- [ ] ngspice-absent SKIP branch
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥4 tests
+- [x] `//!` header present
+- [x] Comparison is on ngspice's print times via interpolation — **never** raw adaptive samples
+- [x] A non-convergent fixture reports "failed to converge" distinctly from a tolerance miss (spec Edge Cases)
+- [x] ngspice-absent SKIP branch
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥4 tests
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ngspice): cross-check transient on a common time grid`
@@ -268,11 +268,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `//!` header present
-- [ ] At least two temperatures compared (one below, one above nominal), so a model pinned to nominal fails
-- [ ] ngspice-absent SKIP branch
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥3 tests
+- [x] `//!` header present
+- [x] At least two temperatures compared (one below, one above nominal), so a model pinned to nominal fails
+- [x] ngspice-absent SKIP branch
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥3 tests
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ngspice): cross-check the operating point across temperature`
@@ -290,12 +290,12 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `//!` header present
-- [ ] Every one of the 13 models × 6 domains is `Covered` or `NotApplicable` with a written reason
-- [ ] A `Covered` row naming a missing `.cir`/`.phdl` twin fails loud
-- [ ] **Guard proven able to fail** (MD-31): add an unaccounted model row, observe the failure, revert — recorded in the commit body
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥3 tests
+- [x] `//!` header present
+- [x] Every one of the 13 models × 6 domains is `Covered` or `NotApplicable` with a written reason
+- [x] A `Covered` row naming a missing `.cir`/`.phdl` twin fails loud
+- [x] **Guard proven able to fail** (MD-31): add an unaccounted model row, observe the failure, revert — recorded in the commit body
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥3 tests
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ngspice): gate model × domain parity coverage`
