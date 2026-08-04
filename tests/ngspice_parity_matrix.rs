@@ -176,10 +176,7 @@ impl ParityMatrix {
                 (Domain::Ac, Coverage::NotApplicable {
                     reason: "pending: no AC golden fixture exercises the switch",
                 }),
-                (Domain::Noise, Coverage::NotApplicable {
-                    reason: "pending: T13 adds the ON-state thermal-noise fixture (ngspice \
-                             swnoise.c)",
-                }),
+                (Domain::Noise, Coverage::Covered { fixture: "noise_switch" }),
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises the switch's \
                              hysteresis",
@@ -204,10 +201,7 @@ impl ParityMatrix {
                     reason: "pending: no AC golden fixture exercises the current-controlled \
                              switch",
                 }),
-                (Domain::Noise, Coverage::NotApplicable {
-                    reason: "pending: T13 adds the ON-state thermal-noise fixture (ngspice \
-                             swnoise.c)",
-                }),
+                (Domain::Noise, Coverage::Covered { fixture: "noise_csw" }),
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises the \
                              current-controlled switch",

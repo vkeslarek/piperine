@@ -66,6 +66,15 @@ pub analog sw {
 
     // Stamp: pure conductance (swload.c)
     I(p, n) <+ g * V(p, n);
+
+    // Thermal noise (swnoise.c:99-102). A switch is a resistor whose value the
+    // state machine picks, so it is as noisy as that resistor: ngspice hands
+    // NevalSrc the very conductance it stamped — `SWonConduct` when closed,
+    // `SWoffConduct` when open — which is exactly `g` above. At the default
+    // ron = 1 Ω a closed switch is therefore a 1 Ω resistor's worth of noise,
+    // three orders louder than the open state, and until now piperine
+    // contributed none at all in either state.
+    I(p, n) <+ white_noise(4.0 * NG_K * $temperature() * g);
 }
 
 // ── CSW: current-controlled switch ──────────────────────────────────────────
@@ -112,4 +121,8 @@ pub analog csw {
 
     var g : Real = if (sw_state > 0.5) { gon } else { goff };
     I(p, n) <+ g * V(p, n);
+
+    // Thermal noise — cswnoise.c is swnoise.c with the CSW conductances; the
+    // stamped conductance is again the noise parameter.
+    I(p, n) <+ white_noise(4.0 * NG_K * $temperature() * g);
 }

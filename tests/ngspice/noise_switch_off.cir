@@ -1,0 +1,15 @@
+* noise_switch_off — the OFF-state value. The control sits below vt, so S1 is
+* roff = 10k and its noise is a measurable tenth of the total at node a
+* (1k || 10k): enough that dropping the open switch's contribution, or reusing
+* the ON conductance for it, moves the spectrum far outside tolerance.
+Vin in 0 DC 1 AC 1
+Vc  c  0 DC 0
+R1  in a 1k
+S1  a 0 c 0 SMOD
+.model SMOD SW (vt=1 ron=1 roff=10k)
+.control
+noise v(a) Vin dec 10 1k 10k
+setplot noise1
+wrdata noise_switch_off_psd onoise_spectrum
+.endc
+.end

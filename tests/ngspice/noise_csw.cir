@@ -1,0 +1,17 @@
+* noise_csw — the OFF-state thermal noise of a current-controlled switch.
+* The sense current (0.1 A through Vsense) sits below it = 0.5 A, so W1 is
+* roff = 10k and contributes a measurable tenth of the noise at node a
+* (1k || 10k). The ON state is not cross-checked here for the reason recorded
+* on the sw fixtures: ngspice's .noise never sees a closed switch.
+Vin in 0 DC 1 AC 1
+Iw  0 s DC 0.1
+Vsense s 0 DC 0
+R1  in a 1k
+W1  a 0 Vsense WMOD
+.model WMOD CSW (it=0.5 ron=1 roff=10k)
+.control
+noise v(a) Vin dec 10 1k 10k
+setplot noise1
+wrdata noise_csw_psd onoise_spectrum
+.endc
+.end

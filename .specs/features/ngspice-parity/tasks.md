@@ -376,11 +376,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Closed switch contributes thermal noise (~16 pA/√Hz at `ron = 1 Ω`, per the ROADMAP audit)
-- [ ] Open switch contributes the OFF-state value ngspice uses
-- [ ] Reverting fails the fixture
-- [ ] Parity matrix updated: sw/csw × Noise → `Covered`
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] Closed switch contributes thermal noise (~16 pA/√Hz at `ron = 1 Ω`, per the ROADMAP audit)
+- [x] Open switch contributes the OFF-state value ngspice uses
+- [x] Reverting fails the fixture
+- [x] Parity matrix updated: sw/csw × Noise → `Covered`
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): stamp ON-state thermal noise for the switch`

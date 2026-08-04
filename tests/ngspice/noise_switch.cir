@@ -1,0 +1,16 @@
+* noise_switch — the ON-state thermal noise of a closed voltage-controlled
+* switch. Vc holds the control above vt, so S1 is a 1 Ohm resistor and
+* dominates the output impedance at node a (1k || 1 Ohm). Its own noise is
+* therefore ~1000x R1's: a switch that contributes none — which is what
+* piperine did before swnoise.c was ported — reads three orders too quiet.
+Vin in 0 DC 1 AC 1
+Vc  c  0 DC 5
+R1  in a 1k
+S1  a 0 c 0 SMOD
+.model SMOD SW (vt=1 ron=1 roff=10k)
+.control
+noise v(a) Vin dec 10 1k 10k
+setplot noise1
+wrdata noise_switch_psd onoise_spectrum
+.endc
+.end

@@ -291,6 +291,99 @@ fn ngspice_jfet_linear_region_channel_noise() {
     }
 }
 
+/// The two OPEN-switch fixtures (NGP-09) — a voltage-controlled `sw` and a
+/// current-controlled `csw`, each stamping `roff = 10 kΩ` across a 1 kΩ source
+/// resistance so its own thermal noise is a tenth of the total at the output.
+/// A switch that contributes nothing reads ~10 % low, two orders outside the
+/// PSD contract.
+const NOISE_SWITCH_OFF: [NoiseCase; 2] = [
+    NoiseCase {
+        circuit: "noise_switch_off",
+        out: "a",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e4,
+        points: 11,
+    },
+    NoiseCase {
+        circuit: "noise_csw",
+        out: "a",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e4,
+        points: 11,
+    },
+];
+
+/// The CLOSED switch, which ngspice cannot be the oracle for — see
+/// [`the_closed_switch_carries_its_on_conductance_noise`].
+const NOISE_SWITCH_ON: NoiseCase = NoiseCase {
+    circuit: "noise_switch",
+    out: "a",
+    reference: "gnd",
+    fstart: 1.0e3,
+    fstop: 1.0e3,
+    points: 1,
+};
+
+/// NGP-09: an open switch contributes the OFF-state thermal noise ngspice
+/// computes from the conductance it stamped (`swnoise.c`/`cswnoise.c`), on both
+/// the voltage- and the current-controlled switch.
+#[test]
+fn ngspice_open_switch_thermal_noise() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP noise_switch_off: ngspice not on PATH");
+        return;
+    };
+    for case in &NOISE_SWITCH_OFF {
+        let golden = case.golden_psd(&harness, "noise-switch-off");
+        let (actual, _) = case.piperine(&harness);
+        NoiseCase::compare_psd(case.circuit, case.out, &golden, &actual)
+            .unwrap_or_else(|e| panic!("{e}"));
+        eprintln!("PASS {} ({} frequency points)", case.circuit, golden.len());
+    }
+}
+
+/// NGP-09 + MD-38 — **a deliberate deviation, asserted against physics rather
+/// than against ngspice.**
+///
+/// `swnoise.c` selects `SWonConduct` when the switch state is non-zero, and
+/// `swacload.c` stamps the same choice, so a closed switch is meant to be as
+/// noisy as its `ron`. ngspice-46 never gets there: the switch state vector is
+/// not propagated into the `.noise` analysis, so both its AC stamp and its
+/// noise source read state 0 and use `roff` for a switch the DC solve closed.
+/// Measured on `noise_switch`, whose operating point both simulators agree on
+/// (`v(a) = 9.99e-4 V`, i.e. the 1 Ω path): ngspice reports 3.881900e-9 V/√Hz
+/// — the 1 kΩ‖10 kΩ figure — and reports the *identical* number with the
+/// instance `ON` keyword, after a preceding `op`, and it tracks `roff` when
+/// `roff` changes (4.071372e-9 at `roff = 1e12`). That is the open switch's
+/// spectrum, not the closed one's.
+///
+/// Piperine stamps the conductance it actually solved with, so the assertion
+/// here is the Johnson noise of the network that exists: the output sees
+/// `gon + 1/R1` in parallel, giving `4kT/(gon + 1/R1)`.
+#[test]
+fn the_closed_switch_carries_its_on_conductance_noise() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP noise_switch: ngspice not on PATH");
+        return;
+    };
+    let (actual, _) = NOISE_SWITCH_ON.piperine(&harness);
+    let (freq, psd) = actual[0];
+    // ron = 1 Ω in parallel with R1 = 1 kΩ; a resistive network's output PSD
+    // is 4kT times its output resistance.
+    let expected = 4.0 * BOLTZMANN * NOMINAL_KELVIN / (1.0 + 1.0e-3);
+    assert!(
+        ToleranceContract::NOISE_PSD.holds(expected, psd),
+        "noise_switch: a closed switch must carry its ron's Johnson noise — \
+         expected {expected:.6e} V²/Hz at {freq:.6e} Hz, got {psd:.6e}. \
+         ngspice is deliberately not the oracle here (see this test's doc \
+         comment); dropping the switch's noise source leaves only R1 and reads \
+         ~1000x quiet.\n  {}",
+        ToleranceContract::NOISE_PSD.rationale()
+    );
+}
+
 /// NGP-02: the output-noise PSD agrees with ngspice at every swept frequency,
 /// once ngspice's V/√Hz is squared into piperine's V²/Hz.
 #[test]
