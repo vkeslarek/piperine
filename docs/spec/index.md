@@ -34,6 +34,8 @@ availability**, and **system tasks**. Driving analyses, measuring, and verifying
 | **VI** | [Plugins](part_vi_plugins.md) | Plugin extensibility model: devices, lifecycle hooks, custom scripts, attribute schemas, security model |
 | **VII** | [Solver](part_vii_solver.md) | Device ABI, analog/digital namespaces, MNA stamping, analyses, mixed-signal execution, convergence aids |
 | **VIII** | [Host APIs](part_viii_host_api.md) | Python (`import piperine`) + Rust (`piperine-api`): load/Design/Module, analyses + results, LiveSession, `piperine run`/`-i`/`test` |
+| **IX** | [Runtime Semantics (piperine-signal)](part_ix_signal_semantics.md) | The pure computation crate shared by compiled PHDL devices and host devices: runtime operators, event detectors, the junction limiter, table interpolation, `Behavior`/`Measure`/`Wave`, derivative verification, digital edge logic (IEEE 1364) |
+| **X** | [Codegen Pipeline (piperine-codegen)](part_x_codegen_pipeline.md) | POM → resolve → flatten → emit → kernel → device: symbolic differentiation, Cranelift emission/CSE, compiled kernels, `CircuitCompiler`, the piperine-signal delegation boundary, the fail-loud coverage contract |
 | **App. A** | [Worked Examples](appendix_a_worked_examples.md) | End-to-end architectures spanning analog, digital, interpreted, and mixed-signal |
 | **App. B** | [Complete Grammar (EBNF)](appendix_b_grammar.md) | Consolidated LL(1) grammar for the whole language |
 | **App. C** | [Host API Surface Reference](appendix_c_host_surface.md) | Flat inventory of the Python + Rust host surfaces, asymmetries, and the surface-review sheet |

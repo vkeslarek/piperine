@@ -767,7 +767,7 @@ one device — a class may stamp directly *and* install a `Wave`/`Behavior`
 | Level | What it is | Home | Host calls |
 |---|---|---|---|
 | **0** | the raw solver ABI — stamps, unknowns, `Element` itself | `piperine-solver` (Rust) / `pip.Device` (Python) | one per **Newton iteration** in Python; native in Rust |
-| **1** | native signal mechanism — `Wave`, `Behavior`, events, `Measure` | `piperine-signal` | **zero** — closed-form value + derivative, evaluated every Newton iteration for free |
+| **1** | native signal mechanism — `Wave`, `Behavior`, events, `Measure` | `piperine-signal` (Part IX) | **zero** — closed-form value + derivative, evaluated every Newton iteration for free |
 | **2** | the sequencer — declares level 1, sequences time, checks | `piperine-api::sequencer` / `pip.Sequencer` | one per **declared wake** (`t.advance`/`t.wait`), never per Newton iteration |
 
 The delivered cost model, concretely:
