@@ -120,6 +120,25 @@ fn white_noise_registers_a_source_on_its_branch() {
     assert!(matches!(source.kind, NoiseKind::White { .. }));
 }
 
+/// A noise source is attributed to the branch it is contributed to even when
+/// the contribution sits inside a conditional — the shape the whole spice
+/// stdlib uses (`if (noisy) { I(p,n) <+ white_noise(…) }`). Recording it on
+/// ground↔ground instead makes it stamp nothing, which reads as a model with
+/// no noise rather than a lowering that lost the branch: a silent zero, the
+/// one thing this project never emits.
+#[test]
+fn white_noise_inside_a_conditional_keeps_its_branch() {
+    let body = lower(
+        &test_mod("if (V(p, n) > 0.0) { I(p, n) <+ white_noise(1e-24); }"),
+        "TestMod",
+    );
+    let analog = body.analog.as_ref().expect("analog body");
+    assert_eq!(analog.noise.len(), 1, "the guarded source is still registered");
+    let source = &analog.noise[0];
+    assert_eq!(body.symbols.node(source.plus).name, "p", "plus is the contribution's node");
+    assert_eq!(body.symbols.node(source.minus).name, "n", "minus is the contribution's node");
+}
+
 #[test]
 fn flicker_noise_registers_a_flicker_source() {
     let body = lower(&test_mod("I(p, n) <+ flicker_noise(1e-25, 2.0);"), "TestMod");
@@ -269,3 +288,4 @@ fn an_unknown_net_in_an_instance_connection_fails_lowering() {
     let err = lower_bodies(&design).expect_err("an unknown net must fail lowering");
     assert!(err.to_string().contains("no_such_net"), "names the net: {err}");
 }
+

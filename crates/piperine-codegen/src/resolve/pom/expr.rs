@@ -305,11 +305,21 @@ pub(crate) fn resolve_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Stmt {
     use piperine_lang::parse::ast::{BindOp, Stmt as S};
     match stmt {
         S::Bind { dest, op, src } => {
-            let src = resolve_expr(src, ctx);
+            // Noise is scanned from the *unresolved* source, on the
+            // contribution's own branch — exactly as the top-level path does.
+            // Resolution rewrites a `white_noise(…)` call to the literal 0.0
+            // it contributes deterministically, so scanning afterwards finds
+            // nothing; and a nested contribution belongs to its own branch,
+            // not to ground↔ground. Either mistake silently drops every noise
+            // source a model guards behind a flag — `if (noisy) { I(p,n) <+
+            // white_noise(…) }` is how the whole spice stdlib is written — and
+            // a silent zero is the one thing this project never emits.
             if *op == BindOp::Contrib {
-                scan_noise(&src, NodeId::GROUND, NodeId::GROUND, ctx);
+                let (_nature, plus, minus) = parse_contrib_dest(dest, ctx);
+                scan_noise(src, plus, minus, ctx);
             }
-            S::Bind { dest: dest.clone(), op: op.clone(), src }
+            let resolved = resolve_expr(src, ctx);
+            S::Bind { dest: dest.clone(), op: op.clone(), src: resolved }
         }
         S::VarDecl { name, ty, default } => {
             let default = default.as_ref().map(|e| resolve_expr(e, ctx));
