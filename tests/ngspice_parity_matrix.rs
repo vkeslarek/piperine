@@ -288,10 +288,7 @@ impl ParityMatrix {
                 (Domain::Ac, Coverage::NotApplicable {
                     reason: "pending: no AC golden fixture exercises mos1",
                 }),
-                (Domain::Noise, Coverage::NotApplicable {
-                    reason: "pending: T11 replaces the saturation-only gm_est with the \
-                             analytic gm and lands the linear-region fixture",
-                }),
+                (Domain::Noise, Coverage::Covered { fixture: "noise_mos_linear" }),
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises mos1",
                 }),
@@ -308,10 +305,7 @@ impl ParityMatrix {
                 (Domain::Ac, Coverage::NotApplicable {
                     reason: "pending: no AC golden fixture exercises mos2",
                 }),
-                (Domain::Noise, Coverage::NotApplicable {
-                    reason: "pending: T11 replaces the saturation-only gm_est with the \
-                             analytic gm and lands the linear-region fixture",
-                }),
+                (Domain::Noise, Coverage::Covered { fixture: "noise_mos2_linear" }),
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises mos2",
                 }),
@@ -328,10 +322,7 @@ impl ParityMatrix {
                 (Domain::Ac, Coverage::NotApplicable {
                     reason: "pending: no AC golden fixture exercises mos3",
                 }),
-                (Domain::Noise, Coverage::NotApplicable {
-                    reason: "pending: T11 replaces the saturation-only gm_est with the \
-                             analytic gm and lands the linear-region fixture",
-                }),
+                (Domain::Noise, Coverage::Covered { fixture: "noise_mos3_linear" }),
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises mos3",
                 }),

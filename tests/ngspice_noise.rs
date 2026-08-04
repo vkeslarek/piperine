@@ -81,6 +81,18 @@ impl NoiseCase {
         (exports.remove(0).pairs(), integrated)
     }
 
+    /// The spectrum export alone, for a fixture whose `.control` block exports
+    /// only `onoise_spectrum`. A device fixture measures the *shape* one
+    /// model's sources give the output noise; the integrated figure and its
+    /// quadrature caveat belong to [`NOISE_RC`].
+    fn golden_psd(&self, harness: &NgspiceHarness, run: &str) -> Vec<(f64, f64)> {
+        let psd = format!("{}_psd", self.circuit);
+        let mut exports = harness
+            .run_export(self.circuit, run, &[(&psd, 2)])
+            .unwrap_or_else(|e| panic!("{e}"));
+        exports.remove(0).pairs()
+    }
+
     /// Piperine's side: the output-noise PSD samples and the integrated total.
     fn piperine(&self, harness: &NgspiceHarness) -> (Vec<(f64, f64)>, f64) {
         let mut session = harness.session(self.circuit).unwrap_or_else(|e| panic!("{e}"));
@@ -179,6 +191,61 @@ const NOISE_RC: NoiseCase = NoiseCase {
     fstop: 1.0e6,
     points: 301,
 };
+
+/// The three triode-biased MOSFET fixtures (NGP-08) — one per model level,
+/// otherwise identical circuits. Each biases `vgs - vto = 2 V` against a
+/// settled `vds ≈ 0.2 V`, which is the region the fix is about: ngspice's gm
+/// there is `beta·vds`, while the saturation-only estimate the models used to
+/// carry is `beta·(vgs - vto)`, ten times larger. The load resistor is sized so
+/// the channel term and its own thermal noise are the same order, so that
+/// tenfold gm error shows up as a ~2.6× error in the output spectrum rather
+/// than disappearing under the resistor.
+const NOISE_MOS_LINEAR: [NoiseCase; 3] = [
+    NoiseCase {
+        circuit: "noise_mos_linear",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e5,
+        points: 21,
+    },
+    NoiseCase {
+        circuit: "noise_mos2_linear",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e5,
+        points: 21,
+    },
+    NoiseCase {
+        circuit: "noise_mos3_linear",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e5,
+        points: 21,
+    },
+];
+
+/// NGP-08: mos1/mos2/mos3 channel noise in the linear region agrees with
+/// ngspice, which it can only do if the noise source reads the model's
+/// analytic gm. Reverting any of the three `gm` sites to the saturation-only
+/// estimate fails this test on that model, naming the frequency and both
+/// spectra.
+#[test]
+fn ngspice_mos_linear_region_channel_noise() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP noise_mos_linear: ngspice not on PATH");
+        return;
+    };
+    for case in &NOISE_MOS_LINEAR {
+        let golden = case.golden_psd(&harness, "noise-mos-linear");
+        let (actual, _) = case.piperine(&harness);
+        NoiseCase::compare_psd(case.circuit, case.out, &golden, &actual)
+            .unwrap_or_else(|e| panic!("{e}"));
+        eprintln!("PASS {} ({} frequency points)", case.circuit, golden.len());
+    }
+}
 
 /// NGP-02: the output-noise PSD agrees with ngspice at every swept frequency,
 /// once ngspice's V/√Hz is squared into piperine's V²/Hz.

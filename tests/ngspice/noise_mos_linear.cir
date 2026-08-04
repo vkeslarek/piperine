@@ -1,0 +1,19 @@
+* noise_mos_linear — MOSFET (level 1) channel noise in the LINEAR region.
+* The bias is the whole point: vgs-vto = 2 V while vds settles near 0.2 V, so
+* the device sits deep in triode, where ngspice's gm is beta*vds and the old
+* saturation-only estimate beta*(vgs-vto) is ten times larger. Rd is sized so
+* its own thermal noise and the channel noise are the same order — a wrong gm
+* moves the total spectrum far outside the comparison tolerance instead of
+* hiding under the resistor.
+* kf=0 keeps flicker out: this fixture measures the channel term alone.
+Vdd vdd 0 DC 5
+Vg  g   0 DC 3 AC 1
+Rd  vdd d 6.2k
+M1  d g 0 0 NMOD L=1u W=100u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0 kf=0)
+.control
+noise v(d) Vg dec 10 1k 100k
+setplot noise1
+wrdata noise_mos_linear_psd onoise_spectrum
+.endc
+.end

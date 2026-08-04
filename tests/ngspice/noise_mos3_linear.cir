@@ -1,0 +1,21 @@
+* noise_mos3_linear — MOSFET (level 3) channel noise in the LINEAR region.
+* Same triode bias as noise_mos_linear.cir; only the model level changes, so
+* the three fixtures together prove the gm fix on mos1, mos2 and mos3.
+* The bias is the whole point: vgs-vto = 2 V while vds settles near 0.2 V, so
+* the device sits deep in triode, where ngspice's gm is beta*vds and the old
+* saturation-only estimate beta*(vgs-vto) is ten times larger. Rd is sized so
+* its own thermal noise and the channel noise are the same order — a wrong gm
+* moves the total spectrum far outside the comparison tolerance instead of
+* hiding under the resistor.
+* kf=0 keeps flicker out: this fixture measures the channel term alone.
+Vdd vdd 0 DC 5
+Vg  g   0 DC 3 AC 1
+Rd  vdd d 6.2k
+M1  d g 0 0 NMOD L=1u W=100u
+.model NMOD NMOS (level=3 vto=1 kp=2e-5 kf=0)
+.control
+noise v(d) Vg dec 10 1k 100k
+setplot noise1
+wrdata noise_mos3_linear_psd onoise_spectrum
+.endc
+.end

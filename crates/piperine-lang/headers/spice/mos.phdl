@@ -268,14 +268,21 @@ pub analog mos1 {
     var vdsat : Real = if (vgst > 0.0) { vgst } else { 0.0 };
 
     var cdrain : Real = 0.0;
+    // `gm` is ngspice's own MOS1gm (mos1load.c:499-524), computed here beside
+    // the current it differentiates rather than re-estimated later: the
+    // channel-noise source (§13) reads it, and the saturation form alone is
+    // wrong by `vgst/vds` throughout the linear region.
+    var gm : Real = 0.0;
     if (vgst > 0.0) {
         var betap : Real = beta * (1.0 + model.lambda * vds_eff);
         if (vgst < vds_eff) {
             // Saturation
             cdrain = betap * vgst * vgst * 0.5;
+            gm = betap * vgst;
         } else {
             // Linear
             cdrain = betap * vds_eff * (vgst - vds_eff * 0.5);
+            gm = betap * vds_eff;
         }
     }
 
@@ -467,9 +474,9 @@ pub analog mos1 {
     // Thermal: RD, RS
     if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
     if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
-    // Channel: 4kT · (2/3) · |gm|  (gm already carries m via beta)
-    var gm_est : Real = beta * vgst;  // saturation gm (approximate for noise)
-    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    // Channel: 4kT · (2/3) · |gm|  (gm already carries m via beta) — the
+    // model's own analytic MOS1gm from §6, exactly what mos1noi.c:132 reads.
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm));
     // Flicker (mos1noi.c:138-143):
     //   KF · |Id|^AF / (f · W · m · Leff · Cox²),  Id = mode·cdrain − cbd
     if (model.kf > 0.0 && cox > 0.0) {
@@ -822,12 +829,16 @@ pub analog mos2 {
     // ════════════════════════════════════════════════════════════════════════
     var ufact : Real = 1.0;
     var ueff : Real = model.u0 * 1.0e-4;   // raw mobility (ngspice quirk, §2)
+    // ∂ufact/∂vgs (mos2load.c:714/721) — one of the three gate derivatives
+    // MOS2gm is assembled from; see §8.
+    var dudvgs : Real = 0.0;
     if (oxideCap > 0.0) {
         var udenom : Real = vgst;
         var tmpx : Real = model.ucrit * 100.0 * NG_EPS_SI / cox;
         if (udenom > tmpx) {
             ufact = exp(model.uexp * ln(tmpx / udenom));
             ueff = model.u0 * 1.0e-4 * ufact;
+            dudvgs = 0.0 - ufact * model.uexp / udenom;
         }
     }
 
@@ -836,6 +847,9 @@ pub analog mos2 {
     var gammad_eta : Real = gamasd / eta;
     if (has_nfs) { vgsx = max(lvgs, von); }
     var vdsat : Real = 0.0;
+    // ∂vdsat/∂vgs (mos2load.c:740-753). With VMAX the Baum root replaces
+    // vdsat and the implicit-function form below (§7) replaces this value.
+    var dsdvgs : Real = 0.0;
     if (gammad_eta > 0.0) {
         var gammd2 : Real = gammad_eta * gammad_eta;
         var argv : Real = (vgsx - vbin) / eta + phiMinVbs;
@@ -843,10 +857,12 @@ pub analog mos2 {
             var argq : Real = sqrt(1.0 + 4.0 * argv / gammd2);
             vdsat = (vgsx - vbin) / eta + gammd2 * (1.0 - argq) / 2.0;
             if (vdsat < 0.0) { vdsat = 0.0; }
+            dsdvgs = (1.0 - 1.0 / argq) / eta;
         }
     } else {
         vdsat = (vgsx - vbin) / eta;
         if (vdsat < 0.0) { vdsat = 0.0; }
+        dsdvgs = 1.0;
     }
 
     // Baum's velocity-saturation quartic (mos2load.c:756-825): the smallest
@@ -986,11 +1002,20 @@ pub analog mos2 {
     var xlamda : Real = model.lambda;
     var bsarg : Real = 0.0;
     var bodys : Real = 0.0;
+    // ∂ΔL/∂vgs, via ∂ΔL/∂vdsat (mos2load.c:851/866/874). ngspice's `line610`
+    // shortcut — no substrate doping, or a user-given LAMBDA — leaves it zero,
+    // which `have_dldsat` reproduces without a jump.
+    var dldsat : Real = 0.0;
+    var dldvgs : Real = 0.0;
+    var have_dldsat : Boolean = 0;
     if (lvds != 0.0) {
+        var dbsrdb : Real = 0.0;
         if (lvbs - vdsat <= 0.0) {
             bsarg = sqrt(vdsat + phiMinVbs);
+            dbsrdb = 0.0 - 0.5 / bsarg;
         } else {
             bsarg = sphi / (1.0 + 0.5 * (lvbs - vdsat) / tPhi);
+            dbsrdb = 0.0 - 0.5 * bsarg * bsarg / sphi3;
         }
         bodys = bsarg * bsarg * bsarg - sarg3;
         if (model.vmax <= 0.0) {
@@ -1000,18 +1025,31 @@ pub analog mos2 {
                 var argl : Real = sqrt(argv4 + sargv);
                 var xlfact : Real = xd / (l_eff * lvds);
                 xlamda = xlfact * argl;
+                dldsat = lvds * xlamda / (8.0 * sargv);
+                have_dldsat = 1;
             }
         } else {
             var xdv : Real = xd / sqrt(model.neff);
             var xlv : Real = model.vmax * xdv / (2.0 * ueff);
+            // With VMAX the Grove-Frohman ∂vdsat/∂vgs above is superseded by
+            // the implicit derivative of Baum's root (mos2load.c:855-863).
+            var vqchan : Real = (vgsx - vbin) / eta - vdsat - gamasd * bsarg;
+            var dqdsat : Real = 0.0 - 1.0 + gamasd * dbsrdb;
+            var vl : Real = model.vmax * l_eff;
+            var dfunds : Real = vl * dqdsat - ueff * vqchan;
+            var dfundg : Real = (vl - ueff * vdsat) / eta;
+            dsdvgs = 0.0 - dfundg / dfunds;
             if (model.nsub != 0.0 && xlamda <= 0.0) {
                 var argv5 : Real = lvds - vdsat;
                 if (argv5 < 0.0) { argv5 = 0.0; }
                 var xls : Real = sqrt(xlv * xlv + argv5);
                 var xlf2 : Real = xdv / (l_eff * lvds);
                 xlamda = xlf2 * (xls - xlv);
+                dldsat = xdv / (2.0 * xls) / l_eff;
+                have_dldsat = 1;
             }
         }
+        if (have_dldsat) { dldvgs = dldsat * dsdvgs; }
     }
 
     var xwb : Real = xd * sbiarg;
@@ -1023,6 +1061,8 @@ pub analog mos2 {
     if (xleff < xwb) {
         xleff = xwb / (1.0 + (deltal - xld) / xwb);
         clfact = xleff / l_eff;
+        // Punch-through rescales the length derivatives too (mos2load.c:895).
+        dldvgs = dldvgs * xleff * xleff / (xwb * xwb);
     }
     var beta1 : Real = beta * ufact / clfact;
 
@@ -1030,15 +1070,24 @@ pub analog mos2 {
     //  §8  Drain current branches  (mos2load.c:908-1017)
     // ════════════════════════════════════════════════════════════════════════
     var cdrain : Real = 0.0;
+    // MOS2gm (mos2load.c:961-989) — the analytic transconductance the channel
+    // noise source reads (§14). Each region's own chain rule, not the
+    // saturation form: `beta1` itself varies with vgs through `ufact` and
+    // `clfact`, which is the `dudvgs`/`dldvgs` term.
+    var gm : Real = 0.0;
     if (lvds > 1.0e-10) {
         var strong : Boolean = if (has_nfs) { lvgs > von } else { lvgs > vbin };
+        var dbeta1 : Real = dudvgs / ufact - dldvgs / clfact;
         if (strong) {
             if (lvds <= vdsat) {
                 // Linear region.
                 cdrain = beta1 * ((lvgs - vbin - eta * lvds / 2.0) * lvds - gamasd * body / 1.5);
+                gm = cdrain * dbeta1 + beta1 * lvds;
             } else {
                 // Saturation region.
                 cdrain = beta1 * ((lvgs - vbin - eta * vdsat / 2.0) * vdsat - gamasd * bodys / 1.5);
+                gm = cdrain * dbeta1 + beta1 * vdsat
+                   + beta1 * (lvgs - vbin - eta * vdsat - gamasd * bsarg) * dsdvgs;
             }
         } else if (has_nfs && vdsat > 0.0) {
             // Subthreshold region (mos2load.c:936-966).
@@ -1048,7 +1097,13 @@ pub analog mos2 {
                 body = bodys;
             }
             var cdson : Real = beta1 * ((von - vbin - eta * vdson * 0.5) * vdson - gamasd * body / 1.5);
-            cdrain = cdson * exp(argg * (lvgs - von));
+            var expg : Real = exp(argg * (lvgs - von));
+            cdrain = cdson * expg;
+            gm = cdrain * argg;
+            if (lvds > vdsat) {
+                var didvds : Real = beta1 * (von - vbin - eta * vdson - gamasd * barg);
+                gm = gm + didvds * dsdvgs * expg;
+            }
         }
         // else cutoff: cdrain = 0.
     }
@@ -1206,8 +1261,9 @@ pub analog mos2 {
     // ════════════════════════════════════════════════════════════════════════
     if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
     if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
-    var gm_est : Real = beta * vgst;
-    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    // Channel: the model's own analytic MOS2gm from §8 (mos2noi.c reads
+    // MOS2gm), not a saturation-only estimate.
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm));
     if (model.kf > 0.0 && cox > 0.0) {
         var cox2 : Real = cox * cox;
         var cd_term : Real = mode * cdrain - cbd;
@@ -1530,6 +1586,12 @@ pub analog mos3 {
     // ════════════════════════════════════════════════════════════════════════
     var cdrain : Real = 0.0;
     var vdsat : Real = 0.0;
+    // MOS3gm, accumulated through the same factor chain the current is
+    // (mos3load.c:691-844): normalized → gate-field → velocity-saturation →
+    // channel-length → weak inversion. The channel noise source (§14) reads
+    // it. `gds` rides along because the channel-length term folds ∂ΔL/∂vds
+    // back into gm through ∂vdsat/∂vgs.
+    var gm : Real = 0.0;
     var conducting : Boolean = has_nfs || lvgs > von;
     if (conducting) {
         var vgsx : Real = max(lvgs, von);
@@ -1538,17 +1600,26 @@ pub analog mos3 {
         var onfg : Real = 1.0 + model.theta * (vgsx - vth);
         var fgate : Real = 1.0 / onfg;
         var us : Real = tSurfMob * 1.0e-4 * fgate;
+        var dfgdvg : Real = 0.0 - model.theta * fgate * fgate;
+        // ∂vth/∂vds is the drain-induced barrier-lowering coefficient
+        // (mos3load.c:620 `dvtdvd = -eta`).
+        var dvtdvd : Real = 0.0 - eta_l;
+        var dfgdvd : Real = 0.0 - dfgdvg * dvtdvd;
 
         // Saturation voltage — smooth VMAX form (mos3load.c:664-679).
         vdsat = (vgsx - vth) * onfbdy;
         var onvdsc : Real = 0.0;
+        var dvsdvg : Real = onfbdy;
         if (model.vmax > 0.0) {
             var vdsc : Real = l_eff * model.vmax / us;
             onvdsc = 1.0 / vdsc;
             var argav : Real = (vgsx - vth) * onfbdy;
             var argbv : Real = sqrt(argav * argav + vdsc * vdsc);
             vdsat = argav + vdsc - argbv;
+            var dvsdga : Real = (1.0 - argav / argbv) * onfbdy;
+            dvsdvg = dvsdga - (1.0 - vdsc / argbv) * vdsc * dfgdvg * onfg;
         }
+        var dvsdvd : Real = 0.0 - dvsdvg * dvtdvd;
 
         var vdsx : Real = min(lvds, vdsat);
         if (vdsx != 0.0) {
@@ -1556,10 +1627,30 @@ pub analog mos3 {
             var cdo : Real = vgsx - vth - 0.5 * (1.0 + fbody) * vdsx;
             var cdnorm : Real = cdo * vdsx;
             var beta1 : Real = beta * fgate;
+            var cd1 : Real = beta * cdnorm;   // before the gate-field factor
             cdrain = beta1 * cdnorm;
+            gm = beta1 * vdsx + dfgdvg * cd1;
+            var gds : Real = if (lvds > vdsat) {
+                0.0 - dvtdvd * vdsx
+            } else {
+                vgsx - vth - (1.0 + fbody + dvtdvd) * vdsx
+            };
+            gds = beta1 * gds + dfgdvd * cd1;
             var fdrain : Real = 0.0;
+            var dfddvg : Real = 0.0;
+            var dfddvd : Real = 0.0;
             if (model.vmax > 0.0) {
                 fdrain = 1.0 / (1.0 + vdsx * onvdsc);
+                var fd2 : Real = fdrain * fdrain;
+                var argaf : Real = fd2 * vdsx * onvdsc * onfg;
+                dfddvg = 0.0 - dfgdvg * argaf;
+                dfddvd = if (lvds > vdsat) {
+                    0.0 - dfgdvd * argaf
+                } else {
+                    0.0 - dfgdvd * argaf - fd2 * onvdsc
+                };
+                gm = fdrain * gm + dfddvg * cdrain;
+                gds = fdrain * gds + dfddvd * cdrain;
                 cdrain = fdrain * cdrain;
             }
 
@@ -1568,6 +1659,9 @@ pub analog mos3 {
             // when alpha == 0 (no NSUB): delxl would be sqrt(0), whose
             // symbolic derivative is 0/0 = NaN, so the guard is required.
             var delxl : Real = 0.0;
+            var dldvd : Real = 0.0;
+            var ddldvg : Real = 0.0;
+            var ddldvd : Real = 0.0;
             var apply_clm : Boolean = 0;
             if (alpha_m == 0.0) {
                 // no CLM — xlfact stays 1 (mos3load.c goto line700)
@@ -1575,34 +1669,77 @@ pub analog mos3 {
                 if (model.vmax <= 0.0) {
                     var argr : Real = lvds / vdsat;
                     delxl = sqrt(model.kappa * alpha_m * vdsat / 8.0);
+                    dldvd = 4.0 * delxl * argr * argr * argr / vdsat;
                     delxl = delxl * argr * argr * argr * argr;
+                    ddldvd = 0.0 - dldvd;
                     apply_clm = 1;
                 }
             } else if (model.vmax <= 0.0) {
-                delxl = sqrt(model.kappa * alpha_m * (lvds - vdsat + vdsat / 8.0));
+                var argx : Real = lvds - vdsat + vdsat / 8.0;
+                delxl = sqrt(model.kappa * alpha_m * argx);
+                dldvd = 0.5 * delxl / argx;
+                ddldvd = 0.0 - dldvd;
                 apply_clm = 1;
             } else {
                 var cdsat : Real = cdrain;
                 var gdsat : Real = cdsat * (1.0 - fdrain) * onvdsc;
                 if (gdsat < 1.0e-12) { gdsat = 1.0e-12; }
+                var gdoncd : Real = gdsat / cdsat;
+                var gdonfd : Real = gdsat / (1.0 - fdrain);
+                var gdonfg : Real = gdsat * onfg;
+                var dgdvg : Real = gdoncd * gm - gdonfd * dfddvg + gdonfg * dfgdvg;
+                var dgdvd : Real = gdoncd * gds - gdonfd * dfddvd + gdonfg * dfgdvd;
                 var emax : Real = model.kappa * cdsat * oneoverxl / gdsat;
+                var emoncd : Real = emax / cdsat;
+                var emongd : Real = emax / gdsat;
+                var demdvg : Real = emoncd * gm - emongd * dgdvg;
+                var demdvd : Real = emoncd * gds - emongd * dgdvd;
                 var argae : Real = 0.5 * emax * alpha_m;
-                var argbe : Real = sqrt(argae * argae + model.kappa * alpha_m * (lvds - vdsat));
+                var argce : Real = model.kappa * alpha_m;
+                var argbe : Real = sqrt(argae * argae + argce * (lvds - vdsat));
                 delxl = argbe - argae;
+                var dldem : Real = 0.0;
+                if (argbe != 0.0) {
+                    dldvd = argce / (argbe + argbe);
+                    dldem = 0.5 * (argae / argbe - 1.0) * alpha_m;
+                }
+                ddldvg = dldem * demdvg;
+                ddldvd = dldem * demdvd - dldvd;
                 apply_clm = 1;
             }
+            // `gds0` is ngspice's ∂Id/∂ΔL·∂ΔL/∂vds term, reused by the weak-
+            // inversion branch below. ngspice leaves the C local undefined
+            // when CLM is skipped; zero is the value that makes that branch
+            // mean "no channel-length contribution", which is what skipping
+            // CLM says.
+            var gds0 : Real = 0.0;
             if (apply_clm) {
                 // Punch-through limit (mos3load.c:799-809).
                 if (delxl > 0.5 * l_eff) {
                     delxl = l_eff - l_eff * l_eff / (4.0 * delxl);
+                    var argap : Real = 4.0 * (l_eff - delxl) * (l_eff - delxl) / (l_eff * l_eff);
+                    ddldvg = ddldvg * argap;
+                    ddldvd = ddldvd * argap;
+                    dldvd = dldvd * argap;
                 }
                 var xlfact : Real = 1.0 / (1.0 - delxl * oneoverxl);
                 cdrain = cdrain * xlfact;
+                var diddl : Real = cdrain / (l_eff - delxl);
+                gm = gm * xlfact + diddl * ddldvg;
+                gds0 = diddl * ddldvd;
+                gm = gm + gds0 * dvsdvg;
+                gds = gds * xlfact + diddl * dldvd + gds0 * dvsdvd;
             }
 
             // Weak inversion (mos3load.c:831-849).
             if (has_nfs && lvgs < von) {
-                cdrain = cdrain * exp((lvgs - von) / (vt * xn));
+                var ondvt : Real = 1.0 / (vt * xn);
+                var wfact : Real = exp((lvgs - von) * ondvt);
+                cdrain = cdrain * wfact;
+                gm = cdrain * ondvt;
+                if (lvds > vdsat) {
+                    gm = gm + gds0 * dvsdvg * wfact;
+                }
             }
         }
         // vdsx == 0 → cdrain stays 0 (mos3load.c:857-866).
@@ -1765,8 +1902,9 @@ pub analog mos3 {
     // ════════════════════════════════════════════════════════════════════════
     if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
     if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
-    var gm_est : Real = beta * (lvgs - von);
-    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    // Channel: the model's own analytic MOS3gm from §7 (mos3noi.c reads
+    // MOS3gm), not a saturation-only estimate.
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm));
     if (model.kf > 0.0 && cox > 0.0) {
         var cox2 : Real = cox * cox;
         var cd_term : Real = mode * cdrain - cbd;

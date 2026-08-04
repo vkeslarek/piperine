@@ -332,11 +332,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] All three `gm_est` sites replaced with the analytic `gm`
-- [ ] Fixture biases the device in the **linear** region, where the old estimate was wrong — a saturation-only fixture does not satisfy this task
-- [ ] Reverting the change makes the new fixture fail (recorded in the commit body)
-- [ ] Parity matrix updated: mos1/2/3 × Noise → `Covered`
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] All three `gm_est` sites replaced with the analytic `gm`
+- [x] Fixture biases the device in the **linear** region, where the old estimate was wrong — a saturation-only fixture does not satisfy this task
+- [x] Reverting the change makes the new fixture fail (recorded in the commit body)
+- [x] Parity matrix updated: mos1/2/3 × Noise → `Covered`
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): use the analytic gm for MOSFET channel noise`
