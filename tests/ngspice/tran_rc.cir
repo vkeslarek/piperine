@@ -1,0 +1,16 @@
+* tran_rc — transient cross-check on an RC charging curve.
+* The cap starts discharged (`uic`, the piperine twin passes ic out=0), so
+* v(out) is the first-order step response 1 - exp(-t/RC) with
+* RC = 1.5915494309189535 us. `.options interp` makes ngspice interpolate its
+* internal adaptive steps onto the print grid (multiples of tstep) before
+* recording, so the export below IS the print grid the comparison evaluates
+* piperine's adaptive waveform on — never the other way around.
+V1 vin 0 DC 1
+R1 vin out 1000
+C1 out 0 1.5915494309189535e-9
+.options interp
+.control
+tran 0.1u 10u uic
+wrdata tran_rc_tran v(out)
+.endc
+.end

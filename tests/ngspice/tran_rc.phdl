@@ -1,0 +1,14 @@
+// tran_rc — the same RC charging circuit as tran_rc.cir. The DC operating
+// point has v(out) = 1 V, so the transient only carries information because
+// the run starts the cap discharged (ngspice `uic`; the piperine side passes
+// ic out=0). The response is the analytic 1 - exp(-t/RC), which the target
+// also anchors independently of ngspice.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+mod Top() {
+    wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
+    v1: vsrc (.p = vin, .n = gnd) { .dc = 1.0 };
+    r1: res  (.p = vin, .n = out) { .r = 1000.0 };
+    c1: cap  (.p = out, .n = gnd) { .c = 1.5915494309189535e-9 };
+}
