@@ -1,0 +1,19 @@
+* noise_rc — output-noise cross-check on a thermal-noise-only network.
+* R1 is the sole noise source, so v(out)'s spectrum is the Johnson noise
+* √(4kTR) shaped by the RC pole at 1/(2*pi*R*C) = 100 kHz. At the sweep's
+* first point (1 kHz) the shaping is negligible, which makes that point a
+* direct probe of the units: ngspice reports V/√Hz, not V²/Hz.
+* `dec 100` rather than `dec 10`: the two sides integrate the spectrum with
+* different quadrature rules, so onoise_total only converges to a common value
+* on a fine grid (see the note on NOISE_RC in tests/ngspice_noise.rs).
+V1 in 0 DC 0 AC 1
+R1 in out 1000
+C1 out 0 1.5915494309189535e-9
+.control
+noise v(out) V1 dec 100 1k 1Meg
+setplot noise1
+wrdata noise_rc_psd onoise_spectrum
+setplot noise2
+wrdata noise_rc_total onoise_total
+.endc
+.end
