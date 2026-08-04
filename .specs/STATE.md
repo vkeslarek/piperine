@@ -576,9 +576,76 @@ delegated the `#[pip::device]` relationship to the agent;
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-08-01 — `dv-tester` DELIVERED (T1–T37, Verifier PASS
-after 2 fix→re-verify rounds); `dv-gradients` DELIVERED 2026-07-31;
-`codegen-simplification` sketched as `dv-tester`'s follow-on, now unblocked.
+**Last updated:** 2026-08-03 — `codegen-simplification` DELIVERED (T1–T14,
+Verifier PASS with 2 minor non-blocking gaps); `dv-tester` DELIVERED
+2026-08-01; `dv-gradients` DELIVERED 2026-07-31.
+
+### Feature — `codegen-simplification` (DELIVERED 2026-08-03)
+
+Spec/design/tasks/validation in `.specs/features/codegen-simplification/`.
+Executes MD-36's delegation half: deletes `piperine-codegen`'s second copies
+of the five runtime-semantic families `piperine-signal` now owns (runtime
+operators, event detectors, the junction limiter formula + bookkeeping,
+`table`, and — newly extracted, not just delegated — digital edge
+detection), and mechanically guards against a copy reappearing
+(`tests/delegation_guard.rs`, 5 witnesses, each proven able to fail per
+MD-31).
+
+14 tasks over 7 phases, delivered via 2 sequential phase-batch sub-agents
+(T1–T6, T7–T14) + an independent Verifier. One design snag mid-batch-1:
+`signal::limit::Limiter::update(vnew, kinds)` recomputes the pnjlim/fetlim/
+limvds formula itself, but codegen already gets `vlim` from the JIT (T4/T5
+register the same formulas as linked Cranelift symbols) — feeding it through
+`Limiter` again would double-compute, and codegen's `vold` lives in the
+shared analog state bank (checkpointed generically), not in a struct field.
+User-approved fix (SPEC_DEVIATION, T6 commit `b4f2c4e`): a new
+`Limiter::advance_precomputed(vlim, vnew, vold: &mut [f64])` method applies
+just rules 2 (seed-preservation skip) + 4 (convergence-veto-with-tolerance)
+to an externally-computed `vlim` and externally-owned `vold`, sharing its
+loop body with the existing `update` via a private helper — no kernel.rs or
+instance.rs change, no architecture move.
+
+The one **intended** behavior change (spec's AC 32, found during Specify by
+a full 57-file codegen sweep, 2026-08-03): digital edge detection had two
+copies that **already disagreed** — codegen's `device/digital.rs` correctly
+implements IEEE 1364 (`X→1`/`Z→1` count as rising edges), `piperine-api`'s
+host `EdgeWait` only fired on `Zero→One`, silently stalling a host tester
+waiting on a clock's first edge out of `X`. New `piperine_signal::logic`
+module (`Logic`/`EdgeDirection::fires`, T9) is the one implementation both
+sides now delegate to (T10 codegen, T11 host — `EdgeDirection::matches`
+deleted, existing narrow-rule test rewritten to the IEEE rule per spec,
+never silently dropped).
+
+P2 shrinkage (CGS-12) came in short and was **renegotiated in the open**
+per spec's own AC 28 clause, not silently gamed: 3 of 5 capped files missed
+their cap (`events.rs` 160/≤140, `limits.rs` 153/≤130, `analog_ops.rs`
+375/≤330 — the last now bigger than its own pre-delegation size), and the
+crate-wide net-deletion floor landed at 196 of a required ≥300 lines
+removed. Full reasoning in `shrinkage.md`: every miss is real adapter/
+mapping code the delegation itself required (a `CompiledTrigger`→
+`signal::events::Trigger` mapping, T6's `advance_precomputed` plumbing,
+`Table`'s `err_from` mapping plus rationale doc comments in a file that
+holds 8 operators, `table` being only one) — not code that could be moved
+elsewhere to hit the number. User accepted the shortfall as the honest cost
+rather than requesting a further cleanup pass.
+
+**Verifier:** PASS — 31/34 ACs matched the spec-defined outcome cleanly, 3
+flagged (AC 11's CSE test proves numeric correctness but not the call
+count; AC 18's table low-end clamp is untested — `host_capability_parity.rs`
+only exercises the high end; AC 26/27 are the pre-accepted P2 shortfall,
+independently re-measured and confirmed exact against `shrinkage.md`).
+Discrimination sensor: 5 mutations injected in the real tree (no worktree
+headroom) and reverted immediately, 3 killed / 2 survived — both survivors
+are test-discrimination gaps in otherwise-independently-confirmed-correct
+code, not defects, and are filed as follow-up (not blocking). `diff.rs` is
+byte-identical across the whole diff range (`resolve/diff.rs` untouched, as
+every AC touching differentiation required). `cargo test --workspace`:
+1689 passed, 0 failed, 276 test-result blocks, 0 rustc/clippy warnings;
+`ngspice_validation.rs` bit-identical throughout (33/33); the four
+`cross_check_*` fixtures deleted (their two-copies-agree purpose is now
+moot), `host_capability_parity.rs` and `piperine-signal/tests/purity.rs`
+untouched and green. Two candidate lessons (L-022/L-023) recorded on the
+test-discrimination-gap pattern found by the sensor.
 
 ### Feature — `dv-tester` (DELIVERED 2026-08-01)
 

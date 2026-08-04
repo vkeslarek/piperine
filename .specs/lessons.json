@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 16,
+  "next_id": 24,
   "lessons": [
     {
       "id": "L-001",
@@ -274,6 +274,150 @@
       ],
       "created": "2026-07-26T03:33:18Z",
       "last_seen": "2026-07-26T03:33:18Z"
+    },
+    {
+      "id": "L-016",
+      "key": "spec_deviation::when one task s dispatcher must call into a sibling module the compiler requires to compile as a whole unit ship that module s real implementation in the dispatcher s commit instead of a stub and record it as a spec deviation rather than forcing an artificial per task stub boundary",
+      "text": "When one task's dispatcher must call into a sibling module the compiler requires to compile as a whole unit, ship that module's real implementation in the dispatcher's commit instead of a stub, and record it as a SPEC_DEVIATION rather than forcing an artificial per-task stub boundary.",
+      "signal": "spec_deviation",
+      "scope": "rust-module-structure",
+      "status": "candidate",
+      "features": [
+        "dv-gradients"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-api/src/driver/entry.rs commit 3ed7501 (T16) (rust-module-structure)"
+      ],
+      "created": "2026-07-31T03:10:19Z",
+      "last_seen": "2026-07-31T03:10:19Z"
+    },
+    {
+      "id": "L-017",
+      "key": "spec_deviation::when an importance sampling or distribution shift estimator only shifts one distribution family e g gauss with resolvable sigma state the narrowed scope in the type s own doc comment and keep every other distribution unbiased but unshifted likelihood ratio 1 rather than silently approximating or blocking on full multivariate support",
+      "text": "When an importance-sampling or distribution-shift estimator only shifts one distribution family (e.g. gauss with resolvable sigma), state the narrowed scope in the type's own doc comment and keep every other distribution unbiased-but-unshifted (likelihood ratio 1), rather than silently approximating or blocking on full multivariate support.",
+      "signal": "spec_deviation",
+      "scope": "sampling",
+      "status": "candidate",
+      "features": [
+        "dv-gradients"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-api/src/driver/high_sigma.rs:22, crates/piperine-api/src/sampling.rs:288 (T20) (sampling)"
+      ],
+      "created": "2026-07-31T03:10:19Z",
+      "last_seen": "2026-07-31T03:10:19Z"
+    },
+    {
+      "id": "L-018",
+      "key": "surviving_mutant::a settled only post event fixture must use a net whose value at the mutated wrong dispatch point genuinely differs from its correct value an initial equals final glitch fixture cannot discriminate stale vs settled dispatch",
+      "text": "A settled-only/post-event fixture must use a net whose value at the mutated (wrong) dispatch point genuinely differs from its correct value — an initial-equals-final glitch fixture cannot discriminate stale-vs-settled dispatch.",
+      "signal": "surviving_mutant",
+      "scope": "test-design",
+      "status": "candidate",
+      "features": [
+        "dv-tester"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-solver/tests/digital_settle_subscriber.rs (mutation: dispatch pre-settle snapshot instead of post-settle) (test-design)"
+      ],
+      "created": "2026-08-01T19:54:53Z",
+      "last_seen": "2026-08-01T19:54:53Z"
+    },
+    {
+      "id": "L-019",
+      "key": "surviving_mutant::any window breakpoint publishing helper needs an explicit boundary test placing an event exactly at the window s edge not just interior placements off by boundary mutations on inclusive ranges routinely survive interior only test suites",
+      "text": "Any window/breakpoint-publishing helper needs an explicit boundary test placing an event exactly at the window's edge, not just interior placements — off-by-boundary mutations on inclusive ranges routinely survive interior-only test suites.",
+      "signal": "surviving_mutant",
+      "scope": "test-design",
+      "status": "candidate",
+      "features": [
+        "dv-tester"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-signal/src/wave.rs push_in() window boundary (t <= end vs t < end) (test-design)"
+      ],
+      "created": "2026-08-01T19:54:53Z",
+      "last_seen": "2026-08-01T19:54:53Z"
+    },
+    {
+      "id": "L-020",
+      "key": "ac_gap::when a spec ac asks for n properties to compose together verify one test exercises all n simultaneously tests proving n 1 of them plus a separate task boundary comment the nth is a later phase s job is not evidence the composition was ever closed",
+      "text": "When a spec AC asks for N properties to compose together, verify one test exercises all N simultaneously — tests proving N-1 of them plus a separate task boundary comment ('the Nth is a later phase's job') is not evidence the composition was ever closed.",
+      "signal": "ac_gap",
+      "scope": "spec-verification",
+      "status": "candidate",
+      "features": [
+        "dv-tester"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "DVT-30 / T18 done-when 'all three levels compose in one host device class' (spec-verification)"
+      ],
+      "created": "2026-08-01T19:54:53Z",
+      "last_seen": "2026-08-01T19:54:53Z"
+    },
+    {
+      "id": "L-021",
+      "key": "spec_deviation::when a fix round test proves a spec s claimed mapping behavior does not hold also correct or spec deviation annotate the spec doc that made the claim a test comment only negative leaves the formal spec still asserting the false positive",
+      "text": "When a fix-round test proves a spec's claimed mapping/behavior does not hold, also correct or SPEC_DEVIATION-annotate the spec doc that made the claim — a test-comment-only negative leaves the formal spec still asserting the false positive.",
+      "signal": "spec_deviation",
+      "scope": "spec-verification",
+      "status": "candidate",
+      "features": [
+        "dv-tester"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "docs/spec/part_viii_host_api.md:919, .specs/features/dv-tester/ideal.md:558-568 vs crates/piperine-api/src/sequencer/{driver.rs,crossing.rs} (spec-verification)"
+      ],
+      "created": "2026-08-01T20:57:53Z",
+      "last_seen": "2026-08-01T20:57:53Z"
+    },
+    {
+      "id": "L-022",
+      "key": "spec_precision_gap::a cse dedup claim collapses to one call needs an assertion that counts the actual emitted call or instruction sites not just a numeric result that would be identical whether dedup ran once or twice",
+      "text": "A CSE/dedup claim (collapses to one call) needs an assertion that counts the actual emitted call or instruction sites, not just a numeric result that would be identical whether dedup ran once or twice.",
+      "signal": "spec_precision_gap",
+      "scope": "codegen",
+      "status": "candidate",
+      "features": [
+        "codegen-simplification"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md AC 11 (codegen)"
+      ],
+      "created": "2026-08-04T02:10:25Z",
+      "last_seen": "2026-08-04T02:10:25Z"
+    },
+    {
+      "id": "L-023",
+      "key": "spec_precision_gap::a clamp or boundary claim on a piecewise function needs a test that drives the input past both ends not just one a fixture that only ever increases from zero silently skips the low end clamp",
+      "text": "A clamp or boundary claim on a piecewise function needs a test that drives the input past both ends, not just one; a fixture that only ever increases from zero silently skips the low-end clamp.",
+      "signal": "spec_precision_gap",
+      "scope": "codegen",
+      "status": "candidate",
+      "features": [
+        "codegen-simplification"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md AC 18 (codegen)"
+      ],
+      "created": "2026-08-04T02:10:25Z",
+      "last_seen": "2026-08-04T02:10:25Z"
     }
   ]
 }

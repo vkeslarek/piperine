@@ -104,6 +104,54 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: audit.md §1 reconciliation / ROADMAP P6 (test suite)
 - last seen: 2026-07-26T03:33:18Z
 
+### L-016 — When one task's dispatcher must call into a sibling module the compiler requires to compile as a whole unit, ship that module's real implementation in the dispatcher's commit instead of a stub, and record it as a SPEC_DEVIATION rather than forcing an artificial per-task stub boundary.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `rust-module-structure` · harmful: 0
+- features: dv-gradients
+- evidence: crates/piperine-api/src/driver/entry.rs commit 3ed7501 (T16) (rust-module-structure)
+- last seen: 2026-07-31T03:10:19Z
+
+### L-017 — When an importance-sampling or distribution-shift estimator only shifts one distribution family (e.g. gauss with resolvable sigma), state the narrowed scope in the type's own doc comment and keep every other distribution unbiased-but-unshifted (likelihood ratio 1), rather than silently approximating or blocking on full multivariate support.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `sampling` · harmful: 0
+- features: dv-gradients
+- evidence: crates/piperine-api/src/driver/high_sigma.rs:22, crates/piperine-api/src/sampling.rs:288 (T20) (sampling)
+- last seen: 2026-07-31T03:10:19Z
+
+### L-018 — A settled-only/post-event fixture must use a net whose value at the mutated (wrong) dispatch point genuinely differs from its correct value — an initial-equals-final glitch fixture cannot discriminate stale-vs-settled dispatch.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `test-design` · harmful: 0
+- features: dv-tester
+- evidence: crates/piperine-solver/tests/digital_settle_subscriber.rs (mutation: dispatch pre-settle snapshot instead of post-settle) (test-design)
+- last seen: 2026-08-01T19:54:53Z
+
+### L-019 — Any window/breakpoint-publishing helper needs an explicit boundary test placing an event exactly at the window's edge, not just interior placements — off-by-boundary mutations on inclusive ranges routinely survive interior-only test suites.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `test-design` · harmful: 0
+- features: dv-tester
+- evidence: crates/piperine-signal/src/wave.rs push_in() window boundary (t <= end vs t < end) (test-design)
+- last seen: 2026-08-01T19:54:53Z
+
+### L-020 — When a spec AC asks for N properties to compose together, verify one test exercises all N simultaneously — tests proving N-1 of them plus a separate task boundary comment ('the Nth is a later phase's job') is not evidence the composition was ever closed.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `spec-verification` · harmful: 0
+- features: dv-tester
+- evidence: DVT-30 / T18 done-when 'all three levels compose in one host device class' (spec-verification)
+- last seen: 2026-08-01T19:54:53Z
+
+### L-021 — When a fix-round test proves a spec's claimed mapping/behavior does not hold, also correct or SPEC_DEVIATION-annotate the spec doc that made the claim — a test-comment-only negative leaves the formal spec still asserting the false positive.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `spec-verification` · harmful: 0
+- features: dv-tester
+- evidence: docs/spec/part_viii_host_api.md:919, .specs/features/dv-tester/ideal.md:558-568 vs crates/piperine-api/src/sequencer/{driver.rs,crossing.rs} (spec-verification)
+- last seen: 2026-08-01T20:57:53Z
+
+### L-022 — A CSE/dedup claim (collapses to one call) needs an assertion that counts the actual emitted call or instruction sites, not just a numeric result that would be identical whether dedup ran once or twice.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `codegen` · harmful: 0
+- features: codegen-simplification
+- evidence: validation.md AC 11 (codegen)
+- last seen: 2026-08-04T02:10:25Z
+
+### L-023 — A clamp or boundary claim on a piecewise function needs a test that drives the input past both ends, not just one; a fixture that only ever increases from zero silently skips the low-end clamp.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `codegen` · harmful: 0
+- features: codegen-simplification
+- evidence: validation.md AC 18 (codegen)
+- last seen: 2026-08-04T02:10:25Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
