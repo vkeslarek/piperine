@@ -1,0 +1,26 @@
+* temp_bjt — Early-voltage temperature dependence (bjttemp.c:112-126).
+* The base current is forced, so the collector current is set by beta and the
+* Early effect alone: Ic = bf*Ib*(1 + vce/VAF). VAF itself is temperature
+* dependent through TVAF1/TVAF2, and this card gives TVAF1 a large enough
+* coefficient that v(c) moves far outside the comparison tolerance between the
+* two temperatures. Q2 is driven hard into saturation so the *reverse* Early
+* voltage — and TVAR1 with it — is exercised on the same card.
+Ib  0 b  DC 2u
+Ib2 0 b2 DC 200u
+Vcc vcc 0 DC 10
+Rc  vcc c  20k
+Rc2 vcc c2 20k
+Q1  c  b  0 QMOD
+Q2  c2 b2 0 QMOD
+.model QMOD NPN (is=1e-16 bf=100 vaf=50 tvaf1=-5e-3 var=20 tvar1=-5e-3)
+.control
+set temp = -25
+op
+wrdata temp_bjt_tm25 v(c)
+wrdata temp_bjt_sat_tm25 v(c2)
+set temp = 100
+op
+wrdata temp_bjt_t100 v(c)
+wrdata temp_bjt_sat_t100 v(c2)
+.endc
+.end

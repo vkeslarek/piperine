@@ -1,0 +1,24 @@
+// temp_bjt — the same forced-base pair as temp_bjt.cir. q1 sits in the forward
+// active region, where the collector current is set by the Early effect alone,
+// and q2 is driven into saturation so the reverse Early voltage is exercised
+// too. Both Early voltages carry their own temperature coefficients.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::bjt;
+mod Top() {
+    wire gnd: Electrical; wire vcc: Electrical;
+    wire b: Electrical; wire c: Electrical;
+    wire b2: Electrical; wire c2: Electrical;
+    ib:  isrc (.p=gnd,.n=b)  { .dc = 2.0e-6 };
+    ib2: isrc (.p=gnd,.n=b2) { .dc = 200.0e-6 };
+    vc:  vsrc (.p=vcc,.n=gnd) { .dc = 10.0 };
+    rc:  res (.p=vcc,.n=c)  { .r = 20.0e3 };
+    rc2: res (.p=vcc,.n=c2) { .r = 20.0e3 };
+    q1: bjt (.c=c,.b=b,.e=gnd,.sub=gnd)
+        { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .vaf = 50.0, .tvaf1 = 0.0 - 5.0e-3,
+                              .var = 20.0, .tvar1 = 0.0 - 5.0e-3 } };
+    q2: bjt (.c=c2,.b=b2,.e=gnd,.sub=gnd)
+        { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .vaf = 50.0, .tvaf1 = 0.0 - 5.0e-3,
+                              .var = 20.0, .tvar1 = 0.0 - 5.0e-3 } };
+}

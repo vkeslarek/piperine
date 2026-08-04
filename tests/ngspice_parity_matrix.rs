@@ -266,9 +266,7 @@ impl ParityMatrix {
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises the bjt",
                 }),
-                (Domain::Temperature, Coverage::NotApplicable {
-                    reason: "pending: T15 temperature-scales VAF/VAR and lands the fixture",
-                }),
+                (Domain::Temperature, Coverage::Covered { fixture: "temp_bjt" }),
             ],
         },
         ModelRow {

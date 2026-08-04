@@ -191,6 +191,42 @@ const TEMP_DIODE: TempCase = TempCase {
     points: &[(0.0, "t0"), (75.0, "t75")],
 };
 
+/// The forced-base BJT pair at -25 °C and 100 °C. `q1` is forward active, so
+/// its collector current is set by beta and the Early effect alone; `q2` is
+/// driven hard into saturation, where the *reverse* Early voltage enters. The
+/// card gives both `VAF`/`VAR` a temperature coefficient, so a model that pins
+/// them to their nominal value — as this one did, with a hardcoded
+/// `1 + 0.0·dt` — cannot agree at both points. Measured with the coefficients
+/// zeroed on ngspice's side, v(c) moves 45 mV at -25 °C and 145 mV at 100 °C,
+/// and v(c2) 0.22 mV; the TEMP contract admits 5.8 mV and 34 µV respectively.
+const TEMP_BJT: TempCase = TempCase {
+    circuit: "temp_bjt",
+    node: "c",
+    points: &[(-25.0, "tm25"), (100.0, "t100")],
+};
+
+/// The same fixture read at the saturated device, which is what exercises
+/// `VAR` — the forward-active node above barely feels it.
+const TEMP_BJT_SATURATED: TempCase = TempCase {
+    circuit: "temp_bjt",
+    node: "c2",
+    points: &[(-25.0, "sat_tm25"), (100.0, "sat_t100")],
+};
+
+/// NGP-14: `VAF` and `VAR` follow their temperature dependence rather than
+/// being pinned to nominal, in both the forward-active and the saturated
+/// device.
+#[test]
+fn ngspice_temp_bjt_early_voltages() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            TEMP_BJT.run(&harness);
+            TEMP_BJT_SATURATED.run(&harness);
+        }
+        None => eprintln!("SKIP temp_bjt: ngspice not on PATH"),
+    }
+}
+
 /// NGP-04: the operating point agrees with ngspice at two temperatures, one
 /// below and one above nominal.
 #[test]

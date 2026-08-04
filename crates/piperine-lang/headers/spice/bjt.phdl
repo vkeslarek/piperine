@@ -82,6 +82,14 @@ pub bundle BjtModel {
     tnom : Real = 300.15,         // nominal temperature (K)
     tlev  : Real = 0.0,           // temp-equation selector (0,1,3)
     tlevc : Real = 0.0,           // cap/potential temp selector (0,1)
+    // Early-voltage temperature coefficients (bjttemp.c:112-126). ngspice
+    // scales VAF/VAR by (1 + tvaf1·dt + tvaf2·dt²) before inverting; the
+    // defaults of 0 make that factor unity, which is why a card that omits
+    // them is unaffected.
+    tvaf1 : Real = 0.0,           // VAF 1st temp coefficient (1/K)
+    tvaf2 : Real = 0.0,           // VAF 2nd temp coefficient (1/K²)
+    tvar1 : Real = 0.0,           // VAR 1st temp coefficient (1/K)
+    tvar2 : Real = 0.0,           // VAR 2nd temp coefficient (1/K²)
 
     // ── Noise ─────────────────────────────────────────────────────────────────
     kf   : Real = 0.0,            // flicker noise coefficient
@@ -174,8 +182,12 @@ pub analog bjt {
     var t_isc : Real = model.isc * exp(factlog / model.nc) / bfactor;
 
     // Early voltages, IKF, IKR (bjttemp.c:147-160)
-    var invVaf : Real = if (model.vaf > 0.0) { 1.0 / (model.vaf * (1.0 + 0.0 * dt)) } else { 0.0 };
-    var invVar : Real = if (model.var > 0.0) { 1.0 / (model.var * (1.0 + 0.0 * dt)) } else { 0.0 };
+    var invVaf : Real = if (model.vaf > 0.0) {
+        1.0 / (model.vaf * (1.0 + model.tvaf1 * dt + model.tvaf2 * dt * dt))
+    } else { 0.0 };
+    var invVar : Real = if (model.var > 0.0) {
+        1.0 / (model.var * (1.0 + model.tvar1 * dt + model.tvar2 * dt * dt))
+    } else { 0.0 };
     var oik    : Real = if (model.ikf > 0.0) { 1.0 / (model.ikf * area_eff) } else { 0.0 };
     var oikr   : Real = if (model.ikr > 0.0) { 1.0 / (model.ikr * area_eff) } else { 0.0 };
 

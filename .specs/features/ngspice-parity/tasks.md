@@ -419,11 +419,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `VAF`/`VAR` scale with temperature per ngspice
-- [ ] Fixture compares at two temperatures away from nominal
-- [ ] Reverting fails the fixture
-- [ ] Parity matrix updated: bjt × Temperature → `Covered`
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] `VAF`/`VAR` scale with temperature per ngspice
+- [x] Fixture compares at two temperatures away from nominal
+- [x] Reverting fails the fixture
+- [x] Parity matrix updated: bjt × Temperature → `Covered`
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): temperature-scale BJT VAF and VAR`
