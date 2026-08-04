@@ -242,11 +242,15 @@ immediate value — hostage to the two largest items.
 
 | Feature | Depends on | Notes |
 | ------- | ---------- | ----- |
-| `ngspice-bsim3` | this feature's **P1** (measured oracle) and **P4** (`gap-3`) | Port first; it proves the method and the multi-segment authoring route. |
+| `ngspice-bsim3` | this feature's **P1** (measured oracle) and **P4** (`gap-3`) | Port first; it proves the method and the internal-node authoring route. |
 | `ngspice-bsim4` | `ngspice-bsim3` | Reuses the proven method; largest single item in the backlog. |
 
-Neither is specified yet — they get their own `spec.md` when scheduled, rather
-than being designed by anticipation here.
+Both are **opened as scaffolds** — `.specs/features/ngspice-bsim3/spec.md` and
+`.specs/features/ngspice-bsim4/spec.md` — carrying the measurements taken here,
+the inherited scope decisions, and an explicit list of open questions. Each is
+marked `NOT YET SPECIFIED`: no user stories, no acceptance criteria, no
+requirement IDs until refined. They record what is known so it is not
+re-derived; they do not design by anticipation.
 
 ---
 
