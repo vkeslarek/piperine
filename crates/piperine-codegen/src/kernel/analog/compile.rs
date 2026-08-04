@@ -915,7 +915,7 @@ impl<'m> AnalogCompiler<'m> {
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
-            _jit: self.jit,
+            _jit: self.jit.into(),
         };
 
         Ok(AnalogKernel {

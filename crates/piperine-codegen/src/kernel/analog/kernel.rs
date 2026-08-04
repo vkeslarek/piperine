@@ -4,7 +4,7 @@
 //! capability implements, the `AnalogCore` always-present half, and the
 //! runtime-state / compiled-event descriptors instances service between steps.
 
-use cranelift_jit::JITModule;
+use crate::emit::OwnedJit;
 
 use crate::resolve::{CrossDir, LoweredBody, NodeId, StateId, VarId};
 
@@ -169,7 +169,7 @@ pub(super) struct AnalogCore {
     /// Runtime-state input values (one per state slot); `None` without
     /// runtime states.
     pub(super) state_inputs: Option<AnalogFn>,
-    pub(super) _jit: JITModule,
+    pub(super) _jit: OwnedJit,
 }
 
 /// A compiled analog device kernel.

@@ -27,7 +27,7 @@ use crate::emit::abi::SimCtx;
 use crate::kernel::digital::compile::DigitalCompiler;
 
 
-use cranelift_jit::JITModule;
+use crate::emit::OwnedJit;
 
 use crate::resolve::{
     EdgeKind, LoweredBody, ParamId,
@@ -123,7 +123,7 @@ pub struct DigitalKernel {
     pub(crate) comb: DigitalFn,
     pub(crate) seq: Option<DigitalFn>,
     pub(crate) watch: Option<WatchFn>,
-    pub(crate) _jit: JITModule,
+    pub(crate) _jit: OwnedJit,
 }
 
 unsafe impl Send for DigitalKernel {}

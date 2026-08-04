@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 use cranelift_codegen::ir::{types, AbiParam, FuncRef, InstBuilder, MemFlags, Signature, Value};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use crate::emit::OwnedJit;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
@@ -210,7 +211,7 @@ impl<'m> DigitalCompiler<'m> {
             comb,
             seq,
             watch,
-            _jit: self.jit,
+            _jit: self.jit.into(),
         })
     }
 
@@ -419,7 +420,7 @@ pub type NetworkCombFn = unsafe extern "C" fn(
 /// A compiled fused combinational network kernel.
 pub struct NetworkComb {
     func: NetworkCombFn,
-    _jit: JITModule,
+    _jit: OwnedJit,
 }
 
 unsafe impl Send for NetworkComb {}
@@ -588,6 +589,6 @@ impl NetworkComb {
 
         let func: NetworkCombFn =
             unsafe { std::mem::transmute(jit.get_finalized_function(func_id)) };
-        Ok(NetworkComb { func, _jit: jit })
+        Ok(NetworkComb { func, _jit: jit.into() })
     }
 }

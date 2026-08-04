@@ -13,6 +13,7 @@ pub mod analog_expr;
 pub mod builder;
 pub mod cse;
 pub mod digital_expr;
+pub mod jit;
 pub mod resolver;
 pub mod stmt;
 
@@ -20,4 +21,5 @@ pub use abi::SimCtx;
 pub use builder::Builder;
 pub use cse::expr_structural_eq;
 pub use digital_expr::Codegen;
+pub use jit::OwnedJit;
 pub use resolver::{DigTy, Resolver};
