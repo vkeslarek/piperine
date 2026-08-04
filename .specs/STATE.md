@@ -574,6 +574,53 @@ delegated the `#[pip::device]` relationship to the agent;
 
 ---
 
+### MD-38: ngspice parity is measured, not asserted
+
+A model is "ngspice-faithful" only where a golden cross-check can falsify the
+claim. The audit of 2026-07-28 marked noise and temperature ✅ on models the
+harness never exercised in those domains — `tests/ngspice_validation.rs` covered
+DC operating points, DC sweeps, `.disto`, `.four` and `.pz` only, while the
+known-wrong behaviour (saturation-only `gm` in channel noise, absent switch
+noise, dead `ic`/UIC) sat precisely in the uncovered domains.
+
+The rule: **extend the oracle before closing the gap.** A parity fix ships with
+a golden test that fails when the fix is reverted; a ✅ with no test behind it is
+a defect in the table, not a property of the model. Each domain (DC, AC
+magnitude, AC phase, noise PSD, transient, temperature) carries an explicit
+documented tolerance with a stated rationale — never an undocumented constant in
+a test body.
+
+Corollary — matching the model, not the defect: where ngspice carries a known
+historical bug, piperine documents the deliberate deviation and asserts its own
+value. Bug-for-bug fidelity is not the goal.
+
+**Status:** Locked (2026-08-04 — `.specs/features/ngspice-parity/spec.md`).
+
+### MD-39: No device that PHDL already is
+
+A SPICE device earns a port only when it adds capability PHDL lacks. Two classes
+do not:
+
+- **Behavioural sources (`asrc`, the `B` element).** `B` exists because a SPICE
+  netlist has no expression language. PHDL does — `V(p,n) <+ <expr>` in an
+  `analog` block *is* the behavioural source, symbolically differentiated like
+  any other contribution. An imported deck's `B` line becomes a PHDL body via
+  the SPICE→PHDL importer, so nothing is blocked. Porting it natively would
+  reimplement the language's premise as a model.
+- **Devices outside the stated user.** The north star is the low/medium-level
+  designer without Cadence-class tooling. Foundry-grade models serving a
+  different user (`vbic` for RF BJT) wait for measured demand rather than
+  shipping on the assumption that more models is better.
+
+This does not exempt genuinely missing physics: BSIM is in scope (as its own
+features), because a compact deep-submicron MOS model is capability PHDL cannot
+express as a wrapper over what exists.
+
+**Status:** Locked (2026-08-04 — user rejected `asrc`/`vbic` on merit during
+`ngspice-parity` specification).
+
+---
+
 ## Handoff Snapshot
 
 **Last updated:** 2026-08-03 — `codegen-simplification` DELIVERED (T1–T14,
