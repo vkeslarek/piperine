@@ -321,24 +321,9 @@ fn ngspice_tolerance_contract() {
     assert!(!NgspiceHarness::within_tolerance(0.0, 1.1e-6, NgspiceHarness::ABSTOL_V));
 }
 
-/// SPICE-08 edge case: the wrdata parser is strict — malformed columns,
-/// unparseable numbers and an empty export all fail loud.
-#[test]
-fn ngspice_wrdata_parsed_strictly() {
-    let ok = NgspiceHarness::parse_wrdata("s", "-1.0e0  1.0e-12\n0.5 2e-3\n").unwrap();
-    assert_eq!(ok, vec![(-1.0, 1.0e-12), (0.5, 2e-3)]);
-
-    let err = NgspiceHarness::parse_wrdata("s", "-1.0e0 1.0e-12 3.0\n")
-        .expect_err("3 columns must fail");
-    assert!(err.contains("malformed wrdata line"), "{err}");
-
-    let err = NgspiceHarness::parse_wrdata("s", "-1.0e0 bogus\n")
-        .expect_err("non-numeric must fail");
-    assert!(err.contains("unparseable wrdata number"), "{err}");
-
-    let err = NgspiceHarness::parse_wrdata("s", "\n \n").expect_err("empty must fail");
-    assert!(err.contains("empty wrdata export"), "{err}");
-}
+// The `wrdata` parser's strictness is unit-covered beside the parser itself,
+// in `support::ngspice`'s `mod tests` (SPICE-08 edge cases: malformed columns,
+// unparseable numbers, empty export — plus the 3-column AC shape).
 
 /// Regression guard for the DC device-bypass fix (runs without ngspice):
 /// two identical series diodes must show equal drops. The old global-scale

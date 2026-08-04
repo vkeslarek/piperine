@@ -12,8 +12,68 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use num_complex::Complex64;
 use piperine::{OpResult, Session, SolverConfig};
 use piperine_lang::SourceMap;
+
+/// One parsed `wrdata` export — N columns of floats, strictly parsed.
+///
+/// `wrdata` is ngspice's general vector export and the mechanism behind every
+/// cross-checked domain, but the column count is domain-dependent: a DC sweep,
+/// a transient and a noise spectrum each render two columns
+/// (`sweep|time|freq  value`), while **AC renders three** — ngspice expands a
+/// complex vector into `freq  real  imag`. The caller states the shape it
+/// expects and any deviation fails loud, so a version or locale change can
+/// never degrade into a silently truncated comparison.
+#[derive(Debug)]
+pub(crate) struct WrData {
+    columns: usize,
+    rows: Vec<Vec<f64>>,
+}
+
+impl WrData {
+    /// Strict parser: every non-empty line must hold exactly `columns` floats;
+    /// anything else — a wrong column count, an unparseable number, or an
+    /// export with no rows at all — is a loud error naming the circuit.
+    pub(crate) fn parse(circuit: &str, content: &str, columns: usize) -> Result<Self, String> {
+        let mut rows = Vec::new();
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() != columns {
+                return Err(format!(
+                    "{circuit}: malformed wrdata line (expected {columns} columns): `{line}`"
+                ));
+            }
+            let mut row = Vec::with_capacity(columns);
+            for col in cols {
+                row.push(col.parse::<f64>().map_err(|e| {
+                    format!("{circuit}: unparseable wrdata number `{col}`: {e}")
+                })?);
+            }
+            rows.push(row);
+        }
+        if rows.is_empty() {
+            return Err(format!("{circuit}: empty wrdata export — contract violation"));
+        }
+        Ok(Self { columns, rows })
+    }
+
+    /// The two-column form: `(coordinate, value)` per row.
+    pub(crate) fn pairs(&self) -> Vec<(f64, f64)> {
+        assert_eq!(self.columns, 2, "pairs() reads a 2-column export");
+        self.rows.iter().map(|row| (row[0], row[1])).collect()
+    }
+
+    /// The three-column AC form: `(freq, real + j·imag)` per row — ngspice
+    /// writes a complex vector as two adjacent real columns.
+    pub(crate) fn complex(&self) -> Vec<(f64, Complex64)> {
+        assert_eq!(self.columns, 3, "complex() reads a 3-column AC export");
+        self.rows.iter().map(|row| (row[0], Complex64::new(row[1], row[2]))).collect()
+    }
+}
 
 /// The piperine-vs-ngspice comparison harness. Owns detection of the ngspice
 /// binary, both simulation paths and the tolerance contract.
@@ -187,33 +247,7 @@ impl NgspiceHarness {
                 .map_err(|e| format!("{circuit}: ngspice wrote no wrdata file {}: {e}", wrdata.display()))
         });
         let _ = std::fs::remove_dir_all(&scratch);
-        Self::parse_wrdata(circuit, &content?)
-    }
-
-    /// Strict `wrdata` parser: every non-empty line must be exactly
-    /// `sweep_value  value` (two floats); anything else fails loud.
-    pub(crate) fn parse_wrdata(circuit: &str, content: &str) -> Result<Vec<(f64, f64)>, String> {
-        let mut points = Vec::new();
-        for line in content.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            let [x, y] = cols.as_slice() else {
-                return Err(format!(
-                    "{circuit}: malformed wrdata line (expected 2 columns): `{line}`"
-                ));
-            };
-            let parse = |s: &str| {
-                s.parse::<f64>()
-                    .map_err(|e| format!("{circuit}: unparseable wrdata number `{s}`: {e}"))
-            };
-            points.push((parse(x)?, parse(y)?));
-        }
-        if points.is_empty() {
-            return Err(format!("{circuit}: empty wrdata export — contract violation"));
-        }
-        Ok(points)
+        Ok(WrData::parse(circuit, &content?, 2)?.pairs())
     }
 
     /// One full sweep golden case: ngspice `.dc`+`wrdata` vs a piperine
@@ -536,5 +570,66 @@ impl NgspiceHarness {
             assert_eq!(pp.im, ng_im, "{circuit}: pole must be real");
         }
         eprintln!("PASS {circuit} (.pz pole {:.6e} vs {ng_re:.6e})", result.poles[0].re, ng_re = ng_poles[0].0);
+    }
+}
+
+/// Unit coverage for the harness's own parsing layer. These live beside the
+/// machinery they exercise (MD-28) and run inside every target that declares
+/// `mod support;`.
+#[cfg(test)]
+mod tests {
+    use super::WrData;
+
+    /// The two-column shape shared by DC sweeps, transients and noise spectra.
+    #[test]
+    fn wrdata_parses_a_two_column_export() {
+        let data = WrData::parse("s", "-1.0e0  1.0e-12\n0.5 2e-3\n", 2).unwrap();
+        assert_eq!(data.pairs(), vec![(-1.0, 1.0e-12), (0.5, 2e-3)]);
+    }
+
+    /// AC is the three-column case: ngspice renders a complex vector as
+    /// `freq real imag`, and `complex()` recombines the pair.
+    #[test]
+    fn wrdata_parses_a_three_column_ac_export() {
+        let data = WrData::parse("ac_rc", "1.0e3 0.5 -0.25\n1.0e4 0.1 -0.9\n", 3).unwrap();
+        let points = data.complex();
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].0, 1.0e3);
+        assert_eq!(points[0].1.re, 0.5);
+        assert_eq!(points[0].1.im, -0.25);
+        assert_eq!(points[1].1.im, -0.9);
+    }
+
+    /// A line whose column count differs from the requested shape fails loud
+    /// and quotes the offending line.
+    #[test]
+    fn wrdata_malformed_line_fails_loud_naming_the_line() {
+        let err = WrData::parse("s", "-1.0e0 1.0e-12 3.0\n", 2)
+            .expect_err("3 columns must fail a 2-column read");
+        assert!(err.contains("malformed wrdata line"), "{err}");
+        assert!(err.contains("-1.0e0 1.0e-12 3.0"), "quotes the line: {err}");
+    }
+
+    /// The symmetric case: a 2-column line read as AC is equally loud, so a
+    /// domain wired to the wrong shape cannot silently compare nothing.
+    #[test]
+    fn wrdata_wrong_column_count_fails_loud() {
+        let err = WrData::parse("ac_rc", "1.0e3 0.5\n", 3)
+            .expect_err("2 columns must fail a 3-column read");
+        assert!(err.contains("malformed wrdata line (expected 3 columns)"), "{err}");
+    }
+
+    /// Numbers are parsed, never skipped.
+    #[test]
+    fn wrdata_unparseable_number_fails_loud() {
+        let err = WrData::parse("s", "-1.0e0 bogus\n", 2).expect_err("non-numeric must fail");
+        assert!(err.contains("unparseable wrdata number"), "{err}");
+    }
+
+    /// An export with no rows is a contract violation, never an empty pass.
+    #[test]
+    fn wrdata_empty_export_fails_loud() {
+        let err = WrData::parse("s", "\n \n", 2).expect_err("empty must fail");
+        assert!(err.contains("empty wrdata export"), "{err}");
     }
 }
