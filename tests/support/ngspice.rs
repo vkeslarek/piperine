@@ -16,6 +16,152 @@ use num_complex::Complex64;
 use piperine::{OpResult, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
+/// The numeric agreement contract for one comparison domain (NGP-07).
+///
+/// Every golden target reads its bound from this table and never retypes a
+/// number: a tolerance that lives in a test body is a constant nobody can
+/// review, and widening one to make a run green is the exact failure mode this
+/// feature exists to prevent. Each constant carries the reason its value is
+/// what it is, and that reason is printed with the failure so a reader sees
+/// *why* the bound is the bound at the moment it is exceeded.
+pub(crate) struct ToleranceContract {
+    reltol: f64,
+    abstol: f64,
+    rationale: &'static str,
+}
+
+impl ToleranceContract {
+    /// DC node voltages — ngspice's own defaults, the contract the existing
+    /// operating-point corpus was baselined against. Unchanged by this
+    /// feature so no golden baseline drifts.
+    pub(crate) const DC: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-6,
+        rationale: "ngspice's own reltol/vntol defaults — the DC baseline every \
+                    existing operating-point check was measured against",
+    };
+
+    /// DC branch currents — same relative agreement, floored at ngspice's
+    /// `abstol` for currents so a reverse-biased junction near 0 A is not
+    /// compared relatively against ~0.
+    pub(crate) const DC_CURRENT: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-9,
+        rationale: "ngspice's abstol for currents — floors the comparison where a \
+                    swept branch current passes through zero",
+    };
+
+    /// AC magnitude — a linear solve at a frozen operating point, so agreement
+    /// should be near machine level; the absolute floor governs the deep
+    /// stopband where the magnitude collapses.
+    pub(crate) const AC_MAG: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-12,
+        rationale: "AC is a linear solve at a frozen OP — agreement is near \
+                    machine level; the abstol floors the deep stopband",
+    };
+
+    /// AC phase — purely absolute, in radians. Phase carries no information
+    /// where the magnitude is ~0, so the comparison is *gated* on magnitude
+    /// clearing `AC_MAG`'s floor rather than being loosened here.
+    pub(crate) const AC_PHASE: Self = Self {
+        reltol: 0.0,
+        abstol: 1e-4,
+        rationale: "radians, absolute: phase is meaningless where magnitude ≈ 0, so \
+                    the comparison is gated on magnitude rather than widened here",
+    };
+
+    /// Output-noise PSD, in **V²/Hz**.
+    ///
+    /// ⚠ Unit reconciliation — the single highest-risk detail of this
+    /// comparison. ngspice's `onoise_spectrum` is an *amplitude* spectrum in
+    /// **V/√Hz**; piperine reports a *power* spectral density in **V²/Hz**
+    /// (Part VII §12). ngspice's value must therefore be **squared** before it
+    /// is compared against piperine's. Verified against ngspice-46: a 1 kΩ
+    /// resistor at 1 kHz gives ngspice 4.071e-9, and √(4kTR) =
+    /// √(4·1.38e-23·300·1000) = 4.07e-9 V/√Hz. Comparing the two directly is
+    /// wrong by a square and reads as a broken noise model rather than a unit
+    /// mismatch. The abstol below is a squared amplitude floor, in V²/Hz.
+    pub(crate) const NOISE_PSD: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-24,
+        rationale: "V²/Hz — ngspice's onoise_spectrum is an amplitude spectrum in \
+                    V/√Hz and must be SQUARED to reach piperine's PSD (Part VII \
+                    §12); comparing them directly is wrong by a square. abstol is \
+                    the squared amplitude floor",
+    };
+
+    /// Integrated output noise — ngspice's `onoise_total` against
+    /// `NoiseTrace::total()`, both an RMS in volts (no squaring here: the
+    /// integrated figure is already an amplitude on both sides).
+    pub(crate) const NOISE_TOTAL: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-15,
+        rationale: "volts RMS — onoise_total and NoiseTrace::total() are both \
+                    amplitudes, so unlike the PSD this one needs no squaring",
+    };
+
+    /// Transient node voltages on ngspice's print grid. Piperine's adaptive
+    /// samples are interpolated onto those times, which adds an error the LTE
+    /// contract bounds — hence the same relative bound as DC rather than a
+    /// tighter one.
+    pub(crate) const TRAN: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-6,
+        rationale: "interpolating piperine's adaptive grid onto ngspice's print \
+                    times adds an error bounded by the LTE contract",
+    };
+
+    /// A temperature-swept operating point — a DC comparison with a different
+    /// `SolverConfig.temperature`, so it inherits the DC contract.
+    pub(crate) const TEMP: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-6,
+        rationale: "a DC comparison under a non-nominal temperature — same bound \
+                    as DC, different SolverConfig.temperature",
+    };
+
+    /// `.disto` harmonic ratios. Both sides run the nonlinear-currents method
+    /// on the equation-identical device, but the Volterra kernels are summed
+    /// in a different order, so agreement is percent-level rather than tight.
+    pub(crate) const DISTO_HD: Self = Self {
+        reltol: 1e-2,
+        abstol: 0.0,
+        rationale: "HD2/HD3 ratios: the same nonlinear-currents method summed in a \
+                    different order on both sides — percent-level agreement",
+    };
+
+    /// `.four` THD and normalized harmonic magnitudes — the two sides
+    /// integrate the transient with different steppers before transforming,
+    /// so the bound is the integrator pair's, not the transform's.
+    pub(crate) const FOUR_THD: Self = Self {
+        reltol: 2e-2,
+        abstol: 0.0,
+        rationale: "THD over a transient integrated by two different steppers \
+                    before the transform — the integrator pair sets the bound",
+    };
+
+    /// `.pz` pole locations — a generalized eigenproblem on both sides, so
+    /// the agreement is as tight as DC.
+    pub(crate) const PZ_POLE: Self = Self {
+        reltol: 1e-3,
+        abstol: 0.0,
+        rationale: "poles from a generalized eigenproblem on both sides — as tight \
+                    as the DC bound",
+    };
+
+    /// `|golden − actual| ≤ abstol + reltol·max(|golden|, |actual|)`.
+    pub(crate) fn holds(&self, golden: f64, actual: f64) -> bool {
+        (golden - actual).abs() <= self.abstol + self.reltol * golden.abs().max(actual.abs())
+    }
+
+    /// Why this domain's bound is what it is — printed with every failure so
+    /// the reader can judge the bound, not just the miss.
+    pub(crate) fn rationale(&self) -> &'static str {
+        self.rationale
+    }
+}
+
 /// One parsed `wrdata` export — N columns of floats, strictly parsed.
 ///
 /// `wrdata` is ngspice's general vector export and the mechanism behind every
@@ -82,12 +228,6 @@ pub(crate) struct NgspiceHarness {
 }
 
 impl NgspiceHarness {
-    /// ngspice's own defaults for DC node voltages (validation contract).
-    const RELTOL: f64 = 1e-3;
-    pub(crate) const ABSTOL_V: f64 = 1e-6;
-    /// Current abstol for sweep comparisons (A).
-    pub(crate) const ABSTOL_I: f64 = 1e-9;
-
     /// The harness for the `ngspice` binary on PATH, or `None` (skip).
     pub(crate) fn detect() -> Option<Self> {
         Self::detect_with_path(std::env::var_os("PATH"))
@@ -101,11 +241,6 @@ impl NgspiceHarness {
             .map(|dir| dir.join("ngspice"))
             .find(|candidate| candidate.is_file())
             .map(|exe| Self { exe })
-    }
-
-    /// `|a − b| ≤ abstol + reltol·max(|a|, |b|)` — the run.py contract.
-    pub(crate) fn within_tolerance(a: f64, b: f64, abstol: f64) -> bool {
-        (a - b).abs() <= abstol + Self::RELTOL * a.abs().max(b.abs())
     }
 
     fn circuits_dir() -> PathBuf {
@@ -192,7 +327,7 @@ impl NgspiceHarness {
             }
             let Some(pp) = piperine(node) else { continue };
             shared += 1;
-            if !Self::within_tolerance(*ng, pp, Self::ABSTOL_V) {
+            if !ToleranceContract::DC.holds(*ng, pp) {
                 mismatches.push(format!(
                     "    v({node}): ngspice={ng:.6e}  piperine={pp:.6e}  Δ={:.3e}",
                     (ng - pp).abs()
@@ -206,7 +341,12 @@ impl NgspiceHarness {
             ));
         }
         if !mismatches.is_empty() {
-            return Err(format!("{circuit}: {} node(s) out of tolerance:\n{}", mismatches.len(), mismatches.join("\n")));
+            return Err(format!(
+                "{circuit}: {} node(s) out of tolerance:\n{}\n  tolerance: {}",
+                mismatches.len(),
+                mismatches.join("\n"),
+                ToleranceContract::DC.rationale()
+            ));
         }
         Ok(())
     }
@@ -261,7 +401,7 @@ impl NgspiceHarness {
         source: &str,
         branch_a: &str,
         branch_b: &str,
-        abstol: f64,
+        tolerance: &ToleranceContract,
     ) {
         let golden = self.ngspice_sweep(circuit).unwrap_or_else(|e| panic!("{e}"));
         assert!(
@@ -301,7 +441,7 @@ impl NgspiceHarness {
             let i_piperine = op
                 .i((branch_a.to_string(), branch_b.to_string()))
                 .unwrap_or_else(|e| panic!("{circuit}: current readback failed at {source}={x}: {e:?}"));
-            if !Self::within_tolerance(*i_golden, i_piperine, abstol) {
+            if !tolerance.holds(*i_golden, i_piperine) {
                 mismatches.push(format!(
                     "    {source}={x:+.4e}: i ngspice={i_golden:+.6e}  piperine={i_piperine:+.6e}  Δ={:.3e}",
                     (i_golden - i_piperine).abs()
@@ -310,10 +450,11 @@ impl NgspiceHarness {
         }
         assert!(
             mismatches.is_empty(),
-            "{circuit}: {}/{} sweep point(s) out of tolerance:\n{}",
+            "{circuit}: {}/{} sweep point(s) out of tolerance:\n{}\n  tolerance: {}",
             mismatches.len(),
             golden.len(),
-            mismatches.join("\n")
+            mismatches.join("\n"),
+            tolerance.rationale()
         );
         eprintln!("PASS {circuit} ({} sweep points)", golden.len());
     }
@@ -397,7 +538,7 @@ impl NgspiceHarness {
 
     /// `.disto` golden case: piperine's HD2/HD3 ratios against ngspice's
     /// harmonic components normalized by its AC fundamental.
-    pub(crate) fn disto_case(&self, circuit: &str, f1: f64, reltol: f64) {
+    pub(crate) fn disto_case(&self, circuit: &str, f1: f64, tolerance: &ToleranceContract) {
         let (fund, ng_hd2, ng_hd3) =
             self.ngspice_disto(circuit).unwrap_or_else(|e| panic!("{e}"));
         assert!(fund > 0.0, "{circuit}: ngspice fundamental must be positive");
@@ -412,9 +553,10 @@ impl NgspiceHarness {
 
         for (name, ng, pp) in [("HD2", ng_hd2, pp_hd2), ("HD3", ng_hd3, pp_hd3)] {
             assert!(
-                (ng - pp).abs() <= reltol * ng.max(pp),
-                "{circuit}: {name} ngspice={ng:.6e} piperine={pp:.6e} Δ={:.3e}",
-                (ng - pp).abs()
+                tolerance.holds(ng, pp),
+                "{circuit}: {name} ngspice={ng:.6e} piperine={pp:.6e} Δ={:.3e}\n  tolerance: {}",
+                (ng - pp).abs(),
+                tolerance.rationale()
             );
         }
         eprintln!("PASS {circuit} (.disto HD2 {pp_hd2:.4e} vs {ng_hd2:.4e}, HD3 {pp_hd3:.4e} vs {ng_hd3:.4e})");
@@ -470,7 +612,13 @@ impl NgspiceHarness {
 
     /// `.four` golden case: piperine's transient + `Waveform::fourier`
     /// against ngspice's `fourier` on the same hard-driven stage.
-    pub(crate) fn four_case(&self, circuit: &str, f0: f64, stop: f64, reltol: f64) {
+    pub(crate) fn four_case(
+        &self,
+        circuit: &str,
+        f0: f64,
+        stop: f64,
+        tolerance: &ToleranceContract,
+    ) {
         let (ng_thd, ng_norms) = self.ngspice_fourier(circuit).unwrap_or_else(|e| panic!("{e}"));
 
         let mut session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
@@ -485,19 +633,21 @@ impl NgspiceHarness {
             .unwrap_or_else(|e| panic!("{circuit}: piperine fourier failed: {e}"));
 
         assert!(
-            (result.thd - ng_thd).abs() <= reltol * result.thd.max(ng_thd),
-            "{circuit}: THD ngspice={ng_thd:.6e} piperine={:.6e} Δ={:.3e}",
+            tolerance.holds(ng_thd, result.thd),
+            "{circuit}: THD ngspice={ng_thd:.6e} piperine={:.6e} Δ={:.3e}\n  tolerance: {}",
             result.thd,
-            (result.thd - ng_thd).abs()
+            (result.thd - ng_thd).abs(),
+            tolerance.rationale()
         );
         // The dominant harmonics (2 and 3) track individually.
         for k in [2usize, 3] {
             let ng = ng_norms[k - 1];
             let pp = result.harmonics[k].norm_magnitude;
             assert!(
-                (ng - pp).abs() <= reltol * ng.max(pp),
-                "{circuit}: norm mag H{k} ngspice={ng:.6e} piperine={pp:.6e} Δ={:.3e}",
-                (ng - pp).abs()
+                tolerance.holds(ng, pp),
+                "{circuit}: norm mag H{k} ngspice={ng:.6e} piperine={pp:.6e} Δ={:.3e}\n  tolerance: {}",
+                (ng - pp).abs(),
+                tolerance.rationale()
             );
         }
         eprintln!("PASS {circuit} (.four THD {:.4e} vs {ng_thd:.4e})", result.thd);
@@ -546,7 +696,7 @@ impl NgspiceHarness {
     }
 
     /// `.pz` golden case: the natural poles of the shared RC network.
-    pub(crate) fn pz_case(&self, circuit: &str, reltol: f64) {
+    pub(crate) fn pz_case(&self, circuit: &str, tolerance: &ToleranceContract) {
         let ng_poles = self.ngspice_poles(circuit).unwrap_or_else(|e| panic!("{e}"));
 
         let mut session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
@@ -563,9 +713,10 @@ impl NgspiceHarness {
         );
         for (pp, &(ng_re, ng_im)) in result.poles.iter().zip(&ng_poles) {
             assert!(
-                (pp.re - ng_re).abs() <= reltol * ng_re.abs().max(pp.re.abs()),
-                "{circuit}: pole Re ngspice={ng_re:.6e} piperine={:.6e}",
-                pp.re
+                tolerance.holds(ng_re, pp.re),
+                "{circuit}: pole Re ngspice={ng_re:.6e} piperine={:.6e}\n  tolerance: {}",
+                pp.re,
+                tolerance.rationale()
             );
             assert_eq!(pp.im, ng_im, "{circuit}: pole must be real");
         }
@@ -578,7 +729,92 @@ impl NgspiceHarness {
 /// `mod support;`.
 #[cfg(test)]
 mod tests {
-    use super::WrData;
+    use super::{ToleranceContract, WrData};
+
+    /// Every domain of the contract, so the exhaustiveness checks below cannot
+    /// pass by simply forgetting one.
+    const EVERY_DOMAIN: [(&str, &ToleranceContract); 11] = [
+        ("DC", &ToleranceContract::DC),
+        ("DC_CURRENT", &ToleranceContract::DC_CURRENT),
+        ("AC_MAG", &ToleranceContract::AC_MAG),
+        ("AC_PHASE", &ToleranceContract::AC_PHASE),
+        ("NOISE_PSD", &ToleranceContract::NOISE_PSD),
+        ("NOISE_TOTAL", &ToleranceContract::NOISE_TOTAL),
+        ("TRAN", &ToleranceContract::TRAN),
+        ("TEMP", &ToleranceContract::TEMP),
+        ("DISTO_HD", &ToleranceContract::DISTO_HD),
+        ("FOUR_THD", &ToleranceContract::FOUR_THD),
+        ("PZ_POLE", &ToleranceContract::PZ_POLE),
+    ];
+
+    /// NGP-07: every domain states why its bound is what it is. A tolerance
+    /// with no stated reason is exactly the undocumented constant the
+    /// requirement forbids.
+    #[test]
+    fn every_domain_states_a_rationale() {
+        for (name, contract) in EVERY_DOMAIN {
+            assert!(
+                !contract.rationale().trim().is_empty(),
+                "{name} must state why its bound is what it is"
+            );
+        }
+    }
+
+    /// The noise reconciliation must survive in writing, not only in a comment
+    /// someone can drop: ngspice's `onoise_spectrum` is an amplitude spectrum
+    /// in V/√Hz and has to be squared to reach piperine's V²/Hz PSD. If this
+    /// text goes missing, the next reader compares the two directly and reads
+    /// a square-order unit error as a broken noise model.
+    #[test]
+    fn the_noise_psd_rationale_records_the_squaring() {
+        let rationale = ToleranceContract::NOISE_PSD.rationale();
+        assert!(rationale.contains("V/√Hz"), "names ngspice's unit: {rationale}");
+        assert!(rationale.contains("V²/Hz"), "names piperine's unit: {rationale}");
+        assert!(
+            rationale.to_lowercase().contains("squar"),
+            "states that ngspice's spectrum is squared: {rationale}"
+        );
+    }
+
+    /// No baseline drift: the DC bounds are the values the existing golden
+    /// corpus was measured against, and this feature must not move them.
+    #[test]
+    fn the_dc_bounds_have_not_drifted() {
+        assert_eq!(ToleranceContract::DC.reltol, 1e-3);
+        assert_eq!(ToleranceContract::DC.abstol, 1e-6);
+        assert_eq!(ToleranceContract::DC_CURRENT.reltol, 1e-3);
+        assert_eq!(ToleranceContract::DC_CURRENT.abstol, 1e-9);
+    }
+
+    /// The contract is `|Δ| ≤ abstol + reltol·max(|a|,|b|)` — inclusive at the
+    /// boundary. `AC_PHASE` is the pure-abstol domain, so the boundary is
+    /// exactly representable and the check is not a floating-point accident.
+    #[test]
+    fn tolerance_is_inclusive_exactly_at_the_boundary() {
+        let phase = &ToleranceContract::AC_PHASE;
+        assert!(phase.holds(0.0, 1e-4), "Δ exactly equal to abstol must hold");
+        assert!(
+            !phase.holds(0.0, 1e-4 * (1.0 + f64::EPSILON)),
+            "one ulp beyond the boundary must fail"
+        );
+    }
+
+    /// Just inside and just outside the DC bound at a working voltage.
+    #[test]
+    fn tolerance_separates_just_inside_from_just_outside() {
+        // 7.5 V vs 7.51 V: Δ=1e-2 > 1e-6 + 1e-3·7.51 → out.
+        assert!(!ToleranceContract::DC.holds(7.5, 7.51));
+        // 7.5 V vs 7.507: Δ=7e-3 ≤ 1e-6 + 1e-3·7.507 ≈ 7.508e-3 → in.
+        assert!(ToleranceContract::DC.holds(7.5, 7.507));
+    }
+
+    /// Near zero the absolute floor governs, so a relative test never divides
+    /// by ~0.
+    #[test]
+    fn the_absolute_floor_governs_near_zero() {
+        assert!(ToleranceContract::DC.holds(0.0, 9.9e-7));
+        assert!(!ToleranceContract::DC.holds(0.0, 1.1e-6));
+    }
 
     /// The two-column shape shared by DC sweeps, transients and noise spectra.
     #[test]

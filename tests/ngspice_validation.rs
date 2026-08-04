@@ -26,7 +26,7 @@ use piperine::OpResult;
 
 mod support;
 
-use support::ngspice::NgspiceHarness;
+use support::ngspice::{NgspiceHarness, ToleranceContract};
 
 /// Run one OP circuit against live ngspice, or skip (and pass) without it.
 fn ngspice_op_case(circuit: &str) {
@@ -134,7 +134,7 @@ fn ngspice_urc_lump10() {
 fn ngspice_diode_iv_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("diode_iv", "v1", "vin", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("diode_iv", "v1", "vin", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP diode_iv: ngspice not on PATH"),
     }
@@ -147,7 +147,7 @@ fn ngspice_diode_iv_sweep() {
 fn ngspice_nmos_id_vgs_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("nmos_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("nmos_id_vgs", "vg", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP nmos_id_vgs: ngspice not on PATH"),
     }
@@ -159,7 +159,7 @@ fn ngspice_nmos_id_vgs_sweep() {
 fn ngspice_nmos_id_vds_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("nmos_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("nmos_id_vds", "vd", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP nmos_id_vds: ngspice not on PATH"),
     }
@@ -171,7 +171,7 @@ fn ngspice_nmos_id_vds_sweep() {
 fn ngspice_nmos2_id_vds_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("nmos2_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("nmos2_id_vds", "vd", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP nmos2_id_vds: ngspice not on PATH"),
     }
@@ -183,7 +183,7 @@ fn ngspice_nmos2_id_vds_sweep() {
 fn ngspice_nmos2_id_vgs_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("nmos2_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("nmos2_id_vgs", "vg", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP nmos2_id_vgs: ngspice not on PATH"),
     }
@@ -195,7 +195,7 @@ fn ngspice_nmos2_id_vgs_sweep() {
 fn ngspice_nmos3_id_vds_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("nmos3_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("nmos3_id_vds", "vd", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP nmos3_id_vds: ngspice not on PATH"),
     }
@@ -207,7 +207,7 @@ fn ngspice_nmos3_id_vds_sweep() {
 fn ngspice_nmos3_id_vgs_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("nmos3_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("nmos3_id_vgs", "vg", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP nmos3_id_vgs: ngspice not on PATH"),
     }
@@ -219,7 +219,7 @@ fn ngspice_nmos3_id_vgs_sweep() {
 fn ngspice_jfet_id_vds_sweep() {
     match NgspiceHarness::detect() {
         Some(harness) => {
-            harness.sweep_case("jfet_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+            harness.sweep_case("jfet_id_vds", "vd", "d", "gnd", &ToleranceContract::DC_CURRENT)
         }
         None => eprintln!("SKIP jfet_id_vds: ngspice not on PATH"),
     }
@@ -234,7 +234,7 @@ fn ngspice_jfet_id_vds_sweep() {
 #[test]
 fn ngspice_disto_diode() {
     match NgspiceHarness::detect() {
-        Some(harness) => harness.disto_case("disto_diode", 1e6, 1e-2),
+        Some(harness) => harness.disto_case("disto_diode", 1e6, &ToleranceContract::DISTO_HD),
         None => eprintln!("SKIP disto_diode: ngspice not on PATH"),
     }
 }
@@ -245,7 +245,7 @@ fn ngspice_disto_diode() {
 #[test]
 fn ngspice_four_diode() {
     match NgspiceHarness::detect() {
-        Some(harness) => harness.four_case("four_diode", 1e6, 3e-6, 2e-2),
+        Some(harness) => harness.four_case("four_diode", 1e6, 3e-6, &ToleranceContract::FOUR_THD),
         None => eprintln!("SKIP four_diode: ngspice not on PATH"),
     }
 }
@@ -255,7 +255,7 @@ fn ngspice_four_diode() {
 #[test]
 fn ngspice_pz_rc() {
     match NgspiceHarness::detect() {
-        Some(harness) => harness.pz_case("pz_rc", 1e-3),
+        Some(harness) => harness.pz_case("pz_rc", &ToleranceContract::PZ_POLE),
         None => eprintln!("SKIP pz_rc: ngspice not on PATH"),
     }
 }
@@ -309,17 +309,9 @@ fn ngspice_mismatch_failure_is_actionable() {
     assert!(err.contains("Δ="), "shows the delta: {err}");
 }
 
-/// The tolerance contract itself: `|Δ| ≤ abstol + reltol·max(|a|,|b|)`.
-#[test]
-fn ngspice_tolerance_contract() {
-    // 7.5 V vs 7.51 V: Δ=1e-2 > 1e-6 + 1e-3·7.51 → out.
-    assert!(!NgspiceHarness::within_tolerance(7.5, 7.51, NgspiceHarness::ABSTOL_V));
-    // 7.5 V vs 7.507: Δ=7e-3 ≤ 1e-6 + 1e-3·7.507 ≈ 7.508e-3 → in.
-    assert!(NgspiceHarness::within_tolerance(7.5, 7.507, NgspiceHarness::ABSTOL_V));
-    // Near zero the abstol floor governs.
-    assert!(NgspiceHarness::within_tolerance(0.0, 9.9e-7, NgspiceHarness::ABSTOL_V));
-    assert!(!NgspiceHarness::within_tolerance(0.0, 1.1e-6, NgspiceHarness::ABSTOL_V));
-}
+// The tolerance contract itself — `|Δ| ≤ abstol + reltol·max(|a|,|b|)`, its
+// boundary, its near-zero floor and the per-domain rationales — is unit-covered
+// beside the contract in `support::ngspice`'s `mod tests` (NGP-07).
 
 // The `wrdata` parser's strictness is unit-covered beside the parser itself,
 // in `support::ngspice`'s `mod tests` (SPICE-08 edge cases: malformed columns,
