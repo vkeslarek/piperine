@@ -623,9 +623,48 @@ express as a wrapper over what exists.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-08-03 — `codegen-simplification` DELIVERED (T1–T14,
+**Last updated:** 2026-08-04 — `ngspice-parity` IN PROGRESS (Phases 1–2 done,
+T1–T10 committed); `codegen-simplification` DELIVERED 2026-08-03 (T1–T14,
 Verifier PASS with 2 minor non-blocking gaps); `dv-tester` DELIVERED
 2026-08-01; `dv-gradients` DELIVERED 2026-07-31.
+
+### Feature — `ngspice-parity` (IN PROGRESS 2026-08-04)
+
+Spec/design/tasks in `.specs/features/ngspice-parity/`. Executes MD-38 (parity
+measured, not asserted): extend the golden oracle to AC, noise, transient and
+temperature, then close the deviations it measures across the 13 shipped
+models.
+
+**Done — Phase 1 (oracle foundation) and Phase 2 (domain comparators + gate),
+T1–T10.** `tests/support/ngspice.rs` now holds the shared `NgspiceHarness`, the
+N-column `WrData` parser and the seven-domain `ToleranceContract` (NGP-07: the
+only place a numeric tolerance may be written). Five per-domain golden targets
+(`ngspice_{validation,ac,noise,tran,temp}.rs`) sit on it, and
+`tests/ngspice_parity_matrix.rs` is the MD-31 coverage gate — 13 models × 6
+domains, each cell `Covered { fixture }` or `NotApplicable { reason }`, all four
+asserts proven able to fail. Root-target naming gained its first registered
+exemption in `suite_hygiene.rs` (the matrix links no workspace crate), with the
+assertion turned into an equality so the exemption cannot grow quietly.
+
+**Remaining:** Phase 3 (T11–T18, model fixes), Phase 4 (T19–T20, `urc` taper +
+`ISPERL`), Phase 5 (T21–T23, `gap-3` array-net expansion + generic `urc[N]`),
+Phase 6 (T24, ROADMAP rewrite), then the Verifier.
+
+**Found and fixed alongside, outside the feature's scope:**
+
+- `cranelift_jit` leaks its code pages on drop by design ("leak memory to
+  guarantee validity of function pointers"); nothing called the unsafe
+  `free_memory`, so every compiled kernel cost the process ~8 kB permanently.
+  `emit::OwnedJit` now makes that call — safe because a kernel's `fn` pointers
+  live in the same value as its `JITModule` and instances hold it behind an
+  `Arc`. Guard: `crates/piperine-codegen/tests/jit_memory.rs`.
+- The ngspice scratch-dir key was per (circuit, domain, pid), so two tests
+  running one fixture in one domain deleted each other's working directory
+  mid-run — a flake that reported as ngspice failing to spawn. The key is now
+  per run.
+- `[profile.dev] debug = "line-tables-only"`: full debuginfo across ~50 test
+  binaries made `rust-lld` the dominant cost (~1.1 GB per link, several
+  parallel). Same one-crate relink went 3m47s → 33s.
 
 ### Feature — `codegen-simplification` (DELIVERED 2026-08-03)
 
