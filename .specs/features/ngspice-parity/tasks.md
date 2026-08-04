@@ -129,12 +129,12 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `WrData::parse(circuit, content, columns)` handles 2- and 3-column exports
-- [ ] `complex()` reconstructs `Complex64` from the `real imag` pair (format verified against ngspice-46 in design.md)
-- [ ] Unit tests: valid 2-col, valid 3-col, malformed line fails loud naming the line, empty content fails loud, wrong column count fails loud
-- [ ] Existing DC sweep checks still pass through the new type
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥5 new unit tests + 26 existing checks pass
+- [x] `WrData::parse(circuit, content, columns)` handles 2- and 3-column exports
+- [x] `complex()` reconstructs `Complex64` from the `real imag` pair (format verified against ngspice-46 in design.md)
+- [x] Unit tests: valid 2-col, valid 3-col, malformed line fails loud naming the line, empty content fails loud, wrong column count fails loud
+- [x] Existing DC sweep checks still pass through the new type
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥5 new unit tests + 26 existing checks pass
 
 **Tests**: unit · **Gate**: full
 **Commit**: `test(ngspice): parse wrdata exports of arbitrary column count`
@@ -152,12 +152,12 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Seven constants defined (`DC`, `AC_MAG`, `AC_PHASE`, `NOISE_PSD`, `NOISE_TOTAL`, `TRAN`, `TEMP`), each with a non-empty `rationale`
-- [ ] No numeric tolerance literal remains in any test body (NGP-07: the contract is the only source)
-- [ ] DC constants are byte-identical to today's values (no baseline drift)
-- [ ] Unit tests: boundary at exactly the tolerance, just inside, just outside
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥3 new unit tests
+- [x] Seven constants defined (`DC`, `AC_MAG`, `AC_PHASE`, `NOISE_PSD`, `NOISE_TOTAL`, `TRAN`, `TEMP`), each with a non-empty `rationale`
+- [x] No numeric tolerance literal remains in any test body (NGP-07: the contract is the only source)
+- [x] DC constants are byte-identical to today's values (no baseline drift)
+- [x] Unit tests: boundary at exactly the tolerance, just inside, just outside
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥3 new unit tests
 
 **Tests**: unit · **Gate**: full
 **Commit**: `test(ngspice): declare the per-domain tolerance contract`
@@ -175,11 +175,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Scratch key includes the domain, so two domains for one circuit cannot collide
-- [ ] A missing expected export file fails loud naming circuit + path
-- [ ] Scratch dir is removed on both success and failure paths
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥2 new unit tests (missing file; scratch isolation)
+- [x] Scratch key includes the domain, so two domains for one circuit cannot collide
+- [x] A missing expected export file fails loud naming circuit + path
+- [x] Scratch dir is removed on both success and failure paths
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥2 new unit tests (missing file; scratch isolation)
 
 **Tests**: unit · **Gate**: full
 **Commit**: `test(ngspice): run a fixture and read back N wrdata exports`
