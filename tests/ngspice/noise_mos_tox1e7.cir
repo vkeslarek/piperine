@@ -1,0 +1,19 @@
+* noise_mos_tox1e7 — the twin of noise_mos_cox0 with TOX stated explicitly.
+* Same card, but TOX = 1e-7 given: the value ngspice's flicker source assumes
+* when Cox is zero (mos1noi.c:53-60). The two fixtures must therefore produce
+* the SAME spectrum on each simulator — that equality IS the substitution, and
+* it is what NGP-12 asks for. ngspice agrees with itself here (measured: both
+* export 1.980669e-9 V/sqrt(Hz) at 1 kHz), so it is the oracle for the
+* substitution even though its mos1 flicker magnitude is not cross-checked
+* (see the note on ngspice_mos_flicker_noise_with_zero_cox).
+Vdd vdd 0 DC 5
+Vg  g   0 DC 3 AC 1
+Rd  vdd d 6.2k
+M1  d g 0 0 NMOD L=1u W=100u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0 kf=1e-26 af=1 tox=1e-7)
+.control
+noise v(d) Vg dec 5 10 1k
+setplot noise1
+wrdata noise_mos_tox1e7_psd onoise_spectrum
+.endc
+.end

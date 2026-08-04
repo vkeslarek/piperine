@@ -398,10 +398,10 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `cox = 0` yields ngspice's substituted value, not NaN/Inf
-- [ ] Fixture uses a model card with no `tox`/`cox`, the case that triggers it
-- [ ] Reverting fails the fixture
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] `cox = 0` yields ngspice's substituted value, not NaN/Inf
+- [x] Fixture uses a model card with no `tox`/`cox`, the case that triggers it
+- [x] Reverting fails the fixture
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): substitute cox=0 in MOSFET flicker noise`

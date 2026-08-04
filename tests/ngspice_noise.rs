@@ -384,6 +384,123 @@ fn the_closed_switch_carries_its_on_conductance_noise() {
     );
 }
 
+/// The `cox = 0` pair (NGP-12): a level-1 card with **no** `tox`, and its twin
+/// with `tox = 1e-7` given. Level 1 is the one MOS level whose oxide
+/// capacitance may legitimately be zero (mos2/mos3 default `tox` themselves),
+/// and the flicker density divides by `Cox²`. `kf` is sized so the flicker term
+/// dominates the whole 10 Hz–1 kHz sweep.
+const NOISE_MOS_COX0: [NoiseCase; 2] = [
+    NoiseCase {
+        circuit: "noise_mos_cox0",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e1,
+        fstop: 1.0e3,
+        points: 11,
+    },
+    NoiseCase {
+        circuit: "noise_mos_tox1e7",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e1,
+        fstop: 1.0e3,
+        points: 11,
+    },
+];
+
+/// NGP-12: with `cox = 0` the flicker source substitutes ngspice's assumed
+/// `tox = 1e-7` (`mos1noi.c:53-60`) instead of dividing by zero or dropping the
+/// source.
+///
+/// On the ngspice side the substitution is asserted directly, as an equality
+/// between the two fixtures: the tox-less card must give exactly what the
+/// `tox = 1e-7` card gives, which is the requirement stated as a measurement
+/// rather than as a formula. ngspice satisfies it (both exports read
+/// 1.980669e-9 V/√Hz at 1 kHz).
+///
+/// The same equality cannot be used on piperine's side, for a reason worth
+/// recording: `mos.phdl` re-derives `KP` from `U0·Cox` whenever `TOX > 0`, even
+/// on a card that gave `KP` — ngspice only derives it when `KP` is *not* given
+/// (mos1temp.c). Stating `tox` therefore moves the twin's beta, its operating
+/// point and its output impedance, so the two cards are no longer the same
+/// circuit. That is a separate mos1 faithfulness defect, out of this task's
+/// scope and reported rather than fixed here. Piperine's side instead subtracts
+/// the identical kf = 0 circuit (`noise_mos_linear`) to isolate the flicker
+/// term — which cancels the shared transfer impedance — and asserts it against
+/// mos1noi.c's density with the substituted `Cox`.
+///
+/// It is deliberately **not** the oracle for the flicker magnitude, and that is
+/// an open disagreement rather than a settled deviation. Piperine computes
+/// mos1noi.c's density as written — `KF·|Id|^AF / (f·W·m·Leff·Cox²)` — and gets
+/// 4.604154e-11 V²/Hz at 1 kHz where ngspice-46 reports 3.414e-18. Probing
+/// ngspice-46 shows its own output does not follow that formula either: the
+/// density scales as `tox¹` rather than `tox²` (tox 1e-7 → 1e-8 divides it by
+/// exactly 10, not 100) and as `Id²` rather than `Id^AF` with `AF = 1`
+/// (Rd 6.2k → 62k, Id 7.736e-4 → 8.032e-5, density ×1/102). It does scale
+/// correctly with `kf` and `1/(W·L)`. Reconciling that belongs to its own
+/// investigation; asserting either magnitude as "parity" would be a guess.
+#[test]
+fn ngspice_mos_flicker_noise_with_zero_cox() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP noise_mos_cox0: ngspice not on PATH");
+        return;
+    };
+    let [zero_cox, given_tox] = &NOISE_MOS_COX0;
+
+    // ngspice's own answer to "what does Cox = 0 mean here": the two cards
+    // agree with each other.
+    let golden_zero = zero_cox.golden_psd(&harness, "noise-mos-cox0");
+    let golden_given = given_tox.golden_psd(&harness, "noise-mos-cox0");
+    let zero_as_psd: Vec<(f64, f64)> = golden_zero
+        .iter()
+        .map(|&(f, s)| (f, NoiseCase::psd_from_spectrum(s)))
+        .collect();
+    NoiseCase::compare_psd(
+        "ngspice noise_mos_cox0 against its own noise_mos_tox1e7 twin",
+        "d",
+        &golden_given,
+        &zero_as_psd,
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+
+    // Piperine's side. `noise_mos_linear` is the identical circuit with kf = 0,
+    // so subtracting its (white) spectrum leaves the flicker term alone and
+    // cancels the transfer impedance the two share.
+    let thermal_only = NoiseCase { circuit: "noise_mos_linear", ..*zero_cox };
+    let (thermal, _) = thermal_only.piperine(&harness);
+    let (with_flicker, _) = zero_cox.piperine(&harness);
+    let op = harness.piperine_op(zero_cox.circuit).unwrap_or_else(|e| panic!("{e}"));
+    let vds = op.v("d".to_string()).expect("v(d)");
+
+    // The fixture's own numbers, from its card: beta = kp·W/L, vgs - vto = 2 V,
+    // and the device is in triode, so gm = beta·vds and Id = (5 - vds)/Rd.
+    let beta = 2.0e-3;
+    let id = (5.0 - vds) / 6.2e3;
+    let thermal_current = 4.0 * BOLTZMANN * NOMINAL_KELVIN
+        * ((2.0 / 3.0) * beta * vds + 1.0 / 6.2e3);
+    // mos1noi.c's density with the substituted oxide capacitance.
+    let cox = 3.4531479969e-11 / 1.0e-7;
+    let flicker_current_at_1hz = 1.0e-26 * id / (1.0e-4 * 1.0e-6 * cox * cox);
+
+    for (&(freq, total), &(_, floor)) in with_flicker.iter().zip(&thermal) {
+        assert!(
+            total.is_finite() && total > 0.0,
+            "noise_mos_cox0: PSD at {freq:.6e} Hz is {total} — a zero Cox must be \
+             substituted, never divided by and never dropped"
+        );
+        let flicker = total - floor;
+        let expected = floor * (flicker_current_at_1hz / freq) / thermal_current;
+        assert!(
+            ToleranceContract::NOISE_PSD.holds(expected, flicker),
+            "noise_mos_cox0: the flicker term at {freq:.6e} Hz must be mos1noi.c's density \
+             with Cox substituted at tox = 1e-7 — expected {expected:.6e} V²/Hz, got \
+             {flicker:.6e}. Without the substitution this fixture reports `inf`.\n  {}",
+            ToleranceContract::NOISE_PSD.rationale()
+        );
+    }
+    eprintln!("PASS noise_mos_cox0 ({} frequency points)", with_flicker.len());
+}
+
 /// NGP-02: the output-noise PSD agrees with ngspice at every swept frequency,
 /// once ngspice's V/√Hz is squared into piperine's V²/Hz.
 #[test]

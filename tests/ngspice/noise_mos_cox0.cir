@@ -1,0 +1,20 @@
+* noise_mos_cox0 — MOSFET flicker noise on a card with NO tox.
+* Level 1 is the one MOS level whose oxide capacitance may legitimately be
+* zero (mos2/mos3 default tox to 1e-7), and the flicker density divides by
+* Cox^2. ngspice does not skip the source and does not divide by zero: it
+* assumes an actual tox of 1e-7 for the noise alone (mos1noi.c:55-60). This
+* card gives tox nowhere, so Cox is exactly 0 and that substitution is the
+* only thing that makes the flicker term finite.
+* kf is sized so flicker dominates the whole sweep — a model that skips the
+* source when Cox = 0 reads the bare thermal floor instead.
+Vdd vdd 0 DC 5
+Vg  g   0 DC 3 AC 1
+Rd  vdd d 6.2k
+M1  d g 0 0 NMOD L=1u W=100u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0 kf=1e-26 af=1)
+.control
+noise v(d) Vg dec 5 10 1k
+setplot noise1
+wrdata noise_mos_cox0_psd onoise_spectrum
+.endc
+.end

@@ -479,8 +479,18 @@ pub analog mos1 {
     I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm));
     // Flicker (mos1noi.c:138-143):
     //   KF · |Id|^AF / (f · W · m · Leff · Cox²),  Id = mode·cdrain − cbd
-    if (model.kf > 0.0 && cox > 0.0) {
-        var cox2 : Real = cox * cox;
+    if (model.kf > 0.0) {
+        // mos1noi.c:53-60: level 1 is the one MOS level whose oxide
+        // capacitance may legitimately be zero — mos2/mos3 default TOX to
+        // 1e-7, mos1 leaves it ungiven — and the density below divides by
+        // Cox². ngspice neither drops the source nor divides by zero: for the
+        // noise alone it assumes an actual TOX of 1e-7. The `&& cox > 0.0`
+        // guard this replaces did not protect anything: a runtime condition
+        // does not gate a noise contribution today, so a tox-less card divided
+        // by zero and reported an infinite spectrum (measured: `inf` V²/Hz at
+        // every point of noise_mos_cox0).
+        var cox_n : Real = if (cox > 0.0) { cox } else { NG_EPS_SIO2 / 1.0e-7 };
+        var cox2 : Real = cox_n * cox_n;
         var cd_term : Real = mode * cdrain - cbd;
         I(dp, sp) <+ flicker_noise(
             model.kf * pow(abs(cd_term), model.af) / (w * m * l_eff * cox2),

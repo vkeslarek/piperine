@@ -1,0 +1,17 @@
+// noise_mos_tox1e7 — the twin of noise_mos_cox0 with tox stated explicitly, at
+// the 1e-7 the flicker source assumes when Cox is zero. The two must produce
+// the same spectrum; that equality is the substitution NGP-12 asks for.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::mos;
+mod Top() {
+    wire gnd: Electrical; wire vdd: Electrical; wire g: Electrical; wire d: Electrical;
+    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
+    vg: vsrc (.p=g,.n=gnd) { .dc = 3.0 };
+    rd: res  (.p=vdd,.n=d) { .r = 6.2e3 };
+    m1: mos1 (.d=d,.g=g,.s=gnd,.b=gnd)
+        { .l = 1.0e-6, .w = 100.0e-6,
+          .model = Mos1Model { .vto = 1.0, .kp = 2.0e-5, .lambda = 0.0,
+                               .kf = 1.0e-26, .af = 1.0, .tox = 1.0e-7 } };
+}
