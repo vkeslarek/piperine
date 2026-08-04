@@ -1,0 +1,19 @@
+* temp_diode — operating-point cross-check across temperature.
+* One forward-biased diode; its voltage shifts ~-2 mV/C, so between the two
+* .temp points below (0 C and 75 C, both away from the 27 C nominal) v(out)
+* moves by far more than the comparison tolerance — a model pinned to the
+* nominal temperature cannot agree at both. Each point is exported
+* separately: `set temp` re-runs the operating point at that temperature.
+V1 vin 0 DC 1
+R1 vin out 100
+D1 out 0 DMOD
+.model DMOD D (is=1e-14 n=1 rs=0)
+.control
+set temp = 0
+op
+wrdata temp_diode_t0 v(out)
+set temp = 75
+op
+wrdata temp_diode_t75 v(out)
+.endc
+.end

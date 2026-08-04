@@ -1,0 +1,13 @@
+// temp_diode — the same forward-biased diode as temp_diode.cir. The piperine
+// side runs one operating point per temperature with
+// SolverConfig.temperature set to the ngspice .temp value (Celsius + 273.15).
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
+    v1: vsrc (.p=vin,.n=gnd) { .dc = 1.0 };
+    r1: res  (.p=vin,.n=out) { .r = 100.0 };
+    d1: dio  (.p=out,.n=gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
+}
