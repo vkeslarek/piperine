@@ -1,191 +1,266 @@
 # dv-tester Design
 
-**Spec:** `spec.md` (DVT-01..23). **Vision:** `../design-verification/ideal.md` §4.
-**Surface design:** `ideal.md` in this directory — the library API, layer by
-layer, with an implementability review. Read it before writing any of layer 1;
-this document covers where things live, that one covers what they look like.
+**Spec:** `spec.md` (DVT-01..45). **Surface design:** `ideal.md` in this
+directory — read it first; it carries the level taxonomy, the four level-1
+families, the cost model and the decision log (§12). This document covers **where
+things live and how they are built**; that one covers what they look like.
+**Vision:** `../design-verification/ideal.md` §4.
 **Depends on:** `dv-core` (`validation_reports()` is how a tester speaks).
+**Follow-on:** `../codegen-simplification/` — this feature extracts, that one
+delegates.
+
+> Rewritten 2026-07-31 against `ideal.md`'s third revision. The previous version
+> placed every component in `piperine-api` and treated the tester as the subject;
+> the subject is now a host-language **device library**, and its mechanism half
+> lives in a new crate.
 
 ## A. Shape
 
-No grammar. A tester is an element on one side and a host program on the other.
+Three levels, three homes, one `Element` at the bottom (`ideal.md` §1).
 
 ```
-host (Python generator, or Rust)                 solver
-─────────────────────────────────                ──────────────────────────────
-def uart_echo(t):
-    t.drive("rst", 1)
-    yield t.advance(100e-9)  ──── installs breakpoint at t+100ns ───▶
-                                                 next_breakpoints() → [t+100ns]
-                                                 (core/element.rs:187, exists)
-                                                 … solve to the breakpoint …
-                                                 step ACCEPTED
-    ◀──── resume exactly once ──────────────────  callback
-    t.drive("rst", 0)
-    t.ramp("vdd", 0, 1.8, 1e-6) ── installs a stamp SEGMENT ────────▶
-                                                 element stamps from the segment
-                                                 through every Newton iteration
-                                                 with NO host crossing (§C2)
-    got = yield from t.uart_recv(...)
-    t.expect(got == byte, …) ──── Error finding ─▶ validation_reports() (dv-core)
+PHDL declaration                          host implementation
+────────────────────                      ───────────────────────────────
+@device pub mod LoadTransient(            class LoadTransient(pip.Sequencer):
+    inout out : Electrical,                   def build(self, b):
+);                                                b.isource("out", "gnd",
+                                                            wave=Wave.const(10e-3))
+   │  (one concept, two binding modes)          def run(self, t):
+   │   plugin → cdylib, TOFU-pinned                 yield t.advance(100e-6)
+   └── host  → in-process registration             d = t.arm(Measure.min("out"))
+                                                    ...
+                       │
+        ┌──────────────┴───────────────────────────────────┐
+        ▼                                                   ▼
+  piperine-api                                       piperine-signal  (new, pure)
+  ─────────────────────────────                      ─────────────────────────────
+  HostElement  ──blanket adapter──▶ Element          Wave      value from time
+  StampSink / Ctx / StateView                        Behavior  value from state + ∂
+  Sequencer   (coroutine driver)                     events    crossing detection
+  level-1 → stamp adapter                            Measure   streaming reductions
+        │                                            ops/limit (extracted §3.9)
+        ▼
+  piperine-solver — sees only `Element`, plus one new seam:
+                    a dynamic digital subscriber (§C5)
 ```
 
-The scheduling half already exists. What is new is the resume callback, the drive
-segments, and the host API.
+The solver gains **one** mechanism (§C5) and otherwise does not change. Codegen
+is not touched by this feature at all — its copies of the extracted families stay
+until `codegen-simplification` removes them.
 
 ## B. Component breakdown
 
 | Component | Home | Notes |
 |---|---|---|
-| Sequencer element | `piperine-solver`-facing element in `piperine-api` | implements `Element`; `next_breakpoints` + `EMITS_VALIDATION` |
-| Resume callback contract | `piperine-api/src/` | language-agnostic (D15); Python and Rust both implement |
-| Drive segments | the sequencer element | piecewise description stamped between breakpoints (§C2) |
-| Host API | `piperine-api/src/` + `piperine-python/src/` | `advance`, `drive_voltage`/`drive_current`/`ramp`, digital `drive`, `read_voltage`/`read_port`, `expect`/`warn` |
-| Generator adapter | `piperine-python/src/` | ergonomics only — one contract underneath |
+| `Wave` descriptors, evaluation, breakpoints, DC values | `piperine-signal` | new; per-kind DC value follows SPICE convention (`ideal.md` §12.10) |
+| `Behavior` kinds + closed-form Jacobians | `piperine-signal` | new; ~8 kinds + composition |
+| `verify_derivatives` FD oracle | `piperine-signal` | new; the guard on every hand-written Jacobian |
+| Runtime ops (`delay`/`slew`/`transition`/`idt`) | `piperine-signal` | **extracted** from `codegen/device/analog/operators.rs` |
+| Event detectors (`cross`/`above`/`timer`) | `piperine-signal` | **extracted** from `codegen/device/analog/events.rs` |
+| `table` | `piperine-signal` | **extracted** from `codegen/resolve/pom/analog_ops.rs` |
+| Limiter (pnjlim/fetlim) | `piperine-signal` | **extracted** from `codegen/device/analog/limits.rs` |
+| Crossing tier 2 (predict + bound + report) | `piperine-signal` | new; §C6 |
+| `Measure` accumulators, gating, error bounds | `piperine-signal` | new |
+| `HostElement` + blanket `Element` adapter | `piperine-api` | §C2 |
+| `StampSink` / `Ctx` / `StateView` | `piperine-api` | the FFI-safety work; §C2 |
+| Level-1 → stamp adapter | `piperine-api` | turns `Wave`/`Behavior` into MNA rows; surfaces the limiter's veto |
+| `@device` host binding mode | `piperine-api` + `piperine-lang` | §C3 |
+| `Sequencer` (coroutine driver, wakes, findings) | `piperine-api` | §C4 |
+| Dynamic digital subscriber | `piperine-solver` | §C5 — the only solver change |
+| PyO3 bridge | `piperine-python` | duck-typed method presence, one catch point |
+| Python surface | `piperine-python` | thin; `pip.Device`/`Wave`/`Behavior`/`Measure`/`Sequencer` |
 | Monitors | no new code | ordinary `digital` modules + `dv-core`'s channel |
-| `cover` parse + POM | `piperine-lang/src/parse/`, `pom/` | statement kind inside a `constraint` block |
-| Bin mapper | `piperine-codegen/src/kernel/analog/` | reuses `dv-core`'s pointwise path; a hit is a counter increment |
-| `cover` posture + bin cap | `piperine-solver/src/analyses/context.rs` | `cover=on\|off` (D9); raisable cap (D10) |
-| Coverage merge | `piperine-api/src/` | host state across runs and seeds |
+| `cover` parse + POM | `piperine-lang` | statement kind inside a `constraint` block |
+| `cover` bin mapper | `piperine-codegen` | reuses `dv-core`'s pointwise path |
+| `cover` posture + bin cap | `piperine-solver` | `cover=on\|off` (D9); raisable cap (D10) |
+| Coverage merge | `piperine-api` | host state across runs and seeds |
 
-## C. The four decisions that shape the implementation
+## C. The decisions that shape the build
 
-### C1. Who chooses the instants decides the language
+### C1. Extraction first, and the cross-check harness is not optional
 
-This is the rule that separates a tester from a `constraint`, and it corrects the
-coarser "inside the time loop → in the language":
+The four extracted families (§B) are the crate's first commits, and their
+correctness bar is **"the existing tests still pass, relocated"** — a far stronger
+starting position than greenfield. But between this feature and
+`codegen-simplification`, each family exists **twice**.
 
-| Instants chosen by | Must live | Rate |
-|---|---|---|
-| the **solver** (every accepted point) | compiled, in-kernel | 10⁶–10⁹ evaluations |
-| the **test** (its own breakpoints) | the host, imperative | 10⁴–10⁵ wake-ups |
+The holding measure is a **per-family cross-check fixture**: one fixture, both
+paths (codegen's JIT device and the crate's direct call), asserted equal. Four
+fixtures, authored here, deleted by the follow-on when codegen's copy goes away.
 
-At ~1 µs a host crossing, 10⁵ wake-ups is noise and 10⁹ is fatal. A `constraint`
-is in the kernel because the solver dictates its rhythm; a tester can be Python
-because it dictates its own. Same time loop, different rate.
+This is a hard requirement (DVT-06), not hygiene. Without it the copies drift and
+`codegen-simplification` stops being "delete a copy" and becomes "reconcile two
+behaviors" — a much worse job, discovered late.
 
-`SimHooks` is explicitly *not* the hook — it is coarse
-(`transform_design`/`before_lower`/`after_solve`) with no per-step site. A tester
-is an `Element`.
+**Ordering consequence:** extraction (Phase 1) precedes everything, because every
+later phase consumes it and because a relocation is easiest to verify when
+nothing else has moved.
 
-### C2. Analog drive: the host installs segments, the element stamps them
+### C2. The blanket adapter is the whole ABI story
 
-A stamp value must exist during every Newton iteration, and calling the host from
-inside that loop is exactly what §C1 forbids.
+`HostElement` mirrors `Element`'s defaulted shape (two required methods, the rest
+defaulted). A blanket `impl<T: HostElement> Element for T` presents it to the
+solver, so **no solver code learns that host devices exist** (MD-01: one ABI, no
+downcast).
 
-So `t.ramp(net, from, to, dur)` installs a **segment** at the current breakpoint,
-and the element stamps from that description until the next one — no host crossing
-in between. This is how a PWL source already behaves; the tester generalizes it
-under host control. Python decides *what* to drive; the element decides *how* to
-stamp.
+The real work is not the trait — it is `StampSink`/`Ctx`/`StateView`, the safe
+wrappers that expose matrix rows and solution values across an FFI boundary
+without handing Python a raw pointer. Design rules:
 
-Two requirements ride along:
+- The sink is **index-validated**: an out-of-range row/column is a loud typed
+  error, never undefined behavior.
+- Views are **borrow-scoped** to one call; nothing a host device holds can
+  outlive the solve step that produced it.
+- Nothing exposes a `&mut` to the matrix itself — only `g(row, col, v)` /
+  `i(row, v)` / `branch(...)` operations.
 
-- **Declared impedance.** `drive_voltage(net, v, rout=50.0)` stamps a Norton
-  source. An ideal force stays available — it is a legitimate bring-up tool — but
-  it is spelled explicitly and never defaulted, or the tester reintroduces the
-  silent ideality this project criticizes `wreal` for.
-- **Registered discontinuities.** An ideal step must register its breakpoint so
-  the integrator sees the edge instead of interpolating across it. The digital
-  path already lives on discontinuities, so this is existing solver business.
+`limiting_report` rides here too: a level-1 limiter can veto convergence
+(`ideal.md` §3.9 D4), so the adapter surfaces that signal alongside stamps rather
+than swallowing it.
 
-Test that the invariant holds: count host calls between breakpoints and assert
-zero (DVT-11).
+### C3. `@device` gains a binding mode, not a new attribute
 
-### C3. Rollback: explicit advance *is* the guarantee
+`@device` already exists (`headers/device_port.phdl`, MD-24): a PHDL module that
+declares ports and params and defers its implementation. A host device is that,
+with the implementation registered in-process instead of loaded from a cdylib.
 
-The hard problem is that the solver rejects timesteps and a Python generator
-cannot un-advance.
+Build consequence: **the PHDL side barely changes.** The elaborator already
+accepts `@device`; what is new is a second resolution path at circuit-build time
+— when `CircuitCompiler` meets an `@device` module, it looks for a plugin binding
+first and a host registration second, and fails loud naming both if neither is
+found. The binding mode is *inferred from where the implementation is*, never
+spelled differently in PHDL (`ideal.md` §8.7).
 
-The answer (D11): `advance(dt)` inserts a breakpoint at `t + dt` and asserts that
-nothing the tester observes changes inside that window. The tester is resumed
-only at that breakpoint, which is an accepted point by construction. No rollback
-protocol, no speculative state, no un-advancing — the failure mode is designed
-out rather than handled.
+**No new macro** (MD-13 rule 5). A Rust host device implements `HostElement` and
+registers explicitly; Python uses a `@pip.device` decorator because that is how
+registration is spelled in that language. `#[pip::device]`'s `inventory`
+collection stays a plugin-binary mechanism and is not reused in-process.
 
-The cost is accepted and named: forcing the solver to land on every tester
-breakpoint constrains its timestep, so a fine-grained tester makes the transient
-slower than it would otherwise be. A known inefficiency beats an unknown failure
-mode.
+### C4. The coroutine resume seam
 
-Implementation consequence: the resume site must be **after** step acceptance,
-never inside the accept/reject decision. A tester resumed during a step that is
-later rejected breaks the model with no clean repair, so this ordering is an
-acceptance criterion (DVT-03), not an implementation detail.
+`advance(dt)` inserts a breakpoint at `t + dt`; the sequencer is resumed **after
+step acceptance**, never inside the accept/reject decision (D11). That ordering
+is an acceptance criterion (DVT-25), not an implementation detail: a sequencer
+resumed during a step that is later rejected breaks the model with no clean
+repair.
 
-### C4. Coverage is the one construct whose value is accumulation
+Language asymmetry, stated rather than hidden: Python uses a generator; Rust has
+no stable generators, so a Rust sequencer implements `resume` as an explicit
+state machine. The *contract* is identical — same wake sources, same findings,
+same ordering — and only the authoring ergonomics differ.
 
-Every other construct here belongs to one analysis. Coverage belongs to a whole
-regression, which produces three design differences:
+The cost D11 buys is accepted and named: forcing the solver to land on every
+sequencer breakpoint constrains its timestep, so a fine-grained tester runs
+slower. A known inefficiency beats an unknown failure mode.
 
-1. **Its own posture** (D9). Riding `checks=` would let `dv-gradients`' optimizer
-   pollute the coverage database with 10³ inner-loop iterates nobody meant as
-   verification runs. `cover=on|off` on `Context`.
-2. **Elaboration-time bin cap** (D10). Bin edges are literal ranges, so a cross's
-   joint bin count is known statically — a 10⁶-bin cross is refused before
-   anything allocates. Raisable on `Context` so a legitimately large cross is one
-   explicit line rather than a compiler fork. A runtime warning was the
-   alternative and loses to the project's fail-loud rule.
-3. **Host-side merged state.** Counters merge across runs and seeds and persist
-   between sessions. The kernel side is cheaper than a margin — a bin hit is a
-   counter increment with no signed distance and no argmin tracking.
+### C5. The dynamic digital subscriber — the one solver change
 
-## D. What the tester makes unnecessary
+`t.wait(edge("clk", RISING))` needs the digital scheduler to resume a waiter when
+a net changes. Today sensitivity is static and compiled; nothing can subscribe at
+runtime.
 
-Recorded here because it is a design decision, not a scope accident (D16):
+The seam is deliberately small: **a subscriber list consulted after net
+settling.** Not a new event kind — `EventKind::Digital` already carries the edge
+with `priority: Exact`. Not a new scheduling concept — the scheduler already
+settles and already emits. What is added is a registration point and a
+post-settle dispatch.
 
-- **RNM as a testbench component** — abstract neighbor, stimulus generator,
-  boundary checker — is fully replaced by this feature. Any stimulus at all,
-  imperative, in the host, with declared drive impedance.
-- **RNM as internal block abstraction** is mostly covered by writing the abstract
-  model as an ordinary simple `analog`/`digital` module; the large speedup comes
-  from not simulating transistors, which a simple module already gets.
-- **Most in-language monitors.** Protocol checking is overwhelmingly at clock
-  edges — the tester's rhythm — so the monitor residue is narrow: continuous
-  obligations at the solver's rhythm, or checks that should ship with a block.
+Two rules ride along:
 
-Net effect on the language: the `behavioral` body kind left with RNM, dropping the
-V1 grammar delta from five additions to four. A capability decision made the
-language smaller.
+- **After settling only** (`ideal.md` §3.5/§12.3). A mid-delta-cycle value can be
+  an artifact of DAG evaluation order rather than a signal the circuit had;
+  waking on one produces results that move when an unrelated edit reorders the
+  graph.
+- **The seam is not tester-only.** An in-language monitor and a live-plotting
+  host would both want it. A one-consumer mechanism in the solver is a smell;
+  this one has three plausible consumers, which is the argument for putting it in
+  the solver rather than faking it in the api crate.
+
+Sequence this **after** time wakes: examples A–E and G in `ideal.md` are provable
+without it, so the feature has a working spine before the scheduler is touched.
+
+### C6. Crossings: tier 2, with the error published
+
+The audit (`ideal.md` §3.4) found that PHDL's own `@cross` fires at the first
+accepted point *after* the crossing — late by up to a timestep, unreported — and
+that nothing in the ABI can force a retry at a computed instant.
+
+Level 1 ships **tier 2**: extrapolate `t_cross` from the trajectory, cap the next
+step through `bound_step_hint`/`$bound_step` (a seam that already exists end to
+end), re-detect, iterate; publish the residual error. No solver change, strictly
+better than today, and never a bare plausible instant.
+
+Tier 3 (exact) needs `EventKind::Crossing` promoted from `Advisory` to `Exact`
+plus reject-and-retry. That is a scoped solver feature with its own spec, and the
+existing enums are already the right shape to receive it.
+
+## D. Data flow: `t.arm(Measure.min("out"))` then a load step
+
+1. **`arm`** constructs a `piperine-signal` accumulator and registers it with the
+   host device; a handle returns to the coroutine. No solver involvement.
+2. **`install`** replaces the driving `Wave` at the current instant
+   (install-relative time, §`ideal.md` 4.2) and registers the discontinuity as an
+   `Exact` breakpoint.
+3. **`advance(50e-6)`** yields; the sequencer declares a breakpoint at
+   `t + 50 µs` through `next_breakpoints`.
+4. The solver runs. Every **accepted** point feeds `(t, v)` into the accumulator
+   through the adapter — natively, zero host calls. Rejected steps feed nothing.
+5. At the breakpoint, after acceptance, the coroutine resumes. `droop.value`
+   reads the accumulator; `droop.error_bound` reads the LTE-derived bound.
+6. `t.expect(...)` compares **against the bound** and emits a finding through
+   `dv-core`'s channel with time and instance provenance.
+
+Host calls in that whole sequence: one, at step 5. That is the design.
 
 ## E. Risks
 
 | Risk | Mitigation |
 |---|---|
-| A tester is resumed on a step that is later rejected | §C3 — resume strictly after acceptance, as an AC (DVT-03), with a recording tester proving it |
+| The two copies of A–D drift before delegation lands | §C1 — four cross-check fixtures, a hard requirement (DVT-06) |
+| Extraction changes a number | The numeric oracles already exist: `tests/ngspice_validation.rs` (30 tests) plus each family's relocated behavior tests. Nothing here may change a single value |
+| Exposing the stamp matrix to Python unsoundly | §C2 — index-validated, borrow-scoped, no raw pointers, loud on invalid indices |
+| A hand-written `Behavior` Jacobian is wrong | `verify_derivatives` (DVT-12); a new kind is not done until it passes |
+| A sequencer is resumed on a step later rejected | §C4 — resume strictly after acceptance, as an AC (DVT-25), with a recording sequencer proving it |
 | Breakpoint density destroys transient performance | Accepted and documented (D11); measured on a realistic test so the cost is known rather than discovered |
-| Host crossings leak into the Newton loop | §C2 — counted-call test asserting zero crossings between breakpoints (DVT-11) |
+| Host crossings leak into the Newton loop | Counted-call test asserting zero crossings between breakpoints (DVT-31) |
+| `Measure` returns a plausible wrong overshoot | Error bound published by default; `expect` compares against the bound (DVT-15) |
+| The digital subscriber becomes a one-consumer seam | §C5 — three plausible consumers named; if it turns out to be tester-only, that is a signal the design was wrong, not a detail |
+| **The GIL**: a Python device holds it during the solve | Documented as a property of the Python tier; level 1 sidesteps it entirely, which is the main reason the catalog exists |
+| Python exceptions mid-solve | One catch point in the bridge; typed error carrying simulation time; analysis stops cleanly |
+| Authors integrating state in `load_*` instead of `accept_timestep` | `ideal.md` §7 is documentation *and* an example; the trap already exists for PHDL authors |
 | Ideal drive causes convergence failures | Declared impedance is the default shape; ideal force explicit; discontinuities register breakpoints |
-| A tester in AC silently does nothing | Loud refusal (D13, DVT-15); DC either defined or loud, never guessed |
-| Non-reproducible runs from tester side effects | Allowed by D12, but documented as the author's responsibility and called out as the one link `(seed, index)` does not cover |
-| Two testers or a tester and a design source drive one net | Loud conflict, not last-writer-wins (Edge Cases) |
-| A generator that never yields hangs the simulation | Bounded zero-advance resumes per instant, then loud |
-| The `Element` ABI has no imperative surface for "wait" | The scheduling half exists (`next_breakpoints`); the resume callback is the new part, and this feature is where ABI gaps will surface — sequence it after `dv-core`'s channel lands |
+| Two devices driving one net | Loud conflict, not last-writer-wins, regardless of instantiation order |
+| A coroutine that never yields | Bounded zero-advance resumes per instant, then loud |
+| Scope: `cover` is a different subject riding along | It is P3 and separable — the natural cut line if this feature needs splitting |
 
 ## F. Test strategy
 
 | Layer | Targets |
 |---|---|
-| Solver/element | `piperine-solver/tests/` or `piperine-api/tests/` — resumed exactly at declared instants, never on a rejected step, multiple testers interleaving, zero host calls between breakpoints |
-| Analog drive | ramp into an RC compared against the analytic segment response; ideal step registers its breakpoint; internal-net drive appears in findings |
-| Host API | `piperine-python/tests/` + root `tests/` — UART-echo generator over thousands of cycles, posture behavior (`strict` aborts on first mismatch, `collect` records all), Rust twin produces identical findings |
-| Monitors | a hierarchical fixture where a monitor sees what the top-level tester cannot |
-| Coverage | bins filled by a sweep with empty bins named; two runs merge rather than replace; oversized cross refused at elaboration |
-| Loud paths | tester + AC; unknown net; driver conflict; non-yielding generator |
+| `piperine-signal` purity | a guard asserting the crate's in-tree dependency list is **empty** and that no `Element`/matrix/Cranelift symbol appears — the crate boundary tested mechanically (MD-31: a policy invariant lives in the gate) |
+| Extracted families | the relocated unit tests, unchanged; plus four cross-check fixtures against codegen's copy |
+| `Behavior` | `verify_derivatives` over a sample grid per kind; a deliberately wrong Jacobian must be caught |
+| `Measure` | online-vs-post-run agreement on one `Waveform`; an overshoot fixture whose analytic peak must lie inside the reported bound; `refine=True` narrows it; loud on unfed/never-gated reads |
+| Crossings | tier-2 convergence against an analytically known crossing instant, with the published error shrinking as the step floor drops |
+| ABI | a resistor written three ways (PHDL / Rust host / Python host), instantiated twice in a hierarchy, identical operating points |
+| Sequencer | resumed exactly at declared instants, never on a rejected step; two sequencers interleaving; zero host calls between breakpoints (counted) |
+| Edge waits | a clock-synchronized burst; a waiter proven to resume only after settling |
+| Analog drive | a ramp into an RC against the analytic segment response; install-relative timing; a replacement's edge registered |
+| Loud paths | AC with a sequencer; unknown net; driver conflict; non-yielding coroutine; rebuild-class `set_param`; unfed measure |
+| Parity | `host_parity.rs`-style enumeration; the four twinned devices (DVT-37) |
+| Coverage | bins filled by a sweep with empty bins named; two runs merge; oversized cross refused at elaboration |
 
 ## G. Spec-document updates (`docs/spec/`)
 
 | Document | What changes |
 |---|---|
-| `part_viii_host_api.md` + `appendix_c_host_surface.md` | **the largest documentation surface in the three features** — the whole tester API: the request protocol, every primitive, the resume contract, posture interaction, and the reach rules (D14). This is a host-language API, so the host-API Part is its normative home |
-| `part_vii_solver.md` | the sequencer element's contract: wake sources (time breakpoints, digital-event wakes, analog crossings), resume-strictly-after-acceptance (D11), drive segments and their impedance requirement, and the AC refusal (D13) |
-| `part_i_language.md` | `cover` as a `constraint`-block statement kind, and `cover` joining the reserved-word list |
+| `part_viii_host_api.md` + `appendix_c_host_surface.md` | **the largest documentation surface in the three dv- features** — the whole library: the three levels and their costs, `Wave`/`Behavior`/`Measure` catalogs, the `Sequencer` and its one `wait`, `install` semantics, measure lifecycle and error bounds, posture interaction, reach rules (D14), and the closed-Python/open-Rust asymmetry |
+| `part_vii_solver.md` | the `HostElement`/`Element` blanket adapter; the dynamic digital subscriber and its settled-only rule; resume-strictly-after-acceptance (D11); drive segments and the impedance requirement; the crossing fidelity tiers with today's tier-1 behavior stated as a **correction to the existing `@cross` documentation**; the AC refusal (D13) |
+| `part_i_language.md` | `@device`'s host binding mode; `cover` as a `constraint`-block statement kind; `cover` joining the reserved words |
 | `appendix_b_grammar.md` | `CoverStmt` production, bins and set forms |
 | `part_ii_elaboration.md` | `cover` bin resolution and the elaboration-time cross-product cap (D10) |
-| `appendix_a_worked_examples.md` | a worked tester example — this is the feature most likely to be *learned* from an example rather than a grammar table |
+| `appendix_a_worked_examples.md` | a worked host-device example **and** a worked tester example — this is the feature most likely to be learned from an example rather than a grammar table |
 
-Note the asymmetry: `dv-core` and `dv-gradients` mostly extend language and
-solver Parts, while this feature's normative content is almost entirely
-host-API. That makes `part_viii_host_api.md`'s exclusion from both mkdocs navs
-(surfaced by `p6-cleanup-architecture` T13, still open) a real obstacle for this
-feature specifically — the documentation it produces would not be published.
+A new crate also needs its own entry wherever the crate table lives
+(`CLAUDE.md`'s "Crate responsibilities", `ARCHITECTURE.md` if present) — a crate
+absent from the map is a crate nobody finds.
