@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use num_complex::Complex64;
 use piperine::{OpResult, Session, SolverConfig};
@@ -162,6 +162,42 @@ impl ToleranceContract {
     }
 }
 
+/// The working directory one ngspice run writes its `wrdata` exports into.
+///
+/// ngspice writes exports relative to its working directory, so each run needs
+/// its own. The key carries the **domain** as well as the circuit: the same
+/// fixture is cross-checked in several domains, targets run in parallel, and a
+/// key of circuit+pid alone would let an AC run and a noise run of one circuit
+/// overwrite each other's exports. Removal is `Drop`'s job, so the success path
+/// and every early return clean up identically.
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    /// The directory name for one (circuit, domain) run of this process.
+    fn key(circuit: &str, domain: &str) -> String {
+        format!("piperine-ngspice-{circuit}-{domain}-{}", std::process::id())
+    }
+
+    fn create(circuit: &str, domain: &str) -> Result<Self, String> {
+        let path = std::env::temp_dir().join(Self::key(circuit, domain));
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("{circuit} ({domain}): scratch dir {}: {e}", path.display()))?;
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// One parsed `wrdata` export — N columns of floats, strictly parsed.
 ///
 /// `wrdata` is ngspice's general vector export and the mechanism behind every
@@ -205,6 +241,17 @@ impl WrData {
             return Err(format!("{circuit}: empty wrdata export — contract violation"));
         }
         Ok(Self { columns, rows })
+    }
+
+    /// Read one export back out of a finished run's directory. An export
+    /// ngspice never wrote is a loud failure naming the circuit and the path
+    /// it was expected at — never an empty comparison.
+    fn read(circuit: &str, dir: &Path, file: &str, columns: usize) -> Result<Self, String> {
+        let path = dir.join(file);
+        let content = std::fs::read_to_string(&path).map_err(|e| {
+            format!("{circuit}: ngspice wrote no wrdata export {}: {e}", path.display())
+        })?;
+        Self::parse(circuit, &content, columns)
     }
 
     /// The two-column form: `(coordinate, value)` per row.
@@ -368,26 +415,35 @@ impl NgspiceHarness {
     /// `dc … + wrdata <circuit>_sweep …`) in a scratch directory and parse
     /// the exported ASCII columns.
     fn ngspice_sweep(&self, circuit: &str) -> Result<Vec<(f64, f64)>, String> {
+        let exports = self.run_export(circuit, "sweep", &[(&format!("{circuit}_sweep"), 2)])?;
+        Ok(exports[0].pairs())
+    }
+
+    /// Run `<circuit>.cir` in a scratch directory of its own and read back the
+    /// `wrdata` exports its `.control` block wrote, one `(file, columns)` pair
+    /// per export. `domain` keys the scratch directory, so cross-checking one
+    /// fixture in several domains — in parallel — cannot collide.
+    pub(crate) fn run_export(
+        &self,
+        circuit: &str,
+        domain: &str,
+        exports: &[(&str, usize)],
+    ) -> Result<Vec<WrData>, String> {
         let cir = Self::circuits_dir().join(format!("{circuit}.cir"));
-        let scratch = std::env::temp_dir().join(format!(
-            "piperine-ngspice-{circuit}-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&scratch)
-            .map_err(|e| format!("{circuit}: scratch dir: {e}"))?;
-        let run = std::process::Command::new(&self.exe)
+        // Removal is the scratch dir's own `Drop`: every `?` below leaves by
+        // the same path as success, so a failed run never leaks a directory.
+        let scratch = ScratchDir::create(circuit, domain)?;
+        std::process::Command::new(&self.exe)
             .arg("-b")
             .arg(&cir)
-            .current_dir(&scratch)
+            .current_dir(scratch.path())
             .output()
-            .map_err(|e| format!("{circuit}: failed to run ngspice: {e}"));
-        let wrdata = scratch.join(format!("{circuit}_sweep"));
-        let content = run.and_then(|_| {
-            std::fs::read_to_string(&wrdata)
-                .map_err(|e| format!("{circuit}: ngspice wrote no wrdata file {}: {e}", wrdata.display()))
-        });
-        let _ = std::fs::remove_dir_all(&scratch);
-        Ok(WrData::parse(circuit, &content?, 2)?.pairs())
+            .map_err(|e| format!("{circuit}: failed to run ngspice: {e}"))?;
+        let mut parsed = Vec::with_capacity(exports.len());
+        for (file, columns) in exports {
+            parsed.push(WrData::read(circuit, scratch.path(), file, *columns)?);
+        }
+        Ok(parsed)
     }
 
     /// One full sweep golden case: ngspice `.dc`+`wrdata` vs a piperine
@@ -729,7 +785,57 @@ impl NgspiceHarness {
 /// `mod support;`.
 #[cfg(test)]
 mod tests {
-    use super::{ToleranceContract, WrData};
+    use super::{ScratchDir, ToleranceContract, WrData};
+
+    /// Two domains of one circuit must not share a working directory — they
+    /// would overwrite each other's exports under a parallel run.
+    #[test]
+    fn the_scratch_key_separates_two_domains_of_one_circuit() {
+        let ac = ScratchDir::key("rc", "ac");
+        let noise = ScratchDir::key("rc", "noise");
+        assert_ne!(ac, noise, "the domain must be part of the key");
+        for key in [&ac, &noise] {
+            assert!(key.contains("rc"), "the key names the circuit: {key}");
+            assert!(
+                key.contains(&std::process::id().to_string()),
+                "the key stays per-process: {key}"
+            );
+        }
+        assert!(ac.contains("ac") && noise.contains("noise"), "{ac} / {noise}");
+    }
+
+    /// An export ngspice never wrote fails loud naming the circuit and the
+    /// path it was expected at — never a silent empty comparison.
+    #[test]
+    fn a_missing_export_fails_loud_naming_circuit_and_path() {
+        let scratch = ScratchDir::create("ac_rc", "ac").unwrap();
+        let err = WrData::read("ac_rc", scratch.path(), "ac_rc_ac", 3)
+            .expect_err("a missing export must fail");
+        assert!(err.contains("ac_rc"), "names the circuit: {err}");
+        assert!(err.contains("ngspice wrote no wrdata export"), "{err}");
+        assert!(
+            err.contains(&scratch.path().join("ac_rc_ac").display().to_string()),
+            "names the expected path: {err}"
+        );
+    }
+
+    /// The directory exists while the run needs it and is gone afterwards —
+    /// including when the read-back failed, which is the path a hand-written
+    /// cleanup call is most likely to miss.
+    #[test]
+    fn the_scratch_dir_is_removed_on_the_failure_path_too() {
+        let path = {
+            let scratch = ScratchDir::create("temp_diode", "temp").unwrap();
+            let path = scratch.path().to_path_buf();
+            assert!(path.is_dir(), "the run needs its directory: {}", path.display());
+            assert!(
+                WrData::read("temp_diode", &path, "temp_diode_op", 2).is_err(),
+                "the read-back must fail so this exercises the error path"
+            );
+            path
+        };
+        assert!(!path.exists(), "scratch dir leaked: {}", path.display());
+    }
 
     /// Every domain of the contract, so the exhaustiveness checks below cannot
     /// pass by simply forgetting one.
