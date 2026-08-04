@@ -45,6 +45,16 @@ piperine-solver = { path = "crates/piperine-solver" }
 piperine-signal = { path = "crates/piperine-signal" }
 num-complex = { workspace = true }
 
+# A dev/test build of this workspace links ~50 test binaries, and full
+# debuginfo is what makes that expensive: every `rust-lld` invocation peaked
+# at ~1.1 GB and several run in parallel, so a one-crate change relinking the
+# suite drove the machine into swap. Line tables keep what a failing test
+# actually needs — file and line in every panic and backtrace — and drop only
+# variable inspection under a debugger. Override locally (`.cargo/config.toml`
+# or `CARGO_PROFILE_DEV_DEBUG=2`) when stepping through code in gdb/lldb.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.dev.package.faer]
 opt-level = 3
 

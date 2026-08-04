@@ -165,19 +165,27 @@ impl ToleranceContract {
 /// The working directory one ngspice run writes its `wrdata` exports into.
 ///
 /// ngspice writes exports relative to its working directory, so each run needs
-/// its own. The key carries the **domain** as well as the circuit: the same
-/// fixture is cross-checked in several domains, targets run in parallel, and a
-/// key of circuit+pid alone would let an AC run and a noise run of one circuit
-/// overwrite each other's exports. Removal is `Drop`'s job, so the success path
-/// and every early return clean up identically.
+/// its own. The key names the circuit and the domain so a run under inspection
+/// is findable, but what makes it *unique* is the trailing serial: two tests in
+/// one binary may run the same fixture in the same domain at the same time (a
+/// golden comparison and an analytic cross-check of one RC, say), and a shared
+/// directory means one run's `Drop` removes the other's working directory out
+/// from under it — which surfaces as ngspice failing to spawn with `No such
+/// file or directory`, not as a comparison failure. Removal is `Drop`'s job, so
+/// the success path and every early return clean up identically.
 struct ScratchDir {
     path: PathBuf,
 }
 
+/// Serial source for [`ScratchDir::key`] — one directory per run, never per
+/// (circuit, domain) pair.
+static SCRATCH_SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl ScratchDir {
-    /// The directory name for one (circuit, domain) run of this process.
+    /// The directory name for one ngspice run of this process.
     fn key(circuit: &str, domain: &str) -> String {
-        format!("piperine-ngspice-{circuit}-{domain}-{}", std::process::id())
+        let serial = SCRATCH_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        format!("piperine-ngspice-{circuit}-{domain}-{}-{serial}", std::process::id())
     }
 
     fn create(circuit: &str, domain: &str) -> Result<Self, String> {
@@ -812,6 +820,29 @@ mod tests {
             );
         }
         assert!(ac.contains("ac") && noise.contains("noise"), "{ac} / {noise}");
+    }
+
+    /// Two runs of the *same* circuit in the *same* domain must not share a
+    /// directory either. They do overlap in practice — one fixture backs both a
+    /// golden comparison and an analytic cross-check — and a shared directory
+    /// makes the first `Drop` delete the second run's working directory, which
+    /// ngspice reports as a spawn failure rather than a comparison one.
+    #[test]
+    fn two_runs_of_one_domain_do_not_share_a_scratch_dir() {
+        let first = ScratchDir::create("rc", "ac").unwrap();
+        let second = ScratchDir::create("rc", "ac").unwrap();
+        assert_ne!(
+            first.path(),
+            second.path(),
+            "concurrent runs of one (circuit, domain) share a working directory"
+        );
+        let survivor = second.path().to_path_buf();
+        drop(first);
+        assert!(
+            survivor.is_dir(),
+            "one run's cleanup removed another's working directory: {}",
+            survivor.display()
+        );
     }
 
     /// An export ngspice never wrote fails loud naming the circuit and the
