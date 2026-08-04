@@ -354,11 +354,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Analytic `gm` replaces `gm_est`; fixture exercises the linear region
-- [ ] `nlev = 3` computes its own form; a fixture sets `nlev=3` and matches ngspice
-- [ ] Reverting either change fails its fixture
-- [ ] Parity matrix updated: jfet × Noise → `Covered`
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] Analytic `gm` replaces `gm_est`; fixture exercises the linear region
+- [x] `nlev = 3` computes its own form; a fixture sets `nlev=3` and matches ngspice
+- [x] Reverting either change fails its fixture
+- [x] Parity matrix updated: jfet × Noise → `Covered`
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): analytic gm and nlev=3 noise for the JFET`

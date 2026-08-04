@@ -246,10 +246,7 @@ impl ParityMatrix {
                 (Domain::Ac, Coverage::NotApplicable {
                     reason: "pending: no AC golden fixture exercises the jfet",
                 }),
-                (Domain::Noise, Coverage::NotApplicable {
-                    reason: "pending: T12 replaces the saturation-only gm_est with the \
-                             analytic gm, adds nlev=3, and lands the fixture",
-                }),
+                (Domain::Noise, Coverage::Covered { fixture: "noise_jfet" }),
                 (Domain::Transient, Coverage::NotApplicable {
                     reason: "pending: no transient golden fixture exercises the jfet",
                 }),

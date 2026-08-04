@@ -247,6 +247,50 @@ fn ngspice_mos_linear_region_channel_noise() {
     }
 }
 
+/// The two linear-region JFET fixtures (NGP-08, NGP-13) — the same circuit
+/// twice, differing only in the model card's `nlev`. Below nlev 3 ngspice's
+/// channel noise is `4kT·(2/3)·|gm|`, and the bias (`vgs - vto = 2 V` against
+/// `vds ≈ 0.25 V`) puts the analytic gm eight times below the saturation-only
+/// estimate. At nlev 3 ngspice abandons gm entirely for its own closed form in
+/// the saturation parameter alpha, which at this bias is ~3.9x larger in power
+/// — so a model that quietly kept the nlev<3 form cannot pass the second case.
+const NOISE_JFET: [NoiseCase; 2] = [
+    NoiseCase {
+        circuit: "noise_jfet",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e5,
+        points: 21,
+    },
+    NoiseCase {
+        circuit: "noise_jfet_nlev3",
+        out: "d",
+        reference: "gnd",
+        fstart: 1.0e3,
+        fstop: 1.0e5,
+        points: 21,
+    },
+];
+
+/// NGP-08 + NGP-13: the JFET's channel noise agrees with ngspice in the linear
+/// region on both noise levels — the analytic gm below nlev 3, and the
+/// nlev-3 closed form when the card asks for it.
+#[test]
+fn ngspice_jfet_linear_region_channel_noise() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP noise_jfet: ngspice not on PATH");
+        return;
+    };
+    for case in &NOISE_JFET {
+        let golden = case.golden_psd(&harness, "noise-jfet");
+        let (actual, _) = case.piperine(&harness);
+        NoiseCase::compare_psd(case.circuit, case.out, &golden, &actual)
+            .unwrap_or_else(|e| panic!("{e}"));
+        eprintln!("PASS {} ({} frequency points)", case.circuit, golden.len());
+    }
+}
+
 /// NGP-02: the output-noise PSD agrees with ngspice at every swept frequency,
 /// once ngspice's V/√Hz is squared into piperine's V²/Hz.
 #[test]

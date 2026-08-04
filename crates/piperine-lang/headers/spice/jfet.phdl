@@ -142,6 +142,10 @@ pub analog jfet {
     //  Classic Shichman-Hodges (B=1) with Sydney-University extension.
     // ════════════════════════════════════════════════════════════════════════
     var id : Real = 0.0;
+    // `gm` is ngspice's own JFETgm (jfetload.c:252-325), computed beside the
+    // current it differentiates: the channel noise source (§8) reads it, and
+    // in the linear region it is `betap·vds·(…)`, not the saturation form.
+    var gm : Real = 0.0;
 
     if (vds >= 0.0) {
         // Normal mode
@@ -150,6 +154,7 @@ pub analog jfet {
         if (vgst > 0.0) {
             if (vgst < vds) {
                 // Saturation
+                gm = betap * vgst * (2.0 * model.b + 3.0 * vgst * bfac);
                 if (model.b == 1.0) {
                     id = betap * vgst * vgst;
                 } else {
@@ -158,10 +163,11 @@ pub analog jfet {
                 }
             } else {
                 // Linear
+                var apart : Real = 2.0 * model.b + 3.0 * bfac * (vgst - vds);
+                gm = betap * vds * (apart + 3.0 * bfac * vgst);
                 if (model.b == 1.0) {
                     id = betap * vds * (2.0 * vgst - vds);
                 } else {
-                    var apart : Real = 2.0 * model.b + 3.0 * bfac * (vgst - vds);
                     var cpart : Real = vds * (vds * (bfac * vds - model.b) + vgst * apart);
                     id = betap * cpart;
                 }
@@ -174,6 +180,7 @@ pub analog jfet {
         if (vgdt > 0.0) {
             if (vgdt < 0.0 - vds) {
                 // Saturation (inverse)
+                gm = 0.0 - betap * vgdt * (2.0 * model.b + 3.0 * vgdt * bfac);
                 if (model.b == 1.0) {
                     id = 0.0 - betap * vgdt * vgdt;
                 } else {
@@ -182,10 +189,11 @@ pub analog jfet {
                 }
             } else {
                 // Linear (inverse)
+                var apart : Real = 2.0 * model.b + 3.0 * bfac * (vgdt + vds);
+                gm = betap * vds * (apart + 3.0 * bfac * vgdt);
                 if (model.b == 1.0) {
                     id = betap * vds * (2.0 * vgdt + vds);
                 } else {
-                    var apart : Real = 2.0 * model.b + 3.0 * bfac * (vgdt + vds);
                     var cpart : Real = vds * (vds * (bfac * vds + model.b) + vgdt * apart);
                     id = betap * cpart;
                 }
@@ -275,17 +283,33 @@ pub analog jfet {
     // Thermal: RD, RS
     if (model.rd > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * m * gdpr); }
     if (model.rs > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * m * gspr); }
-    // Channel noise (nlev < 3: 4kT * (2/3) * |gm|; nlev=3 uses full formula)
-    // Here we use gm ≈ ∂Id/∂vgs.  For the classic model in saturation: gm = 2*beta*vgst.
-    // The solver computes gm from the contribution; for noise we approximate:
-    if (model.nlev < 3.0) {
-        // 4kT * (2/3) * m * |gm| — gm derived from the saturation formula
-        var vgst_n : Real = vgs - tVto;
-        if (vgst_n > 0.0) {
-            var gm_est : Real = 2.0 * tBeta * (1.0 + model.lambda * abs(vds)) * vgst_n;
-            I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * m * abs(gm_est));
-        }
-    }
+    // Channel noise (jfetnoi.c:117-135). Below nlev 3 it is 4kT·(2/3)·m·|gm|
+    // with the model's own analytic gm from §3; at nlev 3 ngspice switches to
+    // its own closed form in the saturation parameter alpha.
+    //
+    // The level selection is an `if` *expression* choosing the power, not two
+    // guarded `I(dp, sp) <+ white_noise(...)` statements in an if/else: a noise
+    // contribution in each arm of an if/else is stamped from BOTH arms today,
+    // so an nlev-2 device would carry the nlev-3 spectrum on top of its own.
+    // Measured on noise_jfet: 2.93e-18 V²/Hz against ngspice's 6.54e-19, which
+    // is exactly the sum of the two forms. One contribution, one power.
+    var vgst_n : Real = vgs - tVto;
+    var alpha : Real =
+        if (vgst_n > 0.0 && vgst_n >= vds) { 1.0 - vds / vgst_n } else { 0.0 };
+    // Deliberate deviation (MD-38) in the cutoff arm: ngspice evaluates its
+    // nlev-3 expression unconditionally, so below threshold it hands NevalSrc a
+    // *negative* thermal-noise parameter and stamps a negative power spectral
+    // density. A pinched-off channel carries no channel noise; piperine
+    // contributes none rather than reproducing that defect.
+    var chan_pwr : Real = if (model.nlev < 3.0) {
+        (2.0 / 3.0) * m * abs(gm)
+    } else if (vgst_n > 0.0) {
+        (2.0 / 3.0) * m * tBeta * vgst_n * (1.0 + alpha + alpha * alpha)
+            / (1.0 + alpha) * model.gdsnoi
+    } else {
+        0.0
+    };
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * chan_pwr);
     // Flicker
     if (model.kf > 0.0) {
         I(dp, sp) <+ flicker_noise(m * model.kf * pow(abs(id), model.af), 1.0);

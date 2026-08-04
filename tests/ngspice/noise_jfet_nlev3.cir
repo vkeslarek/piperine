@@ -1,0 +1,20 @@
+* noise_jfet_nlev3 — the same linear-region JFET, with nlev=3 selected.
+* ngspice then abandons 4kT·(2/3)·|gm| for its own closed form in the
+* saturation parameter alpha (jfetnoi.c:121-134), which at this bias is 5.7x
+* larger — so a model that silently kept the nlev<3 form fails here.
+* vgs - vto = 2 V against a settled vds ~ 0.25 V, so the device sits deep in
+* the linear region: ngspice's gm there is betap*vds*(2b + ...), while the
+* saturation-only estimate 2*beta*(vgs-vto) is eight times larger. Rd is sized
+* so its own thermal noise and the channel noise are the same order, and kf=0
+* keeps flicker out — this fixture measures the channel term alone.
+Vdd vdd 0 DC 5
+Vg  g   0 DC 0 AC 1
+Rd  vdd d 5k
+J1  d g 0 JMOD
+.model JMOD NJF (vto=-2 beta=1e-3 lambda=0 kf=0 nlev=3)
+.control
+noise v(d) Vg dec 10 1k 100k
+setplot noise1
+wrdata noise_jfet_nlev3_psd onoise_spectrum
+.endc
+.end
