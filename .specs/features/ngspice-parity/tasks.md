@@ -107,11 +107,11 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `tests/support/ngspice.rs` exists with a `//!` header stating its scope
-- [ ] `ngspice_validation.rs` compiles against it with **zero changes to existing assertions**
-- [ ] `tests/support/` is not treated as a target (verified: `suite_hygiene::integration_targets` matches top-level only)
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: the 26 existing ngspice checks + suite_hygiene still pass (no silent deletions)
+- [x] `tests/support/ngspice.rs` exists with a `//!` header stating its scope
+- [x] `ngspice_validation.rs` compiles against it with **zero changes to existing assertions**
+- [x] `tests/support/` is not treated as a target (verified: `suite_hygiene::integration_targets` matches top-level only)
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: the 26 existing ngspice checks + suite_hygiene still pass (no silent deletions)
 
 **Tests**: integration (existing, unchanged) · **Gate**: full
 **Commit**: `refactor(tests): extract NgspiceHarness into tests/support`
@@ -221,13 +221,13 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `//!` header present
-- [ ] ngspice `onoise_spectrum` (V/√Hz) squared to piperine's V²/Hz in one named site, derivation commented (design.md §Research)
-- [ ] **Unit-probe test**: a 1 kΩ resistor's ngspice spectrum equals √(4kTR) = 4.07e-9 V/√Hz within `NOISE_PSD` — this is what catches a future unit regression
-- [ ] `onoise_total` compared against `NoiseTrace::total()`
-- [ ] ngspice-absent SKIP branch
-- [ ] Gate check passes: `cargo test --workspace`
-- [ ] Test count: ≥4 tests (per-point, integrated, unit probe, skip branch)
+- [x] `//!` header present
+- [x] ngspice `onoise_spectrum` (V/√Hz) squared to piperine's V²/Hz in one named site, derivation commented (design.md §Research)
+- [x] **Unit-probe test**: a 1 kΩ resistor's ngspice spectrum equals √(4kTR) = 4.07e-9 V/√Hz within `NOISE_PSD` — this is what catches a future unit regression
+- [x] `onoise_total` compared against `NoiseTrace::total()`
+- [x] ngspice-absent SKIP branch
+- [x] Gate check passes: `cargo test --workspace`
+- [x] Test count: ≥4 tests (per-point, integrated, unit probe, skip branch)
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ngspice): cross-check noise PSD and integrated total`
