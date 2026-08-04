@@ -202,9 +202,14 @@ no list here — the tree is the list, and a guard keeps it honest.
   ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope
   lint suppression (MD-33), and dead-architecture identifiers (MD-35).
 - **The numeric oracles**, worth knowing by name because a change must reproduce
-  them: root `tests/ngspice_validation.rs` (+`tests/ngspice/`) cross-checks
-  against ngspice; root `tests/run_examples.rs` is the **only** copy of the
-  "every `examples/*.phdl` elaborates and every `examples/*.py` runs" gate.
+  them: root `tests/ngspice_{validation,ac,noise,tran,temp}.rs` cross-check
+  against ngspice — one target per domain over the `tests/ngspice/` fixture
+  twins, sharing `tests/support/ngspice.rs` (the harness, the `wrdata` parser
+  and the per-domain `ToleranceContract`, which is the *only* place a numeric
+  tolerance is written); `tests/ngspice_parity_matrix.rs` is the coverage gate
+  that keeps a parity claim from being unfalsifiable. Root
+  `tests/run_examples.rs` is the **only** copy of the "every `examples/*.phdl`
+  elaborates and every `examples/*.py` runs" gate.
 
 ## Documentation
 

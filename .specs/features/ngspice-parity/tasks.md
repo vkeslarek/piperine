@@ -313,8 +313,8 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Both tables name every new target and `tests/support/`
-- [ ] Gate check passes: `cargo build --workspace && cargo test --workspace`
+- [x] Both tables name every new target and `tests/support/`
+- [x] Gate check passes: `cargo build --workspace && cargo test --workspace`
 
 **Tests**: none (docs — matrix says build gate only) · **Gate**: build
 **Commit**: `docs: name the per-domain ngspice targets in the test tables`

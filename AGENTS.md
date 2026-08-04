@@ -117,7 +117,8 @@ and cross-crate proofs. Do not maintain a file list anywhere — enumerate with
 |------|-------|
 | host API (session/results/waveform) | root `tests/session*.rs`, `tests/host_*.rs` |
 | example gallery (dual contract) | root `tests/run_examples.rs` (every `.phdl` elaborates + every `.py` runs) |
-| ngspice cross-validation | root `tests/ngspice_validation.rs` (+ `tests/ngspice/`) |
+| ngspice cross-validation | root `tests/ngspice_{validation,ac,noise,tran,temp}.rs` — one target per domain over the `tests/ngspice/` fixture twins, sharing `tests/support/ngspice.rs` (harness, `WrData`, the per-domain `ToleranceContract`) |
+| ngspice parity coverage gate | root `tests/ngspice_parity_matrix.rs` (model × domain: `Covered` by a fixture or `NotApplicable` with a reason) |
 | syntax/elaboration gates | `piperine-lang/tests/{parse_elab,elab,bench_removed}.rs` |
 | POM → resolved + circuit | `piperine-codegen/tests/{resolve_lowering,codegen_api,circuit_from_design,silent_bugs}.rs` |
 | JIT kernels | `piperine-codegen/tests/{analog_kernel,digital_jit}.rs` |
