@@ -95,10 +95,30 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
         symbols.add_param(p.name(), ty, default);
     }
 
-    // 3. Wires
+    // 3. Wires. A scalar wire becomes one node named after itself; an
+    // array wire (`wire tap : Electrical[N+1]`) becomes N distinct element
+    // nodes named `tap[0]`..`tap[N-1]`. The flat form lifts an array wire
+    // onto the parent verbatim (`flatten.rs`'s `inline_sub_instances`), and
+    // the spliced sub-instances' port bindings reference it as
+    // `NetRef { net: "<inst>.tap", index: Some(i) }` — the `Display` form
+    // `<inst>.tap[i]` is what `resolve_node` looks up at circuit-build
+    // time. Registering one scalar node for the lifted wire collapses every
+    // element onto a single net (NGP-18 codegen integration); registering
+    // one node per element makes `resolve_node("<inst>.tap[i]")` resolve
+    // to that element — and the parent-name fallback in `resolve_connections`
+    // never fires for an indexed ref.
     for w in m.wires() {
         let domain = domain_of(prog, w.net_type());
-        symbols.add_node(w.name(), domain);
+        match w.net_type() {
+            NetType::Array(_, n) => {
+                for i in 0..*n {
+                    symbols.add_node(format!("{}[{}]", w.name(), i), domain);
+                }
+            }
+            NetType::Discipline(_) => {
+                symbols.add_node(w.name(), domain);
+            }
+        }
     }
 
     // 4. Vars — module-level persistent state (GAPS §I.15). The slot is
@@ -254,4 +274,103 @@ pub(crate) fn fn_bundle_signatures(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    //! Array-wire symbol-table registration (NGP-18 codegen integration,
+    //! Fix A). The flatten pass (T21/NGP-20) lifts an array wire onto the
+    //! parent and rewrites the spliced sub-instances' port bindings to
+    //! `<inst>.tap[i]`. The symbol table is the place that lifted wire
+    //! becomes addressable from circuit-build time — these tests prove it
+    //! expands to N distinct element nodes, not one collapsed scalar.
+
+    use super::build_symbols_and_ports;
+    use piperine_lang::{parse_and_elaborate, SourceMap};
+
+    const PRELUDE: &str = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod res (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0; }
+    ";
+
+    /// The simplest case: `tap : Electrical[3]` registers three element
+    /// nodes `tap[0]`..`tap[2]`, and the parent wire name `tap` is not
+    /// itself a node — the bug that collapsed every element onto a single
+    /// net (NGP-18 codegen integration).
+    #[test]
+    fn array_wire_registers_one_node_per_element() {
+        let src = format!(
+            "{PRELUDE}
+             mod Mid () {{
+                 wire tap : Electrical[3];
+             }}"
+        );
+        let design = parse_and_elaborate(&src, &SourceMap::dummy())
+            .expect("elaborates");
+        let (symbols, _) = build_symbols_and_ports(
+            design.module("Mid").expect("Mid exists"),
+            &design,
+        );
+        let names: Vec<String> = symbols.nodes().map(|(_, n)| n.name.clone()).collect();
+        assert!(names.contains(&"tap[0]".to_string()), "tap[0] registered: {names:?}");
+        assert!(names.contains(&"tap[1]".to_string()), "tap[1] registered: {names:?}");
+        assert!(names.contains(&"tap[2]".to_string()), "tap[2] registered: {names:?}");
+        assert!(
+            !names.iter().any(|n| n == "tap"),
+            "the parent wire name is not a node — elements replace it: {names:?}"
+        );
+        assert_eq!(
+            names.iter().filter(|n| n.starts_with("tap")).count(),
+            3,
+            "exactly three tap nodes — one per element"
+        );
+    }
+
+    /// The end-to-end shape NGP-18 cares about: a parent module `Top`
+    /// instantiates a child `Seg` whose body declares
+    /// `wire bus : Electrical[2]`. Flatten lifts `bus` onto the flat-Top
+    /// as `s.bus : Electrical[2]` (parse_and_elaborate runs the flatten
+    /// pass); the symbol table for flat-Top must then carry `s.bus[0]`
+    /// and `s.bus[1]` as distinct element nodes, so the spliced `s.r0`/
+    /// `s.r1` instances resolve `s.bus[0]` to the same element node and
+    /// `s.bus[1]` would resolve to a different one — never both collapsing
+    /// to a single `s.bus` scalar.
+    #[test]
+    fn lifted_array_wire_resolves_per_element_in_flat_parent() {
+        let src = format!(
+            "{PRELUDE}
+             mod Seg (inout p : Electrical, inout n : Electrical) {{
+                 wire bus : Electrical[2];
+                 r0 : res (.p=p, .n=bus[0]) {{ .r = 1.0 }};
+                 r1 : res (.p=bus[0], .n=n) {{ .r = 1.0 }};
+             }}
+             mod Top () {{
+                 wire gnd : Electrical;
+                 wire a : Electrical;
+                 s : Seg (.p=a, .n=gnd);
+             }}"
+        );
+        let design = parse_and_elaborate(&src, &SourceMap::dummy())
+            .expect("elaborates (flatten lifts the array wire)");
+        let flat = design.flat_module("Top").expect("Top flat form exists");
+        let (symbols, _) = build_symbols_and_ports(flat, &design);
+        let names: Vec<String> = symbols.nodes().map(|(_, n)| n.name.clone()).collect();
+        assert!(
+            names.contains(&"s.bus[0]".to_string()),
+            "lifted element `s.bus[0]` registered: {names:?}"
+        );
+        assert!(
+            names.contains(&"s.bus[1]".to_string()),
+            "lifted element `s.bus[1]` registered: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n == "s.bus"),
+            "no scalar parent node — the bug that collapsed every element: {names:?}"
+        );
+        let bus0 = symbols.nodes().find(|(_, n)| n.name == "s.bus[0]").map(|(id, _)| id);
+        let bus1 = symbols.nodes().find(|(_, n)| n.name == "s.bus[1]").map(|(id, _)| id);
+        assert!(bus0.is_some(), "s.bus[0] resolves to a node");
+        assert!(bus1.is_some(), "s.bus[1] resolves to a node");
+        assert_ne!(bus0, bus1, "the two element nodes are distinct NodeIds");
+    }
 }

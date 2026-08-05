@@ -353,16 +353,24 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                             // gets a fresh internal node at codegen.
                             continue;
                         };
-                        let name = net_ref.net();
-                        let parent_node = if piperine_lang::pom::is_ground(name) {
+                        // An indexed net ref (`tap[i]`, lifted from an
+                        // array wire by the flatten pass or authored as
+                        // `tap[i]` in a structural `for`) resolves through
+                        // its full Display form — Fix A registers one node
+                        // per element (`tap[0]`..`tap[N-1]`), so the bare
+                        // parent name no longer identifies a node.
+                        let bare = net_ref.net();
+                        let full = net_ref.to_string();
+                        let lookup = if net_ref.index().is_some() { &full } else { bare };
+                        let parent_node = if piperine_lang::pom::is_ground(bare) {
                             NodeId::GROUND
-                        } else if let Some(&id) = node_by_name.get(name) {
+                        } else if let Some(&id) = node_by_name.get(lookup) {
                             id
                         } else {
                             errors.push(LowerError {
                                 module: m.name().to_string(),
                                 what: "net (instance connection)",
-                                name: name.to_string(),
+                                name: full.clone(),
                             });
                             NodeId::GROUND
                         };
