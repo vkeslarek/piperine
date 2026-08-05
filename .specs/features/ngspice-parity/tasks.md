@@ -642,11 +642,11 @@ defect) in `ngspice_nmos3_id_vds_sweep`.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Every ✅ in the table corresponds to a `Covered` cell in the parity matrix
-- [ ] The stale "blocked on `@initial` branch-forcing" claim is corrected
-- [ ] BSIM rows link to `.specs/features/ngspice-bsim{3,4}/`
-- [ ] `asrc`/`vbic` rows record the MD-39 rejection rather than sitting as backlog
-- [ ] Gate check passes: `cargo build --workspace && cargo test --workspace`
+- [x] Every ✅ in the table corresponds to a `Covered` cell in the parity matrix
+- [x] The stale "blocked on `@initial` branch-forcing" claim is corrected
+- [x] BSIM rows link to `.specs/features/ngspice-bsim{3,4}/`
+- [x] `asrc`/`vbic` rows record the MD-39 rejection rather than sitting as backlog
+- [x] Gate check passes: `cargo build --workspace && cargo test --workspace`
 
 **Tests**: none (docs) · **Gate**: build
 **Commit**: `docs(roadmap): rewrite SPICE model completeness from measured parity`

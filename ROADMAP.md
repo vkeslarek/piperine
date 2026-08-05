@@ -4,7 +4,12 @@
 this document is forward-looking only.
 
 Convention: **fail loud** — what the toolchain cannot do is a named error,
-never a silent no-op. Cross-validation: `tests/ngspice_validation.rs`.
+never a silent no-op. Cross-validation: the per-domain targets
+`tests/ngspice_{validation,ac,noise,tran,temp,homotopy}.rs` over the
+`tests/ngspice/` fixture twins, with `tests/ngspice_parity_matrix.rs` as the
+gate that keeps a ✅ claim falsifiable (a `Covered` cell names a fixture one
+of the targets actually runs; everything else is a recorded `NotApplicable`
+with a reason or a `pending: …` open).
 
 ---
 
@@ -59,47 +64,77 @@ postures, SOA).
 | Autonomous-oscillator PSS | period detection needs phase conditions; backlog |
 | AC `.sens` | DC ships; AC behind the same API if the optimizer needs it |
 | Clocked digital fusing | comb cones fused; NBA-semantics follow-up |
-| BSIM-class models | hand-ported to PHDL; big, phased. Needs array-net expansion (`gap-3`) for certain authoring routes |
+| BSIM-class models | split into `.specs/features/ngspice-bsim3/` and `ngspice-bsim4/`, scaffolded `NOT YET SPECIFIED`. `gap-3` (array-net expansion in flatten) **landed**; the codegen integration that consumes it (lifting array-wire elements in the symbol table, processing structural `connections` in the circuit builder) is the open that currently blocks the generic-authoring route (`urc[N]` is the first proving case — see NGP-18 deviation in `ngspice-parity`) |
 
 ### SPICE model completeness — existing models
 
-> Audited 2026-07-28 against `~/Git/ngspice/src/spicelib/devices/`.
+> Re-rewritten from **measured** parity results (the
+> `tests/ngspice_parity_matrix.rs` registry is the source of truth). A ✅ below
+> is a `Covered` cell — a golden fixture that fails when the claim breaks.
+> Anything else is a named open, not an assertion. The 2026-07-28 audit table
+> (which marked whole rows ✅ from a source-reading exercise, with no oracle to
+> falsify them) is superseded.
 
-**Existing models — faithfulness status:**
+**Existing models — measured faithfulness status:**
 
-| Model | File | DC/AC/Charge | Noise | Temperature | Gaps |
-|---|---|---|---|---|---|
-| res, cap, ind | `passives.phdl` | ✅ reference | ✅ exact | ✅ exact | `ic` UIC reserved but unimplemented (cap/ind); per-instance `bv_max` override missing |
-| mut/xfmr | `passives.phdl` | ✅ faithful | — | ⚠️ no temp propagation to coupling | host must pass temp-scaled L values |
-| vsrc, isrc | `sources.phdl` | ⚠️ vsrc lacks `CKTsrcFact` ramp | — | — | **PWL/TRNOISE/TRRANDOM/EXTERNAL/DISTO waveforms all absent**; vsrc source-stepping gap breaks DC homotopy on bias circuits |
-| vcvs/vccs/ccvs/cccs | `controlled.phdl` | ✅ reference | — | — | none |
-| sw, csw | `switches.phdl` | ✅ faithful (positive hysteresis) | ❌ **noise absent** | — | ON-state thermal noise missing (~16 pA/√Hz at ron=1Ω); negative hysteresis approximately right |
-| diode | `diode.phdl` | ✅ reference | ✅ exact (3 sources) | ✅ full tlev/tlevc | LEVEL=3 geometry path (w/l→area) missing; `ic` UIC reserved |
-| jfet | `jfet.phdl` | ✅ faithful | ⚠️ **channel noise approximate** | ✅ exact | gm estimate wrong in linear region; **nlev=3 noise missing entirely**; `ic` UIC reserved |
-| bjt | `bjt.phdl` | ✅ faithful GP | ✅ exact (6 sources) | ⚠️ **SPICE2-era only** | ~50 modern temp-coeff params (TBF1/TBR1/...) absent; **VAF/VAR temp-dependence hardcoded to identity**; **excess phase (PTF) dropped** (PTF=0 default → exact); `ic` UIC reserved |
-| mos1/mos2/mos3 | `mos.phdl` | ✅ faithful (incl. Baum quartic mos2) | ⚠️ **channel noise approximate** | ✅ exact | gm estimate wrong in linear region; **flicker noise mishandles cox=0** (ngspice substitutes 1e-7); mos3's `badMos3` alt mode intentionally absent; `ic` UIC reserved |
-| tline | `tline.phdl` | ✅ Branin faithful | — | — | `FREQ/NL` delay spec missing; IC params missing |
-| urc | `urc.phdl` | ❌ **NOT faithful** | ✅ (via sub-devices) | — | **uniform ladder, not ngspice's geometric taper** (K parameter); no N auto-selection from FMAX; no diode-mode shunt path (ISPERL); blocked by flatten gap-3 |
+| Model | File | DC op (golden) | DC sweep | AC | Noise | Transient | Temperature | Open |
+|---|---|---|---|---|---|---|---|---|
+| res | `passives.phdl` | ✅ `divider` | ✅ `diode_iv` | ✅ `ac_rc` | ✅ `noise_rc` | ✅ `tran_rc` | pending: needs a tempco-bearing fixture | per-instance `bv_max` override missing |
+| cap | `passives.phdl` | n/a (open at DC) | n/a | ✅ `ac_rc` | ✅ `noise_rc` | ✅ `tran_rc` | pending: no temp sweep | `ic` UIC declared but unwired (T16) — the `@initial` mechanism exists, models not yet wired to it |
+| ind | `passives.phdl` | pending | pending | pending | n/a (reactive, noiseless) | pending | pending | `ic` UIC declared but unwired (T16) |
+| sw | `switches.phdl` | pending | pending | pending | ✅ `noise_switch` | pending | pending | ON-state thermal noise landed (T13); negative hysteresis approximately right |
+| csw | `switches.phdl` | pending | pending | pending | ✅ `noise_csw` | pending | pending | ON-state thermal noise landed (T13) |
+| dio | `diode.phdl` | ✅ `rdiode` | ✅ `diode_iv` | pending | pending | pending | ✅ `temp_diode` | LEVEL=3 geometry path (w/l→area) missing; `ic` UIC declared but unwired (T16) |
+| jfet | `jfet.phdl` | ✅ `jfet_bias` | ✅ `jfet_id_vds` | pending | ✅ `noise_jfet` (analytic gm, nlev=3 — T12) | pending | pending | `ic` UIC declared but unwired (T17) |
+| bjt | `bjt.phdl` | ✅ `bjt_ce` | pending | pending | pending | pending | ✅ `temp_bjt` (VAF/VAR temp — T15) | SPICE2-era temperature model only (~50 modern temp-coeff params absent); excess phase (PTF) dropped (defaults to 0 → exact); `ic` UIC declared but unwired (T17) |
+| mos1 | `mos.phdl` | ✅ `nmos_fixed` | ✅ `nmos_id_vgs` | pending | ✅ `noise_mos_linear` (analytic gm — T11) | pending | pending | flicker `cox=0` substitute landed (T14); mos3's `badMos3` alt mode intentionally absent; `ic` UIC declared but unwired (T17) |
+| mos2 | `mos.phdl` | ✅ `nmos2_fixed` | ✅ `nmos2_id_vds` | pending | ✅ `noise_mos2_linear` | pending | pending | as mos1; `.disto` blocked (Cranelift function-count — P1 backlog) |
+| mos3 | `mos.phdl` | ✅ `nmos3_fixed` | ✅ `nmos3_id_vds` | pending | ✅ `noise_mos3_linear` | pending | pending | as mos1; `.disto` blocked (P1 backlog) |
+| tline | `tline.phdl` | pending (in-process `tests/tline.rs` only, not vs ngspice) | pending | pending | n/a (lossless, noiseless) | pending | pending | `FREQ/NL` delay spec missing; IC params missing |
+| urc | `urc.phdl` | ✅ `urc_lump2` | pending | ✅ `urc_taper` (geometric K taper — T19) | pending | pending | pending | ISPERL diode-mode shunt landed (T20); **NGP-18/19/22 documented deviations** — generic `urc[N]` authored but the codegen side does not yet lift array-wire elements or process structural `connections`, so `FMAX → N` auto-select and retirement of the hand-unrolled triple wait on that integration |
 
-**Cross-cutting issues (all existing models):**
+**Cross-cutting issues (status updated from the 2026-07-28 audit):**
 
-1. **Channel/gm noise in MOSFETs/JFETs uses `gm_est`, not the analytic gm.** The estimate is saturation-only; ngspice stores the true gm during load. Noise is wrong in linear/transition regions. Affects jfet, mos1, mos2, mos3.
-2. **`ic`/UIC initial conditions uniformly reserved but unimplemented** across cap, ind, diode, bjt, jfet, mos1/2/3. Blocked on `@initial` branch-forcing in the JIT.
-3. **Source-stepping homotopy (`CKTsrcFact`) applied inconsistently** — vsrc lacks it entirely; isrc misses the TRANOP case. Affects DC convergence robustness.
-4. **No behavioral/arbitrary source (`asrc`/`B` element).** Blocks any SPICE deck using `Bsrc n1 n2 V=...` expressions.
+1. **Channel/gm noise in MOSFETs/JFETs.** **Closed** by T11/T12 — now uses
+   the analytic `gm`, golden-covered in the linear region (`noise_mos_linear`,
+   `noise_mos2_linear`, `noise_mos3_linear`, `noise_jfet`).
+2. **`ic`/UIC initial conditions.** The 2026-07-28 audit's *"`@initial`
+   branch-forcing in the JIT"* blocker claim was **stale** — the mechanism
+   (`flatten/analog.rs:876` collecting `@initial { V(p,n) <- ic; }` as UIC
+   seeds, `analyses/transient.rs:228`'s hold clamps) landed and works. What
+   remains is ordinary model-wiring work: T16 (cap/ind/diode) and T17
+   (bjt/jfet/mos1/2/3) are pending in `ngspice-parity`. A separate open:
+   `cap`'s default `ic=0` always-clamp is a distinct, narrower issue from
+   the (now-closed) JIT-mechanism gap.
+3. **Source-stepping homotopy (`CKTsrcFact`).** **Closed** by T18 — the
+   audit's negative was a false alarm. `vsrc`'s forced value is scaled on
+   its MNA force row; `isrc`'s DC value scales through
+   `$simparam("sourceScaleFactor")` in its body, and the TRANOP runs as a
+   DC-analysis solve so the non-`tran` branch (carrying the scale) is what
+   a transient's t=0 OP takes. The falsifiable proof is the new
+   `homotopy_bias` and `homotopy_sink` fixtures — neither alone falsifies
+   both, so two fixtures ship (`tests/ngspice_homotopy.rs`).
+4. **No behavioral/arbitrary source (`asrc`/`B` element).** **Closed by
+   rejection** (MD-39): the `B` element exists because a SPICE netlist has
+   no expression language; PHDL does — `V(p,n) <+ <expr>` in an `analog`
+   block *is* the behavioural source, differentiated symbolically. An
+   imported deck's `B` line is transcribed into a PHDL body by the
+   SPICE→PHDL importer (Part VI §9). Porting `asrc` as a native device
+   would reimplement the language's own premise as a model.
 
 **Missing ngspice devices (no piperine model at all):**
 
-| Category | ngspice devices | Priority |
+| Category | ngspice devices | Status |
 |---|---|---|
-| **BSIM family** (compact MOS for deep-submicron) | bsim1, bsim2, bsim3 (v0/v1/v32), bsim4 (v5/v6/v7), bsimsoi, bsim3soi_{dd,fd,pd}, soi3 | High — the workhorse models for modern foundries. Big, phased: start from C sources, one level at a time. Needs array-net expansion for multi-segment/NQS structures. |
-| **Advanced BJT** | vbic (modern Si/SiGe replacement for GP), nbjt, nbjt2 | Medium — vbic is the foundry standard for RF BJT. |
-| **Other FETs** | jfet2 (Philips compact), mes/mesa (MESFET), hfet1/hfet2 (HEMT/MODFET) | Medium — compound-semiconductor design. |
-| **Surface-potential MOS** | hisim2, hisimhv1 | Low — niche academic/foundry models. |
-| **Niche MOS** | mos6, mos9 | Low — rarely used. |
-| **Lossy transmission lines** | ltra (RLGC convolution), txl (exponential), cpl (coupled multi-conductor) | Medium — ltra is the practical lossy-line case. |
-| **Numerical / 1D solvers** | numd, numd2, numos | Low — academic Poisson solvers. |
-| **Behavioral** | asrc (`B` element), adms (Verilog-A loader), ndev (shared-lib C device) | asrc: high (common in SPICE decks); adms/ndev: low (OSDI-style external path). |
+| **BSIM family** (compact MOS for deep-submicron) | `bsim3` (BSIM3v3.3), `bsim4` (BSIM4.8) | **Split into their own features** — `.specs/features/ngspice-bsim3/` (port-first; ~11.4k LOC C, ~166 params) and `.specs/features/ngspice-bsim4/` (~22.6k LOC C, ~236 params — the largest single item in the model backlog). Both are scaffolded `NOT YET SPECIFIED`; both depend on this feature's P1 oracle and P4 (`gap-3`). The `v0`/`v1`/`v32`/`v5`/`v6`/`v7` legacy forks are out of scope (frozen pinned model cards). |
+| **Advanced BJT** | `vbic` | **Rejected on merit** (MD-39). Foundry-grade RF BJT outside the north-star user (hobbyists, independents, small teams without Cadence-class tooling); the Gummel-Poon `bjt` already serves that user. Revisit only on measured demand. Also `nbjt`/`nbjt2` (1D Poisson solvers) — different engine, not a compact model. |
+| **Compound-semiconductor FETs** | `jfet2`, `mes`/`mesa`, `hfet1`/`hfet2` | Medium priority, deferred pending the BSIM ports proving the porting method scales. |
+| **Surface-potential MOS** | `hisim2`, `hisimhv1` | Low — niche academic/foundry models. |
+| **Niche MOS** | `mos6`, `mos9` | Low — rarely used. |
+| **Lossy transmission lines** | `ltra` (RLGC convolution), `txl` (exponential), `cpl` (coupled multi-conductor) | Medium — `urc` covers the practical distributed-RC case; `ltra`/`txl`/`cpl` are their own feature if scheduled. |
+| **Numerical / 1D solvers** | `numd`, `numd2`, `numos` | Low — academic Poisson solvers, a different engine. |
+| **Verilog-A / shared-lib devices** | `adms`, `ndev` | Out of scope for the solver core — served by the external OSDI/plugin path (`piperine-osdi`). |
+| **Behavioral source** | `asrc` (`B` element) | **Rejected on merit** (MD-39) — see Cross-cutting issue #4 above. PHDL's `analog` block is the behavioural source; an importer transcribes decks. |
 
 ### P6 residue
 
