@@ -13,7 +13,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pom::{
-    is_ground, Design, ElabError, ElabErrorKind, Connection, Instance, Module, NetRef, Wire,
+    is_ground, Design, ElabError, ElabErrorKind, Connection, Instance, Module, NetRef, NetType,
+    Wire,
 };
 
 use super::passes::ElabPass;
@@ -187,27 +188,76 @@ impl FlattenHierarchy {
     }
 
     /// Rewrite a [`NetRef`] through the rename map `ρ`. Ground is preserved
-    /// verbatim. An indexed reference (`net[i]`) fails loud as gap-3 deferred
-    /// (array-net expansion is not built). An unknown net fails loud naming
-    /// the net and the owning child module (dangling/typo guard).
+    /// verbatim. An indexed reference (`net[i]`) expands to the scalar
+    /// element of the parent net it maps onto (gap-3, NGP-20) via
+    /// [`Self::expand_array_element`]. An unknown net fails loud naming the
+    /// net and the owning child module (dangling/typo guard).
     fn remap(nr: &NetRef, rho: &HashMap<String, NetRef>, child: &Module) -> Result<NetRef, ElabError> {
         if is_ground(&nr.net) {
             return Ok(nr.clone());
         }
-        match rho.get(&nr.net) {
-            Some(target) => {
-                if nr.index.is_some() {
-                    return Err(ElabError::from(ElabErrorKind::Other(format!(
-                        "array-net expansion not yet implemented (gap-3): `{nr}` in module `{}`",
-                        child.name
-                    ))));
-                }
-                Ok(target.clone())
-            }
-            None => Err(ElabError::from(ElabErrorKind::Other(format!(
+        let target = rho.get(&nr.net).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!(
                 "net `{}` in module `{}` is neither a port nor a wire (dangling)",
                 nr.net, child.name
-            )))),
+            )))
+        })?;
+        match nr.index {
+            None => Ok(target.clone()),
+            Some(i) => Self::expand_array_element(nr, i, target, child),
+        }
+    }
+
+    /// Expand `net[i]` into the scalar net of the parent binding `target`
+    /// (NGP-20). The POM carries only a constant index — `eval_net_ref`
+    /// const-folds it during elaboration and fails loud on anything it
+    /// cannot fold (NGP-21) — so the remaining loud cases are structural:
+    ///
+    /// - the child net is not an array net, so `net[i]` is meaningless;
+    /// - `i` is outside the net's declared width;
+    /// - the parent binding is itself indexed, i.e. `net[i]` would name a
+    ///   two-dimensional element the POM cannot express.
+    fn expand_array_element(
+        nr: &NetRef,
+        index: u64,
+        target: &NetRef,
+        child: &Module,
+    ) -> Result<NetRef, ElabError> {
+        let Some(width) = Self::array_width(child, &nr.net) else {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "net `{}` in module `{}` is not an array net but is indexed as `{nr}`",
+                nr.net, child.name
+            ))));
+        };
+        if index >= width {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "array-net index out of range: `{nr}` in module `{}` — width is {width}",
+                child.name
+            ))));
+        }
+        if target.index.is_some() {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "array-net element `{nr}` in module `{}` binds to `{target}`, which is \
+                 already an element — nested array indexing is not representable",
+                child.name
+            ))));
+        }
+        Ok(NetRef::indexed(target.net.clone(), index))
+    }
+
+    /// The declared width of `net` in `child`, when `net` is an array port or
+    /// wire. `None` when the net is scalar (or absent — `remap` has already
+    /// proven presence before calling this).
+    fn array_width(child: &Module, net: &str) -> Option<u64> {
+        let ty = child
+            .ports
+            .iter()
+            .find(|p| p.name == net)
+            .map(|p| &p.ty)
+            .or_else(|| child.wires.iter().find(|w| w.name == net).map(|w| &w.ty))?;
+        match ty {
+            NetType::Array(_, n) => Some(*n),
+            NetType::Discipline(_) => None,
         }
     }
 }
@@ -244,6 +294,75 @@ mod tests {
             name: name.to_string(),
             ty: elec(),
         }
+    }
+
+    fn array_wire(name: &str, width: u64) -> Wire {
+        Wire {
+            span: None,
+            attributes: Vec::new(),
+            doc: None,
+            name: name.to_string(),
+            ty: NetType::Array(Box::new(elec()), width),
+        }
+    }
+
+    fn array_port(name: &str, width: u64) -> Port {
+        Port {
+            span: None,
+            attributes: Vec::new(),
+            doc: None,
+            direction: Direction::Inout,
+            name: name.to_string(),
+            ty: NetType::Array(Box::new(elec()), width),
+        }
+    }
+
+    /// A child module whose sub-instance `r1` binds `{net}[{index}]` on its
+    /// first terminal and the scalar port `p` on its second — the minimal
+    /// shape for exercising array-net expansion in `remap`.
+    fn seg_indexing(net: &str, index: u64, ports: Vec<Port>, wires: Vec<Wire>) -> Module {
+        module_with(
+            "Seg",
+            ports,
+            wires,
+            vec![Instance {
+                span: None,
+                label_span: None,
+                type_span: None,
+                attributes: Vec::new(),
+                doc: None,
+                label: Some("r1".to_string()),
+                module: "Resistor".to_string(),
+                ports: vec![NetRef::indexed(net, index), NetRef::simple("p")],
+                params: Vec::new(),
+            }],
+            Vec::new(),
+        )
+    }
+
+    /// `Top` instantiating `Seg` with the given parent bindings.
+    fn design_with_seg(seg: Module, top_bindings: Vec<NetRef>) -> Design {
+        let mut design = Design::new();
+        design.insert_module("Resistor".to_string(), leaf_module("Resistor"));
+        design.insert_module("Seg".to_string(), seg);
+        design.insert_module(
+            "Top".to_string(),
+            parent_module(
+                "Top",
+                vec![Instance {
+                    span: None,
+                    label_span: None,
+                    type_span: None,
+                    attributes: Vec::new(),
+                    doc: None,
+                    label: Some("x".to_string()),
+                    module: "Seg".to_string(),
+                    ports: top_bindings,
+                    params: Vec::new(),
+                }],
+            ),
+        );
+        design
     }
 
     fn leaf_module(name: &str) -> Module {
@@ -670,50 +789,140 @@ mod tests {
         assert_eq!(before, snapshot_modules(&design), "modules untouched even on failure");
     }
 
+    // ── T21 / gap-3: array-net expansion (NGP-20, NGP-21) ─────────────────
+
     #[test]
-    fn inline_indexed_netref_fails_as_gap3_deferred() {
-        // An indexed NetRef (bus[0]) — array-net expansion is gap-3 deferred.
-        // remap must fail loud rather than silently dropping the index.
-        let seg = module_with(
-            "Seg",
-            vec![port("p")],
-            vec![wire("bus")],
-            vec![Instance {
-                span: None,
-                label_span: None,
-                type_span: None,
-                attributes: Vec::new(),
-                doc: None,
-                label: Some("r1".to_string()),
-                module: "Resistor".to_string(),
-                ports: vec![NetRef::indexed("bus", 0), NetRef::simple("p")],
-                params: Vec::new(),
-            }],
-            Vec::new(),
-        );
-        let mut design = Design::new();
-        design.insert_module("Resistor".to_string(), leaf_module("Resistor"));
-        design.insert_module("Seg".to_string(), seg);
-        design.insert_module(
-            "Top".to_string(),
-            module_with(
-                "Top",
-                Vec::new(),
-                Vec::new(),
-                vec![instance_ports("x", "Seg", &["a"])],
-                Vec::new(),
-            ),
-        );
+    fn inline_indexed_array_wire_expands_to_scalar_net() {
+        // NGP-20: `bus[1]` on a child array wire expands to the element of
+        // the lifted parent wire — `x.bus[1]` — not a dropped index and not
+        // a fail-loud deferral.
+        let seg = seg_indexing("bus", 1, vec![port("p")], vec![array_wire("bus", 3)]);
+        let mut design = design_with_seg(seg, vec![NetRef::simple("a")]);
+        let before = snapshot_modules(&design);
+        FlattenHierarchy::flatten_design(&mut design).expect("flatten expands the array element");
+        assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
+
+        let flat = design.flat_module("Top").expect("Top flat form");
+        let r1 = flat
+            .instances
+            .iter()
+            .find(|i| i.label.as_deref() == Some("x.r1"))
+            .expect("x.r1 spliced");
+        assert_eq!(r1.ports[0].net, "x.bus", "element resolves against the lifted wire");
+        assert_eq!(r1.ports[0].index, Some(1), "the constant index is preserved");
+        assert_eq!(r1.ports[0].to_string(), "x.bus[1]", "scalar net name of the element");
+        assert_eq!(r1.ports[1].net, "a", "the scalar terminal still remaps normally");
+    }
+
+    #[test]
+    fn inline_indexed_array_port_expands_against_the_parent_binding() {
+        // NGP-20, the port branch: an array *port* indexed inside the child
+        // expands against whatever parent net the port is bound to.
+        let seg = seg_indexing("bus", 2, vec![array_port("bus", 3), port("p")], Vec::new());
+        let mut design =
+            design_with_seg(seg, vec![NetRef::simple("outer"), NetRef::simple("a")]);
+        FlattenHierarchy::flatten_design(&mut design).expect("flatten expands the array element");
+        let flat = design.flat_module("Top").expect("Top flat form");
+        let r1 = flat
+            .instances
+            .iter()
+            .find(|i| i.label.as_deref() == Some("x.r1"))
+            .expect("x.r1 spliced");
+        assert_eq!(r1.ports[0].to_string(), "outer[2]", "element of the bound parent net");
+    }
+
+    #[test]
+    fn inline_indexed_netref_out_of_range_fails_loud() {
+        // NGP-20's bound: an index past the declared width is a loud error
+        // naming the reference and the width, never a silently invented net.
+        let seg = seg_indexing("bus", 3, vec![port("p")], vec![array_wire("bus", 3)]);
+        let mut design = design_with_seg(seg, vec![NetRef::simple("a")]);
         let before = snapshot_modules(&design);
         let err = FlattenHierarchy::flatten_design(&mut design)
-            .expect_err("indexed netref must fail loud (gap-3)");
+            .expect_err("out-of-range index must fail loud");
         let msg = err.to_string();
-        assert!(
-            msg.contains("array-net expansion") && msg.contains("gap-3"),
-            "error names gap-3 deferral: {msg}"
-        );
-        assert!(msg.contains("bus"), "error names the indexed net: {msg}");
+        assert!(msg.contains("out of range"), "error names the range violation: {msg}");
+        assert!(msg.contains("bus[3]"), "error names the offending reference: {msg}");
+        assert!(msg.contains("width is 3"), "error names the declared width: {msg}");
         assert_eq!(before, snapshot_modules(&design), "modules untouched even on failure");
+    }
+
+    #[test]
+    fn inline_indexed_scalar_net_fails_loud() {
+        // Indexing a net that was never declared as an array is a loud error
+        // — expansion must not fabricate an element of a scalar net.
+        let seg = seg_indexing("bus", 0, vec![port("p")], vec![wire("bus")]);
+        let mut design = design_with_seg(seg, vec![NetRef::simple("a")]);
+        let err = FlattenHierarchy::flatten_design(&mut design)
+            .expect_err("indexing a scalar net must fail loud");
+        let msg = err.to_string();
+        assert!(msg.contains("is not an array net"), "error names the misuse: {msg}");
+        assert!(msg.contains("bus[0]"), "error names the offending reference: {msg}");
+    }
+
+    #[test]
+    fn inline_indexed_netref_onto_an_indexed_binding_fails_loud() {
+        // A child array port bound to an element of a parent array net would
+        // make `bus[0]` a two-dimensional reference the POM cannot express.
+        // Loud, rather than a silently flattened `outer[1][0]`.
+        let seg = seg_indexing("bus", 0, vec![array_port("bus", 3), port("p")], Vec::new());
+        let mut design =
+            design_with_seg(seg, vec![NetRef::indexed("outer", 1), NetRef::simple("a")]);
+        let err = FlattenHierarchy::flatten_design(&mut design)
+            .expect_err("nested array indexing must fail loud");
+        let msg = err.to_string();
+        assert!(msg.contains("nested array indexing"), "error names the limitation: {msg}");
+        assert!(msg.contains("outer[1]"), "error names the parent binding: {msg}");
+    }
+
+    #[test]
+    fn array_net_element_survives_elaboration_end_to_end() {
+        // NGP-20 through the real front end: a PHDL array wire indexed with
+        // an elaboration constant flattens instead of failing loud.
+        let src = "
+            use piperine::disciplines;
+            use spice::passives;
+            mod Seg (inout p : Electrical, inout n : Electrical) {
+                wire bus : Electrical[2];
+                r0 : res (.p=p, .n=bus[0]) { .r = 1.0 };
+                r1 : res (.p=bus[0], .n=n) { .r = 1.0 };
+            }
+            mod Top () {
+                wire gnd : Electrical;
+                wire a : Electrical;
+                s : Seg (.p=a, .n=gnd);
+            }";
+        let design = crate::parse_and_elaborate(src, &crate::SourceMap::dummy())
+            .expect("array-net indexing elaborates and flattens");
+        let flat = design.flat_module("Top").expect("Top flat form");
+        let nets: Vec<String> = flat
+            .instances
+            .iter()
+            .flat_map(|i| i.ports.iter().map(|p| p.to_string()))
+            .collect();
+        assert!(
+            nets.contains(&"s.bus[0]".to_string()),
+            "the array element became a scalar net of the flat form: {nets:?}"
+        );
+    }
+
+    #[test]
+    fn non_constant_array_index_fails_loud() {
+        // NGP-21: an index that is not an elaboration constant still fails
+        // loud, naming the indexed net and the name that could not be folded.
+        let src = "
+            use piperine::disciplines;
+            use spice::passives;
+            mod Top () {
+                wire gnd : Electrical;
+                wire bus : Electrical[3];
+                r0 : res (.p=bus[k], .n=gnd) { .r = 1.0 };
+            }";
+        let err = crate::parse_and_elaborate(src, &crate::SourceMap::dummy())
+            .expect_err("a non-constant index must fail loud");
+        let msg = err.to_string();
+        assert!(msg.contains("net ref index on `bus`"), "error names the indexed net: {msg}");
+        assert!(msg.contains("k"), "error names the unfoldable index expression: {msg}");
     }
 
     #[test]
