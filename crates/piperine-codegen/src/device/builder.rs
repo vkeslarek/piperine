@@ -43,6 +43,16 @@ pub(super) struct InstanceBuilder<'c, 'p> {
     /// One `Arc<LoweredBody>` per digital module name, cloned lazily for
     /// fused-network members.
     module_arcs: HashMap<String, Arc<LoweredBody>>,
+    /// Canonical-node map (NGP-18 codegen integration, Fix B). A structural
+    /// `connection tap[0] = p;` aliases two `NodeId`s — every device that
+    /// connects to `tap[0]` actually connects to `p`. The alias map records
+    /// `tap0 → p` (and any further chain) so [`Self::node_identifier`]
+    /// returns the canonical [`NodeIdentifier`] for both, and the netlist
+    /// ends up with one MNA unknown rather than two unconnected ones. The
+    /// map is built once from `top.connections()` in [`Self::new`] (before
+    /// any `add_instance` runs); `node_identifier` and the
+    /// [`CircuitBuildInfo::nets`] readback both consult it.
+    node_aliases: HashMap<NodeId, NodeId>,
 }
 
 impl<'c, 'p> InstanceBuilder<'c, 'p> {
@@ -53,11 +63,21 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         top_params: Vec<f64>,
     ) -> Self {
         let next_anon = top_body.symbols.nodes().count();
+        // NGP-18 codegen integration (Fix B): structural `connection
+        // tap[0] = p;` aliases two NodeIds. Built before the `nets`
+        // readback and any `add_instance` call so every name → NodeId →
+        // NodeIdentifier lookup consults the same canonical map.
+        let node_aliases = build_node_aliases(top_body, top);
         let nets = top_body
             .symbols
             .nodes()
             .map(|(id, info)| {
-                let node = if id.is_ground() { NodeIdentifier::Gnd } else { NodeIdentifier::Anonymous(id.0 as usize) };
+                let canonical = canonicalize(id, &node_aliases);
+                let node = if canonical.is_ground() {
+                    NodeIdentifier::Gnd
+                } else {
+                    NodeIdentifier::Anonymous(canonical.0 as usize)
+                };
                 (info.name.clone(), node)
             })
             .collect();
@@ -78,6 +98,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 instances: Vec::new(),
                 fused_networks: 0,
             },
+            node_aliases,
         }
     }
 
@@ -400,12 +421,16 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
 
     /// Map a top-module node to a solver identifier. Digital-domain nodes
     /// also pass through here for mixed instances; the analog side sees them
-    /// as ordinary nodes.
+    /// as ordinary nodes. A node aliased to another by a structural
+    /// `connection lhs = rhs;` (NGP-18, Fix B) resolves to its canonical
+    /// counterpart's identifier — the netlist then sees one MNA unknown,
+    /// shared by every device that connects to either name.
     pub(super) fn node_identifier(&self, node: NodeId) -> NodeIdentifier {
-        if node.is_ground() {
+        let canonical = canonicalize(node, &self.node_aliases);
+        if canonical.is_ground() {
             NodeIdentifier::Gnd
         } else {
-            NodeIdentifier::Anonymous(node.0 as usize)
+            NodeIdentifier::Anonymous(canonical.0 as usize)
         }
     }
 
@@ -432,5 +457,237 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         }
         let _ = self.top_params;
         Ok((circuit, self.build_info))
+    }
+}
+
+// ─── Structural-connection unification (NGP-18 codegen integration, Fix B) ───
+
+/// Build a `child → parent` alias map from a module's structural
+/// `connection lhs = rhs;` entries. A connection states that two nets are
+/// the same node — e.g. `tap[0] = p;` aliases the `tap[0]` NodeId to the
+/// `p` NodeId. Without this map, the circuit builder sees two distinct
+/// MNA unknowns; devices that connect to `tap[0]` end up on a different
+/// unknown than devices that connect to `p`, and a DC solve produces
+/// NaN/Inf for the floating side.
+///
+/// MD-25 binding: unification lives in codegen's resolved/circuit layer
+/// (here) — the POM `Design::modules` is never mutated. Only the
+/// `NodeId → NodeIdentifier` mapping this builder produces is affected.
+///
+/// The map is a forest: each entry points to a parent, and
+/// [`canonicalize`] walks to the root. Union by NodeId ordering picks
+/// the smaller-id root as canonical (deterministic, no graph cycles).
+fn build_node_aliases(
+    top_body: &LoweredBody,
+    top: &Module,
+) -> HashMap<NodeId, NodeId> {
+    let mut aliases: HashMap<NodeId, NodeId> = HashMap::new();
+    for c in top.connections() {
+        let Some(lhs) = resolve_alias_target(top_body, c.lhs()) else { continue };
+        let Some(rhs) = resolve_alias_target(top_body, c.rhs()) else { continue };
+        let lhs_root = union_root(lhs, &aliases);
+        let rhs_root = union_root(rhs, &aliases);
+        if lhs_root == rhs_root {
+            continue;
+        }
+        // Pick the smaller id as the canonical root — deterministic and
+        // stable across builds (so a host's `nets` map is reproducible).
+        let (parent, child) = if lhs_root.0 < rhs_root.0 {
+            (lhs_root, rhs_root)
+        } else {
+            (rhs_root, lhs_root)
+        };
+        aliases.insert(child, parent);
+    }
+    aliases
+}
+
+/// Resolve one side of a structural connection to its target `NodeId`.
+/// Ground aliases to [`NodeId::GROUND`]; any other name looks up through
+/// the same `resolve_node` path instance connections use, so an indexed
+/// ref (`tap[0]`) finds the per-element node Fix A registered.
+fn resolve_alias_target(top_body: &LoweredBody, nr: &piperine_lang::pom::NetRef) -> Option<NodeId> {
+    if piperine_lang::pom::is_ground(nr.net()) {
+        return Some(NodeId::GROUND);
+    }
+    let full = nr.to_string();
+    CircuitCompiler::resolve_node(top_body, &full)
+        .or_else(|| CircuitCompiler::resolve_node(top_body, nr.net()))
+}
+
+/// Walk the alias forest to the root. A node not in the map is its own
+/// root.
+fn union_root(mut node: NodeId, aliases: &HashMap<NodeId, NodeId>) -> NodeId {
+    while let Some(&parent) = aliases.get(&node) {
+        if parent == node {
+            break;
+        }
+        node = parent;
+    }
+    node
+}
+
+/// Canonical form of `node` under the alias map — the root of its
+/// union-find tree. Used by [`InstanceBuilder::node_identifier`] and the
+/// `nets` readback so every alias of a node resolves to one
+/// [`NodeIdentifier`] (one MNA unknown). The alias map is `&` (built
+/// once in [`InstanceBuilder::new`], never mutated thereafter), so this
+/// is a plain read.
+fn canonicalize(node: NodeId, aliases: &HashMap<NodeId, NodeId>) -> NodeId {
+    union_root(node, aliases)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Structural-connection unification (NGP-18 codegen integration,
+    //! Fix B). A structural `connection tap[0] = p; tap[N] = n;` aliases
+    //! two NodeIds. The circuit builder must produce one MNA unknown per
+    //! alias group — otherwise the segment at `tap[0]` floats on its own
+    //! unknown and the DC solve diverges. These tests cover the alias
+    //! map's construction (`build_node_aliases`), its canonical lookup
+    //! (`canonicalize`), and the end-to-end build path through
+    //! `CircuitCompiler::build_circuit_mapped` on a tiny RC chain with
+    //! an array-wire-tap module.
+
+    use super::{build_node_aliases, canonicalize};
+    use crate::resolve::pom::lower_bodies;
+    use crate::CircuitCompiler;
+    use piperine_lang::{parse_and_elaborate, SourceMap};
+    use piperine_solver::abi::NodeIdentifier;
+
+    const PRELUDE: &str = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod res (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0; }
+        analog res { I(p, n) <+ V(p, n) / r; }
+        mod cap (inout p : Electrical, inout n : Electrical) { param c : Real = 1.0e-9; }
+        analog cap { I(p, n) <+ c * ddt(V(p, n)); }
+        mod vsrc_external (inout p : Electrical, inout n : Electrical) {}
+        analog vsrc_external { V(p, n) <- 1.0; }
+    ";
+
+    /// A tiny generic chain with an array wire and structural connections
+    /// — the shape `urc[N]` uses. Two `res` segments separated by an
+    /// array-wire tap; `tap[0]` aliases the input port `p`, `tap[2]`
+    /// aliases the output port `n`.
+    const CHAIN_SRC: &str = "
+        mod Chain (inout p : Electrical, inout n : Electrical) {
+            wire tap : Electrical[3];
+            tap[0] = p;
+            tap[2] = n;
+            r0 : res (.p=tap[0], .n=tap[1]) { .r = 1.0 };
+            r1 : res (.p=tap[1], .n=tap[2]) { .r = 1.0 };
+        }
+        mod Top () {
+            wire gnd : Electrical;
+            wire vin : Electrical;
+            wire vout : Electrical;
+            v : vsrc_external (vin, gnd);
+            u : Chain (.p=vin, .n=vout);
+        }
+    ";
+
+    /// `build_node_aliases` collapses the alias group `tap[0] = p` so the
+    /// tap element and the port share a canonical NodeId. After flatten,
+    /// the chain's structural connections land on flat-Top as
+    /// `u.tap[0] = vin` and `u.tap[2] = vout` (the chain's ports `p` and
+    /// `n` are renamed to the parent's bindings).
+    #[test]
+    fn structural_connection_unifies_tap0_with_p() {
+        let src = format!("{PRELUDE}{CHAIN_SRC}");
+        let design = parse_and_elaborate(&src, &SourceMap::dummy())
+            .expect("elaborates");
+        let bodies = lower_bodies(&design).expect("lowers");
+        let flat = design.flat_module("Top").expect("Top flat form");
+        let top_body = &bodies["Top"];
+        let aliases = build_node_aliases(top_body, flat);
+
+        // Flat-Top carries the spliced `Chain` connections as
+        // `u.tap[0] = vin` and `u.tap[2] = vout`. The alias map must
+        // resolve `u.tap[0]` and `vin` to the same canonical NodeId, and
+        // likewise `u.tap[2]` and `vout`.
+        let vin_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "vin")
+            .expect("vin resolves");
+        let tap0_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "u.tap[0]")
+            .expect("u.tap[0] resolves");
+        let vout_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "vout")
+            .expect("vout resolves");
+        let tap2_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "u.tap[2]")
+            .expect("u.tap[2] resolves");
+
+        assert_eq!(
+            canonicalize(tap0_id, &aliases),
+            canonicalize(vin_id, &aliases),
+            "tap[0] aliases vin — they share a canonical NodeId"
+        );
+        assert_eq!(
+            canonicalize(tap2_id, &aliases),
+            canonicalize(vout_id, &aliases),
+            "tap[2] aliases vout — they share a canonical NodeId"
+        );
+        assert_ne!(
+            canonicalize(tap0_id, &aliases),
+            canonicalize(tap2_id, &aliases),
+            "the two alias groups stay distinct"
+        );
+        // The middle tap (tap[1]) is not in any structural connection —
+        // it canonicalizes to itself.
+        let tap1_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "u.tap[1]")
+            .expect("u.tap[1] resolves");
+        assert_eq!(
+            canonicalize(tap1_id, &aliases),
+            tap1_id,
+            "tap[1] is unaliased — its own canonical node"
+        );
+    }
+
+    /// End-to-end build: the Chain module's two structural connections
+    /// reduce the per-segment topology to one DC path from `vin` to
+    /// `vout`, and the resulting `nets` map shows `u.tap[0]` and `vin`
+    /// sharing one NodeIdentifier (likewise `u.tap[2]` and `vout`).
+    #[test]
+    fn structural_connection_produces_one_mna_unknown_per_alias_group() {
+        let src = format!("{PRELUDE}{CHAIN_SRC}");
+        let design = parse_and_elaborate(&src, &SourceMap::dummy())
+            .expect("elaborates");
+        let bodies = lower_bodies(&design).expect("lowers");
+        let mut compiler = CircuitCompiler::new(&design, &bodies);
+        let (_circuit, info) = compiler.build_circuit_mapped("Top").expect("builds");
+
+        let tap0_node = info.nets.get("u.tap[0]").cloned();
+        let vin_node = info.nets.get("vin").cloned();
+        let tap2_node = info.nets.get("u.tap[2]").cloned();
+        let vout_node = info.nets.get("vout").cloned();
+        let tap1_node = info.nets.get("u.tap[1]").cloned();
+
+        assert!(tap0_node.is_some(), "u.tap[0] in nets");
+        assert!(tap1_node.is_some(), "u.tap[1] in nets");
+        assert!(tap2_node.is_some(), "u.tap[2] in nets");
+        assert_eq!(
+            tap0_node, vin_node,
+            "u.tap[0] and vin share a NodeIdentifier (one MNA unknown)"
+        );
+        assert_eq!(
+            tap2_node, vout_node,
+            "u.tap[2] and vout share a NodeIdentifier (one MNA unknown)"
+        );
+        // The three alias groups — {vin, u.tap[0]}, {u.tap[1]},
+        // {vout, u.tap[2]} — produce three distinct NodeIdentifiers.
+        let groups = [
+            tap0_node.as_ref().unwrap(),
+            tap1_node.as_ref().unwrap(),
+            tap2_node.as_ref().unwrap(),
+        ];
+        let pairs = [
+            (groups[0], groups[1]),
+            (groups[0], groups[2]),
+            (groups[1], groups[2]),
+        ];
+        for (a, b) in &pairs {
+            assert_ne!(a, b, "alias groups produce distinct NodeIdentifiers");
+        }
+        // Sanity: none of the alias groups is ground.
+        assert_ne!(tap0_node.as_ref().unwrap(), &NodeIdentifier::Gnd);
+        assert_ne!(tap1_node.as_ref().unwrap(), &NodeIdentifier::Gnd);
+        assert_ne!(tap2_node.as_ref().unwrap(), &NodeIdentifier::Gnd);
     }
 }
