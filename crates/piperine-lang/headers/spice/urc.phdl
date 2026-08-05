@@ -12,14 +12,18 @@
 // each segment by `K^i`: segment `i` (0-indexed from the input end) takes a
 // `K^i` share of the line total. With `K = 1` the geometric sum collapses to
 // `N` and every segment gets an equal `1/N` share (the uniform ladder); with
-// `K > 1` the share grows geometrically toward the output. Two authoring
+// `K > 1` the share grows geometrically toward the output. Three authoring
 // routes are shipped here:
 //
-//   1. `urc2` / `urc5` / `urc10` keep the per-segment uniform-split API the
-//      golden `urc_lump2/5/10` fixtures baseline; a `k` param (default 1.0)
-//      exposes the geometric taper inside the `urc_seg` chain via the
-//      per-segment factor `pow(k, i)` (the ngspice taper formula in the
-//      model). `k = 1.0` is the no-op case.
+//   1. `urc[N]` is the generic, single-authoring form (NGP-18/NGP-22),
+//      using `wire tap : Electrical[N+1]` and a structural `for` loop. The
+//      codegen symbol table expands the lifted array wire to N+1 element
+//      nodes (NGP-18, Fix A) and the circuit builder unifies them through
+//      the structural connections `tap[0] = p; tap[N] = n;` (NGP-18, Fix B),
+//      so a circuit instantiating `urc[N]` solves correctly with one MNA
+//      unknown per tap. The three golden `urc_lump2/5/10` fixtures
+//      instantiate `urc[2]`, `urc[5]`, `urc[10]` respectively — the same
+//      hand-built `.cir` ladder topology, unchanged.
 //
 //   2. `urc_taper_5_k2` is a tapered variant authored as direct `res`/`cap`
 //      leaves with the per-segment values computed inline from the
@@ -27,61 +31,23 @@
 //      are baked at module-lowering time, so the taper is real at both DC
 //      and AC — the `urc_taper` fixture cross-checks ngspice on it.
 //
-//   3. `urc[N]` is the generic, single-authoring form (NGP-18/NGP-22),
-//      using `wire tap : Electrical[N+1]` and a structural `for` loop. It
-//      is **elaboration-verified** today: it elaborates, monomorphizes and
-//      flattens to the same 2N-leaf netlist the hand-unrolled triple
-//      produces. It is NOT yet wired into the golden fixtures — see the
-//      SPEC_DEVIATION note (NGP-18 codegen integration) below.
+//   3. `urc_isperl_5_k2` adds the diode-mode shunt path selected by ISPERL
+//      (NGP-17), again as direct leaves so the per-segment diode values
+//      bake at module-lowering time.
 //
 // Per-segment R/C are exposed as params so a host can scale them via the
-// flat-label override contract (`u1.s0.r1`, `u1.s0.c1`, …).
+// flat-label override contract (`u1.s[0].r1`, `u1.s[0].c1`, …).
 //
 // SPEC_DEVIATION: NGP-16 (compile-time taper propagation)
 //   The flatten pass bakes each module's per-segment values at module-lowering
 //   time using the module's param DEFAULTS, so a per-instance `k` override on
-//   `urc5 { .k = 2.0 }` does not reach the leaves via the param chain. The
+//   `urc[5] { .k = 2.0 }` does not reach the leaves via the param chain. The
 //   taper formula is in the model (visible, reviewable); applying it for a
 //   specific `k > 1` from a host today uses runtime staging
-//   (`Session::builder.stage("u1.s0.r1", "r", …)`) or a direct-leaf module
+//   (`Session::builder.stage("u1.s[0].r1", "r", …)`) or a direct-leaf module
 //   like `urc_taper_5_k2`. The compile-time propagation gap is a flatten-pass
 //   concern, not a URC model concern; it is shared with every nested-leaf
 //   param chain in the codebase.
-//
-// SPEC_DEVIATION: NGP-18 / NGP-22 (codegen integration of array-net lifting)
-//   The generic `urc[N]` below elaborates and flattens correctly — gap-3
-//   (NGP-20) made the flatten pass lift the array wire `tap` to the parent
-//   and rewrite the indexed net refs `tap[i]`, `tap[i+1]` to `{inst}.tap[i]`
-//   on the spliced leaves. The codegen side is incomplete: (a) the symbol
-//   table builder (`resolve/pom/structure.rs`) registers the lifted array
-//   wire as one scalar node rather than N+1 indexed-element nodes, so
-//   `resolve_node("{inst}.tap[1]")` falls back to the scalar `{inst}.tap`
-//   and collapses every tap element onto a single net; (b) the circuit
-//   builder (`device/builder.rs`) does not process the flat module's
-//   `connections` field, so the structural aliases `tap[0] = p;` and
-//   `tap[N] = n;` inside `urc[N]` are silently dropped. Together these
-//   produce a NaN/Inf DC solve. The hand-unrolled `urc2/5/10` wrappers
-//   remain until the codegen integration is finished, after which they
-//   collapse to thin `urc[N]` instantiants and the golden `urc_lump2/5/10`
-//   fixtures inherit the generic form without their `.cir` twins changing.
-//   Tracked as the dependency that unblocks NGP-19 (FMAX → N auto-select).
-//
-// SPEC_DEVIATION: NGP-19 (FMAX → N auto-selection)
-//   ngspice derives the lump count from `FMAX` when `N` is not given
-//   (`urcsetup.c:84-89`): with `p = K`, `r0 = L·RPERL`, `c0 = L·CPERL`,
-//       wnorm = FMAX · r0 · c0 · 2π
-//       N = max(3, floor( log(wnorm · ((p−1)/p)²) / log(p) ))   (with the
-//                                                       special case
-//       `wnorm < 35 ⇒ N = 3`).
-//   The formula is pure elaboration-time arithmetic (no runtime values),
-//   so it could lower as a const `Natural` param feeding `urc[N]`'s const
-//   arg. It is **not wired** today because the generic `urc[N]` is not yet
-//   usable from a host circuit (see the NGP-18 codegen-integration
-//   deviation above): until the codegen side lifts array-wire elements
-//   and processes structural `connections`, the host must pick one of the
-//   fixed-N `urc2`/`urc5`/`urc10` modules explicitly. Closing the NGP-18
-//   deviation unblocks this for free — the formula lives in the comment,
-//   ready to drop in as `urc[N]`'s default.
 // ════════════════════════════════════════════════════════════════════════════
 
 use piperine::disciplines;
@@ -94,7 +60,7 @@ use spice::passives;
 //  Pure-structural: instantiates `res` and `cap` and owns no analog body.
 //  This is the recursion base for flattening — a mid-level module whose
 //  sub-instances are leaves. When inlined into a parent, its two leaves
-//  reappear under path-prefixed labels (`s0.r1`, `s0.c1`).
+//  reappear under path-prefixed labels (`s[0].r1`, `s[0].c1`).
 // ════════════════════════════════════════════════════════════════════════════
 
 pub mod urc_seg ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
@@ -110,16 +76,19 @@ pub mod urc_seg ( inout p : Electrical, inout n : Electrical, inout g : Electric
 //
 //  Authored once generically: `wire tap : Electrical[N+1]` with a structural
 //  `for` loop instantiating `urc_seg` between successive tap nodes. The
-//  const-indexed array net expands during flattening (NGP-20) so a parent's
-//  flat form gets the same 2N leaf `res`/`cap` instances under composed
-//  labels (`u1.s[i].r1`, …) the hand-unrolled triple produces.
+//  const-indexed array net expands during flattening (NGP-20) and codegen
+//  lifts it to N+1 element nodes (NGP-18, Fix A) unified through the
+//  structural connections `tap[0] = p; tap[N] = n;` (NGP-18, Fix B). A
+//  circuit instantiating `urc[N]` solves correctly with one MNA unknown
+//  per tap — the same 2N-leaf netlist and DC operating point the
+//  previously hand-unrolled triple produced, with no extra authoring.
 //
-//  ELABORATION-ONLY today. See the SPEC_DEVIATION note at the top of this
-//  file (NGP-18 codegen integration): the codegen side does not yet lift an
-//  array wire to N scalar element nodes or process the flat module's
-//  structural `connections`, so a circuit instantiating `urc[N]` does not
-//  solve. The hand-unrolled `urc2/5/10` below remain the production form
-//  the golden fixtures baseline until that lands.
+//  Geometric taper (NGP-16). Each segment `i` receives `r·k^i` and `c·k^i`
+//  via the per-segment `pow(k, i)` factor. `k = 1.0` (the default) makes
+//  `pow` a no-op and the ladder stays uniform — the contract the golden
+//  `urc_lump2/5/10` DC fixtures baseline. See the SPEC_DEVIATION note at
+//  the top of this file for why a per-instance `k` override needs runtime
+//  staging or a direct-leaf module.
 // ════════════════════════════════════════════════════════════════════════════
 
 pub mod urc[N] ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
@@ -141,82 +110,11 @@ pub mod urc[N] ( inout p : Electrical, inout n : Electrical, inout g : Electrica
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  urc2 / urc5 / urc10 — fixed-N ladders of `urc_seg` lumps.
-//
-//  N series segments with N−1 scalar tap wires between them; the input port
-//  `p` is the first tap, the output port `n` the last. Each module is a
-//  pure-structural shell — its flat form (after `FlattenHierarchy`) is the
-//  2N leaf res/cap instances with composed labels (`u1.s0.r1`, …).
-//
-//  Geometric taper (NGP-16). Each segment `i` receives `r·k^i` and `c·k^i`
-//  via the per-segment `pow(k, i)` factor. `k = 1.0` (the default) makes
-//  `pow` a no-op and the ladder stays uniform — the contract the golden
-//  `urc_lump2/5/10` DC fixtures baseline. See the SPEC_DEVIATION note at
-//  the top of this file for why a per-instance `k` override needs runtime
-//  staging or a direct-leaf module.
-// ════════════════════════════════════════════════════════════════════════════
-
-pub mod urc2 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
-    param r : Real = 100.0;
-    param c : Real = 1.0e-9;
-    param k : Real = 1.0;
-
-    wire t1 : Electrical;
-
-    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r * pow(k, 0.0), .c = c * pow(k, 0.0) };
-    s1 : urc_seg ( .p=t1, .n=n,  .g=g ) { .r = r * pow(k, 1.0), .c = c * pow(k, 1.0) };
-}
-
-pub mod urc5 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
-    param r : Real = 100.0;
-    param c : Real = 1.0e-9;
-    param k : Real = 1.0;
-
-    wire t1 : Electrical;
-    wire t2 : Electrical;
-    wire t3 : Electrical;
-    wire t4 : Electrical;
-
-    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r * pow(k, 0.0), .c = c * pow(k, 0.0) };
-    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r * pow(k, 1.0), .c = c * pow(k, 1.0) };
-    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r * pow(k, 2.0), .c = c * pow(k, 2.0) };
-    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r * pow(k, 3.0), .c = c * pow(k, 3.0) };
-    s4 : urc_seg ( .p=t4, .n=n,  .g=g ) { .r = r * pow(k, 4.0), .c = c * pow(k, 4.0) };
-}
-
-pub mod urc10 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
-    param r : Real = 100.0;
-    param c : Real = 1.0e-9;
-    param k : Real = 1.0;
-
-    wire t1 : Electrical;
-    wire t2 : Electrical;
-    wire t3 : Electrical;
-    wire t4 : Electrical;
-    wire t5 : Electrical;
-    wire t6 : Electrical;
-    wire t7 : Electrical;
-    wire t8 : Electrical;
-    wire t9 : Electrical;
-
-    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r * pow(k, 0.0), .c = c * pow(k, 0.0) };
-    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r * pow(k, 1.0), .c = c * pow(k, 1.0) };
-    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r * pow(k, 2.0), .c = c * pow(k, 2.0) };
-    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r * pow(k, 3.0), .c = c * pow(k, 3.0) };
-    s4 : urc_seg ( .p=t4, .n=t5, .g=g ) { .r = r * pow(k, 4.0), .c = c * pow(k, 4.0) };
-    s5 : urc_seg ( .p=t5, .n=t6, .g=g ) { .r = r * pow(k, 5.0), .c = c * pow(k, 5.0) };
-    s6 : urc_seg ( .p=t6, .n=t7, .g=g ) { .r = r * pow(k, 6.0), .c = c * pow(k, 6.0) };
-    s7 : urc_seg ( .p=t7, .n=t8, .g=g ) { .r = r * pow(k, 7.0), .c = c * pow(k, 7.0) };
-    s8 : urc_seg ( .p=t8, .n=t9, .g=g ) { .r = r * pow(k, 8.0), .c = c * pow(k, 8.0) };
-    s9 : urc_seg ( .p=t9, .n=n,  .g=g ) { .r = r * pow(k, 9.0), .c = c * pow(k, 9.0) };
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 //  urc_taper_5_k2 — five-segment tapered URC ladder (NGP-16, K = 2).
 //
 //  The taper is ngspice's `K = 2` geometric progression (`urcsetup.c:80-92`)
-//  on a *linear* ladder of N series R + N shunt C (piperine's `urc5`
-//  topology), normalized to keep total R = 1 kΩ and total C = 10 nF:
+//  on a *linear* ladder of N series R + N shunt C, normalized to keep
+//  total R = 1 kΩ and total C = 10 nF:
 //      r_i = Rtotal · K^i / Σ K^j = 1000 · 2^i / 31
 //      c_i = Ctotal · K^i / Σ K^j = 1e-8 · 2^i / 31
 //  The two ladder topologies differ: ngspice's URC is symmetric (2N R,
@@ -232,7 +130,7 @@ pub mod urc10 ( inout p : Electrical, inout n : Electrical, inout g : Electrical
 //
 //  Authored as direct `res`/`cap` leaves rather than as a `urc_seg` chain
 //  because the flatten pass bakes per-segment values at module-lowering
-//  time using param defaults, so a `k` override on a parent `urc5`
+//  time using param defaults, so a `k` override on a parent `urc[N]`
 //  `{ .k = 2.0 }` does not reach the leaves. Direct leaves make the taper
 //  observable from the flat netlist without runtime staging.
 // ════════════════════════════════════════════════════════════════════════════

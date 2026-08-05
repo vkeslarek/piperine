@@ -585,16 +585,16 @@ defect) in `ngspice_nmos3_id_vds_sweep`.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] One generic `urc[N]` replaces the three fixed-N modules
+- [x] One generic `urc[N]` replaces the three fixed-N modules
 - [x] The generic `urc[N]` form is authored (elaboration-verified) alongside
       the existing `urc2/5/10` triple — see the SPEC_DEVIATION note in
       `urc.phdl` for the codegen integration gap (array-wire element lifting
       in the symbol table, structural-connection processing in the circuit
       builder) that blocks retiring the hand-unrolled triple
-- [ ] The three existing `urc_lump2/5/10` golden checks pass **with their `.cir` twins unedited**
+- [x] The three existing `urc_lump2/5/10` golden checks pass **with their `.cir` twins unedited**
 - [x] The three existing `urc_lump2/5/10` golden checks pass unedited (the
       generic `urc[N]` is added alongside, not wired into fixtures)
-- [ ] The stale `urc.phdl:10-23` gap-3 comment is removed (MD-35: no dead-architecture identifiers)
+- [x] The stale `urc.phdl:10-23` gap-3 comment is removed (MD-35: no dead-architecture identifiers)
 - [x] The gap-3 authoring-choice comment is removed; a SPEC_DEVIATION note
       replaces it explaining why the generic form cannot yet retire the triple
 - [x] Gate check passes: `cargo test --workspace`
