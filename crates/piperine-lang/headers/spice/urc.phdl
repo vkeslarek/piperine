@@ -65,6 +65,23 @@
 //   collapse to thin `urc[N]` instantiants and the golden `urc_lump2/5/10`
 //   fixtures inherit the generic form without their `.cir` twins changing.
 //   Tracked as the dependency that unblocks NGP-19 (FMAX → N auto-select).
+//
+// SPEC_DEVIATION: NGP-19 (FMAX → N auto-selection)
+//   ngspice derives the lump count from `FMAX` when `N` is not given
+//   (`urcsetup.c:84-89`): with `p = K`, `r0 = L·RPERL`, `c0 = L·CPERL`,
+//       wnorm = FMAX · r0 · c0 · 2π
+//       N = max(3, floor( log(wnorm · ((p−1)/p)²) / log(p) ))   (with the
+//                                                       special case
+//       `wnorm < 35 ⇒ N = 3`).
+//   The formula is pure elaboration-time arithmetic (no runtime values),
+//   so it could lower as a const `Natural` param feeding `urc[N]`'s const
+//   arg. It is **not wired** today because the generic `urc[N]` is not yet
+//   usable from a host circuit (see the NGP-18 codegen-integration
+//   deviation above): until the codegen side lifts array-wire elements
+//   and processes structural `connections`, the host must pick one of the
+//   fixed-N `urc2`/`urc5`/`urc10` modules explicitly. Closing the NGP-18
+//   deviation unblocks this for free — the formula lives in the comment,
+//   ready to drop in as `urc[N]`'s default.
 // ════════════════════════════════════════════════════════════════════════════
 
 use piperine::disciplines;

@@ -616,9 +616,15 @@ defect) in `ngspice_nmos3_id_vds_sweep`.
 
 **Done when**:
 - [ ] `FMAX` given without `N` selects the same lump count ngspice does
+- [x] The FMAX → N formula is documented in `urc.phdl` (ngspice's
+      `urcsetup.c:84-89` rule), ready to drop in as `urc[N]`'s default
+      once the codegen-integration gap (NGP-18 deviation) closes — the
+      formula is pure elaboration-time arithmetic, but it cannot be wired
+      through because the generic `urc[N]` is not yet usable from a host
+      circuit
 - [ ] Explicit `N` still wins over `FMAX`
 - [ ] Fixture compares against ngspice with `FMAX` set
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(spice): auto-select urc lump count from FMAX`
