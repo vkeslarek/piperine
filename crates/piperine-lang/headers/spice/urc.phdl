@@ -27,6 +27,13 @@
 //      are baked at module-lowering time, so the taper is real at both DC
 //      and AC — the `urc_taper` fixture cross-checks ngspice on it.
 //
+//   3. `urc[N]` is the generic, single-authoring form (NGP-18/NGP-22),
+//      using `wire tap : Electrical[N+1]` and a structural `for` loop. It
+//      is **elaboration-verified** today: it elaborates, monomorphizes and
+//      flattens to the same 2N-leaf netlist the hand-unrolled triple
+//      produces. It is NOT yet wired into the golden fixtures — see the
+//      SPEC_DEVIATION note (NGP-18 codegen integration) below.
+//
 // Per-segment R/C are exposed as params so a host can scale them via the
 // flat-label override contract (`u1.s0.r1`, `u1.s0.c1`, …).
 //
@@ -40,6 +47,24 @@
 //   like `urc_taper_5_k2`. The compile-time propagation gap is a flatten-pass
 //   concern, not a URC model concern; it is shared with every nested-leaf
 //   param chain in the codebase.
+//
+// SPEC_DEVIATION: NGP-18 / NGP-22 (codegen integration of array-net lifting)
+//   The generic `urc[N]` below elaborates and flattens correctly — gap-3
+//   (NGP-20) made the flatten pass lift the array wire `tap` to the parent
+//   and rewrite the indexed net refs `tap[i]`, `tap[i+1]` to `{inst}.tap[i]`
+//   on the spliced leaves. The codegen side is incomplete: (a) the symbol
+//   table builder (`resolve/pom/structure.rs`) registers the lifted array
+//   wire as one scalar node rather than N+1 indexed-element nodes, so
+//   `resolve_node("{inst}.tap[1]")` falls back to the scalar `{inst}.tap`
+//   and collapses every tap element onto a single net; (b) the circuit
+//   builder (`device/builder.rs`) does not process the flat module's
+//   `connections` field, so the structural aliases `tap[0] = p;` and
+//   `tap[N] = n;` inside `urc[N]` are silently dropped. Together these
+//   produce a NaN/Inf DC solve. The hand-unrolled `urc2/5/10` wrappers
+//   remain until the codegen integration is finished, after which they
+//   collapse to thin `urc[N]` instantiants and the golden `urc_lump2/5/10`
+//   fixtures inherit the generic form without their `.cir` twins changing.
+//   Tracked as the dependency that unblocks NGP-19 (FMAX → N auto-select).
 // ════════════════════════════════════════════════════════════════════════════
 
 use piperine::disciplines;
@@ -64,7 +89,42 @@ pub mod urc_seg ( inout p : Electrical, inout n : Electrical, inout g : Electric
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  urc2 / urc5 / urc10 — fixed-N ladder of `urc_seg` lumps.
+//  urc[N] — generic lumped RC line of N `urc_seg` lumps (NGP-18, NGP-22).
+//
+//  Authored once generically: `wire tap : Electrical[N+1]` with a structural
+//  `for` loop instantiating `urc_seg` between successive tap nodes. The
+//  const-indexed array net expands during flattening (NGP-20) so a parent's
+//  flat form gets the same 2N leaf `res`/`cap` instances under composed
+//  labels (`u1.s[i].r1`, …) the hand-unrolled triple produces.
+//
+//  ELABORATION-ONLY today. See the SPEC_DEVIATION note at the top of this
+//  file (NGP-18 codegen integration): the codegen side does not yet lift an
+//  array wire to N scalar element nodes or process the flat module's
+//  structural `connections`, so a circuit instantiating `urc[N]` does not
+//  solve. The hand-unrolled `urc2/5/10` below remain the production form
+//  the golden fixtures baseline until that lands.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod urc[N] ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    param r : Real = 100.0;
+    param c : Real = 1.0e-9;
+    param k : Real = 1.0;
+
+    wire tap : Electrical[N + 1];
+
+    tap[0] = p;
+    tap[N] = n;
+
+    for i in 0..N {
+        s[i] : urc_seg ( .p=tap[i], .n=tap[i + 1], .g=g ) {
+            .r = r * pow(k, i),
+            .c = c * pow(k, i),
+        };
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  urc2 / urc5 / urc10 — fixed-N ladders of `urc_seg` lumps.
 //
 //  N series segments with N−1 scalar tap wires between them; the input port
 //  `p` is the first tap, the output port `n` the last. Each module is a
@@ -74,8 +134,8 @@ pub mod urc_seg ( inout p : Electrical, inout n : Electrical, inout g : Electric
 //  Geometric taper (NGP-16). Each segment `i` receives `r·k^i` and `c·k^i`
 //  via the per-segment `pow(k, i)` factor. `k = 1.0` (the default) makes
 //  `pow` a no-op and the ladder stays uniform — the contract the golden
-//  `urc_lump2/5/10` DC fixtures baseline. See the SPEC_DEVIATION note at the
-//  top of this file for why a per-instance `k` override needs runtime
+//  `urc_lump2/5/10` DC fixtures baseline. See the SPEC_DEVIATION note at
+//  the top of this file for why a per-instance `k` override needs runtime
 //  staging or a direct-leaf module.
 // ════════════════════════════════════════════════════════════════════════════
 

@@ -312,11 +312,11 @@ re-derived; they do not design by anticipation.
 | NGP-15 | P2: every closed deviation covered by a golden test | Design | Pending |
 | NGP-16 | P3: `urc` geometric taper (`K`) — no `gap-3` dependency | - | Verified |
 | NGP-17 | P3: `urc` `ISPERL` diode shunt path — no `gap-3` dependency | - | Verified |
-| NGP-18 | P3: `urc` re-authored generically after P4 | - | Pending |
-| NGP-19 | P3: `urc` `FMAX` → `N` auto-selection (depends on NGP-18) | - | Pending |
-| NGP-20 | P4: array-net expansion with const index | - | Pending |
-| NGP-21 | P4: non-const index still fails loud | - | Pending |
-| NGP-22 | P4: `urc[N]` replaces the hand-unrolled triple | - | Pending |
+| NGP-18 | P3: `urc` re-authored generically after P4 | - | Documented deviation |
+| NGP-19 | P3: `urc` `FMAX` → `N` auto-selection (depends on NGP-18) | - | Pending (blocked on NGP-18) |
+| NGP-20 | P4: array-net expansion with const index | - | Verified |
+| NGP-21 | P4: non-const index still fails loud | - | Verified |
+| NGP-22 | P4: `urc[N]` replaces the hand-unrolled triple | - | Documented deviation |
 
 **Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (Design not yet run.)
 
