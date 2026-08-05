@@ -482,13 +482,30 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `vsrc` multiplies its value by the source-stepping scale; `isrc` covers TRANOP
-- [ ] Fixture is a bias circuit that **needs** source stepping to converge (plain Newton and gmin both fail) — otherwise the task proves nothing
-- [ ] Reverting makes the fixture fail to converge
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] `vsrc` multiplies its value by the source-stepping scale; `isrc` covers TRANOP
+      — **measured: both already did**, by two different routes. `vsrc`'s forced
+      value is scaled on its MNA force row (`device/analog/forces.rs`), `isrc`'s
+      DC value through `$simparam("sourceScaleFactor")` in its own body. TRANOP
+      runs as a DC-analysis solve (`load_dc` pins `Analysis::Dc`, and
+      `DcSolver::set_analysis_kind` only tags margin evaluation), so `isrc`'s
+      non-`tran` branch — the one carrying the scale — is what a transient's
+      t = 0 operating point takes. No model edit was needed; the deliverable is
+      the falsifiable proof the claim previously lacked (NGP-15)
+- [x] Fixture is a bias circuit that **needs** source stepping to converge (plain Newton and gmin both fail) — otherwise the task proves nothing
+- [x] Reverting makes the fixture fail to converge
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): honour the source-stepping scale in vsrc and isrc`
+
+**Delivered**: two fixtures, not one — `homotopy_bias` (stiff ladder, falsifies
+the `vsrc` half) and `homotopy_sink` (softer ladder + 25 mA sink, falsifies the
+`isrc` half). Neither alone falsifies both: the two sources break the ramp in
+different ways, and a ladder tuned to expose one survives the other's revert.
+They live in their own target `tests/ngspice_homotopy.rs` because adding two
+more JIT'd designs to `ngspice_validation.rs` tipped that binary over a
+Cranelift code-region limit (`TryFromIntError`, the known MOS3 function-count
+defect) in `ngspice_nmos3_id_vds_sweep`.
 
 ---
 

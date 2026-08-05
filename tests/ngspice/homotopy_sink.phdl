@@ -1,0 +1,29 @@
+// homotopy_sink — the twin of homotopy_sink.cir: the bias point that
+// falsifies the `isrc` half of NGP-11.
+//
+// The softer ladder (100 Ω, Is = 1e-16) still defeats plain Newton and gmin
+// stepping, and the 25 mA sink at the middle node `e` defeats the ramp itself
+// unless `isrc` honours `$simparam("sourceScaleFactor")`: at a partial scale
+// an unramped sink pulls more current out of `e` than the partially-driven
+// ladder can supply, so the ramp has no solution to track and the solve
+// diverges. Its twin `homotopy_bias` falsifies the `vsrc` half.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire vs: Electrical;
+    wire a: Electrical; wire b: Electrical; wire c: Electrical; wire d: Electrical;
+    wire e: Electrical; wire f: Electrical; wire g: Electrical; wire h: Electrical;
+    v1: vsrc (.p=vs,.n=gnd) { .dc = 10.0 };
+    r1: res (.p=vs,.n=a) { .r = 100.0 };
+    d1: dio (.p=a,.n=b) { .model = DioModel { .is = 1.0e-16 } };
+    d2: dio (.p=b,.n=c) { .model = DioModel { .is = 1.0e-16 } };
+    d3: dio (.p=c,.n=d) { .model = DioModel { .is = 1.0e-16 } };
+    d4: dio (.p=d,.n=e) { .model = DioModel { .is = 1.0e-16 } };
+    d5: dio (.p=e,.n=f) { .model = DioModel { .is = 1.0e-16 } };
+    d6: dio (.p=f,.n=g) { .model = DioModel { .is = 1.0e-16 } };
+    d7: dio (.p=g,.n=h) { .model = DioModel { .is = 1.0e-16 } };
+    d8: dio (.p=h,.n=gnd) { .model = DioModel { .is = 1.0e-16 } };
+    i1: isrc (.p=e,.n=gnd) { .dc = 0.025 };
+}

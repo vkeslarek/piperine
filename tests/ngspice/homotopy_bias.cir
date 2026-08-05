@@ -1,0 +1,28 @@
+* homotopy_bias — a bias point only source stepping reaches, falsifying the
+* `vsrc` half of NGP-11 (ngspice CKTsrcFact, vsrcload.c).
+*
+* Eight series diodes with Is = 1e-20 hang off a 10 V rail through 10 Ohm,
+* with a 25 mA sink at the middle of the ladder. On the piperine side plain
+* Newton fails and gmin stepping fails ("GMIN step g=1.000e-1 -> fail"); the
+* operating point below is reached only by the source-stepping ramp, and that
+* ramp exists only while the forced voltage ramps with the scale. Measured:
+* with the scale not applied to the voltage source's MNA force row every ramp
+* step solves the fully-driven ladder from a cold start, the solve diverges,
+* and this fixture fails.
+V1 vs 0 DC 10
+R1 vs a 10.0
+D1 a b DM
+D2 b c DM
+D3 c d DM
+D4 d e DM
+D5 e f DM
+D6 f g DM
+D7 g h DM
+D8 h 0 DM
+I1 e 0 DC 0.025
+.model DM D(is=1e-20)
+.control
+op
+print v(a) v(e) v(h)
+.endc
+.end

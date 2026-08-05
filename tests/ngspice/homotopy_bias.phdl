@@ -1,0 +1,28 @@
+// homotopy_bias — the twin of homotopy_bias.cir: the bias point that
+// falsifies the `vsrc` half of NGP-11.
+//
+// The eight-diode ladder off a 10 V rail defeats plain Newton and gmin
+// stepping, so only the source-stepping ramp reaches this operating point —
+// and only while `vsrc`'s forced value ramps with the scale. Its twin
+// `homotopy_sink` falsifies the `isrc` half; the two need different ladder
+// stiffness because the two sources fail the ramp in different ways.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire vs: Electrical;
+    wire a: Electrical; wire b: Electrical; wire c: Electrical; wire d: Electrical;
+    wire e: Electrical; wire f: Electrical; wire g: Electrical; wire h: Electrical;
+    v1: vsrc (.p=vs,.n=gnd) { .dc = 10.0 };
+    r1: res (.p=vs,.n=a) { .r = 10.0 };
+    d1: dio (.p=a,.n=b) { .model = DioModel { .is = 1.0e-20 } };
+    d2: dio (.p=b,.n=c) { .model = DioModel { .is = 1.0e-20 } };
+    d3: dio (.p=c,.n=d) { .model = DioModel { .is = 1.0e-20 } };
+    d4: dio (.p=d,.n=e) { .model = DioModel { .is = 1.0e-20 } };
+    d5: dio (.p=e,.n=f) { .model = DioModel { .is = 1.0e-20 } };
+    d6: dio (.p=f,.n=g) { .model = DioModel { .is = 1.0e-20 } };
+    d7: dio (.p=g,.n=h) { .model = DioModel { .is = 1.0e-20 } };
+    d8: dio (.p=h,.n=gnd) { .model = DioModel { .is = 1.0e-20 } };
+    i1: isrc (.p=e,.n=gnd) { .dc = 0.025 };
+}

@@ -89,12 +89,13 @@ impl ParityMatrix {
 
     /// The golden targets whose sources claim fixtures — a `Covered` cell is
     /// only falsifiable if one of these files actually runs the fixture.
-    const GOLDEN_TARGETS: [&'static str; 5] = [
+    const GOLDEN_TARGETS: [&'static str; 6] = [
         "ngspice_validation.rs",
         "ngspice_ac.rs",
         "ngspice_noise.rs",
         "ngspice_tran.rs",
         "ngspice_temp.rs",
+        "ngspice_homotopy.rs",
     ];
 
     /// The registry: every (model, domain) cell, covered or reasoned. Cells

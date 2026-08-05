@@ -1,0 +1,28 @@
+* homotopy_sink — a bias point only source stepping reaches, falsifying the
+* `isrc` half of NGP-11 (ngspice CKTsrcFact, isrcload.c).
+*
+* Eight series diodes with Is = 1e-16 hang off a 10 V rail through 100 Ohm,
+* with a 25 mA current sink at the middle of the ladder. On the piperine side
+* plain Newton fails and gmin stepping fails ("GMIN step g=1.000e-1 -> fail"),
+* so the operating point below is reached only by the source-stepping ramp.
+* Measured: with the sink's DC value not scaled by
+* $simparam("sourceScaleFactor") it pulls its full 25 mA out of a ladder the
+* ramp has only partially driven, the ramp has no solution to track, and this
+* fixture fails.
+V1 vs 0 DC 10
+R1 vs a 100
+D1 a b DM
+D2 b c DM
+D3 c d DM
+D4 d e DM
+D5 e f DM
+D6 f g DM
+D7 g h DM
+D8 h 0 DM
+I1 e 0 DC 0.025
+.model DM D(is=1e-16)
+.control
+op
+print v(a) v(e) v(h)
+.endc
+.end
