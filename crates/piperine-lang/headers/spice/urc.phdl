@@ -43,6 +43,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 use piperine::disciplines;
+use spice::diode;
 use spice::passives;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -178,4 +179,69 @@ pub mod urc_taper_5_k2 ( inout p : Electrical, inout n : Electrical, inout g : E
     c3 : cap ( .p=t3, .n=g ) { .c = 1.0e-8 * pow(2.0, 2.0) / 31.0 };
     c4 : cap ( .p=t4, .n=g ) { .c = 1.0e-8 * pow(2.0, 3.0) / 31.0 };
     c5 : cap ( .p=n,  .n=g ) { .c = 1.0e-8 * pow(2.0, 4.0) / 31.0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  urc_isperl_5_k2 — five-segment tapered URC ladder with ISPERL diode-mode
+//  shunt path (NGP-17, K = 2).
+//
+//  When ngspice's URC model is given `ISPERL > 0`, the per-segment shunt
+//  branch becomes a diode whose `cjo` carries the per-segment capacitance
+//  and whose `is` carries the per-segment saturation current
+//  (`urcsetup.c:97-113, 179-216`). This module is the linear-ladder analogue:
+//  same K = 2 taper as `urc_taper_5_k2`, but each shunt is a `dio` instance
+//  whose `DioModel` is the per-segment unit (`cjo = c_unit`, `is = i_unit`)
+//  and whose `area = K^i` scales the unit by the geometric factor (mirroring
+//  ngspice's per-instance `area = prop`). The diode replaces the capacitor —
+//  at DC the shunt conducts (the diode's exponential I-V); at AC it presents
+//  both conductance and junction cap.
+//
+//  Parameters chosen for a measurable but stable DC operating point:
+//      c_unit  = 1e-8 / 31   (matches urc_taper_5_k2's per-segment cap)
+//      i_unit  = 1e-12 / 31  (per-segment saturation current at area = 1)
+//  With `Vsource = 5 V`, `Rload = 1 kΩ` the diodes clamp the tap nodes
+//  well below the capacitive case's voltage — a discriminating test that
+//  fails if the diode shunt is missing or replaced by a cap.
+//
+//  Like `urc_taper_5_k2`, authored as direct `res`/`dio` leaves so the
+//  taper values bake at module-lowering time and reach the flat netlist
+//  without runtime staging. See the SPEC_DEVIATION note at the top of
+//  this file for the compile-time propagation gap behind that choice.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod urc_isperl_5_k2 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    wire t1 : Electrical;
+    wire t2 : Electrical;
+    wire t3 : Electrical;
+    wire t4 : Electrical;
+
+    // r_i = 1000 * 2^i / 31 (Ω) — same taper as urc_taper_5_k2.
+    r1 : res ( .p=p,  .n=t1 ) { .r = 1000.0 * pow(2.0, 0.0) / 31.0 };
+    r2 : res ( .p=t1, .n=t2 ) { .r = 1000.0 * pow(2.0, 1.0) / 31.0 };
+    r3 : res ( .p=t2, .n=t3 ) { .r = 1000.0 * pow(2.0, 2.0) / 31.0 };
+    r4 : res ( .p=t3, .n=t4 ) { .r = 1000.0 * pow(2.0, 3.0) / 31.0 };
+    r5 : res ( .p=t4, .n=n  ) { .r = 1000.0 * pow(2.0, 4.0) / 31.0 };
+
+    // d_i : dio with cjo=c_unit, is=i_unit, area=K^i (per-segment scaling).
+    // c_unit = 1e-8/31; i_unit = 1e-12/31.
+    d1 : dio ( .p=t1, .n=g ) {
+        .model = DioModel { .cjo = 1.0e-8 / 31.0, .is = 1.0e-12 / 31.0, .n = 1.0, .rs = 0.0 },
+        .area = pow(2.0, 0.0),
+    };
+    d2 : dio ( .p=t2, .n=g ) {
+        .model = DioModel { .cjo = 1.0e-8 / 31.0, .is = 1.0e-12 / 31.0, .n = 1.0, .rs = 0.0 },
+        .area = pow(2.0, 1.0),
+    };
+    d3 : dio ( .p=t3, .n=g ) {
+        .model = DioModel { .cjo = 1.0e-8 / 31.0, .is = 1.0e-12 / 31.0, .n = 1.0, .rs = 0.0 },
+        .area = pow(2.0, 2.0),
+    };
+    d4 : dio ( .p=t4, .n=g ) {
+        .model = DioModel { .cjo = 1.0e-8 / 31.0, .is = 1.0e-12 / 31.0, .n = 1.0, .rs = 0.0 },
+        .area = pow(2.0, 3.0),
+    };
+    d5 : dio ( .p=n,  .n=g ) {
+        .model = DioModel { .cjo = 1.0e-8 / 31.0, .is = 1.0e-12 / 31.0, .n = 1.0, .rs = 0.0 },
+        .area = pow(2.0, 4.0),
+    };
 }

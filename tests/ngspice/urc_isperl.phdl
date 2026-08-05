@@ -1,0 +1,20 @@
+// urc_isperl — PHDL twin of urc_isperl.cir: a tapered linear URC ladder
+// with the diode-mode shunt path selected by ISPERL (NGP-17). The piperine
+// `urc_isperl_5_k2` module mirrors ngspice's URC ISPERL branch: at every
+// tap node a `dio` instance whose `cjo` carries the per-segment capacitance,
+// whose `is` carries the per-segment saturation current, and whose `area`
+// scales both by the K = 2 geometric factor. At DC the diodes clamp the
+// tap nodes — the test falsifies a model that drops the diode shunt.
+use piperine::disciplines;
+use spice::passives;
+use spice::sources;
+use spice::urc;
+
+mod Top () {
+    wire gnd  : Electrical;
+    wire in   : Electrical;
+    wire out  : Electrical;
+    v1 : vsrc (.p=in, .n=gnd)  { .dc = 5.0 };
+    u1 : urc_isperl_5_k2 (.p=in, .n=out, .g=gnd);
+    rl : res  (.p=out, .n=gnd) { .r = 1.0e3 };
+}

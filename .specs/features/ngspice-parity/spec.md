@@ -311,7 +311,7 @@ re-derived; they do not design by anticipation.
 | NGP-14 | P2: BJT `VAF`/`VAR` temperature dependence | Design | Pending |
 | NGP-15 | P2: every closed deviation covered by a golden test | Design | Pending |
 | NGP-16 | P3: `urc` geometric taper (`K`) — no `gap-3` dependency | - | Verified |
-| NGP-17 | P3: `urc` `ISPERL` diode shunt path — no `gap-3` dependency | - | Pending |
+| NGP-17 | P3: `urc` `ISPERL` diode shunt path — no `gap-3` dependency | - | Verified |
 | NGP-18 | P3: `urc` re-authored generically after P4 | - | Pending |
 | NGP-19 | P3: `urc` `FMAX` → `N` auto-selection (depends on NGP-18) | - | Pending |
 | NGP-20 | P4: array-net expansion with const index | - | Pending |

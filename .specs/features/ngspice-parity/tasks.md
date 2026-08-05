@@ -542,9 +542,9 @@ defect) in `ngspice_nmos3_id_vds_sweep`.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `ISPERL` set ⇒ diode shunt path exists; unset ⇒ capacitive path unchanged
-- [ ] Fixture covers both
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] `ISPERL` set ⇒ diode shunt path exists; unset ⇒ capacitive path unchanged
+- [x] Fixture covers both
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(spice): add the urc ISPERL diode-mode shunt path`

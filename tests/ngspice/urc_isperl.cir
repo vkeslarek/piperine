@@ -1,0 +1,28 @@
+* urc_isperl — tapered URC with ISPERL diode-mode shunt path (NGP-17).
+* Five-segment linear RC ladder (K = 2, total R = 1 kΩ) with a diode at every
+* tap node instead of a capacitor. The diode model carries the per-segment
+* capacitance as `cjo` and a per-segment saturation current as `is`; the
+* instance `area = 2^i` scales both by the geometric taper, mirroring
+* ngspice's `URCsetup` per-segment `area = prop = K^i` (`urcsetup.c:97-113`).
+* At DC the diodes clamp the tap nodes well below the capacitive case — a
+* discriminating check that fails if the diode shunt is missing.
+V1 in 0 DC 5
+* Series R ladder, K = 2 taper, total R = 1 kΩ (r_i = 1000·2^i/31).
+R1 in t1 32.25806451612903
+R2 t1 t2 64.51612903225806
+R3 t2 t3 129.03225806451613
+R4 t3 t4 258.06451612903226
+R5 t4 out 516.1290322580645
+* Diode shunts: cjo and is at per-segment unit, area = 2^i scales both.
+D1 t1 0 DIOMOD AREA=1
+D2 t2 0 DIOMOD AREA=2
+D3 t3 0 DIOMOD AREA=4
+D4 t4 0 DIOMOD AREA=8
+D5 out 0 DIOMOD AREA=16
+.model DIOMOD D(CJO=3.225806451612903e-10 IS=3.225806451612903e-14 N=1 RS=0)
+Rload out 0 1k
+.control
+op
+print v(in) v(out)
+.endc
+.end

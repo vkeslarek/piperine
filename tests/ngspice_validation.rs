@@ -125,6 +125,20 @@ fn ngspice_urc_lump10() {
     ngspice_op_case("urc_lump10");
 }
 
+// ── URC ISPERL diode-mode shunt (NGP-17) ────────────────────────────────────
+//
+// DC operating-point cross-check of the diode-mode shunt path selected by
+// `ISPERL`: the `urc_isperl_5_k2` module puts a `dio` at every tap node
+// (per ngspice's `urcsetup.c:97-113`), and the diodes clamp the ladder
+// well below the capacitive case's voltage. The test fails if the diode
+// shunt is dropped (the cap-only `urc_taper_5_k2` ladder gives a very
+// different Vout at the same total R/C).
+
+#[test]
+fn ngspice_urc_isperl() {
+    ngspice_op_case("urc_isperl");
+}
+
 // ── DC sweep circuits (SPICE-08) ────────────────────────────────────────────
 
 /// Diode I–V (forward + reverse, 37 points): ngspice `.dc` + `wrdata` export
