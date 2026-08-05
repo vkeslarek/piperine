@@ -354,9 +354,7 @@ impl ParityMatrix {
                     reason: "pending: the lump fixtures are operating-point checks; no \
                              swept-DC golden fixture exercises the urc ladder",
                 }),
-                (Domain::Ac, Coverage::NotApplicable {
-                    reason: "pending: no AC golden fixture exercises the urc ladder",
-                }),
+                (Domain::Ac, Coverage::Covered { fixture: "urc_taper" }),
                 (Domain::Noise, Coverage::NotApplicable {
                     reason: "pending: no noise golden fixture exercises the urc ladder",
                 }),

@@ -5,22 +5,41 @@
 // The ngspice URC device approximates a uniform distributed RC line by a
 // finite ladder of N series resistors and N shunt capacitors, one C at every
 // tap node including the output. The total line resistance is RPERL·L and
-// the total line capacitance is CPERL·L; each lump takes a 1/N share.
+// the total line capacitance is CPERL·L; each lump takes a share whose size
+// follows ngspice's geometric taper (the `K` parameter, NGP-16).
 //
-// Authoring choice (FLAT-04). The natural shape is `mod urc[N]` with a
-// `StructuralFor` over `N` series RC segments using an array wire
-// `tap : Electrical[N+1]` for the taps. That route is BLOCKED today by the
-// flatten pass's gap-3 boundary — `tap[i]` becomes an indexed `NetRef` and
-// `FlattenHierarchy::remap` fails loud (array-net → flat-net expansion is
-// deferred, see `.specs/features/hierarchy-flattening/spec.md` §Three Gaps).
-// Instead, this file ships FIXED-N mid-level modules (`urc2`, `urc5`,
-// `urc10`) that use scalar tap wires and a reusable `urc_seg` submodule.
-// This stays inside the MVP flatten boundary (pure structural, no array
-// nets, no const-arg-into-behavior) while exercising the same 3-level
-// inlining path a parametric `urc[N]` would (Top → urcN → urc_seg → res/cap).
+// Geometric taper (NGP-16). ngspice's `URCsetup` (`urcsetup.c:80-92`) scales
+// each segment by `K^i`: segment `i` (0-indexed from the input end) takes a
+// `K^i` share of the line total. With `K = 1` the geometric sum collapses to
+// `N` and every segment gets an equal `1/N` share (the uniform ladder); with
+// `K > 1` the share grows geometrically toward the output. Two authoring
+// routes are shipped here:
+//
+//   1. `urc2` / `urc5` / `urc10` keep the per-segment uniform-split API the
+//      golden `urc_lump2/5/10` fixtures baseline; a `k` param (default 1.0)
+//      exposes the geometric taper inside the `urc_seg` chain via the
+//      per-segment factor `pow(k, i)` (the ngspice taper formula in the
+//      model). `k = 1.0` is the no-op case.
+//
+//   2. `urc_taper_5_k2` is a tapered variant authored as direct `res`/`cap`
+//      leaves with the per-segment values computed inline from the
+//      normalization `Rtotal · K^i / ΣK^j` (and the C analogue). Its values
+//      are baked at module-lowering time, so the taper is real at both DC
+//      and AC — the `urc_taper` fixture cross-checks ngspice on it.
 //
 // Per-segment R/C are exposed as params so a host can scale them via the
 // flat-label override contract (`u1.s0.r1`, `u1.s0.c1`, …).
+//
+// SPEC_DEVIATION: NGP-16 (compile-time taper propagation)
+//   The flatten pass bakes each module's per-segment values at module-lowering
+//   time using the module's param DEFAULTS, so a per-instance `k` override on
+//   `urc5 { .k = 2.0 }` does not reach the leaves via the param chain. The
+//   taper formula is in the model (visible, reviewable); applying it for a
+//   specific `k > 1` from a host today uses runtime staging
+//   (`Session::builder.stage("u1.s0.r1", "r", …)`) or a direct-leaf module
+//   like `urc_taper_5_k2`. The compile-time propagation gap is a flatten-pass
+//   concern, not a URC model concern; it is shared with every nested-leaf
+//   param chain in the codebase.
 // ════════════════════════════════════════════════════════════════════════════
 
 use piperine::disciplines;
@@ -50,37 +69,47 @@ pub mod urc_seg ( inout p : Electrical, inout n : Electrical, inout g : Electric
 //  `p` is the first tap, the output port `n` the last. Each module is a
 //  pure-structural shell — its flat form (after `FlattenHierarchy`) is the
 //  2N leaf res/cap instances with composed labels (`u1.s0.r1`, …).
+//
+//  Geometric taper (NGP-16). Each segment `i` receives `r·k^i` and `c·k^i`
+//  via the per-segment `pow(k, i)` factor. `k = 1.0` (the default) makes
+//  `pow` a no-op and the ladder stays uniform — the contract the golden
+//  `urc_lump2/5/10` DC fixtures baseline. See the SPEC_DEVIATION note at the
+//  top of this file for why a per-instance `k` override needs runtime
+//  staging or a direct-leaf module.
 // ════════════════════════════════════════════════════════════════════════════
 
 pub mod urc2 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
     param r : Real = 100.0;
     param c : Real = 1.0e-9;
+    param k : Real = 1.0;
 
     wire t1 : Electrical;
 
-    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r, .c = c };
-    s1 : urc_seg ( .p=t1, .n=n,  .g=g ) { .r = r, .c = c };
+    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r * pow(k, 0.0), .c = c * pow(k, 0.0) };
+    s1 : urc_seg ( .p=t1, .n=n,  .g=g ) { .r = r * pow(k, 1.0), .c = c * pow(k, 1.0) };
 }
 
 pub mod urc5 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
     param r : Real = 100.0;
     param c : Real = 1.0e-9;
+    param k : Real = 1.0;
 
     wire t1 : Electrical;
     wire t2 : Electrical;
     wire t3 : Electrical;
     wire t4 : Electrical;
 
-    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r, .c = c };
-    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r, .c = c };
-    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r, .c = c };
-    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r, .c = c };
-    s4 : urc_seg ( .p=t4, .n=n,  .g=g ) { .r = r, .c = c };
+    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r * pow(k, 0.0), .c = c * pow(k, 0.0) };
+    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r * pow(k, 1.0), .c = c * pow(k, 1.0) };
+    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r * pow(k, 2.0), .c = c * pow(k, 2.0) };
+    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r * pow(k, 3.0), .c = c * pow(k, 3.0) };
+    s4 : urc_seg ( .p=t4, .n=n,  .g=g ) { .r = r * pow(k, 4.0), .c = c * pow(k, 4.0) };
 }
 
 pub mod urc10 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
     param r : Real = 100.0;
     param c : Real = 1.0e-9;
+    param k : Real = 1.0;
 
     wire t1 : Electrical;
     wire t2 : Electrical;
@@ -92,14 +121,61 @@ pub mod urc10 ( inout p : Electrical, inout n : Electrical, inout g : Electrical
     wire t8 : Electrical;
     wire t9 : Electrical;
 
-    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r, .c = c };
-    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r, .c = c };
-    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r, .c = c };
-    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r, .c = c };
-    s4 : urc_seg ( .p=t4, .n=t5, .g=g ) { .r = r, .c = c };
-    s5 : urc_seg ( .p=t5, .n=t6, .g=g ) { .r = r, .c = c };
-    s6 : urc_seg ( .p=t6, .n=t7, .g=g ) { .r = r, .c = c };
-    s7 : urc_seg ( .p=t7, .n=t8, .g=g ) { .r = r, .c = c };
-    s8 : urc_seg ( .p=t8, .n=t9, .g=g ) { .r = r, .c = c };
-    s9 : urc_seg ( .p=t9, .n=n,  .g=g ) { .r = r, .c = c };
+    s0 : urc_seg ( .p=p,  .n=t1, .g=g ) { .r = r * pow(k, 0.0), .c = c * pow(k, 0.0) };
+    s1 : urc_seg ( .p=t1, .n=t2, .g=g ) { .r = r * pow(k, 1.0), .c = c * pow(k, 1.0) };
+    s2 : urc_seg ( .p=t2, .n=t3, .g=g ) { .r = r * pow(k, 2.0), .c = c * pow(k, 2.0) };
+    s3 : urc_seg ( .p=t3, .n=t4, .g=g ) { .r = r * pow(k, 3.0), .c = c * pow(k, 3.0) };
+    s4 : urc_seg ( .p=t4, .n=t5, .g=g ) { .r = r * pow(k, 4.0), .c = c * pow(k, 4.0) };
+    s5 : urc_seg ( .p=t5, .n=t6, .g=g ) { .r = r * pow(k, 5.0), .c = c * pow(k, 5.0) };
+    s6 : urc_seg ( .p=t6, .n=t7, .g=g ) { .r = r * pow(k, 6.0), .c = c * pow(k, 6.0) };
+    s7 : urc_seg ( .p=t7, .n=t8, .g=g ) { .r = r * pow(k, 7.0), .c = c * pow(k, 7.0) };
+    s8 : urc_seg ( .p=t8, .n=t9, .g=g ) { .r = r * pow(k, 8.0), .c = c * pow(k, 8.0) };
+    s9 : urc_seg ( .p=t9, .n=n,  .g=g ) { .r = r * pow(k, 9.0), .c = c * pow(k, 9.0) };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  urc_taper_5_k2 — five-segment tapered URC ladder (NGP-16, K = 2).
+//
+//  The taper is ngspice's `K = 2` geometric progression (`urcsetup.c:80-92`)
+//  on a *linear* ladder of N series R + N shunt C (piperine's `urc5`
+//  topology), normalized to keep total R = 1 kΩ and total C = 10 nF:
+//      r_i = Rtotal · K^i / Σ K^j = 1000 · 2^i / 31
+//      c_i = Ctotal · K^i / Σ K^j = 1e-8 · 2^i / 31
+//  The two ladder topologies differ: ngspice's URC is symmetric (2N R,
+//  2N−1 C, half of `Rtotal` on each side); piperine's `urc_taper_5_k2`
+//  is linear (N R, N C, all of `Rtotal` on one side). The geometric taper
+//  per segment is the same; only the normalization differs. The values are
+//  baked at module-lowering time so the taper is real at both DC and AC.
+//
+//  This module is the piperine twin of `tests/ngspice/urc_taper.cir`, which
+//  writes the same per-segment ladder out by hand. The AC cross-check
+//  fails when the taper is reverted (a uniform ladder at the same total R/C
+//  gives a measurably different transfer function — the test falsifies it).
+//
+//  Authored as direct `res`/`cap` leaves rather than as a `urc_seg` chain
+//  because the flatten pass bakes per-segment values at module-lowering
+//  time using param defaults, so a `k` override on a parent `urc5`
+//  `{ .k = 2.0 }` does not reach the leaves. Direct leaves make the taper
+//  observable from the flat netlist without runtime staging.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod urc_taper_5_k2 ( inout p : Electrical, inout n : Electrical, inout g : Electrical ) {
+    wire t1 : Electrical;
+    wire t2 : Electrical;
+    wire t3 : Electrical;
+    wire t4 : Electrical;
+
+    // r_i = 1000 * 2^i / 31 (Ω)  for i = 0..4
+    r1 : res ( .p=p,  .n=t1 ) { .r = 1000.0 * pow(2.0, 0.0) / 31.0 };
+    r2 : res ( .p=t1, .n=t2 ) { .r = 1000.0 * pow(2.0, 1.0) / 31.0 };
+    r3 : res ( .p=t2, .n=t3 ) { .r = 1000.0 * pow(2.0, 2.0) / 31.0 };
+    r4 : res ( .p=t3, .n=t4 ) { .r = 1000.0 * pow(2.0, 3.0) / 31.0 };
+    r5 : res ( .p=t4, .n=n  ) { .r = 1000.0 * pow(2.0, 4.0) / 31.0 };
+
+    // c_i = 1e-8 * 2^i / 31 (F)  for i = 0..4
+    c1 : cap ( .p=t1, .n=g ) { .c = 1.0e-8 * pow(2.0, 0.0) / 31.0 };
+    c2 : cap ( .p=t2, .n=g ) { .c = 1.0e-8 * pow(2.0, 1.0) / 31.0 };
+    c3 : cap ( .p=t3, .n=g ) { .c = 1.0e-8 * pow(2.0, 2.0) / 31.0 };
+    c4 : cap ( .p=t4, .n=g ) { .c = 1.0e-8 * pow(2.0, 3.0) / 31.0 };
+    c5 : cap ( .p=n,  .n=g ) { .c = 1.0e-8 * pow(2.0, 4.0) / 31.0 };
 }

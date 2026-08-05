@@ -169,6 +169,24 @@ fn ngspice_ac_rc() {
     }
 }
 
+/// NGP-16 + NGP-01: the tapered URC ladder. The fixture's `.cir` builds a
+/// linear RC ladder by hand with per-segment R/C growing geometrically
+/// (K = 2.0 toward the output), and the `.phdl` twin instantiates piperine's
+/// `urc5` with `.k = 2.0` — piperine applies the same per-segment scaling.
+/// The fixture fails when the taper is reverted (a uniform `urc5` ladder at
+/// the same total R/C produces a measurably different AC response, since the
+/// per-segment distribution shifts the poles).
+const URC_TAPER: AcCase =
+    AcCase { circuit: "urc_taper", node: "out", fstart: 1.0e2, fstop: 1.0e6, points: 41 };
+
+#[test]
+fn ngspice_urc_taper() {
+    match NgspiceHarness::detect() {
+        Some(harness) => URC_TAPER.run(&harness),
+        None => eprintln!("SKIP urc_taper: ngspice not on PATH"),
+    }
+}
+
 /// The fixture is anchored to its **closed form**, not only to ngspice: for a
 /// unit AC stimulus `v(out) = H(f) = 1/(1 + j·2πfRC)`, so at the corner
 /// `f = 1/(2πRC) = 100 kHz` the magnitude is exactly `1/√2` and the phase

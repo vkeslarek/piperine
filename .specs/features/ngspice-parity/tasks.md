@@ -520,11 +520,11 @@ defect) in `ngspice_nmos3_id_vds_sweep`.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Segment R/C follow the geometric taper, not a uniform split
-- [ ] New tapered fixture matches ngspice where a uniform ladder does not
-- [ ] The three existing `urc_lump2/5/10` checks still pass
-- [ ] Parity matrix: urc × DcOp stays `Covered`, and its ROADMAP ❌ is retired
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] Segment R/C follow the geometric taper, not a uniform split
+- [x] New tapered fixture matches ngspice where a uniform ladder does not
+- [x] The three existing `urc_lump2/5/10` checks still pass
+- [x] Parity matrix: urc × DcOp stays `Covered`, and its ROADMAP ❌ is retired
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): taper urc segments geometrically like ngspice`

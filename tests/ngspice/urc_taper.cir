@@ -1,0 +1,22 @@
+* urc_taper — tapered linear RC ladder AC cross-check (NGP-16 geometric taper).
+* N=5 series R + 5 shunt C, per-segment R/C grow by K=2 toward the output,
+* matching piperine's `urc5 { .k = 2.0 }` per-segment scaling. Total R = 1 kΩ
+* and total C = 10 nF; the per-segment base is Rtotal/(K^N-1)/(K-1) = 1000/31
+* and Ctotal/(K^N-1)/(K-1) = 10n/31, so segment i (0-indexed from input) takes
+* r = base·K^i and c = base·K^i.
+V1 in 0 DC 0 AC 1
+Rs1 in t1 32.25806451612903
+Rs2 t1 t2 64.51612903225806
+Rs3 t2 t3 129.03225806451613
+Rs4 t3 t4 258.06451612903226
+Rs5 t4 out 516.1290322580645
+Csh1 t1 0 3.225806451612903e-10
+Csh2 t2 0 6.451612903225806e-10
+Csh3 t3 0 1.2903225806451612e-09
+Csh4 t4 0 2.5806451612903225e-09
+Csh5 out 0 5.161290322580645e-09
+.control
+ac dec 10 100 1Meg
+wrdata urc_taper_ac v(out)
+.endc
+.end
