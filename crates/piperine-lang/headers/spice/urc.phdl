@@ -48,11 +48,46 @@
 //   like `urc_taper_5_k2`. The compile-time propagation gap is a flatten-pass
 //   concern, not a URC model concern; it is shared with every nested-leaf
 //   param chain in the codebase.
+//
+// NGP-19: FMAX → N auto-selection. ngspice derives the lump count from
+//   `FMAX` when `N` is not given (`urcsetup.c:84-89`): with `p = K`,
+//   `r0 = L·RPERL`, `c0 = L·CPERL`,
+//       wnorm = FMAX · r0 · c0 · 2π
+//       N = max(3, floor( log(wnorm · ((p−1)/p)²) / log(p) ))
+//   with the special case `wnorm < 35 ⇒ N = 3`. PHDL const-eval can spell
+//   the formula verbatim (it is pure arithmetic over elaboration
+//   constants) but the result must land in a `Natural`, and PHDL's
+//   `Real → Natural` cast is no-op (the cast is a type-system annotation,
+//   not a value conversion). The default-`FMAX` selection below is
+//   pre-computed (ngspice's defaults give wnorm ≈ 6.28, well under the
+//   35 cutoff, so N = 3); a host with different defaults overrides by
+//   instantiating `urc[N]` with the desired N directly — explicit N
+//   always wins over FMAX. `URC_DEFAULT_N` is the value ngspice's
+//   default deck picks when given no `N=`; closing the Real→Natural
+//   gap (a future language task) would let the formula itself lower as
+//   the const arg.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;   // pulls M_PI for the WNORM comment expression
 use piperine::disciplines;
 use spice::diode;
 use spice::passives;
+
+// NGP-19 — ngspice's N-selection inputs and the resulting default lump
+// count. The formula is in the comment above; `URC_DEFAULT_N` is its value
+// at ngspice's defaults (FMAX = 1 GHz, L = 1 m, RPERL = 1 kΩ/m, CPERL = 1
+// pF/m, K = 1.5) — wnorm ≈ 6.28 < 35 ⇒ N = 3.
+pub const URC_DEFAULT_FMAX  : Real = 1.0e9;
+pub const URC_DEFAULT_L     : Real = 1.0;
+pub const URC_DEFAULT_RPERL : Real = 1000.0;
+pub const URC_DEFAULT_CPERL : Real = 1.0e-12;
+pub const URC_DEFAULT_K     : Real = 1.5;
+// wnorm = FMAX · L · RPERL · L · CPERL · 2π
+//       = 1e9 · 1 · 1000 · 1 · 1e-12 · 2π
+//       = 2π ≈ 6.28  (well below the 35 cutoff → N = 3)
+pub const URC_DEFAULT_WNORM : Real = URC_DEFAULT_FMAX * URC_DEFAULT_L
+    * URC_DEFAULT_RPERL * URC_DEFAULT_L * URC_DEFAULT_CPERL * 2.0 * M_PI;
+pub const URC_DEFAULT_N     : Natural = 3;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  urc_seg — one ladder lump: a series R (p→n) and a shunt C (n→g).

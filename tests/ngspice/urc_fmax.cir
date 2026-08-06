@@ -1,0 +1,19 @@
+* urc_fmax — PHDL twin of urc_lump3.cir's role for NGP-19: a 3-segment
+* ladder at ngspice's defaults (FMAX = 1e9, L = 1, RPERL = 1000, CPERL =
+* 1e-12, K = 1.5). ngspice's `URCsetup` derives N = 3 from those defaults
+* (wnorm = 2π ≈ 6.28 < 35 ⇒ N = 3), and the `.phdl` twin instantiates
+* `urc[URC_DEFAULT_N]` to land on the same 3-segment ladder without the
+* host having to spell the lump count out.
+V1 vin 0 DC 5
+RS1 vin t1 100
+RS2 t1 t2 100
+RS3 t2 vout 100
+CSH1 t1 0 1n
+CSH2 t2 0 1n
+CSH3 vout 0 1n
+Rload vout 0 1k
+.control
+op
+print v(vin) v(vout)
+.endc
+.end

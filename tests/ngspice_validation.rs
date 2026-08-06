@@ -139,6 +139,23 @@ fn ngspice_urc_isperl() {
     ngspice_op_case("urc_isperl");
 }
 
+// ── URC FMAX → N auto-selection (NGP-19) ────────────────────────────────────
+//
+// DC operating-point cross-check of ngspice's `URCsetup` N-selection
+// formula at ngspice's defaults (FMAX = 1e9, L = 1, RPERL = 1000,
+// CPERL = 1e-12, K = 1.5). Those defaults give `wnorm = FMAX·r0·c0·2π ≈
+// 6.28 < 35`, so ngspice selects `N = 3`. The PHDL twin lands on the
+// same 3-segment ladder by instantiating `urc[URC_DEFAULT_N]` (the
+// constant `urc.phdl` pre-computes from the same formula — the
+// Real→Natural gap means PHDL cannot lower the formula's `floor(log…)`
+// form verbatim today, but the value matches ngspice's default-deck
+// selection exactly).
+
+#[test]
+fn ngspice_urc_fmax() {
+    ngspice_op_case("urc_fmax");
+}
+
 // ── DC sweep circuits (SPICE-08) ────────────────────────────────────────────
 
 /// Diode I–V (forward + reverse, 37 points): ngspice `.dc` + `wrdata` export

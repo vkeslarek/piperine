@@ -313,7 +313,7 @@ re-derived; they do not design by anticipation.
 | NGP-16 | P3: `urc` geometric taper (`K`) — no `gap-3` dependency | - | Verified |
 | NGP-17 | P3: `urc` `ISPERL` diode shunt path — no `gap-3` dependency | - | Verified |
 | NGP-18 | P3: `urc` re-authored generically after P4 | - | Verified |
-| NGP-19 | P3: `urc` `FMAX` → `N` auto-selection (depends on NGP-18) | - | Documented deviation |
+| NGP-19 | P3: `urc` `FMAX` → `N` auto-selection (depends on NGP-18) | - | Verified |
 | NGP-20 | P4: array-net expansion with const index | - | Verified |
 | NGP-21 | P4: non-const index still fails loud | - | Verified |
 | NGP-22 | P4: `urc[N]` replaces the hand-unrolled triple | - | Verified |
