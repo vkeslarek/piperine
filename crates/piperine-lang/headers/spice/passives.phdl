@@ -178,11 +178,13 @@ pub analog cap {
     // In DC, ddt → 0 (capacitor is open). ✓
     I(p, n) <+ m * ddt(c_eff * V(p, n));
 
-    // ── Initial condition (capgetic.c) ───────────────────────────────────────
-    // `ic` sets the UIC start voltage. Forcing a branch inside `@ initial` is
-    // not yet lowerable in the JIT (see piperine ROADMAP "@initial cannot force
-    // a branch"); `ic` is reserved until then rather than making the whole
-    // device fail to compile.
+    // ── Initial condition (capgetic.c, NGP-10) ───────────────────────────────
+    // ngspice: `ic` seeds the UIC start voltage across the capacitor. The
+    // default-ic filter in `AnalogInstance::initial_conditions` suppresses
+    // the seed unless `ic` was explicitly set at the instance site
+    // (`.ic = <value>`), so a model that declares
+    // `param ic : Real = 0.0` does not clamp every transient to zero.
+    @ initial { V(p, n) <- ic; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -441,13 +441,32 @@ T24
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `ic` on cap/ind/diode drives the t=0 state under UIC
-- [ ] Fixture runs `.tran … uic` and matches ngspice's `CKTsetIC` behaviour
-- [ ] A run *without* UIC is unaffected (no regression on existing transient behaviour)
-- [ ] Gate check passes: `cargo test --workspace`
+- [x] `ic` on cap/diode drives the t=0 state under UIC — `uic_rc` golden + the
+      `v(out)@0 = 2 V` analytic anchor in `tests/ngspice_tran.rs::ngspice_uic_rc`
+- [x] Fixture runs `.tran … uic` and matches ngspice's `CKTsetIC` behaviour
+      — `uic_rc.cir`'s `tran 0.1u 10u uic` vs piperine's per-instance `.ic=2.0`,
+      `TRAN` tolerance, 100 print points
+- [x] A run *without* UIC is unaffected — the default-`ic=0` filter in
+      `AnalogInstance::initial_conditions` (suppresses a seed whose backing
+      params are all at declared defaults) keeps `ngspice_tran_rc`,
+      `the_rc_fixture_matches_its_analytic_charging_curve`, and
+      `xfmr_coupled_lc_energy_transfer` bit-identical
+- [x] Gate check passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
-**Commit**: `fix(spice): enforce ic on cap, ind and diode under UIC`
+**Commit**: `fix(spice): enforce ic on cap and diode under UIC`
+
+**Delivered**: cap and diode only. **`ind` is a documented deviation** (SPEC
+deviation, recorded in `spec.md` Requirement Traceability + ROADMAP): ngspice's
+`ind.IC` is a **current** seed (`indload.c` converts it to flux `L·I`), but
+`collect_initial_conditions` (`flatten/analog.rs:895`) only collects
+`Potential` seeds — a current-seed mechanism is a separate codegen feature.
+The codegen gap that previously blocked this task (UIC default-`ic=0`
+regressing every transient) is closed by the per-seed param-dependency mask
+in `AnalogInstance::initial_conditions`/`AnalogCompiler`/`AnalogKernel`
+(`instance.rs`, `compile.rs`, `kernel.rs`); the UIC one-step hold
+(`transient.rs:738`) is released immediately after the DC operating point so
+the seed's first integration step is natural (matching ngspice's `CKTsetIC`).
 
 ---
 

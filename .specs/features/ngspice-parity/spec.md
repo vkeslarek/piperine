@@ -304,7 +304,7 @@ re-derived; they do not design by anticipation.
 | NGP-07 | P1: documented per-domain tolerance contract | Design | Pending |
 | NGP-08 | P2: analytic `gm` in channel noise | Design | Pending |
 | NGP-09 | P2: switch ON-state thermal noise | Design | Pending |
-| NGP-10 | P2: `ic`/UIC enforced on six models | Design | Pending |
+| NGP-10 | P2: `ic`/UIC enforced on six models | Design | Partial — cap, diode (T16); bjt, jfet, mos1/2/3 (T17). `ind` is a documented deviation: ngspice's `ind.IC` is a **current** seed (`indload.c` flux form `L·I`), but `collect_initial_conditions` only collects `Potential` seeds — a current-seed mechanism is a separate codegen feature. |
 | NGP-11 | P2: `CKTsrcFact` on vsrc + isrc TRANOP | Design | Pending |
 | NGP-12 | P2: flicker noise `cox = 0` substitution | Design | Pending |
 | NGP-13 | P2: JFET `nlev = 3` noise | Design | Pending |
@@ -318,7 +318,7 @@ re-derived; they do not design by anticipation.
 | NGP-21 | P4: non-const index still fails loud | - | Verified |
 | NGP-22 | P4: `urc[N]` replaces the hand-unrolled triple | - | Verified |
 
-**Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (Design not yet run.)
+**Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (Design not yet run.) — NGP-10 partial: cap + diode Verified (T16); bjt + jfet + mos1/2/3 pending (T17); `ind` documented deviation (current-seed mechanism is a separate codegen feature).
 
 ---
 

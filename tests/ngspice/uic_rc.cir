@@ -1,0 +1,17 @@
+* uic_rc — UIC initial-condition cross-check for the cap's `ic` param
+* (NGP-10 part 1). The cap starts at 2 V (its `IC=2.0` line under `uic`)
+* and the source steps from 0 to 5 V at t=0; v(out) is the first-order
+* response 2 + (5 - 2)·(1 - exp(-t/RC)) = 5 - 3·exp(-t/RC). The fixture
+* fails when the `ic` seed is dropped (v(out) starts from 0 V instead of
+* 2 V) or when a default-ic=0 clamp misfires (v(out) pinned to 0 V for
+* the whole run). `.options interp` makes ngspice interpolate its
+* internal adaptive steps onto the print grid before recording.
+V1 vin 0 DC 5
+R1 vin out 1000
+C1 out 0 1.5915494309189535e-9 IC=2.0
+.options interp
+.control
+tran 0.1u 10u uic
+wrdata uic_rc_tran v(out)
+.endc
+.end

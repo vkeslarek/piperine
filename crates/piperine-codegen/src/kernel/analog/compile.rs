@@ -339,9 +339,34 @@ impl<'m> AnalogCompiler<'m> {
         };
 
         // `@initial` UIC seeds: one param-only row per condition (its value),
-        // plus the terminal pair it seeds.
+        // plus the terminal pair it seeds. Per-seed param-dependency bitmasks
+        // (NGP-10): a seed is only emitted at instance time when one of its
+        // backing params was actually overridden at the instance site, so a
+        // model with a default `ic = 0.0` does not clamp every transient to
+        // zero. The mask is built here (compile-time, by walking the seed
+        // expression) and consulted in `AnalogInstance::initial_conditions`
+        // against the per-instance `param_given_mask`.
         let ic_terminals: Vec<(NodeId, NodeId)> =
             initial_conditions.iter().map(|(p, m, _)| (*p, *m)).collect();
+        let param_id_by_name: HashMap<String, u32> = self
+            .module
+            .symbols
+            .params()
+            .map(|(id, p)| (p.name.clone(), id.0))
+            .collect();
+        let ic_param_deps: Vec<u64> = initial_conditions
+            .iter()
+            .map(|(_, _, v)| {
+                let mut mask = 0u64;
+                visit_all(v, &mut |e| {
+                    if let PomExpr::Ident(name) = e
+                        && let Some(&id) = param_id_by_name.get(name) {
+                        mask |= 1 << id.min(63);
+                    }
+                });
+                mask
+            })
+            .collect();
         let ic_values_id = if initial_conditions.is_empty() {
             None
         } else {
@@ -943,6 +968,7 @@ impl<'m> AnalogCompiler<'m> {
             disto2_charge_start,
             initial_condition_terminals: ic_terminals,
             initial_conditions,
+            initial_condition_param_deps: ic_param_deps,
             opvars,
             opvar_names,
             var_names,

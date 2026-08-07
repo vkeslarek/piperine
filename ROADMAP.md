@@ -80,11 +80,11 @@ postures, SOA).
 | Model | File | DC op (golden) | DC sweep | AC | Noise | Transient | Temperature | Open |
 |---|---|---|---|---|---|---|---|---|
 | res | `passives.phdl` | ✅ `divider` | ✅ `diode_iv` | ✅ `ac_rc` | ✅ `noise_rc` | ✅ `tran_rc` | pending: needs a tempco-bearing fixture | per-instance `bv_max` override missing |
-| cap | `passives.phdl` | n/a (open at DC) | n/a | ✅ `ac_rc` | ✅ `noise_rc` | ✅ `tran_rc` | pending: no temp sweep | `ic` UIC declared but unwired (T16) — the `@initial` mechanism exists, models not yet wired to it |
-| ind | `passives.phdl` | pending | pending | pending | n/a (reactive, noiseless) | pending | pending | `ic` UIC declared but unwired (T16) |
+| cap | `passives.phdl` | n/a (open at DC) | n/a | ✅ `ac_rc` | ✅ `noise_rc` | ✅ `tran_rc` + ✅ `uic_rc` (T16) | pending: no temp sweep | — |
+| ind | `passives.phdl` | pending | pending | pending | n/a (reactive, noiseless) | pending | pending | `ic` UIC **documented deviation** (T16): ngspice's `ind.IC` is a **current** seed (`indload.c` flux `L·I`); `collect_initial_conditions` only collects `Potential` seeds — a current-seed mechanism is a separate codegen feature |
 | sw | `switches.phdl` | pending | pending | pending | ✅ `noise_switch` | pending | pending | ON-state thermal noise landed (T13); negative hysteresis approximately right |
 | csw | `switches.phdl` | pending | pending | pending | ✅ `noise_csw` | pending | pending | ON-state thermal noise landed (T13) |
-| dio | `diode.phdl` | ✅ `rdiode` | ✅ `diode_iv` | pending | pending | pending | ✅ `temp_diode` | LEVEL=3 geometry path (w/l→area) missing; `ic` UIC declared but unwired (T16) |
+| dio | `diode.phdl` | ✅ `rdiode` | ✅ `diode_iv` | pending | pending | ✅ `uic_rc` (T16) | ✅ `temp_diode` | LEVEL=3 geometry path (w/l→area) missing |
 | jfet | `jfet.phdl` | ✅ `jfet_bias` | ✅ `jfet_id_vds` | pending | ✅ `noise_jfet` (analytic gm, nlev=3 — T12) | pending | pending | `ic` UIC declared but unwired (T17) |
 | bjt | `bjt.phdl` | ✅ `bjt_ce` | pending | pending | pending | pending | ✅ `temp_bjt` (VAF/VAR temp — T15) | SPICE2-era temperature model only (~50 modern temp-coeff params absent); excess phase (PTF) dropped (defaults to 0 → exact); `ic` UIC declared but unwired (T17) |
 | mos1 | `mos.phdl` | ✅ `nmos_fixed` | ✅ `nmos_id_vgs` | pending | ✅ `noise_mos_linear` (analytic gm — T11) | pending | pending | flicker `cox=0` substitute landed (T14); mos3's `badMos3` alt mode intentionally absent; `ic` UIC declared but unwired (T17) |
@@ -101,11 +101,18 @@ postures, SOA).
 2. **`ic`/UIC initial conditions.** The 2026-07-28 audit's *"`@initial`
    branch-forcing in the JIT"* blocker claim was **stale** — the mechanism
    (`flatten/analog.rs:876` collecting `@initial { V(p,n) <- ic; }` as UIC
-   seeds, `analyses/transient.rs:228`'s hold clamps) landed and works. What
-   remains is ordinary model-wiring work: T16 (cap/ind/diode) and T17
-   (bjt/jfet/mos1/2/3) are pending in `ngspice-parity`. A separate open:
-   `cap`'s default `ic=0` always-clamp is a distinct, narrower issue from
-   the (now-closed) JIT-mechanism gap.
+   seeds, `analyses/transient.rs:228`'s hold clamps) landed and works. T16
+   closed the cap + diode wiring and the narrow codegen gap that had kept
+   the wiring global-off (per-seed param-dependency mask in
+   `AnalogInstance::initial_conditions` suppresses a seed whose backing
+   params are all at declared defaults, so the model default `ic=0` does
+   not clamp every transient to zero); the UIC one-step hold is released
+   right after the DC operating point so the first integration step is
+   natural (matching ngspice's `CKTsetIC`). T17 (bjt/jfet/mos1/2/3) is
+   pending in `ngspice-parity`. **`ind` documented deviation:** ngspice's
+   `ind.IC` is a **current** seed (`indload.c` flux form `L·I`), but
+   `collect_initial_conditions` only collects `Potential` seeds — a
+   current-seed mechanism is a separate codegen feature.
 3. **Source-stepping homotopy (`CKTsrcFact`).** **Closed** by T18 — the
    audit's negative was a false alarm. `vsrc`'s forced value is scaled on
    its MNA force row; `isrc`'s DC value scales through

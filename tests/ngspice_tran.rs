@@ -141,6 +141,52 @@ fn ngspice_tran_rc() {
     }
 }
 
+/// NGP-10 part 1 (cap `ic`/UIC): the cap's per-instance `.ic = 2.0` seeds
+/// the t=0 voltage, the way ngspice's `IC=2.0 … uic` does. The fixture's
+/// response is `v(t) = 5 − 3·exp(−t/RC)` (a step from 2 V toward 5 V) — a
+/// discriminating check that fails when the seed is dropped (v(out) starts
+/// at 0 V) or when a default-ic clamp misfires (v(out) pinned to 0 V for
+/// the whole run). The per-instance `.ic` reaches the solver through the
+/// cap body's `@ initial { V(p,n) <- ic; }` and the
+/// `AnalogInstance::initial_conditions` filter, so no host-side `ic` map
+/// is passed (the device-level seed is what drives UIC here).
+#[test]
+fn ngspice_uic_rc() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP uic_rc: ngspice not on PATH");
+        return;
+    };
+    let export = "uic_rc_tran";
+    let golden = harness
+        .run_export("uic_rc", "tran", &[(export, 2)])
+        .unwrap_or_else(|e| panic!("{e}"))
+        .remove(0)
+        .pairs();
+
+    let mut session = harness.session("uic_rc").unwrap_or_else(|e| panic!("{e}"));
+    // No host-side `ic` map: the cap's per-instance `.ic = 2.0` is the
+    // UIC seed source. The solver still computes the DC operating point
+    // and overlays the device's initial-condition clamps on top.
+    let trace = session
+        .tran(10.0e-6, None, 0.0, &SolverConfig::default(), None, false, &[])
+        .map_err(|e| TranCase::convergence_failure("uic_rc", e))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let actual = trace
+        .v("out".to_string())
+        .unwrap_or_else(|e| panic!("uic_rc: no v(out) in the transient trace: {e}"));
+
+    TranCase::compare("uic_rc", "out", &golden, &actual)
+        .unwrap_or_else(|e| panic!("{e}"));
+    // The closed-form anchor: v(0) = 2 V (the ic seed); v(∞) → 5 V.
+    let v0 = actual.at(0.0);
+    assert!(
+        (v0 - 2.0).abs() < 1.0e-3,
+        "v(out)@0 = {v0:.6e}, expected the ic seed 2.0 V \
+         (a default-ic clamp would give 0, a dropped seed would give the DC OP)"
+    );
+    eprintln!("PASS uic_rc (transient, {} print points, UIC seed = 2 V)", golden.len());
+}
+
 /// The fixture is anchored to its **closed form**, not only to ngspice: the
 /// charging curve is `v(t) = 1 − exp(−t/RC)` with `RC = 1.5915494309189535 µs`,
 /// so at `t = RC` the waveform reads `1 − e⁻¹` and at `t = 5·RC` it reads

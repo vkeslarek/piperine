@@ -735,7 +735,17 @@ impl<'a> TransientSolver<'a> {
         dc_solver.system.uic_clamps = uic_clamps.clone();
         let dc_result = dc_solver.solve()?;
         self.system.uic_clamps = uic_clamps;
-        self.system.uic_hold = !self.system.uic_clamps.is_empty();
+        // The clamp's job is done once the DC operating point in
+        // `dc_result` has propagated the seed into the rest of the circuit
+        // (NGP-10): the t=0 node values are seeded into the companion's
+        // history buffer by `push_initial_conditions` below, and the first
+        // integration step reads them naturally. Holding the clamp through
+        // that first step instead introduces a startup error ngspice's
+        // `CKTsetIC` does not have — it pins the seeded node to its seed
+        // value for the entire first step's width, costing ~step/τ of
+        // integration time. Releasing the clamp here lets the natural
+        // companion integration take over from the seeded history.
+        self.system.uic_hold = false;
 
         let _netlist = self.system.circuit.netlist();
         let iv_dc = self.system.circuit.netlist().initial_values(dc_result.values());

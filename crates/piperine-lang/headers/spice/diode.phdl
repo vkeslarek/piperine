@@ -471,9 +471,14 @@ pub analog dio {
         I(pp, n) <+ flicker_noise(m * model.kf * pow(abs(cd / m), model.af), 1.0);
     }
 
-    // ── Initial condition (diogetic.c) ───────────────────────────────────────
-    // `ic` seeds the UIC start voltage. Reserved until the JIT can force a
-    // branch inside `@ initial` (see piperine ROADMAP).
+    // ── Initial condition (diogetic.c, NGP-10) ───────────────────────────────
+    // ngspice: `ic` seeds the UIC start voltage across the junction
+    // (`V(p,n)` = `V(pp,n)` once the series resistance is accounted for).
+    // The default-ic filter in `AnalogInstance::initial_conditions`
+    // suppresses the seed unless `ic` was explicitly set at the instance
+    // site, so a model that declares `param ic : Real = 0.0` does not
+    // clamp every transient to zero.
+    @ initial { V(p, n) <- ic; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

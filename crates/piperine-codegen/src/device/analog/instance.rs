@@ -668,6 +668,14 @@ impl AnalogInstance {
     /// `@initial` UIC seeds: `(plus, minus, value)` in netlist references —
     /// the branch voltage `V(plus,minus)` the device wants at t=0 (SPICE
     /// `.ic`). Values are instance-constant. Ground terminals are `None`.
+    ///
+    /// A seed whose backing param(s) are all at their declared defaults is
+    /// suppressed (NGP-10): a model with `param ic : Real = 0.0` and an
+    /// `@initial { V(p,n) <- ic; }` body would otherwise clamp every
+    /// transient to zero. The seed fires only when the user actually wrote
+    /// `ic=<value>` at the instance site (the param is in
+    /// `param_given_mask`). A seed that reads no params (a constant seed)
+    /// fires unconditionally.
     pub fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
         let nic = self.kernel.num_initial_conditions();
         if nic == 0 {
@@ -677,11 +685,22 @@ impl AnalogInstance {
         let mut vals = vec![0.0; nic];
         self.kernel
             .eval_initial_conditions(&zeros, &self.params, &self.state, &self.vars, &self.sim, &mut vals);
+        let deps = self.kernel.initial_condition_param_deps();
         self.kernel
             .initial_condition_terminals()
             .iter()
-            .zip(vals)
-            .map(|(&(p, m), v)| (self.terminal_ref(p), self.terminal_ref(m), v))
+            .zip(vals.iter().zip(deps.iter()))
+            .filter_map(|(&(p, m), (&v, &dep_mask))| {
+                // A seed with no param dependencies fires unconditionally
+                // (it is a constant seed, not a defaultable one). A seed
+                // with param dependencies fires only when at least one of
+                // those params was given at the instance site — the model's
+                // declared default does not count as "given".
+                if dep_mask != 0 && (dep_mask & self.sim.param_given_mask) == 0 {
+                    return None;
+                }
+                Some((self.terminal_ref(p), self.terminal_ref(m), v))
+            })
             .collect()
     }
 

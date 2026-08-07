@@ -240,6 +240,13 @@ pub struct AnalogKernel {
     /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
     pub(super) initial_condition_terminals: Vec<(NodeId, NodeId)>,
     pub(super) initial_conditions: Option<AnalogFn>,
+    /// Per-seed bitmask of param ids the seed expression references
+    /// (NGP-10). Bit `i` set means the seed reads param `i`. A seed fires
+    /// at instance time only when at least one of its backing params was
+    /// actually overridden at the instance site — a default `ic = 0.0`
+    /// would otherwise clamp every transient to zero. The mask is `0` for
+    /// a constant seed (no param references), which then fires unconditionally.
+    pub(super) initial_condition_param_deps: Vec<u64>,
     /// Operating-point variable evaluation (ABI-30): one row per non-shadow
     /// module `var`, reading the same `state`/`vars` banks the residual
     /// uses, evaluated against the final post-solve voltages. `None` when
@@ -512,6 +519,16 @@ impl AnalogKernel {
     /// Branch terminals `(plus, minus)` per `@initial` seed.
     pub fn initial_condition_terminals(&self) -> &[(NodeId, NodeId)] {
         &self.initial_condition_terminals
+    }
+
+    /// Per-seed param-dependency bitmasks (NGP-10), aligned with
+    /// [`initial_condition_terminals`](Self::initial_condition_terminals).
+    /// Bit `i` set means the seed reads param `i`. A seed fires at instance
+    /// time only when at least one of its backing params was overridden at
+    /// the instance site — `AnalogInstance::initial_conditions` consults
+    /// this against its `param_given_mask`.
+    pub fn initial_condition_param_deps(&self) -> &[u64] {
+        &self.initial_condition_param_deps
     }
 
     /// Evaluate the `@initial` seed values (param-only) into `out`.
