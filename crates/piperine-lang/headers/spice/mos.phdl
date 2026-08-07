@@ -102,6 +102,12 @@ pub mod mos1 (
     param temp  : Real = 0.0;
     param dtemp : Real = 0.0;
     param off   : Boolean = 0;
+    // UIC initial conditions (mos1load.c:399-402, NGP-10): ngspice's netlist
+    // `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0 under `.tran … uic`. The
+    // default-ic filter in `AnalogInstance::initial_conditions` suppresses a
+    // seed whose backing param is at its declared default.
+    param ic_vds : Real = 0.0;
+    param ic_vgs : Real = 0.0;
 
     wire dp : Electrical;          // drain'  (if RD > 0)
     wire sp : Electrical;          // source' (if RS > 0)
@@ -497,6 +503,18 @@ pub analog mos1 {
             1.0
         );
     }
+
+    // ── Initial condition (mos1load.c:399-402, NGP-10) ────────────────────────
+    // ngspice's `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0 under UIC. The
+    // default-ic filter suppresses the seed unless the user actually wrote
+    // `.ic_vds=…` or `.ic_vgs=…` at the instance site. The instance's
+    // drain'/source' terminals (internal to the series-resistance network)
+    // are not what ngspice seeds — the external d/s ports are, with the
+    // series resistances solved consistently by the UIC operating point.
+    @ initial {
+        V(d, s) <- ic_vds;
+        V(g, s) <- ic_vgs;
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -617,6 +635,9 @@ pub mod mos2 (
     param temp  : Real = 0.0;
     param dtemp : Real = 0.0;
     param off   : Boolean = 0;
+    // UIC initial conditions (mos2load.c, NGP-10): same shape as mos1.
+    param ic_vds : Real = 0.0;
+    param ic_vgs : Real = 0.0;
 
     wire dp : Electrical;
     wire sp : Electrical;
@@ -1282,6 +1303,13 @@ pub analog mos2 {
             1.0
         );
     }
+
+    // ── Initial condition (mos2load.c, NGP-10) ────────────────────────────────
+    // As mos1; ngspice's `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0.
+    @ initial {
+        V(d, s) <- ic_vds;
+        V(g, s) <- ic_vgs;
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1384,6 +1412,9 @@ pub mod mos3 (
     param temp  : Real = 0.0;
     param dtemp : Real = 0.0;
     param off   : Boolean = 0;
+    // UIC initial conditions (mos3load.c, NGP-10): same shape as mos1.
+    param ic_vds : Real = 0.0;
+    param ic_vgs : Real = 0.0;
 
     wire dp : Electrical;
     wire sp : Electrical;
@@ -1922,5 +1953,12 @@ pub analog mos3 {
             model.kf * pow(abs(cd_term), model.af) / (w_eff * m * l_eff * cox2),
             1.0
         );
+    }
+
+    // ── Initial condition (mos3load.c, NGP-10) ────────────────────────────────
+    // As mos1; ngspice's `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0.
+    @ initial {
+        V(d, s) <- ic_vds;
+        V(g, s) <- ic_vgs;
     }
 }

@@ -1,0 +1,26 @@
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::mos;
+
+// uic_mos — PHDL twin of uic_mos.cir (NGP-10 part 2). The mos1's
+// `.ic_vds = 2.0, .ic_vgs = 5.0` writes the same `IC=2.0,5.0` line
+// ngspice's `.tran … uic` reads. The `@ initial { V(d,s) <- ic_vds; V(g,s)
+// <- ic_vgs; }` block in `headers/spice/mos.phdl`'s mos1 body produces the
+// seeds; the default-ic filter in `AnalogInstance::initial_conditions`
+// suppresses them for any mos1 that keeps the defaults `ic_vds = 0.0`/
+// `ic_vgs = 0.0`, so existing transient fixtures that do NOT set `.ic_v*`
+// continue to start from their own DC operating point.
+mod Top () {
+    wire gnd : Electrical;
+    wire in  : Electrical;
+    wire out : Electrical;
+    vin : vsrc (.p=in,  .n=gnd) { .dc = 5.0 };
+    c1  : cap  (.p=out, .n=gnd) { .c = 1.0e-7, .ic = 2.0 };
+    m1  : mos1 (.d=out, .g=in, .s=gnd, .b=gnd) {
+        .l = 2.0e-6, .w = 10.0e-6, .ic_vds = 2.0, .ic_vgs = 5.0,
+        .model = Mos1Model {
+            .vto = 1.0, .kp = 2.0e-5, .lambda = 0.02, .gamma = 0.5, .phi = 0.65
+        }
+    };
+}

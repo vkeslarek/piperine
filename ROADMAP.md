@@ -85,9 +85,9 @@ postures, SOA).
 | sw | `switches.phdl` | pending | pending | pending | ✅ `noise_switch` | pending | pending | ON-state thermal noise landed (T13); negative hysteresis approximately right |
 | csw | `switches.phdl` | pending | pending | pending | ✅ `noise_csw` | pending | pending | ON-state thermal noise landed (T13) |
 | dio | `diode.phdl` | ✅ `rdiode` | ✅ `diode_iv` | pending | pending | ✅ `uic_rc` (T16) | ✅ `temp_diode` | LEVEL=3 geometry path (w/l→area) missing |
-| jfet | `jfet.phdl` | ✅ `jfet_bias` | ✅ `jfet_id_vds` | pending | ✅ `noise_jfet` (analytic gm, nlev=3 — T12) | pending | pending | `ic` UIC declared but unwired (T17) |
-| bjt | `bjt.phdl` | ✅ `bjt_ce` | pending | pending | pending | pending | ✅ `temp_bjt` (VAF/VAR temp — T15) | SPICE2-era temperature model only (~50 modern temp-coeff params absent); excess phase (PTF) dropped (defaults to 0 → exact); `ic` UIC declared but unwired (T17) |
-| mos1 | `mos.phdl` | ✅ `nmos_fixed` | ✅ `nmos_id_vgs` | pending | ✅ `noise_mos_linear` (analytic gm — T11) | pending | pending | flicker `cox=0` substitute landed (T14); mos3's `badMos3` alt mode intentionally absent; `ic` UIC declared but unwired (T17) |
+| jfet | `jfet.phdl` | ✅ `jfet_bias` | ✅ `jfet_id_vds` | pending | ✅ `noise_jfet` (analytic gm, nlev=3 — T12) | pending | pending | — |
+| bjt | `bjt.phdl` | ✅ `bjt_ce` | pending | pending | pending | pending | ✅ `temp_bjt` (VAF/VAR temp — T15) | SPICE2-era temperature model only (~50 modern temp-coeff params absent); excess phase (PTF) dropped (defaults to 0 → exact) |
+| mos1 | `mos.phdl` | ✅ `nmos_fixed` | ✅ `nmos_id_vgs` | pending | ✅ `noise_mos_linear` (analytic gm — T11) | ✅ `uic_mos` (T17) | pending | flicker `cox=0` substitute landed (T14); mos3's `badMos3` alt mode intentionally absent |
 | mos2 | `mos.phdl` | ✅ `nmos2_fixed` | ✅ `nmos2_id_vds` | pending | ✅ `noise_mos2_linear` | pending | pending | as mos1; `.disto` blocked (Cranelift function-count — P1 backlog) |
 | mos3 | `mos.phdl` | ✅ `nmos3_fixed` | ✅ `nmos3_id_vds` | pending | ✅ `noise_mos3_linear` | pending | pending | as mos1; `.disto` blocked (P1 backlog) |
 | tline | `tline.phdl` | pending (in-process `tests/tline.rs` only, not vs ngspice) | pending | pending | n/a (lossless, noiseless) | pending | pending | `FREQ/NL` delay spec missing; IC params missing |
@@ -106,13 +106,18 @@ postures, SOA).
    the wiring global-off (per-seed param-dependency mask in
    `AnalogInstance::initial_conditions` suppresses a seed whose backing
    params are all at declared defaults, so the model default `ic=0` does
-   not clamp every transient to zero); the UIC one-step hold is released
-   right after the DC operating point so the first integration step is
-   natural (matching ngspice's `CKTsetIC`). T17 (bjt/jfet/mos1/2/3) is
-   pending in `ngspice-parity`. **`ind` documented deviation:** ngspice's
-   `ind.IC` is a **current** seed (`indload.c` flux form `L·I`), but
+   not clamp every transient to zero); T17 closed the bjt + jfet + mos1/2/3
+   wiring (bjt: `ic_vbe`/`ic_vce`, jfet/mos: `ic_vds`/`ic_vgs`). The UIC
+   one-step hold is released right after the DC operating point so the
+   first integration step is natural (matching ngspice's `CKTsetIC`).
+   **Two documented deviations remain:** (a) `ind` — ngspice's `ind.IC` is
+   a **current** seed (`indload.c` flux form `L·I`), but
    `collect_initial_conditions` only collects `Potential` seeds — a
-   current-seed mechanism is a separate codegen feature.
+   current-seed mechanism is a separate codegen feature; (b) mos/bjt/jfet
+   — piperine's `@initial` pins the external node, whereas ngspice seeds
+   the device's internal state during UIC init. The two agree with no
+   series resistance (`uic_mos`'s case) and diverge only when RD/RS are
+   nonzero (a future device-state-seed codegen feature).
 3. **Source-stepping homotopy (`CKTsrcFact`).** **Closed** by T18 — the
    audit's negative was a false alarm. `vsrc`'s forced value is scaled on
    its MNA force row; `isrc`'s DC value scales through

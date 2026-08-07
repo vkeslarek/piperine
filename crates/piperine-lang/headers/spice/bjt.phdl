@@ -126,6 +126,14 @@ pub mod bjt (
     param temp  : Real = 0.0;
     param dtemp : Real = 0.0;
     param off   : Boolean = 0;
+    // UIC initial conditions (bjtload.c:252-258, NGP-10): ngspice's netlist
+    // `IC=VBE,VCE` seeds v(b,e) and v(c,e) at t=0 under `.tran … uic`. The
+    // default-ic filter in `AnalogInstance::initial_conditions` suppresses a
+    // seed whose backing param is at its declared default, so a bjt that
+    // keeps the `ic_vbe = 0.0`/`ic_vce = 0.0` defaults fires no seed — the
+    // model is inert under UIC unless the instance explicitly sets one.
+    param ic_vbe : Real = 0.0;
+    param ic_vce : Real = 0.0;
 
     // Internal nodes for series resistances (bjtdefs.h: colPrime/basePrime/emitPrime)
     wire cp : Electrical;         // collector' (if RC > 0)
@@ -557,6 +565,17 @@ pub analog bjt {
     // Flicker
     if (model.kf > 0.0) {
         I(bp, ep) <+ flicker_noise(m * model.kf * pow(abs(cb), model.af), 1.0);
+    }
+
+    // ── Initial condition (bjtload.c:252-258, NGP-10) ────────────────────────
+    // ngspice's `IC=VBE,VCE` seeds v(b,e) and v(c,e) at t=0; under UIC the
+    // device's internal vbe/vce start from these values and the rest of the
+    // circuit solves against them. The default-ic filter suppresses the
+    // seed unless the user actually wrote `.ic_vbe=…` or `.ic_vce=…` at the
+    // instance site.
+    @ initial {
+        V(b, e) <- ic_vbe;
+        V(c, e) <- ic_vce;
     }
 }
 

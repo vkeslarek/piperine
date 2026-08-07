@@ -60,6 +60,12 @@ pub mod jfet (
     param temp  : Real = 0.0;
     param dtemp : Real = 0.0;
     param off   : Boolean = 0;
+    // UIC initial conditions (jfetload.c:109-110, NGP-10): ngspice's netlist
+    // `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0 under `.tran … uic`. The
+    // default-ic filter in `AnalogInstance::initial_conditions` suppresses a
+    // seed whose backing param is at its declared default.
+    param ic_vds : Real = 0.0;
+    param ic_vgs : Real = 0.0;
 
     wire dp : Electrical;          // drain'  (if RD > 0)
     wire sp : Electrical;          // source' (if RS > 0)
@@ -313,5 +319,14 @@ pub analog jfet {
     // Flicker
     if (model.kf > 0.0) {
         I(dp, sp) <+ flicker_noise(m * model.kf * pow(abs(id), model.af), 1.0);
+    }
+
+    // ── Initial condition (jfetload.c:109-110, NGP-10) ───────────────────────
+    // ngspice's `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0 under UIC. The
+    // default-ic filter suppresses the seed unless the user actually wrote
+    // `.ic_vds=…` or `.ic_vgs=…` at the instance site.
+    @ initial {
+        V(d, s) <- ic_vds;
+        V(g, s) <- ic_vgs;
     }
 }

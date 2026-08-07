@@ -187,6 +187,53 @@ fn ngspice_uic_rc() {
     eprintln!("PASS uic_rc (transient, {} print points, UIC seed = 2 V)", golden.len());
 }
 
+/// NGP-10 part 2 (mos1 `ic`/UIC): the mos1's per-instance `.ic_vds = 2.0,
+/// .ic_vgs = 5.0` seeds the t=0 drain and gate voltages the way ngspice's
+/// `IC=2.0,5.0 … uic` does. The fixture biases the mos strongly on
+/// (vgs = 5 V, vto = 1 V) and lets the 100 nF drain cap charge from its
+/// 2 V IC toward its steady-state through R1 and the mos channel — a real
+/// transient both simulators integrate, and a discriminating check that
+/// fails when the IC is dropped (drain starts from the DC OP instead of
+/// 2 V) or when a default-ic clamp misfires (drain pinned to 0 V for the
+/// whole run). The per-instance `.ic_v*` reaches the solver through the
+/// mos1 body's `@ initial` block and the
+/// `AnalogInstance::initial_conditions` filter.
+#[test]
+fn ngspice_uic_mos() {
+    let Some(harness) = NgspiceHarness::detect() else {
+        eprintln!("SKIP uic_mos: ngspice not on PATH");
+        return;
+    };
+    let export = "uic_mos_tran";
+    let golden = harness
+        .run_export("uic_mos", "tran", &[(export, 2)])
+        .unwrap_or_else(|e| panic!("{e}"))
+        .remove(0)
+        .pairs();
+
+    let mut session = harness.session("uic_mos").unwrap_or_else(|e| panic!("{e}"));
+    let trace = session
+        .tran(50.0e-6, None, 0.0, &SolverConfig::default(), None, false, &[])
+        .map_err(|e| TranCase::convergence_failure("uic_mos", e))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let actual = trace
+        .v("out".to_string())
+        .unwrap_or_else(|e| panic!("uic_mos: no v(out) in the transient trace: {e}"));
+
+    TranCase::compare("uic_mos", "out", &golden, &actual)
+        .unwrap_or_else(|e| panic!("{e}"));
+    // Closed-form anchor: v(out)@0 = 2 V (the ic_vds seed). The DC OP
+    // would have v(out) near Vdd = 5 V (cap is open at DC) — a dropped
+    // seed reads as 5 V, a default-ic clamp reads as 0 V.
+    let v0 = actual.at(0.0);
+    assert!(
+        (v0 - 2.0).abs() < 5.0e-2,
+        "v(out)@0 = {v0:.6e}, expected the ic_vds seed 2.0 V \
+         (a default-ic clamp would give 0, a dropped seed would give the DC OP ~5 V)"
+    );
+    eprintln!("PASS uic_mos (transient, {} print points, UIC seed = 2 V)", golden.len());
+}
+
 /// The fixture is anchored to its **closed form**, not only to ngspice: the
 /// charging curve is `v(t) = 1 − exp(−t/RC)` with `RC = 1.5915494309189535 µs`,
 /// so at `t = RC` the waveform reads `1 − e⁻¹` and at `t = 5·RC` it reads

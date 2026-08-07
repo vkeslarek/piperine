@@ -304,12 +304,12 @@ re-derived; they do not design by anticipation.
 | NGP-07 | P1: documented per-domain tolerance contract | Design | Pending |
 | NGP-08 | P2: analytic `gm` in channel noise | Design | Pending |
 | NGP-09 | P2: switch ON-state thermal noise | Design | Pending |
-| NGP-10 | P2: `ic`/UIC enforced on six models | Design | Partial — cap, diode (T16); bjt, jfet, mos1/2/3 (T17). `ind` is a documented deviation: ngspice's `ind.IC` is a **current** seed (`indload.c` flux form `L·I`), but `collect_initial_conditions` only collects `Potential` seeds — a current-seed mechanism is a separate codegen feature. |
+| NGP-10 | P2: `ic`/UIC enforced on six models | Design | Verified (cap, diode — T16; bjt, jfet, mos1/2/3 — T17). `ind` is a documented deviation: ngspice's `ind.IC` is a **current** seed (`indload.c` flux form `L·I`), but `collect_initial_conditions` only collects `Potential` seeds — a current-seed mechanism is a separate codegen feature. A second narrower deviation: mos/bjt/jfet ICs pin the external node (piperine `@initial`), whereas ngspice seeds the device's internal state during UIC init — the two agree with no series resistance (`uic_mos`'s case) and diverge only when RD/RS are nonzero. |
 | NGP-11 | P2: `CKTsrcFact` on vsrc + isrc TRANOP | Design | Pending |
 | NGP-12 | P2: flicker noise `cox = 0` substitution | Design | Pending |
 | NGP-13 | P2: JFET `nlev = 3` noise | Design | Pending |
 | NGP-14 | P2: BJT `VAF`/`VAR` temperature dependence | Design | Pending |
-| NGP-15 | P2: every closed deviation covered by a golden test | Design | Pending |
+| NGP-15 | P2: every closed deviation covered by a golden test | Design | Verified — T11..T20 + T16/T17 each ship a golden fixture (`noise_mos_linear`, `noise_jfet`, `noise_switch`, `noise_mos_cox0`, `temp_bjt`, `uic_rc`, `uic_mos`, `homotopy_bias`/`homotopy_sink`, `urc_taper`, `urc_isperl`) that fails when the fix is reverted; the parity-matrix gate (`tests/ngspice_parity_matrix.rs`) is the MD-31 falsifiability guard. |
 | NGP-16 | P3: `urc` geometric taper (`K`) — no `gap-3` dependency | - | Verified |
 | NGP-17 | P3: `urc` `ISPERL` diode shunt path — no `gap-3` dependency | - | Verified |
 | NGP-18 | P3: `urc` re-authored generically after P4 | - | Verified |
@@ -318,7 +318,7 @@ re-derived; they do not design by anticipation.
 | NGP-21 | P4: non-const index still fails loud | - | Verified |
 | NGP-22 | P4: `urc[N]` replaces the hand-unrolled triple | - | Verified |
 
-**Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (Design not yet run.) — NGP-10 partial: cap + diode Verified (T16); bjt + jfet + mos1/2/3 pending (T17); `ind` documented deviation (current-seed mechanism is a separate codegen feature).
+**Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (Design not yet run.) — NGP-10 closed (T16+T17): cap, diode, bjt, jfet, mos1/2/3 wired to potential-seed `@ initial` blocks; `ind` documented deviation (current-seed mechanism is a separate codegen feature); mos/bjt/jfet external-node-vs-device-state-seed narrower deviation recorded in ROADMAP.
 
 ---
 

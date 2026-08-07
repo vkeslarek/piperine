@@ -279,9 +279,7 @@ impl ParityMatrix {
                     reason: "pending: no AC golden fixture exercises mos1",
                 }),
                 (Domain::Noise, Coverage::Covered { fixture: "noise_mos_linear" }),
-                (Domain::Transient, Coverage::NotApplicable {
-                    reason: "pending: no transient golden fixture exercises mos1",
-                }),
+                (Domain::Transient, Coverage::Covered { fixture: "uic_mos" }),
                 (Domain::Temperature, Coverage::NotApplicable {
                     reason: "pending: no golden fixture sweeps mos1 across temperature",
                 }),
