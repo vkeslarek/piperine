@@ -152,6 +152,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md AC 18 (codegen)
 - last seen: 2026-08-04T02:10:25Z
 
+### L-024 — When a Tn task ships a docs rewrite (ROADMAP/spec) and later commits (Fix A/B, retire-triple) close items the docs already described as open, the docs MUST be re-synced in the same commit or the next docs commit — otherwise the traceability table and ROADMAP contradict the measured state.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `docs/traceability` · harmful: 0
+- features: ngspice-parity
+- evidence: ROADMAP.md:94; passives.phdl:255-257; mos.phdl:507-513 (docs/traceability)
+- last seen: 2026-08-07T02:43:33Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

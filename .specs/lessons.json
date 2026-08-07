@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 24,
+  "next_id": 25,
   "lessons": [
     {
       "id": "L-001",
@@ -418,6 +418,24 @@
       ],
       "created": "2026-08-04T02:10:25Z",
       "last_seen": "2026-08-04T02:10:25Z"
+    },
+    {
+      "id": "L-024",
+      "key": "spec_precision_gap::when a tn task ships a docs rewrite roadmap spec and later commits fix a b retire triple close items the docs already described as open the docs must be re synced in the same commit or the next docs commit otherwise the traceability table and roadmap contradict the measured state",
+      "text": "When a Tn task ships a docs rewrite (ROADMAP/spec) and later commits (Fix A/B, retire-triple) close items the docs already described as open, the docs MUST be re-synced in the same commit or the next docs commit — otherwise the traceability table and ROADMAP contradict the measured state.",
+      "signal": "spec_precision_gap",
+      "scope": "docs/traceability",
+      "status": "candidate",
+      "features": [
+        "ngspice-parity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ROADMAP.md:94; passives.phdl:255-257; mos.phdl:507-513 (docs/traceability)"
+      ],
+      "created": "2026-08-07T02:43:33Z",
+      "last_seen": "2026-08-07T02:43:33Z"
     }
   ]
 }

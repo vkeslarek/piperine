@@ -91,7 +91,7 @@ postures, SOA).
 | mos2 | `mos.phdl` | ✅ `nmos2_fixed` | ✅ `nmos2_id_vds` | pending | ✅ `noise_mos2_linear` | pending | pending | as mos1; `.disto` blocked (Cranelift function-count — P1 backlog) |
 | mos3 | `mos.phdl` | ✅ `nmos3_fixed` | ✅ `nmos3_id_vds` | pending | ✅ `noise_mos3_linear` | pending | pending | as mos1; `.disto` blocked (P1 backlog) |
 | tline | `tline.phdl` | pending (in-process `tests/tline.rs` only, not vs ngspice) | pending | pending | n/a (lossless, noiseless) | pending | pending | `FREQ/NL` delay spec missing; IC params missing |
-| urc | `urc.phdl` | ✅ `urc_lump2` | pending | ✅ `urc_taper` (geometric K taper — T19) | pending | pending | pending | ISPERL diode-mode shunt landed (T20); **NGP-18/19/22 documented deviations** — generic `urc[N]` authored but the codegen side does not yet lift array-wire elements or process structural `connections`, so `FMAX → N` auto-select and retirement of the hand-unrolled triple wait on that integration |
+| urc | `urc.phdl` | ✅ `urc_lump2` | pending | ✅ `urc_taper` (geometric K taper — T19) | pending | pending | pending | ISPERL diode-mode shunt landed (T20); generic `urc[N]` retired the hand-unrolled triple (T22) once gap-3's codegen side landed (Fix A `ba79501` array-wire element registration + Fix B `8a8114b` structural-connection unification); `FMAX → N` auto-select via `URC_DEFAULT_N` (T23). Compile-time taper propagation remains a SPEC_DEVIATION (`urc.phdl:41-49`) — per-instance `k` override needs runtime staging |
 
 **Cross-cutting issues (status updated from the 2026-07-28 audit):**
 

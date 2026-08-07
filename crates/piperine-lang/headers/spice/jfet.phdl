@@ -322,9 +322,16 @@ pub analog jfet {
     }
 
     // ── Initial condition (jfetload.c:109-110, NGP-10) ───────────────────────
-    // ngspice's `IC=VDS,VGS` seeds v(d,s) and v(g,s) at t=0 under UIC. The
-    // default-ic filter suppresses the seed unless the user actually wrote
-    // `.ic_vds=…` or `.ic_vgs=…` at the instance site.
+    // ngspice's `IC=VDS,VGS` seeds the device-internal drain'/source' (and
+    // gate'/source') nodes during UIC init — the series resistances are then
+    // solved consistently against those seeds. Piperine's `@ initial` pins
+    // the **external** d/s/g/s ports instead. The two agree when RD/RS=0
+    // (the `uic_mos` fixture's case) and diverge only when RD/RS are
+    // nonzero, recorded as a documented deviation for NGP-10 in ROADMAP.md
+    // and `.specs/features/ngspice-parity/spec.md`. A device-internal-state
+    // seed mechanism would close the divergence; that is a separate codegen
+    // feature. The default-ic filter suppresses the seed unless the user
+    // actually wrote `.ic_vds=…` or `.ic_vgs=…` at the instance site.
     @ initial {
         V(d, s) <- ic_vds;
         V(g, s) <- ic_vgs;

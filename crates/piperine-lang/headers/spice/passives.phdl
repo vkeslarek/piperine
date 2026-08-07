@@ -253,8 +253,13 @@ pub analog ind {
     V(p, n) <- l_eff * ddt(I(p, n));
 
     // ── Initial condition (indload.c:39-42, UIC path) ────────────────────────
-    // ngspice: ic seeds the UIC start current. Reserved until the JIT can force
-    // a branch inside `@ initial` (see piperine ROADMAP).
+    // ngspice's `ind.IC` is a **current** seed (the device pre-computes flux
+    // `L · I` per `indload.c:39-42` and pins the inductor's internal state).
+    // Piperine's `@ initial { … }` collects only `Potential` (`V(p,n) <- …`)
+    // seeds — see `flatten/analog.rs collect_initial_conditions`. Wiring a
+    // current seed (`I(p,n) <- ic`) needs a `Flow`-seed mechanism that is a
+    // separate codegen feature; recorded as a documented deviation for
+    // NGP-10 in ROADMAP.md and `.specs/features/ngspice-parity/spec.md`.
 }
 
 // ════════════════════════════════════════════════════════════════════════════
