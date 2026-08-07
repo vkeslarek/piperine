@@ -295,20 +295,20 @@ re-derived; they do not design by anticipation.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| NGP-01 | P1: AC per-point magnitude + phase | Design | Pending |
-| NGP-02 | P1: noise PSD per point + integrated RMS | Design | Pending |
-| NGP-03 | P1: transient on a common time grid | Design | Pending |
-| NGP-04 | P1: temperature-sweep operating point | Design | Pending |
-| NGP-05 | P1: loud, fully-named tolerance failure | Design | Pending |
-| NGP-06 | P1: ngspice-absent SKIP branch preserved | Design | Pending |
-| NGP-07 | P1: documented per-domain tolerance contract | Design | Pending |
-| NGP-08 | P2: analytic `gm` in channel noise | Design | Pending |
-| NGP-09 | P2: switch ON-state thermal noise | Design | Pending |
+| NGP-01 | P1: AC per-point magnitude + phase | P1 | Verified (T5, `1221978`) |
+| NGP-02 | P1: noise PSD per point + integrated RMS | P1 | Verified (T6, `7ce96f6`) |
+| NGP-03 | P1: transient on a common time grid | P1 | Verified (T7, `a0a1900`) |
+| NGP-04 | P1: temperature-sweep operating point | P1 | Verified (T8, `e1b8429`) |
+| NGP-05 | P1: loud, fully-named tolerance failure | P1 | Verified (T3 + T5–T8; rationale surfaced via `ToleranceContract::rationale()`) |
+| NGP-06 | P1: ngspice-absent SKIP branch preserved | P1 | Verified (T5–T8 — each domain target takes the existing SKIP seam) |
+| NGP-07 | P1: documented per-domain tolerance contract | P1 | Verified (T3, `46620e2`; T10 docs) |
+| NGP-08 | P2: analytic `gm` in channel noise | P2 | Verified (T11 mos `c39d35c`; T12 jfet `4868c91`) |
+| NGP-09 | P2: switch ON-state thermal noise | P2 | Verified (T13, `1ac5fdc`) |
 | NGP-10 | P2: `ic`/UIC enforced on six models | Design | Verified (cap, diode — T16; bjt, jfet, mos1/2/3 — T17). `ind` is a documented deviation: ngspice's `ind.IC` is a **current** seed (`indload.c` flux form `L·I`), but `collect_initial_conditions` only collects `Potential` seeds — a current-seed mechanism is a separate codegen feature. A second narrower deviation: mos/bjt/jfet ICs pin the external node (piperine `@initial`), whereas ngspice seeds the device's internal state during UIC init — the two agree with no series resistance (`uic_mos`'s case) and diverge only when RD/RS are nonzero. |
-| NGP-11 | P2: `CKTsrcFact` on vsrc + isrc TRANOP | Design | Pending |
-| NGP-12 | P2: flicker noise `cox = 0` substitution | Design | Pending |
-| NGP-13 | P2: JFET `nlev = 3` noise | Design | Pending |
-| NGP-14 | P2: BJT `VAF`/`VAR` temperature dependence | Design | Pending |
+| NGP-11 | P2: `CKTsrcFact` on vsrc + isrc TRANOP | P2 | Verified (T18, `bdf279c` — measured: both already did; delivered falsifiable fixtures `homotopy_bias`/`homotopy_sink`) |
+| NGP-12 | P2: flicker noise `cox = 0` substitution | P2 | Verified (T14, `c2b4d9f`) |
+| NGP-13 | P2: JFET `nlev = 3` noise | P2 | Verified (T12, `4868c91`) |
+| NGP-14 | P2: BJT `VAF`/`VAR` temperature dependence | P2 | Verified (T15, `2eb614d`) |
 | NGP-15 | P2: every closed deviation covered by a golden test | Design | Verified — T11..T20 + T16/T17 each ship a golden fixture (`noise_mos_linear`, `noise_jfet`, `noise_switch`, `noise_mos_cox0`, `temp_bjt`, `uic_rc`, `uic_mos`, `homotopy_bias`/`homotopy_sink`, `urc_taper`, `urc_isperl`) that fails when the fix is reverted; the parity-matrix gate (`tests/ngspice_parity_matrix.rs`) is the MD-31 falsifiability guard. |
 | NGP-16 | P3: `urc` geometric taper (`K`) — no `gap-3` dependency | - | Verified |
 | NGP-17 | P3: `urc` `ISPERL` diode shunt path — no `gap-3` dependency | - | Verified |
@@ -318,7 +318,7 @@ re-derived; they do not design by anticipation.
 | NGP-21 | P4: non-const index still fails loud | - | Verified |
 | NGP-22 | P4: `urc[N]` replaces the hand-unrolled triple | - | Verified |
 
-**Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (Design not yet run.) — NGP-10 closed (T16+T17): cap, diode, bjt, jfet, mos1/2/3 wired to potential-seed `@ initial` blocks; `ind` documented deviation (current-seed mechanism is a separate codegen feature); mos/bjt/jfet external-node-vs-device-state-seed narrower deviation recorded in ROADMAP.
+**Coverage:** 22 total, 22 mapped to tasks, 0 unmapped. ✅ All verified or documented-deviation. NGP-10 carries two documented deviations (`ind` current-seed; mos/bjt/jfet external-node vs device-state-seed) — both recorded with reasons in the relevant model headers, `ROADMAP.md`, and the validation report.
 
 ---
 
