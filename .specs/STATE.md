@@ -623,32 +623,99 @@ express as a wrapper over what exists.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-08-04 — `ngspice-parity` IN PROGRESS (Phases 1–2 done,
-T1–T10 committed); `codegen-simplification` DELIVERED 2026-08-03 (T1–T14,
-Verifier PASS with 2 minor non-blocking gaps); `dv-tester` DELIVERED
-2026-08-01; `dv-gradients` DELIVERED 2026-07-31.
+**Last updated:** 2026-08-06 — `ngspice-parity` DELIVERED (T1–T24 + Fix A/B,
+Verifier PASS, 22/22 ACs spec-anchored); `codegen-simplification` DELIVERED
+2026-08-03 (T1–T14, Verifier PASS with 2 minor non-blocking gaps); `dv-tester`
+DELIVERED 2026-08-01; `dv-gradients` DELIVERED 2026-07-31.
 
-### Feature — `ngspice-parity` (IN PROGRESS 2026-08-04)
+### Feature — `ngspice-parity` (DELIVERED 2026-08-06)
 
-Spec/design/tasks in `.specs/features/ngspice-parity/`. Executes MD-38 (parity
-measured, not asserted): extend the golden oracle to AC, noise, transient and
-temperature, then close the deviations it measures across the 13 shipped
-models.
+Spec/design/tasks/validation in `.specs/features/ngspice-parity/`. Executes
+MD-38 (parity measured, not asserted): extended the golden oracle to AC,
+noise, transient and temperature, then closed the deviations it measures
+across the 13 shipped models.
 
-**Done — Phase 1 (oracle foundation) and Phase 2 (domain comparators + gate),
-T1–T10.** `tests/support/ngspice.rs` now holds the shared `NgspiceHarness`, the
-N-column `WrData` parser and the seven-domain `ToleranceContract` (NGP-07: the
-only place a numeric tolerance may be written). Five per-domain golden targets
-(`ngspice_{validation,ac,noise,tran,temp}.rs`) sit on it, and
-`tests/ngspice_parity_matrix.rs` is the MD-31 coverage gate — 13 models × 6
-domains, each cell `Covered { fixture }` or `NotApplicable { reason }`, all four
-asserts proven able to fail. Root-target naming gained its first registered
-exemption in `suite_hygiene.rs` (the matrix links no workspace crate), with the
-assertion turned into an equality so the exemption cannot grow quietly.
+**All 24 tasks delivered across 5 phase-batch sub-agents + 1 Verifier round.**
+The headline deliverable — `tests/ngspice_parity_matrix.rs`, the MD-31
+coverage gate — is the only mechanical way to make "no unfalsifiable ✅"
+true: 13 models × 6 domains, every cell `Covered { fixture }` (with a
+golden target that actually runs it) or `NotApplicable { reason }`, all
+four asserts proven able to fail. `tests/support/ngspice.rs` owns the
+shared `NgspiceHarness`, the N-column `WrData` parser, and the
+seven-domain `ToleranceContract` (NGP-07: the only place a numeric
+tolerance may be written).
 
-**Remaining:** Phase 3 (T11–T18, model fixes), Phase 4 (T19–T20, `urc` taper +
-`ISPERL`), Phase 5 (T21–T23, `gap-3` array-net expansion + generic `urc[N]`),
-Phase 6 (T24, ROADMAP rewrite), then the Verifier.
+**Model fixes (NGP-08..15):** analytic `gm` in MOSFET/JFET channel noise
+(T11/T12, killed the saturation-only `gm_est`); switch ON-state thermal
+noise (T13); flicker `cox=0` substitution (T14); BJT `VAF`/`VAR` temp
+dependence (T15); `ic`/UIC enforced on cap/diode/bjt/jfet/mos1/2/3
+(T16/T17); `CKTsrcFact` falsifiable fixtures (T18 — both sources already
+honoured via two routes, deliverable was the proof).
+
+**`urc` faithfulness (NGP-16..19, 22):** geometric K taper (T19);
+ISPERL diode-mode shunt path (T20); generic `urc[N]` retiring the
+hand-unrolled triple (T22) once gap-3's codegen side landed; `FMAX → N`
+auto-select via `URC_DEFAULT_N` (T23).
+
+**gap-3 (NGP-20, 21):** `FlattenHierarchy::remap` expands const-indexed
+`NetRef` to its scalar net (T21, `8a1c08c`); completed at the codegen
+layer by Fix A (`ba79501` — array-wire element registration in
+`structure.rs`) and Fix B (`8a8114b` — structural-connection unification
+in `builder.rs`). 7 inline flattener tests + 4 inline codegen tests
+cover the happy paths and four loud-fail paths.
+
+**Two architectural blockers found and closed during Execute (both
+outside the original task scope, both small and surgical):**
+
+1. **UIC default-ic always-clamp.** The `@ initial` mechanism existed
+   and worked for explicit `.ic` (SC-12 proves it), but
+   `flatten/analog.rs:891 collect_initial_conditions` collected seeds
+   unconditionally — wiring `@ initial { V(p,n) <- ic; }` globally into
+   `spice::passives::cap` with `param ic : Real = 0.0` default regressed
+   every transient where a cap's natural t=0 ≠ 0. Closed by a per-seed
+   param-dependency mask in `AnalogInstance::initial_conditions`
+   (`instance.rs:679-704`, plus kernel/compile.rs plumbing) that
+   suppresses a seed whose backing params are all at declared defaults.
+   A second piece: the UIC one-step hold (`transient.rs:748`) was
+   released right after the DC OP rather than after the first accepted
+   step — otherwise ~step/τ of integration time was "lost" at t=0,
+   blowing `uic_rc`'s tight TRAN tolerance. ngspice DC/tran baselines
+   bit-identical throughout.
+2. **gap-3 codegen integration.** T21 expanded the flattener but left
+   the codegen layer unaware of array wires: `structure.rs:99-102`
+   registered a lifted array wire as one scalar node (collapsed every
+   `tap[i]` onto a single net), and `builder.rs:189-217` never
+   processed `top_module.connections()` (silently dropped `tap[0] = p`
+   aliases). The existing gap-3 test verified only the flatten shape;
+   `run_examples.rs` only elaborated `language_features.phdl`'s
+   `RcChain[N]`, never compiled+ran it. Closed by Fix A + Fix B (above).
+
+**Two documented deviations remain (both with reasons recorded in the
+model header, ROADMAP, and spec traceability — the three sites the
+Verifier audits):**
+
+- **`ind` (NGP-10 part).** ngspice's `ind.IC` is a **current** seed
+  (`indload.c:39-42` flux form `L·I`); `collect_initial_conditions`
+  only collects `Potential` seeds. A `Flow`-seed mechanism is a
+  separate codegen feature.
+- **mos/bjt/jfet external-node vs device-internal-state seed (NGP-10
+  narrower).** Piperine's `@ initial` pins the external port, ngspice
+  seeds the device-internal node and solves series resistances against
+  it. The two agree when RD/RS=0 (`uic_mos`'s case) and diverge only
+  when RD/RS are nonzero. A device-internal-state-seed mechanism would
+  close the divergence.
+
+**Verifier: PASS** — 22/22 ACs spec-anchored with `file:line` evidence
+and spec-matching assertions; 4/4 discrimination-sensor mutations killed
+(UIC default-ic filter, UIC hold release, urc K-taper, array-wire
+element registration); gate `cargo test --workspace` 1841 passed / 0
+failed / 0 rustc warnings / 4 pre-existing ignores, +15 tests vs the
+T10 baseline of 1826. Three docs-drift gaps flagged in round 1 (ROADMAP
+urc row stale; `ind` deviation reason cited the closed JIT-blocker;
+mos/jfet external-node deviation imprecise vs bjt) closed in a single
+follow-up docs commit. Lesson L-024 distilled: when a Tn task ships a
+docs rewrite and later commits close items the docs described as open,
+the docs MUST be re-synced in the same commit or the next docs commit.
 
 **Found and fixed alongside, outside the feature's scope:**
 
