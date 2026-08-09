@@ -18,7 +18,7 @@ use std::sync::Arc;
 use piperine_api::sequencer::install::InstallSite;
 use piperine_api::sequencer::SequencerControl;
 use piperine_api::{HostAdapter, HostElement, Sequencer, SequencerProgram, Wake};
-use piperine_signal::wave::Wave;
+use piperine_ir::wave::Wave;
 use piperine_solver::abi::{
     AnalogDevice, AnalogReference, Context, DcAnalysisState, DigitalDevice, DigitalNet, ElementCapabilities,
     Introspect, LogicValue, Stamp, TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,

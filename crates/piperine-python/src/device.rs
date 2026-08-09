@@ -28,7 +28,7 @@
 //! device that overrides `load_dc`/`load_transient`, that cost lands **once
 //! per Newton iteration** — the same ceiling `ideal.md` §5's cost table
 //! states for "any host call inside Newton". It is a cost of *this* bridge,
-//! not of the host-device mechanism in general: `piperine-signal`'s level-1
+//! not of the host-device mechanism in general: `piperine-ir`'s level-1
 //! catalog (`Wave`/`Behavior`/`Measure`, exposed unchanged as `pip.*` — see
 //! `device.rs`'s sibling in the facade) evaluates natively in Rust once
 //! installed, so a Python device that reaches for `pip.Wave`/`pip.Behavior`

@@ -1,12 +1,12 @@
 //! Events capability: runtime analog event detection (`cross`/`above`/
 //! `@timer`) and the `@initial`/fired-event variable-action dispatch. The
-//! fire decision itself comes from `piperine_signal::events::EventDetector`;
+//! fire decision itself comes from `piperine_ir::events::EventDetector`;
 //! this file keeps everything that is not a detector — the period table,
 //! `CompiledTrigger` -> `signal::events::Trigger` mapping (`Initial` has no
 //! counterpart, it is `@initial` dispatch, not a detector), and the
 //! `@initial`/fired-event variable-action dispatch.
 
-use piperine_signal::events::{CrossDir as SignalCrossDir, EventDetector, Trigger};
+use piperine_ir::events::{CrossDir as SignalCrossDir, EventDetector, Trigger};
 
 use crate::emit::abi::SimCtx;
 use crate::error::CodegenError;
@@ -16,7 +16,7 @@ use crate::resolve::CrossDir;
 use super::AnalogInstance;
 
 /// Codegen's `CrossDir` (`resolve::stmt`) to the signal crate's own —
-/// distinct types by design (the purity guard forbids `piperine-signal`
+/// distinct types by design (the purity guard forbids `piperine-ir`
 /// depending on codegen's resolved form), same three variants.
 fn to_signal_cross_dir(dir: CrossDir) -> SignalCrossDir {
     match dir {

@@ -145,7 +145,7 @@ fn fetlim_matches_ngspice_reference() {
 }
 
 // ── codegen-simplification T5: $limit emits a call (CGS-05/06) ─────────────
-// $limit is now a call into the registered piperine-signal symbol
+// $limit is now a call into the registered piperine-ir symbol
 // (kernel/analog/limits.rs::LIMIT_FNS), not inline branchless IR.
 
 /// AC 11: a structurally-equal `$limit` expression repeated within one

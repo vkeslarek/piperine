@@ -13,7 +13,7 @@
 //! - [`stamp::{Ctx, StateView, StampSink}`] (T14 groundwork, hardened in
 //!   T15) — the borrow-scoped wrappers a `HostElement` reads/writes
 //!   through, so no raw matrix pointer ever crosses into device code.
-//! - [`level1`] (T16) — turns a `piperine-signal` `Wave`/`Behavior` into
+//! - [`level1`] (T16) — turns a `piperine-ir` `Wave`/`Behavior` into
 //!   native stamps and feeds a `Measure` from accepted points, surfacing
 //!   the limiter's convergence veto alongside them.
 //! - [`registry`] (T17) — the second `@device` binding mode: a host

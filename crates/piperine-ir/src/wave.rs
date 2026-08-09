@@ -63,7 +63,7 @@ pub enum Wave {
     // `Wave` is installed inside a `HostElement` (T14/T16) and reaches the
     // solver as `Box<dyn Element>`, it inherits `Element`'s own
     // unconditional `Send + Sync` bound (`AnalogDevice: Send + Sync`,
-    // `piperine-solver/src/core/element.rs`) — a bound `piperine-signal`
+    // `piperine-solver/src/core/element.rs`) — a bound `piperine-ir`
     // had no reason to anticipate before level 1 met level 0. `Rc` fails
     // that bound structurally regardless of which `Wave` variant is
     // actually constructed (Rust's auto-trait analysis is type-wide, not

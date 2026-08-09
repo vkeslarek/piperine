@@ -1630,11 +1630,11 @@ dependencies = [
  "num-complex",
  "piperine-api",
  "piperine-codegen",
+ "piperine-ir",
  "piperine-lang",
  "piperine-plugin",
  "piperine-plugin-macros",
  "piperine-python",
- "piperine-signal",
  "piperine-solver",
 ]
 
@@ -1645,8 +1645,8 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex",
  "piperine-codegen",
+ "piperine-ir",
  "piperine-lang",
- "piperine-signal",
  "piperine-solver",
  "thiserror 2.0.18",
 ]
@@ -1678,12 +1678,16 @@ dependencies = [
  "cranelift-module",
  "ndarray 0.17.2",
  "num-complex",
+ "piperine-ir",
  "piperine-lang",
- "piperine-signal",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "piperine-ir"
+version = "0.2.0"
 
 [[package]]
 name = "piperine-lang"
@@ -1771,17 +1775,13 @@ dependencies = [
  "numpy",
  "piperine-api",
  "piperine-codegen",
+ "piperine-ir",
  "piperine-lang",
  "piperine-plugin",
  "piperine-project",
- "piperine-signal",
  "piperine-solver",
  "pyo3",
 ]
-
-[[package]]
-name = "piperine-signal"
-version = "0.2.0"
 
 [[package]]
 name = "piperine-solver"

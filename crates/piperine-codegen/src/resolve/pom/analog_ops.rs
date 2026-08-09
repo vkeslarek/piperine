@@ -150,8 +150,8 @@ impl Table {
     /// Map a `signal::Table` validation failure onto the existing loud-error
     /// path, keeping today's user-facing text unchanged (AC 17) — the value
     /// carried by `TableError::UnsupportedMode` is not echoed today either.
-    fn err_from(e: piperine_signal::behavior::table::TableError, ctx: &mut LowerCtx) -> Expr {
-        use piperine_signal::behavior::table::TableError;
+    fn err_from(e: piperine_ir::behavior::table::TableError, ctx: &mut LowerCtx) -> Expr {
+        use piperine_ir::behavior::table::TableError;
         let what: &'static str = match e {
             TableError::TooFewPoints => "table needs at least 2 points",
             TableError::LengthMismatch => "table xs and ys must have the same length",
@@ -184,7 +184,7 @@ impl AnalogOp for Table {
             Some(Expr::Literal(Literal::String(s))) => s.clone(),
             Some(_) => "?".to_string(),
         };
-        let table = match piperine_signal::behavior::table::Table::with_mode(xs, ys, &mode) {
+        let table = match piperine_ir::behavior::table::Table::with_mode(xs, ys, &mode) {
             Ok(t) => t,
             Err(e) => return Self::err_from(e, ctx),
         };

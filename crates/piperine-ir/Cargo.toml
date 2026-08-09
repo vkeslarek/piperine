@@ -1,5 +1,5 @@
 [package]
-name = "piperine-signal"
+name = "piperine-ir"
 version.workspace = true
 edition.workspace = true
 

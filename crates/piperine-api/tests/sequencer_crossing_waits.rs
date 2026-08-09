@@ -10,8 +10,8 @@ use piperine_api::sequencer::install::InstallSite;
 use piperine_api::sequencer::wait::EdgeDirection;
 use piperine_api::sequencer::SequencerControl;
 use piperine_api::{HostAdapter, HostElement, Sequencer, SequencerProgram, Wake};
-use piperine_signal::events::CrossDir;
-use piperine_signal::wave::Wave;
+use piperine_ir::events::CrossDir;
+use piperine_ir::wave::Wave;
 use piperine_solver::abi::{AnalogReference, Context, ElementCapabilities};
 use piperine_solver::prelude::{CircuitBuilder, TransientAnalysisOptions};
 

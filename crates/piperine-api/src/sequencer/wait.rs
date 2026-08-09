@@ -7,20 +7,20 @@
 use piperine_solver::abi::{DigitalNet, LogicValue};
 
 /// Which transition a `wait(edge(net, direction))` is watching for — the
-/// shared IEEE 1364 detector (`piperine_signal::logic`), re-exported under
+/// shared IEEE 1364 detector (`piperine_ir::logic`), re-exported under
 /// this crate's existing name/path (`pub use wait::EdgeDirection` in
 /// `sequencer/mod.rs`) so Python bindings keep compiling unchanged.
-pub use piperine_signal::logic::EdgeDirection;
+pub use piperine_ir::logic::EdgeDirection;
 
 /// `LogicValue` (`piperine-solver`) → `signal::logic::Logic`: both four-state
 /// types share discriminants, but the conversion stays an explicit `match`,
 /// never a transmute.
-fn to_signal(value: LogicValue) -> piperine_signal::logic::Logic {
+fn to_signal(value: LogicValue) -> piperine_ir::logic::Logic {
     match value {
-        LogicValue::Zero => piperine_signal::logic::Logic::Zero,
-        LogicValue::One => piperine_signal::logic::Logic::One,
-        LogicValue::X => piperine_signal::logic::Logic::X,
-        LogicValue::Z => piperine_signal::logic::Logic::Z,
+        LogicValue::Zero => piperine_ir::logic::Logic::Zero,
+        LogicValue::One => piperine_ir::logic::Logic::One,
+        LogicValue::X => piperine_ir::logic::Logic::X,
+        LogicValue::Z => piperine_ir::logic::Logic::Z,
     }
 }
 

@@ -886,12 +886,12 @@ const MEASURE_METHODS: &[&str] =
 /// [`MEASURE_METHODS`], called on the Rust catalog directly — compile-time
 /// proof the Rust side carries the full set.
 fn call_every_rust_device_library_method() {
-    use piperine_signal::behavior::kinds::{Comparator, Hysteresis, Limiter, Scaled, Sum, Switch, Vccs, Vco, Vcvs};
-    use piperine_signal::behavior::table::Table;
-    use piperine_signal::measure::handle::Measure;
-    use piperine_signal::events::CrossDir;
-    use piperine_signal::measure::kinds::{Average, Count, Cross, Integral, Min, Peak, Ripple, Rms, Settle};
-    use piperine_signal::wave::Wave;
+    use piperine_ir::behavior::kinds::{Comparator, Hysteresis, Limiter, Scaled, Sum, Switch, Vccs, Vco, Vcvs};
+    use piperine_ir::behavior::table::Table;
+    use piperine_ir::measure::handle::Measure;
+    use piperine_ir::events::CrossDir;
+    use piperine_ir::measure::kinds::{Average, Count, Cross, Integral, Min, Peak, Ripple, Rms, Settle};
+    use piperine_ir::wave::Wave;
 
     let _ = Wave::ramp(0.0, 1.0, 1e-6);
     let _ = Wave::pulse(0.0, 1.0, 0.0, 1e-9, 1e-6, 1e-9, 2e-6);
@@ -1059,8 +1059,8 @@ _probe()
 /// `expect` on each host's findings channel.
 #[test]
 fn host_parity_one_fixture_produces_identical_findings_and_measure_values() {
-    use piperine_signal::measure::handle::Measure;
-    use piperine_signal::measure::kinds::Peak;
+    use piperine_ir::measure::handle::Measure;
+    use piperine_ir::measure::kinds::Peak;
 
     // ── Rust side ──
     let mut peak = Measure::arm(Peak::new());

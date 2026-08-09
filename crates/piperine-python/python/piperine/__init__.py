@@ -1554,7 +1554,7 @@ DeviceStateView = _piperine._DeviceStateView
 # ── Host device library (dv-tester T28, DVT-11 Python half) ────────────────
 #
 # `ideal.md` §3.7's closed-Python/open-Rust rule: `Wave`/`HostBehavior`/
-# `Measure` are exactly `piperine-signal`'s Rust catalog (T7/T8/T11),
+# `Measure` are exactly `piperine-ir`'s Rust catalog (T7/T8/T11),
 # reachable with identical spelling — `HostBehavior` is the one facade name
 # that differs from `ideal.md`'s `pip.Behavior` sketch, because `Behavior`
 # already names the unrelated POM `analog`/`digital`-block reflection type

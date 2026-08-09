@@ -328,7 +328,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         Ok(vlim)
     }
 
-    /// Call a registered `piperine_signal::limit` symbol (`pnjlim`/`fetlim`/
+    /// Call a registered `piperine_ir::limit` symbol (`pnjlim`/`fetlim`/
     /// `limvds`, imported into the analog JIT — `kernel/analog/compile.rs`'s
     /// `LIMIT_FNS` loop). No CSE here: the caller (`emit_analog_limit`)
     /// already CSEs the whole `$limit` under `CseKey::Limit(slot)`, so a

@@ -25,7 +25,7 @@
 
 use piperine_solver::abi::{AnalogReference, DigitalNet, ElementCapabilities, LimitingReport, LogicValue};
 
-use piperine_signal::events::CrossDir;
+use piperine_ir::events::CrossDir;
 
 use crate::device::host_element::HostElement;
 use crate::device::stamp::StateView;
@@ -50,7 +50,7 @@ pub enum Wake {
     WaitEdge(DigitalNet, EdgeDirection),
     /// `t.wait(above(net, level))`: resume once an accepted point brackets
     /// `net` crossing `level` in `direction` (T24) — tier 2 (predict +
-    /// bound, `piperine_signal::events`), never a time breakpoint. Read
+    /// bound, `piperine_ir::events`), never a time breakpoint. Read
     /// `SequencerControl::last_crossing` from `resume` for the bound.
     WaitCrossing(AnalogReference, f64, CrossDir),
     /// The coroutine has nothing further to do.

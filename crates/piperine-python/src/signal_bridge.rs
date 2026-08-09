@@ -1,6 +1,6 @@
 //! T28 — the Python surface's level-1 catalog (DVT-11 Python half):
 //! `pip.Wave`/`pip.Behavior`/`pip.Measure`, reachable with **identical
-//! spelling** to `piperine-signal`'s Rust catalog (`ideal.md` §3.7), and
+//! spelling** to `piperine-ir`'s Rust catalog (`ideal.md` §3.7), and
 //! **closed** — there is no Python-side way to add a new kind. `Wave.const`
 //! is the one deliberate name divergence: `const` is a Rust keyword, so the
 //! Rust catalog spells it `constant` (same precedent as `Design::const_` /
@@ -28,20 +28,20 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use piperine_api::device::{BehaviorStamp, WaveStamp};
-use piperine_signal::behavior::kinds::{
+use piperine_ir::behavior::kinds::{
     Comparator, Hysteresis, Limiter as BehaviorLimiter, Scaled as BScaled, Sum as BSum, Switch, Vccs, Vco, Vcvs,
 };
-use piperine_signal::behavior::table::Table;
-use piperine_signal::behavior::BehaviorKind;
-use piperine_signal::measure::handle::Measure;
-use piperine_signal::measure::kinds::{Average, Count, Cross, Delay, Integral, Min, Peak, Ripple, Rms, Settle};
-use piperine_signal::measure::MeasureKind;
-use piperine_signal::wave::Wave;
+use piperine_ir::behavior::table::Table;
+use piperine_ir::behavior::BehaviorKind;
+use piperine_ir::measure::handle::Measure;
+use piperine_ir::measure::kinds::{Average, Count, Cross, Delay, Integral, Min, Peak, Ripple, Rms, Settle};
+use piperine_ir::measure::MeasureKind;
+use piperine_ir::wave::Wave;
 
 use crate::device::_NetRef;
 
 /// `Wave` has no `Clone` impl upstream (its `FromFn` arm's `Arc<dyn Fn>`
-/// *is* cloneable, but the derive was never added; `piperine-signal` is
+/// *is* cloneable, but the derive was never added; `piperine-ir` is
 /// frozen for this batch, MD-13-adjacent scope rule). Every other arm is
 /// plain data, so a manual, exhaustive clone is correct and cheap. A free
 /// function, not an inherent impl, because `Wave` is a foreign type here
@@ -190,7 +190,7 @@ pub struct _HostBehavior(pub Box<dyn BehaviorKind>);
 impl _HostBehavior {
     /// Move this object's kind out, leaving [`Moved`] behind — `sum`/
     /// `scaled`/`composed`/`b.behavior(...)` all *consume* their operand
-    /// kind (mirroring `piperine-signal`'s own `Wave::sum(a, b)`, which
+    /// kind (mirroring `piperine-ir`'s own `Wave::sum(a, b)`, which
     /// takes its operands by value); `Box<dyn BehaviorKind>` has no `Clone`
     /// bound to preserve (frozen crate, this batch), so ownership transfer
     /// via `mem::replace` is the sound alternative to borrowing into a
@@ -257,7 +257,7 @@ impl _HostBehavior {
     /// shape, `ideal.md` §3.3: `g` a `Hysteresis`, `f` a `Switch`).
     #[staticmethod]
     fn composed(f: &mut _HostBehavior, g: &mut _HostBehavior) -> Self {
-        Self(Box::new(piperine_signal::behavior::kinds::Composed { f: f.take(), g: g.take() }))
+        Self(Box::new(piperine_ir::behavior::kinds::Composed { f: f.take(), g: g.take() }))
     }
 
     /// The closed-form value at `inputs` — for a Python device composing a
@@ -282,7 +282,7 @@ impl _HostBehavior {
     fn register_kind(_name: &str) -> PyResult<()> {
         Err(PyRuntimeError::new_err(
             "pip.Behavior's catalog is closed (ideal.md \u{a7}3.7): a new kind is added by \
-             implementing `piperine_signal::behavior::BehaviorKind` in Rust, not by registering \
+             implementing `piperine_ir::behavior::BehaviorKind` in Rust, not by registering \
              a kind from Python — level 0 (a Python `load_dc`) is always available as the escape \
              hatch for a one-off case that does not warrant a new Rust kind",
         ))
@@ -391,7 +391,7 @@ impl _Measure {
     fn register_kind(_name: &str) -> PyResult<()> {
         Err(PyRuntimeError::new_err(
             "pip.Measure's catalog is closed (ideal.md \u{a7}3.7): a new reduction is added by \
-             implementing `piperine_signal::measure::MeasureKind` in Rust, not by registering a \
+             implementing `piperine_ir::measure::MeasureKind` in Rust, not by registering a \
              kind from Python — level 0 (a Python `load_dc`/`accept_timestep`) is always \
              available as the escape hatch for a one-off case that does not warrant a new Rust \
              kind",
@@ -401,7 +401,7 @@ impl _Measure {
 
 /// `Measure.delay` (DVT-13/15/16 Python half): two-channel — `Delay` is
 /// deliberately **not** a `MeasureKind` upstream (its `feed(t, a, b)` takes
-/// a second signal; `piperine-signal`'s own header on `Delay` explains why
+/// a second signal; `piperine-ir`'s own header on `Delay` explains why
 /// widening `MeasureKind` for one kind is the worse trade). A separate
 /// pyclass mirrors that shape exactly rather than forcing it through
 /// `DynKind`.
@@ -436,11 +436,11 @@ impl _DelayMeasure {
     }
 }
 
-fn cross_dir(s: &str) -> PyResult<piperine_signal::events::CrossDir> {
+fn cross_dir(s: &str) -> PyResult<piperine_ir::events::CrossDir> {
     match s {
-        "rising" | "RISING" => Ok(piperine_signal::events::CrossDir::Rising),
-        "falling" | "FALLING" => Ok(piperine_signal::events::CrossDir::Falling),
-        "either" | "EITHER" => Ok(piperine_signal::events::CrossDir::Either),
+        "rising" | "RISING" => Ok(piperine_ir::events::CrossDir::Rising),
+        "falling" | "FALLING" => Ok(piperine_ir::events::CrossDir::Falling),
+        "either" | "EITHER" => Ok(piperine_ir::events::CrossDir::Either),
         other => Err(PyRuntimeError::new_err(format!("unknown crossing direction {other:?} — use rising/falling/either"))),
     }
 }

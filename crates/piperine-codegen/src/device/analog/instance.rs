@@ -205,15 +205,15 @@ impl AnalogInstance {
                 let slot = spec.id.0 as usize;
                 Ok(match &spec.kind {
                     RuntimeState::Delay { delay } => {
-                        SlottedOperator::new(slot, piperine_signal::ops::Operator::delay(value(delay)?))
+                        SlottedOperator::new(slot, piperine_ir::ops::Operator::delay(value(delay)?))
                     }
                     RuntimeState::Slew { rise, fall } => SlottedOperator::new(
                         slot,
-                        piperine_signal::ops::Operator::slew(value(rise)?.abs(), value(fall)?.abs()),
+                        piperine_ir::ops::Operator::slew(value(rise)?.abs(), value(fall)?.abs()),
                     ),
                     RuntimeState::Transition { delay, rise, fall } => SlottedOperator::new(
                         slot,
-                        piperine_signal::ops::Operator::transition(
+                        piperine_ir::ops::Operator::transition(
                             value(delay)?,
                             value(rise)?.abs(),
                             value(fall)?.abs(),
@@ -221,7 +221,7 @@ impl AnalogInstance {
                     ),
                     RuntimeState::Integrator { ic, modulus } => SlottedOperator::new(
                         slot,
-                        piperine_signal::ops::Operator::integrate(
+                        piperine_ir::ops::Operator::integrate(
                             value(ic)?,
                             modulus.as_ref().map(&value).transpose()?,
                         ),
@@ -234,7 +234,7 @@ impl AnalogInstance {
         // slot starts at 0.
         let mut state = vec![0.0; kernel.num_state_slots()];
         for op in &operators {
-            if let SlottedOperator { slot, op: piperine_signal::ops::Operator::Integrate { value, .. } } = op {
+            if let SlottedOperator { slot, op: piperine_ir::ops::Operator::Integrate { value, .. } } = op {
                 state[*slot] = *value;
             }
         }
@@ -286,13 +286,18 @@ impl AnalogInstance {
     }
 
     /// Update the module-level variable bank from the digital side (the D2A
-    /// bridge). Called after each `eval_discrete` so the analog body sees
-    /// the latest register values. `values[VarId.0]` is the variable's
-    /// current value as an `f64`.
-    pub fn sync_vars(&mut self, values: &[f64]) {
-        for (i, v) in values.iter().enumerate() {
-            if i < self.vars.len() {
-                self.vars[i] = *v;
+    /// bridge). Called after each `eval_discrete` so the analog body sees the
+    /// latest register values.
+    ///
+    /// Writes **only** the vars the digital kernel owns, addressed by
+    /// `VarId` — never a positional blit of the whole bank. A module may hold
+    /// both an `analog` and a `digital` body over one shared var namespace,
+    /// and the vars the analog side owns (an `@timer`'s accumulator, say) must
+    /// survive this call untouched.
+    pub fn sync_vars(&mut self, values: &[(crate::resolve::VarId, f64)]) {
+        for &(id, v) in values {
+            if let Some(slot) = self.vars.get_mut(id.0 as usize) {
+                *slot = v;
             }
         }
     }

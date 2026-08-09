@@ -1,12 +1,12 @@
 //! `wait(above(net, level))` (T24, DVT-26): the analog half of the
 //! sequencer's `wait` verb, built on T10's tier-2 crossing prediction
-//! (`piperine_signal::events::predict_crossing`) — never the exact retry a
+//! (`piperine_ir::events::predict_crossing`) — never the exact retry a
 //! tier-3 solver feature would need, and never a bare instant without its
 //! bound.
 
 use piperine_solver::abi::AnalogReference;
 
-use piperine_signal::events::{predict_crossing, CrossDir, Prediction};
+use piperine_ir::events::{predict_crossing, CrossDir, Prediction};
 
 /// A single outstanding analog crossing wait: which net, which level and
 /// direction, and the last accepted `(t, v)` sample — the bracket a fresh

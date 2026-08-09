@@ -26,9 +26,9 @@
 //! // goes stale) would fail this, even though it would pass a bare
 //! // double-`feed`-loop comparison.
 
-use piperine_signal::measure::gate::{Gate, Gated};
-use piperine_signal::measure::handle::Measure;
-use piperine_signal::measure::kinds::{Average, Peak, Rms};
+use piperine_ir::measure::gate::{Gate, Gated};
+use piperine_ir::measure::handle::Measure;
+use piperine_ir::measure::kinds::{Average, Peak, Rms};
 
 /// A synthetic "recorded transient": accepted `(t, v, lte)` triples, the
 /// same shape a live driver would produce one at a time.

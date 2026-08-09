@@ -2,15 +2,15 @@
 //! criterion. Four device families — a `transition`-driven source, a
 //! pnjlim junction, a `table` nonlinearity, and a `cross`-triggered
 //! element — each written **both** in PHDL (reusing
-//! `piperine-signal/tests/cross_check_*.rs`'s own proven fixture shapes,
+//! `piperine-ir/tests/cross_check_*.rs`'s own proven fixture shapes,
 //! T6's obligation to this feature) **and** as a Rust host device (T14-T18's
-//! library, calling `piperine-signal`'s extracted operators/limiter/table/
+//! library, calling `piperine-ir`'s extracted operators/limiter/table/
 //! events directly — the same functions T6 already proved identical to
 //! codegen's JIT copy). Each pair is solved through a real circuit and
 //! its **values** are asserted equal, not "both ran".
 //!
 //! **`codegen-simplification` extends this set rather than replacing it**
-//! (that follow-on feature deletes the `piperine-signal/tests/cross_check_*`
+//! (that follow-on feature deletes the `piperine-ir/tests/cross_check_*`
 //! fixtures once codegen delegates to the crate instead of carrying its own
 //! copy — this file's PHDL⟷host-device comparisons are untouched by that;
 //! they compare two different *bindings* of the same crate, not two
@@ -26,9 +26,9 @@
 use piperine_api::device::{Ctx, HostAdapter, HostElement, StampSink, StateView};
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
-use piperine_signal::events::{CrossDir, EventDetector, Trigger};
-use piperine_signal::limit::pnjlim;
-use piperine_signal::ops::Operator;
+use piperine_ir::events::{CrossDir, EventDetector, Trigger};
+use piperine_ir::limit::pnjlim;
+use piperine_ir::ops::Operator;
 use piperine_solver::abi::{
     AnalogDevice, AnalogReference, Context, DcAnalysisState, DigitalDevice, Element, ElementCapabilities,
     Introspect, Stamp, TransientAnalysisContext, TransientAnalysisState, UnknownAllocator,
@@ -123,7 +123,7 @@ impl<F: FnMut(f64) -> f64 + Send + Sync> Element for IdealForce<F> {
 
 // ── 1. A `transition`-driven source ────────────────────────────────────────
 
-/// PHDL: identical to `piperine-signal/tests/cross_check_operators.rs`'s
+/// PHDL: identical to `piperine-ir/tests/cross_check_operators.rs`'s
 /// own proven fixture. Host: `Operator::transition` driven directly by an
 /// `IdealForce`, `accept`-ed at every accepted step — the same lag rule
 /// T6 already documented (the residual reads the *committed* state).
@@ -220,7 +220,7 @@ const XS: [f64; 4] = [0.0, 1e-3, 2e-3, 3e-3];
 const YS: [f64; 4] = [0.0, 5.0, 1.0, 5.0];
 
 /// PHDL: identical to `cross_check_table.rs`'s fixture. Host:
-/// `piperine_signal::behavior::table::Table::value` driving an
+/// `piperine_ir::behavior::table::Table::value` driving an
 /// `IdealForce` directly — `table` is a pure function of `t` here (no
 /// accept-lag, unlike `transition`/`cross`).
 #[test]
@@ -241,7 +241,7 @@ mod Top() {{
     let phdl_run = run_phdl_transient(&phdl, "Top", "out", stop, dt);
     assert!(phdl_run.len() > 10, "non-trivial accepted-point sequence");
 
-    let table = piperine_signal::behavior::table::Table::new(XS.to_vec(), YS.to_vec()).unwrap();
+    let table = piperine_ir::behavior::table::Table::new(XS.to_vec(), YS.to_vec()).unwrap();
     let mut builder = CircuitBuilder::new("host_table");
     let gnd = builder.ground();
     let out = builder.node("out");
@@ -264,7 +264,7 @@ mod Top() {{
 // ── 3. A `cross`-triggered element ──────────────────────────────────────
 
 /// PHDL: identical to `cross_check_events.rs`'s Sine+`@cross`-counter
-/// fixture. Host: `piperine_signal::events::EventDetector` driven from
+/// fixture. Host: `piperine_ir::events::EventDetector` driven from
 /// `accept_timestep`, reading the same sine input from a *second* host
 /// device's own `IdealForce` value at `ctx.t()` (mirroring the PHDL's own
 /// `V(sig,gnd) <- sin(...)` source) — a level-0 device using its own
@@ -382,11 +382,11 @@ mod Top() {{
 // ── 4. A pnjlim junction ─────────────────────────────────────────────────
 
 /// PHDL: a minimal exponential junction using `$limit("pnjlim", ...)`
-/// directly (mirrors `piperine-signal/tests/cross_check_limiter.rs`'s own
+/// directly (mirrors `piperine-ir/tests/cross_check_limiter.rs`'s own
 /// minimal-device idiom, not the full spice-faithful diode header — a
 /// smaller, exactly-matched pair rather than replicating ~15 physical
 /// effects). Host: the identical equation, evaluated with
-/// `piperine_signal::limit::pnjlim` directly and Newton-linearized the
+/// `piperine_ir::limit::pnjlim` directly and Newton-linearized the
 /// same way codegen's own kernel does (companion conductance + RHS around
 /// the limited voltage) — solved to the same DC operating point through a
 /// resistor divider, values compared, not the bare formula (T6 already

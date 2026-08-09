@@ -72,13 +72,13 @@ unsafe impl Sync for LimitFn {}
 
 mod wrappers {
     pub extern "C" fn pnjlim(vnew: f64, vold: f64, vte: f64, vcrit: f64) -> f64 {
-        piperine_signal::limit::pnjlim(vnew, vold, vte, vcrit)
+        piperine_ir::limit::pnjlim(vnew, vold, vte, vcrit)
     }
     pub extern "C" fn fetlim(vnew: f64, vold: f64, vto: f64) -> f64 {
-        piperine_signal::limit::fetlim(vnew, vold, vto)
+        piperine_ir::limit::fetlim(vnew, vold, vto)
     }
     pub extern "C" fn limvds(vnew: f64, vold: f64) -> f64 {
-        piperine_signal::limit::limvds(vnew, vold)
+        piperine_ir::limit::limvds(vnew, vold)
     }
 }
 

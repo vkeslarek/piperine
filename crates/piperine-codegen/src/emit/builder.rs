@@ -51,7 +51,7 @@ pub struct Builder<'a, 'f, 'm> {
     pub limits: Option<Vec<Expr>>,
     /// State-bank offset where `$limit` vold slots begin.
     pub limit_base: usize,
-    /// `pnjlim`/`fetlim`/`limvds` symbols (`piperine_signal::limit`), imported
+    /// `pnjlim`/`fetlim`/`limvds` symbols (`piperine_ir::limit`), imported
     /// into the current function — analog context only.
     pub limit_fns: Option<&'a HashMap<&'static str, FuncRef>>,
     /// Common-subexpression cache for analog emission.

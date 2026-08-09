@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 use piperine_api::sequencer::EdgeDirection;
 use piperine_api::sequencer::SequencerControl;
 use piperine_api::{Sequencer, SequencerProgram, Wake};
-use piperine_signal::events::CrossDir;
+use piperine_ir::events::CrossDir;
 use piperine_solver::abi::{AnalogReference, DigitalNet};
 
 use crate::device::_NetRef;

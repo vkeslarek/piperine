@@ -10,7 +10,7 @@ members = [
     "crates/piperine-plugin",
     "crates/piperine-plugin-macros",
     "crates/piperine-python",
-    "crates/piperine-signal",
+    "crates/piperine-ir",
 ]
 
 [workspace.package]
@@ -40,9 +40,9 @@ piperine-lang = { path = "crates/piperine-lang" }
 piperine-codegen = { path = "crates/piperine-codegen" }
 piperine-solver = { path = "crates/piperine-solver" }
 # dv-tester T29/T30: the host-parity/capability-parity fixtures reach
-# piperine-signal's catalog directly (the Rust half of the comparison) and
+# piperine-ir's catalog directly (the Rust half of the comparison) and
 # piperine-api's device/sequencer modules (HostElement, HostDeviceRegistry).
-piperine-signal = { path = "crates/piperine-signal" }
+piperine-ir = { path = "crates/piperine-ir" }
 num-complex = { workspace = true }
 
 # A dev/test build of this workspace links ~50 test binaries, and full

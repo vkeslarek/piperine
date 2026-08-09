@@ -189,8 +189,6 @@ fn the_detectors_recognise_what_they_forbid() {
         ("/// no `IrModule` structural twin", "IrModule"),
         ("//! dispatches on POM `Expr`, not `IrExpr`", "IrExpr"),
         ("/// every module's `IrInstance.connections`", "IrInstance"),
-        ("//! formerly the standalone `piperine-ir` crate", "piperine-ir"),
-        ("use piperine_ir::Program;", "piperine_ir"),
     ] {
         assert_eq!(
             dead_architecture_identifiers_in(offender),
@@ -198,7 +196,13 @@ fn the_detectors_recognise_what_they_forbid() {
             "must be flagged as dead architecture: {offender:?}"
         );
     }
-    for innocent in ["//! the POM `Design`/`Module`/`Instance`", "use piperine_lang::pom;", ""] {
+    for innocent in [
+        "//! the POM `Design`/`Module`/`Instance`",
+        "use piperine_lang::pom;",
+        "//! `piperine-ir` is the compiler's IR crate (MD-40)",
+        "use piperine_ir::core::Module;",
+        "",
+    ] {
         assert!(
             dead_architecture_identifiers_in(innocent).is_empty(),
             "must not be flagged: {innocent:?}"
@@ -395,14 +399,17 @@ fn no_file_scope_lint_suppression() {
 
 // ─── 6. No dead-architecture identifiers (MD-35) ──────────────────────────────
 
-/// The names of the deleted IR layer. There is no `piperine-ir` crate and no
-/// `IrProgram`/`IrModule`/`IrExpr`/`IrInstance` type: codegen resolves a POM
-/// `Design`/`Module`/`Instance` directly. P6 found sixteen comments defining the
-/// code by that dead architecture — two of them broken intra-doc links. A
-/// comment that can only be checked against a deleted crate cannot be checked
-/// at all.
-const DEAD_ARCHITECTURE_IDENTIFIERS: [&str; 6] =
-    ["IrProgram", "IrModule", "IrExpr", "IrInstance", "piperine-ir", "piperine_ir"];
+/// The names of the deleted IR layer. There is no `IrProgram`/`IrModule`/
+/// `IrExpr`/`IrInstance` type: codegen resolves a POM `Design`/`Module`/
+/// `Instance` directly. P6 found sixteen comments defining the code by that
+/// dead architecture — two of them broken intra-doc links. A comment that
+/// can only be checked against a deleted type cannot be checked at all.
+///
+/// Note: `piperine-ir` and `piperine_ir` were on this list under MD-35
+/// before MD-40 renamed `piperine-signal` to `piperine-ir`; they are now
+/// LIVE identifiers (the compiler-IR crate) and are no longer banned.
+const DEAD_ARCHITECTURE_IDENTIFIERS: [&str; 4] =
+    ["IrProgram", "IrModule", "IrExpr", "IrInstance"];
 
 /// Which dead identifiers one source line mentions.
 fn dead_architecture_identifiers_in(line: &str) -> Vec<&'static str> {
@@ -410,20 +417,13 @@ fn dead_architecture_identifiers_in(line: &str) -> Vec<&'static str> {
 }
 
 /// The registry of deliberate historical notes: file → (identifier, why it
-/// survives). Exactly one is allowed — the note in `piperine-codegen`'s `lib.rs`
-/// where the pipeline is introduced, which is the one place a reader benefits
-/// from knowing the resolved layer used to be its own crate. Everything else
-/// describes the present. Registry + exhaustiveness (the
-/// `capabilities_contract.rs` shape): a note that disappears fails the test just
-/// as loudly as a new one appearing.
-fn registered_historical_note(path: &str) -> Option<(&'static str, &'static str)> {
-    match path {
-        "crates/piperine-codegen/src/lib.rs" => Some((
-            "piperine-ir",
-            "the pipeline overview names the crate the `resolve` stage was split out of",
-        )),
-        _ => None,
-    }
+/// survives). Empty today: the rename in MD-40 made every former
+/// `piperine-ir`-as-dead-architecture mention either live again or stale,
+/// and the stale ones were reworded. Registry + exhaustiveness (the
+/// `capabilities_contract.rs` shape): a new note fails until it is recorded,
+/// and a note that disappears fails just as loudly.
+fn registered_historical_note(_path: &str) -> Option<(&'static str, &'static str)> {
+    None
 }
 
 #[test]
@@ -443,14 +443,15 @@ fn no_dead_architecture_identifiers() {
     assert!(
         offences.is_empty(),
         "dead-architecture identifiers (MD-35 — say what the code does now; the \
-         IR crate and its `Ir*` types no longer exist, codegen resolves the POM \
+         `Ir*` types no longer exist, codegen resolves the POM \
          `Design`/`Module`/`Instance` directly):\n  {}",
         offences.join("\n  ")
     );
-    assert_eq!(
-        notes_seen,
-        vec!["crates/piperine-codegen/src/lib.rs".to_string()],
-        "the registered historical note moved or vanished — update the registry"
+    assert!(
+        notes_seen.is_empty(),
+        "the registered-historical-note set is no longer empty — a new entry \
+         appeared; re-add it to `registered_historical_note` if deliberate: \
+         {notes_seen:?}"
     );
 }
 

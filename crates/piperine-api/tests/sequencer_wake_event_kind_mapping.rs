@@ -30,7 +30,7 @@
 
 use piperine_api::sequencer::SequencerControl;
 use piperine_api::{HostElement, Sequencer, SequencerProgram, Wake};
-use piperine_signal::events::CrossDir;
+use piperine_ir::events::CrossDir;
 use piperine_solver::abi::{AnalogReference, AnalogVariable, DigitalNet, EventEntry, EventKind, NodeIdentifier};
 use std::sync::Arc;
 
@@ -104,7 +104,7 @@ fn wait_crossing_never_a_breakpoint_and_maps_to_no_event_kind_at_all() {
     // Honest negative, verified by name rather than assumed: `EventKind`
     // does declare a `Crossing` variant, but it names an unrelated solver
     // feature (an A2D comparator without a digital scheduler, per its own
-    // doc comment) — the Sequencer's tier-2 crossing wait (`piperine_signal
+    // doc comment) — the Sequencer's tier-2 crossing wait (`piperine_ir
     // ::events::predict_crossing`, driven from `accept_timestep`) never
     // constructs or reads an `EventEntry` of any kind, `Crossing` included.
     // `EventKind::Crossing` is named here only to record what

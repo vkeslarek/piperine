@@ -11,7 +11,7 @@ use piperine_api::sequencer::install::InstallSite;
 use piperine_api::sequencer::SequencerControl;
 use piperine_api::{HostAdapter, HostDeviceRegistry, HostElement, Sequencer, SequencerProgram, Wake};
 use piperine_lang::SourceMap;
-use piperine_signal::wave::Wave;
+use piperine_ir::wave::Wave;
 use piperine_solver::abi::{Context, ElementCapabilities};
 use piperine_solver::prelude::CircuitBuilder;
 

@@ -1,7 +1,7 @@
 //! T18 (DVT-30) — the phase's integration proof: a non-trivial Rust host
 //! device composing all three levels this batch delivered (T14-T18), end
 //! to end in a real circuit. Not new production code beyond what the proof
-//! needs — everything here is `piperine-api::device` + `piperine-signal`,
+//! needs — everything here is `piperine-api::device` + `piperine-ir`,
 //! wired the way an author would wire them.
 //!
 //! What is proven, one test per "Done when" bullet:
@@ -14,7 +14,7 @@
 //!   controller: `Behavior::hysteresis` driving `Behavior::switch` through
 //!   `Composed`, solving in a real circuit.
 //! - `a_rejected_step_leaves_level_1_operator_state_untouched` — a
-//!   `piperine_signal::ops::Operator` (accept-gated by construction: its
+//!   `piperine_ir::ops::Operator` (accept-gated by construction: its
 //!   only mutator is `accept`, documented "call only on accepted
 //!   timesteps") is read via `load_dc`-shaped calls with no
 //!   `accept_timestep` in between; its `pending_edges` (a `&self` probe)
@@ -46,10 +46,10 @@ use piperine_api::sequencer::SequencerControl;
 use piperine_api::{
     BehaviorStamp, Ctx, HostAdapter, HostElement, Sequencer, SequencerProgram, StampSink, StateView, Wake, WaveStamp,
 };
-use piperine_signal::behavior::kinds::{Comparator, Composed, Hysteresis, Switch};
-use piperine_signal::behavior::{BehaviorKind, Crossing};
-use piperine_signal::ops::Operator;
-use piperine_signal::wave::Wave;
+use piperine_ir::behavior::kinds::{Comparator, Composed, Hysteresis, Switch};
+use piperine_ir::behavior::{BehaviorKind, Crossing};
+use piperine_ir::ops::Operator;
+use piperine_ir::wave::Wave;
 use piperine_solver::abi::{
     AnalogDevice, AnalogReference, AnalogVariable, Context, DcAnalysisState, DigitalDevice, DigitalNet, Element,
     ElementCapabilities, Introspect, LogicValue, NodeIdentifier, Stamp, TransientAnalysisContext,
@@ -277,7 +277,7 @@ fn hysteretic_pwm_runs_end_to_end() {
 
 #[test]
 fn a_rejected_step_leaves_level_1_operator_state_untouched() {
-    /// A device holding a `piperine_signal::ops::Operator` (level 1): its
+    /// A device holding a `piperine_ir::ops::Operator` (level 1): its
     /// `load_dc` — the "candidate attempt" path a rejected step also
     /// exercises — never calls `Operator::accept`, only `accept_timestep`
     /// does. `Operator`'s own doc header makes this the type-level

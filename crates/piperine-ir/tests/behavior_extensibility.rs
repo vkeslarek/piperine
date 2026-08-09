@@ -3,10 +3,10 @@
 //! shipped one — no plugin, no build ceremony (`ideal.md` §3.7/§12.2).
 //!
 //! This file is itself the proof: it is an ordinary integration test crate
-//! linking against `piperine_signal`, so a `BehaviorKind` impl written here
+//! linking against `piperine_ir`, so a `BehaviorKind` impl written here
 //! is, mechanically, "outside the crate."
 
-use piperine_signal::behavior::{BehaviorKind, Crossing};
+use piperine_ir::behavior::{BehaviorKind, Crossing};
 
 /// A toy external kind: `x^3`. Not in `kinds.rs`, not blessed in any way —
 /// just an ordinary trait impl.
@@ -34,7 +34,7 @@ fn a_kind_defined_outside_the_catalog_composes_like_a_shipped_one() {
 
     // Composes with a shipped kind exactly as a shipped kind would with
     // another: Behavior.scaled(Cube, 2.0).
-    let scaled = piperine_signal::behavior::kinds::Scaled { inner: Box::new(Cube), k: 2.0 };
+    let scaled = piperine_ir::behavior::kinds::Scaled { inner: Box::new(Cube), k: 2.0 };
     assert_eq!(scaled.value(&[2.0]), 16.0);
     let mut j2 = [0.0];
     scaled.jacobian(&[2.0], &mut j2);

@@ -10,9 +10,10 @@
 //! One module per pipeline stage:
 //!
 //! - [`resolve`] — the resolved expression/statement form plus the
-//!   POM→resolved pass (formerly the standalone `piperine-ir` crate +
-//!   `piperine-lang`'s `lowering/`). Codegen-private: nothing outside this
-//!   crate depends on its shape anymore.
+//!   POM→resolved pass (once split out as its own crate, then folded
+//!   back in under MD-23; the name `piperine-ir` now belongs to the
+//!   unrelated compiler-IR crate per MD-40). Codegen-private: nothing
+//!   outside this crate depends on its shape anymore.
 //! - `flatten` (crate-private) — resolved analog body → `FlatAnalog`
 //!   (contributions/forces/events/noise hoisted for emission).
 //! - `emit` (crate-private) — the reusable Cranelift emission machinery

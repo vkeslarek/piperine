@@ -2,7 +2,7 @@
 //! **time origin at the install instant**, and replacing an already-active
 //! wave **takes effect immediately with its discontinuity registered as an
 //! `Exact` breakpoint** — it is never re-anchored from the current value the
-//! way [`piperine_signal::ops::Operator::transition`] is (`ideal.md` §4.2).
+//! way [`piperine_ir::ops::Operator::transition`] is (`ideal.md` §4.2).
 //! `transition`'s re-anchor is correct *for `transition`*, whose entire job
 //! is smoothing; a `Wave` is a literal drive shape, and silently smoothing a
 //! step the author asked for would be exactly the kind of helpful magic
@@ -12,7 +12,7 @@
 
 use piperine_solver::abi::AnalogReference;
 
-use piperine_signal::wave::Wave;
+use piperine_ir::wave::Wave;
 
 use super::super::device::stamp::{Ctx, StampSink};
 

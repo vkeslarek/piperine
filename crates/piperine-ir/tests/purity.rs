@@ -1,4 +1,4 @@
-//! Mechanical proof that `piperine-signal` stays pure (MD-31: a policy
+//! Mechanical proof that `piperine-ir` stays pure (MD-31: a policy
 //! invariant lives in the gate, not in inspection). Two checks: the manifest
 //! declares zero in-tree dependencies, and no source file references
 //! `Element`, an MNA/matrix type, or a Cranelift symbol.
@@ -29,7 +29,7 @@ fn manifest_has_no_dependencies() {
 
     assert!(
         offending.is_empty(),
-        "piperine-signal's [dependencies] table must be empty (purity contract), \
+        "piperine-ir's [dependencies] table must be empty (purity contract), \
          found: {offending:?}"
     );
 }
@@ -49,7 +49,7 @@ fn sources_reference_no_solver_or_jit_symbol() {
 
     assert!(
         hits.is_empty(),
-        "piperine-signal source files must not reference Element/MNA-matrix/Cranelift \
+        "piperine-ir source files must not reference Element/MNA-matrix/Cranelift \
          symbols (purity contract), found: {hits:?}"
     );
 }

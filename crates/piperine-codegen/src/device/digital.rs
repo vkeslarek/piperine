@@ -34,12 +34,12 @@ impl Quad {
 
     /// The same fold as [`Quad::to_logic`], into `signal`'s four-state
     /// type — the input to [`EdgeDirection::fires`].
-    fn to_signal(value: i64) -> piperine_signal::logic::Logic {
+    fn to_signal(value: i64) -> piperine_ir::logic::Logic {
         match value {
-            0 => piperine_signal::logic::Logic::Zero,
-            1 => piperine_signal::logic::Logic::One,
-            3 => piperine_signal::logic::Logic::Z,
-            _ => piperine_signal::logic::Logic::X,
+            0 => piperine_ir::logic::Logic::Zero,
+            1 => piperine_ir::logic::Logic::One,
+            3 => piperine_ir::logic::Logic::Z,
+            _ => piperine_ir::logic::Logic::X,
         }
     }
 }
@@ -47,11 +47,11 @@ impl Quad {
 impl EdgeKind {
     /// Map codegen's clocked-block edge kind onto the shared detector's
     /// direction — `Any` and `Either` name the same thing.
-    fn to_signal(self) -> piperine_signal::logic::EdgeDirection {
+    fn to_signal(self) -> piperine_ir::logic::EdgeDirection {
         match self {
-            EdgeKind::Rising => piperine_signal::logic::EdgeDirection::Rising,
-            EdgeKind::Falling => piperine_signal::logic::EdgeDirection::Falling,
-            EdgeKind::Any => piperine_signal::logic::EdgeDirection::Either,
+            EdgeKind::Rising => piperine_ir::logic::EdgeDirection::Rising,
+            EdgeKind::Falling => piperine_ir::logic::EdgeDirection::Falling,
+            EdgeKind::Any => piperine_ir::logic::EdgeDirection::Either,
         }
     }
 }
@@ -218,7 +218,7 @@ impl DigitalInstance {
     /// Export all register/variable values as `f64`, indexed by `VarId`.
     /// Used by the D2A bridge to sync digital state into the analog vars
     /// bank after each evaluation.
-    pub fn export_vars(&self) -> Vec<f64> {
+    pub fn export_vars(&self) -> Vec<(crate::resolve::VarId, f64)> {
         self.kernel.layout().export_vars(&self.vars_int, &self.vars_real)
     }
 
@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn an_out_of_range_watch_value_folds_to_x_and_still_fires_rising_into_one() {
         let out_of_range = 99_i64;
-        assert_eq!(Quad::to_signal(out_of_range), piperine_signal::logic::Logic::X);
+        assert_eq!(Quad::to_signal(out_of_range), piperine_ir::logic::Logic::X);
         assert_eq!(Quad::to_logic(out_of_range), LogicValue::X);
 
         // Identical to today's rule: not-One before, One after, for prev = X.

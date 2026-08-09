@@ -1,5 +1,5 @@
 //! Guards the `codegen-simplification` delegation: for each of the five
-//! families `piperine-signal` now owns (runtime operators, event detectors,
+//! families `piperine-ir` now owns (runtime operators, event detectors,
 //! the junction limiter, `table`, digital edge detection), a second local
 //! copy must never quietly reappear in `piperine-codegen` or
 //! `piperine-api`. Source-walking style like `tests/suite_hygiene.rs` —
@@ -35,7 +35,7 @@ struct Family {
 /// `piperine-api` (`piperine_codegen::device::digital` and
 /// `piperine_api::sequencer::wait`) before this feature, and the two
 /// copies had already drifted (spec §0 item 3) before being unified onto
-/// `piperine_signal::logic`.
+/// `piperine_ir::logic`.
 const FAMILIES: &[Family] = &[
     Family {
         name: "operators",
@@ -123,7 +123,7 @@ fn offences_for(family: &Family) -> Vec<String> {
                     if line.contains(marker) {
                         offences.push(format!(
                             "{path}:{}: a second copy of the {} family reappeared \
-                             (`{marker}`) — {name} was delegated to piperine-signal, \
+                             (`{marker}`) — {name} was delegated to piperine-ir, \
                              a local copy must not come back",
                             index + 1,
                             family.name,

@@ -29,7 +29,7 @@ pub fn drive_voltage(
     site: &mut InstallSite,
     instance: &str,
     net_label: &str,
-    wave: piperine_signal::wave::Wave,
+    wave: piperine_ir::wave::Wave,
     t: f64,
     internal: bool,
 ) {
@@ -158,7 +158,7 @@ mod tests {
     fn driving_an_internal_net_appears_in_the_findings() {
         let mut site = InstallSite::new(node(0), node(1), 50.0);
         let mut ctl = SequencerControl::new();
-        drive_voltage(&mut ctl, &mut site, "seq0", "internal_x", piperine_signal::wave::Wave::constant(1.0), 3e-6, true);
+        drive_voltage(&mut ctl, &mut site, "seq0", "internal_x", piperine_ir::wave::Wave::constant(1.0), 3e-6, true);
         let report = ctl.findings().to_report().expect("an internal drive must record a finding");
         let f = &report.findings()[0];
         assert_eq!(f.instance_path, "seq0");
@@ -172,7 +172,7 @@ mod tests {
     fn driving_a_boundary_net_records_no_finding() {
         let mut site = InstallSite::new(node(0), node(1), 50.0);
         let mut ctl = SequencerControl::new();
-        drive_voltage(&mut ctl, &mut site, "seq0", "vout", piperine_signal::wave::Wave::constant(1.0), 3e-6, false);
+        drive_voltage(&mut ctl, &mut site, "seq0", "vout", piperine_ir::wave::Wave::constant(1.0), 3e-6, false);
         assert!(ctl.findings().to_report().is_none());
     }
 

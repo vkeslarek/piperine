@@ -8,7 +8,7 @@
 //! | driver conflict | `piperine_api::sequencer::DriveRegistry` (this task) — unit-tested in `conflicts.rs`; ordering independence proven there |
 //! | non-yielding coroutine | `crates/piperine-api/src/sequencer/driver.rs::tests::a_non_yielding_coroutine_is_loud_not_a_hang` (T19) |
 //! | rebuild-class `set_param` | proven below for a **host device** specifically — T14 claimed this "inherited for free" but never tested it end to end |
-//! | unfed measure | `piperine-signal`'s `Measure::value`/`error_bound` (T13); adapted in `crates/piperine-api/src/device/level1.rs::tests::measure_is_fed_on_accept_and_untouched_otherwise` |
+//! | unfed measure | `piperine-ir`'s `Measure::value`/`error_bound` (T13); adapted in `crates/piperine-api/src/device/level1.rs::tests::measure_is_fed_on_accept_and_untouched_otherwise` |
 //! | AC with a sequencer | `crates/piperine-api/tests/sequencer_dc_ac.rs::ac_with_a_sequencer_present_fails_loud_naming_the_gap` (T25) |
 //!
 //! Ordering itself (§12.12): the authored POM instantiation order already

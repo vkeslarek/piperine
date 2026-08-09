@@ -1,12 +1,12 @@
 //! Operators capability: `delay`/`slew`/`transition`/`idt`/`idtmod`
 //! runtime-serviced state, updated once per accepted timestep. The pure
-//! semantics live in `piperine_signal::ops::Operator` — this file only adds
+//! semantics live in `piperine_ir::ops::Operator` — this file only adds
 //! the state-array slot the signal type deliberately does not carry.
 
-use piperine_signal::ops::Operator;
+use piperine_ir::ops::Operator;
 
 /// A runtime-serviced analog operator paired with the state-array slot it
-/// writes: `piperine_signal::ops::Operator` has no notion of a slot, so
+/// writes: `piperine_ir::ops::Operator` has no notion of a slot, so
 /// codegen carries it alongside.
 pub(super) struct SlottedOperator {
     pub(super) slot: usize,
@@ -29,7 +29,7 @@ impl SlottedOperator {
     }
 
     /// Ramp edges strictly inside `(from, end]` for breakpoint declaration —
-    /// see `piperine_signal::ops::Operator::pending_edges`.
+    /// see `piperine_ir::ops::Operator::pending_edges`.
     pub(super) fn pending_edges(&self, from: f64, end: f64, out: &mut Vec<f64>) {
         self.op.pending_edges(from, end, out);
     }
@@ -40,7 +40,7 @@ mod tests {
     use super::*;
 
     // The pure `delay`/`slew`/`transition`/`idt` semantics are
-    // `piperine_signal::ops::Operator`'s own tests (crates/piperine-signal/
+    // `piperine_ir::ops::Operator`'s own tests (crates/piperine-ir/
     // src/ops.rs); these cover only what this file adds — the slot the
     // signal type deliberately does not carry, and that `accept`/
     // `pending_edges` delegate rather than reimplement (CGS-01, CGS-02).
@@ -73,7 +73,7 @@ mod tests {
     fn accept_delegates_to_the_wrapped_signal_operator() {
         // Slew limited to rise*dt = 1.0*1.0 = 1.0 for an input asking for 5.0 —
         // the same result `Operator::slew(1.0, 2.0).accept(1.0, 5.0)` returns
-        // (piperine-signal's `slew_limits_rise_and_fall_asymmetrically`),
+        // (piperine-ir's `slew_limits_rise_and_fall_asymmetrically`),
         // proving the wrapper does not reimplement the limiter math.
         let mut op = SlottedOperator::new(0, Operator::slew(1.0, 2.0));
         assert_eq!(op.accept(1.0, 5.0), 1.0);
@@ -83,8 +83,8 @@ mod tests {
     fn pending_edges_delegates_to_the_wrapped_signal_operator() {
         // A seeded transition with a pending ramp reports the ramp-start and
         // ramp-end edges — the same breakpoints
-        // `piperine_signal::ops::Operator::pending_edges` computes directly
-        // (mirrors piperine-signal's `transition_pending_edges_while_ramping`).
+        // `piperine_ir::ops::Operator::pending_edges` computes directly
+        // (mirrors piperine-ir's `transition_pending_edges_while_ramping`).
         let mut op = SlottedOperator::new(0, Operator::transition(0.0, 2.0, 2.0));
         op.accept(0.0, 0.0);
         op.accept(1.0, 1.0); // change at t=1, ramp over [1, 3]

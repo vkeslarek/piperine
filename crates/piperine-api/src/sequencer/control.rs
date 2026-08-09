@@ -8,7 +8,7 @@
 
 use piperine_solver::abi::{DigitalNet, LogicValue, ValidationSeverity};
 
-use piperine_signal::events::Prediction;
+use piperine_ir::events::Prediction;
 
 use super::findings::Findings;
 
@@ -75,19 +75,19 @@ impl SequencerControl {
         self.findings.push(ValidationSeverity::Warning, "warn", msg, 0.0, t, instance);
     }
 
-    /// `expect` against a [`Measure`](piperine_signal::measure::handle::Measure)'s
+    /// `expect` against a [`Measure`](piperine_ir::measure::handle::Measure)'s
     /// **lower** bound (`ideal.md` §4.3): compares `value - error_bound`
     /// against `threshold`, not the point estimate alone — a borderline
     /// pass whose bound-adjusted worst case would fail the threshold is
     /// still an `expect` failure.
-    pub fn expect_measure_at_least<K: piperine_signal::measure::MeasureKind>(
+    pub fn expect_measure_at_least<K: piperine_ir::measure::MeasureKind>(
         &mut self,
-        measure: &piperine_signal::measure::handle::Measure<K>,
+        measure: &piperine_ir::measure::handle::Measure<K>,
         threshold: f64,
         msg: impl Into<String>,
         t: f64,
         instance: &str,
-    ) -> Result<(), piperine_signal::measure::handle::MeasureError> {
+    ) -> Result<(), piperine_ir::measure::handle::MeasureError> {
         let value = measure.value()?;
         let bound = measure.error_bound()?;
         self.expect(value - bound >= threshold, msg, t, instance);
@@ -96,14 +96,14 @@ impl SequencerControl {
 
     /// The upper-bound twin of [`Self::expect_measure_at_least`]: compares
     /// `value + error_bound` against `threshold`.
-    pub fn expect_measure_at_most<K: piperine_signal::measure::MeasureKind>(
+    pub fn expect_measure_at_most<K: piperine_ir::measure::MeasureKind>(
         &mut self,
-        measure: &piperine_signal::measure::handle::Measure<K>,
+        measure: &piperine_ir::measure::handle::Measure<K>,
         threshold: f64,
         msg: impl Into<String>,
         t: f64,
         instance: &str,
-    ) -> Result<(), piperine_signal::measure::handle::MeasureError> {
+    ) -> Result<(), piperine_ir::measure::handle::MeasureError> {
         let value = measure.value()?;
         let bound = measure.error_bound()?;
         self.expect(value + bound <= threshold, msg, t, instance);
@@ -149,8 +149,8 @@ mod tests {
     /// must catch the case the naive check would silently let through.
     #[test]
     fn expect_measure_at_least_uses_the_error_bound_not_the_point_estimate() {
-        use piperine_signal::measure::handle::Measure;
-        use piperine_signal::measure::kinds::Peak;
+        use piperine_ir::measure::handle::Measure;
+        use piperine_ir::measure::kinds::Peak;
 
         let mut peak = Measure::arm(Peak::new());
         peak.feed(0.0, 5.0, 0.3);
@@ -172,8 +172,8 @@ mod tests {
     /// clears records nothing.
     #[test]
     fn expect_measure_at_least_passes_when_the_bound_adjusted_value_clears_the_threshold() {
-        use piperine_signal::measure::handle::Measure;
-        use piperine_signal::measure::kinds::Peak;
+        use piperine_ir::measure::handle::Measure;
+        use piperine_ir::measure::kinds::Peak;
 
         let mut peak = Measure::arm(Peak::new());
         peak.feed(0.0, 5.0, 0.3);

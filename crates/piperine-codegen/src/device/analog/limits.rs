@@ -4,7 +4,7 @@
 //!
 //! The `active`/`active_slots`/`seeds` bookkeeping (rules 2 and 4 — seed
 //! preservation, convergence veto) delegates to
-//! `piperine_signal::limit::Limiter::advance_precomputed`. Rule 3's formula
+//! `piperine_ir::limit::Limiter::advance_precomputed`. Rule 3's formula
 //! itself (pnjlim/fetlim/limvds) is **not** recomputed here: since T4/T5 the
 //! JIT already calls `signal::limit::{pnjlim,fetlim,limvds}` directly
 //! (`kernel.eval_limit_update`), so `vlim` arrives pre-computed. `vold`
@@ -21,12 +21,12 @@ use super::LoadCtx;
 
 /// Per-instance `$limit` runtime state: whether limiting is still moving,
 /// and the critical-voltage seeds used to tell an unbiased (still-seeded)
-/// junction from a tracked one. A thin wrapper: `piperine_signal::limit::
+/// junction from a tracked one. A thin wrapper: `piperine_ir::limit::
 /// Limiter` owns `active`/`active_slots`/`seeds`; `vold` lives in the
 /// instance's `state` bank, passed in by every call (never inside the
 /// wrapped type).
 pub(super) struct Limiter {
-    inner: piperine_signal::limit::Limiter,
+    inner: piperine_ir::limit::Limiter,
 }
 
 impl Limiter {
@@ -36,7 +36,7 @@ impl Limiter {
     /// same point in `AnalogInstance::new` as before this split — after
     /// `@initial` events, matching the original construction order exactly).
     pub(super) fn new(num_limits: usize) -> Self {
-        Self { inner: piperine_signal::limit::Limiter::new(vec![0.0; num_limits]) }
+        Self { inner: piperine_ir::limit::Limiter::new(vec![0.0; num_limits]) }
     }
 
     /// Seed each `$limit` vold slot (in `state`) with its critical voltage
@@ -55,7 +55,7 @@ impl Limiter {
         for (i, s) in seeds.iter().enumerate() {
             state[base + i] = *s;
         }
-        self.inner = piperine_signal::limit::Limiter::new(seeds);
+        self.inner = piperine_ir::limit::Limiter::new(seeds);
     }
 
     pub(super) fn active(&self) -> bool {

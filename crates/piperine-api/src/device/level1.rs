@@ -1,7 +1,7 @@
 //! Level 1 into stamps (T16, DVT-24): the adapter pieces that turn a
-//! `piperine-signal` [`Wave`]/[`BehaviorKind`] into MNA rows through
+//! `piperine-ir` [`Wave`]/[`BehaviorKind`] into MNA rows through
 //! [`StampSink`], and feed a [`Measure`] from **accepted** points only.
-//! `piperine-signal` itself never stamps (its purity contract, T1) — this
+//! `piperine-ir` itself never stamps (its purity contract, T1) — this
 //! module is the one place that turns its values/derivatives into
 //! `Stamp`s, which is exactly the division of labor `ideal.md` §3.1
 //! describes.
@@ -15,11 +15,11 @@
 
 use piperine_solver::abi::{AnalogReference, LimitReason, LimitingReport};
 
-use piperine_signal::behavior::BehaviorKind;
-use piperine_signal::limit::Limiter;
-use piperine_signal::measure::MeasureKind;
-use piperine_signal::measure::handle::Measure;
-use piperine_signal::wave::Wave;
+use piperine_ir::behavior::BehaviorKind;
+use piperine_ir::limit::Limiter;
+use piperine_ir::measure::MeasureKind;
+use piperine_ir::measure::handle::Measure;
+use piperine_ir::wave::Wave;
 
 use super::stamp::{Ctx, StampSink, StateView};
 
@@ -143,7 +143,7 @@ impl<K: MeasureKind> MeasureFeed<K> {
     }
 }
 
-/// Build a [`LimitingReport`] from a `piperine-signal` [`Limiter`]'s
+/// Build a [`LimitingReport`] from a `piperine-ir` [`Limiter`]'s
 /// current state (DVT-24, `ideal.md` §3.9 D4): `None` while the limiter is
 /// not clamping (the common case — a level-1 limiter costs nothing when
 /// unused), `Some` while it is, so it vetoes Newton convergence exactly as
@@ -173,9 +173,9 @@ pub fn limiting_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use piperine_signal::behavior::kinds::Comparator;
-    use piperine_signal::measure::gate::Gate;
-    use piperine_signal::measure::kinds::Peak;
+    use piperine_ir::behavior::kinds::Comparator;
+    use piperine_ir::measure::gate::Gate;
+    use piperine_ir::measure::kinds::Peak;
     use piperine_solver::abi::{AnalogVariable, CircularArrayBuffer2, NodeIdentifier};
     use std::sync::Arc;
 
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn limiting_report_surfaces_while_still_clamping() {
-        use piperine_signal::limit::LimitKind;
+        use piperine_ir::limit::LimitKind;
         let mut limiter = Limiter::new(vec![0.6]);
         // A large jump from the vcrit seed forces the limiter to clamp.
         limiter.update(&[5.0], &[LimitKind::Pnjlim { vte: 0.02585 }]);
