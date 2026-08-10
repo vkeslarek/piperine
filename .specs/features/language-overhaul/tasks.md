@@ -458,13 +458,32 @@ Phase 6.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Concept-budget guard fails if a sixth top-level concept appears in `core/`
-- [ ] No-catch-all guard fails on a `_ =>` arm in any match over `Op` or net kind
-- [ ] Each guard proven able to fail (inject, observe red, revert — MD-31)
-- [ ] Gate passes: `cargo test --workspace`
+- [x] Concept-budget guard fails if a sixth top-level concept appears in `core/`
+- [x] No-catch-all guard fails on a `_ =>` arm in any match over `Op` or net kind
+- [x] Each guard proven able to fail (inject, observe red, revert — MD-31)
+- [x] Gate passes: `cargo test --workspace`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ir): concept-budget and no-catch-all gates`
+
+**Note (batch execution, Phase 3 — closes P1):** the no-catch-all guard is
+registry-driven per dispatch SITE (file + function + match marker), not a
+crate-wide text scan — a naive whole-crate `_ =>` scan false-positives on
+`interp.rs::eval_pure` (a same-named `op: PureOp` parameter) and on
+`diff.rs`'s own test-module closures, neither of which is a dispatch over
+`Op`/`NetKind`. Each site's function body is isolated by balanced-brace
+extraction first, then only TOP-LEVEL (depth-1) `_ =>` arms within the
+named match are flagged, so a legitimate nested match inside one arm
+(`diff.rs::d_op`'s `match wrt {...}`) is never mistaken for a catch-all on
+the outer `Op` dispatch. Six sites registered today: the four per-Op
+dispatch functions (verify/interp/print/diff) and the two `NetKind`
+dispatches (verify's `ReadSignal`/`Drive` typing, print's `write_net`).
+`piperine-codegen`'s `lower/`/`backend/` (design.md §6's eventual target)
+don't exist until Phase 4/6 — nothing to register there yet. Both guards
+proven able to fail in-tree (dummy `core/bogus.rs`; an injected `_ => {}`
+in `verify.rs::check_op`), observed red naming the exact violation, then
+reverted before this commit. Full-workspace gate: 2044 passed, 0 failed,
+0 errors (before this phase: 2024).
 
 ---
 
