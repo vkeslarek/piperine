@@ -362,12 +362,25 @@ T36 → T37 → T38 → T39 → T40 → T41 → T42
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Harness takes a fixture + two evaluators and reports the first disagreeing output/cell by name
-- [ ] Tolerance is declared per fixture in exactly one place
-- [ ] Gate passes: `cargo test -p piperine-ir`
+- [x] Harness takes a fixture + two evaluators and reports the first disagreeing output/cell by name
+- [x] Tolerance is declared per fixture in exactly one place
+- [x] Gate passes: `cargo test -p piperine-ir`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(ir): differential harness`
+
+**Note (batch execution, Phase 3):** no JIT backend exists yet at this point
+in the plan (Phase 4/T18+ builds it) — spec AC6's literal "interpreter ≡
+JIT" claim cannot be earned here. The harness is generic (`Evaluator`
+trait + `compare`), proven against TWO evaluators: the reference
+interpreter (T13) and a second, INDEPENDENTLY-WRITTEN `CheckedEvaluator`
+(dense-array store, per-op-category dispatch, written from the IR's own
+docs, kept in `tests/` not `src/` so it is never mistaken for a shipped
+backend). See `tests/support/harness.rs`'s module doc for the full
+reasoning. T18 rewires this same `compare` function against the real
+analog backend to close the literal AC6 claim. Extending Bits arithmetic
+in `interp.rs::eval_pure` (previously Real-only) was required to make the
+digital counter fixture evaluable and is folded into this commit.
 
 ---
 
