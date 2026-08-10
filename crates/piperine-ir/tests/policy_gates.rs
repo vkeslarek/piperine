@@ -139,13 +139,15 @@ struct DispatchSite {
     description: &'static str,
 }
 
-/// Every known dispatch over `Op` or `NetKind` in `piperine-ir`. Four
-/// per-op dispatch functions (verifier, interpreter, printer,
-/// differentiator) plus the two `NetKind` dispatches the verifier and
-/// printer each perform. `piperine-codegen`'s `lower/`/`backend/`
-/// (design.md §6's stated target for this guard) do not exist yet —
-/// Phase 6/4 — so there is nothing there to register today; T18/T29 add
-/// entries here when those dispatches land.
+/// Every known dispatch over `Op` or `NetKind` in `piperine-ir`, plus
+/// (T18) `piperine-codegen`'s `backend/` — the first Phase-4 dispatch over
+/// `Op` outside `piperine-ir` (design.md §6's stated eventual target for
+/// this guard). Four per-op dispatch functions in `piperine-ir` (verifier,
+/// interpreter, printer, differentiator) plus the two `NetKind` dispatches
+/// the verifier and printer each perform, plus three in `piperine-codegen`
+/// (`backend::OpCtx::compile_op`, `backend::PortMap::walk`,
+/// `backend::OpCtx::collect_reads_writes`). `lower/` (Phase 6, T29) has no
+/// dispatch yet — nothing to register there today.
 const DISPATCH_SITES: &[DispatchSite] = &[
     DispatchSite {
         file: "crates/piperine-ir/src/verify.rs",
@@ -182,6 +184,24 @@ const DISPATCH_SITES: &[DispatchSite] = &[
         fn_marker: "fn write_net(",
         match_marker: "match &net.kind {",
         description: "printer's net-kind dispatch",
+    },
+    DispatchSite {
+        file: "crates/piperine-codegen/src/backend/engine.rs",
+        fn_marker: "fn compile_op(",
+        match_marker: "match op {",
+        description: "T18 analog/digital backend's per-Op emission dispatch (Cranelift codegen)",
+    },
+    DispatchSite {
+        file: "crates/piperine-codegen/src/backend/engine.rs",
+        fn_marker: "fn walk(",
+        match_marker: "match op {",
+        description: "T18 backend's PortMap scan — per-Op dispatch over contribute/force/drive sites",
+    },
+    DispatchSite {
+        file: "crates/piperine-codegen/src/backend/engine.rs",
+        fn_marker: "fn collect_reads_writes(",
+        match_marker: "match op {",
+        description: "T18 backend's seed-value scan — per-Op dispatch collecting reads/writes",
     },
 ];
 
