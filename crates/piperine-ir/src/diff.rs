@@ -64,6 +64,18 @@ pub struct Differentiator<'a> {
     derivs: HashMap<ValueId, ValueId>,
     zero_id: ValueId,
     one_id: ValueId,
+    /// Every constant-anchor `ValueId` this differentiator has minted
+    /// (`zero_id`, `one_id`, and each `real_const(c)`), paired with its
+    /// actual numeric value. A constant anchor's DEFINING op is the
+    /// self-referential `Pure::Add { args: [out, out], out }` pattern this
+    /// module's doc describes — deliberately unevaluable by walking the
+    /// op graph alone (there is no `x` with `x = x + x` other than `0`,
+    /// so the pattern alone cannot distinguish `zero_id` from `one_id`).
+    /// [`Self::constants`] is the side-channel a numeric consumer (a
+    /// backend; the reference interpreter has no reactive/nonlinear
+    /// Jacobian consumer yet) needs to resolve an anchor to its real
+    /// value instead of evaluating its self-referential defining op.
+    constants: HashMap<ValueId, f64>,
 }
 
 impl<'a> Differentiator<'a> {
@@ -90,7 +102,19 @@ impl<'a> Differentiator<'a> {
             out: one_id,
         });
         let _ = (zero_const, one_const);
-        Self { module, block, derivs: HashMap::new(), zero_id, one_id }
+        let mut constants = HashMap::new();
+        constants.insert(zero_id, 0.0);
+        constants.insert(one_id, 1.0);
+        Self { module, block, derivs: HashMap::new(), zero_id, one_id, constants }
+    }
+
+    /// Every constant-anchor `ValueId` minted so far, mapped to its real
+    /// numeric value — the side-channel a backend needs to resolve
+    /// `zero_id`/`one_id`/`real_const(c)` (see this struct's field doc).
+    /// Read AFTER calling [`Self::d`]/[`Self::d_twice`]/[`Self::d_thrice`]
+    /// so every anchor the derivative graph minted is present.
+    pub fn constants(&self) -> &HashMap<ValueId, f64> {
+        &self.constants
     }
 
     /// Differentiate `value` w.r.t. `wrt`. Returns the `ValueId` of the
@@ -476,6 +500,7 @@ impl<'a> Differentiator<'a> {
             args: vec![out, out],
             out,
         });
+        self.constants.insert(out, c);
         out
     }
 }
