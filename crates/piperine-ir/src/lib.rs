@@ -19,6 +19,7 @@ pub mod catalog;
 pub mod core;
 pub mod diff;
 pub mod events;
+pub mod interp;
 pub mod limit;
 pub mod logic;
 pub mod measure;
