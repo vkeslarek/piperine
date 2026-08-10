@@ -168,6 +168,41 @@ impl Names {
     pub fn block(&self, id: BlockId) -> Option<&str> {
         self.blocks.get(id.0 as usize).and_then(|n| n.as_deref())
     }
+
+    /// Find the value id authored as `name`, if any. Reverse lookup for
+    /// the parser (T9): a `\name` reference at a use site resolves to its
+    /// declaring id through this scan. Linear in the number of authored
+    /// names — fine for parse-time over hand-written fixtures.
+    pub fn find_value(&self, name: &str) -> Option<ValueId> {
+        self.values
+            .iter()
+            .position(|n| n.as_deref() == Some(name))
+            .map(|i| ValueId(i as u32))
+    }
+
+    /// Find the net id authored as `name`.
+    pub fn find_net(&self, name: &str) -> Option<NetId> {
+        self.nets
+            .iter()
+            .position(|n| n.as_deref() == Some(name))
+            .map(|i| NetId(i as u32))
+    }
+
+    /// Find the cell id authored as `name`.
+    pub fn find_cell(&self, name: &str) -> Option<CellId> {
+        self.cells
+            .iter()
+            .position(|n| n.as_deref() == Some(name))
+            .map(|i| CellId(i as u32))
+    }
+
+    /// Find the block id authored as `name`.
+    pub fn find_block(&self, name: &str) -> Option<BlockId> {
+        self.blocks
+            .iter()
+            .position(|n| n.as_deref() == Some(name))
+            .map(|i| BlockId(i as u32))
+    }
 }
 
 /// The printer — owns the algorithm that walks the arenas in id order and
@@ -401,26 +436,26 @@ impl<'a> Printer<'a> {
             Op::ReadAcross { a, b, out: o } => {
                 out.push('(');
                 out.push_str(&self.value_id_str(*o));
-                out.push_str(&format!(" = read-across N{} N{})", a.0, b.0));
+                out.push_str(&format!(" = read-across {} {})", self.net_id_str(*a), self.net_id_str(*b)));
             }
             Op::ReadThrough { a, b, out: o } => {
                 out.push('(');
                 out.push_str(&self.value_id_str(*o));
-                out.push_str(&format!(" = read-through N{} N{})", a.0, b.0));
+                out.push_str(&format!(" = read-through {} {})", self.net_id_str(*a), self.net_id_str(*b)));
             }
             Op::ContributeThrough { a, b, value } => {
                 out.push_str(&format!(
-                    "(contribute-through N{} N{} {})",
-                    a.0,
-                    b.0,
+                    "(contribute-through {} {} {})",
+                    self.net_id_str(*a),
+                    self.net_id_str(*b),
                     self.value_id_str(*value)
                 ));
             }
             Op::ForceAcross { a, b, value } => {
                 out.push_str(&format!(
-                    "(force-across N{} N{} {})",
-                    a.0,
-                    b.0,
+                    "(force-across {} {} {})",
+                    self.net_id_str(*a),
+                    self.net_id_str(*b),
                     self.value_id_str(*value)
                 ));
             }
