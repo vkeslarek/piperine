@@ -394,13 +394,22 @@ digital counter fixture evaluable and is folded into this commit.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] RC fixture: hand-computed DC point matched
-- [ ] Counter fixture: hand-computed sequence over ≥8 cycles matched
-- [ ] Both round-trip through print/parse
-- [ ] Gate passes: `cargo test -p piperine-ir`
+- [x] RC fixture: hand-computed DC point matched
+- [x] Counter fixture: hand-computed sequence over ≥8 cycles matched
+- [x] Both round-trip through print/parse
+- [x] Gate passes: `cargo test -p piperine-ir`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(ir): RC and counter fixtures`
+
+**Note (batch execution, Phase 3):** the RC fixture is a purely resistive
+divider (no `ddt`/reactive companion) — T13's interpreter is handed node
+values externally rather than solving KCL, so the fixture supplies an
+already-balanced operating point and checks the Ohm's-law contributions
+against a hand computation; reactive dynamics land with the analog
+backend (T20). The counter is 4-bit, driven 20 rising edges (> the ≥8
+minimum), checked against `k % 16` after every edge, not just the final
+value.
 
 ---
 
