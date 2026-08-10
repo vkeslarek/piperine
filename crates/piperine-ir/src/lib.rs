@@ -17,6 +17,7 @@
 pub mod behavior;
 pub mod catalog;
 pub mod core;
+pub mod diff;
 pub mod events;
 pub mod limit;
 pub mod logic;

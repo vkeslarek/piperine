@@ -51,6 +51,13 @@ impl Block {
     pub fn ops(&self) -> &[Op] {
         &self.ops
     }
+
+    /// The full op sequence, mutably — for passes that harvest newly-
+    /// pushed ops (the diff pass T12 harvests derivative ops out of an
+    /// arm into a structured If derivative).
+    pub fn ops_mut(&mut self) -> &mut Vec<Op> {
+        &mut self.ops
+    }
 }
 
 #[cfg(test)]
