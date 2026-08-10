@@ -21,6 +21,7 @@ pub mod limit;
 pub mod logic;
 pub mod measure;
 pub mod ops;
+pub mod parse;
 pub mod print;
 pub mod verify;
 pub mod wave;

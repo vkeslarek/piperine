@@ -10,7 +10,7 @@ use super::{Block, BlockId, Cell, CellId, Const, ConstId, NatureId, Net, NatureI
 /// One IR module: the arena storage for every concept. T2 fills in values
 /// and constants; nets and natures arrive in T3; cells in T4; blocks and
 /// the op set in T5.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Module {
     /// The type of each value slot, indexed by [`ValueId`]. The arena is
     /// the source of truth for "what is this value's shape" — ops carry
@@ -165,6 +165,15 @@ impl Module {
         &self.cells[id.0 as usize]
     }
 
+    /// The cell at `id`, mutably. The single-writer rule constrains what
+    /// the writer field may become (the verifier T7 catches a writer
+    /// pointing at an undeclared block); this accessor exists so the
+    /// parser (T9) can resolve forward references after all blocks are
+    /// declared.
+    pub fn cell_at_mut(&mut self, id: CellId) -> &mut Cell {
+        &mut self.cells[id.0 as usize]
+    }
+
     /// All cell ids in declaration order, for passes that walk every cell
     /// (the verifier's writer-count check, T7).
     pub fn cells(&self) -> impl Iterator<Item = (CellId, &Cell)> {
@@ -212,12 +221,21 @@ impl Module {
     pub fn block_count(&self) -> usize {
         self.blocks.len()
     }
+
+    /// Structural equivalence — same arenas, same contents, same order.
+    /// The parser (T9) round-trip check uses this: `parse(print(m))` must
+    /// be structurally equivalent to `m`. Equivalent to [`Self::eq`] (every
+    /// arena slot derives `PartialEq`), but named for the semantic intent
+    /// so the test reads "structurally equivalent" rather than "equal".
+    pub fn structurally_equivalent(&self, other: &Module) -> bool {
+        self == other
+    }
 }
 
 /// A whole IR program: one or more modules. The shape mirrors the POM's
 /// `Design::modules` (MD-25): the IR is a SEPARATE artifact built FROM the
 /// POM, never mutating it.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Program {
     /// One [`Module`] per POM module, in elaboration order.
     pub modules: Vec<Module>,
