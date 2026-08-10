@@ -9,14 +9,22 @@
 //! Nothing in the public API uses `usize` — distinct newtypes prevent a
 //! `CellId` being passed where a `ValueId` belongs.
 
+mod block;
 mod cell;
 mod module;
 mod net;
+mod op;
+mod sigref;
+mod trigger;
 mod value;
 
+pub use block::Block;
 pub use cell::Cell;
 pub use module::{Module, Program};
 pub use net::{Net, NatureInfo, NatureKind, NetKind};
+pub use op::{Op, Pattern, PureOp};
+pub use sigref::{Chunk, SigRef};
+pub use trigger::{CrossDir, Domain, EdgeKind, Trigger};
 pub use value::{Const, Ty};
 
 /// A typed value slot's id — the `Module::values` arena maps this to its [`Ty`].
@@ -35,7 +43,7 @@ pub struct CellId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NetId(pub u32);
 
-/// A declared block's id (T4 references it; `Block` itself is T5).
+/// A declared block's id. Referenced by `Cell.writer` (T4); `Block` lives in T5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BlockId(pub u32);
 
@@ -43,6 +51,6 @@ pub struct BlockId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NatureId(pub u32);
 
-/// An intrinsic-catalog entry's id (T5).
+/// An intrinsic-catalog entry's id (T5's `Op::Call`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct IntrinsicId(pub u32);

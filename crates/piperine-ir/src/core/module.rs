@@ -5,11 +5,11 @@
 //! The arena shape is the Cranelift idiom (already a dependency in the
 //! wider workspace) — dense `Vec` storage plus distinct newtype indices.
 
-use super::{Cell, CellId, Const, ConstId, NatureId, Net, NatureInfo, Ty, ValueId, NetId};
+use super::{Block, BlockId, Cell, CellId, Const, ConstId, NatureId, Net, NatureInfo, Ty, ValueId, NetId};
 
 /// One IR module: the arena storage for every concept. T2 fills in values
-/// and constants; nets and natures arrive in T3; cells (T4) here; blocks
-/// (T5) attach their own arenas next.
+/// and constants; nets and natures arrive in T3; cells in T4; blocks and
+/// the op set in T5.
 #[derive(Debug, Default, Clone)]
 pub struct Module {
     /// The type of each value slot, indexed by [`ValueId`]. The arena is
@@ -30,6 +30,9 @@ pub struct Module {
     /// The declared cells, indexed by [`CellId`]. Each cell names exactly
     /// one writer block (T4).
     cells: Vec<Cell>,
+    /// The declared blocks, indexed by [`BlockId`]. Each block carries its
+    /// domain, trigger and op sequence (T5).
+    blocks: Vec<Block>,
 }
 
 impl Module {
@@ -153,6 +156,40 @@ impl Module {
     pub fn cell_count(&self) -> usize {
         self.cells.len()
     }
+
+    /// Declare a block, returning its id. The id is what a `Cell.writer`
+    /// field carries (T4) and what the verifier (T7) uses to walk the
+    /// declared blocks.
+    pub fn push_block(&mut self, block: Block) -> BlockId {
+        let id = BlockId(self.blocks.len() as u32);
+        self.blocks.push(block);
+        id
+    }
+
+    /// The block at `id`.
+    pub fn block_at(&self, id: BlockId) -> &Block {
+        &self.blocks[id.0 as usize]
+    }
+
+    /// The block at `id`, mutably (for ops to be appended after the block
+    /// is allocated — the common case when `Cell.writer` needs the id
+    /// before the block body is built).
+    pub fn block_at_mut(&mut self, id: BlockId) -> &mut Block {
+        &mut self.blocks[id.0 as usize]
+    }
+
+    /// All block ids in declaration order, for passes that walk every block.
+    pub fn blocks(&self) -> impl Iterator<Item = (BlockId, &Block)> {
+        self.blocks
+            .iter()
+            .enumerate()
+            .map(|(i, block)| (BlockId(i as u32), block))
+    }
+
+    /// The total number of blocks.
+    pub fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
 }
 
 /// A whole IR program: one or more modules. The shape mirrors the POM's
@@ -247,5 +284,38 @@ mod tests {
         assert_eq!(i0, 0);
         assert_eq!(i1, 1);
         assert_eq!(p.modules.len(), 2);
+    }
+
+    #[test]
+    fn module_holds_blocks_indexed_by_blockid() {
+        use crate::core::{Block, Domain, Trigger};
+        let mut m = Module::new();
+        let b0 = m.push_block(Block::new(Domain::Analog, Trigger::Always));
+        let b1 = m.push_block(Block::new(Domain::Digital, Trigger::Initial));
+        assert_ne!(b0, b1);
+        assert!(b0 < b1);
+        assert_eq!(m.block_at(b0).domain, Domain::Analog);
+        assert_eq!(m.block_at(b1).domain, Domain::Digital);
+        assert_eq!(m.block_count(), 2);
+    }
+
+    #[test]
+    fn block_can_be_allocated_before_its_ops_are_built() {
+        // The common lowering pattern: a Cell's writer needs the BlockId
+        // before the block's body exists. Allocate, then mutate.
+        use crate::core::{Block, Cell, Const, Domain, Trigger};
+        let mut m = Module::new();
+        let writer = m.push_block(Block::new(Domain::Analog, Trigger::Always));
+        let init = m.push_const(Const::Real(0.0));
+        let cell_id = m.push_cell(Cell::new(Ty::Real, init, writer));
+        assert_eq!(m.cell_at(cell_id).writer, writer);
+        // Now append ops to the block after the cell has claimed it.
+        let v = m.push_value(Ty::Real);
+        m.block_at_mut(writer).push(crate::core::Op::CellWrite {
+            cell: cell_id,
+            addr: None,
+            value: v,
+        });
+        assert_eq!(m.block_at(writer).ops().len(), 1);
     }
 }
