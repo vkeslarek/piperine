@@ -72,6 +72,18 @@ pub struct TransientAnalysisOptions {
     /// Minimum allowed timestep (default: 1e-15 seconds)
     pub dt_min: f64,
 
+    /// Hard budget on time-loop iterations (accepted + rejected attempts).
+    /// Default 2_000_000 — far above any healthy run, low enough that a
+    /// stepper that collapses onto `dt_min` fails loud in seconds instead of
+    /// grinding for hours with unbounded memory growth.
+    ///
+    /// Without this cap `solve()`'s `while current_time < stop_time` has no
+    /// termination guarantee: an LTE rejection at the `dt_min` floor is
+    /// *accepted* (Part VII §16 §10), so a circuit that pins the floor keeps
+    /// advancing by `dt_min` per iteration — 1e-15 s at a time — recording a
+    /// snapshot for each. That is a hang, not an analysis.
+    pub max_steps: usize,
+
     /// Maximum allowed timestep (default: stop_time / 100)
     pub dt_max: f64,
 
@@ -118,6 +130,7 @@ impl TransientAnalysisOptions {
             stop_time,
             dt,
             dt_min: 1e-15,
+            max_steps: 2_000_000,
             dt_max: (stop_time / 100.0),
             record_from: 0.0,
             start_time: 0.0,
@@ -135,6 +148,12 @@ impl TransientAnalysisOptions {
     /// Set minimum timestep
     pub fn with_dt_min(mut self, dt_min: f64) -> Self {
         self.dt_min = dt_min;
+        self
+    }
+
+    /// Set the time-loop iteration budget (see [`Self::max_steps`]).
+    pub fn with_max_steps(mut self, max_steps: usize) -> Self {
+        self.max_steps = max_steps;
         self
     }
 
@@ -1135,6 +1154,13 @@ impl<'a> TransientSolver<'a> {
         let mut dt = if post_set_step {
             dt_proposed
         } else {
+            // NOTE: the controller targets `lte == 1` while the accept gate
+            // rejects only at `milne > trtol` (default 7). That gap is
+            // deliberate, not a bug: the controller aims ~trtol deeper into the
+            // accept region than the gate demands, so rejections stay rare.
+            // Normalising `milne` by `trtol` here (tried, reverted) closes the
+            // safety band and coarsens the grid enough to break `tran_rc`'s
+            // ngspice parity at the steep part of the charging curve.
             self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options)
         };
         if sets_just_applied {
@@ -1308,7 +1334,41 @@ impl<'a> TransientSolver<'a> {
         let (mut steps, node_indices) = self.begin_run()?;
         let mut st = TimeLoop::new(self.options.start_time, self.options.dt);
 
+        let mut iterations: usize = 0;
         while st.current_time < self.options.stop_time {
+            // Termination guarantee (see `TransientAnalysisOptions::max_steps`):
+            // the loop condition alone does not bound the run, because a step
+            // accepted at the `dt_min` floor advances time by `dt_min`. Fail
+            // loud, naming everything needed to diagnose which of the two
+            // shapes it is — a collapsed `dt` or a genuinely oversized run.
+            iterations += 1;
+            if iterations > self.options.max_steps {
+                let progress = (st.current_time - self.options.start_time)
+                    / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Transient,
+                    format!(
+                        "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
+                         ({:.2}% of the run) with dt = {:.3e} s \
+                         (accepted {}, rejected {}, dt_min floor hits {}, \
+                         smallest dt seen {:.3e} s). \
+                         The timestep has collapsed: the circuit is either stiff \
+                         at a switching edge or has a discontinuity the stepper \
+                         cannot land on. Raise `max_steps` to let it run longer, \
+                         raise `dt_min` to make the floor fail instead of crawl, \
+                         or soften the discontinuity.",
+                        self.options.max_steps,
+                        st.current_time,
+                        self.options.stop_time,
+                        progress * 100.0,
+                        st.dt,
+                        st.steps_accepted,
+                        st.steps_rejected,
+                        st.dt_min_floor_hits,
+                        if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
+                    ),
+                ));
+            }
             let prediction = self.predict_step(&st);
             let attempt = self.attempt_step(&st, prediction)?;
             // Whether this step's Milne window spans a live-set value jump

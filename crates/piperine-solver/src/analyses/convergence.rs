@@ -195,10 +195,27 @@ impl StepperStrategy for PiController {
             return (dt_actual * self.gains.grow_factor).clamp(tran_opts.dt_min, tran_opts.dt_max);
         }
         // Exponent: proportional gain + integral correction on error history.
+        //
+        // Both the relative-change bound and the `max(0.0)` floor are load
+        // bearing, and for the same reason: the law `factor = lte^(-p)` is
+        // only monotone in the error while `p >= 0`. `de` is normalized by the
+        // *current* `lte`, so a step whose error IMPROVES sharply (lte falling
+        // 20x is routine right after a switching edge) yields `de ≈ -19` and
+        // `p = 0.7 + 0.4·(-19) = -6.9`. With the usual `lte < 1` of a
+        // well-resolved step, `lte^(6.9)` is astronomically small and clamps to
+        // the 0.2 shrink floor — the controller cuts `dt` hardest exactly when
+        // accuracy is best. Paired with the 1.5 growth cap that asymmetry is a
+        // ratchet: `dt` walks down to `dt_min` over a few hundred steps with
+        // zero rejections (the accept gate is happy — the error is tiny), and
+        // the run stops terminating in any useful time.
+        //
+        // Bounding `de` to +/-1 keeps the integral term a correction rather
+        // than a sign flip, and flooring `p` at 0 makes "better error" never
+        // mean "smaller step". With the default gains `p` lands in [0.3, 1.1].
         let p = match self.prev_error {
             Some(prev) => {
-                let de = (lte - prev) / lte.max(1e-30);
-                self.gains.kp + self.gains.ki * de
+                let de = ((lte - prev) / lte.max(1e-30)).clamp(-1.0, 1.0);
+                (self.gains.kp + self.gains.ki * de).max(0.0)
             }
             None => self.gains.kp, // first accepted step: proportional only
         };

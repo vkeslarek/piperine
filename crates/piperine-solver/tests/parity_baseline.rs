@@ -423,9 +423,24 @@ fn parity_rc_transient() {
     let v_last = last.get_node(&NodeIdentifier::Anonymous(21)).unwrap();
 
     assert!((t_last - 1e-3).abs() < 1e-12, "t_last = {t_last}");
-    assert!((v_last - (-0.450_485_218_772_388_9)).abs() < 1e-9, "v_last = {v_last}");
+    // Re-pinned when `PiController::propose_dt` was made monotone in the error
+    // (bounded `de`, `p >= 0` — see `analyses/convergence.rs`). That fix changes
+    // the adaptive grid, so this captured value moved by 4.8e-7.
+    //
+    // Re-pinned rather than treated as a regression, on evidence: driving this
+    // same circuit onto a converged grid (dt_max swept 1e-6 → 1e-8, up to ~100k
+    // steps) gives v_last = -0.450_456_791_8, stable to nine digits. Against
+    // that reference the OLD baseline was off by 2.84e-5 and the new one by
+    // 2.89e-5 — both dominated by the coarse ~386-step adaptive grid, and their
+    // difference is 60x smaller than the error they share. The change is
+    // accuracy-neutral here; the old number was the captured one, never the
+    // accurate one.
+    assert!((v_last - (-0.450_485_695_268_389)).abs() < 1e-9, "v_last = {v_last}");
     // Adaptive stepper landed a stable, reproducible number of recorded steps.
-    assert_eq!(res.len(), 386, "step count = {}", res.len());
+    // 386 -> 161 with the monotone controller: the old law shrank `dt` whenever
+    // the error improved sharply, so it paid for the same accuracy with 2.4x
+    // the steps.
+    assert_eq!(res.len(), 161, "step count = {}", res.len());
 }
 
 /// Parallel RLC resonator (current-driven) — complex AC assembly; pins the
@@ -713,3 +728,4 @@ fn parity_digital_scheduler_snapshot() {
     assert_eq!(nets[2], LogicValue::One, "net2");
     assert_eq!(nets[3], LogicValue::Zero, "net3");
 }
+
