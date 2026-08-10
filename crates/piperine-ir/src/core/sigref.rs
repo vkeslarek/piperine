@@ -12,7 +12,7 @@
 //! `Module` to look up source widths), the `concat` constructor (a method
 //! that appends chunks), and tests proving the chunk-list model.
 
-use super::{Const, ConstId, Module, ValueId};
+use super::{ConstId, Module, ValueId};
 
 /// One piece of a [`SigRef`]: either a contiguous slice of a typed value
 /// (`x[hi:lo]`) or an embedded constant (`4'b0`).
@@ -86,7 +86,7 @@ impl SigRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::Ty;
+    use crate::core::{Const, Ty};
 
     /// The load-bearing test: a 32-bit ref built from THREE chunks reports
     /// width 32 (LOV-27). Three chunks of widths summing to 32 — the IR

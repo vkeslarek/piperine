@@ -13,6 +13,7 @@
 //! this trait outside this module composes exactly like a shipped kind, no
 //! plugin and no build ceremony. The shape is `ideal.md`'s verbatim.
 
+pub mod fd_oracle;
 pub mod kinds;
 pub mod table;
 
