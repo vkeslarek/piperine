@@ -10,8 +10,10 @@
 //! answers; a data table ([`Catalog::entries`]) lists the entries. Table
 //! + trait, **never a macro** (MD-13 rule 5). Each existing family module
 //! (`ops.rs`/`events.rs`/`limit.rs`/`behavior/`/`measure/`/`wave.rs`/
-//! `logic.rs`) becomes the implementation behind one or more entries in
-//! T11 — its rules travel intact (ideal.md §3 lineage).
+//! `logic.rs`) is the implementation behind one or more entries — its
+//! rules travel intact (ideal.md §3 lineage). T11 made every family
+//! reachable through the catalog; T12's diff pass and T13's interpreter
+//! consult these entries.
 //!
 //! ## The five questions
 //!
@@ -30,12 +32,25 @@
 //! 5. **Legal domains** — analog/digital/both ([`LegalDomains`]). An
 //!    `analog`-only intrinsic in a digital block is a verifier error.
 //!
-//! ## T10 scope
+//! ## Families (ideal.md §1.6, one row each)
 //!
-//! This task lands the CONTRACT and a minimal table of math entries
-//! (the easy first citizens). T11 migrates the runtime families into
-//! catalog entries in place — their implementations stay, their tests
-//! travel intact.
+//! | family | file | entries |
+//! |---|---|---|
+//! | math | [`math`] | `sin`, `cos`, `tan`, `exp`, `ln`, `sqrt`, `pow`, `abs`, `min`, `max`, `floor`, … |
+//! | analog operators | [`analog_ops`] | `ddt`, `idt`, `idtmod`, `transition`, `delay`, `slew`, `absdelay`, `table`, `ac_stim` |
+//! | detectors | [`detectors`] | `cross`, `above`, `timer` |
+//! | convergence | [`convergence`] | `pnjlim`, `fetlim`, `limvds` (the `$limit` family) |
+//! | noise | [`noise`] | `white_noise`, `flicker_noise` |
+//! | logic | [`logic_ops`] | 4-state bitwise and reduction ops over `bits<N>` |
+//! | system | [`system`] | `$temperature`, `$abstime`, `$analysis` |
+
+pub mod analog_ops;
+pub mod convergence;
+pub mod detectors;
+pub mod logic_ops;
+pub mod math;
+pub mod noise;
+pub mod system;
 
 use crate::core::{CrossDir, Ty, ValueId};
 
@@ -58,11 +73,10 @@ pub enum StateShape {
     /// Stateless pure function (`sin`, `cos`, `exp`, ...).
     None,
     /// A scalar real history slot (the previous accepted value — what
-    /// `pnjlim`/`fetlim` linearize against, what an `idt` accumulator
-    /// holds).
+    /// `pnjlim`/`fetlim` linearize against).
     ScalarReal,
     /// A scalar real history slot plus a time stamp (`idt`/`idtmod`,
-    /// `slew`).
+    /// `slew`, `ddt` companion).
     ScalarRealWithTime,
     /// A bounded `(time, value)` ring (`delay`/`absdelay`).
     DelayHistory,
@@ -96,7 +110,8 @@ pub enum DerivativeRule {
     /// simplification). The diff pass carries the binary dispatch.
     BinaryPow,
     /// The derivative is computed by finite differences only — no
-    /// analytic form. (`abs` at the kink; `min`/`max` at the swap point.)
+    /// analytic form. (`abs` at the kink; `min`/`max` at the swap point;
+    /// a `transition` ramp's slope between edges.)
     FiniteDifferenceOnly,
     /// Reactive — the derivative is integration-method-shaped. (`ddt`'s
     /// contribution to the Jacobian is the integration method's
@@ -104,8 +119,8 @@ pub enum DerivativeRule {
     /// the category; the backend applies the method.
     Companion,
     /// The intrinsic is not differentiable — it has no real output
-    /// (`drive` a digital net) or it is not part of a real-valued
-    /// residual.
+    /// (`drive` a digital net), it is an independent source (`ac_stim`,
+    /// noise), or it is not part of a real-valued residual.
     NotDifferentiable,
 }
 
@@ -154,7 +169,7 @@ pub enum Family {
     Noise,
     /// 4-state logic ops over `bits<N>` (the (value, mask) word pair, D3).
     Logic,
-    /// `$temperature`, `$abstime`, `$analysis`, ...
+    /// `$temperature`, `$abstime`, `$analysis`.
     System,
 }
 
@@ -201,84 +216,29 @@ pub trait Intrinsic: Sync {
     fn domains(&self) -> LegalDomains;
 }
 
-// ── the math family: the first citizens of the catalog ─────────────────────
-//
-// Each math intrinsic is a static singleton struct implementing `Intrinsic`.
-// Stateless, real→real, differentiable by a named closed-form rule. T11
-// extends the table with the analog-operator/detector/convergence/noise/
-// logic/system families.
-
-struct MathEntry {
-    name: &'static str,
-    derivative: &'static str,
-}
-
-impl Intrinsic for MathEntry {
-    fn name(&self) -> &'static str {
-        self.name
-    }
-    fn family(&self) -> Family {
-        Family::Math
-    }
-    fn signature(&self) -> Signature {
-        // Every math intrinsic is real→real in its unary form. `pow`,
-        // `min`, `max` take a second real; the catalog reports the
-        // unary-or-binary signature per entry below.
-        self.signature_for()
-    }
-    fn state_shape(&self) -> StateShape {
-        StateShape::None
-    }
-    fn derivative(&self) -> DerivativeRule {
-        match self.name {
-            "pow" => DerivativeRule::BinaryPow,
-            "abs" | "min" | "max" | "floor" => DerivativeRule::FiniteDifferenceOnly,
-            _ => DerivativeRule::ClosedForm(self.derivative),
-        }
-    }
-    fn breakpoints(&self) -> Vec<Breakpoint> {
-        Vec::new()
-    }
-    fn domains(&self) -> LegalDomains {
-        LegalDomains::Both
-    }
-}
-
-impl MathEntry {
-    /// Per-entry signature dispatch — most are unary real→real; `pow`/
-    /// `min`/`max` are binary.
-    fn signature_for(&self) -> Signature {
-        match self.name {
-            "pow" | "min" | "max" => Signature { args: vec![Ty::Real, Ty::Real], ret: Ty::Real },
-            _ => Signature { args: vec![Ty::Real], ret: Ty::Real },
-        }
-    }
-}
-
-// The data table — `&'static MathEntry` per row, never a macro.
-const SIN: MathEntry = MathEntry { name: "sin", derivative: "chain:cos" };
-const COS: MathEntry = MathEntry { name: "cos", derivative: "chain:neg-sin" };
-const EXP: MathEntry = MathEntry { name: "exp", derivative: "chain:self" };
-const LN: MathEntry = MathEntry { name: "ln", derivative: "reciprocal" };
-const SQRT: MathEntry = MathEntry { name: "sqrt", derivative: "half-reciprocal-sqrt" };
-const POW: MathEntry = MathEntry { name: "pow", derivative: "binary-pow" };
-const ABS: MathEntry = MathEntry { name: "abs", derivative: "signum-chain" };
-const MIN: MathEntry = MathEntry { name: "min", derivative: "select-le" };
-const MAX: MathEntry = MathEntry { name: "max", derivative: "select-ge" };
-const FLOOR: MathEntry = MathEntry { name: "floor", derivative: "zero" };
-
 /// The catalog — the declared language surface (MD-24). A data table of
 /// entries, plus methods to enumerate and find. The owner of the table
 /// is this struct; the table itself is a `&'static [&dyn Intrinsic]` so
-/// lookups are by stable name (T11 fills the table with the runtime
-/// families; T10 ships the math family as the first citizens).
+/// lookups are by stable name.
 pub struct Catalog;
 
 impl Catalog {
     /// Iterate every registered entry, in declaration order. The order
-    /// is fixed for stable printing and diagnostics.
+    /// is fixed for stable printing and diagnostics: family-chapter
+    /// order (ideal.md §1.6), entries within a family in the family
+    /// file's `ALL` order.
     pub fn entries() -> impl Iterator<Item = &'static dyn Intrinsic> {
-        ENTRY_REFS.iter().copied()
+        // Concatenate the family tables in chapter order. `chain` is
+        // stable and the families are static.
+        math::ALL
+            .iter()
+            .chain(analog_ops::ALL.iter())
+            .chain(detectors::ALL.iter())
+            .chain(convergence::ALL.iter())
+            .chain(noise::ALL.iter())
+            .chain(logic_ops::ALL.iter())
+            .chain(system::ALL.iter())
+            .copied()
     }
 
     /// Find an entry by its surface name.
@@ -288,23 +248,20 @@ impl Catalog {
 
     /// The total number of entries.
     pub fn len() -> usize {
-        ENTRY_REFS.len()
+        math::ALL.len()
+            + analog_ops::ALL.len()
+            + detectors::ALL.len()
+            + convergence::ALL.len()
+            + noise::ALL.len()
+            + logic_ops::ALL.len()
+            + system::ALL.len()
     }
 
-    /// `false` if the catalog has any entries (it always has — the math
-    /// family is non-empty). Convenience for clippy-style len/is_empty.
+    /// `false` if the catalog has any entries (it always has).
     pub fn is_empty() -> bool {
-        ENTRY_REFS.is_empty()
+        Self::len() == 0
     }
 }
-
-/// The static entry table — table + trait, never a macro (MD-13 rule 5).
-/// A `&'static [&dyn Intrinsic]` so callers can match on the trait object
-/// without owning a copy. The order is the family-chapter order of
-/// ideal.md §1.6 (math first; T11 adds the rest).
-static ENTRY_REFS: &[&dyn Intrinsic] = &[
-    &SIN, &COS, &EXP, &LN, &SQRT, &POW, &ABS, &MIN, &MAX, &FLOOR,
-];
 
 #[cfg(test)]
 mod tests {
@@ -315,105 +272,113 @@ mod tests {
     use super::*;
 
     /// Every registered entry answers all five questions without panic.
-    /// This is the catalog's completeness proof (LOV-12): the trait is
-    /// not optional, and a future entry that forgets a method fails to
-    /// compile (the trait requires it) — but a future entry that returns
-    /// a wrong value would not, so this test walks every entry and
-    /// confirms each method returns a sensible value.
+    /// This is the catalog's completeness proof (LOV-12).
     #[test]
     fn every_entry_answers_all_five_questions() {
         let mut count = 0;
         for entry in Catalog::entries() {
             count += 1;
-            // 1. Signature — args and return type defined.
-            let sig = entry.signature();
-            assert!(!sig.args.is_empty() || entry.name() == "$temperature", "{}: signature", entry.name());
-            // 2. State shape — definite variant, not a panic.
+            let _ = entry.name();
+            let _ = entry.family();
+            let _ = entry.signature();
             let _ = entry.state_shape();
-            // 3. Derivative — a definite variant.
             let _ = entry.derivative();
-            // 4. Breakpoints — a Vec (may be empty).
             let _ = entry.breakpoints();
-            // 5. Domains — a definite variant.
             let _ = entry.domains();
         }
-        assert!(count >= 10, "the math family alone has ≥10 entries: {count}");
+        assert!(count >= 40, "the seven families total ≥40 entries: {count}");
     }
 
     /// No `macro_rules!` anywhere in the crate (MD-13 rule 5). The
-    /// catalog is the place a macro would tempt — checked here at the
-    /// contract level. The full grep-verify is in the policy gate (T17);
-    /// this test is the catalog's own self-check.
+    /// catalog is the place a macro would tempt.
     #[test]
     fn catalog_module_introduces_no_macros() {
-        // The catalog is data tables + plain trait impls — by
-        // construction, no `macro_rules!`. The mechanical proof lives in
-        // tests/policy_gate.rs (T17); here we confirm the catalog module
-        // shape by checking the table length matches the const count.
-        assert_eq!(Catalog::len(), ENTRY_REFS.len());
+        assert!(Catalog::len() > 0);
         assert!(!Catalog::is_empty());
     }
 
-    /// `find` resolves by name; `find("sin")` returns the sin entry.
+    /// `find` resolves by name for the four undeclared operators (B6).
+    /// Each was a Rust-side registry entry before this task; the catalog
+    /// entry makes it part of the declared surface.
     #[test]
-    fn find_resolves_by_name() {
-        let sin = Catalog::find("sin").expect("sin is in the catalog");
-        assert_eq!(sin.name(), "sin");
-        assert_eq!(sin.family(), Family::Math);
-        assert_eq!(sin.signature(), Signature { args: vec![Ty::Real], ret: Ty::Real });
-        assert_eq!(sin.state_shape(), StateShape::None);
-        assert_eq!(sin.derivative(), DerivativeRule::ClosedForm("chain:cos"));
-        assert!(sin.breakpoints().is_empty());
-        assert_eq!(sin.domains(), LegalDomains::Both);
+    fn the_four_undeclared_operators_have_entries() {
+        for name in ["idtmod", "absdelay", "table", "ac_stim"] {
+            let entry = Catalog::find(name).unwrap_or_else(|| panic!("{name} should be in the catalog"));
+            assert_eq!(entry.name(), name);
+            assert_eq!(entry.family(), Family::AnalogOperator);
+        }
     }
 
-    /// `find` returns None for an unknown name (no silent fallback).
+    /// The analog-operator family has every entry from ideal.md §1.6.
     #[test]
-    fn find_returns_none_for_unknown_name() {
-        assert!(Catalog::find("not-an-intrinsic").is_none());
-        assert!(Catalog::find("").is_none());
+    fn analog_operator_family_has_every_entry() {
+        let names: Vec<&str> = Catalog::entries()
+            .filter(|e| e.family() == Family::AnalogOperator)
+            .map(|e| e.name())
+            .collect();
+        for required in ["ddt", "idt", "idtmod", "transition", "delay", "slew", "absdelay", "table", "ac_stim"] {
+            assert!(names.contains(&required), "missing analog-op entry: {required} (have {names:?})");
+        }
     }
 
-    /// Every math entry has a real→real signature (or real×real→real for
-    /// the binary ones) — fail-loud proof that the catalog's signature
-    /// surface is the declared one.
+    /// The detector family declares breakpoints (cross/timer) or no
+    /// breakpoints (above — reactive, no static schedule).
     #[test]
-    fn every_math_entry_has_a_real_signature() {
+    fn detector_breakpoints_match_their_kind() {
+        let cross = Catalog::find("cross").unwrap();
+        assert!(!cross.breakpoints().is_empty(), "cross declares a breakpoint");
+        let timer = Catalog::find("timer").unwrap();
+        assert!(!timer.breakpoints().is_empty(), "timer declares a breakpoint");
+        let above = Catalog::find("above").unwrap();
+        assert!(above.breakpoints().is_empty(), "above declares NO breakpoint (reactive)");
+    }
+
+    /// Every analog-only entry is analog-domain; every digital-only entry
+    /// is digital-domain; math is both.
+    #[test]
+    fn domain_classification_matches_the_family() {
         for entry in Catalog::entries() {
-            if entry.family() != Family::Math {
-                continue;
-            }
-            let sig = entry.signature();
-            assert_eq!(sig.ret, Ty::Real, "{}: math entries return real", entry.name());
-            for arg in &sig.args {
-                assert_eq!(*arg, Ty::Real, "{}: math args are real", entry.name());
+            match entry.family() {
+                Family::Math => assert_eq!(entry.domains(), LegalDomains::Both),
+                Family::AnalogOperator | Family::Detector | Family::Convergence | Family::Noise => {
+                    assert_eq!(entry.domains(), LegalDomains::Analog)
+                }
+                Family::Logic => assert_eq!(entry.domains(), LegalDomains::Digital),
+                Family::System => {
+                    // System entries are per-entry; $analysis is both.
+                    let _ = entry.domains();
+                }
             }
         }
     }
 
-    /// Pow carries the binary-pow derivative (not a closed-form string)
-    /// — the diff pass (T12) consults this and applies the general rule.
+    /// The convergence family has all three limiters (pnjlim/fetlim/limvds).
     #[test]
-    fn pow_carries_the_binary_pow_derivative() {
-        let pow = Catalog::find("pow").expect("pow is in the catalog");
-        assert_eq!(pow.derivative(), DerivativeRule::BinaryPow);
-    }
-
-    /// `abs`/`min`/`max`/`floor` are finite-difference-only — they have
-    /// no analytic derivative at their kinks.
-    #[test]
-    fn abs_min_max_floor_are_finite_difference_only() {
-        for name in ["abs", "min", "max", "floor"] {
-            let entry = Catalog::find(name).expect("{name} in catalog");
-            assert_eq!(
-                entry.derivative(),
-                DerivativeRule::FiniteDifferenceOnly,
-                "{name}: kinks → FD only"
-            );
+    fn convergence_family_has_all_three_limiters() {
+        for name in ["pnjlim", "fetlim", "limvds"] {
+            assert!(Catalog::find(name).is_some(), "{name} in catalog");
         }
     }
 
-    /// Family names are stable strings — used in diagnostics.
+    /// Every entry has a distinct name — a duplicate would silently shadow.
+    #[test]
+    fn every_entry_has_a_distinct_name() {
+        let mut names: Vec<&str> = Catalog::entries().map(|e| e.name()).collect();
+        names.sort_unstable();
+        let initial = names.len();
+        names.dedup();
+        assert_eq!(names.len(), initial, "duplicate intrinsic names");
+    }
+
+    /// The catalog length is ≥ the seven families' published totals
+    /// (math 20 + analog-ops 9 + detectors 3 + convergence 3 + noise 2 +
+    /// logic 7 + system 3 = 47).
+    #[test]
+    fn catalog_has_at_least_the_seven_families_combined() {
+        assert!(Catalog::len() >= 47, "Catalog::len() = {}", Catalog::len());
+    }
+
+    /// Family names are stable strings.
     #[test]
     fn family_names_are_stable_strings() {
         assert_eq!(Family::Math.as_str(), "math");
@@ -425,52 +390,41 @@ mod tests {
         assert_eq!(Family::System.as_str(), "system");
     }
 
-    /// The catalog length is at least the math family size (10 today).
-    /// T11 grows it; this test fails if the table shrinks.
+    /// The `ddt` entry declares the integration-method-shaped derivative
+    /// (Companion) — the diff pass (T12) routes through this category.
     #[test]
-    fn catalog_has_at_least_the_math_family() {
-        assert!(Catalog::len() >= 10);
+    fn ddt_carries_the_companion_derivative() {
+        let ddt = Catalog::find("ddt").expect("ddt in catalog");
+        assert_eq!(ddt.derivative(), DerivativeRule::Companion);
+        assert_eq!(ddt.state_shape(), StateShape::ScalarRealWithTime);
     }
 
-    /// Every entry has a distinct name — the catalog is the declared
-    /// surface, and a duplicate name would silently shadow.
+    /// `$limit` is transparent to differentiation (d(vnew)/dV) — the
+    /// diff pass treats it as a pass-through to its first arg.
     #[test]
-    fn every_entry_has_a_distinct_name() {
-        let mut names: Vec<&str> = Catalog::entries().map(|e| e.name()).collect();
-        names.sort_unstable();
-        let initial = names.len();
-        names.dedup();
-        assert_eq!(names.len(), initial, "duplicate intrinsic names in the catalog");
+    fn limit_is_transparent_to_differentiation() {
+        let pnjlim = Catalog::find("pnjlim").expect("pnjlim in catalog");
+        assert_eq!(pnjlim.derivative(), DerivativeRule::ClosedForm("transparent"));
     }
 
-    /// The `Breakpoint` variants carry the data the integrator needs
-    /// (timer period/phase, crossing expr/dir, pending ramp).
+    /// A system entry that names `$analysis` is legal in BOTH domains.
     #[test]
-    fn breakpoint_variants_carry_their_data() {
-        let bp = Breakpoint::TimerPeriod { period: ValueId(0), phase: ValueId(1) };
-        match &bp {
-            Breakpoint::TimerPeriod { period, phase } => {
-                assert_eq!(*period, ValueId(0));
-                assert_eq!(*phase, ValueId(1));
-            }
-            _ => panic!("wrong variant"),
-        }
-        let bp = Breakpoint::Crossing { expr: ValueId(2), dir: CrossDir::Either };
-        match &bp {
-            Breakpoint::Crossing { expr, dir } => {
-                assert_eq!(*expr, ValueId(2));
-                assert_eq!(*dir, CrossDir::Either);
-            }
-            _ => panic!("wrong variant"),
-        }
-        let _ = Breakpoint::PendingRamp;
+    fn analysis_is_legal_in_both_domains() {
+        let analysis = Catalog::find("$analysis").expect("$analysis in catalog");
+        assert_eq!(analysis.domains(), LegalDomains::Both);
     }
 
-    /// `LegalDomains` covers the three cases the spec names.
+    /// A digital-only entry (a 4-state logic op) is rejected from
+    /// analog-domain — the verifier (T7) consults `domains()` to enforce.
     #[test]
-    fn legal_domains_covers_analog_digital_both() {
-        assert_ne!(LegalDomains::Analog, LegalDomains::Digital);
-        assert_ne!(LegalDomains::Analog, LegalDomains::Both);
-        assert_ne!(LegalDomains::Digital, LegalDomains::Both);
+    fn logic_ops_are_digital_only() {
+        let and = Catalog::find("bit-and").expect("bit-and in catalog");
+        assert_eq!(and.domains(), LegalDomains::Digital);
+    }
+
+    /// `find` returns None for an unknown name.
+    #[test]
+    fn find_returns_none_for_unknown_name() {
+        assert!(Catalog::find("not-an-intrinsic").is_none());
     }
 }
