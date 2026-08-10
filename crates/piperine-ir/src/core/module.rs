@@ -5,11 +5,11 @@
 //! The arena shape is the Cranelift idiom (already a dependency in the
 //! wider workspace) — dense `Vec` storage plus distinct newtype indices.
 
-use super::{Const, ConstId, Ty, ValueId};
+use super::{Const, ConstId, NatureId, Net, NatureInfo, Ty, ValueId, NetId};
 
 /// One IR module: the arena storage for every concept. T2 fills in values
-/// and constants; nets (T3), cells (T4) and blocks (T5) attach their own
-/// arenas to this struct as they arrive.
+/// and constants; nets and natures arrive in T3; cells (T4) and blocks
+/// (T5) attach their own arenas to this struct as they arrive.
 #[derive(Debug, Default, Clone)]
 pub struct Module {
     /// The type of each value slot, indexed by [`ValueId`]. The arena is
@@ -20,6 +20,13 @@ pub struct Module {
     /// caller's concern — the arena only stores; the IR has no global
     /// constant table because each module owns its own.
     consts: Vec<Const>,
+    /// The nature table, indexed by [`NatureId`]. A discipline (Electrical,
+    /// Thermal, Magnetic, …) names its own natures; the IR carries only
+    /// the ids and this table is for diagnostics plus the discipline's own
+    /// bookkeeping. The IR never hardcodes `V`/`I`.
+    natures: Vec<NatureInfo>,
+    /// The declared nets, indexed by [`NetId`].
+    nets: Vec<Net>,
 }
 
 impl Module {
@@ -75,6 +82,46 @@ impl Module {
     /// The total number of constants.
     pub fn const_count(&self) -> usize {
         self.consts.len()
+    }
+
+    /// Intern a nature, returning its id. Natures are tied 1:1 to a
+    /// discipline's access name; the IR is name-agnostic, but every
+    /// `Node { across, through }` carries two ids that resolve through
+    /// this table for diagnostics.
+    pub fn push_nature(&mut self, info: NatureInfo) -> NatureId {
+        let id = NatureId(self.natures.len() as u32);
+        self.natures.push(info);
+        id
+    }
+
+    /// The nature at `id`.
+    pub fn nature_at(&self, id: NatureId) -> &NatureInfo {
+        &self.natures[id.0 as usize]
+    }
+
+    /// Declare a net, returning its id.
+    pub fn push_net(&mut self, net: Net) -> NetId {
+        let id = NetId(self.nets.len() as u32);
+        self.nets.push(net);
+        id
+    }
+
+    /// The net at `id`.
+    pub fn net_at(&self, id: NetId) -> &Net {
+        &self.nets[id.0 as usize]
+    }
+
+    /// All net ids in declaration order, for passes that walk every net.
+    pub fn nets(&self) -> impl Iterator<Item = (NetId, &Net)> {
+        self.nets
+            .iter()
+            .enumerate()
+            .map(|(i, net)| (NetId(i as u32), net))
+    }
+
+    /// The total number of nets.
+    pub fn net_count(&self) -> usize {
+        self.nets.len()
     }
 }
 
