@@ -695,7 +695,39 @@ impl<'m> AnalogFlattener<'m> {
             let minus = self.resolve_node(&minus_name);
             return Ok((nature_kind, plus, minus));
         }
-        Ok((NatureKind::Flow, NodeId::GROUND, NodeId::GROUND))
+        // Anything that is not an access-function call. This used to fall
+        // through to `(Flow, GROUND, GROUND)` — a current contribution from
+        // ground to ground, i.e. the authored value computed and discarded. A
+        // bare-identifier target is the natural spelling for driving a digital
+        // net from an analog body (`pwm <- duty > ramp`, SPEC Part I §10.4's
+        // "an analog crossing may drive digital state"), so this was not a
+        // theoretical hole: the whole statement silently did nothing, the
+        // design built, and the solver converged on a circuit whose comparator
+        // never fired.
+        //
+        // Fail loud instead. The supported analog->digital direction today is
+        // the other one: a `digital` body reads analog node voltages through
+        // `V(...)` (the A2D bridge, `emit/builder.rs::analog_branch_voltage`),
+        // so the comparator belongs in the digital body.
+        // Report the authored name: a digital node referenced from an analog
+        // body is rewritten to a `__shadow_<net>` var by `shadow_var_for`
+        // before it reaches here (that bridge is read-only — D2A — which is
+        // precisely why a write to it goes nowhere), and leaking the internal
+        // spelling into a user-facing error helps nobody.
+        let spelled = match dest {
+            PomExpr::Ident(name) => {
+                format!("`{}`", name.strip_prefix("__shadow_").unwrap_or(name))
+            }
+            other => format!("{other:?}"),
+        };
+        Err(CodegenError::unsupported(format!(
+            "analog force target {spelled} is not an access function. \
+             `V(a, b) <- …` / `I(a, b) <- …` are the analog force forms; \
+             driving a net by bare name from an `analog` body is not lowered. \
+             To drive a digital net from analog state, put the comparison in \
+             the module's `digital` body and read the analog side there with \
+             `V(...)` (the A2D bridge)."
+        )))
     }
 
     fn resolve_node(&self, name: &str) -> NodeId {
