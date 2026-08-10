@@ -46,6 +46,18 @@ pub struct DigitalLayout {
     /// wires). Used by the A2D bridge to read `V(node)` in digital bodies.
     pub(crate) analog_index: HashMap<NodeId, usize>,
     pub(crate) num_analog: usize,
+    /// The vars this digital body actually **writes** at run time: every
+    /// assignment target in its statement tree, plus comb-locals it declares.
+    /// Not its registers' power-on inits, and not vars it merely has a slot for.
+    ///
+    /// Distinct from `int_slot`/`real_slot`, which cover every var in the
+    /// module: the layout allocates a bank slot for all of them (cheap, and
+    /// it keeps `VarId` -> slot total), but owning a *slot* is not owning a
+    /// *value*. Only this set may travel the D2A bridge. A module carrying
+    /// both an `analog` and a `digital` body shares one var namespace, so
+    /// exporting slot-owned-but-unwritten vars pushed the digital bank's
+    /// zeros over analog-owned state on every `comb_phase`.
+    pub(crate) written: std::collections::HashSet<VarId>,
 }
 
 impl DigitalLayout {
@@ -69,6 +81,19 @@ impl DigitalLayout {
                 }
             }
         }
+        // The written set: every assignment target reachable in the statement
+        // tree (nested `if`/`match`/`@` bodies included).
+        //
+        // Deliberately NOT seeded from `body.regs`. Latch inference marks a
+        // var read-before-assignment as a register, so `regs` includes vars
+        // this body never writes — including the analog side's own. A real
+        // register is assigned inside its clocked block, so the walk below
+        // already covers it; seeding from `regs` only re-admits the vars this
+        // set exists to exclude.
+        let by_name: HashMap<&str, VarId> =
+            module.symbols.vars().map(|(id, info)| (info.name.as_str(), id)).collect();
+        collect_written(&body.stmts, &by_name, &body.regs, &mut layout.written);
+
         // Map analog-domain nodes to indices in the analog_voltages array.
         // The order follows the symbol table's node iteration (ground is
         // NodeId(0), always analog, always 0 V — skipped).
@@ -112,24 +137,83 @@ impl DigitalLayout {
         }
     }
 
-    /// Export all variable values as `f64`, indexed by `VarId`. Integer-bank
-    /// vars are converted to `f64`. Used by the D2A bridge: the analog side
-    /// reads digital register values through this export.
-    pub fn export_vars(&self, vars_int: &[i64], vars_real: &[f64]) -> Vec<f64> {
-        let num_vars = self.int_slot.len() + self.real_slot.len();
-        let mut result = vec![0.0; num_vars];
+    /// Export the values of the variables this digital kernel **owns**, each
+    /// paired with its `VarId`. Integer-bank vars are converted to `f64`.
+    /// Used by the D2A bridge: the analog side reads digital register values
+    /// through this export.
+    ///
+    /// The pairing is load bearing. This used to return a bare `Vec<f64>`
+    /// sized by the *digital* var count (`int_slot.len() + real_slot.len()`)
+    /// but written at the *global* `VarId` index — two different index spaces.
+    /// Every position the digital side did not own kept its `0.0` filler, and
+    /// `AnalogInstance::sync_vars` then blitted the whole vector positionally
+    /// over the analog var bank after each `comb_phase`. The visible effect
+    /// was that a module carrying both an `analog` and a `digital` body had
+    /// its analog-owned module vars silently zeroed on every evaluation — so
+    /// an `@timer` that maintained state (`@timer(tsw) { t0 = $abstime(); }`)
+    /// fired correctly and had its write erased microseconds later, and the
+    /// module's analog timebase quietly stopped existing.
+    pub fn export_vars(&self, vars_int: &[i64], vars_real: &[f64]) -> Vec<(VarId, f64)> {
+        let mut out = Vec::with_capacity(self.written.len());
         for (&var_id, &slot) in &self.int_slot {
-            if let Some(i) = var_id.0.checked_sub(0)
-                && (i as usize) < num_vars && slot < vars_int.len() {
-                    result[i as usize] = vars_int[slot] as f64;
-                }
+            if self.written.contains(&var_id) && slot < vars_int.len() {
+                out.push((var_id, vars_int[slot] as f64));
+            }
         }
         for (&var_id, &slot) in &self.real_slot {
-            if let Some(i) = var_id.0.checked_sub(0)
-                && (i as usize) < num_vars && slot < vars_real.len() {
-                    result[i as usize] = vars_real[slot];
-                }
+            if self.written.contains(&var_id) && slot < vars_real.len() {
+                out.push((var_id, vars_real[slot]));
+            }
         }
-        result
+        out
+    }
+}
+
+/// Collect every var a digital statement tree assigns to, resolving names
+/// through the module's symbol table. Walks nested `if`/`match`/`@`-event
+/// bodies — a var written only inside a clocked block is still written.
+fn collect_written(
+    stmts: &[piperine_lang::parse::ast::Stmt],
+    by_name: &HashMap<&str, VarId>,
+    regs: &[VarId],
+    out: &mut std::collections::HashSet<VarId>,
+) {
+    use piperine_lang::parse::ast::{Expr, Stmt};
+    for stmt in stmts {
+        match stmt {
+            Stmt::Bind { dest: Expr::Ident(name), .. } => {
+                if let Some(&id) = by_name.get(name.as_str()) {
+                    out.insert(id);
+                }
+            }
+            Stmt::VarDecl { name, .. } => {
+                // A declaration is a *power-on init*, not a per-evaluation
+                // write — `compile.rs` routes it to `reg_inits` whenever the
+                // var is a register. Counting it as a write is what let a
+                // module-level `var` the analog side owns travel the D2A
+                // bridge carrying the digital bank's never-updated value.
+                // A genuine comb-local (declared, recomputed each pass, not a
+                // register) IS digital-owned, so it still counts.
+                if let Some(&id) = by_name.get(name.as_str())
+                    && !regs.contains(&id)
+                {
+                    out.insert(id);
+                }
+            }
+            Stmt::If { then_body, else_body, .. } => {
+                collect_written(&then_body.stmts, by_name, regs, out);
+                if let Some(eb) = else_body {
+                    collect_written(&eb.stmts, by_name, regs, out);
+                }
+            }
+            Stmt::Match { arms, .. } => {
+                for arm in arms {
+                    collect_written(&arm.body.stmts, by_name, regs, out);
+                }
+            }
+            Stmt::Event { body, .. } => collect_written(&body.stmts, by_name, regs, out),
+            Stmt::For { body, .. } => collect_written(&body.stmts, by_name, regs, out),
+            _ => {}
+        }
     }
 }
