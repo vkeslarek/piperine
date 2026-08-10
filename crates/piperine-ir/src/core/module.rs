@@ -90,6 +90,14 @@ impl Module {
         self.consts.len()
     }
 
+    /// All const ids in declaration order, for passes that walk the pool
+    /// (the printer T8, the eventual diff pass).
+    pub fn consts(&self) -> impl Iterator<Item = (ConstId, &Const)> {
+        self.consts
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (ConstId(i as u32), c))
+    }
     /// Intern a nature, returning its id. Natures are tied 1:1 to a
     /// discipline's access name; the IR is name-agnostic, but every
     /// `Node { across, through }` carries two ids that resolve through
@@ -103,6 +111,20 @@ impl Module {
     /// The nature at `id`.
     pub fn nature_at(&self, id: NatureId) -> &NatureInfo {
         &self.natures[id.0 as usize]
+    }
+
+    /// The total number of natures.
+    pub fn nature_count(&self) -> usize {
+        self.natures.len()
+    }
+
+    /// All nature ids in declaration order, for passes that walk the table
+    /// (the printer T8, the verifier's diagnostics).
+    pub fn natures(&self) -> impl Iterator<Item = (NatureId, &NatureInfo)> {
+        self.natures
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (NatureId(i as u32), n))
     }
 
     /// Declare a net, returning its id.

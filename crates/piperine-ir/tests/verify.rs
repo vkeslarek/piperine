@@ -9,7 +9,7 @@
 //! reaches ONLY the verifier — the rest of the pipeline is out of scope.
 
 use piperine_ir::core::{
-    Block, Cell, Chunk, Const, Domain, EdgeKind, Module, Net, NetKind, NatureInfo, NatureKind, Op,
+    Block, Cell, Chunk, Const, Domain, EdgeKind, Module, Net, NatureInfo, NatureKind, Op,
     Pattern, PureOp, SigRef, Trigger, Ty,
 };
 use piperine_ir::verify::{VerifyError, Verifier};
