@@ -257,9 +257,11 @@ single `lib.rs` façade, not a two-tier split — codegen has one deliverable
 external code addresses it by deep path (grep-verified), everything else is
 crate-private with host-facing items re-exported through `lib.rs`.
 
-**Status:** Locked (user, 2026-07-20 — `codegen-architecture` feature,
-`hierarchy-flattening`-adjacent readability pass). Applies to future codegen
-modules: name by pipeline stage, narrow visibility by evidence not habit.
+**Status:** **Superseded by MD-41** (user, 2026-08-09 — `language-overhaul`
+design). The *rule* it established — name modules after the pipeline stage they
+perform, narrow visibility by evidence not habit — is retained verbatim in
+MD-41; only the stage list changes, because `flatten` is deleted and `resolve`
+becomes `lower`. Originally locked (user, 2026-07-20 — `codegen-architecture`).
 
 ---
 
@@ -536,7 +538,10 @@ Consequences:
   them keeps a correctness-critical refactor off the critical path of a feature
   whose value is elsewhere.
 
-**Status:** Locked (user, 2026-07-31 — `dv-tester` design;
+**Status:** **Superseded by MD-40** (user, 2026-08-09 — `language-overhaul`
+design). The purity invariant survives verbatim and becomes load-bearing for a
+new reason; the crate's remit widens from "runtime semantics" to "the compiler's
+IR". Originally locked (user, 2026-07-31 — `dv-tester` design;
 `.specs/features/dv-tester/ideal.md` §3, §8.5 and
 `.specs/features/codegen-simplification/ideal.md`).
 
@@ -618,6 +623,58 @@ express as a wrapper over what exists.
 
 **Status:** Locked (2026-08-04 — user rejected `asrc`/`vbic` on merit during
 `ngspice-parity` specification).
+
+---
+
+### MD-40: `piperine-signal` becomes `piperine-ir` (supersedes MD-36)
+
+MD-36 moved runtime semantics into `piperine-signal` under one load-bearing
+invariant: *it computes values, derivatives, event predicates and running
+reductions; it never stamps, never sees a matrix, never sees an `Element`, and
+depends on no other crate in the tree.*
+
+That invariant is **unchanged**. What changes is the crate's remit. The
+`language-overhaul` feature gives the toolchain a single intermediate
+representation, and that IR wants exactly the property `piperine-signal` already
+has and defends with a mechanical gate. So the crate **becomes** the IR rather
+than a new crate being created beside it:
+
+- **Remit widens** from "runtime semantics" to "the compiler's IR — of which
+  runtime semantics are *intrinsic catalog entries*". Operators, event
+  detectors, the junction limiter, `table`, `Behavior`/`Measure`/`Wave` and
+  digital edge logic become the first catalog entries, in place.
+- **Purity becomes structural, not incidental.** An IR with no in-tree
+  dependency is the precondition for its reference interpreter to be a
+  trustworthy differential oracle against the JIT backends. `tests/purity.rs`
+  is inherited unchanged and now gates that.
+- **No new crate** — MD-15's "do not proliferate crates" is preserved; the
+  workspace count does not move.
+
+**Rationale for superseding rather than adding a crate:** two crates with the
+same purity invariant, one holding semantics and one holding the representation
+those semantics are expressed in, is the four-overlapping-representations
+disease that `language-overhaul` exists to cure.
+
+**Status:** Locked (user, 2026-08-09 — `language-overhaul` design, D8).
+
+### MD-41: Codegen pipeline stages are `lower → backend → kernel → device` (supersedes MD-23)
+
+MD-23's rule is **retained verbatim**: `piperine-codegen`'s top-level modules
+name the compilation pipeline stage they perform, one module per stage; no
+module named after a language construct or a vague bucket; public surface is a
+single `lib.rs` façade, with a module staying `pub` only when external code
+addresses it by deep path (grep-verified).
+
+Only the **stage list** changes, because the stages themselves changed:
+
+| MD-23 | MD-41 | why |
+|---|---|---|
+| `resolve` (POM → resolved form) | **`lower`** (POM → IR) | the target is now a real IR, owned by `piperine-ir` |
+| `flatten` (resolved analog → `FlatAnalog`) | **deleted** | control flow stays structured in the IR; symbolic differentiation works arm-wise, so there is nothing to flatten (D9) |
+| `emit` (Cranelift machinery) | **`backend`** (`analog`, `digital`) | it now consumes IR, and the digital half becomes a real backend rather than an AST walk |
+| `kernel`, `device` | unchanged | |
+
+**Status:** Locked (user, 2026-08-09 — `language-overhaul` design, D9).
 
 ---
 
