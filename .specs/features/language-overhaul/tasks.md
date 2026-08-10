@@ -423,14 +423,28 @@ value.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] **A0d**: a cell written by two blocks is rejected, naming both
-- [ ] **A0b**: a `Signal` handed to analog stamping is rejected before any matrix
-- [ ] **A0c**: a write with no matching net-access op fails by name (no catch-all path exists to fall into)
-- [ ] **A0**: `read_across` and `read_through` on one node pair yield **different** values — asserted against a hand-computed current and voltage
-- [ ] Gate passes: `cargo test -p piperine-ir`
+- [x] **A0d**: a cell written by two blocks is rejected, naming both
+- [x] **A0b**: a `Signal` handed to analog stamping is rejected before any matrix
+- [x] **A0c**: a write with no matching net-access op fails by name (no catch-all path exists to fall into)
+- [x] **A0**: `read_across` and `read_through` on one node pair yield **different** values — asserted against a hand-computed current and voltage
+- [x] Gate passes: `cargo test -p piperine-ir`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(ir): the four seam defects are unrepresentable`
+
+**Note (batch execution, Phase 3):** A0d's fixture required a real
+verifier extension — `Cell.writer` is a single FIELD (T4), so a SECOND
+*claimed* writer cannot be constructed at all, but nothing before this
+task stopped a rogue `CellWrite` from appearing in a block other than the
+declared writer. Added `VerifyError::CellWrittenByWrongBlock` +
+`Verifier::check_op`'s `CellWrite` arm now compares `site.block` against
+`cell.writer`, naming both blocks (`crates/piperine-ir/src/verify.rs`).
+Verified this doesn't regress any existing CellWrite fixture (full
+`cargo test -p piperine-ir` stayed green throughout). A0c's fixture
+targets the wrong-domain-op rejection (`DomainOpMismatch`) as the IR-level
+analogue of the historical ground-to-ground fallthrough — PHDL-level
+lowering with an actual `parse_dest`-shaped bug doesn't exist until
+Phase 6.
 
 ---
 
