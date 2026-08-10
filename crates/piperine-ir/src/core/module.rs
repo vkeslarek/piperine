@@ -5,11 +5,11 @@
 //! The arena shape is the Cranelift idiom (already a dependency in the
 //! wider workspace) — dense `Vec` storage plus distinct newtype indices.
 
-use super::{Const, ConstId, NatureId, Net, NatureInfo, Ty, ValueId, NetId};
+use super::{Cell, CellId, Const, ConstId, NatureId, Net, NatureInfo, Ty, ValueId, NetId};
 
 /// One IR module: the arena storage for every concept. T2 fills in values
-/// and constants; nets and natures arrive in T3; cells (T4) and blocks
-/// (T5) attach their own arenas to this struct as they arrive.
+/// and constants; nets and natures arrive in T3; cells (T4) here; blocks
+/// (T5) attach their own arenas next.
 #[derive(Debug, Default, Clone)]
 pub struct Module {
     /// The type of each value slot, indexed by [`ValueId`]. The arena is
@@ -27,6 +27,9 @@ pub struct Module {
     natures: Vec<NatureInfo>,
     /// The declared nets, indexed by [`NetId`].
     nets: Vec<Net>,
+    /// The declared cells, indexed by [`CellId`]. Each cell names exactly
+    /// one writer block (T4).
+    cells: Vec<Cell>,
 }
 
 impl Module {
@@ -122,6 +125,33 @@ impl Module {
     /// The total number of nets.
     pub fn net_count(&self) -> usize {
         self.nets.len()
+    }
+
+    /// Declare a cell, returning its id. The single-writer rule is in the
+    /// [`Cell`] itself — its `writer` is a `BlockId` field, not an option.
+    pub fn push_cell(&mut self, cell: Cell) -> CellId {
+        let id = CellId(self.cells.len() as u32);
+        self.cells.push(cell);
+        id
+    }
+
+    /// The cell at `id`.
+    pub fn cell_at(&self, id: CellId) -> &Cell {
+        &self.cells[id.0 as usize]
+    }
+
+    /// All cell ids in declaration order, for passes that walk every cell
+    /// (the verifier's writer-count check, T7).
+    pub fn cells(&self) -> impl Iterator<Item = (CellId, &Cell)> {
+        self.cells
+            .iter()
+            .enumerate()
+            .map(|(i, cell)| (CellId(i as u32), cell))
+    }
+
+    /// The total number of cells.
+    pub fn cell_count(&self) -> usize {
+        self.cells.len()
     }
 }
 

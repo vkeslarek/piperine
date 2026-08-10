@@ -9,10 +9,12 @@
 //! Nothing in the public API uses `usize` — distinct newtypes prevent a
 //! `CellId` being passed where a `ValueId` belongs.
 
+mod cell;
 mod module;
 mod net;
 mod value;
 
+pub use cell::Cell;
 pub use module::{Module, Program};
 pub use net::{Net, NatureInfo, NatureKind, NetKind};
 pub use value::{Const, Ty};
