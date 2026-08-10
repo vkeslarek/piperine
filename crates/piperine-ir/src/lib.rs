@@ -15,6 +15,7 @@
 //! `core/` this phase.
 
 pub mod behavior;
+pub mod core;
 pub mod events;
 pub mod limit;
 pub mod logic;
