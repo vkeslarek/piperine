@@ -226,6 +226,12 @@ impl Grammar {
         let start = self.expect_punct("@")?;
         let events = if self.eat_punct("*") {
             vec![EventExpr::ImplicitAll]
+        } else if self.eat_punct("(*") {
+            // `@(*)` lexes as `@`, `(*`, `)` — the lexer's attribute-open
+            // token (§2.9) is lexically identical to `(` immediately
+            // followed by `*`, which is exactly this construct too.
+            self.expect_punct(")")?;
+            vec![EventExpr::ImplicitAll]
         } else {
             self.expect_punct("(")?;
             if self.eat_punct("*") {

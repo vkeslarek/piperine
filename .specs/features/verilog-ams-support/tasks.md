@@ -347,11 +347,11 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-01, VAMS-04
 
 **Done when**:
-- [ ] `nature` incl. derived (`: parent`) and the five standard attributes (§3.6.1.2)
-- [ ] `discipline` incl. `domain`, `potential`/`flow` binding, natureless/domainless (§3.6.2)
-- [ ] `module`/`macromodule`/`connectmodule`, both port-list styles, `ground`, net declarations with discipline + range + nodeset
-- [ ] `parameter`/`localparam`/`aliasparam`/`specparam` incl. value ranges (§3.4.2), string params, arrays
-- [ ] Gate passes: `cargo test -p piperine-vams`
+- [x] `nature` incl. derived (`: parent`) and the five standard attributes (§3.6.1.2)
+- [x] `discipline` incl. `domain`, `potential`/`flow` binding, natureless/domainless (§3.6.2)
+- [x] `module`/`macromodule`/`connectmodule`, both port-list styles, `ground`, net declarations with discipline + range + nodeset
+- [x] `parameter`/`localparam`/`aliasparam`/`specparam` incl. value ranges (§3.4.2), string params, arrays
+- [x] Gate passes: `cargo test -p piperine-vams`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(vams): declaration grammar for natures, disciplines and modules`

@@ -87,6 +87,15 @@ const PUNCT_TABLE: &[&str] = &[
     // 2-character
     "<+", "->", "<=", ">=", "==", "!=", "&&", "||", "**", "<<", ">>", "~&", "~|", "~^", "^~",
     "+:", "-:", "::",
+    // §2.9.1's attribute-instance delimiters. Tokenizing these as their own
+    // 2-character lexemes (rather than relying on the grammar layer to
+    // disambiguate `(`+`*` / `*`+`)` from multiplication) is what lets
+    // `a * b` parse as ordinary multiplication *inside* an attribute value
+    // (`(* size = a*b *)`) while `*)` still closes the attribute instance —
+    // maximal munch only merges the trailing `*` into `*)` when a `)`
+    // immediately follows it, exactly the position where multiplication's
+    // right operand can never be.
+    "(*", "*)",
     // 1-character
     "+", "-", "*", "/", "%", "<", ">", "=", "!", "&", "|", "^", "~", "?", ":", ";", ",", ".",
     "(", ")", "[", "]", "{", "}", "@", "#",

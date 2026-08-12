@@ -104,9 +104,7 @@ impl Grammar {
     /// rationale).
     pub(crate) fn parse_attr_instances(&mut self) -> Result<Vec<Attr>, ParseError> {
         let mut attrs = vec![];
-        while self.at_attr_open() {
-            self.expect_punct("(")?;
-            self.expect_punct("*")?;
+        while self.eat_punct("(*") {
             loop {
                 let (name, span) = self.expect_ident()?;
                 let value = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
@@ -115,22 +113,12 @@ impl Grammar {
                     break;
                 }
             }
-            self.expect_punct("*")?;
-            self.expect_punct(")")?;
+            self.expect_punct("*)")?;
         }
         Ok(attrs)
     }
 
-    /// The lexer's `PUNCT_TABLE` tokenizes `*` and `(`/`)` separately (it
-    /// has no 2-character `(*`/`*)` entries), so an attribute-instance
-    /// open is always two adjacent punctuation tokens here — this
-    /// lookahead is what tells `parse_attr_instances` an ordinary
-    /// parenthesized construct isn't starting instead.
-    fn at_attr_open(&self) -> bool {
-        self.at_punct("(") && matches!(self.peek_at_next(), Tok::Punct("*"))
-    }
-
-    fn peek_at_next(&self) -> &Tok {
+    pub(crate) fn peek_at_next(&self) -> &Tok {
         let idx = (self.pos + 1).min(self.toks.len() - 1);
         &self.toks[idx].tok
     }
