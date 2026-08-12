@@ -64,6 +64,23 @@ pub enum ParseErrorKind {
     UnexpectedToken { expected: String, found: String },
     /// The parser needed another token but the source ended.
     UnexpectedEof { expected: String },
+    /// `` `include "path" `` named a file the resolver could not find.
+    IncludeNotFound { path: String },
+    /// `` `include `` formed a cycle: `path` is already being included by
+    /// an enclosing `` `include ``.
+    RecursiveInclude { path: String },
+    /// An `` `ifdef ``/`` `ifndef `` (named by `directive`) was never
+    /// closed by a matching `` `endif `` before the source ended.
+    UnterminatedConditional { directive: String },
+    /// An `` `else ``/`` `elsif ``/`` `endif `` (named by `directive`)
+    /// appeared with no open `` `ifdef ``/`` `ifndef `` to match.
+    UnmatchedConditionalDirective { directive: String },
+    /// A `` `name `` was neither a known compiler directive nor a name
+    /// previously introduced by `` `define ``.
+    UndefinedMacro { name: String },
+    /// A function-like macro invocation's argument count did not match its
+    /// `` `define ``d parameter count.
+    MacroArityMismatch { name: String, expected: usize, found: usize },
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -85,6 +102,24 @@ impl fmt::Display for ParseErrorKind {
             }
             ParseErrorKind::UnexpectedEof { expected } => {
                 write!(f, "unexpected end of file, expected {expected}")
+            }
+            ParseErrorKind::IncludeNotFound { path } => {
+                write!(f, "`include \"{path}\" could not be resolved")
+            }
+            ParseErrorKind::RecursiveInclude { path } => {
+                write!(f, "`include \"{path}\" forms an include cycle")
+            }
+            ParseErrorKind::UnterminatedConditional { directive } => {
+                write!(f, "`{directive} was never closed by a matching `endif")
+            }
+            ParseErrorKind::UnmatchedConditionalDirective { directive } => {
+                write!(f, "`{directive} has no matching `ifdef/`ifndef")
+            }
+            ParseErrorKind::UndefinedMacro { name } => {
+                write!(f, "`{name} is not a compiler directive or a defined macro")
+            }
+            ParseErrorKind::MacroArityMismatch { name, expected, found } => {
+                write!(f, "`{name} expects {expected} argument(s), found {found}")
             }
         }
     }

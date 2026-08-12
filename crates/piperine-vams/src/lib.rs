@@ -18,7 +18,9 @@
 pub mod error;
 pub mod keywords;
 pub mod lexer;
+pub mod preprocessor;
 
 pub use error::{ParseError, ParseErrorKind, Span};
 pub use keywords::Keywords;
 pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
+pub use preprocessor::{IncludeResolver, NoIncludes, Preprocessor};
