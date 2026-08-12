@@ -492,10 +492,10 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-01
 
 **Done when**:
-- [ ] `abstol`/`access`/`units`/`idt_nature`/`ddt_nature` are **named fields**, not map entries (design §5.1 rationale)
-- [ ] `parent` supports derived natures (§3.6.1.1); user-defined attributes in a separate map (§3.6.1.3)
-- [ ] Implements `Named`/`Kinded` like its siblings
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] `abstol`/`access`/`units`/`idt_nature`/`ddt_nature` are **named fields**, not map entries (design §5.1 rationale)
+- [x] `parent` supports derived natures (§3.6.1.1); user-defined attributes in a separate map (§3.6.1.3)
+- [x] Implements `Named`/`Kinded` like its siblings
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(pom): add the Nature node for LRM 3.6.1`
@@ -1086,10 +1086,14 @@ No task defers its tests to a later task. ✅ **Check 3 passes.**
 
 1. **Sub-agent delegation**: 58 tasks packs to ~8 batches. Per the skill this
    requires an **offer-then-confirm** — no worker is dispatched without the
-   user accepting.
+   user accepting. **RESOLVED 2026-08-12 (user):** execute inline in batches,
+   pause at the T26 (Annex F method) and T50 (scheduler scope) decision gates.
 2. **T50 is a hard decision gate** (design R7). If the user declines the
    digital-scheduler scope amendment, T51 and T52 must be re-scoped before
-   Phase 9 proceeds.
+   Phase 9 proceeds. **RESOLVED 2026-08-12 (user):** "extending the digital
+   event scheduler is in-scope for VAMS-20 — 'solver out of scope' means no
+   analog-solver/`Element`-ABI redesign". T50 becomes a docs-only amendment
+   task; T51/T52 proceed when Phase 9 is reached.
 3. **T26 carries an undecided sub-choice**: which of Annex F's two
    discipline-resolution methods is adopted. Decided in-task against the LRM's
    worked examples, then documented in the pass contract.
@@ -1198,3 +1202,19 @@ parser proven against its own Annex A/B conformance gates and an opt-in
 real-model corpus harness, independently green, with nothing outside
 `piperine-vams` moved by this phase. Ready for S2 (POM extensions,
 Phase 4, T17+).
+
+- **T17** ✅ `<pending commit>` — POM `Nature` type (9 tests). Five LRM
+  §3.6.1.2 standard attributes (`abstol`/`access`/`units`/`idt_nature`/
+  `ddt_nature`) are named fields, not map entries (design §5.1 rationale:
+  `abstol` drives solver tolerance, `idt_nature`/`ddt_nature` drive
+  operator typing — a stringly-keyed typo must not fail silently).
+  `parent: Option<String>` records the §3.6.1.1 derived-nature link;
+  user-defined attributes (§3.6.1.3) live in a separate `HashMap<String,
+  Value>`. Implements `Named`/`Kinded` like every POM sibling; new
+  `Kind::Nature` discriminant (between `Discipline` and `Enum`). Test
+  target mirrors the LRM §3.6.1 `voltage`/`current`/`ttl_net_curr`
+  examples directly. `cargo test -p piperine-lang`: 440 passed, 0 failed,
+  0 ignored (was 431 at S1 close — +9 from this task). `cargo build
+  --workspace`: zero warnings. Scope note: the elaboration that lowers
+  `piperine_vams::ast::NatureDecl` → `Nature` is T23, not T17; this task
+  lands the POM type only.
