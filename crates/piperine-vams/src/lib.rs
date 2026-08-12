@@ -17,6 +17,7 @@
 
 pub mod ast;
 pub mod error;
+pub mod grammar;
 pub mod keywords;
 pub mod lexer;
 pub mod preprocessor;
@@ -26,3 +27,4 @@ pub use keywords::Keywords;
 pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
 pub use preprocessor::{IncludeResolver, NoIncludes, Preprocessor};
 pub use ast::{Attr, Item, SourceFile};
+pub use grammar::Grammar;

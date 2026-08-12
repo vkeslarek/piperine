@@ -311,11 +311,11 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-07
 
 **Done when**:
-- [ ] Every ch. 4 operator with correct precedence/associativity, incl. ternary, concat/replication, part-select, array index
-- [ ] Math functions (§4.3) and time-domain functions (`ddt`, `idt`, `idtmod`, `absdelay`, `transition`, `slew`, `last_crossing`, `limexp`, `laplace_*`, `zi_*`) parse as calls
-- [ ] Access functions `V(...)`/`I(...)` (1- and 2-arg) parse
-- [ ] Precedence proven by tests asserting parse **shape**, not just success
-- [ ] Gate passes: `cargo test -p piperine-vams`
+- [x] Every ch. 4 operator with correct precedence/associativity, incl. ternary, concat/replication, part-select, array index
+- [x] Math functions (§4.3) and time-domain functions (`ddt`, `idt`, `idtmod`, `absdelay`, `transition`, `slew`, `last_crossing`, `limexp`, `laplace_*`, `zi_*`) parse as calls
+- [x] Access functions `V(...)`/`I(...)` (1- and 2-arg) parse
+- [x] Precedence proven by tests asserting parse **shape**, not just success
+- [x] Gate passes: `cargo test -p piperine-vams`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(vams): expression grammar for LRM chapter 4`
