@@ -14,3 +14,7 @@
 //! is consulted as a source. See `.specs/features/verilog-ams-support/design.md`
 //! §0 (F3) for why, and `tests/purity.rs` for the mechanical gate that
 //! enforces it.
+
+pub mod error;
+
+pub use error::{ParseError, ParseErrorKind, Span};
