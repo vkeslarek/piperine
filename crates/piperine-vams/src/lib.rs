@@ -16,5 +16,7 @@
 //! enforces it.
 
 pub mod error;
+pub mod lexer;
 
 pub use error::{ParseError, ParseErrorKind, Span};
+pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
