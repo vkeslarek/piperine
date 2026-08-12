@@ -233,7 +233,7 @@ impl Elaborator {
             }
         }
 
-        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: decl.doc.clone(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], constraints: vec![], origin: None })
+        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: decl.doc.clone(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], constraints: vec![], branches: vec![], genvars: vec![], origin: None })
     }
 
     /// Lowers a slice of `ModuleStatement`s, appending the resulting

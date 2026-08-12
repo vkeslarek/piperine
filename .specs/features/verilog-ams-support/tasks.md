@@ -545,9 +545,9 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-01, VAMS-04
 
 **Done when**:
-- [ ] New collections added; existing fields untouched
-- [ ] Test asserts `Design::flat_modules` remains the **only** derived artifact (design §5.3)
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] New collections added; existing fields untouched
+- [x] Test asserts `Design::flat_modules` remains the **only** derived artifact (design §5.3)
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(pom): module and design fields for Verilog-AMS constructs`
@@ -1258,3 +1258,28 @@ Phase 4, T17+).
   family + rendering tests only. `cargo test -p piperine-lang`: 460
   passed, 0 failed, 0 ignored (+7 vs T18). `cargo build --workspace`:
   zero warnings.
+
+- **T20** ✅ `<pending commit>` — POM module/design fields for VAMS (8
+  tests). `Module` gains `branches: Vec<Branch>` (LRM §3.12, module
+  item) and `genvars: Vec<String>` (LRM §3.5, module item), with
+  accessors `branches()`, `genvars()`, `branch(name)`. `Design` gains
+  `natures: HashMap<String, Nature>` (LRM §3.6.1, **top-level only** —
+  not nested in modules per §3.6.2), with accessors `natures()`,
+  `nature(name)`, and internal mutator `natures_map_mut()`. All new
+  fields are additive — every existing accessor and serde field is
+  untouched; a pre-VAMS serialized Module deserializes with empty
+  new fields. SPEC_DEVIATION (non-blocking, LRM-corrected): design.md
+  §4.2's table said `Module` gains `natures`/`branches`/`genvars`/
+  `paramsets`, but LRM §3.6.1 and §6.4 make `nature` and `paramset`
+  top-level declarations (cannot nest inside modules), so they live on
+  `Design`. The LRM is the authoritative source per standing constraint
+  C7. The `paramsets` collection is deferred to T21 (needs the
+  `piperine-vams` dependency for `ParamsetDecl`). `Design::flat_modules`
+  remains the sole derived artifact (MD-25 VAMS clause). `cargo test -p
+  piperine-lang`: 468 passed, 0 failed, 0 ignored (+8 vs T19). `cargo
+  build --workspace`: zero warnings.
+
+**Phase 4 (S2a) closed.** POM gains `Nature` (T17), `Branch` (T18), the
+E4xxx error family (T19), and the VAMS module/design collections (T20).
+S2a's exit condition met: every POM type the VAMS lowering will need is
+in place. Ready for S2b (VAMS → POM elaboration, Phase 5, T21+).

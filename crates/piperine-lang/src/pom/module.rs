@@ -267,6 +267,19 @@ pub struct Module {
     /// `behaviors`. Compiled ASTs: skipped on serialize, same rule.
     #[serde(skip)]
     pub constraints: Vec<crate::pom::ConstraintBlock>,
+    /// Verilog-AMS `branch (p,n) name;` declarations (LRM §3.12), plus
+    /// implicit branches created by access-function call sites. Authored
+    /// form — the elaborator records each branch's kind from the first
+    /// contribution seen (T23). Skipped on serialize, same rule as
+    /// behaviors: branches reference compiled access-function call sites.
+    #[serde(skip, default)]
+    pub branches: Vec<crate::pom::Branch>,
+    /// Verilog-AMS `genvar` names declared in this module (LRM §3.5) —
+    /// loop indices for `generate` regions. Authored form; generated
+    /// instances land in `flat_modules`, never here (MD-25 VAMS clause,
+    /// design §5.3).
+    #[serde(default)]
+    pub genvars: Vec<String>,
     pub origin: Option<String>,
 }
 
@@ -285,7 +298,12 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { span: None, attributes: Vec::new(), doc: None, name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, constraints: Vec::new(), origin: None }
+        Self {
+            span: None, attributes: Vec::new(), doc: None, name,
+            ports, params, wires, vars: Vec::new(), instances, connections,
+            behaviors, constraints: Vec::new(),
+            branches: Vec::new(), genvars: Vec::new(), origin: None,
+        }
     }
 
     /// The module's name.
@@ -314,6 +332,12 @@ impl Module {
     /// their behavior bodies (D4); the accessor reads only the authored
     /// hierarchy — never `flat_modules` (MD-25, UNBREAKABLE).
     pub fn constraints(&self) -> &[crate::pom::ConstraintBlock] { &self.constraints }
+    /// All Verilog-AMS branches declared or implied in this module
+    /// (LRM §3.12). Authored form; `flat_modules` carries the
+    /// post-monormophization shape (MD-25 VAMS clause).
+    pub fn branches(&self) -> &[crate::pom::Branch] { &self.branches }
+    /// All `genvar` names declared in this module (LRM §3.5).
+    pub fn genvars(&self) -> &[String] { &self.genvars }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {
@@ -330,6 +354,12 @@ impl Module {
     /// Look up an instance by label.
     pub fn instance(&self, name: &str) -> Option<&Instance> {
         self.instances.iter().find(|i| i.label.as_deref() == Some(name))
+    }
+    /// Look up a named branch by name. Implicit branches (no authored
+    /// name) are not reachable here — they are returned by the
+    /// elaboration-driven access-function call-site resolver (T23).
+    pub fn branch(&self, name: &str) -> Option<&crate::pom::Branch> {
+        self.branches.iter().find(|b| b.name.as_deref() == Some(name))
     }
 }
 

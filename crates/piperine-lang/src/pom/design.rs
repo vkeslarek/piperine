@@ -137,6 +137,14 @@ pub struct Design {
     pub(crate) flat_modules: HashMap<String, Module>,
     #[serde(skip)]
     pub(crate) disciplines: HashMap<String, DisciplineDecl>,
+    /// Verilog-AMS top-level `nature` declarations (LRM §3.6.1), looked
+    /// up by name from discipline `potential`/`flow` bindings and from
+    /// `idt_nature`/`ddt_nature` references. Top-level only — natures do
+    /// not nest inside modules (LRM §3.6.2). Skipped on serialize (same
+    /// rule as disciplines: declaration-shaped data the deserialized
+    /// `Design` carries empty and re-elaboration rebuilds).
+    #[serde(skip)]
+    pub(crate) natures: HashMap<String, crate::pom::Nature>,
     #[serde(skip)]
     pub(crate) bundles: HashMap<String, BundleDecl>,
     #[serde(skip)]
@@ -164,6 +172,7 @@ impl Design {
             modules: HashMap::new(),
             flat_modules: HashMap::new(),
             disciplines: HashMap::new(),
+            natures: HashMap::new(),
             bundles: HashMap::new(),
             enums: HashMap::new(),
             capabilities: HashMap::new(),
@@ -292,6 +301,17 @@ impl Design {
     /// Look up a discipline declaration by name.
     pub fn discipline(&self, name: &str) -> Option<&DisciplineDecl> {
         self.disciplines.get(name)
+    }
+
+    /// Every Verilog-AMS nature declaration (LRM §3.6.1). Top-level
+    /// only — natures do not nest inside modules.
+    pub fn natures(&self) -> impl Iterator<Item = (&String, &crate::pom::Nature)> {
+        self.natures.iter()
+    }
+
+    /// Look up a nature declaration by name (LRM §3.6.1).
+    pub fn nature(&self, name: &str) -> Option<&crate::pom::Nature> {
+        self.natures.get(name)
     }
 
     /// Every bundle declaration.
@@ -781,6 +801,13 @@ impl Design {
     /// Mutable access to the bundles map. For internal elaboration use.
     pub(crate) fn bundles_map_mut(&mut self) -> &mut HashMap<String, BundleDecl> {
         &mut self.bundles
+    }
+    /// Mutable access to the natures map. For internal elaboration use
+    /// (T23 lowers `piperine_vams::ast::NatureDecl` into POM `Nature`
+    /// through here).
+    #[allow(dead_code, reason = "wired by T23 — VAMS→POM nature lowering")]
+    pub(crate) fn natures_map_mut(&mut self) -> &mut HashMap<String, crate::pom::Nature> {
+        &mut self.natures
     }
     /// Mutable access to the enums map. For internal elaboration use.
     pub(crate) fn enums_map_mut(&mut self) -> &mut HashMap<String, EnumDecl> {
