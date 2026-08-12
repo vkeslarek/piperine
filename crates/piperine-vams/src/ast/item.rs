@@ -241,6 +241,10 @@ pub struct FunctionDecl {
     pub name: String,
     pub ret: Option<ParamType>,
     pub ports: Vec<PortItemDecl>,
+    /// Local variable declarations between the port list and the single
+    /// body statement — `function_item_declaration`'s non-port forms,
+    /// Annex A.2.6.
+    pub decls: Vec<crate::ast::BlockItemDecl>,
     pub body: Box<Stmt>,
 }
 
@@ -250,6 +254,10 @@ pub struct TaskDecl {
     pub attrs: Vec<Attr>,
     pub name: String,
     pub ports: Vec<PortItemDecl>,
+    /// Local variable declarations between the port list and the single
+    /// body statement — `task_item_declaration`'s non-port forms,
+    /// Annex A.2.7.
+    pub decls: Vec<crate::ast::BlockItemDecl>,
     pub body: Box<Stmt>,
 }
 

@@ -187,32 +187,87 @@ impl Grammar {
     /// by T10/T11; unrecognized starts fall through to a typed error
     /// naming what was expected.
     pub(crate) fn parse_module_item(&mut self) -> Result<ModuleItem, ParseError> {
-        if self.at_kw("input") || self.at_kw("output") || self.at_kw("inout") {
+        // Dispatch looks past any leading `(* ... *)` attribute instances
+        // (§Syntax 2-7) so `(* attr *) branch ...` routes the same as a
+        // bare `branch ...` — the chosen production below still consumes
+        // the attributes itself via its own `parse_attr_instances()` call.
+        let kw = self.kw_after_attrs();
+        if kw == Some("input") || kw == Some("output") || kw == Some("inout") {
             return Ok(ModuleItem::Port(self.parse_port_decl()?));
         }
-        if self.at_kw("ground") {
+        if kw == Some("ground") {
             return Ok(ModuleItem::Ground(self.parse_ground_decl()?));
         }
-        if self.at_kw("parameter") {
+        if kw == Some("parameter") || kw == Some("localparam") {
             return Ok(ModuleItem::Param(self.parse_param_decl_body(false)?));
         }
-        if self.at_kw("localparam") {
-            return Ok(ModuleItem::Param(self.parse_param_decl_body(false)?));
-        }
-        if self.at_kw("aliasparam") {
+        if kw == Some("aliasparam") {
             return Ok(ModuleItem::AliasParam(self.parse_aliasparam()?));
         }
-        if self.at_kw("specparam") {
+        if kw == Some("specparam") {
             return Ok(ModuleItem::Specparam(self.parse_specparam()?));
         }
-        // A bare identifier starting an item with no direction/parameter
-        // keyword is a net declaration (`electrical p, n;`) — the
-        // identifier is the discipline name.
-        if matches!(self.peek(), Tok::Ident(_)) {
+        if kw == Some("branch") {
+            return Ok(ModuleItem::Branch(self.parse_branch_decl()?));
+        }
+        if kw == Some("analog") {
+            // `analog function` is a callable declaration; bare `analog`
+            // (optionally `analog initial`) is a behavior construct — one
+            // more token of lookahead tells them apart.
+            if matches!(self.peek_at_next(), Tok::Ident(s) if s == "function") {
+                return Ok(ModuleItem::Function(self.parse_function_decl()?));
+            }
+            return Ok(ModuleItem::Behavior(self.parse_behavior_construct()?));
+        }
+        if kw == Some("initial") || kw == Some("always") {
+            return Ok(ModuleItem::Behavior(self.parse_behavior_construct()?));
+        }
+        if kw == Some("function") {
+            return Ok(ModuleItem::Function(self.parse_function_decl()?));
+        }
+        if kw == Some("task") {
+            return Ok(ModuleItem::Task(self.parse_task_decl()?));
+        }
+        if kw == Some("genvar") {
+            return Ok(ModuleItem::Genvar(self.parse_genvar_decl()?));
+        }
+        if kw == Some("for") {
+            return Ok(ModuleItem::LoopGenerate(self.parse_loop_generate()?));
+        }
+        if kw == Some("if") {
+            return Ok(ModuleItem::IfGenerate(self.parse_if_generate()?));
+        }
+        if kw == Some("case") {
+            return Ok(ModuleItem::CaseGenerate(self.parse_case_generate()?));
+        }
+        if kw == Some("generate") {
+            return Ok(ModuleItem::GenerateRegion(self.parse_generate_region()?));
+        }
+        if kw == Some("defparam") {
+            return Ok(ModuleItem::Defparam(self.parse_defparam()?));
+        }
+        if kw == Some("assign") {
+            return Ok(ModuleItem::ContinuousAssign(self.parse_continuous_assign()?));
+        }
+        // A bare identifier is either a net declaration (`discipline_name
+        // declarator_list ';'`) or a module instantiation (`module_name
+        // [#(...)] instance_name(...)`, possibly repeated). Both start
+        // with `Ident`, so the dispatch needs lookahead: `#` or a second
+        // identifier immediately followed by `(` means instantiation;
+        // anything else (`,`/`;`/`[`) means the first identifier was
+        // already the sole declarator's discipline.
+        if kw.is_some() {
+            let looks_like_instantiation = matches!(self.peek_at(1), Tok::Punct("#"))
+                || (matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Punct("(")));
+            if looks_like_instantiation {
+                return Ok(ModuleItem::Instantiation(self.parse_module_instantiation()?));
+            }
             return Ok(ModuleItem::Net(self.parse_net_decl()?));
         }
         Err(self.unexpected(
-            "a port, net, ground, parameter, aliasparam, or specparam declaration".to_string(),
+            "a module item declaration (port, net, ground, parameter, branch, behavior, \
+             function, task, generate, instantiation, defparam, or continuous assign)"
+                .to_string(),
         ))
     }
 
@@ -434,5 +489,346 @@ impl Grammar {
         }
         let end = self.expect_punct(";")?;
         Ok(SpecparamDecl { span: Span::new(start.start, end.end), attrs, names })
+    }
+
+    /// `hierarchical_identifier`, Annex A.9.3 — `ident {'.' ident}`, joined
+    /// with `.` into one string (`defparam`'s target is the only site this
+    /// crate's scope needs it for).
+    fn parse_hierarchical_name(&mut self) -> Result<String, ParseError> {
+        let mut name = self.expect_ident()?.0;
+        while self.eat_punct(".") {
+            name.push('.');
+            name.push_str(&self.expect_ident()?.0);
+        }
+        Ok(name)
+    }
+
+    // ─────────────────────────────── branch ──────────────────────────────
+
+    /// `branch_declaration`, §5.2 — `branch (pos[,neg]) name {, name};`.
+    /// Attribute-bearing.
+    fn parse_branch_decl(&mut self) -> Result<BranchDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("branch")?;
+        self.expect_punct("(")?;
+        let (pos, _) = self.expect_ident()?;
+        let neg = if self.eat_punct(",") { Some(self.expect_ident()?.0) } else { None };
+        self.expect_punct(")")?;
+        let mut names = vec![self.expect_ident()?.0];
+        while self.eat_punct(",") {
+            names.push(self.expect_ident()?.0);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(BranchDecl { span: Span::new(start.start, end.end), attrs, pos, neg, names })
+    }
+
+    // ─────────────────────────── behavior constructs ──────────────────────
+
+    /// `analog_construct` / `initial_construct` / `always_construct` —
+    /// §5.7/Annex A.1.4. Attribute-bearing, §Syntax 2-7. `analog`'s body
+    /// and digital `initial`/`always`'s body share `parse_stmt` — the
+    /// Annex C analog-subset restriction on which statements are legal
+    /// inside which is enforced later (VAMS-25), not by this production.
+    fn parse_behavior_construct(&mut self) -> Result<BehaviorConstruct, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        let kind = if self.eat_kw("analog") {
+            if self.eat_kw("initial") {
+                BehaviorKind::AnalogInitial
+            } else {
+                BehaviorKind::Analog
+            }
+        } else if self.eat_kw("initial") {
+            BehaviorKind::Initial
+        } else {
+            self.expect_kw("always")?;
+            BehaviorKind::Always
+        };
+        let body = Box::new(self.parse_stmt()?);
+        Ok(BehaviorConstruct { span: Span::new(start.start, body.span().end), attrs, kind, body })
+    }
+
+    // ───────────────────────────── functions / tasks ───────────────────────
+
+    /// `port_declaration`-shaped `tf_port_declaration`, Annex A.2.6 — a
+    /// function/task's formal port, declared as a body item (not a
+    /// parenthesized list — 1364/Verilog-AMS functions and tasks declare
+    /// ports this way). Attribute-bearing, §Syntax 2-8.
+    fn parse_port_item_decl(&mut self) -> Result<PortItemDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        let dir = if self.eat_kw("input") {
+            Direction::Input
+        } else if self.eat_kw("output") {
+            Direction::Output
+        } else {
+            self.expect_kw("inout")?;
+            Direction::Inout
+        };
+        let ty = self.parse_optional_param_type();
+        let mut names = vec![self.expect_ident()?.0];
+        while self.eat_punct(",") {
+            names.push(self.expect_ident()?.0);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(PortItemDecl { span: Span::new(start.start, end.end), attrs, dir, ty, names })
+    }
+
+    /// `analog_function_declaration` / `function_declaration`, §5.9/
+    /// Annex A.2.6. Attribute-bearing, §Syntax 2-7.
+    fn parse_function_decl(&mut self) -> Result<FunctionDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        let kind = if self.eat_kw("analog") {
+            self.expect_kw("function")?;
+            FunctionKind::Analog
+        } else {
+            self.expect_kw("function")?;
+            FunctionKind::Digital
+        };
+        let ret = self.parse_optional_param_type();
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct(";")?;
+        let mut ports = vec![];
+        while self.at_kw("input") || self.at_kw("output") || self.at_kw("inout") {
+            ports.push(self.parse_port_item_decl()?);
+        }
+        let mut decls = vec![];
+        while let Some(d) = self.try_parse_block_item_decl()? {
+            decls.push(d);
+        }
+        let body = Box::new(self.parse_stmt()?);
+        let end = self.expect_kw("endfunction")?;
+        Ok(FunctionDecl { span: Span::new(start.start, end.end), attrs, kind, name, ret, ports, decls, body })
+    }
+
+    /// `task_declaration`, Annex A.2.7. Attribute-bearing, §Syntax 2-7.
+    fn parse_task_decl(&mut self) -> Result<TaskDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("task")?;
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct(";")?;
+        let mut ports = vec![];
+        while self.at_kw("input") || self.at_kw("output") || self.at_kw("inout") {
+            ports.push(self.parse_port_item_decl()?);
+        }
+        let mut decls = vec![];
+        while let Some(d) = self.try_parse_block_item_decl()? {
+            decls.push(d);
+        }
+        let body = Box::new(self.parse_stmt()?);
+        let end = self.expect_kw("endtask")?;
+        Ok(TaskDecl { span: Span::new(start.start, end.end), attrs, name, ports, decls, body })
+    }
+
+    // ────────────────────────────── genvar / generate ──────────────────────
+
+    /// `genvar_declaration`, §6, Annex A.2.1.3. Attribute-bearing.
+    fn parse_genvar_decl(&mut self) -> Result<GenvarDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("genvar")?;
+        let mut names = vec![self.expect_ident()?.0];
+        while self.eat_punct(",") {
+            names.push(self.expect_ident()?.0);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(GenvarDecl { span: Span::new(start.start, end.end), attrs, names })
+    }
+
+    /// `generate_block`, §6 — `begin [':' name] module_or_generate_item*
+    /// end`, or (when unnamed and holding exactly one item) a single bare
+    /// item with no `begin`/`end` wrapper.
+    fn parse_generate_block(&mut self) -> Result<GenerateBlock, ParseError> {
+        if self.at_kw("begin") {
+            let start = self.expect_kw("begin")?;
+            let name = if self.eat_punct(":") { Some(self.expect_ident()?.0) } else { None };
+            let mut items = vec![];
+            while !self.at_kw("end") {
+                if matches!(self.peek(), Tok::Eof) {
+                    return Err(self.eof_error("'end'".to_string()));
+                }
+                items.push(self.parse_module_item()?);
+            }
+            let end = self.expect_kw("end")?;
+            return Ok(GenerateBlock { span: Span::new(start.start, end.end), name, items });
+        }
+        let item = self.parse_module_item()?;
+        Ok(GenerateBlock { span: self.peek_span(), name: None, items: vec![item] })
+    }
+
+    /// `loop_generate_construct`, §6.2. Attribute-bearing, §Syntax 2-7.
+    fn parse_loop_generate(&mut self) -> Result<LoopGenerate, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("for")?;
+        self.expect_punct("(")?;
+        let (genvar, _) = self.expect_ident()?;
+        self.expect_punct("=")?;
+        let init = self.parse_expr()?;
+        self.expect_punct(";")?;
+        let cond = self.parse_expr()?;
+        self.expect_punct(";")?;
+        let (step_var, _) = self.expect_ident()?;
+        self.expect_punct("=")?;
+        let step_value = self.parse_expr()?;
+        self.expect_punct(")")?;
+        let body = self.parse_generate_block()?;
+        Ok(LoopGenerate {
+            span: Span::new(start.start, body.span.end),
+            attrs,
+            genvar,
+            init,
+            cond,
+            step_var,
+            step_value,
+            body,
+        })
+    }
+
+    /// `conditional_generate_construct` (if-form), §6.3. Attribute-bearing.
+    fn parse_if_generate(&mut self) -> Result<IfGenerate, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("if")?;
+        self.expect_punct("(")?;
+        let cond = self.parse_expr()?;
+        self.expect_punct(")")?;
+        let then_branch = self.parse_generate_block()?;
+        let else_branch = if self.eat_kw("else") { Some(self.parse_generate_block()?) } else { None };
+        let end = else_branch.as_ref().map(|b| b.span).unwrap_or(then_branch.span);
+        Ok(IfGenerate { span: Span::new(start.start, end.end), attrs, cond, then_branch, else_branch })
+    }
+
+    /// `conditional_generate_construct` (case-form), §6.4. Attribute-bearing.
+    fn parse_case_generate(&mut self) -> Result<CaseGenerate, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("case")?;
+        self.expect_punct("(")?;
+        let selector = self.parse_expr()?;
+        self.expect_punct(")")?;
+        let mut arms = vec![];
+        while !self.at_kw("endcase") {
+            if matches!(self.peek(), Tok::Eof) {
+                return Err(self.eof_error("'endcase'".to_string()));
+            }
+            let arm_start = self.peek_span();
+            let labels = if self.eat_kw("default") {
+                self.eat_punct(":");
+                None
+            } else {
+                let mut labels = vec![self.parse_expr()?];
+                while self.eat_punct(",") {
+                    labels.push(self.parse_expr()?);
+                }
+                self.expect_punct(":")?;
+                Some(labels)
+            };
+            let body = self.parse_generate_block()?;
+            arms.push(GenerateCaseArm { span: Span::new(arm_start.start, body.span.end), labels, body });
+        }
+        let end = self.expect_kw("endcase")?;
+        Ok(CaseGenerate { span: Span::new(start.start, end.end), attrs, selector, arms })
+    }
+
+    /// `generate_region`, §6.1 — a bare `generate ... endgenerate` with no
+    /// loop/conditional.
+    fn parse_generate_region(&mut self) -> Result<GenerateRegion, ParseError> {
+        let start = self.expect_kw("generate")?;
+        let mut items = vec![];
+        while !self.at_kw("endgenerate") {
+            if matches!(self.peek(), Tok::Eof) {
+                return Err(self.eof_error("'endgenerate'".to_string()));
+            }
+            items.push(self.parse_module_item()?);
+        }
+        let end = self.expect_kw("endgenerate")?;
+        Ok(GenerateRegion { span: Span::new(start.start, end.end), items })
+    }
+
+    // ─────────────────────── instantiation / assign / defparam ─────────────
+
+    /// `defparam_statement`, Annex A.2.1.2. Attribute-bearing.
+    fn parse_defparam(&mut self) -> Result<Defparam, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("defparam")?;
+        let target = self.parse_hierarchical_name()?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(Defparam { span: Span::new(start.start, end.end), attrs, target, value })
+    }
+
+    /// `continuous_assign`, Annex A.6.1. Attribute-bearing, §Syntax 2-7.
+    fn parse_continuous_assign(&mut self) -> Result<ContinuousAssign, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("assign")?;
+        let target = self.parse_lvalue()?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(ContinuousAssign { span: Span::new(start.start, end.end), attrs, target, value })
+    }
+
+    /// One port/parameter connection at an instantiation site — ordered or
+    /// named (`.port(expr)`). Attribute-bearing, §Syntax 2-9.
+    fn parse_port_connection(&mut self) -> Result<PortConnection, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        if self.eat_punct(".") {
+            let (name, _) = self.expect_ident()?;
+            self.expect_punct("(")?;
+            let value = if self.at_punct(")") { None } else { Some(self.parse_expr()?) };
+            let end = self.expect_punct(")")?;
+            return Ok(PortConnection { span: Span::new(start.start, end.end), attrs, name: Some(name), value });
+        }
+        let value = if self.at_punct(",") || self.at_punct(")") { None } else { Some(self.parse_expr()?) };
+        let end = value.as_ref().map(|v| v.span()).unwrap_or(start);
+        Ok(PortConnection { span: Span::new(start.start, end.end), attrs, name: None, value })
+    }
+
+    fn parse_instance(&mut self) -> Result<Instance, ParseError> {
+        let start = self.peek_span();
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct("(")?;
+        let mut connections = vec![];
+        if !self.at_punct(")") {
+            connections.push(self.parse_port_connection()?);
+            while self.eat_punct(",") {
+                connections.push(self.parse_port_connection()?);
+            }
+        }
+        let end = self.expect_punct(")")?;
+        Ok(Instance { span: Span::new(start.start, end.end), name, connections })
+    }
+
+    /// `module_instantiation`, Annex A.4.1. Attribute-bearing.
+    fn parse_module_instantiation(&mut self) -> Result<ModuleInstantiation, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        let (module_name, _) = self.expect_ident()?;
+        let param_overrides = if self.eat_punct("#") {
+            self.expect_punct("(")?;
+            let mut po = vec![];
+            if !self.at_punct(")") {
+                po.push(self.parse_port_connection()?);
+                while self.eat_punct(",") {
+                    po.push(self.parse_port_connection()?);
+                }
+            }
+            self.expect_punct(")")?;
+            po
+        } else {
+            vec![]
+        };
+        let mut instances = vec![self.parse_instance()?];
+        while self.eat_punct(",") {
+            instances.push(self.parse_instance()?);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(ModuleInstantiation {
+            span: Span::new(start.start, end.end),
+            attrs,
+            module_name,
+            param_overrides,
+            instances,
+        })
     }
 }

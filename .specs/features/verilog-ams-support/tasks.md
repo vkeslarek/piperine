@@ -365,12 +365,12 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-02, VAMS-04
 
 **Done when**:
-- [ ] `branch` declarations (named, ground-referenced, port branches)
-- [ ] `analog`/`analog initial` blocks, `initial`/`always` constructs
-- [ ] `analog function`, `function`, `task` with full port declaration forms
-- [ ] `genvar`, `generate` regions: `for`/`if`/`case` generate
-- [ ] Module instantiation (named + ordered connections, parameter overrides, `defparam`) and `continuous assign`
-- [ ] Gate passes: `cargo test -p piperine-vams`
+- [x] `branch` declarations (named, ground-referenced, port branches)
+- [x] `analog`/`analog initial` blocks, `initial`/`always` constructs
+- [x] `analog function`, `function`, `task` with full port declaration forms
+- [x] `genvar`, `generate` regions: `for`/`if`/`case` generate
+- [x] Module instantiation (named + ordered connections, parameter overrides, `defparam`) and `continuous assign`
+- [x] Gate passes: `cargo test -p piperine-vams`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(vams): grammar for branches, behavior blocks, callables and generate`

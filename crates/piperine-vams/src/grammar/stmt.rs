@@ -72,7 +72,7 @@ impl Grammar {
     /// are item-grammar concerns, T9). Returns `Ok(None)` when the next
     /// token does not start a block item declaration, so callers can loop
     /// until the statement list begins.
-    fn try_parse_block_item_decl(&mut self) -> Result<Option<BlockItemDecl>, ParseError> {
+    pub(crate) fn try_parse_block_item_decl(&mut self) -> Result<Option<BlockItemDecl>, ParseError> {
         let attrs = self.parse_attr_instances()?;
         let kind = if self.eat_kw("integer") {
             0

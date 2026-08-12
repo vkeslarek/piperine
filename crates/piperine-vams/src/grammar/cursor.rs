@@ -119,7 +119,36 @@ impl Grammar {
     }
 
     pub(crate) fn peek_at_next(&self) -> &Tok {
-        let idx = (self.pos + 1).min(self.toks.len() - 1);
+        self.peek_at(1)
+    }
+
+    /// Scans past zero or more `(* ... *)` attribute-instance groups
+    /// (without consuming them) and returns the identifier text
+    /// immediately following, if any. Lets a dispatcher recognize
+    /// `(* attr *) branch ...` the same way it recognizes `branch ...`,
+    /// while leaving the attributes themselves for the chosen production's
+    /// own `parse_attr_instances()` call to consume.
+    pub(crate) fn kw_after_attrs(&self) -> Option<&str> {
+        let mut idx = self.pos;
+        while matches!(self.toks.get(idx).map(|l| &l.tok), Some(Tok::Punct("(*"))) {
+            idx += 1;
+            while !matches!(self.toks.get(idx).map(|l| &l.tok), Some(Tok::Punct("*)")) | None) {
+                idx += 1;
+            }
+            idx += 1;
+        }
+        match self.toks.get(idx).map(|l| &l.tok) {
+            Some(Tok::Ident(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Lookahead `offset` tokens past the current position — needed to
+    /// dispatch module items that share a leading identifier (net
+    /// declaration vs. module instantiation, §Annex A.1.4) on more than
+    /// one token of context.
+    pub(crate) fn peek_at(&self, offset: usize) -> &Tok {
+        let idx = (self.pos + offset).min(self.toks.len() - 1);
         &self.toks[idx].tok
     }
 
