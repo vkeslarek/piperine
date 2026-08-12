@@ -17,6 +17,7 @@
 
 pub mod ast;
 pub mod error;
+pub mod fmt;
 pub mod grammar;
 pub mod keywords;
 pub mod lexer;
@@ -24,6 +25,7 @@ pub mod parser;
 pub mod preprocessor;
 
 pub use error::{ParseError, ParseErrorKind, Span};
+pub use fmt::Formatter;
 pub use keywords::Keywords;
 pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
 pub use preprocessor::{IncludeResolver, NoIncludes, Preprocessor};
