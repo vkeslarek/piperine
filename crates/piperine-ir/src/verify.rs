@@ -92,13 +92,6 @@ pub enum VerifyError {
     UndeclaredValue { site: OpSite, value: ValueId, value_count: usize },
     UndeclaredNet { site: OpSite, net: NetId, net_count: usize },
     UndeclaredCell { site: OpSite, cell: CellId, cell_count: usize },
-    /// A `CellWrite` appears in a block OTHER than the cell's declared
-    /// `writer` (the A0d mechanism — a module-level var with two claimed
-    /// owners). `Cell.writer` is a field, so a SECOND writer cannot be
-    /// declared at construction time; this catches the remaining way two
-    /// blocks could both write one cell — a rogue `CellWrite` op in a
-    /// block that isn't the declared writer. Names BOTH blocks.
-    CellWrittenByWrongBlock { site: OpSite, cell: CellId, declared_writer: BlockId, writing_block: BlockId },
 }
 
 impl std::fmt::Display for VerifyError {
@@ -154,13 +147,6 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "block {:?} op {}: references cell {cell:?} but the module declares only \
                  {cell_count} cell(s)",
-                site.block, site.op_index,
-            ),
-            VerifyError::CellWrittenByWrongBlock { site, cell, declared_writer, writing_block } => write!(
-                f,
-                "block {:?} op {}: writes cell {cell:?}, but that cell's declared writer is \
-                 block {declared_writer:?} — block {writing_block:?} has no claim to write it \
-                 (the A0d mechanism: a cell with two claimed owners)",
                 site.block, site.op_index,
             ),
         }
@@ -308,15 +294,6 @@ impl<'m> Verifier<'m> {
             }
             Op::CellWrite { cell, addr, value } => {
                 self.check_declared_cell(site, *cell)?;
-                let declared_writer = self.module.cell_at(*cell).writer;
-                if declared_writer != site.block {
-                    return Err(VerifyError::CellWrittenByWrongBlock {
-                        site,
-                        cell: *cell,
-                        declared_writer,
-                        writing_block: site.block,
-                    });
-                }
                 if let Some(addr_v) = addr {
                     self.check_declared_value(site, *addr_v)?;
                     self.check_value_is_bits(site, *addr_v, "CellWrite address must be bits-typed")?;

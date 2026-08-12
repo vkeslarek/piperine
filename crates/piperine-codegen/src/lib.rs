@@ -32,7 +32,6 @@
 mod emit;
 mod error;
 mod flatten;
-pub mod backend;
 pub mod device;
 pub mod kernel;
 pub mod resolve;

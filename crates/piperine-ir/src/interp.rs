@@ -451,7 +451,7 @@ impl<'a> Interpreter<'a> {
                     .iter()
                     .map(|a| self.value(*a).cloned().ok_or(InterpError::UncomputedValue { value: *a }))
                     .collect::<Result<_, _>>()?;
-                let v = self.eval_pure(*pop, &argv, *out)?;
+                let v = self.eval_pure(*pop, &argv)?;
                 self.state.values.insert(*out, v);
             }
             Op::Call { intrinsic, args, out } => {
@@ -536,51 +536,36 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    /// Evaluate a pure op over real or bits operands. `out` names the
-    /// destination slot so width-native `Bits` arithmetic can mask its
-    /// result to the op's declared output width (the verifier already
-    /// checks `args`/`out` widths agree — this just applies that width).
-    fn eval_pure(&self, op: PureOp, args: &[CellValue], out: ValueId) -> Result<CellValue, InterpError> {
+    /// Evaluate a pure op over real or bits operands.
+    fn eval_pure(&self, op: PureOp, args: &[CellValue]) -> Result<CellValue, InterpError> {
         match op {
-            PureOp::Add | PureOp::Sub | PureOp::Mul | PureOp::Div => match (&args[0], &args[1]) {
-                (CellValue::Real(a), CellValue::Real(b)) => Ok(CellValue::Real(match op {
+            PureOp::Add | PureOp::Sub | PureOp::Mul | PureOp::Div => {
+                let a = cell_as_real(&args[0]).ok_or(InterpError::UnsupportedOp { kind: "non-real Add" })?;
+                let b = cell_as_real(&args[1]).ok_or(InterpError::UnsupportedOp { kind: "non-real Add" })?;
+                let v = match op {
                     PureOp::Add => a + b,
                     PureOp::Sub => a - b,
                     PureOp::Mul => a * b,
                     PureOp::Div => a / b,
                     _ => unreachable!(),
-                })),
-                (CellValue::Bits(a), CellValue::Bits(b)) => {
-                    let mask = bits_mask(self.module.value_ty(out).width());
-                    let v = match op {
-                        PureOp::Add => a.wrapping_add(*b),
-                        PureOp::Sub => a.wrapping_sub(*b),
-                        PureOp::Mul => a.wrapping_mul(*b),
-                        PureOp::Div => {
-                            if *b == 0 {
-                                return Err(InterpError::UnsupportedOp { kind: "division by zero" });
-                            }
-                            a / b
-                        }
-                        _ => unreachable!(),
-                    };
-                    Ok(CellValue::Bits(v & mask))
-                }
-                _ => Err(InterpError::UnsupportedOp { kind: "mismatched-class arithmetic" }),
-            },
-            PureOp::Neg => match &args[0] {
-                CellValue::Real(a) => Ok(CellValue::Real(-a)),
-                CellValue::Bits(a) => {
-                    let mask = bits_mask(self.module.value_ty(out).width());
-                    Ok(CellValue::Bits(a.wrapping_neg() & mask))
-                }
-                _ => Err(InterpError::UnsupportedOp { kind: "non-real-or-bits Neg" }),
-            },
+                };
+                Ok(CellValue::Real(v))
+            }
+            PureOp::Neg => {
+                let a = cell_as_real(&args[0]).ok_or(InterpError::UnsupportedOp { kind: "non-real Neg" })?;
+                Ok(CellValue::Real(-a))
+            }
             PureOp::Eq | PureOp::Ne | PureOp::Lt | PureOp::Le | PureOp::Gt | PureOp::Ge => {
-                let v: bool = match (&args[0], &args[1]) {
-                    (CellValue::Real(a), CellValue::Real(b)) => Self::compare(op, a, b),
-                    (CellValue::Bits(a), CellValue::Bits(b)) => Self::compare(op, a, b),
-                    _ => return Err(InterpError::UnsupportedOp { kind: "mismatched-class comparison" }),
+                let a = cell_as_real(&args[0]).ok_or(InterpError::UnsupportedOp { kind: "non-real cmp" })?;
+                let b = cell_as_real(&args[1]).ok_or(InterpError::UnsupportedOp { kind: "non-real cmp" })?;
+                let v: bool = match op {
+                    PureOp::Eq => a == b,
+                    PureOp::Ne => a != b,
+                    PureOp::Lt => a < b,
+                    PureOp::Le => a <= b,
+                    PureOp::Gt => a > b,
+                    PureOp::Ge => a >= b,
+                    _ => unreachable!(),
                 };
                 Ok(CellValue::Bits(if v { 1 } else { 0 }))
             }
@@ -588,20 +573,6 @@ impl<'a> Interpreter<'a> {
                 let c = cell_as_u128(&args[0]).ok_or(InterpError::UnsupportedOp { kind: "non-bits select cond" })?;
                 Ok(if c != 0 { args[1].clone() } else { args[2].clone() })
             }
-        }
-    }
-
-    /// Ordering comparison shared by the `Real` and `Bits` arms of
-    /// [`Self::eval_pure`]'s comparison group.
-    fn compare<T: PartialOrd>(op: PureOp, a: &T, b: &T) -> bool {
-        match op {
-            PureOp::Eq => a == b,
-            PureOp::Ne => a != b,
-            PureOp::Lt => a < b,
-            PureOp::Le => a <= b,
-            PureOp::Gt => a > b,
-            PureOp::Ge => a >= b,
-            _ => unreachable!(),
         }
     }
 
@@ -741,11 +712,11 @@ impl<'a> Interpreter<'a> {
 
 // ── small helpers ─────────────────────────────────────────────────────────
 
-/// The mask for a `Bits(width)` value — width-native arithmetic (T14/T15's
-/// Bits `Add`/`Sub`/`Mul`/`Div`/`Neg`) wraps at this width, never at the
-/// `u128` storage width.
-fn bits_mask(width: u32) -> u128 {
-    if width >= 128 { u128::MAX } else { (1u128 << width) - 1 }
+fn cell_as_real(v: &CellValue) -> Option<f64> {
+    match v {
+        CellValue::Real(x) => Some(*x),
+        _ => None,
+    }
 }
 
 fn cell_as_u128(v: &CellValue) -> Option<u128> {
