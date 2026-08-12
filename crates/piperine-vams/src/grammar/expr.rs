@@ -249,7 +249,8 @@ impl Grammar {
     }
 
     /// `'{' expr {',' expr} '}'` (concatenation) or
-    /// `'{' expr '{' expr {',' expr} '}' '}'` (replication) — §4.6.1.
+    /// `'{' expr '{' expr {',' expr} '}' '}'` (replication) — Annex A.8.1,
+    /// §4.6.1.
     fn parse_concat_or_replication(&mut self) -> Result<Expr, ParseError> {
         let start = self.expect_punct("{")?;
         let first = self.parse_expr()?;

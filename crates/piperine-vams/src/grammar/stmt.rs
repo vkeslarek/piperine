@@ -1,6 +1,6 @@
 //! Statement grammar — LRM chapter 5 (analog) plus the 1364 procedural
 //! statements Verilog-AMS inherits for digital `always`/`initial` bodies,
-//! Annex A.6.4/A.6.7/A.6.8.
+//! Annex A.6.4/A.6.6/A.6.7/A.6.8.
 
 use crate::ast::{BlockItemDecl, CaseArm, CaseKind, EventExpr, Stmt};
 use crate::error::{ParseError, Span};
@@ -116,7 +116,7 @@ impl Grammar {
         Ok(names)
     }
 
-    /// `'if' '(' expr ')' statement [ 'else' statement ]` — Annex A.6.7.1.
+    /// `'if' '(' expr ')' statement [ 'else' statement ]` — Annex A.6.6.
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_kw("if")?;
         self.expect_punct("(")?;
@@ -130,7 +130,7 @@ impl Grammar {
     }
 
     /// `('case'|'casex'|'casez'|'analog_case') '(' expr ')' case_item*
-    /// 'endcase'` — Annex A.6.7.1.
+    /// 'endcase'` — Annex A.6.7.
     fn parse_case(&mut self) -> Result<Stmt, ParseError> {
         let (kind, start) = if self.at_kw("case") {
             (CaseKind::Case, self.bump().span)
@@ -172,7 +172,7 @@ impl Grammar {
         Ok(CaseArm { span: Span::new(start.start, body.span().end), labels: Some(labels), body })
     }
 
-    /// `'for' '(' assign ';' expr ';' assign ')' statement` — Annex A.6.7.1.
+    /// `'for' '(' assign ';' expr ';' assign ')' statement` — Annex A.6.8.
     fn parse_for(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_kw("for")?;
         self.expect_punct("(")?;
@@ -282,10 +282,10 @@ impl Grammar {
     }
 
     /// `lvalue '=' expr ';'` / `lvalue '<=' expr ';'` / `lvalue '<+' expr
-    /// ';'` — blocking assignment (§Annex A.6.4), non-blocking assignment
-    /// (1364, digital contexts), and the contribution statement (§5.4).
-    /// Also handles a bare procedural/task call used as a statement
-    /// (`name(args);` or `name;`).
+    /// ';'` — blocking assignment (Annex A.6.4), non-blocking assignment
+    /// (1364, digital contexts), and the contribution statement (§5.4,
+    /// Annex A.6.10). Also handles a bare procedural/task call used as a
+    /// statement (`name(args);` or `name;`).
     fn parse_assign_or_contribution(&mut self) -> Result<Stmt, ParseError> {
         let stmt = self.parse_assign_or_contribution_no_semi()?;
         self.expect_punct(";")?;

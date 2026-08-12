@@ -102,9 +102,9 @@ impl Grammar {
     }
 
     /// `{ attribute_instance }` — zero or more `(* attr_spec {,
-    /// attr_spec} *)` groups, §2.9.1 Syntax 2-11/2-12. Shared by every
-    /// grammar file whose productions are attribute-bearing sites (the
-    /// `ast::Attr`-carrying node kinds — see `ast/item.rs`'s per-site
+    /// attr_spec} *)` groups, Annex A.9.1, §2.9.1 Syntax 2-11/2-12. Shared
+    /// by every grammar file whose productions are attribute-bearing sites
+    /// (the `ast::Attr`-carrying node kinds — see `ast/item.rs`'s per-site
     /// rationale).
     pub(crate) fn parse_attr_instances(&mut self) -> Result<Vec<Attr>, ParseError> {
         let mut attrs = vec![];

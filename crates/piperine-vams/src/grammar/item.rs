@@ -88,7 +88,7 @@ impl Grammar {
         Ok(n)
     }
 
-    /// `discipline_declaration`, Annex A.1.5 — §3.6.2. Not attribute-bearing.
+    /// `discipline_declaration`, Annex A.1.7 — §3.6.2. Not attribute-bearing.
     pub fn parse_discipline_decl(&mut self) -> Result<DisciplineDecl, ParseError> {
         let start = self.expect_kw("discipline")?;
         let (name, _) = self.expect_ident()?;
@@ -1033,7 +1033,8 @@ impl Grammar {
 
     // ───────────────────────── paramset / connectrules / config ────────────
 
-    /// `paramset_declaration` (not covered by §2.9's attribute sites).
+    /// `paramset_declaration`, Annex A.1.9 (not covered by §2.9's attribute
+    /// sites).
     pub fn parse_paramset_decl(&mut self) -> Result<ParamsetDecl, ParseError> {
         let start = self.expect_kw("paramset")?;
         let (name, _) = self.expect_ident()?;
