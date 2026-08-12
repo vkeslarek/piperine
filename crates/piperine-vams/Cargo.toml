@@ -1,0 +1,12 @@
+[package]
+name = "piperine-vams"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+# Zero in-tree AND zero external dependencies (purity contract, tests/purity.rs).
+# This crate is text -> AST, nothing else. It must be safely usable as the
+# independent, verifiable parser boundary before any POM/solver work exists
+# (design.md S1). Diagnostic rendering (miette, source spans tied to files)
+# happens at the piperine-lang boundary, not here.
