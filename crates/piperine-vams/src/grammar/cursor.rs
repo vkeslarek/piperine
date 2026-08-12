@@ -31,6 +31,10 @@ impl Grammar {
         &self.toks[self.pos.min(self.toks.len() - 1)].tok
     }
 
+    pub(crate) fn at_eof(&self) -> bool {
+        matches!(self.peek(), Tok::Eof)
+    }
+
     pub(crate) fn peek_span(&self) -> Span {
         self.toks[self.pos.min(self.toks.len() - 1)].span
     }

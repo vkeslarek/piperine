@@ -10,7 +10,7 @@
 use crate::ast::*;
 use crate::error::{ParseError, Span};
 use crate::grammar::cursor::Grammar;
-use crate::lexer::Tok;
+use crate::lexer::{NumberLit, Tok};
 
 /// True when `t` is one of the three port-direction keywords — used to
 /// resolve the port-list comma ambiguity (§Syntax 2-6): a comma followed by
@@ -24,6 +24,25 @@ fn is_direction_kw(t: &Tok) -> bool {
 /// [`is_direction_kw`], for a `#(...)` parameter port list.
 fn is_param_kw(t: &Tok) -> bool {
     matches!(t, Tok::Ident(s) if s == "parameter" || s == "localparam")
+}
+
+/// Every IEEE-1364 gate-primitive keyword and the `GateKind` it names —
+/// Annex A.4.2. A data table (MD-13 rule 5), not a `match` cascade.
+const GATE_KEYWORDS: &[(&str, GateKind)] = &[
+    ("and", GateKind::And), ("nand", GateKind::Nand), ("or", GateKind::Or), ("nor", GateKind::Nor),
+    ("xor", GateKind::Xor), ("xnor", GateKind::Xnor), ("buf", GateKind::Buf), ("not", GateKind::Not),
+    ("bufif0", GateKind::Bufif0), ("bufif1", GateKind::Bufif1),
+    ("notif0", GateKind::Notif0), ("notif1", GateKind::Notif1),
+    ("nmos", GateKind::Nmos), ("pmos", GateKind::Pmos), ("cmos", GateKind::Cmos),
+    ("rnmos", GateKind::Rnmos), ("rpmos", GateKind::Rpmos), ("rcmos", GateKind::Rcmos),
+    ("pullup", GateKind::Pullup), ("pulldown", GateKind::Pulldown),
+    ("tran", GateKind::Tran), ("rtran", GateKind::Rtran),
+    ("tranif0", GateKind::Tranif0), ("tranif1", GateKind::Tranif1),
+    ("rtranif0", GateKind::Rtranif0), ("rtranif1", GateKind::Rtranif1),
+];
+
+fn gate_kind_for(word: &str) -> Option<GateKind> {
+    GATE_KEYWORDS.iter().find(|(w, _)| *w == word).map(|(_, k)| *k)
 }
 
 impl Grammar {
@@ -248,6 +267,12 @@ impl Grammar {
         }
         if kw == Some("assign") {
             return Ok(ModuleItem::ContinuousAssign(self.parse_continuous_assign()?));
+        }
+        if kw == Some("specify") {
+            return Ok(ModuleItem::Specify(self.parse_specify_block()?));
+        }
+        if kw.and_then(gate_kind_for).is_some() {
+            return Ok(ModuleItem::Gate(self.parse_gate_instantiation()?));
         }
         // A bare identifier is either a net declaration (`discipline_name
         // declarator_list ';'`) or a module instantiation (`module_name
@@ -830,5 +855,287 @@ impl Grammar {
             param_overrides,
             instances,
         })
+    }
+
+    // ─────────────────────────────── specify / gates ───────────────────────
+
+    /// `specify_block`, Annex A.7.1 — this crate's scope treats the body as
+    /// opaque (path declarations and system timing checks are a VAMS-22/P3
+    /// concern per the design's Annex E note), so it is skipped token-by-
+    /// token rather than deep-parsed; the construct still parses instead of
+    /// rejecting a source that uses one.
+    fn parse_specify_block(&mut self) -> Result<SpecifyBlock, ParseError> {
+        let start = self.expect_kw("specify")?;
+        while !self.at_kw("endspecify") {
+            if self.at_eof() {
+                return Err(self.eof_error("'endspecify'".to_string()));
+            }
+            self.bump();
+        }
+        let end = self.expect_kw("endspecify")?;
+        Ok(SpecifyBlock { span: Span::new(start.start, end.end), items: vec![] })
+    }
+
+    /// `gate_instantiation`, Annex A.4.2. Attribute-bearing. Drive strength
+    /// (`(strength0, strength1)`) is not disambiguated from an unnamed
+    /// instance's terminal list in this crate's scope — `strength0`/
+    /// `strength1` are always `None`; only `#delay` and the instance list
+    /// are populated.
+    fn parse_gate_instantiation(&mut self) -> Result<GateInstantiation, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        let (word, _) = self.expect_ident()?;
+        let kind = gate_kind_for(&word)
+            .ok_or_else(|| self.unexpected("a gate primitive keyword".to_string()))?;
+        let delay = if self.eat_punct("#") { Some(self.parse_expr()?) } else { None };
+        let mut instances = vec![self.parse_gate_instance()?];
+        while self.eat_punct(",") {
+            instances.push(self.parse_gate_instance()?);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(GateInstantiation {
+            span: Span::new(start.start, end.end),
+            attrs,
+            kind,
+            strength0: None,
+            strength1: None,
+            delay,
+            instances,
+        })
+    }
+
+    fn parse_gate_instance(&mut self) -> Result<GateInstance, ParseError> {
+        let start = self.peek_span();
+        let name = if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek_at(1), Tok::Punct("(")) {
+            Some(self.expect_ident()?.0)
+        } else {
+            None
+        };
+        self.expect_punct("(")?;
+        let mut terminals = vec![self.parse_expr()?];
+        while self.eat_punct(",") {
+            terminals.push(self.parse_expr()?);
+        }
+        let end = self.expect_punct(")")?;
+        Ok(GateInstance { span: Span::new(start.start, end.end), name, terminals })
+    }
+
+    // ─────────────────────────────────── UDP ────────────────────────────────
+
+    /// `udp_declaration`, Annex A.5.1. Attribute-bearing.
+    pub fn parse_primitive_decl(&mut self) -> Result<PrimitiveDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("primitive")?;
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct("(")?;
+        // The port name list at the header is positional-only (types/
+        // directions are restated as `udp_port_declaration`s below,
+        // Annex A.5.2) — captured here only to advance past it correctly.
+        self.expect_ident()?;
+        while self.eat_punct(",") {
+            self.expect_ident()?;
+        }
+        self.expect_punct(")")?;
+        self.expect_punct(";")?;
+
+        let mut ports = vec![];
+        while !self.at_kw("table") {
+            if self.at_eof() {
+                return Err(self.eof_error("'table'".to_string()));
+            }
+            ports.push(self.parse_udp_port_decl()?);
+        }
+        self.expect_kw("table")?;
+        let mut table = vec![];
+        while !self.at_kw("endtable") {
+            if self.at_eof() {
+                return Err(self.eof_error("'endtable'".to_string()));
+            }
+            table.push(self.parse_udp_table_row()?);
+        }
+        self.expect_kw("endtable")?;
+        let is_sequential = table.iter().any(|r| r.current_state.is_some());
+        let end = self.expect_kw("endprimitive")?;
+        Ok(PrimitiveDecl { span: Span::new(start.start, end.end), attrs, name, ports, table, is_sequential })
+    }
+
+    /// `udp_port_declaration`, Annex A.5.2. Attribute-bearing.
+    fn parse_udp_port_decl(&mut self) -> Result<UdpPortDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        if self.eat_kw("output") {
+            let is_reg = self.eat_kw("reg");
+            let (name, _) = self.expect_ident()?;
+            let init = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
+            let end = self.expect_punct(";")?;
+            return Ok(UdpPortDecl::Output {
+                span: Span::new(start.start, end.end),
+                attrs,
+                name,
+                is_reg,
+                init,
+            });
+        }
+        if self.eat_kw("input") {
+            let mut names = vec![self.expect_ident()?.0];
+            while self.eat_punct(",") {
+                names.push(self.expect_ident()?.0);
+            }
+            let end = self.expect_punct(";")?;
+            return Ok(UdpPortDecl::Input { span: Span::new(start.start, end.end), attrs, names });
+        }
+        self.expect_kw("reg")?;
+        let (name, _) = self.expect_ident()?;
+        let end = self.expect_punct(";")?;
+        Ok(UdpPortDecl::Reg { span: Span::new(start.start, end.end), attrs, name })
+    }
+
+    /// One `table` row, Annex A.5.3 — `level_symbol+ ':' level_symbol
+    /// [':' level_symbol] ';'`; a second `:' marks a sequential UDP's
+    /// current-state column.
+    fn parse_udp_table_row(&mut self) -> Result<UdpTableRow, ParseError> {
+        let start = self.peek_span();
+        let mut inputs = vec![self.parse_level_symbol()?];
+        while !self.at_punct(":") {
+            inputs.push(self.parse_level_symbol()?);
+        }
+        self.expect_punct(":")?;
+        let first = self.parse_level_symbol()?;
+        let (current_state, next_state) = if self.eat_punct(":") {
+            (Some(first), self.parse_level_symbol()?)
+        } else {
+            (None, first)
+        };
+        let end = self.expect_punct(";")?;
+        Ok(UdpTableRow { span: Span::new(start.start, end.end), inputs, current_state, next_state })
+    }
+
+    /// One UDP level symbol (`0`/`1`/`x`/`?`/`-`/`*`/`b`/`r`/`f`/`p`/`n`) —
+    /// kept as raw text; interpreting the symbol is an elaboration/codegen
+    /// concern (VAMS-19), not this grammar's.
+    fn parse_level_symbol(&mut self) -> Result<String, ParseError> {
+        match self.peek().clone() {
+            Tok::Number(NumberLit::Integer(n)) => {
+                self.bump();
+                Ok(n.to_string())
+            }
+            Tok::Ident(s) => {
+                self.bump();
+                Ok(s)
+            }
+            Tok::Punct(p) => {
+                self.bump();
+                Ok(p.to_string())
+            }
+            _ => Err(self.unexpected("a UDP level symbol".to_string())),
+        }
+    }
+
+    // ───────────────────────── paramset / connectrules / config ────────────
+
+    /// `paramset_declaration` (not covered by §2.9's attribute sites).
+    pub fn parse_paramset_decl(&mut self) -> Result<ParamsetDecl, ParseError> {
+        let start = self.expect_kw("paramset")?;
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct("(")?;
+        let (module_name, _) = self.expect_ident()?;
+        self.expect_punct(")")?;
+        self.expect_punct(";")?;
+        let mut params = vec![];
+        while !self.at_kw("endparamset") {
+            if self.at_eof() {
+                return Err(self.eof_error("'endparamset'".to_string()));
+            }
+            params.push(self.parse_param_decl_body(false)?);
+        }
+        let end = self.expect_kw("endparamset")?;
+        Ok(ParamsetDecl { span: Span::new(start.start, end.end), name, module_name, params })
+    }
+
+    /// `connectrules_declaration`, LRM chapter 7/Annex F.
+    pub fn parse_connectrules_decl(&mut self) -> Result<ConnectrulesDecl, ParseError> {
+        let start = self.expect_kw("connectrules")?;
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct(";")?;
+        let mut rules = vec![];
+        while !self.at_kw("endconnectrules") {
+            if self.at_eof() {
+                return Err(self.eof_error("'endconnectrules'".to_string()));
+            }
+            rules.push(self.parse_connect_rule()?);
+        }
+        let end = self.expect_kw("endconnectrules")?;
+        Ok(ConnectrulesDecl { span: Span::new(start.start, end.end), name, rules })
+    }
+
+    fn parse_connect_rule(&mut self) -> Result<ConnectRule, ParseError> {
+        let start = self.expect_kw("connect")?;
+        let mut disciplines = vec![self.expect_ident()?.0];
+        while self.eat_punct(",") {
+            disciplines.push(self.expect_ident()?.0);
+        }
+        let mut body = vec![];
+        let end = if self.eat_punct("{") {
+            while !self.at_punct("}") {
+                if self.at_eof() {
+                    return Err(self.eof_error("'}'".to_string()));
+                }
+                body.push(self.parse_stmt()?);
+            }
+            self.expect_punct("}")?
+        } else {
+            self.expect_punct(";")?
+        };
+        Ok(ConnectRule { span: Span::new(start.start, end.end), disciplines, body })
+    }
+
+    /// `config_declaration`, inherited from 1364 (Annex A.1.1). Piperine
+    /// tooling has no configuration-selection consumer (spec Out of
+    /// Scope), so the body is skipped token-by-token rather than
+    /// reconstructed — a source using one parses instead of rejecting.
+    pub fn parse_config_decl(&mut self) -> Result<ConfigDecl, ParseError> {
+        let start = self.expect_kw("config")?;
+        let (name, _) = self.expect_ident()?;
+        self.expect_punct(";")?;
+        while !self.at_kw("endconfig") {
+            if self.at_eof() {
+                return Err(self.eof_error("'endconfig'".to_string()));
+            }
+            self.bump();
+        }
+        let end = self.expect_kw("endconfig")?;
+        Ok(ConfigDecl { span: Span::new(start.start, end.end), name, body: String::new() })
+    }
+
+    // ─────────────────────────────── source file ───────────────────────────
+
+    /// `source_text`, Annex A.1.1 — the grammar's top-level entry point:
+    /// zero or more `description`s until end of file.
+    pub fn parse_source_file(&mut self) -> Result<SourceFile, ParseError> {
+        let mut items = vec![];
+        while !self.at_eof() {
+            items.push(self.parse_item()?);
+        }
+        Ok(SourceFile { items })
+    }
+
+    /// `description`, Annex A.1.1 — one top-level declaration.
+    fn parse_item(&mut self) -> Result<Item, ParseError> {
+        match self.kw_after_attrs() {
+            Some("discipline") => Ok(Item::Discipline(self.parse_discipline_decl()?)),
+            Some("nature") => Ok(Item::Nature(self.parse_nature_decl()?)),
+            Some("module") | Some("macromodule") | Some("connectmodule") => {
+                Ok(Item::Module(self.parse_module_decl()?))
+            }
+            Some("paramset") => Ok(Item::Paramset(self.parse_paramset_decl()?)),
+            Some("connectrules") => Ok(Item::Connectrules(self.parse_connectrules_decl()?)),
+            Some("config") => Ok(Item::Config(self.parse_config_decl()?)),
+            Some("primitive") => Ok(Item::Primitive(self.parse_primitive_decl()?)),
+            _ => Err(self.unexpected(
+                "a top-level declaration (discipline, nature, module, macromodule, \
+                 connectmodule, paramset, connectrules, config, or primitive)"
+                    .to_string(),
+            )),
+        }
     }
 }

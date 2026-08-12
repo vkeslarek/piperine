@@ -377,6 +377,246 @@ T53 → T54 → T55 → T56 → T57 → T58
 
 ---
 
+### Phase 3: `piperine-vams` conformance + façade (S1c) — 5 tasks
+```
+T12 → T13 → T14 → T15 → T16
+```
+
+### Phase 4: POM extensions (S2a) — 4 tasks
+```
+T17 → T18 → T19 → T20
+```
+
+### Phase 5: VAMS → POM elaboration (S2b) — 7 tasks
+```
+T21 → T22 → T23 → T24 → T25 → T26 → T27
+```
+
+### Phase 6: Codegen retarget (S3a) — 6 tasks
+```
+T28 → T29 → T30 → T31 → T32 → T33
+```
+
+### Phase 7: Downstream retarget + PHDL removal (S3b) — 6 tasks
+```
+T34 → T35 → T36 → T37 → T38 → T39
+```
+
+### Phase 8: Corpus migration (S4) — 7 tasks
+```
+T40 → T41 → T42 → T43 → T44 → T45 → T46
+```
+
+### Phase 9: Full 1364 digital (S5a) — 6 tasks
+```
+T47 → T48 → T49 → T50 → T51 → T52
+```
+
+### Phase 10: VPI, Annex E, close-out (S5b) — 6 tasks
+```
+T53 → T54 → T55 → T56 → T57 → T58
+```
+
+**Total: 58 tasks / 10 phases.** Packs to ~8 batched workers at ~7 tasks each.
+
+---
+
+## Task Breakdown
+
+### Phase 1 — `piperine-vams` foundation (S1a)
+
+#### T1: Create the `piperine-vams` crate skeleton + purity/provenance gate
+**What**: New zero-dependency crate with the two-family purity gate.
+**Where**: `crates/piperine-vams/{Cargo.toml,src/lib.rs}`, `crates/piperine-vams/tests/purity.rs`, workspace `Cargo.toml`
+**Depends on**: None
+**Reuses**: `crates/piperine-ir/tests/purity.rs` (gate pattern), `crates/piperine-ir/Cargo.toml` (empty `[dependencies]`)
+**Requirement**: design §4.1, C7/R1
+
+**Done when**:
+- [ ] `[dependencies]` table is empty; gate asserts it (copy `piperine-ir` check)
+- [ ] Banned-token scan family (a): POM/`Element`/matrix/Cranelift identifiers
+- [ ] Banned-token scan family (b): **provenance** — third-party VA-compiler names and external grammar-file extensions, scanned in **comments too**
+- [ ] `lib.rs` `//!` header states the crate contract: text → AST, nothing else
+- [ ] Workspace baseline recorded: `cargo test --workspace` counts written into this file's Gate section
+- [ ] Gate passes: `cargo build --workspace && cargo test --workspace`
+
+**Tests**: integration · **Gate**: build
+**Commit**: `feat(vams): add the piperine-vams crate with a purity and provenance guard`
+
+---
+
+#### T2: Typed parse-error enum (E-STD, no free strings)
+**What**: `ParseError` + `ParseErrorKind` carrying structured fields and the LRM clause, with hand-written `Display`/`Error` (no `thiserror` — purity).
+**Where**: `crates/piperine-vams/src/error.rs`, `crates/piperine-vams/tests/errors.rs`
+**Depends on**: T1
+**Reuses**: `piperine-lang/src/parse/error.rs` for shape — **explicitly not** its `Generic`/`Legacy` free-string variants or `From<String>`/`From<&str>` impls
+**Requirement**: VAMS-05, C8
+
+**Done when**:
+- [ ] One variant per failure mode; every variant carries a byte `Span`
+- [ ] Every variant carries `expected`/`found` structured data (not a pre-formatted sentence) and, where it enforces an LRM rule, the clause string
+- [ ] **No `String`-message catch-all variant and no `From<String>`/`From<&str>`** — asserted by a test that greps the module's own source
+- [ ] `Display` is one method over one `match`; `std::error::Error` implemented
+- [ ] Test per variant asserting the structured fields survive round-trip
+- [ ] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): typed parse errors with structured spans and LRM clauses`
+
+---
+
+#### T3: Lexer — LRM ch. 2 lexical conventions
+**What**: `Lexer`/`Tok`/`Lexed` covering every ch. 2 token form, newline-preserving for the preprocessor.
+**Where**: `crates/piperine-vams/src/lexer.rs`, `crates/piperine-vams/tests/lexical.rs`
+**Depends on**: T2
+**Reuses**: nothing (C7 — written from LRM §2)
+**Requirement**: VAMS-07
+
+**Done when**:
+- [ ] Integer constants: sized/based (`4'b1010`, `8'hFF`), unsized, `_` separators (§2.6.1)
+- [ ] Real constants incl. **SI scale suffixes** (`1.2p`, `4k`, `3M`) and exponent form (§2.6.2)
+- [ ] String literals (§2.7), escaped identifiers (§2.8.1), both comment forms (§2.4)
+- [ ] Newlines preserved as tokens (the preprocessor needs them)
+- [ ] Every token form has a test asserting kind + span; malformed input yields a T2 error variant with the right span
+- [ ] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): lexer for LRM chapter 2 lexical conventions`
+
+---
+
+#### T4: Annex B keyword table + conformance gate
+**What**: `Keywords` data table of every LRM Annex B reserved word, plus the gate that proves completeness.
+**Where**: `crates/piperine-vams/src/keywords.rs`, `crates/piperine-vams/tests/annex_b_keywords.rs`
+**Depends on**: T3
+**Reuses**: `VAMS-LRM-2-4.md` Annex B
+**Requirement**: VAMS-24
+
+**Done when**:
+- [ ] Every Annex B keyword present in the table (data table + lookup method, MD-13 rule 5)
+- [ ] Gate asserts each is reserved and **rejected as an identifier** with a T2 error naming the keyword
+- [ ] Gate is written to be re-runnable every phase (VAMS-24 is an ongoing gate)
+- [ ] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): Annex B keyword table with a completeness gate`
+
+---
+
+#### T5: Preprocessor — LRM ch. 10 compiler directives
+**What**: `Preprocessor` implementing the directive set, with `` `include`` I/O injected via an `IncludeResolver` trait (purity).
+**Where**: `crates/piperine-vams/src/preprocessor.rs`, `crates/piperine-vams/tests/preprocessor.rs`
+**Depends on**: T4
+**Reuses**: nothing (C7)
+**Requirement**: VAMS-16
+
+**Done when**:
+- [ ] `` `define`` incl. macro arguments and CPP-style rescan expansion
+- [ ] `` `ifdef``/`` `ifndef``/`` `else``/`` `elsif``/`` `endif``, `` `undef``, `` `timescale``, `` `resetall``, `` `include``
+- [ ] `IncludeResolver` trait — the crate performs **no filesystem I/O**
+- [ ] Include-not-found produces a T2 variant carrying the requested path + the including span, with `help` naming the search path (E-STD 4/6)
+- [ ] Unterminated conditional / recursive include fail loud with distinct variants
+- [ ] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): preprocessor for LRM chapter 10 compiler directives`
+
+---
+
+### Phase 2 — `piperine-vams` grammar (S1b)
+
+#### T6: AST type definitions
+**What**: `ast::{SourceFile, Item, ModuleItem, Stmt, Expr, Span, Attr, …}` — the tree shape, no parsing.
+**Where**: `crates/piperine-vams/src/ast/{mod.rs,expr.rs,stmt.rs,item.rs}`
+**Depends on**: T5
+**Reuses**: nothing (C7 — derived from LRM Annex A productions)
+**Requirement**: VAMS-07, VAMS-12
+
+**Done when**:
+- [x] Node per Annex A production in scope; each type's doc comment names its production
+- [x] `Attr` (attribute instance) attachable at **exactly** the sites LRM Syntax 2-5..2-10 permit — encoded in the types, so an illegal site is unrepresentable
+- [x] `Span { start, end }` plain byte range (no `miette` — purity)
+- [x] `mod.rs` declares and re-exports only (C3)
+- [x] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): AST node definitions from LRM Annex A`
+
+---
+
+#### T7: Expression grammar — LRM ch. 4 (Pratt)
+**What**: `Grammar` expression methods: full operator set with LRM precedence, math + time-domain functions.
+**Where**: `crates/piperine-vams/src/grammar/expr.rs`, `crates/piperine-vams/tests/expressions.rs`
+**Depends on**: T6
+**Requirement**: VAMS-07
+
+**Done when**:
+- [x] Every ch. 4 operator with correct precedence/associativity, incl. ternary, concat/replication, part-select, array index
+- [x] Math functions (§4.3) and time-domain functions (`ddt`, `idt`, `idtmod`, `absdelay`, `transition`, `slew`, `last_crossing`, `limexp`, `laplace_*`, `zi_*`) parse as calls
+- [x] Access functions `V(...)`/`I(...)` (1- and 2-arg) parse
+- [x] Precedence proven by tests asserting parse **shape**, not just success
+- [x] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): expression grammar for LRM chapter 4`
+
+---
+
+#### T8: Statement grammar — LRM ch. 5 analog + 1364 procedural
+**What**: `Grammar` statement methods: contribution, procedural, control flow, event control.
+**Where**: `crates/piperine-vams/src/grammar/stmt.rs`, `crates/piperine-vams/tests/statements.rs`
+**Depends on**: T7
+**Requirement**: VAMS-02, VAMS-03
+
+**Done when**:
+- [x] Contribution `<+`, indirect assignment, blocking `=` / non-blocking `<=`
+- [x] `if`/`case`/`casex`/`casez`, `for`/`while`/`repeat`/`forever`, `begin`/`end` named blocks with block item declarations
+- [x] Event control `@(...)` incl. `posedge`/`negedge`, `initial_step`/`final_step`/`cross`/`above`/`timer`
+- [x] `disable`, `$`-task calls, analog `case` (`analog_case`)
+- [x] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): statement grammar for analog and procedural blocks`
+
+---
+
+#### T9: Item grammar I — nature, discipline, module, ports, params
+**What**: The declaration productions for the core module surface.
+**Where**: `crates/piperine-vams/src/grammar/item.rs` (new), `crates/piperine-vams/tests/items_core.rs`
+**Depends on**: T8
+**Requirement**: VAMS-01, VAMS-04
+
+**Done when**:
+- [x] `nature` incl. derived (`: parent`) and the five standard attributes (§3.6.1.2)
+- [x] `discipline` incl. `domain`, `potential`/`flow` binding, natureless/domainless (§3.6.2)
+- [x] `module`/`macromodule`/`connectmodule`, both port-list styles, `ground`, net declarations with discipline + range + nodeset
+- [x] `parameter`/`localparam`/`aliasparam`/`specparam` incl. value ranges (§3.4.2), string params, arrays
+- [x] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): declaration grammar for natures, disciplines and modules`
+
+---
+
+#### T10: Item grammar II — branches, analog blocks, callables, generate
+**What**: The behavioral + structural declaration productions.
+**Where**: `crates/piperine-vams/src/grammar/item.rs` (extend), `crates/piperine-vams/tests/items_behavior.rs`
+**Depends on**: T9
+**Requirement**: VAMS-02, VAMS-04
+
+**Done when**:
+- [x] `branch` declarations (named, ground-referenced, port branches)
+- [x] `analog`/`analog initial` blocks, `initial`/`always` constructs
+- [x] `analog function`, `function`, `task` with full port declaration forms
+- [x] `genvar`, `generate` regions: `for`/`if`/`case` generate
+- [x] Module instantiation (named + ordered connections, parameter overrides, `defparam`) and `continuous assign`
+- [x] Gate passes: `cargo test -p piperine-vams`
+
+**Tests**: integration · **Gate**: quick
+**Commit**: `feat(vams): grammar for branches, behavior blocks, callables and generate`
+
+---
+
 #### T11: Item grammar III — UDP, specify, gates, paramset, connectrules, config
 **What**: The remaining top-level and module-item productions.
 **Where**: `crates/piperine-vams/src/grammar/item.rs` (extend), `crates/piperine-vams/tests/items_remaining.rs`
