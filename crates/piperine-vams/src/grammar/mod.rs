@@ -10,5 +10,6 @@
 
 pub(crate) mod cursor;
 mod expr;
+mod stmt;
 
 pub use cursor::Grammar;

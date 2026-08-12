@@ -125,6 +125,16 @@ impl Grammar {
         self.parse_postfix()
     }
 
+    /// An lvalue: `primary` plus index/part-select postfixes, but **no**
+    /// binary operators — used by `stmt.rs` to parse an assignment's
+    /// target without `parse_expr`'s Pratt loop swallowing a trailing
+    /// `<=`/`==` as a comparison operator instead of leaving it for the
+    /// assignment-operator check (`q <= d` must not become
+    /// `Binary{Le, q, d}` when `q` is an assignment target).
+    pub(crate) fn parse_lvalue(&mut self) -> Result<Expr, ParseError> {
+        self.parse_postfix()
+    }
+
     /// `primary { '[' expr [':' expr] ']' }` — index / part-select
     /// postfix, §4.1.
     fn parse_postfix(&mut self) -> Result<Expr, ParseError> {

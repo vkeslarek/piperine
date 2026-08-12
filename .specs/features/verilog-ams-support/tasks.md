@@ -329,11 +329,11 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-02, VAMS-03
 
 **Done when**:
-- [ ] Contribution `<+`, indirect assignment, blocking `=` / non-blocking `<=`
-- [ ] `if`/`case`/`casex`/`casez`, `for`/`while`/`repeat`/`forever`, `begin`/`end` named blocks with block item declarations
-- [ ] Event control `@(...)` incl. `posedge`/`negedge`, `initial_step`/`final_step`/`cross`/`above`/`timer`
-- [ ] `disable`, `$`-task calls, analog `case` (`analog_case`)
-- [ ] Gate passes: `cargo test -p piperine-vams`
+- [x] Contribution `<+`, indirect assignment, blocking `=` / non-blocking `<=`
+- [x] `if`/`case`/`casex`/`casez`, `for`/`while`/`repeat`/`forever`, `begin`/`end` named blocks with block item declarations
+- [x] Event control `@(...)` incl. `posedge`/`negedge`, `initial_step`/`final_step`/`cross`/`above`/`timer`
+- [x] `disable`, `$`-task calls, analog `case` (`analog_case`)
+- [x] Gate passes: `cargo test -p piperine-vams`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(vams): statement grammar for analog and procedural blocks`

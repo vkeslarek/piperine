@@ -3,6 +3,7 @@
 //! `item.rs` each contribute `impl Grammar` blocks (MD-13 rule 4: files
 //! named by what they parse, not by "helpers").
 
+use crate::ast::Attr;
 use crate::error::{ParseError, ParseErrorKind, Span};
 use crate::lexer::{Lexed, Tok};
 
@@ -61,6 +62,77 @@ impl Grammar {
         } else {
             Err(self.unexpected(format!("'{p}'")))
         }
+    }
+
+    /// `word` matches a `Tok::Ident` whose text equals `word` (keywords are
+    /// lexically identifiers, LRM §2.8.2 — see `keywords.rs`).
+    pub(crate) fn at_kw(&self, word: &str) -> bool {
+        matches!(self.peek(), Tok::Ident(s) if s == word)
+    }
+
+    pub(crate) fn eat_kw(&mut self, word: &str) -> bool {
+        if self.at_kw(word) {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn expect_kw(&mut self, word: &str) -> Result<Span, ParseError> {
+        if self.at_kw(word) {
+            Ok(self.bump().span)
+        } else {
+            Err(self.unexpected(format!("'{word}'")))
+        }
+    }
+
+    pub(crate) fn expect_ident(&mut self) -> Result<(String, Span), ParseError> {
+        match self.peek().clone() {
+            Tok::Ident(s) | Tok::EscapedIdent(s) => {
+                let span = self.bump().span;
+                Ok((s, span))
+            }
+            _ => Err(self.unexpected("an identifier".to_string())),
+        }
+    }
+
+    /// `{ attribute_instance }` — zero or more `(* attr_spec {,
+    /// attr_spec} *)` groups, §2.9.1 Syntax 2-11/2-12. Shared by every
+    /// grammar file whose productions are attribute-bearing sites (the
+    /// `ast::Attr`-carrying node kinds — see `ast/item.rs`'s per-site
+    /// rationale).
+    pub(crate) fn parse_attr_instances(&mut self) -> Result<Vec<Attr>, ParseError> {
+        let mut attrs = vec![];
+        while self.at_attr_open() {
+            self.expect_punct("(")?;
+            self.expect_punct("*")?;
+            loop {
+                let (name, span) = self.expect_ident()?;
+                let value = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
+                attrs.push(Attr { span, name, value });
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+            self.expect_punct("*")?;
+            self.expect_punct(")")?;
+        }
+        Ok(attrs)
+    }
+
+    /// The lexer's `PUNCT_TABLE` tokenizes `*` and `(`/`)` separately (it
+    /// has no 2-character `(*`/`*)` entries), so an attribute-instance
+    /// open is always two adjacent punctuation tokens here — this
+    /// lookahead is what tells `parse_attr_instances` an ordinary
+    /// parenthesized construct isn't starting instead.
+    fn at_attr_open(&self) -> bool {
+        self.at_punct("(") && matches!(self.peek_at_next(), Tok::Punct("*"))
+    }
+
+    fn peek_at_next(&self) -> &Tok {
+        let idx = (self.pos + 1).min(self.toks.len() - 1);
+        &self.toks[idx].tok
     }
 
     pub(crate) fn unexpected(&self, expected: String) -> ParseError {
