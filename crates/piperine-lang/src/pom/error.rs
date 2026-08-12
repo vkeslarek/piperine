@@ -186,8 +186,7 @@ pub enum ElabErrorKind {
     /// [`BranchKind`][super::Branch::kind] variant, not by relaxing this
     /// check. Both contribution sites are labelled (E-STD 6).
     #[error("branch `{branch}` in module `{module}` is contributed as both potential and flow (LRM §5.4.2)")]
-    #[diagnostic(code(E4001))]
-    #[help("A branch can be a potential source or a flow source, not both. If you are modelling an ideal switch, declare it as a switch branch (LRM §5.6.5) — contribution statements inside a conditional `if`/`case` mark the branch as a switch branch automatically.")]
+    #[diagnostic(code(E4001), help("A branch can be a potential source or a flow source, not both. If you are modelling an ideal switch, declare it as a switch branch (LRM §5.6.5) — contribution statements inside a conditional `if`/`case` mark the branch as a switch branch automatically."))]
     BranchKindConflict {
         module: String,
         /// The branch's authored name, or `"(pos,neg)"` for an implicit branch.
@@ -198,6 +197,73 @@ pub enum ElabErrorKind {
         /// The conflicting (potential-vs-flow) contribution site.
         #[label("conflicting contribution here")]
         second: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4002 — a digital-only construct is used inside an analog-only
+    /// evaluation context (or vice versa), violating LRM Annex C's analog
+    /// language subset. First enforced in P1 for the constructs P1 already
+    /// supports; extended as later phases add constructs (VAMS-25).
+    #[error("{construct_kind} is not allowed in {context} (LRM Annex C — analog language subset)")]
+    #[diagnostic(code(E4002), help("Annex C restricts which constructs may appear in an analog-only evaluation context. Move this construct into a digital `always`/`initial` block, or rewrite it as the analog equivalent (e.g. a digital event becomes a `cross`/`above` event — LRM §5.10.5)."))]
+    AnnexCSubsetViolation {
+        /// What the author wrote (e.g. `"digital event control @"+"`).
+        construct_kind: String,
+        /// Where it was used (e.g. `"analog block"`, `"analog function body"`).
+        context: String,
+        /// The construct's source span.
+        #[label("{construct_kind} used here")]
+        span: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4003 — discipline resolution for an undeclared net failed
+    /// under both of Annex F's methods. The elaborator commits to a
+    /// single Annex F method (declared in the `ResolveDisciplines` pass
+    /// contract, T26); this fires when even that method could not produce
+    /// a discipline for the named net (VAMS-17).
+    #[error("could not resolve a discipline for net `{net}` in module `{module}` via Annex F method `{method}` — {reason} (LRM Annex F)")]
+    #[diagnostic(code(E4003), help("Annex F resolves disciplines for undeclared nets by connectivity. Declare an explicit discipline for this net (`electrical a;`) or extend the connectrules/block reach to cover the crossing."))]
+    DisciplineResolutionFailed {
+        net: String,
+        module: String,
+        /// Which Annex F method was applied (e.g. `"compatible-discipline resolution"`, `"default-discipline resolution"`).
+        method: String,
+        /// Why the method failed (e.g. `"no neighbouring net carries a discipline"`, `"incompatible disciplines on drivers and receivers"`).
+        reason: String,
+        /// The net declaration (or first reference) span.
+        #[label("net `{net}` declared/referenced here")]
+        span: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4004 — a `discipline` declaration binds a nature that is
+    /// either undeclared or violates the §3.6.2.1 binding rules
+    /// (conservative disciplines must use distinct natures for potential
+    /// and flow; domains must agree). VAMS-01.
+    #[error("discipline `{discipline}` nature binding is invalid: {issue} (LRM §3.6.2.1)")]
+    #[diagnostic(code(E4004), help("A discipline binds a nature to its potential and/or flow (§3.6.2.1). Declare the nature before the discipline, and use distinct natures for potential vs flow on a conservative discipline. Signal-flow disciplines may bind only one of the two."))]
+    InvalidNatureBinding {
+        discipline: String,
+        nature: String,
+        /// What went wrong (e.g. `"nature `Foo` is undeclared"`,
+        /// `"potential and flow bind the same nature"`,
+        /// `"domain=discrete with nature binding"`).
+        issue: String,
+        /// The discipline declaration span.
+        #[label("discipline `{discipline}` declared here")]
+        span: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4005 — a discipline crossing requires a connect module but
+    /// either none matched or more than one matched ambiguously (LRM ch. 7
+    /// / Annex F connectrules). VAMS-20.
+    #[error("connect-module selection for `{from_discipline}` ↔ `{to_discipline}` {issue} (LRM ch. 7)")]
+    #[diagnostic(code(E4005), help("Mixed-domain connections resolve through connect modules (ch. 7). Either declare a connectrule covering this pair, or disambiguate between competing rules with a `connect_mode` annotation."))]
+    ConnectModuleAmbiguous {
+        from_discipline: String,
+        to_discipline: String,
+        /// `"is ambiguous — N candidates matched"` or `"matched no rule"`.
+        issue: String,
+        /// The first endpoint's connection span.
+        #[label("`{from_discipline}` endpoint here")]
+        from_span: Option<miette::SourceSpan>,
+        /// The second endpoint's connection span.
+        #[label("`{to_discipline}` endpoint here")]
+        to_span: Option<miette::SourceSpan>,
     },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]

@@ -527,11 +527,11 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: C8, VAMS-05
 
 **Done when**:
-- [ ] E4xxx variants added for: analog-subset violation (Annex C), discipline-resolution failure (Annex F), nature/discipline binding error, connect-module rule violation
-- [ ] **Every** new variant has descriptive `#[label]` text, a `#[help]`, and the LRM clause in the help (E-STD 3/4/5) — no `"here"` labels
-- [ ] `From<piperine_vams::ParseError> for ElabError` maps structured parse data onto E1xxx diagnostics with labels + help
-- [ ] Test asserts each new variant renders code, span, label text and help
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] E4xxx variants added for: analog-subset violation (Annex C), discipline-resolution failure (Annex F), nature/discipline binding error, connect-module rule violation
+- [x] **Every** new variant has descriptive `#[label]` text, a `#[help]`, and the LRM clause in the help (E-STD 3/4/5) — no `"here"` labels
+- [ ] `From<piperine_vams::ParseError> for ElabError` maps structured parse data onto E1xxx diagnostics with labels + help — **deferred to T21** (piperine-vams dependency is wired there)
+- [x] Test asserts each new variant renders code, span, label text and help
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): E4xxx LRM-conformance diagnostics with clause citations`
@@ -1238,5 +1238,23 @@ Phase 4, T17+).
   nature-discipline binding / connect-module). `cargo test -p
   piperine-lang`: 453 passed, 0 failed, 0 ignored (+13 vs T17).
   `cargo build --workspace`: zero warnings. Scope note: wiring
-  `record_contribution` into the actual elaboration contribution path
+  `record_contribution`   into the actual elaboration contribution path
   is T23; T18 ships the type + check.
+
+- **T19** ✅ `<pending commit>` — E4xxx LRM-conformance error family (7
+  tests). Four new variants — E4002 `AnnexCSubsetViolation` (Annex C
+  analog-subset, VAMS-25), E4003 `DisciplineResolutionFailed` (Annex F,
+  VAMS-17, carries the applied method + reason), E4004
+  `InvalidNatureBinding` (§3.6.2.1, VAMS-01, carries the specific issue
+  string so undeclared-nature vs same-nature-clash are distinct), E4005
+  `ConnectModuleAmbiguous` (ch. 7, VAMS-20, two endpoint spans). Each
+  carries a numbered `#[diagnostic(code(...), help("..."))]` (E-STD 2/4),
+  cites its LRM clause in both the `#[error]` and the help (E-STD 5), has
+  descriptive `#[label("...")]` text never bare `"here"` (E-STD 3), and
+  carries at least one span (E-STD 6). SPEC_DEVIATION (non-blocking):
+  the T19 done-when bullet `From<piperine_vams::ParseError> for ElabError`
+  is deferred to T21 — that conversion requires the `piperine-vams`
+  dependency, which T21 is the task that wires it; T19 ships the E4xxx
+  family + rendering tests only. `cargo test -p piperine-lang`: 460
+  passed, 0 failed, 0 ignored (+7 vs T18). `cargo build --workspace`:
+  zero warnings.
