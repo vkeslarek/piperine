@@ -509,10 +509,10 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-02
 
 **Done when**:
-- [ ] Named, implicit and ground-referenced branches representable
-- [ ] Contributing both potential and flow to one branch is a typed E4xxx error citing LRM §5, with both contribution spans labelled (E-STD 6)
-- [ ] Switch-branch behavior modelled explicitly, not by relaxing that check
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Named, implicit and ground-referenced branches representable
+- [x] Contributing both potential and flow to one branch is a typed E4xxx error citing LRM §5, with both contribution spans labelled (E-STD 6)
+- [x] Switch-branch behavior modelled explicitly, not by relaxing that check
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(pom): add the Branch node and contribution-kind checking`
@@ -1218,3 +1218,25 @@ Phase 4, T17+).
   --workspace`: zero warnings. Scope note: the elaboration that lowers
   `piperine_vams::ast::NatureDecl` → `Nature` is T23, not T17; this task
   lands the POM type only.
+
+- **T18** ✅ `<pending commit>` — POM `Branch` type + `BranchKindConflict`
+  (E4001) error (13 tests). `Branch` carries `pos: NetRef`,
+  `neg: Option<NetRef>` (None ⇒ ground-referenced per §3.12),
+  `name: Option<String>` (None ⇒ implicit branch from access-function
+  call site), and `kind: BranchKind` (set by first contribution).
+  `BranchKind` has four variants — `Probe` (default, LRM §5.4.2
+  no-contribution state), `Potential`, `Flow`, and `Switch` (the §5.6.5
+  legal exception, modelled explicitly via `Branch::mark_switch()` and
+  `BranchKind::allows_both_potential_and_flow()` — never by relaxing
+  the regular conflict check). `Branch::record_contribution()` is the
+  structural pre-check that fires E4001 when a non-switch branch
+  receives both Potential and Flow contributions, citing LRM §5.4.2 in
+  the message, with `#[label]`s on both span fields (E-STD 6) and a
+  `#[help]` naming the switch-branch exception (E-STD 4/5). E4001
+  occupies the new E4xxx range allocated by E-STD for LRM-clause-citing
+  semantic errors; T19 lands the broader family (Annex C / Annex F /
+  nature-discipline binding / connect-module). `cargo test -p
+  piperine-lang`: 453 passed, 0 failed, 0 ignored (+13 vs T17).
+  `cargo build --workspace`: zero warnings. Scope note: wiring
+  `record_contribution` into the actual elaboration contribution path
+  is T23; T18 ships the type + check.

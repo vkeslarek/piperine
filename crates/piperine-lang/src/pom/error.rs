@@ -179,6 +179,26 @@ pub enum ElabErrorKind {
     #[error("`extern` declaration `{name}` (used in module `{module}`) has no matching native implementation registered")]
     #[diagnostic(code(E2025))]
     ExternMissingBinding { name: String, module: String },
+    /// VAMS E4001 — a branch is contributed as both potential and flow,
+    /// violating LRM §5.4.2 ("a branch cannot simultaneously be both a
+    /// potential and a flow source"). The §5.6.5 switch-branch exception
+    /// is the one legal pass and is modelled by a distinct
+    /// [`BranchKind`][super::Branch::kind] variant, not by relaxing this
+    /// check. Both contribution sites are labelled (E-STD 6).
+    #[error("branch `{branch}` in module `{module}` is contributed as both potential and flow (LRM §5.4.2)")]
+    #[diagnostic(code(E4001))]
+    #[help("A branch can be a potential source or a flow source, not both. If you are modelling an ideal switch, declare it as a switch branch (LRM §5.6.5) — contribution statements inside a conditional `if`/`case` mark the branch as a switch branch automatically.")]
+    BranchKindConflict {
+        module: String,
+        /// The branch's authored name, or `"(pos,neg)"` for an implicit branch.
+        branch: String,
+        /// The first (already-recorded) contribution site.
+        #[label("first contribution here")]
+        first: Option<miette::SourceSpan>,
+        /// The conflicting (potential-vs-flow) contribution site.
+        #[label("conflicting contribution here")]
+        second: Option<miette::SourceSpan>,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

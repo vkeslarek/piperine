@@ -3,6 +3,7 @@
 //! The reflection API. See `docs/reflection_api.md`.
 
 pub mod behavior;
+pub mod branch;
 pub mod constraint;
 pub mod design;
 pub mod error;
@@ -19,6 +20,7 @@ pub mod traits;
 pub use crate::value;
 
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
+pub use branch::{Branch, BranchKind};
 pub use constraint::{
     ConstraintBlock, ConstraintStmt, QuantityClass, ResolvedCoverBins, ResolvedWindow, StmtClass, StmtClassNode,
     TargetCmp,
