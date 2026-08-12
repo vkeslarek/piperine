@@ -15,6 +15,7 @@
 //! §0 (F3) for why, and `tests/purity.rs` for the mechanical gate that
 //! enforces it.
 
+pub mod ast;
 pub mod error;
 pub mod keywords;
 pub mod lexer;
@@ -24,3 +25,4 @@ pub use error::{ParseError, ParseErrorKind, Span};
 pub use keywords::Keywords;
 pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
 pub use preprocessor::{IncludeResolver, NoIncludes, Preprocessor};
+pub use ast::{Attr, Item, SourceFile};
