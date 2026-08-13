@@ -667,6 +667,49 @@ frontends" or "PHDL path still compiles" drops that constraint.
 **Status:** Locked (user, 2026-08-12 — re-spec of `verilog-ams-support`
 Execute phase, supersedes design.md §7 S2 row).
 
+### MD-45: T21's PHDL-AST deletion takes the value-layer language with it — dv-* goes dark until rebuilt on VAMS attributes
+
+T21's Phase-5 batch worker found a gap MD-44/`design.md` didn't account for:
+`piperine-lang/src/parse/ast.rs` is not only "PHDL's Verilog-AMS dialect" —
+it also carries a full Rust-like value-layer language with no VAMS Annex A
+counterpart: generics (`TypeParam`, const/type params), the capability
+system (`CapabilityDecl`/`ImplDecl`), `BundleDecl`, `EnumDecl`,
+`ConstraintDecl` (dv-core's `require`/`var`/`target`/`cover` blocks),
+`FnDecl` with `Pattern`-based `match`, tuples, lambdas, `Map`/`Set`
+literals, optional types. `piperine-vams`'s AST (LRM Annex A grammar) has
+none of it — there is no production to lower from. Twelve files outside
+`pom/behavior.rs` depend on this machinery
+(`elab/event.rs`, `elab/lower/{attrs,constraint,mod,mono,register}.rs`,
+`elab/registry/{callables,impls,mod,types}.rs`, `elab/typecheck.rs`,
+`eval/interp.rs`, `pom/design.rs`), and it backs three DELIVERED features:
+`dv-tester`, `dv-gradients`, `host-library`.
+
+**Decision (user, 2026-08-12): gut it now, rebuild later.** T21 deletes
+`piperine-lang/src/parse/` in full, including this value-layer machinery —
+no minimal parallel AST kept alive. `dv-tester`/`dv-gradients`/
+`host-library`'s capability/generics/bundle/enum/constraint-block-dependent
+surface goes dark (fails to compile or loses functionality) from T21 until
+a later phase rebuilds the needed pieces on VAMS's `(* attribute *)`
+surface — the path `design.md`'s P2 story already sketches for
+attribute-carried extensions (T35 is the named landing task for
+`@device`/`@port`; the rest of the value-layer surface has no task yet and
+needs one before Phase 7 closes). This is truer to MD-44's "no dual
+anything" than keeping a second AST alive, at the cost of a known
+functionality gap in three delivered features until it's closed.
+
+**Consequence for tasks.md:** T21 proceeds today as literally specified
+(no scope-up, no parallel AST). A new task must be added — before Phase 7
+(T34–T39, downstream retarget) closes — to rebuild the capability/generics/
+bundle/enum/constraint-block surface on VAMS attributes, or to explicitly
+retire dv-tester/dv-gradients/host-library's dependence on it. Until that
+task exists and lands, `dv-tester`/`dv-gradients`/`host-library` are
+**regressed, not just paused** — this MD is the record of why and the
+open item tracking the debt.
+
+**Status:** Locked (user, 2026-08-12 — resolves the T21 batch-worker
+blocker; supersedes the "mechanical retarget" framing in `design.md` F1/F2
+for the value-layer subset of `piperine-lang/src/parse/ast.rs`).
+
 ---
 
 ## Handoff Snapshot

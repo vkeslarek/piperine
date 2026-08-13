@@ -1103,6 +1103,16 @@ No task defers its tests to a later task. ✅ **Check 3 passes.**
 4. **Corpus source (T14)**: the out-of-tree compact-model corpus must be
    obtained from upstream publishers (design R2). Not blocking — T14 passes
    with the corpus absent.
+5. **MD-45 debt (new, 2026-08-12)**: T21 deletes `piperine-lang/src/parse/`
+   in full, including the value-layer language (generics/capabilities/
+   bundles/enums/constraint blocks) that `dv-tester`/`dv-gradients`/
+   `host-library` depend on — no parallel AST kept alive (user: "gut it
+   now, rebuild later"). Those three DELIVERED features are regressed from
+   T21 until a task rebuilding this surface on VAMS `(* attribute *)`
+   syntax is authored and landed. **A concrete task for this MUST be added
+   before Phase 7 (T34–T39) is considered closed** — do not let Phase 7
+   close on codegen/lang-server/python retargeting alone while this debt
+   is undocumented as a task. See `.specs/STATE.md` MD-45.
 
 ## Progress Log
 
