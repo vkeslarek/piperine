@@ -65,7 +65,6 @@ fn module_existing_collections_are_untouched_by_vams_additions() {
     assert!(m.instances().is_empty());
     assert!(m.connections().is_empty());
     assert!(m.behaviors().is_empty());
-    assert!(m.constraints().is_empty());
     assert_eq!(Named::name(&m), "m");
     assert_eq!(Kinded::kind(&m), Kind::Module);
 }
@@ -136,7 +135,7 @@ fn flat_modules_remains_the_single_derived_artifact() {
     //
     // Concretely: a freshly-constructed Design has an empty flat_modules
     // (the derived side) and empty authored collections (modules,
-    // natures, disciplines, bundles, enums, capabilities, functions).
+    // natures, disciplines, paramsets).
     // The lookup `flat_module(name)` falls back to `modules` per its
     // documented contract — so a missing flat form is observable only
     // by inspecting the derived map itself, not the lookup. The

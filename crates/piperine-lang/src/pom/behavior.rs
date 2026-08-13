@@ -2,17 +2,16 @@
 //! statements, and [`Function`]/[`ImplBlock`] (value-layer computation).
 
 use crate::value::Value;
-use crate::parse::ast::BehaviorKind;
+use piperine_vams::ast::BehaviorKind;
 use crate::pom::net_type::TypeRef;
 use crate::pom::node::Kind;
 use crate::pom::traits::{Kinded, Named};
 
-/// Behavior bodies are the surface [`Stmt`](crate::parse::ast::Stmt) type directly
-/// (SIMPLIFICATION.md P3): the elaborator const-folds structural `if`s and
-/// unrolls `for`s *in place*, and records the one thing it genuinely adds —
-/// resolved `var` types — in [`Behavior::var_types`], instead of deep-copying
-/// every statement into a parallel enum.
-pub use crate::parse::ast::{Stmt as BehaviorStmt, StmtMatchArm as MatchArm};
+/// Behavior bodies are the surface [`Stmt`](piperine_vams::ast::Stmt) type
+/// directly (design F1, preserved across the MD-44 frontend swap — only the
+/// surface AST's identity changed, `piperine_lang::parse::ast` →
+/// `piperine_vams::ast`).
+pub use piperine_vams::ast::Stmt as BehaviorStmt;
 
 /// A behavior block inside a module (analog or digital).
 #[derive(Debug, Clone)]
@@ -50,10 +49,16 @@ impl Behavior {
     /// The statements inside the behavior block.
     pub fn body(&self) -> &[BehaviorStmt] { &self.body }
 
-    /// Returns `true` if this is an `analog` behavior block.
-    pub fn is_analog(&self) -> bool { matches!(self.kind, BehaviorKind::Analog) }
-    /// Returns `true` if this is a `digital` behavior block.
-    pub fn is_digital(&self) -> bool { matches!(self.kind, BehaviorKind::Digital) }
+    /// Returns `true` for `analog`/`analog initial` behavior blocks (LRM
+    /// §5, continuous-time).
+    pub fn is_analog(&self) -> bool {
+        matches!(self.kind, BehaviorKind::Analog | BehaviorKind::AnalogInitial)
+    }
+    /// Returns `true` for `initial`/`always` behavior blocks (event-driven
+    /// digital, inherited from IEEE 1364).
+    pub fn is_digital(&self) -> bool {
+        matches!(self.kind, BehaviorKind::Initial | BehaviorKind::Always)
+    }
 }
 
 impl Named for Behavior { fn name(&self) -> &str { self.name() } }
@@ -73,7 +78,7 @@ pub struct Function {
     /// `None` for a non-defaulted (leading) param, `Some(expr)` for a
     /// trailing defaulted one (the language spec Part I §9.1). Defaults are
     /// elaboration constants.
-    pub defaults: Vec<Option<crate::parse::ast::Expr>>,
+    pub defaults: Vec<Option<piperine_vams::ast::Expr>>,
     /// Return type.
     pub ret: TypeRef,
     /// Function body statements.
@@ -90,7 +95,7 @@ impl Function {
     /// The function parameters (name, type).
     pub fn params(&self) -> &[(String, TypeRef)] { &self.params }
     /// Default value expressions, parallel to [`params`](Self::params).
-    pub fn defaults(&self) -> &[Option<crate::parse::ast::Expr>] { &self.defaults }
+    pub fn defaults(&self) -> &[Option<piperine_vams::ast::Expr>] { &self.defaults }
     /// The function return type.
     pub fn ret(&self) -> &TypeRef { &self.ret }
     /// The function body statements.

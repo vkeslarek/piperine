@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
+use piperine_vams::ast::DisciplineDecl;
 use crate::pom::{
-    ElabError, ElabErrorKind, Function, ImplBlock, IntrospectionMeta, ModelId, Module,
+    ElabError, ElabErrorKind, IntrospectionMeta, ModelId, Module,
     OverrideMap, TermMeta, VAR_KINDS, Value, VarMeta, TERMINAL_KINDS,
 };
 
@@ -150,16 +150,6 @@ pub struct Design {
     /// rule as disciplines/natures. Skipped on serialize.
     #[serde(skip)]
     pub(crate) paramsets: HashMap<String, piperine_vams::ast::ParamsetDecl>,
-    #[serde(skip)]
-    pub(crate) bundles: HashMap<String, BundleDecl>,
-    #[serde(skip)]
-    pub(crate) enums: HashMap<String, EnumDecl>,
-    #[serde(skip)]
-    pub(crate) capabilities: HashMap<String, CapabilityDecl>,
-    #[serde(skip)]
-    pub(crate) functions: HashMap<String, Function>,
-    #[serde(skip)]
-    pub(crate) impls: Vec<ImplBlock>,
     pub(crate) consts: HashMap<String, Value>,
     /// Project metadata (name, version, dependencies).
     pub(crate) project: Project,
@@ -179,11 +169,6 @@ impl Design {
             disciplines: HashMap::new(),
             natures: HashMap::new(),
             paramsets: HashMap::new(),
-            bundles: HashMap::new(),
-            enums: HashMap::new(),
-            capabilities: HashMap::new(),
-            functions: HashMap::new(),
-            impls: Vec::new(),
             consts: HashMap::new(),
             project: Project::default(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
@@ -210,25 +195,6 @@ impl Design {
         self.project.name = Some(name.into());
         self.project.version = Some(version.into());
         self.project.dependencies = dependencies;
-    }
-
-    /// Record item provenance (item name → source package) — called once by
-    /// elaboration with the resolver's record.
-    pub(crate) fn set_origins(&mut self, origins: HashMap<String, String>) {
-        self.project.origins = origins;
-    }
-
-    /// Record item-name → real on-disk declaring file (BUG-1/LSB-01..03) —
-    /// called once by elaboration with the resolver's record, alongside
-    /// [`Self::set_origins`].
-    pub(crate) fn set_item_files(&mut self, item_files: HashMap<String, PathBuf>) {
-        self.project.item_files = item_files;
-    }
-
-    /// Record `use`-path → real on-disk file — called once by elaboration
-    /// with the resolver's record, alongside [`Self::set_item_files`].
-    pub(crate) fn set_use_files(&mut self, use_files: HashMap<Vec<String>, PathBuf>) {
-        self.project.use_files = use_files;
     }
 
     /// The elaborated top module, if set.
@@ -294,11 +260,6 @@ impl Design {
         self.modules.len()
     }
 
-    /// Look up a function by name.
-    pub fn function(&self, name: &str) -> Option<&Function> {
-        self.functions.get(name)
-    }
-
     /// Every discipline declaration.
     pub fn disciplines(&self) -> impl Iterator<Item = (&String, &DisciplineDecl)> {
         self.disciplines.iter()
@@ -331,67 +292,6 @@ impl Design {
         self.paramsets.get(name)
     }
 
-    /// Every bundle declaration.
-    pub fn bundles(&self) -> impl Iterator<Item = (&String, &BundleDecl)> {
-        self.bundles.iter()
-    }
-
-    /// Look up a bundle declaration by name.
-    pub fn bundle(&self, name: &str) -> Option<&BundleDecl> {
-        self.bundles.get(name)
-    }
-
-    /// Every enum declaration.
-    pub fn enums(&self) -> impl Iterator<Item = (&String, &EnumDecl)> {
-        self.enums.iter()
-    }
-
-    /// Look up an enum declaration by name.
-    pub fn enum_(&self, name: &str) -> Option<&EnumDecl> {
-        self.enums.get(name)
-    }
-
-    /// Every enum variant's discriminant, keyed bare (`Idle`) and qualified
-    /// (`SarState::Idle`). Values default sequential from zero, continuing
-    /// after an explicit discriminant (SPEC §6.4). Non-constant explicit
-    /// discriminants were rejected during elaboration.
-    pub fn enum_value_map(&self) -> HashMap<String, i64> {
-        let mut map = HashMap::new();
-        for (enum_name, decl) in &self.enums {
-            let mut next: i64 = 0;
-            for variant in &decl.variants {
-                let value = variant
-                    .value
-                    .as_ref()
-                    .and_then(|expr| crate::elab::const_eval::ConstEnv::new().eval(expr).ok())
-                    .map_or(next, |val| match val {
-                        crate::value::Value::Int(v) => v,
-                        crate::value::Value::Nat(v) => v as i64,
-                        _ => next,
-                    });
-                map.insert(variant.name.clone(), value);
-                map.insert(format!("{enum_name}::{}", variant.name), value);
-                next = value + 1;
-            }
-        }
-        map
-    }
-
-    /// Every capability declaration.
-    pub fn capabilities(&self) -> impl Iterator<Item = (&String, &CapabilityDecl)> {
-        self.capabilities.iter()
-    }
-
-    /// Look up a capability declaration by name.
-    pub fn capability(&self, name: &str) -> Option<&CapabilityDecl> {
-        self.capabilities.get(name)
-    }
-
-    /// Every global function.
-    pub fn functions(&self) -> impl Iterator<Item = &Function> {
-        self.functions.values()
-    }
-
     /// Look up a global constant by name.
     pub fn const_(&self, name: &str) -> Option<&Value> {
         self.consts.get(name)
@@ -401,9 +301,6 @@ impl Design {
     pub fn consts(&self) -> impl Iterator<Item = (&String, &Value)> {
         self.consts.iter()
     }
-
-    /// Every impl block.
-    pub fn impls(&self) -> &[ImplBlock] { &self.impls }
 
     /// Resolve every `@rfport(num, z0)` attribute declared on a wire or port
     /// of `module_name` into a [`RfPort`] (SP-01) — the `.sp` port
@@ -807,17 +704,18 @@ impl Design {
 
     // ── Internal access (pub(crate)) ──────────────────────────────────────
 
-    /// Mutable access to the modules map. For internal elaboration use.
+    /// Mutable access to the modules map. For internal elaboration use
+    /// (T22 lowers `piperine_vams::ast::ModuleDecl` into POM `Module`
+    /// through here).
+    #[allow(dead_code, reason = "wired by T22 — VAMS→POM module lowering")]
     pub(crate) fn modules_map_mut(&mut self) -> &mut HashMap<String, Module> {
         &mut self.modules
     }
-    /// Mutable access to the disciplines map. For internal elaboration use.
+    /// Mutable access to the disciplines map. For internal elaboration use
+    /// (T23 lowers `piperine_vams::ast::DisciplineDecl` into this map).
+    #[allow(dead_code, reason = "wired by T23 — VAMS→POM discipline lowering")]
     pub(crate) fn disciplines_map_mut(&mut self) -> &mut HashMap<String, DisciplineDecl> {
         &mut self.disciplines
-    }
-    /// Mutable access to the bundles map. For internal elaboration use.
-    pub(crate) fn bundles_map_mut(&mut self) -> &mut HashMap<String, BundleDecl> {
-        &mut self.bundles
     }
     /// Mutable access to the natures map. For internal elaboration use
     /// (T23 lowers `piperine_vams::ast::NatureDecl` into POM `Nature`
@@ -832,23 +730,10 @@ impl Design {
     pub(crate) fn paramsets_map_mut(&mut self) -> &mut HashMap<String, piperine_vams::ast::ParamsetDecl> {
         &mut self.paramsets
     }
-    /// Mutable access to the enums map. For internal elaboration use.
-    pub(crate) fn enums_map_mut(&mut self) -> &mut HashMap<String, EnumDecl> {
-        &mut self.enums
-    }
-    /// Mutable access to the capabilities map. For internal elaboration use.
-    pub(crate) fn capabilities_map_mut(&mut self) -> &mut HashMap<String, CapabilityDecl> {
-        &mut self.capabilities
-    }
-    /// Mutable access to the functions map. For internal elaboration use.
-    pub(crate) fn functions_map_mut(&mut self) -> &mut HashMap<String, Function> {
-        &mut self.functions
-    }
-    /// Mutable access to the impl blocks vec. For internal elaboration use.
-    pub(crate) fn impls_vec_mut(&mut self) -> &mut Vec<ImplBlock> {
-        &mut self.impls
-    }
-    /// Mutable access to the consts map. For internal elaboration use.
+    /// Mutable access to the consts map. For internal elaboration use
+    /// (T24 folds `piperine_vams::ast::ParamDecl`/`localparam` globals
+    /// through here).
+    #[allow(dead_code, reason = "wired by T24 — VAMS const-eval retarget")]
     pub(crate) fn consts_map_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.consts
     }

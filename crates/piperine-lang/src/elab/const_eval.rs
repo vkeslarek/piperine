@@ -1,9 +1,22 @@
-use crate::eval::const_host::ConstHost;
-use crate::eval::{EvalError, Interpreter};
-use crate::parse::ast::Expr;
-use crate::value::Value;
+//! Compile-time constant evaluation over `piperine_vams::ast::Expr`.
+//!
+//! **MD-45 note:** before the PHDL→VAMS frontend swap this delegated to
+//! `crate::eval::Interpreter` (a general tree-walking evaluator shared with
+//! runtime const-folding). That evaluator was PHDL-`Stmt`/`Expr`-shaped and
+//! died with `parse/`. VAMS's own `Expr` (LRM ch. 4, `piperine_vams::ast::
+//! Expr`) is self-contained — no blocks, lambdas, or statements to walk —
+//! so this is a small direct recursive evaluator instead of a host-trait
+//! indirection; `crate::eval::interp` is rebuilt separately (T24) for
+//! whatever richer runtime const-folding VAMS actually needs (e.g.
+//! `analog function` bodies), not reintroduced here speculatively.
+
 use std::collections::HashMap;
+
+use piperine_vams::ast::{BinOp, Expr, UnOp};
+use piperine_vams::lexer::NumberLit;
 use thiserror::Error;
+
+use crate::value::Value;
 
 /// Errors that can occur during constant evaluation.
 #[derive(Debug, Clone, Error)]
@@ -22,33 +35,10 @@ pub enum ConstEvalError {
     TypeMismatch,
 }
 
-/// Narrow a general evaluation error down to the smaller const-eval error
-/// set. Anything not representable at compile time (an effectful system
-/// task, a host-owned assignment, ...) is reported as `NotConst` — the same
-/// outcome the legacy const-folder gave for any construct it didn't handle.
-impl From<EvalError> for ConstEvalError {
-    fn from(e: EvalError) -> Self {
-        match e {
-            EvalError::Undefined(name) => ConstEvalError::Undefined(name),
-            EvalError::DivByZero => ConstEvalError::DivByZero,
-            EvalError::TypeMismatch(_) => ConstEvalError::TypeMismatch,
-            EvalError::NotConst(msg) => ConstEvalError::NotConst(msg),
-            other => ConstEvalError::NotConst(other.to_string()),
-        }
-    }
-}
-
 /// A lexical-scope environment for compile-time constant evaluation.
 /// Maintains a stack of scopes; `push`/`pop` manage nesting (e.g. for
-/// loop bodies), `define` adds a binding to the innermost scope, and
-/// `lookup` searches scopes from innermost outward.
-///
-/// `eval` delegates to the shared [`crate::eval::Interpreter`], run against
-/// a pure [`ConstHost`] backed by this environment's binding stack — the
-/// same tree-walking engine, restricted to constructs valid at
-/// elaboration time (no analyses, no staging). Values are the one
-/// [`Value`] type (SIMPLIFICATION.md P2); a result that isn't a
-/// compile-time scalar is rejected here with `NotConst`.
+/// generate-loop bodies), `define` adds a binding to the innermost scope,
+/// and `lookup` searches scopes from innermost outward.
 pub struct ConstEnv {
     bindings: Vec<HashMap<String, Value>>,
 }
@@ -65,13 +55,12 @@ impl ConstEnv {
     }
 
     /// Pushes a new empty scope onto the bindings stack (e.g. before
-    /// entering a loop body).
+    /// entering a generate-loop body).
     pub fn push(&mut self) {
         self.bindings.push(HashMap::new());
     }
 
-    /// Pops the innermost scope from the bindings stack (e.g. after
-    /// leaving a loop body).
+    /// Pops the innermost scope from the bindings stack.
     pub fn pop(&mut self) {
         self.bindings.pop();
     }
@@ -82,25 +71,136 @@ impl ConstEnv {
     }
 
     /// Looks up `name` in the scope stack, from innermost outward.
-    /// Returns `None` if the name is unbound.
     pub fn lookup(&self, name: &str) -> Option<&Value> {
         self.bindings.iter().rev().find_map(|scope| scope.get(name))
     }
 
-    /// Evaluates a compile-time expression to a scalar [`Value`]. Supports
-    /// the full `fn`-body grammar (SPEC Part I §9) evaluated by the shared
-    /// interpreter; a non-scalar result (list, closure, ...) is `NotConst`.
+    /// Evaluates a compile-time expression to a scalar [`Value`].
     pub fn eval(&self, expr: &Expr) -> Result<Value, ConstEvalError> {
-        let mut host = ConstHost::new(&self.bindings);
-        let mut interp = Interpreter::new(&mut host);
-        let value = interp.eval_expr(expr)?;
-        if value.is_const_scalar() {
-            Ok(value)
-        } else {
-            Err(ConstEvalError::NotConst(format!(
-                "{} is not a compile-time constant",
-                value.type_name()
-            )))
+        match expr {
+            Expr::Number { value, .. } => Ok(number_lit_to_value(value)),
+            Expr::Str { value, .. } => Ok(Value::Str(value.clone())),
+            Expr::Ident { name, .. } => self
+                .lookup(name)
+                .cloned()
+                .ok_or_else(|| ConstEvalError::Undefined(name.clone())),
+            Expr::Unary { op, operand, .. } => self.eval_unary(*op, operand),
+            Expr::Binary { op, lhs, rhs, .. } => self.eval_binary(*op, lhs, rhs),
+            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+                match self.eval(cond)? {
+                    Value::Bool(true) => self.eval(then_branch),
+                    Value::Bool(false) => self.eval(else_branch),
+                    Value::Nat(n) => self.eval(if n != 0 { then_branch } else { else_branch }),
+                    Value::Int(n) => self.eval(if n != 0 { then_branch } else { else_branch }),
+                    _ => Err(ConstEvalError::TypeMismatch),
+                }
+            }
+            Expr::Concat { .. }
+            | Expr::Replication { .. }
+            | Expr::Index { .. }
+            | Expr::PartSelect { .. }
+            | Expr::Call { .. }
+            | Expr::AccessFunction { .. }
+            | Expr::SystemFunctionCall { .. } => Err(ConstEvalError::NotConst(
+                "not yet supported by the elaboration-constant evaluator".into(),
+            )),
+        }
+    }
+
+    fn eval_unary(&self, op: UnOp, operand: &Expr) -> Result<Value, ConstEvalError> {
+        let v = self.eval(operand)?;
+        match (op, v) {
+            (UnOp::Neg, Value::Real(r)) => Ok(Value::Real(-r)),
+            (UnOp::Neg, Value::Int(i)) => Ok(Value::Int(-i)),
+            (UnOp::Neg, Value::Nat(n)) => Ok(Value::Int(-(n as i64))),
+            (UnOp::Plus, v @ (Value::Real(_) | Value::Int(_) | Value::Nat(_))) => Ok(v),
+            (UnOp::LogNot, Value::Bool(b)) => Ok(Value::Bool(!b)),
+            (UnOp::BitNot, Value::Int(i)) => Ok(Value::Int(!i)),
+            (UnOp::BitNot, Value::Nat(n)) => Ok(Value::Int(!(n as i64))),
+            _ => Err(ConstEvalError::TypeMismatch),
+        }
+    }
+
+    fn eval_binary(&self, op: BinOp, lhs: &Expr, rhs: &Expr) -> Result<Value, ConstEvalError> {
+        let l = self.eval(lhs)?;
+        let r = self.eval(rhs)?;
+        // Logical/relational ops share a numeric coercion; arithmetic ops
+        // stay Real if either side is Real, else Int/Nat.
+        let as_f64 = |v: &Value| -> Result<f64, ConstEvalError> {
+            match v {
+                Value::Real(r) => Ok(*r),
+                Value::Int(i) => Ok(*i as f64),
+                Value::Nat(n) => Ok(*n as f64),
+                _ => Err(ConstEvalError::TypeMismatch),
+            }
+        };
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod | BinOp::Pow => {
+                if matches!(l, Value::Real(_)) || matches!(r, Value::Real(_)) {
+                    let (a, b) = (as_f64(&l)?, as_f64(&r)?);
+                    Ok(Value::Real(match op {
+                        BinOp::Add => a + b,
+                        BinOp::Sub => a - b,
+                        BinOp::Mul => a * b,
+                        BinOp::Div => a / b,
+                        BinOp::Mod => a % b,
+                        BinOp::Pow => a.powf(b),
+                        _ => unreachable!(),
+                    }))
+                } else {
+                    let (a, b) = (int_of(&l)?, int_of(&r)?);
+                    match op {
+                        BinOp::Div if b == 0 => Err(ConstEvalError::DivByZero),
+                        BinOp::Mod if b == 0 => Err(ConstEvalError::DivByZero),
+                        BinOp::Add => Ok(Value::Int(a + b)),
+                        BinOp::Sub => Ok(Value::Int(a - b)),
+                        BinOp::Mul => Ok(Value::Int(a * b)),
+                        BinOp::Div => Ok(Value::Int(a / b)),
+                        BinOp::Mod => Ok(Value::Int(a % b)),
+                        BinOp::Pow => Ok(Value::Int(a.pow(b.try_into().unwrap_or(0)))),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::Eq | BinOp::Ne
+            | BinOp::CaseEq | BinOp::CaseNe => {
+                let (a, b) = (as_f64(&l)?, as_f64(&r)?);
+                Ok(Value::Bool(match op {
+                    BinOp::Lt => a < b,
+                    BinOp::Le => a <= b,
+                    BinOp::Gt => a > b,
+                    BinOp::Ge => a >= b,
+                    BinOp::Eq | BinOp::CaseEq => a == b,
+                    BinOp::Ne | BinOp::CaseNe => a != b,
+                    _ => unreachable!(),
+                }))
+            }
+            BinOp::LogAnd | BinOp::LogOr => {
+                let (a, b) = (truthy(&l)?, truthy(&r)?);
+                Ok(Value::Bool(match op {
+                    BinOp::LogAnd => a && b,
+                    BinOp::LogOr => a || b,
+                    _ => unreachable!(),
+                }))
+            }
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::BitXnor => {
+                let (a, b) = (int_of(&l)?, int_of(&r)?);
+                Ok(Value::Int(match op {
+                    BinOp::BitAnd => a & b,
+                    BinOp::BitOr => a | b,
+                    BinOp::BitXor => a ^ b,
+                    BinOp::BitXnor => !(a ^ b),
+                    _ => unreachable!(),
+                }))
+            }
+            BinOp::Shl | BinOp::Shr => {
+                let (a, b) = (int_of(&l)?, int_of(&r)?);
+                Ok(Value::Int(match op {
+                    BinOp::Shl => a << b,
+                    BinOp::Shr => a >> b,
+                    _ => unreachable!(),
+                }))
+            }
         }
     }
 
@@ -110,17 +210,70 @@ impl ConstEnv {
         match self.eval(expr)? {
             Value::Nat(n) => Ok(n),
             Value::Int(n) if n >= 0 => Ok(n as u64),
+            Value::Real(r) if r >= 0.0 && r.fract() == 0.0 => Ok(r as u64),
             _ => Err(ConstEvalError::TypeMismatch),
         }
     }
 
-    /// Evaluates `expr` and returns the result as an `i64`. Accepts `Int`
-    /// values directly and `Nat` values widened to `i64`.
+    /// Evaluates `expr` and returns the result as an `i64`.
     pub fn eval_int(&self, expr: &Expr) -> Result<i64, ConstEvalError> {
         match self.eval(expr)? {
             Value::Int(n) => Ok(n),
             Value::Nat(n) => Ok(n as i64),
+            Value::Real(r) if r.fract() == 0.0 => Ok(r as i64),
             _ => Err(ConstEvalError::TypeMismatch),
+        }
+    }
+
+    /// Evaluates `expr` and returns the result as an `f64` (widens
+    /// `Int`/`Nat`) — used by `Real`-typed elaboration constants (`abstol`,
+    /// port ranges, ...).
+    pub fn eval_f64(&self, expr: &Expr) -> Result<f64, ConstEvalError> {
+        match self.eval(expr)? {
+            Value::Real(r) => Ok(r),
+            Value::Int(n) => Ok(n as f64),
+            Value::Nat(n) => Ok(n as f64),
+            _ => Err(ConstEvalError::TypeMismatch),
+        }
+    }
+}
+
+fn int_of(v: &Value) -> Result<i64, ConstEvalError> {
+    match v {
+        Value::Int(i) => Ok(*i),
+        Value::Nat(n) => Ok(*n as i64),
+        _ => Err(ConstEvalError::TypeMismatch),
+    }
+}
+
+fn truthy(v: &Value) -> Result<bool, ConstEvalError> {
+    match v {
+        Value::Bool(b) => Ok(*b),
+        Value::Int(i) => Ok(*i != 0),
+        Value::Nat(n) => Ok(*n != 0),
+        Value::Real(r) => Ok(*r != 0.0),
+        _ => Err(ConstEvalError::TypeMismatch),
+    }
+}
+
+fn number_lit_to_value(lit: &NumberLit) -> Value {
+    match lit {
+        NumberLit::Integer(i) => Value::Int(*i),
+        NumberLit::Real(r) => Value::Real(*r),
+        NumberLit::Based(b) => {
+            let digits: String = b.digits.chars().filter(|c| *c != '_').collect();
+            let radix = match b.base {
+                piperine_vams::lexer::NumberBase::Decimal => 10,
+                piperine_vams::lexer::NumberBase::Binary => 2,
+                piperine_vams::lexer::NumberBase::Octal => 8,
+                piperine_vams::lexer::NumberBase::Hex => 16,
+            };
+            let magnitude = i64::from_str_radix(&digits, radix).unwrap_or(0);
+            if b.signed {
+                Value::Int(magnitude)
+            } else {
+                Value::Nat(magnitude as u64)
+            }
         }
     }
 }

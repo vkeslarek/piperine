@@ -1695,8 +1695,6 @@ version = "0.2.0"
 dependencies = [
  "miette",
  "num-complex",
- "piperine-codegen",
- "piperine-solver",
  "piperine-vams",
  "serde",
  "serde_json",

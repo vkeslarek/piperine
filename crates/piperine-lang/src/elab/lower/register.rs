@@ -2,7 +2,8 @@
 //! that populates the `Elaborator`'s symbol tables before anything is
 //! resolved or elaborated.
 
-use crate::parse::ast::Item;
+use piperine_vams::ast::Item;
+
 use crate::pom::ElabError;
 
 use super::Elaborator;
@@ -10,228 +11,33 @@ use super::Elaborator;
 impl Elaborator {
     // ──────────────────────── Symbol registration ─────────────────────────────
 
-    /// Populates the elaborator's symbol tables from the top-level items
-    /// of a source file. Each `Item` variant is inserted into the
-    /// corresponding map (disciplines, bundles, enums, modules, functions,
-    /// capabilities) or pushed into a vector (behaviors, impl blocks).
-    /// `UseDecl` items are skipped as they are already expanded by the
-    /// resolver.
+    /// Populates the elaborator's symbol tables from the top-level items of
+    /// a source file. Each `Item` variant is inserted into its
+    /// corresponding map.
     pub(crate) fn register_items<'a>(
         &mut self,
         items: impl Iterator<Item = &'a Item>,
     ) -> Result<(), ElabError> {
         for item in items {
             match item {
-                Item::DisciplineDecl(d) => {
+                Item::Discipline(d) => {
                     self.syms.disciplines.insert(d.name.clone(), d.clone());
-                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Discipline(d.clone()));
                 }
-                Item::BundleDecl(b) => {
-                    self.syms.bundles.insert(b.name.clone(), b.clone());
-                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Bundle(b.clone()));
-                    // Register as an attribute schema if marked
-                    // `@attribute(schema = "name")`. The schema name is an
-                    // alias — `@name(...)` is used in source, not the bundle
-                    // name directly.
-                    for attr in &b.attrs {
-                        if attr.name == "attribute" {
-                            for arg in &attr.args {
-                                if arg.name == "schema"
-                                    && let crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) = &arg.expr {
-                                        self.ctx.schemas.register(s, &b.name);
-                                    }
-                            }
-                        }
-                    }
+                Item::Nature(n) => {
+                    self.syms.natures.insert(n.name.clone(), n.clone());
                 }
-                Item::EnumDecl(e) => {
-                    self.syms.enums.insert(e.name.clone(), e.clone());
-                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Enum(e.clone()));
-                }
-                Item::ModuleDeclaration(m) => {
+                Item::Module(m) => {
                     self.syms.module_decls.insert(m.name.clone(), m.clone());
-                    self.ctx.components.register(m.clone());
                 }
-                Item::BehaviorDecl(b) => {
-                    self.syms.behavior_decls.push(b.clone());
-                }
-                // dv-core T8 (DVC-04) — elaborated and attached by the
-                // `ElabConstraints` pass (after `AttachBehaviors`, so the
-                // drained mono cache's variants participate).
-                Item::ConstraintDecl(c) => {
-                    self.syms.constraint_decls.push(c.clone());
-                }
-                Item::FnDecl(f) => {
-                    self.syms.fn_decls.insert(f.sig.name.clone(), f.clone());
-                    self.ctx.callables.register(f.clone());
-                }
-                Item::CapabilityDecl(c) => {
-                    self.syms.capability_decls.insert(c.name.clone(), c.clone());
-                }
-                Item::ImplDecl(i) => {
-                    self.syms.impl_decls.push(i.clone());
-                }
-                Item::ConstDecl(c) => {
-                    self.syms.const_decls.insert(c.name.clone(), c.clone());
-                }
-                Item::UseDecl(_) => {} // already expanded by Resolver
-                // `extern type Name;` registers into TypeRegistry alongside
-                // plain types (declared-language-surface T7, DLS-01
-                // groundwork). Types are not overloadable — a name already
-                // taken by any type declaration (plain or extern) is an
-                // ordinary duplicate-declaration error (SPEC Edge Cases: no
-                // shadowing of an `extern` declaration).
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name, doc }) => {
-                    if self.ctx.types.lookup(name).is_some() {
-                        return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
-                            "type `{name}` is already declared (duplicate `extern type`/type declaration)"
-                        ))).with_span(*span));
-                    }
-                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Extern {
-                        name: name.clone(),
-                        decl_span: *span,
-                        doc: doc.clone(),
-                    });
-                }
-                // `extern fn`/`extern task` register into `CallableRegistry`
-                // as an overload candidate (declared-language-surface T11,
-                // DLS-01/03 groundwork) — the `resolve.rs` fail-loud call
-                // path (T11) is their first real consumer. `extern task`
-                // shares `CallableRegistry`'s namespace with `extern fn`
-                // (both are just named, typed callables); its `$`-prefixed
-                // form keeps it distinct from any `fn` name in practice.
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Fn(sig))
-                | Item::ExternDecl(crate::parse::ast::ExternDecl::Task(sig)) => {
-                    let param_types = self.extern_sig_param_types(sig)?;
-                    self.ctx.callables.register(crate::elab::registry::ExternFnDecl {
-                        sig: sig.clone(),
-                        param_types,
-                    });
-                    self.register_constraint_helper(sig)?;
-                }
-                // `extern operator name(...) -> Ret;` registers into the
-                // dedicated `OperatorRegistry` (T10). Carrying real
-                // `param_types` here (same shape as `ExternFnDecl` above) is
-                // load-bearing — without it, `resolve_operator_call`'s
-                // `validate_call` always succeeds and operator arity/type
-                // mismatches silently pass elaboration (Verifier's
-                // surviving-mutant finding during declared-language-surface
-                // validation, fixed post-T27).
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Operator(sig)) => {
-                    let param_types = self.extern_sig_param_types(sig)?;
-                    self.ctx.operators.register(crate::elab::registry::ExternOperatorDecl {
-                        sig: sig.clone(),
-                        param_types,
-                    });
-                }
-                // `extern attribute name { field: Type, ... }` registers
-                // into `SchemaRegistry` exactly like a bundle-backed schema
-                // (T12) — `@name(...)` attribute validation (`elab/lower/
-                // attrs.rs`) already fails loud (`UnknownAttrSchema`) for
-                // any name not registered here, so this wiring alone closes
-                // DLS-04 for the attribute-schema category. A field's own
-                // trailing `?` (`Type::optional`, the same optional-type
-                // marker used everywhere else in PHDL) makes it an
-                // optional schema field (T23, DLS-21) — omission at a use
-                // site is fine, no default substituted; a field without
-                // `?` is required, matching bundle-backed schemas' own
-                // "no default = required" rule.
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields, doc }) => {
-                    let attr_fields = fields
-                        .iter()
-                        .map(|f| crate::elab::registry::AttrField {
-                            name: f.name.clone(),
-                            ty: f.ty.name.clone(),
-                            required: !f.ty.optional,
-                            default: None,
-                            decl_span: f.span,
-                        })
-                        .collect();
-                    self.ctx.schemas.register_declared(name, attr_fields, *span, doc.clone());
-                }
-                // `extern impl TypeName { fn method(...) -> Ret; ... }`
-                // registers each method into the impl-method table (T10),
-                // keyed by `(target, method.name)` — `resolve.rs`'s
-                // `Type::method(...)` call path (T11) is its first real
-                // consumer.
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Impl { target, methods, .. }) => {
-                    for method in methods {
-                        let param_types = self.extern_sig_param_types(method)?;
-                        self.ctx.impl_methods.register_impl_method(
-                            target,
-                            crate::elab::registry::ExternFnDecl { sig: method.clone(), param_types },
-                        );
-                    }
-                }
+                // `paramset`/`connectrules`/`config`/`primitive` (UDP) land
+                // in later phases (T22 extends this list as their own POM
+                // collections are wired up).
+                Item::Paramset(_)
+                | Item::Connectrules(_)
+                | Item::Config(_)
+                | Item::Primitive(_) => {}
             }
         }
         Ok(())
-    }
-
-    /// Reads an `extern fn`'s `@quantity(class = "…", analysis = "…")`
-    /// marker (dv-core T7, DVC-09) into the constraint-helper registry — no
-    /// marker, no entry. Both arguments are mandatory string literals whose
-    /// values are the declared spellings: `class` is `pointwise` or
-    /// `reduced`; anything else fails loud naming the helper.
-    fn register_constraint_helper(
-        &mut self,
-        sig: &crate::parse::ast::ExternSig,
-    ) -> Result<(), ElabError> {
-        let Some(attr) = sig.attrs.iter().find(|a| a.name == "quantity") else {
-            return Ok(());
-        };
-        let arg = |key: &str| -> Result<&str, ElabError> {
-            attr.args
-                .iter()
-                .find(|a| a.name == key)
-                .and_then(|a| match &a.expr {
-                    crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) => Some(s.as_str()),
-                    _ => None,
-                })
-                .ok_or_else(|| {
-                    ElabError::from(crate::pom::ElabErrorKind::Other(format!(
-                        "constraint helper `{}`: `@quantity` requires a `{key} = \"…\"` string argument",
-                        sig.name
-                    )))
-                    .with_span(attr.span)
-                })
-        };
-        let class = match arg("class")? {
-            "pointwise" => crate::pom::QuantityClass::Pointwise,
-            "reduced" => crate::pom::QuantityClass::Reduced,
-            other => {
-                return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
-                    "constraint helper `{}`: `@quantity` class must be `pointwise` or `reduced`, found `{other}`",
-                    sig.name
-                )))
-                .with_span(attr.span));
-            }
-        };
-        let analysis = arg("analysis")?.to_string();
-        self.ctx
-            .constraint_helpers
-            .register(&sig.name, crate::elab::registry::ConstraintHelper { class, analysis })
-            .map_err(|e| e.with_span(sig.span))
-    }
-
-    /// Resolves an `extern fn`/`extern task`/`extern impl` method
-    /// signature's declared parameter types to `ValueType`s, for storage in
-    /// `ExternFnDecl::param_types` — skips `self` (not a call-site
-    /// argument). Requires every referenced type to already be registered
-    /// (an author declaring `extern fn foo(x: Bar)` before `Bar` exists
-    /// gets the ordinary `UndefinedType` error, same as any other type use).
-    fn extern_sig_param_types(
-        &self,
-        sig: &crate::parse::ast::ExternSig,
-    ) -> Result<Vec<crate::pom::ValueType>, ElabError> {
-        sig.params
-            .iter()
-            .filter_map(|p| match p {
-                crate::parse::ast::FnParam::SelfParam => None,
-                crate::parse::ast::FnParam::Typed { ty, .. } => {
-                    Some(self.resolve_value_type(ty, &crate::elab::const_eval::ConstEnv::new()))
-                }
-            })
-            .collect()
     }
 }

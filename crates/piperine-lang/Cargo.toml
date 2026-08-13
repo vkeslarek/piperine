@@ -16,12 +16,10 @@ serde_json = "1"
 piperine-vams = { path = "../piperine-vams" }
 
 [dev-dependencies]
-# The frontend's own build needs only piperine-math (the builtin-math
-# dispatch table shared with the const/bench interpreter); the backend and
-# solver appear here solely because the integration tests drive the full
-# pipeline (parse → elaborate → codegen::lower → JIT → solve). codegen
-# depends on piperine-lang for its POM types, so this edge only exists for
-# lang's own test binaries — not a real dependency cycle.
-piperine-codegen = { path = "../piperine-codegen" }
-piperine-solver = { path = "../piperine-solver" }
+# MD-45 (2026-08-12): piperine-codegen/piperine-solver were dev-only deps
+# for the two through-codegen pipeline test targets (bundle_param.rs,
+# spec_simulation.rs) — both PHDL-syntax end-to-end tests, deleted with
+# `parse/` (bundle literals, generics and the pre-VAMS pipeline they drove
+# have no VAMS equivalent yet). Re-added when Phase 6 (codegen retarget)
+# gives piperine-lang's test suite a working through-codegen path again.
 tempfile.workspace = true

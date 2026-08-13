@@ -26,6 +26,26 @@ impl Kinded for Attribute { fn kind(&self) -> Kind { Kind::Attribute } }
 
 // ─────────────────────────────── Port ────────────────────────────────────────
 
+/// Port direction — mirrors `piperine_vams::ast::Direction` (LRM §3.7); a
+/// separate POM-native type because the AST crate is serde-free by purity
+/// contract (T1) and `Port` crosses the serialization boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Direction {
+    Input,
+    Output,
+    Inout,
+}
+
+impl From<piperine_vams::ast::Direction> for Direction {
+    fn from(d: piperine_vams::ast::Direction) -> Self {
+        match d {
+            piperine_vams::ast::Direction::Input => Direction::Input,
+            piperine_vams::ast::Direction::Output => Direction::Output,
+            piperine_vams::ast::Direction::Inout => Direction::Inout,
+        }
+    }
+}
+
 /// A module port — direction, name, and net type.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Port {
@@ -35,7 +55,7 @@ pub struct Port {
     /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
     #[serde(default)]
     pub doc: Option<String>,
-    pub direction: crate::parse::ast::Direction,
+    pub direction: Direction,
     pub name: String,
     pub ty: NetType,
 }
@@ -45,7 +65,7 @@ impl Port {
     /// The port's declared name.
     pub fn name(&self) -> &str { &self.name }
     /// The port's I/O direction.
-    pub fn direction(&self) -> &crate::parse::ast::Direction { &self.direction }
+    pub fn direction(&self) -> &Direction { &self.direction }
     /// The port's net type (discipline or bus).
     pub fn net_type(&self) -> &NetType { &self.ty }
     /// The port's attached `///` doc comment, if any.
@@ -262,11 +282,6 @@ pub struct Module {
     /// do not cross a serialization boundary (SPEC Part IV §7).
     #[serde(skip)]
     pub behaviors: Vec<Behavior>,
-    /// Constraint blocks attached to this module (dv-core DVC-05) —
-    /// authored form, carried through monomorphization exactly like
-    /// `behaviors`. Compiled ASTs: skipped on serialize, same rule.
-    #[serde(skip)]
-    pub constraints: Vec<crate::pom::ConstraintBlock>,
     /// Verilog-AMS `branch (p,n) name;` declarations (LRM §3.12), plus
     /// implicit branches created by access-function call sites. Authored
     /// form — the elaborator records each branch's kind from the first
@@ -301,7 +316,7 @@ impl Module {
         Self {
             span: None, attributes: Vec::new(), doc: None, name,
             ports, params, wires, vars: Vec::new(), instances, connections,
-            behaviors, constraints: Vec::new(),
+            behaviors,
             branches: Vec::new(), genvars: Vec::new(), origin: None,
         }
     }
@@ -327,11 +342,6 @@ impl Module {
     pub fn connections(&self) -> &[Connection] { &self.connections }
     /// All behavior blocks of the module.
     pub fn behaviors(&self) -> &[Behavior] { &self.behaviors }
-    /// All constraint blocks attached to the module (dv-core DVC-05), in
-    /// authored form. Monomorphized variants carry the block as they carry
-    /// their behavior bodies (D4); the accessor reads only the authored
-    /// hierarchy — never `flat_modules` (MD-25, UNBREAKABLE).
-    pub fn constraints(&self) -> &[crate::pom::ConstraintBlock] { &self.constraints }
     /// All Verilog-AMS branches declared or implied in this module
     /// (LRM §3.12). Authored form; `flat_modules` carries the
     /// post-monormophization shape (MD-25 VAMS clause).

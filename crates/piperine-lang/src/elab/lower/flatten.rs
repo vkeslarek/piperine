@@ -268,8 +268,7 @@ mod tests {
     //! assertion: `Design::modules` deep-equal before and after the pass.
 
     use super::*;
-    use crate::parse::ast::Direction;
-    use crate::pom::{Connection, Instance, Module, NetType, Port, Wire};
+    use crate::pom::{Connection, Direction, Instance, Module, NetType, Port, Wire};
 
     fn elec() -> NetType {
         NetType::Discipline("Electrical".to_string())

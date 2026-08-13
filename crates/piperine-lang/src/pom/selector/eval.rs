@@ -250,22 +250,14 @@ impl<'a> Evaluator<'a> {
                         }
                     }
             }
-            // dv-core T9 (DVC-05): constraint blocks walk exactly like
-            // behaviors — on the authored module and, through an instance,
-            // on the child module the instance instantiates (variants
-            // included). Never `flat_modules` (MD-25).
-            Axis::Constraint => {
-                if let Node::Module(m) = node {
-                    for c in m.constraints() {
-                        res.push(Node::Constraint(c));
-                    }
-                } else if let Node::Instance(inst) = node
-                    && let Some(child_mod) = self.design.module(inst.module_name()) {
-                        for c in child_mod.constraints() {
-                            res.push(Node::Constraint(c));
-                        }
-                    }
-            }
+            // MD-45 (2026-08-12): dv-core `constraint` blocks (and the POM
+            // `ConstraintBlock` node they walked to) are deleted with
+            // `piperine-lang/src/parse/` — no VAMS Annex A production.
+            // `.constraint` selector queries now always yield the empty
+            // set rather than resolving to a dead node kind; a future
+            // phase re-anchors constraint blocks on VAMS `(* attribute *)`
+            // syntax (tasks.md open item #5).
+            Axis::Constraint => {}
 
             Axis::Attr => {
                 if let Node::Module(m) = node {

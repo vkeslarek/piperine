@@ -4,7 +4,6 @@
 
 pub mod behavior;
 pub mod branch;
-pub mod constraint;
 pub mod design;
 pub mod error;
 pub mod introspection;
@@ -19,16 +18,12 @@ pub mod wire;
 pub mod traits;
 pub use crate::value;
 
-pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
+pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock};
 pub use branch::{Branch, BranchKind};
-pub use constraint::{
-    ConstraintBlock, ConstraintStmt, QuantityClass, ResolvedCoverBins, ResolvedWindow, StmtClass, StmtClassNode,
-    TargetCmp,
-};
 pub use design::{Design, Project, RfPort};
 pub use introspection::{IntrospectionMeta, ModelId, TermMeta, VarMeta, VAR_KINDS, TERMINAL_KINDS};
 pub use error::{ElabError, ElabErrorKind, ReflectError};
-pub use module::{Connection, Distribution, Instance, Module, Param, Port, Var, Wire};
+pub use module::{Connection, Direction, Distribution, Instance, Module, Param, Port, Var, Wire};
 pub use nature::Nature;
 pub use net_type::{is_ground, GROUND_NAMES, NetRef, NetType, TypeRef, ValueType};
 pub use node::{Id, Kind};

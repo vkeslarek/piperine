@@ -1,176 +1,49 @@
 //! # Elaboration phase
 //!
-//! Transforms a parsed [`SourceFile`] into a fully
+//! Transforms a parsed [`piperine_vams::ast::SourceFile`] into a fully
 //! resolved [`Design`].
 //!
 //! ```text
-//! SourceFile (parse AST)  ──Elaborator──▶  Design (elaborated IR + POM)
+//! SourceFile (VAMS AST)  ──Elaborator──▶  Design (elaborated IR + POM)
 //! ```
 //!
-//! ## What elaboration does
-//!
-//! 1. **`use` expansion** — `use` declarations are resolved by the [`Resolver`]
-//!    (file-based or built-in) and expanded into flat item lists before the
-//!    elaborator ever sees them.
-//! 2. **Prelude injection** — standard capabilities (`Add`, `Sub`, `map`, …) are
-//!    prepended so they are always in scope without requiring an explicit `use`.
-//! 3. **Symbol registration** — disciplines, bundles, enums, modules, behaviors,
-//!    functions, capabilities, impls are indexed into symbol tables.
-//! 4. **Semantic validation** — the [`EventRegistry`](crate::elab::event::EventRegistry) rejects `<+` in digital blocks,
-//!    `<-`/`<+` in mod bodies, and domain-mismatched event kinds.
-//! 5. **Type resolution** — every `Type { name: String }` in the AST is
-//!    resolved to a `NetType` or `ValueType`; array dimensions are
-//!    evaluated to concrete `u64` values.
-//! 6. **Structural elaboration** — `StructuralFor` and `StructuralIf` in
-//!    `mod` bodies are unrolled / evaluated away.
-//! 7. **Bundle expansion** — net-capable bundle ports are expanded to flat
-//!    `Port`s named `{port}_{field}`.
-//! 8. **Generic monomorphization** — `mod Foo[N]` instantiated as `Foo[8]`
-//!    produces `Module { name: "Foo__8", … }` with `N=8` substituted.
-//! 9. **Behavioral for unrolling** — `for` loops in `analog`/`digital` blocks
-//!    must have elaboration-constant bounds and are fully unrolled.
-//! 10. **Event validation** — event names looked up in the [`EventRegistry`](crate::elab::event::EventRegistry).
-
-// hygiene-exempt: the elaboration phase contract is long-form prose (the pass list,
-// the SourceFile -> Design pipeline) plus `SourceFile`'s own impl. 72 of its 172
-// lines are that `//!` contract, which MD-34 explicitly allows in a `mod.rs`.
+//! **MD-44/MD-45 (2026-08-12):** this phase is being rebuilt against the
+//! VAMS AST task by task (`.specs/features/verilog-ams-support/tasks.md`
+//! T21-T27). `piperine-lang/src/parse/` (PHDL) and the PHDL-syntax-only
+//! value-layer machinery it carried (generics, capabilities, bundles,
+//! enums, `constraint` blocks, `use`-decl resolution/prelude injection) are
+//! gone, not retargeted — see MD-45 in `.specs/STATE.md`.
 
 pub mod const_eval;
-pub mod event;
 pub mod lower;
 pub mod typecheck;
-pub mod resolve;
 pub mod registry;
 pub mod resolution;
 
-use crate::pom::{Design, ElabError, ElabErrorKind};
+use crate::pom::{Design, ElabError};
 pub use lower::Elaborator;
-use crate::parse::ast::SourceFile;
-use crate::resolve::Resolver;
 
-use crate::source_map::SourceMap;
+use piperine_vams::ast::SourceFile;
 
-impl SourceFile {
-    /// Elaborate this source file using the supplied [`SourceMap`].
-    ///
-    /// The source map controls where `use` declarations are looked up.
-    pub fn elaborate(self, source_map: &SourceMap) -> Result<Design, ElabError> {
-        let mut resolver = Resolver::new(source_map);
-        self.elaborate_with(&mut resolver)
-    }
-
-    /// Elaborate this source file using the supplied [`Resolver`].
-    pub fn elaborate_with(self, resolver: &mut Resolver) -> Result<Design, ElabError> {
-        self.elaborate_seeded(resolver, |_| {})
-    }
-
-    /// Like [`elaborate_with`](Self::elaborate_with), but lets the caller
-    /// seed the [`ElabContext`](crate::elab::registry::ElabContext) registries before elaboration runs — the
-    /// entry point plugin hosts use to contribute attribute schemas
-    /// (SPEC Part VI §11) without `piperine-lang` knowing about plugins.
-    pub fn elaborate_seeded(
-        self,
-        resolver: &mut Resolver,
-        seed: impl FnOnce(&mut crate::elab::registry::ElabContext),
-    ) -> Result<Design, ElabError> {
-        let mut items = resolver.prelude_items();
-        let expanded = resolver
-            .expand(self)
-            .map_err(|e| ElabError::from(ElabErrorKind::Other(e.to_string())))?;
-        items.extend(expanded);
-        let augmented = SourceFile { items };
+impl Elaborator {
+    /// Elaborate a parsed VAMS `SourceFile` directly — VAMS has no
+    /// PHDL-style `use` declaration to expand or prelude to inject before
+    /// elaboration proper (`` `include`` is a preprocessor-level, textual
+    /// concern `piperine_vams::Parser` already resolved before this AST
+    /// existed).
+    pub fn elaborate_source(source: SourceFile) -> Result<Design, ElabError> {
         let mut elaborator = Elaborator::new();
-        seed(&mut elaborator.ctx);
-        let mut design = elaborator.elaborate(augmented)?;
-        design.set_origins(resolver.take_origins());
-        design.set_item_files(resolver.take_item_files());
-        design.set_use_files(resolver.take_file_paths());
-        Ok(design)
+        elaborator.elaborate(source)
     }
 
-    /// Like [`elaborate`](Self::elaborate), but also returns the
-    /// [`ElabContext`][crate::elab::registry::ElabContext] populated during
-    /// elaboration — the `TypeRegistry`/`CallableRegistry`/`OperatorRegistry`/
-    /// `SchemaRegistry`/impl-method-table entries a host needs to resolve
-    /// `extern`-declared names after the fact (declared-language-surface
-    /// T14: `piperine-lang-server`'s `symbol_index::resolve_at` is the
-    /// first consumer — `Design` alone carries no registry state).
-    pub fn elaborate_with_context(
-        self,
-        source_map: &SourceMap,
-    ) -> Result<(Design, crate::elab::registry::ElabContext), ElabError> {
-        let mut resolver = Resolver::new(source_map);
-        let mut items = resolver.prelude_items();
-        let expanded = resolver
-            .expand(self)
-            .map_err(|e| ElabError::from(ElabErrorKind::Other(e.to_string())))?;
-        items.extend(expanded);
-        let augmented = SourceFile { items };
-        let mut elaborator = Elaborator::new();
-        let mut design = elaborator.elaborate(augmented)?;
-        design.set_origins(resolver.take_origins());
-        design.set_item_files(resolver.take_item_files());
-        design.set_use_files(resolver.take_file_paths());
-        Ok((design, elaborator.ctx))
-    }
-
-    /// Like [`elaborate`](Self::elaborate), but also returns a
-    /// [`ResolutionIndex`][crate::elab::resolution::ResolutionIndex] built
-    /// over the resulting `Design` (LSP-03/05) — the side artifact the
-    /// language server reads for binding-identity-aware resolution instead
-    /// of a word-based global scan. Additive: `Design` itself is unchanged,
-    /// and existing `elaborate*` entry points are untouched (no call-site
-    /// churn for hosts that don't need the index yet).
-    pub fn elaborate_with_index(
-        self,
-        source_map: &SourceMap,
-    ) -> Result<(Design, crate::elab::resolution::ResolutionIndex), ElabError> {
-        let design = self.elaborate(source_map)?;
-        let index = crate::elab::resolution::index_design(&design);
+    /// Like [`elaborate_source`](Self::elaborate_source), but also returns a
+    /// [`ResolutionIndex`](resolution::ResolutionIndex) built over the
+    /// resulting `Design` (LSP-03/05).
+    pub fn elaborate_source_with_index(
+        source: SourceFile,
+    ) -> Result<(Design, resolution::ResolutionIndex), ElabError> {
+        let design = Self::elaborate_source(source)?;
+        let index = resolution::index_design(&design);
         Ok((design, index))
-    }
-
-    /// Like [`elaborate_with_context`](Self::elaborate_with_context), but
-    /// never stops at the first error (LSP-18/T16): accumulates every
-    /// independent error a recoverable pass finds
-    /// (`Elaborator::elaborate_accumulating` — see its docs for exactly
-    /// which passes accumulate vs. fail fast) instead of returning
-    /// `Result`. `errors` is empty on a clean elaboration; a non-empty
-    /// `errors` means `design`/the returned [`ElabContext`](crate::elab::registry::ElabContext) are
-    /// best-effort/partial (whatever passes managed to run before a
-    /// fail-fast precondition stopped the pipeline, or everything an
-    /// accumulating pass could still process around its own failures).
-    ///
-    /// Additive: `elaborate`/`elaborate_with_context`/`elaborate_with_index`
-    /// are untouched, so no existing caller's signature or behavior
-    /// changes.
-    pub fn elaborate_with_context_accumulating(
-        self,
-        source_map: &SourceMap,
-    ) -> (Design, crate::elab::registry::ElabContext, Vec<ElabError>) {
-        let mut resolver = Resolver::new(source_map);
-        let mut items = resolver.prelude_items();
-        let expanded = match resolver.expand(self) {
-            Ok(expanded) => expanded,
-            Err(e) => {
-                // `use`-resolution runs before any pass in the pipeline —
-                // a precondition failure like `elaborate`'s own handling
-                // of this same error, not something a pass could recover
-                // from.
-                return (
-                    Design::new(),
-                    crate::elab::registry::ElabContext::new(),
-                    vec![ElabError::from(ElabErrorKind::Other(e.to_string()))],
-                );
-            }
-        };
-        items.extend(expanded);
-        let augmented = SourceFile { items };
-        let mut elaborator = Elaborator::new();
-        let (mut design, errors) = elaborator.elaborate_accumulating(augmented);
-        design.set_origins(resolver.take_origins());
-        design.set_item_files(resolver.take_item_files());
-        design.set_use_files(resolver.take_file_paths());
-        (design, elaborator.ctx, errors)
     }
 }
