@@ -2,7 +2,7 @@
 
 use super::Type;
 
-use piperine_lang::parse::ast::Expr as PomExpr;
+use piperine_vams::ast::Expr as PomExpr;
 
 // ─── Ids ──────────────────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ pub struct Function {
     /// trailing one (the language spec Part I §9.1). Filled by the inliner at expansion.
     pub defaults: Vec<Option<PomExpr>>,
     pub returns: Option<Type>,
-    pub body: Vec<piperine_lang::parse::ast::Stmt>,
+    pub body: Vec<piperine_vams::ast::Stmt>,
 }
 
 // ─── Symbol table ─────────────────────────────────────────────────────────────

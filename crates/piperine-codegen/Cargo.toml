@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 piperine-solver = { path = "../piperine-solver" }
 piperine-lang = { path = "../piperine-lang" }
+piperine-vams = { path = "../piperine-vams" }
 piperine-ir = { path = "../piperine-ir" }
 thiserror = "2.0"
 cranelift-codegen  = "0.113"

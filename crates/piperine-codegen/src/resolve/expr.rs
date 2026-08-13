@@ -1,5 +1,6 @@
 //! Operator types shared by digital and analog codegen. Codegen dispatches on
-//! POM `Expr` directly; these are the operator enums that form carries.
+//! POM `Expr` (`piperine_vams::ast::Expr`) directly; these are the operator
+//! enums that form carries.
 
 /// A resolved analysis kind returned by `$analysis`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,22 +37,31 @@ pub enum BinOp {
     BitAnd,
     BitOr,
     BitXor,
+    BitXnor,
     Shl,
     Shr,
 }
 
 impl BinOp {
-    /// Map a POM `BinaryOp` to this enum.
-    pub fn from_pom(op: piperine_lang::parse::ast::BinaryOp) -> Self {
-        use piperine_lang::parse::ast::BinaryOp as P;
+    /// Map a VAMS AST `BinOp` (LRM §4.1.3/Table 4-1) to this enum.
+    ///
+    /// `CaseEq`/`CaseNe` (`===`/`!==`, 4-state case (in)equality) have no
+    /// distinct slot here — this resolved form carries `Real`/`Int`/`Bool`
+    /// values, not 4-state (0/1/X/Z) ones, so a genuine X/Z-aware case
+    /// comparison cannot be expressed; they fall back to ordinary
+    /// (in)equality, a documented, non-silent approximation (not a `0.0`
+    /// no-op) until the resolved form gains a 4-state value representation.
+    pub fn from_pom(op: piperine_vams::ast::BinOp) -> Self {
+        use piperine_vams::ast::BinOp as P;
         match op {
             P::Add => BinOp::Add,
             P::Sub => BinOp::Sub,
             P::Mul => BinOp::Mul,
             P::Div => BinOp::Div,
-            P::Rem => BinOp::Rem,
-            P::Eq => BinOp::Eq,
-            P::Neq => BinOp::Ne,
+            P::Mod => BinOp::Rem,
+            P::Pow => BinOp::Pow,
+            P::Eq | P::CaseEq => BinOp::Eq,
+            P::Ne | P::CaseNe => BinOp::Ne,
             P::Lt => BinOp::Lt,
             P::Le => BinOp::Le,
             P::Gt => BinOp::Gt,
@@ -59,22 +69,27 @@ impl BinOp {
             P::BitAnd => BinOp::BitAnd,
             P::BitOr => BinOp::BitOr,
             P::BitXor => BinOp::BitXor,
-            P::And => BinOp::And,
-            P::Or => BinOp::Or,
+            P::BitXnor => BinOp::BitXnor,
+            P::LogAnd => BinOp::And,
+            P::LogOr => BinOp::Or,
+            P::Shl => BinOp::Shl,
+            P::Shr => BinOp::Shr,
         }
     }
 
-    /// Map this enum to a POM `BinaryOp`.
-    pub fn to_pom(self) -> piperine_lang::parse::ast::BinaryOp {
-        use piperine_lang::parse::ast::BinaryOp as P;
+    /// Map this enum back to a VAMS AST `BinOp` (used by `diff.rs` to
+    /// rebuild an `Expr` node after differentiating).
+    pub fn to_pom(self) -> piperine_vams::ast::BinOp {
+        use piperine_vams::ast::BinOp as P;
         match self {
             BinOp::Add => P::Add,
             BinOp::Sub => P::Sub,
             BinOp::Mul => P::Mul,
             BinOp::Div => P::Div,
-            BinOp::Rem => P::Rem,
+            BinOp::Rem => P::Mod,
+            BinOp::Pow => P::Pow,
             BinOp::Eq => P::Eq,
-            BinOp::Ne => P::Neq,
+            BinOp::Ne => P::Ne,
             BinOp::Lt => P::Lt,
             BinOp::Le => P::Le,
             BinOp::Gt => P::Gt,
@@ -82,9 +97,11 @@ impl BinOp {
             BinOp::BitAnd => P::BitAnd,
             BinOp::BitOr => P::BitOr,
             BinOp::BitXor => P::BitXor,
-            BinOp::And => P::And,
-            BinOp::Or => P::Or,
-            BinOp::Pow | BinOp::Shl | BinOp::Shr => P::BitXor, // fallback (unused in analog)
+            BinOp::BitXnor => P::BitXnor,
+            BinOp::And => P::LogAnd,
+            BinOp::Or => P::LogOr,
+            BinOp::Shl => P::Shl,
+            BinOp::Shr => P::Shr,
         }
     }
 }
@@ -97,70 +114,99 @@ pub enum UnOp {
     RedAnd,
     RedOr,
     RedXor,
+    RedNand,
+    RedNor,
+    RedXnor,
 }
 
-/// Evaluate a compile-time-constant POM `Expr`. `param` resolves parameter
-/// references by name. Anything runtime-dependent is an error.
+impl UnOp {
+    /// Map a VAMS AST `UnOp` (LRM §4.1.3) to this enum. `Plus` (`+x`) is a
+    /// no-op at the value level — callers should drop the wrapping node
+    /// entirely rather than call this for it (see `pom_eval_const`/`diff.rs`).
+    pub fn from_pom(op: piperine_vams::ast::UnOp) -> Self {
+        use piperine_vams::ast::UnOp as P;
+        match op {
+            P::Neg => UnOp::Neg,
+            P::LogNot => UnOp::Not,
+            P::BitNot => UnOp::BitNot,
+            P::AndReduce => UnOp::RedAnd,
+            P::OrReduce => UnOp::RedOr,
+            P::XorReduce => UnOp::RedXor,
+            P::NandReduce => UnOp::RedNand,
+            P::NorReduce => UnOp::RedNor,
+            P::XnorReduce => UnOp::RedXnor,
+            // Handled by the caller before reaching here (identity).
+            P::Plus => UnOp::Neg,
+        }
+    }
+}
+
+/// Evaluate a compile-time-constant VAMS `Expr` (LRM ch. 4). `param`
+/// resolves parameter references by name. Anything runtime-dependent
+/// (branch access functions, system functions) is an error.
 pub fn pom_eval_const(
-    expr: &piperine_lang::parse::ast::Expr,
+    expr: &piperine_vams::ast::Expr,
     resolve_param: &impl Fn(&str) -> Option<f64>,
 ) -> Result<f64, String> {
-    use piperine_lang::parse::ast::{Expr, Literal, UnaryOp};
+    use piperine_vams::ast::{BinOp as P, Expr, UnOp as U};
     let eval = |e: &Expr| pom_eval_const(e, resolve_param);
     match expr {
-        Expr::Literal(Literal::Real(v)) => Ok(*v),
-        Expr::Literal(Literal::Int(v)) => Ok(*v as f64),
-        Expr::Literal(Literal::Bool(b)) => Ok(f64::from(*b)),
-        Expr::Ident(name) => {
+        Expr::Number { value, .. } => Ok(number_lit_to_f64(value)),
+        Expr::Ident { name, .. } => {
             resolve_param(name).ok_or_else(|| format!("parameter `{name}` has no value"))
         }
-        Expr::Unary(UnaryOp::Neg, x) => Ok(-eval(x)?),
-        Expr::Unary(UnaryOp::Not, x) => Ok(f64::from(eval(x)? == 0.0)),
-        Expr::Binary(lhs, op, rhs) => {
+        Expr::Unary { op: U::Plus, operand, .. } => eval(operand),
+        Expr::Unary { op: U::Neg, operand, .. } => Ok(-eval(operand)?),
+        Expr::Unary { op: U::LogNot, operand, .. } => Ok(f64::from(eval(operand)? == 0.0)),
+        Expr::Unary { op, .. } => {
+            Err(format!("unary operator {op:?} is not const-evaluable"))
+        }
+        Expr::Binary { op, lhs, rhs, .. } => {
             let (a, b) = (eval(lhs)?, eval(rhs)?);
-            use piperine_lang::parse::ast::BinaryOp as P;
             Ok(match op {
                 P::Add => a + b,
                 P::Sub => a - b,
                 P::Mul => a * b,
                 P::Div => a / b,
-                P::Rem => a % b,
-                P::Eq => f64::from(a == b),
-                P::Neq => f64::from(a != b),
+                P::Mod => a % b,
+                P::Pow => a.powf(b),
+                P::Eq | P::CaseEq => f64::from(a == b),
+                P::Ne | P::CaseNe => f64::from(a != b),
                 P::Lt => f64::from(a < b),
                 P::Le => f64::from(a <= b),
                 P::Gt => f64::from(a > b),
                 P::Ge => f64::from(a >= b),
-                P::And => f64::from(a != 0.0 && b != 0.0),
-                P::Or => f64::from(a != 0.0 || b != 0.0),
+                P::LogAnd => f64::from(a != 0.0 && b != 0.0),
+                P::LogOr => f64::from(a != 0.0 || b != 0.0),
                 _ => return Err(format!("operator {op:?} is not const-evaluable")),
             })
         }
-        Expr::Call(func, args) => {
-            if let Expr::Ident(name) = func.as_ref() {
-                let vals: Vec<f64> = args.iter().map(eval).collect::<Result<_, _>>()?;
-                return piperine_lang::math::eval_const_math(name, &vals)
-                    .ok_or_else(|| format!("`{name}` is not a const-evaluable math builtin"));
-            }
-            Err("non-identifier call in const context".into())
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            if eval(cond)? != 0.0 { eval(then_branch) } else { eval(else_branch) }
         }
-        Expr::Cast(_, inner) => eval(inner),
-        Expr::If { cond, then_body, else_body } => {
-            if eval(cond)? != 0.0 {
-                if let Some(e) = &then_body.expr { eval(e) } else { Ok(0.0) }
-            } else {
-                if let Some(e) = &else_body.expr { eval(e) } else { Ok(0.0) }
-            }
-        }
-        Expr::Block(b) => {
-            if let Some(e) = &b.expr { return eval(e); }
-            for s in b.stmts.iter().rev() {
-                if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
-                    return eval(e);
-                }
-            }
-            Ok(0.0)
+        Expr::Call { name, args, .. } => {
+            let vals: Vec<f64> = args.iter().map(eval).collect::<Result<_, _>>()?;
+            piperine_lang::math::eval_const_math(name, &vals)
+                .ok_or_else(|| format!("`{name}` is not a const-evaluable math builtin"))
         }
         other => Err(format!("expression is not compile-time constant: {other:?}")),
+    }
+}
+
+fn number_lit_to_f64(lit: &piperine_vams::lexer::NumberLit) -> f64 {
+    use piperine_vams::lexer::NumberLit;
+    match lit {
+        NumberLit::Integer(i) => *i as f64,
+        NumberLit::Real(r) => *r,
+        NumberLit::Based(b) => {
+            let digits: String = b.digits.chars().filter(|c| *c != '_').collect();
+            let radix = match b.base {
+                piperine_vams::lexer::NumberBase::Decimal => 10,
+                piperine_vams::lexer::NumberBase::Binary => 2,
+                piperine_vams::lexer::NumberBase::Octal => 8,
+                piperine_vams::lexer::NumberBase::Hex => 16,
+            };
+            i64::from_str_radix(&digits, radix).map(|v| v as f64).unwrap_or(0.0)
+        }
     }
 }
