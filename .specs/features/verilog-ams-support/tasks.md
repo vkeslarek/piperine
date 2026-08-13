@@ -1620,3 +1620,22 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
   `vams_generate` 4, `vams_discipline_resolution` 4, `vams_annex_c` 5 —
   79 total across those 11 targets) + 59 lib unit tests. `cargo build -p
   piperine-lang`: zero warnings.
+
+**Phase 5 (S2b) closed.** The VAMS→POM elaboration pipeline is real and
+tested end to end for the constructs T21-T27 scope covers: module/port/
+param/net structure (T22), natures/disciplines/branches (T23), parameter
+ranges + localparam/aliasparam (T24), generate unrolling onto the derived
+artifact only (T25), Annex F discipline resolution (T26), and Annex C
+enforcement (T27) — all on top of T21's frontend swap. Two Annex F/C
+SPEC_DEVIATIONs are recorded against their tasks' literal wording (T26:
+core Basic-resolution mechanic, not the full multi-hierarchy/connectrules
+machinery; T27: three constructs checked today, the walk is built to
+extend). The batch's accepted, still-open item from T21 stands
+unchanged: `cargo test -p piperine-lang` is 79 VAMS-originated
+integration tests + 59 lib unit tests green, well below the pre-T21
+baseline of 468, because MD-45 authorized gutting the entire PHDL-syntax
+value layer (generics/capabilities/bundles/enums/constraint-blocks/
+`extern`) alongside the behavior-body swap — documented in T21's entry,
+not silently carried forward. `cargo build --workspace` still fails in
+`piperine-codegen` and `piperine-lang-server` (Phase 6/7, untouched by
+this batch). Ready for Phase 6 (S3a, codegen retarget, T28+).
