@@ -307,7 +307,7 @@ impl NgspiceHarness {
     fn headers_source_map() -> SourceMap {
         let headers =
             PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-        let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+        let mut map = SourceMap::new(headers.clone());
         map.add_namespace("piperine", headers.clone());
         map.add_namespace("spice", headers.join("spice"));
         map
@@ -353,16 +353,16 @@ impl NgspiceHarness {
         Ok(vals)
     }
 
-    /// Elaborate `<circuit>.phdl` against the real stdlib headers.
+    /// Elaborate `<circuit>.vams` against the real stdlib headers.
     fn elaborate(circuit: &str) -> Result<piperine_lang::Design, String> {
-        let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
-        let src = std::fs::read_to_string(&phdl)
-            .map_err(|e| format!("{circuit}: {}: {e}", phdl.display()))?;
+        let vams = Self::circuits_dir().join(format!("{circuit}.vams"));
+        let src = std::fs::read_to_string(&vams)
+            .map_err(|e| format!("{circuit}: {}: {e}", vams.display()))?;
         piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
             .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))
     }
 
-    /// The piperine side of a domain cross-check: `<circuit>.phdl` compiled
+    /// The piperine side of a domain cross-check: `<circuit>.vams` compiled
     /// into a session. Deliberately **not** `.disto(true)` — the 2nd/3rd
     /// derivative kernels are opt-in, costly, and overrun Cranelift on
     /// MOS2/MOS3, so only the spectral target (which needs them) asks.
@@ -371,7 +371,7 @@ impl NgspiceHarness {
         Ok(Session::compile(&design, "Top").expect("session compiles"))
     }
 
-    /// Piperine side: elaborate `<circuit>.phdl` and solve the DC operating
+    /// Piperine side: elaborate `<circuit>.vams` and solve the DC operating
     /// point in-process, returning the result object.
     pub(crate) fn piperine_op(&self, circuit: &str) -> Result<OpResult, String> {
         let design = Self::elaborate(circuit)?;
@@ -488,9 +488,9 @@ impl NgspiceHarness {
             golden.len()
         );
 
-        let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
-        let src = std::fs::read_to_string(&phdl)
-            .unwrap_or_else(|e| panic!("{circuit}: {}: {e}", phdl.display()));
+        let vams = Self::circuits_dir().join(format!("{circuit}.vams"));
+        let src = std::fs::read_to_string(&vams)
+            .unwrap_or_else(|e| panic!("{circuit}: {}: {e}", vams.display()));
         let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
             .unwrap_or_else(|e| panic!("{circuit}: elaboration failed: {e:?}"));
         let mut session = Session::compile(&design, "Top").expect("session compiles");

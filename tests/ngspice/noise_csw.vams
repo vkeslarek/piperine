@@ -1,0 +1,16 @@
+// noise_csw — the same open current-controlled switch as noise_csw.cir. The
+// sense current through vsense is below the model's threshold, so w1 stamps
+// roff and the OFF-state thermal noise that goes with it.
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "switches.va"
+
+module Top ();
+    electrical gnd, in, s, a;
+    vsrc #(.dc(1.0), .ac_mag(1.0)) vin (.p(in), .n(gnd));
+    isrc #(.dc(0.1)) iw (.p(gnd), .n(s));
+    vsrc #(.dc(0.0)) vsense (.p(s), .n(gnd));
+    res  #(.r(1.0e3)) r1 (.p(in), .n(a));
+    csw  #(.off(1), .it(0.5), .ron(1.0), .roff(10.0e3)) w1 (.p(a), .n(gnd), .cp(s), .cn(gnd));
+endmodule

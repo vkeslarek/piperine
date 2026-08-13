@@ -403,7 +403,7 @@ impl ParityMatrix {
         problems
     }
 
-    /// A `Covered` row names a fixture whose `.cir`/`.phdl` twin must exist
+    /// A `Covered` row names a fixture whose `.cir`/`.vams` twin must exist
     /// and be non-empty — a row naming a missing twin is a claim no test
     /// backs, which is exactly what this gate exists to catch.
     fn missing_fixtures() -> Vec<String> {
@@ -411,7 +411,7 @@ impl ParityMatrix {
         for row in &Self::REGISTRY {
             for (domain, coverage) in &row.cells {
                 let Coverage::Covered { fixture } = coverage else { continue };
-                for extension in ["cir", "phdl"] {
+                for extension in ["cir", "vams"] {
                     let path = Self::circuits_dir().join(format!("{fixture}.{extension}"));
                     let Ok(meta) = std::fs::metadata(&path) else {
                         missing.push(format!(
@@ -496,7 +496,7 @@ fn every_model_domain_cell_is_accounted_for() {
     );
 }
 
-/// A `Covered` row whose `.cir`/`.phdl` twin is missing or empty fails loud
+/// A `Covered` row whose `.cir`/`.vams` twin is missing or empty fails loud
 /// naming the cell and the path — the claim exists only if the fixture does.
 #[test]
 fn every_covered_cell_names_an_existing_fixture() {

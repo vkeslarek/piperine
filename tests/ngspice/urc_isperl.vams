@@ -1,0 +1,18 @@
+// urc_isperl — VAMS twin of urc_isperl.cir: a tapered linear URC ladder
+// with the diode-mode shunt path selected by ISPERL (NGP-17). The piperine
+// `urc_isperl_5_k2` module mirrors ngspice's URC ISPERL branch: at every
+// tap node a `dio` instance whose `cjo` carries the per-segment capacitance,
+// whose `is` carries the per-segment saturation current, and whose `area`
+// scales both by the K = 2 geometric factor. At DC the diodes clamp the
+// tap nodes — the test falsifies a model that drops the diode shunt.
+`include "disciplines.vams"
+`include "passives.va"
+`include "sources.va"
+`include "urc.va"
+
+module Top ();
+    electrical gnd, in, out;
+    vsrc #(.dc(5.0)) v1 (.p(in), .n(gnd));
+    urc_isperl_5_k2 u1 (.p(in), .n(out), .g(gnd));
+    res  #(.r(1.0e3)) rl (.p(out), .n(gnd));
+endmodule

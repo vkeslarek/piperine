@@ -1,0 +1,17 @@
+// VAMS twin of urc_lump2.cir: 2-segment lumped RC line (the same ladder
+// topology, built structurally from the fixed-count `urc2` module — see
+// `urc.va`'s file header for why `urc`'s own `segs` override cannot be
+// used here). The flatten pass inlines Top → urc2 → urc_seg → {res, cap}
+// so codegen only sees leaf devices; the host reads v(vin)/v(vout) off the
+// flat netlist.
+`include "disciplines.vams"
+`include "passives.va"
+`include "sources.va"
+`include "urc.va"
+
+module Top ();
+    electrical gnd, vin, vout;
+    vsrc #(.dc(5.0)) v1 (.p(vin), .n(gnd));
+    urc2 #(.r(100.0), .c(1.0e-9)) u1 (.p(vin), .n(vout), .g(gnd));
+    res  #(.r(1.0e3)) rl (.p(vout), .n(gnd));
+endmodule

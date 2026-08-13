@@ -1,0 +1,11 @@
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "jfet.va"
+
+module Top ();
+    electrical gnd, vdd, d;
+    vsrc #(.dc(5.0)) v1 (.p(vdd), .n(gnd));
+    res  #(.r(1.0e3)) rd (.p(vdd), .n(d));
+    jfet #(.vto(-2.0), .beta(1.0e-3), .lambda(0.0)) j1 (.d(d), .g(gnd), .s(gnd));
+endmodule

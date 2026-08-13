@@ -1,0 +1,15 @@
+// NMOS level 3 Id-Vds sweep — same circuit as nmos3_id_vds.cir; the
+// harness stages vd.dc per sweep point and reads that source's branch current.
+`include "disciplines.vams"
+`include "sources.va"
+`include "mos.va"
+
+module Top ();
+    electrical gnd, d, g;
+    vsrc #(.dc(0.0)) vd (.p(d), .n(gnd));
+    vsrc #(.dc(3.0)) vg (.p(g), .n(gnd));
+    mos3 #(.l(1.0e-6), .w(10.0e-6), .vto(1.0), .kp(2.0e-5), .nsub(1.0e15),
+           .theta(0.05), .eta(0.1), .kappa(0.5),
+           .vmax(1.0e5), .xj(0.3e-6), .rd(100.0), .rs(100.0))
+        m1 (.d(d), .g(g), .s(gnd), .b(gnd));
+endmodule

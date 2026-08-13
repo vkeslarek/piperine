@@ -1,0 +1,16 @@
+// noise_mos2_linear — the same triode-biased level-2 NMOS as
+// noise_mos2_linear.cir. The channel noise source reads the model's analytic
+// gm, which in this region is beta*vds rather than beta*(vgs-vto).
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "mos.va"
+
+module Top ();
+    electrical gnd, vdd, g, d;
+    vsrc #(.dc(5.0)) vd (.p(vdd), .n(gnd));
+    vsrc #(.dc(3.0)) vg (.p(g),   .n(gnd));
+    res  #(.r(6.2e3)) rd (.p(vdd), .n(d));
+    mos2 #(.l(1.0e-6), .w(100.0e-6), .vto(1.0), .kp(2.0e-5), .lambda(0.0), .kf(0.0))
+        m1 (.d(d), .g(g), .s(gnd), .b(gnd));
+endmodule

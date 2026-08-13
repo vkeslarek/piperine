@@ -1,0 +1,21 @@
+// temp_bjt — the same forced-base pair as temp_bjt.cir. q1 sits in the forward
+// active region, where the collector current is set by the Early effect alone,
+// and q2 is driven into saturation so the reverse Early voltage is exercised
+// too. Both Early voltages carry their own temperature coefficients.
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "bjt.va"
+
+module Top ();
+    electrical gnd, vcc, b, c, b2, c2;
+    isrc #(.dc(2.0e-6))   ib  (.p(gnd), .n(b));
+    isrc #(.dc(200.0e-6)) ib2 (.p(gnd), .n(b2));
+    vsrc #(.dc(10.0)) vc (.p(vcc), .n(gnd));
+    res  #(.r(20.0e3)) rc  (.p(vcc), .n(c));
+    res  #(.r(20.0e3)) rc2 (.p(vcc), .n(c2));
+    bjt  #(.is(1.0e-16), .bf(100.0), .vaf(50.0), .tvaf1(-5.0e-3), .var(20.0), .tvar1(-5.0e-3))
+        q1 (.c(c), .b(b), .e(gnd), .sub(gnd));
+    bjt  #(.is(1.0e-16), .bf(100.0), .vaf(50.0), .tvaf1(-5.0e-3), .var(20.0), .tvar1(-5.0e-3))
+        q2 (.c(c2), .b(b2), .e(gnd), .sub(gnd));
+endmodule

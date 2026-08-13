@@ -1,0 +1,28 @@
+// homotopy_sink — the twin of homotopy_sink.cir: the bias point that
+// falsifies the `isrc` half of NGP-11.
+//
+// The softer ladder (100 Ω, Is = 1e-16) still defeats plain Newton and gmin
+// stepping, and the 25 mA sink at the middle node `e` defeats the ramp itself
+// unless `isrc` honours `$simparam("sourceScaleFactor")`: at a partial scale
+// an unramped sink pulls more current out of `e` than the partially-driven
+// ladder can supply, so the ramp has no solution to track and the solve
+// diverges. Its twin `homotopy_bias` falsifies the `vsrc` half.
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "diode.va"
+
+module Top ();
+    electrical gnd, vs, a, b, c, d, e, f, g, h;
+    vsrc #(.dc(10.0)) v1 (.p(vs), .n(gnd));
+    res  #(.r(100.0)) r1 (.p(vs), .n(a));
+    dio #(.is(1.0e-16)) d1 (.p(a), .n(b));
+    dio #(.is(1.0e-16)) d2 (.p(b), .n(c));
+    dio #(.is(1.0e-16)) d3 (.p(c), .n(d));
+    dio #(.is(1.0e-16)) d4 (.p(d), .n(e));
+    dio #(.is(1.0e-16)) d5 (.p(e), .n(f));
+    dio #(.is(1.0e-16)) d6 (.p(f), .n(g));
+    dio #(.is(1.0e-16)) d7 (.p(g), .n(h));
+    dio #(.is(1.0e-16)) d8 (.p(h), .n(gnd));
+    isrc #(.dc(0.025)) i1 (.p(e), .n(gnd));
+endmodule

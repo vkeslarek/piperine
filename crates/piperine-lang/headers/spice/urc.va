@@ -170,6 +170,83 @@ module urc (inout electrical p, inout electrical n, inout electrical g);
 endmodule
 
 // ════════════════════════════════════════════════════════════════════════════
+//  urc2 / urc5 / urc10 — fixed-segment-count ladders (T44, `tests/ngspice/
+//  urc_lump{2,5,10}.vams`).
+//
+//  `urc`'s own `segs` OVERRIDE never reaches its `generate for` loop bound
+//  (the PRE-EXISTING GAP documented above: `UnrollGenerate` unrolls a
+//  module's generate body once per module *declaration*, against that
+//  module's own declared `segs` DEFAULT, before any instance-level
+//  override is applied). The file header already names the fix for a
+//  caller that needs a non-default segment count: "declaring another
+//  module whose own `segs` default is the wanted count." These three are
+//  exactly that — same body as `urc`, only the declared default differs —
+//  so `urc_lump2/5/10`'s golden fixtures get the fixed 2/5/10-segment
+//  ladder their `.cir` twins hand-build explicitly, without depending on
+//  the override path this module doesn't have.
+// ════════════════════════════════════════════════════════════════════════════
+
+module urc2 (inout electrical p, inout electrical n, inout electrical g);
+    parameter integer segs = 2 from [2:1000];
+    parameter real r = 100.0;
+    parameter real c = 1.0e-9;
+    parameter real k = 1.0;
+
+    electrical tap[0:segs-2];
+
+    urc_seg #(.r(r), .c(c)) s0 (p, tap[0], g);
+
+    genvar i;
+    generate
+        for (i = 1; i < segs - 1; i = i + 1) begin: s
+            urc_seg #(.r(r * pow(k, i)), .c(c * pow(k, i))) u (tap[i - 1], tap[i], g);
+        end
+    endgenerate
+
+    urc_seg #(.r(r * pow(k, segs - 1)), .c(c * pow(k, segs - 1))) slast (tap[segs - 2], n, g);
+endmodule
+
+module urc5 (inout electrical p, inout electrical n, inout electrical g);
+    parameter integer segs = 5 from [2:1000];
+    parameter real r = 100.0;
+    parameter real c = 1.0e-9;
+    parameter real k = 1.0;
+
+    electrical tap[0:segs-2];
+
+    urc_seg #(.r(r), .c(c)) s0 (p, tap[0], g);
+
+    genvar i;
+    generate
+        for (i = 1; i < segs - 1; i = i + 1) begin: s
+            urc_seg #(.r(r * pow(k, i)), .c(c * pow(k, i))) u (tap[i - 1], tap[i], g);
+        end
+    endgenerate
+
+    urc_seg #(.r(r * pow(k, segs - 1)), .c(c * pow(k, segs - 1))) slast (tap[segs - 2], n, g);
+endmodule
+
+module urc10 (inout electrical p, inout electrical n, inout electrical g);
+    parameter integer segs = 10 from [2:1000];
+    parameter real r = 100.0;
+    parameter real c = 1.0e-9;
+    parameter real k = 1.0;
+
+    electrical tap[0:segs-2];
+
+    urc_seg #(.r(r), .c(c)) s0 (p, tap[0], g);
+
+    genvar i;
+    generate
+        for (i = 1; i < segs - 1; i = i + 1) begin: s
+            urc_seg #(.r(r * pow(k, i)), .c(c * pow(k, i))) u (tap[i - 1], tap[i], g);
+        end
+    endgenerate
+
+    urc_seg #(.r(r * pow(k, segs - 1)), .c(c * pow(k, segs - 1))) slast (tap[segs - 2], n, g);
+endmodule
+
+// ════════════════════════════════════════════════════════════════════════════
 //  urc_taper_5_k2 — five-segment tapered URC ladder (NGP-16, K = 2).
 //
 //  The taper is ngspice's `K = 2` geometric progression (`urcsetup.c:80-92`)

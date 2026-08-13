@@ -1,0 +1,16 @@
+// pz_rc — same natural network as pz_rc.cir. The 0 V source is a short in
+// series with the current source: it changes nothing about the network's
+// natural poles and exists only to give the host `.pz` call an input
+// branch to resolve (piperine's PoleZeroOptions names a source branch).
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+
+module Top ();
+    electrical gnd, in, inj, out;
+    isrc #(.dc(1.0)) i1 (.p(gnd), .n(inj));
+    vsrc #(.dc(0.0)) v1 (.p(inj), .n(in));
+    res  #(.r(1000.0)) r1 (.p(in), .n(out));
+    res  #(.r(1000.0)) r2 (.p(in), .n(gnd));
+    cap  #(.c(1.0e-6)) c1 (.p(out), .n(gnd));
+endmodule

@@ -1,0 +1,12 @@
+// noise_rc — the same thermal-noise-only network as noise_rc.cir. R1 is the
+// only noise source; C1 shapes it with a 100 kHz pole and contributes none.
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+
+module Top ();
+    electrical gnd, in, out;
+    vsrc #(.dc(0.0), .ac_mag(1.0)) v1 (.p(in), .n(gnd));
+    res  #(.r(1000.0)) r1 (.p(in), .n(out));
+    cap  #(.c(1.5915494309189535e-9)) c1 (.p(out), .n(gnd));
+endmodule

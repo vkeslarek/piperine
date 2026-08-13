@@ -1,0 +1,27 @@
+// homotopy_bias — the twin of homotopy_bias.cir: the bias point that
+// falsifies the `vsrc` half of NGP-11.
+//
+// The eight-diode ladder off a 10 V rail defeats plain Newton and gmin
+// stepping, so only the source-stepping ramp reaches this operating point —
+// and only while `vsrc`'s forced value ramps with the scale. Its twin
+// `homotopy_sink` falsifies the `isrc` half; the two need different ladder
+// stiffness because the two sources fail the ramp in different ways.
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "diode.va"
+
+module Top ();
+    electrical gnd, vs, a, b, c, d, e, f, g, h;
+    vsrc #(.dc(10.0)) v1 (.p(vs), .n(gnd));
+    res  #(.r(10.0)) r1 (.p(vs), .n(a));
+    dio #(.is(1.0e-20)) d1 (.p(a), .n(b));
+    dio #(.is(1.0e-20)) d2 (.p(b), .n(c));
+    dio #(.is(1.0e-20)) d3 (.p(c), .n(d));
+    dio #(.is(1.0e-20)) d4 (.p(d), .n(e));
+    dio #(.is(1.0e-20)) d5 (.p(e), .n(f));
+    dio #(.is(1.0e-20)) d6 (.p(f), .n(g));
+    dio #(.is(1.0e-20)) d7 (.p(g), .n(h));
+    dio #(.is(1.0e-20)) d8 (.p(h), .n(gnd));
+    isrc #(.dc(0.025)) i1 (.p(e), .n(gnd));
+endmodule

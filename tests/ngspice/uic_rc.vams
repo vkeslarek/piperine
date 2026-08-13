@@ -1,0 +1,28 @@
+// uic_rc — VAMS twin of uic_rc.cir (NGP-10 part 1). The cap's `ic`
+// param seeds the UIC start voltage: `c1 : cap #(.ic(2.0))` writes
+// the same `IC=2.0` line ngspice's `.tran … uic` reads.
+//
+// KNOWN GAP (T44, carried from T41): `headers/spice/passives.va`'s `cap`
+// no longer wires `ic` into an `@ initial` seed — the real Verilog-A `<+`
+// contribution operator cannot coexist with `cap`'s own unconditional Flow
+// contribution on the same (p,n) branch the way PHDL's `<-` (Force, a
+// non-contribution primitive) could (passives.va's own file-header
+// comment, T41). `ic` stays a declared, unused parameter. This fixture is
+// kept, migrated faithfully, so the gap is measured rather than hidden —
+// see the T44 progress-log entry.
+//
+// The fixture's driver is a step from 0 to 5 V at t=0; with the cap
+// pre-charged to 2 V, the response is `v(t) = 5 - 3·exp(-t/RC)` with
+// `RC = 1.5915494309189535 µs`. The host runs the transient with
+// `uic = true` so the per-instance `ic` seeds (not the DC operating
+// point) drive the t=0 state.
+`include "disciplines.vams"
+`include "passives.va"
+`include "sources.va"
+
+module Top ();
+    electrical gnd, vin, out;
+    vsrc #(.dc(5.0)) v1 (.p(vin), .n(gnd));
+    res  #(.r(1.0e3)) r1 (.p(vin), .n(out));
+    cap  #(.c(1.5915494309189535e-9), .ic(2.0)) c1 (.p(out), .n(gnd));
+endmodule

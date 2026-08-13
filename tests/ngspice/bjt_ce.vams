@@ -1,0 +1,14 @@
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "bjt.va"
+
+module Top ();
+    electrical gnd, vcc, vb, base, col;
+    vsrc #(.dc(5.0)) vc  (.p(vcc), .n(gnd));
+    vsrc #(.dc(2.0)) vbb (.p(vb),  .n(gnd));
+    res  #(.r(10.0e3)) rb (.p(vb),  .n(base));
+    res  #(.r(1.0e3))  rc (.p(vcc), .n(col));
+    bjt  #(.is(1.0e-16), .bf(100.0), .nf(1.0), .br(1.0), .nr(1.0))
+        q1 (.c(col), .b(base), .e(gnd), .sub(gnd));
+endmodule

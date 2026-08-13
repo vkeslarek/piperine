@@ -1,0 +1,14 @@
+// four_diode — same circuit as four_diode.cir; the harness runs a
+// transient (3 µs) and Waveform::fourier(1e6, 10) on v(out), comparing THD
+// and the normalized harmonic magnitudes against ngspice's fourier table.
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "diode.va"
+
+module Top ();
+    electrical gnd, in, out;
+    vsrc #(.dc(0.3), .wave(1), .sin_vo(0.3), .sin_va(0.3), .sin_freq(1e6)) v1 (.p(in), .n(gnd));
+    res  #(.r(1000.0)) r1 (.p(in), .n(out));
+    dio  #(.is(1.0e-14), .n_e(1.0), .rs(0.0)) d1 (.p(out), .n(gnd));
+endmodule

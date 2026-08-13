@@ -881,9 +881,21 @@ known for `k`).
 
 ---
 
-#### T44: Migrate `tests/ngspice/` fixture twins (48 files)
+#### T44: Migrate `tests/ngspice/` fixture twins (48 files) — ⚠️ PARTIAL (see Progress Log)
 **Where**: `tests/ngspice/*.vams` · **Depends on**: T43 · **Requirement**: VAMS-08
 **Done when**: all five ngspice domain targets green with unchanged `ToleranceContract` · `ngspice_parity_matrix.rs` still covers every model×domain · **Gate**: full
+**Status**: All 48 fixtures migrated, verified individually, `.phdl` originals
+deleted. 4 of 6 ngspice-family targets fully green (`validation` 49/49, `ac`
+24/24, `temp` 24/24, `homotopy` 18/18) plus `parity_matrix` 4/4. Two domain
+targets carry known failures neither caused by nor fixable within this
+task's file scope: `tran` 23/25 (`uic_rc`/`uic_mos` — pre-existing NGP-10
+debt, `cap`/`mos1`'s UIC dropped at T41/T42, documented in those files'
+own headers) and `noise` 28/29 (`the_closed_switch_carries_its_on_
+conductance_noise` — a **newly-discovered** `piperine-codegen` gap: an
+`@(initial_step)` event action's ternary condition does not read an
+instance-overridden `parameter integer`'s per-instance value, confirmed by
+minimal reproduction). See Progress Log for full root-cause evidence,
+reproduction, and disposition.
 **Commit**: `test(ngspice): migrate the fixture twins to Verilog-AMS`
 
 ---
@@ -2974,3 +2986,159 @@ did not close.
   — all three commits landed, T43's checkbox above is DONE, and the
   `tasks.md`/`STATE.md` open-item note flagging this as outstanding is
   closed by this entry.
+
+- **T44** ⚠️ PARTIAL — all 48 `tests/ngspice/*.phdl` fixture twins migrated
+  to `.vams`, one per model/domain combination the corpus already covered;
+  `.phdl` originals deleted in the same change (VAMS-11).
+  `tests/support/ngspice.rs` retargeted to read `<circuit>.vams` (two call
+  sites: `elaborate()`, `sweep_case()`) and its `headers_source_map()`
+  dropped the dead `.with_prelude(headers.join("prelude.phdl"))` call
+  (`prelude_path` has been unused since T21/MD-45 — `prelude.phdl` itself
+  no longer exists). `tests/ngspice_parity_matrix.rs`'s `missing_fixtures()`
+  extension list changed `["cir", "phdl"]` → `["cir", "vams"]`.
+  `PHDL_HIGH_WATER_MARK` lowered 90 → 42 (`tests/suite_hygiene.rs`),
+  matching the post-deletion count exactly (`git ls-files '*.phdl' '*.ppr'`
+  confirms 42 remain).
+
+  **Translation notes** (mechanical, per-file, no surprises beyond the two
+  gaps below): PHDL's `mod Top() { wire x: Electrical; ... }` becomes
+  `module Top (); electrical x; ... endmodule`; `use spice::X;` becomes
+  `` `include "X.va"`` (namespace-guard-protected, per `X.va`'s own
+  `` `ifdef``/`` `define`` header — confirmed multiple headers can be
+  included in any order/combination without duplicate-declaration errors);
+  `inst: mod (.port=net) { .param = value, .model = Bundle { .field = v }
+  };` becomes `mod #(.param(value), .field(v)) inst (.port(net));` — model-
+  bundle fields flatten into the same override list as instance params,
+  per T41-T43's own flattened-parameter convention (`dio`'s `.n` bundle
+  field is `.n_e` at the instance site too, since `n` is the port — T42's
+  naming note, reused here). PHDL's `0.0 - X` idiom (used only because
+  PHDL's own grammar made unary-minus-in-a-param-default ambiguous)
+  becomes VAMS's ordinary `-X` literal — VAMS's unary minus binds correctly
+  in a `parameter`/override default (confirmed: every migrated `.va` model
+  already uses bare `-2.0`-style defaults, e.g. `jfet.va`'s own `vto`).
+
+  **New `urc2`/`urc5`/`urc10` modules added to `headers/spice/urc.va`**
+  (in scope for this task — anticipated verbatim by `urc.va`'s own T43
+  file-header comment: "a host with different defaults instantiates `urc`
+  with an explicit `segs`... Getting a non-default segment count in VAMS
+  today means declaring another module whose own `segs` default is the
+  wanted count — the `urc_lump2/5/10` golden fixtures... will need exactly
+  that treatment when they migrate"). `urc`'s own `segs` parameter
+  override never reaches its `generate for` loop bound (the documented
+  pre-existing gap: `UnrollGenerate` unrolls once per module *declaration*
+  against that module's own default, before any instance override
+  applies) — `urc2`/`urc5`/`urc10` are the same module body with a
+  different declared `segs` default (2/5/10), giving `urc_lump2/5/10`'s
+  golden fixtures the fixed-segment-count ladder their `.cir` twins hand-
+  build. `urc_fmax` needed no new module — its target segment count (3)
+  already equals `urc`'s own default (`URC_DEFAULT_N`), so it instantiates
+  plain `urc` directly.
+
+  **Verification**: `cargo build --workspace` zero warnings.
+  `cargo test --test ngspice_validation` 49/49;
+  `cargo test --test ngspice_ac` 24/24;
+  `cargo test --test ngspice_temp` 24/24;
+  `cargo test --test ngspice_homotopy` 18/18;
+  `cargo test --test ngspice_parity_matrix` 4/4 — five of six ngspice-
+  family targets fully green, the sixth being `ngspice_tran` (see below).
+  `cargo test -p piperine-lang/-codegen/-api/-project --lib`,
+  `cargo test --test suite_hygiene`, `cargo test --test run_examples`: all
+  pre-existing failures confirmed byte-identical before/after this change
+  via `git stash` A/B (2 piperine-lang, 2 piperine-codegen, 3 piperine-api,
+  1 piperine-project, 1 `mod_rs_declares_only` in suite_hygiene, 2 in
+  run_examples — none touch `headers/spice/` or `tests/ngspice*`, none new).
+  `cargo test --workspace` as one command still cannot compile (same
+  pre-existing dead-PHDL-AST integration targets documented since T21/
+  MD-44 — `extern_grammar.rs`, `tol_clause.rs`,
+  `operator_and_impl_method_registries.rs`,
+  `digital_codegen_gaps.rs`, and others reproduce byte-identically on
+  `git stash`), so per-crate/per-target sweeps are the gate, matching the
+  practice every T40-T43 entry already established.
+
+  **Two domain-target failures, neither a fixture-translation defect:**
+
+  1. **`ngspice_tran` 23/25** — `ngspice_uic_rc` and `ngspice_uic_mos`
+     fail: `v(out)` reads 0 for the whole run instead of the documented
+     `ic`-seeded start voltage. Root cause: **pre-existing, already
+     documented** — `headers/spice/passives.va`'s `cap` (T41) and
+     `headers/spice/mos.va`'s `mos1` (T42) both dropped their UIC wiring
+     during the PHDL→VAMS dialect translation, each file's own header
+     explaining why (`<-`/Force, PHDL's non-contribution assignment
+     primitive, had no VAMS lowering path; the real Verilog-A `<+`
+     equivalent conflicts with the module's own unconditional Flow
+     contribution on the same branch per LRM §5.4.2, which
+     `AnalogKernel::compile` rejects). `ic`/`ic_vds`/`ic_vgs` stay
+     declared, unused parameters in both files. This is NGP-10 debt
+     (`.specs/STATE.md`'s Verifier-audited gap list), not something a
+     fixture-migration task's file scope (`tests/ngspice/*`) can fix —
+     closing it needs a Flow/Potential-coexistence or dedicated Flow-seed
+     mechanism in `piperine-codegen`, a solver/codegen feature of its own.
+     `uic_rc.vams`/`uic_mos.vams` are migrated faithfully (both instance
+     overrides present, matching the `.phdl` originals exactly) and carry
+     an inline comment naming the gap so a future reader doesn't
+     re-discover it from scratch.
+
+  2. **`ngspice_noise` 28/29** — `the_closed_switch_carries_its_on_
+     conductance_noise` fails: expected `4kT/(gon+1/R1) ≈ 1.656e-20 V²/Hz`
+     (the closed switch's Johnson noise), got `1.507e-17` (≈1000× larger —
+     the *open*-switch figure, `4kT·(R1‖Roff)`). **Newly discovered**,
+     root-caused via a minimal reproduction (not a fixture defect):
+     ```
+     module probe (inout electrical p, inout electrical n);
+         parameter integer off = 1;
+         real st;
+         analog begin
+             @(initial_step) begin st = off ? 0.0 : 1.0; end
+             V(p, n) <+ st;
+         end
+     endmodule
+     module Top ();
+         electrical gnd, a, b;
+         probe #(.off(1)) p1 (a, gnd);   // v(a) = 0.0  — correct
+         probe #(.off(0)) p2 (b, gnd);   // v(b) = 0.0  — WRONG, expected 1.0
+     endmodule
+     ```
+     Confirmed via `piperine_lang::Design::module("Top").instances()`
+     that the POM correctly carries the instance override
+     (`s1: params=[("off", Int(0)), ...]`) — the bug is downstream of
+     elaboration, inside `piperine-codegen`'s `@(initial_step)`
+     event-action compilation
+     (`crates/piperine-codegen/src/device/analog/events.rs`'s
+     `fire_initial_events`/`apply_event_actions`,
+     `crates/piperine-codegen/src/kernel/analog/compile.rs`'s
+     `FlatEventTrigger::Initial` handling, or the ternary emission in
+     `crates/piperine-codegen/src/emit/analog_expr.rs`): a `parameter
+     integer` overridden away from its module default, when read inside
+     an `@(initial_step)` event action's ternary condition, evaluates as
+     if it still held its **default** value — every other read site of
+     the *same* per-instance param (ordinary analog-body expressions,
+     confirmed across every mos/bjt/jfet/switch fixture in this same
+     batch) reads the correct per-instance override. `sw.va`/`csw.va`'s
+     own `off` parameter is the first place in the whole migrated corpus
+     an integer param is overridden to a value that actually changes an
+     `@(initial_step)`-computed branch (every prior fixture either used
+     the default or overrode a `real`, not an `integer`, inside an event
+     body). Per this task's own instruction ("If you hit a genuine
+     architecture gap... stop and report, don't make a unilateral call")
+     and `CLAUDE.md`'s "files not to edit casually" list
+     (`emit/analog_expr.rs` is named explicitly), **not fixed here** —
+     `crates/piperine-codegen` is outside this task's file scope
+     (`tests/ngspice/*`) and the fix requires care beyond a header/fixture
+     task's remit. `noise_switch.vams` is migrated faithfully (matches
+     the `.phdl` original exactly, including the `.off(0)` override) and
+     carries no workaround — the gap is measured, not hidden. Recommend a
+     dedicated follow-up task (own Verifier-audited gate, `piperine-ir`'s
+     `verify_derivatives`-style oracle if applicable) before this feature
+     resumes past T44, since the same defect class could affect any other
+     `@(initial_step)`/`@(above(...))`/`@(cross(...))` event action reading
+     an overridden integer parameter — not yet audited beyond this one
+     reproduction.
+
+  **No tolerance loosened, no test modified, no `.va` model file edited
+  to paper over either gap** (MD-38/C6). `PHDL_HIGH_WATER_MARK` lowered as
+  described above.
+  **Not proceeding to T45/T46 per this task's explicit instruction** —
+  reported here for the next task/orchestrator to decide disposition on
+  the two open gaps (fix in a dedicated `piperine-codegen` task vs. accept
+  and continue past T44 with both documented as known debt, matching how
+  NGP-10 is already carried).
