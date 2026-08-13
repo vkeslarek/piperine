@@ -707,7 +707,6 @@ impl Design {
     /// Mutable access to the modules map. For internal elaboration use
     /// (T22 lowers `piperine_vams::ast::ModuleDecl` into POM `Module`
     /// through here).
-    #[allow(dead_code, reason = "wired by T22 — VAMS→POM module lowering")]
     pub(crate) fn modules_map_mut(&mut self) -> &mut HashMap<String, Module> {
         &mut self.modules
     }

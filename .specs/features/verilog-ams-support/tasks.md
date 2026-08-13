@@ -583,10 +583,10 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-04
 
 **Done when**:
-- [ ] Modules, ports (both declaration styles), parameters, nets with disciplines lower to POM
-- [ ] Instantiation (named + ordered, overrides) produces navigable `Instance`s
-- [ ] MD-25 test: authored hierarchy walkable exactly as written
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Modules, ports (both declaration styles), parameters, nets with disciplines lower to POM
+- [x] Instantiation (named + ordered, overrides) produces navigable `Instance`s
+- [x] MD-25 test: authored hierarchy walkable exactly as written
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): lower VAMS module structure into the POM`
@@ -1444,3 +1444,29 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
     errors) and `piperine-lang-server` (65 errors) — both out of this
     task's scope (Phase 6/7), consistent with design R3's accepted "dark
     middle" and MD-44 §3's relaxed gate.
+
+- **T22** ✅ `<pending commit>` — VAMS→POM structural lowering
+  (`elab/lower/vams.rs`, new `ElabModules` pass in `passes.rs`; 9 tests in
+  `tests/vams_lower_structure.rs`). Ports (both declaration-list and
+  name-list styles, §3.7), internal nets/wires (§3.6.3), `parameter`
+  declarations with defaults (§3.4), and hierarchical instantiation
+  (ordered connections resolved positionally against the target module's
+  own declared port order, named connections resolved by name — never by
+  source order — plus `#(...)` parameter overrides) all lower to the POM.
+  Behavior-block attachment (`analog`/`analog initial`/`initial`/`always`)
+  is included even though not in T22's own Done-When list: VAMS nests
+  behavior bodies directly inside `ModuleItem::Behavior`, so attaching them
+  while walking a module's items is strictly cheaper than deferring it,
+  and every downstream test needs *some* body to assert against.
+  POM-shape discipline (per the mid-batch reminder on MD-44 point 2):
+  `NetType::Discipline(name)` carries the LRM discipline name as-is —
+  no PHDL-style net-capability lattice reintroduced; ports/nets with no
+  explicit discipline fail loud naming Annex F/T26 as the resolution path,
+  rather than guessing or defaulting silently (C6). `target_port_order`
+  reads the callee module's *own* declared order from the symbol table
+  (already populated by `Register`), so instance lowering never depends on
+  connection-list source order. `cargo test -p piperine-lang`: 59 lib +
+  9 new + the 5 already-green VAMS integration targets, still only the
+  same 2 pre-existing documented lib-test failures (array-index fixtures
+  using PHDL `use` syntax, unrelated to this task). `cargo build -p
+  piperine-lang`: zero warnings.

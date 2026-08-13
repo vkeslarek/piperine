@@ -15,9 +15,10 @@
 //! resolution, GAPS width/discipline typechecking). `Register` is VAMS-
 //! shaped from the start (`register.rs`); `FlattenHierarchy` operates on
 //! the POM, not the surface AST, and needed no change. `.specs/features/
-//! verilog-ams-support/tasks.md` T22 (module lowering) through T27 (Annex C
-//! enforcement) rebuild this pipeline's remaining VAMS-shaped stages task
-//! by task.
+//! verilog-ams-support/tasks.md` T22 adds `ElabModules` (module/port/param/
+//! net/instance/behavior lowering, `vams.rs`); T23 through T27 rebuild the
+//! remaining VAMS-shaped stages (natures/disciplines/branches, generate,
+//! Annex F, Annex C) task by task.
 
 use crate::pom::{Design, ElabError};
 
@@ -31,7 +32,7 @@ pub(crate) trait ElabPass {
 }
 
 /// The elaboration pipeline, in execution order.
-pub(crate) const PASSES: &[&dyn ElabPass] = &[&Register, &FlattenHierarchy];
+pub(crate) const PASSES: &[&dyn ElabPass] = &[&Register, &ElabModules, &FlattenHierarchy];
 
 /// Index every top-level item into the elaborator's symbol tables.
 struct Register;
@@ -39,5 +40,20 @@ impl ElabPass for Register {
     fn run(&self, elab: &mut Elaborator, _design: &mut Design) -> Result<(), ElabError> {
         let items = std::mem::take(&mut elab.pending_items);
         elab.register_items(items.iter())
+    }
+}
+
+/// Lower every registered `module`/`macromodule`/`connectmodule` into the
+/// design (T22, VAMS-04).
+struct ElabModules;
+impl ElabPass for ElabModules {
+    fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        let names: Vec<String> = elab.syms.module_decls.keys().cloned().collect();
+        for name in &names {
+            let decl = elab.syms.module_decls[name].clone();
+            let module = elab.elab_module(&decl)?;
+            design.modules_map_mut().insert(name.clone(), module);
+        }
+        Ok(())
     }
 }

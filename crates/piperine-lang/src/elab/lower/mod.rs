@@ -26,6 +26,7 @@ use crate::pom::{ElabError, Design};
 mod flatten;
 mod passes;
 mod register;
+mod vams;
 
 /// The symbol table: all registered top-level declarations. Populated by
 /// the `Register` pass, read by every subsequent pass.
