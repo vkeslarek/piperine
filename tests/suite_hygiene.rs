@@ -681,3 +681,70 @@ fn root_targets_match_the_naming_rule() {
          `ROOT_TARGET_EXEMPTIONS` and move this assertion's expected set with it"
     );
 }
+
+// ─── `.phdl` monotonic-shrink gate (VAMS-11, MD-31, T39) ──────────────────────
+
+/// The committed high-water mark for straggling PHDL/PPR source files during
+/// the Verilog-AMS migration (`.specs/features/verilog-ams-support/design.md`
+/// §7: "a dual-frontend period allowed S2-S4, bounded by a monotonic-shrink
+/// gate" — MD-31, the invariant lives in a test, not a promise). Set at T39
+/// (2026-08-13) to the count measured in the tree the day this gate landed —
+/// `piperine-lang`'s own PHDL *parser* is already gone (T21/T38); this counts
+/// the source *corpus* Phase 8 (T40-T46) still has to migrate one file at a
+/// time, deleting each `.phdl`/`.ppr` original in the same commit that adds
+/// its `.vams`/`.va` twin (VAMS-11's own requirement — "no `.phdl` file
+/// survives past its own migration task").
+///
+/// **This number must only ever go down.** Lower it in the same commit that
+/// lowers the real count (every T40-T46 migration commit does); never raise
+/// it, and never let it drift stale above the true count — T46 is expected to
+/// bring it to exactly `0` and tighten this assertion to `== 0`.
+const PHDL_HIGH_WATER_MARK: usize = 115;
+
+/// Every `.phdl`/`.ppr` file anywhere in the repository (recursive, skipping
+/// `target`/`.git`) — a plain filesystem walk over every file extension, not
+/// a `.rs`-source scan like [`rust_sources`]: the files this gate counts are
+/// PHDL source, not Rust.
+fn phdl_files() -> Vec<PathBuf> {
+    let root = repo_root();
+    let mut out = Vec::new();
+    collect_phdl(&root, &mut out);
+    out
+}
+
+fn collect_phdl(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if path.is_dir() {
+            if name != "target" && name != ".git" {
+                collect_phdl(&path, out);
+            }
+        } else if path.extension().is_some_and(|e| e == "phdl" || e == "ppr") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn phdl_corpus_does_not_grow() {
+    let root = repo_root();
+    let files = phdl_files();
+    let count = files.len();
+    assert!(
+        count <= PHDL_HIGH_WATER_MARK,
+        "`.phdl`/`.ppr` file count is {count}, above the committed high-water mark of \
+         {PHDL_HIGH_WATER_MARK} (VAMS-11) — PHDL is retired (MD-44); no new `.phdl`/`.ppr` \
+         file may be added at all, and every migration task (T40-T46) must delete its \
+         `.phdl`/`.ppr` original in the same commit that adds the `.vams`/`.va` twin. If this \
+         fired from *lowering* `PHDL_HIGH_WATER_MARK` below the real count instead, that means \
+         a migration commit forgot to bump this constant down with it — the two must move \
+         together, never the mark alone. Files found:\n  {}",
+        files
+            .iter()
+            .map(|p| p.strip_prefix(&root).unwrap_or(p).display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}

@@ -827,7 +827,7 @@ T53 → T54 → T55 → T56 → T57 → T58
 
 ---
 
-#### T39: `.phdl` monotonic-shrink gate
+#### T39: `.phdl` monotonic-shrink gate — ✅ DONE (see Progress Log)
 **What**: The gate that makes "no straggling dual frontend" mechanical (MD-31).
 **Where**: `tests/suite_hygiene.rs` (extend)
 **Depends on**: T38 · **Requirement**: VAMS-11
@@ -2399,3 +2399,72 @@ not started.
   happened. Marking this entry closes tasks.md's own instruction to
   "confirm this in tasks.md (mark it done, note it was satisfied by
   T21, do NOT re-delete anything or create a redundant commit)".
+
+- **T39** ✅ `<pending commit>` — `tests/suite_hygiene.rs` gains
+  `phdl_corpus_does_not_grow` (VAMS-11, MD-31): a plain recursive
+  filesystem walk (`phdl_files`/`collect_phdl`, skipping `target`/
+  `.git` — a separate walker from `rust_sources`'s `.rs`-only one, since
+  this gate counts PHDL *source*, not Rust) counts every `.phdl`/`.ppr`
+  file in the tree and asserts the count never exceeds a committed
+  `PHDL_HIGH_WATER_MARK` constant, failing loud with the full file list
+  when it does. Measured today (`find . -name '*.phdl' -o -name
+  '*.ppr'`, excluding `target/`): **115 files** — `tests/ngspice/` 48,
+  `examples/` 24, `crates/piperine-lang/tests/examples/` 14,
+  `crates/piperine-lang/headers/` 13, `crates/piperine-lang/headers/
+  spice/` 12, `tests/spice/` 2, `crates/piperine-project/examples/
+  spice_proj/src/` 1, `crates/piperine-cli/templates/` 1 — set as the
+  mark. (Lower than design.md §4.4's "140 files" estimate; not
+  investigated further since the gate counts the real tree, not the
+  design doc's earlier estimate — Phase 8's own per-task counts are
+  what matter going forward.) Doc comment states the invariant
+  explicitly: the mark drops only in lockstep with the real count (every
+  T40-T46 migration commit lowers both together), never rises, and T46
+  is expected to bring it to exactly `0` and tighten the assertion to
+  `==`.
+  **Discrimination-sensor check performed before committing** (mirrors
+  the Verifier's own technique, done here since this task's only
+  substantive assertion is the shrink gate itself): temporarily set
+  `PHDL_HIGH_WATER_MARK` to `10` — `phdl_corpus_does_not_grow` failed
+  immediately, correctly naming a sample of the real files over the
+  lowered mark; restored to `115` and re-ran green. The gate is live,
+  not vacuous.
+  **Verification**: `cargo test -p piperine --test suite_hygiene`:
+  **9 of 10 tests green**, `phdl_corpus_does_not_grow` included; the
+  10th, `mod_rs_declares_only`, fails on exactly the same pre-existing
+  `crates/piperine-ir/src/catalog/mod.rs` (430 lines) defect flagged
+  out-of-scope since T1 (T37's entry already re-confirmed this same
+  single failure) — unrelated to this task, untouched. `cargo build
+  --workspace`: zero warnings. `cargo test --workspace` (T39's literal
+  "full" gate): still blocked by the same pre-existing `piperine-lang`/
+  `piperine-codegen` test-target compile failures T37's entry documents
+  at length — none touching `.phdl` counting, none newly introduced,
+  none in this batch's scope to fix.
+
+**Phase 7 (S3b) closed. T34-T39 all done** (T38 satisfied by T21, no
+new work; the other five each landed their own commit). `piperine-api`,
+`piperine-plugin`, `piperine-lang-server`, `piperine-python`,
+`piperine-cli`, and the root `piperine` package all build clean with
+zero warnings for the first time since T21 — `cargo build --workspace`
+is fully green. `cargo test --workspace` remains blocked, but narrowly
+and by name: every blocking target was independently traced to T21's or
+T32's own documented pre-existing compile-failure inventory
+(`piperine-lang`: `cover_parse`, `constraint_elab`, `constraint_class`,
+`elab`, `operator_and_impl_method_registries`, `fmt_doc_comment`,
+`extern_missing_native_binding`, `pom_serde`, `prelude`,
+`spice_headers`, `constraint_scope`; `piperine-codegen`: `digital_jit`,
+`resolve_lowering`, `silent_bugs`, `digital_codegen_gaps`,
+`margin_lowering`, `param_diff`) — all PHDL-fixture-string or deleted-
+POM-surface test files whose fix is Phase 8 corpus migration (T40-T46),
+not a Phase 7 deliverable. Runtime-reachable test suites (`piperine-api`,
+`piperine-plugin`, `piperine-lang-server`, the root package's own
+`run_examples`/`suite_hygiene`) all execute now and fail exactly where
+expected — real PHDL fixture syntax rejected by the VAMS parser, or a
+corpus not yet migrated — never a new regression from T34-T39's own
+changes, confirmed individually per task rather than assumed. Ready for
+Phase 8 (corpus migration, T40+), not started; MD-45's dv-tester/
+dv-gradients/host-library debt (tasks.md Open Item #5, `.specs/STATE.md`
+MD-45) remains open beyond the narrow `@device`/`@port` piece T35
+landed — the broader capability/generics/bundle/enum/constraint-block
+surface rebuild on VAMS attribute syntax has no task yet, same as
+before this batch; T35's entry documents exactly which piece it did and
+did not close.
