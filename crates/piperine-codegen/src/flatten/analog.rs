@@ -59,8 +59,17 @@ fn event_expr_to_sources(event: &EventExpr) -> Vec<EventSource> {
         // ever runs; this is a defensive empty list, not a live path.
         return vec![];
     };
-    let PomExpr::Call { name, args, .. } = e else { return vec![] };
-    match name.as_str() {
+    // `initial_step`/`final_step` take no mandatory args, so the parser
+    // accepts the bare-identifier spelling (`@(initial_step)`, no parens)
+    // as well as the zero/multi-arg call form (`@(initial_step("dc"))`) —
+    // LRM §5.6's analog event functions. `cross`/`above`/`timer` always
+    // carry at least one arg and so only ever parse as `Call`.
+    let (name, args): (&str, &[PomExpr]) = match e {
+        PomExpr::Call { name, args, .. } => (name.as_str(), args.as_slice()),
+        PomExpr::Ident { name, .. } => (name.as_str(), &[]),
+        _ => return vec![],
+    };
+    match name {
         "initial_step" => vec![EventSource::InitialStep],
         "final_step" => vec![EventSource::FinalStep],
         // First arg is the watched expression; a missing arg defaults to a
