@@ -82,8 +82,10 @@ impl Kinded for Port { fn kind(&self) -> Kind { Kind::Port } }
 /// Declaration only — sampling the distribution is dv-gradients' scope.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Distribution {
-    /// The distribution kind, resolved against `headers/statistics.phdl`
-    /// (`gauss`, `uniform`).
+    /// The distribution kind (`gauss`, `uniform`). Formerly resolved
+    /// against `headers/statistics.phdl`, deleted at T40 (MD-45 — the
+    /// `tol`-clause dv-core surface this backs has no VAMS Annex A
+    /// production and stays dark until a future phase rebuilds it).
     pub kind: String,
     /// The keyed arguments, evaluated as elaboration constants in module
     /// param scope (e.g. `sigma = 0.005 / sqrt(w * l)`).

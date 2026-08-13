@@ -699,7 +699,7 @@ fn root_targets_match_the_naming_rule() {
 /// lowers the real count (every T40-T46 migration commit does); never raise
 /// it, and never let it drift stale above the true count — T46 is expected to
 /// bring it to exactly `0` and tighten this assertion to `== 0`.
-const PHDL_HIGH_WATER_MARK: usize = 115;
+const PHDL_HIGH_WATER_MARK: usize = 102;
 
 /// Every `.phdl`/`.ppr` file anywhere in the repository (recursive, skipping
 /// `target`/`.git`) — a plain filesystem walk over every file extension, not
