@@ -766,9 +766,9 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-06
 
 **Done when**:
-- [ ] RC analog + digital counter authored in `.vams` simulate through `piperine-api`
-- [ ] Results match the existing PHDL fixture within the **existing** tolerance contract (never loosened)
-- [ ] Gate passes: `cargo test --workspace`
+- [~] RC analog authored in `.vams` simulates (DC + transient) through `piperine_solver` directly — **not** `piperine-api` (broken, T34/Phase 7); digital counter **not delivered**, genuine pre-existing blocker, see Progress Log
+- [x] Results match an analytic closed-form golden within a tolerance matching `ToleranceContract::DC` (reltol 1e-3/abstol 1e-6) — restated locally, not imported (support harness needs `piperine-api`)
+- [~] Gate passes: `cargo test --workspace` — not achievable pre-Phase-7 (many unrelated targets fail to build); `cargo test -p piperine-codegen` green for the new target (verified via temp copy), see Progress Log
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(vams): end-to-end vertical slice matching the PHDL baseline`
@@ -1788,3 +1788,115 @@ this batch). Ready for Phase 6 (S3a, codegen retarget, T28+).
 **Phase 6 (S3a) closed.** `piperine-codegen` builds clean
 (zero warnings) against the VAMS AST for the first time since T21.
 Ready for T33 — the end-to-end vertical slice.
+
+- **T33** ⚠️ (partial — see below) `<pending commit>` — `tests/
+  vams_vertical_slice.rs`: an RC circuit authored entirely in `.vams`
+  (`vsrc`/`resistor`/`capacitor` leaf modules instantiated under a
+  `top` module, LRM `analog begin V(p,n) <+ …; end` syntax throughout)
+  parses, elaborates, lowers (`resolve::lower_bodies`), builds
+  (`CircuitCompiler::build_circuit_mapped`), and simulates on the
+  **unmodified** native solver via two tests: a DC operating-point
+  check (`v(vout) = v(vin) = 1.0 V` — the capacitor is open at DC) and
+  a transient run (5τ, dt = τ/50) asserting `v(vout)` tracks the
+  closed-form RC solution's settled value at **every** recorded step
+  within a tolerance matching `ToleranceContract::DC` (reltol 1e-3,
+  abstol 1e-6, restated locally). Both tests verified green (temporarily
+  copied into `crates/piperine-codegen/tests/` to run them, since the
+  root package doesn't build yet — see SPEC_DEVIATION below — then the
+  copy was deleted; the committed file lives only at the T33-specified
+  path `tests/vams_vertical_slice.rs`).
+
+  **SPEC_DEVIATION 1 (recorded, not silent) — the transient test is
+  steady-state tracking, not a literal step edge.** The circuit's
+  ideal source is `V(p,n) <+ dc;`, a constant — real Verilog-A's own
+  ideal-source idiom (T32's entry already established this replaces
+  PHDL's deleted `<-`/UIC path). `piperine_ir::ops::Operator::
+  transition`'s own test suite documents "the DC-op seed settles at
+  the input — no ramp from 0", so the transient run's t=0 state is
+  already the charged DC operating point, not an uncharged capacitor.
+  A literal step trace needs either a pulse source (not migrated —
+  P2/Phase 8 stdlib corpus work) or UIC seeding via
+  `@(initial_step) V(p,n) <+ ic;`, which has no lowering path yet
+  (event actions currently only lower `Assign`, not `Contribution`,
+  inside an event body — a real gap, flagged, not invented around).
+  What the delivered test DOES prove, non-trivially: the `ddt`
+  charge/Jacobian codegen path (T28-T32's entire retarget) integrates
+  correctly under the TrBdf2 stepper without drifting off the true
+  solution across 250+ steps — a wrong charge residual or reactive
+  Jacobian would plausibly show up as drift or a convergence failure
+  here, not a silent pass (confirmed non-shallow: the test was run
+  once with a deliberately-flipped sign on the charge term during
+  drafting and failed immediately with a large drift, before being
+  reverted — informal, not a committed mutation test, but real
+  verification the assertion is load-bearing).
+
+  **SPEC_DEVIATION 2 (recorded, not silent) — `piperine-api` is
+  bypassed entirely, and `cargo test --workspace` cannot pass.** T33's
+  own text says "simulate through `piperine-api`" and "Reuses:
+  `tests/support/ngspice.rs` `ToleranceContract` — unmodified", gate
+  `cargo test --workspace`. None of the three is achievable within
+  this batch: `piperine-api` (T34, Phase 7) does not build (20
+  errors — `piperine_lang::pom::QuantityClass`/`StmtClass` and
+  `Module::constraints()` no longer exist, same MD-45 fallout T30/T32
+  already worked around inside `piperine-codegen`); `tests/support/
+  ngspice.rs` imports `piperine::{Session, ...}` and so doesn't build
+  either; and because the root `piperine` package itself depends on
+  `piperine-api`, **every** root-level test target — not just this
+  new one — fails to build right now, which is also why `cargo test
+  --workspace` cannot run to completion (confirmed: `cargo build
+  -p piperine-lang` also still fails on old T21-debt fixtures like
+  `tests/bench_removed.rs` calling the deleted `parse_str`, unrelated
+  to this batch). This test therefore talks to `piperine_solver`
+  directly (the same low-level API `crates/piperine-codegen/tests/
+  flatten_hierarchy.rs` already established) and restates
+  `ToleranceContract::DC`'s exact numeric bound locally rather than
+  importing a harness that cannot compile. Per-crate build status
+  measured directly (`cargo build -p <crate>`, not the cascading
+  `--workspace` run): `piperine-lang` 0 errors, `piperine-vams` 0,
+  `piperine-codegen` 0, `piperine-solver` 0, `piperine-ir` 0 (this
+  feature's own crates, all clean); `piperine-api` 20, `piperine-plugin`
+  20, `piperine-lang-server` 66, `piperine-cli` 20, `piperine-python`
+  20 (all Phase 7, T34+, out of this batch's scope — none touched).
+
+  **Genuine architecture gap found, not fixed here, flagged per the
+  batch brief's own escalation instruction**: VAMS-06's story asks for
+  "a simple digital counter" alongside the RC circuit. A counter needs
+  persistent register state (`var count`, written inside a clocked
+  `always @(posedge clk)` block). `crates/piperine-lang/src/elab/
+  lower/vams.rs:122`'s `ModuleItem::Var(_) => {}` arm — landed in
+  Phase 5 (T22), **before** this batch, never touched by T28-T33 —
+  does not lower module-level `var`/`integer`/`real` declarations into
+  the POM at all. Confirmed by direct inspection immediately before
+  writing this entry (grep still shows the no-op arm). Consequence:
+  **no `.vams` source can declare working register state through the
+  current elaboration pipeline** — not just counters, any
+  D-flip-flop/latch/register is equally blocked, since all of them
+  need persistent storage. This is squarely a `piperine-lang`
+  elaboration gap (whoever lowers `ModuleItem::Var` needs to add a
+  `Module::vars` entry the way `ModuleItem::Param`/`Instantiation`
+  already do), not a codegen/emission gap — `piperine-codegen`'s own
+  digital kernel (T31/T32) already has everything needed on the
+  consuming side (`SymbolTable::add_var`, `DigitalBody::regs`/
+  `reg_inits`, `Builder::store_var`/`load_var`) and would work the
+  moment the POM carried the var. Not fixed here: fixing it is Phase
+  5 (`elab/lower/vams.rs`) work, outside "codegen retarget," and
+  risks scope creep this batch's brief explicitly warned against.
+  Flagged for the orchestrator/user rather than decided unilaterally,
+  per the batch brief's own "STOP and report clearly" instruction for
+  a gap design/tasks.md didn't anticipate.
+
+  **Verdict**: T33 delivers a real, verified, passing end-to-end VAMS
+  analog proof (VAMS-02's contribution-statement path, VAMS-06's core
+  claim for the analog half) but does **not** deliver VAMS-06's
+  digital-counter half or its literal `piperine-api`/`cargo test
+  --workspace` gate — both blocked by out-of-batch-scope gaps
+  (Phase 7 not started; a Phase 5 elaboration gap discovered, not
+  introduced, by this batch). Recorded as partial, not silently
+  marked done.
+
+**Phase 6 (S3a) status: T28-T32 fully closed; T33 partially closed**
+(analog half delivered and verified; digital-counter half blocked on
+a Phase 5 gap, `piperine-api` integration blocked on Phase 7 — both
+out of this batch's assigned scope, T28-T33). This batch stops here
+per its own instructions ("Do NOT proceed past T33"). Phase 7
+(downstream retarget + PHDL removal, T34+) is next, not started.
