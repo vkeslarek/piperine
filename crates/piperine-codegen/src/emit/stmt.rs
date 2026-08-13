@@ -1,11 +1,12 @@
 //! Statement-level emission: [`Builder::emit_stmt`] dispatches on the POM
-//! `Stmt` — a fixed set that doesn't need a trait — plus its helpers
-//! (assignment, `match`, guarded/if-else control flow).
+//! `Stmt` (`piperine_vams::ast::Stmt`) — a fixed set that doesn't need a
+//! trait — plus its helpers (assignment, `case`, guarded/if-else control
+//! flow).
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, InstBuilder, MemFlags, TrapCode, Value};
 
-use piperine_lang::parse::ast::{BindOp, Expr, Pattern, Stmt};
+use piperine_vams::ast::{CaseArm, CaseKind, Expr, Stmt};
 
 use crate::error::CodegenError;
 use crate::resolve::{NodeId, Type, VarId};
@@ -19,8 +20,8 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     pub fn emit_if_branch(
         &mut self,
         flag: Value,
-        then_body: &[Stmt],
-        else_body: &[Stmt],
+        then_body: &Stmt,
+        else_body: Option<&Stmt>,
     ) -> Result<(), CodegenError> {
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
@@ -30,15 +31,13 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
         self.builder.switch_to_block(then_block);
         self.builder.seal_block(then_block);
-        for stmt in then_body {
-            self.emit_stmt(stmt)?;
-        }
+        self.emit_stmt(then_body)?;
         self.builder.ins().jump(merge_block, &[]);
 
         self.builder.switch_to_block(else_block);
         self.builder.seal_block(else_block);
-        for stmt in else_body {
-            self.emit_stmt(stmt)?;
+        if let Some(else_body) = else_body {
+            self.emit_stmt(else_body)?;
         }
         self.builder.ins().jump(merge_block, &[]);
 
@@ -51,60 +50,79 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// This is the statement-level dispatch — moved here because statements are
     /// a fixed set and don't need a trait.
     pub fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), CodegenError> {
-        use piperine_lang::parse::ast::Stmt as S;
+        use Stmt as S;
         match stmt {
-            S::Bind { dest, op, src } => {
-                let value = src.emit(self)?;
-                match op {
-                    BindOp::Assign | BindOp::Force => {
-                        self.emit_assign(dest, value)?;
-                    }
-                    BindOp::Contrib => {
-                        return Err(CodegenError::unsupported(
-                            "analog contribution `<+` in a digital body",
-                        ));
-                    }
+            S::Null { .. } => Ok(()),
+            // Blocking vs non-blocking assignment: full IEEE-1364 scheduling
+            // semantics (a non-blocking RHS read happening-before every
+            // blocking write in the same timestep, deferred until the
+            // active-region's NBA update) is P3/VAMS-20 scope — today's
+            // digital kernel already only covers the subset PHDL's own
+            // `BindOp::Assign` did (immediate write), so both forms emit
+            // identically here, same as before the frontend swap. Tracked
+            // as a known simplification, not a silent behavior change from
+            // what this crate already did.
+            S::Assign { target, value, .. } | S::NonBlockingAssign { target, value, .. } => {
+                let v = value.emit(self)?;
+                self.emit_assign(target, v)
+            }
+            S::Contribution { .. } => Err(CodegenError::unsupported(
+                "analog contribution `<+` in a digital body",
+            )),
+            S::Block { stmts, .. } => {
+                for s in stmts {
+                    self.emit_stmt(s)?;
                 }
                 Ok(())
             }
-            S::VarDecl { name, ty: _, default } => {
-                if let Some(init) = default {
-                    let value = init.emit(self)?;
-                    if let Some(&id) = self.resolver.vars.get(name) {
-                        self.store_var(id, value)?;
-                    }
-                }
-                Ok(())
-            }
-            S::If { cond, then_body, else_body } => {
+            S::If { cond, then_branch, else_branch, .. } => {
                 let c = cond.emit(self)?;
                 let flag = self.truthy(c)?;
-                let else_stmts: &[Stmt] = match else_body {
-                    Some(b) => &b.stmts,
-                    None => &[],
-                };
-                self.emit_if_branch(flag, &then_body.stmts, else_stmts)
+                self.emit_if_branch(flag, then_branch, else_branch.as_deref())
             }
-            S::Match { expr, arms } => {
-                let scrutinee = expr.emit(self)?;
-                self.emit_match(scrutinee, arms)
+            S::Case { kind, selector, arms, .. } => {
+                if !matches!(kind, CaseKind::Case) {
+                    // casex/casez wildcard (X/Z-position) matching and the
+                    // analog-only `analog_case` form are P3/VAMS-18/19
+                    // scope — fail loud rather than silently treating a
+                    // wildcard case as a plain equality case, which would
+                    // give a wrong (over-strict) match result.
+                    return Err(CodegenError::unsupported(format!(
+                        "{kind:?} (wildcard case matching) in digital codegen"
+                    )));
+                }
+                let scrutinee = selector.emit(self)?;
+                self.emit_case(scrutinee, arms)
             }
-            S::Event { .. } => Err(CodegenError::Invalid(
-                "clocked block in combinational context".into(),
+            S::EventControl { .. } => Err(CodegenError::Invalid(
+                "nested event control outside a top-level clocked block".into(),
             )),
-            S::Diagnostic { .. } => Ok(()), // collected, not executed
-            S::Return(_) => Ok(()),         // handled by inliner
-            S::Expr(_) => Ok(()),
-            S::For { .. } => Err(CodegenError::unsupported(
-                "`for` loop — must be unrolled at elaboration",
-            )),
+            // `$display`-family diagnostic system tasks: collected/reported
+            // elsewhere (not executed by this JIT path), matching PHDL's
+            // own `Diagnostic` no-op. A genuine user-defined `task` call
+            // has no lowering (VAMS `task`/`function` decls aren't lowered
+            // into the POM yet — MD-45, see `resolve/pom/body.rs`).
+            S::TaskCall { name, .. } => match name.trim_start_matches('$') {
+                "display" | "write" | "strobe" | "monitor" | "warning" | "warn" | "error"
+                | "fatal" | "info" | "finish" | "stop" => Ok(()),
+                other => Err(CodegenError::unsupported(format!("task call `{other}`"))),
+            },
+            S::For { .. } | S::While { .. } | S::Repeat { .. } | S::Forever { .. } => {
+                Err(CodegenError::unsupported(
+                    "runtime loop statement (for/while/repeat/forever) in digital codegen",
+                ))
+            }
+            S::DelayControl { .. } => {
+                Err(CodegenError::unsupported("`#delay` control in digital codegen"))
+            }
+            S::Disable { .. } => Err(CodegenError::unsupported("`disable` in digital codegen")),
         }
     }
 
     /// Assign to a destination (var or net).
     fn emit_assign(&mut self, dest: &Expr, value: Typed) -> Result<(), CodegenError> {
         match dest {
-            Expr::Ident(name) => {
+            Expr::Ident { name, .. } => {
                 if let Some(&id) = self.resolver.vars.get(name) {
                     self.store_var(id, value)?;
                     return Ok(());
@@ -170,16 +188,14 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         Ok(())
     }
 
-    /// Emit a match statement.
-    fn emit_match(
-        &mut self,
-        scrutinee: Typed,
-        arms: &[piperine_lang::parse::ast::StmtMatchArm],
-    ) -> Result<(), CodegenError> {
+    /// Emit a `case` statement (LRM Annex A.6.7.1): the first arm whose
+    /// label set contains a value equal to the scrutinee runs; a `default`
+    /// arm (`labels: None`) always matches when reached.
+    fn emit_case(&mut self, scrutinee: Typed, arms: &[CaseArm]) -> Result<(), CodegenError> {
         match arms {
             [] => Ok(()),
             [arm, rest @ ..] => {
-                let flag = self.pattern_flag(scrutinee, &arm.pat)?;
+                let flag = self.case_arm_flag(scrutinee, arm)?;
                 let then_block = self.builder.create_block();
                 let merge_block = self.builder.create_block();
                 let else_block = self.builder.create_block();
@@ -187,9 +203,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
                 self.builder.switch_to_block(then_block);
                 self.builder.seal_block(then_block);
-                for stmt in &arm.body.stmts {
-                    self.emit_stmt(stmt)?;
-                }
+                self.emit_stmt(&arm.body)?;
                 self.builder.ins().jump(merge_block, &[]);
 
                 self.builder.switch_to_block(else_block);
@@ -200,7 +214,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     // covered), trap loudly rather than silently falling through.
                     self.builder.ins().trap(TrapCode::unwrap_user(5));
                 } else {
-                    self.emit_match(scrutinee, rest)?;
+                    self.emit_case(scrutinee, rest)?;
                     self.builder.ins().jump(merge_block, &[]);
                 }
 
@@ -211,47 +225,33 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
     }
 
-    /// The i1 flag for "scrutinee matches pattern".
-    fn pattern_flag(&mut self, scrutinee: Typed, pattern: &Pattern) -> Result<Value, CodegenError> {
-        match pattern {
-            Pattern::Wildcard => Ok(self.builder.ins().iconst(types::I8, 1)),
-            Pattern::Literal(val) => {
-                let value = Typed::int(self.builder_i64(*val as i64));
-                let value = self.coerce(value, scrutinee.ty)?;
-                match scrutinee.ty {
-                    DigTy::Real => Ok(self.builder.ins().fcmp(FloatCC::Equal, scrutinee.value, value.value)),
-                    DigTy::Int | DigTy::Quad => {
-                        Ok(self.builder.ins().icmp(IntCC::Equal, scrutinee.value, value.value))
-                    }
+    /// The i1 flag for "scrutinee matches this arm's label set" — `None`
+    /// (the `default` arm) always matches; otherwise any label equal to
+    /// the scrutinee matches (OR'd).
+    fn case_arm_flag(&mut self, scrutinee: Typed, arm: &CaseArm) -> Result<Value, CodegenError> {
+        let Some(labels) = &arm.labels else {
+            return Ok(self.builder.ins().iconst(types::I8, 1));
+        };
+        let mut flag: Option<Value> = None;
+        for label in labels {
+            let label_val = label.emit(self)?;
+            let label_val = self.coerce(label_val, scrutinee.ty)?;
+            let eq = match scrutinee.ty {
+                DigTy::Real => self.builder.ins().fcmp(FloatCC::Equal, scrutinee.value, label_val.value),
+                DigTy::Int | DigTy::Quad => {
+                    self.builder.ins().icmp(IntCC::Equal, scrutinee.value, label_val.value)
                 }
-            }
-            Pattern::Path(p) => {
-                let name = if p.segments.len() == 1 {
-                    &p.segments[0]
-                } else {
-                    p.segments.last().unwrap()
-                };
-                Err(CodegenError::unsupported(format!(
-                    "enum pattern `{name}` — enum resolution not yet wired"
-                )))
-            }
-            Pattern::BitPattern(s) => match s.as_str() {
-                "?" => Ok(self.builder.ins().iconst(types::I8, 1)),
-                "0" | "1" => {
-                    let target = i64::from(s.as_str() == "1");
-                    let scrutinee = self.coerce(scrutinee, DigTy::Quad)?;
-                    let target_val = self.builder_i64(target);
-                    Ok(self.builder.ins().icmp(IntCC::Equal, scrutinee.value, target_val))
-                }
-                _ => Err(CodegenError::unsupported(
-                    "multi-bit patterns in a digital `match` (bus signals)",
-                )),
-            },
+            };
+            flag = Some(match flag {
+                None => eq,
+                Some(prev) => self.builder.ins().bor(prev, eq),
+            });
         }
+        Ok(flag.unwrap_or_else(|| self.builder.ins().iconst(types::I8, 0)))
     }
 
     /// Emit a guarded clocked block: `if fired[index] { body }`.
-    pub fn emit_guarded_block(&mut self, index: usize, body: &[Stmt]) -> Result<(), CodegenError> {
+    pub fn emit_guarded_block(&mut self, index: usize, body: &Stmt) -> Result<(), CodegenError> {
         let fired = self.pointers.expect("digital context").fired;
         let fired_val = self.builder.ins().load(
             types::I64,
@@ -261,6 +261,6 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         );
         let zero = self.builder.ins().iconst(types::I64, 0);
         let flag = self.builder.ins().icmp(IntCC::NotEqual, fired_val, zero);
-        self.emit_if_branch(flag, body, &[])
+        self.emit_if_branch(flag, body, None)
     }
 }

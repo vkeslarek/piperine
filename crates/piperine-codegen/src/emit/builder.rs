@@ -8,7 +8,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, FuncRef, InstBuilder, MemFlags, Value};
 use cranelift_frontend::FunctionBuilder;
 
-use piperine_lang::parse::ast::{BinaryOp, Expr};
+use piperine_vams::ast::Expr;
 
 use crate::resolve::{BinOp, LoweredBody, NodeId, ParamId, Type, UnOp, VarId};
 use crate::kernel::digital::compile::{Pointers, VarReads};
@@ -310,22 +310,11 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         })
     }
 
-    /// Dispatch a call expression: math function? analog operator? user function? branch access?
-    pub fn call_expr(&mut self, func: &Expr, args: &[Expr]) -> Result<Typed, CodegenError> {
-        let Expr::Ident(name) = func else {
-            return Err(CodegenError::unsupported("non-identifier call target"));
-        };
-        // Branch access: V(p,n) or I(p,n)
-        match name.as_str() {
-            "V" | "I" => {
-                let plus = ident_from_expr(args.first()).unwrap_or_default();
-                let minus = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
-                let plus_id = self.resolve_node(&plus)?;
-                let minus_id = self.resolve_node(&minus)?;
-                return self.load_branch(plus_id, minus_id);
-            }
-            _ => {}
-        }
+    /// Dispatch a call expression: math function? user function? (`V`/`I`
+    /// branch access is `Expr::AccessFunction` now, a dedicated node —
+    /// dispatched by `Codegen::emit` straight to [`Builder::branch_access`],
+    /// never reaching here.)
+    pub fn call_expr(&mut self, name: &str, args: &[Expr]) -> Result<Typed, CodegenError> {
         // Math function
         if math::math_fn(name).is_some() {
             return self.emit_math(name, args);
@@ -333,14 +322,27 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         // User function — inline by substitution, same approach as the
         // analog inliner (`resolve/pom/expr.rs::inline_user_fn`): bind each
         // param name to its call-site argument expression, walk the body
-        // (Bind/VarDecl update the substitution map, Return yields the
-        // final expression), then emit the substituted expression right
-        // here via the existing `Codegen` dispatch.
+        // (Assign updates the substitution map, Return yields the final
+        // expression), then emit the substituted expression right here via
+        // the existing `Codegen` dispatch. Currently unreachable — VAMS
+        // `analog function`/`function` decls aren't lowered into the POM's
+        // `SymbolTable` yet (MD-45), same documented gap as the analog
+        // path — kept for that future producer, not deleted.
         if let Some(&fn_id) = self.resolver.fns.get(name) {
             let inlined = self.inline_user_fn(fn_id, name, args)?;
             return inlined.emit(self);
         }
         Err(CodegenError::unsupported(format!("unknown call target `{name}`")))
+    }
+
+    /// Load an analog branch voltage V(pos) - V(neg) for the A2D bridge —
+    /// `Expr::AccessFunction`'s dedicated dispatch (LRM §5.3/§5.4).
+    pub fn branch_access(&mut self, pos: &Expr, neg: Option<&Expr>) -> Result<Typed, CodegenError> {
+        let plus = ident_from_expr(Some(pos)).unwrap_or_default();
+        let minus = neg.and_then(|n| ident_from_expr(Some(n))).unwrap_or_else(|| "0".into());
+        let plus_id = self.resolve_node(&plus)?;
+        let minus_id = self.resolve_node(&minus)?;
+        self.load_branch(plus_id, minus_id)
     }
 
     /// Expand a user-function call into a single substituted [`Expr`] — pure
@@ -382,26 +384,19 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             subst.insert(pname, value);
         }
 
-        for stmt in &function.body {
-            use piperine_lang::parse::ast::Stmt as S;
-            match stmt {
-                S::Return(e) => return Ok(subst_expr(e, &subst)),
-                S::Bind { dest: Expr::Ident(bind_name), op: _, src } => {
-                    let val = subst_expr(src, &subst);
-                    subst.insert(bind_name.clone(), val);
-                }
-                S::VarDecl { name: var_name, default: Some(e), .. } => {
-                    let val = subst_expr(e, &subst);
-                    subst.insert(var_name.clone(), val);
-                }
-                _ => {
-                    return Err(CodegenError::unsupported(format!(
-                        "function `{name}`: statement kind in digital fn inlining (only Bind/VarDecl/Return supported)"
-                    )));
-                }
-            }
-        }
-        Err(CodegenError::unsupported(format!("function `{name}`: no `return` statement in body")))
+        // VAMS functions have no explicit `return` statement — a `function`
+        // body's result is the assignment to the function's own name (LRM
+        // §5.9 for `analog function`, 1364 for `function`). This substitutes
+        // a `name = expr;`/`name <= expr;` assignment matching the
+        // function's own name as the "return"; every other Assign updates
+        // the substitution map for later reads.
+        let mut result: Option<Expr> = None;
+        inline_fn_stmts(&function.body, name, &mut subst, &mut result)?;
+        result.ok_or_else(|| {
+            CodegenError::unsupported(format!(
+                "function `{name}`: body never assigns to its own name (no result)"
+            ))
+        })
     }
 
     /// Load an analog branch voltage V(plus) - V(minus) for the A2D bridge.
@@ -878,13 +873,49 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
 pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
     match e? {
-        Expr::Ident(s) => Some(s.clone()),
-        Expr::Field(base, field) => match base.as_ref() {
-            Expr::Ident(base_name) => Some(format!("{base_name}.{field}")),
-            _ => None,
-        },
+        // Hierarchical/scoped names (`load.p`) are already one joined
+        // `Ident` string by the time they reach the AST — the grammar does
+        // the joining (`piperine_vams::ast::expr`'s own doc comment).
+        Expr::Ident { name, .. } => Some(name.clone()),
         _ => None,
     }
+}
+
+/// Walk a VAMS function body, substituting parameter names for their
+/// call-site argument expressions and threading the result to `out` when a
+/// statement assigns to the function's own name (`fn_name`) — VAMS's
+/// `return`-less function-result convention (LRM §5.9/1364: a function's
+/// result is whatever its own name was last assigned). Mirrors
+/// `resolve/pom/expr.rs::inline_fn_body`'s substitution strategy for the
+/// digital `Codegen` path, which walks the same raw POM `Stmt`/`Expr` AST
+/// but never runs through that resolved-analog lowering pass.
+fn inline_fn_stmts(
+    stmts: &[piperine_vams::ast::Stmt],
+    fn_name: &str,
+    subst: &mut HashMap<String, Expr>,
+    out: &mut Option<Expr>,
+) -> Result<(), CodegenError> {
+    use piperine_vams::ast::Stmt as S;
+    for stmt in stmts {
+        match stmt {
+            S::Assign { target: Expr::Ident { name: bind_name, .. }, value, .. }
+            | S::NonBlockingAssign { target: Expr::Ident { name: bind_name, .. }, value, .. } => {
+                let val = subst_expr(value, subst);
+                if bind_name == fn_name {
+                    *out = Some(val.clone());
+                }
+                subst.insert(bind_name.clone(), val);
+            }
+            S::Block { stmts, .. } => inline_fn_stmts(stmts, fn_name, subst, out)?,
+            S::If { .. } | S::Case { .. } => {
+                return Err(CodegenError::unsupported(format!(
+                    "function `{fn_name}`: control-flow statement in digital fn inlining — only straight-line assignment supported"
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Substitute every free `Ident` in `expr` found in `subst`, recursively —
@@ -892,62 +923,63 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 /// `resolve/pom/expr.rs::subst_expr`, same `Expr` type, kept local to avoid
 /// depending on the analog-lowering-only `resolve::pom` module).
 fn subst_expr(expr: &Expr, subst: &HashMap<String, Expr>) -> Expr {
-    use piperine_lang::parse::ast::Block;
-    fn subst_block(block: &Block, subst: &HashMap<String, Expr>) -> Block {
-        Block {
-            stmts: block.stmts.clone(),
-            expr: block.expr.as_ref().map(|e| Box::new(subst_expr(e, subst))),
-        }
-    }
     match expr {
-        Expr::Ident(name) => subst.get(name).cloned().unwrap_or_else(|| expr.clone()),
-        Expr::Unary(op, x) => Expr::Unary(op.clone(), Box::new(subst_expr(x, subst))),
-        Expr::Binary(l, op, r) => {
-            Expr::Binary(Box::new(subst_expr(l, subst)), op.clone(), Box::new(subst_expr(r, subst)))
+        Expr::Ident { name, .. } => subst.get(name).cloned().unwrap_or_else(|| expr.clone()),
+        Expr::Unary { span, op, operand } => {
+            Expr::Unary { span: *span, op: *op, operand: Box::new(subst_expr(operand, subst)) }
         }
-        Expr::Call(f, args) => {
-            let f = subst_expr(f, subst);
-            let args: Vec<Expr> = args.iter().map(|a| subst_expr(a, subst)).collect();
-            Expr::Call(Box::new(f), args)
-        }
-        Expr::SysCall(name, args) => {
-            let args: Vec<Expr> = args.iter().map(|a| subst_expr(a, subst)).collect();
-            Expr::SysCall(name.clone(), args)
-        }
-        Expr::If { cond, then_body, else_body } => Expr::If {
-            cond: Box::new(subst_expr(cond, subst)),
-            then_body: subst_block(then_body, subst),
-            else_body: subst_block(else_body, subst),
+        Expr::Binary { span, op, lhs, rhs } => Expr::Binary {
+            span: *span,
+            op: *op,
+            lhs: Box::new(subst_expr(lhs, subst)),
+            rhs: Box::new(subst_expr(rhs, subst)),
         },
-        Expr::Block(b) => Expr::Block(subst_block(b, subst)),
-        Expr::Cast(t, x) => Expr::Cast(t.clone(), Box::new(subst_expr(x, subst))),
-        Expr::Field(base, field) => Expr::Field(Box::new(subst_expr(base, subst)), field.clone()),
-        Expr::Index(base, idx) => {
-            Expr::Index(Box::new(subst_expr(base, subst)), Box::new(subst_expr(idx, subst)))
+        Expr::Ternary { span, cond, then_branch, else_branch } => Expr::Ternary {
+            span: *span,
+            cond: Box::new(subst_expr(cond, subst)),
+            then_branch: Box::new(subst_expr(then_branch, subst)),
+            else_branch: Box::new(subst_expr(else_branch, subst)),
+        },
+        Expr::Call { span, name, args } => Expr::Call {
+            span: *span,
+            name: name.clone(),
+            args: args.iter().map(|a| subst_expr(a, subst)).collect(),
+        },
+        Expr::SystemFunctionCall { span, name, args } => Expr::SystemFunctionCall {
+            span: *span,
+            name: name.clone(),
+            args: args.iter().map(|a| subst_expr(a, subst)).collect(),
+        },
+        Expr::AccessFunction { span, function, pos, neg } => Expr::AccessFunction {
+            span: *span,
+            function: function.clone(),
+            pos: Box::new(subst_expr(pos, subst)),
+            neg: neg.as_ref().map(|n| Box::new(subst_expr(n, subst))),
+        },
+        Expr::Index { span, base, index } => Expr::Index {
+            span: *span,
+            base: Box::new(subst_expr(base, subst)),
+            index: Box::new(subst_expr(index, subst)),
+        },
+        Expr::PartSelect { span, base, msb, lsb } => Expr::PartSelect {
+            span: *span,
+            base: Box::new(subst_expr(base, subst)),
+            msb: Box::new(subst_expr(msb, subst)),
+            lsb: Box::new(subst_expr(lsb, subst)),
+        },
+        Expr::Concat { span, parts } => {
+            Expr::Concat { span: *span, parts: parts.iter().map(|p| subst_expr(p, subst)).collect() }
         }
-        _ => expr.clone(),
+        Expr::Replication { span, count, parts } => Expr::Replication {
+            span: *span,
+            count: Box::new(subst_expr(count, subst)),
+            parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
+        },
+        Expr::Number { .. } | Expr::Str { .. } => expr.clone(),
     }
 }
 
-/// Map a POM `BinaryOp` to the IR `BinOp` (shared by digital and analog paths).
-pub(crate) fn lower_binop_pom(op: BinaryOp) -> crate::resolve::BinOp {
-    use piperine_lang::parse::ast::BinaryOp as P;
-    match op {
-        P::Add => crate::resolve::BinOp::Add,
-        P::Sub => crate::resolve::BinOp::Sub,
-        P::Mul => crate::resolve::BinOp::Mul,
-        P::Div => crate::resolve::BinOp::Div,
-        P::Rem => crate::resolve::BinOp::Rem,
-        P::Eq => crate::resolve::BinOp::Eq,
-        P::Neq => crate::resolve::BinOp::Ne,
-        P::Lt => crate::resolve::BinOp::Lt,
-        P::Le => crate::resolve::BinOp::Le,
-        P::Gt => crate::resolve::BinOp::Gt,
-        P::Ge => crate::resolve::BinOp::Ge,
-        P::BitAnd => crate::resolve::BinOp::BitAnd,
-        P::BitOr => crate::resolve::BinOp::BitOr,
-        P::BitXor => crate::resolve::BinOp::BitXor,
-        P::And => crate::resolve::BinOp::And,
-        P::Or => crate::resolve::BinOp::Or,
-    }
+/// Map a VAMS `BinOp` to the IR `BinOp` (shared by digital and analog paths).
+pub(crate) fn lower_binop_pom(op: piperine_vams::ast::BinOp) -> crate::resolve::BinOp {
+    crate::resolve::BinOp::from_pom(op)
 }

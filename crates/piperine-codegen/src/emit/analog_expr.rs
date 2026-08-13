@@ -10,7 +10,8 @@ use cranelift_codegen::ir::{types, InstBuilder, MemFlags, Value};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_frontend::FunctionBuilder;
 
-use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, Stmt, UnaryOp};
+use piperine_vams::ast::{BinOp, Expr, UnOp};
+use piperine_vams::lexer::NumberLit;
 use piperine_lang::math;
 use crate::error::CodegenError;
 use crate::emit::abi::SimCtx;
@@ -25,12 +26,15 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// dispatching on POM `Expr`.
     pub fn emit_analog(&mut self, expr: &Expr) -> Result<Value, CodegenError> {
         match expr {
-            Expr::Literal(Literal::Real(v)) => Ok(self.cse_const(*v)),
-            Expr::Literal(Literal::Int(v)) => Ok(self.cse_const(*v as f64)),
-            Expr::Literal(Literal::Bool(b)) => Ok(self.cse_const(f64::from(*b))),
+            Expr::Number { value: NumberLit::Real(v), .. } => Ok(self.cse_const(*v)),
+            Expr::Number { value: NumberLit::Integer(v), .. } => Ok(self.cse_const(*v as f64)),
+            Expr::Number { value: NumberLit::Based(_), .. } => {
+                Err(CodegenError::unsupported("based (4-state) literal in an analog expression"))
+            }
+            Expr::Str { .. } => Err(CodegenError::unsupported("string literal in an analog expression")),
 
             // A bare identifier: param, module-level var, or state marker.
-            Expr::Ident(name) => {
+            Expr::Ident { name, .. } => {
                 if let Some(&id) = self.resolver.params.get(name) {
                     return self.params.as_ref().expect("analog context")
                         .get(id.0 as usize)
@@ -43,84 +47,59 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 Err(CodegenError::Invalid(format!("unresolved analog identifier `{name}`")))
             }
 
-            // Branch access: V(p,n) / I(p,n).
-            Expr::Call(func, args) => {
-                if let Expr::Ident(name) = func.as_ref() {
-                    match name.as_str() {
-                        "V" | "I" => return self.emit_analog_branch(args),
-                        "__state_load" => return self.emit_state_load(args),
-                        name if Self::is_tape_marker(name) => {
-                            let id = match args.first() {
-                                Some(Expr::Literal(Literal::Int(n))) => *n as usize,
-                                _ => return Err(CodegenError::Invalid(
-                                    format!("{name} needs an integer id"))),
-                            };
-                            return self.emit_tape(name, id);
-                        }
-                        _ => {}
+            // Branch access: V(p,n) / I(p,n) — LRM's dedicated AccessFunction
+            // node, not a generic call.
+            Expr::AccessFunction { pos, neg, .. } => self.emit_analog_branch(pos, neg.as_deref()),
+
+            // Marker calls (`__state_load`, tape markers) and math builtins.
+            Expr::Call { name, args, .. } => {
+                match name.as_str() {
+                    "__state_load" => return self.emit_state_load(args),
+                    n if Self::is_tape_marker(n) => {
+                        let id = match args.first() {
+                            Some(Expr::Number { value: NumberLit::Integer(n), .. }) => *n as usize,
+                            _ => return Err(CodegenError::Invalid(
+                                format!("{n} needs an integer id"))),
+                        };
+                        return self.emit_tape(n, id);
                     }
-                    // Math builtins (exp, ln, sqrt, sin, …)
-                    if math::math_fn(name).is_some() {
-                        return self.emit_analog_math_call(name, args);
-                    }
+                    _ => {}
+                }
+                // Math builtins (exp, ln, sqrt, sin, …)
+                if math::math_fn(name).is_some() {
+                    return self.emit_analog_math_call(name, args);
                 }
                 Err(CodegenError::unsupported(format!(
-                    "call `{}` in an analog expression (should be inlined)",
-                    ident_from_expr(Some(func)).unwrap_or_default()
+                    "call `{name}` in an analog expression (should be inlined)"
                 )))
             }
 
             // Syscalls: $temperature, $abstime, $vt, $simparam, $limit, …
-            Expr::SysCall(name, args) => self.emit_analog_syscall(name, args),
+            Expr::SystemFunctionCall { name, args, .. } => self.emit_analog_syscall(name, args),
 
-            Expr::Unary(op, x) => self.emit_analog_unary(op.clone(), x),
+            Expr::Unary { op, operand, .. } => self.emit_analog_unary(*op, operand),
 
-            Expr::Binary(lhs, op, rhs) => self.emit_analog_binary(op.clone(), lhs, rhs),
+            Expr::Binary { op, lhs, rhs, .. } => self.emit_analog_binary(*op, lhs, rhs),
 
-            // Ternary select: If { cond, then, else } → Cranelift select.
-            Expr::If { cond, then_body, else_body } => {
+            // Ternary select: VAMS's expression-level conditional (§4.1.7) →
+            // Cranelift select.
+            Expr::Ternary { cond, then_branch, else_branch, .. } => {
                 let c = self.emit_analog_truthy(cond)?;
-                let t = self.emit_analog_block_value(then_body)?;
-                let e = self.emit_analog_block_value(else_body)?;
+                let t = self.emit_analog(then_branch)?;
+                let e = self.emit_analog(else_branch)?;
                 Ok(self.cse_op3(T_SELECT, c, t, e, |b| b.ins().select(c, t, e)))
             }
 
-            Expr::Block(b) => self.emit_analog_block_value(b),
-
-            Expr::Cast(_, inner) => self.emit_analog(inner),
-
-            Expr::Field(base, field) => {
-                // Flattened bundle field: "base_field" as a combined name.
-                if let Expr::Ident(base_name) = base.as_ref() {
-                    let combined = format!("{base_name}_{field}");
-                    if let Some(&id) = self.resolver.params.get(&combined) {
-                        return self.params.as_ref().expect("analog context")
-                            .get(id.0 as usize)
-                            .copied()
-                            .ok_or_else(|| CodegenError::Invalid(format!("param #{} out of range", id.0)));
-                    }
-                    if let Some(&id) = self.resolver.vars.get(&combined) {
-                        return Ok(self.cse_load(BANK_VARS, self.vars_ptr(), (id.0 * 8) as i32));
-                    }
-                }
-                Err(CodegenError::unsupported(format!("unresolved field access in analog: {expr:?}")))
-            }
-
-            Expr::Literal(Literal::String(_)) | Expr::Literal(Literal::None) | Expr::Literal(Literal::Quad(_)) => {
-                Err(CodegenError::unsupported("non-real literal in an analog expression"))
-            }
-            Expr::Path(_) => Err(CodegenError::unsupported("path in an analog expression")),
-            Expr::Index(_, _) | Expr::Slice(_, _) | Expr::Array(_) | Expr::Tuple(_)
-            | Expr::BundleLit { .. } | Expr::MapLit(_) | Expr::SetLit(_) | Expr::Lambda { .. } => {
-                Err(CodegenError::unsupported("vector/value-layer expression in an analog contribution"))
+            Expr::Concat { .. } | Expr::Replication { .. } | Expr::Index { .. } | Expr::PartSelect { .. } => {
+                Err(CodegenError::unsupported("vector/bit-select expression in an analog contribution"))
             }
         }
     }
 
     /// Emit a branch voltage V(plus, minus) lookup from precomputed values.
-    fn emit_analog_branch(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
-        let plus_name = ident_from_expr(args.first()).unwrap_or_else(|| "?".into());
-        let minus_name = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
+    fn emit_analog_branch(&mut self, pos: &Expr, neg: Option<&Expr>) -> Result<Value, CodegenError> {
+        let plus_name = ident_from_expr(Some(pos)).unwrap_or_else(|| "?".into());
+        let minus_name = neg.and_then(|n| ident_from_expr(Some(n))).unwrap_or_else(|| "0".into());
         let plus = self.resolve_node(&plus_name)?;
         let minus = self.resolve_node(&minus_name)?;
         self.branch_voltages.as_ref().expect("analog context")
@@ -134,7 +113,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// Emit `__state_load(id)` → load from the state bank.
     fn emit_state_load(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
         let id = match args.first() {
-            Some(Expr::Literal(Literal::Int(v))) => *v as u32,
+            Some(Expr::Number { value: NumberLit::Integer(v), .. }) => *v as u32,
             _ => return Err(CodegenError::unsupported("__state_load expects a state id")),
         };
         Ok(self.cse_load(BANK_STATE, self.state_ptr(), (id * 8) as i32))
@@ -212,7 +191,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             }
             "simparam" => {
                 let sim_key = match args.first() {
-                    Some(Expr::Literal(Literal::String(s))) => s.clone(),
+                    Some(Expr::Str { value, .. }) => value.clone(),
                     _ => "?".into(),
                 };
                 let default = args.get(1);
@@ -228,7 +207,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             }
             "param_given" => {
                 let pname = match args.first() {
-                    Some(Expr::Literal(Literal::String(s))) => s.clone(),
+                    Some(Expr::Str { value, .. }) => value.clone(),
                     _ => "?".into(),
                 };
                 let id = self.resolver.param_given(&pname).ok_or_else(|| {
@@ -249,7 +228,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             }
             "analysis" => {
                 let kind = match args.first() {
-                    Some(Expr::Literal(Literal::String(s))) => match s.as_str() {
+                    Some(Expr::Str { value, .. }) => match value.as_str() {
                         "ac" => 1u64,
                         "dc" => 0,
                         "tran" => 2,
@@ -298,7 +277,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         // The first arg is the kind string ("pnjlim"/"fetlim"), the rest
         // are (vnew, vseed, vte, vcrit).
         let kind = match args.first() {
-            Some(Expr::Literal(Literal::String(s))) => s.as_str(),
+            Some(Expr::Str { value, .. }) => value.as_str(),
             _ => return Err(CodegenError::unsupported("$limit expects a kind string")),
         };
         if args.len() < 5 {
@@ -306,7 +285,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
         // Find the slot by structural equality against the limits table.
         let limits = self.limits.as_ref().expect("analog context");
-        let slot = limits.iter().position(|l| expr_structural_eq(l, &Expr::SysCall(full_name.to_string(), args.to_vec())))
+        let nospan = piperine_vams::error::Span::new(0, 0);
+        let probe = Expr::SystemFunctionCall { span: nospan, name: full_name.to_string(), args: args.to_vec() };
+        let slot = limits.iter().position(|l| expr_structural_eq(l, &probe))
             .ok_or_else(|| CodegenError::Invalid("$limit expression missing from slot table".into()))?;
         let key = CseKey::Limit(slot as u32);
         if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
@@ -342,13 +323,14 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
     // ── Unary / binary / math ──
 
-    fn emit_analog_unary(&mut self, op: UnaryOp, x: &Expr) -> Result<Value, CodegenError> {
+    fn emit_analog_unary(&mut self, op: UnOp, x: &Expr) -> Result<Value, CodegenError> {
         match op {
-            UnaryOp::Neg => {
+            UnOp::Plus => self.emit_analog(x),
+            UnOp::Neg => {
                 let v = self.emit_analog(x)?;
                 Ok(self.cse_op1(T_NEG, v, |b| b.ins().fneg(v)))
             }
-            UnaryOp::Not => {
+            UnOp::LogNot => {
                 let v = self.emit_analog(x)?;
                 let key = CseKey::Op1(T_NOT, v.as_u32());
                 if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
@@ -360,23 +342,17 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 self.cse.as_mut().expect("analog context").insert(key, val);
                 Ok(val)
             }
+            other => Err(CodegenError::unsupported(format!("unary {other:?} in an analog expression"))),
         }
     }
 
-    fn emit_analog_binary(&mut self, op: BinaryOp, a: &Expr, b: &Expr) -> Result<Value, CodegenError> {
+    fn emit_analog_binary(&mut self, op: BinOp, a: &Expr, b: &Expr) -> Result<Value, CodegenError> {
         let ir_op = lower_binop_pom(op);
-        // POM `BinaryOp` has no `Pow` variant, so the resolved/differentiated
-        // form carries exponentiation as `BitXor` (see `lower/expr.rs`
-        // `to_pom`; `d_math("pow")` and `d_via_pow` produce it). In an analog
-        // expression a real bitwise xor is meaningless, so `BitXor` is always
-        // that pow carrier.
-        if ir_op == crate::resolve::BinOp::Pow || ir_op == crate::resolve::BinOp::BitXor {
-            let lhs = self.emit_analog(a)?;
-            let rhs = self.emit_analog(b)?;
-            return self.analog_call_math("pow", &[lhs, rhs]);
-        }
         let lhs = self.emit_analog(a)?;
         let rhs = self.emit_analog(b)?;
+        if ir_op == crate::resolve::BinOp::Pow {
+            return self.analog_call_math("pow", &[lhs, rhs]);
+        }
         let key = CseKey::Op2(bin_tag(ir_op), lhs.as_u32(), rhs.as_u32());
         if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
             return Ok(hit);
@@ -414,7 +390,8 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 self.bool_to_f64(combined)
             }
             crate::resolve::BinOp::BitAnd | crate::resolve::BinOp::BitOr
-            | crate::resolve::BinOp::BitXor | crate::resolve::BinOp::Shl | crate::resolve::BinOp::Shr => {
+            | crate::resolve::BinOp::BitXor | crate::resolve::BinOp::BitXnor
+            | crate::resolve::BinOp::Shl | crate::resolve::BinOp::Shr => {
                 return Err(CodegenError::unsupported(format!("bitwise/shift {ir_op:?} in an analog expression")));
             }
             crate::resolve::BinOp::Pow => unreachable!("handled above"),
@@ -478,18 +455,5 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         let current = self.builder.ins().load(types::F64, MemFlags::trusted(), ptr, (idx * 8) as i32);
         let sum = self.builder.ins().fadd(current, value);
         self.builder.ins().store(MemFlags::trusted(), sum, ptr, (idx * 8) as i32);
-    }
-
-    /// Evaluate a POM `Block` to its expression value (analog context).
-    fn emit_analog_block_value(&mut self, block: &piperine_lang::parse::ast::Block) -> Result<Value, CodegenError> {
-        if let Some(e) = &block.expr {
-            return self.emit_analog(e);
-        }
-        for s in block.stmts.iter().rev() {
-            if let Stmt::Expr(e) = s {
-                return self.emit_analog(e);
-            }
-        }
-        Ok(self.cse_const(0.0))
     }
 }

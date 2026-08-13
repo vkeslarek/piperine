@@ -1,8 +1,10 @@
 //! Common-subexpression bookkeeping for analog emission: the CSE key space,
 //! [`SimCtx`](crate::emit::SimCtx) field offsets, load-bank/op tags, and
-//! structural equality for POM `Expr` (used for `$limit` slot deduplication).
+//! structural equality for POM `Expr` (`piperine_vams::ast::Expr`, used for
+//! `$limit` slot deduplication).
 
-use piperine_lang::parse::ast::Expr;
+use piperine_vams::ast::Expr;
+use piperine_vams::lexer::NumberLit;
 
 // ─── Analog CSE infrastructure (copied from jit/emit.rs) ──────────────────────
 
@@ -75,73 +77,82 @@ pub(crate) fn bin_tag(op: crate::resolve::BinOp) -> u8 {
             crate::resolve::BinOp::BitXor => 16,
             crate::resolve::BinOp::Shl => 17,
             crate::resolve::BinOp::Shr => 18,
+            crate::resolve::BinOp::BitXnor => 19,
         }
 }
 
-/// Structural equality for POM `Expr` (which doesn't derive `PartialEq`).
+/// Structural equality for POM `Expr` (which doesn't derive `PartialEq`...
+/// actually `piperine_vams::ast::Expr` *does* derive `PartialEq`, but this
+/// helper predates that and stays as the one place `$limit` slot lookup
+/// goes through, kept for minimal-diff continuity).
 /// Used for `$limit` slot deduplication.
 pub fn expr_structural_eq(a: &Expr, b: &Expr) -> bool {
-    use piperine_lang::parse::ast::Literal;
     match (a, b) {
-        (Expr::Literal(la), Expr::Literal(lb)) => match (la, lb) {
-            (Literal::Real(x), Literal::Real(y)) => x == y,
-            (Literal::Int(x), Literal::Int(y)) => x == y,
-            (Literal::Bool(x), Literal::Bool(y)) => x == y,
-            (Literal::String(x), Literal::String(y)) => x == y,
-            (Literal::Quad(x), Literal::Quad(y)) => x == y,
-            (Literal::None, Literal::None) => true,
-            _ => false,
-        },
-        (Expr::Ident(x), Expr::Ident(y)) => x == y,
-        (Expr::Path(x), Expr::Path(y)) => x.segments == y.segments,
-        (Expr::SysCall(na, aa), Expr::SysCall(nb, ab)) => {
+        (Expr::Number { value: va, .. }, Expr::Number { value: vb, .. }) => number_eq(va, vb),
+        (Expr::Str { value: va, .. }, Expr::Str { value: vb, .. }) => va == vb,
+        (Expr::Ident { name: na, .. }, Expr::Ident { name: nb, .. }) => na == nb,
+        (
+            Expr::SystemFunctionCall { name: na, args: aa, .. },
+            Expr::SystemFunctionCall { name: nb, args: ab, .. },
+        ) => {
             na == nb && aa.len() == ab.len()
                 && aa.iter().zip(ab).all(|(x, y)| expr_structural_eq(x, y))
         }
-        (Expr::Call(fa, aa), Expr::Call(fb, ab)) => {
-            expr_structural_eq(fa, fb) && aa.len() == ab.len()
+        (Expr::Call { name: na, args: aa, .. }, Expr::Call { name: nb, args: ab, .. }) => {
+            na == nb && aa.len() == ab.len()
                 && aa.iter().zip(ab).all(|(x, y)| expr_structural_eq(x, y))
         }
-        (Expr::Unary(oa, xa), Expr::Unary(ob, xb)) => oa == ob && expr_structural_eq(xa, xb),
-        (Expr::Binary(la, oa, ra), Expr::Binary(lb, ob, rb)) => {
-            oa == ob && expr_structural_eq(la, lb) && expr_structural_eq(ra, rb)
+        (
+            Expr::AccessFunction { function: fa, pos: pa, neg: na, .. },
+            Expr::AccessFunction { function: fb, pos: pb, neg: nb, .. },
+        ) => {
+            fa == fb
+                && expr_structural_eq(pa, pb)
+                && match (na, nb) {
+                    (Some(x), Some(y)) => expr_structural_eq(x, y),
+                    (None, None) => true,
+                    _ => false,
+                }
         }
-        (Expr::Cast(ta, xa), Expr::Cast(tb, xb)) => ta == tb && expr_structural_eq(xa, xb),
-        (Expr::Field(ba, fa), Expr::Field(bb, fb)) => expr_structural_eq(ba, bb) && fa == fb,
-        (Expr::Index(ba, ia), Expr::Index(bb, ib)) => expr_structural_eq(ba, bb) && expr_structural_eq(ia, ib),
-        (Expr::If { cond: ca, then_body: ta, else_body: ea },
-         Expr::If { cond: cb, then_body: tb, else_body: eb }) => {
+        (Expr::Unary { op: oa, operand: xa, .. }, Expr::Unary { op: ob, operand: xb, .. }) => {
+            oa == ob && expr_structural_eq(xa, xb)
+        }
+        (
+            Expr::Binary { op: oa, lhs: la, rhs: ra, .. },
+            Expr::Binary { op: ob, lhs: lb, rhs: rb, .. },
+        ) => oa == ob && expr_structural_eq(la, lb) && expr_structural_eq(ra, rb),
+        (
+            Expr::Ternary { cond: ca, then_branch: ta, else_branch: ea, .. },
+            Expr::Ternary { cond: cb, then_branch: tb, else_branch: eb, .. },
+        ) => expr_structural_eq(ca, cb) && expr_structural_eq(ta, tb) && expr_structural_eq(ea, eb),
+        (Expr::Index { base: ba, index: ia, .. }, Expr::Index { base: bb, index: ib, .. }) => {
+            expr_structural_eq(ba, bb) && expr_structural_eq(ia, ib)
+        }
+        (
+            Expr::PartSelect { base: ba, msb: ma, lsb: la, .. },
+            Expr::PartSelect { base: bb, msb: mb, lsb: lb, .. },
+        ) => expr_structural_eq(ba, bb) && expr_structural_eq(ma, mb) && expr_structural_eq(la, lb),
+        (Expr::Concat { parts: pa, .. }, Expr::Concat { parts: pb, .. }) => {
+            pa.len() == pb.len() && pa.iter().zip(pb).all(|(x, y)| expr_structural_eq(x, y))
+        }
+        (
+            Expr::Replication { count: ca, parts: pa, .. },
+            Expr::Replication { count: cb, parts: pb, .. },
+        ) => {
             expr_structural_eq(ca, cb)
-                && blocks_eq(ta, tb)
-                && blocks_eq(ea, eb)
+                && pa.len() == pb.len()
+                && pa.iter().zip(pb).all(|(x, y)| expr_structural_eq(x, y))
         }
         _ => false,
     }
 }
 
-fn blocks_eq(a: &piperine_lang::parse::ast::Block, b: &piperine_lang::parse::ast::Block) -> bool {
-    a.stmts.len() == b.stmts.len()
-        && a.stmts.iter().zip(&b.stmts).all(|(x, y)| stmts_eq(x, y))
-        && match (&a.expr, &b.expr) {
-            (Some(x), Some(y)) => expr_structural_eq(x, y),
-            (None, None) => true,
-            _ => false,
-        }
-}
-
-fn stmts_eq(a: &piperine_lang::parse::ast::Stmt, b: &piperine_lang::parse::ast::Stmt) -> bool {
-    use piperine_lang::parse::ast::Stmt as S;
+fn number_eq(a: &NumberLit, b: &NumberLit) -> bool {
     match (a, b) {
-        (S::Bind { dest: da, op: oa, src: sa }, S::Bind { dest: db, op: ob, src: sb }) => {
-            oa == ob && expr_structural_eq(da, db) && expr_structural_eq(sa, sb)
-        }
-        (S::Expr(ea), S::Expr(eb)) => expr_structural_eq(ea, eb),
-        (S::VarDecl { name: na, default: da, .. }, S::VarDecl { name: nb, default: db, .. }) => {
-            na == nb && match (da, db) {
-                (Some(x), Some(y)) => expr_structural_eq(x, y),
-                (None, None) => true,
-                _ => false,
-            }
+        (NumberLit::Real(x), NumberLit::Real(y)) => x == y,
+        (NumberLit::Integer(x), NumberLit::Integer(y)) => x == y,
+        (NumberLit::Based(x), NumberLit::Based(y)) => {
+            x.size == y.size && x.signed == y.signed && x.base == y.base && x.digits == y.digits
         }
         _ => false,
     }
