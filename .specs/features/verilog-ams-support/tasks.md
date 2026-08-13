@@ -863,10 +863,18 @@ T53 → T54 → T55 → T56 → T57 → T58
 
 ---
 
-#### T43: Migrate `headers/spice/` device models → `.va` (part 3: tline, urc, lib)
+#### T43: Migrate `headers/spice/` device models → `.va` (part 3: tline, urc, lib) — ⚠️ PARTIAL (see Progress Log)
 **Where**: `crates/piperine-lang/headers/spice/*.va` · **Depends on**: T42 · **Requirement**: VAMS-08
 **Done when**: remaining models migrated and green · **Gate**: full
-**Commit**: `feat(headers): migrate distributed SPICE models to Verilog-A`
+**Status**: `tline`/`lib` migrated and verified green. `urc` is **BLOCKED** — two
+genuine `piperine-lang` elaboration-layer gaps (beyond T42's three documented
+classes) make `urc_seg`/the generic `urc[N]` ladder unmigratable without a
+code fix outside this task's file scope (`crates/piperine-lang/headers/spice/*.va`
+only). See Progress Log for the two gaps, root-cause evidence, and why a
+header-migration task cannot paper over them. `urc.phdl` is deliberately left
+in place, unmodified — not deleted, per VAMS-11's own "delete once migrated"
+condition, which does not hold here.
+**Commit**: `feat(headers): migrate distributed SPICE models to Verilog-A` (tline+lib only)
 
 ---
 
@@ -2739,3 +2747,106 @@ did not close.
   patterns from T41, extended here to the harder junction-device cases —
   not new deviations, just the same class applied to RB's nonlinear IRB
   case and to a branch with zero conflicting contributions).
+
+- **T43** ⚠️ PARTIAL — `crates/piperine-lang/headers/spice/{tline,lib}.phdl`
+  (2 files) migrated to `.va` and deleted; `urc.phdl` **BLOCKED**, left in
+  place unmigrated, unmodified — two genuine `piperine-lang` elaboration
+  gaps found, both beyond T42's three documented classes, both outside this
+  task's file scope (`crates/piperine-lang/headers/spice/*.va`) to fix.
+  **`tline.va`**: direct translation, no sub-instances so neither gap below
+  applies. PHDL's `delay(x, td)` becomes the real Annex-B name `absdelay(x,
+  td)` — both resolve to the same codegen `Delay` op
+  (`resolve/pom/analog_ops.rs:390` registers both strings), so this is a
+  spelling change, not a behavior change. PHDL's two `$assert`s become
+  `from (0:1e15)` parameter ranges (T41's `xfmr` convention). Both `<-`
+  sites (`V(k1,n1)`, `V(k2,n2)`) are each the sole contribution on their
+  own implicit branch (distinct from the `I(p1,k1)`/`I(p2,k2)`
+  series-resistor branches), so `<-` → `<+` is exact, no LRM Sec 5.4.2
+  conflict — confirmed by direct compile. **`lib.va`**: `` `include``
+  aggregator replacing PHDL's `use spice::X;` list, same file set and
+  order as the original (which never listed `urc` — preserved as-authored,
+  not silently extended); still unreferenced by anything in the tree
+  (grep-confirmed before and after), same as its PHDL predecessor.
+  **Verification (tline/lib only)**: both confirmed via a temporary scratch
+  test (`piperine_lang::parse_and_elaborate` + `piperine_codegen::resolve::
+  lower_bodies` + `CircuitCompiler::build_circuit`, deleted before this
+  commit) — `tline` elaborates and JIT-compiles as a 4-port hierarchical
+  instance; `lib.va` elaborates standalone and reaches `tline`/`dio`/`res`
+  by name through its `` `include`` chain. `cargo build --workspace`: zero
+  warnings. `cargo test -p piperine --test suite_hygiene`: 9/10 green (same
+  pre-existing `mod_rs_declares_only`/`piperine-ir` failure, untouched);
+  `phdl_corpus_does_not_grow` green with `PHDL_HIGH_WATER_MARK` lowered
+  93 → 91 (2 files deleted, `git status`/on-disk count both confirm 91).
+  `tests/ngspice_{validation,ac,noise,tran,temp}.rs` and
+  `ngspice_parity_matrix.rs`: pass/fail counts identical to T42's recorded
+  baseline (validation 20/29, ac 21/3, noise 22/7, tran 21/4, temp 22/2,
+  parity_matrix 4/0) — expected, `tests/ngspice/*.phdl` fixtures are still
+  `.phdl` (unmigrated until T44).
+
+  **`urc` — two genuine architecture gaps found, both blocking, neither one
+  of T42's three known classes.** Found while attempting the faithful
+  translation of `urc_seg` (a mid-level module that forwards its own `r`/`c`
+  params into `res`/`cap` sub-instance overrides — the file's own stated
+  purpose: "per-segment R/C are exposed as params so a host can scale them
+  via the flat-label override contract") and `urc_taper_5_k2`/
+  `urc_isperl_5_k2` (whose per-segment values are `pow(k, i)`-derived).
+  Both isolated with a minimal throwaway probe module (not `urc_seg`
+  itself) before touching any real file, then reproduced against the real
+  translation intent, then reverted — no `piperine-lang` source was changed.
+
+  1. **A module's own parameter is invisible to elaboration-constant
+     evaluation inside that same module.** `elab_module`
+     (`crates/piperine-lang/src/elab/lower/vams.rs:36`) does
+     `let env = ConstEnv::new();` once and never calls `.define()` on it
+     as parameters are declared — every later `eval_param_default`/
+     `check_param_ranges`/net-array-range/`expr_to_net_ref`/instance
+     param-override call in that same function reuses this permanently
+     empty `env`. Confirmed directly: a two-module probe (`module mid
+     (...); parameter real r = 200.0; leaf #(.r(r)) l1 (...);`) fails
+     elaboration with `undefined name: r` — `r` is `mid`'s own declared
+     parameter, referenced by identifier in its own body, one line below
+     its declaration. This is not particular to generate blocks (a
+     separate probe showed a `generate for` loop's `iter_env` is even
+     more isolated — it carries only the genvar, not the enclosing
+     module's params either) — it is that **no VAMS module can forward
+     its own parameter to anything** (a sub-instance override, a net's
+     array-range bound, another parameter's default): every T40-T42 file
+     escaped this because every one of them is leaf-only (no
+     sub-instances), so `urc.phdl` (T43) is the first file in the
+     corpus that actually exercises the cross-reference at all. Blocks
+     `urc_seg` and any generic `urc[N]`-equivalent outright — the whole
+     point of `urc_seg` is a host-settable per-segment `r`/`c`, and there
+     is no way to express "forward my own param to my child" without this
+     wired.
+  2. **Function calls are not supported anywhere in elaboration-constant
+     evaluation**, `ConstEnv::eval` (`crates/piperine-lang/src/elab/
+     const_eval.rs:97`) hard-codes `Expr::Call { .. } => Err(NotConst(...))`
+     — confirmed directly: `leaf #(.r(1000.0 * pow(2.0, 0.0) / 31.0)) l1
+     (...)` (a pure-literal expression, no identifiers, isolated from gap 1)
+     fails the same way. This blocks `urc_taper_5_k2`/`urc_isperl_5_k2`'s
+     `pow(k, i)`-computed per-segment overrides too — **but only this gap**;
+     since their per-segment values are true compile-time constants with no
+     param dependency, precomputing the five `pow(2, i)` values by hand as
+     decimal literals (`32.258064516129032`, `64.51612903225806`, …) would
+     be a faithful, in-scope translation (same numeric result, a spelling
+     choice, same disposition T41/T42 already use for baked-at-lowering-
+     time values) — **not attempted yet**, held back deliberately: shipping
+     `urc_taper_5_k2`/`urc_isperl_5_k2` alone while `urc_seg`/`urc[N]`
+     (the file's own headline capability, and the one `.specs/STATE.md`'s
+     `hierarchy-flattening`/`ngspice-parity` entries spent NGP-16..22
+     delivering) stays blocked would fragment one logical file across two
+     extensions with no clear finish line, and risks reading as "T43 is
+     basically done" when the harder half — the part the task brief
+     explicitly flagged for "extra care" — is not. Left for the same
+     follow-up as gap 1 rather than shipped as a partial `urc.va` today.
+
+  **Disposition**: per this task's explicit instruction ("If you hit a
+  genuine architecture gap beyond the three known classes above — stop and
+  report, don't make a unilateral call"), `urc.phdl` is left in the tree,
+  untouched, not deleted — VAMS-11's "delete the original in the same
+  commit" presumes the migration is actually complete; it is not. Both
+  gaps are `piperine-lang/src/elab/lower/vams.rs` +
+  `piperine-lang/src/elab/const_eval.rs` fixes, outside a header-migration
+  task's file scope (`crates/piperine-lang/headers/spice/*.va`) by this
+  feature's own MD-13/surgical-change discipline. Reported to the user for
+  a scoping decision rather than decided here.
