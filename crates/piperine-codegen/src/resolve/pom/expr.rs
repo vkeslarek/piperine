@@ -370,21 +370,6 @@ pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, 
     }
 }
 
-pub(crate) fn expr_to_name(expr: &Expr) -> String {
-    match expr {
-        Expr::Ident { name, .. } => name.clone(),
-        _ => "_".into(),
-    }
-}
-
-pub(crate) fn eval_const_int(expr: &Expr) -> Option<i64> {
-    match expr {
-        Expr::Number { value: NumberLit::Integer(n), .. } => Some(*n),
-        Expr::Number { value: NumberLit::Real(f), .. } => Some(*f as i64),
-        _ => None,
-    }
-}
-
 /// Resolve a single VAMS `Stmt`'s expressions (analog path — keeps POM
 /// `Stmt` structure; the flattener/Builder dispatch on it directly).
 pub(crate) fn resolve_stmt(stmt: &piperine_vams::ast::Stmt, ctx: &mut LowerCtx) -> piperine_vams::ast::Stmt {

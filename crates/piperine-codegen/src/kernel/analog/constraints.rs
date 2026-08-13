@@ -9,9 +9,7 @@
 //! pointwise margin; reduced-class margins never reach the kernel (D7 —
 //! host-side reductions).
 
-use piperine_lang::pom::ResolvedWindow;
-
-use crate::resolve::MarginKind;
+use crate::resolve::{MarginKind, ResolvedWindow};
 
 use super::{AnalogCapability, AnalogFn};
 

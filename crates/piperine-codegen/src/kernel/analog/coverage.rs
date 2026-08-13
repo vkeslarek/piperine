@@ -8,7 +8,7 @@
 //! no compiled function at all — they are a host-side combination of
 //! already-mapped bin indices, static catalog data only.
 
-use piperine_lang::pom::{ResolvedCoverBins, ResolvedWindow};
+use crate::resolve::{ResolvedCoverBins, ResolvedWindow};
 
 use super::{AnalogCapability, AnalogFn};
 

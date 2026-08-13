@@ -12,7 +12,7 @@
 //! `checks=off` shape [`super::constraints::MarginTracker`] already
 //! established.
 
-use piperine_lang::pom::ResolvedCoverBins;
+use crate::resolve::ResolvedCoverBins;
 use piperine_solver::abi::CoverPosture;
 
 use super::LoadCtx;

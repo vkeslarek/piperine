@@ -31,7 +31,7 @@ use crate::emit::OwnedJit;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use piperine_lang::parse::ast::{EventSpec, Expr, Stmt};
+use piperine_vams::ast::{EventExpr, Expr, Stmt};
 
 use crate::emit::{Builder, Codegen, DigTy, Resolver};
 use crate::resolve::{
@@ -92,38 +92,46 @@ impl<'m> DigitalCompiler<'m> {
     }
 
     pub(crate) fn compile(mut self) -> Result<DigitalKernel, CodegenError> {
-        // Split the body: combinational statements vs clocked blocks, and
-        // collect register power-on inits.
+        // Split the body: combinational statements vs clocked blocks.
+        // Register power-on inits come from `DigitalBody::reg_inits`
+        // directly (T30, `resolve/pom/body.rs`) — VAMS has no
+        // `VarDecl`-with-default statement to scan for anymore.
         let mut comb_stmts: Vec<&Stmt> = Vec::new();
-        let mut clocked: Vec<(&EventSpec, &[Stmt])> = Vec::new();
-        let mut reg_inits = Vec::new();
+        let mut clocked: Vec<(&[EventExpr], &Stmt)> = Vec::new();
         for stmt in &self.body.stmts {
             match stmt {
-                Stmt::Event { spec, guard: _, body } => clocked.push((spec, &body.stmts)),
-                Stmt::VarDecl { name, default: Some(init), .. } => {
-                    // Register power-on init: the var must be in `regs`.
-                    if let Some(&var) = self.resolver.vars.get(name)
-                        && self.body.regs.contains(&var) {
-                            reg_inits.push(RegInit { var, init: init.clone() });
-                            continue;
-                        }
-                    comb_stmts.push(stmt);
+                Stmt::EventControl { events, body, .. } if is_clocked(events) => {
+                    clocked.push((events, body));
                 }
+                // A non-edge event control (`@*`/`@(sig)` — level-sensitive)
+                // is combinational in this step-based (not event-scheduled)
+                // execution model: `comb` already re-evaluates every pass,
+                // which already gives "re-run on any input change"
+                // semantics, so its body folds directly into the plain
+                // combinational statement list rather than through the
+                // clocked/`fired`-flag path.
+                Stmt::EventControl { body, .. } => comb_stmts.push(body.as_ref()),
                 other => comb_stmts.push(other),
             }
         }
+        let reg_inits: Vec<RegInit> = self
+            .body
+            .reg_inits
+            .iter()
+            .map(|(var, init)| RegInit { var: *var, init: init.clone() })
+            .collect();
 
         // Number the atomic watch terms across all clocked blocks. Each
-        // `EventSpec::Named { name, arg }` contributes one term: the `arg`
-        // expression, with the edge polarity derived from `name`
-        // ("posedge"/"negedge"/"change").
+        // event-control entry contributes one term: the watched expression,
+        // with the edge polarity from `Posedge`/`Negedge`/`Level`
+        // ("change").
         let mut watch_terms: Vec<Expr> = Vec::new();
         let mut clocked_specs = Vec::new();
-        for (spec, _) in &clocked {
+        for (events, _) in &clocked {
             let mut terms = Vec::new();
             let mut event_terms = Vec::new();
-            extract_event_terms(spec, &mut event_terms);
-            for (edge_name, arg) in event_terms {
+            extract_event_terms(events, &mut event_terms);
+            for (edge, arg) in event_terms {
                 let index = match watch_terms.iter().position(|t| crate::emit::expr_structural_eq(t, &arg)) {
                     Some(i) => i,
                     None => {
@@ -131,15 +139,9 @@ impl<'m> DigitalCompiler<'m> {
                         watch_terms.len() - 1
                     }
                 };
-                let edge = match edge_name.as_str() {
-                    "posedge" => EdgeKind::Rising,
-                    "negedge" => EdgeKind::Falling,
-                    "change" => EdgeKind::Any,
-                    _ => EdgeKind::Any,
-                };
                 terms.push((index, edge));
             }
-            clocked_specs.push(ClockedSpec { terms, is_initial: is_initial_spec(spec) });
+            clocked_specs.push(ClockedSpec { terms, is_initial: false });
         }
 
         // `comb` reads live variable values: after `seq` writes register
@@ -156,7 +158,7 @@ impl<'m> DigitalCompiler<'m> {
                 .body
                 .stmts
                 .iter()
-                .filter(|s| matches!(s, Stmt::Event { .. }))
+                .filter(|s| matches!(s, Stmt::EventControl { events, .. } if is_clocked(events)))
                 .collect();
             Some(self.compile_body_fn("seq", &stmts, VarReads::PreEdge)?)
         };
@@ -225,8 +227,10 @@ impl<'m> DigitalCompiler<'m> {
         self.build_fn(name, false, |b| {
             let mut clocked_index = 0usize;
             for stmt in stmts {
-                if let Stmt::Event { body, .. } = stmt {
-                    b.emit_guarded_block(clocked_index, &body.stmts)?;
+                if let Stmt::EventControl { events, body, .. } = stmt
+                    && is_clocked(events)
+                {
+                    b.emit_guarded_block(clocked_index, body)?;
                     clocked_index += 1;
                 } else {
                     b.emit_stmt(stmt)?;
@@ -331,37 +335,32 @@ impl<'m> DigitalCompiler<'m> {
     }
 }
 
-// ─── Event-spec helpers ───────────────────────────────────────────────────────
+// ─── Event-control helpers ─────────────────────────────────────────────────────
 
-/// Walk an `EventSpec` and collect `(edge_name, arg)` pairs for each atomic
-/// `Named { name, arg }` term. `Initial`/`Final` contribute no terms.
-/// `And`/`Not` are constraint-only forms (DVC-20) and reach this path
-/// only defensively (the behavior-body validator rejects them); they
-/// contribute no digital watch terms.
-fn extract_event_terms(spec: &EventSpec, terms: &mut Vec<(String, Expr)>) {
-    match spec {
-        EventSpec::Named { name, args, window: _ } => {
-            // Digital edge events (`posedge(net)`, …) carry a single net arg.
-            if let Some(arg) = args.first() {
-                terms.push((name.clone(), arg.clone()));
-            }
-        }
-        EventSpec::Initial | EventSpec::Final => {}
-        EventSpec::Or(specs) => {
-            for s in specs {
-                extract_event_terms(s, terms);
-            }
-        }
-        EventSpec::And(_) | EventSpec::Not(_) => {}
-    }
+/// `true` if any entry in an event-control's `events` list is edge-sensitive
+/// (`posedge`/`negedge`) — the digital clocked-block marker (LRM/1364).
+/// A control with only `Level`/`ImplicitAll` entries is level-sensitive
+/// (`@(sig)`/`@*`), which this step-based execution model already covers by
+/// re-evaluating combinational statements every pass — see `compile`'s own
+/// classification.
+fn is_clocked(events: &[EventExpr]) -> bool {
+    events.iter().any(|e| matches!(e, EventExpr::Posedge(_) | EventExpr::Negedge(_)))
 }
 
-/// `true` if this spec (or any sub-spec in an `Or`) is `Initial`.
-fn is_initial_spec(spec: &EventSpec) -> bool {
-    match spec {
-        EventSpec::Initial => true,
-        EventSpec::Or(specs) => specs.iter().any(is_initial_spec),
-        _ => false,
+/// Walk a clocked event-control's `events` list and collect
+/// `(edge, watched_expr)` pairs for each atomic term. `ImplicitAll` (`@*`)
+/// contributes no digital watch term — a clocked block never spells its
+/// sensitivity that way (mixing `@*` with `posedge`/`negedge` in the same
+/// control has no LRM meaning); defensive, not a live path once `is_clocked`
+/// has already gated the caller.
+fn extract_event_terms(events: &[EventExpr], terms: &mut Vec<(EdgeKind, Expr)>) {
+    for event in events {
+        match event {
+            EventExpr::Posedge(e) => terms.push((EdgeKind::Rising, e.clone())),
+            EventExpr::Negedge(e) => terms.push((EdgeKind::Falling, e.clone())),
+            EventExpr::Level(e) => terms.push((EdgeKind::Any, e.clone())),
+            EventExpr::ImplicitAll => {}
+        }
     }
 }
 
@@ -487,7 +486,7 @@ impl NetworkComb {
             let body = m.module.digital.as_ref().ok_or_else(|| {
                 CodegenError::Invalid(format!("`{}` has no digital body", m.module.name))
             })?;
-            if body.stmts.iter().any(|s| matches!(s, Stmt::Event { .. })) {
+            if body.stmts.iter().any(|s| matches!(s, Stmt::EventControl { events, .. } if is_clocked(events))) {
                 return Err(CodegenError::unsupported(format!(
                     "network fusion of clocked module `{}` (comb-only cones for now)",
                     m.module.name
@@ -569,13 +568,9 @@ impl NetworkComb {
             );
             let body = m.module.digital.as_ref().unwrap();
             for stmt in &body.stmts {
-                // Skip register power-on decls (handled at init, not in comb).
-                if let Stmt::VarDecl { name, default: Some(_), .. } = stmt
-                    && let Some(&var) = resolver.vars.get(name)
-                    && body.regs.contains(&var)
-                {
-                    continue;
-                }
+                // Register power-on inits are `DigitalBody::reg_inits` data
+                // (T30), never a statement in this tree — nothing to skip
+                // here anymore (VAMS has no VarDecl-with-default form).
                 b.emit_stmt(stmt)?;
             }
         }

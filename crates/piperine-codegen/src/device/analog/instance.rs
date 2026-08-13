@@ -194,7 +194,7 @@ impl AnalogInstance {
             .iter()
             .map(|spec| {
                 let param_names = kernel.param_names();
-                let value = |expr: &piperine_lang::parse::ast::Expr| {
+                let value = |expr: &piperine_vams::ast::Expr| {
                     let resolve = |name: &str| -> Option<f64> {
                         param_names.iter().position(|n| n == name)
                             .and_then(|i| params.get(i).copied())
@@ -250,10 +250,10 @@ impl AnalogInstance {
             .cover_catalog()
             .iter()
             .map(|info| match &info.bins {
-                piperine_lang::pom::ResolvedCoverBins::Range { lo, step, hi } => {
+                crate::resolve::ResolvedCoverBins::Range { lo, step, hi } => {
                     ((hi - lo) / step + 1e-9).floor() as usize + 1
                 }
-                piperine_lang::pom::ResolvedCoverBins::Set(v) => v.len(),
+                crate::resolve::ResolvedCoverBins::Set(v) => v.len(),
             })
             .collect();
         let cover_cross_joint_counts: Vec<usize> =

@@ -1,17 +1,35 @@
-//! Analog body flattening: from the POM `Stmt` tree to pure per-branch
-//! expressions. Operates entirely on POM `Expr`/`Stmt`.
+//! Analog body flattening: from the POM `Stmt` tree
+//! (`piperine_vams::ast::Stmt`) to pure per-branch expressions. Operates
+//! entirely on POM `Expr`/`Stmt`.
 //!
 //! - Variable assignments resolved symbolically (`Ident(name)` → scope value),
-//! - `If`/`Match` path conditions folded into contribution expressions,
+//! - `If`/`Case` path conditions folded into contribution expressions,
 //! - User function calls inlined,
 //! - `__ddt(id, x)` markers split into resistive (0) and charge (x) parts,
 //! - `__idt(id, x, ic)` lowered to the implicit-Euler companion,
 //! - `__ddx(id, x, node)` resolved to a compile-time derivative,
 //! - `__state_load(id)` left as-is for runtime state reads.
+//!
+//! **MD-45 note**: PHDL's `BindOp::Force` (`dest <- src`, an analog "force"
+//! distinct from `<+` contribution — used for ideal-source guarded/switch
+//! branches and `@initial` UIC seeding) has no VAMS Annex A production —
+//! Verilog-AMS has only `<+`. Since no `.vams` source can ever construct
+//! one, `add_force`/`collect_initial_conditions`/the guarded switch-branch
+//! trick are deleted, not ported (documented, not silent) — this is *not*
+//! a regression for anything expressible in VAMS: a genuinely
+//! guarded/conditional potential contribution was **already** an error via
+//! `<+` before this retarget (see `add_contrib`'s Potential arm, unchanged),
+//! and no VAMS source ever had `<-` to reach the deleted path in the first
+//! place. `FlatForce`/the `forces` pipeline itself stays — every ordinary
+//! `V(p,n) <+ expr;` (LRM's ideal-source idiom, e.g. `V(p,n) <+ V0;`)
+//! still flows through `add_contrib`'s potential accumulator into
+//! `split_flux` exactly as before; that pipeline was never Force-specific.
 
 use std::collections::HashMap;
 
-use piperine_lang::parse::ast::{BinaryOp, BindOp, EventSpec, Expr as PomExpr, Literal, Stmt as PomStmt};
+use piperine_vams::ast::{BinOp, Expr as PomExpr, EventExpr, Stmt as PomStmt, UnOp};
+use piperine_vams::lexer::NumberLit;
+use piperine_vams::error::Span;
 
 use crate::resolve::{
     CrossDir, EventSource, AnalogEvent, LoweredBody,
@@ -20,52 +38,50 @@ use crate::resolve::{
 
 use crate::error::CodegenError;
 
-/// Convert an `EventSpec` (AST) to `EventSource`(s) for the flattener.
-/// Expressions are NOT substituted here — `add_event` does that.
-///
-/// Behavior-body event specs only — the constraint-side filter (windows,
-/// `&`, `not`) never reaches this path. `And`/`Not` and any window on
-/// `Named` are elaboration-rejected for behavior bodies (T29), so the
-/// arms are present only to keep the match exhaustive.
-fn event_spec_to_sources(spec: &EventSpec) -> Vec<EventSource> {
-    match spec {
-        EventSpec::Initial => vec![EventSource::InitialStep],
-        EventSpec::Final => vec![EventSource::FinalStep],
-        EventSpec::Named { name, args, window: _ } => match name.as_str() {
-            // First arg is the watched expression; a missing arg defaults to a
-            // zero literal (the elaborator rejects genuinely arg-less events).
-            "cross" => vec![EventSource::Cross {
-                expr: args.first().cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0))),
-                dir: CrossDir::Either,
-            }],
-            "above" => vec![EventSource::Above {
-                expr: args.first().cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0))),
-            }],
-            // `@timer(period)` or `@timer(period, phase)`. `phase` (default 0)
-            // offsets the fire times: fires at phase, phase+period, … instead
-            // of period, 2·period, … — so a source can declare both its rise
-            // and fall edges with two phased timers.
-            "timer" => {
-                let period = args.first().cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0)));
-                let phase = args.get(1).cloned().unwrap_or(PomExpr::Literal(Literal::Real(0.0)));
-                vec![EventSource::Timer { period, phase }]
-            }
-            // Digital events (posedge/negedge/change) don't appear in analog bodies.
-            _ => vec![],
-        },
-        EventSpec::Or(specs) => {
-            let mut all = Vec::new();
-            for s in specs {
-                all.extend(event_spec_to_sources(s));
-            }
-            all
+const NOSPAN: Span = Span { start: 0, end: 0 };
+
+fn call(name: &str, args: Vec<PomExpr>) -> PomExpr {
+    PomExpr::Call { span: NOSPAN, name: name.to_string(), args }
+}
+
+/// Convert an event-control's `events` list (LRM §5.6 analog event
+/// functions, seen as ordinary `Call` expressions inside an `EventExpr`) to
+/// `EventSource`s for the flattener. Expressions are NOT substituted here —
+/// `add_event` does that.
+fn event_exprs_to_sources(events: &[EventExpr]) -> Vec<EventSource> {
+    events.iter().flat_map(event_expr_to_sources).collect()
+}
+
+fn event_expr_to_sources(event: &EventExpr) -> Vec<EventSource> {
+    let EventExpr::Level(e) = event else {
+        // Posedge/Negedge/ImplicitAll are digital-only forms — Annex C
+        // (T27) rejects them inside an analog behavior before flattening
+        // ever runs; this is a defensive empty list, not a live path.
+        return vec![];
+    };
+    let PomExpr::Call { name, args, .. } = e else { return vec![] };
+    match name.as_str() {
+        "initial_step" => vec![EventSource::InitialStep],
+        "final_step" => vec![EventSource::FinalStep],
+        // First arg is the watched expression; a missing arg defaults to a
+        // zero literal (the elaborator rejects genuinely arg-less events).
+        "cross" => vec![EventSource::Cross {
+            expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
+            dir: CrossDir::Either,
+        }],
+        "above" => vec![EventSource::Above {
+            expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
+        }],
+        // `@timer(period)` or `@timer(period, phase)`. `phase` (default 0)
+        // offsets the fire times: fires at phase, phase+period, … instead
+        // of period, 2·period, … — so a source can declare both its rise
+        // and fall edges with two phased timers.
+        "timer" => {
+            let period = args.first().cloned().unwrap_or_else(|| lit(0.0));
+            let phase = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
+            vec![EventSource::Timer { period, phase }]
         }
-        EventSpec::And(_) | EventSpec::Not(_) => {
-            // Constraint-only forms (DVC-20) — the behavior-body validator
-            // rejects them before flattening. Defensive empty list keeps
-            // the flattener total rather than panicking.
-            Vec::new()
-        }
+        _ => vec![],
     }
 }
 
@@ -77,7 +93,8 @@ pub struct FlatContrib {
     pub expr: PomExpr,
 }
 
-/// A flattened potential source.
+/// A flattened potential source (every `V(p,n) <+ expr;` — LRM's ideal-
+/// source idiom).
 #[derive(Debug, Clone)]
 pub struct FlatForce {
     pub plus: NodeId,
@@ -94,7 +111,7 @@ pub struct FlatForce {
     pub flux_terms: Vec<(NodeId, NodeId, PomExpr)>,
     /// Series-impedance terms: each `(branch_plus, branch_minus, coeff)` is a
     /// linear `coeff·I(branch)` piece of this force's *resistive* value —
-    /// `V(p,n) <- R·I(p,n)` is an exact series resistor over the force's own
+    /// `V(p,n) <+ R·I(p,n)` is an exact series resistor over the force's own
     /// branch (a perfect short at `R = 0`). Split out because the JIT reads a
     /// bare `I(a,b)` in an expression as a branch *voltage*; the runtime
     /// stamps `−coeff` on the target branch-current column instead. The
@@ -168,10 +185,14 @@ pub struct FlatAnalog {
     pub diagnostics: Vec<FlatDiagnostic>,
     pub runtime_states: Vec<(StateId, PomExpr)>,
     pub events: Vec<FlatEvent>,
-    /// `@initial { V(p,n) <- ic; }` UIC seeds: `(plus, minus, value)`, value
-    /// instance-constant (param-only). Applied by the transient analysis to
-    /// seed the t=0 branch voltage (SPICE `.ic`/UIC). Empty when the module
-    /// has no initial-condition force.
+    /// UIC seeds: `(plus, minus, value)`. Always empty post-MD-45 — the
+    /// sole PHDL producer (`BindOp::Force` inside `@initial`) has no VAMS
+    /// source; a VAMS UIC idiom (`@(initial_step) V(p,n) <+ ic;`, a
+    /// contribution nested inside an event-action body) has no lowering
+    /// path yet either (event actions currently only lower `Assign`, see
+    /// `collect_event_actions`) — tracked as a follow-up, not invented
+    /// speculatively here. The field/consumer stay so a future task adding
+    /// that lowering doesn't also need a new `FlatAnalog` field.
     pub initial_conditions: Vec<(NodeId, NodeId, PomExpr)>,
     /// Module-level analog opvars (ABI-30): `(var_name, final_temp_id)` for
     /// each non-shadow module `var` reachable at the end of flattening. The
@@ -208,13 +229,12 @@ impl FlatAnalog {
         let (mut params, mut state, mut vars) = (0usize, 0usize, 0usize);
         for expr in self.exprs() {
             visit_all(expr, &mut |e| {
-                if let PomExpr::Call(func, args) = e
-                    && let PomExpr::Ident(name) = func.as_ref()
-                        && name == "__state_load"
-                            && let Some(PomExpr::Literal(Literal::Int(id))) = args.first() {
-                                state = state.max(*id as usize + 1);
-                            }
-                if let PomExpr::Ident(name) = e {
+                if let PomExpr::Call { name, args, .. } = e
+                    && name == "__state_load"
+                    && let Some(PomExpr::Number { value: NumberLit::Integer(id), .. }) = args.first() {
+                        state = state.max(*id as usize + 1);
+                    }
+                if let PomExpr::Ident { name, .. } = e {
                     if let Some(id) = module_param_id(module, name) {
                         params = params.max(id.0 as usize + 1);
                     }
@@ -237,9 +257,49 @@ fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::resolve::Var
     module.symbols.vars().find(|(_, v)| v.name == name).map(|(id, _)| id)
 }
 
+/// Pre-order walk over a VAMS `Expr`. No shared `Walk` trait exists
+/// post-MD-45 — every `resolve`/`flatten` module that needs one carries its
+/// own (T29's `diff.rs` precedent).
 pub(crate) fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
-    use piperine_lang::parse::ast::Walk;
-    expr.walk(&mut |e| { f(e); Walk::Continue });
+    f(expr);
+    match expr {
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } => {}
+        PomExpr::Unary { operand, .. } => visit_all(operand, f),
+        PomExpr::Binary { lhs, rhs, .. } => {
+            visit_all(lhs, f);
+            visit_all(rhs, f);
+        }
+        PomExpr::Ternary { cond, then_branch, else_branch, .. } => {
+            visit_all(cond, f);
+            visit_all(then_branch, f);
+            visit_all(else_branch, f);
+        }
+        PomExpr::Concat { parts, .. } | PomExpr::Replication { parts, .. } => {
+            for p in parts {
+                visit_all(p, f);
+            }
+        }
+        PomExpr::Index { base, index, .. } => {
+            visit_all(base, f);
+            visit_all(index, f);
+        }
+        PomExpr::PartSelect { base, msb, lsb, .. } => {
+            visit_all(base, f);
+            visit_all(msb, f);
+            visit_all(lsb, f);
+        }
+        PomExpr::Call { args, .. } | PomExpr::SystemFunctionCall { args, .. } => {
+            for a in args {
+                visit_all(a, f);
+            }
+        }
+        PomExpr::AccessFunction { pos, neg, .. } => {
+            visit_all(pos, f);
+            if let Some(n) = neg {
+                visit_all(n, f);
+            }
+        }
+    }
 }
 
 /// Variable environment: maps a `var` name to its current **temporary id**.
@@ -269,36 +329,37 @@ impl Scope {
 
 /// A `__temp(id)` leaf — a reference to temporary `id` in [`FlatAnalog::temps`].
 pub(crate) fn temp_ref(id: u32) -> PomExpr {
-    PomExpr::Call(
-        Box::new(PomExpr::Ident("__temp".into())),
-        vec![PomExpr::Literal(Literal::Int(id as u64))],
-    )
+    call("__temp", vec![int(id as i64)])
 }
 
 fn select(cond: PomExpr, then_: PomExpr, else_: PomExpr) -> PomExpr {
-    PomExpr::If {
-        cond: Box::new(cond),
-        then_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(then_)) },
-        else_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(else_)) },
-    }
+    PomExpr::Ternary { span: NOSPAN, cond: Box::new(cond), then_branch: Box::new(then_), else_branch: Box::new(else_) }
 }
 
-fn binary(op: BinaryOp, a: PomExpr, b: PomExpr) -> PomExpr {
-    PomExpr::Binary(Box::new(a), op, Box::new(b))
+fn binary(op: BinOp, a: PomExpr, b: PomExpr) -> PomExpr {
+    PomExpr::Binary { span: NOSPAN, op, lhs: Box::new(a), rhs: Box::new(b) }
 }
 
 fn lit(v: f64) -> PomExpr {
-    PomExpr::Literal(Literal::Real(v))
+    PomExpr::Number { span: NOSPAN, value: NumberLit::Real(v) }
+}
+
+fn int(v: i64) -> PomExpr {
+    PomExpr::Number { span: NOSPAN, value: NumberLit::Integer(v) }
+}
+
+fn str_lit(s: impl Into<String>) -> PomExpr {
+    PomExpr::Str { span: NOSPAN, value: s.into() }
 }
 
 fn not_expr(e: PomExpr) -> PomExpr {
-    PomExpr::Unary(piperine_lang::parse::ast::UnaryOp::Not, Box::new(e))
+    PomExpr::Unary { span: NOSPAN, op: UnOp::LogNot, operand: Box::new(e) }
 }
 
 fn and_guards(guard: Option<&PomExpr>, cond: &PomExpr) -> PomExpr {
     match guard {
         None => cond.clone(),
-        Some(g) => binary(BinaryOp::And, g.clone(), cond.clone()),
+        Some(g) => binary(BinOp::LogAnd, g.clone(), cond.clone()),
     }
 }
 
@@ -330,7 +391,7 @@ impl<'m> AnalogFlattener<'m> {
             if is_node(&v.name) {
                 continue;
             }
-            let id = f.alloc_temp(PomExpr::Ident(v.name.clone()));
+            let id = f.alloc_temp(PomExpr::Ident { span: NOSPAN, name: v.name.clone() });
             f.scope.set(v.name.clone(), id);
         }
         f
@@ -373,7 +434,7 @@ impl<'m> AnalogFlattener<'m> {
                     .any(|&(a, b)| (a, b) == (p, m) || (a, b) == (m, p));
                 if !is_force {
                     return Err(CodegenError::unsupported(
-                        "branch-current term in a potential force must probe a forced branch (`V(...) <- ...`)",
+                        "branch-current term in a potential force must probe a forced branch (`V(...) <+ ...`)",
                     ));
                 }
             }
@@ -415,62 +476,55 @@ impl<'m> AnalogFlattener<'m> {
     fn walk(&mut self, stmts: &[PomStmt], guard: Option<&PomExpr>) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
-                PomStmt::Bind { dest, op: BindOp::Contrib, src } => {
-                    self.add_contrib(dest, src, guard)?;
+                PomStmt::Contribution { target, value, .. } => {
+                    self.add_contrib(target, value, guard)?;
                 }
-                PomStmt::Bind { dest, op: BindOp::Force, src } => {
-                    self.add_force(dest, src, guard)?;
-                }
-                PomStmt::Bind { dest: PomExpr::Ident(name), op: BindOp::Assign, src } => {
+                PomStmt::Assign { target: PomExpr::Ident { name, .. }, value, .. }
+                | PomStmt::NonBlockingAssign { target: PomExpr::Ident { name, .. }, value, .. } => {
                     // A guarded reassignment reads the previous temp as its
                     // else-branch: `x = g ? new : __temp(old)`.
-                    let value = self.subst(src)?;
-                    let value = match guard {
-                        None => value,
+                    let resolved = self.subst(value)?;
+                    let resolved = match guard {
+                        None => resolved,
                         Some(g) => {
                             let old = self.scope.get(name)
                                 .map(temp_ref)
                                 .unwrap_or_else(|| lit(0.0));
-                            select(g.clone(), value, old)
+                            select(g.clone(), resolved, old)
                         }
                     };
-                    let id = self.alloc_value_temp(value)?;
+                    let id = self.alloc_value_temp(resolved)?;
                     self.scope.set(name.clone(), id);
                 }
                 // A non-identifier assign target has no meaning in a
                 // flattened analog body — nothing to record.
-                PomStmt::Bind { op: BindOp::Assign, .. } => {}
-                PomStmt::VarDecl { name, default, .. } => {
-                    let value = match default {
-                        Some(e) => self.subst(e)?,
-                        None => lit(0.0),
-                    };
-                    let id = self.alloc_value_temp(value)?;
-                    self.scope.set(name.clone(), id);
+                PomStmt::Assign { .. } | PomStmt::NonBlockingAssign { .. } => {}
+                PomStmt::Block { stmts, .. } => {
+                    self.walk(stmts, guard)?;
                 }
-                PomStmt::If { cond, then_body, else_body } => {
+                PomStmt::If { cond, then_branch, else_branch, .. } => {
                     let cond = self.subst(cond)?;
                     let then_guard = and_guards(guard, &cond);
-                    self.walk(&then_body.stmts, Some(&then_guard))?;
+                    self.walk(std::slice::from_ref(then_branch.as_ref()), Some(&then_guard))?;
                     let else_guard = and_guards(guard, &not_expr(cond.clone()));
-                    if let Some(eb) = else_body {
-                        self.walk(&eb.stmts, Some(&else_guard))?;
+                    if let Some(eb) = else_branch {
+                        self.walk(std::slice::from_ref(eb.as_ref()), Some(&else_guard))?;
                     }
                 }
-                PomStmt::Match { expr, arms } => {
-                    let scrutinee = self.subst(expr)?;
+                PomStmt::Case { selector, arms, .. } => {
+                    let scrutinee = self.subst(selector)?;
                     let mut no_prior = None::<PomExpr>;
                     for arm in arms {
-                        let cond = pattern_cond(&scrutinee, &arm.pat);
+                        let cond = case_arm_cond(&scrutinee, arm);
                         let arm_guard = chain_guards(guard, &no_prior, &cond);
-                        self.walk(&arm.body.stmts, Some(&arm_guard))?;
+                        self.walk(std::slice::from_ref(arm.body.as_ref()), Some(&arm_guard))?;
                         no_prior = Some(match no_prior {
                             None => not_expr(cond),
-                            Some(prev) => binary(BinaryOp::And, prev, not_expr(cond)),
+                            Some(prev) => binary(BinOp::LogAnd, prev, not_expr(cond)),
                         });
                     }
                 }
-                PomStmt::Expr(PomExpr::SysCall(name, args)) => {
+                PomStmt::TaskCall { name, args, .. } => {
                     match name.trim_start_matches('$') {
                         "bound_step" => {
                             let val = match args.first() {
@@ -494,7 +548,7 @@ impl<'m> AnalogFlattener<'m> {
                                 _ => crate::resolve::Severity::Info,
                             };
                             let fmt = match args.first() {
-                                Some(PomExpr::Literal(Literal::String(s))) => s.clone(),
+                                Some(PomExpr::Str { value, .. }) => value.clone(),
                                 _ => String::new(),
                             };
                             self.out.diagnostics.push(FlatDiagnostic { severity, format: fmt });
@@ -502,46 +556,23 @@ impl<'m> AnalogFlattener<'m> {
                         _ => {}
                     }
                 }
-                PomStmt::Expr(_) => {}
-                PomStmt::Diagnostic { sys, .. } => {
-                    let bare = sys.trim_start_matches('$');
-                    let severity = match bare {
-                        "warning" | "warn" => crate::resolve::Severity::Warn,
-                        "error" => crate::resolve::Severity::Error,
-                        "fatal" => crate::resolve::Severity::Fatal,
-                        _ => crate::resolve::Severity::Info,
-                    };
-                    self.out.diagnostics.push(FlatDiagnostic {
-                        severity,
-                        format: String::new(),
-                    });
-                }
-                PomStmt::Event { spec, guard: event_guard, body } => {
-                    // Combine the event's `when` guard with the outer path guard.
-                    let combined_guard = match event_guard {
-                        Some(eg) => {
-                            let resolved_eg = self.subst(eg)?;
-                            match guard {
-                                Some(pg) => Some(Box::new(PomExpr::Binary(
-                                    Box::new(resolved_eg), BinaryOp::And, Box::new(pg.clone()),
-                                ))),
-                                None => Some(Box::new(resolved_eg)),
-                            }
-                        }
-                        None => guard.map(|g| Box::new(g.clone())),
-                    };
-                    for source in event_spec_to_sources(spec) {
-                        let event = AnalogEvent {
-                            source,
-                            body: body.stmts.clone(),
+                PomStmt::EventControl { events, body, .. } => {
+                    for source in event_exprs_to_sources(events) {
+                        let event_body = match body.as_ref() {
+                            PomStmt::Block { stmts, .. } => stmts.clone(),
+                            other => vec![other.clone()],
                         };
-                        self.add_event(&event, combined_guard.as_deref())?;
+                        let event = AnalogEvent { source, body: event_body };
+                        self.add_event(&event, guard)?;
                     }
                 }
-                PomStmt::Return(_) => {
-                    return Err(CodegenError::Invalid("`return` in an analog body".into()));
+                PomStmt::Null { .. } | PomStmt::Disable { .. } => {}
+                PomStmt::For { .. } | PomStmt::While { .. } | PomStmt::Repeat { .. }
+                | PomStmt::Forever { .. } | PomStmt::DelayControl { .. } => {
+                    return Err(CodegenError::unsupported(
+                        "runtime loop/delay-control statement in an analog body",
+                    ));
                 }
-                _ => {}
             }
         }
         Ok(())
@@ -562,7 +593,7 @@ impl<'m> AnalogFlattener<'m> {
                 }
                 match self.potential_acc.iter_mut().find(|(p, m, _)| *p == plus && *m == minus) {
                     Some((_, _, acc)) => {
-                        *acc = binary(BinaryOp::Add, acc.clone(), guarded);
+                        *acc = binary(BinOp::Add, acc.clone(), guarded);
                     }
                     None => self.potential_acc.push((plus, minus, guarded)),
                 }
@@ -571,15 +602,15 @@ impl<'m> AnalogFlattener<'m> {
         }
     }
 
-    /// Split a potential-force value into `(resistive, flux_terms,
-    /// current_terms)`. `… + L·ddt(I(p,n))` over the force's *own* branch
-    /// current is the inductor flux `Φ = L·I`: `L` is returned as a flux term
-    /// and the branch equation gains `dΦ/dt`. A bare linear `R·I(branch)`
-    /// read is a series-impedance term (`FlatForce::current_terms`) — exact
+    /// Split a potential contribution's value into `(resistive, flux_terms,
+    /// current_terms)`. `… + L·ddt(I(p,n))` over the branch's *own* current
+    /// is the inductor flux `Φ = L·I`: `L` is returned as a flux term and
+    /// the branch equation gains `dΦ/dt`. A bare linear `R·I(branch)` read
+    /// is a series-impedance term (`FlatForce::current_terms`) — exact
     /// `V = R·I`, never a penalty conductance. `ddt` of a *different*
     /// branch's current (mutual inductance) stays supported; a nonlinear
-    /// flux/impedance or mixing `R·I` with `ddt` in one force is a loud
-    /// error for now.
+    /// flux/impedance or mixing `R·I` with `ddt` in one contribution is a
+    /// loud error for now.
     #[allow(clippy::type_complexity)]
     fn split_flux(
         &mut self,
@@ -594,7 +625,7 @@ impl<'m> AnalogFlattener<'m> {
         let resistive = substitute_marker(&value, &["__ddt"], false)?;
         if !collect_branch_current_pairs(&resistive).is_empty() {
             return Err(CodegenError::unsupported(
-                "a branch-current term (`R·I(...)`) combined with `ddt` in one potential force",
+                "a branch-current term (`R·I(...)`) combined with `ddt` in one potential contribution",
             ));
         }
         let flux = substitute_marker(&value, &["__ddt"], true)?;
@@ -604,7 +635,7 @@ impl<'m> AnalogFlattener<'m> {
         let branches = collect_branch_current_pairs(&flux);
         if branches.is_empty() {
             return Err(CodegenError::unsupported(
-                "ddt in a potential force must integrate a branch current (`ddt(I(p,n))`)",
+                "ddt in a potential contribution must integrate a branch current (`ddt(I(p,n))`)",
             ));
         }
         let mut terms = Vec::new();
@@ -622,11 +653,12 @@ impl<'m> AnalogFlattener<'m> {
     }
 
     /// Split the linear `coeff·I(branch)` (series-impedance) terms out of a
-    /// non-reactive force value. Returns the remainder (every listed branch
-    /// current set to 0) and one `(plus, minus, coeff)` term per distinct
-    /// branch, with `coeff = value@[I_k=1, others 0] − value@[all 0]` — exact
-    /// for a value affine in the branch currents; a coefficient that still
-    /// reads a branch current (nonlinear impedance) is a loud error.
+    /// non-reactive potential-contribution value. Returns the remainder
+    /// (every listed branch current set to 0) and one `(plus, minus,
+    /// coeff)` term per distinct branch, with `coeff = value@[I_k=1, others
+    /// 0] − value@[all 0]` — exact for a value affine in the branch
+    /// currents; a coefficient that still reads a branch current
+    /// (nonlinear impedance) is a loud error.
     #[allow(clippy::type_complexity)]
     fn split_current_terms(
         &mut self,
@@ -640,10 +672,10 @@ impl<'m> AnalogFlattener<'m> {
         let mut terms = Vec::new();
         for (a, b) in &pairs {
             let at_one = isolate_branch_coeff(&value, a, b, &pairs);
-            let coeff = binary(BinaryOp::Sub, at_one, rest.clone());
+            let coeff = binary(BinOp::Sub, at_one, rest.clone());
             if has_branch_current(&coeff) {
                 return Err(CodegenError::unsupported(
-                    "nonlinear branch-current impedance (I(...) inside its own coefficient) in a potential force",
+                    "nonlinear branch-current impedance (I(...) inside its own coefficient) in a potential contribution",
                 ));
             }
             let (pa, pb) = (self.resolve_node(a), self.resolve_node(b));
@@ -652,80 +684,34 @@ impl<'m> AnalogFlattener<'m> {
         Ok((rest, terms))
     }
 
-    fn add_force(&mut self, dest: &PomExpr, expr: &PomExpr, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
-        let (nature_kind, plus, minus) = self.parse_dest(dest)?;
-        let resolved = self.subst(expr)?;
-        match nature_kind {
-            NatureKind::Potential => {
-                if let Some(g) = guard {
-                    let branch = PomExpr::Call(
-                        Box::new(PomExpr::Ident("V".into())),
-                        vec![PomExpr::Ident(self.module.symbols.node(plus).name.clone()),
-                             PomExpr::Ident(self.module.symbols.node(minus).name.clone())],
-                    );
-                    let v_minus_e = binary(BinaryOp::Sub, branch, resolved);
-                    let conductance = select(g.clone(), lit(1e12), lit(1e-12));
-                    let switch = binary(BinaryOp::Mul, conductance, v_minus_e);
-                    return self.add_flow(switch, plus, minus);
-                }
-                let (expr, flux_terms, current_terms) = self.split_flux(resolved, plus, minus)?;
-                self.out.forces.push(FlatForce { plus, minus, expr, ac_stim: None, flux_terms, current_terms });
-                Ok(())
-            }
-            NatureKind::Flow => {
-                if let Some(g) = guard {
-                    let guarded = select(g.clone(), resolved, lit(0.0));
-                    return self.add_flow(guarded, plus, minus);
-                }
-                self.add_flow(resolved, plus, minus)
-            }
-        }
-    }
-
     fn parse_dest(&self, dest: &PomExpr) -> Result<(NatureKind, NodeId, NodeId), CodegenError> {
-        if let PomExpr::Call(func, args) = dest
-            && let PomExpr::Ident(name) = func.as_ref() {
-            let nature_kind = match name.as_str() {
+        if let PomExpr::AccessFunction { function, pos, neg, .. } = dest {
+            let nature_kind = match function.as_str() {
                 "V" => NatureKind::Potential,
                 _ => NatureKind::Flow,
             };
-            let plus_name = ident_str(args.first()).unwrap_or_else(|| "?".into());
-            let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
+            let plus_name = ident_str(Some(pos)).unwrap_or_else(|| "?".into());
+            let minus_name = neg.as_deref().and_then(|n| ident_str(Some(n))).unwrap_or_else(|| "0".into());
             let plus = self.resolve_node(&plus_name);
             let minus = self.resolve_node(&minus_name);
             return Ok((nature_kind, plus, minus));
         }
-        // Anything that is not an access-function call. This used to fall
-        // through to `(Flow, GROUND, GROUND)` — a current contribution from
-        // ground to ground, i.e. the authored value computed and discarded. A
-        // bare-identifier target is the natural spelling for driving a digital
-        // net from an analog body (`pwm <- duty > ramp`, SPEC Part I §10.4's
-        // "an analog crossing may drive digital state"), so this was not a
-        // theoretical hole: the whole statement silently did nothing, the
-        // design built, and the solver converged on a circuit whose comparator
-        // never fired.
-        //
-        // Fail loud instead. The supported analog->digital direction today is
-        // the other one: a `digital` body reads analog node voltages through
-        // `V(...)` (the A2D bridge, `emit/builder.rs::analog_branch_voltage`),
-        // so the comparator belongs in the digital body.
-        // Report the authored name: a digital node referenced from an analog
-        // body is rewritten to a `__shadow_<net>` var by `shadow_var_for`
-        // before it reaches here (that bridge is read-only — D2A — which is
-        // precisely why a write to it goes nowhere), and leaking the internal
-        // spelling into a user-facing error helps nobody.
+        // Anything that is not an access-function call. A bare-identifier
+        // target is the natural spelling for driving a digital net from an
+        // analog body — but analog contributions only ever target branches
+        // (LRM §5.4.1), so this is a hard error, not a silent no-op.
         let spelled = match dest {
-            PomExpr::Ident(name) => {
+            PomExpr::Ident { name, .. } => {
                 format!("`{}`", name.strip_prefix("__shadow_").unwrap_or(name))
             }
             other => format!("{other:?}"),
         };
         Err(CodegenError::unsupported(format!(
-            "analog force target {spelled} is not an access function. \
-             `V(a, b) <- …` / `I(a, b) <- …` are the analog force forms; \
+            "analog contribution target {spelled} is not an access function. \
+             `V(a, b) <+ …` / `I(a, b) <+ …` are the analog contribution forms; \
              driving a net by bare name from an `analog` body is not lowered. \
              To drive a digital net from analog state, put the comparison in \
-             the module's `digital` body and read the analog side there with \
+             the module's digital body and read the analog side there with \
              `V(...)` (the A2D bridge)."
         )))
     }
@@ -747,7 +733,7 @@ impl<'m> AnalogFlattener<'m> {
         if has_ddt {
             let with_arg = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], true)?;
             let with_zero = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], false)?;
-            let charge = binary(BinaryOp::Sub, with_arg, with_zero);
+            let charge = binary(BinOp::Sub, with_arg, with_zero);
             let charge = self.finish_expr(charge)?;
             self.out.charge.push(FlatContrib { plus, minus, expr: charge });
         }
@@ -773,66 +759,60 @@ impl<'m> AnalogFlattener<'m> {
     fn finish_expr(&mut self, expr: PomExpr) -> Result<PomExpr, CodegenError> {
         let error: Option<CodegenError> = None;
         let out = rewrite_expr(&expr, &mut |e| {
-            if let PomExpr::Call(func, args) = e
-                && let PomExpr::Ident(name) = func.as_ref() {
-                    match name.as_str() {
-                        "__ddx" => {
-                            // __ddx(id, x, node_id) → d_dnode(x, node)
-                            if args.len() >= 3 {
-                                let x = &args[1];
-                                let node_id = match &args[2] {
-                                    PomExpr::Literal(Literal::Int(n)) => NodeId(*n as u32),
-                                    _ => NodeId::GROUND,
-                                };
-                                let module = self.module;
-                                let resolve = |n: &str| -> Option<NodeId> {
-                                    module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id)
-                                };
-                                return crate::resolve::diff::d_dnode(x, node_id, &resolve);
-                            }
-                            return lit(0.0);
+            if let PomExpr::Call { name, args, .. } = e {
+                match name.as_str() {
+                    "__ddx" => {
+                        // __ddx(id, x, node_id) → d_dnode(x, node)
+                        if args.len() >= 3 {
+                            let x = &args[1];
+                            let node_id = match &args[2] {
+                                PomExpr::Number { value: NumberLit::Integer(n), .. } => NodeId(*n as u32),
+                                _ => NodeId::GROUND,
+                            };
+                            let module = self.module;
+                            let resolve = |n: &str| -> Option<NodeId> {
+                                module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id)
+                            };
+                            return crate::resolve::diff::d_dnode(x, node_id, &resolve);
                         }
-                        "__idt" | "__idtmod" => {
-                            // __idt(id, x, ic[, modulus]) → __state_load(id) + step * x
-                            if args.len() >= 2 {
-                                let id = match &args[0] {
-                                    PomExpr::Literal(Literal::Int(n)) => StateId(*n as u32),
-                                    _ => return e.clone(),
-                                };
-                                let x = &args[1];
-                                if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
-                                    self.out.runtime_states.push((id, x.clone()));
-                                }
-                                let state_load = PomExpr::Call(
-                                    Box::new(PomExpr::Ident("__state_load".into())),
-                                    vec![PomExpr::Literal(Literal::Int(id.0 as u64))],
-                                );
-                                let step = PomExpr::SysCall(
-                                    "$simparam".to_string(),
-                                    vec![PomExpr::Literal(Literal::String("step".into())), lit(0.0)],
-                                );
-                                return binary(BinaryOp::Add, state_load, binary(BinaryOp::Mul, step, x.clone()));
-                            }
-                            return e.clone();
-                        }
-                        "__delay" | "__slew" | "__transition" => {
-                            // Runtime state: __op(id, x, ...) → __state_load(id), register input.
-                            if let Some(PomExpr::Literal(Literal::Int(id))) = args.first() {
-                                let sid = StateId(*id as u32);
-                                if !self.out.runtime_states.iter().any(|(s, _)| *s == sid) {
-                                    let x = args.get(1).cloned().unwrap_or(lit(0.0));
-                                    self.out.runtime_states.push((sid, x));
-                                }
-                                return PomExpr::Call(
-                                    Box::new(PomExpr::Ident("__state_load".into())),
-                                    vec![PomExpr::Literal(Literal::Int(*id))],
-                                );
-                            }
-                            return e.clone();
-                        }
-                        _ => {}
+                        return lit(0.0);
                     }
+                    "__idt" | "__idtmod" => {
+                        // __idt(id, x, ic[, modulus]) → __state_load(id) + step * x
+                        if args.len() >= 2 {
+                            let id = match &args[0] {
+                                PomExpr::Number { value: NumberLit::Integer(n), .. } => StateId(*n as u32),
+                                _ => return e.clone(),
+                            };
+                            let x = &args[1];
+                            if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
+                                self.out.runtime_states.push((id, x.clone()));
+                            }
+                            let state_load = call("__state_load", vec![int(id.0 as i64)]);
+                            let step = PomExpr::SystemFunctionCall {
+                                span: NOSPAN,
+                                name: "$simparam".to_string(),
+                                args: vec![str_lit("step"), lit(0.0)],
+                            };
+                            return binary(BinOp::Add, state_load, binary(BinOp::Mul, step, x.clone()));
+                        }
+                        return e.clone();
+                    }
+                    "__delay" | "__slew" | "__transition" => {
+                        // Runtime state: __op(id, x, ...) → __state_load(id), register input.
+                        if let Some(PomExpr::Number { value: NumberLit::Integer(id), .. }) = args.first() {
+                            let sid = StateId(*id as u32);
+                            if !self.out.runtime_states.iter().any(|(s, _)| *s == sid) {
+                                let x = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
+                                self.out.runtime_states.push((sid, x));
+                            }
+                            return call("__state_load", vec![int(*id)]);
+                        }
+                        return e.clone();
+                    }
+                    _ => {}
                 }
+            }
             e.clone()
         });
         match error {
@@ -844,7 +824,7 @@ impl<'m> AnalogFlattener<'m> {
     /// Resolve `var` references to `__temp` leaves. Never inlines — the
     /// output is linear in the size of `expr`.
     fn subst(&self, expr: &PomExpr) -> Result<PomExpr, CodegenError> {
-        Ok(subst_scope(expr, &self.scope, &Locals::new()))
+        Ok(subst_scope(expr, &self.scope))
     }
 
     /// Introduce a value temporary from an already-substituted expression:
@@ -867,10 +847,9 @@ impl<'m> AnalogFlattener<'m> {
     /// expressions are small, so this stays bounded.
     fn inline_temps(&self, expr: &PomExpr) -> PomExpr {
         rewrite_expr(expr, &mut |e| {
-            if let PomExpr::Call(f, args) = e
-                && let PomExpr::Ident(name) = f.as_ref()
+            if let PomExpr::Call { name, args, .. } = e
                 && name == "__temp"
-                && let Some(PomExpr::Literal(Literal::Int(id))) = args.first()
+                && let Some(PomExpr::Number { value: NumberLit::Integer(id), .. }) = args.first()
             {
                 return self.inline_temps(&self.out.temps[*id as usize]);
             }
@@ -905,39 +884,9 @@ impl<'m> AnalogFlattener<'m> {
                 }
             }
         };
-        // `@initial { V(p,n) <- ic; }` — collect potential forces in the
-        // initial event as UIC seeds (not runtime event actions).
-        if matches!(event.source, EventSource::InitialStep) {
-            self.collect_initial_conditions(&event.body)?;
-        }
         let mut actions = Vec::new();
         self.collect_event_actions(&event.body, guard, &mut actions)?;
         self.out.events.push(FlatEvent { trigger, actions });
-        Ok(())
-    }
-
-    /// Collect `V(p,n) <- expr` potential forces inside an `@initial` body as
-    /// instance-constant UIC seeds. The value must not depend on node
-    /// voltages (an initial condition is a fixed seed); a `V`/`I` reference in
-    /// it is a loud error.
-    fn collect_initial_conditions(&mut self, stmts: &[PomStmt]) -> Result<(), CodegenError> {
-        for stmt in stmts {
-            if let PomStmt::Bind { dest, op: BindOp::Force, src } = stmt {
-                let (nature_kind, plus, minus) = self.parse_dest(dest)?;
-                if nature_kind != NatureKind::Potential {
-                    return Err(CodegenError::unsupported(
-                        "@initial can only seed a potential (`V(p,n) <- ic`)",
-                    ));
-                }
-                let value = self.finish_expr(self.inline_temps(&self.subst(src)?))?;
-                if has_branch_access(&value) {
-                    return Err(CodegenError::unsupported(
-                        "@initial seed value must be instance-constant (no V()/I())",
-                    ));
-                }
-                self.out.initial_conditions.push((plus, minus, value));
-            }
-        }
         Ok(())
     }
 
@@ -949,31 +898,32 @@ impl<'m> AnalogFlattener<'m> {
     ) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
-                PomStmt::Bind { dest, op: BindOp::Assign, src } => {
-                    if let PomExpr::Ident(name) = dest
-                        && let Some(var_id) = self.module.symbols.vars()
-                            .find(|(_, v)| &v.name == name).map(|(id, _)| id)
-                        {
-                            // Event action values run against the persistent
-                            // var bank, not the contribution temp tape, so
-                            // inline temps back to bank-referencing form.
-                            let value = self.inline_temps(&self.subst(src)?);
-                            let value = self.finish_expr(value)?;
-                            let value = match guard {
-                                None => value,
-                                Some(g) => select(self.inline_temps(g), value,
-                                    PomExpr::Ident(name.clone())),
-                            };
-                            actions.push(FlatEventAction { var: var_id, value });
-                        }
+                PomStmt::Assign { target: PomExpr::Ident { name, .. }, value, .. }
+                | PomStmt::NonBlockingAssign { target: PomExpr::Ident { name, .. }, value, .. } => {
+                    if let Some(var_id) = self.module.symbols.vars()
+                        .find(|(_, v)| &v.name == name).map(|(id, _)| id)
+                    {
+                        // Event action values run against the persistent
+                        // var bank, not the contribution temp tape, so
+                        // inline temps back to bank-referencing form.
+                        let value = self.inline_temps(&self.subst(value)?);
+                        let value = self.finish_expr(value)?;
+                        let value = match guard {
+                            None => value,
+                            Some(g) => select(self.inline_temps(g), value,
+                                PomExpr::Ident { span: NOSPAN, name: name.clone() }),
+                        };
+                        actions.push(FlatEventAction { var: var_id, value });
+                    }
                 }
-                PomStmt::If { cond, then_body, else_body } => {
+                PomStmt::Block { stmts, .. } => self.collect_event_actions(stmts, guard, actions)?,
+                PomStmt::If { cond, then_branch, else_branch, .. } => {
                     let cond = self.subst(cond)?;
                     let then_guard = and_guards(guard, &cond);
-                    self.collect_event_actions(&then_body.stmts, Some(&then_guard), actions)?;
+                    self.collect_event_actions(std::slice::from_ref(then_branch.as_ref()), Some(&then_guard), actions)?;
                     let else_guard = and_guards(guard, &not_expr(cond));
-                    if let Some(eb) = else_body {
-                        self.collect_event_actions(&eb.stmts, Some(&else_guard), actions)?;
+                    if let Some(eb) = else_branch {
+                        self.collect_event_actions(std::slice::from_ref(eb.as_ref()), Some(&else_guard), actions)?;
                     }
                 }
                 _ => {}
@@ -983,105 +933,88 @@ impl<'m> AnalogFlattener<'m> {
     }
 }
 
-type Locals = HashMap<String, PomExpr>;
-
 /// Substitute a `var` reference `Ident(name)` with its `__temp(id)` leaf.
-/// Non-var idents (params, nodes) pass through untouched. Crucially this does
-/// **not** inline module-level vars — that is what keeps the tree linear.
-///
-/// `locals` holds **block-local** vars (declared inside an `if`/block
-/// expression, e.g. `var a = …` in a diode's cubic-extension branch). Those
-/// have a tiny lexical scope and are inlined into the block's tail, since the
-/// emitter evaluates only a block's tail expression, not its statements.
-fn subst_scope(expr: &PomExpr, scope: &Scope, locals: &Locals) -> PomExpr {
+/// Non-var idents (params, nodes) pass through untouched. Crucially this
+/// does **not** inline module-level vars — that is what keeps the tree
+/// linear. Block-local `var`s (VAMS `BlockItemDecl`, name-only — no
+/// initializer syntax) are not separately tracked: since a local
+/// declaration carries no default expression, its first use is always
+/// preceded by an ordinary `Assign`, which the caller (`walk`) already
+/// allocates a temp for exactly like a module-level reassignment — there is
+/// no PHDL-style "block-local inlined value" case left to handle here.
+fn subst_scope(expr: &PomExpr, scope: &Scope) -> PomExpr {
     match expr {
-        PomExpr::Ident(name) => {
-            if let Some(local) = locals.get(name) {
-                return local.clone();
-            }
-            match scope.get(name) {
-                Some(id) => temp_ref(id),
-                None => expr.clone(),
-            }
-        }
-        PomExpr::Unary(op, x) => PomExpr::Unary(op.clone(), Box::new(subst_scope(x, scope, locals))),
-        PomExpr::Binary(l, op, r) => PomExpr::Binary(
-            Box::new(subst_scope(l, scope, locals)), op.clone(), Box::new(subst_scope(r, scope, locals))),
-        PomExpr::Call(f, args) => {
-            let f = subst_scope(f, scope, locals);
-            let args: Vec<_> = args.iter().map(|a| subst_scope(a, scope, locals)).collect();
-            PomExpr::Call(Box::new(f), args)
-        }
-        PomExpr::SysCall(name, args) => {
-            let args: Vec<_> = args.iter().map(|a| subst_scope(a, scope, locals)).collect();
-            PomExpr::SysCall(name.clone(), args)
-        }
-        PomExpr::If { cond, then_body, else_body } => PomExpr::If {
-            cond: Box::new(subst_scope(cond, scope, locals)),
-            then_body: subst_block(then_body, scope, locals),
-            else_body: subst_block(else_body, scope, locals),
+        PomExpr::Ident { name, .. } => match scope.get(name) {
+            Some(id) => temp_ref(id),
+            None => expr.clone(),
         },
-        PomExpr::Block(b) => PomExpr::Block(subst_block(b, scope, locals)),
-        PomExpr::Cast(t, x) => PomExpr::Cast(t.clone(), Box::new(subst_scope(x, scope, locals))),
-        PomExpr::Field(base, field) => {
-            PomExpr::Field(Box::new(subst_scope(base, scope, locals)), field.clone())
+        PomExpr::Unary { span, op, operand } => {
+            PomExpr::Unary { span: *span, op: *op, operand: Box::new(subst_scope(operand, scope)) }
         }
-        PomExpr::Index(base, idx) => PomExpr::Index(
-            Box::new(subst_scope(base, scope, locals)), Box::new(subst_scope(idx, scope, locals))),
-        _ => expr.clone(),
-    }
-}
-
-/// Resolve a block expression: fold its `var`/assign statements into the
-/// `locals` map (inlined), then return a statement-free block holding just
-/// the tail expression. This is what makes block-local vars work — the
-/// emitter never runs block statements.
-fn subst_block(block: &piperine_lang::parse::ast::Block, scope: &Scope, outer: &Locals) -> piperine_lang::parse::ast::Block {
-    use piperine_lang::parse::ast::Stmt as S;
-    let mut locals = outer.clone();
-    for s in &block.stmts {
-        match s {
-            S::VarDecl { name, default, .. } => {
-                let value = default.as_ref()
-                    .map(|e| subst_scope(e, scope, &locals))
-                    .unwrap_or_else(|| lit(0.0));
-                locals.insert(name.clone(), value);
-            }
-            S::Bind { dest: PomExpr::Ident(name), op: BindOp::Assign, src } => {
-                let value = subst_scope(src, scope, &locals);
-                locals.insert(name.clone(), value);
-            }
-            _ => {}
+        PomExpr::Binary { span, op, lhs, rhs } => PomExpr::Binary {
+            span: *span,
+            op: *op,
+            lhs: Box::new(subst_scope(lhs, scope)),
+            rhs: Box::new(subst_scope(rhs, scope)),
+        },
+        PomExpr::Ternary { span, cond, then_branch, else_branch } => PomExpr::Ternary {
+            span: *span,
+            cond: Box::new(subst_scope(cond, scope)),
+            then_branch: Box::new(subst_scope(then_branch, scope)),
+            else_branch: Box::new(subst_scope(else_branch, scope)),
+        },
+        PomExpr::Call { span, name, args } => PomExpr::Call {
+            span: *span,
+            name: name.clone(),
+            args: args.iter().map(|a| subst_scope(a, scope)).collect(),
+        },
+        PomExpr::SystemFunctionCall { span, name, args } => PomExpr::SystemFunctionCall {
+            span: *span,
+            name: name.clone(),
+            args: args.iter().map(|a| subst_scope(a, scope)).collect(),
+        },
+        PomExpr::AccessFunction { span, function, pos, neg } => PomExpr::AccessFunction {
+            span: *span,
+            function: function.clone(),
+            pos: Box::new(subst_scope(pos, scope)),
+            neg: neg.as_ref().map(|n| Box::new(subst_scope(n, scope))),
+        },
+        PomExpr::Index { span, base, index } => PomExpr::Index {
+            span: *span,
+            base: Box::new(subst_scope(base, scope)),
+            index: Box::new(subst_scope(index, scope)),
+        },
+        PomExpr::PartSelect { span, base, msb, lsb } => PomExpr::PartSelect {
+            span: *span,
+            base: Box::new(subst_scope(base, scope)),
+            msb: Box::new(subst_scope(msb, scope)),
+            lsb: Box::new(subst_scope(lsb, scope)),
+        },
+        PomExpr::Concat { span, parts } => {
+            PomExpr::Concat { span: *span, parts: parts.iter().map(|p| subst_scope(p, scope)).collect() }
         }
+        PomExpr::Replication { span, count, parts } => PomExpr::Replication {
+            span: *span,
+            count: Box::new(subst_scope(count, scope)),
+            parts: parts.iter().map(|p| subst_scope(p, scope)).collect(),
+        },
+        PomExpr::Number { .. } | PomExpr::Str { .. } => expr.clone(),
     }
-    let tail = block.expr.as_ref()
-        .map(|e| subst_scope(e, scope, &locals))
-        // A block whose value is its last `Expr` statement.
-        .or_else(|| block.stmts.iter().rev().find_map(|s| match s {
-            S::Expr(e) => Some(subst_scope(e, scope, &locals)),
-            _ => None,
-        }))
-        .unwrap_or_else(|| lit(0.0));
-    piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(tail)) }
 }
 
 /// Check if an expression contains any of the named marker calls.
 /// The distinct branch-current node pairs `(a,b)` a flux expression reads
 /// (orientation from the first occurrence; `I(b,a)` folds onto `(a,b)`).
 fn collect_branch_current_pairs(expr: &PomExpr) -> Vec<(String, String)> {
-    use piperine_lang::parse::ast::Walk;
     let mut pairs: Vec<(String, String)> = Vec::new();
-    expr.walk(&mut |e| {
-        if let PomExpr::Call(func, args) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-            && name == "I"
-            && args.len() == 2
-            && let (PomExpr::Ident(a), PomExpr::Ident(b)) = (&args[0], &args[1])
+    visit_all(expr, &mut |e| {
+        if let PomExpr::AccessFunction { function, pos, neg: Some(neg), .. } = e
+            && function == "I"
+            && let (PomExpr::Ident { name: a, .. }, PomExpr::Ident { name: b, .. }) = (pos.as_ref(), neg.as_ref())
             && !pairs.iter().any(|(x, y)| (x == a && y == b) || (x == b && y == a))
         {
             pairs.push((a.clone(), b.clone()));
         }
-        Walk::Continue
     });
     pairs
 }
@@ -1091,20 +1024,18 @@ fn collect_branch_current_pairs(expr: &PomExpr) -> Vec<(String, String)> {
 /// branch's current to 0.
 fn isolate_branch_coeff(expr: &PomExpr, a: &str, b: &str, all: &[(String, String)]) -> PomExpr {
     rewrite_expr(expr, &mut |e| {
-        if let PomExpr::Call(func, args) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-            && name == "I"
-            && args.len() == 2
-            && let (PomExpr::Ident(x), PomExpr::Ident(y)) = (&args[0], &args[1])
+        if let PomExpr::AccessFunction { function, pos, neg: Some(neg), .. } = e
+            && function == "I"
+            && let (PomExpr::Ident { name: x, .. }, PomExpr::Ident { name: y, .. }) = (pos.as_ref(), neg.as_ref())
         {
             if x == a && y == b {
-                return PomExpr::Literal(Literal::Real(1.0));
+                return lit(1.0);
             }
             if x == b && y == a {
-                return PomExpr::Literal(Literal::Real(-1.0));
+                return lit(-1.0);
             }
             if all.iter().any(|(p, q)| (p == x && q == y) || (p == y && q == x)) {
-                return PomExpr::Literal(Literal::Real(0.0));
+                return lit(0.0);
             }
         }
         e.clone()
@@ -1115,14 +1046,12 @@ fn isolate_branch_coeff(expr: &PomExpr, a: &str, b: &str, all: &[(String, String
 /// the "remainder" of an expression affine in those branch currents.
 fn zero_branch_currents(expr: &PomExpr, all: &[(String, String)]) -> PomExpr {
     rewrite_expr(expr, &mut |e| {
-        if let PomExpr::Call(func, args) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-            && name == "I"
-            && args.len() == 2
-            && let (PomExpr::Ident(x), PomExpr::Ident(y)) = (&args[0], &args[1])
+        if let PomExpr::AccessFunction { function, pos, neg: Some(neg), .. } = e
+            && function == "I"
+            && let (PomExpr::Ident { name: x, .. }, PomExpr::Ident { name: y, .. }) = (pos.as_ref(), neg.as_ref())
             && all.iter().any(|(p, q)| (p == x && q == y) || (p == y && q == x))
         {
-            return PomExpr::Literal(Literal::Real(0.0));
+            return lit(0.0);
         }
         e.clone()
     })
@@ -1130,49 +1059,24 @@ fn zero_branch_currents(expr: &PomExpr, all: &[(String, String)]) -> PomExpr {
 
 /// True if the expression still reads any branch current `I(...)`.
 fn has_branch_current(expr: &PomExpr) -> bool {
-    use piperine_lang::parse::ast::Walk;
     let mut found = false;
-    expr.walk(&mut |e| {
-        if let PomExpr::Call(func, _) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-            && name == "I"
+    visit_all(expr, &mut |e| {
+        if let PomExpr::AccessFunction { function, .. } = e
+            && function == "I"
         {
             found = true;
-            return Walk::SkipChildren;
         }
-        Walk::Continue
-    });
-    found
-}
-
-/// True if the expression reads any branch voltage/current (`V(...)`/`I(...)`).
-fn has_branch_access(expr: &PomExpr) -> bool {
-    use piperine_lang::parse::ast::Walk;
-    let mut found = false;
-    expr.walk(&mut |e| {
-        if let PomExpr::Call(func, _) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-            && (name == "V" || name == "I")
-        {
-            found = true;
-            return Walk::SkipChildren;
-        }
-        Walk::Continue
     });
     found
 }
 
 fn has_marker(expr: &PomExpr, names: &[&str]) -> bool {
-    use piperine_lang::parse::ast::Walk;
     let mut found = false;
-    expr.walk(&mut |e| {
-        if let PomExpr::Call(func, _) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-                && names.contains(&name.as_str()) {
-                    found = true;
-                    return Walk::SkipChildren;
-                }
-        Walk::Continue
+    visit_all(expr, &mut |e| {
+        if let PomExpr::Call { name, .. } = e
+            && names.contains(&name.as_str()) {
+                found = true;
+            }
     });
     found
 }
@@ -1180,15 +1084,14 @@ fn has_marker(expr: &PomExpr, names: &[&str]) -> bool {
 /// Replace marker calls: `__ddt(id, x)` → `x` (with_arg=true) or `0.0` (false).
 fn substitute_marker(expr: &PomExpr, names: &[&str], with_arg: bool) -> Result<PomExpr, CodegenError> {
     Ok(rewrite_expr(expr, &mut |e| {
-        if let PomExpr::Call(func, args) = e
-            && let PomExpr::Ident(name) = func.as_ref()
-                && names.contains(&name.as_str()) {
-                    if with_arg {
-                        return args.get(1).cloned().unwrap_or(lit(0.0));
-                    } else {
-                        return lit(0.0);
-                    }
+        if let PomExpr::Call { name, args, .. } = e
+            && names.contains(&name.as_str()) {
+                if with_arg {
+                    return args.get(1).cloned().unwrap_or_else(|| lit(0.0));
+                } else {
+                    return lit(0.0);
                 }
+            }
         e.clone()
     }))
 }
@@ -1196,96 +1099,89 @@ fn substitute_marker(expr: &PomExpr, names: &[&str], with_arg: bool) -> Result<P
 /// Bottom-up rewrite: children first, then `f` on the rebuilt node.
 pub(crate) fn rewrite_expr(expr: &PomExpr, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> PomExpr {
     let rewritten = match expr {
-        PomExpr::Literal(_) | PomExpr::Ident(_) | PomExpr::Path(_) => expr.clone(),
-        PomExpr::SysCall(name, args) => PomExpr::SysCall(
-            name.clone(),
-            args.iter().map(|a| rewrite_expr(a, f)).collect(),
-        ),
-        PomExpr::Unary(op, x) => PomExpr::Unary(op.clone(), Box::new(rewrite_expr(x, f))),
-        PomExpr::Binary(l, op, r) => PomExpr::Binary(
-            Box::new(rewrite_expr(l, f)), op.clone(), Box::new(rewrite_expr(r, f))),
-        PomExpr::Call(func, args) => {
-            let func = rewrite_expr(func, f);
-            let args: Vec<_> = args.iter().map(|a| rewrite_expr(a, f)).collect();
-            PomExpr::Call(Box::new(func), args)
-        }
-        PomExpr::If { cond, then_body, else_body } => PomExpr::If {
-            cond: Box::new(rewrite_expr(cond, f)),
-            then_body: rewrite_block(then_body, f),
-            else_body: rewrite_block(else_body, f),
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } => expr.clone(),
+        PomExpr::SystemFunctionCall { span, name, args } => PomExpr::SystemFunctionCall {
+            span: *span,
+            name: name.clone(),
+            args: args.iter().map(|a| rewrite_expr(a, f)).collect(),
         },
-        PomExpr::Block(b) => PomExpr::Block(rewrite_block(b, f)),
-        PomExpr::Cast(t, x) => PomExpr::Cast(t.clone(), Box::new(rewrite_expr(x, f))),
-        PomExpr::Field(base, field) => PomExpr::Field(Box::new(rewrite_expr(base, f)), field.clone()),
-        PomExpr::Index(base, idx) => PomExpr::Index(
-            Box::new(rewrite_expr(base, f)), Box::new(rewrite_expr(idx, f))),
-        _ => expr.clone(),
+        PomExpr::Unary { span, op, operand } => {
+            PomExpr::Unary { span: *span, op: *op, operand: Box::new(rewrite_expr(operand, f)) }
+        }
+        PomExpr::Binary { span, op, lhs, rhs } => PomExpr::Binary {
+            span: *span,
+            op: *op,
+            lhs: Box::new(rewrite_expr(lhs, f)),
+            rhs: Box::new(rewrite_expr(rhs, f)),
+        },
+        PomExpr::Call { span, name, args } => {
+            let args: Vec<_> = args.iter().map(|a| rewrite_expr(a, f)).collect();
+            PomExpr::Call { span: *span, name: name.clone(), args }
+        }
+        PomExpr::AccessFunction { span, function, pos, neg } => PomExpr::AccessFunction {
+            span: *span,
+            function: function.clone(),
+            pos: Box::new(rewrite_expr(pos, f)),
+            neg: neg.as_ref().map(|n| Box::new(rewrite_expr(n, f))),
+        },
+        PomExpr::Ternary { span, cond, then_branch, else_branch } => PomExpr::Ternary {
+            span: *span,
+            cond: Box::new(rewrite_expr(cond, f)),
+            then_branch: Box::new(rewrite_expr(then_branch, f)),
+            else_branch: Box::new(rewrite_expr(else_branch, f)),
+        },
+        PomExpr::Index { span, base, index } => PomExpr::Index {
+            span: *span,
+            base: Box::new(rewrite_expr(base, f)),
+            index: Box::new(rewrite_expr(index, f)),
+        },
+        PomExpr::PartSelect { span, base, msb, lsb } => PomExpr::PartSelect {
+            span: *span,
+            base: Box::new(rewrite_expr(base, f)),
+            msb: Box::new(rewrite_expr(msb, f)),
+            lsb: Box::new(rewrite_expr(lsb, f)),
+        },
+        PomExpr::Concat { span, parts } => {
+            PomExpr::Concat { span: *span, parts: parts.iter().map(|p| rewrite_expr(p, f)).collect() }
+        }
+        PomExpr::Replication { span, count, parts } => PomExpr::Replication {
+            span: *span,
+            count: Box::new(rewrite_expr(count, f)),
+            parts: parts.iter().map(|p| rewrite_expr(p, f)).collect(),
+        },
     };
     f(&rewritten)
-}
-
-fn rewrite_block(block: &piperine_lang::parse::ast::Block, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> piperine_lang::parse::ast::Block {
-    piperine_lang::parse::ast::Block {
-        stmts: block.stmts.iter().map(|s| rewrite_stmt(s, f)).collect(),
-        expr: block.expr.as_ref().map(|e| Box::new(rewrite_expr(e, f))),
-    }
-}
-
-fn rewrite_stmt(stmt: &PomStmt, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> PomStmt {
-    use piperine_lang::parse::ast::Stmt as S;
-    match stmt {
-        S::Bind { dest, op, src } => S::Bind {
-            dest: rewrite_expr(dest, f), op: op.clone(), src: rewrite_expr(src, f),
-        },
-        S::Expr(e) => S::Expr(rewrite_expr(e, f)),
-        S::Return(e) => S::Return(rewrite_expr(e, f)),
-        other => other.clone(),
-    }
 }
 
 fn chain_guards(guard: Option<&PomExpr>, no_prior: &Option<PomExpr>, cond: &PomExpr) -> PomExpr {
     let with_prior = match no_prior {
         None => cond.clone(),
-        Some(prev) => binary(BinaryOp::And, prev.clone(), cond.clone()),
+        Some(prev) => binary(BinOp::LogAnd, prev.clone(), cond.clone()),
     };
     and_guards(guard, &with_prior)
 }
 
-fn pattern_cond(scrutinee: &PomExpr, pattern: &piperine_lang::parse::ast::Pattern) -> PomExpr {
-    use piperine_lang::parse::ast::Pattern as P;
-    match pattern {
-        P::Wildcard => lit(1.0),
-        P::Literal(lit_v) => binary(BinaryOp::Eq, scrutinee.clone(),
-            PomExpr::Literal(Literal::Int(*lit_v))),
-        P::Path(p) => {
-            let name = p.segments.join("::");
-            binary(BinaryOp::Eq, scrutinee.clone(), PomExpr::Ident(name))
-        }
-        P::BitPattern(bits) => {
-            let mut mask = 0i64;
-            let mut value = 0i64;
-            for c in bits.chars() {
-                mask <<= 1; value <<= 1;
-                match c {
-                    '0' => mask |= 1,
-                    '1' => { mask |= 1; value |= 1; }
-                    _ => {}
-                }
+/// The path condition for one `case` arm: `false` for an empty label list
+/// (unreachable — the grammar requires at least one label or `default`),
+/// the OR of `scrutinee == label` for a labeled arm, `true` for the
+/// `default` arm (`labels: None`).
+fn case_arm_cond(scrutinee: &PomExpr, arm: &piperine_vams::ast::CaseArm) -> PomExpr {
+    match &arm.labels {
+        None => lit(1.0),
+        Some(labels) => labels.iter().fold(lit(0.0), |acc, label| {
+            let eq = binary(BinOp::Eq, scrutinee.clone(), label.clone());
+            if matches!(acc, PomExpr::Number { value: NumberLit::Real(v), .. } if v == 0.0) {
+                eq
+            } else {
+                binary(BinOp::LogOr, acc, eq)
             }
-            binary(BinaryOp::Eq,
-                binary(BinaryOp::BitAnd, scrutinee.clone(), PomExpr::Literal(Literal::Int(mask as u64))),
-                PomExpr::Literal(Literal::Int(value as u64)))
-        }
+        }),
     }
 }
 
 fn ident_str(e: Option<&PomExpr>) -> Option<String> {
     match e? {
-        PomExpr::Ident(s) => Some(s.clone()),
-        PomExpr::Field(base, field) => match base.as_ref() {
-            PomExpr::Ident(base_name) => Some(format!("{base_name}.{field}")),
-            _ => None,
-        },
+        PomExpr::Ident { name, .. } => Some(name.clone()),
         _ => None,
     }
 }
@@ -1301,7 +1197,7 @@ fn ident_str(e: Option<&PomExpr>) -> Option<String> {
 fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>), CodegenError> {
     let mut count = 0usize;
     visit_all(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, _) = e
+        if let PomExpr::SystemFunctionCall { name, .. } = e
             && name == "$ac_stim" {
                 count += 1;
             }
@@ -1310,26 +1206,26 @@ fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>),
         return Ok((expr, None));
     }
     let without = rewrite_expr(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, _) = e
+        if let PomExpr::SystemFunctionCall { name, .. } = e
             && name == "$ac_stim" {
                 return lit(0.0);
             }
         e.clone()
     });
-    let math1 = |name: &str, a: PomExpr| PomExpr::Call(Box::new(PomExpr::Ident(name.to_string())), vec![a]);
-    let math2 = |name: &str, a: PomExpr, b: PomExpr| PomExpr::Call(Box::new(PomExpr::Ident(name.to_string())), vec![a, b]);
+    let math1 = |name: &str, a: PomExpr| call(name, vec![a]);
+    let math2 = |name: &str, a: PomExpr, b: PomExpr| call(name, vec![a, b]);
     if count == 1 {
         let mut phase_expr = None;
         let with_mag = rewrite_expr(&expr, &mut |e| {
-            if let PomExpr::SysCall(name, args) = e
+            if let PomExpr::SystemFunctionCall { name, args, .. } = e
                 && name == "$ac_stim" {
                     phase_expr = args.get(1).cloned();
-                    return args.first().cloned().unwrap_or(lit(1.0));
+                    return args.first().cloned().unwrap_or_else(|| lit(1.0));
                 }
             e.clone()
         });
-        let mag = binary(BinaryOp::Sub, with_mag, without.clone());
-        let phase = phase_expr.unwrap_or(lit(0.0));
+        let mag = binary(BinOp::Sub, with_mag, without.clone());
+        let phase = phase_expr.unwrap_or_else(|| lit(0.0));
         return Ok((without, Some((mag, phase))));
     }
     // Phasor sum: one magnitude extraction per occurrence, then rectangular
@@ -1340,20 +1236,20 @@ fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>),
         let mut seen = 0usize;
         let mut phase_k = lit(0.0);
         let with_k = rewrite_expr(&expr, &mut |e| {
-            if let PomExpr::SysCall(name, args) = e
+            if let PomExpr::SystemFunctionCall { name, args, .. } = e
                 && name == "$ac_stim" {
                     let this = seen == k;
                     if this {
-                        phase_k = args.get(1).cloned().unwrap_or(lit(0.0));
+                        phase_k = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
                     }
                     seen += 1;
-                    return if this { args.first().cloned().unwrap_or(lit(1.0)) } else { lit(0.0) };
+                    return if this { args.first().cloned().unwrap_or_else(|| lit(1.0)) } else { lit(0.0) };
                 }
             e.clone()
         });
-        let mag_k = binary(BinaryOp::Sub, with_k, without.clone());
-        re = binary(BinaryOp::Add, re, binary(BinaryOp::Mul, mag_k.clone(), math1("cos", phase_k.clone())));
-        im = binary(BinaryOp::Add, im, binary(BinaryOp::Mul, mag_k, math1("sin", phase_k)));
+        let mag_k = binary(BinOp::Sub, with_k, without.clone());
+        re = binary(BinOp::Add, re, binary(BinOp::Mul, mag_k.clone(), math1("cos", phase_k.clone())));
+        im = binary(BinOp::Add, im, binary(BinOp::Mul, mag_k, math1("sin", phase_k)));
     }
     let mag = math2("hypot", re.clone(), im.clone());
     let phase = math2("atan2", im, re);

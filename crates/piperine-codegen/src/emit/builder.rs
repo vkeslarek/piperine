@@ -635,6 +635,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             BitAnd => Ok(Typed::int(self.builder.ins().band(a.value, b.value))),
             BitOr => Ok(Typed::int(self.builder.ins().bor(a.value, b.value))),
             BitXor => Ok(Typed::int(self.builder.ins().bxor(a.value, b.value))),
+            BitXnor => {
+                let xor = self.builder.ins().bxor(a.value, b.value);
+                Ok(Typed::int(self.builder.ins().bnot(xor)))
+            }
             Shl => Ok(Typed::int(self.builder.ins().ishl(a.value, b.value))),
             Shr => Ok(Typed::int(self.builder.ins().ushr(a.value, b.value))),
             Eq => Ok(icmp(self, IntCC::Equal)),

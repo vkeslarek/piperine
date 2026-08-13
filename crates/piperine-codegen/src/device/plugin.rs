@@ -6,7 +6,7 @@
 //! Dependency direction: this trait lives in codegen so codegen never
 //! depends on the plugin crate — the plugin host implements it.
 
-use piperine_lang::parse::ast::Direction;
+use piperine_lang::pom::Direction;
 use piperine_lang::pom::module::Attribute;
 use piperine_lang::pom::{Instance, Module};
 use piperine_lang::Value;

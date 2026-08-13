@@ -58,37 +58,14 @@ impl EdgeKind {
 
 /// Evaluate a POM `Expr` as a compile-time/param constant. `param_lookup`
 /// resolves parameter names to their instance values. Returns `None` for
-/// anything that isn't a literal, a param reference, or simple arithmetic
-/// over those — matching the register-init use case (SPEC §9 power-on).
+/// anything that isn't const-evaluable (delegates to the shared
+/// `resolve::pom_eval_const` — the same constant-folding this crate already
+/// uses at codegen time, not a second implementation).
 fn eval_const_expr(
-    expr: &piperine_lang::parse::ast::Expr,
+    expr: &piperine_vams::ast::Expr,
     param_lookup: &impl Fn(&str) -> Option<f64>,
 ) -> Option<f64> {
-    use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
-    match expr {
-        Expr::Literal(Literal::Real(v)) => Some(*v),
-        Expr::Literal(Literal::Int(v)) => Some(*v as f64),
-        Expr::Literal(Literal::Bool(b)) => Some(if *b { 1.0 } else { 0.0 }),
-        Expr::Literal(Literal::Quad(s)) => match s.as_str() {
-            "0" => Some(0.0),
-            "1" => Some(1.0),
-            _ => Some(2.0),
-        },
-        Expr::Ident(name) => param_lookup(name),
-        Expr::Binary(lhs, op, rhs) => {
-            let l = eval_const_expr(lhs, param_lookup)?;
-            let r = eval_const_expr(rhs, param_lookup)?;
-            Some(match op {
-                BinaryOp::Add => l + r,
-                BinaryOp::Sub => l - r,
-                BinaryOp::Mul => l * r,
-                BinaryOp::Div => l / r,
-                _ => return None,
-            })
-        }
-        Expr::Unary(UnaryOp::Neg, x) => Some(-eval_const_expr(x, param_lookup)?),
-        _ => None,
-    }
+    crate::resolve::pom_eval_const(expr, param_lookup).ok()
 }
 
 /// Reusable per-evaluation buffers. The event loop calls

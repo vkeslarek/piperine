@@ -173,47 +173,57 @@ impl DigitalLayout {
 /// through the module's symbol table. Walks nested `if`/`match`/`@`-event
 /// bodies — a var written only inside a clocked block is still written.
 fn collect_written(
-    stmts: &[piperine_lang::parse::ast::Stmt],
+    stmts: &[piperine_vams::ast::Stmt],
+    by_name: &HashMap<&str, VarId>,
+    _regs: &[VarId],
+    out: &mut std::collections::HashSet<VarId>,
+) {
+    for stmt in stmts {
+        collect_written_one(stmt, by_name, _regs, out);
+    }
+}
+
+/// Single-statement counterpart of [`collect_written`] — VAMS's `If`/
+/// `EventControl`/etc. bodies are one `Stmt` (often a `Block`), not a
+/// statement list, unlike PHDL's `Block { stmts, .. }` everywhere.
+fn collect_written_one(
+    stmt: &piperine_vams::ast::Stmt,
     by_name: &HashMap<&str, VarId>,
     regs: &[VarId],
     out: &mut std::collections::HashSet<VarId>,
 ) {
-    use piperine_lang::parse::ast::{Expr, Stmt};
-    for stmt in stmts {
-        match stmt {
-            Stmt::Bind { dest: Expr::Ident(name), .. } => {
-                if let Some(&id) = by_name.get(name.as_str()) {
-                    out.insert(id);
-                }
+    use piperine_vams::ast::{Expr, Stmt};
+    match stmt {
+        // VAMS has no `VarDecl`-with-default statement (LRM local
+        // declarations are name-only, `BlockItemDecl`) — a register's
+        // power-on init is now a first-class `DigitalBody::reg_inits`
+        // entry (`resolve/pom/body.rs`), never a statement in this tree,
+        // so every `Assign`/`NonBlockingAssign` to a var is a genuine
+        // per-evaluation write, register or not.
+        Stmt::Assign { target: Expr::Ident { name, .. }, .. }
+        | Stmt::NonBlockingAssign { target: Expr::Ident { name, .. }, .. } => {
+            if let Some(&id) = by_name.get(name.as_str()) {
+                out.insert(id);
             }
-            Stmt::VarDecl { name, .. } => {
-                // A declaration is a *power-on init*, not a per-evaluation
-                // write — `compile.rs` routes it to `reg_inits` whenever the
-                // var is a register. Counting it as a write is what let a
-                // module-level `var` the analog side owns travel the D2A
-                // bridge carrying the digital bank's never-updated value.
-                // A genuine comb-local (declared, recomputed each pass, not a
-                // register) IS digital-owned, so it still counts.
-                if let Some(&id) = by_name.get(name.as_str())
-                    && !regs.contains(&id)
-                {
-                    out.insert(id);
-                }
-            }
-            Stmt::If { then_body, else_body, .. } => {
-                collect_written(&then_body.stmts, by_name, regs, out);
-                if let Some(eb) = else_body {
-                    collect_written(&eb.stmts, by_name, regs, out);
-                }
-            }
-            Stmt::Match { arms, .. } => {
-                for arm in arms {
-                    collect_written(&arm.body.stmts, by_name, regs, out);
-                }
-            }
-            Stmt::Event { body, .. } => collect_written(&body.stmts, by_name, regs, out),
-            Stmt::For { body, .. } => collect_written(&body.stmts, by_name, regs, out),
-            _ => {}
         }
+        Stmt::Block { stmts, .. } => collect_written(stmts, by_name, regs, out),
+        Stmt::If { then_branch, else_branch, .. } => {
+            collect_written_one(then_branch, by_name, regs, out);
+            if let Some(eb) = else_branch {
+                collect_written_one(eb, by_name, regs, out);
+            }
+        }
+        Stmt::Case { arms, .. } => {
+            for arm in arms {
+                collect_written_one(&arm.body, by_name, regs, out);
+            }
+        }
+        Stmt::EventControl { body, .. }
+        | Stmt::For { body, .. }
+        | Stmt::While { body, .. }
+        | Stmt::Repeat { body, .. }
+        | Stmt::Forever { body, .. }
+        | Stmt::DelayControl { body, .. } => collect_written_one(body, by_name, regs, out),
+        _ => {}
     }
 }

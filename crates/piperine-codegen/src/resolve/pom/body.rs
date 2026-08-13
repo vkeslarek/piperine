@@ -6,7 +6,7 @@
 //! Also home to the pass's failure surface (`LowerError`/`LowerErrors`) and
 //! the `LowerCtx` scope the per-construct modules resolve against.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use piperine_lang::pom::Design;
 
@@ -102,7 +102,6 @@ pub(crate) struct LowerCtx<'a> {
     /// before behavior lowering starts; `vars` gains entries only through
     /// [`LowerCtx::shadow_var_for`], which keeps its map in sync.
     nodes: HashMap<String, NodeId>,
-    pub(super) params: HashMap<String, ParamId>,
     vars: HashMap<String, VarId>,
     /// State variables (ddt, idt, etc.) allocated during this behavior lowering.
     pub states: Vec<StateId>,
@@ -111,8 +110,6 @@ pub(crate) struct LowerCtx<'a> {
     /// Whether this context is lowering a `digital` (`initial`/`always`)
     /// body, as opposed to an `analog`/`analog initial` one.
     pub is_digital: bool,
-    /// Names of the owning module's persistent `var`s (GAPS §I.15).
-    pub module_vars: HashSet<String>,
     /// Map from `"instance_name.port_name"` → NodeId for named instance
     /// port access (SPEC §7.3: `I(load.p, gnd) <+ …`). The parent
     /// contributes to the child's port node, which is the parent-scope
@@ -135,26 +132,18 @@ impl<'a> LowerCtx<'a> {
     /// Create a fresh lowering context. Snapshots the symbol table's
     /// name → id maps once — every later lookup is a hash probe, not a
     /// table scan.
-    pub fn new(
-        symbols: &'a mut SymbolTable,
-        module_name: String,
-        is_digital: bool,
-        module_vars: HashSet<String>,
-    ) -> Self {
+    pub fn new(symbols: &'a mut SymbolTable, module_name: String, is_digital: bool) -> Self {
         let nodes = symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
-        let params = symbols.params().map(|(id, p)| (p.name.clone(), id)).collect();
         let vars = symbols.vars().map(|(id, v)| (v.name.clone(), id)).collect();
         Self {
             symbols,
             module_name,
             errors: Vec::new(),
             nodes,
-            params,
             vars,
             states: vec![],
             noise_sources: vec![],
             is_digital,
-            module_vars,
             instance_ports: HashMap::new(),
             consts: HashMap::new(),
             digital_shadows: Vec::new(),
@@ -328,9 +317,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
 
         for behavior in m.behaviors() {
             let is_digital = behavior.is_digital();
-            let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
-            let mut ctx =
-                LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, module_vars);
+            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital);
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
 

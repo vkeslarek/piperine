@@ -13,7 +13,9 @@ use crate::flatten::analog::{visit_all, FlatAnalog, FlatContrib, FlatEventTrigge
 use crate::error::CodegenError;
 use piperine_lang::math;
 
-use piperine_lang::parse::ast::Expr as PomExpr;
+use piperine_vams::ast::Expr as PomExpr;
+use piperine_vams::error::Span;
+use piperine_vams::lexer::NumberLit;
 
 use super::{
     AnalogCore, AnalogFn, AnalogKernel, AnalogParamFn, CompiledEvent, CompiledTrigger, RuntimeState, RuntimeStateSpec,
@@ -24,18 +26,26 @@ use super::limits::{Limits, LIMIT_FNS};
 use super::noise::Noise;
 use super::reactive::Reactive;
 
+const NOSPAN: Span = Span { start: 0, end: 0 };
+
+fn real(v: f64) -> PomExpr {
+    PomExpr::Number { span: NOSPAN, value: NumberLit::Real(v) }
+}
+
+fn call(name: &str, args: Vec<PomExpr>) -> PomExpr {
+    PomExpr::Call { span: NOSPAN, name: name.to_string(), args }
+}
+
 /// Collect the unique `$limit` expressions across every flattened expression,
 /// in a stable order. Each becomes a `vold` slot appended to the state bank.
 fn collect_limits(flat: &FlatAnalog) -> Vec<PomExpr> {
     let mut limits: Vec<PomExpr> = Vec::new();
     let mut scan = |e: &PomExpr| {
-        use piperine_lang::parse::ast::Walk;
-        e.walk(&mut |node| {
-            if let PomExpr::SysCall(name, _) = node
+        visit_all(e, &mut |node| {
+            if let PomExpr::SystemFunctionCall { name, .. } = node
                 && name.trim_start_matches('$') == "limit" && !limits.iter().any(|l| expr_eq(l, node)) {
                     limits.push(node.clone());
                 }
-            Walk::Continue
         });
     };
     for c in &flat.resistive { scan(&c.expr); }
@@ -50,7 +60,7 @@ fn collect_limits(flat: &FlatAnalog) -> Vec<PomExpr> {
 
 /// The junction branch `(plus, minus)` a `$limit` acts on.
 fn limit_branch(limit: &PomExpr, module: &LoweredBody, temps: &[PomExpr]) -> Option<(NodeId, NodeId)> {
-    let PomExpr::SysCall(name, args) = limit else { return None };
+    let PomExpr::SystemFunctionCall { name, args, .. } = limit else { return None };
     if name.trim_start_matches('$') != "limit" { return None; }
     let vnew = args.get(1)?;
     let resolve = |n: &str| -> NodeId {
@@ -71,39 +81,65 @@ fn limit_branches_into(
     expr: &PomExpr,
     temps: &[PomExpr],
     resolve: &impl Fn(&str) -> NodeId,
-    seen_temps: &mut std::collections::HashSet<u64>,
+    seen_temps: &mut std::collections::HashSet<i64>,
     out: &mut Vec<(NodeId, NodeId)>,
 ) {
-    use piperine_lang::parse::ast::{Literal, Walk};
-    expr.walk(&mut |node| {
-        if let PomExpr::Call(func, call_args) = node
-            && let PomExpr::Ident(fname) = func.as_ref()
-        {
-            if fname == "V" || fname == "I" {
-                let plus = ident_of(call_args.first()).unwrap_or_default();
-                let minus = ident_of(call_args.get(1)).unwrap_or_else(|| "0".into());
-                let branch = (resolve(&plus), resolve(&minus));
-                if !out.contains(&branch) {
-                    out.push(branch);
-                }
-                return Walk::SkipChildren;
-            }
-            if fname == "__temp"
-                && let Some(PomExpr::Literal(Literal::Int(id))) = call_args.first()
-            {
-                if seen_temps.insert(*id) {
-                    limit_branches_into(&temps[*id as usize], temps, resolve, seen_temps, out);
-                }
-                return Walk::SkipChildren;
+    // Cannot use the generic `visit_all` recursion here — it needs to stop
+    // descending into a matched `V`/`I`/`__temp` node's children (mirrors
+    // the old `Walk::SkipChildren` behavior) and recurse into the temp
+    // tape by id instead of the node's own (empty) children.
+    match expr {
+        PomExpr::AccessFunction { pos, neg, .. } => {
+            let plus = ident_of(Some(pos)).unwrap_or_default();
+            let minus = neg.as_deref().and_then(|n| ident_of(Some(n))).unwrap_or_else(|| "0".into());
+            let branch = (resolve(&plus), resolve(&minus));
+            if !out.contains(&branch) {
+                out.push(branch);
             }
         }
-        Walk::Continue
-    });
+        PomExpr::Call { name, args, .. } if name == "__temp" => {
+            if let Some(PomExpr::Number { value: NumberLit::Integer(id), .. }) = args.first()
+                && seen_temps.insert(*id)
+            {
+                limit_branches_into(&temps[*id as usize], temps, resolve, seen_temps, out);
+            }
+        }
+        PomExpr::Unary { operand, .. } => limit_branches_into(operand, temps, resolve, seen_temps, out),
+        PomExpr::Binary { lhs, rhs, .. } => {
+            limit_branches_into(lhs, temps, resolve, seen_temps, out);
+            limit_branches_into(rhs, temps, resolve, seen_temps, out);
+        }
+        PomExpr::Ternary { cond, then_branch, else_branch, .. } => {
+            limit_branches_into(cond, temps, resolve, seen_temps, out);
+            limit_branches_into(then_branch, temps, resolve, seen_temps, out);
+            limit_branches_into(else_branch, temps, resolve, seen_temps, out);
+        }
+        PomExpr::Call { args, .. } | PomExpr::SystemFunctionCall { args, .. } => {
+            for a in args {
+                limit_branches_into(a, temps, resolve, seen_temps, out);
+            }
+        }
+        PomExpr::Concat { parts, .. } | PomExpr::Replication { parts, .. } => {
+            for p in parts {
+                limit_branches_into(p, temps, resolve, seen_temps, out);
+            }
+        }
+        PomExpr::Index { base, index, .. } => {
+            limit_branches_into(base, temps, resolve, seen_temps, out);
+            limit_branches_into(index, temps, resolve, seen_temps, out);
+        }
+        PomExpr::PartSelect { base, msb, lsb, .. } => {
+            limit_branches_into(base, temps, resolve, seen_temps, out);
+            limit_branches_into(msb, temps, resolve, seen_temps, out);
+            limit_branches_into(lsb, temps, resolve, seen_temps, out);
+        }
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } => {}
+    }
 }
 
 fn ident_of(e: Option<&PomExpr>) -> Option<String> {
     match e {
-        Some(PomExpr::Ident(s)) => Some(s.clone()),
+        Some(PomExpr::Ident { name, .. }) => Some(name.clone()),
         _ => None,
     }
 }
@@ -274,11 +310,9 @@ impl<'m> AnalogCompiler<'m> {
             };
             for expr in self.flat.exprs() {
                 visit_all(expr, &mut |e| {
-                    if let PomExpr::SysCall(name, args) = e
+                    if let PomExpr::SystemFunctionCall { name, args, .. } = e
                         && name.trim_start_matches('$') == "param_given"
-                        && let Some(PomExpr::Literal(
-                            piperine_lang::parse::ast::Literal::String(pname),
-                        )) = args.first()
+                        && let Some(PomExpr::Str { value: pname, .. }) = args.first()
                         && let Some(id) = resolve(pname)
                     {
                         presence_mask |= 1 << id.min(63);
@@ -303,7 +337,7 @@ impl<'m> AnalogCompiler<'m> {
         // linear-operator view of `idt(x)` (the device scales by 1/(jω) at
         // stamp time). Other runtime states stay frozen in AC, as before.
         let ac_idt_jacobian_id = {
-            let idt_inputs: Vec<(u64, &PomExpr)> = runtime_inputs
+            let idt_inputs: Vec<(i64, &PomExpr)> = runtime_inputs
                 .iter()
                 .filter(|(id, _)| {
                     matches!(
@@ -311,17 +345,16 @@ impl<'m> AnalogCompiler<'m> {
                         StateKind::Idt { .. } | StateKind::IdtMod { .. }
                     )
                 })
-                .map(|(id, x)| (id.0 as u64, x))
+                .map(|(id, x)| (id.0 as i64, x))
                 .collect();
             if idt_inputs.is_empty() {
                 None
             } else {
                 let subst = |e: &PomExpr| -> PomExpr {
                     crate::flatten::analog::rewrite_expr(e, &mut |ex| {
-                        if let PomExpr::Call(func, args) = ex
-                            && let PomExpr::Ident(name) = func.as_ref()
+                        if let PomExpr::Call { name, args, .. } = ex
                             && name == "__state_load"
-                            && let Some(PomExpr::Literal(piperine_lang::parse::ast::Literal::Int(k))) = args.first()
+                            && let Some(PomExpr::Number { value: NumberLit::Integer(k), .. }) = args.first()
                             && let Some((_, x)) = idt_inputs.iter().find(|(slot, _)| slot == k)
                         {
                             return (*x).clone();
@@ -345,7 +378,9 @@ impl<'m> AnalogCompiler<'m> {
         // model with a default `ic = 0.0` does not clamp every transient to
         // zero. The mask is built here (compile-time, by walking the seed
         // expression) and consulted in `AnalogInstance::initial_conditions`
-        // against the per-instance `param_given_mask`.
+        // against the per-instance `param_given_mask`. Always empty today
+        // (MD-45 — see `FlatAnalog::initial_conditions`'s doc) but kept
+        // live so a future UIC-lowering producer needs no compiler change.
         let ic_terminals: Vec<(NodeId, NodeId)> =
             initial_conditions.iter().map(|(p, m, _)| (*p, *m)).collect();
         let param_id_by_name: HashMap<String, u32> = self
@@ -359,7 +394,7 @@ impl<'m> AnalogCompiler<'m> {
             .map(|(_, _, v)| {
                 let mut mask = 0u64;
                 visit_all(v, &mut |e| {
-                    if let PomExpr::Ident(name) = e
+                    if let PomExpr::Ident { name, .. } = e
                         && let Some(&id) = param_id_by_name.get(name) {
                         mask |= 1 << id.min(63);
                     }
@@ -469,11 +504,11 @@ impl<'m> AnalogCompiler<'m> {
         let (force_ac_mag_id, force_ac_phase_id) = if forces.iter().any(|f| f.ac_stim.is_some()) {
             let mags: Vec<PomExpr> = forces
                 .iter()
-                .map(|f| f.ac_stim.as_ref().map_or(PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)), |(m, _)| m.clone()))
+                .map(|f| f.ac_stim.as_ref().map_or_else(|| real(0.0), |(m, _)| m.clone()))
                 .collect();
             let phases: Vec<PomExpr> = forces
                 .iter()
-                .map(|f| f.ac_stim.as_ref().map_or(PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)), |(_, p)| p.clone()))
+                .map(|f| f.ac_stim.as_ref().map_or_else(|| real(0.0), |(_, p)| p.clone()))
                 .collect();
             (
                 Some(self.compile_rows("force_ac_mag", &mags)?),
@@ -509,10 +544,10 @@ impl<'m> AnalogCompiler<'m> {
                 .limits
                 .iter()
                 .map(|l| match l {
-                    PomExpr::SysCall(name, args) if name.trim_start_matches('$') == "limit" && args.len() >= 5 => {
+                    PomExpr::SystemFunctionCall { name, args, .. } if name.trim_start_matches('$') == "limit" && args.len() >= 5 => {
                         args[4].clone()
                     }
-                    _ => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
+                    _ => real(0.0),
                 })
                 .collect();
             Some(self.compile_rows("limit_seed", &seeds)?)
@@ -525,10 +560,10 @@ impl<'m> AnalogCompiler<'m> {
                 .limits
                 .iter()
                 .map(|l| match l {
-                    PomExpr::SysCall(name, args) if name.trim_start_matches('$') == "limit" && args.len() >= 2 => {
+                    PomExpr::SystemFunctionCall { name, args, .. } if name.trim_start_matches('$') == "limit" && args.len() >= 2 => {
                         args[1].clone()
                     }
-                    _ => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
+                    _ => real(0.0),
                 })
                 .collect();
             Some(self.compile_rows("limit_vnew", &vnews)?)
@@ -554,11 +589,11 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|l| {
                 let kind = match l {
-                    PomExpr::SysCall(name, args)
+                    PomExpr::SystemFunctionCall { name, args, .. }
                         if name.trim_start_matches('$') == "limit" && !args.is_empty() =>
                     {
                         match &args[0] {
-                            PomExpr::Literal(piperine_lang::parse::ast::Literal::String(s)) => s.as_str(),
+                            PomExpr::Str { value, .. } => value.as_str(),
                             _ => "",
                         }
                     }
@@ -583,7 +618,7 @@ impl<'m> AnalogCompiler<'m> {
         let noise_exp_id = if noise.iter().any(|(_, _, _, exp)| exp.is_some()) {
             let rows: Vec<PomExpr> = noise
                 .iter()
-                .map(|(_, _, _, exp)| exp.clone().unwrap_or(PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0))))
+                .map(|(_, _, _, exp)| exp.clone().unwrap_or_else(|| real(0.0)))
                 .collect();
             Some(self.compile_rows("noise_exponents", &rows)?)
         } else {
@@ -594,7 +629,7 @@ impl<'m> AnalogCompiler<'m> {
             None
         } else {
             // One row per state *slot*; slots without a runtime input write 0.
-            let mut rows = vec![PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)); self.module.symbols.num_states()];
+            let mut rows = vec![real(0.0); self.module.symbols.num_states()];
             for (id, input) in &runtime_inputs {
                 rows[id.0 as usize] = input.clone();
             }
@@ -620,27 +655,23 @@ impl<'m> AnalogCompiler<'m> {
         };
 
         // Constraint margin kernels (DVC-10): one compiled function per
-        // declared **pointwise** margin — never per instance (the kernel
-        // is `Arc`-shared across every instance of the module; the
-        // `.disto` function-count wall is the standing proof of what
-        // per-instance emission costs, design §E). Module-var references
-        // resolve through the same `__temp` tape the residual reads, so
-        // the margin functions CSE the shared subexpressions per
-        // evaluation instead of re-inlining them. Reduced-class margins
-        // never reach the kernel (D7 — host-side reductions); no
-        // pointwise margin → nothing compiled, the capability stays
-        // `None`.
+        // declared **pointwise** margin — never per instance. Always empty
+        // post-MD-45: `LoweredBody::constraints` is permanently `None`
+        // (`pom::ConstraintBlock`'s producer was deleted at T21 — see
+        // `resolve/pom/body.rs`'s doc). The consumer stays wired so a
+        // future phase rebuilding the producer on VAMS attributes needs no
+        // compiler change.
         let mut margin_ids: Vec<(super::constraints::MarginInfo, FuncId)> = Vec::new();
         if let Some(margins) = &self.module.constraints {
             let scope: HashMap<&str, u32> =
                 module_var_temps.iter().map(|(n, id)| (n.as_str(), *id)).collect();
             for (i, margin) in margins
                 .iter()
-                .filter(|m| m.class == piperine_lang::pom::QuantityClass::Pointwise)
+                .filter(|m| m.class == crate::resolve::QuantityClass::Pointwise)
                 .enumerate()
             {
                 let expr = crate::flatten::analog::rewrite_expr(&margin.expr, &mut |e| match e {
-                    PomExpr::Ident(name) if scope.contains_key(name.as_str()) => {
+                    PomExpr::Ident { name, .. } if scope.contains_key(name.as_str()) => {
                         temp_ref(scope[name.as_str()])
                     }
                     _ => e.clone(),
@@ -658,14 +689,8 @@ impl<'m> AnalogCompiler<'m> {
             }
         }
 
-        // `cover` bin-mapper kernels (T33, DVT-40): one compiled function
-        // per declared `cover` point, through the exact same
-        // `compile_rows` pointwise-evaluation path as margins — reused,
-        // not reinvented (a `cover` point is elaboration-proved pointwise
-        // already, no filter needed). `cover cross` entries carry no
-        // compiled function of their own (they combine already-mapped
-        // bin indices device-side), so they pass through as static
-        // catalog data alongside the compiled points.
+        // `cover` bin-mapper kernels (T33, DVT-40): same MD-45 status as
+        // margins above — always empty, consumer kept.
         let mut cover_ids: Vec<(super::coverage::CoverInfo, FuncId)> = Vec::new();
         let mut cover_crosses: Vec<super::coverage::CoverCrossInfo> = Vec::new();
         if let Some((points, crosses)) = &self.module.cover {
@@ -673,7 +698,7 @@ impl<'m> AnalogCompiler<'m> {
                 module_var_temps.iter().map(|(n, id)| (n.as_str(), *id)).collect();
             for (i, point) in points.iter().enumerate() {
                 let expr = crate::flatten::analog::rewrite_expr(&point.expr, &mut |e| match e {
-                    PomExpr::Ident(name) if scope.contains_key(name.as_str()) => {
+                    PomExpr::Ident { name, .. } if scope.contains_key(name.as_str()) => {
                         temp_ref(scope[name.as_str()])
                     }
                     _ => e.clone(),
@@ -711,7 +736,7 @@ impl<'m> AnalogCompiler<'m> {
                     FlatEventTrigger::Cross { expr, .. } | FlatEventTrigger::Above { expr } => {
                         expr.clone()
                     }
-                    FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
+                    FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => real(0.0),
                 })
                 .collect();
             let action_rows: Vec<PomExpr> = events
@@ -746,7 +771,7 @@ impl<'m> AnalogCompiler<'m> {
         } else {
             let min = bound_steps
                 .into_iter()
-                .reduce(|a, b| PomExpr::Call(Box::new(PomExpr::Ident("min".to_string())), vec![a, b]))
+                .reduce(|a, b| call("min", vec![a, b]))
                 .expect("non-empty");
             Some(self.compile_rows("bound_step", &[min])?)
         };
@@ -1200,9 +1225,8 @@ impl<'m> AnalogCompiler<'m> {
         let mut reads_i = false;
         let mut scan = |e: &PomExpr| {
             visit_all(e, &mut |node| {
-                if let PomExpr::Call(func, _) = node
-                    && let PomExpr::Ident(fname) = func.as_ref()
-                    && fname == "I"
+                if let PomExpr::AccessFunction { function, .. } = node
+                    && function == "I"
                 {
                     reads_i = true;
                 }
@@ -1331,7 +1355,7 @@ impl<'m> AnalogCompiler<'m> {
                         .map(|contrib| {
                             let row = crate::resolve::diff::d_dv_thrice(&contrib.expr, (a, b), (c, d), (e, f), &resolve_node);
                             match &row {
-                                PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
+                                PomExpr::Number { value: NumberLit::Real(v), .. } if *v == 0.0 => None,
                                 _ => Some(row),
                             }
                         })
@@ -1463,7 +1487,7 @@ impl<'m> AnalogCompiler<'m> {
                     .map(|contrib| {
                         let e = crate::resolve::diff::d_dv_twice(&contrib.expr, a, b, c, d, &resolve_node);
                         match &e {
-                            PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
+                            PomExpr::Number { value: NumberLit::Real(v), .. } if *v == 0.0 => None,
                             _ => Some(e),
                         }
                     })

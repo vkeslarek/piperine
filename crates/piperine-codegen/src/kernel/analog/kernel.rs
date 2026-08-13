@@ -21,7 +21,7 @@ use super::limits::Limits;
 use super::noise::Noise;
 use super::reactive::Reactive;
 
-use piperine_lang::parse::ast::Expr as PomExpr;
+use piperine_vams::ast::Expr as PomExpr;
 
 
 /// The uniform analog JIT function type.
