@@ -2174,3 +2174,47 @@ not started.
   lang`, `piperine-vams`, `piperine-codegen`, `piperine-solver`,
   `piperine-ir`, `piperine-api`, `piperine-plugin`, `piperine-project`
   all build clean with zero warnings.
+
+- **T36** ✅ `<pending commit>` — `crates/piperine-lang/tests/
+  extern_coverage_guard.rs` rewritten (design R9: "rewritten, never
+  deleted"), not deleted. The PHDL-era file guarded eight "native table →
+  textual `extern` declaration" categories (math functions, system tasks,
+  runtime operators, primitive types, `@device`/`@port`, statistical
+  distributions, constraint helpers, cast overloads) — every one of them
+  read `parse::ast::{ExternDecl, Item}`/`parse_str`/`ElabContext::{
+  callables,types,operators,constraint_helpers}`, all deleted at T21
+  (MD-45); the file was itself in T21's own "compile failures" inventory.
+  **Honest accounting, not a guard asserting nothing**: of the eight,
+  only `@device`/`@port` has a real VAMS-native mechanism today (T35's
+  `ElabContext::schemas`). The other seven have **no replacement at
+  all** — math functions and runtime operators are now bare string
+  matches deep in `piperine-codegen` (`resolve/diff.rs:409`'s `"sin" =>
+  …`, no elaboration-time registry); primitive types parse directly
+  through `piperine-vams` with no mediating registry; system tasks are
+  unscheduled until T47 (Phase 9, VAMS-15); statistical distributions and
+  constraint helpers went dark with dv-core's `ConstraintBlock`
+  (MD-45, same cause as `piperine-api`'s `margins.rs`/`reduced.rs`
+  stubs in T34); cast `from` overloads have no VAMS call-site syntax
+  needing them back. The rewritten file's header carries this as an
+  explicit table (mechanism / native table / textual decl / status) so
+  the debt is inventoried, not silently dropped — writing a test with no
+  mechanism behind it would have asserted nothing meaningful, which is
+  exactly what this task's brief warned against.
+  **What the file now asserts** (2 tests, deliberately not duplicating
+  `vams_device_port_attrs.rs`'s T35 behavioral coverage): (1)
+  `seed_device_port_schemas_registers_exactly_device_and_port` — the
+  inverse-direction regression trap the original file's spirit called
+  for, ported to the new mechanism: `ElabContext::schemas` after seeding
+  is **exactly** `{"device", "port"}`, so a silently added or dropped
+  schema name fails here by name even in a case
+  `vams_device_port_attrs.rs`'s behavioral tests might not happen to
+  exercise; (2) `an_unseeded_elaboration_context_registers_no_schema_
+  at_all` — an unseeded `ElabContext` (and `parse_and_elaborate`'s
+  unseeded default) registers nothing, proving MD-24's "no silent
+  fallback" holds at the seam itself, not just at a specific attribute
+  use site. `cargo test -p piperine-lang --test extern_coverage_guard`:
+  **2 passed, 0 failed**. `cargo build -p piperine-lang`: zero warnings.
+  One incidental effect worth recording: this file is no longer in the
+  T21 "compile failure" inventory — it now builds and passes, shrinking
+  that debt list by one entry (not claimed as this task's goal, just
+  true as a side effect of the rewrite).
