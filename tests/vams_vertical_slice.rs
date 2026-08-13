@@ -29,20 +29,35 @@
 //! `tasks.md` Progress Log (T33) for the full accounting of what's still
 //! broken workspace-wide.
 //!
-//! **Digital counter — NOT included, genuine pre-existing blocker, not
-//! introduced by this batch**: VAMS-06's story also asks for "a simple
-//! digital counter". A counter needs persistent register state (`var
-//! count`), and `crates/piperine-lang/src/elab/lower/vams.rs`'s
-//! `ModuleItem::Var(_) => {}` arm (Phase 5, T22 — landed before this
-//! batch, not touched by it) does not lower module-level `var`/`integer`/
-//! `real` declarations into the POM at all yet. No `.vams` source can
-//! declare working register state until that lands, so no digital counter
-//! is buildable through the current pipeline — flagged here, not silently
-//! skipped, and not fixed in this task (fixing it is `piperine-lang`
-//! elaboration work, outside "codegen retarget", Phase 6's scope).
+//! **Digital counter — now included.** The prior batch found
+//! `crates/piperine-lang/src/elab/lower/vams.rs`'s `ModuleItem::Var(_) =>
+//! {}` arm silently skipped every module-level `integer`/`real`/`time`/
+//! `realtime` declaration, so no `.vams` source could declare working
+//! register state (a T22 gap, fixed as a same-scope addendum — see
+//! `tests/vams_lower_var.rs` in `piperine-lang` for the elaboration-level
+//! proof, plus a `piperine-vams` grammar fix: `parse_module_item` never
+//! dispatched those keywords into `ModuleItem::Var` at all either). With
+//! both fixed, `vams_digital_counter_register_increments_on_posedge`
+//! below proves the fix all the way through: elaborate → lower_bodies →
+//! `CircuitCompiler` → a real digital device whose `integer count;`
+//! register is written by a compiled `always @(posedge clk) count <=
+//! count + 1;` clocked block on the native solver, unmodified.
+//!
+//! **Stimulus note**: VAMS has no `#delay` procedural timing control in
+//! this codegen (`emit/stmt.rs`: `` `#delay` control in digital codegen``
+//! is `CodegenError::unsupported`) and digital-only devices have no
+//! writable params yet (`device/element.rs`'s `set_param`/`list_params`
+//! read `self.analog` only — a purely-digital device has none), so a
+//! self-clocking oscillator can't yet be authored in `.vams` source
+//! itself (a real, separate gap, not this task's to fix). The clock edges
+//! are instead forced directly through `DigitalState::schedule` (the same
+//! public event-queue API `CircuitInstance::init_digital` itself seeds
+//! t=0 power-on events through) — a legitimate Rust-level testbench
+//! stimulus, not a VAMS-authored oscillator.
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
+use piperine_solver::abi::{DigitalEvent, DigitalNet, ElementCapabilities, LogicValue};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 
 /// The exact `.vams` translation of `examples/22_rc_step_response.phdl`'s
@@ -168,4 +183,117 @@ fn vams_rc_circuit_dc_operating_point() {
 
     assert!((v_in - 1.0).abs() < 1e-6, "v(vin) = 1.0 V (the ideal source), got {v_in}");
     assert!((v_out - 1.0).abs() < 1e-6, "v(vout) = 1.0 V at DC (capacitor open, no IR drop), got {v_out}");
+}
+
+/// VAMS-06's digital half: a `.vams` module declaring a persistent
+/// register (`integer count;`, LRM Annex A.2.1.3 `integer_declaration`)
+/// written by a clocked block (`always @(posedge clk) count <= count +
+/// 1;`). `clk` is driven by 5 externally forced `Zero -> One` transitions
+/// (see the file doc comment for why the stimulus is Rust-level, not
+/// VAMS-authored). `count`'s power-on value is the digital kernel's
+/// uninitialized-register sentinel (`Quad::X`, exported as raw value `2`
+/// through `Element::digital_hidden_snapshot`'s `Vec<i64>`) — VAMS's own
+/// `VarDecl` carries no initializer (`var_declarator_to_var`'s doc
+/// comment in `elab/lower/vams.rs`), so there is no `reg_inits` entry to
+/// seed a clean `0`. The test asserts the *delta* (post-run minus
+/// pre-run), not the sentinel's raw encoding, so it stays correct even if
+/// the sentinel's internal representation changes.
+const COUNTER: &str = r#"
+    discipline logic;
+        domain discrete;
+    enddiscipline
+
+    module counter (input logic clk, output logic q);
+        integer count;
+        always @(posedge clk) count <= count + 1;
+    endmodule
+
+    module top ();
+        logic clk_net;
+        logic q_net;
+        counter c1 (clk_net, q_net);
+    endmodule
+"#;
+
+#[test]
+fn vams_digital_counter_register_increments_on_posedge() {
+    let design = parse_and_elaborate(COUNTER, &piperine_lang::SourceMap::dummy())
+        .expect("a .vams counter with a module-level `integer` register parses and elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowers");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let (mut circuit, info) = compiler
+        .build_circuit_mapped("top")
+        .expect("CircuitCompiler builds a digital device from the VAMS-elaborated register");
+
+    let counter_dev_index = circuit
+        .all_devices()
+        .iter()
+        .position(|d| d.name() == "c1")
+        .expect("the `c1` counter instance is a device in the built circuit");
+
+    // A device with real persistent digital state declares SUPPORTS_ROLLBACK
+    // (ABI-05) — proves the elaborated `integer count;` actually became
+    // stateful register storage in the compiled kernel, not just a local.
+    let caps = circuit.all_devices()[counter_dev_index].capabilities();
+    assert!(
+        caps.contains(ElementCapabilities::SUPPORTS_ROLLBACK),
+        "a device with a written module-level var must declare SUPPORTS_ROLLBACK, got {caps:?}"
+    );
+
+    let count_before = circuit.all_devices()[counter_dev_index]
+        .digital_hidden_snapshot()
+        .expect("the counter device exposes hidden digital register state")
+        .0[0];
+
+    let clk_idx = *info.digital_nets.get("clk_net").expect("`clk_net` mapped to a digital net");
+
+    // Force exactly 5 clean posedges (Zero -> One) at t = 1, 3, 5, 7, 9,
+    // each preceded by a return to Zero so every rising edge is genuine.
+    const EDGES: u32 = 5;
+    for i in 0..EDGES {
+        let base = (2 * i) as f64;
+        circuit.digital_state.schedule(DigitalEvent {
+            time: base + 0.5,
+            net: DigitalNet(clk_idx),
+            value: LogicValue::Zero,
+            source: usize::MAX,
+            seq: (2 * i) as u64,
+        });
+        circuit.digital_state.schedule(DigitalEvent {
+            time: base + 1.0,
+            net: DigitalNet(clk_idx),
+            value: LogicValue::One,
+            source: usize::MAX,
+            seq: (2 * i + 1) as u64,
+        });
+    }
+
+    let opts = TransientAnalysisOptions::new(10.0, 0.1);
+    let mut tran = circuit.transient(opts, Context::default()).unwrap();
+    let result = tran.solve().expect("the all-digital circuit's transient run completes");
+
+    // The forced clock itself only rose exactly `EDGES` times — confirms
+    // the stimulus landed as intended before trusting the register count.
+    let mut clk_rising_edges = 0;
+    let mut prev = None;
+    for step in result.iter() {
+        if let Some(v) = step.digital(clk_idx) {
+            if prev == Some(LogicValue::Zero) && v == LogicValue::One {
+                clk_rising_edges += 1;
+            }
+            prev = Some(v);
+        }
+    }
+    assert_eq!(clk_rising_edges, EDGES, "exactly {EDGES} forced posedges were observed on clk_net");
+
+    let count_after = circuit.all_devices()[counter_dev_index]
+        .digital_hidden_snapshot()
+        .expect("the counter device exposes hidden digital register state")
+        .0[0];
+
+    assert_eq!(
+        count_after - count_before,
+        i64::from(EDGES),
+        "count increments by exactly 1 per posedge (before={count_before}, after={count_after})"
+    );
 }

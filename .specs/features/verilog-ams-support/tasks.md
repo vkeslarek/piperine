@@ -766,12 +766,12 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-06
 
 **Done when**:
-- [~] RC analog authored in `.vams` simulates (DC + transient) through `piperine_solver` directly — **not** `piperine-api` (broken, T34/Phase 7); digital counter **not delivered**, genuine pre-existing blocker, see Progress Log
-- [x] Results match an analytic closed-form golden within a tolerance matching `ToleranceContract::DC` (reltol 1e-3/abstol 1e-6) — restated locally, not imported (support harness needs `piperine-api`)
-- [~] Gate passes: `cargo test --workspace` — not achievable pre-Phase-7 (many unrelated targets fail to build); `cargo test -p piperine-codegen` green for the new target (verified via temp copy), see Progress Log
+- [x] RC analog authored in `.vams` simulates (DC + transient) through `piperine_solver` directly — **not** `piperine-api` (broken, T34/Phase 7, documented deviation, unchanged); digital counter **delivered** as a T22-addendum follow-up (module-level `var` lowering fixed), see Progress Log
+- [x] Results match an analytic closed-form golden (analog half) / an exact edge-count delta (digital half) within tolerances stated in the tests — restated locally, not imported (support harness needs `piperine-api`)
+- [~] Gate passes: `cargo test --workspace` — still not achievable pre-Phase-7 (piperine-api and everything downstream of it still fails to build); `cargo test -p piperine-codegen` green for all 3 tests in the target (verified via temp copy), see Progress Log
 
 **Tests**: integration · **Gate**: full
-**Commit**: `test(vams): end-to-end vertical slice matching the PHDL baseline`
+**Commit**: `test(vams): end-to-end vertical slice matching the PHDL baseline` (RC half); `test(vams): close T33 — digital counter register proof` (counter half, this follow-up)
 
 ---
 
@@ -1894,9 +1894,87 @@ Ready for T33 — the end-to-end vertical slice.
   introduced, by this batch). Recorded as partial, not silently
   marked done.
 
-**Phase 6 (S3a) status: T28-T32 fully closed; T33 partially closed**
-(analog half delivered and verified; digital-counter half blocked on
-a Phase 5 gap, `piperine-api` integration blocked on Phase 7 — both
-out of this batch's assigned scope, T28-T33). This batch stops here
-per its own instructions ("Do NOT proceed past T33"). Phase 7
-(downstream retarget + PHDL removal, T34+) is next, not started.
+### T22 addendum + T33 close-out (follow-up batch, 2026-08-13)
+
+- **T22 addendum** `a4a5b3a` — module-level `var` lowering. The gap the
+  previous batch flagged (`elab/lower/vams.rs:122`'s `ModuleItem::Var(_)
+  => {}`) had a second, deeper layer it didn't surface: `piperine-vams`'s
+  own `parse_module_item` never dispatched `integer`/`real`/`time`/
+  `realtime` into `ModuleItem::Var` at all — confirmed by direct parse
+  (`integer count;` was silently misread as a net declaration with
+  discipline `"integer"`). Both fixed together, since the elaboration fix
+  alone would have been dead code: `piperine-vams/grammar/item.rs` gains
+  `parse_var_decl` (Annex A.2.1.3 `module_or_generate_item_declaration`),
+  dispatched before the net-decl fallback; `elab/lower/vams.rs` gains the
+  real match arm, populating the pre-existing (unused-until-now)
+  `pom::Var`/`Module::vars` — already consumed by
+  `piperine-codegen/resolve/pom/body.rs` for `DigitalBody::regs`/
+  `reg_inits` (T30), so no codegen change was needed. `init` is always
+  `None`: VAMS's `ast::VarDecl`/`Declarator` carries no initializer
+  expression at all (confirmed by reading the AST type, not assumed) — a
+  bare `= expr` after a var name is now a genuine parse error, not a
+  silently dropped default. New target `tests/vams_lower_var.rs` (4
+  tests: scalar, real-typed, multi-name, and the clocked-register shape).
+  `cargo test -p piperine-lang`: 59 lib (same 2 pre-existing PHDL-fixture
+  failures, unchanged) + 83 VAMS-originated integration tests (the T27
+  baseline's 79 + 4 new), all green — above the Phase-5 floor.
+  `cargo test -p piperine-vams`: 208/208 green, no regression from the
+  grammar dispatch addition. `cargo build -p piperine-lang` / `-p
+  piperine-vams` / `-p piperine-codegen`: zero warnings.
+
+- **T33 close-out** `<pending commit>` — with module-level `var`
+  lowering real, `tests/vams_vertical_slice.rs` gains
+  `vams_digital_counter_register_increments_on_posedge`: a `.vams`
+  module (`integer count; always @(posedge clk) count <= count + 1;`)
+  elaborates, lowers, and compiles into a real digital device
+  (`ElementCapabilities::SUPPORTS_ROLLBACK` asserted), whose register
+  increments by exactly 1 per forced posedge (5 forced edges, exact
+  delta assertion) — proven on the unmodified native solver via
+  `CircuitCompiler`, same as the RC half. **Two genuine blockers found
+  and worked around/documented, neither the var-decl gap**:
+  1. **No self-clocking oscillator is authorable in `.vams` today**: the
+     digital kernel's `emit/stmt.rs` fails loud on `` `#delay`` control
+     (`"`#delay` control in digital codegen"`), and purely-digital
+     devices have no writable params (`device/element.rs`'s
+     `set_param`/`list_params` read `self.analog` only, `self.analog =
+     None` for a digital-only module) — so neither the classic
+     `#delay`-toggle idiom nor the old PHDL prelude's
+     `schedule_set`-driven `BitDriver` pattern works for a digital-only
+     clock source. Worked around, not fixed: the clock is forced
+     directly through `DigitalState::schedule` (the same public
+     event-queue API `CircuitInstance::init_digital` itself uses for
+     power-on events) — a legitimate Rust-level testbench stimulus, not
+     a VAMS-authored oscillator. Flagged as a real, separate feature gap
+     (digital `$abstime` access + digital live-params + `#delay`), not
+     fixed here (would be new codegen work, out of this batch's scope).
+  2. **A red herring, resolved, not a real blocker**: an early version
+     of this test appeared to show the register firing a non-integer
+     multiple of times per forced edge (e.g. one edge landing on `count
+     = 3`, two edges on `count = 4`). Traced to a bug in the test's own
+     assumption, not the solver: `count`'s power-on value is the digital
+     kernel's uninitialized-register sentinel (`Quad::X`, exported as
+     raw `i64` value `2` through `digital_hidden_snapshot`), not `0` —
+     VAMS's `VarDecl` has no initializer syntax to seed a `reg_inits`
+     entry (see the T22-addendum entry above), so an unseeded register
+     starts at the sentinel. Re-checked against the *delta*
+     (post-run minus pre-run) rather than an assumed `0`-based absolute
+     value: exactly `+1` per forced edge, deterministic across repeated
+     runs (verified 3x). No solver-level double-firing exists; the
+     clocked/edge-triggered path is correct.
+  The already-documented `piperine-api`/Phase-7 blocker (SPEC_DEVIATION
+  2 in the RC-half entry above) is unchanged and still applies to this
+  new test the same way: verified via a temporary copy in
+  `crates/piperine-codegen/tests/` (3/3 tests green, deterministic
+  across 3 reruns), then the copy deleted — the committed file lives
+  only at the T33-specified path. `cargo build -p piperine-codegen`:
+  zero warnings, unchanged.
+
+**Phase 6 (S3a) status: T28-T33 all fully closed.** Analog half (RC)
+and digital half (counter) both verified end to end on the native
+solver; the only two remaining open items are out-of-batch-scope by
+design: `piperine-api`/`cargo test --workspace` integration (Phase 7,
+T34+) and the digital self-clocking-oscillator gap (`$abstime`/live
+digital params/`#delay` in digital codegen — a new, separate open item,
+not filed against any existing task number; a future task should give
+it one). Phase 7 (downstream retarget + PHDL removal, T34+) is next,
+not started.
