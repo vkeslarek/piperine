@@ -112,6 +112,12 @@ pub struct Param {
     /// DVC-01/02) — additive, inert at solve.
     #[serde(default)]
     pub distribution: Option<Distribution>,
+    /// `true` for `localparam` (§3.4.3) — a named constant local to the
+    /// module, never overridable at instantiation, as opposed to
+    /// `parameter` (`false`, the default). Additive: every pre-VAMS
+    /// serialized `Param` deserializes as `parameter` (`false`).
+    #[serde(default)]
+    pub is_local: bool,
 }
 
 impl Param {
@@ -121,6 +127,8 @@ impl Param {
     pub fn default(&self) -> Option<&Value> { self.default.as_ref() }
     /// The param's attached `///` doc comment, if any.
     pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
+    /// `true` for `localparam` — not overridable at instantiation (§3.4.3).
+    pub fn is_local(&self) -> bool { self.is_local }
     /// The `tol`-declared statistical distribution — kind, evaluated
     /// arguments, and the process (`global`) vs mismatch marker — if the
     /// param carries a `tol` clause (dv-core DVC-02).

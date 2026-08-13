@@ -617,9 +617,9 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-07, R6
 
 **Done when**:
-- [ ] Evaluates VAMS constant expressions incl. parameter value ranges (§3.4.2) and `localparam`/`aliasparam`
-- [ ] Range violation fails loud with an E4xxx naming the parameter, the offending value and the declared range (E-STD 3/6)
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Evaluates VAMS constant expressions incl. parameter value ranges (§3.4.2) and `localparam`/`aliasparam` — SPEC_DEVIATION: `eval/interp.rs` itself was deleted at T21, not retargeted (MD-45) — `elab::const_eval::ConstEnv` evaluates `piperine_vams::ast::Expr` directly with a small self-contained recursive evaluator (no host-trait indirection needed, VAMS expressions have no blocks/lambdas to walk); T24's remaining scope (param ranges, `localparam`/`aliasparam`) is delivered here
+- [x] Range violation fails loud with an E4xxx naming the parameter, the offending value and the declared range (E-STD 3/6) — new E4006 `ParamRangeViolation`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `refactor(lang): retarget the const evaluator to the VAMS AST`
@@ -1501,3 +1501,32 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
   pre-existing documented lib-test failures, no new regressions; all 9
   T22 + 8 T23 + 43 T17-T21 VAMS-originated integration tests green.
   `cargo build -p piperine-lang`: zero warnings.
+
+- **T24** ✅ `<pending commit>` — parameter value ranges + `localparam`/
+  `aliasparam` (`elab/lower/vams.rs` extended: `check_param_ranges`/
+  `in_from_range`; new E4006 `ParamRangeViolation` in `pom/error.rs`; 6
+  tests in `tests/vams_param_ranges.rs`). SPEC_DEVIATION recorded above:
+  T24's own "Where" names `eval/interp.rs` for retargeting, but that file
+  was deleted outright at T21 under MD-45 (not retargeted) since VAMS's
+  own `Expr` grammar has no blocks/lambdas/statements to walk and needed
+  no host-trait indirection — `elab::const_eval::ConstEnv` already
+  evaluates it directly, done as part of T21's compile-fix pass. T24's
+  substantive remaining scope — the two Done-When bullets about param
+  ranges and `localparam`/`aliasparam` — is what's delivered in this
+  commit. `from`/`exclude` ranges (§3.4.2): `from` ranges are OR'd (value
+  must satisfy at least one), `exclude` ranges/values are AND'd
+  exclusions; a bare `exclude value;` (no `[lo:hi]` brackets) is read as
+  an exact-value exclusion, while a `from` range with an open bound is
+  read as unbounded on that side — the grammar's own AST shape can't
+  otherwise distinguish the two (`exclude value` and `from [lo:]` parse
+  to an identical `ParamRange{hi:None}` shape), documented as a judgment
+  call in `check_param_ranges`'s doc comment. `localparam` sets `Param`'s
+  new `is_local: bool` field (additive, serde-defaulted `false` — every
+  pre-VAMS-param serialized `Param` stays `parameter`). `aliasparam`
+  lowers to a `Param` with no default, reusing `bundle_origin` as an
+  `("aliasparam", target)` carrier (documented reuse, not a new field,
+  since both express "this param's value comes from elsewhere"); full
+  alias-value resolution is deferred to the codegen retarget (T30+).
+  `cargo test -p piperine-lang`: same 2 pre-existing documented
+  lib-test failures, no new regressions. `cargo build -p piperine-lang`:
+  zero warnings.

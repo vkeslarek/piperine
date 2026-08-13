@@ -300,6 +300,18 @@ pub enum ElabErrorKind {
         #[label("`{to_discipline}` endpoint here")]
         to_span: Option<miette::SourceSpan>,
     },
+    /// VAMS E4006 — a parameter's value violates its declared `from`/
+    /// `exclude` range (LRM §3.4.2). VAMS-01 (param value ranges are part
+    /// of the module-surface lowering T22/T24 own).
+    #[error("parameter `{param}` value {value} violates its declared range: {reason} (LRM §3.4.2)")]
+    #[diagnostic(code(E4006), help("Declared `from`/`exclude` clauses on a parameter constrain every legal value, including its own default. Adjust the value or the declared range."))]
+    ParamRangeViolation {
+        param: String,
+        value: String,
+        reason: String,
+        #[label("`{param}` declared here")]
+        span: Option<miette::SourceSpan>,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

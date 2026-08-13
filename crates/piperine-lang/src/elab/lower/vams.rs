@@ -66,18 +66,41 @@ impl Elaborator {
                 ModuleItem::Param(p) => {
                     let ty = param_value_type(p.ty);
                     for (name, expr) in &p.names {
-                        let default = Some(eval_param_default(expr, &env)?);
+                        let value = eval_param_default(expr, &env)?;
+                        check_param_ranges(name, &value, &p.ranges, &env)?;
                         params.push(Param {
                             span: None,
                             attributes: Vec::new(),
                             doc: None,
                             name: name.clone(),
                             ty: ty.clone(),
-                            default,
+                            default: Some(value),
                             bundle_origin: None,
                             distribution: None,
+                            is_local: p.is_local,
                         });
                     }
+                }
+                // `aliasparam name = target;` (§3.4.7): a pure name alias —
+                // lowered as a `Param` with no default of its own; its
+                // value always mirrors `target`'s. Resolving `target` to a
+                // concrete value happens where params are read (T30+,
+                // codegen retarget) — recording the alias link here keeps
+                // it visible on the POM (`bundle_origin` is reused as the
+                // (alias, target) carrier since both are "this param's
+                // value comes from elsewhere", not a new field).
+                ModuleItem::AliasParam(a) => {
+                    params.push(Param {
+                        span: None,
+                        attributes: Vec::new(),
+                        doc: None,
+                        name: a.name.clone(),
+                        ty: ValueType::Real,
+                        default: None,
+                        bundle_origin: Some(("aliasparam".to_string(), a.target.clone())),
+                        distribution: None,
+                        is_local: false,
+                    });
                 }
                 ModuleItem::Instantiation(inst_decl) => {
                     for ast_inst in &inst_decl.instances {
@@ -103,7 +126,6 @@ impl Elaborator {
                 | ModuleItem::Var(_)
                 | ModuleItem::Event(_)
                 | ModuleItem::Genvar(_)
-                | ModuleItem::AliasParam(_)
                 | ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
                 | ModuleItem::Function(_)
@@ -531,4 +553,93 @@ fn resolve_or_create_branch<'a>(
 
     branches.push(Branch { span: None, doc: None, name: None, pos: pos_ref, neg: neg_ref, kind: BranchKind::Probe });
     Ok(branches.last_mut().unwrap())
+}
+
+/// Validates a parameter's evaluated default against its declared
+/// `from`/`exclude` ranges (§3.4.2): the value must fall in at least one
+/// `from` range (when any are declared) and in none of the `exclude`
+/// ranges/values. `exclude value;` (no `[lo:hi]` brackets) parses to a
+/// range with `hi: None` — read as an exact-value exclusion; a `from`
+/// range with `hi: None` is read as unbounded-above (the LRM's own
+/// asymmetry: the bare-value shorthand is only meaningful for `exclude`,
+/// §3.4.2).
+fn check_param_ranges(
+    name: &str,
+    value: &Value,
+    ranges: &[piperine_vams::ast::ParamRange],
+    env: &ConstEnv,
+) -> Result<(), ElabError> {
+    if ranges.is_empty() {
+        return Ok(());
+    }
+    let v = value.coerce_real().map_err(|_| {
+        ElabError::from(ElabErrorKind::Other(format!(
+            "parameter `{name}`: a `from`/`exclude` range requires a numeric default"
+        )))
+    })?;
+
+    let eval_bound = |e: &Expr| -> Result<f64, ElabError> {
+        env.eval_f64(e).map_err(|e| {
+            ElabError::from(ElabErrorKind::ConstEval { context: format!("parameter `{name}` range bound"), source: e })
+        })
+    };
+
+    let froms: Vec<_> = ranges.iter().filter(|r| !r.excluded).collect();
+    if !froms.is_empty() {
+        let mut in_any = false;
+        for r in &froms {
+            if in_from_range(v, r, &eval_bound)? {
+                in_any = true;
+                break;
+            }
+        }
+        if !in_any {
+            return Err(ElabError::from(ElabErrorKind::ParamRangeViolation {
+                param: name.to_string(),
+                value: v.to_string(),
+                reason: "not within any declared `from` range".to_string(),
+                span: None,
+            }));
+        }
+    }
+    for r in ranges.iter().filter(|r| r.excluded) {
+        let excluded = match r.hi {
+            None => {
+                let point = r.lo.as_ref().map(|e| eval_bound(e)).transpose()?.unwrap_or(v);
+                v == point
+            }
+            Some(_) => in_from_range(v, r, &eval_bound)?,
+        };
+        if excluded {
+            return Err(ElabError::from(ElabErrorKind::ParamRangeViolation {
+                param: name.to_string(),
+                value: v.to_string(),
+                reason: "falls in a declared `exclude` range".to_string(),
+                span: None,
+            }));
+        }
+    }
+    Ok(())
+}
+
+fn in_from_range(
+    v: f64,
+    r: &piperine_vams::ast::ParamRange,
+    eval_bound: &impl Fn(&Expr) -> Result<f64, ElabError>,
+) -> Result<bool, ElabError> {
+    let lo_ok = match &r.lo {
+        None => true,
+        Some(e) => {
+            let lo = eval_bound(e)?;
+            if r.lo_exclusive { v > lo } else { v >= lo }
+        }
+    };
+    let hi_ok = match &r.hi {
+        None => true,
+        Some(e) => {
+            let hi = eval_bound(e)?;
+            if r.hi_exclusive { v < hi } else { v <= hi }
+        }
+    };
+    Ok(lo_ok && hi_ok)
 }
