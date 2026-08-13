@@ -1,32 +1,63 @@
-//! Constraint margin lowering (DVC-08): each `require`/`target` comparison
-//! becomes a signed, scale-normalized margin expression — `m ≥ 0` ⟺
-//! satisfied — resolved against the module's own scope exactly as its
-//! analog body is (same constants, enum values, instance ports, optional
-//! params).
+//! Constraint-margin/cover-catalog *types* (DVC-08/DVT-40). The producer
+//! that used to fill these (`ConstraintLowering`, walking PHDL's
+//! `pom::ConstraintBlock`) is gone: T21's MD-45 gutting deleted
+//! `pom/constraint.rs` (`ConstraintBlock`/`QuantityClass`/`Module::
+//! constraints()`) outright along with the rest of PHDL's dv-core
+//! `require`/`var`/`target`/`cover` surface — Verilog-AMS's Annex A grammar
+//! has no constraint-block production to lower from, and a future phase
+//! re-anchors this on VAMS `(* attribute *)` syntax (design.md P2 story,
+//! `.specs/STATE.md` MD-45) rather than this task rebuilding it
+//! speculatively.
 //!
-//! The lowering rules (spec P1 "Margins" AC1):
-//!
-//! ```text
-//! a <= b            →  (b − a) / scale
-//! a >= b            →  (a − b) / scale
-//! a in [l, u]       →  min(u − a, a − l) / scale
-//! ```
-//!
-//! `scale = 1` absent a `tol` — no implicit normalization, so the division
-//! is only emitted when a `tol` is authored. The grammar has no `in`
-//! operator: the interval form is the compound predicate `l <= a && a <= u`
-//! by construction, and the `&&` rule — the min of the parts' margins — IS
-//! the interval rule. Reduced-class statements lower like the rest (the
-//! class travels with the margin); the kernel stage keeps only the
-//! pointwise ones (D7).
+//! The types stay (kernel's constraint/coverage capabilities are already
+//! `Option`-gated on `LoweredBody::constraints`/`::cover`, which
+//! `lower_bodies` now always sets to `None` — see `body.rs`) so that
+//! machinery doesn't need touching in this retarget; only the producer that
+//! depended on the deleted POM type is removed.
 
-use std::collections::HashMap;
+use piperine_vams::ast::Expr as PomExpr;
 
-use piperine_lang::parse::ast::{BinaryOp, ConstraintStmt, Expr as PomExpr, Literal, TargetCmp};
-use piperine_lang::pom::{ConstraintBlock, QuantityClass, ResolvedCoverBins, ResolvedWindow, StmtClassNode};
+/// A quantity's analysis class — kept as a plain local copy since
+/// `piperine_lang::pom::QuantityClass` was deleted with `ConstraintBlock`
+/// (MD-45); nothing constructs a non-default value today (the producer is
+/// gone), but the field shape is kept stable for whichever future task
+/// rebuilds the producer on VAMS attributes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum QuantityClass {
+    #[default]
+    Pointwise,
+    Reduced,
+}
 
-use super::LowerCtx;
-use super::expr::{resolve_expr, subst_expr};
+/// A temporal window (DVC-20) an enclosing event block scopes a margin/cover
+/// point to — `[after, after + dur)` in simulation time. Local copy of the
+/// type `piperine_lang::pom::ResolvedWindow` used to be (deleted with
+/// `pom/constraint.rs`, MD-45); kept because `kernel`/`device`'s constraint
+/// and coverage capabilities still read it through `LoweredMargin`/
+/// `LoweredCoverPoint`, even though nothing constructs a non-`None` value
+/// until a future phase rebuilds the producer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResolvedWindow {
+    pub after: f64,
+    pub dur: f64,
+}
+
+impl ResolvedWindow {
+    /// Whether simulation time `t` falls inside `[after, after + dur)`.
+    pub fn contains(&self, t: f64) -> bool {
+        t >= self.after && t < self.after + self.dur
+    }
+}
+
+/// A `cover` point's bin partition (D10: literal by construction) — local
+/// copy of the type `piperine_lang::pom::ResolvedCoverBins` used to be
+/// (deleted with `pom/constraint.rs`, MD-45), kept for the same reason as
+/// [`ResolvedWindow`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResolvedCoverBins {
+    Range { lo: f64, step: f64, hi: f64 },
+    Set(Vec<f64>),
+}
 
 /// What kind of statement a lowered margin came from — a `require` names
 /// its finding by the authored label; a `target` is unlabeled by grammar
@@ -73,177 +104,4 @@ pub struct LoweredCoverCross {
     pub label: String,
     pub points: Vec<String>,
     pub joint_bin_count: usize,
-}
-
-/// The margin lowering over one [`ConstraintBlock`]: `var` statements bind
-/// into a substitution map (authored order — elaboration already proved
-/// every reference resolves), `require`/`target` statements become
-/// [`LoweredMargin`]s.
-pub(crate) struct ConstraintLowering<'a> {
-    block: &'a ConstraintBlock,
-}
-
-impl<'a> ConstraintLowering<'a> {
-    /// Lower every `require`/`target` of `block` to its margin expression,
-    /// resolving names against `ctx` exactly as the module's analog body
-    /// does. Predicate forms with no margin (anything but `<=`, `>=`,
-    /// `&&`) record a [`super::LowerError`] — never a silent `0.0` margin.
-    pub(crate) fn lower(block: &'a ConstraintBlock, ctx: &mut LowerCtx) -> Vec<LoweredMargin> {
-        Self { block }.lower_stmts(ctx)
-    }
-
-    /// Lower every `cover`/`cover cross` of `block` (T33, DVT-40): a
-    /// `cover` point's expression resolves exactly like a `require`'s
-    /// predicate operand (same scope, same `ctx`); `cover cross` carries
-    /// no expression of its own, just its already-elaborated joint count
-    /// and the names it joins.
-    pub(crate) fn lower_cover(block: &'a ConstraintBlock, ctx: &mut LowerCtx) -> (Vec<LoweredCoverPoint>, Vec<LoweredCoverCross>) {
-        let mut points = Vec::new();
-        let mut crosses = Vec::new();
-        // `var` bindings are irrelevant here — a `cover` point's `bins`
-        // are literal by construction (D10), and its `expr` is resolved
-        // fresh against `ctx` the same way a `require`'s probe operand is,
-        // with no substitution needed (a `cover` expression does not
-        // reference a preceding block `var`, per the elaborator's own
-        // scope rules for `require`/`target`).
-        for (stmt, node) in block.cover_points() {
-            match (stmt, node) {
-                (ConstraintStmt::Cover { name, expr, .. }, StmtClassNode::Cover { class, bins, .. }) => {
-                    points.push(LoweredCoverPoint {
-                        label: name.clone(),
-                        bins: bins.clone(),
-                        analyses: class.analyses.clone(),
-                        window: class.window,
-                        expr: resolve_expr(expr, ctx),
-                    });
-                }
-                (ConstraintStmt::CoverCross { name, points: pts, .. }, StmtClassNode::CoverCross { joint_bin_count, .. }) => {
-                    crosses.push(LoweredCoverCross {
-                        label: name.clone(),
-                        points: pts.clone(),
-                        joint_bin_count: *joint_bin_count,
-                    });
-                }
-                _ => {}
-            }
-        }
-        (points, crosses)
-    }
-
-    fn lower_stmts(&self, ctx: &mut LowerCtx) -> Vec<LoweredMargin> {
-        let mut bindings: HashMap<String, PomExpr> = HashMap::new();
-        let mut margins = Vec::new();
-        // Leaves are yielded depth-first in authored order (event blocks
-        // descend). The positional `target#<index>` label uses the leaf
-        // index — the same scheme the host catalog uses, so a target keeps
-        // its label whether read from a margin entry or the catalog
-        // (DVC-19: a target inside `@ dc { … }` is still the Nth leaf).
-        for (leaf_index, (stmt, class)) in self.block.leaves().enumerate() {
-            match stmt {
-                ConstraintStmt::Var { name, value, .. } => {
-                    let bound = subst_expr(value, &bindings);
-                    bindings.insert(name.clone(), resolve_expr(&bound, ctx));
-                }
-                ConstraintStmt::Require { name, pred, .. } => {
-                    let pred = subst_expr(pred, &bindings);
-                    let expr = self.margin_of_pred(name, &pred, ctx);
-                    margins.push(LoweredMargin {
-                        label: name.clone(),
-                        kind: MarginKind::Require,
-                        class: class.class,
-                        analyses: class.analyses.clone(),
-                        window: class.window,
-                        expr,
-                    });
-                }
-                ConstraintStmt::Target { expr, cmp, level, tol, .. } => {
-                    let margin = self.margin_of_target(expr, *cmp, level, tol.as_ref(), &bindings, ctx);
-                    margins.push(LoweredMargin {
-                        label: format!("target#{leaf_index}"),
-                        kind: MarginKind::Target,
-                        class: class.class,
-                        analyses: class.analyses.clone(),
-                        window: class.window,
-                        expr: margin,
-                    });
-                }
-                // `cover`/`cover cross` never become margins (D9): they
-                // are not `require`/`target` predicates, and `leaves()`
-                // never actually yields one here in the first place (only
-                // `StmtClassNode::Leaf`-classified statements are —
-                // `Cover`/`CoverCross` classify to their own node kinds,
-                // see `pom/constraint.rs`). T33's bin-mapper reads
-                // `ConstraintBlock::stmts` directly for the cover catalog,
-                // parallel to but separate from this margin lowering.
-                ConstraintStmt::Event { .. } | ConstraintStmt::Cover { .. } | ConstraintStmt::CoverCross { .. } => {}
-            }
-        }
-        margins
-    }
-
-    /// A `require` predicate's margin (scale 1 — a `require` carries no
-    /// `tol`): `<=`/`>=` lower to the signed difference; `&&` to the min of
-    /// the parts' margins (the interval form `l <= a && a <= u` thereby
-    /// lowers to `min(u − a, a − l)` — the `a in [l, u]` rule).
-    fn margin_of_pred(&self, label: &str, pred: &PomExpr, ctx: &mut LowerCtx) -> PomExpr {
-        match pred {
-            PomExpr::Binary(l, BinaryOp::Le, r) => Self::difference(r, l, ctx),
-            PomExpr::Binary(l, BinaryOp::Ge, r) => Self::difference(l, r, ctx),
-            PomExpr::Binary(l, BinaryOp::And, r) => {
-                let lm = self.margin_of_pred(label, l, ctx);
-                let rm = self.margin_of_pred(label, r, ctx);
-                Self::min(lm, rm)
-            }
-            other => {
-                ctx.errors.push(super::LowerError {
-                    module: ctx.module_name.clone(),
-                    what: "require predicate (only `<=`, `>=`, `&&` lower to a margin)",
-                    name: format!("{label} ({})", super::expr::expr_to_name(other)),
-                });
-                PomExpr::Literal(Literal::Real(0.0))
-            }
-        }
-    }
-
-    /// A `target`'s margin: `expr <= level` → `(level − expr)/scale`,
-    /// `expr >= level` → `(expr − level)/scale`; the division is emitted
-    /// only when a `tol` is authored (`scale = 1` otherwise — no implicit
-    /// normalization).
-    fn margin_of_target(
-        &self,
-        expr: &PomExpr,
-        cmp: TargetCmp,
-        level: &PomExpr,
-        tol: Option<&PomExpr>,
-        bindings: &HashMap<String, PomExpr>,
-        ctx: &mut LowerCtx,
-    ) -> PomExpr {
-        let a = resolve_expr(&subst_expr(expr, bindings), ctx);
-        let b = resolve_expr(&subst_expr(level, bindings), ctx);
-        let diff = match cmp {
-            TargetCmp::Le => Self::sub(b, a),
-            TargetCmp::Ge => Self::sub(a, b),
-        };
-        match tol {
-            None => diff,
-            Some(scale) => {
-                let scale = resolve_expr(&subst_expr(scale, bindings), ctx);
-                PomExpr::Binary(Box::new(diff), BinaryOp::Div, Box::new(scale))
-            }
-        }
-    }
-
-    /// `b − a` with both sides resolved (the `<=`/`>=` margin core).
-    fn difference(b: &PomExpr, a: &PomExpr, ctx: &mut LowerCtx) -> PomExpr {
-        Self::sub(resolve_expr(b, ctx), resolve_expr(a, ctx))
-    }
-
-    fn sub(l: PomExpr, r: PomExpr) -> PomExpr {
-        PomExpr::Binary(Box::new(l), BinaryOp::Sub, Box::new(r))
-    }
-
-    /// The binary `min` math call — the `&&`/interval margin combinator.
-    fn min(l: PomExpr, r: PomExpr) -> PomExpr {
-        PomExpr::Call(Box::new(PomExpr::Ident("min".to_string())), vec![l, r])
-    }
 }

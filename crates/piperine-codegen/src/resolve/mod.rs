@@ -31,7 +31,10 @@ pub use symbols::{
     LaplaceKind, NatureId, NatureInfo, NatureKind, NodeId, NodeInfo, ParamId, ParamInfo, StateId,
     SymbolTable, TableRef, VarId, VarInfo, ZKind,
 };
-pub use pom::{LoweredMargin, MarginKind, lower_bodies, LowerError, LowerErrors, LoweredBody};
+pub use pom::{
+    LoweredMargin, MarginKind, QuantityClass, ResolvedCoverBins, ResolvedWindow, lower_bodies,
+    LowerError, LowerErrors, LoweredBody,
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +58,7 @@ pub struct AnalogBody {
     /// Operator state slots referenced by this body (ids into `symbols.states`).
     pub states: Vec<StateId>,
     pub noise: Vec<NoiseSource>,
-    pub stmts: Vec<piperine_lang::parse::ast::Stmt>,
+    pub stmts: Vec<piperine_vams::ast::Stmt>,
 }
 
 /// Digital behavior: the PHDL model — combinational logic with inferred
@@ -66,10 +69,20 @@ pub struct DigitalBody {
     pub outputs: Vec<NodeId>,
     /// Variables holding state across timesteps (registers and latches).
     pub regs: Vec<VarId>,
+    /// Each register's initial value, parallel-keyed (not positionally
+    /// parallel to `regs` — looked up by [`VarId`]). VAMS's `Stmt` has no
+    /// `VarDecl`-with-default form (LRM local declarations are name-only,
+    /// `BlockItemDecl`; a value comes from a later plain assignment) — PHDL
+    /// used to smuggle a register's initial value in as a `VarDecl`
+    /// statement prepended to `stmts` and had the digital kernel scan for
+    /// it; VAMS has nothing to scan for, so this is now a first-class
+    /// field the elaboration pass (`resolve/pom/body.rs`) populates
+    /// directly instead.
+    pub reg_inits: Vec<(VarId, piperine_vams::ast::Expr)>,
     /// Combinational statements plus clocked `@`-blocks, kept as the POM
     /// `Stmt` tree (the AST type). The `Codegen` trait emits these directly
     /// to Cranelift via the `Builder` — no `IrStmt` intermediate.
-    pub stmts: Vec<piperine_lang::parse::ast::Stmt>,
+    pub stmts: Vec<piperine_vams::ast::Stmt>,
 }
 
 // ─── Ports ────────────────────────────────────────────────────────────────────

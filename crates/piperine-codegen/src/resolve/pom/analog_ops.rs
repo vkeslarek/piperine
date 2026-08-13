@@ -6,12 +6,24 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use piperine_lang::parse::ast::{ArrayBody, Expr, Literal};
+use piperine_vams::ast::{BinOp as VBinOp, Expr};
+use piperine_vams::error::Span;
+use piperine_vams::lexer::NumberLit;
 
 use crate::resolve::*;
 
 use super::expr::resolve_expr;
 use super::LowerCtx;
+
+const NOSPAN: Span = Span { start: 0, end: 0 };
+
+fn real(v: f64) -> Expr {
+    Expr::Number { span: NOSPAN, value: NumberLit::Real(v) }
+}
+
+fn int(v: i64) -> Expr {
+    Expr::Number { span: NOSPAN, value: NumberLit::Integer(v) }
+}
 
 /// One analog operator: `ddt(x)`, `laplace_np(x, num, den)`, etc.
 pub(crate) trait AnalogOp: Send + Sync {
@@ -20,20 +32,48 @@ pub(crate) trait AnalogOp: Send + Sync {
 }
 
 fn arg(args: &[Expr], i: usize, ctx: &mut LowerCtx, default: f64) -> Expr {
-    args.get(i).map(|a| resolve_expr(a, ctx)).unwrap_or(Expr::Literal(Literal::Real(default)))
+    args.get(i).map(|a| resolve_expr(a, ctx)).unwrap_or_else(|| real(default))
 }
 
 /// Build a marker call: `__<name>(state_id, args...)`.
 fn marker(name: &str, id: StateId, args: Vec<Expr>) -> Expr {
-    let mut all = vec![Expr::Literal(Literal::Int(id.0 as u64))];
+    let mut all = vec![int(id.0 as i64)];
     all.extend(args);
-    Expr::Call(Box::new(Expr::Ident(name.to_string())), all)
+    Expr::Call { span: NOSPAN, name: name.to_string(), args: all }
+}
+
+/// A VAMS `{a, b, c}` concatenation used as a coefficient-list carrier
+/// (real Verilog-A spells `laplace_nd(x, {1}, {1, tau})`'s num/den lists
+/// this way — LRM §4.6.1's `concatenation` production, not an array
+/// literal, which VAMS has no syntax for at all). A bare non-`Concat`
+/// expression is treated as a one-element list.
+fn to_coeff_vec(e: &Expr, ctx: &mut LowerCtx) -> Vec<Expr> {
+    if let Expr::Concat { parts, .. } = e {
+        parts.iter().map(|item| resolve_expr(item, ctx)).collect()
+    } else {
+        vec![resolve_expr(e, ctx)]
+    }
+}
+
+/// A constant-real coefficient list — `table`'s `xs`/`ys` and any other
+/// operator that needs its list literally evaluated at lowering time,
+/// rather than carried through to the runtime marker.
+fn const_coeff_vec(e: &Expr, ctx: &mut LowerCtx) -> Option<Vec<f64>> {
+    let Expr::Concat { parts, .. } = e else { return None };
+    parts
+        .iter()
+        .map(|item| match resolve_expr(item, ctx) {
+            Expr::Number { value: NumberLit::Real(v), .. } => Some(v),
+            Expr::Number { value: NumberLit::Integer(v), .. } => Some(v as f64),
+            _ => None,
+        })
+        .collect()
 }
 
 struct Ddt;
 impl AnalogOp for Ddt {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let id = ctx.alloc_state(StateKind::Ddt, x.clone());
         marker("__ddt", id, vec![x])
@@ -43,7 +83,7 @@ impl AnalogOp for Ddt {
 struct Idt;
 impl AnalogOp for Idt {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
         let id = ctx.alloc_state(StateKind::Idt { ic: ic.clone() }, x.clone());
@@ -54,7 +94,7 @@ impl AnalogOp for Idt {
 struct IdtMod;
 impl AnalogOp for IdtMod {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
         let modulus = arg(args, 2, ctx, 1.0);
@@ -66,24 +106,40 @@ impl AnalogOp for IdtMod {
     }
 }
 
+/// Extract a node name from a `ddx` second argument: real Verilog-A spells
+/// it `ddx(expr, V(node))` — a single-terminal access-function probe, LRM
+/// §4.5.2 — so this unwraps `AccessFunction`'s `pos` when it names a bare
+/// node, falling back to a bare `Ident` for any caller still spelling it
+/// that way.
+fn ddx_node_name(e: &Expr) -> Option<String> {
+    match e {
+        Expr::Ident { name, .. } => Some(name.clone()),
+        Expr::AccessFunction { pos, neg: None, .. } => match pos.as_ref() {
+            Expr::Ident { name, .. } => Some(name.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 struct Ddx;
 impl AnalogOp for Ddx {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 2 {
-            return Expr::Literal(Literal::Real(0.0));
+            return real(0.0);
         }
         let x = resolve_expr(&args[0], ctx);
-        let node_name = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
+        let node_name = ddx_node_name(&args[1]).unwrap_or_else(|| "?".into());
         let node = ctx.require_node(&node_name);
         let id = ctx.alloc_state(StateKind::Ddx { node }, x.clone());
-        marker("__ddx", id, vec![x, Expr::Literal(Literal::Int(node.0 as u64))])
+        marker("__ddx", id, vec![x, int(node.0 as i64)])
     }
 }
 
 struct Delay;
 impl AnalogOp for Delay {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let delay = arg(args, 1, ctx, 0.0);
         let id = ctx.alloc_state(StateKind::Delay { delay: delay.clone() }, x.clone());
@@ -94,7 +150,7 @@ impl AnalogOp for Delay {
 struct Transition;
 impl AnalogOp for Transition {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let delay = arg(args, 1, ctx, 0.0);
         let rise = arg(args, 2, ctx, 0.0);
@@ -111,7 +167,7 @@ impl AnalogOp for Transition {
 struct Slew;
 impl AnalogOp for Slew {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let rise = arg(args, 1, ctx, 0.0);
         let fall = arg(args, 2, ctx, 0.0);
@@ -121,30 +177,20 @@ impl AnalogOp for Slew {
 }
 
 /// `table(x, xs, ys[, mode])` — 1-D measured-data lookup (spec Part V §2).
-/// `xs`/`ys` must be constant real arrays with `xs` strictly increasing;
-/// interpolation is linear with end clamp. Lowered to a **pure piecewise
-/// expression** (nested selects) — no state, so the Jacobian falls out of
-/// the normal symbolic-diff path as the segment slope.
+/// `xs`/`ys` must be constant real concatenation lists (`{...}`) with `xs`
+/// strictly increasing; interpolation is linear with end clamp. Lowered to
+/// a **pure piecewise expression** (nested ternaries) — no state, so the
+/// Jacobian falls out of the normal symbolic-diff path as the segment
+/// slope.
 struct Table;
 impl Table {
-    fn const_array(e: &Expr, ctx: &mut LowerCtx) -> Option<Vec<f64>> {
-        let Expr::Array(ArrayBody::List(list)) = e else { return None };
-        list.iter()
-            .map(|item| match resolve_expr(item, ctx) {
-                Expr::Literal(Literal::Real(v)) => Some(v),
-                Expr::Literal(Literal::Int(v)) => Some(v as f64),
-                _ => None,
-            })
-            .collect()
-    }
-
     fn err(ctx: &mut LowerCtx, what: &'static str) -> Expr {
         ctx.errors.push(super::LowerError {
             module: ctx.module_name.clone(),
             what,
             name: "table".to_string(),
         });
-        Expr::Literal(Literal::Real(0.0))
+        real(0.0)
     }
 
     /// Map a `signal::Table` validation failure onto the existing loud-error
@@ -170,18 +216,18 @@ impl AnalogOp for Table {
         if args.len() < 3 {
             return Self::err(ctx, "table(x, xs, ys) needs at least 3 arguments");
         }
-        let Some(xs) = Self::const_array(&args[1], ctx) else {
-            return Self::err(ctx, "table breakpoints (xs) must be a constant real array");
+        let Some(xs) = const_coeff_vec(&args[1], ctx) else {
+            return Self::err(ctx, "table breakpoints (xs) must be a constant real {..} list");
         };
-        let Some(ys) = Self::const_array(&args[2], ctx) else {
-            return Self::err(ctx, "table data (ys) must be a constant real array");
+        let Some(ys) = const_coeff_vec(&args[2], ctx) else {
+            return Self::err(ctx, "table data (ys) must be a constant real {..} list");
         };
         // Any mode argument that is not the "linear" string literal fails
         // through `Table::with_mode` below with the same message as today,
         // regardless of what the argument actually was.
         let mode = match args.get(3) {
             None => "linear".to_string(),
-            Some(Expr::Literal(Literal::String(s))) => s.clone(),
+            Some(Expr::Str { value, .. }) => value.clone(),
             Some(_) => "?".to_string(),
         };
         let table = match piperine_ir::behavior::table::Table::with_mode(xs, ys, &mode) {
@@ -190,28 +236,26 @@ impl AnalogOp for Table {
         };
         let x = resolve_expr(&args[0], ctx);
 
-        let real = |v: f64| Expr::Literal(Literal::Real(v));
-        let block = |e: Expr| piperine_lang::parse::ast::Block {
-            stmts: Vec::new(),
-            expr: Some(Box::new(e)),
-        };
         let (xs, ys) = table.points();
         // Segment i: ys[i] + (x − xs[i]) · slope_i.
         let seg = |i: usize, x: &Expr| {
             let slope = table.segment_slope(i);
-            Expr::Binary(
-                Box::new(real(ys[i])),
-                piperine_lang::parse::ast::BinaryOp::Add,
-                Box::new(Expr::Binary(
-                    Box::new(Expr::Binary(
-                        Box::new(x.clone()),
-                        piperine_lang::parse::ast::BinaryOp::Sub,
-                        Box::new(real(xs[i])),
-                    )),
-                    piperine_lang::parse::ast::BinaryOp::Mul,
-                    Box::new(real(slope)),
-                )),
-            )
+            Expr::Binary {
+                span: NOSPAN,
+                op: VBinOp::Add,
+                lhs: Box::new(real(ys[i])),
+                rhs: Box::new(Expr::Binary {
+                    span: NOSPAN,
+                    op: VBinOp::Mul,
+                    lhs: Box::new(Expr::Binary {
+                        span: NOSPAN,
+                        op: VBinOp::Sub,
+                        lhs: Box::new(x.clone()),
+                        rhs: Box::new(real(xs[i])),
+                    }),
+                    rhs: Box::new(real(slope)),
+                }),
+            }
         };
         // Fold back-to-front: else-most = last segment (extrapolation is a
         // flat clamp on both ends).
@@ -220,25 +264,29 @@ impl AnalogOp for Table {
         for i in (0..n - 1).rev() {
             // x < xs[i+1] → segment i (for i = 0 the low clamp is applied
             // below), else previous accumulation.
-            expr = Expr::If {
-                cond: Box::new(Expr::Binary(
-                    Box::new(x.clone()),
-                    piperine_lang::parse::ast::BinaryOp::Lt,
-                    Box::new(real(xs[i + 1])),
-                )),
-                then_body: block(seg(i, &x)),
-                else_body: block(expr),
+            expr = Expr::Ternary {
+                span: NOSPAN,
+                cond: Box::new(Expr::Binary {
+                    span: NOSPAN,
+                    op: VBinOp::Lt,
+                    lhs: Box::new(x.clone()),
+                    rhs: Box::new(real(xs[i + 1])),
+                }),
+                then_branch: Box::new(seg(i, &x)),
+                else_branch: Box::new(expr),
             };
         }
         // Low clamp: x ≤ xs[0] → ys[0].
-        Expr::If {
-            cond: Box::new(Expr::Binary(
-                Box::new(x.clone()),
-                piperine_lang::parse::ast::BinaryOp::Lt,
-                Box::new(real(xs[0])),
-            )),
-            then_body: block(real(ys[0])),
-            else_body: block(expr),
+        Expr::Ternary {
+            span: NOSPAN,
+            cond: Box::new(Expr::Binary {
+                span: NOSPAN,
+                op: VBinOp::Lt,
+                lhs: Box::new(x.clone()),
+                rhs: Box::new(real(xs[0])),
+            }),
+            then_branch: Box::new(real(ys[0])),
+            else_branch: Box::new(expr),
         }
     }
 }
@@ -249,18 +297,11 @@ struct Laplace {
 impl AnalogOp for Laplace {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 3 {
-            return Expr::Literal(Literal::Real(0.0));
+            return real(0.0);
         }
         let x = resolve_expr(&args[0], ctx);
-        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<Expr> {
-            if let Expr::Array(ArrayBody::List(list)) = e {
-                list.iter().map(|item| resolve_expr(item, ctx)).collect()
-            } else {
-                vec![resolve_expr(e, ctx)]
-            }
-        };
-        let num = to_vec(&args[1], ctx);
-        let den = to_vec(&args[2], ctx);
+        let num = to_coeff_vec(&args[1], ctx);
+        let den = to_coeff_vec(&args[2], ctx);
         let variant = match self.variant {
             "zp" => LaplaceKind::ZerosPoles,
             "np" => LaplaceKind::NumPoles,
@@ -271,9 +312,11 @@ impl AnalogOp for Laplace {
             StateKind::Laplace { variant, num: num.clone(), den: den.clone() },
             x.clone(),
         );
-        let mut marker_args = vec![x];
-        marker_args.push(Expr::Array(ArrayBody::List(num)));
-        marker_args.push(Expr::Array(ArrayBody::List(den)));
+        let marker_args = vec![
+            x,
+            Expr::Concat { span: NOSPAN, parts: num },
+            Expr::Concat { span: NOSPAN, parts: den },
+        ];
         marker("__laplace", id, marker_args)
     }
 }
@@ -284,18 +327,11 @@ struct ZTransform {
 impl AnalogOp for ZTransform {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 4 {
-            return Expr::Literal(Literal::Real(0.0));
+            return real(0.0);
         }
         let x = resolve_expr(&args[0], ctx);
-        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<Expr> {
-            if let Expr::Array(ArrayBody::List(list)) = e {
-                list.iter().map(|item| resolve_expr(item, ctx)).collect()
-            } else {
-                vec![resolve_expr(e, ctx)]
-            }
-        };
-        let num = to_vec(&args[1], ctx);
-        let den = to_vec(&args[2], ctx);
+        let num = to_coeff_vec(&args[1], ctx);
+        let den = to_coeff_vec(&args[2], ctx);
         let sample_dt = resolve_expr(&args[3], ctx);
         let variant = match self.variant {
             "zp" => ZKind::ZerosPoles,
@@ -307,10 +343,12 @@ impl AnalogOp for ZTransform {
             StateKind::ZTransform { variant, num: num.clone(), den: den.clone(), sample_dt: sample_dt.clone() },
             x.clone(),
         );
-        let mut marker_args = vec![x];
-        marker_args.push(Expr::Array(ArrayBody::List(num)));
-        marker_args.push(Expr::Array(ArrayBody::List(den)));
-        marker_args.push(sample_dt);
+        let marker_args = vec![
+            x,
+            Expr::Concat { span: NOSPAN, parts: num },
+            Expr::Concat { span: NOSPAN, parts: den },
+            sample_dt,
+        ];
         marker("__ztransform", id, marker_args)
     }
 }
@@ -320,14 +358,14 @@ impl AnalogOp for AcStim {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let mag = arg(args, 0, ctx, 1.0);
         let phase = arg(args, 1, ctx, 0.0);
-        Expr::SysCall("$ac_stim".to_string(), vec![mag, phase])
+        Expr::SystemFunctionCall { span: NOSPAN, name: "$ac_stim".to_string(), args: vec![mag, phase] }
     }
 }
 
 struct NoiseCall;
 impl AnalogOp for NoiseCall {
     fn lower(&self, _args: &[Expr], _ctx: &mut LowerCtx) -> Expr {
-        Expr::Literal(Literal::Real(0.0))
+        real(0.0)
     }
 }
 

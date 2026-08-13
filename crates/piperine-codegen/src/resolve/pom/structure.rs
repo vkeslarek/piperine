@@ -1,32 +1,23 @@
 //! Module structure → IR: ports, params, wires, instances, connections,
 //! and the value-type/const conversions they need.
 
-use piperine_lang::pom::{Function as PomFunction, Module, NetType, ValueType, Design};
-use piperine_lang::parse::ast::{DisciplineItem, DisciplineDecl, Expr as PomExpr};
+use piperine_lang::pom::{Module, NetType, ValueType, Design};
+use piperine_vams::ast::{Domain as VamsDomain, DisciplineDecl};
+use piperine_vams::error::Span;
+use piperine_vams::lexer::NumberLit;
 use crate::resolve::*;
-use super::stmt::resolve_stmts;
-use super::LowerCtx;
-use std::collections::HashSet;
 
-/// A bundle parameter's field names, for call-site expansion.
-#[derive(Clone, Debug)]
-pub(crate) struct BundleParamFields {
-    pub(crate) fields: Vec<String>,
-}
-
-/// One function's parameter signatures: `None` = scalar param,
-/// `Some(bundle, fields)` = bundle param.
-pub(crate) type FnSigParams = Vec<Option<BundleParamFields>>;
+const NOSPAN: Span = Span { start: 0, end: 0 };
 
 // ─── Module conversion ───────────────────────────────────────────────────────
 
 /// Determine the IR domain of a net type by inspecting its discipline.
 ///
-/// Per SPEC §6.2: a storage discipline is digital iff its storage value
-/// type is `Boolean` or `Quad`; a storage discipline with `Real` storage
-/// is analog (signal-flow). A conservative discipline (potential+flow) is
-/// always analog. This is the single place the digital/analog boundary is
-/// decided for a net — every port, wire, and terminal flows through here.
+/// Per LRM §3.6.2: `domain discrete` marks a digital (event-driven)
+/// discipline; `domain continuous` (or an absent `domain` clause — the
+/// conservative default) marks an analog one. This is the single place the
+/// digital/analog boundary is decided for a net — every port, wire, and
+/// terminal flows through here.
 fn domain_of(prog: &Design, net_type: &NetType) -> Domain {
     let discipline_name = match net_type {
         NetType::Discipline(name) => name.as_str(),
@@ -39,28 +30,18 @@ fn domain_of(prog: &Design, net_type: &NetType) -> Domain {
     }
 }
 
-/// Returns `true` if the named discipline is a storage discipline whose
-/// storage value type is `Boolean` or `Quad` — the digital storage kinds.
+/// Returns `true` if the named discipline declares `domain discrete`
+/// (LRM §3.6.2) — the digital/event-driven marker.
 fn is_digital_discipline(prog: &Design, name: &str) -> bool {
     let Some(decl) = prog.discipline(name) else {
         // Unknown discipline — default to analog (the conservative case).
         return false;
     };
-    let Some(storage_name) = storage_value_type(decl) else {
-        return false;
-    };
-    matches!(storage_name, "Boolean" | "Quad")
+    discipline_domain(decl) == Some(VamsDomain::Discrete)
 }
 
-/// Extract the storage value type name from a discipline declaration.
-/// Returns `None` for conservative disciplines (no `storage` clause).
-fn storage_value_type(decl: &DisciplineDecl) -> Option<&str> {
-    for item in &decl.items {
-        if let DisciplineItem::Storage(ty) = item {
-            return Some(ty.name.as_str());
-        }
-    }
-    None
+fn discipline_domain(decl: &DisciplineDecl) -> Option<VamsDomain> {
+    decl.domain
 }
 
 /// Build a module's [`SymbolTable`] and resolved [`Port`]s from its POM
@@ -71,7 +52,7 @@ fn storage_value_type(decl: &DisciplineDecl) -> Option<&str> {
 /// building them here would only be a structural twin nobody but the
 /// circuit builder reads.
 pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable, Vec<Port>) {
-    use piperine_lang::parse::ast::Direction;
+    use piperine_lang::pom::Direction as PomDirection;
 
     let mut symbols = SymbolTable::new();
     let mut ports = Vec::new();
@@ -81,9 +62,9 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
         let domain = domain_of(prog, p.net_type());
         let node_id = symbols.add_node(p.name(), domain);
         let direction = match p.direction() {
-            Direction::Input => super::super::Direction::In,
-            Direction::Output => super::super::Direction::Out,
-            Direction::Inout => super::super::Direction::Inout,
+            PomDirection::Input => super::super::Direction::In,
+            PomDirection::Output => super::super::Direction::Out,
+            PomDirection::Inout => super::super::Direction::Inout,
         };
         ports.push(Port { node: node_id, direction });
     }
@@ -96,16 +77,15 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
     }
 
     // 3. Wires. A scalar wire becomes one node named after itself; an
-    // array wire (`wire tap : Electrical[N+1]`) becomes N distinct element
-    // nodes named `tap[0]`..`tap[N-1]`. The flat form lifts an array wire
-    // onto the parent verbatim (`flatten.rs`'s `inline_sub_instances`), and
-    // the spliced sub-instances' port bindings reference it as
-    // `NetRef { net: "<inst>.tap", index: Some(i) }` — the `Display` form
-    // `<inst>.tap[i]` is what `resolve_node` looks up at circuit-build
-    // time. Registering one scalar node for the lifted wire collapses every
-    // element onto a single net (NGP-18 codegen integration); registering
-    // one node per element makes `resolve_node("<inst>.tap[i]")` resolve
-    // to that element — and the parent-name fallback in `resolve_connections`
+    // array wire becomes N distinct element nodes named `tap[0]`..`tap[N-1]`.
+    // The flat form lifts an array wire onto the parent verbatim
+    // (`flatten.rs`'s `inline_sub_instances`), and the spliced sub-instances'
+    // port bindings reference it as `NetRef { net: "<inst>.tap", index:
+    // Some(i) }` — the `Display` form `<inst>.tap[i]` is what `resolve_node`
+    // looks up at circuit-build time. Registering one scalar node for the
+    // lifted wire collapses every element onto a single net; registering
+    // one node per element makes `resolve_node("<inst>.tap[i]")` resolve to
+    // that element — and the parent-name fallback in `resolve_connections`
     // never fires for an indexed ref.
     for w in m.wires() {
         let domain = domain_of(prog, w.net_type());
@@ -130,9 +110,11 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
         symbols.add_var(v.name(), ty);
     }
 
-    // 5. Global functions are added to each module's symbol table in
-    //    `lower_bodies` pass 1.5 (after all module skeletons are built), so
-    //    that `FnId`s are consistent. Skip here to avoid duplicates.
+    // 5. Functions: not yet lowered from `ModuleItem::Function`/`Task` into
+    // the POM at all (MD-45 — VAMS's own `analog function`/`function`/
+    // `task` declarations have no elaboration pass populating `Design` with
+    // them yet, a documented pre-existing gap from Phase 5/T22, not this
+    // retarget's scope). Nothing to register here until that lands.
 
     (symbols, ports)
 }
@@ -145,135 +127,34 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> Type {
         ValueType::Boolean => Type::Bool,
         ValueType::Quad => Type::Quad,
         ValueType::Str => Type::Real,
+        // Enum/Bundle/Tuple/FnPtr: PHDL-only value-layer types with no VAMS
+        // Annex A production (MD-45) — a `Param`/`Var` can no longer
+        // actually carry one post-frontend-swap (nothing parses one), so
+        // this is an unreachable-but-total fallback, not a live path.
         ValueType::Enum(_) => Type::Integer,
-        // Bundle-typed params are flattened per-field before this runs
-        // (`convert_fn`); the scalar fallback is never a field's own type.
         ValueType::Bundle(_) => Type::Real,
         ValueType::Array(inner, _) => elab_value_type_to_ir(inner),
         ValueType::FnPtr(_, _) => Type::Real,
-        ValueType::Tuple(_) => Type::Real, // Tuples are value-layer only
+        ValueType::Tuple(_) => Type::Real,
     }
 }
 
-pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> PomExpr {
+pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> piperine_vams::ast::Expr {
     value_to_pom_expr(v)
 }
 
 /// Convert a POM runtime `Value` to a POM AST `Expr` for the analog/digital
 /// paths. The Builder evaluates these via `Codegen`-trait dispatch.
-pub(crate) fn value_to_pom_expr(v: &piperine_lang::value::Value) -> piperine_lang::parse::ast::Expr {
-    use piperine_lang::parse::ast::{Expr, Literal};
+pub(crate) fn value_to_pom_expr(v: &piperine_lang::value::Value) -> piperine_vams::ast::Expr {
     use piperine_lang::value::Value;
+    use piperine_vams::ast::Expr;
     match v {
-        Value::Real(f) => Expr::Literal(Literal::Real(*f)),
-        Value::Int(i) => Expr::Literal(Literal::Int(*i as u64)),
-        Value::Nat(n) => Expr::Literal(Literal::Int(*n)),
-        Value::Bool(b) => Expr::Literal(Literal::Bool(*b)),
-        _ => Expr::Literal(Literal::Real(0.0)),
+        Value::Real(f) => Expr::Number { span: NOSPAN, value: NumberLit::Real(*f) },
+        Value::Int(i) => Expr::Number { span: NOSPAN, value: NumberLit::Integer(*i) },
+        Value::Nat(n) => Expr::Number { span: NOSPAN, value: NumberLit::Integer(*n as i64) },
+        Value::Bool(b) => Expr::Number { span: NOSPAN, value: NumberLit::Integer(i64::from(*b)) },
+        _ => Expr::Number { span: NOSPAN, value: NumberLit::Real(0.0) },
     }
-}
-
-pub(crate) fn convert_fn(
-    f: &PomFunction,
-    prog: &Design,
-    symbols: &mut SymbolTable,
-    errors: &mut Vec<super::LowerError>,
-) -> Function {
-    convert_fn_named(f.name(), f, prog, symbols, errors)
-}
-
-/// [`convert_fn`] with an explicit IR name — impl methods register as
-/// `Type::method`. Bundle-typed params (GAPS §I.14 extended to fns) are
-/// flattened into one scalar var per field (`m` : `ResModel` → `m_rsh`,
-/// `m_kf`); the body's `m.rsh` resolves through the qualified-name var
-/// lookup, and call sites expand a bundle argument to match.
-pub(crate) fn convert_fn_named(
-    ir_name: &str,
-    f: &PomFunction,
-    prog: &Design,
-    symbols: &mut SymbolTable,
-    errors: &mut Vec<super::LowerError>,
-) -> Function {
-    let mut params = Vec::new();
-    let mut module_vars = HashSet::new();
-    let mut bundle_bindings: Vec<(String, (String, Vec<String>))> = Vec::new();
-    for (n, ty) in f.params() {
-        if let Some(piperine_lang::pom::ValueType::Bundle(bname)) = ty.as_value() {
-            let fields = bundle_field_names(prog, bname);
-            for field in &fields {
-                let flat = format!("{n}_{field}");
-                let vid = symbols.add_var(&flat, Type::Real);
-                params.push(vid);
-                module_vars.insert(flat);
-            }
-            bundle_bindings.push((n.to_string(), (bname.clone(), fields)));
-            continue;
-        }
-        let vty = elab_value_type_to_ir(ty.as_value().unwrap_or(&piperine_lang::pom::ValueType::Real));
-        let vid = symbols.add_var(n, vty);
-        params.push(vid);
-        module_vars.insert(n.to_string());
-    }
-    
-    let mut ctx = LowerCtx::new(symbols, format!("fn {ir_name}"), false, module_vars);
-    ctx.enum_values = prog.enum_value_map();
-    ctx.consts = LowerCtx::const_irs(prog);
-    ctx.bundle_bindings = bundle_bindings.into_iter().collect();
-    ctx.fn_bundle_sigs = fn_bundle_signatures(prog);
-    // Resolve default expressions (parallel to params) — elaboration
-    // constants, so each resolves to a constant POM `Expr`.
-    let defaults: Vec<Option<PomExpr>> = f
-        .defaults()
-        .iter()
-        .map(|d| d.as_ref().map(|e| super::expr::resolve_expr(e, &mut ctx)))
-        .collect();
-    let body = resolve_stmts(f.body(), &mut ctx);
-    errors.append(&mut ctx.errors);
-
-    let returns = Some(Type::Real); // Best effort fallback
-    Function { name: ir_name.to_string(), params, defaults, returns, body }
-}
-
-/// Field names of a value bundle, declaration order.
-pub(crate) fn bundle_field_names(prog: &Design, bundle: &str) -> Vec<String> {
-    prog.bundle(bundle)
-        .map(|b| b.fields.iter().map(|f| f.name.clone()).collect())
-        .unwrap_or_default()
-}
-
-/// Bundle-typed parameter positions of every non-generic fn and impl
-/// method (methods keyed `Type::method`, with `self` as the leading
-/// position) — what call-site expansion consults.
-pub(crate) fn fn_bundle_signatures(
-    prog: &Design,
-) -> std::collections::HashMap<String, FnSigParams> {
-    let sig_of = |params: &[(String, piperine_lang::pom::TypeRef)]| {
-        params
-            .iter()
-            .map(|(_, ty)| match ty.as_value() {
-                Some(piperine_lang::pom::ValueType::Bundle(b)) => {
-                    Some(BundleParamFields { fields: bundle_field_names(prog, b) })
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-    };
-    let mut out = std::collections::HashMap::new();
-    for f in prog.functions() {
-        if !f.is_generic() {
-            out.insert(f.name().to_string(), sig_of(f.params()));
-        }
-    }
-    for ib in prog.impls() {
-        for m in &ib.methods {
-            let mut sig = vec![Some(BundleParamFields {
-                fields: bundle_field_names(prog, &ib.ty),
-            })];
-            sig.extend(sig_of(&m.params));
-            out.insert(format!("{}::{}", ib.ty, m.name), sig);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -288,24 +169,18 @@ mod tests {
     use super::build_symbols_and_ports;
     use piperine_lang::{parse_and_elaborate, SourceMap};
 
-    const PRELUDE: &str = "
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod res (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0; }
-    ";
-
-    /// The simplest case: `tap : Electrical[3]` registers three element
+    /// The simplest case: `electrical tap[2:0];` registers three element
     /// nodes `tap[0]`..`tap[2]`, and the parent wire name `tap` is not
     /// itself a node — the bug that collapsed every element onto a single
     /// net (NGP-18 codegen integration).
     #[test]
     fn array_wire_registers_one_node_per_element() {
-        let src = format!(
-            "{PRELUDE}
-             mod Mid () {{
-                 wire tap : Electrical[3];
-             }}"
-        );
-        let design = parse_and_elaborate(&src, &SourceMap::dummy())
+        let src = "
+             module Mid ();
+                 electrical tap[2:0];
+             endmodule
+        ";
+        let design = parse_and_elaborate(src, &SourceMap::dummy())
             .expect("elaborates");
         let (symbols, _) = build_symbols_and_ports(
             design.module("Mid").expect("Mid exists"),
@@ -327,30 +202,29 @@ mod tests {
     }
 
     /// The end-to-end shape NGP-18 cares about: a parent module `Top`
-    /// instantiates a child `Seg` whose body declares
-    /// `wire bus : Electrical[2]`. Flatten lifts `bus` onto the flat-Top
-    /// as `s.bus : Electrical[2]` (parse_and_elaborate runs the flatten
-    /// pass); the symbol table for flat-Top must then carry `s.bus[0]`
-    /// and `s.bus[1]` as distinct element nodes, so the spliced `s.r0`/
-    /// `s.r1` instances resolve `s.bus[0]` to the same element node and
-    /// `s.bus[1]` would resolve to a different one — never both collapsing
-    /// to a single `s.bus` scalar.
+    /// instantiates a child `Seg` whose body declares `electrical bus[1:0]`.
+    /// Flatten lifts `bus` onto the flat-Top as `s.bus[1:0]`
+    /// (`parse_and_elaborate` runs the flatten pass); the symbol table for
+    /// flat-Top must then carry `s.bus[0]` and `s.bus[1]` as distinct
+    /// element nodes.
     #[test]
     fn lifted_array_wire_resolves_per_element_in_flat_parent() {
-        let src = format!(
-            "{PRELUDE}
-             mod Seg (inout p : Electrical, inout n : Electrical) {{
-                 wire bus : Electrical[2];
-                 r0 : res (.p=p, .n=bus[0]) {{ .r = 1.0 }};
-                 r1 : res (.p=bus[0], .n=n) {{ .r = 1.0 }};
-             }}
-             mod Top () {{
-                 wire gnd : Electrical;
-                 wire a : Electrical;
-                 s : Seg (.p=a, .n=gnd);
-             }}"
-        );
-        let design = parse_and_elaborate(&src, &SourceMap::dummy())
+        let src = "
+             module Seg (inout electrical p, inout electrical n);
+                 electrical bus[1:0];
+                 res r0 (p, bus[0]);
+                 res r1 (bus[0], n);
+             endmodule
+             module res (inout electrical p, inout electrical n);
+                 parameter real r = 1.0;
+             endmodule
+             module Top ();
+                 electrical gnd;
+                 electrical a;
+                 Seg s (a, gnd);
+             endmodule
+        ";
+        let design = parse_and_elaborate(src, &SourceMap::dummy())
             .expect("elaborates (flatten lifts the array wire)");
         let flat = design.flat_module("Top").expect("Top flat form exists");
         let (symbols, _) = build_symbols_and_ports(flat, &design);

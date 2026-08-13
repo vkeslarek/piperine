@@ -11,18 +11,25 @@ use std::collections::{HashMap, HashSet};
 use piperine_lang::pom::Design;
 
 use crate::resolve::*;
-use super::structure::FnSigParams;
 
-use piperine_lang::parse::ast::{BindOp, Expr as PomExpr, Stmt as PomStmt};
-use super::structure::{build_symbols_and_ports, convert_fn, value_to_pom_expr};
+use piperine_vams::ast::{Expr as PomExpr, Stmt as PomStmt};
+use super::structure::{build_symbols_and_ports, value_to_pom_expr};
 use super::stmt::resolve_stmts;
-use super::structure;
 
 
 /// A module's resolved lowering: its symbol table, resolved ports, and
 /// analog/digital bodies. This is what `device::CompiledModule::compile`
 /// consumes; the POM `Module`/`Instance` themselves are read directly by
 /// `device::circuit` for structure (connections, param overrides).
+///
+/// `constraints`/`cover` are permanently `None` post-MD-45: PHDL's dv-core
+/// `require`/`var`/`target`/`cover` constraint blocks (`pom::ConstraintBlock`)
+/// were deleted at T21 along with the rest of the PHDL-only value layer —
+/// Verilog-AMS's Annex A grammar has no constraint-block production, and a
+/// future phase re-anchors this on VAMS `(* attribute *)` syntax rather
+/// than this retarget inventing one. `kernel`'s constraint/coverage
+/// capabilities stay in place (already `Option`-gated) and simply never
+/// activate until that phase lands.
 #[derive(Debug, Clone, Default)]
 pub struct LoweredBody {
     /// The owning module's name — diagnostics only (`lower_bodies`'s
@@ -32,17 +39,11 @@ pub struct LoweredBody {
     pub ports: Vec<Port>,
     pub analog: Option<AnalogBody>,
     pub digital: Option<DigitalBody>,
-    /// The module's lowered constraint margins (DVC-08): one per
-    /// `require`/`target` across the module's constraint blocks, signed
-    /// and scale-normalized (`expr ≥ 0` ⟺ satisfied). `None` when the
-    /// module declares no constraint block — nothing lowered, nothing
-    /// allocated.
+    /// See the type doc above (MD-45) — always `None` until a future phase
+    /// rebuilds the producer.
     pub constraints: Option<Vec<crate::resolve::pom::LoweredMargin>>,
-    /// The module's lowered `cover` catalog (T33, DVT-40): every `cover`
-    /// point's resolved expression + literal bin partition, and every
-    /// `cover cross`'s already-elaborated joint bin count. `None` when the
-    /// module declares no `cover` — separate from [`Self::constraints`]
-    /// (D9: coverage is not a margin).
+    /// See the type doc above (MD-45) — always `None` until a future phase
+    /// rebuilds the producer.
     pub cover: Option<(Vec<crate::resolve::pom::LoweredCoverPoint>, Vec<crate::resolve::pom::LoweredCoverCross>)>,
 }
 
@@ -87,13 +88,11 @@ impl std::fmt::Display for LowerErrors {
 /// Lowering context carrying the current scope, state-variable counter, and
 /// discovered noise-source list.
 pub(crate) struct LowerCtx<'a> {
-    /// Name → POM expression bindings for the current scope.
-    pub env: HashMap<String, PomExpr>,
     /// The module's symbol table, populated during `convert_mod`.
     pub symbols: &'a mut SymbolTable,
     /// The module being lowered — error context only.
     pub module_name: String,
-    /// Unresolved names found so far; `ppr_to_ir` fails if any module's
+    /// Unresolved names found so far; `lower_bodies` fails if any module's
     /// lowering left this non-empty. The `require_*` lookups push here and
     /// return a placeholder id that never escapes — the whole program is
     /// discarded on error.
@@ -109,9 +108,8 @@ pub(crate) struct LowerCtx<'a> {
     pub states: Vec<StateId>,
     /// Noise sources discovered from contribution right-hand sides.
     pub noise_sources: Vec<NoiseSource>,
-    /// Set to `true` while lowering a `digital` body.  Lets the Bind-Force
-    /// arm pick the digital-drive form (`Assign`) instead of the
-    /// analog-force form (`Force`).
+    /// Whether this context is lowering a `digital` (`initial`/`always`)
+    /// body, as opposed to an `analog`/`analog initial` one.
     pub is_digital: bool,
     /// Names of the owning module's persistent `var`s (GAPS §I.15).
     pub module_vars: HashSet<String>,
@@ -120,26 +118,14 @@ pub(crate) struct LowerCtx<'a> {
     /// contributes to the child's port node, which is the parent-scope
     /// node the port is connected to.
     pub instance_ports: HashMap<String, NodeId>,
-    /// Enum variant discriminants, keyed bare (`Idle`) and qualified
-    /// (`SarState::Idle`). SPEC §6.4: a variant is an integer constant.
-    pub enum_values: HashMap<String, i64>,
     /// Global `const` values as POM expressions (`NG_K`, `M_PI`, …).
     pub consts: HashMap<String, PomExpr>,
-    /// Bundle-typed value bindings in scope (module bundle params and
-    /// flattened fn params): logical name → (bundle type, field names).
-    /// What `model.method(...)` and bundle-valued call arguments resolve
-    /// against (GAPS §I.14 extended to fns/methods).
-    pub bundle_bindings: HashMap<String, (String, Vec<String>)>,
-    /// Per-fn bundle-typed parameter positions (fn name → one entry per
-    /// declared param, `Some((bundle, fields))` for bundle-typed ones) —
-    /// call sites expand a bundle argument into its per-field scalars.
-    pub fn_bundle_sigs: HashMap<String, FnSigParams>,
     /// Digital-domain nodes read from *this* analog body (a port or wire
     /// whose value comes from the digital side, referenced by bare name —
     /// not through `V`/`I`), bridged through a synthetic module-level
     /// shadow `var`: the same D2A path (`AnalogInstance::sync_vars`) a
     /// real `var` read already uses, so this never falls back to a silent
-    /// `Real(0.0)`. The caller (`ppr_to_ir`) merges these into the
+    /// `Real(0.0)`. The caller (`lower_bodies`) merges these into the
     /// module's digital body (creating one if the module has none) after
     /// every behavior is lowered.
     pub digital_shadows: Vec<(NodeId, VarId)>,
@@ -159,7 +145,6 @@ impl<'a> LowerCtx<'a> {
         let params = symbols.params().map(|(id, p)| (p.name.clone(), id)).collect();
         let vars = symbols.vars().map(|(id, v)| (v.name.clone(), id)).collect();
         Self {
-            env: HashMap::new(),
             symbols,
             module_name,
             errors: Vec::new(),
@@ -171,17 +156,14 @@ impl<'a> LowerCtx<'a> {
             is_digital,
             module_vars,
             instance_ports: HashMap::new(),
-            enum_values: HashMap::new(),
             consts: HashMap::new(),
-            bundle_bindings: HashMap::new(),
-            fn_bundle_sigs: HashMap::new(),
             digital_shadows: Vec::new(),
         }
     }
 
     /// Global-const POM expressions for `prog`, shared by every context.
     pub fn const_irs(prog: &Design) -> HashMap<String, PomExpr> {
-        prog.consts().map(|(name, v)| (name.clone(), structure::value_to_pom_expr(v))).collect()
+        prog.consts().map(|(name, v)| (name.clone(), value_to_pom_expr(v))).collect()
     }
 
     /// The shadow `var` bridging digital-domain node `id` (named `name`,
@@ -197,12 +179,6 @@ impl<'a> LowerCtx<'a> {
         self.digital_shadows.push((id, var));
         var
     }
-
-    /// Lookup an enum variant's discriminant by bare or qualified name.
-    pub fn lookup_enum_value(&self, name: &str) -> Option<i64> {
-        self.enum_values.get(name).copied()
-    }
-
 
     /// Allocate a new state variable of `kind`, returning its `StateId`.
     pub fn alloc_state(&mut self, kind: StateKind, arg: PomExpr) -> StateId {
@@ -222,23 +198,15 @@ impl<'a> LowerCtx<'a> {
         if let Some(id) = self.instance_ports.get(name) {
             return Some(*id);
         }
-        if let Some(id) = self.nodes.get(name) {
-            return Some(*id);
-        }
-        // A net-capable bundle port (`out : Differential`) was expanded to
-        // flat scalar ports `out_p`/`out_n` at elaboration (SPEC §7 bundle
-        // expansion) — `out.p` in the behavior body names the flat form.
-        if name.contains('.') {
-            return self.nodes.get(&name.replace('.', "_")).copied();
-        }
-        None
+        self.nodes.get(name).copied()
     }
 
     // ── Fail-loud lookups (SIMPLIFICATION.md P5) ──────────────────────────
     //
     // Each returns a placeholder id on failure *after* recording the error;
-    // `ppr_to_ir` discards the whole program when any error was recorded,
-    // so a placeholder can never mis-wire a circuit that gets simulated.
+    // `lower_bodies` discards the whole program when any error was
+    // recorded, so a placeholder can never mis-wire a circuit that gets
+    // simulated.
 
     /// Resolve a node name or record an "unresolved net" error.
     pub fn require_node(&mut self, name: &str) -> NodeId {
@@ -251,8 +219,6 @@ impl<'a> LowerCtx<'a> {
             NodeId::GROUND
         })
     }
-
-
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -293,42 +259,15 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
         });
     }
 
-    // Pass 1.5: Add non-generic functions to each module's symbol table.
-    // Generic functions (map, reduce, …) are elaboration-time generators:
-    // they are monomorphized at call sites and never lowered as-is, so
-    // adding their unresolved bodies would produce dangling references.
-    for body in &mut bodies {
-        for f in prog.functions() {
-            if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
-                eprintln!("DBG fn: {} generic={}", f.name(), f.is_generic());
-            }
-            if f.is_generic() {
-                continue;
-            }
-            let ir_f = convert_fn(f, prog, &mut body.symbols, &mut errors);
-            body.symbols.add_fn(ir_f);
-        }
-        // Impl methods register as `Type::method` with `self` prepended as
-        // a bundle-typed param (flattened per-field like any other) —
-        // `model.conductance()` lowers to a plain fn call (SPEC §6.5/§6.6).
-        for ib in prog.impls() {
-            for method in &ib.methods {
-                let mut synth = method.clone();
-                synth.params.insert(
-                    0,
-                    (
-                        "self".to_string(),
-                        piperine_lang::pom::TypeRef::Value(piperine_lang::pom::ValueType::Bundle(ib.ty.clone())),
-                    ),
-                );
-                synth.defaults.insert(0, None);
-                let mangled = format!("{}::{}", ib.ty, method.name);
-                let ir_f =
-                    structure::convert_fn_named(&mangled, &synth, prog, &mut body.symbols, &mut errors);
-                body.symbols.add_fn(ir_f);
-            }
-        }
-    }
+    // Pass 1.5 (functions): PHDL used to register every non-generic
+    // `Design::functions()`/`impls()` entry into each module's symbol
+    // table here. Both collections were deleted at T21 (MD-45) along with
+    // the rest of the value layer, and VAMS's own `analog function`/
+    // `function`/`task` module items aren't lowered into the POM at all
+    // yet (a documented pre-existing gap from T22, not this retarget's
+    // scope — see `elab/lower/vams.rs`'s no-op match arms). Nothing to do
+    // here until that lands; `resolve/pom/expr.rs`'s `fn_by_name` lookup
+    // stays in place as the (currently always-empty) landing spot.
 
     // Pass 2: Lower behaviors using the built SymbolTables — flat module
     // form (lifted wires + spliced instance ports are already in the symbol
@@ -393,31 +332,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             let mut ctx =
                 LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, module_vars);
             ctx.instance_ports = instance_ports.clone();
-            ctx.enum_values = prog.enum_value_map();
-            let enum_values_for_digital = ctx.enum_values.clone();
             ctx.consts = LowerCtx::const_irs(prog);
-            ctx.fn_bundle_sigs = structure::fn_bundle_signatures(prog);
-            // Module bundle params (flattened at elaboration) — resolvable
-            // as method receivers and bundle-valued call arguments.
-            for p in m.params() {
-                if let Some((logical, bundle)) = &p.bundle_origin {
-                    ctx.bundle_bindings
-                        .entry(logical.clone())
-                        .or_insert_with(|| {
-                            (bundle.clone(), structure::bundle_field_names(prog, bundle))
-                        });
-                }
-                // Also register bundle-typed params themselves (e.g.
-                // `param rmodel : ResistorModel`) so `rmodel.get_or(…)`
-                // and `rmodel.rsh` resolve.
-                if let piperine_lang::pom::ValueType::Bundle(bundle) = &p.ty {
-                    ctx.bundle_bindings
-                        .entry(p.name().to_string())
-                        .or_insert_with(|| {
-                            (bundle.clone(), structure::bundle_field_names(prog, bundle))
-                        });
-                }
-            }
 
             if is_digital {
                 // Digital path: keep the POM `Stmt` tree directly — the
@@ -450,15 +365,16 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 // Module-level vars are persistent digital state — they are
                 // registers (SPEC §9: a `var` updated in a clocked `@` block
                 // is an edge-triggered register). Collect their VarIds and
-                // emit `VarDecl` statements with their initializers so the
-                // digital compiler can extract `reg_inits`.
+                // initial values (see `DigitalBody::reg_inits`'s doc — VAMS
+                // has no `VarDecl`-with-default statement to smuggle these
+                // through, so they're a first-class parallel list here).
                 let var_inits: Vec<(String, Option<&piperine_lang::value::Value>)> = m
                     .vars()
                     .iter()
                     .map(|v| (v.name().to_string(), v.init()))
                     .collect();
                 let mut regs = Vec::new();
-                let mut reg_decls: Vec<PomStmt> = Vec::new();
+                let mut reg_inits: Vec<(VarId, PomExpr)> = Vec::new();
                 for (vname, vinit) in var_inits {
                     let vid = match bodies[i].symbols.vars().find(|(_, info)| info.name == vname).map(|(id, _)| id) {
                         Some(id) => id,
@@ -466,22 +382,18 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     };
                     regs.push(vid);
                     if let Some(init) = vinit {
-                        let init_expr = value_to_pom_expr(init);
-                        reg_decls.push(PomStmt::VarDecl { name: vname, ty: None, default: Some(init_expr) });
+                        reg_inits.push((vid, value_to_pom_expr(init)));
                     }
                 }
 
-                let mut all_stmts = reg_decls;
-                all_stmts.extend(behavior.body().iter().cloned());
-                for stmt in &mut all_stmts {
-                    resolve_enum_patterns_in_stmt(stmt, &enum_values_for_digital);
-                }
+                let stmts: Vec<PomStmt> = behavior.body().to_vec();
 
                 bodies[i].digital = Some(DigitalBody {
                     inputs,
                     outputs,
                     regs,
-                    stmts: all_stmts,
+                    reg_inits,
+                    stmts,
                 });
             } else {
                 // Analog path: resolve POM `Stmt` (keep POM structure, mark
@@ -498,46 +410,10 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             }
         }
 
-        // Constraint margins (DVC-08): every `require`/`target` on the
-        // module lowers to its signed, scale-normalized margin expression
-        // against the same scope the module's analog bodies resolved
-        // against (instance ports, enum values, consts, fn signatures).
-        // No constraint block → `None` stays — nothing lowered, nothing
-        // allocated.
-        if !m.constraints().is_empty() {
-            let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
-            let mut cctx =
-                LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false, module_vars);
-            cctx.instance_ports = instance_ports.clone();
-            cctx.enum_values = prog.enum_value_map();
-            cctx.consts = LowerCtx::const_irs(prog);
-            cctx.fn_bundle_sigs = structure::fn_bundle_signatures(prog);
-            for p in m.params() {
-                if let Some((logical, bundle)) = &p.bundle_origin {
-                    cctx.bundle_bindings
-                        .entry(logical.clone())
-                        .or_insert_with(|| (bundle.clone(), structure::bundle_field_names(prog, bundle)));
-                }
-                if let piperine_lang::pom::ValueType::Bundle(bundle) = &p.ty {
-                    cctx.bundle_bindings
-                        .entry(p.name().to_string())
-                        .or_insert_with(|| (bundle.clone(), structure::bundle_field_names(prog, bundle)));
-                }
-            }
-            let mut margins = Vec::new();
-            let mut cover_points = Vec::new();
-            let mut cover_crosses = Vec::new();
-            for block in m.constraints() {
-                margins.extend(super::constraints::ConstraintLowering::lower(block, &mut cctx));
-                let (points, crosses) = super::constraints::ConstraintLowering::lower_cover(block, &mut cctx);
-                cover_points.extend(points);
-                cover_crosses.extend(crosses);
-            }
-            digital_shadows.append(&mut cctx.digital_shadows);
-            errors.append(&mut cctx.errors);
-            bodies[i].constraints = Some(margins);
-            bodies[i].cover = if cover_points.is_empty() { None } else { Some((cover_points, cover_crosses)) };
-        }
+        // Constraint margins (DVC-08) — permanently `None` post-MD-45; see
+        // `LoweredBody`'s type doc. `Module::constraints()` no longer
+        // exists (deleted with `pom::ConstraintBlock` at T21) — there is
+        // nothing to walk here anymore.
 
         if !digital_shadows.is_empty() {
             let assigns: Vec<PomStmt> = digital_shadows
@@ -545,10 +421,11 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 .map(|(node, var)| {
                     let var_name = bodies[i].symbols.var(*var).name.clone();
                     let node_name = bodies[i].symbols.node(*node).name.clone();
-                    PomStmt::Bind {
-                        dest: PomExpr::Ident(var_name),
-                        op: BindOp::Assign,
-                        src: PomExpr::Ident(node_name),
+                    let nospan = piperine_vams::error::Span::new(0, 0);
+                    PomStmt::Assign {
+                        span: nospan,
+                        target: PomExpr::Ident { span: nospan, name: var_name },
+                        value: PomExpr::Ident { span: nospan, name: node_name },
                     }
                 })
                 .collect();
@@ -561,8 +438,13 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     // semantics — a bare top-level `Assign`, re-evaluated
                     // each digital eval, never a one-shot).
                     let inputs = digital_shadows.iter().map(|(node, _)| *node).collect();
-                    bodies[i].digital =
-                        Some(DigitalBody { inputs, outputs: Vec::new(), regs: Vec::new(), stmts: assigns });
+                    bodies[i].digital = Some(DigitalBody {
+                        inputs,
+                        outputs: Vec::new(),
+                        regs: Vec::new(),
+                        reg_inits: Vec::new(),
+                        stmts: assigns,
+                    });
                 }
             }
         }
@@ -573,52 +455,4 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     }
 
     Ok(names.into_iter().zip(bodies).collect())
-}
-
-/// Pre-resolve `Pattern::Path` (enum-variant patterns, e.g. `State::Idle`)
-/// in a digital `match` into `Pattern::Literal(discriminant)` — the emit-
-/// time `Codegen`/`Builder` path (`emit/stmt.rs::pattern_flag`) already
-/// handles `Pattern::Literal` (a `match` on a bit-literal), so resolving the
-/// variant name here (the same way `resolve_expr`'s `Expr::Path` case
-/// resolves an enum value for the analog path — bare name first, then
-/// `A::B` joined) reuses that path instead of teaching emit a second,
-/// symbol-table-dependent resolution step. Digital bodies keep the raw POM
-/// `Stmt`/`Expr` (SPEC-verified: no `resolve_expr` pass runs over them, see
-/// `lower_bodies`'s `is_digital` branch above) — an unresolvable path is
-/// left as-is, so the caller's original "enum pattern ... not yet wired"
-/// error still fires for a genuinely unknown variant (fail loud, not a
-/// silent match-nothing).
-fn resolve_enum_patterns_in_stmt(stmt: &mut PomStmt, enum_values: &HashMap<String, i64>) {
-    use piperine_lang::parse::ast::{Block, Pattern};
-    fn resolve_pattern(pat: &mut Pattern, enum_values: &HashMap<String, i64>) {
-        if let Pattern::Path(p) = pat {
-            let joined = p.segments.join("::");
-            let bare = p.segments.last().cloned().unwrap_or_default();
-            if let Some(&value) = enum_values.get(&joined).or_else(|| enum_values.get(&bare)) {
-                *pat = Pattern::Literal(value as u64);
-            }
-        }
-    }
-    fn resolve_block(block: &mut Block, enum_values: &HashMap<String, i64>) {
-        for s in &mut block.stmts {
-            resolve_enum_patterns_in_stmt(s, enum_values);
-        }
-    }
-    match stmt {
-        PomStmt::Match { arms, .. } => {
-            for arm in arms {
-                resolve_pattern(&mut arm.pat, enum_values);
-                resolve_block(&mut arm.body, enum_values);
-            }
-        }
-        PomStmt::If { then_body, else_body, .. } => {
-            resolve_block(then_body, enum_values);
-            if let Some(b) = else_body {
-                resolve_block(b, enum_values);
-            }
-        }
-        PomStmt::Event { body, .. } => resolve_block(body, enum_values),
-        PomStmt::For { body, .. } => resolve_block(body, enum_values),
-        _ => {}
-    }
 }
