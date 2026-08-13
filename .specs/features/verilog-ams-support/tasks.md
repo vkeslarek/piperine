@@ -863,18 +863,21 @@ T53 → T54 → T55 → T56 → T57 → T58
 
 ---
 
-#### T43: Migrate `headers/spice/` device models → `.va` (part 3: tline, urc, lib) — ⚠️ PARTIAL (see Progress Log)
+#### T43: Migrate `headers/spice/` device models → `.va` (part 3: tline, urc, lib) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/headers/spice/*.va` · **Depends on**: T42 · **Requirement**: VAMS-08
 **Done when**: remaining models migrated and green · **Gate**: full
-**Status**: `tline`/`lib` migrated and verified green. `urc` is **BLOCKED** — two
-genuine `piperine-lang` elaboration-layer gaps (beyond T42's three documented
-classes) make `urc_seg`/the generic `urc[N]` ladder unmigratable without a
-code fix outside this task's file scope (`crates/piperine-lang/headers/spice/*.va`
-only). See Progress Log for the two gaps, root-cause evidence, and why a
-header-migration task cannot paper over them. `urc.phdl` is deliberately left
-in place, unmodified — not deleted, per VAMS-11's own "delete once migrated"
-condition, which does not hold here.
-**Commit**: `feat(headers): migrate distributed SPICE models to Verilog-A` (tline+lib only)
+**Status**: All three (`tline`/`lib`/`urc`) migrated, verified, and green.
+`tline`/`lib` landed first (`23d840d`); `urc` was blocked on two genuine
+`piperine-lang` elaboration-layer gaps outside a header-migration task's file
+scope — reported per this task's own instruction rather than decided here,
+then fixed as their own dedicated commits (`d551517`, `00073d1`, both outside
+`crates/piperine-lang/headers/spice/*.va`) before `urc.va` itself landed
+(`933dd74`). See Progress Log for the two gaps, root-cause evidence, the
+fixes, and `urc.va`'s own migration notes (including a third, pre-existing,
+now-documented gap: generate-loop/nested-instance param overrides don't
+propagate past one hierarchy hop — not new, not blocking, same class already
+known for `k`).
+**Commit**: `feat(headers): migrate distributed SPICE models to Verilog-A` (tline+lib, `23d840d`); `fix(lang): make a module's own params visible to its own const-eval, support builtin math calls` (`d551517`); `fix(lang): generate bodies see the enclosing module's own params too` (`00073d1`); `feat(headers): migrate urc.phdl to Verilog-A, completing T43` (`933dd74`)
 
 ---
 
@@ -2850,3 +2853,124 @@ did not close.
   task's file scope (`crates/piperine-lang/headers/spice/*.va`) by this
   feature's own MD-13/surgical-change discipline. Reported to the user for
   a scoping decision rather than decided here.
+
+- **T43 follow-up (gap fixes + `urc.va`)** ✅ — both reported gaps fixed,
+  `urc.phdl` migrated, T43 now fully DONE.
+
+  **Fix 1** (`d551517`) — `elab_module` (`elab/lower/vams.rs:37`) created
+  `ConstEnv::new()` once and never `.define()`d each param as it was
+  declared. Fixed by making the env mutable and calling
+  `eval_and_define_param` (new shared helper, replaces the old inline
+  eval+check+push) for each `parameter`/`localparam` in source order as
+  the module's item list is walked — a later param already saw an earlier
+  one before this fix (the existing pattern), now the module's OWN params
+  are visible to everything declared after them in the same module too
+  (a sub-instance override, a net array-range bound). An out-of-order or
+  self-referential param still fails loud via the pre-existing
+  `ConstEvalError::Undefined` path (confirmed: no panic, a named
+  `ConstEval` error citing the undefined name).
+
+  **Fix 2** (`d551517`) — `ConstEnv::eval` (`elab/const_eval.rs:79`) had no
+  `Expr::Call` arm at all (`NotConst` catch-all). Added `eval_call`, scoped
+  deliberately to built-in math functions only: reuses
+  `crate::math::eval_const_math` (the same libm wrappers the JIT links
+  against — MD-13 rule 2/3, no second copy) rather than writing a second
+  evaluator. **Scope boundary, stated explicitly**: a call to a
+  user-declared `analog function`/`function` is NOT evaluated (no
+  recursive interpreter — `eval/interp.rs` was deleted at T21/MD-45, there
+  is nothing to reuse for that path, and building one was explicitly
+  flagged as out-of-scope-if-large by this task's own brief) — it fails
+  loud via `NotConst`, naming the call. This is genuinely all `urc.phdl`
+  needs: every `pow(...)` call site across `urc[N]`/`urc_taper_5_k2`/
+  `urc_isperl_5_k2` is the Annex-D `pow` builtin, never a user function
+  (grep-confirmed before writing the fix).
+
+  **Fix 3** (`00073d1`, found while wiring up `urc[N]`'s generic ladder,
+  not one of the two originally reported) — `UnrollGenerate::run`
+  (`elab/lower/generate.rs`) built its own independent, permanently-empty
+  `ConstEnv` per module, same defect class as Fix 1 but unreached by it (a
+  separate code path, not `elab_module`'s own item loop). Confirmed
+  directly: `urc[N]`'s exact shape (`leaf #(.r(r * pow(k, i))) l1(...)`
+  inside `for (i = 0; i < N; ...)`, `r`/`k` the enclosing module's own
+  params) still failed with `undefined name: r` after Fix 1 alone.
+  Extracted `module_param_env` (walks a module's declared params into a
+  fresh `ConstEnv`, reusing `eval_and_define_param`) and wired
+  `UnrollGenerate` to seed its env from it; each loop iteration's
+  `iter_env` now clones that base instead of starting from nothing.
+
+  **Tests** (all new, none modified): `vams_lower_structure.rs` +4 (param
+  forwarded to instance override — `urc_seg`'s exact shape; later-param-
+  references-earlier; self-reference fails loud not panics; net
+  array-range bound references the module's own param); new
+  `vams_const_eval_calls.rs` (3 tests: `pow` of literals as a param
+  default — `urc_taper_5_k2`'s exact shape; `pow` of a forwarded param +
+  index inside an instance override — `urc[N]`'s exact shape; a call to
+  an unsupported/undeclared function fails loud naming it); `vams_generate.rs`
+  +1 (`urc[N]`'s exact shape end-to-end through the generate pass,
+  asserting the three iterations' `pow(k, i)`-scaled values numerically).
+  13 new tests total, all green; every previously-green target re-run
+  individually (bare `cargo test -p piperine-lang` still can't execute —
+  same pre-existing PHDL-test-target debt, unrelated, unchanged — so the
+  per-target sweep is the gate, same pattern every T40-T43 entry used):
+  `--lib` 59 passed/2 pre-existing failed (unchanged), all 16
+  VAMS-originated integration targets green with their previously-recorded
+  counts +13 new, `urc_flatten` still 0/3 (pre-existing "PHDL fed to a
+  VAMS-only parser" E1005, unrelated, unchanged since before Fix 1).
+  `cargo build --workspace`: zero warnings throughout.
+
+  **`urc.va` migration** (`933dd74`) — `urc_seg` and `urc_taper_5_k2`/
+  `urc_isperl_5_k2` are direct dialect translations (unchanged shape and
+  values; `pow` now resolves through Fix 2). `urc[N]` (PHDL's compile-time
+  module-name monomorphization) becomes an ordinary `urc` module with a
+  `segs` parameter and a `genvar`/`generate for` loop — PHDL's array-wire
+  node-alias idiom (`wire tap : Electrical[N+1]; tap[0] = p; tap[N] = n;`,
+  a structural net-equality statement) has no VAMS Annex A production, so
+  the first/last segments (`s0`/`slast`) are authored directly against
+  `urc`'s own `p`/`n` ports outside the generated loop, and only the
+  strictly-internal taps (`tap[0:segs-2]`, 0-indexed — `NetType::Array`
+  tracks only a width, not the declared range's own offset, confirmed by
+  a scratch-test failure before correcting the indexing) go through the
+  array + loop. Requires `segs >= 2` (`from [2:1000]` on `urc`'s own
+  declared default; SPEC_DEVIATION, documented in the file header) —
+  every fixture this model is cross-checked against already uses `segs >=
+  2`.
+
+  **A third, pre-existing gap surfaced (documented, not fixed — out of
+  this task's scope)**: `UnrollGenerate` unrolls a module's generate body
+  once per module *declaration*, against that module's own declared param
+  defaults — confirmed directly that neither a generate-loop-bound param
+  (`segs`) nor a nested leaf param (`r`/`c`/`k`) reaches an instance-level
+  override through more than the one hierarchy hop Fix 1/Fix 3 cover
+  (`urc #(.segs(5)) u1(...)` elaborates but the ladder still has
+  `URC_DEFAULT_N = 3` segments; `urc #(.r(50.0)) u1(...)` elaborates but
+  `s0`'s leaf `res` still gets `r = 100.0`). This is not new — `urc.phdl`'s
+  own header already documented it for `k` ("a per-instance `k`
+  override... does not reach the leaves via the param chain... shared with
+  every nested-leaf param chain in the codebase") — confirmed here to be
+  the fully general statement it claimed to be, not `k`-specific.
+  `urc.va`'s own header carries the expanded note; getting a non-default
+  segment count in VAMS means declaring another module whose own `segs`
+  default is the wanted count (relevant for T44's `urc_lump2/5/10`
+  fixture migration, flagged there so it isn't rediscovered from scratch).
+
+  **Verification**: throwaway scratch test (`piperine_lang::
+  parse_and_elaborate` + `piperine_codegen::resolve::lower_bodies` +
+  `CircuitCompiler::build_circuit`, temp `piperine-codegen` dev-dependency,
+  both deleted/reverted before the `933dd74` commit) — `urc` (default
+  `segs = 3`) elaborates, flattens to 7 leaf instances (3 `urc_seg` × 2 +
+  1 driver), and JIT-compiles; `urc_taper_5_k2`/`urc_isperl_5_k2`
+  JIT-compile. `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine --test suite_hygiene`: 9/10 green (same
+  pre-existing `mod_rs_declares_only` failure, untouched);
+  `phdl_corpus_does_not_grow` green with `PHDL_HIGH_WATER_MARK` lowered
+  91 → 90 (`git ls-files`/on-disk count both confirm 90 `.phdl` files
+  remain). `tests/ngspice_{validation,ac,noise,tran,temp}.rs` and
+  `ngspice_parity_matrix.rs`: pass/fail counts identical to T42/T43's
+  recorded baseline (validation 20/29, ac 21/3, noise 22/7, tran 21/4,
+  temp 22/2, parity_matrix 4/0) — expected and unaffected, `tests/
+  ngspice/*.phdl` fixtures are still `.phdl` (unmigrated until T44).
+
+  **Phase 8's device-model trio (T41-T43) is no longer blocked/incomplete**
+  — all three commits landed, T43's checkbox above is DONE, and the
+  `tasks.md`/`STATE.md` open-item note flagging this as outstanding is
+  closed by this entry.
