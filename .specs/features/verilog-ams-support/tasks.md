@@ -668,9 +668,9 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-25
 
 **Done when**:
-- [ ] A digital-only construct inside an analog-only context fails with the E4xxx variant citing Annex C
-- [ ] Gate is written to extend as later phases add constructs (VAMS-25 is ongoing)
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] A digital-only construct inside an analog-only context fails with the E4xxx variant citing Annex C
+- [x] Gate is written to extend as later phases add constructs (VAMS-25 is ongoing) — one recursive `check_analog_subset` walk over every analog behavior's `Stmt` tree; a later phase adds another `match` arm, not a second mechanism
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): enforce the Annex C analog language subset`
@@ -1591,4 +1591,32 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
   hierarchy + `connect...resolveto` resolution is out of this task's
   scope, deferred to T52. `cargo test -p piperine-lang`: same 2
   pre-existing documented failures, no new regressions. `cargo build -p
+  piperine-lang`: zero warnings.
+
+- **T27** ✅ `<pending commit>` — Annex C analog-subset enforcement
+  (`elab/typecheck.rs` rewritten from its T21 stub into a real check;
+  `Typecheck` restored to `PASSES`; 5 tests in `tests/vams_annex_c.rs`).
+  Three constructs checked today, all cited directly from Annex C §C.7
+  ("No digital behavior or events are supported in Verilog-A" +
+  "`casex` and `casez` are not supported in Verilog-A"): non-blocking
+  assignment `<=` inside an `analog`/`analog initial` behavior body,
+  digital edge-sensitive event control (`posedge`/`negedge` inside
+  `@(...)`), and `casex`/`casez`. `check_analog_subset` recurses through
+  every statement-tree shape a violation could hide inside (blocks,
+  if/else, case arms, loop/delay-control bodies, nested event control) —
+  the same recursive-walk shape T23's `resolve_contribution_branches`
+  already established, kept consistent rather than inventing a second
+  pattern. Reuses E4002 `AnnexCSubsetViolation` (declared at T19, unused
+  until now). This closes out Phase 5 (S2b) — T21 through T27, VAMS→POM
+  elaboration — with a working (if intentionally scoped) pipeline:
+  `Register → LowerDeclarations → ElabModules → ResolveDisciplines →
+  UnrollGenerate → Typecheck → FlattenHierarchy`. `cargo test -p
+  piperine-lang`: same 2 pre-existing documented failures (both PHDL
+  fixture-string tests from before T21), no new regressions; every
+  VAMS-originated integration target across T17-T27 is green (43 tests
+  across 9 targets: `pom_nature` 9, `pom_branch` 13, `errors_lrm` 7,
+  `pom_vams_shape` 8, `vams_deviation_resolutions` 6, plus T22-T27's own
+  `vams_lower_structure` 9, `vams_lower_analog` 8, `vams_param_ranges` 6,
+  `vams_generate` 4, `vams_discipline_resolution` 4, `vams_annex_c` 5 —
+  79 total across those 11 targets) + 59 lib unit tests. `cargo build -p
   piperine-lang`: zero warnings.

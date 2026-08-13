@@ -46,6 +46,7 @@ pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &ElabModules,
     &ResolveDisciplines,
     &UnrollGenerate,
+    &Typecheck,
     &FlattenHierarchy,
 ];
 
@@ -83,5 +84,20 @@ impl ElabPass for ElabModules {
             design.modules_map_mut().insert(name.clone(), module);
         }
         Ok(())
+    }
+}
+
+/// Annex C analog-subset enforcement (T27, VAMS-25) — every failure found
+/// across every analog behavior in the design is reported (LSP-18/T16:
+/// like `ElabModules`, each behavior's check is independent of every
+/// other's), while still returning the *first* one to satisfy the
+/// ordinary `ElabPass::run` fail-fast contract.
+struct Typecheck;
+impl ElabPass for Typecheck {
+    fn run(&self, _elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        crate::elab::typecheck::typecheck_program_accumulating(design)
+            .into_iter()
+            .next()
+            .map_or(Ok(()), Err)
     }
 }

@@ -4,16 +4,96 @@
 //! §B.2 connection-width and discipline-mismatch checks, pattern-match
 //! exhaustiveness over PHDL `Stmt`/`Pattern`) were built directly against
 //! `piperine-lang/src/parse/`'s AST types and are deleted with it, not
-//! retargeted — none has a 1:1 VAMS shape. `.specs/features/
-//! verilog-ams-support/tasks.md` T27 (Annex C analog-subset enforcement)
-//! rebuilds this module's real checks against `piperine_vams::ast`.
+//! retargeted — none has a 1:1 VAMS shape.
+//!
+//! **T27 (VAMS-25) — Annex C analog-subset enforcement.** LRM Annex C.7:
+//! "No digital behavior or events are supported in Verilog-A" — a digital-
+//! only construct used inside an `analog`/`analog initial` behavior body
+//! fails loud citing the clause (E4002 `AnnexCSubsetViolation`, declared
+//! at T19). Checked today: non-blocking assignment (`<=`, digital-only —
+//! LRM §5.5 restricts analog blocks to blocking `=` and contribution
+//! `<+`), digital edge-sensitive event control (`posedge`/`negedge`
+//! inside `@(...)`), and `casex`/`casez` (Annex C.7: "`casex` and `casez`
+//! are not supported in Verilog-A"). This is deliberately an **ongoing**
+//! gate (VAMS-25): later phases (full 1364 digital, ch. 7 mixed-signal)
+//! add more Annex-C-restricted constructs to the same walk rather than
+//! opening a second mechanism.
 
-use crate::pom::{Design, ElabError};
+use piperine_vams::ast::{EventExpr, Stmt};
+
+use crate::pom::{Design, ElabError, ElabErrorKind};
 
 /// Typecheck every module in `design`, accumulating every independent
-/// failure instead of stopping at the first (LSP-18/T16 precedent). Always
-/// empty today — T27 is where the first real check (Annex C enforcement)
-/// lands.
-pub fn typecheck_program_accumulating(_design: &Design) -> Vec<ElabError> {
-    Vec::new()
+/// failure instead of stopping at the first (LSP-18/T16 precedent).
+/// Returns every Annex C violation found across every analog behavior in
+/// the design.
+pub fn typecheck_program_accumulating(design: &Design) -> Vec<ElabError> {
+    let mut errors = Vec::new();
+    for module in design.modules() {
+        for behavior in module.behaviors() {
+            if !behavior.is_analog() {
+                continue;
+            }
+            for stmt in behavior.body() {
+                check_analog_subset(stmt, &mut errors);
+            }
+        }
+    }
+    errors
+}
+
+/// Recursively walks a statement tree inside an analog behavior body,
+/// recording an [`ElabErrorKind::AnnexCSubsetViolation`] for every
+/// digital-only construct found. Never stops at the first violation —
+/// every offending statement in the tree is reported (the pass's own
+/// caller decides whether to treat this as fail-fast or accumulate).
+fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
+    match stmt {
+        Stmt::NonBlockingAssign { span, .. } => {
+            errors.push(annex_c_error("non-blocking assignment `<=`", *span));
+        }
+        Stmt::Case { kind, arms, selector: _, span } => {
+            use piperine_vams::ast::CaseKind;
+            if matches!(kind, CaseKind::Casex | CaseKind::Casez) {
+                let name = if matches!(kind, CaseKind::Casex) { "`casex`" } else { "`casez`" };
+                errors.push(annex_c_error(name, *span));
+            }
+            for arm in arms {
+                check_analog_subset(&arm.body, errors);
+            }
+        }
+        Stmt::EventControl { events, body, span } => {
+            for e in events {
+                if matches!(e, EventExpr::Posedge(_) | EventExpr::Negedge(_)) {
+                    errors.push(annex_c_error("digital edge-sensitive event control (`posedge`/`negedge`)", *span));
+                }
+            }
+            check_analog_subset(body, errors);
+        }
+        Stmt::Block { stmts, .. } => stmts.iter().for_each(|s| check_analog_subset(s, errors)),
+        Stmt::If { then_branch, else_branch, .. } => {
+            check_analog_subset(then_branch, errors);
+            if let Some(e) = else_branch {
+                check_analog_subset(e, errors);
+            }
+        }
+        Stmt::For { body, .. }
+        | Stmt::While { body, .. }
+        | Stmt::Repeat { body, .. }
+        | Stmt::Forever { body, .. }
+        | Stmt::DelayControl { body, .. } => check_analog_subset(body, errors),
+        Stmt::Null { .. }
+        | Stmt::Assign { .. }
+        | Stmt::Contribution { .. }
+        | Stmt::Disable { .. }
+        | Stmt::TaskCall { .. } => {}
+    }
+}
+
+fn annex_c_error(construct_kind: &str, span: piperine_vams::Span) -> ElabError {
+    ElabError::from(ElabErrorKind::AnnexCSubsetViolation {
+        construct_kind: construct_kind.to_string(),
+        context: "analog block".to_string(),
+        span: Some(miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))),
+    })
 }
