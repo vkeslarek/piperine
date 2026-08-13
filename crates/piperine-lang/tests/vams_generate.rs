@@ -77,6 +77,47 @@ fn if_generate_picks_the_taken_branch_only() {
 }
 
 #[test]
+fn for_generate_body_sees_the_enclosing_module_s_own_params() {
+    // `urc[N]`'s exact shape (headers/spice/urc.phdl): a generate loop's
+    // sub-instance param override references two params the *enclosing*
+    // module declares (`r`, `k`), combined with the loop's own genvar via
+    // `pow` — this used to fail with `undefined name: r` because
+    // `UnrollGenerate` built its own permanently-empty `ConstEnv`.
+    let src = r#"
+        module leaf (inout electrical p, inout electrical n);
+            parameter real r = 1.0;
+        endmodule
+
+        module top (inout electrical a, inout electrical b);
+            parameter real r = 100.0;
+            parameter real k = 1.5;
+            genvar i;
+            for (i = 0; i < 3; i = i + 1) begin: g
+                leaf #(.r(r * pow(k, i))) l1 (a, b);
+            end
+        endmodule
+    "#;
+    let d = elab(src);
+    let flat = d.flat_module("top").expect("top has a flat form");
+    assert_eq!(flat.instances().len(), 3);
+    for (i, expected_k_pow) in [(0, 1.0), (1, 1.5), (2, 2.25)] {
+        let inst = flat
+            .instances()
+            .iter()
+            .find(|inst| inst.name() == format!("l1__{i}"))
+            .unwrap_or_else(|| panic!("l1__{i} present"));
+        let (_, value) = inst.params.iter().find(|(n, _)| n == "r").expect("r override");
+        let expected = 100.0 * expected_k_pow;
+        match value {
+            piperine_lang::pom::Value::Real(got) => {
+                assert!((got - expected).abs() < 1e-9, "iteration {i}: got {got}, expected {expected}")
+            }
+            other => panic!("expected Real, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn generate_produced_instance_colliding_with_an_authored_one_fails_loud() {
     // `if`-generate doesn't mangle its body's instance labels (no loop
     // index to fold in), so an authored `l1` and an `if`-generated `l1`

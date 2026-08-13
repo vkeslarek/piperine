@@ -39,6 +39,7 @@ pub enum ConstEvalError {
 /// Maintains a stack of scopes; `push`/`pop` manage nesting (e.g. for
 /// generate-loop bodies), `define` adds a binding to the innermost scope,
 /// and `lookup` searches scopes from innermost outward.
+#[derive(Clone)]
 pub struct ConstEnv {
     bindings: Vec<HashMap<String, Value>>,
 }

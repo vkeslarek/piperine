@@ -37,7 +37,13 @@ impl ElabPass for UnrollGenerate {
         for name in &names {
             let decl = elab.syms.module_decls[name].clone();
             let mut out = Vec::new();
-            let env = ConstEnv::new();
+            // The module's own params must be visible inside its generate
+            // bodies exactly like anywhere else in the module (bug fix:
+            // this used to be a permanently-empty `ConstEnv::new()`, so a
+            // generate loop's port connections/param overrides could never
+            // reference an enclosing `parameter` — see `vams::
+            // module_param_env`'s doc comment).
+            let env = super::vams::module_param_env(&decl)?;
             // Only descend into the module's *generate* constructs — an
             // ordinary top-level instantiation is already lowered into
             // `Module::instances` by `ElabModules` and must not be
@@ -135,7 +141,11 @@ fn unroll_loop(
 
     let mut iterations = 0usize;
     loop {
-        let mut iter_env = ConstEnv::new();
+        // Starts from the module's own param env (see `run`'s doc comment
+        // above) rather than a fresh empty one, so a body like
+        // `leaf #(.r(r * pow(k, i))) l1 (...)` can see the enclosing
+        // module's `r`/`k` params alongside the loop's own genvar.
+        let mut iter_env = env.clone();
         iter_env.define(lg.genvar.clone(), crate::value::Value::Int(i));
         let cont = iter_env.eval(&lg.cond).map_err(|e| {
             ElabError::from(ElabErrorKind::ConstEval { context: format!("generate loop `{}` condition", lg.genvar), source: e })

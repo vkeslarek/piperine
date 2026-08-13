@@ -70,9 +70,7 @@ impl Elaborator {
                 ModuleItem::Param(p) => {
                     let ty = param_value_type(p.ty);
                     for (name, expr) in &p.names {
-                        let value = eval_param_default(expr, &env)?;
-                        check_param_ranges(name, &value, &p.ranges, &env)?;
-                        env.define(name.clone(), value.clone());
+                        let value = eval_and_define_param(name, expr, &p.ranges, &mut env)?;
                         params.push(Param {
                             span: None,
                             attributes: Vec::new(),
@@ -654,6 +652,48 @@ fn param_value_type(ty: Option<ParamType>) -> ValueType {
 fn eval_param_default(expr: &Expr, env: &ConstEnv) -> Result<Value, ElabError> {
     env.eval(expr)
         .map_err(|e| ElabError::from(ElabErrorKind::ConstEval { context: "parameter default".into(), source: e }))
+}
+
+/// Evaluates one `name = expr [ranges]` parameter declarator against
+/// `env`, validates its declared `from`/`exclude` ranges, and `.define()`s
+/// it into `env` before returning the value — the single place a param
+/// becomes visible to elaboration-constant evaluation, shared by
+/// `elab_module`'s own `Param` arm and [`module_param_env`] so a module's
+/// own params are defined identically everywhere they're needed (no
+/// second copy of this eval+range-check+define sequence, MD-13 rule 2/3).
+fn eval_and_define_param(
+    name: &str,
+    expr: &Expr,
+    ranges: &[piperine_vams::ast::ParamRange],
+    env: &mut ConstEnv,
+) -> Result<Value, ElabError> {
+    let value = eval_param_default(expr, env)?;
+    check_param_ranges(name, &value, ranges, env)?;
+    env.define(name.to_string(), value.clone());
+    Ok(value)
+}
+
+/// Builds a `ConstEnv` populated with every `parameter`/`localparam` a
+/// module declares, in source order (the same sequential
+/// `eval_and_define_param` order `elab_module`'s own item loop uses so a
+/// later param may reference an earlier one). This is the base
+/// environment a generate construct's body (T25, LRM ch.6) must evaluate
+/// against: a `for`/`if`/`case` generate body is still "this same module"
+/// for const-eval purposes and must see its own module's params exactly
+/// like an ordinary instantiation does (`elab/lower/generate.rs`'s
+/// `UnrollGenerate` pass is the sole caller — it previously built its own
+/// permanently-empty `ConstEnv`, the same gap `eval_and_define_param`'s
+/// doc comment on the module-body side fixes).
+pub(super) fn module_param_env(decl: &ModuleDecl) -> Result<ConstEnv, ElabError> {
+    let mut env = ConstEnv::new();
+    for item in &decl.items {
+        if let ModuleItem::Param(p) = item {
+            for (name, expr) in &p.names {
+                eval_and_define_param(name, expr, &p.ranges, &mut env)?;
+            }
+        }
+    }
+    Ok(env)
 }
 
 /// A port-connection value resolves to a `NetRef` — a bare identifier, or
