@@ -1,4 +1,4 @@
-//! Example-gallery gate (BRM-11 dual contract): every `examples/*.phdl`
+//! Example-gallery gate (BRM-11 dual contract): every `examples/*.vams`
 //! elaborates, and every `examples/*.py` runs green in-process through the
 //! same embedded-CPython host `piperine run` uses.
 
@@ -13,13 +13,13 @@ fn examples_dir() -> PathBuf {
 
 /// The `SourceMap` a real `piperine` invocation builds for the examples
 /// project: the bundled stdlib headers under the `piperine`/`spice`
-/// namespaces, so an example's `use piperine::disciplines;` /
-/// `use spice::...;` resolves exactly as it does on the CLI (which uses
-/// `piperine_project::project_source_map`). `SourceMap::dummy()` maps no
-/// namespaces — it can only elaborate a fully self-contained file.
+/// namespaces, so an example's `` `include "disciplines.vams"`` /
+/// `` `include "spice/X.va"`` resolves exactly as it does on the CLI (which
+/// uses `piperine_project::project_source_map`). `SourceMap::dummy()` maps
+/// no namespaces — it can only elaborate a fully self-contained file.
 fn examples_source_map() -> piperine_lang::SourceMap {
     let headers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/piperine-lang/headers");
-    let mut map = piperine_lang::SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -39,12 +39,12 @@ fn gallery(ext: &str) -> Vec<PathBuf> {
     files
 }
 
-/// Leg 1: every `.phdl` example is a valid circuit module — elaboration is
+/// Leg 1: every `.vams` example is a valid circuit module — elaboration is
 /// the compile gate (the runnable assertions live in the `.py` twins).
 #[test]
-fn every_example_phdl_elaborates() {
+fn every_example_vams_elaborates() {
     let mut failures: Vec<String> = Vec::new();
-    for path in gallery("phdl") {
+    for path in gallery("vams") {
         let body = fs::read_to_string(&path).unwrap();
         if let Err(e) = piperine_lang::parse_and_elaborate(&body, &examples_source_map()) {
             failures.push(format!("{}: elaboration failed: {e:?}", path.display()));

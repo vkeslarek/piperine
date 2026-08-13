@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "08_johnson_noise.phdl")
+P = os.path.join(os.path.dirname(__file__), "08_johnson_noise.vams")
 m = piperine.load(P).module("NoiseCell")
 n = m.noise(piperine.NoiseConfig(out="out", fstart=1.0, fstop=1e7, points=200))
 psd = n.psd(); plateau = psd.at(100.0)

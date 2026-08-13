@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "19_multiplier_2x2.phdl")
+P = os.path.join(os.path.dirname(__file__), "19_multiplier_2x2.vams")
 m = piperine.load(P).module("Mult2")
 for a1 in [0,1]:
  for a0 in [0,1]:

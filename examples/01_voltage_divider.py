@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "01_voltage_divider.phdl")
+P = os.path.join(os.path.dirname(__file__), "01_voltage_divider.vams")
 def M(): return piperine.load(P).module("DividerBoard")
 # test_dc_ratio
 m = M(); r = m.op()

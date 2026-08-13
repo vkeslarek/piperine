@@ -1,0 +1,61 @@
+// Multi-module SEQUENTIAL logic verified over TIME with `$tran` (an `$op`
+// operating point is stateless — it cannot clock a register). An analog clock
+// source crosses a comparator (the A2D bridge) into a digital clock, which
+// drives a 4-stage shift register built from four separate D-flip-flop modules.
+// With a constant `1` on the serial input, the register fills from q0 upward —
+// one stage per rising edge — proving register state and clocking propagate
+// correctly across module boundaries in real time.
+//
+// The transient records a digital snapshot per step, so `tr.v(bit_net)` returns
+// the logic value (0/1) as a waveform; `.at(t)` samples it.
+`include "disciplines.vams"
+
+// Analog square-wave clock: low in the first half of each period, high in the
+// second. Period defaults to 1 us (rising edges at 0.5, 1.5, 2.5, ... us).
+module ClockSrc (inout electrical clk_a, inout electrical gnd);
+    parameter real period = 1.0e-6;
+    real ph;
+    analog begin
+        ph = $abstime - period * floor($abstime / period);
+        V(clk_a, gnd) <+ (ph > period * 0.5) ? 1.0 : 0.0;
+    end
+endmodule
+
+// Constant logic-1 driver (a fixed analog level through a comparator).
+module HighSrc (inout electrical h_a, inout electrical gnd);
+    analog begin
+        V(h_a, gnd) <+ 1.0;
+    end
+endmodule
+
+// A2D comparator: analog level -> logic.
+module Comparator (input electrical a, input electrical n, output logic y);
+    always @(*) begin
+        y <= V(a, n) > 0.5;
+    end
+endmodule
+
+// Rising-edge D flip-flop (canonical 1364 idiom: no intermediate state,
+// the new q is latched directly from d at each posedge).
+module Dff (input logic clk, input logic d, output logic q);
+    always @(posedge clk) q <= d;
+endmodule
+
+module ShiftTran ();
+    electrical gnd;
+    electrical clk_a;       // analog clock rail
+    electrical high_a;      // analog logic-1 rail
+    logic clk;              // digital clock
+    logic din;              // digital serial-in (constant 1)
+    logic q0, q1, q2, q3;
+
+    ClockSrc #(.period(1.0e-6)) clkgen (.clk_a(clk_a), .gnd(gnd));
+    HighSrc highgen (.h_a(high_a), .gnd(gnd));
+    Comparator ccmp (.a(clk_a), .n(gnd), .y(clk));
+    Comparator dcmp (.a(high_a), .n(gnd), .y(din));
+
+    Dff f0 (.clk(clk), .d(din), .q(q0));
+    Dff f1 (.clk(clk), .d(q0),  .q(q1));
+    Dff f2 (.clk(clk), .d(q1),  .q(q2));
+    Dff f3 (.clk(clk), .d(q2),  .q(q3));
+endmodule

@@ -371,8 +371,20 @@ impl DigitalInstance {
         s.prev_outputs.clear();
         s.prev_outputs
             .extend(self.out_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
-        s.outputs.clear();
-        s.outputs.extend_from_slice(&s.prev_outputs);
+        // Preserve any writes `eval_seq_phase` made to `s.outputs` this
+        // step (a clocked block like `always @(posedge clk) q <= d;`
+        // updates the output register in seq, not in comb). For devices
+        // whose `comb` writes every output every pass (the combinational
+        // case), those writes simply overwrite — same as the previous
+        // unconditional reset-to-prev_outputs did. For purely clocked
+        // devices whose `comb` is empty, the previous reset silently
+        // discarded seq's writes, so a clocked output never propagated
+        // to its net. Initialise only when seq didn't run this step
+        // (s.outputs was cleared by `std::mem::take` above).
+        if s.outputs.len() != s.prev_outputs.len() {
+            s.outputs.clear();
+            s.outputs.extend_from_slice(&s.prev_outputs);
+        }
 
         let abi = DigitalAbi {
             inputs: s.inputs.as_ptr(),

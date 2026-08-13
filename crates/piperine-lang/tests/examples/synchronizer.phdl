@@ -1,7 +1,0 @@
-mod Synchronizer ( input d : Bit, input clk_b : Bit, output q : Bit ) {
-    var m : Bit = 0;  var n : Bit = 0;
-}
-digital Synchronizer {
-    q <- n;
-    @ posedge(clk_b) { m = d; n = m; }
-}

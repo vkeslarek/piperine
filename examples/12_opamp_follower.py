@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "12_opamp_follower.phdl")
+P = os.path.join(os.path.dirname(__file__), "12_opamp_follower.vams")
 def M(): return piperine.load(P).module("Follower")
 # test_dc_tracks_input
 m = M(); assert abs(m.op().v("out","gnd") - 1.0) < 5e-4, "follower tracks input"

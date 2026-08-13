@@ -1,0 +1,25 @@
+// capabilities.vams — formerly demonstrated Piperine's value-layer
+// capability system (Add/Sub/Mul capability declarations, `impl Add for
+// UInt[N]` with a ripple-carry body, `bundle UInt[N] { bits : Bit[N] }`,
+// bounded polymorphism `mod Adder <T: Add + Net>`).
+//
+// MD-45 (2026-08-13): Verilog-AMS Annex A has no productions for ANY of
+// those constructs — no capability, no impl block, no bundle, no generics,
+// no UInt abstract type. The capability system was deleted at T21 with
+// the rest of the PHDL value layer. What's preserved here is the
+// pedagogical *example* (a 1-bit full adder) expressed in plain VAMS
+// 1364 digital, which is what the deleted `impl Add for UInt[1]` ultimately
+// produced: the same XOR/AND truth table, just without the polymorphic
+// indirection. The deleted PHDL file's other content (the `Number`
+// capability hierarchy, the `Pair` bundle, the higher-order pattern) has
+// no VAMS analog at all and is gone.
+`include "disciplines.vams"
+
+// 1-bit full adder: sum = a XOR b XOR cin, cout = majority(a, b, cin).
+module Adder (input logic a, input logic b, input logic cin,
+              output logic sum, output logic cout);
+    always @(*) begin
+        sum  <= (a != b) != cin;
+        cout <= (a && b) || (cin && (a != b));
+    end
+endmodule

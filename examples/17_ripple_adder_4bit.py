@@ -1,5 +1,5 @@
 import os, sys, math, piperine
-P = os.path.join(os.path.dirname(__file__), "17_ripple_adder_4bit.phdl")
+P = os.path.join(os.path.dirname(__file__), "17_ripple_adder_4bit.vams")
 m = piperine.load(P).module("Adder4")
 def bit(v, i): return float((int(v) >> i) & 1)
 for a in range(16):

@@ -1,0 +1,29 @@
+// 4-bit binary-weighted current-steering DAC into a load resistor:
+// v(out) = code · Iunit · Rload. The python twin walks codes by setting the bit
+// params and checks the staircase — including full-scale and midscale.
+`include "disciplines.vams"
+
+module CurrentDac (inout electrical out, inout electrical gnd);
+    parameter real b3 = 0.0;
+    parameter real b2 = 0.0;
+    parameter real b1 = 0.0;
+    parameter real b0 = 0.0;
+    parameter real iunit = 100e-6;
+    analog begin
+        I(out, gnd) <+ -(8.0 * b3 + 4.0 * b2 + 2.0 * b1 + b0) * iunit;
+    end
+endmodule
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module DacBoard ();
+    electrical gnd;
+    electrical out;
+    CurrentDac dac (.out(out), .gnd(gnd));
+    Resistor #(.r(1e3)) load (.p(out), .n(gnd));
+endmodule

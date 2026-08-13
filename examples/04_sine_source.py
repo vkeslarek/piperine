@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "04_sine_source.phdl")
+P = os.path.join(os.path.dirname(__file__), "04_sine_source.vams")
 def M(): return piperine.load(P).module("SineDemo")
 # test_sine_shape
 m = M(); t = m.tran(piperine.TranConfig(stop=2e-3, step=1e-5)); v = t.v("out", "gnd")

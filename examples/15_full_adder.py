@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "15_full_adder.phdl")
+P = os.path.join(os.path.dirname(__file__), "15_full_adder.vams")
 m = piperine.load(P).module("AdderBoard")
 for a in [0.0,1.0]:
     for b in [0.0,1.0]:

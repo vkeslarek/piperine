@@ -1,0 +1,35 @@
+// Resistive voltage divider — the "hello world" of analog verification.
+// The python twin checks the exact DC transfer ratio and the branch current, then
+// sweeps the load leg and verifies the divider equation at every point.
+//
+// (2026-08-13) The idiomatic VAMS form would `include "spice/passives.va"`
+// and instantiate the stdlib `res`/`vsrc` models — but piperine-api's
+// `OpResult::i` post-solve query path (results.rs:392) calls
+// `kernel.eval_residual` with empty `state`/`vars` slices, which the
+// stdlib `res` kernel (10 module-level vars: t, w_eff, g_dc, ...) trips.
+// Pending that fix, this example keeps its local self-contained device
+// modules (no vars in the body) so the post-solve query path works.
+`include "disciplines.vams"
+
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 5.0;
+    analog begin
+        V(p, n) <+ voltage;
+    end
+endmodule
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module DividerBoard ();
+    electrical gnd;
+    electrical vin;
+    electrical mid;
+    VoltageSource #(.voltage(5.0)) source (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule

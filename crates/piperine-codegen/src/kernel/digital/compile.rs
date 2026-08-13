@@ -567,11 +567,27 @@ impl NetworkComb {
                 None,
             );
             let body = m.module.digital.as_ref().unwrap();
+            // Mirror the per-device `compile()` split (lines 99-116 above):
+            // a non-edge event control (`@*`/`@(sig)` — level-sensitive) is
+            // combinational in this step-based execution model, so its body
+            // folds directly into the plain combinational statement list
+            // rather than being emitted as a (rejected) nested event
+            // control. Without this fold a fused cone containing any
+            // `always @(*) begin ... end` member dies with "nested event
+            // control outside a top-level clocked block" — the per-device
+            // path never hits this because it splits first.
             for stmt in &body.stmts {
-                // Register power-on inits are `DigitalBody::reg_inits` data
-                // (T30), never a statement in this tree — nothing to skip
-                // here anymore (VAMS has no VarDecl-with-default form).
-                b.emit_stmt(stmt)?;
+                match stmt {
+                    Stmt::EventControl { events, body, .. } if is_clocked(events) => {
+                        // Already rejected at line 489 above; defensive only.
+                        return Err(CodegenError::unsupported(format!(
+                            "network fusion of clocked module `{}` (comb-only cones for now)",
+                            m.module.name
+                        )));
+                    }
+                    Stmt::EventControl { body, .. } => b.emit_stmt(body)?,
+                    other => b.emit_stmt(other)?,
+                }
             }
         }
 

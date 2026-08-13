@@ -1,0 +1,29 @@
+// Johnson-Nyquist noise of a resistor, band-limited by its own parallel
+// capacitance. The python twin checks physics, not plumbing: the output PSD
+// plateau is 4kTR and the integrated noise approaches the classic kT/C.
+`include "disciplines.vams"
+
+/// R = 1 kOhm at T = 300 K: thermal current PSD 4kT/R ~= 1.657e-23 A^2/Hz.
+module NoisyResistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    parameter real psd_4ktr = 1.657e-23;   // 4*k*300/R, A^2/Hz
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+        I(p, n) <+ white_noise(psd_4ktr, "thermal");
+    end
+endmodule
+
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 1e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+
+module NoiseCell ();
+    electrical gnd;
+    electrical out;
+    NoisyResistor r1 (.p(out), .n(gnd));
+    Capacitor c1 (.p(out), .n(gnd));
+    // fc ~= 159 kHz
+endmodule

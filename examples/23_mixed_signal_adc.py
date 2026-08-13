@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-P = os.path.join(os.path.dirname(__file__), "23_mixed_signal_adc.phdl")
+P = os.path.join(os.path.dirname(__file__), "23_mixed_signal_adc.vams")
 m = piperine.load(P).module("AdcDemo")
 
 # Ramp 0 → 4 V over 10 µs; A2D samples the ramp each step, D2A reconstructs.

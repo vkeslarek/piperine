@@ -1,0 +1,32 @@
+// Zero-crossing counter: a `@cross` event increments a counter every time
+// a 1 kHz sine crosses zero (either direction); the count is exposed as a
+// voltage. Three full periods have six crossings after t = 0 — the python twin
+// checks the count and cross-validates with `Waveform.cross`.
+`include "disciplines.vams"
+
+module SineSource (inout electrical p, inout electrical n);
+    parameter real amplitude = 1.0;
+    parameter real freq = 1e3;
+    analog begin
+        V(p, n) <+ amplitude * sin(6.283185307179586 * freq * $abstime);
+    end
+endmodule
+
+// `n` is persistent analog state (Verilog-A module-scope `real`): seeded
+// once at `initial_step`, incremented only by the `cross` event.
+module CrossCounter (input electrical vin, inout electrical count, inout electrical gnd);
+    real n;
+    analog begin
+        @(initial_step) n = 0.0;
+        V(count, gnd) <+ n;
+        @(cross(V(vin, gnd))) n = n + 1.0;
+    end
+endmodule
+
+module Counter ();
+    electrical gnd;
+    electrical sig;
+    electrical count;
+    SineSource   src (.p(sig),   .n(gnd));
+    CrossCounter det (.vin(sig), .count(count), .gnd(gnd));
+endmodule

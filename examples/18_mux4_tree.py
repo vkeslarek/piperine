@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "18_mux4_tree.phdl")
+P = os.path.join(os.path.dirname(__file__), "18_mux4_tree.vams")
 m = piperine.load(P).module("Mux4")
 for v0 in [0,1]:
  for v1 in [0,1]:

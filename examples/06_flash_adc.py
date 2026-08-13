@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "06_flash_adc.phdl")
+P = os.path.join(os.path.dirname(__file__), "06_flash_adc.vams")
 def M(): return piperine.load(P).module("AdcBoard")
 # test_transfer_staircase
 for level in [0.5, 1.5, 2.5, 3.5]:

@@ -1,0 +1,11 @@
+// sr_latch.vams — NAND SR latch, migrated from PHDL.
+`include "disciplines.vams"
+
+module SrLatch (input logic s, input logic r, output logic q);
+    reg st;
+    always @(posedge s or posedge r) begin
+        if (s == 1) st <= 1;
+        else        st <= 0;
+    end
+    always @(*) q <= st;
+endmodule

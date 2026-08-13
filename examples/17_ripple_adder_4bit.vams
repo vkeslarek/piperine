@@ -1,0 +1,54 @@
+// Multi-module digital correctness: a 4-bit ripple-carry adder built from four
+// 1-bit FullAdder instances chained by their carry. This exercises the thing
+// that matters across module boundaries — the carry propagates fa0 -> fa1 -> fa2
+// -> fa3, so a wrong inter-module wiring or a settle bug shows up immediately.
+// The python twin is EXHAUSTIVE: all 256 (a, b) pairs, a,b in [0, 15], asserting
+// s = a + b as a 5-bit result. It is also the correctness oracle for the fused
+// digital-network JIT (piperine-codegen/docs/DIGITAL_JIT.md): the same cone,
+// per-device or fused, must produce this table.
+`include "disciplines.vams"
+
+// Stageable one-bit driver: a real param -> a logic net.
+module BitDriver (output logic q);
+    parameter real level = 0.0;
+    always @(*) begin
+        q <= (level > 0.5);
+    end
+endmodule
+
+// 1-bit full adder: sum = a XOR b XOR cin, cout = majority(a, b, cin).
+module FullAdder (input logic a, input logic b, input logic cin,
+                  output logic sum, output logic cout);
+    always @(*) begin
+        sum <= (a != b) != cin;
+        cout <= (a && b) || (cin && (a != b));
+    end
+endmodule
+
+module Adder4 ();
+    // Input logic nets, LSB-first.
+    logic a0, a1, a2, a3;
+    logic b0, b1, b2, b3;
+    // Carry chain between adder stages.
+    logic c0, c1, c2;
+    // Sum bits + final carry.
+    logic s0, s1, s2, s3;
+    logic cout;
+    // Constant 0 for the first carry-in (a driver left at level 0).
+    logic zero;
+
+    BitDriver dz (.q(zero));
+    BitDriver da0 (.q(a0));
+    BitDriver da1 (.q(a1));
+    BitDriver da2 (.q(a2));
+    BitDriver da3 (.q(a3));
+    BitDriver db0 (.q(b0));
+    BitDriver db1 (.q(b1));
+    BitDriver db2 (.q(b2));
+    BitDriver db3 (.q(b3));
+
+    FullAdder fa0 (.a(a0), .b(b0), .cin(zero), .sum(s0), .cout(c0));
+    FullAdder fa1 (.a(a1), .b(b1), .cin(c0),  .sum(s1), .cout(c1));
+    FullAdder fa2 (.a(a2), .b(b2), .cin(c1),  .sum(s2), .cout(c2));
+    FullAdder fa3 (.a(a3), .b(b3), .cin(c2),  .sum(s3), .cout(cout));
+endmodule

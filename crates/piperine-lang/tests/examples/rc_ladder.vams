@@ -1,0 +1,30 @@
+// rc_ladder.vams — RC ladder demo, migrated from PHDL.
+//
+// MD-45 NOTE: PHDL's `mod Ladder[N]` used compile-time generic-module
+// monomorphization with a structural `for` loop that authored the parasitic
+// contribution per tap. VAMS has no module generics — written concretely
+// (N=3) with the parasitic contributions unrolled.
+`include "disciplines.vams"
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1.0e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Ladder (inout electrical bus, inout electrical gnd);
+    parameter real cpar = 5.0e-15;
+    electrical tap0, tap1, tap2;
+    Resistor seg0 (.p(bus),  .n(tap0));
+    Resistor gnd0 (.p(tap0), .n(gnd));
+    Resistor seg1 (.p(tap0), .n(tap1));
+    Resistor gnd1 (.p(tap1), .n(gnd));
+    Resistor seg2 (.p(tap1), .n(tap2));
+    Resistor gnd2 (.p(tap2), .n(gnd));
+    analog begin
+        I(tap0, gnd) <+ cpar * ddt(V(tap0, gnd));
+        I(tap1, gnd) <+ cpar * ddt(V(tap1, gnd));
+        I(tap2, gnd) <+ cpar * ddt(V(tap2, gnd));
+    end
+endmodule

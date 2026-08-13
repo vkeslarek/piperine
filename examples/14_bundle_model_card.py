@@ -1,5 +1,5 @@
 import os, sys, math, piperine
-P = os.path.join(os.path.dirname(__file__), "14_bundle_model_card.phdl")
+P = os.path.join(os.path.dirname(__file__), "14_bundle_model_card.vams")
 def M(): return piperine.load(P).module("BiasCell")
 # test_measured_drop_matches_the_model_card
 # (Python can't construct a DiodeModel bundle + call forward_drop; replicate

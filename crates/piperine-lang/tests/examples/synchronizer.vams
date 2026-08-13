@@ -1,0 +1,12 @@
+// synchronizer.vams — two-stage synchronizer, migrated from PHDL.
+`include "disciplines.vams"
+
+module Synchronizer (input logic d, input logic clk_b, output logic q);
+    reg m;
+    reg n;
+    always @(posedge clk_b) begin
+        m <= d;
+        n <= m;
+    end
+    always @(*) q <= n;
+endmodule

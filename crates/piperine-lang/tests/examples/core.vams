@@ -1,0 +1,52 @@
+// core.vams — core analog+digital leaf modules, migrated from PHDL.
+//
+// MD-45 NOTE: the PHDL original had a top-level `fn thermal_voltage(t: Real)
+// -> Real { ... }` — VAMS has no module-external function scope (LRM
+// §4.7/§5.9), and piperine's codegen doesn't lower `analog function` calls
+// yet (T22 documented gap). The expression is inlined at the Diode call
+// site (same disposition T41 applied to ngspice waveform helpers). The
+// `BitToVoltage` module's conditional `V(a) <- vhigh/vlow` becomes
+// unconditional `<+` with a ternary selector (T41 SPEC_DEVIATION pattern).
+`include "disciplines.vams"
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1.0e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 1.0e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+
+module VSource (inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+
+module Diode (inout electrical a, inout electrical c);
+    parameter real is_sat = 1.0e-14;
+    parameter real temp = 300.0;
+    analog begin
+        // 8.617e-5 * t is the former `thermal_voltage(temp)` body, inlined.
+        I(a, c) <+ is_sat * (exp(V(a, c) / (8.617e-5 * temp)) - 1.0);
+    end
+endmodule
+
+module Comparator (input electrical vp, input electrical vn, output logic out);
+    always @(*) out <= (V(vp) > V(vn));
+endmodule
+
+module BitToVoltage (input logic d, inout electrical a);
+    parameter real vlow = 0.0;
+    parameter real vhigh = 1.8;
+    analog begin
+        V(a) <+ (d == 1) ? vhigh : vlow;
+    end
+endmodule

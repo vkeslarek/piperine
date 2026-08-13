@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-P = os.path.join(os.path.dirname(__file__), "22_rc_step_response.phdl")
+P = os.path.join(os.path.dirname(__file__), "22_rc_step_response.vams")
 m = piperine.load(P).module("RcStep")
 
 # Step response: 1 V source, cap starts at 0 V, charges through R.

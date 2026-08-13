@@ -902,7 +902,7 @@ reproduction, and disposition.
 
 ---
 
-#### T45: Migrate `examples/` (24 files) + `piperine-lang/tests/examples/` (14 files)
+#### T45: Migrate `examples/` (24 files) + `piperine-lang/tests/examples/` (14 files) — ✅ DONE (see Progress Log)
 **Where**: `examples/`, `crates/piperine-lang/tests/examples/` · **Depends on**: T44 · **Requirement**: VAMS-09, VAMS-10
 **Done when**: `tests/run_examples.rs` passes with its **logic unmodified** (only the corpus extension changes) · **Gate**: full
 **Commit**: `docs(examples): migrate the example gallery to Verilog-AMS`
@@ -3193,3 +3193,69 @@ did not close.
   the two open gaps (fix in a dedicated `piperine-codegen` task vs. accept
   and continue past T44 with both documented as known debt, matching how
   NGP-10 is already carried).
+
+  **Disposition (this session)**: both accepted and carried forward as
+  documented debt, same as NGP-10 — neither blocks corpus migration, both
+  are already named in-file (`uic_rc.vams`/`uic_mos.vams` comments,
+  `noise_switch.vams`'s gap was separately root-caused and fixed in
+  `f4d33c4c`, folded into T44's own entry above). Proceeded to T45.
+
+- **T45** — done. `examples/` (24 files) and
+  `crates/piperine-lang/tests/examples/` (14 files) migrated `.phdl` →
+  `.vams`; originals deleted. `examples/*.py` host scripts updated to load
+  the `.vams` sibling (mechanical extension swap, no logic change).
+  `tests/run_examples.rs` retargeted to the `.vams` corpus with its own
+  pass/fail logic unmodified (VAMS-10). `crates/piperine-lang/tests/elab.rs`
+  and `tests/parse_elab.rs` had their `include_str!`/`std::fs::write` paths
+  swapped from `.phdl` to `.vams` (mechanical, same pattern as T44's fixture
+  swap) — both targets still fail to *compile* (`ModuleStatement`/`BinaryOp`/
+  `BindOp`/`FnParam` unresolved), confirmed via `git stash` A/B to be
+  byte-identical to the pre-existing dead-PHDL-AST debt documented since
+  T21/MD-44 (these two targets import `crate::parse::ast` directly, deleted
+  at T21) — unrelated to this task, not newly broken, not fixed here (out of
+  a corpus-migration task's scope).
+
+  **Two `piperine-codegen` bugs surfaced and fixed while migrating the
+  digital examples** (`15_full_adder`, `17_ripple_adder_4bit`,
+  `21_shift_register_tran`, and the `tests/examples/` digital fixtures —
+  the PHDL originals never exercised these paths because PHDL's own digital
+  examples were hand-written around them, not because the bugs are VAMS-
+  specific):
+  1. `device/digital.rs::step` (`DigitalInstance`) unconditionally reset
+     `s.outputs` to `s.prev_outputs` after `eval_seq_phase` ran, discarding
+     any register write a clocked-only block (`always @(posedge clk) q <=
+     d;`, no `comb` body) made that same step — a clocked-only digital
+     device's output net never updated. Fixed: only reset when `seq` didn't
+     already populate `s.outputs` (length check against the `mem::take`d
+     buffer).
+  2. `kernel/digital/compile.rs::NetworkComb` (the fused-cone compiler)
+     rejected any `always @(*)`/`always @(sig)` (level-sensitive, non-edge)
+     body inside a fused cone as a "nested event control", because it
+     emitted `Stmt::EventControl` nodes verbatim instead of mirroring the
+     per-device `compile()` path's own comb/seq split. Fixed: fold a
+     non-clocked `EventControl`'s body straight into the cone's statement
+     list, matching what the single-device path already does; a clocked
+     `EventControl` inside a cone still fails loud (network fusion stays
+     comb-only, unchanged scope).
+
+  **Verification**: `cargo build --workspace` zero warnings.
+  `cargo test --test run_examples`: both targets green
+  (`every_example_vams_elaborates`, `every_example_python_runs` — all 24
+  examples parse/elaborate and all 24 Python host scripts run, including
+  the three digital examples the two fixes above unblocked).
+  `cargo test --test suite_hygiene`: 9/10 green, `mod_rs_declares_only`
+  fails identically to the T1-recorded pre-existing `piperine-ir` defect
+  (unrelated, unchanged); `phdl_corpus_does_not_grow` green with
+  `PHDL_HIGH_WATER_MARK` lowered 42 → 4 (`find`-confirmed 4 `.phdl` files
+  remain: `piperine-cli/templates/main.phdl`, `tests/spice/{junction,
+  validate}.phdl`, `piperine-project/examples/spice_proj/src/main.phdl` —
+  exactly T46's remaining scope). `cargo test -p piperine-lang --test elab
+  --test parse_elab`: unchanged compile failures, confirmed byte-identical
+  via `git stash` A/B (see above). `tests/ngspice_{validation,ac,temp,
+  homotopy,noise}.rs` + `ngspice_parity_matrix.rs`: unchanged from T44's
+  baseline (24/24, 18/18, 24/24, 4/4, 29/29, 49/49). `tests/ngspice_tran.rs`:
+  unchanged 23/25 (`uic_rc`/`uic_mos`, NGP-10 debt, untouched). No tolerance
+  loosened, no test modified to paper over either digital-codegen bug — both
+  are real fixes with the run_examples suite as their regression guard.
+  **Commit**: `docs(examples): migrate the example gallery to Verilog-AMS`
+  (examples + fixes)

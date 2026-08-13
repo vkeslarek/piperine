@@ -87,7 +87,7 @@ fn test_parse_all_examples() {
 
 #[test]
 fn test_core_structure() {
-    let src = include_str!("examples/core.phdl");
+    let src = include_str!("examples/core.vams");
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
 
@@ -115,7 +115,7 @@ fn test_core_structure() {
 
 #[test]
 fn test_sar_adc_structure() {
-    let src = include_str!("examples/sar_adc.phdl");
+    let src = include_str!("examples/sar_adc.vams");
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
 
@@ -151,7 +151,7 @@ fn test_sar_adc_structure() {
 
 #[test]
 fn test_capabilities_structure() {
-    let src = include_str!("examples/capabilities.phdl");
+    let src = include_str!("examples/capabilities.vams");
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
 
@@ -180,7 +180,7 @@ fn test_capabilities_structure() {
 
 #[test]
 fn test_delta_sigma_structure() {
-    let src = include_str!("examples/delta_sigma.phdl");
+    let src = include_str!("examples/delta_sigma.vams");
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
 
@@ -199,7 +199,7 @@ fn test_delta_sigma_structure() {
 
 #[test]
 fn test_electrothermal_structure() {
-    let src = include_str!("examples/electrothermal.phdl");
+    let src = include_str!("examples/electrothermal.vams");
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
 
@@ -536,7 +536,7 @@ mod X ();
 
 #[test]
 fn test_language_features_structure() {
-    let src = include_str!("examples/language_features.phdl");
+    let src = include_str!("examples/language_features.vams");
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
 

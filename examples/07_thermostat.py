@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "07_thermostat.phdl")
+P = os.path.join(os.path.dirname(__file__), "07_thermostat.vams")
 m = piperine.load(P).module("Thermostat")
 t = m.tran(piperine.TranConfig(stop=0.2, step=1e-4, start=0.05))
 temp = t.v("temp","gnd")

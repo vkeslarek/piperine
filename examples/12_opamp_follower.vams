@@ -1,0 +1,36 @@
+// Single-pole op-amp macromodel (gm into R||C, ideal output buffer) wired
+// as a unity follower. DC: the closed loop lands within 1/A0 of the input.
+// Transient: from a zeroed compensation node, the step settles with
+// tau = 1/(2*pi*GBW) — checked at 1 tau and at 6 tau.
+`include "disciplines.vams"
+
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 1.0;
+    analog begin
+        V(p, n) <+ voltage;
+    end
+endmodule
+
+// A0 = gm*rp = 1e4, pole fp = 1/(2*pi*rp*cp) = 10 Hz, GBW = A0*fp = 100 kHz.
+// The compensation node is a pin so the testbench can preset it.
+module OpAmp (input electrical inp, input electrical inn,
+              inout electrical pole, inout electrical out, inout electrical gnd);
+    parameter real gm = 1e-3;
+    parameter real rp = 1e7;
+    parameter real cp = 1.5915e-9;
+    analog begin
+        I(pole, gnd) <+ -gm * (V(inp, gnd) - V(inn, gnd));
+        I(pole, gnd) <+ V(pole, gnd) / rp;
+        I(pole, gnd) <+ cp * ddt(V(pole, gnd));
+        V(out, gnd) <+ V(pole, gnd);
+    end
+endmodule
+
+module Follower ();
+    electrical gnd;
+    electrical vin;
+    electrical comp;
+    electrical out;
+    VoltageSource #(.voltage(1.0)) src (.p(vin), .n(gnd));
+    OpAmp amp (.inp(vin), .inn(out), .pole(comp), .out(out), .gnd(gnd));
+endmodule

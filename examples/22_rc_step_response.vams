@@ -1,0 +1,35 @@
+// First-order RC step response: a 1 V source steps the input at t=0 (the
+// transient starts there), and the capacitor — forced to 0 V through
+// `TranConfig.ic` — charges through R following V_out(t) = 1 - e^(-t/tau),
+// tau = RC. The python twin checks the classic 1*tau / 2*tau / 5*tau landmarks.
+`include "disciplines.vams"
+
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 1.0;
+    analog begin
+        V(p, n) <+ voltage;
+    end
+endmodule
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 100e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+
+module RcStep ();
+    electrical gnd;
+    electrical vin;
+    electrical out;
+    VoltageSource #(.voltage(1.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(1e3)) r1 (.p(vin), .n(out));        // tau = RC = 100 us
+    Capacitor #(.c(100e-9)) c1 (.p(out), .n(gnd));
+endmodule

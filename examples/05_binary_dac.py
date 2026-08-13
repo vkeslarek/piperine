@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "05_binary_dac.phdl")
+P = os.path.join(os.path.dirname(__file__), "05_binary_dac.vams")
 def M(): return piperine.load(P).module("DacBoard")
 def bits(m, b3=0, b2=0, b1=0, b0=0):
     m.set("dac","b3",b3); m.set("dac","b2",b2); m.set("dac","b1",b1); m.set("dac","b0",b0)

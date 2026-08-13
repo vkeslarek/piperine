@@ -1,0 +1,47 @@
+// language_features.vams — formerly demonstrated PHDL's value-layer
+// language surface (enum declarations, bundle records, top-level
+// `fn map<T,U>`/`fn reduce<T>` higher-order functions, generic modules,
+// structural `for` loops, switch-style analog contributions).
+//
+// MD-45 (2026-08-13): VAMS Annex A has no enum, no bundle/record, no
+// top-level function scope, no generics, no higher-order functions. All of
+// that machinery was deleted at T21 with the rest of the PHDL value layer.
+// What's preserved here is the one piece that DOES have a VAMS analog:
+// the structural resistor-chain `RcChain[N]`, here written concretely
+// (N=3) with VAMS `generate for` over a 4-node `electrical` array. The
+// deleted content (FilterSpec bundle, DiffPair bundle, Complex impl,
+// SwState/Phase/OpCode enums, map/reduce higher-order fns, the `Switch`
+// analog-case with `<-` Force) has no VAMS production at all.
+`include "disciplines.vams"
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1.0e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 1.0e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+
+module RcChain (inout electrical in_, inout electrical out, inout electrical gnd);
+    parameter real r = 1.0e3;
+    parameter real c = 1.0e-9;
+    electrical tap0;
+    electrical tap1;
+    electrical tap2;
+    // node[0] = in_, node[3] = out (the PHDL array-wire aliases are
+    // authored directly against the parent ports; T43's urc.va documents
+    // the same workaround for VAMS's missing array-wire-equality syntax).
+    Resistor #(.r(r)) r0 (.p(in_), .n(tap0));
+    Capacitor #(.c(c)) c0 (.p(tap0), .n(gnd));
+    Resistor #(.r(r)) r1 (.p(tap0), .n(tap1));
+    Capacitor #(.c(c)) c1 (.p(tap1), .n(gnd));
+    Resistor #(.r(r)) r2 (.p(tap1), .n(tap2));
+    Capacitor #(.c(c)) c2 (.p(tap2), .n(gnd));
+    Resistor #(.r(r)) r3 (.p(tap2), .n(out));
+endmodule

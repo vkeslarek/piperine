@@ -17,7 +17,7 @@ import time
 
 import piperine
 
-P = os.path.join(os.path.dirname(__file__), "live_optimize.phdl")
+P = os.path.join(os.path.dirname(__file__), "live_optimize.vams")
 design = piperine.load(P)
 module = design.module("Fitter")
 

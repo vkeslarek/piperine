@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "09_coulomb_counter.phdl")
+P = os.path.join(os.path.dirname(__file__), "09_coulomb_counter.vams")
 m = piperine.load(P).module("Gauge")
 t = m.tran(piperine.TranConfig(stop=10.0, step=0.05))
 soc = t.v("soc","gnd")

@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "10_pwm_dimmer.phdl")
+P = os.path.join(os.path.dirname(__file__), "10_pwm_dimmer.vams")
 m = piperine.load(P).module("Dimmer")
 t = m.tran(piperine.TranConfig(stop=10e-3, step=5e-6, start=5e-3))
 v = t.v("out","gnd")

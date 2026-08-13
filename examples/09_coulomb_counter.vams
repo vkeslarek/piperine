@@ -1,0 +1,27 @@
+// Coulomb counter: battery state-of-charge as the running integral (`idt`)
+// of the load current. 100 C capacity discharged at 1 A drops 1 %/s; the
+// python twin validates the ramp and the time of the 95 % crossing.
+`include "disciplines.vams"
+
+// soc(t) = 1 - integral(i_load)*dt / q_full, exposed as a voltage (1 V == 100 %).
+module BatteryGauge (inout electrical soc, inout electrical gnd);
+    parameter real i_load = 1.0;     // A, constant discharge
+    parameter real q_full = 100.0;   // coulombs
+    analog begin
+        V(soc, gnd) <+ 1.0 - idt(i_load) / q_full;
+    end
+endmodule
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e6;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Gauge ();
+    electrical gnd;
+    electrical soc;
+    BatteryGauge cell (.soc(soc), .gnd(gnd));
+    Resistor probe (.p(soc), .n(gnd));    // high-impedance meter
+endmodule

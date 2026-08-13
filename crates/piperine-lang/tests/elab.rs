@@ -420,7 +420,7 @@ fn test_use_resolution_file_based() {
     use tempfile::TempDir;
 
     let dir = TempDir::new().unwrap();
-    let lib_path = dir.path().join("mylib.phdl");
+    let lib_path = dir.path().join("mylib.vams");
     std::fs::write(
         &lib_path,
         "pub discipline MyNet { potential v: Real; flow i: Real; }",
@@ -436,7 +436,7 @@ fn test_use_resolution_file_based() {
 
     assert!(
         prog.discipline("MyNet").is_some(),
-        "MyNet discipline should be resolved from mylib.phdl"
+        "MyNet discipline should be resolved from mylib.vams"
     );
     assert!(prog.module("M").is_some(), "M should be elaborated");
 }
@@ -460,7 +460,7 @@ fn test_prelude_items_map_to_real_header_paths() {
 
     let ddt_path = item_files.get("ddt").expect("ddt should have a tracked file");
     assert!(
-        ddt_path.ends_with("headers/operators.phdl"),
+        ddt_path.ends_with("headers/operators.vams"),
         "ddt should map to headers/operators.phdl, got {}",
         ddt_path.display()
     );
@@ -468,7 +468,7 @@ fn test_prelude_items_map_to_real_header_paths() {
 
     let real_path = item_files.get("Real").expect("Real should have a tracked file");
     assert!(
-        real_path.ends_with("headers/types.phdl"),
+        real_path.ends_with("headers/types.vams"),
         "Real should map to headers/types.phdl, got {}",
         real_path.display()
     );
@@ -482,7 +482,7 @@ fn test_use_loaded_item_maps_to_real_on_disk_path() {
     use tempfile::TempDir;
 
     let dir = TempDir::new().unwrap();
-    let lib_path = dir.path().join("mylib.phdl");
+    let lib_path = dir.path().join("mylib.vams");
     std::fs::write(
         &lib_path,
         "pub discipline MyNet { potential v: Real; flow i: Real; }",
@@ -517,7 +517,7 @@ fn test_design_project_item_file_returns_real_header_path() {
         .item_file("ddt")
         .expect("ddt should be tracked on the elaborated design's project");
     assert!(
-        ddt_path.ends_with("headers/operators.phdl"),
+        ddt_path.ends_with("headers/operators.vams"),
         "ddt should map to headers/operators.phdl, got {}",
         ddt_path.display()
     );
@@ -548,7 +548,7 @@ fn test_ddt_doc_comes_from_the_real_header_content() {
 
     let header_text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/headers/operators.phdl"
+        "/headers/operators.vams"
     ))
     .expect("headers/operators.phdl must exist on disk");
     assert!(
@@ -568,11 +568,11 @@ fn test_use_transitive() {
     let dir = TempDir::new().unwrap();
     // a.phdl uses b.phdl
     std::fs::write(
-        dir.path().join("b.phdl"),
+        dir.path().join("b.vams"),
         "pub discipline NetB { potential v: Real; flow i: Real; }",
     )
     .unwrap();
-    std::fs::write(dir.path().join("a.phdl"), "use b;").unwrap();
+    std::fs::write(dir.path().join("a.vams"), "use b;").unwrap();
 
     let src = "use a;\n mod M ( inout x : NetB );";
     let source = parse_str(src).expect("parse");
@@ -588,7 +588,7 @@ fn test_use_transitive() {
 
 #[test]
 fn test_elab_sr_latch_example() {
-    let src = include_str!("examples/sr_latch.phdl");
+    let src = include_str!("examples/sr_latch.vams");
     // sr_latch uses Bit discipline — provide it inline since there's no `use`.
     let full = format!(
         "discipline Bit {{ storage Boolean; }}\n{}",
@@ -630,14 +630,14 @@ fn test_pub_item_accessible_from_other_package() {
     let tmp = std::env::temp_dir().join("piperine_pubtest_pub");
     let lib_dir = tmp.join("lib");
     std::fs::create_dir_all(&lib_dir).unwrap();
-    std::fs::write(lib_dir.join("devices.phdl"), "
+    std::fs::write(lib_dir.join("devices.vams"), "
         pub discipline Electrical { potential v: Real; flow i: Real; }
         pub mod Resistor ( inout p : Electrical, inout n : Electrical ) {
             param r : Real = 1e3;
         }
         analog Resistor { I(p, n) <+ V(p, n) / r; }
     ").unwrap();
-    std::fs::write(tmp.join("top.phdl"), "
+    std::fs::write(tmp.join("top.vams"), "
         use lib::devices;
         mod Top ( inout a : Electrical, inout b : Electrical ) {
             r1 : Resistor ( .p = a, .n = b );
@@ -648,7 +648,7 @@ fn test_pub_item_accessible_from_other_package() {
     sm.add_namespace("piperine", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("headers"));
     sm.add_namespace("lib", lib_dir);
 
-    let src = std::fs::read_to_string(tmp.join("top.phdl")).unwrap();
+    let src = std::fs::read_to_string(tmp.join("top.vams")).unwrap();
     let result = parse_and_elaborate(&src, &sm);
     let prog = result.expect("pub items should be accessible");
     assert!(prog.module("Top").is_some());
@@ -661,14 +661,14 @@ fn test_private_item_not_accessible_from_other_package() {
     let tmp = std::env::temp_dir().join("piperine_pubtest_priv");
     let lib_dir = tmp.join("lib");
     std::fs::create_dir_all(&lib_dir).unwrap();
-    std::fs::write(lib_dir.join("devices.phdl"), "
+    std::fs::write(lib_dir.join("devices.vams"), "
         pub discipline Electrical { potential v: Real; flow i: Real; }
         mod SecretHelper ( inout p : Electrical, inout n : Electrical ) {
             param gain : Real = 2.0;
         }
         analog SecretHelper { I(p, n) <+ gain * V(p, n); }
     ").unwrap();
-    std::fs::write(tmp.join("top.phdl"), "
+    std::fs::write(tmp.join("top.vams"), "
         use lib::devices;
         mod Top ( inout a : Electrical, inout b : Electrical ) {
             r1 : SecretHelper ( .p = a, .n = b );
@@ -679,7 +679,7 @@ fn test_private_item_not_accessible_from_other_package() {
     sm.add_namespace("piperine", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("headers"));
     sm.add_namespace("lib", lib_dir);
 
-    let src = std::fs::read_to_string(tmp.join("top.phdl")).unwrap();
+    let src = std::fs::read_to_string(tmp.join("top.vams")).unwrap();
     let result = parse_and_elaborate(&src, &sm);
     // SecretHelper is private — should not be accessible from top.phdl.
     assert!(result.is_err(), "private module should not be accessible");

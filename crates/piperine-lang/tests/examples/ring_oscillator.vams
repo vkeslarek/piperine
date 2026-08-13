@@ -1,0 +1,24 @@
+// ring_oscillator.vams — three-stage single-pole inverter ring, migrated
+// from PHDL.
+//
+// MD-45 NOTE: PHDL's `mod RingOsc[N]` used compile-time generic-module
+// monomorphization. VAMS has no module generics — written concretely (N=3).
+`include "disciplines.vams"
+
+module Inverter (input electrical a, inout electrical y, inout electrical gnd);
+    parameter real gain = 10.0;
+    parameter real c = 1.0e-15;
+    parameter real r = 1.0e3;
+    real v_target;
+    analog begin
+        v_target = -gain * V(a, gnd);
+        I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - v_target) / r;
+    end
+endmodule
+
+module RingOsc (inout electrical gnd);
+    electrical n0, n1, n2;
+    Inverter i0 (.a(n2), .y(n0), .gnd(gnd));
+    Inverter i1 (.a(n0), .y(n1), .gnd(gnd));
+    Inverter i2 (.a(n1), .y(n2), .gnd(gnd));
+endmodule

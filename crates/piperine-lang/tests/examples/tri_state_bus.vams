@@ -1,0 +1,17 @@
+// tri_state_bus.vams — formerly demonstrated PHDL's `discipline DataLine
+// { storage Quad; resolve tri; }`, generic `mod Driver[N]`, the `Logic`
+// discipline, and a digital body that drives a tri-state value (`[0qZ; N]`).
+//
+// MD-45 (2026-08-13): VAMS Annex A has no module generics and no
+// 4-state-`storage` discipline syntax (PHDL's `discipline X { storage
+// Quad; }` was a PHDL-specific construct). The Driver is rewritten here
+// concretely (N=1) as a single-bit 1364 tri-state driver using the
+// `assign ... = en ? val : 1'bz;` idiom (the standard VMS way to express
+// tri-state). The original PHDL `Logic` discipline maps to VMS's stdlib
+// `logic` (declared in `disciplines.vams`); the deleted `DataLine`
+// discipline and `resolve tri` clause have no direct VMS production.
+`include "disciplines.vams"
+
+module Driver (input logic en, input logic val, output logic bus);
+    assign bus = (en == 1) ? val : 1'bz;
+endmodule

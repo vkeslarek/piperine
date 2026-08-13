@@ -1,7 +1,0 @@
-mod Accumulator[W] ( input clk : Bit, input en : Bit, input x : UInt[W], output sum : UInt[W] ) {
-    var acc : UInt[W] = 0;
-}
-digital Accumulator {
-    sum <- acc;
-    @ posedge(clk) when (en) { acc = acc + x; }     // '+' is UInt's Add capability
-}

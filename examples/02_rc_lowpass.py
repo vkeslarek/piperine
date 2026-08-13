@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "02_rc_lowpass.phdl")
+P = os.path.join(os.path.dirname(__file__), "02_rc_lowpass.vams")
 def M(): return piperine.load(P).module("RcFilter")
 # test_frequency_response
 m = M(); r = m.ac(piperine.AcConfig(fstart=1.0, fstop=1e6, points=600))

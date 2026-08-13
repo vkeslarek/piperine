@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "13_zero_cross_counter.phdl")
+P = os.path.join(os.path.dirname(__file__), "13_zero_cross_counter.vams")
 m = piperine.load(P).module("Counter")
 t = m.tran(piperine.TranConfig(stop=3e-3, step=5e-6))
 n = t.v("count","gnd")

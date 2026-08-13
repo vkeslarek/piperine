@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "16_priority_encoder.phdl")
+P = os.path.join(os.path.dirname(__file__), "16_priority_encoder.vams")
 def M(): return piperine.load(P).module("IrqBoard")
 def read_code(m):
     r = m.op()

@@ -1,5 +1,5 @@
 import os, sys, piperine
-P = os.path.join(os.path.dirname(__file__), "03_diode_clipper.phdl")
+P = os.path.join(os.path.dirname(__file__), "03_diode_clipper.vams")
 def M(): return piperine.load(P).module("Clipper")
 # test_clamps_to_forward_drop
 m = M(); vd = m.op().v("out", "gnd")

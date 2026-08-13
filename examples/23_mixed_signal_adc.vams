@@ -1,0 +1,41 @@
+// Mixed-signal transient demo: a ramp voltage source drives a 3-comparator
+// level ADC. The digital block reads the analog ramp through the A2D bridge
+// and drives three top-level digital bits (d0/d1/d2 at 1 V / 2 V / 3 V); the
+// analog block reads those bits back through the D2A bridge and reconstructs
+// a monotonic staircase `rec` = count of bits high (in volts). One circuit,
+// both bridges, both characteristics.
+`include "disciplines.vams"
+
+module RampSource (inout electrical p, inout electrical n);
+    parameter real slope = 4.0e5;   // V/s  (0.4 V/us -> 0..4 V over 10 us)
+    analog begin
+        V(p, n) <+ slope * $abstime;
+    end
+endmodule
+
+module LevelAdc (input electrical vin, inout electrical gnd,
+                 output logic d2, output logic d1, output logic d0,
+                 inout electrical rec);
+    real v;
+    always @(*) begin
+        d0 = V(vin, gnd) > 1.0;
+        d1 = V(vin, gnd) > 2.0;
+        d2 = V(vin, gnd) > 3.0;
+    end
+    analog begin
+        v = 0.0;
+        if (d0 == 1) v = v + 1.0;
+        if (d1 == 1) v = v + 1.0;
+        if (d2 == 1) v = v + 1.0;
+        V(rec, gnd) <+ v;
+    end
+endmodule
+
+module AdcDemo ();
+    electrical gnd;
+    electrical vin;
+    electrical rec;
+    logic d2, d1, d0;
+    RampSource #(.slope(4.0e5)) src (.p(vin), .n(gnd));
+    LevelAdc adc (.vin(vin), .gnd(gnd), .d2(d2), .d1(d1), .d0(d0), .rec(rec));
+endmodule

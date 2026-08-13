@@ -1,0 +1,38 @@
+// PWM dimmer: an `@timer` event toggles the drive at 10 kHz (50% duty),
+// the switch forces a 0/5 V square wave, and an RC (tau = 1 ms) extracts the
+// average. The python twin checks the settled mean is VDD/2 with small ripple.
+`include "disciplines.vams"
+
+module PwmSwitch (inout electrical sw, inout electrical gnd);
+    parameter real vdd = 5.0;
+    parameter real half_period = 5e-5;
+    real drive;
+    analog begin
+        @(initial_step) drive = 0.0;
+        V(sw, gnd) <+ drive * vdd;
+        @(timer(half_period)) drive = 1.0 - drive;
+    end
+endmodule
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+
+module Dimmer ();
+    electrical gnd;
+    electrical sw;
+    electrical out;
+    PwmSwitch pwm (.sw(sw), .gnd(gnd));
+    Resistor r1 (.p(sw), .n(out));
+    Capacitor c1 (.p(out), .n(gnd));
+endmodule

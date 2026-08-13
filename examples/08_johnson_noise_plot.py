@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-P = os.path.join(os.path.dirname(__file__), "08_johnson_noise.phdl")
+P = os.path.join(os.path.dirname(__file__), "08_johnson_noise.vams")
 m = piperine.load(P).module("NoiseCell")
 
 # R=1k, C=1n, T=300K.  Plateau 4kTR ≈ 1.657e-17 V²/Hz (4.07 nV/√Hz),

@@ -1,0 +1,37 @@
+// Live-session optimization fixture: a 5 V source through a series resistor
+// into an exponential-law diode. The diode voltage v(out) falls
+// monotonically as r grows, so fitting r to a target v(out) is a clean
+// bisection — the LIVE-12 optimization-loop scenario (examples/live_optimize.py
+// drives it through the Python LiveSession: compile once, set + op per point).
+`include "disciplines.vams"
+
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 5.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Diode (inout electrical p, inout electrical n);
+    parameter real isat = 1e-14;
+    parameter real vt = 0.02585;
+    analog begin
+        I(p, n) <+ isat * (exp(V(p, n) / vt) - 1.0);
+    end
+endmodule
+
+module Fitter ();
+    electrical gnd;
+    electrical vin;
+    electrical out;
+    Vsrc v1 (.p(vin), .n(gnd));
+    Resistor r1 (.p(vin), .n(out));
+    Diode d1 (.p(out), .n(gnd));
+endmodule

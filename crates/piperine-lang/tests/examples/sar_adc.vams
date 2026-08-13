@@ -1,0 +1,71 @@
+// sar_adc.vams — successive-approximation register ADC, migrated from PHDL.
+//
+// MD-45 NOTES:
+//  - `enum SarState : Bit[2] { Idle, Convert, Done }` has no VAMS Annex A
+//    production. Encoded here as a 2-bit `reg [1:0]` with the three states
+//    as explicit 2-bit literals (Idle=2'b00, Convert=2'b01, Done=2'b10).
+//  - `mod Dac[N]` / `mod SarAdc[N]` used PHDL's compile-time generic-module
+//    monomorphization. VAMS has no module generics — written concretely
+//    (N=4) with a 4-bit code register.
+//  - The `Real::from(i)`/`pow(2.0, Real::from(i))` PHDL expressions inside
+//    the DAC body used deleted value-layer machinery; the equivalent is
+//    plain VMS arithmetic on a `real` accumulator inside an `always @(*)`.
+//  - The `<-` Force on `V(out, gnd)` becomes `<+` (T32 SPEC_DEVIATION).
+//  - `match state { ... }` becomes a 1364 `case (state)`.
+`include "disciplines.vams"
+
+module Comparator (input electrical vp, input electrical vn, output logic y);
+    always @(*) y <= (V(vp) > V(vn));
+endmodule
+
+module Dac (input logic [3:0] code, inout electrical out, inout electrical gnd);
+    parameter real vref = 1.8;
+    real acc;
+    always @(*) begin
+        acc = 0.0;
+        if (code[0] == 1) acc = acc + vref * 1.0 / 16.0;
+        if (code[1] == 1) acc = acc + vref * 2.0 / 16.0;
+        if (code[2] == 1) acc = acc + vref * 4.0 / 16.0;
+        if (code[3] == 1) acc = acc + vref * 8.0 / 16.0;
+    end
+    analog begin
+        V(out, gnd) <+ acc;
+    end
+endmodule
+
+module SarAdc (input logic clk, input logic start, input electrical vin,
+               inout electrical gnd, output logic [3:0] result, output logic done);
+    parameter real cload = 50.0e-15;
+    electrical dout;
+    logic cmp;
+    reg [1:0] state;     // Idle=2'b00, Convert=2'b01, Done=2'b10
+    reg [3:0] code;
+    integer idx;
+
+    Dac       dac  (code, dout, gnd);
+    Comparator comp (vin, dout, cmp);
+
+    analog begin
+        I(dout, gnd) <+ cload * ddt(V(dout, gnd));
+    end
+    always @(*) begin
+        result <= code;
+        done   <= (state == 2'b10);
+    end
+    always @(posedge clk) begin
+        case (state)
+            2'b00: begin if (start == 1) begin
+                state <= 2'b01; idx <= 3; code <= 4'b1000;
+            end end
+            2'b01: begin
+                if (cmp == 0) code[idx] <= 0;
+                if (idx == 0) state <= 2'b10;
+                else begin
+                    idx <= idx - 1;
+                    code[idx-1] <= 1;
+                end
+            end
+            2'b10: begin if (start == 0) state <= 2'b00; end
+        endcase
+    end
+endmodule
