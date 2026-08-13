@@ -1,11 +1,12 @@
-//! Symbolic differentiation of analog expressions (POM `Expr`).
+//! Symbolic differentiation of analog expressions (POM `Expr`,
+//! `piperine_vams::ast::Expr`).
 //!
 //! The Jacobian is built by differentiating each flattened contribution
 //! w.r.t. every branch voltage it reads, then emitting the derivative like
 //! any other expression. `__state_load` / `__ddt` reads are constants within
 //! a Newton iteration (reactive parts are handled by the charge Jacobian).
 
-use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
+use piperine_vams::ast::{BinOp, Expr, UnOp};
 
 use super::symbols::NodeId;
 
@@ -261,118 +262,98 @@ fn differentiate(
     tapes: &[(&str, &str)],
 ) -> Expr {
     match expr {
-        // $limit is transparent to differentiation: d(vnew)/dV.
-        Expr::SysCall(name, args) if name.trim_start_matches('$') == "limit" => {
-            args.get(1).map(|vnew| differentiate(vnew, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0))
+        Expr::Number { .. } | Expr::Str { .. } => lit(0.0),
+
+        // `$limit` is transparent to differentiation: d(vnew)/dV.
+        Expr::SystemFunctionCall { name, args, .. } if name.trim_start_matches('$') == "limit" => {
+            args.get(1)
+                .map(|vnew| differentiate(vnew, seed, ident_seed, resolve_node, tapes))
+                .unwrap_or_else(|| lit(0.0))
+        }
+        Expr::SystemFunctionCall { .. } => lit(0.0),
+
+        // Branch access: V(p,n) / I(br) — resolve node names and seed.
+        Expr::AccessFunction { pos, neg, .. } => {
+            let plus_name = ident_str(pos).unwrap_or_else(|| "0".into());
+            let minus_name = neg.as_deref().and_then(ident_str).unwrap_or_else(|| "0".into());
+            let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
+            let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
+            seed(p, m)
         }
 
-        Expr::Literal(Literal::Real(_))
-        | Expr::Literal(Literal::Int(_))
-        | Expr::Literal(Literal::Bool(_))
-        | Expr::Literal(Literal::String(_))
-        | Expr::Literal(Literal::None)
-        | Expr::Literal(Literal::Quad(_))
-        | Expr::SysCall(_, _) => lit(0.0),
-
-        // Branch access: V(p,n) — resolve node names to ids and seed.
-        Expr::Call(func, args) => {
-            if let Expr::Ident(name) = func.as_ref() {
-                if name == "V" || name == "I" {
-                    let plus_name = ident_str(args.first()).unwrap_or_else(|| "0".into());
-                    let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
-                    let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
-                    let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
-                    return seed(p, m);
+        Expr::Call { name, args, .. } => {
+            // A value-tape leaf: its derivative is the matching entry of
+            // the derivative tape (`d(temps[id])/dV`), referenced as the
+            // pair's derivative-marker leaf and emitted once per branch.
+            let mut tape_hit = None;
+            for (leaf_marker, deriv_marker) in tapes {
+                if name == leaf_marker {
+                    tape_hit = Some(*deriv_marker);
+                    break;
                 }
-                // A value-tape leaf: its derivative is the matching entry of
-                // the derivative tape (`d(temps[id])/dV`), referenced as the
-                // pair's derivative-marker leaf and emitted once per branch.
-                let mut tape_hit = None;
-                for (leaf_marker, deriv_marker) in tapes {
-                    if name == leaf_marker {
-                        tape_hit = Some(*deriv_marker);
-                        break;
-                    }
+            }
+            if let Some(deriv_marker) = tape_hit {
+                if let Some(Expr::Number { value: piperine_vams::lexer::NumberLit::Integer(id), span }) =
+                    args.first()
+                {
+                    return Expr::Call {
+                        span: *span,
+                        name: deriv_marker.into(),
+                        args: vec![Expr::Number {
+                            span: *span,
+                            value: piperine_vams::lexer::NumberLit::Integer(*id),
+                        }],
+                    };
                 }
-                if let Some(deriv_marker) = tape_hit {
-                    if let Some(Expr::Literal(Literal::Int(id))) = args.first() {
-                        return Expr::Call(
-                            Box::new(Expr::Ident(deriv_marker.into())),
-                            vec![Expr::Literal(Literal::Int(*id))],
-                        );
-                    }
-                    return lit(0.0);
-                }
-                // __state_load, __ddt, __idt, __delay, __slew, etc. — constants
-                // within a Newton iteration.
-                if name.starts_with("__") {
-                    return lit(0.0);
-                }
-                // Math builtins: chain rule.
-                if super::math::math_fn(name).is_some() {
-                    return d_math(name, args, seed, ident_seed, resolve_node, tapes);
-                }
+                return lit(0.0);
+            }
+            // __state_load, __ddt, __idt, __delay, __slew, etc. — constants
+            // within a Newton iteration.
+            if name.starts_with("__") {
+                return lit(0.0);
+            }
+            // Math builtins: chain rule.
+            if super::math::math_fn(name).is_some() {
+                return d_math(name, args, seed, ident_seed, resolve_node, tapes);
             }
             lit(0.0)
         }
 
-        Expr::Ident(name) => ident_seed(name),
-        Expr::Path(_) => lit(0.0),
+        Expr::Ident { name, .. } => ident_seed(name),
 
-        Expr::Unary(UnaryOp::Neg, x) => neg(differentiate(x, seed, ident_seed, resolve_node, tapes)),
-        Expr::Unary(UnaryOp::Not, _) => lit(0.0),
+        Expr::Unary { op: UnOp::Neg, operand, .. } => {
+            neg(differentiate(operand, seed, ident_seed, resolve_node, tapes))
+        }
+        Expr::Unary { op: UnOp::Plus, operand, .. } => {
+            differentiate(operand, seed, ident_seed, resolve_node, tapes)
+        }
+        Expr::Unary { .. } => lit(0.0),
 
-        Expr::Binary(lhs, op, rhs) => d_binary(op.clone(), lhs, rhs, seed, ident_seed, resolve_node, tapes),
-
-        Expr::If { cond, then_body, else_body } => {
-            let t = block_deriv(then_body, seed, ident_seed, resolve_node, tapes);
-            let e = block_deriv(else_body, seed, ident_seed, resolve_node, tapes);
-            Expr::If {
-                cond: cond.clone(),
-                then_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(t)) },
-                else_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(e)) },
-            }
+        Expr::Binary { op, lhs, rhs, .. } => {
+            d_binary(*op, lhs, rhs, seed, ident_seed, resolve_node, tapes)
         }
 
-        Expr::Block(b) => {
-            if let Some(e) = &b.expr {
-                return differentiate(e, seed, ident_seed, resolve_node, tapes);
-            }
-            for s in b.stmts.iter().rev() {
-                if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
-                    return differentiate(e, seed, ident_seed, resolve_node, tapes);
-                }
-            }
+        Expr::Ternary { cond, then_branch, else_branch, .. } => Expr::Ternary {
+            span: expr.span(),
+            cond: cond.clone(),
+            then_branch: Box::new(differentiate(then_branch, seed, ident_seed, resolve_node, tapes)),
+            else_branch: Box::new(differentiate(else_branch, seed, ident_seed, resolve_node, tapes)),
+        },
+
+        // Concat/replication/index/part-select have no continuous
+        // derivative in this analog Real-valued form (they're the
+        // bit/vector-selection forms inherited from 1364 digital
+        // expressions) — zero-derivative, not reached by any flattened
+        // analog contribution today (flatten only ever feeds this
+        // differentiator resistive/charge Real-valued expressions).
+        Expr::Concat { .. } | Expr::Replication { .. } | Expr::Index { .. } | Expr::PartSelect { .. } => {
             lit(0.0)
         }
-
-        Expr::Cast(_, inner) => differentiate(inner, seed, ident_seed, resolve_node, tapes),
-        Expr::Field(_, _) => lit(0.0),
-
-        _ => lit(0.0),
     }
-}
-
-fn block_deriv(
-    block: &piperine_lang::parse::ast::Block,
-    seed: &impl Fn(NodeId, NodeId) -> Expr,
-    ident_seed: &impl Fn(&str) -> Expr,
-    resolve_node: &impl Fn(&str) -> Option<NodeId>,
-    tapes: &[(&str, &str)],
-) -> Expr {
-    if let Some(e) = &block.expr {
-        return differentiate(e, seed, ident_seed, resolve_node, tapes);
-    }
-    for s in block.stmts.iter().rev() {
-        if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
-            return differentiate(e, seed, ident_seed, resolve_node, tapes);
-        }
-    }
-    lit(0.0)
 }
 
 fn d_binary(
-    op: BinaryOp,
+    op: BinOp,
     a: &Expr,
     b: &Expr,
     seed: &impl Fn(NodeId, NodeId) -> Expr,
@@ -383,34 +364,30 @@ fn d_binary(
     let da = differentiate(a, seed, ident_seed, resolve_node, tapes);
     let db = differentiate(b, seed, ident_seed, resolve_node, tapes);
     match op {
-        BinaryOp::Add => add(da, db),
-        BinaryOp::Sub => sub(da, db),
-        BinaryOp::Mul => add(mul(da, b.clone()), mul(a.clone(), db)),
-        BinaryOp::Div => div(
+        BinOp::Add => add(da, db),
+        BinOp::Sub => sub(da, db),
+        BinOp::Mul => add(mul(da, b.clone()), mul(a.clone(), db)),
+        BinOp::Div => div(
             sub(mul(da, b.clone()), mul(a.clone(), db)),
             mul(b.clone(), b.clone()),
         ),
-        BinaryOp::And | BinaryOp::Or => lit(0.0),
-        _ => {
-            // For Pow and other ops, use the IR BinOp mapping.
-            let ir_op = super::BinOp::from_pom(op);
-            match ir_op {
-                super::BinOp::Pow => {
-                    if is_zero(&db) {
-                        mul(
-                            mul(b.clone(), binary(super::BinOp::Pow, a.clone(), sub(b.clone(), lit(1.0)))),
-                            da,
-                        )
-                    } else {
-                        mul(
-                            binary(super::BinOp::Pow, a.clone(), b.clone()),
-                            add(mul(db, math1("ln", a.clone())), div(mul(b.clone(), da), a.clone())),
-                        )
-                    }
-                }
-                _ => lit(0.0),
+        BinOp::LogAnd | BinOp::LogOr => lit(0.0),
+        BinOp::Pow => {
+            if is_zero(&db) {
+                mul(
+                    mul(b.clone(), binary(super::BinOp::Pow, a.clone(), sub(b.clone(), lit(1.0)))),
+                    da,
+                )
+            } else {
+                mul(
+                    binary(super::BinOp::Pow, a.clone(), b.clone()),
+                    add(mul(db, math1("ln", a.clone())), div(mul(b.clone(), da), a.clone())),
+                )
             }
         }
+        // Comparisons, case (in)equality, and bitwise ops have no
+        // continuous derivative — zero.
+        _ => lit(0.0),
     }
 }
 
@@ -439,11 +416,7 @@ fn d_math(
         "cosh" => mul(math1("sinh", u), du),
         "tanh" => mul(sub(lit(1.0), mul(math1("tanh", u.clone()), math1("tanh", u))), du),
         "abs" => mul(
-            Expr::If {
-                cond: Box::new(binary(super::BinOp::Ge, u.clone(), lit(0.0))),
-                then_body: block(lit(1.0)),
-                else_body: block(lit(-1.0)),
-            },
+            ternary(binary(super::BinOp::Ge, u.clone(), lit(0.0)), lit(1.0), lit(-1.0)),
             du,
         ),
         "pow" => {
@@ -459,53 +432,92 @@ fn d_math(
             } else {
                 binary(super::BinOp::Ge, u, v)
             };
-            Expr::If {
-                cond: Box::new(pick_first),
-                then_body: block(du),
-                else_body: block(dv),
-            }
+            ternary(pick_first, du, dv)
         }
         _ => lit(0.0),
     }
 }
 
-/// Collect every distinct `V(p,n)` branch pair in the tree.
+/// Collect every distinct `V(p,n)`/`I(p,n)` branch pair in the tree.
 pub fn collect_branches(expr: &Expr, out: &mut Vec<(NodeId, NodeId)>, resolve_node: &impl Fn(&str) -> Option<NodeId>) {
-    use piperine_lang::parse::ast::Walk;
-    expr.walk(&mut |e| {
-        if let Expr::Call(func, args) = e
-            && let Expr::Ident(name) = func.as_ref()
-                && (name == "V" || name == "I") {
-                    let plus_name = ident_str(args.first()).unwrap_or_else(|| "0".into());
-                    let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
-                    let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
-                    let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
-                    let pair = (p, m);
-                    if !out.contains(&pair) {
-                        out.push(pair);
-                    }
-                    return Walk::SkipChildren;
-                }
-        Walk::Continue
+    walk(expr, &mut |e| {
+        if let Expr::AccessFunction { pos, neg, .. } = e {
+            let plus_name = ident_str(pos).unwrap_or_else(|| "0".into());
+            let minus_name = neg.as_deref().and_then(ident_str).unwrap_or_else(|| "0".into());
+            let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
+            let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
+            let pair = (p, m);
+            if !out.contains(&pair) {
+                out.push(pair);
+            }
+            return false;
+        }
+        true
     });
 }
 
 /// Walk an expression and call `f` on each node (pre-order).
 pub fn visit_expr<F: FnMut(&Expr)>(expr: &Expr, f: &mut F) {
-    use piperine_lang::parse::ast::Walk;
-    expr.walk(&mut |e| {
+    walk(expr, &mut |e| {
         f(e);
-        Walk::Continue
+        true
     });
 }
 
-fn ident_str(e: Option<&Expr>) -> Option<String> {
-    match e? {
-        Expr::Ident(s) => Some(s.clone()),
-        Expr::Field(base, field) => match base.as_ref() {
-            Expr::Ident(base_name) => Some(format!("{base_name}.{field}")),
-            _ => None,
-        },
+/// Pre-order tree walk over a VAMS `Expr`. `f` returns `false` to skip a
+/// node's children (used by [`collect_branches`] to stop at an
+/// `AccessFunction` node rather than descending into `pos`/`neg`, which are
+/// name expressions, not sub-expressions to differentiate). No shared
+/// `Walk` trait exists post-MD-45 (the PHDL-only one was deleted with
+/// `parse/`) — this is `diff.rs`'s own, self-contained per T29's "no other
+/// file changed" isolation.
+fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
+    if !f(expr) {
+        return;
+    }
+    match expr {
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } => {}
+        Expr::Unary { operand, .. } => walk(operand, f),
+        Expr::Binary { lhs, rhs, .. } => {
+            walk(lhs, f);
+            walk(rhs, f);
+        }
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            walk(cond, f);
+            walk(then_branch, f);
+            walk(else_branch, f);
+        }
+        Expr::Concat { parts, .. } | Expr::Replication { parts, .. } => {
+            for p in parts {
+                walk(p, f);
+            }
+        }
+        Expr::Index { base, index, .. } => {
+            walk(base, f);
+            walk(index, f);
+        }
+        Expr::PartSelect { base, msb, lsb, .. } => {
+            walk(base, f);
+            walk(msb, f);
+            walk(lsb, f);
+        }
+        Expr::Call { args, .. } | Expr::SystemFunctionCall { args, .. } => {
+            for a in args {
+                walk(a, f);
+            }
+        }
+        Expr::AccessFunction { pos, neg, .. } => {
+            walk(pos, f);
+            if let Some(n) = neg {
+                walk(n, f);
+            }
+        }
+    }
+}
+
+fn ident_str(e: &Expr) -> Option<String> {
+    match e {
+        Expr::Ident { name, .. } => Some(name.clone()),
         _ => None,
     }
 }
@@ -513,15 +525,15 @@ fn ident_str(e: Option<&Expr>) -> Option<String> {
 // ── Constant-folding constructors ──
 
 fn lit(v: f64) -> Expr {
-    Expr::Literal(Literal::Real(v))
+    Expr::Number { span: piperine_vams::error::Span::new(0, 0), value: piperine_vams::lexer::NumberLit::Real(v) }
 }
 
 fn is_zero(e: &Expr) -> bool {
-    matches!(e, Expr::Literal(Literal::Real(v)) if *v == 0.0)
+    matches!(e, Expr::Number { value: piperine_vams::lexer::NumberLit::Real(v), .. } if *v == 0.0)
 }
 
 fn is_one(e: &Expr) -> bool {
-    matches!(e, Expr::Literal(Literal::Real(v)) if *v == 1.0)
+    matches!(e, Expr::Number { value: piperine_vams::lexer::NumberLit::Real(v), .. } if *v == 1.0)
 }
 
 fn add(a: Expr, b: Expr) -> Expr {
@@ -549,23 +561,26 @@ fn div(a: Expr, b: Expr) -> Expr {
 }
 
 fn neg(a: Expr) -> Expr {
-    if let Expr::Literal(Literal::Real(v)) = &a {
+    if let Expr::Number { value: piperine_vams::lexer::NumberLit::Real(v), .. } = &a {
         return lit(-v);
     }
-    Expr::Unary(UnaryOp::Neg, Box::new(a))
+    Expr::Unary { span: a.span(), op: UnOp::Neg, operand: Box::new(a) }
 }
 
 fn binary(op: super::BinOp, lhs: Expr, rhs: Expr) -> Expr {
     let pom_op = op.to_pom();
-    Expr::Binary(Box::new(lhs), pom_op, Box::new(rhs))
+    let span = lhs.span();
+    Expr::Binary { span, op: pom_op, lhs: Box::new(lhs), rhs: Box::new(rhs) }
+}
+
+fn ternary(cond: Expr, then_branch: Expr, else_branch: Expr) -> Expr {
+    let span = cond.span();
+    Expr::Ternary { span, cond: Box::new(cond), then_branch: Box::new(then_branch), else_branch: Box::new(else_branch) }
 }
 
 fn math1(name: &str, a: Expr) -> Expr {
-    Expr::Call(Box::new(Expr::Ident(name.to_string())), vec![a])
-}
-
-fn block(e: Expr) -> piperine_lang::parse::ast::Block {
-    piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(e)) }
+    let span = a.span();
+    Expr::Call { span, name: name.to_string(), args: vec![a] }
 }
 
 // Extension trait for Pow differentiation.
@@ -589,8 +604,7 @@ impl PowDeriv for Expr {
 }
 
 fn unpack_pow(e: &Expr) -> (Expr, Expr) {
-    if let Expr::Binary(lhs, BinaryOp::BitXor, rhs) = e {
-        // This shouldn't happen — Pow is handled via Call("pow", ...)
+    if let Expr::Binary { op: BinOp::Pow, lhs, rhs, .. } = e {
         (lhs.as_ref().clone(), rhs.as_ref().clone())
     } else {
         (e.clone(), lit(1.0))
