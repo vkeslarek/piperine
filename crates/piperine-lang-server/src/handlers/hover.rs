@@ -46,14 +46,15 @@ fn resolve_hover(doc: &DocumentState, position: lsp_types::Position) -> Option<H
         info.push_str("\n\n");
         info.push_str(ty);
     }
-    // T20/LSP-22: hovering a schema name shows its fields (name/type/
-    // required), the same info a bundle-backed or `extern attribute`
-    // declaration validates `@name(...)` use sites against.
-    if resolution.kind == SymbolKind::AttrSchema
-        && let Some(fields) = schema_field_summary(doc, &resolution.name) {
-        info.push_str("\n\n");
-        info.push_str(&fields);
-    }
+    // MD-45 regression, documented: T20/LSP-22's field-summary hover
+    // (`schema_field_summary`, "hovering a schema name shows its
+    // fields") read `ElabContext::schemas`' old `SchemaShape`
+    // (bundle-backed or declared-with-fields) — that whole registry
+    // shape is gone (T21/T35): `ElabContext::schemas` is now a bare
+    // `HashSet<String>` of names, carrying no field metadata at all.
+    // An `AttrSchema` resolution therefore shows only its name (via the
+    // `**{kind}** `{name}`` line above) — there is no field list left to
+    // append.
 
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
@@ -62,36 +63,6 @@ fn resolve_hover(doc: &DocumentState, position: lsp_types::Position) -> Option<H
         }),
         range: None,
     })
-}
-
-/// The Markdown-formatted field list (`name: Type` / `name?: Type`) for a
-/// registered schema, reading `ctx.schemas`' shape (T20/LSP-22): bundle-
-/// backed schemas read their fields off the named bundle's declaration
-/// (`design.bundles()`); declared schemas (`extern attribute`, host/plugin-
-/// registered) carry their fields directly.
-fn schema_field_summary(doc: &DocumentState, schema_name: &str) -> Option<String> {
-    use piperine_lang::elab::registry::SchemaShape;
-
-    let ctx = doc.ctx.as_ref()?;
-    let shape = ctx.schemas.shape(schema_name)?;
-    let mut lines = vec!["**Fields**:".to_string()];
-    match shape {
-        SchemaShape::Bundle(bundle_name) => {
-            let design = doc.design.as_ref()?;
-            let (_, bundle) = design.bundles().find(|(name, _)| name.as_str() == bundle_name)?;
-            for field in &bundle.fields {
-                let opt = if field.default.is_some() { "?" } else { "" };
-                lines.push(format!("- `{}{opt}: {}`", field.name, field.ty.name));
-            }
-        }
-        SchemaShape::Declared(fields) => {
-            for field in fields {
-                let opt = if field.required { "" } else { "?" };
-                lines.push(format!("- `{}{opt}: {}`", field.name, field.ty));
-            }
-        }
-    }
-    Some(lines.join("\n"))
 }
 
 /// Kept for tests that still call this function directly

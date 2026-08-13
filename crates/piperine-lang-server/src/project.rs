@@ -86,23 +86,38 @@ impl ProjectUnit {
         let mut index = ResolutionIndex::default();
         let mut errors = HashMap::new();
 
-        for path in discover_phdl_files(root) {
+        for path in discover_project_files(root) {
             let Ok(body) = std::fs::read_to_string(&path) else { continue };
-            // Mirrors `DocumentState::analyze`'s own pipeline (parse
-            // errors, then elaboration) so a project file's errors surface
+            // Mirrors `DocumentState::analyze`'s own pipeline (parse,
+            // then elaboration, T37) so a project file's errors surface
             // through the same `ParseError` shape a directly-opened
-            // document's do.
-            let (source_file, parse_errors) = piperine_lang::parse::parse_str_tolerant(&body);
-            let mut file_errors: Vec<crate::state::ParseError> = parse_errors
-                .into_iter()
-                .map(|e| {
-                    let code = miette::Diagnostic::code(&e).map(|c| c.to_string());
-                    crate::state::ParseError { message: e.to_string(), span: e.span(), code }
-                })
-                .collect();
+            // document's do. `piperine_vams::Parser` has no tolerant
+            // mode (state.rs's matching doc comment) — a parse failure
+            // yields exactly one error and no `Design` for this file.
+            let mut file_errors: Vec<crate::state::ParseError> = Vec::new();
+            let parser = piperine_vams::Parser::with_include_resolver(
+                piperine_lang::SourceMapIncludeResolver::new(source_map),
+            );
+            let source_file = match parser.parse(&body) {
+                Ok(sf) => sf,
+                Err(e) => {
+                    let elab_err = piperine_lang::ElabError::from(e);
+                    let code = miette::Diagnostic::code(&elab_err.kind).map(|c| c.to_string());
+                    file_errors.push(crate::state::ParseError {
+                        message: elab_err.to_string(),
+                        span: elab_err.span,
+                        code,
+                    });
+                    errors.insert(path, file_errors);
+                    continue;
+                }
+            };
 
-            match source_file.elaborate_with_index(source_map) {
-                Ok((design, mut file_index)) => {
+            let mut elaborator = piperine_lang::elab::Elaborator::new();
+            piperine_lang::seed_device_port_schemas(&mut elaborator.ctx);
+            match elaborator.elaborate(source_file) {
+                Ok(design) => {
+                    let mut file_index = piperine_lang::elab::resolution::index_design(&design);
                     file_index.set_file(path.display().to_string());
                     index.merge(file_index);
                     designs.insert(path.clone(), design);
@@ -124,10 +139,13 @@ impl ProjectUnit {
     }
 }
 
-/// Every `.phdl` file under `root/src/` (recursive) — mirrors
+/// Every Verilog-AMS source file (`.va`/`.vams`) — plus, during the
+/// migration window (VAMS-11's monotonic-shrink gate), any straggling
+/// `.phdl`/`.ppr` file — under `root/src/` (recursive). Mirrors
 /// `piperine-cli check`'s own project-file discovery
 /// (`crates/piperine-cli/src/commands/check.rs::execute`).
-fn discover_phdl_files(root: &Path) -> Vec<PathBuf> {
+fn discover_project_files(root: &Path) -> Vec<PathBuf> {
+    const EXTENSIONS: [&str; 4] = ["va", "vams", "phdl", "ppr"];
     let mut paths = Vec::new();
     let src_dir = root.join("src");
     if src_dir.exists() {
@@ -138,7 +156,9 @@ fn discover_phdl_files(root: &Path) -> Vec<PathBuf> {
                     let p = entry.path();
                     if p.is_dir() {
                         stack.push(p);
-                    } else if p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("phdl") {
+                    } else if p.is_file()
+                        && p.extension().and_then(|s| s.to_str()).is_some_and(|e| EXTENSIONS.contains(&e))
+                    {
                         paths.push(p);
                     }
                 }

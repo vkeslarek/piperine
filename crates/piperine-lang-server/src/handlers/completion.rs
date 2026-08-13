@@ -1,4 +1,17 @@
-//! Completion handler: provides keyword and context-aware completions using piperine-lang predictive parsing.
+//! Completion handler: keyword/snippet and `@schema` completions.
+//!
+//! **T37 (MD-45) regression, documented**: the PHDL-era predictive parser
+//! (`piperine_lang::parse::predict`, `ExpectedSyntax`/`IdentRole`) this
+//! handler used for cursor-context-aware completion (only suggest what
+//! the grammar actually accepts at the cursor) was deleted with `piperine-
+//! lang/src/parse/` at T21 — it was hand-written specifically against
+//! PHDL's own grammar shape, not mechanically portable, and rebuilding an
+//! equivalent tolerant/predictive parser for VAMS's grammar is new
+//! architecture work (a second parsing mode for `piperine-vams`), not a
+//! retarget. `completions_at` now offers a static, non-context-aware set
+//! of VAMS keywords/snippets/operators/sysfuncs (still filtered by the
+//! BUG-4 heuristic where it can — see below) plus `@schema` completion
+//! (T18/LSP-20, unaffected — that path never used the predictive parser).
 
 use lsp_server::{Connection, Request};
 use lsp_types::{
@@ -9,8 +22,6 @@ use lsp_types::{
 use super::{ConnectionExt, RequestExt};
 use crate::state::{DocumentState, ServerState};
 use piperine_lang::elab::registry::ElabContext;
-use piperine_lang::parse::lexer::Tok;
-use piperine_lang::parse::predict::{ExpectedSyntax, IdentRole};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let Some((id, params)) = req.parse::<CompletionParams>(connection) else { return };
@@ -33,16 +44,16 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
 
 /// The completion items for `offset` in `doc` — either `@schema` completion
 /// (T18/LSP-20, when the cursor sits right after an `@` and an optional
-/// partial schema name) or the ordinary predictive-parser completions.
-/// Exposed as its own function (rather than inlined in `handle`) so tests
-/// can drive it directly against a `DocumentState` without a full LSP
-/// round trip.
+/// partial schema name) or the static, non-context-aware keyword/snippet
+/// set (T37: no predictive parser exists for VAMS, see this module's
+/// header doc). Exposed as its own function (rather than inlined in
+/// `handle`) so tests can drive it directly against a `DocumentState`
+/// without a full LSP round trip.
 pub fn completions_at(doc: &DocumentState, offset: usize) -> Vec<CompletionItem> {
     if let Some(prefix) = attr_schema_prefix(&doc.source, offset) {
         return schema_completions(doc.ctx.as_ref(), prefix);
     }
-    let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
-    build_completions_predictive(&expected, doc.design.as_ref())
+    static_completions(doc.design.as_ref())
 }
 
 /// Whether `offset` sits right after an `@` (possibly with a partial
@@ -65,14 +76,14 @@ fn attr_schema_prefix(source: &str, offset: usize) -> Option<&str> {
     }
 }
 
-/// Only the in-scope schema names (`ctx.schemas` — the registry populated
-/// for this document's own compilation unit) whose name starts with
-/// `prefix`, as completion items (T18/LSP-20).
+/// Only the in-scope schema names (`ctx.schemas` — T35's
+/// `HashSet<String>` seam) whose name starts with `prefix`, as
+/// completion items (T18/LSP-20).
 fn schema_completions(ctx: Option<&ElabContext>, prefix: &str) -> Vec<CompletionItem> {
     let Some(ctx) = ctx else { return Vec::new() };
     let mut items: Vec<CompletionItem> = ctx
         .schemas
-        .names()
+        .iter()
         .filter(|name| name.starts_with(prefix))
         .map(|name| kw_item(name, "Attribute schema", CompletionItemKind::PROPERTY))
         .collect();
@@ -80,104 +91,60 @@ fn schema_completions(ctx: Option<&ElabContext>, prefix: &str) -> Vec<Completion
     items
 }
 
-
-pub fn build_completions_predictive(expected: &[ExpectedSyntax], design: Option<&piperine_lang::Design>) -> Vec<CompletionItem> {
+/// The static, non-context-aware completion set (T37 — see this module's
+/// header doc for why there is no cursor-context filtering anymore):
+/// every keyword/snippet/operator/sysfunc list this file declares, plus
+/// every discipline/module name the current document's `Design` (if any)
+/// declares.
+pub fn static_completions(design: Option<&piperine_lang::Design>) -> Vec<CompletionItem> {
     let mut items = Vec::new();
+    add_top_level_completions(&mut items);
+    add_behavior_completions(&mut items);
+    add_value_types(&mut items);
+    add_events(&mut items);
+    add_sysfuncs(&mut items);
 
-    for req in expected {
-        match req {
-            ExpectedSyntax::Keyword(kw) => {
-                items.push(kw_item(kw, "Keyword", CompletionItemKind::KEYWORD));
-            }
-            ExpectedSyntax::Ident(role) => match role {
-                IdentRole::TypeName => {
-                    add_value_types(&mut items);
-                    if let Some(design) = design {
-                        for (name, _) in design.disciplines() {
-                            items.push(kw_item(name, "Discipline", CompletionItemKind::INTERFACE));
-                        }
-                    }
-                }
-                IdentRole::ModName => {
-                    if let Some(design) = design {
-                        for m in design.modules() {
-                            items.push(kw_item(m.name(), "Module", CompletionItemKind::CLASS));
-                        }
-                    }
-                }
-                IdentRole::CapabilityName => {
-                    if let Some(design) = design {
-                        for (name, _) in design.capabilities() {
-                            items.push(kw_item(name, "Capability", CompletionItemKind::INTERFACE));
-                        }
-                    }
-                }
-                _ => {}
-            },
-            ExpectedSyntax::Expression => {
-                add_behavior_completions(&mut items);
-                add_sysfuncs(&mut items);
-                add_events(&mut items);
-            }
-            ExpectedSyntax::Punctuation(_) => {}
+    if let Some(design) = design {
+        for (name, _) in design.disciplines() {
+            items.push(kw_item(name, "Discipline", CompletionItemKind::INTERFACE));
         }
-    }
-    
-    // Fallback: If the parser returned absolutely nothing (which is rare but possible during early typing),
-    // we can provide some top-level defaults if the document is empty.
-    if expected.is_empty() {
-        add_top_level_completions(&mut items);
-    }
-
-    // BUG-4 (LSB-11..13): cursor sitting immediately after a module's
-    // closing `}` makes `check_cursor()` intercept every subsequent
-    // `peek()`/`eat_ident()` attempt in the mod-body statement dispatcher,
-    // snowballing `expected` into every possible body-statement
-    // continuation (including behavior-only keywords like `for`) with no
-    // signal that the block is actually closing. The confirmed repro's
-    // signature — `Punctuation(RBrace)` together with a module-body-only
-    // keyword (`param`/`wire`) both present — is the "likely a block
-    // boundary" heuristic (scoped to this exact signature, not a general
-    // claim about every `}` position; see design.md). `if`/`var` are
-    // deliberately not suppressed — both are valid inside a `mod{}` body
-    // too, so suppressing them would be a new false negative.
-    let has_rbrace = expected.iter().any(|e| matches!(e, ExpectedSyntax::Punctuation(Tok::RBrace)));
-    let has_mod_body_only = expected.iter().any(|e| matches!(e, ExpectedSyntax::Keyword(k) if k == "param" || k == "wire"));
-    if has_rbrace && has_mod_body_only {
-        let behavior_only = ["for", "match", "return", "when"];
-        items.retain(|it| !behavior_only.contains(&it.label.as_str()));
-        add_top_level_completions(&mut items);
+        for m in design.modules() {
+            items.push(kw_item(m.name(), "Module", CompletionItemKind::CLASS));
+        }
     }
 
     // Deduplicate items based on label
     items.sort_by(|a, b| a.label.cmp(&b.label));
     items.dedup_by(|a, b| a.label == b.label);
-    
+
     items
 }
 
 fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
+    // VAMS Annex B top-level-declaration keywords (T37 — swapped from the
+    // PHDL-only `bundle`/`capability`/`impl`/`pub`/`const` set, none of
+    // which VAMS has).
     let keywords = [
-        ("fn", "Function declaration", CompletionItemKind::KEYWORD),
-        ("digital", "Digital behavior block", CompletionItemKind::KEYWORD),
-        ("bundle", "Bundle (struct) declaration", CompletionItemKind::KEYWORD),
-        ("enum", "Enum declaration", CompletionItemKind::KEYWORD),
-        ("capability", "Capability (trait) declaration", CompletionItemKind::KEYWORD),
-        ("impl", "Impl block", CompletionItemKind::KEYWORD),
-        ("pub", "Public visibility", CompletionItemKind::KEYWORD),
-        ("use", "Import declaration", CompletionItemKind::KEYWORD),
-        ("const", "Constant declaration", CompletionItemKind::KEYWORD),
+        ("module", "Module declaration", CompletionItemKind::KEYWORD),
+        ("discipline", "Discipline declaration", CompletionItemKind::KEYWORD),
+        ("nature", "Nature declaration", CompletionItemKind::KEYWORD),
+        ("analog", "Analog behavior block", CompletionItemKind::KEYWORD),
+        ("always", "Digital always block", CompletionItemKind::KEYWORD),
+        ("initial", "Initial block", CompletionItemKind::KEYWORD),
+        ("branch", "Branch declaration", CompletionItemKind::KEYWORD),
+        ("genvar", "Generate-loop index declaration", CompletionItemKind::KEYWORD),
+        ("parameter", "Parameter declaration", CompletionItemKind::KEYWORD),
     ];
     for (kw, desc, kind) in &keywords {
         items.push(kw_item(kw, desc, *kind));
     }
-    
+
     // Snippets
     items.push(CompletionItem {
-        label: "mod".into(),
+        label: "module".into(),
         kind: Some(CompletionItemKind::SNIPPET),
         detail: Some("Module snippet".into()),
-        insert_text: Some("mod ${1:Name} {\n\t$0\n}".into()),
+        insert_text: Some("module ${1:Name} (${2:ports});\n\t$0\nendmodule".into()),
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         ..Default::default()
     });
@@ -185,7 +152,7 @@ fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
         label: "analog".into(),
         kind: Some(CompletionItemKind::SNIPPET),
         detail: Some("Analog block snippet".into()),
-        insert_text: Some("analog {\n\t$0\n}".into()),
+        insert_text: Some("analog begin\n\t$0\nend".into()),
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         ..Default::default()
     });
@@ -193,31 +160,15 @@ fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
         label: "discipline".into(),
         kind: Some(CompletionItemKind::SNIPPET),
         detail: Some("Discipline snippet".into()),
-        insert_text: Some("discipline ${1:Name} {\n\tdomain: ${2:continuous},\n\t$0\n}".into()),
+        insert_text: Some("discipline ${1:Name};\n\tpotential ${2:V};\n\tflow ${3:I};\nenddiscipline".into()),
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         ..Default::default()
     });
     items.push(CompletionItem {
-        label: "bundle".into(),
+        label: "nature".into(),
         kind: Some(CompletionItemKind::SNIPPET),
-        detail: Some("Bundle snippet".into()),
-        insert_text: Some("bundle ${1:Name} {\n\t$0\n}".into()),
-        insert_text_format: Some(InsertTextFormat::SNIPPET),
-        ..Default::default()
-    });
-    items.push(CompletionItem {
-        label: "capability".into(),
-        kind: Some(CompletionItemKind::SNIPPET),
-        detail: Some("Capability snippet".into()),
-        insert_text: Some("capability ${1:Name} {\n\tfn ${2:method}(self, ${3:args}) -> ${4:RetType};\n}".into()),
-        insert_text_format: Some(InsertTextFormat::SNIPPET),
-        ..Default::default()
-    });
-    items.push(CompletionItem {
-        label: "impl".into(),
-        kind: Some(CompletionItemKind::SNIPPET),
-        detail: Some("Impl snippet".into()),
-        insert_text: Some("impl ${1:Capability} for ${2:Type} {\n\tfn ${3:method}(self, ${4:args}) -> ${5:RetType} {\n\t\t$0\n\t}\n}".into()),
+        detail: Some("Nature snippet".into()),
+        insert_text: Some("nature ${1:Name};\n\tunits = \"${2:V}\";\n\taccess = ${3:V};\n\tabstol = ${4:1e-6};\nendnature".into()),
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         ..Default::default()
     });

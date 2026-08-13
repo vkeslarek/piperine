@@ -1664,6 +1664,7 @@ dependencies = [
  "piperine-plugin",
  "piperine-project",
  "piperine-python",
+ "piperine-vams",
  "tempfile",
  "thiserror 2.0.18",
  "toml_edit",
@@ -1714,6 +1715,7 @@ dependencies = [
  "miette",
  "piperine-lang",
  "piperine-project",
+ "piperine-vams",
  "serde",
  "serde_json",
  "url",
@@ -1781,6 +1783,7 @@ dependencies = [
  "piperine-plugin",
  "piperine-project",
  "piperine-solver",
+ "piperine-vams",
  "pyo3",
 ]
 

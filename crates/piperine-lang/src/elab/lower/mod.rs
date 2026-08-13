@@ -18,6 +18,12 @@
 //! VAMS Annex A production. `.specs/features/verilog-ams-support/tasks.md`
 //! T22-T27 rebuild this pipeline's VAMS-shaped passes task by task.
 
+// hygiene-exempt: `SymbolTable` + the `Elaborator` god struct — the shared
+// state every sibling file in this module mutates through `&mut Elaborator`;
+// splitting the struct definition out from its own `new()`/`elaborate()`
+// driver would separate declaration from the one place that constructs it.
+// No p6 task splits it.
+
 use std::collections::HashMap;
 
 use piperine_vams::ast::{DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFile};
@@ -52,7 +58,14 @@ pub struct Elaborator {
     pub syms: SymbolTable,
     /// Items handed to `elaborate`, consumed by the `Register` pass.
     pending_items: Vec<Item>,
-    pub(crate) ctx: crate::elab::registry::ElabContext,
+    /// Elaboration-registry seam (T35, VAMS-12/13) — a caller seeds this
+    /// *before* calling [`elaborate`](Self::elaborate) (e.g.
+    /// `seed(&mut elaborator.ctx)`, mirroring `parse_and_elaborate_
+    /// seeded`'s own hook), and may read it back afterward (e.g.
+    /// `piperine-lang-server`'s `symbol_index::resolve_at`, T37, needs
+    /// the populated `schemas` set for hover/goto-def). `pub`, not
+    /// `pub(crate)`, so an external elaboration driver can do both.
+    pub ctx: crate::elab::registry::ElabContext,
     /// Generate-produced instances (LRM ch. 6), keyed by the owning
     /// module's name — written by `UnrollGenerate` (T25), read by
     /// `FlattenHierarchy` when building `Design::flat_modules`. **Never**

@@ -1,5 +1,3 @@
-use piperine_lang::parse::format::{FormatOptions, TokenFormatter};
-use piperine_lang::parse::lexer::Lexer;
 use std::fs;
 use std::path::PathBuf;
 
@@ -8,7 +6,7 @@ pub fn execute(file: Option<String>) {
         PathBuf::from(f)
     } else {
         if let Some(root) = piperine_project::get_current_project_root() {
-            root.join("src").join("main.phdl")
+            root.join("src").join("main.vams")
         } else {
             eprintln!(
                 "Error: No Piperine.toml found in current or parent directories. Please provide a file."
@@ -23,13 +21,13 @@ pub fn execute(file: Option<String>) {
         std::process::exit(1);
     });
 
-    let mut lexer = Lexer::new(&input);
-    let raw_tokens = lexer.tokenize_all().unwrap_or_else(|e| {
-        eprintln!("Lexer error: {}", e);
+    // T37: `piperine_vams::Formatter::format` (T15) replaces the deleted
+    // PHDL `Lexer`+`TokenFormatter` pipeline — see
+    // `piperine-lang-server/src/handlers/formatting.rs`'s matching retarget.
+    let formatted = piperine_vams::Formatter::format(&input).unwrap_or_else(|e| {
+        eprintln!("Format error: {e}");
         std::process::exit(1);
     });
-
-    let formatted = TokenFormatter::format_source(&input, &raw_tokens, FormatOptions::default());
     fs::write(&path, formatted).unwrap_or_else(|e| {
         eprintln!("Error writing file: {}", e);
         std::process::exit(1);

@@ -12,17 +12,10 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let uri = params.text_document.uri;
 
     let result = state.documents.get(&uri).and_then(|doc| {
-        // A document that does not lex must not be formatted — formatting
-        // an empty token stream would replace the text with garbage.
-        let tokens = piperine_lang::parse::lexer::Lexer::new(&doc.source)
-            .tokenize_all()
-            .ok()?;
-        let options = piperine_lang::parse::format::FormatOptions::default();
-        let formatted = piperine_lang::parse::format::TokenFormatter::format_source(
-            &doc.source,
-            &tokens,
-            options,
-        );
+        // A document that does not lex/parse must not be formatted —
+        // `piperine_vams::Formatter::format` (T15) fails loud on either,
+        // matching the old "do not replace with garbage" guard.
+        let formatted = piperine_vams::Formatter::format(&doc.source).ok()?;
 
         if formatted == doc.source {
             return Some(Vec::new());

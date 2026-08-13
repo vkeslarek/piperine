@@ -69,15 +69,29 @@ pub fn parse_and_elaborate_seeded(
     source_map: &SourceMap,
     seed: impl FnOnce(&mut elab::registry::ElabContext),
 ) -> Result<Design, miette::Report> {
+    parse_and_elaborate_seeded_with_context(input, source_map, seed).map(|(design, _ctx)| design)
+}
+
+/// Like [`parse_and_elaborate_seeded`], but also returns the populated
+/// [`elab::registry::ElabContext`] — needed by consumers that resolve
+/// names against `ElabContext::schemas` *after* elaboration succeeds
+/// (T35, VAMS-12/13; `piperine-lang-server`'s `symbol_index::resolve_at`
+/// is the first such consumer, T37).
+pub fn parse_and_elaborate_seeded_with_context(
+    input: &str,
+    source_map: &SourceMap,
+    seed: impl FnOnce(&mut elab::registry::ElabContext),
+) -> Result<(Design, elab::registry::ElabContext), miette::Report> {
     let parser = piperine_vams::Parser::with_include_resolver(SourceMapIncludeResolver::new(source_map));
     let source = parser
         .parse(input)
         .map_err(|e| miette::Report::from(ElabError::from(e)).with_source_code(input.to_string()))?;
     let mut elaborator = elab::Elaborator::new();
     seed(&mut elaborator.ctx);
-    elaborator
+    let design = elaborator
         .elaborate(source)
-        .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
+        .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))?;
+    Ok((design, elaborator.ctx))
 }
 
 /// Register the `@device`/`@port` schemas into an elaboration context — the

@@ -2218,3 +2218,155 @@ not started.
   T21 "compile failure" inventory — it now builds and passes, shrinking
   that debt list by one entry (not claimed as this task's goal, just
   true as a side effect of the rewrite).
+
+- **T37** ✅ `<pending commit>` — `piperine-lang-server` (12 files, 65
+  build errors) and `piperine-python` (`module.rs`, 1 error) retargeted
+  to the VAMS AST; **the whole workspace builds with zero warnings for
+  the first time since T21** (`cargo build --workspace`).
+  **piperine-lang plumbing this task needed** (both changes are narrow,
+  additive, and used by no one but the LSP so far): `Elaborator::ctx`'s
+  visibility moves `pub(crate)` → `pub` (a caller needs to seed it
+  *before* `elaborate()` and read it back *after* — `lib.rs`'s own
+  `parse_and_elaborate_seeded` already did the former internally, but
+  had no way to hand the populated `ElabContext` back out); a new
+  `parse_and_elaborate_seeded_with_context` returns `(Design,
+  ElabContext)` together (`parse_and_elaborate_seeded` now delegates to
+  it, discarding the context — no behavior change to the existing public
+  functions).
+  **`piperine-lang-server` retarget, by cause**:
+  - *Mechanical* (`piperine_lang::parse::ast` → `piperine_vams::ast`,
+    `Design::disciplines()`'s `piperine_vams::ast::DisciplineDecl` span
+    now converted via a new `symbol_index::vams_span_to_miette` helper
+    since the AST crate is serde/miette-free by purity contract):
+    `symbol_index.rs`, `workspace_symbols.rs`, `selection_range.rs`,
+    `folding_range.rs`, `semantic_tokens.rs` (lexer API: `Lexer::new(src)
+    .tokenize()` consuming `self`, not `&mut self.tokenize_all()`;
+    `Tok::SystemIdent`/`Tok::Ident` replace `SysCall`/PHDL's `Ident`),
+    `formatting.rs`/`piperine-cli`'s `fmt.rs` (`piperine_vams::Formatter
+    ::format`, T15, replaces the deleted `Lexer`+`TokenFormatter`
+    pipeline verbatim).
+  - *MD-45 POM-surface loss* (`Design::{enums,bundles,capabilities,
+    impls}` deleted at T21 — no VAMS Annex A production): the four
+    outline/hover/symbol-scan loops that walked them in `symbol_index.rs`
+    and `handlers/symbols.rs` are gone, not retargeted;
+    `SymbolKind::{Enum,Bundle,Capability}` stay declared (other files
+    match on `SymbolKind` exhaustively) but are never constructed
+    anymore — documented in both files rather than cascading a variant
+    deletion through every exhaustive match in the crate.
+  - *MD-24 extern-registry loss* (`ElabContext::{callables,types,
+    operators,constraint_helpers,impl_methods}` deleted at T21; only
+    `schemas: HashSet<String>` remains, T35): `symbol_index.rs::resolve_
+    at`'s four extern-lookup blocks (callables/types/operators/
+    impl_methods) collapse into one — `ctx.schemas.contains(&word)` →
+    an `AttrSchema` resolution with `decl_span: None` always (no textual
+    declaration exists anymore to point at, mirroring T20/LSP-22's
+    pre-existing `rfport` defensive shape). `hover.rs`'s
+    `schema_field_summary` (showed a schema's fields via the deleted
+    `SchemaShape`) is deleted outright — there is no field metadata left
+    to show, only a name.
+  - **Two genuine feature regressions, new architecture work not a
+    retarget, documented rather than rebuilt (same MD-45 latitude)**:
+    (1) the PHDL-era tolerant parser (`parse_str_tolerant`, returned a
+    partial AST plus every accumulated error) and the accumulating
+    elaborator (`elaborate_with_context_accumulating`, collected every
+    independent elaboration error) have no VAMS-native equivalent —
+    `piperine_vams::Parser`/`Elaborator::elaborate` are both fail-fast.
+    `state.rs::DocumentState::analyze` and `project.rs::ProjectUnit::
+    build` are rewritten around this: only the *first* parse or
+    elaboration error surfaces per file, and a parse failure (no partial
+    tree exists) leaves `self.ast` at its previous value — the same
+    "keep the last valid snapshot" policy the pre-existing elaboration-
+    failure branch already used, now applied one stage earlier so hover/
+    goto-def/outline degrade gracefully instead of going dark on every
+    keystroke of a broken document. (2) the PHDL-era predictive parser
+    (`piperine_lang::parse::predict`, `ExpectedSyntax`/`IdentRole`) that
+    powered cursor-context-aware completion was hand-written against
+    PHDL's own grammar shape, not mechanically portable, and rebuilding
+    an equivalent tolerant/predictive mode for VAMS's grammar is a new
+    parser capability, not a retarget — `handlers/completion.rs` now
+    offers a static, non-context-aware VAMS keyword/snippet/discipline/
+    module completion set instead (the PHDL-only `bundle`/`capability`/
+    `impl`/`pub`/`const` keywords and snippets swapped for real VAMS
+    Annex B ones — `module`/`discipline`/`nature`/`analog`/`always`/
+    `initial`/`branch`/`genvar`/`parameter`); `@schema` completion
+    (T18/LSP-20, `ctx.schemas`-driven) is unaffected, never used the
+    predictive parser.
+  - `inlay_hints.rs`: the PHDL-only `var x = …` inferred-type hint is
+    gone (VAMS has no local-variable-with-inferred-type declaration
+    form — module-level `integer`/`real` decls always carry an explicit
+    type keyword); the SI-suffix-literal hint (`1k`, `2.2u`, …) survives,
+    retargeted to `Tok::Number(NumberLit::Real(_))`.
+  **`piperine-python` retarget**: `module.rs`'s `_Behavior::of` mapped
+  PHDL's binary `BehaviorKind::Analog`/`Digital`; VAMS's `BehaviorKind`
+  (LRM §5/§7) has four variants — `Analog`/`AnalogInitial` now collapse
+  to `"analog"`, `Initial`/`Always` (the IEEE-1364 event-driven digital
+  forms) to `"digital"`, mirroring `piperine_lang::pom::Behavior::
+  is_analog`/`is_digital`'s own classification exactly (cross-checked
+  against `behavior.rs`, not guessed).
+  **`piperine-cli`**: `commands/fmt.rs` needed the identical
+  `Lexer`+`TokenFormatter` → `piperine_vams::Formatter::format` swap
+  `formatting.rs` already made, plus `main.phdl` → `main.vams` in its
+  no-file-given default path — not named in design.md's F2 table but
+  blocking the full workspace build, so folded into this task rather
+  than left as a dangling one-line gap.
+  **New `piperine-vams` dependency** added to `piperine-lang-server`,
+  `piperine-python`, and `piperine-cli`'s `Cargo.toml` (the same pattern
+  T28/T34/T35 already established for every AST-consuming downstream
+  crate).
+  **Verification — `cargo build --workspace`: zero warnings**, the full
+  workspace, for the first time since T21. Per-crate test runs (`cargo
+  test -p piperine-api`/`-p piperine-plugin` unchanged from T34/T35's
+  own entries; `-p piperine-lang-server`: lib 6/6 green, 5 of the 12
+  integration targets fully green — `symbol_resolution`'s tests that
+  don't need a fixture design, doc-comment-free paths, etc. — the
+  remaining 55 failures across all 12 targets traced (not sampled) to
+  the identical single root cause T34/T35 already documented: PHDL-
+  fixture-syntax source strings (`discipline Electrical { ... }`)
+  rejected by the VAMS parser, plus a handful of tests asserting the two
+  documented-gone features above (predictive-completion suppression,
+  schema-field hover) — none a new bug, all Phase-8/future-architecture
+  debt). `-p piperine-python`: no test targets exist in this crate
+  (pyo3 extension, tested via the Python-side `tests/run_examples.rs`
+  harness only).
+  **`cargo test --workspace` (T37's literal gate) does not exit zero —
+  documented, not silently waived**: it cannot complete because several
+  `piperine-lang`/`piperine-codegen` integration-test *targets* fail to
+  **compile** (not run) — `cargo test` refuses to execute any target in
+  a crate if any target in that crate fails to build, so a single
+  broken fixture file blocks the whole crate's suite. Every failing
+  target was individually confirmed to already be named in T21's or
+  T32's own documented compile-failure inventory (`cover_parse`,
+  `constraint_elab`, `constraint_class`, `elab`,
+  `operator_and_impl_method_registries` for `piperine-lang`;
+  `digital_jit`, `resolve_lowering`, `silent_bugs`,
+  `digital_codegen_gaps`, `margin_lowering`, `param_diff` for
+  `piperine-codegen`) — none newly broken by this task, none in this
+  batch's scope (`piperine-api`/`piperine-plugin`/`piperine-lang-server`/
+  `piperine-python`) to fix. `cargo check --tests -p piperine` (the root
+  package's own test corpus, a proxy for the gate `cargo test --
+  workspace` cannot reach) is clean — every root `tests/*.rs` target
+  **compiles** for the first time since T21; `run_examples.rs` and
+  `suite_hygiene.rs` were run directly and both now execute (previously
+  impossible — the whole root package failed to build) — `run_examples`
+  fails exactly as expected (every `examples/*.phdl` file still uses
+  PHDL `use` syntax; VAMS-10/Phase 8 migrates them, T45), and
+  `suite_hygiene`'s `mod_rs_declares_only` surfaced two exemption-
+  registry entries that had gone stale *while the gate was dark*
+  (`elab/registry/mod.rs` — T35 shrank it under the 60-line ceiling;
+  `elab/mod.rs` — pre-existing since T21-T27, never caught because this
+  gate could not run at all until this task) plus one real gap (`elab/
+  lower/mod.rs` had no in-file `// hygiene-exempt:` marker despite being
+  registered) — all three fixed directly in `tests/suite_hygiene.rs`/
+  the two source files, since I introduced or newly exposed each one and
+  the fix is a one-line, in-scope correction. `suite_hygiene.rs` is now
+  back down to **exactly the T1-recorded baseline**: 8/9 tests green,
+  the one remaining failure being the same `crates/piperine-ir/src/
+  catalog/mod.rs` (430 lines) defect flagged out-of-scope since T1,
+  untouched here. `disk note`: a full `cargo test --workspace` link
+  pass exhausted the build disk mid-run (`rustc-LLVM ERROR: ... No space
+  left on device`, unrelated to this task's code) — `cargo check
+  --workspace --tests` (compile-only, no linking) was used instead to
+  confirm no crate outside the known debt list fails to build; the
+  `debug/incremental` directory was cleared to recover ~27 GB before
+  re-attempting, a known recurring issue (`.specs/` `jit-pages-and-
+  build-cost` memory entry).

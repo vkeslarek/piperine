@@ -20,41 +20,35 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                 parent,
             }));
             
+            // T37 (MD-45) regression, documented: VAMS's `Item` enum
+            // (Annex A) only has `Module`/`Discipline`/`Nature`/
+            // `Paramset`/`Connectrules`/`Config`/`Primitive` — the PHDL-
+            // only `BehaviorDecl`/`FnDecl`/`BundleDecl`/`EnumDecl`/
+            // `ConstDecl`/`CapabilityDecl`/`ImplDecl` variants are gone
+            // (T21). The deeper "which statement inside the module body
+            // am I in" expansion is also gone: PHDL's uniform `Module::
+            // body: Vec<Stmt>` (with a `Stmt::span()` method) has no VAMS
+            // counterpart — a module's `items: Vec<ModuleItem>` has no
+            // single per-item span accessor to walk the same way. Only
+            // the item-level (module/discipline) span selection survives.
             if let Some(ast) = &doc.ast {
                 for item in &ast.items {
-                    use piperine_lang::parse::ast::Item;
+                    use piperine_vams::ast::Item;
                     let span = match item {
-                        Item::ModuleDeclaration(m) => m.span,
-                        Item::BehaviorDecl(b) => b.span,
-                        Item::FnDecl(f) => f.span,
-                        Item::DisciplineDecl(d) => d.span,
-                        Item::BundleDecl(b) => b.span,
-                        Item::EnumDecl(e) => e.span,
-                        Item::ConstDecl(c) => c.span,
-                        Item::CapabilityDecl(c) => c.span,
-                        Item::ImplDecl(i) => i.span,
+                        Item::Module(m) => Some(m.span),
+                        Item::Discipline(d) => Some(d.span),
                         _ => None,
                     };
-                    
-                    if let Some(s) = span
-                        && offset >= s.offset() && offset <= s.offset() + s.len() {
+
+                    if let Some(s) = span {
+                        let s = crate::symbol_index::vams_span_to_miette(s);
+                        if offset >= s.offset() && offset <= s.offset() + s.len() {
                             parent = Some(Box::new(SelectionRange {
                                 range: crate::text_pos::byte_range(&doc.source, s.offset(), s.offset() + s.len()),
                                 parent,
                             }));
-                            
-                            if let Item::ModuleDeclaration(m) = item {
-                                for stmt in &m.body {
-                                    if let Some(ss) = stmt.span()
-                                        && offset >= ss.offset() && offset <= ss.offset() + ss.len() {
-                                            parent = Some(Box::new(SelectionRange {
-                                                range: crate::text_pos::byte_range(&doc.source, ss.offset(), ss.offset() + ss.len()),
-                                                parent,
-                                            }));
-                                        }
-                                }
-                            }
                         }
+                    }
                 }
             }
             

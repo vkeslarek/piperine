@@ -1,7 +1,15 @@
-use piperine_lang::elab::registry::{ElabContext, TypeDefKind};
+use piperine_lang::elab::registry::ElabContext;
 use piperine_lang::pom::Design;
 use miette::SourceSpan;
 use std::path::PathBuf;
+
+/// Convert a pure-crate `piperine_vams::error::Span` (a plain byte range,
+/// T1's purity contract) into the `miette::SourceSpan` every `Resolution`
+/// carries — `Design::disciplines()` keeps the surface AST shape verbatim
+/// (design F1), so its span type never got the POM's own conversion.
+pub(crate) fn vams_span_to_miette(span: piperine_vams::error::Span) -> SourceSpan {
+    SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolKind {
@@ -245,151 +253,52 @@ pub fn resolve_at(
         }
     }
 
-    for (name, e) in design.enums() {
-        if *name == word {
-            return Some(Resolution {
-                kind: SymbolKind::Enum,
-                name: name.clone(),
-                decl_span: e.span,
-                type_info: None,
-                doc: None,
-                file: item_file(name),
-            });
-        }
-    }
-
-    for (name, b) in design.bundles() {
-        if *name == word {
-            return Some(Resolution {
-                kind: SymbolKind::Bundle,
-                name: name.clone(),
-                decl_span: b.span,
-                type_info: None,
-                doc: None,
-                file: item_file(name),
-            });
-        }
-    }
-
+    // MD-45: `Design::{enums,bundles,capabilities,impls}` (the PHDL-only
+    // value-layer POM surface) were deleted with `piperine-lang/src/
+    // parse/` at T21 — no VAMS Annex A production backs `enum`/`bundle`/
+    // the capability system/`impl` blocks, so there is nothing left here
+    // to resolve a word against. The four loops that used to scan them
+    // are gone, not retargeted; `SymbolKind::Enum`/`Bundle`/`Capability`
+    // stay declared (other files match on `SymbolKind` exhaustively) but
+    // are never constructed anymore.
     for (name, d) in design.disciplines() {
         if *name == word {
             return Some(Resolution {
                 kind: SymbolKind::Discipline,
                 name: name.clone(),
-                decl_span: d.span,
+                decl_span: Some(vams_span_to_miette(d.span)),
                 type_info: None,
-                doc: d.doc.clone(),
-                file: item_file(name),
-            });
-        }
-    }
-
-    for (name, c) in design.capabilities() {
-        if *name == word {
-            return Some(Resolution {
-                kind: SymbolKind::Capability,
-                name: name.clone(),
-                decl_span: c.span,
-                type_info: None,
+                // `piperine_vams::ast::DisciplineDecl` carries no `///`
+                // doc-comment field (design F1: the POM re-exports the
+                // surface AST verbatim) — no doc to show.
                 doc: None,
                 file: item_file(name),
             });
         }
     }
 
-    for i in design.impls() {
-        for m in &i.methods {
-            if m.name == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Function,
-                    name: format!("{}::{}", i.ty, m.name),
-                    decl_span: m.span,
-                    type_info: Some(format!("impl method for {}", i.ty)),
-                    doc: None,
-                    file: None,
-                });
-            }
-        }
-    }
-
-    // declared-language-surface T14: every name resolved so far came
-    // straight off the POM, which carries only *plain* declarations —
-    // `extern`-declared names (types, fns/tasks, operators, attribute
-    // schemas, impl methods) live in the `ElabContext` registries
-    // populated at elaboration time (T11-T13's real lookup path) and have
-    // no POM-level counterpart of their own. This is the first time these
-    // registries have any LSP-facing consumer.
+    // MD-45: MD-24's `extern`-registry surface (`ElabContext::{callables,
+    // types,operators,constraint_helpers,impl_methods}`) was deleted at
+    // T21 along with the `extern` keyword's only producer, PHDL's parser
+    // — none of it has a VAMS Annex A production (T36's `extern_coverage_
+    // guard.rs` rewrite is the fuller accounting). `ElabContext` today
+    // carries exactly one thing an LSP consumer can resolve against:
+    // `schemas` (T35, VAMS-12/13) — the plugin system's own `device`/
+    // `port` attribute-schema *names*. There is no textual declaration
+    // backing them anymore (no `headers/device_port.phdl` to point at),
+    // so a resolved `AttrSchema` always carries `decl_span: None` —
+    // goto-definition correctly declines rather than fabricating a
+    // location, the same defensive shape T20/LSP-22's `rfport` case
+    // already established for a registered-but-undeclared schema.
     let ctx = ctx?;
-
-    // BUG-1 (LSB-01..03): extern-registry resolutions carry the real
-    // on-disk declaring file (a stdlib header today), so goto-definition
-    // can jump there instead of falling through to the same-file fallback.
-    let extern_file = design.project().item_file(&word).map(PathBuf::from);
-
-    if let Some(c) = ctx.callables.lookup(&word)
-        && let Some(decl_span) = c.decl_span() {
-        return Some(Resolution {
-            kind: SymbolKind::Function,
-            name: word,
-            decl_span: Some(decl_span),
-            type_info: None,
-            doc: c.doc().map(str::to_string),
-            file: extern_file,
-        });
-    }
-
-    if let Some(TypeDefKind::Extern { decl_span, doc, .. }) = ctx.types.lookup(&word) {
-        return Some(Resolution {
-            kind: SymbolKind::Type,
-            name: word,
-            decl_span: *decl_span,
-            type_info: None,
-            doc: doc.clone(),
-            file: extern_file,
-        });
-    }
-
-    if let Some(c) = ctx.operators.lookup(&word)
-        && let Some(decl_span) = c.decl_span() {
-        return Some(Resolution {
-            kind: SymbolKind::Operator,
-            name: word,
-            decl_span: Some(decl_span),
-            type_info: None,
-            doc: c.doc().map(str::to_string),
-            file: extern_file,
-        });
-    }
-
-    // Implementation note (T20/LSP-22): previously gated on `decl_span.is_some()`,
-    // so a registered schema with no textual declaration (e.g. the built-in
-    // `rfport`, registered directly in `ElabContext::new()`) never resolved
-    // at all — hover on `@rfport` (spec.md's own P3 independent test)
-    // couldn't show its fields. Resolve any registered schema name;
-    // `decl_span` stays `None` when the schema has no textual source, so
-    // goto-definition correctly declines instead of fabricating a location.
-    if ctx.schemas.shape(&word).is_some() {
-        let decl_span = ctx.schemas.decl_span(&word);
-        let doc = ctx.schemas.doc(&word).map(str::to_string);
+    if ctx.schemas.contains(&word) {
         return Some(Resolution {
             kind: SymbolKind::AttrSchema,
             name: word,
-            decl_span,
+            decl_span: None,
             type_info: None,
-            doc,
-            file: extern_file,
-        });
-    }
-
-    if let Some(c) = ctx.impl_methods.find_by_method_name(&word)
-        && let Some(decl_span) = c.decl_span() {
-        return Some(Resolution {
-            kind: SymbolKind::Function,
-            name: word,
-            decl_span: Some(decl_span),
-            type_info: None,
-            doc: c.doc().map(str::to_string),
-            file: extern_file,
+            doc: None,
+            file: None,
         });
     }
 

@@ -11,8 +11,9 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use piperine_api::SolverConfig;
-use piperine_lang::parse::ast::{BehaviorKind, Direction};
+use piperine_lang::pom::Direction;
 use piperine_lang::ValueType;
+use piperine_vams::ast::BehaviorKind;
 
 use crate::instance::InstanceResolver;
 use crate::results::_AcTrace;
@@ -621,9 +622,14 @@ impl _Behavior {
     fn of(beh: &piperine_api::model::Behavior) -> Self {
         Self {
             name: beh.name().to_string(),
+            // VAMS's `BehaviorKind` (LRM §5, §7) has four variants, not
+            // PHDL's binary Analog/Digital — `analog`/`analog initial`
+            // collapse to "analog", `initial`/`always` (the IEEE-1364
+            // event-driven digital forms) collapse to "digital", mirroring
+            // `piperine_lang::pom::Behavior::is_analog`/`is_digital`.
             kind: match beh.kind() {
-                BehaviorKind::Analog => "analog",
-                BehaviorKind::Digital => "digital",
+                BehaviorKind::Analog | BehaviorKind::AnalogInitial => "analog",
+                BehaviorKind::Initial | BehaviorKind::Always => "digital",
             }
             .to_string(),
         }

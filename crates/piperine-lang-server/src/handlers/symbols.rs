@@ -152,40 +152,13 @@ pub fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Docu
         }
     }
 
-    for (name, e) in design.enums() {
-        if let Some(range) = span_to_range(source, e.span) {
-            symbols.push(DocumentSymbol {
-                name: name.clone(),
-                detail: Some("enum".into()),
-                kind: SymbolKind::ENUM,
-                range,
-                selection_range: range,
-                children: None,
-                tags: None,
-                #[allow(deprecated)]
-                deprecated: None
-            });
-        }
-    }
-
-    for (name, b) in design.bundles() {
-        if let Some(range) = span_to_range(source, b.span) {
-            symbols.push(DocumentSymbol {
-                name: name.clone(),
-                detail: Some("bundle".into()),
-                kind: SymbolKind::STRUCT,
-                range,
-                selection_range: range,
-                children: None,
-                tags: None,
-                #[allow(deprecated)]
-                deprecated: None
-            });
-        }
-    }
-
+    // MD-45: `Design::{enums,bundles,capabilities,impls}` — the PHDL-only
+    // value-layer POM surface — were deleted at T21; no VAMS Annex A
+    // production backs `enum`/`bundle`/the capability system/`impl`
+    // blocks, so there is nothing left to outline here. The four loops
+    // that used to walk them are gone, not retargeted.
     for (name, d) in design.disciplines() {
-        if let Some(range) = span_to_range(source, d.span) {
+        if let Some(range) = span_to_range(source, Some(crate::symbol_index::vams_span_to_miette(d.span))) {
             symbols.push(DocumentSymbol {
                 name: name.clone(),
                 detail: Some("discipline".into()),
@@ -193,54 +166,6 @@ pub fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Docu
                 range,
                 selection_range: range,
                 children: None,
-                tags: None,
-                #[allow(deprecated)]
-                deprecated: None
-            });
-        }
-    }
-
-    for (name, c) in design.capabilities() {
-        if let Some(range) = span_to_range(source, c.span) {
-            symbols.push(DocumentSymbol {
-                name: name.clone(),
-                detail: Some("capability".into()),
-                kind: SymbolKind::INTERFACE,
-                range,
-                selection_range: range,
-                children: None,
-                tags: None,
-                #[allow(deprecated)]
-                deprecated: None
-            });
-        }
-    }
-
-    for i in design.impls() {
-        let mut children = Vec::new();
-        for m in &i.methods {
-            if let Some(range) = span_to_range(source, m.span) {
-                children.push(DocumentSymbol {
-                    name: m.name.clone(),
-                    detail: Some("method".into()),
-                    kind: SymbolKind::METHOD,
-                    range,
-                    selection_range: range,
-                    children: None,
-                    tags: None,
-                    #[allow(deprecated)]
-                    deprecated: None
-                });
-            }
-        }
-        if let Some(range) = span_to_range(source, i.span) {
-            symbols.push(DocumentSymbol {
-                name: format!("impl {} for {}", i.capability.as_deref().unwrap_or(""), i.ty),
-                detail: Some("impl".into()),
-                kind: SymbolKind::CLASS,
-                range,
-                selection_range: range,
-                children: Some(children),
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None

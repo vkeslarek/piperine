@@ -44,7 +44,7 @@ pub struct DocumentState {
     /// (LSP-17); set by `ServerState::analyze_document`.
     pub project_root: Option<PathBuf>,
     /// The raw parsed AST.
-    pub ast: Option<piperine_lang::parse::ast::SourceFile>,
+    pub ast: Option<piperine_vams::ast::SourceFile>,
     /// Parse/elaboration error messages if any.
     pub errors: Vec<ParseError>,
 }
@@ -129,42 +129,65 @@ impl DocumentState {
     /// On elaboration failure the **previous** design is kept so that
     /// hover, goto-definition and outline continue working on the last
     /// valid snapshot instead of going completely dark.
+    ///
+    /// **T37 (MD-44/MD-45) regression, documented**: `piperine_vams::
+    /// Parser` is fail-fast — no tolerant mode (`parse_str_tolerant`'s
+    /// PHDL-era "return a partial AST plus every accumulated error"
+    /// contract has no VAMS-native equivalent) and `Elaborator::elaborate`
+    /// stops at the first failing pass (the PHDL-era
+    /// `elaborate_with_context_accumulating`'s "collect every independent
+    /// elaboration error" contract likewise has none). Concretely: only
+    /// the *first* parse or elaboration error surfaces as a diagnostic
+    /// per `analyze()` call, not every one; a parse failure leaves `self.
+    /// ast` at its previous value (there is no partial tree to install) —
+    /// the same "keep the last valid snapshot" policy the elaboration-
+    /// failure branch below already used, now applied one stage earlier
+    /// too, so hover/goto-def/outline degrade gracefully rather than
+    /// going dark on every keystroke of a broken document.
     pub fn analyze(&mut self, source_map: &piperine_lang::SourceMap) {
         self.errors.clear();
-        let (source_file, parse_errors) =
-            piperine_lang::parse::parse_str_tolerant(&self.source);
 
-        for e in parse_errors {
-            let code = miette::Diagnostic::code(&e).map(|c| c.to_string());
-            self.errors.push(ParseError { message: e.to_string(), span: e.span(), code });
-        }
+        let parser = piperine_vams::Parser::with_include_resolver(
+            piperine_lang::SourceMapIncludeResolver::new(source_map),
+        );
+        let source_file = match parser.parse(&self.source) {
+            Ok(sf) => sf,
+            Err(e) => {
+                let elab_err = piperine_lang::ElabError::from(e);
+                let code = miette::Diagnostic::code(&elab_err.kind).map(|c| c.to_string());
+                self.errors.push(ParseError { message: elab_err.to_string(), span: elab_err.span, code });
+                return;
+            }
+        };
+        self.ast = Some(source_file.clone());
 
-        // LSP-18/T16: accumulates every independent elaboration error
-        // instead of stopping at the first (see
-        // `Elaborator::elaborate_accumulating`'s docs for exactly which
-        // passes accumulate vs. fail fast).
-        let (design, ctx, elab_errors) =
-            source_file.clone().elaborate_with_context_accumulating(source_map);
-        if elab_errors.is_empty() {
-            // Update to the new valid design (+ its registries + the
-            // ResolutionIndex built over it — LSP-03/05/10/13).
-            self.resolution_index = Some(piperine_lang::elab::resolution::index_design(&design));
-            self.design = Some(design);
-            self.ctx = Some(ctx);
-        } else {
-            // Record every error but keep the previous design alive so
-            // language features (hover, go-to-def, outline) keep working.
-            for e in elab_errors {
-                // `ElabError::kind` (not `ElabError` itself) carries the
-                // `#[diagnostic(code(...))]` — `#[diagnostic_source]`
-                // forwards `.diagnostic_source()`/`.source()`, not `.code()`.
+        // Seed the plugin system's own `@device`/`@port` attribute
+        // schemas (T35, VAMS-12/13) unconditionally — the LSP has no
+        // plugin host to seed anything beyond this, but doing so lets
+        // hover/goto-def resolve those two schema names (via `ctx.
+        // schemas`, `symbol_index::resolve_at`) and lets a `.vams` file
+        // that legitimately uses `(* device = …, type = … *)` elaborate
+        // in the editor instead of failing loud on every such file.
+        let mut elaborator = piperine_lang::elab::Elaborator::new();
+        piperine_lang::seed_device_port_schemas(&mut elaborator.ctx);
+        match elaborator.elaborate(source_file) {
+            Ok(design) => {
+                // Update to the new valid design (+ its registries + the
+                // ResolutionIndex built over it — LSP-03/05/10/13).
+                self.resolution_index = Some(piperine_lang::elab::resolution::index_design(&design));
+                self.design = Some(design);
+                self.ctx = Some(elaborator.ctx);
+            }
+            Err(e) => {
+                // Record the error but keep the previous design alive so
+                // language features (hover, go-to-def, outline) keep
+                // working.
                 let code = miette::Diagnostic::code(&e.kind).map(|c| c.to_string());
                 self.errors.push(ParseError { message: e.to_string(), span: e.span, code });
+                // `self.design`/`self.ctx` intentionally left unchanged
+                // (stale-but-valid).
             }
-            // `self.design`/`self.ctx` intentionally left unchanged
-            // (stale-but-valid).
         }
-        self.ast = Some(source_file);
     }
 
     /// Resolve the identifier at `byte_offset` against the elaborated

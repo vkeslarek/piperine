@@ -502,16 +502,24 @@ fn mod_rs_files() -> Vec<(String, usize, String)> {
 /// exemption fails until it is recorded, and an exemption that becomes
 /// unnecessary fails just as loudly, so the list cannot rot into a blanket.
 ///
-/// All seven are pre-existing and outside `p6-cleanup-architecture`'s task
-/// list; the in-file `// hygiene-exempt:` line carries the per-file reason.
+/// Five are pre-existing and outside `p6-cleanup-architecture`'s task list
+/// (two more, `crates/piperine-lang/src/elab/registry/mod.rs` and
+/// `crates/piperine-lang/src/elab/mod.rs`, dropped off this list at T37:
+/// this gate could not run at all from T21 until T37 restored the root
+/// `piperine` package's build — its first run found both exemptions
+/// stale, one from T35 shrinking `registry/mod.rs` back under the
+/// ceiling, the other pre-existing from T21-T27's own VAMS rewrite of
+/// `elab/mod.rs`, neither previously catchable since the gate itself was
+/// dark; `mod_rs_declares_only`'s own "an exemption that becomes
+/// unnecessary fails just as loudly" design is what caught both). The
+/// in-file `// hygiene-exempt:` line carries the per-file reason for the
+/// ones that remain.
 fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
     Some(match path {
         "crates/piperine-lang/src/parse/parser/mod.rs" => "`Parser` + the `Parse` trait; frozen parse tree",
         "crates/piperine-lang/src/parse/format/mod.rs" => "formatter vocabulary + `FormatRule`; frozen parse tree",
         "crates/piperine-lang/src/parse/mod.rs" => "phase contract + the three parse entry points",
         "crates/piperine-lang/src/elab/lower/mod.rs" => "`SymbolTable` + the `Elaborator` god struct",
-        "crates/piperine-lang/src/elab/mod.rs" => "long-form elaboration phase contract",
-        "crates/piperine-lang/src/elab/registry/mod.rs" => "registry re-exports + `ElabContext`",
         "crates/piperine-codegen/src/resolve/mod.rs" => "the resolved form's own vocabulary",
         _ => return None,
     })
