@@ -842,14 +842,14 @@ T53 → T54 → T55 → T56 → T57 → T58
 > commit** (VAMS-11), lower the shrink-gate high-water mark, keep every
 > oracle/tolerance unchanged (VAMS-08 edge case).
 
-#### T40: Migrate `headers/` stdlib → Annex D `.vams`
+#### T40: Migrate `headers/` stdlib → Annex D `.vams` — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/headers/*.vams` · **Depends on**: T39 · **Requirement**: VAMS-09
 **Done when**: `disciplines.vams`/`constants.vams` derive from LRM Annex D · Piperine-specific surface is attribute-declared · each header elaborates standalone · **Gate**: quick
 **Commit**: `feat(headers): migrate the stdlib to Verilog-AMS Annex D`
 
 ---
 
-#### T41: Migrate `headers/spice/` device models → `.va` (part 1: passives, sources, switches, controlled)
+#### T41: Migrate `headers/spice/` device models → `.va` (part 1: passives, sources, switches, controlled) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/headers/spice/*.va` · **Depends on**: T40 · **Requirement**: VAMS-08
 **Done when**: ngspice provenance docstrings preserved verbatim · `tests/ngspice_*.rs` unchanged and green · **Gate**: full
 **Commit**: `feat(headers): migrate passive and source SPICE models to Verilog-A`
@@ -2468,3 +2468,148 @@ landed — the broader capability/generics/bundle/enum/constraint-block
 surface rebuild on VAMS attribute syntax has no task yet, same as
 before this batch; T35's entry documents exactly which piece it did and
 did not close.
+
+### Phase 8 (S4, corpus migration, 2026-08-13)
+
+- **T40** ✅ `46e43ac` — `crates/piperine-lang/headers/*.phdl` (13 files)
+  migrated. `disciplines.vams`/`constants.vams` are hand-transcribed
+  verbatim from `VAMS-LRM-2-4.md` Annex D.1/D.2 (C7 — the LRM's own
+  standard-definitions package, not reinvented), correcting only
+  PDF-extraction spacing artifacts (e.g. `potentialVoltage;` → `potential
+  Voltage;`, `` `defineM_E2.71828... `` → `` `define M_E 2.71828... ``) —
+  no semantic changes. Cross-checked against the deleted
+  `disciplines.phdl`/`constants.phdl` values (VAMS-09's "cross-checked
+  against their PHDL predecessor" bullet): `Current` nature abstol
+  1e-12/access `I`/units `"A"`, `Voltage` nature abstol 1e-6/access
+  `V`/units `"V"`, `electrical` discipline potential=Voltage
+  flow=Current, `P_Q` NIST2010 default 1.602176565e-19 — all match. New
+  `crates/piperine-lang/tests/vams_headers.rs` (4 tests) proves each
+  header elaborates standalone via `` `include`` (LRM ch. 10, VAMS-16)
+  resolved through `SourceMap::dummy()`'s "piperine" -> "headers"
+  namespace, and that the LRM's own `` `ifdef DISCIPLINES_VAMS `else
+  ... `endif`` include-guard is idempotent on a double include.
+  **Piperine-specific surface**: the remaining 11 headers
+  (`capabilities`/`collections`/`constraints`/`device_port`/
+  `introspection`/`math`/`operators`/`prelude`/`statistics`/`tasks`/
+  `types`) are deleted, not migrated — MD-45 already gutted the PHDL
+  value-layer machinery they depended on (generics, the capability
+  system, `bundle`/`enum`, `constraint` blocks, the `extern` mechanism)
+  at T21, with no VAMS Annex A production and no replacement built yet;
+  keeping them as `.phdl` text that can never parse again would violate
+  VAMS-11 for no benefit. `device_port.phdl`'s old job (`@device`/
+  `@port` schemas) needs no header file at all — T35 already re-anchored
+  it on native `(* attribute *)` handling (`seed_device_port_schemas`).
+  Two stale doc-comment references to deleted headers fixed as part of
+  this same change (`source_map.rs`'s `SourceMap::dummy()` no longer
+  points `with_prelude` at a deleted file — that field has had no reader
+  since T21's `use`-decl-resolver deletion; `pom/module.rs`'s
+  `Distribution::kind` doc comment now notes the MD-45 cause instead of
+  citing a file that no longer exists).
+  **Verification**: `cargo build -p piperine-lang` / `--workspace`: zero
+  warnings. `cargo test -p piperine-lang --test vams_headers`: 4/4
+  green. Every previously-green VAMS-originated integration target
+  re-run individually (bare `cargo test -p piperine-lang` still can't
+  execute — `constraint_parse`/`operator_and_impl_method_registries`
+  fail to *compile*, both already in T21's documented inventory,
+  untouched by this task): `vams_lower_structure` 9,
+  `vams_lower_analog` 8, `vams_lower_var` 4, `vams_param_ranges` 6,
+  `vams_generate` 4, `vams_discipline_resolution` 4, `vams_annex_c` 5,
+  `pom_nature` 9, `pom_branch` 13, `errors_lrm` 7, `pom_vams_shape` 8,
+  `vams_deviation_resolutions` 6, `vams_device_port_attrs` 5,
+  `extern_coverage_guard` 2 — all unchanged, all green; `--lib` 59
+  passed, the same 2 pre-existing documented failures (T22-T27's array-
+  index fixtures) unchanged. `tests/suite_hygiene.rs`'s
+  `phdl_corpus_does_not_grow` (`PHDL_HIGH_WATER_MARK` lowered 115 → 102,
+  matching the real count after this commit): green; the crate's other
+  9/10 tests green, `mod_rs_declares_only` failing on the same
+  pre-existing `piperine-ir` defect flagged out-of-scope since T1,
+  unrelated and untouched.
+
+- **T41** ✅ — `crates/piperine-lang/headers/spice/{passives,sources,
+  switches,controlled}.phdl` (4 files) migrated to `.va`; `constants.phdl`
+  (the shared NG_* physical-constants header `passives.va`/`switches.va`
+  both `` `include``) migrated alongside them as a necessary dependency,
+  since it is not itself named in any T41/T42/T43 file list but two T41
+  models need it to elaborate — its physical-constant `` `define`` macros
+  moved verbatim into `constants.va`; its helper functions (`ng_egfet`/
+  `ng_sign`/`ng_clamp`) and `Region` enum, used only by `diode`/`bjt`/
+  `jfet`/`mos` (T42 scope, grep-confirmed zero T41-scope use), were left
+  undecided for T42 rather than designed here (VAMS has no top-level
+  function scope — LRM §4.7/§5.9 — and no enum type at all, so this is a
+  real design choice, not a rename, and belongs to the task that actually
+  consumes them).
+  **Design decisions carried across all 5 files** (documented in each
+  file's own header comment, not just here): PHDL `bundle` model-cards
+  flatten into ordinary module `parameter`s — Verilog-A has no model/
+  instance two-tier parameter system, so a field shared by both (e.g.
+  `model.tc1` and instance `tc1`, both "the resistor's 1st temp
+  coefficient") merges into ONE parameter, since an instance's own
+  parameter override already gives the same "explicit value wins"
+  precedence PHDL computed by hand; `Real?`/`.is_present()`/`.get_or()`
+  (PHDL optionals; VAMS has neither optionals nor a wired `$param_given()`
+  — LRM §9.19 exists but is unimplemented in this codegen, Phase 9/T47
+  scope) become a negative-sentinel default (`parameter real x = -1.0;`)
+  on every quantity that is never legitimately negative, with `x >= 0.0`
+  standing in for "was given" — verified case-by-case that the sentinel
+  reproduces the exact original branch, not just "compiles"; PHDL's
+  `dest <- src` (`BindOp::Force`, deleted at T32, SPEC_DEVIATION already
+  on record) becomes `<+` everywhere it appears here — all seven `<-`
+  sites across `passives.phdl`/`controlled.phdl` are unconditional
+  single-branch contributions, confirmed individually to have no other
+  contribution sharing the same branch, so the substitution is exact, not
+  approximate.
+  **New gap found and documented, not fixed (out of scope for a header-
+  migration task)**: `cap`'s UIC seed (`@ initial { V(p,n) <- ic; }` in
+  PHDL) has no working VAMS translation today — the real Verilog-A idiom
+  (`@(initial_step) V(p,n) <+ ic;`) is rejected by the elaborator
+  (`branch (p,n) ... contributed as both potential and flow`, LRM §5.4.2)
+  because `cap` already carries an unconditional `I(p,n) <+ ddt(...)` on
+  the same branch, confirmed by direct test that the conflict fires
+  regardless of the `@(initial_step)` guard; emitting it would break every
+  circuit using `cap`, not just IC-specific ones, so the IC contribution
+  is dropped (parameter kept, declared, documented unused) rather than
+  shipped broken. Same root cause and same disposition `ind`'s current-
+  seed IC already carries as NGP-10 (`ROADMAP.md`). Separately, `csw`/
+  `cccs` (current-controlled devices reading a branch current via
+  `I(...)`) fail `AnalogKernel::compile` with
+  `Unsupported("disto2: ... current-controlled nonlinearities have no
+  voltage-pair higher derivative")` — this fires unconditionally in
+  `compile()` (not `SessionBuilder::disto`-gated), confirmed with both an
+  implicit and an explicitly named controlling branch, so it is not a
+  phrasing artifact; `ccvs` fails differently
+  (`Unsupported("branch-current term in a potential force must probe a
+  forced branch")`). All three parse/elaborate cleanly — only kernel
+  JIT-compilation is blocked, and every voltage-controlled/voltage-sensing
+  sibling (`sw`, `vcvs`, `vccs`, `res`, `cap`, `ind`, `mut`, `xfmr`)
+  compiles end-to-end with no issue. Documented in each affected file's
+  header (same style as `CLAUDE.md`'s existing MOS2/MOS3 `.disto` gap,
+  which this extends to current-controlled devices generally) rather than
+  worked around, since T41's scope is dialect translation, not codegen
+  feature work, and no VAMS phrasing of a current-controlled device
+  avoids reading the controlling branch's current.
+  **Verification**: every file confirmed to elaborate standalone
+  (`parse_and_elaborate`) and every one of its modules confirmed to lower
+  (`piperine_codegen::resolve::lower_bodies`) and JIT-compile
+  (`AnalogKernel::compile`) individually before moving to the next file,
+  except the three documented compile-time gaps above (elaboration still
+  succeeds for those three). `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine --test suite_hygiene`: 9/10 green (the same
+  pre-existing `mod_rs_declares_only`/`piperine-ir` failure, untouched);
+  `phdl_corpus_does_not_grow` green with `PHDL_HIGH_WATER_MARK` lowered
+  102 → 97, matching the real count after this commit (97 `.phdl` files
+  remain). `tests/ngspice_{validation,ac,noise,temp,tran,homotopy}.rs`
+  and `ngspice_parity_matrix.rs`: pass/fail sets recorded before this
+  change and re-run after, diffed with `sort` to remove parallel-execution
+  ordering noise — byte-identical, zero change (expected: the `tests/
+  ngspice/*.phdl` fixtures these targets actually exercise are still
+  `.phdl`, unmigrated until T44, so none of them reach the newly-`.va`
+  models yet either way; the gate is "no regression", not "new passes",
+  and that is what it shows). `cargo test --workspace` (T41's literal
+  "full" gate) still cannot execute as one command — confirmed the two
+  compile failures blocking it (`piperine-lang-server`'s `goto_definition`
+  target `include_str!`-ing a `.phdl` file T40 already deleted;
+  `piperine-codegen`'s `resolve_lowering` target) both predate this
+  commit: the `goto_definition` failure reproduces identically on a
+  `git stash` back to T40's own commit `46e43ac`, and `resolve_lowering`
+  is already named in T37's documented pre-existing inventory — neither
+  is new, neither touches `.phdl`/`.va` header counting, both untouched.

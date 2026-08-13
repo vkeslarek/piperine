@@ -1,0 +1,62 @@
+// NGSPICE faithful models — physical constants and helper macros.
+//
+// All constant values are taken verbatim from ngspice/src/include/ngspice/const.h
+// and ngspice/src/include/ngspice/defines.h.  Using the same numeric values as
+// the C implementation is essential for bit-for-bit parity.
+//
+// Migrated from `constants.phdl` (T41, VAMS-08) — a mechanical dialect
+// rewrite, values unchanged. PHDL's `pub const NAME : Real = value;` becomes
+// a compiler-directive macro (LRM ch. 10, `` `define``), the same idiom
+// `headers/constants.vams` (T40, LRM Annex D.2) already established for the
+// LRM's own physical constants — this file is the SPICE-specific sibling,
+// carrying values ngspice actually compiles with (which do not all match any
+// one of Annex D.2's SPICE/OLD/NIST option groups; see the per-constant
+// mapping below).
+//
+// PHDL's helper functions (`ng_egfet`, `ng_sign`, `ng_clamp`) and the
+// `Region` enum have NO VAMS Annex A production to migrate to — Verilog-A
+// user-defined functions must be declared inside a module (LRM §4.7/§5.9:
+// "All functions are defined within modules"), and VAMS has no enum type at
+// all. Neither is used by any T41-scope model (`passives`/`sources`/
+// `switches`/`controlled` — grep-confirmed); their consumers are
+// `diode`/`bjt`/`jfet`/`mos` (T42 scope). Left for T42 to design (per-module
+// `analog function` duplicated where needed, or function-like `` `define``
+// macros) rather than decided here for files this task does not touch.
+
+`ifdef SPICE_CONSTANTS_VA
+`else
+`define SPICE_CONSTANTS_VA 1
+
+// ── Physical constants (ngspice const.h / defines.h) ────────────────────────
+// NOTE: comments live on their own line, never trailing a `` `define`` —
+// `` `define``'s body runs to end of physical line (LRM Sec 10.1), so a
+// trailing `//` comment would be captured as part of the macro's expansion
+// text (T40 established this constraint; see `constants.vams`).
+
+// electron charge (C) — matches Annex D.2 P_Q_OLD
+`define NG_Q        1.6021918e-19
+// Boltzmann constant (J/K) — matches Annex D.2 P_K_OLD
+`define NG_K        1.3806226e-23
+// k/q (V/K) — ngspice CONSTKoverQ
+`define NG_K_OVER_Q 8.617e-5
+// e — ngspice CONSTe
+`define NG_E        2.71828182845905
+// sqrt(2) — ngspice CONSTroot2
+`define NG_SQRT2    1.41421356237310
+// Celsius -> Kelvin — ngspice CONSTCtoK
+`define NG_CTOI     273.15
+// 27 degC reference — ngspice REFTEMP
+`define NG_REFTEMP  300.15
+
+// vacuum permittivity (F/m) — matches Annex D.2 P_EPS0_SPICE
+`define NG_EPS0     8.854214871e-12
+// SiO2 permittivity = 3.9 * eps0
+`define NG_EPS_SIO2 3.4531479969e-11
+// Si permittivity = 11.7 * eps0
+`define NG_EPS_SI   1.0359431400e-10
+// vacuum permeability (H/m)
+`define NG_MU0      1.25663706143592e-6
+// intrinsic carrier conc. (m^-3)
+`define NG_NI_SI    1.45e16
+
+`endif

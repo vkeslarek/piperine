@@ -1,0 +1,163 @@
+// NGSPICE faithful models — switches.
+//
+// Source: ngspice/src/spicelib/devices/{sw,csw}/
+//   swdefs.h   swload.c   swmparam.c   swparam.c   swsetup.c
+//   cswdefs.h  cswload.c  cswmpar.c    cswparam.c  cswsetup.c
+//
+// SW  = voltage-controlled switch (S element)
+// CSW = current-controlled switch (W element)
+//
+// Both use the same 4-state hysteresis machine (REALLY_OFF, REALLY_ON,
+// HYST_OFF, HYST_ON) and the same conductance selection (gon / goff).
+// Equations translated from swload.c / cswload.c — mechanical dialect
+// rewrite of the PHDL predecessor this file replaces (T41, VAMS-08), values
+// unchanged. `SwModel`/`CswModel` (PHDL `bundle`s, no VAMS equivalent) are
+// flattened into flat module `parameter`s, same convention as
+// `passives.va` (see that file's header for the sentinel/merge rationale —
+// `off` merges with no counterpart here since it was never a model-card
+// field). PHDL's `@ above(...)`/`@ initial {...}` map directly onto real
+// Verilog-A analog events (LRM Sec 5.6): `above()` is an
+// `analog_event_function` verbatim, and `@ initial` becomes
+// `@(initial_step)` (the LRM's own global initialization event, Sec 6602).
+//
+// KNOWN CODEGEN GAP (found during T41, not caused by this translation):
+// `csw` parses/elaborates cleanly but `AnalogKernel::compile` rejects it —
+// `Unsupported("disto2: device \`csw\` reads a branch current \`I(...)\`;
+// current-controlled nonlinearities have no voltage-pair higher
+// derivative")`. This fires unconditionally in `compile()` (the `.disto`
+// distortion-analysis kernel is not opt-in at this layer — only
+// `SessionBuilder::disto(true)` further downstream gates whether it is
+// *used*), so any current-controlled device reading a branch current via
+// `I(...)` hits it, confirmed with both an implicit and a named branch. No
+// VAMS phrasing of a current-controlled switch avoids reading a controlling
+// branch current, so this is not a translation defect — flagged for
+// follow-up in the codegen (same family as `CLAUDE.md`'s documented MOS2/
+// MOS3 `.disto` gap, which this extends to current-controlled devices
+// generally). `sw` (voltage-controlled) is unaffected — confirmed compiling
+// end-to-end.
+// ════════════════════════════════════════════════════════════════════════════
+
+`include "disciplines.vams"
+`include "constants.va"
+
+// ── SW: voltage-controlled switch ───────────────────────────────────────────
+
+module sw (
+    inout electrical p,
+    inout electrical n,
+    inout electrical cp,       // controlling voltage +
+    inout electrical cn        // controlling voltage -
+);
+    // ── Model-card parameters (formerly `SwModel`) ───────────────────────────
+    parameter real vt   = 0.0;          // threshold voltage (V)
+    parameter real vh   = 0.0;          // hysteresis voltage (V) — may be negative
+    parameter real ron  = 1.0;          // ON resistance (Ohm)
+    parameter real roff = 0.0;          // OFF resistance (Ohm) — 0 = 1/gmin
+
+    parameter integer off = 1;          // initial state: 1 = open, 0 = closed
+
+    real sw_state;   // 0 = OFF, 1 = ON (persistent module state)
+    real gmin, gon, goff, vc, g;
+
+    analog begin
+        gmin = $simparam("gmin", 1.0e-12);
+        gon  = 1.0 / ron;
+        goff = (roff > 0.0) ? (1.0 / roff) : gmin;
+
+        // Initialise state (swsetup.c: on -> REALLY_ON, off -> REALLY_OFF)
+        @(initial_step) begin
+            sw_state = off ? 0.0 : 1.0;
+        end
+
+        // Control voltage (swload.c)
+        vc = V(cp, cn);
+
+        // Hysteresis state machine (swload.c: four-state machine)
+        if (vh >= 0.0) begin
+            // Positive hysteresis (standard)
+            @(above(vc - (vt + vh))) begin
+                sw_state = 1.0;   // turn ON
+            end
+            @(above((vt - vh) - vc)) begin
+                sw_state = 0.0;   // turn OFF
+            end
+        end else begin
+            // Negative hysteresis (anti-hysteresis — thresholds swapped)
+            @(above(vc - (vt - vh))) begin
+                sw_state = 1.0;   // turn ON
+            end
+            @(above((vt + vh) - vc)) begin
+                sw_state = 0.0;   // turn OFF
+            end
+        end
+
+        // Conductance (swload.c: g_now = gon if ON, goff if OFF)
+        g = (sw_state > 0.5) ? gon : goff;
+
+        // Stamp: pure conductance (swload.c)
+        I(p, n) <+ g * V(p, n);
+
+        // Thermal noise (swnoise.c:99-102). A switch is a resistor whose value
+        // the state machine picks, so it is as noisy as that resistor: ngspice
+        // hands NevalSrc the very conductance it stamped — `SWonConduct` when
+        // closed, `SWoffConduct` when open — which is exactly `g` above.
+        I(p, n) <+ white_noise(4.0 * `NG_K * $temperature() * g);
+    end
+endmodule
+
+// ── CSW: current-controlled switch ──────────────────────────────────────────
+
+module csw (
+    inout electrical p,
+    inout electrical n,
+    inout electrical cp,       // controlling branch +
+    inout electrical cn        // controlling branch -
+);
+    // ── Model-card parameters (formerly `CswModel`) ──────────────────────────
+    parameter real it   = 0.0;          // threshold current (A)
+    parameter real ih   = 0.0;          // hysteresis current (A)
+    parameter real ron  = 1.0;          // ON resistance (Ohm)
+    parameter real roff = 0.0;          // OFF resistance (Ohm) — 0 = 1/gmin
+
+    parameter integer off = 1;
+
+    real sw_state;
+    real gmin, gon, goff, ic, g;
+
+    analog begin
+        gmin = $simparam("gmin", 1.0e-12);
+        gon  = 1.0 / ron;
+        goff = (roff > 0.0) ? (1.0 / roff) : gmin;
+
+        @(initial_step) begin
+            sw_state = off ? 0.0 : 1.0;
+        end
+
+        // Control current (cswload.c: reads branch current of controlling vsrc)
+        ic = I(cp, cn);
+
+        // Same hysteresis state machine as SW (cswload.c)
+        if (ih >= 0.0) begin
+            @(above(ic - (it + ih))) begin
+                sw_state = 1.0;
+            end
+            @(above((it - ih) - ic)) begin
+                sw_state = 0.0;
+            end
+        end else begin
+            @(above(ic - (it - ih))) begin
+                sw_state = 1.0;
+            end
+            @(above((it + ih) - ic)) begin
+                sw_state = 0.0;
+            end
+        end
+
+        g = (sw_state > 0.5) ? gon : goff;
+        I(p, n) <+ g * V(p, n);
+
+        // Thermal noise — cswnoise.c is swnoise.c with the CSW conductances;
+        // the stamped conductance is again the noise parameter.
+        I(p, n) <+ white_noise(4.0 * `NG_K * $temperature() * g);
+    end
+endmodule
