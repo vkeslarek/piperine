@@ -95,11 +95,11 @@ impl ConstEnv {
                     _ => Err(ConstEvalError::TypeMismatch),
                 }
             }
+            Expr::Call { name, args, .. } => self.eval_call(name, args),
             Expr::Concat { .. }
             | Expr::Replication { .. }
             | Expr::Index { .. }
             | Expr::PartSelect { .. }
-            | Expr::Call { .. }
             | Expr::AccessFunction { .. }
             | Expr::SystemFunctionCall { .. } => Err(ConstEvalError::NotConst(
                 "not yet supported by the elaboration-constant evaluator".into(),
@@ -204,6 +204,34 @@ impl ConstEnv {
         }
     }
 
+    /// Evaluates a `name(args)` call (LRM §4.3 math functions/§4.5
+    /// time-domain functions/§5.9 user functions — `Expr::Call` doesn't
+    /// distinguish which at parse time, see its doc comment) in constant
+    /// context.
+    ///
+    /// **Scope boundary**: only the built-in math functions
+    /// (`crate::math::MATH_FNS`, e.g. `pow`/`sin`/`sqrt`/...) are
+    /// evaluable here — the same libm wrappers the JIT links against
+    /// (`crate::math::eval_const_math`), reused rather than duplicated so
+    /// compile-time and runtime results stay bit-identical (MD-13 rule 2/3).
+    /// A user-declared `analog function`/`function`, a time-domain operator
+    /// (`ddt`/`idt`/...), or any other call name is not a compile-time
+    /// constant here and fails loud naming the call, never silently
+    /// returning a wrong value — evaluating a user function body would need
+    /// its own recursive interpreter (statements, `return`, local
+    /// variables), which is out of scope for this elaboration-constant
+    /// evaluator (VAMS expressions otherwise have no blocks/lambdas to
+    /// walk, per this module's own `//!` header).
+    fn eval_call(&self, name: &str, args: &[Expr]) -> Result<Value, ConstEvalError> {
+        let arg_vals = args.iter().map(|a| value_to_f64(&self.eval(a)?)).collect::<Result<Vec<_>, _>>()?;
+        crate::math::eval_const_math(name, &arg_vals).map(Value::Real).ok_or_else(|| {
+            ConstEvalError::NotConst(format!(
+                "call to `{name}` is not a compile-time constant (only built-in math functions \
+                 are evaluable in constant expressions; user-declared functions are not)"
+            ))
+        })
+    }
+
     /// Evaluates `expr` and returns the result as a `u64`. Accepts `Nat`
     /// values directly and non-negative `Int` values.
     pub fn eval_nat(&self, expr: &Expr) -> Result<u64, ConstEvalError> {
@@ -235,6 +263,15 @@ impl ConstEnv {
             Value::Nat(n) => Ok(n as f64),
             _ => Err(ConstEvalError::TypeMismatch),
         }
+    }
+}
+
+fn value_to_f64(v: &Value) -> Result<f64, ConstEvalError> {
+    match v {
+        Value::Real(r) => Ok(*r),
+        Value::Int(i) => Ok(*i as f64),
+        Value::Nat(n) => Ok(*n as f64),
+        _ => Err(ConstEvalError::TypeMismatch),
     }
 }
 

@@ -35,7 +35,14 @@ impl Elaborator {
     /// (no cross-module resolution beyond looking up an instantiated
     /// module's port order in the already-registered symbol table).
     pub(crate) fn elab_module(&self, decl: &ModuleDecl) -> Result<Module, ElabError> {
-        let env = ConstEnv::new();
+        // Mutable so each parameter becomes visible to elaboration-constant
+        // evaluation for everything declared after it in this same module
+        // (a later param's default, a net's array-range bound, a
+        // sub-instance param override) — mirrors how a later `parameter`
+        // already sees an earlier one via the identical `env.define` below.
+        // A param that references itself or a not-yet-declared later name
+        // fails loud through `ConstEvalError::Undefined` (C6), never panics.
+        let mut env = ConstEnv::new();
 
         let mut ports = Vec::new();
         let mut wires = Vec::new();
@@ -65,6 +72,7 @@ impl Elaborator {
                     for (name, expr) in &p.names {
                         let value = eval_param_default(expr, &env)?;
                         check_param_ranges(name, &value, &p.ranges, &env)?;
+                        env.define(name.clone(), value.clone());
                         params.push(Param {
                             span: None,
                             attributes: Vec::new(),

@@ -167,6 +167,79 @@ fn hierarchy_is_navigable_and_never_flattened() {
 }
 
 #[test]
+fn a_module_forwards_its_own_param_to_a_sub_instance_override() {
+    // Reproduces `urc_seg`'s own shape (headers/spice/urc.phdl): a
+    // mid-level module declares `parameter real r`, then forwards it into
+    // a child instance's `#(.r(r))` override — the elaboration-constant
+    // evaluator gap (T43) made `r` invisible to its own module's const-eval
+    // context, failing with `undefined name: r`.
+    let d = elab(
+        r#"
+        module leaf (inout electrical p, inout electrical n);
+            parameter real r = 100.0;
+        endmodule
+
+        module mid (inout electrical p, inout electrical n);
+            parameter real r = 200.0;
+            leaf #(.r(r)) l1 (p, n);
+        endmodule
+        "#,
+    );
+    let m = d.module("mid").expect("mid elaborated");
+    let l1 = m.instances().iter().find(|i| i.name() == "l1").expect("l1");
+    assert_eq!(
+        l1.params,
+        vec![("r".to_string(), piperine_lang::pom::Value::Real(200.0))],
+        "mid's own `r` param forwards into l1's override"
+    );
+}
+
+#[test]
+fn a_later_param_default_may_reference_an_earlier_one_in_the_same_module() {
+    let d = elab(
+        r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 100.0;
+            parameter real r2 = r + 1.0;
+        endmodule
+        "#,
+    );
+    let m = d.module("res").expect("res elaborated");
+    let r2 = m.params().iter().find(|p| p.name == "r2").expect("r2 param");
+    assert_eq!(r2.default, Some(piperine_lang::pom::Value::Real(101.0)));
+}
+
+#[test]
+fn a_param_referencing_itself_fails_loud_instead_of_panicking() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = r + 1.0;
+        endmodule
+    "#;
+    let err = piperine_lang::parse_and_elaborate(src, &piperine_lang::SourceMap::dummy())
+        .expect_err("a self-referential param default must fail elaboration, not panic");
+    let msg = err.to_string();
+    assert!(msg.contains('r'), "names the undefined self-reference: {msg}");
+}
+
+#[test]
+fn a_net_array_range_bound_may_reference_the_module_s_own_param() {
+    // `wire tap : Electrical[N + 1];`-equivalent (urc[N]'s own construct):
+    // the array width bound references a param the module itself declares.
+    let d = elab(
+        r#"
+        module ladder (inout electrical p, inout electrical n);
+            parameter integer segs = 4;
+            electrical tap [segs:0];
+        endmodule
+        "#,
+    );
+    let m = d.module("ladder").expect("ladder elaborated");
+    let tap = m.wires().iter().find(|w| w.name == "tap").expect("tap wire");
+    assert_eq!(tap.ty.width(), 5, "0:segs with segs=4 is a 5-wide array");
+}
+
+#[test]
 fn analog_behavior_attaches_to_its_module() {
     let d = elab(
         r#"
