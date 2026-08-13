@@ -5,8 +5,9 @@
 
 use piperine_api::model::Design;
 use piperine_api::SolverConfig;
-use piperine_lang::parse::ast::{BehaviorKind, Direction};
+use piperine_lang::pom::Direction;
 use piperine_lang::{Value, ValueType};
+use piperine_vams::ast::BehaviorKind;
 
 /// Self-contained divider (own discipline + devices, no prelude):
 /// `mid = 5·2k/(3k+2k) = 2.0 V` by default; staging `r_top.r = 2e3`

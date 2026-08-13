@@ -1648,6 +1648,7 @@ dependencies = [
  "piperine-ir",
  "piperine-lang",
  "piperine-solver",
+ "piperine-vams",
  "thiserror 2.0.18",
 ]
 

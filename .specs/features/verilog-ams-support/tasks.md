@@ -1978,3 +1978,100 @@ digital params/`#delay` in digital codegen — a new, separate open item,
 not filed against any existing task number; a future task should give
 it one). Phase 7 (downstream retarget + PHDL removal, T34+) is next,
 not started.
+
+### Phase 7 (S3b, follow-up batch, 2026-08-13)
+
+- **T34** ✅ `<pending commit>` — retargeted `piperine-api` to the VAMS
+  AST; the crate builds again for the first time since T21 (`cargo build
+  -p piperine-api`: **zero warnings**). Added the `piperine-vams`
+  dependency (the established pattern every downstream crate T28-T32
+  already used) so `model/descriptors.rs` can name `piperine_vams::ast::
+  BehaviorKind` directly; `Direction` moves to `piperine_lang::pom::
+  Direction` (the POM-native type T21 introduced when the AST crate went
+  serde-free). The five named files plus their two test-fixture
+  counterparts (`tests/model_module.rs`, `tests/model_descriptors.rs`)
+  needed only that import fix.
+  **MD-45 stub, applied per the batch brief's latitude** (same
+  "document, and delete/stub dead code with a note" treatment T21/
+  T28-T32 used, not a new VAMS-attribute replacement): `gradient.rs`,
+  `margins.rs`, `reduced.rs`, and `session/entry.rs`'s `gradient()`
+  candidate-listing branch all walked `Module::constraints()`/
+  `ConstraintStmt`/`QuantityClass`/`StmtClass` — the dv-core constraint-
+  block surface MD-45 records as gutted at T21, with no VAMS Annex A
+  production to lower from. Each is stubbed to the loudest honest
+  behavior available with no constraint tree to read:
+  - `margins.rs::ConstraintCatalog::compute` always returns
+    `Self::default()` (empty catalog) — documented in its own doc
+    comment. The rest of `margins.rs` (`MarginEntry`/`MarginValue`/
+    `MarginsResult`) is untouched: it operates on the solver's
+    `ReportedMargin`, not the POM constraint tree, so it was never
+    actually MD-45-coupled — only `ConstraintCatalog::compute`'s POM walk
+    was.
+  - `reduced.rs::ReducedEvaluation::evaluate` always returns `Ok(Vec::
+    new())` (no constraint quantities exist to reduce). Deleted (not
+    kept as unreachable dead code, per coding-principles "remove ONLY
+    what your changes orphaned" — these helpers exist *only* to serve
+    `evaluate`'s deleted walk): `EvalScope`, `target_margin`, `constant`,
+    `scalar`, `reduce`, `unity_gain_freq`, `phase_margin`, `gain_margin`,
+    `bracket`, `interp_log`, `probe`, `probe_node`, `literal`, `arith` —
+    the AC phasor-sweep reduction math (`ac_unity_gain_freq`/
+    `ac_phase_margin`/`ac_gain_margin`), real and non-trivial, is real
+    functionality loss documented here, expected to be reintroduced
+    alongside a real constraint-block walk once that surface is rebuilt
+    on VAMS `(* attribute *)` syntax.
+  - `gradient.rs::classify_margin_gradient` always returns
+    `Err(Error::Measurement(...))` naming the MD-45 cause. Deleted for
+    the same orphaning reason: `margin_value_expr`, `is_literal_or_ident`,
+    `extract_voltage_probe`, `resolve_probe_end`. The public result types
+    (`MarginDifferentiability`, `MarginGradientResult`, `Sensitivity`,
+    `SensitivityMethod`, `Gradient`) are untouched — they carry no AST
+    reference and are `Session::gradient`'s real return shape.
+  - `session/entry.rs::Session::gradient`'s net-name fallback path (used
+    when `classify_margin_gradient` returns `Err`, which it now always
+    does) built a "declared margins" candidate list by walking
+    `Module::constraints()` for its error message; that walk is deleted
+    and the list is always empty, documented inline. The rest of
+    `gradient()` (the adjoint solve, the `PointwiseDc`/`AcDefined`/
+    `EventDetected`/`NonDifferentiableReduction` match) is untouched —
+    it was already unreachable in practice once `classify_margin_gradient`
+    can no longer produce `Ok`, but the match stays exhaustive and
+    correct against the (unchanged) `MarginDifferentiability` enum.
+  **Cargo.toml**: added `piperine-vams = { path = "../piperine-vams" }`
+  to `crates/piperine-api/Cargo.toml`.
+  **Test verification** (`cargo test -p piperine-api --no-fail-fast`):
+  **97 passed, 101 failed** across the `--lib` target + 34 integration
+  targets. Every failure traced individually (not sampled) to the same
+  single root cause: a PHDL-syntax fixture string (`discipline Electrical
+  { potential v: Real; flow i: Real; }`, PHDL's `mod`/`analog X { ... }`
+  block shape) fed to `parse_and_elaborate`/`load_str`/`elaborate`,
+  rejected by the VAMS parser with `E1005` ("expected 'domain',
+  'potential', or 'flow', found '{'") or an equivalent parse failure —
+  the identical failure class T21/T30/T32 already documented for
+  `piperine-lang`/`piperine-codegen`'s own PHDL fixture-string tests, now
+  visible in `piperine-api` for the first time because the crate did not
+  build at all before this task. None of the 101 failures stems from a
+  bug introduced by this task's stubbing (`margins.rs`/`reduced.rs`/
+  `gradient.rs`/`session/entry.rs` — spot-checked directly: every
+  fixture-driven test fails at the elaboration/parse step, before any
+  stubbed function is ever reached). Per-target breakdown available via
+  `cargo test -p piperine-api --no-fail-fast` (not reproduced verbatim
+  here for length); three additional pre-existing failures in `device/
+  registry.rs`'s lib tests (`a_host_registered_device_composes_like_any_
+  module`, `neither_plugin_nor_host_binding_found_fails_loud_naming_
+  both`, `the_same_phdl_declaration_serves_either_binding_mode`) use
+  `parse_and_elaborate_seeded(.., piperine_lang::seed_device_port_
+  schemas)` with a PHDL `@device(...)` fixture — squarely T35's scope
+  (attribute-carried `@device`/`@port` on VAMS syntax + the currently-
+  stubbed `seed_device_port_schemas`), not fixed here.
+  **T34's own Done-when, evaluated literally**: "all refs retargeted" —
+  met (zero remaining reference to `piperine_lang::parse`/`ConstraintStmt`/
+  `QuantityClass`/`StmtClass` anywhere in `crates/piperine-api/{src,
+  tests}`, confirmed by grep). "host parity test green" — met:
+  `tests/host_device_e2e.rs` (T17/T18's DVT-30 host-device proof, the
+  one integration target with no PHDL fixture string — it drives
+  `piperine-api::device`/`piperine-ir` types directly) is **5 passed, 0
+  failed**. The literal `cargo test -p piperine-api` gate does not exit
+  zero (101 failures, all PHDL-fixture debt, none a regression); recorded
+  as the same documented MD-44 §3 relaxation every task since T21 has
+  operated under, not silently waived — the fixture corpus is Phase 8's
+  job (VAMS-08/09/10 migration), not this task's.

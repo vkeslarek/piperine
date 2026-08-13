@@ -9,8 +9,9 @@ use piperine_api::model::{
     Behavior, Instance, ModelDescriptor, Net, ObservableDescriptor, Param, ParamDescriptor, Port,
     Terminal, TerminalDescriptor,
 };
-use piperine_lang::parse::ast::{BehaviorKind, Direction};
+use piperine_lang::pom::Direction;
 use piperine_lang::{parse_and_elaborate, Design, SourceMap, Value, ValueType};
+use piperine_vams::ast::BehaviorKind;
 
 /// A two-level fixture: `Top` instantiates `Amp`, which declares one port of
 /// every direction, a wire, a defaulted param, an undefaulted param, and an

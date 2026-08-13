@@ -13,8 +13,9 @@
 //! wrappers do exactly that, the way `_TerminalDescriptor` already does for the
 //! solver's descriptor enums).
 
-use piperine_lang::parse::ast::{BehaviorKind, Direction};
+use piperine_lang::pom::Direction;
 use piperine_lang::{Value, ValueType};
+use piperine_vams::ast::BehaviorKind;
 
 /// A reflected port — its name, direction, and net (discipline) type.
 #[derive(Debug, Clone)]

@@ -460,28 +460,16 @@ impl Session {
         // 2. Fall through to the net-name path — `V(metric)` at the DC
         //    operating point. Loud with both candidate lists when the
         //    name matches neither a margin nor a net.
-        use piperine_lang::parse::ast::ConstraintStmt;
+        //
+        // MD-45 regression: the declared-margins candidate list is always
+        // empty — `Module::constraints()`/`ConstraintStmt` were gutted
+        // with the PHDL AST at T21 (no VAMS Annex A production carries
+        // dv-core constraint blocks), so there is nothing left to walk
+        // for candidates. `crate::gradient::classify_margin_gradient`
+        // already documents the same regression.
         let node = crate::session::build::resolve_net(&self.info, metric).map_err(|_| {
             let nets: Vec<String> = self.info.nets.keys().cloned().collect();
-            let margins: Vec<String> = self
-                .design
-                .flat_module(&self.module)
-                .map(|flat| {
-                    flat.instances()
-                        .iter()
-                        .filter_map(|inst| self.design.module(inst.module_name()))
-                        .flat_map(|m| m.constraints().iter())
-                        .flat_map(|b| b.leaves())
-                        .filter_map(|(s, _)| match s {
-                            ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => Some(name.clone()),
-                            ConstraintStmt::Target { .. } => Some("target#…".to_string()),
-                            ConstraintStmt::Event { .. }
-                            | ConstraintStmt::Cover { .. }
-                            | ConstraintStmt::CoverCross { .. } => None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let margins: Vec<String> = Vec::new();
             Error::Measurement(format!(
                 "unknown metric `{metric}` — addressable nets: [{}]; declared margins: [{}]",
                 nets.join(", "),

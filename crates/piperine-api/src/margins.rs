@@ -13,8 +13,7 @@
 //! read.
 
 use piperine_codegen::device::CircuitBuildInfo;
-use piperine_lang::parse::ast::ConstraintStmt;
-use piperine_lang::pom::{Design, QuantityClass};
+use piperine_lang::pom::Design;
 use piperine_solver::prelude::{MarginKind, ReportedMargin};
 
 use crate::error::Error;
@@ -144,44 +143,16 @@ impl ConstraintCatalog {
     /// `var`/`target` is host-computed on AC results only. Pointwise
     /// `var`s travel inside the margins that read them and are never
     /// readable by name — they stay "unknown", catalogued nowhere.
-    pub fn compute(design: &Design, info: &CircuitBuildInfo, top: &str) -> Self {
-        let mut catalog = Self::default();
-        let Some(flat) = design.flat_module(top) else { return catalog };
-        for instance in flat.instances() {
-            let Some(module) = design.module(instance.module_name()) else { continue };
-            if module.constraints().is_empty() {
-                continue;
-            }
-            let analog = info.instances.iter().find(|i| i.label == instance.name());
-            for block in module.constraints() {
-                for (leaf_index, (stmt, class)) in block.leaves().enumerate() {
-                    let label = match stmt {
-                        ConstraintStmt::Require { name, .. } | ConstraintStmt::Var { name, .. } => {
-                            name.clone()
-                        }
-                        ConstraintStmt::Target { .. } => format!("target#{leaf_index}"),
-                        ConstraintStmt::Event { .. } | ConstraintStmt::Cover { .. } | ConstraintStmt::CoverCross { .. } => {
-                            continue
-                        }
-                    };
-                    let qualified = format!("{}.{}", instance.name(), label);
-                    let Some(built) = analog else {
-                        catalog.digital.push(qualified);
-                        continue;
-                    };
-                    let in_kernel = built.kernel.margin_catalog().iter().any(|m| m.label == label);
-                    if in_kernel {
-                        continue;
-                    }
-                    let reduced_entry = class.class == QuantityClass::Reduced
-                        && !matches!(stmt, ConstraintStmt::Require { .. });
-                    if reduced_entry {
-                        catalog.not_defined.push(qualified);
-                    }
-                }
-            }
-        }
-        catalog
+    ///
+    /// **MD-45 regression**: this always returns an empty catalog. The
+    /// dv-core `constraint` block surface (`Module::constraints()`,
+    /// `ConstraintStmt`, `QuantityClass`) was gutted with the PHDL AST at
+    /// T21 — no VAMS Annex A production carries it, and the POM has no
+    /// constraint-block node to walk anymore. `dv-gradients`/`dv-tester`'s
+    /// constraint-catalog surface is dark until a future task rebuilds it
+    /// on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45).
+    pub fn compute(_design: &Design, _info: &CircuitBuildInfo, _top: &str) -> Self {
+        Self::default()
     }
 
     /// `true` when `name` — qualified (`"x1.ugbw"`) or bare (`"ugbw"`) —
