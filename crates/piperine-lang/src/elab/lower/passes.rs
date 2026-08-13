@@ -23,6 +23,7 @@
 use crate::pom::{Design, ElabError};
 
 use super::flatten::FlattenHierarchy;
+use super::generate::UnrollGenerate;
 use super::Elaborator;
 
 /// One elaboration stage. `run` mutates the shared `Elaborator` state and
@@ -32,7 +33,14 @@ pub(crate) trait ElabPass {
 }
 
 /// The elaboration pipeline, in execution order.
-pub(crate) const PASSES: &[&dyn ElabPass] = &[&Register, &LowerDeclarations, &ElabModules, &FlattenHierarchy];
+///
+/// `UnrollGenerate` (T25) runs after `ElabModules` — generate bodies
+/// instantiate modules, so `lower_instance`'s target-port-order lookup
+/// needs every module already registered — and before `FlattenHierarchy`,
+/// which reads `Elaborator::generated_instances` when building the derived
+/// flat form (design §6 ordering).
+pub(crate) const PASSES: &[&dyn ElabPass] =
+    &[&Register, &LowerDeclarations, &ElabModules, &UnrollGenerate, &FlattenHierarchy];
 
 /// Index every top-level item into the elaborator's symbol tables.
 struct Register;

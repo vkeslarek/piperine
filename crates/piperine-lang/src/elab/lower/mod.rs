@@ -24,6 +24,7 @@ use piperine_vams::ast::{DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFil
 use crate::pom::{ElabError, Design};
 
 mod flatten;
+mod generate;
 mod passes;
 mod register;
 mod vams;
@@ -51,6 +52,13 @@ pub struct Elaborator {
     /// Items handed to `elaborate`, consumed by the `Register` pass.
     pending_items: Vec<Item>,
     pub(crate) ctx: crate::elab::registry::ElabContext,
+    /// Generate-produced instances (LRM ch. 6), keyed by the owning
+    /// module's name — written by `UnrollGenerate` (T25), read by
+    /// `FlattenHierarchy` when building `Design::flat_modules`. **Never**
+    /// merged into `Design::modules` (MD-25 VAMS clause): a generate
+    /// block reads back as a generate block on the authored side; the
+    /// instances it produces exist only on the derived path.
+    pub(crate) generated_instances: HashMap<String, Vec<crate::pom::Instance>>,
 }
 
 impl Elaborator {
@@ -60,6 +68,7 @@ impl Elaborator {
             syms: SymbolTable::new(),
             pending_items: Vec::new(),
             ctx: crate::elab::registry::ElabContext::new(),
+            generated_instances: HashMap::new(),
         }
     }
 

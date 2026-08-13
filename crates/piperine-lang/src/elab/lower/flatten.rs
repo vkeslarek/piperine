@@ -31,20 +31,26 @@ type InlineResult = (Vec<Instance>, Vec<Wire>, Vec<Connection>);
 pub(super) struct FlattenHierarchy;
 
 impl ElabPass for FlattenHierarchy {
-    fn run(&self, _elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        Self::flatten_design(design)
+    fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        Self::flatten_design(design, &elab.generated_instances)
     }
 }
 
 impl FlattenHierarchy {
     /// Flatten every module in `design.modules` into `design.flat_modules`.
     /// The authored `modules` map is never mutated — only `flat_modules` is
-    /// written. Entry point for the pass driver and for unit tests.
-    pub(super) fn flatten_design(design: &mut Design) -> Result<(), ElabError> {
+    /// written. `generated` is T25's per-module generate-produced instance
+    /// list (MD-25: merged into the derived form only, never into
+    /// `design.modules`). Entry point for the pass driver and for unit
+    /// tests (which pass an empty map when generate isn't under test).
+    pub(super) fn flatten_design(
+        design: &mut Design,
+        generated: &std::collections::HashMap<String, Vec<Instance>>,
+    ) -> Result<(), ElabError> {
         let names: Vec<String> = design.modules.keys().cloned().collect();
         let mut in_progress = HashSet::new();
         for name in &names {
-            Self::flatten_module(name, design, &mut in_progress)?;
+            Self::flatten_module(name, design, generated, &mut in_progress)?;
         }
         Ok(())
     }
@@ -65,6 +71,7 @@ impl FlattenHierarchy {
     fn flatten_module(
         name: &str,
         design: &mut Design,
+        generated: &std::collections::HashMap<String, Vec<Instance>>,
         in_progress: &mut HashSet<String>,
     ) -> Result<Module, ElabError> {
         if let Some(flat) = design.flat_modules.get(name) {
@@ -86,10 +93,30 @@ impl FlattenHierarchy {
         // flatten_module (which mutates design.flat_modules) and calls inline
         // (which mutates m.wires/m.connections) — both would conflict with a
         // live borrow of m.instances.
-        let authored_instances = std::mem::take(&mut m.instances);
+        let mut authored_instances = std::mem::take(&mut m.instances);
+
+        // T25 (VAMS-04, MD-25): splice this module's generate-produced
+        // instances in on the derived side only — `design.modules` (the
+        // clone `authored` came from) never saw them. A generated label
+        // colliding with an authored one fails loud (spec Edge Cases: no
+        // silent rename); `generate.rs`'s own `check_no_collisions` already
+        // ruled out generated-vs-generated collisions.
+        if let Some(gen_insts) = generated.get(name) {
+            for g in gen_insts {
+                if authored_instances.iter().any(|a| a.name() == g.name()) {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "module `{name}`: generate produced an instance named `{}`, \
+                         colliding with an authored instance of the same name",
+                        g.name()
+                    ))));
+                }
+            }
+            authored_instances.extend(gen_insts.iter().cloned());
+        }
+
         let mut kept = Vec::new();
         for inst in authored_instances {
-            let child = Self::flatten_module(&inst.module, design, in_progress)?;
+            let child = Self::flatten_module(&inst.module, design, generated, in_progress)?;
             if Self::is_leaf(&child) {
                 kept.push(inst);
             } else {
@@ -449,7 +476,7 @@ mod tests {
         let mut design = Design::new();
         design.insert_module("Resistor".to_string(), leaf_module("Resistor"));
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
         let flat = design.flat_module("Resistor").expect("Resistor flat form");
         let auth = design.module("Resistor").expect("Resistor authored");
@@ -469,7 +496,7 @@ mod tests {
             parent_module("Divider", vec![instance("r1", "Resistor"), instance("r2", "Resistor")]),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
         let flat = design.flat_module("Divider").expect("Divider flat form");
         assert_eq!(flat.instances.len(), 2, "both leaf instances kept");
@@ -484,7 +511,7 @@ mod tests {
             parent_module("Loop", vec![instance("self", "Loop")]),
         );
         let before = snapshot_modules(&design);
-        let err = FlattenHierarchy::flatten_design(&mut design)
+        let err = FlattenHierarchy::flatten_design(&mut design, &Default::default())
             .expect_err("self-cycle must fail loud");
         let msg = err.to_string();
         assert!(
@@ -506,7 +533,7 @@ mod tests {
             parent_module("Beta", vec![instance("a", "Alpha")]),
         );
         let before = snapshot_modules(&design);
-        let err = FlattenHierarchy::flatten_design(&mut design)
+        let err = FlattenHierarchy::flatten_design(&mut design, &Default::default())
             .expect_err("transitive cycle must fail loud");
         let msg = err.to_string();
         assert!(
@@ -528,9 +555,9 @@ mod tests {
             "Divider".to_string(),
             parent_module("Divider", vec![instance("r1", "Resistor")]),
         );
-        FlattenHierarchy::flatten_design(&mut design).expect("first flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("first flatten");
         let after_first = format!("{:?}", design.flat_modules);
-        FlattenHierarchy::flatten_design(&mut design).expect("second flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("second flatten");
         let after_second = format!("{:?}", design.flat_modules);
         assert_eq!(after_first, after_second, "flatten is memoized / idempotent");
     }
@@ -543,7 +570,7 @@ mod tests {
             "Divider".to_string(),
             parent_module("Divider", vec![instance("r1", "Resistor")]),
         );
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert!(design.flat_modules.contains_key("Resistor"), "Resistor flattened");
         assert!(design.flat_modules.contains_key("Divider"), "Divider flattened");
     }
@@ -583,7 +610,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
 
         let flat = design.flat_module("Top").expect("Top flat form");
@@ -624,7 +651,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
 
         let flat = design.flat_module("Top").expect("Top flat form");
@@ -669,7 +696,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
 
         let flat = design.flat_module("Top").expect("Top flat form");
@@ -710,7 +737,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
 
         let flat = design.flat_module("Top").expect("Top flat form");
@@ -746,7 +773,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
         let flat = design.flat_module("Top").expect("Top flat form");
         let r1 = flat.instances.iter().find(|i| i.label.as_deref() == Some("x.r1")).expect("x.r1");
@@ -780,7 +807,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        let err = FlattenHierarchy::flatten_design(&mut design)
+        let err = FlattenHierarchy::flatten_design(&mut design, &Default::default())
             .expect_err("dangling net must fail loud");
         let msg = err.to_string();
         assert!(msg.contains("missing"), "error names the dangling net: {msg}");
@@ -798,7 +825,7 @@ mod tests {
         let seg = seg_indexing("bus", 1, vec![port("p")], vec![array_wire("bus", 3)]);
         let mut design = design_with_seg(seg, vec![NetRef::simple("a")]);
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten expands the array element");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten expands the array element");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
 
         let flat = design.flat_module("Top").expect("Top flat form");
@@ -820,7 +847,7 @@ mod tests {
         let seg = seg_indexing("bus", 2, vec![array_port("bus", 3), port("p")], Vec::new());
         let mut design =
             design_with_seg(seg, vec![NetRef::simple("outer"), NetRef::simple("a")]);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten expands the array element");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten expands the array element");
         let flat = design.flat_module("Top").expect("Top flat form");
         let r1 = flat
             .instances
@@ -837,7 +864,7 @@ mod tests {
         let seg = seg_indexing("bus", 3, vec![port("p")], vec![array_wire("bus", 3)]);
         let mut design = design_with_seg(seg, vec![NetRef::simple("a")]);
         let before = snapshot_modules(&design);
-        let err = FlattenHierarchy::flatten_design(&mut design)
+        let err = FlattenHierarchy::flatten_design(&mut design, &Default::default())
             .expect_err("out-of-range index must fail loud");
         let msg = err.to_string();
         assert!(msg.contains("out of range"), "error names the range violation: {msg}");
@@ -852,7 +879,7 @@ mod tests {
         // — expansion must not fabricate an element of a scalar net.
         let seg = seg_indexing("bus", 0, vec![port("p")], vec![wire("bus")]);
         let mut design = design_with_seg(seg, vec![NetRef::simple("a")]);
-        let err = FlattenHierarchy::flatten_design(&mut design)
+        let err = FlattenHierarchy::flatten_design(&mut design, &Default::default())
             .expect_err("indexing a scalar net must fail loud");
         let msg = err.to_string();
         assert!(msg.contains("is not an array net"), "error names the misuse: {msg}");
@@ -867,7 +894,7 @@ mod tests {
         let seg = seg_indexing("bus", 0, vec![array_port("bus", 3), port("p")], Vec::new());
         let mut design =
             design_with_seg(seg, vec![NetRef::indexed("outer", 1), NetRef::simple("a")]);
-        let err = FlattenHierarchy::flatten_design(&mut design)
+        let err = FlattenHierarchy::flatten_design(&mut design, &Default::default())
             .expect_err("nested array indexing must fail loud");
         let msg = err.to_string();
         assert!(msg.contains("nested array indexing"), "error names the limitation: {msg}");
@@ -946,7 +973,7 @@ mod tests {
             ),
         );
         let before = snapshot_modules(&design);
-        FlattenHierarchy::flatten_design(&mut design).expect("flatten");
+        FlattenHierarchy::flatten_design(&mut design, &Default::default()).expect("flatten");
         assert_eq!(before, snapshot_modules(&design), "modules untouched (non-destructive)");
         let flat = design.flat_module("Top").expect("Top flat form");
         // 1 direct leaf + 2 spliced leaves from Seg = 3 leaf instances.

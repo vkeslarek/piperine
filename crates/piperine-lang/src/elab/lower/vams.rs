@@ -108,6 +108,7 @@ impl Elaborator {
                             &inst_decl.module_name,
                             ast_inst,
                             &inst_decl.param_overrides,
+                            &env,
                         )?);
                     }
                 }
@@ -254,12 +255,17 @@ impl Elaborator {
 
     /// Lowers one `Instance` (from a `module_identifier inst1(...), ...;`
     /// list) into a POM `Instance` — resolves ordered/named connections
-    /// against the target module's registered port order (§6.3).
-    fn lower_instance(
+    /// against the target module's registered port order (§6.3). `env`
+    /// carries whatever elaboration-constant scope is live at this call
+    /// site — a fresh empty one for ordinary module-body instantiation, or
+    /// a generate-loop's genvar-bound scope (`elab/lower/generate.rs`,
+    /// T25) so `res r1(bus[i])` inside `for (i=...)` resolves `i`.
+    pub(super) fn lower_instance(
         &self,
         module_name: &str,
         ast_inst: &piperine_vams::ast::Instance,
         param_overrides: &[PortConnection],
+        env: &ConstEnv,
     ) -> Result<Instance, ElabError> {
         let target = self.syms.module_decls.get(module_name).ok_or_else(|| {
             ElabError::from(ElabErrorKind::UndefinedModule(module_name.to_string()))
@@ -277,7 +283,7 @@ impl Elaborator {
                         ast_inst.name
                     )))
                 })?;
-                ports.push(expr_to_net_ref(expr)?);
+                ports.push(expr_to_net_ref(expr, env)?);
             }
         } else {
             let mut by_name: HashMap<&str, &Expr> = HashMap::new();
@@ -299,11 +305,10 @@ impl Elaborator {
                         ast_inst.name
                     )))
                 })?;
-                ports.push(expr_to_net_ref(expr)?);
+                ports.push(expr_to_net_ref(expr, env)?);
             }
         }
 
-        let env = ConstEnv::new();
         let mut params = Vec::new();
         for ov in param_overrides {
             let name = ov.name.clone().ok_or_else(|| {
@@ -318,7 +323,7 @@ impl Elaborator {
                     ast_inst.name
                 )))
             })?;
-            params.push((name, eval_param_default(expr, &env)?));
+            params.push((name, eval_param_default(expr, env)?));
         }
 
         Ok(Instance {
@@ -423,8 +428,9 @@ fn eval_param_default(expr: &Expr, env: &ConstEnv) -> Result<Value, ElabError> {
 }
 
 /// A port-connection value resolves to a `NetRef` — a bare identifier, or
-/// `name[index]` for a bus tap.
-fn expr_to_net_ref(expr: &Expr) -> Result<NetRef, ElabError> {
+/// `name[index]` for a bus tap (`index` resolves against `env`, so a
+/// generate-loop's genvar is visible, T25).
+fn expr_to_net_ref(expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
     match expr {
         Expr::Ident { name, .. } => Ok(NetRef::simple(name.clone())),
         Expr::Index { base, index, .. } => {
@@ -433,7 +439,7 @@ fn expr_to_net_ref(expr: &Expr) -> Result<NetRef, ElabError> {
                     "port connection: only `name[index]` indexing is supported".to_string(),
                 )));
             };
-            let idx = ConstEnv::new().eval_nat(index).map_err(|e| {
+            let idx = env.eval_nat(index).map_err(|e| {
                 ElabError::from(ElabErrorKind::ConstEval { context: "port connection index".into(), source: e })
             })?;
             Ok(NetRef::indexed(name.clone(), idx))
@@ -542,8 +548,9 @@ fn resolve_or_create_branch<'a>(
         return Ok(&mut branches[idx]);
     }
 
-    let pos_ref = expr_to_net_ref(pos)?;
-    let neg_ref = neg.map(expr_to_net_ref).transpose()?;
+    let env = ConstEnv::new();
+    let pos_ref = expr_to_net_ref(pos, &env)?;
+    let neg_ref = neg.map(|e| expr_to_net_ref(e, &env)).transpose()?;
     if let Some(idx) = branches
         .iter()
         .position(|b| b.is_implicit() && b.pos == pos_ref && b.neg == neg_ref)

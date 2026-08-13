@@ -634,10 +634,10 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-04
 
 **Done when**:
-- [ ] Inserted at PASSES position 5 (after `ElabFns`, before `ElabModules`) per design §6
-- [ ] **MD-25 test: `Design::modules` still shows the generate block as authored** — the unrolled form is reachable only through the derived path
-- [ ] Name collision between a generated and an authored instance fails loud with both spans labelled
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Inserted in `PASSES` — SPEC_DEVIATION: design §6's "position 5, after `ElabFns`, before `ElabModules`" assumed a pass list that no longer exists (`ElabFns` deleted, MD-45); placed after `ElabModules`/before `FlattenHierarchy` instead — functionally equivalent, since `lower_instance`'s port-order lookup reads the `Register`-populated symbol table, not `Design::modules`, so `UnrollGenerate` and `ElabModules` don't share mutable state either order
+- [x] **MD-25 test: `Design::modules` still shows the generate block as authored** — the unrolled form is reachable only through the derived path
+- [x] Name collision between a generated and an authored instance fails loud — SPEC_DEVIATION: message-only (`ElabErrorKind::Other`), not a two-`#[label]`-span E4xxx variant as literally worded; `pom::Instance` carries no per-instance span today (`span: None` at every construction site in `vams.rs`/`generate.rs`), and threading real spans through instance lowering is a larger change than this task's stated scope — tracked, not silently dropped
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): UnrollGenerate pass writing only the derived artifact`
@@ -1530,3 +1530,31 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
   `cargo test -p piperine-lang`: same 2 pre-existing documented
   lib-test failures, no new regressions. `cargo build -p piperine-lang`:
   zero warnings.
+
+- **T25** ✅ `<pending commit>` — `UnrollGenerate` pass (new
+  `elab/lower/generate.rs`; `Elaborator::generated_instances` field;
+  `FlattenHierarchy` extended to splice generated instances in on the
+  derived side only; 4 tests in `tests/vams_generate.rs`). Two
+  SPEC_DEVIATIONs recorded above (pass position, collision-error span
+  granularity) — both judgment calls forced by earlier tasks' deletions/
+  scope, neither silently dropped. Supports `for`/`if`/`case` generate,
+  arbitrarily nested (`GenerateRegion` too), with module instantiation as
+  the only body content actually lowered (matching T25's own scope —
+  nested nets/params/behaviors inside a generate block are a later
+  task's job, same as ordinary module bodies before T22 existed).
+  `for`-loop iteration is bounded (100000) to fail loud on a
+  non-terminating loop rather than hang. A real bug caught during
+  self-testing, fixed before commit: the first draft's `UnrollGenerate`
+  walked *every* `ModuleItem` at the top level, including ordinary
+  (non-generate) instantiations already lowered by `ElabModules` —
+  producing a spurious "collides with itself" error on every module with
+  a plain instance. Fixed by restricting the pass's top-level scan to
+  `LoopGenerate`/`IfGenerate`/`CaseGenerate`/`GenerateRegion` items only;
+  `vams_lower_structure.rs`'s existing 9 tests (none using generate) are
+  what caught the regression. Also fixed along the way: `lower_instance`
+  and `expr_to_net_ref` previously created a *fresh* `ConstEnv` internally
+  for every call, so a genvar bound in a generate loop's scope was
+  invisible to a port connection like `leaf l1(bus[i])` — both now accept
+  `env: &ConstEnv` from the caller instead. `cargo test -p piperine-lang`:
+  same 2 pre-existing documented failures, no new regressions. `cargo
+  build -p piperine-lang`: zero warnings.
