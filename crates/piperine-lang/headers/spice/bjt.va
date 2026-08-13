@@ -1,0 +1,619 @@
+// NGSPICE faithful model — BJT (Gummel-Poon).
+//
+// Source: ngspice/src/spicelib/devices/bjt/
+//   bjtdefs.h  bjttemp.c  bjtload.c  bjtnoise.c  bjtgetic.c  bjtparam.c  bjtmpar.c
+//
+// Includes: NPN/PNP, VERTICAL/LATERAL substrate, series resistances (RC/RB/RE
+// with internal nodes), full Gummel-Poon transport + base currents, high-level
+// injection (IKF/IKR/NKF), Early effect (VAF/VAR), nonideal base currents
+// (ISE/ISC/NE/NC), substrate diode (ISS/NS), TF bias-dependence (XTF/VTF/ITF),
+// 5 charge-storage elements (BE/BC/BX/Sub depletion + diffusion), temperature
+// dependence (tlev/tlevc, XTB, XTI, EG), thermal/shot/flicker noise.
+//
+// NOTE: Excess phase (PTF) uses a state recurrence in ngspice. When PTF > 0
+// the ideal Piperine would use a delay or z-domain operator; here we compute
+// cex = cbe (no excess phase) and flag the gap. Setting PTF = 0 (the default)
+// gives exact parity.
+//
+// Translated from the PHDL predecessor this file replaces (T42, VAMS-08 —
+// dialect rewrite, not re-derivation), same conventions `diode.va`/`jfet.va`
+// (T42) established: `pub bundle BjtModel` flattens into flat module
+// `parameter`s; PHDL's `dest <- src` becomes `<+`; `ng_egfet(t)` is inlined
+// (no VAMS top-level function scope, MD-45). PHDL's local var `temp` inside
+// the TF-bias-dependence block is renamed `tf_ratio` — it collided with the
+// (now-flat) instance parameter `temp` once model-card and instance
+// namespaces merged into one.
+//
+// THREE conditional/branch-conflict gaps found migrating `diode.va`/
+// `jfet.va` (T42), all present here too:
+//  1. Series-resistance branches (RC/RE/RB — internal nodes c'/e'/b') that
+//     stamp `V(x,y) <+ R*I(x,y)` cannot ALSO carry Flow-type noise on the
+//     SAME branch (LRM Sec 5.4.2). Fixed via the Norton/Thevenin
+//     equivalence: a noise current source (PSD S_I) in parallel with the
+//     branch's actual resistance R converts to a series voltage source of
+//     PSD S_V = S_I . R^2. For RC/RE this reduces to `4kT.R` (R =
+//     rcollector/remitter, the branch's own resistance) exactly like
+//     `diode.va`/`jfet.va`. RB is NOT that simple: ngspice's own noise
+//     model (bjtnoise.c) always uses the SIMPLE resistance `rbpr+rbpi/qb`,
+//     while the DC branch itself uses `rbase` — which differs from that
+//     simple form whenever the IRB (current-dependent base-resistance,
+//     bjtload.c:528-531) tan-model is active. Preserving ngspice's own
+//     approximation exactly means the conversion keeps ngspice's PSD
+//     numerator (`4kT.m/(rbpr+rbpi/qb)`) and multiplies by the ACTUAL
+//     branch resistance squared (`rbase^2`), not the simple form squared:
+//     `S_V = 4kT.m.rbase^2/(rbpr+rbpi/qb)`.
+//  2. ANY conditional (inside `if`) Potential contribution is separately
+//     unsupported (`Unsupported("conditional potential contribution")`,
+//     `flatten/analog.rs`), so every `if (model.rX > 0.0) { V(...) <+
+//     white_noise(...); }` guard is dropped in favor of an unconditional
+//     contribution whose VALUE is 0 in the off case. RC/RE are naturally
+//     safe (rcollector/remitter are already 0 when RC/RE <= 0). RB is NOT
+//     safe this way — `rbpr+rbpi/qb` is `0/qb = 0` when RB and RBM are both
+//     0 (the DEFAULT case), so the division itself would be `0/0` = NaN if
+//     evaluated unconditionally. The guard is kept as a ternary INSIDE the
+//     (still unconditional) contribution's value expression instead of a
+//     statement-level `if` — a ternary is just an expression, not a
+//     conditional contribution, so it does not trip the same check.
+//  3. Flow-type (`I(...) <+`) contributions MAY stay conditional (confirmed
+//     working in `jfet.va`'s flicker-noise guard and here for the
+//     vertical/lateral substrate routing) — only Potential contributions
+//     are restricted.
+//
+// UIC (`@ initial { V(b,e) <- ic_vbe; V(c,e) <- ic_vce; }`) is dropped
+// entirely (NOT WIRED) for the same reason `diode.va`/`jfet.va` drop theirs:
+// any Potential contribution inside an event-control body hits the
+// unconditional-contribution restriction regardless of branch-conflict
+// status. `ic_vbe`/`ic_vce` stay declared, unused parameters (NGP-10,
+// `ROADMAP.md`, `.specs/features/ngspice-parity/spec.md`).
+// ════════════════════════════════════════════════════════════════════════════
+
+`include "disciplines.vams"
+`include "constants.va"
+
+module bjt (
+    inout electrical c,     // collector
+    inout electrical b,     // base
+    inout electrical e,     // emitter
+    inout electrical sub    // substrate
+);
+    // ── Model-card parameters (formerly `BjtModel`) ──────────────────────────
+    parameter integer npn      = 1;    // 1 = NPN, 0 = PNP
+    parameter integer vertical = 1;    // 1 = vertical (sub->c'), 0 = lateral (sub->b')
+
+    parameter real is   = 1.0e-16;     // transport saturation current (A)
+    parameter real bf   = 100.0;       // ideal forward beta
+    parameter real nf   = 1.0;         // forward emission coefficient
+    parameter real vaf  = 0.0;         // forward Early voltage (V) — 0 = off
+    parameter real ikf  = 0.0;         // forward high-current roll-off (A) — 0 = off
+    parameter real ise  = 0.0;         // B-E leakage sat current (A)
+    parameter real ne   = 1.5;         // B-E leakage emission coefficient
+    parameter real br   = 1.0;         // ideal reverse beta
+    parameter real nr   = 1.0;         // reverse emission coefficient
+    parameter real var  = 0.0;         // reverse Early voltage (V) — 0 = off
+    parameter real ikr  = 0.0;         // reverse high-current roll-off (A) — 0 = off
+    parameter real isc  = 0.0;         // B-C leakage sat current (A)
+    parameter real nc   = 2.0;         // B-C leakage emission coefficient
+    parameter real iss  = 0.0;         // substrate junction sat current (A)
+    parameter real ns   = 1.0;         // substrate emission coefficient
+    parameter real nkf  = 0.5;         // high-current roll-off exponent
+
+    parameter real rb   = 0.0;         // zero-bias base resistance (Ohm)
+    parameter real irb  = 0.0;         // current at which Rb = (rb+rbm)/2 (A) — 0 = off
+    parameter real rbm  = 0.0;         // minimum base resistance (Ohm) — 0 = use rb
+    parameter real re   = 0.0;         // emitter resistance (Ohm)
+    parameter real rc   = 0.0;         // collector resistance (Ohm)
+
+    parameter real cje  = 0.0;         // zero-bias B-E depletion cap (F)
+    parameter real vje  = 0.75;        // B-E built-in potential (V)
+    parameter real mje  = 0.33;        // B-E grading coefficient
+    parameter real tf   = 0.0;         // ideal forward transit time (s)
+    parameter real xtf  = 0.0;         // TF bias-dependence coefficient
+    parameter real vtf  = 0.0;         // VBC giving TF dependence (V) — 0 = off
+    parameter real itf  = 0.0;         // high-current TF dependence (A)
+    parameter real ptf  = 0.0;         // excess phase at 1/(2.pi.TF) Hz (degrees) — see header
+
+    parameter real cjc  = 0.0;         // zero-bias B-C depletion cap (F)
+    parameter real vjc  = 0.75;        // B-C built-in potential (V)
+    parameter real mjc  = 0.33;        // B-C grading coefficient
+    parameter real xcjc = 1.0;         // fraction of B-C cap to internal base
+    parameter real tr   = 0.0;         // ideal reverse transit time (s)
+
+    parameter real cjs  = 0.0;         // zero-bias substrate cap (F)
+    parameter real vjs  = 0.75;        // substrate built-in potential (V)
+    parameter real mjs  = 0.0;         // substrate grading coefficient
+
+    parameter real fc   = 0.5;         // forward-bias junction fit
+
+    parameter real xtb  = 0.0;         // BF/BR temp exponent
+    parameter real eg   = 1.11;        // bandgap (eV)
+    parameter real xti  = 3.0;         // IS temp exponent
+    parameter real tnom = 300.15;      // nominal temperature (K)
+    parameter real tlev  = 0.0;        // temp-equation selector (0,1,3)
+    parameter real tlevc = 0.0;        // cap/potential temp selector (0,1)
+    parameter real tvaf1 = 0.0;        // VAF 1st temp coefficient (1/K)
+    parameter real tvaf2 = 0.0;        // VAF 2nd temp coefficient (1/K^2)
+    parameter real tvar1 = 0.0;        // VAR 1st temp coefficient (1/K)
+    parameter real tvar2 = 0.0;        // VAR 2nd temp coefficient (1/K^2)
+
+    parameter real kf   = 0.0;         // flicker noise coefficient
+    parameter real af   = 1.0;         // flicker noise exponent
+
+    // SOA (DVC-16, T27) — see file header: dv-core constraint runtime is
+    // dark since MD-45; kept declared (unused) for API fidelity.
+    parameter real vce_max = 1.0e99;
+    parameter real vbe_max = 1.0e99;
+    parameter real vcb_max = 1.0e99;
+    parameter real ic_max  = 1.0e99;
+    parameter real pd_max  = 1.0e99;
+
+    // ── Instance parameters ───────────────────────────────────────────────
+    parameter real area  = 1.0;    // emitter area factor
+    parameter real areab = 0.0;    // base area factor — 0 = use area
+    parameter real areac = 0.0;    // collector area factor — 0 = use area
+    parameter real m     = 1.0;    // parallel multiplier
+    parameter real temp  = 0.0;
+    parameter real dtemp = 0.0;
+    parameter integer off = 0;     // initially off (advisory, unused)
+    // UIC initial conditions — see file header (NOT WIRED, NGP-10).
+    parameter real ic_vbe = 0.0;
+    parameter real ic_vce = 0.0;
+
+    // Internal nodes for series resistances (bjtdefs.h: colPrime/basePrime/emitPrime)
+    electrical cp;   // collector' (if RC > 0)
+    electrical bp;   // base'     (if RB > 0)
+    electrical ep;   // emitter'  (if RE > 0)
+
+    real type, subs, area_eff, areab_eff, areac_eff, rbm_eff;
+    real t, dt, vt, vtnom, fact1, fact2, egfet, egfet1, arg, pbfact, arg1, pbfact1;
+    real ratlog, ratio1, factlog, t_is, t_iss, bfactor, t_bf, t_br, t_ise, t_isc;
+    real invVaf, invVar, oik, oikr, gcpr, gepr, rbpr, rbpi, xjrb;
+    real t_nf, t_nr, t_ne, t_nc, t_ns, t_tf, t_tr, t_itf;
+    real xfc, fc_clamped, f2_be, f3_be, f2_bc, f3_bc, ovtf;
+    real tVje, tCje, pbo, gmaold, gmanew, tDepCap_be, tf1_be;
+    real tVjc, tCjc, tDepCap_bc, tf1_bc;
+    real tVjs, tCjs;
+    real tVcrit, czbe, ctot_bc, czbc, czbx, czsub, csat, csubsat, c2, c4, gmin;
+    real vbe, vbc, vbx, vsub;
+    real vte_be, vte_bc, vte_ben, vte_bcn, vte_sub;
+    real cbe, a, cbc, cben, cbcn, cdsub, evsub;
+    real q1, qb, q2, arg_q, sqarg;
+    real cex, cc, cb;
+    real cbe_q, argtf, tf_ratio;
+    real rcollector, remitter, rbase, gx, arg2, arg1t;
+    real qbe, qbc, qbx, qsub, s, czof2;
+
+    analog begin
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec0  Type and area
+        // ════════════════════════════════════════════════════════════════════
+        type = npn ? 1.0 : -1.0;
+        subs = vertical ? 1.0 : -1.0;
+        // ngspice scales the device physics by AREA only; the multiplier m is
+        // applied at stamp time (bjtload.c:795+). Every contribution below
+        // carries an explicit `m *`, so area_eff must NOT include m (else m
+        // is squared).
+        area_eff  = area;
+        areab_eff = (areab > 0.0) ? areab : area;
+        areac_eff = (areac > 0.0) ? areac : area;
+        rbm_eff = (rbm > 0.0) ? rbm : rb;
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec1  Temperature preprocessing  (bjttemp.c)
+        // ════════════════════════════════════════════════════════════════════
+        t = (temp > 0.0) ? temp : ($temperature() + dtemp);
+        dt = t - tnom;
+        vt = $vt(t);
+        vtnom = $vt(tnom);
+
+        // Bandgap / pbfact (bjttemp.c:107-118 — same scheme as diode)
+        fact1  = tnom / `NG_REFTEMP;
+        fact2  = t / `NG_REFTEMP;
+        egfet  = 1.16 - (7.02e-4 * t * t) / (t + 1108.0);
+        egfet1 = 1.16 - (7.02e-4 * tnom * tnom) / (tnom + 1108.0);
+        arg    = 0.0 - egfet / (2.0 * `NG_K * t) + 1.1150877 / (2.0 * `NG_K * `NG_REFTEMP);
+        pbfact = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + `NG_Q * arg);
+        arg1   = 0.0 - egfet1 / (2.0 * `NG_K * tnom) + 1.1150877 / (2.0 * `NG_K * `NG_REFTEMP);
+        pbfact1= 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + `NG_Q * arg1);
+
+        // IS temperature (bjttemp.c:120-126)
+        ratlog = ln(t / tnom);
+        ratio1 = t / tnom - 1.0;
+        factlog = ratio1 * eg / vt + xti * ratlog;
+        t_is = is * exp(factlog);
+        t_iss = iss * exp(factlog);
+
+        // BF/BR temperature (bjttemp.c:128-135)
+        bfactor = exp(ratlog * xtb);
+        t_bf = bf * bfactor;
+        t_br = br * bfactor;
+
+        // ISE/ISC temperature (bjttemp.c:137-145)
+        t_ise = ise * exp(factlog / ne) / bfactor;
+        t_isc = isc * exp(factlog / nc) / bfactor;
+
+        // Early voltages, IKF, IKR (bjttemp.c:147-160)
+        invVaf = (vaf > 0.0) ? (1.0 / (vaf * (1.0 + tvaf1 * dt + tvaf2 * dt * dt))) : 0.0;
+        invVar = (var > 0.0) ? (1.0 / (var * (1.0 + tvar1 * dt + tvar2 * dt * dt))) : 0.0;
+        oik    = (ikf > 0.0) ? (1.0 / (ikf * area_eff)) : 0.0;
+        oikr   = (ikr > 0.0) ? (1.0 / (ikr * area_eff)) : 0.0;
+
+        // Series conductances (bjttemp.c:162-170)
+        gcpr = (rc > 0.0) ? (area_eff / rc) : 0.0;
+        gepr = (re > 0.0) ? (area_eff / re) : 0.0;
+
+        // Base resistance params (bjttemp.c:172-176)
+        rbpr = rbm_eff / area_eff;
+        rbpi = rb / area_eff - rbpr;
+        xjrb = irb * area_eff;
+
+        // Emission coefficients (pass-through for tlev=0)
+        t_nf = nf;
+        t_nr = nr;
+        t_ne = ne;
+        t_nc = nc;
+        t_ns = ns;
+
+        // Transit times (bjttemp.c:185-186)
+        t_tf  = tf;
+        t_tr  = tr;
+        t_itf = itf * area_eff;
+
+        // Junction cap precomputation (bjttemp.c:42-98)
+        xfc = ln(1.0 - fc);
+        fc_clamped = (fc > 0.9999) ? 0.9999 : fc;
+
+        // f2/f3 for BE junction
+        f2_be = exp((1.0 + mje) * xfc);
+        f3_be = 1.0 - fc * (1.0 + mje);
+
+        // f6/f7 for BC junction (= f2/f3 with mjc)
+        f2_bc = exp((1.0 + mjc) * xfc);
+        f3_bc = 1.0 - fc * (1.0 + mjc);
+
+        // TF VBC factor (bjttemp.c:62-65)
+        ovtf = (vtf > 0.0) ? (1.0 / (vtf * 1.44)) : 0.0;
+
+        // Junction potentials/caps temperature adjust (bjttemp.c:178-260, tlevc=0)
+        // BE junction
+        if (tlevc == 0.0) begin
+            pbo = (vje - pbfact1) / fact1;
+            gmaold = (vje - pbo) / pbo;
+            tCje = cje / (1.0 + mje * (4.0e-4 * (tnom - `NG_REFTEMP) - gmaold));
+            tVje = pbfact + fact2 * pbo;
+            gmanew = (tVje - pbo) / pbo;
+            tCje = tCje * (1.0 + mje * (4.0e-4 * (t - `NG_REFTEMP) - gmanew));
+        end else begin
+            tVje = vje;
+            tCje = cje;
+        end
+        tDepCap_be = fc * tVje;
+        tf1_be = tVje * (1.0 - exp((1.0 - mje) * xfc)) / (1.0 - mje);
+
+        // BC junction
+        if (tlevc == 0.0) begin
+            pbo = (vjc - pbfact1) / fact1;
+            gmaold = (vjc - pbo) / pbo;
+            tCjc = cjc / (1.0 + mjc * (4.0e-4 * (tnom - `NG_REFTEMP) - gmaold));
+            tVjc = pbfact + fact2 * pbo;
+            gmanew = (tVjc - pbo) / pbo;
+            tCjc = tCjc * (1.0 + mjc * (4.0e-4 * (t - `NG_REFTEMP) - gmanew));
+        end else begin
+            tVjc = vjc;
+            tCjc = cjc;
+        end
+        tDepCap_bc = fc * tVjc;
+        tf1_bc = tVjc * (1.0 - exp((1.0 - mjc) * xfc)) / (1.0 - mjc);
+
+        // Substrate junction
+        if (tlevc == 0.0) begin
+            pbo = (vjs - pbfact1) / fact1;
+            gmaold = (vjs - pbo) / pbo;
+            tCjs = cjs / (1.0 + mjs * (4.0e-4 * (tnom - `NG_REFTEMP) - gmaold));
+            tVjs = pbfact + fact2 * pbo;
+            gmanew = (tVjs - pbo) / pbo;
+            tCjs = tCjs * (1.0 + mjs * (4.0e-4 * (t - `NG_REFTEMP) - gmanew));
+        end else begin
+            tVjs = vjs;
+            tCjs = cjs;
+        end
+
+        // Critical voltages (bjttemp.c:262-265)
+        tVcrit = vt * ln(vt / (`NG_SQRT2 * t_is * area_eff));
+
+        // Per-instance scaled caps (bjtload.c:543-566)
+        // ngspice: BC total cap uses areab for VERTICAL, areac for LATERAL; the
+        // substrate cap uses the opposite (areac vertical, areab lateral).
+        czbe = tCje * area_eff;
+        ctot_bc = vertical ? (tCjc * areab_eff) : (tCjc * areac_eff);
+        czbc = ctot_bc * xcjc;
+        czbx = ctot_bc - czbc;
+        czsub = vertical ? (tCjs * areac_eff) : (tCjs * areab_eff);
+
+        csat = t_is * area_eff;
+        csubsat = t_iss * area_eff;
+        c2 = t_ise * area_eff;
+        c4 = t_isc * areab_eff;
+
+        gmin = $simparam("gmin", 1.0e-12);
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec2  Voltages  (bjtload.c:308-324)
+        // ════════════════════════════════════════════════════════════════════
+        vbe = type * V(bp, ep);
+        vbc = type * V(bp, cp);
+        vbx = type * V(b, cp);
+        vsub = vertical ? (type * V(sub, cp)) : (type * V(bp, sub));
+
+        // Voltage limiting (bjtload.c:384-391, DEVpnjlim)
+        vbe = $limit("pnjlim", vbe, 0.0, t_nf * vt, tVcrit);
+        vbc = $limit("pnjlim", vbc, 0.0, t_nr * vt, tVcrit);
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec3  Diode currents  (bjtload.c:396-467)
+        //  Cubic extension for v < -3*vte, limexp for forward region.
+        //  Solver differentiates automatically for Jacobian — no explicit gd.
+        // ════════════════════════════════════════════════════════════════════
+        vte_be = t_nf * vt;
+        vte_bc = t_nr * vt;
+        vte_ben = t_ne * vt;
+        vte_bcn = t_nc * vt;
+        vte_sub = t_ns * vt;
+
+        // BE diode (transport)
+        if (vbe >= 0.0 - 3.0 * vte_be) begin
+            cbe = csat * (limexp(vbe / vte_be) - 1.0);
+        end else begin
+            a = 3.0 * vte_be / (vbe * `NG_E);
+            cbe = 0.0 - csat * (1.0 + a * a * a);
+        end
+
+        // BC diode (transport)
+        if (vbc >= 0.0 - 3.0 * vte_bc) begin
+            cbc = csat * (limexp(vbc / vte_bc) - 1.0);
+        end else begin
+            a = 3.0 * vte_bc / (vbc * `NG_E);
+            cbc = 0.0 - csat * (1.0 + a * a * a);
+        end
+
+        // BE leakage (nonideal base current) — ngspice adds gmin.vbe even if
+        // ISE=0 (bjtload.c:408-424).
+        cben = 0.0;
+        if (c2 > 0.0) begin
+            if (vbe >= 0.0 - 3.0 * vte_ben) begin
+                cben = c2 * (limexp(vbe / vte_ben) - 1.0);
+            end else begin
+                a = 3.0 * vte_ben / (vbe * `NG_E);
+                cben = 0.0 - c2 * (1.0 + a * a * a);
+            end
+        end
+        cben = cben + gmin * vbe;
+
+        // BC leakage (bjtload.c:438-454)
+        cbcn = 0.0;
+        if (c4 > 0.0) begin
+            if (vbc >= 0.0 - 3.0 * vte_bcn) begin
+                cbcn = c4 * (limexp(vbc / vte_bcn) - 1.0);
+            end else begin
+                a = 3.0 * vte_bcn / (vbc * `NG_E);
+                cbcn = 0.0 - c4 * (1.0 + a * a * a);
+            end
+        end
+        cbcn = cbcn + gmin * vbc;
+
+        // Substrate diode — always includes gmin.vsub (bjtload.c:456-467)
+        if (vsub <= 0.0 - 3.0 * vte_sub) begin
+            a = 3.0 * vte_sub / (vsub * `NG_E);
+            cdsub = 0.0 - csubsat * (1.0 + a * a * a);
+        end else begin
+            evsub = limexp(vsub / vte_sub);
+            cdsub = csubsat * (evsub - 1.0);
+        end
+        cdsub = cdsub + gmin * vsub;
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec4  Base charge qb  (bjtload.c:471-493)
+        //  Early effect + high-level injection (Gummel-Poon)
+        // ════════════════════════════════════════════════════════════════════
+        q1 = 1.0 / (1.0 - invVaf * vbc - invVar * vbe);
+        if (oik == 0.0 && oikr == 0.0) begin
+            qb = q1;
+        end else begin
+            q2 = oik * cbe + oikr * cbc;
+            arg_q = 1.0 + 4.0 * q2;
+            if (arg_q < 0.0) begin
+                arg_q = 0.0;
+            end
+            sqarg = pow(arg_q, nkf);
+            qb = q1 * (1.0 + sqarg) / 2.0;
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec5  Terminal currents  (bjtload.c:523-524)
+        //  IMPORTANT: ngspice computes cc/cb from the *raw* diode currents —
+        //  the TF/qb modulation of cbe (bjtload.c:584) happens later and
+        //  applies ONLY to the base-emitter charge, never to the DC terminal
+        //  currents.
+        // ════════════════════════════════════════════════════════════════════
+        // Excess phase: cex = cbe (PTF = 0 — see file header note)
+        cex = cbe;
+        cc = (cex - cbc) / qb - cbc / br - cbcn;
+        cb = cbe / bf + cben + cbc / br + cbcn;
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec6  TF bias dependence — modulates the BE *charge* only
+        //  (bjtload.c:567-587)
+        // ════════════════════════════════════════════════════════════════════
+        cbe_q = cbe;   // cbe feeding the diffusion charge tf.cbe
+        if (t_tf > 0.0 && vbe > 0.0) begin
+            argtf = 0.0;
+            if (xtf > 0.0) begin
+                argtf = xtf;
+                if (ovtf > 0.0) begin
+                    argtf = argtf * limexp(vbc * ovtf);
+                end
+                if (t_itf > 0.0) begin
+                    tf_ratio = cbe / (cbe + t_itf);
+                    argtf = argtf * tf_ratio * tf_ratio;
+                end
+            end
+            cbe_q = cbe * (1.0 + argtf) / qb;
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec7  DC contributions  (bjtload.c:774-818)
+        //
+        //  Current decomposition:
+        //    I(c'->e') = transport current = (cex - cbc) / qb
+        //    I(b'->e') = forward base current = cbe/BF + cben
+        //    I(b'->c') = reverse base-collector = cbc/BR + cbcn
+        //    I(sub->substCon) = substrate diode
+        // ════════════════════════════════════════════════════════════════════
+        // Transport current (collector' -> emitter')
+        I(cp, ep) <+ m * type * (cex - cbc) / qb;
+
+        // Forward base-emitter current (base' -> emitter')
+        I(bp, ep) <+ m * type * (cbe / bf + cben);
+
+        // Reverse base-collector current (base' -> collector')
+        I(bp, cp) <+ m * type * (cbc / br + cbcn);
+
+        // Substrate diode
+        if (vertical) begin
+            I(sub, cp) <+ m * type * cdsub;
+        end else begin
+            I(sub, bp) <+ m * (0.0 - type) * cdsub;
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec8  Series resistances  (bjtload.c:525-532, 818)
+        // ════════════════════════════════════════════════════════════════════
+        // ngspice collapses the internal nodes when RC/RE/RB == 0 (bjtsetup.c);
+        // this keeps them and forces the series drop instead — `V = R.I` over
+        // the force's own branch is an exact series resistor, and R = 0 a
+        // perfect short.
+        rcollector = (rc > 0.0) ? (1.0 / (m * gcpr)) : 0.0;
+        remitter   = (re > 0.0) ? (1.0 / (m * gepr)) : 0.0;
+
+        // Base resistance — current/bias-dependent (bjtload.c:525-532): the
+        // effective resistance `gx` (rbpr + rbpi/qb, or the IRB tan form) is
+        // re-evaluated at each bias point and forced as V = (gx/m).I.
+        rbase = 0.0;
+        if (rb > 0.0) begin
+            if (xjrb > 0.0) begin
+                // IRB model (bjtload.c:528-531)
+                arg1 = abs(cb) / xjrb;
+                if (arg1 < 1.0e-9) begin
+                    arg1 = 1.0e-9;
+                end
+                arg2 = (0.0 - 1.0 + sqrt(1.0 + 14.59025 * arg1)) / (2.4317 * sqrt(arg1));
+                arg1t = tan(arg2);
+                if (abs(arg1t) < 1.0e-9) begin
+                    arg1t = 1.0e-9;
+                end
+                gx = rbpr + 3.0 * rbpi * (arg1t - arg2) / (arg2 * arg1t * arg1t);
+            end else begin
+                gx = rbpr + rbpi / qb;
+            end
+            if (gx > 0.0) begin
+                rbase = gx / m;
+            end
+        end
+        V(c, cp) <+ rcollector * I(c, cp);
+        V(e, ep) <+ remitter * I(e, ep);
+        V(b, bp) <+ rbase * I(b, bp);
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec9  Charge storage  (bjtload.c:537-645)
+        // ════════════════════════════════════════════════════════════════════
+        // BE charge: depletion + diffusion (TF * cbe)
+        if (vbe < tDepCap_be) begin
+            a = 1.0 - vbe / tVje;
+            s = exp(0.0 - mje * ln(a));
+            qbe = t_tf * cbe_q + tVje * czbe * (1.0 - a * s) / (1.0 - mje);
+        end else begin
+            czof2 = czbe / f2_be;
+            qbe = t_tf * cbe_q + czbe * tf1_be + czof2 * (
+                f3_be * (vbe - tDepCap_be) +
+                (mje / (tVje + tVje)) * (vbe * vbe - tDepCap_be * tDepCap_be)
+            );
+        end
+
+        // BC charge (internal): depletion + diffusion (TR * cbc)
+        if (vbc < tDepCap_bc) begin
+            a = 1.0 - vbc / tVjc;
+            s = exp(0.0 - mjc * ln(a));
+            qbc = t_tr * cbc + tVjc * czbc * (1.0 - a * s) / (1.0 - mjc);
+        end else begin
+            czof2 = czbc / f2_bc;
+            qbc = t_tr * cbc + czbc * tf1_bc + czof2 * (
+                f3_bc * (vbc - tDepCap_bc) +
+                (mjc / (tVjc + tVjc)) * (vbc * vbc - tDepCap_bc * tDepCap_bc)
+            );
+        end
+
+        // BX charge (external base -> collector'): depletion only
+        if (vbx < tDepCap_bc) begin
+            a = 1.0 - vbx / tVjc;
+            s = exp(0.0 - mjc * ln(a));
+            qbx = tVjc * czbx * (1.0 - a * s) / (1.0 - mjc);
+        end else begin
+            czof2 = czbx / f2_bc;
+            qbx = czbx * tf1_bc + czof2 * (
+                f3_bc * (vbx - tDepCap_bc) +
+                (mjc / (tVjc + tVjc)) * (vbx * vbx - tDepCap_bc * tDepCap_bc)
+            );
+        end
+
+        // Substrate charge — quadratic forward extension (bjtload.c:631-641)
+        if (vsub < 0.0) begin
+            a = 1.0 - vsub / tVjs;
+            s = exp(0.0 - mjs * ln(a));
+            qsub = tVjs * czsub * (1.0 - a * s) / (1.0 - mjs);
+        end else begin
+            qsub = vsub * czsub * (1.0 + mjs * vsub / (2.0 * tVjs));
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec10  Capacitive contributions  (bjtload.c:701-745)
+        // ════════════════════════════════════════════════════════════════════
+        I(bp, ep) <+ m * type * ddt(qbe);
+        I(bp, cp) <+ m * type * ddt(qbc);
+        I(b, cp)  <+ m * type * ddt(qbx);
+        if (vertical) begin
+            I(sub, cp) <+ m * type * ddt(qsub);
+        end else begin
+            I(sub, bp) <+ m * (0.0 - type) * ddt(qsub);
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec11  Noise  (bjtnoise.c — 6 sources)
+        // ════════════════════════════════════════════════════════════════════
+        // Thermal: RC, RE — see file header (gap 1/2): Thevenin-equivalent
+        // series voltage-noise on the SAME branch as the deterministic
+        // `V <+ R.I` stamp, unconditional (rcollector/remitter are already 0
+        // when RC/RE <= 0).
+        V(c, cp) <+ white_noise(4.0 * `NG_K * t * rcollector);
+        V(e, ep) <+ white_noise(4.0 * `NG_K * t * remitter);
+        // Thermal: RB. ngspice's own noise model always uses the SIMPLE
+        // resistance form (rbpr+rbpi/qb) regardless of whether the IRB
+        // tan-model is active for the DC path (bjtnoise.c); the Thevenin
+        // conversion keeps that PSD numerator and multiplies by the ACTUAL
+        // branch resistance squared (rbase^2) — see file header gap 1. The
+        // ternary (not a statement-level `if`) both avoids the conditional-
+        // Potential-contribution restriction (gap 2) and the `0/0` NaN that
+        // `rbpr+rbpi/qb` would otherwise produce at RB=RBM=0 (the default).
+        V(b, bp) <+ white_noise(
+            (rb > 0.0) ? (4.0 * `NG_K * t * m * rbase * rbase / (rbpr + rbpi / qb)) : 0.0
+        );
+        // Shot: Ic, Ib
+        I(cp, ep) <+ white_noise(2.0 * `NG_Q * m * abs(cc));
+        I(bp, ep) <+ white_noise(2.0 * `NG_Q * m * abs(cb));
+        // Flicker
+        if (kf > 0.0) begin
+            I(bp, ep) <+ flicker_noise(m * kf * pow(abs(cb), af), 1.0);
+        end
+
+        // ── Initial condition (bjtload.c:252-258, NGP-10) ─────────────────────
+        // NOT WIRED — see file header.
+    end
+endmodule

@@ -1,0 +1,352 @@
+// NGSPICE faithful model — JFET (Shichman-Hodges + Sydney-University extension).
+//
+// Source: ngspice/src/spicelib/devices/jfet/
+//   jfetdefs.h  jfettemp.c  jfetload.c  jfetnoi.c  jfetpar.c  jfetmpar.c
+//
+// Includes: NJF/PJF, series resistances (RD/RS with internal nodes), quadratic
+// drain current with channel-length modulation (lambda), Sydney-University B
+// parameter, gate-junction diodes (GS/GD), depletion charges, temperature
+// dependence (TCV/BEX), thermal/shot/flicker noise.
+//
+// All equations are translated line-by-line from the C source, same as the
+// PHDL predecessor this file replaces (T42, VAMS-08 — a dialect rewrite, not
+// a re-derivation). Same conventions `diode.va` (T42) established:
+// `pub bundle JfetModel` flattens into flat module `parameter`s (T41
+// convention); PHDL's `dest <- src` becomes `<+` throughout (every `<-` here
+// is an unconditional single contribution to its own branch, so the
+// substitution is exact); `ng_egfet(t)` (no VAMS top-level function scope,
+// MD-45) is inlined as `1.16 - 7.02e-4*t*t/(t+1108.0)` at each call site.
+//
+// TWO GAPS FOUND DURING THIS TRANSLATION (both first found migrating
+// `diode.va`, T42, confirmed here independently):
+//  1. A series-resistance branch that stamps `V(x,y) <+ R*I(x,y)` (the
+//     R=0-safe Force form) cannot ALSO carry a Flow-type noise contribution
+//     on the SAME branch — LRM Sec 5.4.2 rejects mixing potential/flow on one
+//     branch, and PHDL's `<-` Force (exempt from the check) hid this. Fixed
+//     by the textbook Norton/Thevenin equivalence: a resistor's parallel
+//     current-noise source (PSD 4kT.G) and its series voltage-noise source
+//     (PSD 4kT.R = 4kT/G) are the same physical noise; re-expressed as
+//     Potential with PSD 4kT.R (R = rdrain/rsource below, already computed).
+//  2. ANY conditional (inside `if`) Potential contribution is separately
+//     unsupported by `AnalogKernel::compile`
+//     (`Unsupported("conditional potential contribution")`,
+//     `flatten/analog.rs`) — not just the branch-conflict case. The
+//     `if (model.rd > 0.0) { ... }` guards PHDL wrapped these noise sources
+//     in are dropped; they are not needed anyway, since `rdrain`/`rsource`
+//     are already 0 when RD/RS <= 0, so the unconditional PSD is
+//     `white_noise(0.0)` — the same outcome the guard produced.
+//
+// UIC (`@ initial { V(d,s) <- ic_vds; V(g,s) <- ic_vgs; }`) is dropped
+// entirely (NOT WIRED) for the same reason `diode.va` drops its own: any
+// Potential contribution inside an event-control body
+// (`@(initial_step) V(...) <+ ...;`) hits the same
+// `Unsupported("conditional potential contribution")` regardless of branch-
+// conflict status — confirmed by direct compile. `ic_vds`/`ic_vgs` stay
+// declared, unused parameters (NGP-10, `ROADMAP.md`,
+// `.specs/features/ngspice-parity/spec.md`).
+// ════════════════════════════════════════════════════════════════════════════
+
+`include "disciplines.vams"
+`include "constants.va"
+
+module jfet (
+    inout electrical d,          // drain
+    inout electrical g,          // gate
+    inout electrical s           // source
+);
+    // ── Model-card parameters (formerly `JfetModel`) ─────────────────────────
+    parameter integer njf = 1;         // 1 = NJF, 0 = PJF
+
+    parameter real vto    = -2.0;      // threshold voltage (V)
+    parameter real beta   = 1.0e-4;    // transconductance parameter (A/V^2)
+    parameter real lambda = 0.0;       // channel-length modulation (1/V)
+    parameter real is     = 1.0e-14;   // gate-junction saturation current (A)
+    parameter real b      = 1.0;       // Sydney-University doping-tail (1 = classic)
+
+    parameter real rd     = 0.0;       // drain resistance (Ohm)
+    parameter real rs     = 0.0;       // source resistance (Ohm)
+
+    parameter real cgs    = 0.0;       // zero-bias G-S junction cap (F)
+    parameter real cgd    = 0.0;       // zero-bias G-D junction cap (F)
+    parameter real pb     = 1.0;       // gate junction potential (V)
+    parameter real fc     = 0.5;       // forward-bias depletion cap coeff
+    // NOTE: ngspice hardcodes MJ = 0.5 (abrupt junction) for the JFET.
+
+    parameter real tnom   = 300.15;    // nominal temperature (K)
+    parameter real tcv    = 0.0;       // threshold temp coefficient (V/K)
+    parameter real bex    = 0.0;       // beta temp exponent
+
+    parameter real kf     = 0.0;       // flicker noise coefficient
+    parameter real af     = 1.0;       // flicker noise exponent
+    parameter real nlev   = 2.0;       // noise-equation selector
+    parameter real gdsnoi = 1.0;       // channel-noise coefficient (nlev=3)
+
+    // ── Instance parameters ───────────────────────────────────────────────
+    parameter real area  = 1.0;
+    parameter real m     = 1.0;
+    parameter real temp  = 0.0;
+    parameter real dtemp = 0.0;
+    parameter integer off = 0;         // initially off (advisory, unused)
+    // UIC initial conditions — see file header (NOT WIRED, NGP-10).
+    parameter real ic_vds = 0.0;
+    parameter real ic_vgs = 0.0;
+
+    electrical dp;    // drain'  (if RD > 0)
+    electrical sp;    // source' (if RS > 0)
+
+    real type, t, dt, vt, vtnom, ratio1, tSatCur, tVto, tBeta;
+    real fact1, fact2, egfet, egfet1, arg, pbfact, arg1, pbfact1;
+    real pbo, gmaold, tGatePot, gmanew, tCgs, tCgd;
+    real xfc, corDepCap, twop, fcpb2, f1, f2, f3, gdpr, gspr;
+    real vgs, vgd, vds, bfac, id, gm, vgst, betap, bf, apart, cpart, vgdt;
+    real gmin, csat, igs, igd, a, qgs, sarg, czof2, qgd;
+    real rdrain, rsource, vgst_n, alpha, chan_pwr;
+
+    analog begin
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec0  Type
+        // ════════════════════════════════════════════════════════════════════
+        type = njf ? 1.0 : -1.0;
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec1  Temperature preprocessing  (jfettemp.c)
+        // ════════════════════════════════════════════════════════════════════
+        t = (temp > 0.0) ? temp : ($temperature() + dtemp);
+        dt = t - tnom;
+        vt = $vt(t);
+        vtnom = $vt(tnom);
+
+        // IS temperature (jfettemp.c:92 — per-unit; area scales in load, m at stamp)
+        ratio1 = t / tnom - 1.0;
+        tSatCur = is * area * exp(ratio1 * 1.11 / vt);
+
+        // VTO temperature (jfettemp.c:111)
+        tVto = vto - tcv * dt;
+
+        // Beta temperature (jfettemp.c:112) — area-scaled (jfetload.c:92)
+        tBeta = beta * area * pow(t / tnom, bex);
+
+        // Junction potential / cap temperature (jfettemp.c — pbfact scheme, MJ=0.5)
+        fact1  = tnom / `NG_REFTEMP;
+        fact2  = t / `NG_REFTEMP;
+        egfet  = 1.16 - (7.02e-4 * t * t) / (t + 1108.0);
+        egfet1 = 1.16 - (7.02e-4 * tnom * tnom) / (tnom + 1108.0);
+        arg    = 0.0 - egfet / (2.0 * `NG_K * t) + 1.1150877 / (2.0 * `NG_K * `NG_REFTEMP);
+        pbfact = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + `NG_Q * arg);
+        arg1   = 0.0 - egfet1 / (2.0 * `NG_K * tnom) + 1.1150877 / (2.0 * `NG_K * `NG_REFTEMP);
+        pbfact1= 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + `NG_Q * arg1);
+
+        pbo = (pb - pbfact1) / fact1;
+        gmaold = (pb - pbo) / pbo;
+        tGatePot = pbfact + fact2 * pbo;
+        gmanew = (tGatePot - pbo) / pbo;
+
+        // Junction caps: area-scaled (jfetload.c:408-409); m applied at stamp time.
+        tCgs = cgs * area / (1.0 + 0.5 * (4.0e-4 * (tnom - `NG_REFTEMP) - gmaold));
+        tCgs = tCgs * (1.0 + 0.5 * (4.0e-4 * (t - `NG_REFTEMP) - gmanew));
+
+        tCgd = cgd * area / (1.0 + 0.5 * (4.0e-4 * (tnom - `NG_REFTEMP) - gmaold));
+        tCgd = tCgd * (1.0 + 0.5 * (4.0e-4 * (t - `NG_REFTEMP) - gmanew));
+
+        // Cap precomputation (jfettemp.c — MJ=0.5 hardcoded)
+        xfc = ln(1.0 - fc);
+        corDepCap = fc * tGatePot;
+        twop = 2.0 * tGatePot;
+        fcpb2 = corDepCap * corDepCap;
+        f1 = tGatePot * (1.0 - exp(0.5 * xfc)) / 0.5;   // (1-MJ)=0.5
+        f2 = exp(1.5 * xfc);                              // (1+MJ)=1.5
+        f3 = 1.0 - 1.5 * fc;                               // 1-FC*(1+MJ)
+
+        // Series conductances — area-scaled (jfetload.c:93-94); m at stamp time.
+        gdpr = (rd > 0.0) ? (area / rd) : 0.0;
+        gspr = (rs > 0.0) ? (area / rs) : 0.0;
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec2  Voltages  (jfetload.c:215-227)
+        // ════════════════════════════════════════════════════════════════════
+        vgs = type * V(g, sp);
+        vgd = type * V(g, dp);
+        vds = vgs - vgd;
+
+        // Sydney-University B factor (jfetload.c:265)
+        bfac = 0.0;
+        if (b != 1.0 && pb != vto) begin
+            bfac = (1.0 - b) / (pb - vto);
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec3  Drain current  (jfetload.c:252-326)
+        //  Classic Shichman-Hodges (B=1) with Sydney-University extension.
+        // ════════════════════════════════════════════════════════════════════
+        id = 0.0;
+        gm = 0.0;
+
+        if (vds >= 0.0) begin
+            // Normal mode
+            vgst = vgs - tVto;
+            betap = tBeta * (1.0 + lambda * vds);
+            if (vgst > 0.0) begin
+                if (vgst < vds) begin
+                    // Saturation
+                    gm = betap * vgst * (2.0 * b + 3.0 * vgst * bfac);
+                    if (b == 1.0) begin
+                        id = betap * vgst * vgst;
+                    end else begin
+                        bf = vgst * bfac;
+                        id = betap * vgst * vgst * (b + bf);
+                    end
+                end else begin
+                    // Linear
+                    apart = 2.0 * b + 3.0 * bfac * (vgst - vds);
+                    gm = betap * vds * (apart + 3.0 * bfac * vgst);
+                    if (b == 1.0) begin
+                        id = betap * vds * (2.0 * vgst - vds);
+                    end else begin
+                        cpart = vds * (vds * (bfac * vds - b) + vgst * apart);
+                        id = betap * cpart;
+                    end
+                end
+            end
+        end else begin
+            // Inverse mode (drain/source swapped)
+            vgdt = vgd - tVto;
+            betap = tBeta * (1.0 - lambda * vds);
+            if (vgdt > 0.0) begin
+                if (vgdt < 0.0 - vds) begin
+                    // Saturation (inverse)
+                    gm = 0.0 - betap * vgdt * (2.0 * b + 3.0 * vgdt * bfac);
+                    if (b == 1.0) begin
+                        id = 0.0 - betap * vgdt * vgdt;
+                    end else begin
+                        bf = vgdt * bfac;
+                        id = 0.0 - betap * vgdt * vgdt * (b + bf);
+                    end
+                end else begin
+                    // Linear (inverse)
+                    apart = 2.0 * b + 3.0 * bfac * (vgdt + vds);
+                    gm = betap * vds * (apart + 3.0 * bfac * vgdt);
+                    if (b == 1.0) begin
+                        id = betap * vds * (2.0 * vgdt + vds);
+                    end else begin
+                        cpart = vds * (vds * (bfac * vds + b) + vgdt * apart);
+                        id = betap * cpart;
+                    end
+                end
+            end
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec4  Gate-junction diode currents  (jfetload.c:228-250)
+        // ════════════════════════════════════════════════════════════════════
+        gmin = $simparam("gmin", 1.0e-12);
+        csat = tSatCur;
+
+        if (vgs >= 0.0 - 3.0 * vt) begin
+            igs = csat * (limexp(vgs / vt) - 1.0);
+        end else begin
+            a = 3.0 * vt / (vgs * `NG_E);
+            igs = 0.0 - csat * (1.0 + a * a * a);
+        end
+
+        if (vgd >= 0.0 - 3.0 * vt) begin
+            igd = csat * (limexp(vgd / vt) - 1.0);
+        end else begin
+            a = 3.0 * vt / (vgd * `NG_E);
+            igd = 0.0 - csat * (1.0 + a * a * a);
+        end
+
+        // gmin addition (jfetload.c:245-250)
+        igs = igs + gmin * vgs;
+        igd = igd + gmin * vgd;
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec5  Charge storage  (jfetload.c:408-435)
+        //  Depletion charges for GS and GD junctions (MJ = 0.5).
+        // ════════════════════════════════════════════════════════════════════
+        // Qgs
+        if (vgs < corDepCap) begin
+            sarg = sqrt(1.0 - vgs / tGatePot);
+            qgs = 2.0 * tGatePot * tCgs * (1.0 - sarg);
+        end else begin
+            czof2 = tCgs / f2;
+            qgs = tCgs * f1 + czof2 * (f3 * (vgs - corDepCap) + (vgs * vgs - fcpb2) / (2.0 * twop));
+        end
+
+        // Qgd
+        if (vgd < corDepCap) begin
+            sarg = sqrt(1.0 - vgd / tGatePot);
+            qgd = 2.0 * tGatePot * tCgd * (1.0 - sarg);
+        end else begin
+            czof2 = tCgd / f2;
+            qgd = tCgd * f1 + czof2 * (f3 * (vgd - corDepCap) + (vgd * vgd - fcpb2) / (2.0 * twop));
+        end
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec6  Contributions  (jfetload.c:499-528)
+        // ════════════════════════════════════════════════════════════════════
+        // Drain current (drain' -> source')
+        I(dp, sp) <+ m * type * id;
+
+        // Gate diodes
+        I(g, sp) <+ m * type * igs;
+        I(g, dp) <+ m * type * igd;
+
+        // Capacitive currents
+        I(g, sp) <+ m * type * ddt(qgs);
+        I(g, dp) <+ m * type * ddt(qgd);
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec7  Series resistances  (jfetload.c:499-528)
+        // ════════════════════════════════════════════════════════════════════
+        // ngspice collapses the internal nodes when RD/RS == 0 (jfetsetup.c);
+        // this keeps them and forces the series drop instead — `V = R.I` over
+        // the force's own branch is an exact series resistor, and R = 0 a
+        // perfect short.
+        rdrain = (rd > 0.0) ? (1.0 / (m * gdpr)) : 0.0;
+        rsource = (rs > 0.0) ? (1.0 / (m * gspr)) : 0.0;
+        V(d, dp) <+ rdrain * I(d, dp);
+        V(s, sp) <+ rsource * I(s, sp);
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Sec8  Noise  (jfetnoi.c — 4 sources)
+        // ════════════════════════════════════════════════════════════════════
+        // Thermal: RD, RS. See file header (gap 1): re-expressed as the
+        // Thevenin-equivalent series voltage-noise source on the SAME branch
+        // as the deterministic `V <+ R.I` stamp (Norton PSD 4kT.G <-> Thevenin
+        // PSD 4kT.R), unconditional (gap 2) since `rdrain`/`rsource` are
+        // already 0 when RD/RS <= 0.
+        V(d, dp) <+ white_noise(4.0 * `NG_K * t * rdrain);
+        V(s, sp) <+ white_noise(4.0 * `NG_K * t * rsource);
+        // Channel noise (jfetnoi.c:117-135). Below nlev 3 it is
+        // 4kT.(2/3).m.|gm| with the model's own analytic gm from Sec3; at
+        // nlev 3 ngspice switches to its own closed form in the saturation
+        // parameter alpha.
+        //
+        // The level selection is an expression choosing the power, not two
+        // guarded `I(dp,sp) <+ white_noise(...)` statements in an if/else: a
+        // noise contribution in each arm of an if/else is stamped from BOTH
+        // arms (measured on noise_jfet: 2.93e-18 V^2/Hz against ngspice's
+        // 6.54e-19, exactly the sum of the two forms). One contribution, one
+        // power.
+        vgst_n = vgs - tVto;
+        alpha = (vgst_n > 0.0 && vgst_n >= vds) ? (1.0 - vds / vgst_n) : 0.0;
+        // Deliberate deviation (MD-38) in the cutoff arm: ngspice evaluates
+        // its nlev-3 expression unconditionally, so below threshold it hands
+        // NevalSrc a *negative* thermal-noise parameter and stamps a negative
+        // power spectral density. A pinched-off channel carries no channel
+        // noise; piperine contributes none rather than reproducing that
+        // defect.
+        chan_pwr = (nlev < 3.0) ? ((2.0 / 3.0) * m * abs(gm))
+                 : (vgst_n > 0.0) ? ((2.0 / 3.0) * m * tBeta * vgst_n * (1.0 + alpha + alpha * alpha)
+                       / (1.0 + alpha) * gdsnoi)
+                 : 0.0;
+        I(dp, sp) <+ white_noise(4.0 * `NG_K * t * chan_pwr);
+        // Flicker
+        if (kf > 0.0) begin
+            I(dp, sp) <+ flicker_noise(m * kf * pow(abs(id), af), 1.0);
+        end
+
+        // ── Initial condition (jfetload.c:109-110, NGP-10) ────────────────────
+        // NOT WIRED — see file header.
+    end
+endmodule

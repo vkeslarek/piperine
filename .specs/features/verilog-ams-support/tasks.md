@@ -856,7 +856,7 @@ T53 → T54 → T55 → T56 → T57 → T58
 
 ---
 
-#### T42: Migrate `headers/spice/` device models → `.va` (part 2: diode, bjt, jfet, mos)
+#### T42: Migrate `headers/spice/` device models → `.va` (part 2: diode, bjt, jfet, mos) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/headers/spice/*.va` · **Depends on**: T41 · **Requirement**: VAMS-08
 **Done when**: junction-device op points match the ngspice oracle within the **existing** contract · a mismatch is root-caused, never tolerance-loosened · **Gate**: full
 **Commit**: `feat(headers): migrate junction SPICE models to Verilog-A`
@@ -2613,3 +2613,129 @@ did not close.
   `git stash` back to T40's own commit `46e43ac`, and `resolve_lowering`
   is already named in T37's documented pre-existing inventory — neither
   is new, neither touches `.phdl`/`.va` header counting, both untouched.
+
+- **T42** ✅ — `crates/piperine-lang/headers/spice/{diode,bjt,jfet,mos}.phdl`
+  (4 files, ~2820 lines) migrated to `.va`, the junction-device half of
+  the SPICE-model corpus. `constants.va` (T41) already carried the
+  physical-constant `` `define``s; `ng_egfet`/`ng_sign`/`ng_clamp` and the
+  `Region` enum it left undecided for this task were resolved here:
+  `ng_egfet(t)` (the only one of the three actually used by any of these
+  four models) is inlined at every call site (`1.16 - 7.02e-4*t*t/(t+
+  1108.0)`, same as `constants.phdl`'s formula) rather than declared —
+  VAMS has no module-external function scope (LRM Sec 4.7/5.9) and this
+  codegen does not lower `analog function` calls into the POM either way
+  (MD-45), the same disposition T41's `sources.va` already established for
+  its own inlined waveform helpers; `ng_sign`/`ng_clamp` are unused by any
+  of the four files (grep-confirmed) so nothing needed inlining for them;
+  the `Region` enum (DVC-17's MOS operating-region opvar) is dropped
+  outright — VAMS has no enum type at all, and the dv-core introspection
+  machinery that read the opvar is itself dark since MD-45, so there is
+  neither a type to express it with nor a reader left to consume it.
+  **Design decisions carried across all 4 files** (documented in each
+  file's own header, T41 style): `pub bundle *Model` flattens into flat
+  module `parameter`s exactly as T41 established, with one genuine name
+  collision the flattening surfaces per file — `dio`'s model-card grading
+  coefficient (`model.m`) vs. its instance-level parallel multiplier
+  (`param m`), both bare `m` in PHDL's separate namespaces, resolved by
+  renaming the model-card field to `grad_m`; `dio`'s port `n` vs. its
+  model-card emission coefficient `model.n`, resolved by renaming the
+  field to `n_e`; `mos1/2/3`'s local bulk-diode-current variable `cbd`/
+  `cbs` vs. the model-card zero-bias-cap parameters of the same names,
+  resolved by renaming the locals to `cbd_i`/`cbs_i`; `bjt`'s local TF-
+  bias-dependence variable `temp` vs. the (now-flat) instance parameter
+  `temp`, resolved by renaming the local to `tf_ratio`. `<-` (Force)
+  becomes `<+` throughout per T32's SPEC_DEVIATION, and the SOA
+  `constraint {dio|mos1|bjt}` blocks (dv-core T26/T27, DVC-16) are dropped
+  entirely — same MD-45 constraint-runtime-is-dark disposition as every
+  other migrated file — with their `*_max` sentinel parameters kept
+  declared-but-unused for API fidelity.
+  **Three genuine architecture findings, all root-caused and fixed, not
+  papered over** (first found migrating `diode.va`, confirmed identically
+  in all three other files):
+  1. A series-resistance branch that stamps the R=0-safe Force form
+     (`V(x,y) <+ R*I(x,y)`) cannot ALSO carry a Flow-type noise
+     contribution on the same branch — LRM Sec 5.4.2 rejects mixing
+     potential/flow on one branch, and PHDL's `<-` Force (a distinct
+     mechanism from `<+`) was exempt from the check, hiding this for the
+     whole PHDL-authored corpus. Fixed with the textbook Norton/Thevenin
+     equivalence: a resistor's parallel current-noise source (PSD
+     `S_I = 4kT.G`) and its series voltage-noise source
+     (PSD `S_V = S_I.R^2`, where `R` is the branch's ACTUAL stamped
+     resistance) are the same physical noise, so the contribution becomes
+     Potential-typed with the transformed PSD. For `dio`/`jfet`/mos1-3's
+     RC/RD/RS branches this reduces to the simple `S_V = 4kT.R` (the
+     noise formula's own conductance coefficient already equals the
+     stamped conductance); `bjt`'s RB branch does NOT reduce that far —
+     ngspice's own noise model (`bjtnoise.c`) always uses the SIMPLE
+     resistance form `rbpr+rbpi/qb` for the noise PSD regardless of
+     whether the IRB nonlinear tan-model is active for the DC branch
+     resistance `rbase`, so preserving that ngspice-specific
+     approximation exactly requires keeping ngspice's own PSD numerator
+     and multiplying by the ACTUAL branch resistance squared
+     (`S_V = 4kT.m.rbase^2/(rbpr+rbpi/qb)`), not the simple form squared.
+  2. ANY conditional (inside `if`) Potential contribution is separately
+     unsupported by `AnalogKernel::compile`
+     (`Unsupported("conditional potential contribution")`,
+     `flatten/analog.rs`) — independent of gap 1's branch-conflict check.
+     Every `if (rX > 0.0) { V(...) <+ ...; }` noise guard PHDL had is
+     dropped in favor of an unconditional contribution; safe everywhere
+     except `bjt`'s RB noise, where the divisor `rbpr+rbpi/qb` is `0/0`
+     at RB=RBM=0 (the DEFAULT parameter values) — there the guard is kept
+     as a ternary INSIDE the (still unconditional) contribution's value
+     expression, which is just an expression and does not trip the same
+     restriction. Flow-type (`I(...) <+`) contributions confirmed to stay
+     conditional with no issue (flicker noise, vertical/lateral substrate
+     routing).
+  3. UIC (`@ initial { V(...) <- ...; }`) is dropped in all four files
+     (NOT WIRED, same disposition `passives.va`'s `cap`/`ind` already
+     carry for NGP-10) — but for a DIFFERENT and more general reason than
+     `cap`/`ind`'s branch conflict: `dio`'s UIC seeds the *implicit*
+     branch `(p,n)`, which carries no other contribution at all (unlike
+     `cap`), so gap 1's branch-conflict check does not fire — yet
+     `AnalogKernel::compile` still rejects it, because ANY Potential
+     contribution inside an event-control body hits gap 2's restriction
+     unconditionally, regardless of branch-conflict status. Confirmed by
+     direct compile on `dio` in isolation (both with and without a
+     branch conflict) before applying the same disposition to
+     `jfet`/`bjt`/mos1-3 without re-deriving it four more times.
+  **Verification**: each of the six modules (`dio`, `jfet`, `bjt`, `mos1`,
+  `mos2`, `mos3`) confirmed individually via a temporary scratch test
+  (`piperine_lang::parse_and_elaborate` + `piperine_codegen::resolve::
+  lower_bodies` + `AnalogKernel::compile`, deleted before this commit) to
+  elaborate standalone and JIT-compile with zero `Unsupported` errors —
+  including `mos2`'s ~700-line Baum-quartic velocity-saturation solver and
+  `mos3`'s KAPPA/alpha channel-length-modulation branch, both exercised
+  end-to-end. The MOS2/MOS3 `.disto` distortion-analysis gap `CLAUDE.md`
+  already documents is unrelated to this (opt-in, gated by
+  `SessionBuilder::disto`, not exercised by a plain `compile()`) and does
+  not block this task. `cargo build --workspace`: zero warnings. `cargo
+  test -p piperine --test suite_hygiene`: 9/10 green (the same
+  pre-existing `mod_rs_declares_only`/`piperine-ir` failure, untouched);
+  `phdl_corpus_does_not_grow` green with `PHDL_HIGH_WATER_MARK` lowered
+  97 → 93, matching the real count after this commit (`git ls-files`
+  confirms 93 `.phdl` files remain — a plain recursive `find` overcounts
+  by including untracked build/example artifacts the gate's own walker
+  excludes; `git ls-files` is the authoritative count and matches the
+  test's own passing assertion). `tests/ngspice_{validation,ac,noise,
+  temp,tran}.rs` and `ngspice_parity_matrix.rs`: pass/fail counts recorded
+  before and after this change are identical (validation 20/29,
+  ac 21/3, noise 22/7, tran 21/4, temp 22/2, parity_matrix 4/0) — expected
+  and unaffected by construction, since `tests/ngspice/*.phdl` fixtures
+  are still `.phdl` (unmigrated until T44) and every one of the 29/3/7/4/2
+  failures is the *same* pre-existing "PHDL source fed to a VAMS-only
+  parser" `E1005` (`found 'use'` at the fixture's own `use piperine::
+  disciplines;` line) that already fired before this commit — none of
+  them reach the newly-`.va` models either way, confirmed by inspecting
+  one representative failure's message. `cargo test --workspace --no-run`
+  still cannot compile as one command; the specific failures (`piperine_
+  lang::parse` unresolved in `digital_jit.rs`/`digital_codegen_gaps.rs`/
+  `margin_lowering.rs`, `DigitalBody::reg_inits` missing in the same two
+  digital targets, `QuantityClass` unresolved import in
+  `margin_lowering.rs`) reproduce byte-identically on `git stash` back to
+  this commit's parent — confirmed for `margin_lowering.rs` directly;
+  none is new, none touches `headers/spice/`, all pre-existing Phase-6/8
+  debt tracked for T44-T46's corpus migration.
+  No SPEC_DEVIATION beyond the three gaps above (all already-established
+  patterns from T41, extended here to the harder junction-device cases —
+  not new deviations, just the same class applied to RB's nonlinear IRB
+  case and to a branch with zero conflicting contributions).
