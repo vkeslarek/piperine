@@ -18,13 +18,13 @@ use std::collections::{HashMap, HashSet};
 
 use piperine_vams::ast::{
     BranchDecl, Declarator, Direction as AstDirection, Expr, ModuleDecl, ModuleItem, ParamType,
-    PortConnection, PortDecl, Stmt,
+    PortConnection, PortDecl, Stmt, VarKind,
 };
 
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
     Behavior, Branch, BranchKind, Design, Direction, ElabError, ElabErrorKind, Instance, Module,
-    Nature, NetRef, NetType, Param, Port, Value, ValueType, Wire,
+    Nature, NetRef, NetType, Param, Port, Value, ValueType, Var, Wire,
 };
 
 use super::Elaborator;
@@ -42,6 +42,7 @@ impl Elaborator {
         let mut instances = Vec::new();
         let mut behaviors = Vec::new();
         let mut branches = Vec::new();
+        let mut vars = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
@@ -115,11 +116,22 @@ impl Elaborator {
                     behaviors.push(Behavior::new(decl.name.clone(), b.kind, stmts));
                 }
                 ModuleItem::Branch(b) => lower_branch_decl(b, &mut branches),
-                // genvar/generate (T25), ground/var/event declarations,
+                // `integer`/`real`/`time`/`realtime` module-level
+                // declarations (LRM Annex A.2.1.3 `module_or_generate_item_
+                // declaration`) — module-level persistent state (GAPS
+                // §I.15's `pom::Var`, reused as-is: VAMS's own `VarDecl`
+                // carries no initializer, so `init` is always `None` here —
+                // see `var_declarator_to_var`'s doc comment).
+                ModuleItem::Var(v) => {
+                    let ty = var_kind_value_type(v.kind);
+                    for d in &v.names {
+                        vars.push(var_declarator_to_var(d, ty.clone(), &env)?);
+                    }
+                }
+                // genvar/generate (T25), ground/event declarations,
                 // continuous assign, specify/gates: not yet lowered — later
                 // tasks extend this match.
                 ModuleItem::Ground(_)
-                | ModuleItem::Var(_)
                 | ModuleItem::Event(_)
                 | ModuleItem::Genvar(_)
                 | ModuleItem::Specparam(_)
@@ -163,6 +175,7 @@ impl Elaborator {
         let mut module =
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
         module.branches = branches;
+        module.vars = vars;
 
         // Access-function call sites inside analog behaviors (§5.4.1) bind
         // to a branch, named or implicit, and drive its BranchKind —
@@ -429,6 +442,51 @@ fn declarator_net_type(d: &Declarator, discipline: &str, env: &ConstEnv) -> Resu
             Ok(NetType::Array(Box::new(base), width))
         }
     }
+}
+
+/// `integer`/`real`/`time`/`realtime` (LRM Annex A.2.1.3 `variable_type`)
+/// map onto the same POM `ValueType`s `param_value_type` already uses for
+/// the identical keyword set on a `parameter` declaration — `time`/
+/// `realtime` have no dedicated POM value type, so both fold into `Real`
+/// (seconds), matching `param_value_type`'s existing precedent.
+fn var_kind_value_type(kind: VarKind) -> ValueType {
+    match kind {
+        VarKind::Integer => ValueType::Integer,
+        VarKind::Real | VarKind::Time | VarKind::Realtime => ValueType::Real,
+    }
+}
+
+/// A module-level `var` (GAPS §I.15) — persistent digital register state
+/// consumed directly by `piperine-codegen`'s digital kernel
+/// (`resolve/pom/body.rs` reads `Module::vars()` to populate
+/// `DigitalBody::regs`/`reg_inits`). `init` is always `None`: unlike a
+/// `parameter` (`ParamDecl::names: Vec<(String, Expr)>`, a mandatory
+/// default), VAMS's `VarDecl`/`Declarator` carries no initializer
+/// expression at all (LRM's own `variable_type ::= variable_identifier
+/// { dimension } [ '=' constant_arrayinit ] | variable_identifier '='
+/// constant_expression` is not represented in `ast::Declarator` today) —
+/// there is nothing to invent an initializer from, so this stays `None`
+/// rather than smuggling a value in from elsewhere (T30's `reg_inits`
+/// SPEC_DEVIATION note: PHDL had a `VarDecl`-with-default statement to
+/// smuggle this through; VAMS genuinely doesn't).
+///
+/// A `[msb:lsb]` range widens the scalar type into `ValueType::Array`,
+/// same width computation as `declarator_net_type` uses for nets/ports.
+fn var_declarator_to_var(d: &Declarator, ty: ValueType, env: &ConstEnv) -> Result<Var, ElabError> {
+    let ty = match &d.range {
+        None => ty,
+        Some(r) => {
+            let msb = env.eval_int(&r.msb).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval { context: format!("var `{}` range msb", d.name), source: e })
+            })?;
+            let lsb = env.eval_int(&r.lsb).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval { context: format!("var `{}` range lsb", d.name), source: e })
+            })?;
+            let width = (msb - lsb).unsigned_abs() + 1;
+            ValueType::Array(Box::new(ty), width)
+        }
+    };
+    Ok(Var { span: None, attributes: Vec::new(), doc: None, name: d.name.clone(), ty, init: None })
 }
 
 fn param_value_type(ty: Option<ParamType>) -> ValueType {

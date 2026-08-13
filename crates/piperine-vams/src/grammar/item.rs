@@ -271,6 +271,9 @@ impl Grammar {
         if kw == Some("specify") {
             return Ok(ModuleItem::Specify(self.parse_specify_block()?));
         }
+        if matches!(kw, Some("integer") | Some("real") | Some("realtime") | Some("time")) {
+            return Ok(ModuleItem::Var(self.parse_var_decl()?));
+        }
         if kw.and_then(gate_kind_for).is_some() {
             return Ok(ModuleItem::Gate(self.parse_gate_instantiation()?));
         }
@@ -355,6 +358,33 @@ impl Grammar {
         let (name, _) = self.expect_ident()?;
         self.expect_punct(";")?;
         Ok(GroundDecl { span: start, name })
+    }
+
+    /// `integer_declaration`/`real_declaration`/`time_declaration`/
+    /// `realtime_declaration`, Annex A.2.1.3 — one of the
+    /// `module_or_generate_item_declaration` alternatives. The `variable_type`
+    /// production also allows a `'=' constant_expression` initializer per
+    /// name, but `ast::VarDecl` carries no initializer field (only
+    /// `Declarator { name, range }`, the same shape ports/nets use) — an
+    /// initialized module-level variable is not yet representable, so this
+    /// parses the declarator-list form only; a bare `=` here is a genuine
+    /// parse error, not a silently dropped initializer.
+    fn parse_var_decl(&mut self) -> Result<VarDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.peek_span();
+        let kind = if self.eat_kw("integer") {
+            VarKind::Integer
+        } else if self.eat_kw("real") {
+            VarKind::Real
+        } else if self.eat_kw("realtime") {
+            VarKind::Realtime
+        } else {
+            self.expect_kw("time")?;
+            VarKind::Time
+        };
+        let names = self.parse_declarator_list()?;
+        let end = self.expect_punct(";")?;
+        Ok(VarDecl { span: Span::new(start.start, end.end), attrs, kind, names })
     }
 
     /// A discipline name where present, distinguished from "no discipline,
