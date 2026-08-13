@@ -881,22 +881,24 @@ known for `k`).
 
 ---
 
-#### T44: Migrate `tests/ngspice/` fixture twins (48 files) — ⚠️ PARTIAL (see Progress Log)
+#### T44: Migrate `tests/ngspice/` fixture twins (48 files) — done (see Progress Log)
 **Where**: `tests/ngspice/*.vams` · **Depends on**: T43 · **Requirement**: VAMS-08
 **Done when**: all five ngspice domain targets green with unchanged `ToleranceContract` · `ngspice_parity_matrix.rs` still covers every model×domain · **Gate**: full
 **Status**: All 48 fixtures migrated, verified individually, `.phdl` originals
-deleted. 4 of 6 ngspice-family targets fully green (`validation` 49/49, `ac`
-24/24, `temp` 24/24, `homotopy` 18/18) plus `parity_matrix` 4/4. Two domain
-targets carry known failures neither caused by nor fixable within this
-task's file scope: `tran` 23/25 (`uic_rc`/`uic_mos` — pre-existing NGP-10
-debt, `cap`/`mos1`'s UIC dropped at T41/T42, documented in those files'
-own headers) and `noise` 28/29 (`the_closed_switch_carries_its_on_
-conductance_noise` — a **newly-discovered** `piperine-codegen` gap: an
-`@(initial_step)` event action's ternary condition does not read an
-instance-overridden `parameter integer`'s per-instance value, confirmed by
-minimal reproduction). See Progress Log for full root-cause evidence,
+deleted. 5 of 6 ngspice-family targets fully green (`validation` 49/49, `ac`
+24/24, `temp` 24/24, `homotopy` 18/18, `noise` 29/29 as of the follow-up fix
+below) plus `parity_matrix` 4/4. One domain target carries a known failure
+neither caused by nor fixable within this task's file scope: `tran` 23/25
+(`uic_rc`/`uic_mos` — pre-existing NGP-10 debt, `cap`/`mos1`'s UIC dropped at
+T41/T42, documented in those files' own headers — out of scope, left alone).
+`noise` 28/29's original gap (`the_closed_switch_carries_its_on_
+conductance_noise`) was a **newly-discovered** `piperine-codegen` bug, root-
+caused and fixed in a dedicated follow-up (commit `f4d33c4c`, see Progress
+Log addendum below). See Progress Log for full root-cause evidence,
 reproduction, and disposition.
 **Commit**: `test(ngspice): migrate the fixture twins to Verilog-AMS`
+(`956e726`); `fix(codegen): recognize bare-identifier @(initial_step)/
+@(final_step) events` (`f4d33c4c`, follow-up)
 
 ---
 
@@ -3133,6 +3135,55 @@ did not close.
      `@(initial_step)`/`@(above(...))`/`@(cross(...))` event action reading
      an overridden integer parameter — not yet audited beyond this one
      reproduction.
+
+     **Addendum — fixed (commit `f4d33c4c`).** The minimal reproduction's own
+     framing ("ternary doesn't read the override") was the visible symptom,
+     not the mechanism. Root cause, found via the same reproduction
+     instrumented with `eprintln!` over `kernel.events().len()`:
+     `crates/piperine-codegen/src/flatten/analog.rs`'s
+     `event_expr_to_sources` matched only `EventExpr::Level(PomExpr::Call
+     {..})` to recognize `initial_step`/`final_step`/`cross`/`above`/
+     `timer`. `initial_step`/`final_step` take no mandatory args, so LRM
+     §5.6 permits (and `piperine-vams`'s parser produces) the bare-
+     identifier spelling `@(initial_step)` — parsed as `PomExpr::Ident`, not
+     `PomExpr::Call`. The `let PomExpr::Call { .. } = e else { return
+     vec![] }` guard silently dropped the whole event on that mismatch: no
+     parse error, no elaboration error, no compiled kernel event at all —
+     `kernel.events().len() == 0` for the repro's `probe` module. `st` (the
+     event's target var) never got assigned by any action and simply kept
+     its analog-context power-on default (`0.0`). `p1` (`off=1`, the
+     ternary's true branch is `0.0`) read the *correct* value by
+     coincidence; `p2` (`off=0`, expecting `1.0`) read the wrong, never-
+     updated default — exactly the observed asymmetry, with no actual
+     per-instance-param-read defect anywhere in the emission path (both
+     `emit/analog_expr.rs`'s `Expr::Ident` arm and the params array plumbed
+     through `AnalogInstance::new`/`build_fn` were already correct and
+     shared uniformly across every compiled row, event actions included —
+     confirmed by inspection and by the fix needing zero changes there).
+     Fix: `event_expr_to_sources` now matches `PomExpr::Ident { name, .. }`
+     as a zero-arg call alongside `PomExpr::Call`, so `@(initial_step)`
+     (and `@(final_step)`) register their event same as the parenthesized
+     form; `cross`/`above`/`timer` are unaffected (each always carries a
+     mandatory arg and so only ever parses as `Call`). 11-line diff, one
+     file (`crates/piperine-codegen/src/flatten/analog.rs`), no test file
+     added — the existing `tests/ngspice_noise.rs::
+     the_closed_switch_carries_its_on_conductance_noise` (the real-model
+     ngspice oracle that found the bug) is the regression guard.
+     **Verification**: `cargo build --workspace` zero warnings.
+     `cargo test -p piperine-codegen --lib`: 2 pre-existing failures,
+     confirmed byte-identical to pre-fix via `git stash` A/B (unrelated —
+     `device::builder::tests::structural_connection_*`). `cargo test -p
+     piperine-codegen` (the bare per-crate sweep) still cannot compile —
+     same pre-existing dead-PHDL-AST integration targets (`param_diff.rs`,
+     `digital_codegen_gaps.rs`, `margin_lowering.rs`, …) reproduce byte-
+     identically on `git stash`, unaffected by this change.
+     `tests/ngspice_noise.rs`: 28/29 → **29/29** —
+     `the_closed_switch_carries_its_on_conductance_noise` now passes.
+     `tests/ngspice_{validation,ac,temp}.rs` + `ngspice_parity_matrix.rs`:
+     unchanged from T44's recorded baseline (49/49, 24/24, 24/24, 4/4).
+     `tests/ngspice_tran.rs`: unchanged 23/25 — `uic_rc`/`uic_mos` are the
+     separately-tracked NGP-10 debt, explicitly out of this fix's scope,
+     left untouched. No tolerance loosened, no test modified (MD-38/C6).
 
   **No tolerance loosened, no test modified, no `.va` model file edited
   to paper over either gap** (MD-38/C6). `PHDL_HIGH_WATER_MARK` lowered as
