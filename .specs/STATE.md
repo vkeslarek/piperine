@@ -257,11 +257,7 @@ single `lib.rs` façade, not a two-tier split — codegen has one deliverable
 external code addresses it by deep path (grep-verified), everything else is
 crate-private with host-facing items re-exported through `lib.rs`.
 
-**Status:** **Superseded by MD-41** (user, 2026-08-09 — `language-overhaul`
-design). The *rule* it established — name modules after the pipeline stage they
-perform, narrow visibility by evidence not habit — is retained verbatim in
-MD-41; only the stage list changes, because `flatten` is deleted and `resolve`
-becomes `lower`. Originally locked (user, 2026-07-20 — `codegen-architecture`).
+**Status:** Locked (user, 2026-07-20 — `codegen-architecture`).
 
 ---
 
@@ -538,10 +534,7 @@ Consequences:
   them keeps a correctness-critical refactor off the critical path of a feature
   whose value is elsewhere.
 
-**Status:** **Superseded by MD-40** (user, 2026-08-09 — `language-overhaul`
-design). The purity invariant survives verbatim and becomes load-bearing for a
-new reason; the crate's remit widens from "runtime semantics" to "the compiler's
-IR". Originally locked (user, 2026-07-31 — `dv-tester` design;
+**Status:** Locked (user, 2026-07-31 — `dv-tester` design;
 `.specs/features/dv-tester/ideal.md` §3, §8.5 and
 `.specs/features/codegen-simplification/ideal.md`).
 
@@ -626,55 +619,53 @@ express as a wrapper over what exists.
 
 ---
 
-### MD-40: `piperine-signal` becomes `piperine-ir` (supersedes MD-36)
+### MD-44: Verilog-AMS is the sole frontend — PHDL dies now, no dual-frontend S2
 
-MD-36 moved runtime semantics into `piperine-signal` under one load-bearing
-invariant: *it computes values, derivatives, event predicates and running
-reductions; it never stamps, never sees a matrix, never sees an `Element`, and
-depends on no other crate in the tree.*
+The `verilog-ams-support` feature spec/design/tasks planned a Phase-5 "S2"
+dual-frontend period: both PHDL and VAMS elaborate side-by-side so
+differential parity (VAMS-06) can be measured, with the PHDL parser deleted
+only at T38 (Phase 7). **Re-spec'd mid-Execute by the user (2026-08-12,
+during T21):**
 
-That invariant is **unchanged**. What changes is the crate's remit. The
-`language-overhaul` feature gives the toolchain a single intermediate
-representation, and that IR wants exactly the property `piperine-signal` already
-has and defends with a mechanical gate. So the crate **becomes** the IR rather
-than a new crate being created beside it:
+> "piperine-lang morre, o vams passa a ser o parser principal e o POM tem
+> que se adaptar PARA representar 100% do VAMS"
 
-- **Remit widens** from "runtime semantics" to "the compiler's IR — of which
-  runtime semantics are *intrinsic catalog entries*". Operators, event
-  detectors, the junction limiter, `table`, `Behavior`/`Measure`/`Wave` and
-  digital edge logic become the first catalog entries, in place.
-- **Purity becomes structural, not incidental.** An IR with no in-tree
-  dependency is the precondition for its reference interpreter to be a
-  trustworthy differential oracle against the JIT backends. `tests/purity.rs`
-  is inherited unchanged and now gates that.
-- **No new crate** — MD-15's "do not proliferate crates" is preserved; the
-  workspace count does not move.
+Concretely, from T21 onwards:
 
-**Rationale for superseding rather than adding a crate:** two crates with the
-same purity invariant, one holding semantics and one holding the representation
-those semantics are expressed in, is the four-overlapping-representations
-disease that `language-overhaul` exists to cure.
+1. **`piperine-lang::parse::ast` (PHDL AST) is dead.** `BehaviorStmt` and
+   every other POM re-export repoint to `piperine_vams::ast::*` directly.
+   There is no transitional "both compile" period; the PHDL path goes dark
+   the moment T21's swap lands.
+2. **The POM adapts to VAMS, not vice-versa.** Where the spec called for
+   "VAMS constructs lower into the existing POM node X", the truth is the
+   POM node IS the VAMS construct — `Nature`, `Branch`, `discipline`,
+   `genvar`, `branch`, `paramset` are first-class POM nodes whose shape is
+   the LRM's shape, full stop. No "map VAMS onto PHDL-shaped POM" step.
+3. **Test debt accepted**: every PHDL-elaboration test that touches
+   behaviors/contributions/events will fail to compile from T21 until
+   either the test is rewritten against VAMS source (corpus migration,
+   Phase 8) or the test is deleted as part of T38 (PHDL parser removal).
+   The `cargo test --workspace` gate is therefore relaxed to "0 rustc
+   warnings + every *VAMS-originated* test still passes + every
+   PHDL-originated compile failure is documented in tasks.md's progress
+   log per task". The pre-T21 baseline (468 passing in `piperine-lang`)
+   is the floor VAMS-originated tests must stay above.
+4. **T38 (PHDL parser deletion) collapses into T21**: there is no
+   separate "delete parse/" task because T21 *is* the deletion. T38's
+   surviving deliverable (the `.phdl` monotonic-shrink gate, T39) stays.
+5. **Differential parity for VAMS-06 is achieved differently**: the RC +
+   counter fixture is authored once in `.vams`, and parity is measured
+   against the existing PHDL-fixture *recorded numeric result* (committed
+   golden), not against a live PHDL compile. The golden survives PHDL's
+   deletion as a static oracle.
 
-**Status:** Locked (user, 2026-08-09 — `language-overhaul` design, D8).
+This MD supersedes the S2 column of `design.md` §7's stage table and
+the dual-frontend clarification paragraph below it. T22–T37 are
+re-sequenced in `tasks.md` accordingly: each task that touched "both
+frontends" or "PHDL path still compiles" drops that constraint.
 
-### MD-41: Codegen pipeline stages are `lower → backend → kernel → device` (supersedes MD-23)
-
-MD-23's rule is **retained verbatim**: `piperine-codegen`'s top-level modules
-name the compilation pipeline stage they perform, one module per stage; no
-module named after a language construct or a vague bucket; public surface is a
-single `lib.rs` façade, with a module staying `pub` only when external code
-addresses it by deep path (grep-verified).
-
-Only the **stage list** changes, because the stages themselves changed:
-
-| MD-23 | MD-41 | why |
-|---|---|---|
-| `resolve` (POM → resolved form) | **`lower`** (POM → IR) | the target is now a real IR, owned by `piperine-ir` |
-| `flatten` (resolved analog → `FlatAnalog`) | **deleted** | control flow stays structured in the IR; symbolic differentiation works arm-wise, so there is nothing to flatten (D9) |
-| `emit` (Cranelift machinery) | **`backend`** (`analog`, `digital`) | it now consumes IR, and the digital half becomes a real backend rather than an AST walk |
-| `kernel`, `device` | unchanged | |
-
-**Status:** Locked (user, 2026-08-09 — `language-overhaul` design, D9).
+**Status:** Locked (user, 2026-08-12 — re-spec of `verilog-ams-support`
+Execute phase, supersedes design.md §7 S2 row).
 
 ---
 
