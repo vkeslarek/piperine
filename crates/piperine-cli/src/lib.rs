@@ -31,13 +31,13 @@ pub enum Commands {
     /// Run a simulation explicitly, a Python script, or an interactive REPL
     Run {
         /// The file to run: `foo.py` (Python
-        /// script), or `foo.phdl` (loaded into the interactive REPL with `-i`)
+        /// script), or `foo.vams` (loaded into the interactive REPL with `-i`)
         entry: Option<String>,
-        /// The file containing the entry point (defaults to src/main.phdl)
+        /// The file containing the entry point (defaults to src/main.vams)
         #[arg(long, short)]
         file: Option<String>,
         /// Start an interactive Python REPL with `import piperine` ready.
-        /// With a `.phdl` arg, pre-loads it as `design`.
+        /// With a `.vams` arg, pre-loads it as `design`.
         #[arg(short = 'i', long)]
         interactive: bool,
     },

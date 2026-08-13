@@ -1,0 +1,35 @@
+// Smoke circuits for the models that simulate through the current piperine
+// JIT: passives, independent sources (DC / AC), controlled sources.
+// Junction devices (dio/bjt/mos1/jfet) live in junction.vams.
+//
+// The independent source used here is the library's own `vsrc`, which
+// drives AC analysis via the force-branch `ac_stim` support.
+
+`include "disciplines.vams"
+`include "passives.va"
+`include "sources.va"
+`include "controlled.va"
+`include "switches.va"
+
+// ── Resistive divider: exercises res + vsrc DC ──────────────────────────────
+module Divider ();
+    electrical gnd, vin, mid;
+    vsrc #(.dc(10.0)) vs (.p(vin), .n(gnd));
+    res  #(.r(1.0e3)) r1 (.p(vin), .n(mid));
+    res  #(.r(3.0e3)) r2 (.p(mid), .n(gnd));
+endmodule
+
+// ── RC low-pass driven by an AC voltage source ──────────────────────────────
+module RcLowpass ();
+    electrical gnd, vin, out;
+    vsrc #(.dc(0.0), .ac_mag(1.0)) vs (.p(vin), .n(gnd));
+    res  #(.r(1591.5)) r1 (.p(vin), .n(out));   // fc = 1/(2πRC) ≈ 100 kHz
+    cap  #(.c(1.0e-9)) c1 (.p(out), .n(gnd));
+endmodule
+
+// ── VCVS gain stage ─────────────────────────────────────────────────────────
+module Amp ();
+    electrical gnd, vin, out;
+    vsrc #(.dc(0.5)) vs (.p(vin), .n(gnd));
+    vcvs #(.gain(4.0)) e1 (.p(out), .n(gnd), .cp(vin), .cn(gnd));
+endmodule

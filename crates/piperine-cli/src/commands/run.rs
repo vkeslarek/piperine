@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
 pub fn execute(entry: Option<String>, file: Option<String>, interactive: bool) {
-    // Interactive Python REPL: `piperine run -i [design.phdl]`.
-    // Pre-loads `import piperine`; with a `.phdl` arg, loads it as `design`.
+    // Interactive Python REPL: `piperine run -i [design.vams]`.
+    // Pre-loads `import piperine`; with a `.vams`/`.va` arg, loads it as `design`.
     if interactive {
-        let design_path = entry.as_deref().filter(|e| e.ends_with(".phdl"));
+        let design_path =
+            entry.as_deref().filter(|e| e.ends_with(".vams") || e.ends_with(".va"));
         if let Err(e) = piperine_python::embed::run_interactive(design_path) {
             eprintln!("Error: {e}");
             std::process::exit(1);
@@ -27,16 +28,16 @@ pub fn execute(entry: Option<String>, file: Option<String>, interactive: bool) {
         return;
     }
 
-    // A positional `.phdl`/`.ppr` names the design file to elaborate; any
+    // A positional `.vams`/`.va` names the design file to elaborate; any
     // other entry form (the removed bench `module::fn`) is a loud error,
     // never a silent ignore.
     let file = match entry {
-        Some(e) if e.ends_with(".phdl") || e.ends_with(".ppr") => Some(e),
+        Some(e) if e.ends_with(".vams") || e.ends_with(".va") => Some(e),
         Some(e) => {
             eprintln!(
                 "Error: unknown entry `{e}`. The in-language `bench` was removed: run a \
                  Python script (`piperine run foo.py`), elaborate a design (`piperine run \
-                 foo.phdl`), or run `*_tb.py` testbenches with `piperine test`."
+                 foo.vams`), or run `*_tb.py` testbenches with `piperine test`."
             );
             std::process::exit(1);
         }
@@ -49,7 +50,7 @@ pub fn execute(entry: Option<String>, file: Option<String>, interactive: bool) {
         PathBuf::from(f)
     } else {
         if let Some(root) = piperine_project::get_current_project_root() {
-            root.join("src").join("main.phdl")
+            root.join("src").join("main.vams")
         } else {
             eprintln!("Error: No Piperine.toml found. Please provide a file.");
             std::process::exit(1);

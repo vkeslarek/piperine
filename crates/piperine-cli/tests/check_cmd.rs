@@ -1,7 +1,7 @@
 //! `piperine check` on a real project: the command elaborates the target and
 //! reports the modules it found.
 //!
-//! Exercises the `check` command against small AMS and PHDL fixtures
+//! Exercises the `check` command against a small Verilog-AMS fixture
 //! to confirm the front-door wiring (file detection + parse + summary).
 
 use piperine_cli::commands::check::check_file;
@@ -19,18 +19,21 @@ fn tmp_ams(name: &str, body: &str) -> PathBuf {
 }
 
 #[test]
-fn check_ppr_resistor_extracts_module() {
+fn check_vams_resistor_extracts_module() {
     let p = tmp_ams(
-        "resistor.phdl",
+        "resistor.vams",
         "\
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-        }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        nature Voltage; units = \"V\"; access = V; endnature
+        nature Current; units = \"A\"; access = I; endnature
+        discipline electrical; potential Voltage; flow Current; enddiscipline
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog begin
+                I(p, n) <+ V(p, n) / r;
+            end
+        endmodule
         ",
     );
     let summary = check_file(&p, &piperine_lang::SourceMap::dummy()).expect("check_file ok");
-    let piperine_cli::commands::check::CheckSummary::Ppr { module_names: modules } = summary;
-    assert_eq!(modules, vec!["R".to_string()]);
+    assert_eq!(summary.module_names, vec!["R".to_string()]);
 }

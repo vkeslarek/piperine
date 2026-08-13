@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use super::utils::build_source_map;
 
-/// Find every `.phdl` file under `root/src` (mirrors `check::execute`'s
+/// Find every `.vams`/`.va` file under `root/src` (mirrors `check::execute`'s
 /// project-wide discovery).
-fn discover_phdl_files(root: &std::path::Path) -> Vec<PathBuf> {
+fn discover_vams_files(root: &std::path::Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let src_dir = root.join("src");
     if src_dir.exists() {
@@ -15,7 +15,9 @@ fn discover_phdl_files(root: &std::path::Path) -> Vec<PathBuf> {
                     let p = entry.path();
                     if p.is_dir() {
                         stack.push(p);
-                    } else if p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("phdl") {
+                    } else if p.is_file()
+                        && matches!(p.extension().and_then(|s| s.to_str()), Some("vams") | Some("va"))
+                    {
                         paths.push(p);
                     }
                 }
@@ -25,7 +27,7 @@ fn discover_phdl_files(root: &std::path::Path) -> Vec<PathBuf> {
     paths
 }
 
-/// `piperine build`: elaborate the target PHDL, then compile every zero-port
+/// `piperine build`: elaborate the target Verilog-AMS source, then compile every zero-port
 /// module (a module with no `inout`/`input`/`output` ports — the only
 /// structural signal a self-contained circuit root carries today, matching
 /// every example's `mod Board()`/`mod Top()` convention) through the full
@@ -39,9 +41,9 @@ pub fn execute(file: Option<String>) {
     let target_paths = if let Some(f) = file {
         vec![PathBuf::from(f)]
     } else {
-        let paths = discover_phdl_files(&project_root);
+        let paths = discover_vams_files(&project_root);
         if paths.is_empty() {
-            eprintln!("Error: No .phdl files found in src/ directory.");
+            eprintln!("Error: No .vams/.va files found in src/ directory.");
             std::process::exit(1);
         }
         paths

@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-/// A scratch project: `Piperine.toml` marker + the given `.phdl` files
+/// A scratch project: `Piperine.toml` marker + the given `.vams` files
 /// (relative path under `src/` → content).
 fn scratch_project(files: &[(&str, &str)]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -31,20 +31,24 @@ fn combined(out: &Output) -> String {
 }
 
 const VALID_ZERO_PORT_DESIGN: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-mod Resistor(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog Resistor { I(p, n) <+ V(p, n) / r; }
-mod Board() {
-    wire a: Electrical; wire gnd: Electrical;
-    r1: Resistor(.p = a, .n = gnd) { .r = 1e3 };
-}
+`include \"disciplines.vams\"
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Board ();
+    electrical a, gnd;
+    Resistor #(.r(1e3)) r1 (.p(a), .n(gnd));
+endmodule
 ";
 
 /// PB-01 AC1: a valid zero-port design builds successfully (elaborates +
 /// runs the full codegen pipeline), exit 0, per-module success reported.
 #[test]
 fn valid_zero_port_design_builds_and_exits_zero() {
-    let dir = scratch_project(&[("main.phdl", VALID_ZERO_PORT_DESIGN)]);
+    let dir = scratch_project(&[("main.vams", VALID_ZERO_PORT_DESIGN)]);
     let out = piperine_build(dir.path(), &[]);
     let text = combined(&out);
     assert!(out.status.success(), "expected exit 0, got: {text}");
@@ -55,7 +59,7 @@ fn valid_zero_port_design_builds_and_exits_zero() {
 /// the elaboration error — never silently succeeds.
 #[test]
 fn elaboration_failure_exits_nonzero_with_error() {
-    let dir = scratch_project(&[("main.phdl", "mod Broken() { this is not phdl")]);
+    let dir = scratch_project(&[("main.vams", "module Broken (); this is not vams")]);
     let out = piperine_build(dir.path(), &[]);
     let text = combined(&out);
     assert!(!out.status.success(), "expected non-zero exit, got success. output: {text}");
@@ -71,15 +75,18 @@ fn codegen_failure_exits_nonzero_attributed_to_module() {
     // validation at codegen time — a real post-elaboration failure (mirrors
     // `piperine-codegen/tests/silent_bugs.rs::d5_user_fn_missing_still_errors`).
     let design = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-mod Broken(inout p: Electrical, inout n: Electrical) { }
-analog Broken { I(p, n) <+ no_such_fn(V(p, n)); }
-mod Board() {
-    wire a: Electrical; wire gnd: Electrical;
-    b1: Broken(.p = a, .n = gnd) { };
-}
+`include \"disciplines.vams\"
+module Broken (inout electrical p, inout electrical n);
+    analog begin
+        I(p, n) <+ no_such_fn(V(p, n));
+    end
+endmodule
+module Board ();
+    electrical a, gnd;
+    Broken b1 (.p(a), .n(gnd));
+endmodule
 ";
-    let dir = scratch_project(&[("main.phdl", design)]);
+    let dir = scratch_project(&[("main.vams", design)]);
     let out = piperine_build(dir.path(), &[]);
     let text = combined(&out);
     assert!(!out.status.success(), "expected non-zero exit, got success. output: {text}");
@@ -91,28 +98,32 @@ mod Board() {
 #[test]
 fn library_only_project_prints_note_and_exits_zero() {
     let design = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-mod Resistor(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+`include \"disciplines.vams\"
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
 ";
-    let dir = scratch_project(&[("main.phdl", design)]);
+    let dir = scratch_project(&[("main.vams", design)]);
     let out = piperine_build(dir.path(), &[]);
     let text = combined(&out);
     assert!(out.status.success(), "a library-only project must exit 0, got: {text}");
     assert!(text.contains("nothing to build"), "expected a nothing-to-build note, got: {text}");
 }
 
-/// Edge case: an explicit `file` argument overrides the default `src/main.phdl`
+/// Edge case: an explicit `file` argument overrides the default `src/main.vams`
 /// discovery (matches `check`'s existing single-file override behavior).
 #[test]
 fn explicit_file_argument_overrides_default_discovery() {
     let dir = scratch_project(&[
-        ("main.phdl", "mod Unused() { }"),
-        ("other.phdl", VALID_ZERO_PORT_DESIGN),
+        ("main.vams", "module Unused (); endmodule"),
+        ("other.vams", VALID_ZERO_PORT_DESIGN),
     ]);
-    let other_path = dir.path().join("src").join("other.phdl");
+    let other_path = dir.path().join("src").join("other.vams");
     let out = piperine_build(dir.path(), &[other_path.to_str().unwrap()]);
     let text = combined(&out);
     assert!(out.status.success(), "expected exit 0 building the explicit file, got: {text}");
-    assert!(text.contains("built `Board`"), "expected `Board` (from other.phdl) built, got: {text}");
+    assert!(text.contains("built `Board`"), "expected `Board` (from other.vams) built, got: {text}");
 }

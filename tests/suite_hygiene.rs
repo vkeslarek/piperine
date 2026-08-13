@@ -695,11 +695,10 @@ fn root_targets_match_the_naming_rule() {
 /// its `.vams`/`.va` twin (VAMS-11's own requirement — "no `.phdl` file
 /// survives past its own migration task").
 ///
-/// **This number must only ever go down.** Lower it in the same commit that
-/// lowers the real count (every T40-T46 migration commit does); never raise
-/// it, and never let it drift stale above the true count — T46 is expected to
-/// bring it to exactly `0` and tighten this assertion to `== 0`.
-const PHDL_HIGH_WATER_MARK: usize = 4;
+/// T46 brought the corpus to exactly zero — the mark is now `0` and the
+/// assertion below is exact-equality (VAMS-11's own closing requirement).
+/// No `.phdl`/`.ppr` file may ever exist in this repository again.
+const PHDL_HIGH_WATER_MARK: usize = 0;
 
 /// Every `.phdl`/`.ppr` file anywhere in the repository (recursive, skipping
 /// `target`/`.git`) — a plain filesystem walk over every file extension, not
@@ -732,15 +731,11 @@ fn phdl_corpus_does_not_grow() {
     let root = repo_root();
     let files = phdl_files();
     let count = files.len();
-    assert!(
-        count <= PHDL_HIGH_WATER_MARK,
-        "`.phdl`/`.ppr` file count is {count}, above the committed high-water mark of \
-         {PHDL_HIGH_WATER_MARK} (VAMS-11) — PHDL is retired (MD-44); no new `.phdl`/`.ppr` \
-         file may be added at all, and every migration task (T40-T46) must delete its \
-         `.phdl`/`.ppr` original in the same commit that adds the `.vams`/`.va` twin. If this \
-         fired from *lowering* `PHDL_HIGH_WATER_MARK` below the real count instead, that means \
-         a migration commit forgot to bump this constant down with it — the two must move \
-         together, never the mark alone. Files found:\n  {}",
+    assert_eq!(
+        count, PHDL_HIGH_WATER_MARK,
+        "`.phdl`/`.ppr` file count is {count}, expected exactly {PHDL_HIGH_WATER_MARK} \
+         (VAMS-11) — PHDL is fully retired (MD-44); no `.phdl`/`.ppr` file may exist in this \
+         repository. Files found:\n  {}",
         files
             .iter()
             .map(|p| p.strip_prefix(&root).unwrap_or(p).display().to_string())

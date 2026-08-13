@@ -1,26 +1,17 @@
 use std::path::{Path, PathBuf};
 
-/// Detect the file format by extension.
-///
-/// `.phdl`/`.ppr` → PHDL, parsed with `piperine_lang::parse_and_elaborate`.
-fn detect_format(path: &Path) -> FileFormat {
-    match path.extension().and_then(|s| s.to_str()) {
-        Some("phdl") | Some("ppr") => FileFormat::Ppr,
-        _ => FileFormat::Ams,
-    }
-}
-
-enum FileFormat {
-    Ams,
-    Ppr,
+/// Recognized source extensions: `.vams`/`.va` (Verilog-AMS/Verilog-A,
+/// parsed with `piperine_lang::parse_and_elaborate`).
+fn is_recognized_source(path: &Path) -> bool {
+    matches!(path.extension().and_then(|s| s.to_str()), Some("vams") | Some("va"))
 }
 
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum CheckError {
-    #[error("AMS format is no longer supported directly. Please use PHDL.")]
-    AmsNotSupported,
+    #[error("unrecognized source extension (expected .vams or .va)")]
+    UnrecognizedExtension,
     #[error("read failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("elaboration failed: {0}")]
@@ -34,25 +25,23 @@ pub fn check_file(
     source_map: &piperine_lang::SourceMap,
 ) -> Result<CheckSummary, CheckError> {
     println!("Checking file: {}", path.display());
-    match detect_format(path) {
-        FileFormat::Ams => Err(CheckError::AmsNotSupported),
-        FileFormat::Ppr => {
-            let body = std::fs::read_to_string(path)?;
-            let elab = piperine_lang::parse_and_elaborate(&body, source_map)
-                .map_err(CheckError::ElabReport)?;
-            let module_names: Vec<String> = elab.modules().map(|m| m.name().to_string()).collect();
-            println!("  PHDL modules: {}", module_names.len());
-            for name in &module_names {
-                println!("    - {name}");
-            }
-            Ok(CheckSummary::Ppr { module_names })
-        }
+    if !is_recognized_source(path) {
+        return Err(CheckError::UnrecognizedExtension);
     }
+    let body = std::fs::read_to_string(path)?;
+    let elab = piperine_lang::parse_and_elaborate(&body, source_map)
+        .map_err(CheckError::ElabReport)?;
+    let module_names: Vec<String> = elab.modules().map(|m| m.name().to_string()).collect();
+    println!("  modules: {}", module_names.len());
+    for name in &module_names {
+        println!("    - {name}");
+    }
+    Ok(CheckSummary { module_names })
 }
 
 #[derive(Debug)]
-pub enum CheckSummary {
-    Ppr { module_names: Vec<String> },
+pub struct CheckSummary {
+    pub module_names: Vec<String>,
 }
 
 pub fn execute(file: Option<String>) {
@@ -79,9 +68,7 @@ pub fn execute(file: Option<String>) {
                                     let p = entry.path();
                                     if p.is_dir() {
                                         stack.push(p);
-                                    } else if p.is_file()
-                                        && p.extension().and_then(|s| s.to_str()) == Some("phdl")
-                                    {
+                                    } else if p.is_file() && is_recognized_source(&p) {
                                         paths.push(p);
                                     }
                                 }
@@ -89,7 +76,7 @@ pub fn execute(file: Option<String>) {
                         }
                     }
                     if paths.is_empty() {
-                        eprintln!("Error: No .phdl files found in src/ directory.");
+                        eprintln!("Error: No .vams/.va files found in src/ directory.");
                         std::process::exit(1);
                     }
                     paths

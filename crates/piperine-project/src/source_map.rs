@@ -37,7 +37,7 @@ pub fn project_source_map(project_root: &Path) -> SourceMap {
                 eprintln!("Warning: Failed to resolve dependencies: {}", e);
             }
         }
-        // A plugin's own PHDL is importable too (plugin-interface v2, D10):
+        // A plugin's own Verilog-AMS source is importable too (plugin-interface v2, D10):
         // the author writes `@device pub mod …` in the plugin package and the
         // user `use`s it — so a `[plugins]` entry is a namespace exactly like
         // a dependency. A name already claimed by the project or a dependency
@@ -68,7 +68,6 @@ pub fn project_source_map(project_root: &Path) -> SourceMap {
     }
 
     if headers_dir.exists() {
-        source_map = source_map.with_prelude(headers_dir.join("prelude.phdl"));
         source_map.add_namespace("piperine", headers_dir.clone());
         // Builtin `spice` stdlib namespace — only if no project package or
         // dependency already claimed the name (project packages win).
@@ -120,29 +119,29 @@ mod tests {
     }
 
     /// SPICE-01: with no `Piperine.toml` at all, the builtin `spice`
-    /// namespace resolves `use spice::diode;` from `headers/spice/`.
+    /// namespace resolves `` `include "diode.va"`` from `headers/spice/`.
     #[test]
     fn builtin_spice_namespace_without_piperine_toml() {
         let scratch = ScratchDir::new("builtin");
         let map = project_source_map(&scratch.0);
 
         let spice_dir = map.namespaces.get("spice").expect("builtin `spice` namespace registered");
-        assert!(spice_dir.join("diode.phdl").exists(), "headers/spice/diode.phdl reachable at {spice_dir:?}");
+        assert!(spice_dir.join("diode.va").exists(), "headers/spice/diode.va reachable at {spice_dir:?}");
 
         let src = "
-            use piperine::disciplines;
-            use spice::sources;
-            use spice::passives;
-            use spice::diode;
-            mod Top() {
-                wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
-                v1: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
-                r1: res  (.p=vin,.n=out) { .r = 1.0e3 };
-                d1: dio  (.p=out,.n=gnd) { };
-            }
+            `include \"disciplines.vams\"
+            `include \"sources.va\"
+            `include \"passives.va\"
+            `include \"diode.va\"
+            module Top ();
+                electrical gnd, vin, out;
+                vsrc #(.dc(5.0)) v1 (.p(vin), .n(gnd));
+                res  #(.r(1.0e3)) r1 (.p(vin), .n(out));
+                dio  d1 (.p(out), .n(gnd));
+            endmodule
         ";
         let design = piperine_lang::parse_and_elaborate(src, &map)
-            .expect("use spice::diode; must elaborate through the builtin path");
+            .expect("`include \"diode.va\" must elaborate through the builtin path");
         assert!(design.module("Top").is_some());
     }
 
@@ -158,14 +157,14 @@ mod tests {
         .unwrap();
         let src_dir = scratch.0.join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
-        std::fs::write(src_dir.join("diode.phdl"), "// project-local diode\n").unwrap();
+        std::fs::write(src_dir.join("diode.va"), "// project-local diode\n").unwrap();
 
         let map = project_source_map(&scratch.0);
         let spice_dir = map.namespaces.get("spice").expect("`spice` namespace registered");
         assert_eq!(spice_dir, &src_dir, "project `spice` package must win over the builtin headers");
     }
 
-    /// Plugin-interface v2 (D10/PLG-05): a plugin's own PHDL is importable —
+    /// Plugin-interface v2 (D10/PLG-05): a plugin's own Verilog-AMS source is importable —
     /// `use <plugin>::…` reaches the package the `[plugins]` entry points at,
     /// which is where its `@device pub mod`s live.
     #[test]

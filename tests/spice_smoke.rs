@@ -13,7 +13,7 @@ use piperine_lang::{Design, SourceMap};
 /// `piperine-project` builds for a project.
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -44,7 +44,7 @@ fn v(op: &OpResult, net: &str) -> f64 {
 /// drop, pnjlim-converged).
 #[test]
 fn spice_diode_forward_drop() {
-    let design = elaborate("junction.phdl");
+    let design = elaborate("junction.vams");
     let vd = v(&op(&design, "DioBias"), "out");
     assert!((0.55..0.80).contains(&vd), "Shockley forward drop, got {vd}");
 }
@@ -53,7 +53,7 @@ fn spice_diode_forward_drop() {
 /// drop.
 #[test]
 fn spice_bjt_diode_drop() {
-    let design = elaborate("junction.phdl");
+    let design = elaborate("junction.vams");
     let vbe = v(&op(&design, "BjtDiode"), "bc");
     assert!((0.60..0.95).contains(&vbe), "diode-connected BJT junction drop, got {vbe}");
 }
@@ -62,7 +62,7 @@ fn spice_bjt_diode_drop() {
 /// threshold.
 #[test]
 fn spice_mos1_diode_bias() {
-    let design = elaborate("junction.phdl");
+    let design = elaborate("junction.vams");
     let vds = v(&op(&design, "MosBias"), "d");
     assert!((1.0..5.0).contains(&vds), "NMOS diode-connected above threshold, got {vds}");
 }
@@ -70,7 +70,7 @@ fn spice_mos1_diode_bias() {
 /// JFET: gate junction reverse-biased, channel conducts.
 #[test]
 fn spice_jfet_bias_conducts() {
-    let design = elaborate("junction.phdl");
+    let design = elaborate("junction.vams");
     let vds = v(&op(&design, "JfetBias"), "d");
     assert!((0.0..5.0).contains(&vds), "JFET conducts, got {vds}");
 }
@@ -78,7 +78,7 @@ fn spice_jfet_bias_conducts() {
 /// Resistive divider: `10 V · 3k/(1k+3k) = 7.5 V`.
 #[test]
 fn spice_divider_ratio() {
-    let design = elaborate("validate.phdl");
+    let design = elaborate("validate.vams");
     let mid = v(&op(&design, "Divider"), "mid");
     assert!((mid - 7.5).abs() < 1.0e-6, "10 V · 3k/(1k+3k) = 7.5 V, got {mid}");
 }
@@ -86,7 +86,7 @@ fn spice_divider_ratio() {
 /// RC low-pass at its corner: passband gain ≈ 1 at 1 kHz, −3 dB at 100 kHz.
 #[test]
 fn spice_rc_lowpass_corner() {
-    let design = elaborate("validate.phdl");
+    let design = elaborate("validate.vams");
     let trace = Session::compile(&design.fork(), "RcLowpass").expect("session compiles")
         .ac(1.0e3, 1.0e6, 40, true, &SolverConfig::default())
         .unwrap_or_else(|e| panic!("RcLowpass: ac failed: {e}"));
@@ -103,7 +103,7 @@ fn spice_rc_lowpass_corner() {
 /// VCVS gain stage: `4 · 0.5 V = 2 V`.
 #[test]
 fn spice_vcvs_gain() {
-    let design = elaborate("validate.phdl");
+    let design = elaborate("validate.vams");
     let out = v(&op(&design, "Amp"), "out");
     assert!((out - 2.0).abs() < 1.0e-6, "VCVS: 4 · 0.5 V = 2 V, got {out}");
 }

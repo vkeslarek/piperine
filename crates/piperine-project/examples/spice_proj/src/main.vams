@@ -1,0 +1,10 @@
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+
+module simple_circuit ();
+    electrical p, gnd;
+
+    vsrc #(.dc(5.0)) v1 (.p(p), .n(gnd));
+    res  #(.r(1000.0)) r1 (.p(p), .n(gnd));
+endmodule

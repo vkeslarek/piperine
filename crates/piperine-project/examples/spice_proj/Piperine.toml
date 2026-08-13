@@ -4,5 +4,6 @@ version = "0.1.0"
 authors = ["Keslarek"]
 edition = "2024"
 
-[dependencies]
-spice = { git = "https://github.com/vkeslarek/piperine-spice.git", version = "0.1.0" }
+# The external `piperine-spice` git dependency (still PHDL-authored) is
+# retired with the rest of PHDL — this demo now uses the builtin `spice`
+# namespace (`crates/piperine-lang/headers/spice/*.va`) instead.

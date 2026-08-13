@@ -7,20 +7,20 @@
 // The flattener's shared-temporary tape lets these large bodies compile at
 // all (they used to exhaust memory); gmin stepping gets the coupled
 // operating points to converge.
-use piperine::disciplines;
-use spice::sources;
-use spice::passives;
-use spice::diode;
-use spice::bjt;
-use spice::mos;
-use spice::jfet;
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "diode.va"
+`include "bjt.va"
+`include "mos.va"
+`include "jfet.va"
 
-mod DioBias() {
-    wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
-    vs: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
-    rb: res  (.p=vin,.n=out) { .r = 1.0e3 };
-    d1: dio  (.p=out,.n=gnd) { };
-}
+module DioBias ();
+    electrical gnd, vin, out;
+    vsrc #(.dc(5.0)) vs (.p(vin), .n(gnd));
+    res  #(.r(1.0e3)) rb (.p(vin), .n(out));
+    dio  d1 (.p(out), .n(gnd));
+endmodule
 
 // Diode-connected NPN (base = collector): a single effective B-E junction
 // with a real KCL-consistent operating point (passes the current-residual
@@ -28,25 +28,25 @@ mod DioBias() {
 // BC-reverse junctions that need saturation — is a known gap: gmin stepping
 // alone converges to the wrong solution branch (active instead of saturated);
 // it needs source stepping. See validation/ (bjt_ce) and the piperine ROADMAP.
-mod BjtDiode() {
-    wire gnd: Electrical; wire vin: Electrical; wire bc: Electrical;
-    vs: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
-    r1: res  (.p=vin,.n=bc) { .r = 1.0e3 };
-    q1: bjt  (.c=bc,.b=bc,.e=gnd,.sub=gnd) { };
-}
+module BjtDiode ();
+    electrical gnd, vin, bc;
+    vsrc #(.dc(5.0)) vs (.p(vin), .n(gnd));
+    res  #(.r(1.0e3)) r1 (.p(vin), .n(bc));
+    bjt  q1 (.c(bc), .b(bc), .e(gnd), .sub(gnd));
+endmodule
 
 // NMOS diode-connected (gate=drain): channel + bulk junctions.
-mod MosBias() {
-    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
-    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
-    r1: res (.p=vdd,.n=d) { .r = 10.0e3 };
-    m1: mos1 (.d=d,.g=d,.s=gnd,.b=gnd) { .model = Mos1Model { .vto = 1.0, .kp = 2.0e-5 } };
-}
+module MosBias ();
+    electrical gnd, vdd, d;
+    vsrc #(.dc(5.0)) vd (.p(vdd), .n(gnd));
+    res  #(.r(10.0e3)) r1 (.p(vdd), .n(d));
+    mos1 #(.vto(1.0), .kp(2.0e-5)) m1 (.d(d), .g(d), .s(gnd), .b(gnd));
+endmodule
 
 // JFET: gate junction reverse-biased, channel conducts.
-mod JfetBias() {
-    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
-    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
-    r1: res (.p=vdd,.n=d) { .r = 1.0e3 };
-    j1: jfet (.d=d,.g=gnd,.s=gnd) { };
-}
+module JfetBias ();
+    electrical gnd, vdd, d;
+    vsrc #(.dc(5.0)) vd (.p(vdd), .n(gnd));
+    res  #(.r(1.0e3)) r1 (.p(vdd), .n(d));
+    jfet j1 (.d(d), .g(gnd), .s(gnd));
+endmodule

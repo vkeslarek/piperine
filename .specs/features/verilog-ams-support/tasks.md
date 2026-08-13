@@ -909,12 +909,89 @@ reproduction, and disposition.
 
 ---
 
-#### T46: Migrate project fixtures + CLI template; reach zero `.phdl`
+#### T46: Migrate project fixtures + CLI template; reach zero `.phdl` — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-project/examples/`, `tests/spice/`, `crates/piperine-cli/templates/` · **Depends on**: T45 · **Requirement**: VAMS-10, VAMS-11
 **Done when**: **zero `.phdl`/`.ppr` files in the tree**; shrink gate's high-water mark is 0 and it now asserts exact-zero · **Gate**: build
 **Commit**: `chore: complete the Verilog-AMS migration — zero PHDL sources remain`
 
 ---
+
+- **T46** — done. The last 4 `.phdl` files migrated: `tests/spice/{junction,
+  validate}.vams` (mechanical, `use spice::X;` → `` `include "X.va"``, PHDL
+  colon-instance syntax → VAMS `#(...)`/`(...)`  ordered-connection syntax,
+  matching T44's own translation notes), `crates/piperine-cli/templates/
+  main.vams` (rewritten against the `input logic`/`output logic` +
+  `always @(*)` mixed-signal pattern `examples/23_mixed_signal_adc.vams`
+  already established, rather than the PHDL original's `<-` Force-assignment
+  idiom, which has no VAMS lowering — same gap already documented at T44's
+  UIC entry), and `crates/piperine-project/examples/spice_proj/src/
+  main.vams` (**SPEC_DEVIATION**: the original pulled an external
+  `piperine-spice` git dependency, itself still PHDL-authored and out of
+  this repo's scope to migrate; rewritten to use the builtin `spice`
+  namespace instead — `[dependencies]` dropped from `Piperine.toml`,
+  `Piperine.lock`/stale `target/` build cache deleted — so the demo stays
+  honest about what actually elaborates today rather than silently keeping
+  a dependency edge that can never resolve to valid source again).
+  `PHDL_HIGH_WATER_MARK` lowered 4 → 0, assertion tightened from `<=` to
+  `==` (exact-zero, VAMS-11's closing requirement).
+
+  **Scope widened beyond the task's literal file list** (flagged, not a
+  unilateral silent call — found while verifying T46's own "Gate: build"
+  requirement actually exercises a working CLI): `crates/piperine-cli/src/
+  commands/{new,run,check,build}.rs` and `crates/piperine-project/src/
+  source_map.rs` still hard-coded `.phdl`/`.ppr` extension detection,
+  `src/main.phdl` as the default entry filename, and a dead
+  `SourceMap::with_prelude(headers/prelude.phdl)` call (`prelude.phdl` has
+  not existed since T21/MD-45) — `piperine new`/`check`/`build`/`run` would
+  have scaffolded and then immediately failed to find `.vams` files even
+  after every corpus file was migrated. Retargeted all four commands'
+  extension logic and default filename to `.vams`/`.va`; `check.rs`'s
+  `FileFormat`/`CheckError::AmsNotSupported` (which had it backwards —
+  labelled VAMS "not supported, use PHDL") collapsed to a single
+  `is_recognized_source` predicate and a `CheckSummary { module_names }`
+  struct (was an enum with one variant, `Ppr`). Also fixed a genuinely
+  broken (not merely stale-string) `piperine-project` unit test,
+  `source_map::tests::builtin_spice_namespace_without_piperine_toml`,
+  which fed literal PHDL syntax (`mod Top() { wire gnd: Electrical; ...
+  }`) to `piperine_lang::parse_and_elaborate` post-T21 and was failing on
+  `main` before this session touched anything (confirmed via the panic
+  message, not assumed) — rewritten against the same `` `include``/VAMS
+  module syntax T44 established; the sibling `project_named_spice_
+  shadows_builtin` test's `diode.phdl` scratch file renamed to `diode.va`
+  for consistency (its content is never parsed, so this alone wasn't a
+  correctness fix). `crates/piperine-cli/tests/{build_cmd,check_cmd,
+  test_tb}.rs` (3 targets, all PHDL-syntax fixtures previously) rewritten
+  to VAMS source, including `check_cmd.rs`'s inline `nature`/`discipline`
+  declarations (its `SourceMap::dummy()` has no include resolver, so it
+  can't reach the real `disciplines.vams` header — same pattern
+  `vams_lower_analog.rs` already uses for header-free elaboration tests).
+
+  **Verification**: `cargo build --workspace` zero warnings. `cargo test -p
+  piperine-cli -p piperine-project`: **all targets 100% green** (not
+  baseline-matched pre-existing-failure debt — these two crates' test
+  suites pass in full for the first time since T21, per the `git stash`-
+  confirmed broken `source_map` test above). Manually exercised the real
+  CLI end-to-end (`cargo run -p piperine-cli -- new`, `build`, `check`
+  against both the scaffolded template and the migrated `spice_proj`
+  fixture) — all four commands elaborate/build the `.vams` corpus
+  correctly. `cargo test --test spice_smoke`: 7/7 (both migrated `tests/
+  spice/*.vams` fixtures, all four device families). `cargo test --test
+  suite_hygiene`: 9/10, `mod_rs_declares_only` unchanged pre-existing
+  failure (T1 baseline, `piperine-ir`, unrelated); `phdl_corpus_does_not_grow`
+  green against the new `== 0` assertion. `cargo test -p piperine-lang
+  --lib`: 59/61, unchanged from T45's recorded baseline (2 pre-existing
+  `elab::lower::flatten` failures). `tests/ngspice_{validation,ac,temp,
+  homotopy,noise}.rs` + `ngspice_parity_matrix.rs`: unchanged (24/24, 18/18,
+  24/24, 4/4, 29/29 — same as T45's recorded baseline). `tests/
+  ngspice_tran.rs`: unchanged 23/25 (`uic_rc`/`uic_mos`, NGP-10 debt,
+  untouched, out of this task's scope same as every prior Phase 8 entry).
+  `find . -name '*.phdl' -o -name '*.ppr'` (excluding `target/`): **zero
+  matches.** No tolerance loosened, no test modified to paper over a real
+  gap (the `piperine-project`/`piperine-cli` fixes above are genuine
+  corrections, not workarounds).
+
+  **Phase 8 (S4, corpus migration) is complete.** VAMS-08/09/10/11 are all
+  closed; zero `.phdl`/`.ppr` sources remain anywhere in the repository.
 
 ### Phase 9 — Full 1364 digital (S5a)
 
