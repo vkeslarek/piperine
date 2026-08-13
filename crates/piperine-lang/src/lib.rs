@@ -86,15 +86,20 @@ pub fn parse_and_elaborate_seeded(
 /// binding mode (plugin or host, dv-tester T17) resolves it at
 /// circuit-build time.
 ///
-/// **MD-45 regression (accepted, tracked):** the PHDL `extern attribute`
-/// declaration this read from (`headers/device_port.phdl`) is gone with the
-/// PHDL parser. Re-anchoring `@device`/`@port` schemas on VAMS
-/// `(* attribute *)` syntax is VAMS-12/13 (Phase 7, T35) — out of this
-/// crate's current scope. Until then this is a documented no-op: no
-/// schemas register, so any `@device`-attributed module fails loud at
-/// lookup (MD-24's "no silent fallback" still holds — it just fails
-/// earlier, at "no schema known" rather than "unknown schema").
-pub fn seed_device_port_schemas(_ctx: &mut elab::registry::ElabContext) {}
+/// **T35 (VAMS-12/13)**: re-anchored on VAMS `(* attribute *)` syntax.
+/// MD-24's textual `extern attribute` declaration this used to read from
+/// (`headers/device_port.phdl`) is gone with the PHDL parser (T21) — there
+/// is no `extern` keyword in VAMS Annex A to carry it. The schema names
+/// are registered natively here instead (`ctx.register_schema`); their
+/// field shapes (`device { plugin, type }`, `port { name, kind? }`) are
+/// validated where `elab::lower::vams` lowers a `(* ... *)` instance
+/// naming one of them, not read from a textual table anymore. MD-24's
+/// "no silent fallback" still holds: an attribute-instance name that is
+/// neither of these two fails loud (`ElabErrorKind::UnknownAttrSchema`).
+pub fn seed_device_port_schemas(ctx: &mut elab::registry::ElabContext) {
+    ctx.register_schema("device");
+    ctx.register_schema("port");
+}
 
 /// Like [`parse_and_elaborate`], but also returns a [`ResolutionIndex`]
 /// built over the resulting `Design` (LSP-03/05).

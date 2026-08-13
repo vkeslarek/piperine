@@ -185,10 +185,19 @@ pub enum ElabErrorKind {
         /// What is missing — either variant names or a note about wildcard.
         missing: String,
     },
-    /// An `@schema(...)` attribute references a schema name not registered
-    /// by any bundle via `@attribute(schema = "...")`.
-    #[error("unknown attribute schema `{0}` — not registered by any bundle")]
-    #[diagnostic(code(E2022))]
+    /// An attribute-instance name (VAMS `(* ... *)`, LRM §2.9) is not a
+    /// schema Piperine's own extension registry has declared for this
+    /// elaboration run (VAMS-13, T35) — MD-24's "no silent fallback" rule
+    /// ported from PHDL's `extern attribute` mechanism to VAMS `(* ... *)`
+    /// syntax. Known schemas (today: `device`/`port`) are seeded before
+    /// elaboration starts, by `piperine_lang::seed_device_port_schemas`/
+    /// `PluginHost::seed_schemas` (MD-21/D2: schema authority stays with
+    /// the plugin system, never a per-plugin stub).
+    #[error("unknown attribute schema `{0}` — not registered for this elaboration run")]
+    #[diagnostic(
+        code(E2022),
+        help("Piperine's own extension attributes (`device`, `port`, …) must be registered before elaboration runs — a plugin host does this via `PluginHost::seed_schemas`. Check the attribute's spelling, or that a plugin providing it is loaded.")
+    )]
     UnknownAttrSchema(String),
     /// An item is accessed from outside its declaring package without being
     /// declared `pub`.

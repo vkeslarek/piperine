@@ -22,6 +22,7 @@ use piperine_vams::ast::{
 };
 
 use crate::elab::const_eval::ConstEnv;
+use crate::pom::module::Attribute;
 use crate::pom::{
     Behavior, Branch, BranchKind, Design, Direction, ElabError, ElabErrorKind, Instance, Module,
     Nature, NetRef, NetType, Param, Port, Value, ValueType, Var, Wire,
@@ -46,13 +47,13 @@ impl Elaborator {
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
-            lower_port_decl(p, &mut ports)?;
+            lower_port_decl(p, &self.ctx.schemas, &mut ports)?;
         }
 
         for item in &decl.items {
             match item {
                 // Name-list style: `module m(a, b); input electrical a; ...`.
-                ModuleItem::Port(p) => lower_port_decl(p, &mut ports)?,
+                ModuleItem::Port(p) => lower_port_decl(p, &self.ctx.schemas, &mut ports)?,
                 ModuleItem::Net(n) => {
                     let discipline = n.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
                     for d in &n.names {
@@ -176,6 +177,7 @@ impl Elaborator {
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
         module.branches = branches;
         module.vars = vars;
+        module.attributes = lower_module_attrs(&decl.attrs, &self.ctx.schemas)?;
 
         // Access-function call sites inside analog behaviors (§5.4.1) bind
         // to a branch, named or implicit, and drive its BranchKind —
@@ -390,7 +392,11 @@ fn target_port_order(decl: &ModuleDecl) -> Vec<String> {
     }
 }
 
-fn lower_port_decl(p: &PortDecl, out: &mut Vec<Port>) -> Result<(), ElabError> {
+fn lower_port_decl(
+    p: &PortDecl,
+    known_schemas: &HashSet<String>,
+    out: &mut Vec<Port>,
+) -> Result<(), ElabError> {
     // An absent discipline (`inout p;` with no leading discipline name) is
     // left as the `ResolveDisciplines` pass's sentinel (T26, LRM Annex F) —
     // resolved from connectivity after every module is lowered, never
@@ -402,10 +408,11 @@ fn lower_port_decl(p: &PortDecl, out: &mut Vec<Port>) -> Result<(), ElabError> {
         AstDirection::Inout => Direction::Inout,
     };
     let env = ConstEnv::new();
+    let attributes = lower_port_attrs(&p.attrs, known_schemas)?;
     for d in &p.names {
         out.push(Port {
             span: None,
-            attributes: Vec::new(),
+            attributes: attributes.clone(),
             doc: None,
             direction,
             name: d.name.clone(),
@@ -413,6 +420,145 @@ fn lower_port_decl(p: &PortDecl, out: &mut Vec<Port>) -> Result<(), ElabError> {
         });
     }
     Ok(())
+}
+
+/// Lower one module declaration's `(* ... *)` attribute instances into the
+/// plugin system's `device` schema (VAMS-12/13, T35 — re-anchors PHDL's
+/// `@device(plugin = …, type = …)` attribute, design P2). No `device` attr
+/// present ⇒ no attributes. Any attribute name that is neither `device`,
+/// its required `type` companion, nor a name `known_schemas` has itself
+/// registered fails loud (`ElabErrorKind::UnknownAttrSchema`, MD-24's
+/// "no silent fallback" ported to VAMS-13).
+///
+/// SPEC_DEVIATION: VAMS's `attr_spec` (LRM §2.9.1) is `attr_name [=
+/// constant_expression]` — there is no nested-call form for a PHDL-style
+/// `@device(plugin = …, type = …)` attribute. The schema's two fields
+/// travel as two sibling attribute names in one `(* device = "plugin",
+/// type = "type_id" *)` instance instead: `device`'s own value is the
+/// `plugin` field, a required sibling `type` attribute is the `type`
+/// field — the exact spelling `design.md`'s P2 story quotes.
+fn lower_module_attrs(
+    attrs: &[piperine_vams::ast::Attr],
+    known_schemas: &HashSet<String>,
+) -> Result<Vec<Attribute>, ElabError> {
+    let mut out = Vec::new();
+    let has_device = if let Some(a) = lower_device_attr(attrs, known_schemas)? {
+        out.push(a);
+        true
+    } else {
+        false
+    };
+    for a in attrs {
+        if has_device && matches!(a.name.as_str(), "device" | "type") {
+            continue;
+        }
+        if !known_schemas.contains(&a.name) {
+            return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
+                .with_span(Some(to_miette_span(a.span))));
+        }
+    }
+    Ok(out)
+}
+
+/// Lower one port declaration's `(* ... *)` attribute instances into the
+/// plugin system's `port` schema (VAMS-12/13, T35 — re-anchors PHDL's
+/// `@port(name = …, kind = …)` attribute). `kind` is optional, matching
+/// PHDL's `port { name: String, kind: String? }` schema. Same
+/// sibling-attribute SPEC_DEVIATION as [`lower_module_attrs`].
+fn lower_port_attrs(
+    attrs: &[piperine_vams::ast::Attr],
+    known_schemas: &HashSet<String>,
+) -> Result<Vec<Attribute>, ElabError> {
+    let mut out = Vec::new();
+    let has_port = if let Some(a) = lower_port_attr(attrs, known_schemas)? {
+        out.push(a);
+        true
+    } else {
+        false
+    };
+    for a in attrs {
+        if has_port && matches!(a.name.as_str(), "port" | "kind") {
+            continue;
+        }
+        if !known_schemas.contains(&a.name) {
+            return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
+                .with_span(Some(to_miette_span(a.span))));
+        }
+    }
+    Ok(out)
+}
+
+fn lower_device_attr(
+    attrs: &[piperine_vams::ast::Attr],
+    known_schemas: &HashSet<String>,
+) -> Result<Option<Attribute>, ElabError> {
+    let Some(dev) = attrs.iter().find(|a| a.name == "device") else { return Ok(None) };
+    if !known_schemas.contains("device") {
+        return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema("device".to_string()))
+            .with_span(Some(to_miette_span(dev.span))));
+    }
+    let env = ConstEnv::new();
+    let plugin = attr_string_value(dev, "device", "plugin", &env)?;
+    let ty_attr = attrs.iter().find(|a| a.name == "type").ok_or_else(|| {
+        ElabError::from(ElabErrorKind::AttrSchemaField {
+            schema: "device".into(),
+            field: "type".into(),
+            reason: "missing — @device needs a `type` string alongside it".into(),
+        })
+        .with_span(Some(to_miette_span(dev.span)))
+    })?;
+    let ty = attr_string_value(ty_attr, "device", "type", &env)?;
+    let mut data = HashMap::new();
+    data.insert("plugin".to_string(), plugin);
+    data.insert("type".to_string(), ty);
+    Ok(Some(Attribute { schema: "device".to_string(), data }))
+}
+
+fn lower_port_attr(
+    attrs: &[piperine_vams::ast::Attr],
+    known_schemas: &HashSet<String>,
+) -> Result<Option<Attribute>, ElabError> {
+    let Some(p) = attrs.iter().find(|a| a.name == "port") else { return Ok(None) };
+    if !known_schemas.contains("port") {
+        return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema("port".to_string()))
+            .with_span(Some(to_miette_span(p.span))));
+    }
+    let env = ConstEnv::new();
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), attr_string_value(p, "port", "name", &env)?);
+    if let Some(k) = attrs.iter().find(|a| a.name == "kind") {
+        data.insert("kind".to_string(), attr_string_value(k, "port", "kind", &env)?);
+    }
+    Ok(Some(Attribute { schema: "port".to_string(), data }))
+}
+
+fn attr_string_value(
+    attr: &piperine_vams::ast::Attr,
+    schema: &str,
+    field: &str,
+    env: &ConstEnv,
+) -> Result<Value, ElabError> {
+    let expr = attr.value.as_ref().ok_or_else(|| {
+        ElabError::from(ElabErrorKind::AttrSchemaField {
+            schema: schema.to_string(),
+            field: field.to_string(),
+            reason: "attribute has no value".to_string(),
+        })
+        .with_span(Some(to_miette_span(attr.span)))
+    })?;
+    let value = env.eval(expr).map_err(|e| {
+        ElabError::from(ElabErrorKind::ConstEval { context: format!("attribute `{schema}.{field}`"), source: e })
+            .with_span(Some(to_miette_span(attr.span)))
+    })?;
+    match &value {
+        Value::Str(_) => Ok(value),
+        other => Err(ElabError::from(ElabErrorKind::AttrSchemaField {
+            schema: schema.to_string(),
+            field: field.to_string(),
+            reason: format!("expected a String, got {other:?}"),
+        })
+        .with_span(Some(to_miette_span(attr.span)))),
+    }
 }
 
 fn declarator_to_wire(d: &Declarator, discipline: &str, env: &ConstEnv) -> Result<Wire, ElabError> {

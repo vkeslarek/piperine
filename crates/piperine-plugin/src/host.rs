@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use piperine::SimHooks;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
-use piperine_lang::elab::registry::{AttrField, ElabContext};
+use piperine_lang::elab::registry::ElabContext;
 use piperine_lang::Design;
 use piperine_project::lockfile::PiperineLock;
 use piperine_project::release::{GitHubClient, PluginCache, ReleaseError, ReleaseRef};
@@ -377,50 +377,23 @@ impl PluginHost {
     /// deleted). Called by whoever drives elaboration (CLI, hosts, tests)
     /// through `parse_and_elaborate_seeded`.
     ///
-    /// `@device`/`@port`'s shape (declared-language-surface T23, DLS-21)
-    /// comes from `headers/device_port.phdl`'s `extern attribute`
-    /// declarations, not a hand-rolled `AttrField` list — ctrl+click on
-    /// either name now resolves to that header exactly like any other
-    /// `extern attribute`. This header is parsed here (not embedded into
-    /// every compilation unit like `piperine-lang`'s own
-    /// `types.phdl`/`math.phdl`/etc.) because `@device`/`@port` are only
-    /// meaningful once a plugin is loaded — unchanged: still gated on
-    /// `!self.is_empty()` below.
+    /// **T35 (VAMS-12/13)**: `@device`/`@port`'s shape used to come from
+    /// `headers/device_port.phdl`'s `extern attribute` declarations
+    /// (declared-language-surface T23, DLS-21) — that mechanism has no
+    /// VAMS Annex A production and was deleted with the PHDL parser
+    /// (T21, MD-45). Schema authority stays here (MD-21/D2: two device
+    /// plugins never collide, still gated on `!self.is_empty()` below),
+    /// delegating the actual registration to
+    /// [`piperine_lang::seed_device_port_schemas`] — the one place the
+    /// `device`/`port` names are spelled, so a plugin-driven elaboration
+    /// and a direct `parse_and_elaborate_seeded(.., seed_device_port_schemas)`
+    /// call (used by this crate's own tests and `piperine-api`'s) always
+    /// agree.
     pub fn seed_schemas(&self, ctx: &mut ElabContext) {
         if self.is_empty() {
             return;
         }
-        // The @device/@port schemas belong to the plugin *system*, not to
-        // any single plugin — two device plugins must not collide on them.
-        if let Ok(source) = piperine_lang::parse::parse_str(include_str!(
-            "../../piperine-lang/headers/device_port.phdl"
-        )) {
-            Self::register_attribute_items(ctx, &source.items);
-        }
-    }
-
-    /// Register every `extern attribute` item's schema into `ctx.schemas`
-    /// (T23) — used for `@device`/`@port`'s own header. Non-attribute
-    /// items are ignored.
-    fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
-        for item in items {
-            if let piperine_lang::parse::ast::Item::ExternDecl(
-                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields, doc },
-            ) = item
-            {
-                let attr_fields = fields
-                    .iter()
-                    .map(|f| AttrField {
-                        name: f.name.clone(),
-                        ty: f.ty.name.clone(),
-                        required: !f.ty.optional,
-                        default: None,
-                        decl_span: f.span,
-                    })
-                    .collect();
-                ctx.schemas.register_declared(name, attr_fields, *span, doc.clone());
-            }
-        }
+        piperine_lang::seed_device_port_schemas(ctx);
     }
 }
 

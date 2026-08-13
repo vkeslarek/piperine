@@ -2075,3 +2075,102 @@ not started.
   as the same documented MD-44 §3 relaxation every task since T21 has
   operated under, not silently waived — the fixture corpus is Phase 8's
   job (VAMS-08/09/10 migration), not this task's.
+
+- **T35** ✅ `<pending commit>` — `@device`/`@port` re-anchored on VAMS
+  `(* attribute *)` syntax (VAMS-12/13). This is the landing task
+  `.specs/STATE.md` MD-45/tasks.md Open Item #5 named for this narrow
+  piece (the plugin system's own two schemas), not the general
+  MD-24-`extern`-mechanism rebuild, which stays future work.
+  **New seam**: `ElabContext` (`elab/registry/mod.rs`, MD-34-exempt per
+  `tests/suite_hygiene.rs`'s existing registry entry) regains one field —
+  `schemas: HashSet<String>` + `register_schema` — the set of
+  attribute-instance schema names known for one elaboration run. Not
+  MD-24's textual `extern attribute` table reborn (no field/type
+  metadata, only a name): that mechanism's declaration vehicle (the
+  `extern` keyword) has no VAMS Annex A production and stays deleted.
+  `piperine_lang::seed_device_port_schemas` (`lib.rs`) registers
+  `"device"`/`"port"` natively (no more `headers/device_port.phdl` to
+  parse — deleted at T21); `PluginHost::seed_schemas` (`piperine-plugin/
+  src/host.rs`) now delegates to it directly instead of hand-parsing a
+  PHDL header through the deleted `piperine_lang::parse`/`AttrField`/
+  `ctx.schemas.register_declared` surface (removed the `AttrField` import
+  and the `register_attribute_items` helper it fed — both orphaned).
+  **New lowering** (`elab/lower/vams.rs`): `lower_module_attrs`/
+  `lower_port_attrs` (+ the `lower_device_attr`/`lower_port_attr`/
+  `attr_string_value` helpers they call) turn a VAMS module/port's
+  `(* ... *)` attribute-instance list into POM `Attribute`s, wired into
+  `elab_module`'s existing `Module::new(...)` call site and
+  `lower_port_decl` (which now takes `known_schemas: &HashSet<String>`
+  threaded from `self.ctx.schemas`). **SPEC_DEVIATION, documented in both
+  functions' doc comments**: design.md's own P2 story quotes the exact
+  spelling `(* device = "plugin_name", type = "..." *)` — VAMS's
+  `attr_spec` grammar (LRM §2.9.1) is `attr_name [= constant_expression]`
+  with no nested-call form, so PHDL's single `@device(plugin = …, type =
+  …)` call becomes two sibling attribute names in one instance instead:
+  `device`'s own value is the `plugin` field, a required sibling `type`
+  attribute supplies `type` (mirrored for `port`/`kind`, `kind` optional
+  per PHDL's `port { name: String, kind: String? }`). An attribute name
+  that is neither of these two nor itself a `known_schemas` entry fails
+  loud via the pre-existing (dv-core-era, previously unused since T21)
+  `ElabErrorKind::UnknownAttrSchema` (E2022) — its `#[error]`/`#[help]`
+  text is updated in the same commit (it said "not registered by any
+  bundle"; bundles don't exist post-MD-45, so the old text was actively
+  wrong, not just stale) and it gains the `#[help]` E-STD requires (had
+  none before). A `device` attr with no sibling `type` fails loud via the
+  pre-existing `ElabErrorKind::AttrSchemaField` (E2023, already used by
+  `pom/design.rs`'s introspection-attribute reader — reused, not
+  reinvented). **Verification**: mechanism proved correct with a scratch
+  test (written, run — 3/3 green — then deleted per the T33-precedent
+  "verify then discard" pattern, since a permanent one was written next)
+  before committing to the real one: `crates/piperine-lang/tests/
+  vams_device_port_attrs.rs` (5 tests) — `(* device = "none", type =
+  "host_resistor" *)` on a module lowers into
+  `Attribute{schema:"device", data:{plugin,type}}` exactly as PHDL's
+  `@device` did; `(* port = "A0", kind = "digital" *)` on one
+  declaration-list port lowers into the `port` schema while its
+  un-attributed sibling port carries no attributes; unseeded elaboration
+  and an unregistered attribute name (`frobnicate`) both fail loud citing
+  E2022; a `device` attribute missing its `type` sibling fails loud
+  citing E2023. All 5 green.
+  **Regression check**: `cargo test -p piperine-lang --lib` — 59 passed,
+  2 failed (the same pre-existing PHDL `use`-syntax array-index fixture
+  failures documented since T22-T27, unchanged). Every previously-green
+  VAMS-originated integration target re-run individually (bare `cargo
+  test -p piperine-lang` cannot run at all — cargo refuses to execute
+  *any* target if *any* target in the crate fails to **compile**, and
+  the T21-documented PHDL-fixture-string targets, `extern_coverage_guard`
+  included — T36's job, not touched here — still don't; this is why
+  T21-T33's own entries always report per-target, not bare crate,
+  numbers): `vams_lower_structure` 9, `vams_lower_analog` 8,
+  `vams_lower_var` 4, `vams_param_ranges` 6, `vams_generate` 4,
+  `vams_discipline_resolution` 4, `vams_annex_c` 5, `pom_nature` 9,
+  `pom_branch` 13, `errors_lrm` 7, `pom_vams_shape` 8,
+  `vams_deviation_resolutions` 6 — all unchanged, all green. `cargo
+  build -p piperine-lang -p piperine-plugin -p piperine-api`: **zero
+  warnings**.
+  **`cargo test -p piperine-plugin`** (T35's literal gate — this crate's
+  own test targets all compile, unlike `piperine-lang`'s): lib 15/15
+  green; `macro_collisions`/`native_smoke`/`release_fetch`/`scripts`/
+  `trust` all green (18 tests); `e2e`/`extern_stub`/`hooks`/`inject`/
+  `staging` — **16 failures**, every one traced individually to the same
+  PHDL-fixture-syntax root cause T34 already documented for
+  `piperine-api` (`discipline Electrical { potential v: Real; flow i:
+  Real; }`-shaped source text rejected by the VAMS parser, E1005) —
+  including `tests/e2e.rs`'s own `device_attribute_requires_seeded_
+  schema`, which is literally the test this task's mechanism should make
+  pass once its fixture migrates (not fixed here — Phase 8 corpus
+  migration, same MD-44 §3 relaxation as T34). Not a regression: these
+  targets could not even compile before T34 (the whole crate failed to
+  build), so this is the first time their fixture-syntax debt is
+  *visible* at all, exactly the pattern T34 documented for
+  `piperine-api`.
+  **Workspace-wide effect confirmed** (not this task's gate, recorded
+  for the batch): `cargo build --workspace` now fails only in
+  `piperine-lang-server` (65 errors, unchanged, T37) and cascades from it
+  into `piperine-python`/`piperine-cli` (down to **1 error each** — both
+  now just "could not find `parse` in `piperine_lang`", the same
+  single-cause class T37 will retarget) and root `tests/`/`piperine`
+  (still blocked on `piperine-lang-server`/`piperine-python`). `piperine-
+  lang`, `piperine-vams`, `piperine-codegen`, `piperine-solver`,
+  `piperine-ir`, `piperine-api`, `piperine-plugin`, `piperine-project`
+  all build clean with zero warnings.
