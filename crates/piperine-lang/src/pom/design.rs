@@ -145,6 +145,11 @@ pub struct Design {
     /// `Design` carries empty and re-elaboration rebuilds).
     #[serde(skip)]
     pub(crate) natures: HashMap<String, crate::pom::Nature>,
+    /// Verilog-AMS top-level `paramset` declarations (LRM §6.4), named
+    /// reusable parameter sets bound to a module. Top-level only — same
+    /// rule as disciplines/natures. Skipped on serialize.
+    #[serde(skip)]
+    pub(crate) paramsets: HashMap<String, piperine_vams::ast::ParamsetDecl>,
     #[serde(skip)]
     pub(crate) bundles: HashMap<String, BundleDecl>,
     #[serde(skip)]
@@ -173,6 +178,7 @@ impl Design {
             flat_modules: HashMap::new(),
             disciplines: HashMap::new(),
             natures: HashMap::new(),
+            paramsets: HashMap::new(),
             bundles: HashMap::new(),
             enums: HashMap::new(),
             capabilities: HashMap::new(),
@@ -312,6 +318,17 @@ impl Design {
     /// Look up a nature declaration by name (LRM §3.6.1).
     pub fn nature(&self, name: &str) -> Option<&crate::pom::Nature> {
         self.natures.get(name)
+    }
+
+    /// Every Verilog-AMS paramset declaration (LRM §6.4). Top-level
+    /// only — paramsets do not nest inside modules.
+    pub fn paramsets(&self) -> impl Iterator<Item = (&String, &piperine_vams::ast::ParamsetDecl)> {
+        self.paramsets.iter()
+    }
+
+    /// Look up a paramset declaration by name (LRM §6.4).
+    pub fn paramset(&self, name: &str) -> Option<&piperine_vams::ast::ParamsetDecl> {
+        self.paramsets.get(name)
     }
 
     /// Every bundle declaration.
@@ -809,6 +826,12 @@ impl Design {
     pub(crate) fn natures_map_mut(&mut self) -> &mut HashMap<String, crate::pom::Nature> {
         &mut self.natures
     }
+    /// Mutable access to the paramsets map. For internal elaboration use
+    /// (T22+ lowers `piperine_vams::ast::ParamsetDecl` through here).
+    #[allow(dead_code, reason = "wired by T22+ — VAMS→POM paramset lowering")]
+    pub(crate) fn paramsets_map_mut(&mut self) -> &mut HashMap<String, piperine_vams::ast::ParamsetDecl> {
+        &mut self.paramsets
+    }
     /// Mutable access to the enums map. For internal elaboration use.
     pub(crate) fn enums_map_mut(&mut self) -> &mut HashMap<String, EnumDecl> {
         &mut self.enums
@@ -922,5 +945,29 @@ mod flat_module_tests {
         let flat = design.flat_module("Synth").expect("Synth in flat_modules");
         assert_eq!(flat.name(), "Synth");
         assert!(!design.modules.contains_key("Synth"));
+    }
+
+    /// T20 deviation resolution (pre-T21 commit): `paramsets_map_mut`
+    /// populates the top-level paramset collection (LRM §6.4); the public
+    /// accessor + lookup then read it back. Population-via-mutator lives
+    /// here as a `pub(crate)` unit test (the mutator is invisible to
+    /// integration tests).
+    #[test]
+    fn paramsets_map_mut_populates_top_level_paramset() {
+        let mut design = Design::new();
+        assert!(design.paramset("nmos_fast").is_none());
+        design.paramsets_map_mut().insert(
+            "nmos_fast".into(),
+            piperine_vams::ast::ParamsetDecl {
+                span: piperine_vams::Span::new(0, 0),
+                name: "nmos_fast".into(),
+                module_name: "nmos".into(),
+                params: Vec::new(),
+            },
+        );
+        let by_lookup = design.paramset("nmos_fast").expect("paramset reachable by name");
+        assert_eq!(by_lookup.name, "nmos_fast");
+        assert_eq!(by_lookup.module_name, "nmos");
+        assert_eq!(design.paramsets().count(), 1);
     }
 }

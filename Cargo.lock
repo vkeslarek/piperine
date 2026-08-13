@@ -1697,6 +1697,7 @@ dependencies = [
  "num-complex",
  "piperine-codegen",
  "piperine-solver",
+ "piperine-vams",
  "serde",
  "serde_json",
  "tempfile",

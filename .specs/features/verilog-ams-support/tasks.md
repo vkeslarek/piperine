@@ -557,18 +557,21 @@ T53 → T54 → T55 → T56 → T57 → T58
 ### Phase 5 — VAMS → POM elaboration (S2b)
 
 #### T21: Wire `piperine-vams` into `piperine-lang`; behavior body retarget
-**What**: Add the dependency; POM re-exports `piperine_vams::ast::Stmt` as `BehaviorStmt` (design F1 pattern preserved).
-**Where**: `crates/piperine-lang/{Cargo.toml,src/pom/behavior.rs}`
-**Depends on**: T20
+**What**: Add the dependency; POM re-exports `piperine_vams::ast::Stmt` as `BehaviorStmt` (design F1 pattern preserved). **Re-spec'd by MD-44 (2026-08-12): the PHDL parse path is deleted here — no S2 dual-frontend period.**
+**Where**: `crates/piperine-lang/{Cargo.toml,src/pom/behavior.rs}`, plus every PHDL-AST-coupled call site that the swap breaks
+**Depends on**: T20 + a pre-T21 deviations commit (From<piperine_vams::ParseError> + Design::paramsets)
 **Requirement**: VAMS-02, VAMS-03
 
 **Done when**:
-- [ ] PHDL parse path still compiles and its tests still pass (both frontends alive — S2)
-- [ ] `BehaviorStmt` re-export now points at the VAMS AST
-- [ ] Gate passes: `cargo test --workspace`
+- [ ] `piperine-vams` is a `piperine-lang` dependency (added in pre-T21 commit)
+- [ ] `BehaviorStmt` re-export now points at the VAMS AST (`pub use piperine_vams::ast::Stmt as BehaviorStmt`)
+- [ ] PHDL-elaboration tests that touched behaviors/contributions/events either compile-fail *predictably* (with each failure documented in this task's progress-log entry) or have been rewritten against VAMS source in this same commit
+- [ ] `cargo build --workspace` compiles with zero warnings (VAMS-originated code paths)
+- [ ] VAMS-originated `piperine-lang` tests stay above the T20 baseline of 468 passing
+- [ ] Progress log names every PHDL test that broke and why (acceptance per MD-44 §3)
 
-**Tests**: integration · **Gate**: full
-**Commit**: `refactor(lang): point POM behavior bodies at the VAMS AST`
+**Tests**: integration · **Gate**: build (relaxed per MD-44 §3: PHDL-originated compile failures are documented, not gated)
+**Commit**: `refactor(lang): point POM behavior bodies at the VAMS AST — PHDL dies (MD-44)`
 
 ---
 
@@ -1283,3 +1286,29 @@ Phase 4, T17+).
 E4xxx error family (T19), and the VAMS module/design collections (T20).
 S2a's exit condition met: every POM type the VAMS lowering will need is
 in place. Ready for S2b (VAMS → POM elaboration, Phase 5, T21+).
+
+### MD-44 re-spec (2026-08-12, mid-Execute)
+
+User decision: **PHDL dies at T21, not T38**. No S2 dual-frontend period.
+The POM adapts to VAMS, not vice-versa. Concrete consequences for the
+remaining plan:
+
+- T21 swaps `BehaviorStmt` to `piperine_vams::ast::Stmt` *and* deletes
+  the PHDL parse path. Every PHDL-elaboration test touching behaviors
+  will compile-fail until rewritten against VAMS source (corpus migration
+  in Phase 8) or deleted at T38's survival (T39 shrink gate).
+- The `cargo test --workspace` gate is **relaxed** per MD-44 §3: 0 rustc
+  warnings + VAMS-originated tests above the 468-baseline floor + every
+  PHDL-originated compile failure documented in the per-task progress
+  log. Pre-T21 baseline: 468 passing in `piperine-lang` (recorded above
+  in T20's progress entry).
+- T38 collapses into T21 (no separate "delete parse/" task). T39 (shrink
+  gate) stays.
+- Differential parity for VAMS-06 uses the *recorded* PHDL-fixture
+  numeric golden, not a live PHDL compile.
+
+A pre-T21 deviations commit lands first: wires the `piperine-vams`
+dependency, implements `From<piperine_vams::ParseError> for ElabError`
+(closing the T19 SPEC_DEVIATION), and adds `Design::paramsets` (closing
+the T20 SPEC_DEVIATION). Both deviations require the dep, which is why
+they were deferred; the pre-T21 commit is the dedicated resolution.

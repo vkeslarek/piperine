@@ -9,6 +9,11 @@ num-complex.workspace = true
 miette = { version = "7.6.0", features = ["fancy"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = "1"
+# The Verilog-AMS frontend (MD-44: VAMS is the sole parser, PHDL is dead).
+# Zero in-tree deps on the piperine-vams side (purity contract, see its
+# `tests/purity.rs`); piperine-lang consumes its AST + ParseError and
+# owns the miette rendering boundary.
+piperine-vams = { path = "../piperine-vams" }
 
 [dev-dependencies]
 # The frontend's own build needs only piperine-math (the builtin-math

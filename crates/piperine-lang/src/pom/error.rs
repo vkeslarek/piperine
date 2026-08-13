@@ -3,9 +3,7 @@
 
 use thiserror::Error;
 
-use crate::elab::const_eval::ConstEvalError;
-
-/// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
+use crate::elab::const_eval::ConstEvalError;/// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
 /// into a [`Design`][super::Design].
 #[derive(Debug, Clone, Error, miette::Diagnostic)]
 #[error("{kind}")]
@@ -35,10 +33,47 @@ impl From<ElabErrorKind> for ElabError {
     }
 }
 
+/// VAMS-parse-failure → elaboration error. Carries the typed
+/// [`piperine_vams::ParseErrorKind`] through unchanged and converts the
+/// pure-crate byte [`piperine_vams::Span`] into a miette `SourceSpan`
+/// (VAMS-05, design.md §10). The diagnostic code, label text, and help
+/// are supplied by [`ElabErrorKind::VamsParse`] (E1005).
+impl From<piperine_vams::ParseError> for ElabError {
+    fn from(err: piperine_vams::ParseError) -> Self {
+        let span = miette::SourceSpan::new(err.span.start.into(), err.span.end.saturating_sub(err.span.start));
+        Self {
+            kind: ElabErrorKind::VamsParse { kind: err.kind, span: Some(span) },
+            span: None,
+        }
+    }
+}
+
 /// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
 /// into a [`Design`][super::Design].
 #[derive(Debug, Clone, Error, miette::Diagnostic)]
 pub enum ElabErrorKind {
+    /// VAMS E1005 — a structured parse failure surfaced from
+    /// `piperine-vams`. The `kind` field carries the typed cause
+    /// (one of [`piperine_vams::ParseErrorKind`]'s 13 variants); the
+    /// span is converted from piperine-vams's plain byte range to a
+    /// miette `SourceSpan` by the `From<piperine_vams::ParseError>`
+    /// impl at the bottom of this module. Per-cause granularity lives
+    /// in the inner `ParseErrorKind`'s `Display`; the wrapping variant
+    /// supplies the diagnostic code, label text, and the actionable
+    /// help (VAMS-05 fail-loud).
+    #[error("{kind}")]
+    #[diagnostic(
+        code(E1005),
+        help("This is a Verilog-AMS parse failure. The byte range below marks where the parser gave up; check the surrounding tokens against the production you intended. LRM ch. 2 (lexical) and Annex A (grammar) define the accepted forms.")
+    )]
+    VamsParse {
+        /// The typed cause, rendered via its own `Display`.
+        kind: piperine_vams::ParseErrorKind,
+        /// The construct's source span, converted from the pure-crate
+        /// byte range to a miette label.
+        #[label("parser stopped here")]
+        span: Option<miette::SourceSpan>,
+    },
     /// Constant evaluation failed in a given context.
     #[error("const eval error in `{context}`: {source}")]
     #[diagnostic(code(E2001))]
