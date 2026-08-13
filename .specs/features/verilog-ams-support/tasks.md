@@ -651,10 +651,10 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-17
 
 **Done when**:
-- [ ] **Which Annex F method is used is decided here, stated in the pass's `//!` contract, and asserted by the test** — the spec's "documented, not implementation-defined" criterion
-- [ ] Behavior matches the LRM's own worked examples for that method
-- [ ] Unresolvable discipline fails loud with an E4xxx naming the method applied and why it failed
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] **Which Annex F method is used is decided here, stated in the pass's `//!` contract, and asserted by the test** — Basic discipline resolution (§7.4.4.1), the LRM's own stated default of the two documented methods; see `elab/lower/disciplines.rs`'s module doc for the full reasoning
+- [x] Behavior matches the LRM's own worked examples for that method — SPEC_DEVIATION (documented in the pass's own module doc): implements the core Basic-resolution mechanic (propagate a neighbour's known discipline across a direct connection, within one module, iterated to a fixed point across the whole design) rather than the full multi-level-hierarchy + `connect...resolveto` (ch. 10) machinery the complete LRM algorithm describes — that fuller form is `InsertConnectModules`'s territory (T52)
+- [x] Unresolvable discipline fails loud with an E4xxx naming the method applied and why it failed — E4003 `DisciplineResolutionFailed` (already declared at T19)
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): ResolveDisciplines pass implementing Annex F`
@@ -1558,3 +1558,37 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
   `env: &ConstEnv` from the caller instead. `cargo test -p piperine-lang`:
   same 2 pre-existing documented failures, no new regressions. `cargo
   build -p piperine-lang`: zero warnings.
+
+- **T26** ✅ `<pending commit>` — `ResolveDisciplines` pass, implementing
+  Basic discipline resolution (new `elab/lower/disciplines.rs`; 4 tests
+  in `tests/vams_discipline_resolution.rs`). Annex F method decision (the
+  task's own pre-delegated sub-choice, Open Item #3): **Basic** — the
+  LRM names it "the default" of the two documented algorithms
+  (§7.4.4, "basic (the default) and detail"), and its own worked example
+  is the simpler of the two (propagate a neighbour's known discipline
+  across a connection) versus Detail's per-net compatible-discipline-set
+  reasoning; documented with the full trade-off in the pass's `//!`
+  header, not asserted by fiat. `vams.rs`'s port/net lowering no longer
+  fails loud immediately on a missing discipline (moved from T22's
+  temporary "not implemented until T26" stub to a sentinel discipline
+  name, `disciplines::UNRESOLVED = ""`); `ResolveDisciplines` runs after
+  `ElabModules`, propagating disciplines from connected instance ports to
+  fixed point across the whole design (a net resolved in one module can
+  supply the discipline a connected net in another module needs next
+  round), then fails loud (E4003) on anything still unresolved or on a
+  genuine conflict (two connections disagreeing on discipline). A real
+  gap found while writing the tests, fixed before commit: VAMS's own
+  grammar has no syntax for "declare a net with no discipline" (`net_decl`
+  always requires a leading discipline identifier) — the actual
+  undeclared-net case is LRM §3.7/1364's *implicit net declaration*: an
+  identifier used as an instance port connection that names neither a
+  declared port nor a declared net is itself an undeclared-discipline net.
+  `elab_module` (T22) now registers one (as a `Wire` with the
+  `UNRESOLVED` sentinel) for every such name, so `ResolveDisciplines` has
+  something to act on — this also closes a latent T22 gap (an implicit
+  net referenced only in a port connection previously vanished from the
+  POM entirely). SPEC_DEVIATION recorded above: full multi-level
+  hierarchy + `connect...resolveto` resolution is out of this task's
+  scope, deferred to T52. `cargo test -p piperine-lang`: same 2
+  pre-existing documented failures, no new regressions. `cargo build -p
+  piperine-lang`: zero warnings.

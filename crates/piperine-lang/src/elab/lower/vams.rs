@@ -53,12 +53,7 @@ impl Elaborator {
                 // Name-list style: `module m(a, b); input electrical a; ...`.
                 ModuleItem::Port(p) => lower_port_decl(p, &mut ports)?,
                 ModuleItem::Net(n) => {
-                    let discipline = n.discipline.as_deref().ok_or_else(|| {
-                        ElabError::from(ElabErrorKind::Other(format!(
-                            "net declaration has no discipline — undeclared-net discipline \
-                             resolution (LRM Annex F) is not implemented until T26"
-                        )))
-                    })?;
+                    let discipline = n.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
                     for d in &n.names {
                         wires.push(declarator_to_wire(d, discipline, &env)?);
                     }
@@ -138,6 +133,30 @@ impl Elaborator {
                 | ModuleItem::GenerateRegion(_)
                 | ModuleItem::Specify(_)
                 | ModuleItem::Gate(_) => {}
+            }
+        }
+
+        // 1364/§3.7's implicit net declaration: an identifier used as an
+        // instance port connection that names neither a declared port nor
+        // a declared net still refers to a real (1-bit, undeclared-
+        // discipline) net — it just needs registering so `ResolveDisciplines`
+        // (T26) has something to resolve. Declared-name collisions are
+        // skipped (already a real port/wire).
+        let declared: std::collections::HashSet<String> =
+            ports.iter().map(|p| p.name.clone()).chain(wires.iter().map(|w| w.name.clone())).collect();
+        let mut implicit_seen = std::collections::HashSet::new();
+        for inst in &instances {
+            for net_ref in &inst.ports {
+                let n = net_ref.net();
+                if !declared.contains(n) && implicit_seen.insert(n.to_string()) {
+                    wires.push(Wire {
+                        span: None,
+                        attributes: Vec::new(),
+                        doc: None,
+                        name: n.to_string(),
+                        ty: NetType::Discipline(super::disciplines::UNRESOLVED.to_string()),
+                    });
+                }
             }
         }
 
@@ -359,13 +378,11 @@ fn target_port_order(decl: &ModuleDecl) -> Vec<String> {
 }
 
 fn lower_port_decl(p: &PortDecl, out: &mut Vec<Port>) -> Result<(), ElabError> {
-    let discipline = p.discipline.as_deref().ok_or_else(|| {
-        ElabError::from(ElabErrorKind::Other(
-            "port declaration has no discipline — undeclared-net discipline resolution \
-             (LRM Annex F) is not implemented until T26"
-                .to_string(),
-        ))
-    })?;
+    // An absent discipline (`inout p;` with no leading discipline name) is
+    // left as the `ResolveDisciplines` pass's sentinel (T26, LRM Annex F) —
+    // resolved from connectivity after every module is lowered, never
+    // guessed here.
+    let discipline = p.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
     let direction = match p.dir {
         AstDirection::Input => Direction::Input,
         AstDirection::Output => Direction::Output,

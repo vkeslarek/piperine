@@ -22,6 +22,7 @@
 
 use crate::pom::{Design, ElabError};
 
+use super::disciplines::ResolveDisciplines;
 use super::flatten::FlattenHierarchy;
 use super::generate::UnrollGenerate;
 use super::Elaborator;
@@ -39,8 +40,14 @@ pub(crate) trait ElabPass {
 /// needs every module already registered — and before `FlattenHierarchy`,
 /// which reads `Elaborator::generated_instances` when building the derived
 /// flat form (design §6 ordering).
-pub(crate) const PASSES: &[&dyn ElabPass] =
-    &[&Register, &LowerDeclarations, &ElabModules, &UnrollGenerate, &FlattenHierarchy];
+pub(crate) const PASSES: &[&dyn ElabPass] = &[
+    &Register,
+    &LowerDeclarations,
+    &ElabModules,
+    &ResolveDisciplines,
+    &UnrollGenerate,
+    &FlattenHierarchy,
+];
 
 /// Index every top-level item into the elaborator's symbol tables.
 struct Register;

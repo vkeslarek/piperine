@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use piperine_vams::ast::{DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFile};
 use crate::pom::{ElabError, Design};
 
+mod disciplines;
 mod flatten;
 mod generate;
 mod passes;
