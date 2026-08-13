@@ -600,10 +600,10 @@ T53 → T54 → T55 → T56 → T57 → T58
 **Requirement**: VAMS-01, VAMS-02
 
 **Done when**:
-- [ ] Natures (incl. derived chains) and disciplines lower with all attributes
-- [ ] Named + implicit branches resolve; access functions bind to branches
-- [ ] Missing/ambiguous nature binding fails loud with an E4xxx citing §3.6.2.1
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Natures (incl. derived chains) and disciplines lower with all attributes
+- [x] Named + implicit branches resolve; access functions bind to branches
+- [x] Missing/ambiguous nature binding fails loud with an E4xxx citing §3.6.2.1
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): lower natures, disciplines and branches into the POM`
@@ -1470,3 +1470,34 @@ they were deferred; the pre-T21 commit is the dedicated resolution.
   same 2 pre-existing documented lib-test failures (array-index fixtures
   using PHDL `use` syntax, unrelated to this task). `cargo build -p
   piperine-lang`: zero warnings.
+
+- **T23** ✅ `<pending commit>` — natures, disciplines and branches
+  (`elab/lower/vams.rs` extended: `lower_declarations`/`effective_nature`/
+  `lower_branch_decl`/`resolve_contribution_branches`/
+  `resolve_or_create_branch`; new `LowerDeclarations` pass in
+  `passes.rs`; 8 tests in `tests/vams_lower_analog.rs`). Natures resolve
+  their `parent` chain (§3.6.1.1) by following the *raw* AST decl links
+  (not already-built `Nature`s) with cycle detection, so declaration
+  order in the source doesn't matter; disciplines keep the surface AST
+  shape verbatim (F1 pattern — `Design::disciplines` was already typed
+  `HashMap<String, piperine_vams::ast::DisciplineDecl>` since the T20/T21
+  deviation resolutions, so T23 only had to populate it, not define a new
+  type). §3.6.2.1 binding validation (E4004 `InvalidNatureBinding`) fires
+  when a discipline's `potential`/`flow` names an undeclared nature.
+  Branches: `branch (p,n) name;` lowers directly; access-function call
+  sites (`V(...)`/`I(...)`) used as a contribution target inside an
+  `analog` behavior resolve to a branch — a single-arg form matching an
+  already-declared name binds to it, otherwise it's the implicit
+  two-terminal/ground-referenced form (found-or-created, keyed by the
+  exact terminal pair since `V(a,b)` and `V(b,a)` are distinct branches
+  per §5.4.1) — and each contribution calls T18's `record_contribution`,
+  which sets the branch's `BranchKind` on first use and fires E4001 on a
+  potential/flow conflict. Scope note (documented in the function's doc
+  comment, not silently narrowed): only the conventional `V`/`I`
+  access-function spellings are recognized — a custom discipline's own
+  `access`-named function (§3.6.1.2) isn't resolved to potential/flow
+  yet, since that needs the nature→discipline→access lookup chain, which
+  is beyond T23's stated scope. `cargo test -p piperine-lang`: same 2
+  pre-existing documented lib-test failures, no new regressions; all 9
+  T22 + 8 T23 + 43 T17-T21 VAMS-originated integration tests green.
+  `cargo build -p piperine-lang`: zero warnings.

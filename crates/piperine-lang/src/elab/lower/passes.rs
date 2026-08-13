@@ -32,7 +32,7 @@ pub(crate) trait ElabPass {
 }
 
 /// The elaboration pipeline, in execution order.
-pub(crate) const PASSES: &[&dyn ElabPass] = &[&Register, &ElabModules, &FlattenHierarchy];
+pub(crate) const PASSES: &[&dyn ElabPass] = &[&Register, &LowerDeclarations, &ElabModules, &FlattenHierarchy];
 
 /// Index every top-level item into the elaborator's symbol tables.
 struct Register;
@@ -40,6 +40,19 @@ impl ElabPass for Register {
     fn run(&self, elab: &mut Elaborator, _design: &mut Design) -> Result<(), ElabError> {
         let items = std::mem::take(&mut elab.pending_items);
         elab.register_items(items.iter())
+    }
+}
+
+/// Lower top-level `nature`/`discipline` declarations into the design
+/// (T23, VAMS-01) — must precede `ElabModules` since a module's port/net
+/// disciplines don't need this, but branch/contribution lowering inside
+/// behaviors reads nothing from it either; ordered first anyway so a
+/// future pass reading `Design::natures`/`disciplines` during module
+/// lowering (e.g. Annex F resolution, T26) can rely on it being populated.
+struct LowerDeclarations;
+impl ElabPass for LowerDeclarations {
+    fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        elab.lower_declarations(design)
     }
 }
 

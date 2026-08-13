@@ -712,14 +712,12 @@ impl Design {
     }
     /// Mutable access to the disciplines map. For internal elaboration use
     /// (T23 lowers `piperine_vams::ast::DisciplineDecl` into this map).
-    #[allow(dead_code, reason = "wired by T23 — VAMS→POM discipline lowering")]
     pub(crate) fn disciplines_map_mut(&mut self) -> &mut HashMap<String, DisciplineDecl> {
         &mut self.disciplines
     }
     /// Mutable access to the natures map. For internal elaboration use
     /// (T23 lowers `piperine_vams::ast::NatureDecl` into POM `Nature`
     /// through here).
-    #[allow(dead_code, reason = "wired by T23 — VAMS→POM nature lowering")]
     pub(crate) fn natures_map_mut(&mut self) -> &mut HashMap<String, crate::pom::Nature> {
         &mut self.natures
     }

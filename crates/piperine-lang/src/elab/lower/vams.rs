@@ -14,17 +14,17 @@
 //! (no flattening, no connect-module insertion — those are later passes,
 //! T25/T52, writing only the derived side artifact).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use piperine_vams::ast::{
-    Declarator, Direction as AstDirection, Expr, ModuleDecl, ModuleItem, ParamType, PortConnection,
-    PortDecl,
+    BranchDecl, Declarator, Direction as AstDirection, Expr, ModuleDecl, ModuleItem, ParamType,
+    PortConnection, PortDecl, Stmt,
 };
 
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
-    Behavior, Direction, ElabError, ElabErrorKind, Instance, Module, NetRef, NetType,
-    Param, Port, Value, ValueType, Wire,
+    Behavior, Branch, BranchKind, Design, Direction, ElabError, ElabErrorKind, Instance, Module,
+    Nature, NetRef, NetType, Param, Port, Value, ValueType, Wire,
 };
 
 use super::Elaborator;
@@ -41,6 +41,7 @@ impl Elaborator {
         let mut params = Vec::new();
         let mut instances = Vec::new();
         let mut behaviors = Vec::new();
+        let mut branches = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
@@ -94,11 +95,11 @@ impl Elaborator {
                     };
                     behaviors.push(Behavior::new(decl.name.clone(), b.kind, stmts));
                 }
-                // Branches (T23), genvar/generate (T25), ground/var/event
-                // declarations, continuous assign, specify/gates: not yet
-                // lowered — later tasks extend this match.
+                ModuleItem::Branch(b) => lower_branch_decl(b, &mut branches),
+                // genvar/generate (T25), ground/var/event declarations,
+                // continuous assign, specify/gates: not yet lowered — later
+                // tasks extend this match.
                 ModuleItem::Ground(_)
-                | ModuleItem::Branch(_)
                 | ModuleItem::Var(_)
                 | ModuleItem::Event(_)
                 | ModuleItem::Genvar(_)
@@ -117,9 +118,116 @@ impl Elaborator {
             }
         }
 
-        let module =
+        let mut module =
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
+        module.branches = branches;
+
+        // Access-function call sites inside analog behaviors (§5.4.1) bind
+        // to a branch, named or implicit, and drive its BranchKind —
+        // resolve/create branches and record each contribution (T18's
+        // conflict check fires here).
+        for behavior in &module.behaviors {
+            if !behavior.is_analog() {
+                continue;
+            }
+            for stmt in behavior.body() {
+                resolve_contribution_branches(stmt, &decl.name, &mut module.branches)?;
+            }
+        }
+
         Ok(module)
+    }
+
+    /// Lowers every top-level `nature` (LRM §3.6.1, incl. derived chains)
+    /// and copies the registered `discipline` declarations into the design
+    /// (T23, VAMS-01). Disciplines keep the surface AST shape verbatim
+    /// (design F1 pattern: the POM re-exports the VAMS declaration rather
+    /// than deep-copying it into a parallel type); natures resolve their
+    /// `parent` inheritance chain into one flat, evaluated `Nature`.
+    pub(crate) fn lower_declarations(&self, design: &mut Design) -> Result<(), ElabError> {
+        *design.disciplines_map_mut() = self.syms.disciplines.clone();
+
+        let names: Vec<String> = self.syms.natures.keys().cloned().collect();
+        for name in names {
+            let mut visiting = HashSet::new();
+            let nature = self.effective_nature(&name, &mut visiting)?;
+            design.natures_map_mut().insert(name, nature);
+        }
+
+        // §3.6.2.1: a discipline's potential/flow binding must name a
+        // declared nature.
+        for disc in self.syms.disciplines.values() {
+            for (field, nature_name) in [("potential", &disc.potential), ("flow", &disc.flow)] {
+                if let Some(n) = nature_name
+                    && !self.syms.natures.contains_key(n)
+                {
+                    return Err(ElabError::from(ElabErrorKind::InvalidNatureBinding {
+                        discipline: disc.name.clone(),
+                        nature: n.clone(),
+                        issue: format!("{field} nature `{n}` is undeclared"),
+                        span: None,
+                    }));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Resolves one nature's full attribute set by following its `parent`
+    /// chain (§3.6.1.1) — a value present at this level wins; an absent one
+    /// inherits from the nearest ancestor that sets it. `visiting` detects
+    /// a parent cycle.
+    fn effective_nature(&self, name: &str, visiting: &mut HashSet<String>) -> Result<Nature, ElabError> {
+        if !visiting.insert(name.to_string()) {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "nature `{name}`: derived-nature `parent` chain cycles back to itself"
+            ))));
+        }
+        let decl = self
+            .syms
+            .natures
+            .get(name)
+            .ok_or_else(|| ElabError::from(ElabErrorKind::UndefinedType(name.to_string())))?;
+        let parent = decl.parent.as_deref().map(|p| self.effective_nature(p, visiting)).transpose()?;
+
+        let env = ConstEnv::new();
+        let abstol = decl
+            .abstol
+            .as_ref()
+            .map(|e| env.eval_f64(e))
+            .transpose()
+            .map_err(|e| ElabError::from(ElabErrorKind::ConstEval { context: format!("nature `{name}` abstol"), source: e }))?
+            .or_else(|| parent.as_ref().and_then(|p| p.abstol));
+        let units = decl
+            .units
+            .as_ref()
+            .map(|e| expr_to_string(e))
+            .transpose()?
+            .or_else(|| parent.as_ref().and_then(|p| p.units.clone()));
+        let access = decl.access.clone().or_else(|| parent.as_ref().and_then(|p| p.access.clone()));
+        let idt_nature = decl.idt_nature.clone().or_else(|| parent.as_ref().and_then(|p| p.idt_nature.clone()));
+        let ddt_nature = decl.ddt_nature.clone().or_else(|| parent.as_ref().and_then(|p| p.ddt_nature.clone()));
+
+        let mut user_attrs = parent.map(|p| p.user_attrs).unwrap_or_default();
+        for (k, e) in &decl.user_attrs {
+            let v = env.eval(e).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval { context: format!("nature `{name}` attribute `{k}`"), source: e })
+            })?;
+            user_attrs.insert(k.clone(), v);
+        }
+
+        Ok(Nature {
+            span: None,
+            doc: None,
+            name: name.to_string(),
+            parent: decl.parent.clone(),
+            abstol,
+            access,
+            units,
+            idt_nature,
+            ddt_nature,
+            user_attrs,
+        })
     }
 
     /// Lowers one `Instance` (from a `module_identifier inst1(...), ...;`
@@ -312,4 +420,115 @@ fn expr_to_net_ref(expr: &Expr) -> Result<NetRef, ElabError> {
             "port connection must be a net name or `name[index]`".to_string(),
         ))),
     }
+}
+
+/// Evaluates a `nature`/attribute `Expr` that must be a string (e.g.
+/// `units = "V"`) to its literal text.
+fn expr_to_string(expr: &Expr) -> Result<String, ElabError> {
+    match expr {
+        Expr::Str { value, .. } => Ok(value.clone()),
+        _ => Err(ElabError::from(ElabErrorKind::Other(
+            "expected a string literal".to_string(),
+        ))),
+    }
+}
+
+/// `byte range` → `miette::SourceSpan`, mirroring
+/// `From<piperine_vams::ParseError>`'s conversion (`pom/error.rs`).
+fn to_miette_span(span: piperine_vams::Span) -> miette::SourceSpan {
+    miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
+}
+
+/// `branch (pos[,neg]) name1, name2, ...;` (§5.2) — one POM `Branch` per
+/// declared name, all sharing the same terminal pair.
+fn lower_branch_decl(b: &BranchDecl, out: &mut Vec<Branch>) {
+    for name in &b.names {
+        out.push(Branch {
+            span: Some(to_miette_span(b.span)),
+            doc: None,
+            name: Some(name.clone()),
+            pos: NetRef::simple(b.pos.clone()),
+            neg: b.neg.clone().map(NetRef::simple),
+            kind: BranchKind::Probe,
+        });
+    }
+}
+
+/// Walks a statement tree looking for `V(...)`/`I(...)` access functions
+/// used as a contribution target (`V(p,n) <+ expr;`, §5.4), resolving each
+/// to a branch (a name lookup for `V(br)`, or find-or-create for the
+/// two-terminal/ground-referenced implicit form, §5.4.1) and recording the
+/// contribution's kind (`V` → potential, `I` → flow) — the T18
+/// `record_contribution` conflict check fires here.
+///
+/// Scope note: only the conventional `V`/`I` access-function spellings are
+/// recognized; a custom discipline's own `access` name (§3.6.1.2) is not
+/// yet resolved to potential/flow here (needs the nature→discipline→access
+/// lookup chain, deferred past T23's stated scope).
+fn resolve_contribution_branches(stmt: &Stmt, module: &str, branches: &mut Vec<Branch>) -> Result<(), ElabError> {
+    match stmt {
+        Stmt::Contribution { target, span, .. } => {
+            if let Expr::AccessFunction { function, pos, neg, .. } = target {
+                let kind = match function.as_str() {
+                    "V" => BranchKind::Potential,
+                    "I" => BranchKind::Flow,
+                    _ => return Ok(()),
+                };
+                let branch = resolve_or_create_branch(pos, neg.as_deref(), branches)?;
+                branch.record_contribution(kind, Some(to_miette_span(*span)), module)?;
+            }
+            Ok(())
+        }
+        Stmt::Block { stmts, .. } => {
+            stmts.iter().try_for_each(|s| resolve_contribution_branches(s, module, branches))
+        }
+        Stmt::If { then_branch, else_branch, .. } => {
+            resolve_contribution_branches(then_branch, module, branches)?;
+            if let Some(e) = else_branch {
+                resolve_contribution_branches(e, module, branches)?;
+            }
+            Ok(())
+        }
+        Stmt::Case { arms, .. } => {
+            arms.iter().try_for_each(|arm| resolve_contribution_branches(&arm.body, module, branches))
+        }
+        Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Forever { body, .. }
+        | Stmt::EventControl { body, .. } | Stmt::DelayControl { body, .. } => {
+            resolve_contribution_branches(body, module, branches)
+        }
+        Stmt::Null { .. }
+        | Stmt::Assign { .. }
+        | Stmt::NonBlockingAssign { .. }
+        | Stmt::Disable { .. }
+        | Stmt::TaskCall { .. } => Ok(()),
+    }
+}
+
+/// A single-arg access function (`V(br)`) names an already-declared branch;
+/// otherwise (one or two nets) it's the implicit form — find an existing
+/// implicit branch with the same terminal pair (order matters: `V(a,b)` and
+/// `V(b,a)` are distinct branches, LRM §5.4.1) or create one.
+fn resolve_or_create_branch<'a>(
+    pos: &Expr,
+    neg: Option<&Expr>,
+    branches: &'a mut Vec<Branch>,
+) -> Result<&'a mut Branch, ElabError> {
+    if neg.is_none()
+        && let Expr::Ident { name, .. } = pos
+        && let Some(idx) = branches.iter().position(|b| b.name.as_deref() == Some(name.as_str()))
+    {
+        return Ok(&mut branches[idx]);
+    }
+
+    let pos_ref = expr_to_net_ref(pos)?;
+    let neg_ref = neg.map(expr_to_net_ref).transpose()?;
+    if let Some(idx) = branches
+        .iter()
+        .position(|b| b.is_implicit() && b.pos == pos_ref && b.neg == neg_ref)
+    {
+        return Ok(&mut branches[idx]);
+    }
+
+    branches.push(Branch { span: None, doc: None, name: None, pos: pos_ref, neg: neg_ref, kind: BranchKind::Probe });
+    Ok(branches.last_mut().unwrap())
 }
