@@ -16,8 +16,8 @@ which every module's hierarchy, ports, and instances are already resolved (Part 
 per module, is a pair of compiled kernels (analog and/or digital) plus the device
 wiring that turns them into `Element`s a `CircuitInstance` can stamp.
 
-There is no interpreted execution path anywhere in this pipeline. A PHDL
-`analog`/`digital` body compiles to native code once, at elaboration/build time
+There is no interpreted execution path anywhere in this pipeline. A
+Verilog-AMS `analog`/`digital` body compiles to native code once, at elaboration/build time
 (MD-18 — normatively restated in §11.1); simulation never re-invokes this
 pipeline.
 
@@ -73,9 +73,10 @@ data (parameter values, runtime-operator state, register banks) lives entirely
 in the device layer (§7), never in the kernel.
 
 *Rationale.* This is the same invariant Part VII §2 states from the solver's
-side ("a compiled PHDL module, a plugin device, and an external model are
-equivalent once they present the one `Element` ABI") — codegen is simply the
-producer that makes a compiled PHDL module satisfy that equivalence.
+side ("a compiled Verilog-AMS module, a plugin device, and an external model
+are equivalent once they present the one `Element` ABI") — codegen is simply
+the producer that makes a compiled Verilog-AMS module satisfy that
+equivalence.
 
 ---
 
@@ -101,12 +102,13 @@ The resolved form SHALL satisfy, for every module it covers:
   resolved form is monomorphic by construction, mirroring the POM it reads.
 
 *Note.* The resolved form is **codegen-private**. Nothing outside this crate
-depends on its shape; Verilog-AMS (`piperine-vams`) is the pipeline's sole
-frontend (PHDL retired, MD-44/MD-45), so there is no cross-crate IR contract
-to keep stable (a former standalone IR crate existed when PHDL and an earlier
-Verilog-AMS frontend attempt both fed it — that dual-frontend era is gone,
-and the resolved form retreated to being this crate's internal stage, now fed
-by the one surviving frontend).
+depends on its shape; Verilog-AMS (`piperine-lang`, whose parser/elaborator
+modules absorbed the former standalone `piperine-vams` crate, MD-47) is the
+pipeline's sole frontend (PHDL retired, MD-44/MD-45), so there is no
+cross-crate IR contract to keep stable (a former standalone IR crate existed
+when PHDL and an earlier Verilog-AMS frontend attempt both fed it — that
+dual-frontend era is gone, and the resolved form retreated to being this
+crate's internal stage, now fed by the one surviving frontend).
 
 ### 2.2 The lowering pass — one resolved body per module
 
@@ -128,9 +130,10 @@ connected.
 ### 2.3 Analog runtime operators — the marker-call convention
 
 Every analog runtime operator (`ddt`, `idt`, `idtmod`, `ddx`, `delay`, `slew`,
-`transition`, `table`, and the currently-undeclared `laplace_*`/`zi_*` family —
-Part I's extension surface, MD-24) SHALL lower to a POM `Expr::Call` of the
-fixed shape:
+`transition`, `table`, and the `laplace_*`/`zi_*` family — all 5 `laplace_*`
+and 4 `zi_*` LRM variants are registered in
+`AnalogOpRegistry::with_builtins`, Part I's extension surface, MD-24) SHALL
+lower to a POM `Expr::Call` of the fixed shape:
 
 ```text
 __<op>(state_id, resolved_args...)
@@ -547,9 +550,9 @@ instance; reading it directly from the POM at build time instead means:
 
 **Plugin devices.** An instance annotated `@device` (Part VI's plugin
 extensibility model) SHALL be delegated to a registered device provider
-instead of being compiled from a PHDL body — the provider returns an
+instead of being compiled from a Verilog-AMS body — the provider returns an
 `Element` directly, and the solver SHALL NOT be able to distinguish a
-plugin-provided device from a PHDL-compiled one (Part VI §7's stated
+plugin-provided device from a Verilog-AMS-compiled one (Part VI §7's stated
 invariant). This crate SHALL NOT depend on the plugin-loading crate to
 implement this: the provider contract is a trait defined here, implemented
 by the plugin host, preserving the dependency direction plugins→codegen never
@@ -574,7 +577,7 @@ and how.
 | Event detectors (`cross`/`above`/`@timer`'s fire decision) | The fire decision itself | The device layer maps its compiled trigger representation to `piperine-signal`'s trigger type and asks it whether a fire occurred; `@initial` dispatch and the timer period table remain codegen's — they are not detector logic |
 | The junction limiter (`pnjlim`/`fetlim`/`limvds`) | Both the formula **and** the seed-preservation/convergence-veto bookkeeping | The formula is linked as an external native symbol (§5.3) and called from **compiled JIT code** — this is the one family where the call crosses into emitted machine code, not just device-layer Rust; the bookkeeping calls a `piperine-signal` method that accepts the JIT-computed limited value and an externally-owned state slice, so the formula is never computed twice |
 | `table` | Validation (strictly increasing breakpoints, matching-length arrays, supported interpolation mode) and segment geometry | The resolve stage (§2) constructs a validated table value from `piperine-signal` at lowering time and reads its segment data to emit the equivalent piecewise expression — the *validated data* crosses the boundary, not a runtime call, because `table`'s value must remain a differentiable compiled expression (§3), not an opaque function call |
-| Digital edge detection (IEEE 1364 rising/falling/either) | The edge-fire predicate | Both the compiled digital kernel's `watch`-derived comparison (§6.2, §7.3) and the host sequencer's wait predicate (Part VIII) call the same predicate — this is the one family whose two call sites span two different crates (`piperine-codegen` and `piperine-api`), unified so a host tester's edge wait cannot silently disagree with what a compiled PHDL clocked block would observe |
+| Digital edge detection (IEEE 1364 rising/falling/either) | The edge-fire predicate | Both the compiled digital kernel's `watch`-derived comparison (§6.2, §7.3) and the host sequencer's wait predicate (Part VIII) call the same predicate — this is the one family whose two call sites span two different crates (`piperine-codegen` and `piperine-api`), unified so a host tester's edge wait cannot silently disagree with what a compiled Verilog-AMS clocked block would observe |
 
 **What stays in codegen, and why.** Compile-time machinery — symbolic
 differentiation (§3), Cranelift emission and CSE (§5), the `SimCtx` ABI
@@ -631,7 +634,7 @@ substituted value (a `0.0` residual, a no-op stamp, an ignored contribution).
 ### 11.2 The coverage guarantee
 
 "100% coverage" is a specific, checkable claim about this pipeline: **every
-PHDL construct that reaches codegen either lowers to executable device code,
+Verilog-AMS construct that reaches codegen either lowers to executable device code,
 or fails loud with a named, construct-identifying error** at the point it is
 first found unsupported. This SHALL hold uniformly across every emission
 site a construct might be reached through — the primary residual path, a

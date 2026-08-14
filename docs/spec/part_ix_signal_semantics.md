@@ -6,7 +6,7 @@ limiter, table interpolation, closed-form behavior kinds, streaming measures,
 time-domain waveforms, derivative verification, and four-state digital edge
 logic — that used to have two implementations (one inside `piperine-codegen`'s
 JIT-compiled devices, one inside a hand-written host device) and now have
-exactly one. A compiled PHDL block (Part VII §5, via `piperine-codegen` — Part
+exactly one. A compiled Verilog-AMS block (Part VII §5, via `piperine-codegen` — Part
 X) and a host-written device (Part VIII) both compute these semantics by
 calling into this crate; neither hand-rolls its own copy.
 
@@ -42,7 +42,7 @@ Part VII's convention (§3.3) — there is no typed-units layer here either.
 
 ## §1 Purity contract and position in the pipeline
 
-`piperine-signal` sits below both the PHDL compilation pipeline (Part X) and
+`piperine-signal` sits below both the Verilog-AMS compilation pipeline (Part X) and
 the host device surface (Part VIII), and above neither: it has no upstream
 dependency on either. Both consume it as a library.
 
@@ -69,7 +69,7 @@ piperine-api  ──────┘
 **Consequence — capability parity is structural, not incidental.** Because
 neither `piperine-codegen` nor `piperine-api`'s host device layer can see
 inside the other, and both call the *same* functions here for the *same*
-family, a device written in PHDL and a device written by hand in the host
+family, a device written in Verilog-AMS and a device written by hand in the host
 language that both use (for example) `transition` or the junction limiter are
 guaranteed to compute identical values for identical inputs — not because the
 two authors were careful, but because there is only one implementation to
@@ -257,8 +257,8 @@ is the tier-1/tier-2 boundary:
 
 - **Tier 1** (this section's `EventDetector`) detects reactively — it fires
   at the first accepted sample after the sign change has already happened,
-  contributing no static breakpoints. This is what PHDL's `@cross`/`@above`
-  compile to.
+  contributing no static breakpoints. This is what Verilog-AMS's
+  `@(cross(...))`/`@(above(...))` compile to.
 - **Tier 2** (§3.4 below) *predicts* the crossing instant from the
   bracketing pair of accepted samples and publishes an honest error bound,
   without requiring any solver change — it does not retroactively make tier
@@ -837,10 +837,10 @@ value).
 
 Four-state digital logic (`0`, `1`, `X`, `Z` — matching the meanings defined
 in Part VII §7) and the edge-trigger predicate (`Rising`/`Falling`/`Either`)
-that both PHDL's compiled `@(posedge …)`/`@(negedge …)` blocks and a host
-sequencer's `wait(edge(…))` calls resolve through — one shared rule, so a
-host test waiting on a net's edge fires at **exactly** the same transitions a
-PHDL block driven by the identical net would.
+that both Verilog-AMS's compiled `@(posedge …)`/`@(negedge …)` blocks and a
+host sequencer's `wait(edge(…))` calls resolve through — one shared rule, so
+a host test waiting on a net's edge fires at **exactly** the same
+transitions a Verilog-AMS block driven by the identical net would.
 
 ### 10.1 The edge rule (IEEE 1364)
 

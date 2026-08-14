@@ -1,372 +1,97 @@
-# Appendix B — Complete Grammar (EBNF)
+# Appendix B — Grammar
 
-The consolidated LL(1) grammar for PHDL. Every production in this appendix also appears
-in the section it belongs to (Lexical in Part I §4, Types in §6, etc.); this appendix
-gathers them in one place for reference.
+Piperine's sole frontend is Verilog-AMS (LRM 2.4). Piperine does not maintain its own
+EBNF for that grammar — the authoritative, complete grammar is the LRM's own **Annex A**
+(`VAMS-LRM-2-4.md` at the repo root, `# **Annex A**` through `# **Annex B**`, currently
+lines 16560–17959 of the in-repo copy). This appendix does not restate it. What follows
+is (B.1) how conformance to Annex A is mechanically checked, and (B.2) the one place
+Piperine's own semantics ride on top of standard Annex A syntax rather than inside it.
 
-## Notation
+## B.1 Conformance gate
 
-`::=` definition · `|` alternative · `{X}` zero or more · `[X]` optional · `(X)` group
-· `"x"` literal terminal.
+Two test targets in `crates/piperine-lang/tests/` hold the parser to the LRM, both
+re-deriving their ground truth from the checked-in `VAMS-LRM-2-4.md` at test time rather
+than from a frozen copy — so the gate can't quietly drift from the document it claims to
+cover.
 
-The grammar is LL(1) after one inline left-factoring (instance parsing — §B.4).
-Semantic distinctions the parser cannot make on one token of lookahead (value vs net
-type, access vs call, `[Expr]` as const-arg vs array-dim) are deferred to the type
-checker.
+### B.1.1 `annex_a_grammar.rs` — grammar section coverage
 
-## B.1 Lexical
+A table (`SECTIONS`) lists every LRM Annex A section at **leaf granularity** (down to
+e.g. A.2.1.1/A.2.1.2/A.2.1.3, skipping only bare parent headings like A.2.1 that carry no
+direct content). Each section is marked one of:
 
-```
-Ident      ::= (letter|"_") { letter|digit|"_" }
-RealLit    ::= Digits "." Digits [ ("e"|"E") ["+"|"-"] Digits ] [ SiSuffix ]
-             | Digits ("e"|"E") ["+"|"-"] Digits [ SiSuffix ]
-NatLit     ::= Digits [ SiSuffix ] | "0b" BinDigits | "0x" HexDigits
-Digits     ::= digit { digit | "_" }                     -- '_' separators anywhere between digits
-SiSuffix   ::= "T"|"G"|"M"|"k" | "m"|"u"|"n"|"p"|"f"|"a" -- case-sensitive; M=mega, m=milli
-QuadLit    ::= "0q" ("0"|"1"|"X"|"Z")
-StringLit  ::= '"' {char} '"'
-SysCall    ::= "$" Ident
-```
+- `Implemented` — some `grammar/{mod,cursor,expr,stmt,item}.rs` production's doc comment
+  cites it (`Annex A.X.Y`); a test asserts the citation string is actually present in the
+  concatenated grammar source.
+- `OutOfScope(reason)` — not yet implemented, with a **mandatory, non-blank** written
+  reason naming what covers it and when (a task/phase reference). A blank reason fails
+  the gate outright.
 
-Comments: `//` line, `/* */` block. `@` prefixes both attributes (§B.3) and events
-(§B.7); position disambiguates.
+A third test cross-checks the table itself against the document: every `### **A.X.Y**` /
+`#### **A.X.Y.Z**` leaf heading found inside Annex A's span in `VAMS-LRM-2-4.md` must have
+a matching row in `SECTIONS`, so a future LRM section can't go silently unaccounted for
+either by omission from the table or by a stale citation.
 
-Reserved spellings are listed in Part I §4.3. Lexer-level sigils: `$`, `@`, `<+`
-(contribution), `<-` (force), `?` (optional type; pattern wildcard), `..` / `..=`
-(ranges), `::` (path), `=>` (match arm), `->` (fn return), `|` (lambda; event OR), `=`
-(assignment).
+The granularity choice is a recorded `SPEC_DEVIATION`: a literal per-production regex
+over the LRM's PDF-to-text extraction produces ~500 noisy, often-merged pseudo-productions
+that don't correspond to real grammar rules; section headers are the unit the source
+document actually supports mechanically, and the same unit `grammar/*.rs` doc comments
+already cite.
 
-## B.2 Compilation unit
+As of this writing, notable `OutOfScope` areas include: `config_declaration` bodies
+(A.1.5), `connectrules` semantics beyond the declaration shell (A.1.8), the full IEEE 1364
+net-type/strength/delay tables and primitive/UDP truth-table semantics (A.2.2.x, A.3.x,
+A.5.4), specify-block internals treated as an opaque span (A.7.2–A.7.5.3), and a handful
+of sections whose grammar is implemented but cited under a sibling section to avoid
+double-booking one method across two rows (e.g. A.8.2/A.8.4/A.8.5/A.8.6 fold into A.8.3's
+Pratt-parser citation; A.8.7/A.8.8/A.9.2/A.9.4 are the lexer's scope, cited against the
+LRM's own numbered subsections instead of Annex A). None of this is guessed — read
+`annex_a_grammar.rs`'s `SECTIONS` table for the current, authoritative list; it changes as
+phases land.
 
-```
-CompilationUnit ::= { UseDecl | Item }
-UseDecl   ::= "use" Path ";"
-Path      ::= Ident { "::" Ident }
-Item      ::= { Attribute } [ "pub" ] ItemKind
-ItemKind  ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl | BundleDecl
-             | EnumDecl | CapabilityDecl | ImplDecl | FnDecl | ConstDecl
-             | ExternDecl
-ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
-```
+### B.1.2 `annex_b_keywords.rs` — reserved word set
 
-`ConstraintDecl` is defined in §B.9; `BehaviorDecl` in §B.7; `ExternDecl` below.
+Independently re-derives the keyword set from `VAMS-LRM-2-4.md`'s own **Table B.1** (the
+"List of keywords" table, scanned for backtick-delimited lowercase cells between the
+`Table B.1` caption and the following `Analog language subset` heading) and diffs it
+against `Keywords::all()` in `keywords.rs` — any keyword present in one but not the other
+fails the gate. Three further tests hold every keyword in that set to §2.8.2's rule that
+a keyword is lexically a plain identifier, distinguished only at the grammar layer:
+`Keywords::is_reserved` is true for all of them, each one lexes as a bare `Tok::Ident`,
+and each is rejected as an identifier with a typed `ParseErrorKind::UnexpectedToken`
+naming the keyword — never a silent fallback.
 
-```
-ExternDecl     ::= "extern" ( ExternType | ExternFn | ExternTask
-                            | ExternOperator | ExternAttribute | ExternImpl )
-ExternType     ::= "type" Ident ";"
-ExternFn       ::= "fn" Ident ParamList "->" Type ";"
-ExternTask     ::= "task" SysCall [ ParamList ] "->" Type ";"
-ExternOperator ::= "operator" Ident ParamList "->" Type ";"
-ExternAttribute::= "attribute" Ident "{" [ AttrField {"," AttrField} [","] ] "}"
-AttrField      ::= Ident ":" Type
-ExternImpl     ::= "impl" [ Ident "for" ] Ident "{" { FnSig } "}"
-```
+## B.2 Piperine's own surface: `device`/`port` attributes
 
-Every `extern` form is **signature-only**: a body on the declaration, or on any
-method inside an `extern impl` block, is a parse error (Part I §5.4). `FnSig` is
-B.6's production. `extern impl` methods participate in overload resolution by
-argument type.
+Piperine's plugin system needs two pieces of metadata that Annex A has no dedicated
+grammar for: which plugin implements a module as a native device, and how a port maps to
+that device's terminal model. These ride entirely on **standard** Annex A.9.1
+`attribute_instance` syntax (`(* attr_spec {, attr_spec} *)`, `attr_spec ::= attr_name [
+"=" constant_expression ]`) — parsed once, generically, by
+`grammar::cursor::Cursor::parse_attr_instances` (cited against Annex A.9.1) and shared by
+every attribute-bearing site in the grammar. **There is no syntactic extension**: no new
+production, no nested-call form, nothing the LRM parser doesn't already accept. What's
+Piperine-specific is purely semantic — which attribute *names* are recognized, and what
+they mean — decided during elaboration, not during parsing.
 
-## B.3 Attributes
+`crates/piperine-lang/src/elab/lower/vams.rs` (`lower_module_attrs`/`lower_port_attrs`,
+task T35) is where this recognition happens:
 
-```
-Attribute ::= "@" Ident "(" [ AttrArg { "," AttrArg } ] ")"
-AttrArg   ::= Ident "=" Expr
-```
+| Attribute names (sibling `attr_spec`s in one instance) | Recognized on | Elaborates to |
+|---|---|---|
+| `device = "<plugin>"`, `type = "<type-id>"` | a module declaration | plugin-system `device` schema (`Attribute { schema: "device", data: { plugin, type } }`) |
+| `port = "<name>"`, `kind = "<kind>"` (optional) | a port declaration | plugin-system `port` schema (`Attribute { schema: "port", data: { name, kind? } }`) |
 
-An attribute prefixes any declaration (item, port, `param`, `wire`, `var`, instance);
-stackable. `Ident` is a plugin-registered schema; arguments are checked against it.
-Attributes are inert (Part I §8).
-
-## B.4 Modules
-
-```
-ModDecl     ::= "mod" Ident [ConstParams] [TypeParams] PortList [ModBody]
-ConstParams ::= "[" Ident {"," Ident} "]"
-PortList    ::= "(" [ Port {"," Port} [","] ] ")"
-Port        ::= { Attribute } Direction Ident ":" Type
-Direction   ::= "input" | "output" | "inout"
-ModBody     ::= "{" { ModStmt } "}"
-ModStmt     ::= { Attribute } ( ParamDecl | WireDecl | VarDecl | StructuralFor
-                                | StructuralIf | AssertStmt | InstanceOrConnect )
-ParamDecl  ::= "param" Ident ":" Type [ "=" Expr ] [ TolClause ] ";"
-TolClause  ::= "tol" Ident "(" KeyedArg {"," KeyedArg} ")" [ "global" ]
-KeyedArg    ::= Ident "=" Expr
-WireDecl   ::= "wire" Ident ":" Type ";"
-VarDecl    ::= "var" Ident [ ":" Type ] [ "=" Expr ] ";"
-AssertStmt ::= "$assert" "(" Expr "," Expr ")" ";"
-```
-
-Instances and connections, left-factored on `Ident { Indexer | Field }`:
-
-```
-InstanceOrConnect ::= Ident [ "::" Ident { "::" Ident } ] { Indexer | Field } InstTail
-InstTail  ::= ":" ModuleRef PortArgs [ParamArgs] ";"     -- named instance
-             | ConstArgs PortArgs [ParamArgs] ";"        -- anon w/ const args
-             | PortArgs [ParamArgs] ";"                   -- anon
-             | "=" Expr ";"                               -- net connection
-ModuleRef ::= Path [ConstArgs] [TypeArgs]
-Path      ::= Ident { "::" Ident }   -- a qualified module reference is an
-                                     -- implicit `use` of the prefix file;
-                                     -- the final segment is the module name
-                                     -- (`spice::passives::res` ⇒ load file
-                                     -- `spice::passives`, instantiate `res`).
-                                     -- A leading `Ident ::` on the anon form
-                                     -- is likewise a qualified module ref.
-ConstArgs ::= "[" Expr {"," Expr} "]"
-TypeArgs  ::= "<" Type {"," Type} ">"
-PortArgs  ::= "(" [ PortArg {"," PortArg} ] ")"
-PortArg   ::= Expr | "." Ident "=" Expr
-ParamArgs ::= "{" [ ParamArg {"," ParamArg} ] "}"
-ParamArg  ::= "." Ident "=" Expr
-Indexer   ::= "[" Expr "]"   ;   Field ::= "." Ident
-StructuralFor ::= "for" Ident "in" Range ModBody
-StructuralIf  ::= "if" "(" Expr ")" ModBody [ "else" (ModBody|StructuralIf) ]
-Range     ::= Expr (".."|"..=") Expr
-```
-
-## B.5 Types
-
-```
-Type      ::= TupleType | FnType | NamedType
-NamedType ::= Ident [TypeArgs] { Indexer } [ "?" ]
-FnType    ::= "fn" "(" [ Type {"," Type} [","] ] ")" [ "->" Type ] [ "?" ]
-TupleType ::= "(" Type "," Type {"," Type} [","] ")" [ "?" ]
-```
-
-A trailing `?` marks an optional type (`Real?`, Part I §6.1). `fn(T, U) -> R` is a
-function type (Part I §9.2). `(T, U)` is a tuple type; a single parenthesized type is
-not a 1-tuple.
-
-### B.5.1 Disciplines
-
-```
-DisciplineDecl ::= "discipline" Ident "{" { DisciplineItem } "}"
-DisciplineItem ::= NatureDecl | StorageDecl | ResolveDecl
-NatureDecl     ::= ("potential"|"flow") Ident ":" Type [ AttrList ] ";"
-AttrList       ::= "(" NamedAttr {"," NamedAttr} ")"
-NamedAttr      ::= Ident "=" Expr
-StorageDecl    ::= "storage" Type ";"
-ResolveDecl    ::= "resolve" ("tri"|"or"|"and"|"sum"|"avg"|"max"|"min") ";"
-```
-
-### B.5.2 Enums
-
-```
-EnumDecl    ::= "enum" Ident [ ":" Type ] "{" EnumVariant {"," EnumVariant} [","] "}"
-EnumVariant ::= Ident [ "=" Expr ]
-```
-
-### B.5.3 Bundles
-
-```
-BundleDecl ::= "bundle" Ident [ConstParams] [TypeParams] "{" [ Field {"," Field} [","] ] "}"
-Field      ::= { Attribute } Ident ":" Type [ "=" Expr ]
-```
-
-## B.6 Capabilities, generics, functions
-
-```
-CapabilityDecl ::= "capability" Ident [ ":" Ident {"," Ident} ] "{" { FnSig | FnDecl } "}"
-FnSig          ::= "fn" Ident [TypeParams] ParamList "->" Type ";"
-ImplDecl       ::= "impl" [ Ident "for" ] TypeRef "{" { FnDecl } "}"
-TypeRef        ::= Ident [ConstArgs] [TypeArgs]
-FnDecl         ::= "fn" Ident [TypeParams] ParamList "->" Type Block
-ParamList      ::= "(" [ Param {"," Param} ] ")"
-Param          ::= "self" | Ident ":" Type [ "=" Expr ]
-Block          ::= "{" { Stmt } [ Expr ] "}"
-TypeParams     ::= "<" TypeParam {"," TypeParam} ">"
-TypeParam      ::= Ident [ ":" Bound ]
-Bound          ::= Ident { "+" Ident }
-```
-
-`impl Cap for T` vs `impl T`: peek for `for` after the first identifier.
-
-## B.7 Behavior
-
-```
-BehaviorDecl  ::= ("analog"|"digital") Ident "{" { BehaviorStmt } "}"
-BehaviorStmt  ::= VarDecl | BindStmt | IfStmt | MatchStmt | ForStmt | EventBlock
-                | Diagnostic | ExprStmt
-BindStmt      ::= Expr BindOp Expr ";"     ;   BindOp ::= "<+" | "<-" | "="
-EventBlock    ::= "@" EventSpec [ "when" "(" Expr ")" ] Block
-Diagnostic    ::= SysCall "(" [ Expr {"," Expr} ] ")" ";"
-```
-
-`EventSpec` is **one** production, shared by behavior bodies and `constraint`
-scopes (§B.9), defined once here:
-
-```
-EventSpec      ::= EventTerm | "(" EventOr ")" | EventAnd | "not" EventSpec
-EventOr        ::= EventAnd { ("|"|"or") EventAnd }
-EventAnd       ::= EventUnary { ("&"|"and") EventUnary }
-EventUnary     ::= "not" EventUnary | EventTerm
-EventTerm      ::= "initial" | "final"
-                 | Ident [ "(" [ TermArg {"," TermArg} ] ")" ]
-TermArg        ::= Expr | "after" "=" Expr | "dur" "=" Expr
-```
-
-The grammar is shared; what differs is which **terms** resolve in which scope,
-which the `EventRegistry` decides, not the parser (Part II §9). A behavior body
-admits the edge/crossing/lifecycle/timer kinds and the `when (cond)` clause; a
-constraint scope admits the analysis-scope kinds (`dc`/`tran`/`ac`) and the
-`after =`/`dur =` window arguments, and rejects `when`. Using a term in the wrong
-scope is a loud elaboration error, never a parse error.
-
-The left-hand side of `<+` / `<-` must be an access expression (type-checked); the
-left-hand side of `=` must be an lvalue.
-
-## B.8 Statements and expressions
-
-```
-Stmt      ::= VarDecl | ReturnStmt | IfStmt | MatchStmt | ForStmt | BindStmt | ExprStmt
-ReturnStmt::= "return" Expr ";"   ;   ExprStmt ::= Expr ";"
-IfStmt    ::= "if" "(" Expr ")" Block [ "else" (Block|IfStmt) ]
-ForStmt   ::= "for" Ident "in" Range Block
-MatchStmt ::= "match" Expr "{" { MatchArm } "}"
-MatchArm  ::= Pattern "=>" Block [","]
-Pattern   ::= Path | "_" | BitPattern            -- BitPattern: "0b" {"0"|"1"|"?"}
-
-Expr      ::= OrExpr
-OrExpr    ::= AndExpr  { "|"  AndExpr }
-AndExpr   ::= EqExpr   { "&"  EqExpr }
-EqExpr    ::= RelExpr  { ("=="|"!=") RelExpr }
-RelExpr   ::= XorExpr  { ("<"|"<="|">"|">=") XorExpr }
-XorExpr   ::= AddExpr  { "^"  AddExpr }
-AddExpr   ::= MulExpr  { ("+"|"-") MulExpr }
-MulExpr   ::= UnaryExpr{ ("*"|"/"|"%") UnaryExpr }
-UnaryExpr ::= ("!"|"-") UnaryExpr | PostfixExpr
-PostfixExpr::= Primary { Call | Indexer | Slice | Field | PathSeg }
-Call      ::= "(" [ Expr {"," Expr} ] ")"
-Slice     ::= "[" Expr (".."|"..=") Expr "]"
-PathSeg   ::= "::" Ident
-
-Primary   ::= Literal | SysCall | Ident | "(" Expr ")" | Block | IfExpr
-             | ArrayExpr | BundleLit | MapLit | SetLit | Lambda
-IfExpr    ::= "if" "(" Expr ")" Block "else" Block
-ArrayExpr ::= "[" ( Expr ";" Expr | Expr "|" Ident "in" Range | Expr {"," Expr} ) "]"
-BundleLit ::= TypeRef "{" [ FieldInit {"," FieldInit} [","] ] "}"
-FieldInit ::= "." Ident "=" Expr
-MapLit    ::= "Map" "{" [ MapEntry {"," MapEntry} [","] ] "}"
-MapEntry  ::= Ident ":" Expr | StringLit ":" Expr
-SetLit    ::= "Set" "{" [ Expr {"," Expr} [","] ] "}"
-Lambda    ::= "|" [ Ident {"," Ident} ] "|" Expr
-```
-
-A `BundleLit` in statement position (where it might collide with a block) must be
-parenthesized or appear in value position (after `=`, `<-`, or `return`).
-
-Native canonical spellings only: `|` (not `or`) for event OR, one diagnostic per
-severity. Verilog-AMS aliases are accepted only in the AMS ingestion front end.
-
-## B.9 Constraints (`constraint` blocks)
-
-A third top-level body kind beside `analog`/`digital` (Part I §10.6), attaching
-correctness intent to a module by name. `ItemKind` (B.2) already admits it as an
-alternative top-level item — it is not restated here:
-
-```
-ConstraintDecl ::= { Attribute } [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
-ConstraintStmt ::= RequireStmt | TargetStmt | ConstraintVar | CoverStmt | ScopedBlock
-RequireStmt    ::= "require" Ident ":" Expr ";"
-ConstraintVar  ::= "var" Ident ":" Type "=" Expr ";"     -- annotation mandatory
-TargetStmt     ::= "target" TargetExpr ("<="|">=") TargetExpr [ "tol" Expr ] ";"
-CoverStmt      ::= "cover" Ident ":" Expr "bins" "[" Expr ":" Expr ":" Expr "]" ";"
-                 | "cover" Ident ":" Expr "in" "{" Expr { "," Expr } "}" ";"
-                 | "cover" "cross" Ident ":" Ident { "," Ident } ";"
-ScopedBlock    ::= "@" EventSpec "{" { ConstraintStmt } "}"
-```
-
-**`CoverStmt` (dv-tester DVT-42, `crates/piperine-lang/src/parse/parser/
-constraint_decl.rs`).** The bin form after `bins` is a literal-edged range
-partition `[lo:step:hi]`; the set form after `in` is an explicit, literal
-list of bin values — both lower to `piperine_lang::parse::ast::CoverBins`
-(`Range { lo, step, hi }` / `Set(points)`). The third form, `cover cross
-<name> : <point1>, <point2>, …;`, names two or more `cover` points already
-declared **earlier in the same block** by their own labels — it carries no
-`Expr`/`CoverBins` of its own, only the label list. `ConstraintStmt::Cover`
-and `ConstraintStmt::CoverCross` are the two POM variants; a `cover` point
-carries no margin and no signed distance (unlike `RequireStmt`/`TargetStmt`)
-— it lowers to a bin-mapper counter, not a `Boolean`/comparison expression
-(Part I §10.6, Part II §11 for the elaboration-time bin-count check).
-
-`TargetExpr` is the `Expr` production of B.8 parsed at minimum precedence 7
-(BitXor and above), so a following `<=`/`>=` is the statement's comparison
-rather than a binary operator inside the operand. Only the non-strict
-comparisons parse: the strict `<`/`>` have no signed-margin semantics and fail
-loud at the comparison token.
-
-**The `EventSpec` reuse (DVC-19/20).** `ScopedBlock` reuses the one `EventSpec`
-production defined in B.7, unchanged — `@ dc { … }`/`@ tran { … }`/`@ ac { … }`
-scope the body to one analysis, `|` composes (`@ (dc | tran) { … }`), `&`/`not`
-intersect and complement evaluation-point sets, and `after = …`/`dur = …`
-keyed window args open and close a temporal window on a term. The terms are
-resolved against the same `EventRegistry` as behavior-body events (Part II §9);
-the analysis-scope kinds (`dc`/`tran`/`ac`) are registered analysis names. The
-`when (cond)` clause is not allowed in a constraint scope (only behavior bodies
-accept it); a temporal window serves the same role. The scope distinction is
-enforced at elaboration, not in the grammar.
-
-A top-level `require` holds in every analysis (subject to `Context::require_scope`,
-Part VII §3.3); one inside `@ dc { … }` holds in DC analyses only; an analysis
-that never ran leaves a scoped `require` **not exercised** — never a silent
-vacuous pass (DVC-19).
-
-## B.10 Selector
-
-```
-Selector  ::= [ "/" | "//" ] Step { ( "/" | "//" ) Step }
-Step      ::= [ Axis "::" ] NodeTest { Predicate }
-Axis      ::= "inst"|"net"|"port"|"param"|"attr"|"behavior"|"constraint"
-             |"driver"|"load"|"parent"|"ancestor"
-NodeTest  ::= Name | "*"
-Predicate ::= "[" ( Index | PredExpr ) "]"
-Index     ::= NatLit | "last" "(" ")"
-PredExpr  ::= OrExpr
-OrExpr    ::= AndExpr { "or" AndExpr }
-AndExpr   ::= NotExpr { "and" NotExpr }
-NotExpr   ::= "not" "(" PredExpr ")" | Compare
-Compare   ::= Operand [ CmpOp Operand ]
-CmpOp     ::= "=="|"!="|"<"|"<="|">"|">="|"~"
-Operand   ::= AttrRef | AxisRef | Func | Literal
-AttrRef   ::= "@" Name [ "." Name ]
-AxisRef   ::= Axis "::" NodeTest
-Func      ::= "of" "(" StringLit ")" | "count" "(" AxisRef ")"
-Literal   ::= NumberLit | StringLit | BoolLit | Ident
-```
-
-`/` is absolute from the context node; `//` is descendant closure over `inst::`. Full
-semantics: Part IV §8–§14.
-
-## B.11 Leaf enums
-
-```
-Direction          ::= Input | Output | Inout
-Domain             ::= Analog | Digital
-DisciplineKind     ::= Conservative | Storage
-Resolution         ::= Single | Tri | Or | And | Sum | Avg | Max | Min | Kcl
-NatureKind         ::= Potential | Flow
-ConstraintStmt     ::= Require | Var | Target | Cover | CoverCross | ScopeBlock
-QuantityClass      ::= Pointwise | Reduced
-ReflectError       ::= NotFound | NotSettable | TypeMismatch | OutOfRange
-                     | MultipleDrivers | Other
-```
-
-## B.12 Const-expression subset
-
-```
-ConstExpr     ::= ConstOrExpr
-ConstOrExpr   ::= ConstAndExpr { "or" ConstAndExpr }
-ConstAndExpr  ::= ConstNotExpr { "and" ConstNotExpr }
-ConstNotExpr  ::= "not" "(" ConstExpr ")" | ConstCompare
-ConstCompare  ::= ConstUnary [ CmpOp ConstUnary ]
-ConstUnary    ::= ("!"|"-") ConstUnary | ConstPostfix
-ConstPostfix  ::= ConstPrimary { "[" ConstExpr "]" }
-ConstPrimary  ::= Literal | Ident | "(" ConstExpr ")" | BlockWithValue
-```
-
-Evaluatable: literals (including SI-suffixed and `_`-separated numerics), named
-bindings, unary `-`/`!`, binary arithmetic/comparison/bitwise, `if`/`else`, and a block
-with a trailing value. Anything else (general calls, field access, comprehensions,
-runtime values) is rejected as `NotConst`.
+Because the LRM's `attr_spec` has no nested-call form, the schema's two (or three) fields
+travel as separate sibling attribute names inside one `(* … *)` instance —
+`(* device = "some_plugin", type = "diode_v2" *)` — rather than as
+`(* device(plugin = …, type = …) *)`; this is a recorded `SPEC_DEVIATION` in
+`lower_module_attrs`'s doc comment. `type`/`kind` are only consumed once their sibling
+`device`/`port` attribute is present; standing alone they're just attribute names subject
+to the same check as everything else. Any attribute name on a module or port that is
+neither `device`/`type`/`port`/`kind` nor a name the plugin system has itself registered
+in `known_schemas` fails loud with `ElabErrorKind::UnknownAttrSchema` (MD-24's
+no-silent-fallback rule, ported to VAMS as requirement VAMS-13) — an unrecognized
+attribute is a compile error, never inert. These two schemas are seeded by the plugin
+system itself (`PluginHost::seed_schemas`); individual plugins contribute no schemas of
+their own (see CLAUDE.md, "Declared language surface").

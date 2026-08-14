@@ -1,1413 +1,315 @@
 # Part I — Language Specification
 
-This Part is the normative core of PHDL: the lexical form, the type system, the module
-and net model, behavior (analog/digital), functions, attributes, system tasks, the
-extension model, and the phase model. It defines what every PHDL program must satisfy
-to be well-formed.
+Piperine's sole frontend is Verilog-AMS (LRM 2.4). This Part is the normative
+description of the language **as Piperine implements it**: which LRM semantics apply,
+where Piperine's own pipeline narrows or extends them, and what parses but does not yet
+reach a simulated device. It does not restate the grammar — Appendix B is the grammar
+reference, anchored directly to `VAMS-LRM-2-4.md` Annex A. This Part is about meaning,
+not productions.
 
-The grammar defined here is LL(1) after one inline left-factoring in instance parsing.
-Semantic distinctions that the parser cannot make on a single token of lookahead (value
-vs net type, access vs call, `[Expr]` as const-arg vs array-dim) are deferred to the
-type checker; the grammar produces a single ambiguous AST and the elaborator resolves
-it. The full consolidated grammar is in Appendix B.
+Every claim below is grounded in `crates/piperine-lang/src/{ast,grammar,lexer.rs,
+preprocessor.rs,parser.rs,keywords.rs}` (the parser, merged into `piperine-lang` at
+MD-47 — see Part I §0) and `crates/piperine-lang/src/elab/` (the elaborator, Part II)
+and cross-references the LRM clause each construct implements.
+
+## §0 A note on the crate merge (MD-47)
+
+Until 2026-08-13, the parser (`ast`/`grammar`/`lexer`/`preprocessor`/`parser`/`error`/
+`fmt`/`keywords`) lived in a separate crate, `piperine-vams`, behind a mechanically
+enforced zero-dependency purity gate (`tests/purity.rs`) — the boundary existed because
+the parser was meant to have no elaboration/serde/diagnostics dependencies at all. That
+boundary was retired the same day (MD-47, user decision): the purity gate is deleted,
+not weakened, and the parser's modules now live physically inside `piperine-lang`
+alongside the elaborator (`elab`/`pom`/`eval`/`annex_e`/`value`/`source_map`/`math`/
+`vams_include`). Every `piperine_lang::…` import path is unaffected; only the five
+downstream crates that used to depend on both crates had their now-redundant
+`piperine-vams` dependency line removed. This Part cites source paths under
+`crates/piperine-lang/src/` throughout — there is no `crates/piperine-vams/` on this
+branch.
 
 ## Contents
 
-- §1 Goals and governing rules
-- §2 Core model: value vs net
-- §3 Naming conventions
-- §4 Lexical structure
-- §5 Top-level items and packages
-- §6 Types
-- §7 Modules
-- §8 Attributes (metadata)
-- §9 Functions
-- §10 Behavior
-- §10.6 Constraints (`constraint` blocks) — design verification
-- §10.7 `@device` — the host binding mode (dv-tester)
-- §11 System tasks (`$`-syscalls) — overview
-- §12 Phase model
-- §13 No-Magic rule
-- §14 Extension model
-- §15 Rejected features
-- §16 Validation rules (Part I consolidated)
+- §1 Lexical conventions (LRM ch. 2)
+- §2 Types: nature, discipline, net, parameter, genvar (LRM ch. 3)
+- §3 Expressions (LRM ch. 4)
+- §4 Analog behavior and contribution statements (LRM ch. 5)
+- §5 Hierarchical structures and module instantiation (LRM ch. 6)
+- §6 The digital subset: what's live vs. parse-only (LRM ch. 7, 8)
+- §7 Functions and tasks (LRM §5.9, ch. 9)
+- §8 Piperine's own attribute extension: `(* device *)`/`(* port *)`
+- §9 Preprocessor (LRM Annex E)
+- §10 What is explicitly not supported
+- §11 Diagnostics and the fail-loud contract
 
 ---
 
-## §1 Goals and governing rules
+## §1 Lexical conventions (LRM ch. 2)
 
-PHDL is governed by seven rules. Every language decision in this Part follows from one
-or more of them; every rejected feature in §15 is rejected because it violates one.
+`crates/piperine-lang/src/lexer.rs` implements LRM ch. 2's token set: identifiers
+(escaped `\name ` and unescaped forms, §2.7), the four numeric literal forms (`Integer`,
+`Real`, sized/based `Integer` per the LRM's `size'base digits` production, and
+scaled-real `1.5n`/`2.2M`-style unit suffixes), string literals, and comments
+(`//` line, `/* */` block). `crates/piperine-lang/src/keywords.rs` carries the reserved
+word table Appendix B §B.1.2's `annex_b_keywords.rs` gate re-derives at test time from
+the LRM text itself, so the reserved set cannot silently drift from what the standard
+actually reserves. The lexical layer is otherwise unremarkable LRM ch. 2 — this Part
+does not restate token grammar; Appendix B's B.1 conformance-gate description is the
+authoritative pointer to how lexical/grammar coverage is checked.
 
-**One mixed-signal model.** Continuous and discrete hardware share module, type, and
-function constructs. The boundary between them is explicit and checked — you cannot
-accidentally connect an analog node to a digital wire without a converter. There is one
-language, not "an analog HDL" and "a digital HDL" glued together.
+## §2 Types: nature, discipline, net, parameter, genvar (LRM ch. 3)
 
-**No-Magic.** Type conversion, domain crossing, and driver resolution are never inserted
-implicitly. The source states them. If you want to convert a `Real` voltage to a `Quad`
-logic level, you write a converter module; the compiler does not invent one. If two
-drivers contend on a single-driver net, that is an error, not an implicit resolution.
+**Nature** (§3.6.1) and **discipline** (§3.6.2) are top-level declarations, lowered by
+`LowerDeclarations` (Part II §4) into `pom::Nature` and the AST's own `DisciplineDecl`
+respectively (Part IV §5). A discipline binds a nature to `potential` and/or `flow`;
+Piperine implements Annex F's **Basic** discipline-resolution method (§7.4.4.1) for
+nets that declare no explicit discipline — see Part II §4's `ResolveDisciplines` entry
+for the exact scope narrowing (single-module fixed point, not full hierarchy-wide
+`connect...resolveto` resolution).
 
-**Well-formed by construction.** A program that type-checks elaborates to a structurally
-valid netlist: matched widths, single-driver where required, no implicit domain
-crossings. The type checker is not advisory — if it accepts the program, the netlist is
-sound.
+**Net** declarations (§3.6.3) name a discipline directly — `electrical p, n;` — no
+PHDL-style value/net type lattice sits between the discipline name and the POM
+`NetType::Discipline(String)` it lowers into (Part IV §4's callout on this point).
+Net arrays (`NetType::Array`) are supported; width is the product of array dimensions.
 
-**Compile-time by default.** Anything resolvable before the run — const folding, dead
-branches, monomorphization, analysis specialization — is resolved then. The solver
-receives a specialized, already-resolved device, not a generic interpreter.
+**Parameter** declarations (§3.4) support the LRM's `from`/`exclude` range-constraint
+clauses — violated at their declared value (including the parameter's own default)
+fails loud as `ParamRangeViolation` (E4006, Part II §6). `paramset` (§6.4, a named
+reusable parameter set bound to a module) is registered at the top level
+(`Design::paramsets()`); `specparam`/`defparam` (§3.4/§6.4.2) parse
+(`SpecparamDecl`/`Defparam` in the AST) but are **not lowered at all** — confirmed
+directly against `elab_module`'s per-`ModuleItem` match in
+`crates/piperine-lang/src/elab/lower/vams.rs`, where `ModuleItem::Specparam(_) |
+ModuleItem::Defparam(_)` is one of a no-op arm's variants (§6 below has the full list
+of that arm's members). A `specparam`/`defparam` in source parses and elaborates
+without error, but contributes nothing to the POM.
 
-**Tier independence.** Tier-1 code (leaf devices, RTL) is readable and writable with no
-knowledge of the tier-3 machinery (capabilities, generics, higher-order functions). A
-construct that forces generic or capability syntax into a leaf device model is a defect.
-A resistor model should read like a resistor model, not like an exercise in type theory.
+**Genvar** (§3.5) — a `generate`-loop index, declared per module
+(`Module::genvars()`); unrolled instances the loop produces are a **derived** artifact
+(Part II §4's `UnrollGenerate` entry), never written back into the authored `genvar`
+declaration or the module's own instance list.
 
-**No-Bloat (burden of proof).** A feature must demonstrate it cannot live in an
-extension layer (§14) before it may touch the core grammar. The grammar is closed by
-default; growth happens above it, not inside it.
+**Branch** (§3.12/§5.4.1) — explicit (`branch (p,n) name;`) or implicit (created on an
+access-function call site's first use). Covered fully in Part IV §5; the one semantic
+rule worth restating here: a branch contributed as both a potential source and a flow
+source is a fail-loud error (`BranchKindConflict`, E4001, LRM §5.4.2) *unless* it is a
+switch branch (§5.6.5) — the one construct in the language explicitly permitted to
+toggle kind at runtime through conditional contribution statements.
 
-**Machine-writable.** The grammar is LL(1) — one token of lookahead suffices to decide
-every parse. `todo!` is a legal placeholder that type-checks, so code generators can
-emit structure first and fill bodies later.
+## §3 Expressions (LRM ch. 4)
 
----
+`crates/piperine-lang/src/grammar/expr.rs`/`ast/expr.rs` implement LRM ch. 4's
+expression grammar: the standard operator precedence table, ternary `?:`, concatenation
+`{a, b, c}` (used both as a genuine bit-concatenation and, in Piperine's operator
+lowering, as the coefficient-list carrier for `laplace_*`/`zi_*`'s numerator/denominator
+arguments — VAMS has no array-literal syntax, so this is the LRM's own mechanism, not
+a Piperine extension — see Part V §2), and the analog access-function call forms
+(`V(a,b)`, `I(br)`). Every builtin name callable in expression position (math functions,
+analog operators, `$`-system functions) resolves through the native tables Part V
+documents — there is no `extern`-declared surface for any of them (Part V §0).
 
-## §2 Core model: value vs net
+## §4 Analog behavior and contribution statements (LRM ch. 5)
 
-PHDL separates two kinds of type: **value types** and **net types**. This separation is
-the foundation of the language's mixed-signal discipline — it is what makes domain
-crossings explicit (§13) and what lets the type checker prove structural well-formedness
-at compile time (§1: well-formed by construction).
+An `analog` block (`BehaviorKind::Analog`), an `analog initial` block
+(`AnalogInitial`, §5.7, runs once before the first analysis time point), and the
+contribution statement `V(p,n) <+ expr;` / `I(br) <+ expr;` (§5.4) are the core of the
+analog language surface, and the one area Annex C (§4 below) most tightly constrains.
+`event_control` forms legal inside analog (`@(cross(...))`, `@(above(...))`,
+`@(timer(...))`, `@(initial_step)`, `@(final_step)`) drive discrete state transitions
+inside otherwise-continuous behavior — the thermostat hysteresis pattern
+(`examples/07_thermostat.vams`) is the canonical worked example:
 
-### 2.1 Value — pure data
-
-A value is computed, passed, stored, and read. It has no direction, no driver, and no
-physical meaning. Value types live in:
-
-- `param` — an elaboration-time constant, settable by the parent module at instantiation.
-- `var` — a mutable binding, scoped to its block.
-- expressions — the operands and results of computation.
-- `fn` results — the return value of a pure function.
-
-The primitive value types are `Real`, `Natural` (indices, widths, counts), `Integer`,
-`Boolean` (2-state), `Quad` (4-state: `0`/`1`/`X`/`Z`), and `String` (diagnostics).
-Composite value types — tuples, lists (`Vec<T>`), maps (`Map<K,V>`), sets (`Set<T>`),
-options (`T?`), and results (`Result<T,E>`) — exist in the value layer for const
-evaluation and the `fn` body layer (the full catalog is §6.1).
-`UInt[N]` and `SInt[N]` are standard-library bundles (§6.5), not primitives.
-
-A value can be stored, indexed, mapped, reduced — all the ordinary operations of a
-pure functional layer. What a value *cannot* do is carry a signal between modules, or
-participate in Kirchhoff's laws. That is the job of a net.
-
-### 2.2 Net — a signal carrier
-
-A net carries a value through the simulation, but it also has **resolution** — the rule
-for how multiple drivers combine. A net type is either a **discipline** (§6.2) or a
-**net-capable bundle** (§6.5). Every net is defined by two things:
-
-1. **Storage** — the value type(s) the net carries.
-   - For a conservative discipline like `Electrical`, there are two quantities: a
-     *potential* (`Real`, measured in volts) and a *flow* (`Real`, measured in amperes).
-     Both are part of the net's storage; KCL relates them.
-   - For a storage discipline like `Bit`, the storage is a single `Boolean`. For `Logic`,
-     it is a `Quad`.
-   - For a storage discipline like `Voltage`, the storage is a `Real` — a signal-flow
-     potential without an associated flow.
-
-2. **Resolution** — how drivers combine.
-   - A **conservative** discipline resolves by KCL (Kirchhoff's current law), always and
-     implicitly. Every connected terminal contributes its flow to the node; the solver
-     finds the potential where they balance.
-   - A **storage** discipline resolves by a single-driver rule by default: one driver
-     writes the value, and a second driver is an error. An optional `resolve` clause
-     (§6.3) permits multiple drivers: `tri` (tri-state, needs high-impedance `Z`),
-     `wired-or`, `sum`, `average`, etc.
-
-A net lives in **ports** (the module's external interface) and **wires** (internal
-connections). It does not live in a `param` or a pure `var` — those carry values, not
-signals.
-
-### 2.3 Reading and driving
-
-The boundary between value and net is bridged in two directions, both explicit:
-
-- **Reading a net into a value** — access functions like `V(a,b)` read a voltage as a
-  `Real`; a digital net is read directly as a `Boolean` or `Quad`. This is ordinary
-  sampling and does not cross a discipline boundary.
-- **Driving a value onto a net** — contributions (`<+`) and forces (`<-`) write a
-  computed value onto a net. A contribution accumulates (multiple `<+` on the same
-  branch add up); a force overwrites (single-driver).
-
-What is forbidden is *connecting* two nets of incompatible disciplines without an
-explicit converter module. Reading and driving are value/net interactions; connecting
-is net/net, and that is where No-Magic (§13) applies.
-
-### 2.4 Construct kinds
-
-PHDL's construct kinds, each with a distinct role (the full top-level item list is
-§5.2):
-
-| Construct | Role |
-|-----------|------|
-| `mod` | Module shape: identity, ports, parameters, instances, structural body. The unit of hierarchy. |
-| `discipline` | A net type: storage + resolution (§6.2). The vocabulary of what a signal *is*. |
-| `enum` | An enumerated value over a digital representation (§6.4). |
-| `bundle` | An aggregate of named fields, each of value or net type. May be net-capable (if all fields are net types) and type a port, or value-only and type a `param`/`var`. |
-| `fn` | A pure value computation. Inlines at the call site; serves every context uniformly (elaboration, analog, digital, interpreted). |
-| `capability` | A named contract of function signatures. Operators desugar to capabilities. Satisfied via `impl Cap for T`. |
-| `impl` | Provides method bodies for a bundle, or an implementation of a capability. |
-| `analog` / `digital` | Behavior blocks: the continuous and discrete engines that run during solve. |
-
-Metadata attaches to any declaration via `@` attributes (§8). Attributes are inert —
-they do not affect elaboration or simulation. They carry tool-specific intent (layout,
-routing, floorplan, matching) for downstream tools.
-
-### 2.5 Two phases by location
-
-The location of a construct determines when it runs:
-
-- A **`mod` body** runs at **elaboration time** — once, producing a fixed netlist.
-  Structural `for`/`if`, parameter substitution, monomorphization, and const evaluation
-  all happen here. The result is static structure: no hardware is created or destroyed
-  after elaboration.
-- An **`analog` or `digital` body** runs at **solve time** — evaluated by the
-  Newton-Raphson or event-driven engine during each analysis. A solve value never
-  controls elaboration structure: you cannot write a `for` loop whose bound depends on
-  a voltage. Runtime topology (a switch opening and closing) is expressed as a switch
-  branch over a fixed node set, not as structural change.
-Verification and measurement are **host** concerns, not language constructs —
-the Python/Rust host APIs (Part VIII) drive analyses over the elaborated design.
-
-This phase separation is what makes PHDL statically analyzable: the structure is known
-before any current flows.
-
----
-
-## §3 Naming conventions
-
-PascalCase: modules, bundles, value types, net types, disciplines, enums, capabilities.
-
-snake_case: functions, methods.
-
-lowercase/snake_case: ports, params, vars, fields, instances.
-
-This convention is not merely stylistic — the selector (Part IV §8) relies on it to
-disambiguate instance-type matches (PascalCase) from instance-name matches
-(snake_case). A name's casing carries semantic information that tools depend on.
-
----
-
-## §4 Lexical structure
-
-### 4.1 Lexical grammar (EBNF)
-
-```
-Ident      ::= (letter|"_") { letter|digit|"_" }
-RealLit    ::= Digits "." Digits [ ("e"|"E") ["+"|"-"] Digits ] [ SiSuffix ]
-             | Digits ("e"|"E") ["+"|"-"] Digits [ SiSuffix ]
-NatLit     ::= Digits [ SiSuffix ] | "0b" BinDigits | "0x" HexDigits
-Digits     ::= digit { digit | "_" }                     -- '_' separators anywhere between digits
-SiSuffix   ::= "T"|"G"|"M"|"k" | "m"|"u"|"n"|"p"|"f"|"a" -- case-sensitive; M=mega, m=milli
-QuadLit    ::= "0q" ("0"|"1"|"X"|"Z")
-StringLit  ::= '"' {char} '"'
-SysCall    ::= "$" Ident
+```verilogams
+module Controller (inout electrical temp, inout electrical gnd);
+    parameter real t_high = 25.0;
+    parameter real t_low = 22.0;
+    parameter real power = 1.0;
+    real heater;
+    analog begin
+        @(initial_step) heater = 1.0;
+        I(temp, gnd) <+ -heater * power;
+        @(above(V(temp, gnd) - t_high)) heater = 0.0;
+        @(above(t_low - V(temp, gnd))) heater = 1.0;
+    end
+endmodule
 ```
 
-### 4.2 Comments, whitespace, and tokens
-
-Comments: `//` line, `/* */` block. Whitespace is not significant beyond separating
-tokens.
-
-System names are a distinct token class: `$name` introduces a syscall (§11, Part V).
-The `@` sigil prefixes both attributes (§8) and events (§10.4); the parser disambiguates
-by position — an `@` at declaration-start is an attribute, an `@` at statement-start
-inside a behavior body is an event.
-
-### 4.3 Reserved spellings
-
-The following identifiers are reserved at the parser level — they cannot be used as
-variable, field, or type names because the parser interprets them as keywords in the
-positions where they are expected:
-
-`above`, `analog`, `bundle`, `capability`, `change`, `const`, `constraint`,
-`cover`, `cross`, `digital`, `discipline`, `else`, `enum`, `final`, `flow`,
-`fn`, `for`, `global`, `if`, `impl`, `in`, `initial`, `inout`, `input`,
-`match`, `mod`, `negedge`, `none`, `output`, `param`, `posedge`,
-`potential`, `pub`, `require`, `resolve`, `return`, `self`, `Self`,
-`storage`, `target`, `tol`, `use`, `var`, `when`, `wire`.
-
-The design-verification surface (DVC-06) contributes six of these —
-`constraint`, `require`, `target`, `tol`, `cover`, `global`. They are
-reserved at the parser level rather than treated as contextual keywords so
-that the grammar stays LL(1) without a keyword/context disambiguation in
-the identifier production (a contextual-keyword path was considered and
-rejected at design time). `cover` introduces a `constraint`-block coverage
-point (§10.6, dv-tester DVT-42); `global` marks the process-variation kind
-of a `tol` clause (§7.2).
-
-Contextual keywords (reserved only where the grammar expects them): the resolve kinds
-`tri`, `or`, `and`, `sum`, `avg`, `max`, `min` (inside a `discipline` body); `and` /
-`or` / `not` inside selector predicates and const boolean expressions; `bins` (inside
-a `constraint` block's `cover` statement); `after` / `dur` (inside a `constraint`
-block's `@` event-block window arguments).
-
-Lexer-level sigils: `$`, `@`, `<+` (contribution), `<-` (force), `?` (optional type;
-pattern wildcard), `..` / `..=` (ranges), `::` (path), `=>` (match arm), `->` (fn
-return), `|` (lambda; event OR), `=` (assignment).
-
-### 4.4 Literals
-
-- **`Real`** — `1.0`, `1.0e3`, `2u` (= 2e-6). SI suffixes are case-sensitive: `T G M k`
-  multiply by 1e12…1e3; `m u n p f a` multiply by 1e-3…1e-18. `M` is mega, `m` is milli.
-  Digit separators `_` may appear anywhere between digits: `1_000_000`, `4_2u`.
-- **`Boolean`** — `0` (false) or `1` (true).
-- **`Quad`** — `0q0`, `0q1`, `0qX`, `0qZ` (4-state logic values).
-- **`String`** — `"text"`, used in diagnostics and attribute arguments.
-- **Arrays** — element list `[a, b, c]`, repeat `[v; N]`, comprehension
-  `[expr | i in 0..N]`; index `a[i]`, slice `a[lo..hi]`; nesting `Bit[8][16]` = 16 words
-  of 8 bits.
-
-`Boolean` widens to `Quad` implicitly (a 2-state value is a special case of 4-state);
-all other casts are explicit associated-function calls (`Real::from(x)`,
-`Integer::from(x)`, `Quad::from(x)`, `Boolean::from(x)` — §5.4).
-
----
-
-## §5 Top-level items and packages
-
-### 5.1 Grammar (EBNF)
-
-```
-CompilationUnit ::= { UseDecl | Item }
-UseDecl   ::= "use" Path ";"
-Path      ::= Ident { "::" Ident }
-Item      ::= { Attribute } [ "pub" ] ItemKind
-ItemKind  ::= ModDecl | BehaviorDecl | ConstraintDecl | DisciplineDecl | BundleDecl
-             | EnumDecl | CapabilityDecl | ImplDecl | FnDecl | ConstDecl
-             | ExternDecl
-ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
-```
-
-### 5.2 Items
-
-| Item | Purpose |
-|------|---------|
-| `discipline` | net type: storage + resolution (§6.2) |
-| `bundle` | value/net aggregate (§6.5) |
-| `enum` | enumerated value over a digital repr (§6.4) |
-| `capability` | type contract, operator sugar (§6.6) |
-| `fn` | pure value function (§9) |
-| `const` | global compile-time constant |
-| `mod` | module shape (§7) |
-| `analog`/`digital` | module behavior (§10) |
-| `constraint` | module correctness intent (§10.6) |
-| `impl` | bundle methods / capability impl (§6.5–§6.6) |
-| `extern` | signature-only native declaration (§5.4, MD-24) |
-
-### 5.3 Packages and visibility
-
-Packages are file/directory-based: a file or directory is a package; there is no
-namespace declaration, no index file, no re-export. Items are private unless declared
-`pub`; `use pkg::item` imports public items from another package — non-`pub` items
-from a used file are not visible to the importer.
-
-```phdl
-// devices/passives.phdl → package devices::passives
-pub mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
-mod InternalHelper ( ... );   // private — not visible to importers
-
-// top.phdl
-use devices::passives;        // brings Resistor into scope; InternalHelper stays private
-```
-
-The standard library (`piperine::` namespace) is exempt from privacy filtering — its
-items are always exported regardless of `pub`, matching the prelude injection model.
-
-**Qualified module references (implicit `use`).** A module may be instantiated by its
-full `::`-qualified path with no `use` statement — the resolver auto-loads the prefix
-file exactly as an explicit `use` would. The path's final segment is the module name;
-everything before it is the file to load:
-
-```phdl
-// (a) explicit `use`, then a bare module name:
-use spice::passives;
-r1 : res ( .p = a, .n = gnd ) { .r = 1k };
-
-// (b) fully-qualified path, no `use` needed — equivalent to (a):
-r1 : spice::passives::res ( .p = a, .n = gnd ) { .r = 1k };
-```
-
-`spice::passives::res` loads the file `spice::passives` (exactly as `use
-spice::passives;` does) and instantiates its `res` module — the final path segment is
-the module name, the prefix is the file. The qualified form works for both labeled
-(`r1 : spice::passives::res(...)`) and anonymous (`spice::passives::res(...)`)
-instances. Mixing the two styles in one file is fine — the resolver dedups the file
-load. A qualified path whose prefix file does not exist is a fail-loud resolve error,
-never a silent bare-name fallback.
-
-A `const NAME : T = expr;` declares a global compile-time constant, evaluated at
-elaboration and usable wherever a param or literal is expected.
-
-### 5.4 `extern` declarations (MD-24 — declared language surface)
-
-A declaration marked `extern` is signature-only (no body); its implementation defers
-to a native registry reached only after the declaration resolves the call. Seven
-forms, one keyword:
-
-| Form | Purpose | Stdlib home |
-|------|---------|-------------|
-| `extern type Real;` | primitive value type | `headers/types.phdl` |
-| `extern fn sin(x: Real) -> Real;` | libm intrinsic | `headers/math.phdl` |
-| `extern task $display() -> Unit;` | system task (`$`-prefixed name) | `headers/tasks.phdl` |
-| `extern operator ddt(x: Real) -> Real;` | runtime operator | `headers/operators.phdl` |
-| `extern attribute device { plugin: String, type: String }` | attribute schema | `headers/device_port.phdl` (stdlib only — plugins contribute no schemas, Part VI §6) |
-| `extern impl TypeName { fn method(self, ...) -> Ret; ... }` | type methods (signature only per method) | `headers/types.phdl` (casts) |
-| `extern impl Capability for TypeName { ... }` | capability impl (reserved for future primitive capability dispatch) | (none today) |
-
-A body on any `extern` declaration (or on any method inside an `extern impl` block)
-is a parse error — `extern` is signature-only by construction, never a body with a
-native escape hatch.
-
-`extern impl` methods (inherent or capability-gated) participate in **overload
-resolution** by argument type: `extern impl Real { fn from(x: Integer) -> Real; fn
-from(x: Boolean) -> Real; }` resolves `Real::from(b)` to the Boolean candidate. Zero
-candidates matching → fail loud naming every candidate tried; more than one matching
-→ fail loud as ambiguous. This is the surface that replaced the former bare-name cast
-exception (`real(x)`/`int(x)`/`bit(x)`/`Boolean(x)`/`Quad(x)` — deleted, not migrated;
-casts are now ordinary declared `Real::from(x)`-shaped associated-function calls).
-The four cast targets declared in `headers/types.phdl` are `Real`, `Integer`,
-`Quad`, and `Boolean`; a cast performs no value conversion (it never did — it is a
-type-system annotation, a no-op at runtime and at codegen).
-
-**Validation.** An unresolved `use` import is stored and deferred; a reference to an
-unknown item at a use-site is E2002 (`UndefinedType`) or E2003 (`UndefinedModule`).
-Privacy is enforced during `use` resolution: non-`pub` items from a used file are not
-inlined, so referencing one from the importer yields E2002/E2003 (the item is not in
-scope).
-
----
-
-## §6 Types
-
-### 6.1 Value types
-
-The primitive value types:
-
-| Type | Values | Notes |
-|------|--------|-------|
-| `Real` | floating-point | default numeric type in analog contexts |
-| `Natural` | non-negative integer | indices, widths, counts; const-position |
-| `Integer` | signed integer | |
-| `Boolean` | `0` / `1` | 2-state logic |
-| `Quad` | `0q0` / `0q1` / `0qX` / `0qZ` | 4-state logic, standard propagation |
-| `Complex` | a complex pair | AC/frequency-domain values |
-| `String` | text | diagnostics only |
-
-These seven are exactly the `extern type` declarations in `headers/types.phdl`
-(§5.4), and the regression guard
-(`crates/piperine-lang/tests/extern_coverage_guard.rs`) asserts that list.
-`UInt[N]` and `SInt[N]` are **standard-library bundles** (§6.5), not primitives —
-they are built from the same `bundle` + `capability` + `impl` machinery available to
-any user. Primitives carry built-in operators via the capability system (§6.6).
-
-**Implicit widening.** A small closed set of widenings is implicit; everything else is
-an explicit cast (`Real::from(x)`, `Integer::from(x)`, `Quad::from(x)`,
-`Boolean::from(x)` — §5.4):
-
-| From | To | Rationale |
-|------|----|-----------|
-| `Boolean` | `Quad` | a 2-state value is a special case of 4-state |
-| `Natural` | `Boolean`, `Quad` | the literals `0`/`1` serve as logic values in context |
-| `Integer` | `Boolean`, `Quad` | same literal rule for signed positions |
-| `Integer` | `Natural` | a const-position integer known non-negative |
-
-The literal-coercion consequence: `code = 0;` on a `Bit[N]` var, `if (start == 1)` on
-a `Bit`, and `param w : Natural = 4` all type-check without casts. There is no implicit
-narrowing and no implicit `Integer`/`Natural` → `Real` — write `Real::from(x)`.
-
-*Note (roadmap):* the widening table is intended to become explicit `impl From<T>`
-capability declarations in the prelude, replacing the compiler-internal table.
-
-**Collections and composites** (the `fn`-body value layer, const-eval included):
-
-- **Tuples** `(a, b, ...)` — indexed `.0`/`.1`/...; `(e)` with no comma is a
-  parenthesized group, not a 1-tuple.
-- **Lists** `[a, b, ...]` / `[v; N]` / `[expr | i in a..b]` — a runtime `Vec<T>` in the
-  value layer, with `.push(v)`, `.len()`, `.get(i) -> Option<T>`. The same array-literal
-  syntax produces a fixed-size elaboration-constant `Array` in a `mod`/`analog`/
-  `digital` context — which form applies follows from context.
-- **Options** — `Option<T>` with `.is_some()`, `.is_none()`, `.unwrap()`,
-  `.unwrap_or(default)`. The optional type `T?` is sugar: a trailing `?` marks a value
-  that may be absent; `none` is the absent value. Read through `.is_present()` /
-  `.get_or(default)`. On a scalar `param`, this lowers onto parameter-presence
-  (`is_present` ≡ `$param_given`), so the choice is per-instance. Prefer `T?` over a
-  sentinel default (`1e99`, `0`) + `$param_given`.
-- **Sets** — `Set<T>` with literal `Set { a, b, c }` (`Set {}` is empty), `.insert(x)`
-  (adds if not present), `.contains(x) -> Boolean`, `.len() -> Natural`, `.remove(x)`.
-  Backed by a list with linear search (N is small; `Value` is not `Hash`/`Eq`-clean).
-- **Results** — `Result<T, E>` represents either `Ok(T)` or `Err(E)`. No literal syntax —
-  result values are produced by fallible operations (e.g. `Selection.one()` returns
-  `Result` — `Ok` when exactly one match, `Err` when empty or ambiguous). Methods:
-  `.is_ok() -> Boolean`, `.is_err() -> Boolean`, `.unwrap() -> T` (errors on `Err`),
-  `.unwrap_or(default) -> T`, `.ok() -> Option<T>`, `.err() -> Option<E>`.
-- **Maps** — `Map<K, V>` with literal `Map { key: value, ... }` (`Map {}` is empty),
-  `.insert(k, v)`, `.get(k) -> Option<V>`, `.len()`. Keys compare by value (structural
-  equality, small-N association list). Backs the `ic:`/`nodeset:` fields of the host
-  analysis configs (Part VIII §3).
-
-**Validation.** Using a collection literal in an `analog`/`digital` body where lowering
-is not implemented fails loud at device-compile (never a silent stub).
-
-### 6.2 Disciplines — net types
-
-A discipline is one of exactly two kinds:
-
-**Conservative** — declares a `potential` and a `flow` (each with optional named
-attributes like unit and abstol). Resolves by KCL, always and implicitly. Read through
-accessors: `V(a,b)` for potential, `I(a,b)` for flow, plus the declared nature names
-(`Temp(th)`, `Pwr(th)`, etc.). A conservative net is a physical terminal pair.
-
-**Storage** — declares one `storage` value type. Single-driver by default; read/driven
-by name. An optional `resolve` clause (§6.3) permits multiple drivers.
-
-```phdl
-discipline Electrical { potential v : Real (unit = "V", abstol = 1e-6);
-                        flow      i : Real (unit = "A", abstol = 1e-12); }
-discipline Voltage  { storage Real; }        // signal-flow potential
-discipline Bit      { storage Boolean; }
-discipline Logic    { storage Quad; resolve tri; }
-```
-
-`Ground` is the predefined conservative reference node — the universal KCL sink.
-
-```
-DisciplineDecl ::= "discipline" Ident "{" { DisciplineItem } "}"
-DisciplineItem ::= NatureDecl | StorageDecl | ResolveDecl
-NatureDecl     ::= ("potential"|"flow") Ident ":" Type [ AttrList ] ";"
-AttrList       ::= "(" NamedAttr {"," NamedAttr} ")"
-NamedAttr      ::= Ident "=" Expr
-StorageDecl    ::= "storage" Type ";"
-```
-
-**Validation.** A value-field bundle used as a net type → E2004 (`NotNetCapable`).
-Multiple drivers on a single-driver storage net → E2020 (`MultipleDrivers`).
-
-### 6.3 Resolution
-
-```
-ResolveDecl ::= "resolve" ("tri"|"or"|"and"|"sum"|"avg"|"max"|"min") ";"
-```
-
-- Conservative → KCL, implicit. No `resolve` clause applies.
-- Storage default → single-driver. A second driver is E2020.
-- `resolve` clause on `Quad` storage: `tri` (tri-state, needs `Z`), `or` (wired-or),
-  `and` (wired-and).
-- `resolve` clause on `Real` storage: `sum`, `avg`, `max`, `min` (numeric bus
-  resolution).
-- `Boolean` storage is single-driver only — it has no `resolve` clause.
-- A vector net resolves per line, independently.
-
-### 6.4 Enums
-
-```
-EnumDecl    ::= "enum" Ident [ ":" Type ] "{" EnumVariant {"," EnumVariant} [","] "}"
-EnumVariant ::= Ident [ "=" Expr ]
-```
-
-An enum is an enumerated value over a digital representation. The optional `: Repr`
-fixes the underlying digital net type; the default is `Bit[ceil(log2(count))]`. Values
-default sequential from zero, continuing from the last explicit value.
-
-```phdl
-enum SwState { Open, Closed }                          // sequential → Bit[1]
-enum Phase   { Idle = 0b00, P1, P2, P3 }               // explicit / continuing
-enum OpCode : Bit[32] { Mov = 0, Add, Sub, Jmp = 16 }  // explicit repr
-```
-
-### 6.5 Bundles
-
-A bundle is a named aggregate of fields, each of value or net type, with optional
-defaults. A bundle is the "struct" of PHDL — it groups related data.
-
-**Net-capable** iff every field (recursively) is a net type. A net-capable bundle may
-type a port or wire; it is expanded field-by-field at elaboration (Part II §7).
-Otherwise the bundle is value-only: it types a `param`, `var`, or `fn` argument.
-
-A bundle port is **direction-agnostic**: one direction applies to the whole bundle.
-Mixed-direction interfaces (some fields in, some out) are expressed as two bundles, not
-one. Same-type net bundles connect field-by-field by name; a field is read or driven as
-`b.field`.
-
-Methods and constructors live in `impl`. A named constructor is an associated
-`fn -> Self`. The literal syntax is `Name { .field = v }`; omitted fields take their
-defaults.
-
-```phdl
-bundle Complex { re : Real = 0.0, im : Real = 0.0 }
-impl Complex {
-    fn polar(mag: Real, ang: Real) -> Self {
-        return Complex { .re = mag*cos(ang), .im = mag*sin(ang) };
-    }
-}
-```
-
-```
-BundleDecl ::= "bundle" Ident [ConstParams] [TypeParams] "{" [ Field {"," Field} [","] ] "}"
-Field      ::= { Attribute } Ident ":" Type [ "=" Expr ]
-```
-
-**Validation.** E2004 (`NotNetCapable`); E2015 (`UnknownBundle`); E2016
-(`BundleFieldUnknown`); E2017 (`BundleParamDefault` — wrong type for a bundle param);
-E2018 (`BundleFieldNoDefault` — required field omitted); E2019
-(`BundleParamNameCollision`).
-
-### 6.6 Capabilities and generics
-
-A `capability` is a named contract of `fn` signatures. A type satisfies a capability via
-`impl Cap for T`. `Self` refers to the implementing type. A capability may require
-super-capabilities and supply default method bodies.
-
-Operators are sugar for capability methods: `a + b` desugars to `a.add(b)`. The standard
-operator capabilities are:
-
-| Operator | Capability | Method |
-|----------|------------|--------|
-| `+` `-` `*` `/` | `Add` `Sub` `Mul` `Div` | `add` `sub` `mul` `div` |
-| `==` `!=` | `Eq` | `eq` |
-| `<` `<=` `>` `>=` | `Ord : Eq` | `lt` |
-| `&` `\|` `^` | `BitAnd` `BitOr` `BitXor` | `bitand` `bitor` `bitxor` |
-| `!` | `Not` | `not` |
-
-`Ord` declares only `lt`; the remaining comparisons derive from it and `Eq`:
-`a <= b` ≡ `a.lt(b) or a.eq(b)`, `a > b` ≡ `b.lt(a)`, `a >= b` ≡ `b.lt(a) or a.eq(b)`,
-and `a != b` ≡ `!a.eq(b)`.
-
-`Number : Add+Sub+Mul` is a convenience capability with a default `double` method.
-Primitive types satisfy the relevant capabilities intrinsically (*roadmap:* these
-intrinsic satisfactions are intended to become visible `extern impl` declarations in
-the prelude).
-
-**Generics.** Type parameters appear in `<>`, const parameters (of type `Natural`) in
-`[]`. A bound is a `+`-separated set of capabilities. `Type` and `Net` are root
-capabilities — every value type satisfies `Type`, every net type satisfies `Net`.
-
-```phdl
-capability Add { fn add(self, o: Self) -> Self; }
-mod Adder <T: Add + Net> ( input a : T, input b : T, output y : T );
-digital Adder { y <- a + b; }
-```
-
-`UInt`/`SInt` are library bundles built this way — fixed-width arithmetic in
-PHDL, not compiler magic. `Bit`-vector concatenation is the library `fn concat`, not an
-operator.
-
-```
-CapabilityDecl ::= "capability" Ident [ ":" Ident {"," Ident} ] "{" { FnSig | FnDecl } "}"
-FnSig          ::= "fn" Ident [TypeParams] ParamList "->" Type ";"
-ImplDecl       ::= "impl" [ Ident "for" ] TypeRef "{" { FnDecl } "}"
-TypeRef        ::= Ident [ConstArgs] [TypeArgs]
-TypeParams     ::= "<" TypeParam {"," TypeParam} ">"
-TypeParam      ::= Ident [ ":" Bound ]
-Bound          ::= Ident { "+" Ident }
-```
-
-**Parsing note.** `impl Cap for T` vs `impl T` is disambiguated by peeking for `for`
-after the first identifier — the parser looks one token ahead.
-
----
-
-## §7 Modules
-
-A module is the unit of hierarchy. It declares ports (its external interface), params
-(elaboration constants settable by the parent), internal wires and vars, child
-instances, and structural control (`for`/`if`). Behavior is attached separately via
-`analog`/`digital` blocks (§10).
-
-```
-ModDecl     ::= "mod" Ident [ConstParams] [TypeParams] PortList [ModBody]
-ConstParams ::= "[" Ident {"," Ident} "]"
-PortList    ::= "(" [ Port {"," Port} [","] ] ")"
-ModBody     ::= "{" { ModStmt } "}"
-ModStmt     ::= { Attribute } ( ParamDecl | WireDecl | VarDecl | StructuralFor
-                                | StructuralIf | AssertStmt | InstanceOrConnect )
-```
-
-Const params `[N]` scale an architecture without threading widths through every call;
-type params `<T>` parameterize over types per §6.6. Braces are omitted when a module
-has only ports (a leaf with no internal structure).
-
-### 7.1 Ports
-
-```
-Port      ::= { Attribute } Direction Ident ":" Type
-Direction ::= "input" | "output" | "inout"
-```
-
-- **`input`** — directional in; high-impedance analog sense (reads without loading).
-- **`output`** — single-driver out; one driver per net.
-- **`inout`** — bidirectional; a conservative terminal participating in KCL.
-
-Vectors: `NetType[N]` for a bus of width N.
-
-### 7.2 Storage classes
-
-```
-ParamDecl ::= "param" Ident ":" Type [ "=" Expr ] [ TolClause ] ";"
-TolClause ::= "tol" Ident "(" KeyedArg {"," KeyedArg} ")" [ "global" ]
-KeyedArg  ::= Ident "=" Expr
-WireDecl  ::= "wire" Ident ":" Type ";"
-VarDecl   ::= "var" Ident [ ":" Type ] [ "=" Expr ] ";"
-AssertStmt::= "$assert" "(" Expr "," Expr ")" ";"
-```
-
-- **`param`** — an elaboration constant. Settable by the parent via `{ .name = value }`.
-  Always a value type. Requires an explicit type.
-- **`wire`** — an internal net (or net array). Connects instances; participates in KCL.
-- **`var`** — a mutable binding. In `digital`, combinational by default; if it must hold
-  a value across cycles (read on a path where it was not assigned), it infers memory
-  (§10.3). An initialized `var` infers its type (`var acc = 0.0;` → `Real`); `param`,
-  ports, and fields require explicit types.
-
-#### The `tol` clause (DVC-01)
-
-An optional `tol <dist>(keyed = args) [global]` trailer attaches a statistical
-distribution to a `Real` param. The clause is **pure declaration** — it never
-changes the param's nominal value, never participates in the solve, and never
-moves a waveform. Resolving the distribution name against
-`headers/statistics.phdl` (Part V §6.2) and evaluating its arguments as
-elaboration constants in the param's scope is the elaborator's job (Part II §3);
-sampling is `dv-gradients`' scope, not this feature's.
-
-```phdl
-param vto : Real = 0.7 tol gauss(sigma = 0.005);
-param vth : Real = 0.5 tol gauss(sigma = 0.005 / sqrt(w * l)) global;
-```
-
-- `<dist>` names a distribution declared in `headers/statistics.phdl` — `gauss`
-  or `uniform`, each with absolute and relative spellings distinguished by the
-  keyed argument name (`gauss(sigma = …)` vs `gauss(sigma_rel = …)`). An
-  undeclared name fails loud at elaboration.
-- The keyed arguments evaluate as elaboration constants against the param's
-  already-bound siblings — `sigma = 0.005 / sqrt(w * l)` references the
-  instance's `w` and `l` params.
-- `global` (absent) selects the variation kind: **process** variation when
-  present (one draw per parameter, shared across instances); **mismatch**
-  variation when absent (one draw per instance). The marker is recorded on the
-  POM; the runtime meaning belongs to `dv-gradients`.
-- A `tol` on an `Integer` or `Natural` param fails loud — only `Real` carries
-  statistical variation.
-
-**Validation.** A `tol` on a non-`Real` param → elaboration error. An
-undeclared distribution name → elaboration error naming it (DVC-02).
-
-### 7.3 Instances and connectivity
-
-```
-InstanceOrConnect ::= Ident { Indexer | Field } InstTail
-InstTail  ::= ":" ModuleRef PortArgs [ParamArgs] ";"     -- named instance
-             | ConstArgs PortArgs [ParamArgs] ";"        -- anon w/ const args
-             | PortArgs [ParamArgs] ";"                   -- anon
-             | "=" Expr ";"                               -- net connection
-ModuleRef ::= Ident [ConstArgs] [TypeArgs]
-ConstArgs ::= "[" Expr {"," Expr} "]"
-TypeArgs  ::= "<" Type {"," Type} ">"
-PortArgs  ::= "(" [ PortArg {"," PortArg} ] ")"
-PortArg   ::= Expr | "." Ident "=" Expr
-ParamArgs ::= "{" [ ParamArg {"," ParamArg} ] "}"
-ParamArg  ::= "." Ident "=" Expr
-Indexer   ::= "[" Expr "]"   ;   Field ::= "." Ident
-```
-
-Ports connect positionally in `()` or by name `.p = net`. Params bind by name in `{}`.
-An instance may be named (`name : Module`) — a named instance exposes its ports as nets
-`name.port`, which the parent may connect, probe, or contribute to from its own `analog`
-block. This is the KCL-accumulation mechanism: contributing `I(load.p, gnd) <+ expr`
-adds current to the node that `load.p` is connected to, without an extra component.
-Anonymous instances cannot be addressed afterward.
-
-```phdl
-r1 : Resistor ( .p = a, .n = b ) { .r = 50 };
-load : Capacitor ( out, gnd ) { .c = 1p };
-analog Tile { I(load.p, gnd) <+ cpar * ddt(V(load.p, gnd)); }
-```
-
-Inside a `for i in lo..hi` (§7.4), a named instance becomes an **instance array**:
-`name[i] : Module(...)`. Each iteration creates one replica accessible as `name[i]`,
-and `name[i].port` reaches the port of the i-th replica. The loop variable `i` is the
-address — it appears in both the instance name and any expressions (port connections,
-param overrides) that use it. Anonymous instances (no name) inside a `for` cannot be
-addressed afterward.
-
-**Validation.** E2011 (`MissingConstParam` — wrong const-arg count); E2013
-(`WidthMismatch` — net width mismatch on connection); E2014 (`DisciplineCrossing` —
-incompatible disciplines connected); E2020 (`MultipleDrivers`).
-
-### 7.4 Structural control
-
-```
-StructuralFor ::= "for" Ident "in" Range ModBody
-StructuralIf  ::= "if" "(" Expr ")" ModBody [ "else" (ModBody|StructuralIf) ]
-Range         ::= Expr (".."|"..=") Expr
-```
-
-`for i in lo..hi` / `lo..=hi` over a constant range builds parametric structure — the
-loop is fully unrolled at elaboration, each iteration emitting its instances. `if
-(const) {} else {}` selects which instances exist — the condition is evaluated at
-elaboration and only the taken branch is emitted. `$assert(cond, msg)` in a `mod` body
-is an elaboration-time check.
-
-**Validation.** A non-const range or condition → E2001 (`ConstEval`). The loop bound
-must be an elaboration constant; a runtime-dependent bound is an error (a solve value
-never controls elaboration structure, §2.5).
-
----
-
-## §8 Attributes (metadata)
-
-`@SchemaName(field = value, ...)` prefixes any declaration — a `wire`, a port, a
-`param`, a `mod`, a `bundle`, an instance. It attaches typed metadata for tools:
-layout intent, routing constraints, floorplan placement, matching requirements.
-Attributes are stackable:
-
-```phdl
-@layout(min_width = 2u, layer = "m3") @route(priority = 1) wire clk : Electrical;
-@fp(x = 0, y = 0) mod Cpu ( ... ) { ... }
-```
-
-```
-Attribute ::= "@" Ident "(" [ AttrArg { "," AttrArg } ] ")"
-AttrArg   ::= Ident "=" Expr
-```
-
-Three rules govern every attribute. Violation of any is a defect:
-
-1. **Inert.** The core compiler never reads attribute content for semantics. It
-   validates against the schema and attaches. Attributes do not affect elaboration or
-   simulation.
-2. **Removable.** Deleting every `@` yields an identical elaborated netlist and identical
-   simulation results. (Contrast Verilog `full_case`/`parallel_case` — attributes that
-   changed synthesis semantics and caused sim/synth mismatch; forbidden here by rule 1.)
-3. **Schema-typed.** Each schema is a registered bundle declaration. The attribute's
-   arguments are validated against the bundle's fields (names, types, defaults) during
-   elaboration. An unregistered schema name is an error.
-
-### Schema registration
-
-A bundle becomes an attribute schema by prefixing its declaration with
-`@attribute(schema = "name")`. The schema name is an **alias** — decoupled from the
-bundle name. Once registered, `@name(...)` is usable on any declaration.
-
-```phdl
-@attribute(schema = "layout")
-bundle Layout { min_width : Real = 0.0, layer : String, spacing : Real = 0.0 }
-
-// Usage uses the schema name, not the bundle name:
-@layout(layer = "m3") wire clk : Electrical;       // min_width and spacing get defaults
-@layout(min_width = 5u, layer = "m2") wire data : Electrical;
-```
-
-The arguments are type-checked against the bundle's fields: provided values must match
-declared types, required fields (no default) must be supplied, and omitted fields with
-defaults are filled in automatically.
-
-**Two entry paths, one store.** Attributes enter through two paths but live in one
-metadata store:
-
-- **Inline** — design intent, written in source next to the declaration.
-- **Overlay** — flow intent, applied from a host or plugin (Part VI §8.2, Part VIII)
-  via the selector: `select("//pll//net::*").meta(layout, spacing = 2u)`. This annotates in bulk
-  without touching source, like SDC/UPF constraints in ASIC flow. Overlay wins over
-  inline on conflict, with a diagnostic.
-
-Reflection (Part IV) exposes both uniformly through the `aspect::` axis. A module-level
-attribute replaces the former "aspect block"; there is one metadata mechanism.
-
-**Validation.** An attribute whose schema name is not a registered bundle is
-`UnknownAttrSchema(name)` (E2022). An attribute argument that names a field not in
-the bundle, or whose value type does not match the field's declared type, or a
-required field that is omitted, is `AttrSchemaField { schema, field, reason }`
-(E2023). Attributes are now populated into the POM — every node's `attributes()`
-returns the validated `Attribute { schema, data }` entries from source.
-
----
-
-## §9 Functions
-
-A function is a pure value computation: `fn name(args) -> T`. Pure means no
-contributions (`<+`), no forces (`<-`), no state, no events — just inputs in, a result
-out. Because it is pure, a `fn` inlines at the call site, and so it serves every
-context uniformly:
-
-- **Elaboration** — compute a param default, a width, a const expression.
-- **`digital`** — combinational logic (a `fn` called in a `digital` body inlines into
-  the dataflow).
-- **`analog`** — a `Real`-valued `fn` inlines into a contribution and is differentiated
-  for the Jacobian (the Verilog-A analog function, gated by type: `Real` → analog,
-  discrete → digital).
-
-```
-FnDecl    ::= "fn" Ident [TypeParams] ParamList "->" Type Block
-ParamList ::= "(" [ Param {"," Param} ] ")"
-Param     ::= "self" | Ident ":" Type [ "=" Expr ]      -- trailing defaults allowed
-Block     ::= "{" { Stmt } [ Expr ] "}"
-```
-
-Arguments pass by value (basic types) or read-only reference (bundles). `mod` is the
-unit of reusable structure; `fn` is the unit of reusable value computation.
-
-This `fn`-body grammar — `var`, `if`/`else`, `match`, `for`, `return`, expressions,
-lambdas — is **the same grammar** used everywhere in PHDL: bundle `impl` methods
-and analog/digital behavior bodies. The statements and expressions are uniform;
-what changes by context is purity, effect availability, and the system-task set.
-
-### 9.1 Default parameter values
-
-A parameter may carry a default value: `fn v(self, a: Net, b: Net = gnd) -> Real`.
-Defaults are **trailing only** — a defaulted parameter followed by a non-defaulted one
-is a parse error. A call may omit trailing defaulted arguments: `r.v(a)` ≡
-`r.v(a, gnd)`. Arity checking counts only the non-defaulted prefix.
-
-Defaults are elaboration constants, evaluated in the callee's scope against the
-already-bound earlier parameters. This applies uniformly — bundle `impl` methods, global
-`fn`s, interpreted helpers, and analog `fn`s used in contributions. It replaces
-overloading-by-arity (which PHDL does not have) and makes optional config expressible:
-`op(cfg: OpConfig = OpConfig {})`.
-
-### 9.2 Higher-order functions and generation
-
-A function is a value: type `fn(T, U) -> R`. Lambdas `|a, b| a + b` are pure and capture
-only elaboration constants. Collection operators are library functions, not syntax:
-
-```phdl
-fn map<T, U>(xs: T[N], f: fn(T) -> U) -> U[N] { return [ f(xs[i]) | i in 0..N ]; }
-fn reduce<T>(xs: T[N], op: fn(T, T) -> T) -> T {
-    if (N == 1) { return xs[0]; }
-    return op( reduce(xs[0..N/2], op), reduce(xs[N/2..N], op) );
-}
-```
-
-With a net `T` and a combinational `op`, `reduce(parts, |a,b| a+b)` emits a balanced
-adder tree. (A mux tree, priority encoder, or prefix network is the same pattern.)
-
-**Generation** is the elaboration phase evaluating pure values/types to emit hardware —
-not macros over syntax. Recursion is elaboration-only and must terminate (each call
-reduces a const param; a hard depth limit is the backstop). The elaboration phase stays
-a total pure evaluator, never a Turing-complete macro stage.
-
-```
-Lambda ::= "|" [ Ident {"," Ident} ] "|" Expr
-```
-
-**Validation.** An effectful syscall inside a pure `fn` body is rejected
-(`TaskUnavailable`) — purity is enforced by the const evaluator's effect-gating
-mechanism. The per-context availability tables are Part V §3 and §7.
-
----
-
-## §10 Behavior
-
-`analog` and `digital` blocks are named after the module they belong to and run on
-different engines under one statement grammar:
-
-- **`analog`** builds the continuous system. Contributions `<+` and forces `<-` are
-  stamped and resolved by Newton-Raphson each iteration (a blocking instruction list).
-  Reads analog quantities and digital values.
-- **`digital`** computes next state. Drives `<-`, assignments `=`, events `@`, on the
-  event-driven kernel (combinational dataflow; inferred memory). Reads digital values
-  and samples analog quantities.
-
-A leaf device has one behavior block. A boundary device takes the block of the domain it
-*drives*: a `Comparator` is `digital` (samples `V`, drives `Bit`); a 1-bit DAC is
-`analog` (reads `Bit`, forces `V`). A behavioral `for` is unrolled — the bound must be
-an elaboration constant. Inside the loop body, instance array references like
-`rseg[i].port` are resolved per iteration. Behavior may branch on `$analysis` (§11),
-specialized per analysis at compile time.
-
-```
-BehaviorDecl ::= ("analog"|"digital") Ident "{" { BehaviorStmt } "}"
-BehaviorStmt ::= VarDecl | BindStmt | IfStmt | MatchStmt | ForStmt
-                | EventBlock | Diagnostic | ExprStmt
-BindStmt     ::= Expr BindOp Expr ";"    ;   BindOp ::= "<+" | "<-" | "="
-```
-
-### 10.1 Access functions
-
-Conservative quantities are read through accessors. A node pair is a branch:
-`V(a,b)` reads the potential difference, `I(a,b)` reads the flow through the branch,
-`V(n)` reads a node's potential relative to ground. The declared nature names are also
-available: `Temp(th)`, `Pwr(th)`, etc.
-
-Built-in analog operators include `ddt` (time derivative), `idt` (time integral), the
-full math catalog (Part V §1), and explicit casts (`Real::from`, `Integer::from`,
-`Quad::from`, `Boolean::from` — §5.4). The analog-
-operator set is open — new operators register through the layer-2 extension mechanism
-(§14, Part V §2).
-
-### 10.2 Analog behavior
-
-`<+` is a **contribution**: it accumulates on a branch. Multiple contributions to the
-same branch add up (KCL). `<-` is a **force**: it sets a single-driver value or a
-controlled expression. One force per quantity per branch.
-
-Each statement is a stamp: a flow contribution injects current into a node; a potential
-force becomes a voltage source with an internal branch-current unknown. The solver
-resolves all stamps together in each Newton iteration. Ideal constraint elements (ideal
-op-amp, ideal switch) use a finite-parameter approximation (large-but-finite gain),
-keeping every statement a direct stamp rather than a singular system.
-
-A **switch branch** toggles which quantity it forces at runtime — this is runtime
-topology over a static node set. An open ideal switch is stabilized by a small
-conductance (Gmin). `@ initial` sets an analog initial condition; `$bound_step(dt)`
-caps the next timestep.
-
-```phdl
-analog Switch { if (ctrl == Closed) { V(a,b) <- 0.0; } else { I(a,b) <- 0.0; } }
-```
-
-**Validation.** `<+` in a `digital` block → E2005 (`ContribInDigital`). `<+` in a `mod`
-body → E2006 (`ContribInModBody`). `<-` in a `mod` body → E2007 (`ForceInModBody`).
-
-### 10.3 Digital behavior
-
-`<-` drives a net; `=` assigns a `var`. Combinational by default: an assignment is
-dataflow — a later statement reads the value just assigned. Memory inference follows
-two patterns:
-
-- **Latch inference** — a `var` read on a path where it was not assigned retains its
-  previous value. This raises a **warning by default** (deny-able per project or via
-  attribute). It is the Verilog/VHDL idiom for accidental storage.
-- **Register inference** — a `var` updated in a clocked `@` block is an edge-triggered
-  register. Within the block, reads see the pre-edge value (a chain of register writes
-  is a pipeline). Register inference is silent (it is the intended idiom, not an
-  accident).
-
-Overlapping writes: last in source order wins.
-
-Control flow is `if`/`else` and `match`. A `match` over an enum is exhaustiveness-
-checked. Patterns: enum variants, `_` (wildcard), and bit-pattern wildcards (`0b1??0`;
-`?` is pattern-only, distinct from the `Quad` value `X`).
-
-```phdl
-digital SarAdc {
-    result <- code;
-    @ posedge(clk) {
-        match state {
-            Idle    => { if (start == 1) { state = Convert; idx = N-1; code = 0; code[N-1] = 1; } }
-            Convert => { if (cmp == 0) { code[idx] = 0; }
-                         if (idx == 0) { state = Done; } else { idx = idx - 1; code[idx-1] = 1; } }
-            Done    => { if (start == 0) { state = Idle; } }
-        }
-    }
-}
-```
-
-```
-MatchStmt ::= "match" Expr "{" { MatchArm } "}"
-MatchArm  ::= Pattern "=>" Block [","]
-Pattern   ::= Path | "_" | BitPattern            -- BitPattern: "0b" {"0"|"1"|"?"}
-```
-
-**Validation.** Inferred latch → diagnostic `InferredLatch(var)` (warning). Non-
-exhaustive `match` → elaboration error.
-
-### 10.4 Events
-
-`@ EVENT [ when (cond) ] { ... }` — the only place a `var` becomes state. Events are
-how the digital kernel decides when to update registers, and how the analog kernel
-detects crossings.
-
-```
-EventBlock  ::= "@" EventSpec [ "when" "(" Expr ")" ] Block
-EventSpec   ::= EventTerm | "(" EventTerm { ("|"|"or") EventTerm } ")"
-EventTerm   ::= Ident "(" [Expr] ")" | "initial" | "final"
-```
-
-Event sources (Part V §5 for the full table):
-- **Digital edges:** `posedge(sig)`, `negedge(sig)`, `change(sig)`.
-- **Analog crossings:** `cross(expr)` (zero crossing), `above(expr)` (one-shot level
-  crossing).
-- **Lifecycle:** `initial` (fires once at start), `final` (fires once at end;
-  diagnostics only).
-- **Periodic:** `timer(period)` or `timer(period, phase)` (analog only). The
-  optional `phase` offsets the first fire to `phase` (fires at `phase`,
-  `phase+period`, … instead of `period`, `2·period`, …); a source declares
-  both its rise and fall edges with two phased timers.
-
-Combine events with OR via `|`: `@ (posedge(a) | posedge(b))`. The `when (cond)` clause
-gates on a level. An analog crossing may drive digital state (domain coupling — the
-ngspice switch idiom). An unrecognized event name is a compile error.
-
-**Validation.** E2008 (`UnknownEvent` — name not registered); E2009
-(`AnalogEventInDigital`); E2010 (`DigitalEventInAnalog`).
-
-### 10.5 Diagnostics
-
-```
-Diagnostic ::= SysCall "(" [ Expr {"," Expr} ] ")" ";"
-```
-
-`$info` / `$warn` / `$error` / `$fatal` report at increasing severity. `$assert(cond,
-msg)` reports when `cond` is false. Format strings interpolate arguments:
-`$info("vout = {}", V(out))`. `$finish` ends the run. `$display` / `$write` print at
-Info severity. `$fatal` does not auto-`$finish`.
-
-The full `$`-syscall catalog — including `$temperature`, `$vt`, `$abstime`,
-`$analysis`, `$limit`, `$random`/`$dist_*`, `$simparam`, `$port_connected`, and more —
-is normative in Part V §3.
-
----
-
-## §10.6 Constraints (`constraint` blocks) — design verification
-
-A `constraint Name { ... }` block is a third top-level body kind beside
-`analog`/`digital`, attaching **correctness intent** to the module named `Name`
-rather than behavior. It is named after the module it attaches to, exactly as
-an `analog`/`digital` block is. The block holds three statement kinds —
-`require`, `var`, `target` — and analysis-scoped `@ … { … }` event blocks that
-restrict a rule to one analysis or window.
-
-```
-ConstraintDecl ::= { Attribute } [ "pub" ] "constraint" Ident "{" { ConstraintStmt } "}"
-ConstraintStmt ::= RequireStmt | ConstraintVar | TargetStmt | CoverStmt | ScopedBlock
-RequireStmt    ::= "require" Ident ":" Expr ";"
-ConstraintVar  ::= "var" Ident ":" Type "=" Expr ";"     -- annotation mandatory
-TargetStmt     ::= "target" TargetExpr ("<="|">=") TargetExpr [ "tol" Expr ] ";"
-CoverStmt      ::= "cover" Ident ":" Expr CoverBins ";"
-                  | "cover" "cross" Ident ":" Ident { "," Ident } ";"
-CoverBins      ::= "bins" "[" Expr ":" Expr ":" Expr "]" | "in" "{" Expr { "," Expr } "}"
-ScopedBlock    ::= "@" EventSpec "{" { ConstraintStmt } "}"
-```
-
-The four leaf statement kinds:
-
-- **`require <name> : <pred>;`** — a named predicate that must hold at every
-  evaluation point (Part VII §16, design §C3). The predicate is `Boolean`
-  (typical: `abs(V(m1.d, m1.s)) <= vds_max`, `m1.region == Region::Saturation`).
-  `name` is the label a host reads the margin by.
-- **`var <name> : <Type> = <expr>;`** — a named computed scalar. The type
-  annotation is **mandatory** here — unlike the ordinary `var` of §7.2, which
-  may infer its type from an initializer, a constraint `var` is a declared
-  quantity a host reads by name, so the parser rejects the bare
-  `var x = expr;` form.
-- **`target <expr> <cmp> <level> [tol <scale>];`** — an unlabeled comparison.
-  `<cmp>` is one of `<=` or `>=` (the strict `<`/`>` have no signed-margin
-  semantics, DVC-08, and fail loud at the comparison token). `tol <scale>`
-  normalizes the resulting margin (see the margin convention below); absent
-  it, `scale = 1` — no implicit normalization. A `target` is a soft goal: it
-  never fails the analysis, only its margin is read.
-- **`cover <name> : <expr> bins [lo:step:hi];`** or **`cover <name> :
-  <expr> in {e1, e2, …};`** (dv-tester DVT-42) — a named coverage point:
-  which bin the pointwise value of `<expr>` fell into, at every evaluation
-  point. Unlike `require`/`target`, a `cover` point carries **no margin and
-  no signed distance** — a bin hit is a counter increment (Part VII/VIII
-  document the host-side accumulation this reuses `dv-core`'s pointwise
-  path for). `bins [lo:step:hi]` partitions a literal range into equal
-  steps; `in {…}` names an explicit, literal set of bin values.
-- **`cover cross <name> : <point1>, <point2>, …;`** — joint coverage over
-  two or more previously-declared `cover` points **in the same block**,
-  named by their own labels. The joint bin count is the product of each
-  named point's own bin count — since bin edges are literal, that product
-  is known statically at elaboration, before anything allocates, and is
-  checked there against a raisable cap (§10.6's Validation paragraph
-  below; Part II documents the cap and its error).
-
-`TargetExpr` is the ordinary `Expr` production parsed at minimum precedence 7
-(BitXor and above), so a following `<=`/`>=` is the statement's own comparison
-rather than a binary operator inside the operand (Appendix B §B.9).
-
-`@ … { … }` reuses the behavior-body `EventBlock` production (§10.4), extended
-for constraint scopes with `&`/`not` composition and the `after =`/`dur =`
-window arguments — the full production is Appendix B §B.9 —
-`@ dc { … }`/`@ tran { … }`/`@ ac { … }` scope the body to one analysis; `|`
-composes (`@ (dc | tran) { … }`); `after = …`/`dur = …` window named-args open
-and close a temporal window on a term. The terms are resolved against the same
-`EventRegistry` as behavior-body events (the analysis-scope kinds `dc`/`tran`/
-`ac` are registered analysis names). See Part II §9 for the resolution rules.
-
-```phdl
-constraint Amplifier {
-    require headroom : V(out, gnd) >= 0.2;
-    var     ugbw     : Real = ac_unity_gain_freq(V(out, gnd));
-    target  gain_db  >= 60 tol 1.0;
-    cover   vin_swept : V(inp, inn) bins [-1.0:0.1:1.0];
-    cover   temp_pt   : temp in {-40.0, 27.0, 125.0};
-    cover cross corner : vin_swept, temp_pt;
-    @ tran(after = 5u, dur = 10u) {
-        require settled : abs(V(out, gnd) - vfinal) <= vtol;
-    }
-}
-```
-
-`pub constraint Name { … }` is required for the block to survive a `use` (the
-privacy filter drops non-`pub` items from used sources, even in the `spice`
-namespace — Part II §10). The shipped SOA blocks (`constraint mos1`, `dio`,
-`bjt` in `headers/spice/`) are all `pub` for this reason.
-
-**The margin convention (DVC-08).** Every `require`/`target` lowers to a
-signed, scale-normalized scalar `m` such that **`m ≥ 0` ⟺ satisfied**. The
-lowering is normative:
-
-| Authored form | Margin `m` |
-|---------------|------------|
-| `a <= b` (or a `require` predicate) | `(b − a) / scale` |
-| `a >= b` | `(a − b) / scale` |
-| `l <= a && a <= u` (the interval form) | `min(u − a, a − l) / scale` |
-| compound predicate `P && Q` | `min(m_P, m_Q)` |
-
-`scale = 1` when no `tol` is authored — the division is not emitted, so the
-margin is the raw signed difference with no implicit normalization. A
-`require` carries no `tol` (its scale is always 1); only a `target` may
-normalize. Margins are evaluated only at the points design §C3 (Part VII
-§16) defines — never at a homotopy stage, a rejected step, or UIC `t = 0`.
-
-**Validation.** A non-`Boolean` `require` predicate → elaboration error. A
-non-`Real` `target` operand → elaboration error. A missing `var` annotation
-→ elaboration error. A duplicate statement label inside one block →
-elaboration error. A `require`/`target` reading a **reduced** quantity (Part
-V §6.2) inside a pointwise scope → elaboration error ("a reduced quantity is
-checkable once per analysis, not per point"). A strict `<`/`>` in a `target`
-→ parse error at the comparison token. A `cover`'s expression must be `Real`
-and pointwise (the same reduced-quantity restriction as `require`/`target`)
-→ elaboration error. A `cover cross` naming an undeclared point → elaboration
-error, listing the undeclared label. **A `cover cross`'s joint bin count is
-checked at elaboration against `ElabContext::cover_bin_cap`** (default 4096,
-an agent-decided default per dv-tester D10 — `spec.md` left the exact number
-open) **and refused loudly, naming the declared count and the cap**, when it
-is exceeded — bin edges are literal, so the product is known before any
-coverage state allocates (Part II §11 documents the check site). The
-complete catalog is Part II §11.
-
-The host-side surface — `r.margins`, `r.violations`, `r.requires_ok`,
-`r.first_violation`, the three postures — is Part VIII §7 and Appendix C.
-`cover`'s own host-side merge/closure surface (`CoverageDatabase`) is Part
-VIII §17 and Appendix C.
-
----
-
-## §10.7 `@device` — the host binding mode (dv-tester)
-
-`@device` already declares a module whose *implementation* comes from
-outside PHDL (§5.4, `headers/device_port.phdl`) — a plugin cdylib,
-TOFU-pinned at load. dv-tester adds a **second binding mode for the same
-attribute**: an implementation registered **in-process**, from the host's
-own script or crate, with no compiled binary and no `dlopen`. There is one
-concept, `@device`, not two — the PHDL never spells which mode it will
-resolve to:
-
-```phdl
-@device(plugin = "none", type = "MyRegulator")
-mod Regulator ( inout vout : Electrical, inout gnd : Electrical ) {
-    param iload : Real = 10e-3;
-}
-```
-
-The same declaration, instantiated the same way (composing with hierarchy,
-parameterized, instantiated more than once) resolves at circuit-build time
-by trying a wired plugin binding first and a host registration second,
-failing loud and naming both when neither has the type id (Part VII §20.1,
-Part VIII §17 — `HostDeviceRegistry`). The binding mode is **inferred from
-where the implementation is registered**, never spelled differently in
-source.
-
-**No new macro.** A Rust host device implements `HostElement` and registers
-with an explicit call (`HostDeviceRegistry::register`/`register_sequencer`)
-— not `#[pip::device]`'s `inventory`-collection mechanism, which is
-plugin-binary-only and has no meaning for an in-process implementation.
-Python spells the registration with `@pip.device("MyRegulator")`, the idiom
-that language already uses for declaration-coupled registration — the
-*concept* is identical to the Rust call, only the spelling follows each
-language's own grain (this reuses the same `device(type_id)` decorator
-`#[pip::device]`'s Python-glue binding marker already used for plugin
-scripting glue, not a second decorator).
-
-**The graduation path.** A Rust host device can become a plugin device with
-**no change to the PHDL**: the same `@device` declaration, the same
-`HostElement` implementation, moved from a script/crate into a distributed
-`cdylib`. Prototype in-process, promote when it stabilizes; the circuits
-that instantiate it never notice, because the resolution order (plugin
-first, host second) means a newly-wired plugin binding simply wins.
-
-**The Python limitation, stated rather than discovered.** A Python host
-device **cannot graduate** — there is no Python `cdylib` for the native
-plugin backend to load (`crates/piperine-plugin/src/backend/native.rs`
-requires a compiled shared library). A Python host device stays
-script-local: fine for a tester or a one-off prototype, a real limitation
-for a model meant to be distributed. The Rust route is the one that reaches
-a plugin.
-
----
-
-## §11 System tasks (`$`-syscalls) — overview
-
-A `$`-syscall is the surface syntax for every runtime-valued or effectful operation.
-The `$` prefix makes it visually distinct from user-defined functions and signals that
-the call may depend on simulation state, not just its arguments.
-
-PHDL has two layers of `$`-syscall availability, depending on context (full tables in
-Part V):
-
-1. **Everywhere (pure tasks):** diagnostics (`$assert`, `$info`, `$warn`, `$error`,
-   `$fatal`, `$display`) and the math catalog (`$sqrt`, `$ln`, ...). Available in any
-   `fn` body, including pure functions.
-
-2. **Solve-time (analog/digital):** runtime quantities (`$temperature`, `$vt`,
-   `$abstime`, `$analysis`, `$random`, ...) and control (`$bound_step`, `$finish`,
-   `$discontinuity`). Available in `analog`/`digital` bodies only.
-
-Analyses are driven by the host APIs (Part VIII), not by `$`-syscalls.
-
-The syscall set is open — new syscalls register through the layer-2 extension mechanism
-(§14). This section gives the grammar; Part V gives the exhaustive tables.
-
----
-
-## §12 Phase model
-
-| Phase | Where | What |
-|-------|-------|------|
-| Elaboration | `mod` body, type annotations, structural control | resolved once into a fixed netlist |
-| Solve | `analog` / `digital` | evaluated by the NR / event-driven engine |
-
-Hardware is neither created nor destroyed during solve. Runtime
-topology — a switch opening, a MOSFET entering cutoff — is a switch branch over a
-static node set, not structural change. This is the fundamental contract: the structure
-is fixed before any current flows, and the solver specializes itself to that structure.
-
----
-
-## §13 No-Magic
-
-Connecting incompatible disciplines is a compile error. Crossing a discipline or domain
-boundary requires an explicit converter `mod` — the compiler never inserts one
-implicitly.
-
-This rule governs **net connections only**. Reading a net into a value (sampling a
-voltage into a `Real`) or driving a value onto a net (forcing a computed voltage) is
-ordinary and unchecked. A device that couples two disciplines *internally* (an
-electrothermal resistor with both `Electrical` and `Thermal` ports) needs no converter,
-because no single net crosses a boundary — the coupling happens inside the device's own
-`analog` block.
-
-### 13.1 Declared-first name resolution
-
-A companion rule, locked as project decision MD-24, governs *name resolution*: every
-referenceable PHDL name — primitive type, math function, system task, runtime operator,
-attribute schema, type method — resolves to a **textual declaration** in the project's
-headers/source. Name lookup that
-finds no textual declaration is a compile error, never a silent fallback into a
-Rust-native registry. A declaration marked `extern` (§5.4) is the only case allowed to
-defer its *implementation* to a native registry — its full *shape* (params, types,
-return type) is 100% textual, so LSP go-to-definition always lands on a real
-declaration line.
-
-This rule generalizes the original No-Magic rule (which governed only net connections)
-to the entire name-resolution surface. A regression guard
-(`crates/piperine-lang/tests/extern_coverage_guard.rs`) iterates every native
-implementation table (`MATH_FNS`, `TaskRegistry`, the operator contract, the 7
-primitive types, the `@device`/`@port` schemas) and asserts a matching `extern`
-declaration exists, so the mechanism can't silently regress back into "magic" after a
-future change. The rule's one open gap today is the analog-operator surface: four
-operators (`idtmod`, `absdelay`, `table`, `ac_stim`) carry no `extern operator`
-declaration and resolve through codegen's operator registry instead — see Part V §2's
-declaration column and `ROADMAP.md`.
-
-**Validation.** E2013 (`WidthMismatch`); E2014 (`DisciplineCrossing`); an unresolved
-identifier at any reference site is a fail-loud `ElabErrorKind::Other` naming the
-identifier and use site.
-
----
-
-## §14 Extension model
-
-The core grammar (layer 0) is closed. Growth happens above it, through five layers:
-
-| Layer | Mechanism | Adds |
-|-------|-----------|------|
-| 1 | Standard library (capabilities, generics, HOF) | Value types (`UInt`, `Complex`), `map`/`reduce`/`concat` |
-| 2 | Compiler registries (trait + registry) | Analog operators, `$`-syscalls, `@`-event kinds |
-| 3 | Attribute schemas | Typed per-declaration metadata (layout, routing, ...) |
-| 4 | POM + selector + plugins | Reflection, overrides, annotations — the design-closure loop |
-| 5 | Host APIs (Part VIII) | Orchestration, sweeps, verification, closure loops |
-
-New value types (layer 1) and new operators/syscalls/events (layer 2) never touch the
-grammar — they register at startup and the existing grammar productions (function
-calls, `$`-prefixed names, `@`-prefixed event specs) absorb them.
-
-Layers 3–4 carry the physical-design loop: attribute metadata + a plugin that reflects
-over the POM, runs placement/extraction, and returns **annotations** (parasitics keyed
-by `NetId`, fused by KCL) and **overrides** (staged, consumed by pure re-elaboration).
-The loop is `reflect → emit → re-elaborate → simulate`, deterministic at every step.
-Verification and timing live in layer 5, outside the hardware language.
-
-Layer 0 stays closed by the No-Bloat rule (§1): a feature must demonstrate it cannot
-live in a layer above before it may touch the core grammar.
-
----
-
-## §15 Rejected features
-
-These are decisions, not omissions — each was considered and rejected for a stated
-reason.
-
-**Digital `#` delays.** Rejected because they are a source of race semantics and delta
-cycles. RTL in PHDL is zero-delay combinational logic plus registers. Timing belongs to
-analog (the `transition` and `absdelay` operators) or to host-side verification
-(Part VIII), not to the RTL itself.
-
-**Connect modules / connectrules (auto-insertion).** Rejected by No-Magic (§13). If you
-need to cross a discipline boundary, you write an explicit converter module. The
-compiler never inserts one for you.
-
-**Indirect branch assignment (`V(x): f(x)==0`).** Rejected because it produces singular
-systems (the Jacobian has no useful entry for an algebraic constraint with no residual).
-Use the finite-parameter idiom instead — a large-but-finite gain VCVS.
-
-**`mod`/`bundle` unification.** Rejected because it reproduces the SystemVerilog
-`interface` — a construct that blurs the line between "shape with identity and
-behavior" (a module) and "valued aggregate" (a bundle). They are distinct concepts in
-PHDL; their field syntax rhymes, and that suffices.
-
-**First-class type values (`Value::Type`).** Rejected because types are an elaboration
-concept and values are a runtime concept — PHDL is explicit about this boundary (§2.5).
-Generic type parameters (`<T: Add + Net>`) already provide "referencing a type" at the
-elaboration level, resolved before any current flows. Carrying a type as a runtime value
-would blur the elaboration/solve boundary, open the door to dynamic type dispatch (which
-the No-Magic rule, §1, forbids), and add complexity without real power: reflection over
-the POM already answers "what type is this port/param/net?" without needing a value-level
-type. If you need type-dependent behavior, write two generic instantiations or two `impl`
-blocks — the type system resolves which applies at elaboration, not at runtime.
-
----
-
-## §16 Validation rules (Part I consolidated)
-
-Every validation rule in this Part, gathered for cross-reference. The master catalog
-with error codes is Part II §11.
-
-| Section | Rule | Error |
-|---------|------|-------|
-| §2 | value type used as net | E2004 `NotNetCapable` |
-| §2 | `<+` / `<-` in a `mod` body | E2006 / E2007 |
-| §5.3 | accessing a non-`pub` item from outside its package | E2021 `PrivateItem` (surfaces today as E2002/E2003 — the item is filtered out of scope during `use` resolution) |
-| §6.1 | collection literal in unlowered context | fail-loud at device-compile |
-| §6.2 | multiple drivers on single-driver storage | E2020 `MultipleDrivers` |
-| §6.5 | bundle type/field errors | E2015–E2019 |
-| §7.3 | const-arg count mismatch | E2011 `MissingConstParam` |
-| §7.3 | a name that does not resolve to a net | E2012 `NotANetRef` |
-| §7.3 | width mismatch on connection | E2013 `WidthMismatch` |
-| §7.3 | discipline crossing | E2014 `DisciplineCrossing` |
-| §7.4 | non-const structural control | E2001 `ConstEval` |
-| §8 | unknown attribute schema | E2022 `UnknownAttrSchema` |
-| §8 | attribute field mismatch | E2023 `AttrSchemaField` |
-| §9.2 | effectful syscall inside pure `fn` | `TaskUnavailable` |
-| §10.2 | `<+` in `digital` or `mod` body | E2005 / E2006 |
-| §10.3 | inferred latch | diagnostic `InferredLatch` (warning) |
-| §10.3 | non-exhaustive `match` | E2024 `NonExhaustiveMatch` |
-| §10.4 | unknown event name | E2008 `UnknownEvent` |
-| §10.4 | event/block domain mismatch | E2009 / E2010 |
-| §10.6 | `tol` on a non-`Real` param; undeclared distribution name | elaboration error (DVC-02) |
-| §10.6 | non-`Boolean` `require` predicate; non-`Real` `target` operand; missing `var` annotation; duplicate statement label | elaboration error (DVC-04/07) |
-| §10.6 | `require`/`target` reading a reduced quantity in a pointwise scope | elaboration error (DVC-09) |
-| §10.6 | strict `<` / `>` in a `target` | parse error at the comparison token |
+`heater` is Verilog-A module-scope persistent analog state — seeded once at
+`initial_step`, flipped only by the `above` events, read continuously by the
+contribution. Module-scope `real`s in an analog block are the direct VAMS equivalent of
+what PHDL called a `var`; there is no separate `var` keyword in VAMS analog behavior.
+
+**Annex C enforcement** (`Typecheck`, T27, Part II §4) is the pass that keeps a
+`.vams` analog block inside the LRM's own restricted analog subset: non-blocking
+assignment (`<=`), `@(posedge ...)`-style edge event control, and `casex` are all
+illegal inside `analog` and fail loud citing "Annex C" — `crates/piperine-lang/tests/
+vams_annex_c.rs` is the live regression suite for exactly these three rejections.
+
+## §5 Hierarchical structures and module instantiation (LRM ch. 6)
+
+`module`/`macromodule`/`connectmodule` declarations (Annex A.1.2) lower into POM
+`Module`s (Part II §4's `ElabModules` entry). Instantiation supports both named
+(`.port(net)`) and ordered port-connection styles and parameter overrides at the
+instantiation site (`#(.param(value))`), exercised end-to-end by
+`crates/piperine-lang/tests/vams_lower_structure.rs::hierarchy_is_navigable_and_never_
+flattened` — the live proof that the authored `instance → submodule → sub-instance`
+tree survives elaboration unflattened (Part II §7).
+
+`generate` regions (`for`/`if`/`case`, ch. 6) are unrolled by `UnrollGenerate` (Part II
+§4) into a derived instance set that never touches the authored module's own instance
+list — reading a generate-bearing module back through the POM (Part IV) shows exactly
+the `for`/`if`/`case` construct as written, not its expansion.
+
+`connectrules`/`connect` (ch. 7, §10) — the automatic connect-module-selection
+mechanism at a discipline-domain crossing — is parsed and its selection algorithm is
+implemented (`InsertConnectModules`, Part II §4), but **cannot be exercised by any real
+`.vams` source today**: `ResolveDisciplines` (the pass immediately before it) already
+hard-fails on the only inputs that would trigger connect-module selection. This is a
+genuine, documented gap in ch. 7 coverage, not a hidden one.
+
+## §6 The digital subset: what's live vs. parse-only (LRM ch. 7, 8)
+
+`always @(...)`/`initial` blocks (`BehaviorKind::Always`/`Initial`) are the one part of
+the digital surface with a real, live path to a simulated device — Part IX/X's fused
+digital-network JIT compiles `LoweredBody` module semantics built from these blocks.
+`crates/piperine-lang/tests/vams_vertical_slice.rs::vams_digital_counter_register_
+increments_on_posedge` is the live proof: an `always @(posedge clk) count <= count + 1;`
+counter drives a real compiled digital device with the `SUPPORTS_ROLLBACK` capability,
+asserted to increment exactly `+5` for five forced clock edges.
+
+Everything else in ch. 7/8's surface is **parsed correctly and given an independently
+tested pure-function implementation, but has no lowering path into the POM and no
+codegen wiring** — instantiating any of these in a `.vams` source parses without error
+but produces no simulated behavior:
+
+- **Gate primitives** (§7.2-§7.4: `and`/`nand`/`or`/`nor`/`xor`/`xnor`, `buf`/`not`,
+  `bufif0/1`/`notif0/1`) — truth tables and drive-strength resolution are implemented
+  and tested (`GatePrimitive::eval`, `crates/piperine-codegen/src/kernel/digital/
+  gates.rs`), confirmed live by a discrimination-sensor mutation test (flipping
+  `Nand`'s truth table to plain `And` was caught by `vams_gates::and_nand_or_
+  nor_xor_xnor_truth_tables`). But `piperine-lang`'s elaboration pipeline never lowers
+  a `GateInstantiation` AST node into the POM, so no instance of `and g1(y, a, b);`
+  ever reaches a compiled device.
+- **User-defined primitives** (`primitive`/UDP, Annex A.5.3) — combinational and
+  sequential state-table evaluation is implemented (`UdpTable`,
+  `crates/piperine-codegen/src/kernel/digital/udp.rs`) against the same
+  "pure, tested, not wired" pattern.
+- **Switch-level primitives** (`nmos`/`pmos`/`cmos`, `tran*`, `pullup`/`pulldown`) —
+  not even given a pure-function implementation; they are a bidirectional-resistive
+  network model, structurally different from a truth table, and no work has started.
+- **LRM ch. 8's stratified event-region cycle** (`Active`/`Inactive`/`Nba`/`Monitor`,
+  §8.3) — `RegionQueue` (`crates/piperine-solver/src/digital/regions.rs`) proves the
+  region-priority-then-FIFO ordering rule correct in isolation (confirmed by a
+  discrimination-sensor mutation on `RegionEvent::cmp`'s sort key), but is not wired
+  into the live scheduler, which still runs only a two-phase (register-commit, then
+  combinational re-evaluation) delta cycle.
+
+None of this is a hidden gap — every file above carries its own module-doc
+`SPEC_DEVIATION` naming exactly what's missing and why closing it was out of the task's
+stated scope when it was written (T48/T49/T51 respectively).
+
+**A wider, less-documented version of the same gap, found while grounding this Part
+directly in `elab_module`'s per-`ModuleItem` match** (`crates/piperine-lang/src/elab/
+lower/vams.rs`, `ElabModules`'s implementation, Part II §4): the match arm handling one
+`ModuleItem` at a time silently no-ops (`=> {}`) on **`Ground`** (explicit `ground net;`
+reference-ground declarations, §3.6.4), **`Event`** (named `event` declarations, used
+by `-> event_name` triggers), **`Specparam`**/**`Defparam`** (above), **`Function`**/
+**`Task`** declared *inside* a module body (as opposed to top-level — LRM permits both;
+only the top-level form has any further path through the pipeline, and even that path
+dead-ends at codegen per §7), **`ContinuousAssign`** (`assign lhs = rhs;`, ch. 6's
+digital continuous-assignment construct), **`Specify`** (specify blocks, ch. 14 timing
+checks), and **`Gate`** (gate instantiation, consistent with the dedicated finding
+above). `LoopGenerate`/`IfGenerate`/`CaseGenerate` appear in the same source-level arm
+list as unhandled, but are **not actually a live gap** — `UnrollGenerate` (Part II §4)
+re-scans a module's `ModuleItem`s independently through its own dedicated match
+(`elab/lower/generate.rs`) and does handle all three; the code comment adjacent to the
+no-op arm ("genvar/generate (T25)... not yet lowered — later tasks extend this match")
+is stale relative to that later pass having shipped. The remaining eight constructs in
+that arm have no such second path anywhere in the pipeline — each parses, elaborates
+without error, and is then silently absent from the POM.
+
+## §7 Functions and tasks (LRM §5.9, ch. 9)
+
+`function`/`analog function` (`FunctionKind::Digital`/`Analog`, §5.9) and `task`
+declarations parse with their full port-list/local-declaration/single-body-statement
+shape (Annex A.2.6/A.2.7). LRM ch. 9's system tasks/functions (`$display`,
+`$temperature`, `$bound_step`, the `$itor`/`$rtoi`/... conversion family) have their
+full LRM semantics implemented as pure, tested functions
+(`crates/piperine-lang/src/eval/tasks.rs`, Part V §3) — but, like the gate/UDP surface
+above, **no elaboration pass lowers a `$`-task call into the POM yet**. A `$display(...)`
+call inside an analog block parses and elaborates, but has nowhere to go once codegen
+receives the behavior body — it is not a working diagnostic print today.
+
+## §8 Piperine's own attribute extension: `(* device *)`/`(* port *)`
+
+Piperine's plugin system needs two pieces of metadata the LRM has no dedicated grammar
+for: which plugin implements a module as a native device, and how a port maps to that
+device's terminal model. Both ride entirely on **standard** Annex A.9.1
+`attribute_instance` syntax — no new production, no Piperine-specific grammar. This is
+covered precisely, including the recognized attribute names, the elaboration site
+(`elab/lower/vams.rs::lower_module_attrs`/`lower_port_attrs`), and the one recorded
+SPEC_DEVIATION (sibling `attr_spec`s rather than a nested-call form, since Annex A's
+`attr_spec` grammar has no nested-call shape), in **Appendix B §B.2** — this Part does
+not restate it. The governing rule restated briefly: any attribute name on a module or
+port that is neither `device`/`type`/`port`/`kind` nor a name the plugin system has
+itself registered fails loud (`UnknownAttrSchema`) — an unrecognized attribute is a
+compile error, never silently inert. Plugins contribute no attribute schemas of their
+own; the two schemas above are seeded once by the plugin system itself
+(`PluginHost::seed_schemas`), so two device plugins can never collide on them.
+
+This is the entirety of Piperine's syntactic extension over the LRM. There is no other
+extension surface, no second `(* ... *)` vocabulary, and no PHDL-era "layer-2 registry"
+mechanism (MD-24's `extern` declarations, capability impls, etc.) carried forward —
+Part V §0 covers exactly what replaced MD-24 for builtin resolution.
+
+## §9 Preprocessor (LRM Annex E)
+
+`crates/piperine-lang/src/preprocessor.rs`/`annex_e.rs` implement the LRM's textual
+macro/conditional-compilation layer: `` `define``/`` `ifdef``/`` `ifndef``/`` `else``/
+`` `endif``/`` `include``. `` `include`` reuses the existing `SourceMap` search-path
+logic shared with the rest of the compiler's file resolution. The stdlib headers
+(`disciplines.vams`, `constants.vams`, Part V §4) are ordinary source files that lean on
+exactly this mechanism (`` `ifdef DISCIPLINES_VAMS``-style include guards) — there is no
+special-cased header-loading path distinct from an ordinary project `` `include``.
+
+## §10 What is explicitly not supported
+
+- **VPI (Verilog Procedural Interface) C-ABI hosting.** ch. 11's VPI mechanism is
+  modeled at the language-registration level only (`VpiTaskKind`/`VpiTaskRegistry`,
+  Part V §3) — a `$name` becomes valid callable surface through Piperine's own native
+  plugin ABI, never through a `dlopen`'d IEEE-VPI shared object. There is no VPI C-ABI
+  host anywhere in the codebase and none is planned; this is a permanent, deliberate
+  scope boundary, not a temporary gap.
+- **OSDI as an in-tree dependency.** Compiled Verilog-A compact models load as OSDI
+  v0.4 shared libraries through the external `piperine-osdi` plugin repo — the solver
+  core (`piperine-solver`) has no OSDI/libloading dependency at all (CLAUDE.md, project
+  summary). This is an architectural boundary, not a language gap.
+- **`laplace_*`/`zi_*` operators — corrected from stale project documentation.**
+  `ROADMAP.md`'s "P1 backlog" table and CLAUDE.md's "Known gaps" section both currently
+  read as though these operators are undeclared and fail loud at elaboration. That is
+  **not what the source on this branch does**: `piperine-codegen`'s
+  `AnalogOpRegistry::with_builtins` (`resolve/pom/analog_ops.rs`) registers all five
+  `laplace_*` and all four `zi_*` LRM variants, and they resolve exactly like `ddt`/
+  `idt`. See Part V §2 for the full grounding and the direct quote from the registry
+  source. `.disto` on MOS2/MOS3 (a Cranelift function-count explosion on the
+  second/third-derivative kernel, opt-in via `SessionBuilder::disto(true)`, default
+  off) is the one operator-family gap that genuinely remains open per `ROADMAP.md`.
+- **The VAMS-14 constraint-block surface.** PHDL's `constraint Name { ... }` block and
+  its attribute-instance-carried VAMS equivalent were never rebuilt after MD-45 deleted
+  `pom::ConstraintBlock` — see Part IV §4's callout and
+  `.specs/features/verilog-ams-support/validation.md` Gap 3 for the full history
+  (including that the migration's own plan explicitly flagged this as a "must add a
+  task before Phase 7 closes" item that was never acted on).
+- **Gate primitives, UDPs, and `$`-system-task calls as live device behavior** — §6/§7
+  above; parsed and semantically implemented, not wired into a simulated device.
+
+## §11 Diagnostics and the fail-loud contract
+
+Every elaboration failure is a typed `ElabErrorKind` variant carrying a source span,
+`miette`-renderable diagnostic code, and (for the LRM-Annex-anchored E4xxx family)
+actionable help text citing the specific clause — the full catalog is Part II §6. There
+is no silent fallback path anywhere in this pipeline: an unrecognized attribute schema,
+a discipline that cannot be resolved, a branch contributed inconsistently, a construct
+outside Annex C's analog subset, or a parameter value outside its declared range are all
+fail-loud, source-anchored compile errors, never a warning, a default substitution, or a
+`0.0` placeholder (CLAUDE.md's "fail loud" rule, restated here for the language layer
+specifically).

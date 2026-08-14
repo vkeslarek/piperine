@@ -36,7 +36,7 @@ session) + `OpResult`, `Trace`, `AcTrace`, `NoiseTrace`, `PssResult`,
 
 | Object | Members |
 |---|---|
-| `load(path) -> Design` | Load + elaborate `.phdl`/`.ppr` (raises `ElaborationError`) |
+| `load(path) -> Design` | Load + elaborate `.vams`/`.va` (raises `ElaborationError`) |
 | `load_str(src) -> Design` | Elaborate inline source, no filesystem read |
 | `Design` | `compile(module=None) -> Session` · `const(name)` · `module(name) -> Module` (raises `UnknownModule`) · `__getitem__(name) -> Module` · `modules()` · `select(path) -> Selection` · `top -> Module \| None` (property) |
 | `Module` | analyses `op(cfg=None)`, `sens(...)`, `pss(...)`, `pz(...)`, `disto(...)`, `sp(...)`, `tran(cfg)`, `ac(cfg)`, `noise(cfg)` · `sensitivity(metric, param, solver=None)` / `gradient(metric, params, solver=None)` (dv-gradients, engine attribution — Part VIII §14) · `compile() -> Session` · `set(label, param, value)` (staged override) · reflection properties `name`, `ports`, `params`, `nets`, `instances`, `behaviors` |
@@ -126,7 +126,7 @@ inherits the matching builtin type it previously surfaced as, so existing
 | `C(value: float) -> float` | HOST-21, Celsius → Kelvin |
 
 **CLI host commands:** `piperine run foo.py` · `piperine run -i
-[design.phdl]` (REPL, pre-loads `design`) · `piperine test` (`*_tb.py`,
+[design.vams]` (REPL, pre-loads `design`) · `piperine test` (`*_tb.py`,
 `--list`, explicit file, `PIPERINE_TEST_TIMEOUT_SECS`) · `piperine check`/
 `piperine build`.
 
@@ -332,7 +332,7 @@ unchanged by this feature).
 `Measure` catalog entry on both hosts, with the closed-Python/open-Rust
 catalog asymmetry (§17.6) declared as the only divergence rather than
 silently tolerated; `tests/host_capability_parity.rs` separately proves
-capability parity itself — the same device written in PHDL and as a host
+capability parity itself — the same device written in Verilog-AMS and as a host
 device produces identical results, for one device per level-1 family
 (a `transition` source, a pnjlim junction, a `table` nonlinearity, a
 `cross`-triggered element).

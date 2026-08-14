@@ -2,12 +2,22 @@
 
 The Piperine Object Model (POM) and the selector query language are one surface: the
 selector's axes *are* POM relations, and its predicates *are* POM attributes. The POM
-exposes an elaborated design as a graph of typed runtime nodes — the single interface
-for the Python host, the Rust host (Part VIII), and the plugin ABI (Part VI).
+exposes an elaborated `.vams` design as a graph of typed runtime nodes — the interface
+the Python host, the Rust host (Part VIII), the plugin ABI (Part VI), and the language
+server all read the same design through.
 
 POM is **read-first**: querying has no effect; assigning a parameter **stages an
-override** consumed by a later pure elaboration (Part II). The selector adds no model of
-its own — it is a query language layered over the POM's existing structure.
+override** consumed by a later pure re-elaboration (Part II). The selector adds no model
+of its own — it is a query language layered over the POM's existing structure.
+
+This Part describes the POM as it exists after the `verilog-ams-support` migration
+(`crates/piperine-lang/src/pom/`). Two structural facts drive most of what changed from
+the PHDL-era POM: **natures and branches are now first-class, top-level or per-module
+nodes** (LRM §3.6.1, §3.12 — PHDL folded a nature inline inside a discipline and had no
+branch type at all), and **the PHDL value layer that made bundles/enums/capabilities
+first-class POM citizens is gone** (MD-45) — those `Kind` variants and node accessors
+still exist as vestiges in the type definitions but are unreachable through the live
+graph. Both facts are called out explicitly below rather than silently dropped.
 
 ## Contents
 
@@ -15,8 +25,8 @@ its own — it is a query language layered over the POM's existing structure.
 - §2 Design root
 - §3 Staging and determinism
 - §4 Elaborated-structure nodes
-- §5 Definition nodes
-- §6 Leaf enums
+- §5 Natures, disciplines, branches
+- §6 The `Node` graph and its gaps
 - §7 One model, two languages, one ABI
 - §8 Selector — model
 - §9 Selector — grammar
@@ -24,85 +34,104 @@ its own — it is a query language layered over the POM's existing structure.
 - §11 Selector — node tests
 - §12 Selector — predicates
 - §13 Selector — evaluation
-- §14 Selector — integration
+- §14 Selector — integration and its own live gap
 
 ---
 
 ## §1 Core concepts
 
-**Distinct typed nodes.** Each construct is its own node type with its own interface.
-There is no generic "node" that you must downcast — a `Module` has `ports()`, an
-`Instance` has `of()`, a `Net` has `discipline()`. The node types are:
+**Distinct typed nodes.** Each construct is its own Rust type with its own interface —
+`Module` has `ports()`, `Instance` has `of()` (via `module_name()`/lookup), a `Nature`
+has `abstol()`. The construct-level POM types, all in `crates/piperine-lang/src/pom/`:
 
-- **Elaborated-structure:** `Module`, `Instance`, `Net`, `Port`, `Param`, `Attribute`,
-  `Behavior`, `ConstraintBlock`.
-- **Definition:** `Bundle`, `Enum`, `Discipline`, `Capability`.
-- **Leaf:** `Field` (of a bundle), `Variant` (of an enum), `Nature` (of a discipline),
-  `Signature` (of a capability).
+- `Module`, `Instance`, `Port`, `Param`, `Wire`, `Var`, `Connection`, `Attribute`
+  (`module.rs`) — the structural graph of one elaborated module.
+- `Behavior` (`behavior.rs`) — one `analog`/`digital` block; its body is `BehaviorStmt`,
+  a direct alias of `crate::ast::Stmt` (§4 below — no separate resolved-behavior layer).
+- `Nature` (`nature.rs`) and `Branch`/`BranchKind` (`branch.rs`) — LRM §3.6.1 and §3.12,
+  new in the VAMS-era POM (§5).
+- `Design` (`design.rs`) — the root; owns every module plus the top-level
+  natures/disciplines/paramsets/consts.
 
-**Two-axis model.** Every node offers two kinds of access:
+There is no generic node wrapper you must downcast into these — you reach a `Module`
+straight from `Design::module(name)`, an `Instance` from `Module::instance(name)`, and
+so on through plain typed accessors. The discriminated `Node<'a>` enum described in §6
+exists *in addition* to this, purely as the selector's uniform navigation type; it is
+narrower than the full set of POM node types (§6 explains the gap).
 
-- *Attributes* — scalar properties returning a `Value`. Examples: `Module.name`,
-  `Net.width`, `Port.direction`. A few attributes are settable (params); the rest are
-  read-only.
-- *Relations* — named axes returning a `Selection` of related nodes. Examples:
-  `Module.ports()`, `Instance.children()`, `Net.drivers()`.
+**Two-axis model.** Every construct offers two kinds of access:
 
-This is what makes the selector work: its axes are the POM's relations, its predicates
-test the POM's attributes.
+- *Attributes* — scalar properties returning a value or a `Value`. Examples:
+  `Module::name()`, `Nature::abstol()`, `Port::direction()`. A few are settable (params,
+  via staged overrides); the rest are read-only accessor methods.
+- *Relations* — accessor methods returning a slice or `Selection` of related nodes.
+  Examples: `Module::ports()`, `Module::instances()`, `Design::modules()`.
 
-**Identity.** `Node.id()` returns a stable `Id` — stable across re-elaboration while the
-source is unchanged. `Net` also exposes `NetId`, the anchor for parasitic extraction and
-LVS across the design-closure loop.
+This is what makes the selector work (§8 onward): its axes are these same relations,
+its predicates test these same attributes.
 
-**Value.** The value layer of the POM: primitives (`Real`, `Natural`, `Integer`,
-`Boolean`, `Quad`, `Complex`, `String` — the seven of Part I §6.1), a node reference,
-or a value-layer collection (`Vec`, `Map`, `Set`, `Option`, `Result`). `UInt[N]` and
-`SInt[N]` are `Bundle`s, not primitives.
+**Value.** The value layer used by params, consts, and attribute data:
+`crate::value::Value` — the LRM's value types (`Real`, `Integer`, `Boolean` (2-state),
+a 4-state logic value, `String`) plus their aggregate forms. `UInt`/`SInt` bit-vector
+convenience types that PHDL's stdlib defined as bundles do not exist in the VAMS POM;
+VAMS parameters and `var`s carry LRM's own type set directly (LRM §3.2/§3.3, ch. 4).
 
-**Selection\<T\>** — the universal navigation result. An ordered, duplicate-free set:
+**Selection\<T\>** — the universal navigation result returned by relation accessors
+(`crate::pom::selection::Selection<T>`, `crate::pom::selection::NodeSelection<'a>` is
+its `Node<'a>` specialization):
 
 ```
 len, is_empty
-get(i) -> Option<T>     ; first / last -> Option<T>
-iter() -> Vec<T>
-filter(pred) -> Selection<T>
-map(f) -> Vec<U>
-where(path) -> Selection<Node>
-one() -> Result<T, _>
+first() -> Option<&T>   ; get, iter, etc.
+where_path(design, path) -> Result<NodeSelection, SelectorError>   (NodeSelection only)
 ```
 
-`sel[i]` is sugar for `get(i)` unwrapped. Settable attributes write across a whole
-selection (e.g., `select("//resistor").resistance = 2e6` stages the override on every
-matched resistor).
+`where_path` is how a selection re-enters the selector grammar (§8) for a further step.
 
 ---
 
 ## §2 Design root
 
-The `Design` node is the root of the POM:
+`Design` (`crate::pom::Design`) is the root, returned by
+`piperine_lang::SourceFile::elaborate` / `parse_and_elaborate` (Part VIII §2):
 
 ```
 Design
-  top() -> Module
-  module(name) -> Option<Module>
-  modules() -> Selection<Module>
-  select(path) -> Selection<Node>
-  const_(name) -> Option<Value>
-  consts() -> Map<String, Value>
-  bundles() / enums() / disciplines() / capabilities() -> Selection<...>
+  top() -> Option<&Module>
+  module(name) -> Option<&Module>
+  flat_module(name) -> Option<&Module>     // FlattenHierarchy's derived form, codegen-only
+  modules() -> impl Iterator<Item = &Module>
+  module_count() -> usize
+  select(path) -> Result<NodeSelection, SelectorError>
+  const_(name) -> Option<&Value>
+  consts() -> impl Iterator<Item = (&String, &Value)>
+  discipline(name) / disciplines() -> Option<&DisciplineDecl> / iterator
+  nature(name) / natures() -> Option<&Nature> / iterator
+  paramset(name) / paramsets() -> Option<&ParamsetDecl> / iterator
+  project() -> &Project
 ```
 
-A host reaches the root through `pip.load(...)` / `parse_and_elaborate(...)`
-(Part VIII §2); `module.select(path)` re-roots a query at any module.
+There is no `bundles()`/`enums()`/`capabilities()` on `Design` — PHDL's value-layer
+definition nodes (§6). `flat_module` reaches `Design::flat_modules`, the codegen-only
+derived artifact `FlattenHierarchy` builds (Part II §5); `module`/`modules()` always
+return the **authored** hierarchy (the POM-navigability unbreakable rule, CLAUDE.md).
+
+`design.select(path)` is the entry point for the selector language (§8); a returned
+`NodeSelection` re-roots further steps via `where_path`.
 
 ---
 
 ## §3 Staging and determinism
 
-Writing a parameter stages an override; it does not edit the design. `Param.set(v)`
-returns `Result<Unit, ReflectError>`; the sugar forms are `sel.r = 0.2e-2` and
-`sel.set("w", 2.0)`. The next analysis re-elaborates purely from staged overrides.
+Writing a parameter stages an override rather than editing the design in place:
+`Design::set_param(path, param, value)` records the override; `Design::with_overrides_
+applied(root_module)` produces a fresh, purely re-elaborated `Design` — Part II's
+elaboration contract (pure, total) holds across this boundary. `get_override`/
+`has_overrides`/`clear_overrides`/`fork` round out the staging surface. Structural
+staging (`stage_instance`/`stage_connection`) is the mechanism plugin `transform_design`
+hooks use (Part VI §8.2) — additive only, never a mutation of authored structure.
+
+Selector-level "reflection" errors, `ReflectError` (`pom/error.rs`):
 
 | Code | Variant | Trigger |
 |------|---------|---------|
@@ -110,153 +139,177 @@ returns `Result<Unit, ReflectError>`; the sugar forms are `sel.r = 0.2e-2` and
 | E3002 | `NotSettable` | the attribute is read-only |
 | E3003 | `TypeMismatch` | the value's type does not match |
 | E3004 | `OutOfRange` | the value is outside the accepted range |
-| E3005 | `MultipleDrivers` | staging would create a multi-driver conflict |
+| E3005 | `MultipleDrivers` | staging would create a multi-driver conflict on a discipline that does not resolve |
 | E3999 | `Other(String)` | catch-all |
 
-No in-place mutation occurs. Writing a read-only attribute is `NotSettable` (E3002);
-there is no escape hatch.
+No in-place mutation occurs. There is no escape hatch around `NotSettable`.
 
 ---
 
 ## §4 Elaborated-structure nodes
 
-**Module** — `name`; `is_generic`; `ports()`, `params()`, `nets()`, `instances()`,
-`behaviors()`, `constraints()` → `Selection`; `attributes()` → `Selection<Attribute>`;
-`port(n)`, `net(n)`, `instance(n)`, `param(n)` → `Option`; `attribute(schema)` →
-`Option<Attribute>`; `select(path)`. `instances()` returns direct children; `nets()`
-returns port nets plus internal wires.
+**Module** (`pom::Module`) — `name()`; `doc()`; `attributes()`; `ports()`, `params()`,
+`wires()`, `vars()`, `instances()`, `connections()`, `behaviors()`, `branches()`
+→ `&[T]`; `genvars()` → `&[String]` (LRM §3.5 loop-index names declared in this module,
+generated instances themselves land only in `Design::flat_modules`, never here — MD-25);
+`port(n)`, `param(n)`, `wire(n)`, `instance(n)`, `branch(n)` → `Option<&T>`. There is no
+combined `nets()` accessor merging ports and wires, and **no `constraints()`** — see the
+callout below.
 
-**Instance** — `name`; `path` → `Path`; `of()` → `Module`; `ports()`, `params()`,
-`children()` → `Selection`; `port(n)`, `param(n)` → `Option`; `net(port)` →
-`Option<Net>` (the `dac.out` access from Part I §7.3). `param.set` / `inst.r = ...`
-stages an override scoped to the instance path.
+**Instance** (`pom::Instance`) — `name()`, `attributes()`, `module_name()` (the callee
+module's name — `of()` in the old PHDL-era phrasing no longer exists as a method that
+returns the resolved `Module`; a caller resolves it via `design.module(inst.module_
+name())`), `ports()` → `&[NetRef]` (positional/named connection list as authored),
+`params()` → `&[(String, Value)]` (param overrides given at the instantiation site),
+`label()`, `doc()`.
 
-**Net** — `id` → `NetId`; `name`; `discipline()` → `Discipline`; `resolution()` →
-`Resolution`; `width()` → `Natural`; `line(i)` → `Option<Net>`; `is_port`;
-`drivers()`, `loads()`, `connected()` → `Selection<Port>`. A bus is one `Net` of
-`width N`; `line(i)` returns a single line.
+**Port** — `name()`, `direction()` → `Direction` (`Input`/`Output`/`Inout`, LRM §3.7),
+`net_type()` → `NetType`, `doc()`, `attributes()`.
 
-**Port** — `name`; `direction()` → `Direction`; `net_type()` → `Type`; `net()` →
-`Net`; `owner()` → `Node`.
+**Param** — `name()`, `value_type()` → `ValueType`, `default()` → `Option<&Value>`,
+`doc()`, `is_local()`, `distribution()` → `Option<&Distribution>` (the dv-core `tol`
+surface — currently dark, §5's note applies equally here: `Distribution::kind` used to
+resolve against a PHDL statistics header deleted at T40 and has no VAMS Annex A
+production yet).
 
-**Param** — `name`; `type()` → `Type`; `value()` → `Value`; `is_overridden`; `set(v)`;
-`owner()` → `Node`.
+**Wire** — `name()`, `net_type()`, `doc()`, `attributes()`.
 
-**Attribute** — plugin metadata from `@schema(...)`: `schema()` → `String`; `data()` →
-`Value`; `field(name)` → `Option<Value>`; `owner()` → `Node`. Inline (source) and
-overlay (selector-applied) attributes appear identically here; overlay wins on conflict.
+**Connection** — `lhs()`/`rhs()` → `&NetRef` (a `connect a, b;`-shaped structural tie).
 
-**Behavior** — `domain()` → `Domain` (`Analog` | `Digital`); `owner()` → `Module`.
+**Attribute** (`pom::module::Attribute`) — the `(* schema = ..., field = ... *)` carrier
+(Appendix B §B.2, Part I §8): `schema()`, `data()` → `&HashMap<String, Value>`,
+`field(name)` → `Option<&Value>`. Every attribute instance on a module or port that does
+not match one of the plugin system's seeded `device`/`port` schemas fails loud at
+elaboration (`ElabErrorKind::UnknownAttrSchema`) — it never reaches the POM as an inert,
+un-typed blob.
 
-**ConstraintBlock** — the authored `constraint Name { … }` block (Part I §10.6),
-attached to the module it names: `name()` (the module it attaches to); `doc()` →
-`Option<String>`; `stmts()` → `&[ConstraintStmt]` (authored order); `var_type(n)` →
-`Option<Type>` and `classes()` → `&[StmtClassNode]`, the two side tables elaboration
-adds on top of the surface AST (mirroring `Behavior::var_types`).
+**Behavior** — `name()`, `doc()`, `kind()` → `crate::ast::BehaviorKind` (`Analog` |
+`Digital`), `body()` → `&[BehaviorStmt]`, `var_types()` — the resolved value types of
+the body's `var` declarations, a side table elaboration builds on top of the surface
+AST. **`BehaviorStmt` is `pub use crate::ast::Stmt as BehaviorStmt` — a direct type
+alias, not a distinct resolved-behavior AST layer** (confirmed against
+`crates/piperine-lang/src/pom/behavior.rs`'s own doc comment: "Behavior bodies are the
+surface `Stmt` type directly (design F1, preserved across the MD-44 frontend swap —
+only the surface AST's identity changed, `piperine_lang::parse::ast` → `crate::ast`)").
+Where PHDL's POM once carried an independently-typed resolved-statement form, VAMS
+behavior bodies are the same `crate::ast::Stmt`/`Expr` that the parser produced,
+structurally unrolled where elaboration folds `generate` regions but otherwise
+unchanged; `piperine-codegen`'s own `resolve` layer (Part X) is where a second,
+codegen-private resolved form is built, downstream of the POM.
 
-The block stays in its **authored** surface form (Part II §8.1) — one block per
-authored module, carried unchanged onto every monomorphized variant, so a walk
-reaches it on `Dac` and on `Dac__8` alike, and never a flattened structure (MD-25).
-A `Behavior` and a `ConstraintBlock` are distinct node kinds: a constraint carries
-correctness intent, not behavior, so it has no `Domain`.
-
-Two walks address the leaves, because they yield different node kinds:
-
-- `leaves()` — every `require`/`var`/`target`, depth-first in authored order,
-  yielding `(stmt, class)`. The class's `analyses` set is the **union** of the
-  leaf's own helper analyses and every enclosing `@` block's scope analyses
-  (DVC-19); the analysis drivers gate evaluation on exactly that set.
-  `class_of(name)` is the by-label lookup over the same walk.
-- `cover_points()` — every `cover`/`cover cross`, the two kinds `leaves()`
-  deliberately does not yield (they classify to their own node variants, carrying
-  bins and counters rather than a margin).
-
-**ConstraintStmt** — one statement: `Require` | `Var` | `Target` | `Cover` |
-`CoverCross` | a nested `@` scope block. A leaf's `StmtClass` carries its
-`QuantityClass` (`Pointwise` | `Reduced`, Part II §8.1) and its analyses.
-
-*Host coverage.* The POM side is complete (`Module::constraints()`); the **Python
-binding does not expose it yet** — `Module.behaviors` has no `constraints` twin, and
-the `constraint::` axis below is reachable from Rust and the selector, not from
-`import piperine`. Tracked in Appendix C §3 alongside the other host-parity gaps.
-
----
-
-## §5 Definition nodes
-
-**Bundle** — `name`; `is_net_capable`; `type_params()`, `const_params()` →
-`Vec<String>`; `fields()` → `Selection<Field>`; `capabilities()` →
-`Selection<Capability>`.
-
-**Field** — `name`; `type()` → `Type`; `default()` → `Option<Value>`.
-
-**Enum** — `name`; `repr()` → `Type`; `variants()` → `Selection<Variant>`.
-
-**Variant** — `name`; `value()` → `Value`.
-
-**Discipline** — `name`; `kind()` → `DisciplineKind` (`Conservative` | `Storage`);
-`storage()` → `Option<Type>`; `resolution()` → `Resolution`; `natures()` →
-`Selection<Nature>` (conservative only).
-
-**Nature** — `name`; `kind()` → `NatureKind` (`Potential` | `Flow`); `value_type()` →
-`Type`; `unit()` → `Option`; `abstol()` → `Option<Real>`.
-
-**Capability** — `name`; `supers()` → `Selection<Capability>`; `signatures()` →
-`Selection<Signature>`; `implementors()` → `Selection<Node>`.
-
-**Signature** — `name`; `params()` → `Vec<Type>`; `returns()` → `Type`; `has_default`
-→ `Boolean`.
+> **Removed: `ConstraintBlock`.** PHDL's `constraint Name { ... }` node and its
+> `Module::constraints()` accessor do not exist in the current POM. T21/MD-45 deleted
+> `pom::ConstraintBlock` outright along with the rest of the PHDL value layer; T35
+> explicitly scoped the VAMS migration's attribute work to *only* the `device`/`port`
+> schemas, leaving the general constraint/capability rebuild as declared future work.
+> `.specs/features/verilog-ams-support/validation.md` Gap 3 records this precisely: the
+> spec's own P2 story for an attribute-instance-carried constraint block (VAMS-14) was
+> never delivered, and no later task picked it back up despite the plan's own "must add
+> a task before Phase 7 closes" gate. There is currently no way to author a
+> `ConstraintBlock`-equivalent through `.vams` source at all — this is real,
+> undelivered functionality, not merely an undocumented POM shape.
 
 ---
 
-## §6 Leaf enums
+## §5 Natures, disciplines, branches
 
-```
-Direction          ::= Input | Output | Inout
-Domain             ::= Analog | Digital
-DisciplineKind     ::= Conservative | Storage
-Resolution         ::= Single | Tri | Or | And | Sum | Avg | Max | Min | Kcl
-NatureKind         ::= Potential | Flow
-ConstraintStmt     ::= Require | Var | Target | Cover | CoverCross | ScopeBlock
-QuantityClass      ::= Pointwise | Reduced
-ReflectError       ::= NotFound | NotSettable | TypeMismatch | OutOfRange
-                     | MultipleDrivers | Other
+Two constructs the PHDL-era POM had no equivalent for at all:
+
+**Nature** (`pom::Nature`, LRM §3.6.1) — a stand-alone, top-level, independently
+declared continuous-quantity kind (`Voltage`, `Current`, …), looked up by name from a
+discipline's `potential`/`flow` binding and from `idt_nature`/`ddt_nature` references.
+Fields: `name`, `parent` (`Option<String>` — a derived nature per §3.6.1.1), and the
+five LRM-standard attributes (§3.6.1.2) as **named fields, not a map** — `abstol`
+(`Option<f64>`, drives solver per-net tolerance), `access` (`Option<String>`, the
+access-function name, e.g. `V`/`I`), `units` (`Option<String>`), `idt_nature`,
+`ddt_nature` (both `Option<String>`, default to the nature itself when unset). Named
+fields, deliberately, over a stringly-keyed map — a typo'd key in a map would fail
+silently, violating the project's fail-loud rule. User-defined attributes (§3.6.1.3)
+live in a separate map, preserving the LRM-standard/author-defined split. Natures do not
+nest inside modules; `Design::natures()` is the only place to look them up.
+
+**Discipline** — still represented by the AST's own `DisciplineDecl` type
+(`crate::ast::DisciplineDecl`), reached via `Design::discipline(name)`/`disciplines()`,
+rather than by a dedicated POM `Discipline` struct with a `Kind`/`storage()`/
+`resolution()` reflection surface. A discipline binds a nature to `potential` and/or
+`flow` (LRM §3.6.2) — this binding is read directly off the AST node today; there is no
+richer POM-native `Discipline` reflection type analogous to `Nature`.
+
+**Branch** (`pom::Branch`/`BranchKind`, LRM §3.12/§5) — a named or implicit path between
+two nets. PHDL had no first-class branch type at all; contributions resolved through
+net/terminal references directly. VAMS's branches are explicit and nameable
+(`branch (p,n) name;`) or created implicitly by an access-function call site's first
+use (§5.4.1). `BranchKind` tracks how a branch is driven: `Probe` (read but never
+contributed — the default state), `Potential`, `Flow`, or `Switch` (the one legal
+exception to "a branch cannot be contributed as both potential and flow," LRM §5.6.5,
+for a branch that legitimately toggles kind at runtime through conditional contribution
+statements). A branch contributed as both potential and flow outside the switch case is
+`ElabErrorKind::BranchKindConflict` (E4001) — a fail-loud elaboration error, not a
+silent last-write-wins resolution. `Module::branches()` reaches a module's own declared
+and implicit branches.
+
+---
+
+## §6 The `Node` graph and its gaps
+
+`crate::pom::node::Kind` — the discriminant every generic-node API switches on — still
+lists **fourteen** variants: `Module`, `Instance`, `Port`, `Param`, `Wire`, `Var`,
+`Behavior`, `Discipline`, `Nature`, `Branch`, `Enum`, `Bundle`, `Capability`,
+`Attribute`. But `crate::pom::node::Node<'a>` — the actual enum every selector-facing
+API (`select`, `NodeSelection`) constructs and returns — carries only **seven**:
+
+```rust
+pub enum Node<'a> {
+    Module(&'a Module), Instance(&'a Instance), Port(&'a Port), Param(&'a Param),
+    Wire(&'a Wire), Behavior(&'a Behavior), Attribute(&'a Attribute),
+}
 ```
 
-`Node` is the supertype of every node kind; `Node.kind()` discriminates it, allowing an
-untyped host to recover the concrete type.
+`Var`, `Discipline`, `Nature`, `Branch`, `Enum`, `Bundle`, and `Capability` are `Kind`
+variants with **no corresponding `Node` case** — they exist as POM struct types (`Var`,
+`Nature`, `Branch` are real and populated; `Enum`/`Bundle`/`Capability` are PHDL-value-
+layer vestiges with no VAMS producer at all) but are unreachable through the generic
+`Node`/selector graph walk. This is confirmed at `crates/piperine-lang-server/src/
+symbol_index.rs`'s own comment: PHDL's bundle/enum/capability symbol kinds "are gone,
+not retargeted." Concretely: `select("//nature::Voltage")` or any selector path trying
+to reach a `Nature`/`Branch` node has no axis to do so (§10's axis table below has no
+`nature::`/`discipline::` entry either) — reaching a nature or branch today means going
+through the typed `Design::nature(name)`/`Module::branch(name)` accessors directly, not
+through the selector or the generic `Node` graph. This is a real, load-bearing gap in
+the reflection surface for two constructs the VAMS migration itself introduced, not an
+inherited PHDL-era limitation.
 
 ---
 
 ## §7 One model, two languages, one ABI
 
-The POM is uniform underneath and idiomatic on top. The wire protocol is a serialized
-node carrying `kind`, `id`, scalar attributes, and relation axes. Every host rebuilds
-the same typed objects from this one ABI:
+The POM is uniform underneath and idiomatic on top. Every host reaches the same typed
+objects, in the host's own idiom:
 
-- **Python** — classes with `__getattr__` / `__setattr__`, with assignment sugar
-  (`inst.r = ...`).
-- **Rust** — structs and traits with explicit calls (`inst.param("r")?.set(...)?`).
+- **Python** — classes with `__getattr__`/`__setattr__`, with assignment sugar
+  (`inst.r = ...`) — Part VIII, Appendix C.
+- **Rust** — the structs and typed accessors described above, with explicit calls
+  (`inst.param("r")`, `param.set(...)` via the staging API of §3).
 
-Compiled plugins (Rust or Python) load like OSDI compact models — a shared library
-exposing a descriptor that conforms to the ABI.
+Compiled device plugins (native or embedded-Python) reach the POM through the same
+reflection surface the hosts use — Part VI.
 
 ---
 
 ## §8 Selector — model
 
 The selector is the "XPath of the circuit." It evaluates against a design and returns a
-`Selection<Node>`. It adds no model of its own:
+`NodeSelection`. It adds no model of its own:
 
 > **Axes are POM relations. Predicates are POM attributes.**
 
 A path is a sequence of **steps**. Each step moves along an **axis**, keeps nodes
 matching a **node test**, and filters through **predicates**. Results union across
-context nodes, deduplicate by identity, and preserve first-seen order.
+context nodes and preserve first-seen order (`crate::pom::selector::{ast, parse, eval}`).
 
 A selector is evaluated against a context node: `design.select(path)` (rooted at the
-design), `module.select(path)` (rooted at a module), or `selection.where(path)`
-(rooted at each node in a selection).
+design), or `node_selection.where_path(design, path)` (rooted at each node currently
+selected).
 
 ---
 
@@ -269,94 +322,60 @@ Axis      ::= "inst"|"net"|"port"|"param"|"attr"|"behavior"|"constraint"
              |"driver"|"load"|"parent"|"ancestor"
 NodeTest  ::= Name | "*"
 Predicate ::= "[" ( Index | PredExpr ) "]"
-Index     ::= NatLit | "last" "(" ")"
-PredExpr  ::= OrExpr
-OrExpr    ::= AndExpr { "or" AndExpr }
-AndExpr   ::= NotExpr { "and" NotExpr }
-NotExpr   ::= "not" "(" PredExpr ")" | Compare
-Compare   ::= Operand [ CmpOp Operand ]
-CmpOp     ::= "=="|"!="|"<"|"<="|">"|">="|"~"
-Operand   ::= AttrRef | AxisRef | Func | Literal
-AttrRef   ::= "@" Name [ "." Name ]
-AxisRef   ::= Axis "::" NodeTest
-Func      ::= "of" "(" StringLit ")" | "count" "(" AxisRef ")"
-Literal   ::= NumberLit | StringLit | BoolLit | Ident
 ```
 
-`/` is absolute from the context node; `//` is the descendant-or-self closure over
-`inst::`. The default axis (when none is written) is `inst::`.
+(`crate::pom::selector::ast::Axis` — see §10 for which of these eleven names actually
+dispatch to something today.)
 
 ---
 
 ## §10 Selector — axes
 
-| Axis | POM relation |
-|------|--------------|
-| `inst::` *(default)* | `instances()` / `children()` |
-| `net::` | `nets()` |
-| `port::` | `ports()` |
-| `param::` | `params()` |
-| `attr::` | `attributes()` |
-| `behavior::` | `behaviors()` |
-| `constraint::` | `constraints()` |
-| `driver::` | net `drivers()` |
-| `load::` | net `loads()` |
-| `parent::` | reverse of `instances()` — the containing instance |
-| `ancestor::` | transitive closure of `parent::` |
+| Axis | Dispatches to | Status |
+|------|----------------|--------|
+| `inst::` *(default)* | `Module::instances()` | live |
+| `net::` | port/wire lookup by name | live |
+| `port::` | `Module::ports()` | live |
+| `param::` | `Module::params()` | live |
+| `attr::` | `Module::attributes()` | live |
+| `behavior::` | `Module::behaviors()` | live |
+| `constraint::` | nothing — `Axis::Constraint => {}` in `selector/eval.rs`, a no-op arm | **dead**: `Module::constraints()` does not exist (§4's `ConstraintBlock` removal); a selector step on this axis always returns empty, silently, not a parse error |
+| `driver::` | net drivers | live |
+| `load::` | net loads | live |
+| `parent::` | reverse of `instances()` | live |
+| `ancestor::` | transitive closure of `parent::` | live |
 
-`//X` is equivalent to "X at any instance depth." A step after `//` may switch axis:
-`//*/net::clk` selects every `clk` net at any depth.
+There is no `nature::`/`discipline::`/`branch::` axis — §6's gap, not merely an
+oversight in this table.
 
 ---
 
 ## §11 Selector — node tests
 
-`*` matches any node. A name matches by the node's name:
-
-- On `inst::`, **PascalCase** matches by module type (the `of()` source name — `Dac`
-  matches the monomorphized `Dac__8`), while **snake_case** matches by instance name
-  (the `name :` given in the parent).
-- On other axes, a name matches by the node's own name.
-
-An instance array `leg[N]` shares the base name `leg`; a bare `leg` matches all
-replicas, and an index predicate `[i]` picks one.
+`*` matches any node. A name matches by the node's own name; on `inst::`, a name may
+match either by instance label or by the callee module's name, mirroring how a source
+file itself names an instantiation (`crate::pom::selector::eval` resolves this).
 
 ---
 
 ## §12 Selector — predicates
 
-A predicate filters the step's result set. Two kinds:
+A predicate filters the step's result set:
 
-**Positional:** `[i]` (0-based index) or `[last()]`.
-
-**Expressional:** a boolean expression over attributes and axis-references.
-
-- Attribute reference: `@name` or `@schema.field` — e.g., `[@direction == Input]`,
-  `[@width > 1]`, `[@layout.min_width > 1u]`.
-- String match: `[@name ~ "cmp*"]` (glob, case-sensitive).
-- Axis existence: `[attr::layout]` (the node has a `layout` attribute),
-  `[net::clk]` (the node has a `clk` net).
-- Axis comparison: `[param::r > 1k]` (the node's `r` param exceeds 1k).
-- Boolean combinators: `and` (binds tighter), `or`, `not(...)`.
-- Functions: `of("TypeName")` (tests the node's type), `count(axis::test)` (counts
-  matches along an axis).
-
-Enum and node-type names are bare identifiers (`Input`, `Resistor`); string values are
-quoted (`"m3"`). Sequential predicates are conjoined left-to-right: `[@width > 1][@name
-~ "data*"]` means width > 1 AND name starts with "data".
+- **Positional:** `[i]` (0-based index) or `[last()]`.
+- **Expressional:** a boolean expression over `@name`/`@schema.field` attribute
+  references, axis existence/comparison (`[net::clk]`, `[param::r > 1k]`), string glob
+  match (`[@name ~ "cmp*"]`), and the boolean combinators `and`/`or`/`not(...)`.
 
 ---
 
 ## §13 Selector — evaluation
 
 Per step over a node set S: for each node n in S, follow the axis from n, keep nodes
-matching the node test, apply predicates left-to-right (boolean filters narrow the set;
-positional predicates keep the ordinal), then union all results and deduplicate by
-identity.
+matching the node test, apply predicates left-to-right, then union all results.
 
-An empty result is valid (not an error) — use `is_empty()` or `one()` to handle it.
-Evaluation is a pure function of the elaborated design plus staged overrides, so the
-same selector on the same state always returns the same nodes.
+An empty result is valid, not an error. Evaluation is a pure function of the elaborated
+`Design` plus staged overrides.
 
 | Variant | Trigger |
 |---------|---------|
@@ -368,28 +387,22 @@ same selector on the same state always returns the same nodes.
 
 ---
 
-## §14 Selector — integration
+## §14 Selector — integration and its own live gap
 
 ```python
-# Read every resistor's value
 for r in design.select("//Resistor").nodes():
     print(r.param("r").value())
 
-# Set a param on every matched instance
 design.select("//dac/param::vref").set(1.8)
-design.select("//leg").set("w", 2.0)
-
-# Filter into a local
-big = design.select("//Resistor").where("[param::r > 1k]")
-
-# Reach a module's declared correctness intent
-soa = design.select("//mos1/constraint::*")
 ```
 
 A plugin's `transform_design` hook stages structural additions over the same model
 (`staging.add_instance(...)` — Part VI §8.2); the selector itself is read-only apart
 from the staged parameter writes of §3.
 
-Adding a POM node type or attribute extends what the selector addresses, with no
-grammar change — the new relation or attribute is immediately available as an axis or
-predicate.
+The one concrete, load-bearing limitation to carry forward from this Part: a `.vams`
+design's own new POM constructs — `Nature` and `Branch` — are **not** selector-
+addressable (§6, §10), and the `constraint::` axis is silently dead (§10). Extending
+`Node<'a>` to cover `Var`/`Nature`/`Branch` and wiring matching axes is open work, not
+speculative — it is the natural next step given the VAMS migration already built the
+underlying `Nature`/`Branch` POM types.

@@ -1,483 +1,248 @@
 # Part II — Elaboration
 
-Elaboration transforms a parsed source file into a resolved, monomorphic design: no
-generic parameters, no unresolved constants, no structural `for`/`if`, no bundle
-references in port lists. This Part defines how each kind of construct is resolved and
-what is rejected along the way.
+Elaboration transforms a parsed `.vams` source file into a resolved `Design` (Part IV):
+generate constructs unrolled into derived instances, natures/disciplines/branches
+resolved, structural well-formedness checked. This Part defines the real pipeline —
+`crates/piperine-lang/src/elab/` — as it exists after the `verilog-ams-support`
+migration, not the PHDL-era pipeline it replaced.
 
-Elaboration is the first of PHDL's two execution contexts (Part I §12). It is **pure and
-total**: the same source plus the same staged overrides always produce the same design.
-A solve value never controls elaboration structure — runtime topology is a switch
-branch over a static netlist, not structural change.
+Elaboration is **pure and total**: the same source plus the same staged overrides
+(Part IV §3) always produce the same `Design`. A solve value never controls elaboration
+structure.
 
 ## Contents
 
 - §1 The elaboration contract
-- §2 Entry point and pipeline
+- §2 Entry point and the pass pipeline
 - §3 Constant evaluation
-- §4 Type resolution
-- §5 Structural elaboration (`mod` body)
-- §6 Monomorphization
-- §7 Bundle expansion
-- §8 Behavior elaboration
-- §8.1 Constraint elaboration
-- §9 Event system
-- §10 Standard library (injected)
-- §11 Validation catalog (master)
-- §12 Diagnostics
+- §4 The pass catalog, in execution order
+- §5 Hierarchy flattening — the one derived artifact
+- §6 The E-STD error family
+- §7 POM navigability (the unbreakable rule, restated for elaboration)
+- §8 What the PHDL-era pipeline is not carried forward
 
 ---
 
 ## §1 The elaboration contract
 
-Elaboration takes a parsed AST and produces a fully-resolved design graph. After
-elaboration, every generic has been substituted with a concrete type, every structural
-loop has been unrolled, every const expression has been evaluated, and every bundle
-port has been expanded into individual nets. The result is a concrete structure the
-codegen (Part X) and the hosts (Part VIII) consume without further resolution. It is
-not a *flattened* structure: the authored `instance → submodule → sub-instances` tree
-stays walkable on the POM (Part IV), and any collapsed form a transform needs is a
-separate side artifact (MD-25).
+Elaboration takes a parsed `crate::ast::SourceFile` and produces a `pom::Design`. What
+"resolved" means for VAMS today is narrower than PHDL's own contract was: there is no
+generic-parameter substitution, no bundle-port expansion, and no monomorphization
+mechanism in the current pipeline (§8) — those were PHDL value-layer features with no
+VAMS Annex A production to lower. What elaboration *does* guarantee: every top-level
+`nature`/`discipline` is registered before any module needs it; every `module`/
+`macromodule`/`connectmodule` is lowered into a POM `Module` with its ports, params,
+wires, instances, branches, and behavior bodies; every `generate` region is unrolled
+into a derived instance set; a fixed-point discipline-resolution pass assigns a
+discipline to every net that declared none; and the analog subset (Annex C) is enforced
+on every analog behavior body. The authored `instance → submodule → sub-instances` tree
+stays walkable on the POM exactly as written — no elaboration pass edits
+`Design::modules` to hold anything other than what the source declared (§7).
 
-The contract is one-directional: elaboration reads the source and produces structure;
-it never reads runtime values. A voltage, a current, a digital state — none of these
-exist at elaboration time. This is what makes the structure statically analyzable: the
-netlist is fixed before any current flows.
+## §2 Entry point and the pass pipeline
 
-## §2 Entry point and pipeline
+`SourceFile::elaborate` constructs an `Elaborator` (symbol tables, pending items) and a
+`Design` under construction, then runs `elab::lower::passes::PASSES` — a fixed array of
+`&dyn ElabPass`, executed strictly in order, first error aborting the whole run:
 
-The elaborator runs a fixed pipeline:
+```rust
+pub(crate) const PASSES: &[&dyn ElabPass] = &[
+    &Register,               // index every top-level item into symbol tables
+    &LowerDeclarations,      // top-level `nature`/`discipline` (T23, VAMS-01)
+    &ElabModules,            // module/port/param/net/instance/behavior lowering (T22, VAMS-04)
+    &ResolveDisciplines,     // LRM Annex F discipline propagation (T26)
+    &InsertConnectModules,   // LRM ch. 7 connect-module selection (T52)
+    &UnrollGenerate,         // LRM ch. 6 generate unrolling (T25)
+    &Typecheck,              // LRM Annex C analog-subset enforcement (T27, VAMS-25)
+    &FlattenHierarchy,       // derived leaf-only netlist for codegen (§5)
+];
+```
 
-1. **Inject stdlib** — prepend the standard library (disciplines, capabilities, numeric
-   bundles, math fns, prelude constants) so every source file sees the same base scope.
-2. **Register items** — enter every top-level declaration (disciplines, bundles, enums,
-   modules, behaviors, fns, capabilities, impls, consts) into symbol tables.
-3. **Validate** — run the checks cataloged in §11.
-4. **Elaborate in dependency order** — resolve types, unroll structure, monomorphize,
-   expand bundles, elaborate behavior bodies.
+(`crates/piperine-lang/src/elab/lower/passes.rs` — this array, its ordering rationale,
+and the trait it implements are the entire pipeline definition; there is no driver logic
+hidden elsewhere.) Each pass is one struct with one job — `ElabPass::run(&self, elab:
+&mut Elaborator, design: &mut Design) -> Result<(), ElabError>` — and the pipeline
+*order* is this array, not something a caller has to trace through a driver function.
 
-The output feeds the codegen (Part X, which lowers it to JIT-compiled analog kernels
-and event-driven digital models); host APIs (Part VIII) drive analyses over it.
+**Why this order, in the source's own words** (`passes.rs`'s module doc):
+`UnrollGenerate` runs after `ElabModules` because generate bodies instantiate modules,
+so instance lowering's target-port-order lookup needs every module already registered;
+it runs before `FlattenHierarchy`, which reads the generated-instance side table when
+building the derived flat form. `InsertConnectModules` runs immediately after
+`ResolveDisciplines` and before `UnrollGenerate`/`FlattenHierarchy` — both write only
+derived-only elaborator state, so their relative order doesn't affect correctness. Both
+placements are documented decisions in the file that owns them, not incidental.
 
 ## §3 Constant evaluation
 
-Expressions in elaboration position — array dimensions, structural `for`/`if` bounds,
-parameter defaults, const arguments, `const` declarations — must be compile-time
-constants.
-
-A `ConstEnv` is a scoped name→value stack. Each `for` iteration pushes the loop variable
-onto the stack and pops it when the iteration ends. The evaluator handles:
-
-- Literals, including SI-suffixed and `_`-separated numerics.
-- Named bindings (params, loop variables, consts).
-- Unary `-` and `!`, binary arithmetic, comparison, bitwise.
-- `if`/`else` (the condition must itself be const).
-- Block with a trailing value.
-
-Anything else — general function calls, field access, comprehensions, runtime values
-— is rejected as `NotConst`. This keeps the elaboration phase a total pure evaluator:
-no side effects, no unbounded computation, no dependence on solve-time state.
-
-```
-ConstExpr      ::= ConstOrExpr
-ConstOrExpr    ::= ConstAndExpr { "or" ConstAndExpr }
-ConstAndExpr   ::= ConstNotExpr { "and" ConstNotExpr }
-ConstNotExpr   ::= "not" "(" ConstExpr ")" | ConstCompare
-ConstCompare   ::= ConstUnary [ CmpOp ConstUnary ]
-ConstUnary     ::= ("!"|"-") ConstUnary | ConstPostfix
-ConstPostfix   ::= ConstPrimary { "[" ConstExpr "]" }
-ConstPrimary   ::= Literal | Ident | "(" ConstExpr ")" | BlockWithValue
-```
-
-**Validation.** A const expression that cannot be evaluated → E2001 (`ConstEval`).
-
-## §4 Type resolution
-
-Every type annotation in the source is resolved to either a value type
-(`ElabValueType`) or a net type (`ElabNetType`).
-
-**Primitive value types:** `Real`, `Natural`, `Integer`, `Boolean`, `Quad`, `Complex`,
-`String` — the seven `extern type` declarations of `headers/types.phdl` (Part I §6.1).
-
-**Net types** resolve as disciplines of one of the two kinds (Part I §6.2):
-conservative (potential + flow, KCL) or storage (`storage T` + optional `resolve`).
-
-**Enums** resolve to `ElabValueType::Enum`.
-
-**Arrays** `Type[N]` evaluate `N` via the const evaluator; a free (unset) dimension is
-an error.
-
-**Bundles** resolve recursively. A bundle is **net-capable** iff every field
-(recursively) is a net type. A net-capable bundle may type a port or wire; a value-
-field bundle used as a net type is rejected. `Type` and `Net` are root capabilities —
-every value type satisfies `Type` implicitly, every net type satisfies `Net`.
-
-**Validation.** E2002 (`UndefinedType`); E2003 (`UndefinedModule`); E2004
-(`NotNetCapable`).
-
-## §5 Structural elaboration (`mod` body)
-
-The `mod` body is where structure is built. The elaborator processes each statement:
-
-- **`for` loops unroll** — both bounds must evaluate to `Nat`. Each iteration emits its
-  statements with the loop variable substituted by its concrete value. The result is
-  as if the user had written every iteration by hand.
-- **`if (const)` folds** — the condition is evaluated; only the taken branch is emitted.
-  A runtime-dependent condition in a `mod` body is an error.
-- **`$assert(cond, msg)`** is evaluated immediately. If `cond` is false, elaboration
-  fails with the message.
-
-After structural elaboration, the `mod` body contains no loops and no `if` — only
-concrete declarations and instances.
-
-**Validation.** E2006 (`ContribInModBody`); E2007 (`ForceInModBody`); E2001 (`ConstEval`
-on a non-const range or condition).
-
-## §6 Monomorphization
-
-A const-param module (`mod Dac[N]`) is elaborated on each instantiation with concrete
-arguments. The elaborator substitutes the const params, elaborates the body, and caches
-the result under a mangled name: `Dac[8]` → `Dac__8`, `Grid[4,4]` → `Grid__4_4`. Two
-instantiations with the same arguments share one monomorphization.
-
-Type-param modules (`mod Adder <T: Add + Net>`) substitute via a type map. Uninstantiated
-generics keep their generic bodies (for reflection); monomorphization happens on demand
-when a concrete instantiation is needed.
-
-Generic `fn`s keep their generic signatures for reflection; the type checker inlines
-them at each call site with the concrete types substituted.
-
-## §7 Bundle expansion
-
-A net-capable bundle port expands to one individual port per field. The expanded ports
-are named `{port}_{field}`:
-
-```
-input inp : DiffPair   →   input inp_p : Electrical,  input inp_n : Electrical
-```
-
-Field-access expressions (`inp.p`) in behavior bodies are preserved in the AST; the type
-checker rewrites them to the expanded names during lowering. From the solver's
-perspective, every net is scalar — there are no "bundle nets," only individual nets
-that happened to be declared together.
-
-## §8 Behavior elaboration
-
-`analog` and `digital` bodies are elaborated with the same const machinery, but with
-per-block rules:
-
-- **Behavioral `for` unrolls** — the bound must be an elaboration constant. A runtime
-  loop (iterating a value that depends on solve state) is an error.
-- **Const `if` folds** — a condition that can be evaluated at elaboration time is
-  folded; only the taken branch is kept. A runtime `if` is preserved as a branch in the
-  lowered body.
-- **`match` arms are kept** — the type checker performs exhaustiveness analysis but
-  does not fold the match (the scrutinee is a runtime value).
-- **Latch inference** — a `var` read on a path where it was not assigned raises a
-  warning by default (`InferredLatch`). Register inference (a `var` updated in a
-  clocked `@` block) is silent — it is the intended idiom.
-
-### §8.1 Constraint elaboration (dv-core DVC-04/05/07/09)
-
-A `constraint Name { … }` block (Part I §10.6) is elaborated against the module
-named `Name` with the same name-resolution machinery as a behavior body, then
-**attached** to that module on the POM. Like a behavior body, the block stays
-in its *authored* surface form on the POM — the parse AST's `ConstraintStmt`s
-plus side tables the elaborator adds (resolved `var` value types, per-statement
-classification). Nothing about the constraint crosses a flattening boundary
-(MD-25): the POM holds exactly one authored block per authored module.
-
-**Resolution order.** Constraint blocks register at step 2 of the pipeline
-(§2) and elaborate at step 4, after their target module is fully lowered:
-
-1. **Attach** — every registered `constraint Name { … }` resolves `Name`
-   against the authored-module table. A constraint naming a non-existent
-   module fails loud; a constraint on a module that has no `analog`/`digital`
-   body is legal (a structural module can carry SOA intent).
-2. **Resolve references** — every name inside the block (nets, ports,
-   instance paths, `var`s, helpers, callables) resolves through the same scope
-   as a behavior body, plus `headers/constraints.phdl`'s helpers (§10). An
-   instance path `m1.d` reaches the *port* net of child instance `m1` through
-   the authored tree; a child's *internal* node fails loud — it crosses
-   encapsulation and depends on optional parameters (DVC-07 AC3).
-3. **Type-check** — a `require` predicate must be `Boolean`; a `target`'s
-   operands must be `Real`; a `var`'s annotation must resolve to a value type.
-   Duplicate statement labels inside one block fail loud.
-4. **Classify** — every leaf statement (§10 of the helpers' classes) is
-   classified `Pointwise` or `Reduced` from the **declarations** in
-   `headers/constraints.phdl` (§10), never inferred from a use site.
-
-**The pointwise/reduced classification (DVC-09).** A constraint quantity
-exists either at every evaluation point of an analysis (*pointwise*) or only
-once the analysis has run to completion (*reduced*) — design §C2. The class is
-a property of the **declaration**, carried by `headers/constraints.phdl`'s
-`@quantity(class, analysis)` marker; the elaborator reads it transitively over
-every expression. The rules:
-
-- A `var`/`target` expression's class is the class of its subexpressions:
-  pointwise arithmetic over pointwise terms stays pointwise; **any** reduced
-  subexpression makes the whole expression reduced.
-- A `require` is always classified pointwise — a reduced predicate is a loud
-  elaboration error ("a reduced quantity is checkable once per analysis, not
-  per point"), because `require` is a per-point check by definition.
-- The analysis a helper belongs to (`ac`, `dc`, `tran`) is recorded on the
-  statement, so a later pass can refuse a cross-analysis read.
-
-Only pointwise quantities lower to a per-point margin kernel (Part VII §3.5);
-reduced ones are computed host-side as reductions over the points the solver
-returns (Part VIII §7).
-
-**Monomorphized carriage (DVC-05).** A const-param module (`mod Dac[N]`)
-elaborates on each instantiation, and a `constraint Dac { … }` block attaches
-to every monomorphized variant (`Dac[8]` → `Dac__8`) exactly as an
-`analog`/`digital` body does — the block is authored once, carried by every
-variant. The POM holds exactly one authored block per authored module; a
-selector walk (Part IV) reaches it on both. No accessor reads a flattened
-structure.
-
-**`tol` distribution resolution (DVC-02).** A `param`'s optional `tol` clause
-(Part I §7.2) is resolved against `headers/statistics.phdl` (§10): the
-distribution name must match a declared `extern fn`, the keyed arguments
-evaluate as elaboration constants in the param's scope (sibling params
-already bound), and the `global` marker is recorded on the POM as the
-process-vs-mismatch kind. A `tol` on a non-`Real` param, or an undeclared
-distribution name, fails loud at elaboration. The clause is inert at solve —
-sampling is `dv-gradients`' scope.
-
-**`cover` bin resolution and the elaboration-time cross cap (dv-tester
-DVT-42, D10).** A `cover <name> : <expr> bins […]` / `… in {…}` statement
-resolves and classifies exactly like a `var`/`target` expression (steps 2–4
-above): `<expr>` must be `Real` and **pointwise** — the same reduced-quantity
-restriction `require` carries, for the same reason ("a reduced quantity is
-checkable once per analysis, not per point"). Its `CoverBins` (a literal-edged
-range `[lo:step:hi]` or an explicit literal set `{e1, e2, …}`) resolve to a
-`ResolvedCoverBins` and a concrete **bin count**, both computed at
-elaboration since every bin edge is a literal — nothing about a `cover`
-point's own bin count needs a solve. The point's name and bin count are
-recorded in the block's local scope so a later `cover cross` in the same
-block can look them up by label.
-
-A `cover cross <name> : <point1>, <point2>, …;` names two or more
-previously-declared `cover` points, in the same block, by label — naming an
-undeclared point fails loud, listing the undeclared label and the points
-that must be declared first. Its **joint bin count is the product of each
-named point's own bin count**, and because every factor is already known
-statically, the product is checked **at elaboration, before anything
-allocates**: exceeding `ElabContext::cover_bin_cap` (a field on the
-elaboration context an embedding host may raise, defaulting to 4096 — an
-agent-decided default, since `spec.md`/`ideal.md` D10 left the exact number
-open) is a loud elaboration error naming the declared joint count and the
-cap, rather than a runtime allocation of however many bins the product
-turned out to be. This is the whole point of resolving bin counts at
-elaboration rather than at the first solve: a combinatorially oversized
-`cover cross` (crossing several fine-grained ranges) is refused before a
-single coverage counter exists, not discovered as a multi-gigabyte
-allocation mid-run.
-
-**Event-block scoping (DVC-19/20).** A `@ … { … }` block inside a constraint
-reuses the behavior-body `EventSpec` production and `EventRegistry` (§9). The
-elaborator resolves each term and rejects names that are not analysis-scope
-kinds inside a constraint scope (`posedge`/`cross`/`timer` belong in a
-behavior body, not a constraint scope). `after = …`/`dur = …` window named-args
-evaluate as elaboration-constant `f64`s; a non-constant window expression fails
-loud. The scope's analyses and window are unioned into every enclosed leaf's
-classification, so a `require` inside `@ tran(after = 5u, dur = 10u) { … }`
-records `["tran"]` and the resolved window — the runtime evaluator gates each
-evaluation point on both.
-
-**Validation.** Every constraint-elaboration failure surfaces today as a
-descriptive `ElabErrorKind::Other` (E2999 in the catalog below) — the
-constraint block is the one place where the parse/elaboration surface grew
-without an assigned E20xx code, deliberately, because every check names the
-constraint, the module, and the offending site in its message. The full list
-of fail-loud clauses is in §11.1.
-
-## §9 Event system
-
-Events are resolved against an extensible registry. The parser emits an `EventSpec`
-node for each `@` expression; the elaborator resolves the event name against the
-registry and validates that the event class is legal in the enclosing block's domain.
-
-**Built-in events:**
-
-| Name | Class | Fires |
-|------|-------|-------|
-| `posedge(sig)` | digital edge | rising edge of `sig` |
-| `negedge(sig)` | digital edge | falling edge of `sig` |
-| `change(sig)` | digital edge | any change of `sig` |
-| `cross(expr)` | analog crossing | zero crossing of `expr` |
-| `above(expr)` | analog crossing | one-shot level crossing |
-| `timer(period)` / `timer(period, phase)` | analog | periodic, every `period` seconds; optional `phase` offsets the first fire (see Part V) |
-| `initial` | lifecycle | once, at the start of the analysis |
-| `final` | lifecycle | once, at the end (diagnostics only) |
-| `dc` / `tran` / `ac` | analysis scope | every evaluation point of that analysis — **`constraint` blocks only** (Part I §10.6); an analysis-scope kind inside a behavior body, or a behavior-body kind inside a constraint scope, fails loud |
-
-Events combine via OR: `@ (posedge(a) | posedge(b)) { ... }`. The `when (cond)` clause
-gates the event body on a level condition — behavior bodies only; a constraint scope
-uses a temporal window (`after =`/`dur =`) instead and rejects `when` (Appendix B §B.9).
-
-**Custom events** can be registered by plugins through the layer-2 extension mechanism
-(Part I §14). A custom event implements the `EventKind` trait, declaring its name and
-its class (digital edge, analog crossing, etc.); the elaborator validates it the same
-way as built-ins.
-
-**Validation.** E2008 (`UnknownEvent` — name not registered); E2009
-(`AnalogEventInDigital` — an analog event like `cross` inside a `digital` block); E2010
-(`DigitalEventInAnalog` — a digital edge like `posedge` inside an `analog` block). An
-unrecognized event name is always a hard error — there is no silent fallback.
-
-## §10 Standard library (injected)
-
-Every compilation unit is prepended with the standard library, so every source file
-sees the same base scope. The stdlib provides:
-
-**Disciplines:** `Ground` (reference). Storage-digital: `Bit`, `Logic`, `DDiscrete`.
-Conservative: `Electrical`, `Magnetic`, `Thermal`, `Kinematic`, `KinematicV`,
-`Rotational`, `RotationalOmega`. Storage-`Real`: `Voltage`, `Current`.
-
-**Constants:** math constants (`M_PI`, `M_E`, `M_SQRT2`, ...); physical constants
-(`P_Q` elementary charge, `P_K` Boltzmann, `P_C` speed of light, ...).
-
-**Capabilities:** `Type`, `Net` (root markers); `Add`, `Sub`, `Mul`, `Div`, `Eq`,
-`Ord : Eq`, `BitAnd`, `BitOr`, `BitXor`, `Not`, `Number : Add+Sub+Mul`.
-
-**Collections:** `map<T,U>(xs: T[N], f: fn(T)->U) -> U[N]`,
-`reduce<T>(xs: T[N], op: fn(T,T)->T) -> T`, `concat(...)`.
-
-**Numeric bundles:** `UInt[N]`, `SInt[N]`. (`Complex` is a primitive `extern type`,
-not a bundle — Part I §6.1.)
-
-**Statistical distributions (DVC-02):** `headers/statistics.phdl` declares the
-four distribution spellings a `tol` clause (Part I §7.2) may name — `gauss`
-and `uniform`, each with absolute and relative argument forms distinguished by
-the keyed-argument name. The full table is Part V §6.2.
-
-**Constraint helpers (DVC-09):** `headers/constraints.phdl` declares the
-helpers a `var`/`target` expression may call, each carrying its
-pointwise/reduced class and its analysis in a `@quantity(class, analysis)`
-marker the elaborator reads. The full table is Part V §6.2.
-
-All stdlib items are elaboration-time generators — called with concrete `N`,
-they unroll to fixed structure.
-
-## §11 Validation catalog (master)
-
-This is the master catalog of elaboration errors. Each error carries a code (`ENNNT`),
-a variant name, and a trigger. The section column points to where the error is
-explained.
-
-### Elaboration errors
-
-| Code | Variant | Trigger | Section |
-|------|---------|---------|---------|
-| E2001 | `ConstEval { context, source }` | a const expression failed to evaluate | I §7.4, II §3 |
-| E2002 | `UndefinedType(String)` | a type name was not found | I §6, II §4 |
-| E2003 | `UndefinedModule(String)` | a module name was not found | I §7, II §4 |
-| E2004 | `NotNetCapable(String)` | a value-field bundle was used as a net type | I §6.5 |
-| E2005 | `ContribInDigital` | a contribution `<+` appeared in a `digital` block | I §10.2 |
-| E2006 | `ContribInModBody` | a contribution `<+` appeared in a `mod` body | I §10.2 |
-| E2007 | `ForceInModBody` | a force `<-` appeared in a `mod` body | I §10.2 |
-| E2008 | `UnknownEvent(String)` | an event name was not registered | I §10.4 |
-| E2009 | `AnalogEventInDigital(String)` | an analog event in a `digital` block | I §10.4 |
-| E2010 | `DigitalEventInAnalog(String)` | a digital event in an `analog` block | I §10.4 |
-| E2011 | `MissingConstParam { param, module }` | wrong const-argument count | I §7.3 |
-| E2012 | `NotANetRef(String)` | a name does not resolve to a net | I §7.3 |
-| E2013 | `WidthMismatch { module, lhs, rhs, lhs_w, rhs_w }` | net width mismatch on connection | I §7.3, I §13 |
-| E2014 | `DisciplineCrossing { module, lhs, rhs }` | incompatible disciplines connected | I §13 |
-| E2015 | `UnknownBundle(String)` | a bundle name was not found | I §6.5 |
-| E2016 | `BundleFieldUnknown { bundle, field }` | an unknown bundle field was referenced | I §6.5 |
-| E2017 | `BundleParamDefault { param, expected, found }` | wrong type for a bundle param | I §6.5 |
-| E2018 | `BundleFieldNoDefault { param, bundle, field }` | a required field was omitted with no default | I §6.5 |
-| E2019 | `BundleParamNameCollision(String)` | two params with the same name | I §6.5 |
-| E2020 | `MultipleDrivers { module, net, discipline }` | a second driver on a single-driver net | I §6.3 |
-| E2021 | `PrivateItem { item, owner_pkg }` | a private item accessed from another package | I §5.3 |
-| E2022 | `UnknownAttrSchema(String)` | attribute schema name not a registered bundle | I §8 |
-| E2023 | `AttrSchemaField { schema, field, reason }` | attribute argument does not match the schema's bundle field | I §8 |
-| E2024 | `NonExhaustiveMatch { module, missing }` | a `match` does not cover every variant | I §10.3 |
-| E2999 | `Other(String)` | catch-all for custom diagnostics | — |
-
-### §11.1 Constraint-elaboration fail-loud catalog (dv-core)
-
-Every constraint-related failure surfaces as `E2999 Other(…)` today. Each
-message names the constraint, the module, and the offending site explicitly,
-so the catch-all carries the descriptive load an E20xx code would. Gathered
-in one place for cross-reference (the rule column points to the spec section
-that defines the rule):
-
-| Rule | Trigger wording | Section |
-|------|-----------------|---------|
-| `tol` on a non-`Real` param | `` `tol` on param `{p}` requires a `Real` param, found `{ty}` `` | I §7.2, II §8.1 |
-| `tol` on a bundle-typed param | `` `tol` on param `{p}` … found bundle-typed `{ty}` `` | I §7.2 |
-| `tol` names an undeclared distribution | `` `tol` on param `{p}` names undeclared distribution `{d}` … `` | I §7.2, II §8.1 |
-| `constraint` on a non-existent module | `` constraint `{name}` names a module that does not exist in the design `` | II §8.1 |
-| unknown net/port/var inside a constraint | `` constraint `{c}` on module `{m}` (site): unknown name `{n}` `` | I §10.6, II §8.1 |
-| unknown instance-path segment | `` constraint `{c}` on module `{m}` (site): unknown instance `{i}` `` | I §10.6 |
-| child internal node read | `` `{inst}.{field}` is an internal node of `{child}` — a constraint reads a child port, not its internals `` | II §8.1 |
-| instance path deeper than one level | `` unsupported instance path — a constraint reaches one level: `instance.port` `` | II §8.1 |
-| undeclared helper or function | `` undeclared helper or function `{n}` — constraint helpers are declared in headers/constraints.phdl, math functions in headers/math.phdl `` | I §10.6, V §6.2 |
-| missing `@quantity` argument | `` constraint helper `{h}`: `@quantity` requires a `{key} = "…"` string argument `` | V §6.2 |
-| bad `@quantity` class | `` constraint helper `{h}`: `@quantity` class must be `pointwise` or `reduced`, found `{x}` `` | V §6.2 |
-| duplicate helper declaration | `` constraint helper `{n}` is declared more than once `` | V §6.2 |
-| non-`Boolean` `require` predicate | `` constraint `{c}` on module `{m}`: `require` predicate must be `Boolean`, found `{ty}` `` | I §10.6 |
-| non-`Real` `target` operand | `` constraint `{c}` on module `{m}`: `target` operand must be `Real`, found `{ty}` `` | I §10.6 |
-| missing `var` annotation | `` constraint `{c}` on module `{m}`: `var` `{n}` requires a type annotation `` | I §10.6 |
-| duplicate statement label | `` constraint `{c}` on module `{m}`: duplicate statement label `{n}` `` | I §10.6 |
-| reduced quantity in a pointwise scope | `` constraint `{c}` on module `{m}`: a reduced quantity is checkable once per analysis, not per point `` | I §10.6, II §8.1 |
-| `cover cross` names an undeclared point | `` `cover cross `{name}`` names undeclared cover point `{point}` — every crossed point must be declared with `cover {point} : … bins […]` or `… in {…}` earlier in the same block `` | I §10.6, II §8.1 (DVT-42) |
-| `cover cross` joint bin count exceeds the cap | `` `cover cross {name}`'s joint bin count ({n}) exceeds the elaboration cap ({cap}) — cross fewer points, coarsen a range, or raise `ElabContext::cover_bin_cap` `` | I §10.6, II §8.1 (DVT-42, D10) |
-| bad cast or call form in a constraint | `` unsupported {form} `{x}` in a constraint `` | II §8.1 |
-| `none` literal where a value type is required | `` `none` has no value type in a constraint `` | II §8.1 |
-| `@` block names no analyses | `` constraint `{c}` on module `{m}`: an `@` event block must name at least one analysis `` | I §10.6 |
-| `@` block term illegal in a constraint scope | `` `{term}` is valid only inside a `constraint` block's `@` event block, not a runtime behavior body `` (and the reverse) | I §10.6 |
-| non-const `after`/`dur` window expression | `` constraint `{c}` on module `{m}` (@ event block window): {e} `` | I §10.6 |
-
-A constraint block that survives elaboration has cleared every check above;
-the device-compile stage assumes a well-classified, well-typed block.
-
-### Reflection errors
-
-| Code | Variant | Trigger |
-|------|---------|---------|
-| E3001 | `NotFound` | a name or path was not found in the POM |
-| E3002 | `NotSettable` | an attribute is read-only |
-| E3003 | `TypeMismatch` | a value's type does not match the expected type |
-| E3004 | `OutOfRange` | a value is outside the accepted range |
-| E3005 | `MultipleDrivers` | staging an override would create a multi-driver conflict |
-| E3999 | `Other(String)` | catch-all |
-
-(Covered in Part IV §3.)
-
-### Selector errors
-
-| Variant | Trigger |
-|---------|---------|
-| `EmptySelector` | empty selector string |
-| `ExpectedDoubleColon` | missing `::` after an axis name |
-| `ExpectedNodeTest` | missing node test after an axis |
-| `UnknownAxis(String)` | axis name not in the table |
-| `AxisNotImplemented(Axis)` | axis exists but is not yet lowered |
-
-(Covered in Part IV §13.)
-
-### Codegen errors
-
-| Variant | Trigger |
-|---------|---------|
-| `ModuleNotFound(String)` | module name not found in the lowered program |
-| `Invalid(String)` | IR validation failed |
-| `Module(String)` | Cranelift module error |
-| `Unsupported(String)` | an IR construct that has no lowering yet (fail-loud) |
-| `ConstEval(String)` | constant evaluation failed at lowering |
-| `Function(String)` | function lowering failed |
-
-Every unimplemented lowering is a named `Unsupported` error — nothing silently compiles
-to `0.0` or a no-op. This is the fail-loud contract.
-
-## §12 Diagnostics
-
-Diagnostics are warnings, not errors — they report potential issues but do not stop
-elaboration. The one diagnostic defined today:
-
-- **`InferredLatch(var)`** — a `var` in a `digital` block is read on a path where it
-  was not assigned, meaning it retains its previous value (unintended storage). Raised
-  as a warning by default; can be promoted to an error per-project or via an attribute.
+`crates/piperine-lang/src/elab/const_eval.rs` — a small, direct recursive evaluator over
+`crate::ast::Expr` (`BinOp`/`UnOp`/number literals/names bound in a `ConstEnv` scope
+stack). This is a deliberate departure from PHDL's own const evaluator, which delegated
+to `crate::eval::Interpreter` — a general tree-walking evaluator PHDL shared with
+runtime const-folding. VAMS's `Expr` has no blocks, lambdas, or statements to walk, so a
+small self-contained evaluator replaced the host-trait indirection; the module's own doc
+comment records this as a deliberate choice, not an oversight: "`crate::eval::interp` is
+rebuilt separately (T24) for whatever richer runtime const-folding VAMS actually needs
+(e.g. `analog function` bodies), not reintroduced here speculatively." Errors:
+`ConstEvalError::{NotConst, DivByZero, Undefined, TypeMismatch}`.
+
+## §4 The pass catalog, in execution order
+
+**`Register`** — indexes every top-level `Item` (from `SourceFile::items`) into the
+`Elaborator`'s symbol tables (`crate::ast::Item` variants: disciplines, natures,
+modules, paramsets, connectrules, …). Pure bookkeeping; no `Design` mutation.
+
+**`LowerDeclarations`** — lowers top-level `nature`/`discipline` declarations into
+`Design::natures`/`Design::disciplines` (T23, VAMS-01). Ordered before `ElabModules`
+even though nothing in module lowering strictly needs it yet, so a future pass reading
+these tables during module lowering can rely on them being populated.
+
+**`ElabModules`** — lowers every registered `module`/`macromodule`/`connectmodule` into
+a POM `Module` (`elab_module`, `vams.rs`, T22, VAMS-04): ports (both declaration-list
+and name-list styles, LRM §3.7), nets/wires with disciplines (§3.6.3), parameters
+(§3.4), instantiation (named and ordered port connections, parameter overrides, §6.3),
+and behavior-block attachment. Unlike PHDL (which had a separate top-level
+`BehaviorDecl` matched by name to its owning module), VAMS behavior blocks are
+structurally nested `ModuleItem`s directly inside the module body — there is no
+name-matching step to get wrong.
+
+`elab_module`'s per-item match has a real, wider no-op arm than just "generate
+constructs deferred to a later pass": `ModuleItem::{Ground, Event, Specparam,
+Defparam, Function, Task, ContinuousAssign, Specify, Gate}` are all `=> {}` today —
+parsed and passed through elaboration successfully, but silently absent from the
+resulting `Module`. `LoopGenerate`/`IfGenerate`/`CaseGenerate` sit in the same arm
+list but are not actually dark — `UnrollGenerate` (below) reaches them through its own
+independent scan of the same `ModuleItem`s. See Part I §6's fuller writeup of this gap
+(found while grounding Part I directly in this match, not carried forward from any
+prior doc or task note).
+
+**`ResolveDisciplines`** (T26, LRM Annex F) — assigns a discipline to any port/net
+declared with none, by propagating the discipline of whatever it connects to.
+**Documented method and scope choice, not a silent narrowing:** the LRM names two
+algorithms, "basic (the default)" and "detail" (§7.4.4); this pass implements **Basic**
+(§7.4.4.1) — propagate a neighbour's known discipline across a direct connection — and
+explicitly leaves Detail (which additionally reasons about per-net compatible-discipline
+*sets* before collapsing them) out of scope. It resolves within one module at a time,
+iterated to a fixed point across every module in the design (an unresolved port takes
+its discipline from any instance port it's directly connected to whose callee-side
+discipline is already known); the fuller LRM algorithm — resolution across the entire
+hierarchy plus vendor `connect ... resolveto` statements (§7.4.4.3, ch. 10) — is out of
+scope, tracked as follow-up in `InsertConnectModules`'s own doc (below). Failure:
+`ElabErrorKind::DisciplineResolutionFailed` (E4003).
+
+**`InsertConnectModules`** (T52, LRM ch. 7, VAMS-20) — automatic connect-module
+selection at a discipline-domain crossing: a discipline pair `(A, B)` is eligible for
+bridging only if a registered `connectrules` block declares a `connect` rule naming
+both; given eligibility, the unique `connectmodule` whose two ports' disciplines are
+exactly `{A, B}` is selected (`ElabErrorKind::ConnectModuleAmbiguous`, E4005, on zero or
+multiple candidates). **Documented, load-bearing SPEC_DEVIATION, still open on this
+branch:** because `ResolveDisciplines` runs one pass *earlier* and already hard-fails
+the instant it sees a port connected to a net whose already-resolved discipline
+mismatches (`disciplines.rs:122-131`'s `Some(d) if d != callee_disc => Err(...)` arm), a
+genuine cross-discipline connection in real `.vams` source **never survives to reach
+this pass**. `InsertConnectModules`'s selection algorithm is implemented and
+independently unit-tested (bypassing `ResolveDisciplines` to construct a `Design`
+directly, the same technique `FlattenHierarchy`'s own tests use), and is wired into
+`PASSES` at the documented position — but it is provably a no-op over every design in
+today's corpus, since none of them can reach it with a live mismatch. Closing this for
+real needs `ResolveDisciplines` itself changed to defer a connectrules-eligible mismatch
+to this pass instead of failing outright — a coupled change outside T52's stated scope,
+carried forward as documented debt in both passes' own module docs.
+
+**`UnrollGenerate`** (T25, LRM ch. 6, MD-25) — unrolls `for`/`if`/`case` generate
+regions (arbitrarily nested) into **derived** instances, written only to
+`Elaborator::generated_instances` — never into `Design::modules`. A generated instance's
+label is mangled `{label}__{genvar value}` per loop level (outermost first); a mangled-
+name collision (two generated instances, or a generated instance colliding with an
+authored name) fails loud with both source spans, never a silent rename.
+
+**`Typecheck`** (T27, LRM Annex C, VAMS-25) — enforces the analog-language subset on
+every `analog` behavior body: non-blocking assignment, `@(posedge)`-style event
+control, and `casex` inside an `analog` block are rejected, citing "Annex C" in the
+diagnostic. Every analog behavior in the design is checked independently
+(`typecheck_program_accumulating` collects every failure across every behavior), while
+the pass itself still returns only the *first* to satisfy the ordinary fail-fast
+`ElabPass::run` contract.
+
+**`FlattenHierarchy`** — see §5.
+
+## §5 Hierarchy flattening — the one derived artifact
+
+`crates/piperine-lang/src/elab/lower/flatten.rs`. Runs last, after `Typecheck`, so it
+sees the fully generate-unrolled module set. Algorithm: memoized bottom-up — for each
+module, clone the authored form, recurse into every child so each child is itself
+already flat, keep leaf instances as-is, and inline non-leaf children's sub-instances
+through a net-rename map. The result populates `Design::flat_modules` — a
+`#[serde(skip)]` side map, rebuilt on every elaboration, consumed **only** by
+`piperine-codegen`. `Design::modules` (the authored hierarchy) is never mutated by this
+pass — this is the POM-navigability unbreakable rule in its most concrete instance (§7).
+
+## §6 The E-STD error family
+
+`ElabErrorKind` (`crates/piperine-lang/src/pom/error.rs`) carries every elaboration
+failure as a typed, `miette`-diagnosable variant — a span, a diagnostic code, and (for
+the newer VAMS-era variants) actionable help text citing the LRM clause. The full
+variant catalog, grouped by code prefix as they appear in the source:
+
+**E1xxx — parse-failure passthrough.** `VamsParse { kind, span }` (E1005) — a
+structured `ParseError` from the parser surfaced through elaboration unchanged, span
+converted to a `miette::SourceSpan`. This is the *only* E1xxx variant; VAMS-05's
+fail-loud requirement is satisfied by carrying the parser's own typed
+`ParseErrorKind` (13 variants) through rather than re-deriving a coarser message.
+
+**E2xxx — elaboration/lowering failures** (E2001 through E2025): `ConstEval`,
+`UndefinedType` (E2002), `UndefinedModule` (E2003), `NotNetCapable` (E2004),
+`ContribInDigital`/`ContribInModBody`/`ForceInModBody` (E2005-E2007), `UnknownEvent`
+(E2008), `AnalogEventInDigital`/`DigitalEventInAnalog` (E2009-E2010),
+`MissingConstParam` (E2011), a not-reducible-to-net-reference expression (E2012),
+`WidthMismatch` (E2013), a discipline-crossing requiring an explicit converter (E2014),
+`UnknownBundle`/`NoSuchBundleField` (E2015-E2016), bundle-param-default type errors
+(E2017-E2018), a param/bundle-field name collision (E2019), `MultipleDrivers` (E2020),
+a private-item-access violation (E2021), an attribute-schema field error (E2023),
+non-exhaustive `match` (E2024), and a missing native `extern` implementation (E2025 —
+vestigial: nothing in the current VAMS grammar declares `extern`, so this variant has no
+live producer today). `UnknownAttrSchema` (no fixed numeric code assigned in the source)
+covers an unrecognized `(* ... *)` attribute name.
+
+**E4xxx — VAMS-era, LRM-clause-anchored elaboration failures**, all carrying
+actionable `help` text citing the specific clause: `BranchKindConflict` (E4001, LRM
+§5.4.2 — a branch contributed as both potential and flow outside the switch-branch
+exception), `AnnexCViolation` (E4002, LRM Annex C — a construct outside the enforced
+analog subset), `DisciplineResolutionFailed` (E4003, LRM Annex F), `NatureBindingInvalid`
+(E4004, LRM §3.6.2.1), `ConnectModuleAmbiguous` (E4005, LRM ch. 7), and
+`ParamRangeViolation` (E4006, LRM §3.4.2 — a declared `from`/`exclude` range violated,
+including by the parameter's own default).
+
+**E2999** — a catch-all `Other(String)`.
+
+Reflection-layer errors (`ReflectError`, E3xxx) are the selector/staging-time family —
+covered in Part IV §3, a distinct concern from elaboration proper.
+
+## §7 POM navigability (the unbreakable rule, restated for elaboration)
+
+Every pass in §4 that needs a collapsed or transformed view produces it as a **separate
+side artifact**, never by overwriting `Design::modules`: `Elaborator::generated_
+instances` (generate unrolling) and `Design::flat_modules` (`#[serde(skip)]`, hierarchy
+flattening) are the two concrete instances of this rule in the current pipeline. A
+device author querying the POM (Part IV) after elaboration reads back their own
+modules, instances, and hierarchy exactly as authored — internal transforms never leak
+into that view. See `.specs/features/hierarchy-flattening/design.md` for the fuller
+design rationale.
+
+## §8 What the PHDL-era pipeline is not carried forward
+
+MD-45 (2026-08-12) deleted the PHDL-syntax-only stages outright, alongside
+`piperine-lang/src/parse/` itself, rather than retargeting them at VAMS: `ValidateEvents`
+(the `<+`/`<-` misuse registry), `FoldGlobals` (global `enum`/`const` constant folding),
+`ElabFns` (`impl`/`fn` elaboration), `AttachBehaviors` (name-matching a top-level
+`BehaviorDecl` to its module — VAMS behavior blocks are nested `ModuleItem`s and need no
+such step), `ElabConstraints` (dv-core `constraint` attachment — Part IV's
+`ConstraintBlock` removal is the direct consequence), `ResolveCalls` (`extern`-call
+resolution — there is no `extern` in VAMS), and `Typecheck` in its PHDL form (GAPS
+width/discipline typechecking over the PHDL value-net lattice — replaced by the
+Annex-C-shaped `Typecheck` pass in §4, a narrower and differently-scoped check).
+`Register` was already VAMS-shaped from the start of the migration and needed no
+change; `FlattenHierarchy` operates on the POM rather than the surface AST and likewise
+needed no change when the frontend swapped underneath it. There is no PHDL-compatibility
+shim anywhere in this pipeline — a `.phdl` file is simply not a construct the parser
+(now merged into `piperine-lang`, MD-47) accepts.

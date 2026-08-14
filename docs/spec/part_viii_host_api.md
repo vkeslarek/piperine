@@ -1,7 +1,7 @@
 # Part VIII — Host APIs: Python and Rust
 
-Driving a simulation is a **host** concern, not a language concern. PHDL
-describes circuits (Parts I–II); hosts elaborate, compile, solve, and
+Driving a simulation is a **host** concern, not a language concern.
+Verilog-AMS describes circuits (Parts I–II); hosts elaborate, compile, solve, and
 measure. There are exactly two host surfaces, and they are one surface
 (MD-22): same call shape, same names, same config/result types, enforced by
 a parity test (`tests/host_parity.rs`).
@@ -45,7 +45,7 @@ changes what gets *built* has to precede the build.
 ```python
 import piperine as pip
 
-design = pip.load("chip.phdl")           # -> Design (elaborated POM)
+design = pip.load("chip.vams")           # -> Design (elaborated POM)
 module = design["Amp"]                    # -> Module (reflected view + analyses; __getitem__)
 op     = module.op()                      # -> OpResult   (staged: fresh build)
 
@@ -77,7 +77,7 @@ let mid     = op.v("mid")?;                                 // impl NetSelector 
 
 ## 2. `load` and `Design`
 
-`pip.load(path)` / `pip.load_str(src)` parse and elaborate a `.phdl`/`.ppr`
+`pip.load(path)` / `pip.load_str(src)` parse and elaborate a `.vams`/`.va`
 file (or inline source, no filesystem read) into a `Design` — or raise
 `ElaborationError` (a `ValueError` subclass) with the diagnostic (never a
 silent success). In Rust, `parse_and_elaborate`/`parse_and_elaborate_seeded`
@@ -218,8 +218,9 @@ sim.schedule_set(5e-6, "v1", "dc", 1.8);
 sim.rebuilds();
 ```
 
-- `set`/`schedule_set` address instances by their PHDL labels (bundle fields
-  flatten to `{param}_{field}`, e.g. `model_is`); unknown names fail loud
+- `set`/`schedule_set` address instances by their flat authored-tree
+  instance label (dotted-path hierarchy, e.g. `sub.model`, param `is`);
+  unknown names fail loud
   (Python: `KeyError`/`UnknownNet`; Rust: `Error::Measurement`), listing the
   element's parameters; out-of-bounds values fail loud with the solver's
   own message.
@@ -270,7 +271,7 @@ runtime ndarray dependency in `piperine-api`). A structural knob auto-
 rebuilds mid-sweep and counts it in `rebuilds` (never a silently-wrong
 restamp); values match per-point fresh builds. Axes are addressed
 `"label.param"` (not bare kwargs — a dotted path is not a valid Python
-identifier, and PHDL parameters are addressed by flat instance label
+identifier, and Verilog-AMS parameters are addressed by flat instance label
 regardless).
 
 ## 6. Device introspection — the opvar/observable door
@@ -576,7 +577,7 @@ detail), `Plugin(String)`.
 | `piperine check [file]` | parse + elaborate |
 | `piperine build [file]` | elaborate + JIT-compile |
 | `piperine run script.py` | run a Python script with `import piperine` available (embedded CPython — no pip install) |
-| `piperine run -i [design.phdl]` | interactive REPL; with a file, pre-loads it as `design` |
+| `piperine run -i [design.vams]` | interactive REPL; with a file, pre-loads it as `design` |
 | `piperine test [file]` | discover and run `**/*_tb.py` under the project root (skipping `.venv`/`target`); per-file PASS/FAIL with tracebacks, per-file timeout (default 300 s, `PIPERINE_TEST_TIMEOUT_SECS`), exit 1 on any failure, exit 0 with a notice when none exist |
 
 The table covers the commands that *are* a host surface. The CLI's remaining
@@ -590,7 +591,7 @@ A testbench is plain Python with asserts:
 # divider_tb.py
 import piperine
 
-m = piperine.load("src/main.phdl").module("DividerBoard")
+m = piperine.load("src/main.vams").module("DividerBoard")
 r = m.op()
 assert abs(r.v("mid") - 2.0) < 1e-6, "divider ratio is R2/(R1+R2)"
 ```
@@ -781,8 +782,9 @@ limits.
 
 ## 17. The host device library (dv-tester)
 
-A fifth way to get a device into a circuit, alongside PHDL, a compiled
-plugin, an OSDI model, and (via §14–16) the driver/sampling surface: write
+A fifth way to get a device into a circuit, alongside Verilog-AMS, a
+compiled plugin, an OSDI model, and (via §14–16) the driver/sampling
+surface: write
 the device in the host language itself — Rust or Python, in-process, no
 `dlopen`, no matched toolchain, no Verilog-A compiler. `HostElement` +
 `HostAdapter<T>` (Part VII §20.1) is what makes the solver unable to tell a
@@ -960,8 +962,9 @@ the sequencer's own polling, not by an `EventKind`:
 > `HostElement::accept_timestep`'s `StateView` (`Sequencer::accept_timestep`,
 > `crates/piperine-api/src/sequencer/driver.rs`, `crossing.rs`) — it never
 > reads or produces an `EventKind::Crossing` entry. `EventKind::Crossing`
-> is what PHDL's `@cross` reads (Part VII §20.5's tier 1); the two crossing
-> paths are independent, and only `@cross` touches the event queue.
+> is what Verilog-AMS's `@(cross(...))` reads (Part VII §20.5's tier 1); the
+> two crossing paths are independent, and only `@(cross(...))` touches the
+> event queue.
 
 `t.expect(cond, msg)` records an `Error` finding with time and instance
 provenance through `dv-core`'s channel when `cond` is false — never a
@@ -1046,9 +1049,10 @@ is proven able to fail (add a Rust-only name, watch it fail, revert) the
 same way every other mechanical guard in this project is.
 `tests/host_capability_parity.rs` additionally proves the harder claim:
 four devices — a `transition`-driven source, a pnjlim junction, a `table`
-nonlinearity, and a `cross`-triggered element — each written once in PHDL
-and once as a host device, produce **identical** results on the same
-fixture. Any PHDL capability not reachable from the host device library
+nonlinearity, and a `cross`-triggered element — each written once in
+Verilog-AMS and once as a host device, produce **identical** results on the
+same fixture. Any Verilog-AMS capability not reachable from the host device
+library
 is named there rather than silently missing — a scoped promise, not an
 eroding one.
 

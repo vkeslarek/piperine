@@ -45,7 +45,7 @@ extension surfaces without breaking the core pipeline's invariants:
 
 | Shape | Declared by | What loads |
 |-------|-------------|------------|
-| Pure-PHDL | `[plugin]` with no `python`/`device` key | A code library — its `pub` items resolve via `use`; nothing runs |
+| Pure | `[plugin]` with no `python`/`device` key | A code library — its `pub`/`` `include ``-able items resolve via Verilog-AMS `` `include ``; nothing runs |
 | Scripted | `python = "plugin.py"` | Python scripts/hooks in the embedded-CPython host |
 | Device | `device = { … }` | A compiled binary through the native backend, bound to the plugin's `@device` mods |
 
@@ -90,8 +90,8 @@ serialization tier, and no imperative registration API.
 |-----------|---------|
 | **Security-first, capability-based** | A plugin declares permissions in its manifest; the host denies by default. |
 | **Fail loud** | A plugin that requests a nonexistent hook phase, references an unregistered device, or uses an undeclared capability raises a typed `PluginError` — never a silent `0.0` or no-op. |
-| **No netlist magic** | Every element a plugin injects — instance, connection, param override — must reference a type that was declared in PHDL source. A plugin cannot invent a type that was never declared. |
-| **Declaration = injection** | Every contribution is declared at its point of definition: a device is a `#[pip::device]` type plus a `@device pub mod` in the plugin's own PHDL; a script or hook is one decorator. There is no imperative `Registrar` and no per-plugin `extern.phdl` stub. |
+| **No netlist magic** | Every element a plugin injects — instance, connection, param override — must reference a type that was declared in Verilog-AMS source. A plugin cannot invent a type that was never declared. |
+| **Declaration = injection** | Every contribution is declared at its point of definition: a device is a `#[pip::device]` type plus a `(* device = …, type = … *)` module in the plugin's own Verilog-AMS; a script or hook is one decorator. There is no imperative `Registrar` and no per-plugin `extern.phdl` stub (the retired PHDL-era name for the vacant P0010 error, §11). |
 | **No plugin schemas** | Plugins declare no `extern` and no attribute schemas. The only plugin-facing schemas are the stdlib `@device`/`@port`, seeded by the plugin *system* itself. |
 | **The POM is the reflection contract** | The POM is public and stable; the codegen IR stays closed. Plugins reflect through the POM — the real `Design`, in both hosts. |
 | **Literal Rust/Python parity** | `#[pip::script]`/`#[pip::hook(phase)]`/`#[pip::device]` (Rust) and `@pip.script`/`@pip.hook.<phase>`/`@pip.device` (Python) — same names, same hook catalog, same `ctx` surface (MD-22). A parity test locks the names. |
@@ -179,7 +179,7 @@ device = { path = "target/release/libspice_plugin.so" }        # device shape, l
 # device = { release = "github:acme/spice@v1.2.0", verify = "sha256:ab…" }  # …or a fetched release (§10)
 
 [permissions]
-filesystem = ["read *.cir", "read *.sp", "write *.phdl"]
+filesystem = ["read *.cir", "read *.sp", "write *.vams"]
 network    = false
 ```
 
@@ -196,7 +196,7 @@ network    = false
 | `permissions.process_spawn` | Whitelist of executables; empty = none (API is a follow-up) |
 
 **Shape inference.** The shape is *which keys are present*: `device` →
-device, `python` → scripted, neither → pure-PHDL code library. There is **no
+device, `python` → scripted, neither → pure Verilog-AMS code library. There is **no
 `abi` field** — the backend is inferred, never declared. Exactly one of
 `device.path` / `device.release` may be set.
 
@@ -237,22 +237,24 @@ anything is written.
 `add` writes a `[dependencies]` entry, and that entry is the whole install:
 a dependency whose package root declares contributions — a
 `piperine-plugin.toml`, or a `[plugin]` section in its own `Piperine.toml`
-(§4) — **is** a plugin (D9): its PHDL resolves via `use` and its declared
-contributions (device / scripts / hooks) load. Nothing else has to be written
-by hand. A dependency declaring neither is a plain PHDL library and
-contributes nothing.
+(§4) — **is** a plugin (D9): its Verilog-AMS resolves via `` `include ``
+against its registered namespace, and its declared contributions
+(device / scripts / hooks) load. Nothing else has to be written by hand. A
+dependency declaring neither is a plain Verilog-AMS library and contributes
+nothing.
 
 ### 5.2 Project configuration
 
 A plugin is therefore declared either way:
 
 - as a **dependency** — the `piperine add` path above, and the only one
-  needed for a plugin that ships PHDL (a device's `@device pub mod` lives in
-  the plugin's own PHDL, §6);
+  needed for a plugin that ships Verilog-AMS (a device's attribute-instance
+  module lives in the plugin's own Verilog-AMS, §6);
 - in an explicit **`[plugins]`** section — for a plugin that is only a
-  loadable artifact (no PHDL to import), or to point a name at a different
-  path than the dependency copy. A name in both sections keeps its
-  `[plugins]` path. `[plugins]` entries have no transitive PHDL deps.
+  loadable artifact (no Verilog-AMS to `` `include ``), or to point a name at
+  a different path than the dependency copy. A name in both sections keeps
+  its `[plugins]` path. `[plugins]` entries have no transitive Verilog-AMS
+  deps.
 
 ```toml
 [plugins.spice]
@@ -268,13 +270,14 @@ subdir = "piperine-yosys"        # its directory within the repository
 ```
 
 Path sources are used in place; git sources sync into
-`target/plugins/<name>/` through the same resolver PHDL dependencies use.
+`target/plugins/<name>/` through the same resolver Verilog-AMS dependencies
+use.
 `subdir` points inside the checkout; it must be a relative path with no
 `..`, and must exist in the checkout — anything else fails loud.
 
-Either way the plugin package is an **importable namespace**: `use
-<name>::…` reaches its `src/` (or its root), which is where a device
-plugin's `@device pub mod`s live.
+Either way the plugin package is a **registered `` `include `` namespace**:
+`` `include "<name>/<file>.va" `` reaches its `src/` (or its root), which is
+where a device plugin's attribute-instance modules live.
 
 ### 5.3 Artifacts are prebuilt
 
@@ -372,7 +375,7 @@ plugins.
 ## §7 Device loading
 
 Plugin devices bind to the solver through the same device ABI as compiled
-PHDL devices and external model wrappers. The normative solver-side
+Verilog-AMS devices and external model wrappers. The normative solver-side
 device-loading contract, including factory inputs, terminal bindings, and
 solver validation rules, is Part VII §5.
 
@@ -399,29 +402,34 @@ An exported `piperine_plugin_abi_version` differing from the host's
 v2 (a manifest-level compatibility field is a deferred follow-up). Loaded
 libraries stay mapped for the process lifetime.
 
-**The `@device` mod lives in the plugin's own PHDL (D10).** The plugin
-ships `@device pub mod …` declarations in its `.phdl`; importing the plugin
-injects every declared device, each mod's `type` resolved against the
-binary's `#[pip::device]` table. The user `use`s the plugin package and
-instantiates the mod — a user design **never** writes `@device`:
+**The `@device` module lives in the plugin's own Verilog-AMS (D10).** The
+plugin ships `(* device = …, type = … *)` attribute-instance module
+declarations in its `.vams`/`.va` source; importing the plugin injects every
+declared device, each module's `type` resolved against the binary's
+`#[pip::device]` table. The user `` `include ``s the plugin's namespace and
+instantiates the module — a user design **never** writes the `device`
+attribute:
 
-```phdl
+```verilogams
 // in the plugin's own source:
-@device(plugin = "spice", type = "Spice::Diode")
-pub mod Diode(inout p: Electrical, inout n: Electrical) {
-    param is: Real = 1e-14;
-}
+(* device = "spice", type = "Spice::Diode" *)
+module Diode(inout electrical p, inout electrical n);
+    parameter real is = 1e-14;
+endmodule
 ```
 
-```phdl
-// in the user's design — no @device here:
-use spice::Diode;
-mod Top() { /* … */ d1 : Diode (.p = out, .n = gnd); }
+```verilogams
+// in the user's design — no device attribute here:
+`include "spice/diode.va"
+module Top();
+    /* … */
+    Diode d1 (.p(out), .n(gnd));
+endmodule
 ```
 
-A `@device` type ID no loaded plugin provides is
+A `device` attribute type ID no loaded plugin provides is
 `PluginError::DeviceNotRegistered` (P0004). Without any plugin loaded,
-`@device(...)` in source is an ordinary unknown-schema error (E2022).
+`(* device = … *)` in source is an ordinary unknown-schema error (E2022).
 
 This Part owns plugin discovery, trust, declaration coupling, and
 contribution collisions. Once a plugin contributes a device factory, the
@@ -496,14 +504,14 @@ nothing after it. The plugin's `transform_design` stages a declared
 `Resistor` from `out` to `gnd` — and the host observes a 2.5 V divider that
 only exists if the injection happened:
 
-```phdl
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r1  : Resistor (.p = vin, .n = out);
-}
+```verilogams
+module Top();
+    electrical gnd;
+    electrical vin;
+    electrical out;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor r1 (.p(vin), .n(out));
+endmodule
 ```
 
 ```python
@@ -526,15 +534,15 @@ checks registered scripts before treating an unknown subcommand as an
 error:
 
 ```
-$ piperine spice rectifier.cir -o rectifier.phdl
+$ piperine spice rectifier.cir -o rectifier.vams
 ```
 
 ```rust
 #[pip::script("spice")]
 fn spice(args: &[String], ctx: &Ctx) -> Result<i32, String> {
     let netlist = ctx.fs_read(&args[0]).map_err(|e| e.to_string())?;   // capability-gated
-    let phdl = transcribe(&netlist)?;                                  // plugin logic
-    ctx.fs_write("rectifier.phdl", &phdl).map_err(|e| e.to_string())?;
+    let vams = transcribe(&netlist)?;                                  // plugin logic
+    ctx.fs_write("rectifier.vams", &vams).map_err(|e| e.to_string())?;
     Ok(0)
 }
 ```
@@ -674,47 +682,47 @@ Three complete plugins, smallest possible. Each is a repository with a
 each installs with `piperine add <git>` (§5.1) and is declared under
 `[plugins]` in the user's `Piperine.toml` (§5.2).
 
-### A.1 Pure-PHDL: a model library
+### A.1 Pure: a model library
 
-No code runs — the plugin is a code library whose `pub` items resolve via
-`use`.
+No code runs — the plugin is a code library whose modules resolve via
+`` `include ``.
 
 ```
 bjt-models/
 ├── Piperine.toml
 ├── piperine-plugin.toml
 └── src/
-    └── lib.phdl
+    └── lib.va
 ```
 
 ```toml
-# piperine-plugin.toml — [plugin] alone ⇒ pure-PHDL shape (§4)
+# piperine-plugin.toml — [plugin] alone ⇒ pure shape (§4)
 [plugin]
 name        = "bjt-models"
 description = "Gummel–Poon model library"
 ```
 
-```phdl
-// src/lib.phdl
-pub mod GummelPoon(inout c: Electrical, inout b: Electrical, inout e: Electrical) {
-    param is:  Real = 1e-15;
-    param bf:  Real = 100.0;
+```verilogams
+// src/lib.va
+module GummelPoon(inout electrical c, inout electrical b, inout electrical e);
+    parameter real is = 1e-15;
+    parameter real bf = 100.0;
     // …
-}
+endmodule
 ```
 
-```phdl
+```verilogams
 // the user's design
-use bjt_models::GummelPoon;
+`include "bjt-models/lib.va"
 
-mod Amp() {
+module Amp();
     // …
-    q1 : GummelPoon (.c = vcc, .b = inp, .e = gnd);
-}
+    GummelPoon q1 (.c(vcc), .b(inp), .e(gnd));
+endmodule
 ```
 
-Nothing is registered, hashed, or prompted — importing resolves the `pub`
-items and that is all.
+Nothing is registered, hashed, or prompted — the `` `include `` resolves
+against the plugin's registered namespace and that is all.
 
 ### A.2 Scripted: a lint script + an elaboration hook
 
@@ -729,7 +737,7 @@ name   = "lintpack"
 python = "plugin.py"
 
 [permissions]
-filesystem = ["write *.phdl"]
+filesystem = ["write *.vams"]
 ```
 
 <table>
@@ -742,7 +750,7 @@ import piperine as pip
 @pip.script("lint")
 def lint(args, ctx):
     issues = run_lint(args)
-    ctx.fs_write("lint-report.phdl", issues)
+    ctx.fs_write("lint-report.vams", issues)
     return 0
 
 @pip.hook.after_elaborate
@@ -766,7 +774,7 @@ fn lint(args: &[String], ctx: &Ctx)
     -> Result<i32, String>
 {
     let issues = run_lint(args);
-    ctx.fs_write("lint-report.phdl", &issues)
+    ctx.fs_write("lint-report.vams", &issues)
         .map_err(|e| e.to_string())?;
     Ok(0)
 }
@@ -797,16 +805,16 @@ fn inject(ctx: &Ctx, staging: &DesignStaging)
 ```
 $ piperine add acme/lintpack
   Plugin 'lintpack' declares permissions:
-    filesystem    : write *.phdl
+    filesystem    : write *.vams
   Grant these permissions? [y/N] y
-$ piperine lint src/main.phdl      # dispatches to @pip.script("lint")
+$ piperine lint src/main.vams      # dispatches to @pip.script("lint")
 ```
 
-### A.3 Device: a compiled binary + `@device` in the plugin's own PHDL
+### A.3 Device: a compiled binary + a `device` attribute in the plugin's own Verilog-AMS
 
 Three pieces: the `Element` implementation with `#[pip::device]`, the
-`@device pub mod` in the plugin's **own** PHDL (D10), and the manifest
-pointing at a release (§10).
+`(* device = …, type = … *)` module in the plugin's **own** Verilog-AMS
+(D10), and the manifest pointing at a release (§10).
 
 ```rust
 // src/lib.rs — the device binary (crate-type = ["cdylib"])
@@ -841,13 +849,13 @@ pub extern "C" fn piperine_plugin_entry() -> *mut core::ffi::c_void {
 }
 ```
 
-```phdl
-// src/lib.phdl — the @device mod lives in the PLUGIN's PHDL; the user
-// never writes @device (D10).
-@device(plugin = "spice", type = "Spice::Diode")
-pub mod Diode(inout p: Electrical, inout n: Electrical) {
-    param is: Real = 1e-14;
-}
+```verilogams
+// src/lib.va — the device module lives in the PLUGIN's Verilog-AMS; the
+// user never writes the device attribute (D10).
+(* device = "spice", type = "Spice::Diode" *)
+module Diode(inout electrical p, inout electrical n);
+    parameter real is = 1e-14;
+endmodule
 ```
 
 ```toml
@@ -866,16 +874,16 @@ libspice-aarch64-apple-darwin.dylib
 libspice-x86_64-pc-windows-msvc.dll
 ```
 
-The user adds the plugin and instantiates the mod — no `@device` at the
-user site:
+The user adds the plugin and instantiates the module — no `device`
+attribute at the user site:
 
-```phdl
-use spice::Diode;
+```verilogams
+`include "spice/lib.va"
 
-mod Rectifier() {
+module Rectifier();
     // …
-    d1 : Diode (.p = out, .n = gnd) { .is = 1e-13 };
-}
+    Diode #(.is(1e-13)) d1 (.p(out), .n(gnd));
+endmodule
 ```
 
 On first load the asset for the user's triple is fetched, hashed, and

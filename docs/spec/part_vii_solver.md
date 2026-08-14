@@ -8,7 +8,7 @@ make mixed-signal simulation deterministic.
 
 The solver is below elaboration and device construction. It receives a fixed set
 of elements, a fixed analog variable map, and a fixed digital net namespace. It
-does not know source syntax or elaboration internals. A compiled PHDL module, a
+does not know source syntax or elaboration internals. A compiled Verilog-AMS module, a
 plugin device, and an external model are equivalent once they present the one
 `Element` ABI defined here.
 
@@ -110,7 +110,7 @@ point: it owns the circuit plus the shared run configuration (`Context` and
 ## §3 Element ABI — analog operations
 
 There is **one** solver-facing object, the **element**. Every participant — a
-pure resistor, a logic gate, a comparator, a JIT-compiled PHDL block, a plugin,
+pure resistor, a logic gate, a comparator, a JIT-compiled Verilog-AMS block, a plugin,
 a wrapped external model — implements the same `Element` contract and
 implements only the operations it needs. There is no downcast and no `Any`.
 
@@ -461,7 +461,7 @@ references and digital terminals as digital nets. Parameter values are already
 elaborated. The loader must either construct a faithful element or fail loud with
 a diagnostic naming the model and missing capability.
 
-Native PHDL-compiled elements, native plugin elements, and wrapped external model
+Native Verilog-AMS-compiled elements, native plugin elements, and wrapped external model
 ABIs all lower into this same one `Element` boundary. An OSDI v0.4 model is not a
 solver-native object; an OSDI loader must parse the model descriptor, bind its
 terminals and parameters, and wrap the compiled model as an element declaring
@@ -718,7 +718,7 @@ The time loop is a thin loop over named phase methods, with its mutable state
    (§10.3) and clamp the target time to the analysis stop time, to the next
    pending digital event time, to the next declared **breakpoint** (analog
    `@timer` fires and source edges — see §15.9), and to the next scheduled
-   live-set time (§10.5). Digital-var/enum `if`s in analog bodies switch at
+   live-set time (§10.5). Digital-var `if`s in analog bodies switch at
    digital events, which are themselves breakpoints, so landing here covers
    them. A target landing on a declared discontinuity is marked exempt from
    the LTE gate.
@@ -832,9 +832,9 @@ start time because skipped early states influence later history.
 
 A host may write parameters on the **compiled** circuit — no re-elaboration,
 no re-JIT (the MD-18 boundary): elaboration fixes devices; simulation
-restamps. Addressing is the PHDL scheme — the same flat instance labels and
-flattened `{param}_{field}` bundle names the POM's `Design::set_param`
-accepts. A write routes to the element's `set_param` (§3.4) and the caller
+restamps. Addressing is the same scheme regardless of frontend — flat
+instance labels and the `(path, param)` pair `Design::set_param` accepts. A
+write routes to the element's `set_param` (§3.4) and the caller
 recomputes exactly what the reported invalidation requires; a successful
 write through a held DC analysis also invalidates the driver's bypass stamp
 cache. Unknown labels or parameters fail loud (the parameter
@@ -1206,7 +1206,7 @@ Breakpoints come from two unified sources: (a) **analog** — each element's
 `@timer` fires (a phased `@timer(period, phase)` lets a source declare both
 its rise and fall edges, so the integrator lands on each switching edge
 instead of stepping over it); (b) **digital** — the digital event queue's
-future value-change times, which are when digital-var/enum `if`s in analog
+future value-change times, which are when digital-var `if`s in analog
 bodies switch. Landing on a digital event thus covers analog contributions
 that branch on a digital variable. If no hook is available, the solver still
 must honor digital event times and the global minimum/maximum timestep
@@ -1774,7 +1774,7 @@ implements either forwards to its `HostElement` mirror (through the safe
 `Ctx`/`StampSink`/`StateView` wrappers §3's raw types are translated into)
 or falls back to the supertrait's own inert default when `HostElement` does
 not mirror it. A compiled circuit holding a host device, a JIT-compiled
-PHDL device, and an external OSDI model side by side is, from every solver
+Verilog-AMS device, and an external OSDI model side by side is, from every solver
 call site, three `Box<dyn Element>`s — indistinguishable.
 
 ### 20.2 The dynamic digital subscriber
@@ -1843,9 +1843,9 @@ observes a rejected step.**
 This is a **level-2** guarantee specifically, not a solver-wide one. Levels
 0 and 1 participate in rejected steps like any other device: a level-0
 device's `load_dc`/`load_transient` are called (and re-called) during
-rejected attempts exactly as a PHDL device's are, so a level-0 author must
+rejected attempts exactly as a Verilog-AMS device's are, so a level-0 author must
 mutate state only in `accept_timestep`/`update`, never inside a load
-method — the same trap PHDL device authors already navigate, now reachable
+method — the same trap Verilog-AMS device authors already navigate, now reachable
 from a host language too. Level 1 (`Wave`/`Behavior`/`Measure`) is pure, so
 re-evaluating it during a rejected attempt is free and side-effect-free by
 construction; a `Measure` accumulates only on the accepted points it is
@@ -1906,7 +1906,7 @@ built, one this feature adds, and one still a scoped solver feature:
 
 | Tier | Mechanism | Solver change | Error |
 |---|---|---|---|
-| **1 — reactive** (PHDL's `@cross`, today, unchanged by this feature) | `EventDetector` (`piperine-signal::events`, Part IX §3) compares the previous **accepted** trigger value against the current one; it fires at the **first accepted point after** the sign change | none | up to one full timestep, **unreported** — the detector and the `EventKind::Crossing` entry it produces (`priority: Advisory`, §15.9) carry no error estimate at all |
+| **1 — reactive** (Verilog-AMS's `@(cross(...))`, today, unchanged by this feature) | `EventDetector` (`piperine-signal::events`, Part IX §3) compares the previous **accepted** trigger value against the current one; it fires at the **first accepted point after** the sign change | none | up to one full timestep, **unreported** — the detector and the `EventKind::Crossing` entry it produces (`priority: Advisory`, §15.9) carry no error estimate at all |
 | **2 — predicted + bounded** (this feature's `Sequencer::wait(above(...))`, `piperine_signal::events::predict_crossing`) | extrapolate the crossing instant from the bracketing accepted pair, resume the sequencer at the current accepted `t` (the earliest instant it can act), and report the prediction's `error_bound` honestly rather than claiming an exact landing | **none** — built entirely on seams that already existed (`$bound_step`/`bound_step_hint`, §15.9's step-hint entries) | converges toward the step floor as the surrounding steps shrink; always **reported** |
 | **3 — exact** (not built; a scoped future solver feature) | promote `EventKind::Crossing` from `Advisory` to `Exact` and add reject-and-retry at the predicted instant, the way a `Breakpoint` entry already lands exactly | yes — a real solver feature, its own spec | machine precision |
 
@@ -1915,7 +1915,7 @@ grading of code quality: `EventKind::Crossing` is `Advisory` because
 nothing in the retry machinery can force a landing at a computed instant —
 `SUPPORTS_ROLLBACK`'s checkpoint/restore (§15.8) is fully live and used for
 DC homotopy and LTE rejection, but no caller asks it to retry at a
-crossing-predicted time today. A PHDL `@cross` event body, and any host
+crossing-predicted time today. A Verilog-AMS `@(cross(...))` event body, and any host
 device that only reads `EventKind::Crossing` directly, gets tier 1: late by
 up to a timestep, with no way to know how late. `Sequencer::wait(above(net,
 level))` (Part VIII) is what buys tier 2 — the wake instant it reports

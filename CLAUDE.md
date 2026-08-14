@@ -124,10 +124,6 @@ both a package and the workspace) — always pass `--workspace`.
 
 ## Known gaps (all fail loud — see `ROADMAP.md`)
 
-- `laplace_*`, `zi_*` — **not recognized at all** by the operator/analog-function
-  resolution codegen reads from (no VAMS Annex A production reaches these names), so a
-  call fails loud at elaboration/codegen; they never reach the JIT. Language backlog,
-  tracked in `ROADMAP.md`.
 - `.disto` on MOS2/MOS3 — the 2nd/3rd-derivative kernels emit one JIT function per
   *ordered* controlling-branch combination and overrun Cranelift (`TryFromIntError`).
   They are opt-in (`SessionBuilder::disto(true)`, default off) and `Session::disto`
@@ -135,8 +131,9 @@ both a package and the workspace) — always pass `--workspace`.
 - Everything else in that family is implemented and has a ROADMAP entry with its commit:
   `transition` and the other runtime operators (`device/analog/operators.rs`), `table`,
   `$limit`/pnjlim/fetlim (`kernel/analog/limits.rs` + `device/analog/limits.rs`),
-  `idt`'s AC `1/jω` admittance, and multiple `ac_stim` per contribution (phasor sum,
-  `flatten/analog.rs::split_ac_stim`).
+  `idt`'s AC `1/jω` admittance, `laplace_*`/`zi_*` (registered in
+  `resolve/pom/analog_ops.rs`'s `AnalogOpRegistry`), and multiple `ac_stim` per
+  contribution (phasor sum, `flatten/analog.rs::split_ac_stim`).
 - Solver ABI work in progress — see `.specs/STATE.md` for the decision log and
   `.specs/features/` for feature specs.
 

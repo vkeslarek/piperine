@@ -59,7 +59,6 @@ postures, SOA).
 | Item | Status |
 |------|--------|
 | `.disto` on MOS2/MOS3 — Cranelift function-count explosion | **open** — kernels are opt-in (`disto(true)`, default off); fix = stop emitting the ordered cross-product (combinations are symmetric → one indexed function, not N) |
-| `laplace_*` / `zi_*` operators | fail-loud; language backlog |
 | LTRA (lossy tline, convolution) | urc covers the practical case; backlog |
 | Autonomous-oscillator PSS | period detection needs phase conditions; backlog |
 | AC `.sens` | DC ships; AC behind the same API if the optimizer needs it |

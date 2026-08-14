@@ -1,268 +1,346 @@
 # Appendix A — Worked Examples
 
 Each example stresses a corner of the model. Together they cover analog, digital,
-and mixed-signal design, plus the host surfaces that drive them (Part VIII).
+and mixed-signal design, plus the host surfaces that drive them (Part VIII). Every
+snippet below is real Verilog-AMS, checked against the actual sources under
+`examples/*.vams` (Piperine's runnable example gallery, one Python twin per
+circuit, gated end-to-end by `tests/run_examples.rs`) — several sections are
+verbatim excerpts; the rest are minimal compositions built from the same
+constructs those files use, so nothing here relies on a construct outside the
+supported LRM subset.
 
 ## A.1 Core library (excerpt)
 
-The foundational devices — all behavior, no elaboration-time structure beyond params.
+The foundational device patterns — all behavior, no elaboration-time structure
+beyond `parameter`s. Each piece below is drawn from a real example
+(`01_voltage_divider.vams`, `03_diode_clipper.vams`, `06_flash_adc.vams`).
 
-```phdl
-discipline Electrical { potential v : Real (unit = "V", abstol = 1e-6);
-                        flow      i : Real (unit = "A", abstol = 1e-12); }
+```verilogams
+`include "disciplines.vams"
 
-mod Resistor  ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
-analog Resistor  { I(p, n) <+ V(p, n) / r; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 5.0;
+    analog begin
+        V(p, n) <+ voltage;
+    end
+endmodule
 
-mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
-analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
 
-mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
-analog VSource { V(p, n) <- dc; }
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 1e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
 
-fn thermal_voltage(t: Real) -> Real { return 8.617e-5 * t; }
+// Series-resistor-into-diode clipper: the exponential nonlinearity that
+// exercises the Newton solve (03_diode_clipper.vams).
+module Diode (inout electrical a, inout electrical c);
+    parameter real isat = 1e-14;
+    parameter real vt = 0.02585;
+    analog begin
+        I(a, c) <+ isat * (exp(V(a, c) / vt) - 1.0);
+    end
+endmodule
 
-mod Diode ( inout a : Electrical, inout c : Electrical ) {
-    param is_sat : Real = 1e-14; param temp : Real = 300.0;
-}
-analog Diode { I(a, c) <+ is_sat * (exp(V(a, c) / thermal_voltage(temp)) - 1.0); }
+// Comparator: a digital block reading an analog node through the A2D
+// bridge — `always @(*)` over a `V(...)` read (06_flash_adc.vams's idiom).
+module Comparator (input electrical vp, input electrical vn, output logic out);
+    always @(*) begin
+        out = V(vp, vn) > 0.0;
+    end
+endmodule
 
-mod Comparator ( input vp : Electrical, input vn : Electrical, output out : Bit );
-digital Comparator { out <- (V(vp) > V(vn)); }
-
-mod BitToVoltage ( input d : Bit, inout a : Electrical ) {
-    param vlow : Real = 0.0; param vhigh : Real = 1.8;
-}
-analog BitToVoltage { if (d == 1) { V(a) <- vhigh; } else { V(a) <- vlow; } }
+// D2A bridge: a digital `logic` net driving an analog level from inside an
+// `analog` block (23_mixed_signal_adc.vams's idiom).
+module BitToVoltage (input logic d, inout electrical a, inout electrical gnd);
+    parameter real vlow = 0.0;
+    parameter real vhigh = 1.8;
+    analog begin
+        V(a, gnd) <+ (d == 1) ? vhigh : vlow;
+    end
+endmodule
 ```
 
 ## A.2 Worked architectures
 
-### A.2.1 Parametric N-bit SAR ADC
+### A.2.1 Multi-level flash ADC (analog + digital in one circuit)
 
-Analog + digital in one module set. Named children (`dac`, `comp`) are loaded by the
-parent through its own `analog` block (KCL accumulation of parasitic load).
+A bank of comparators (digital, reading node voltages through the A2D bridge)
+feeds thermometer-to-binary logic, and an analog reconstruction DAC lets a
+host testbench verify the transfer staircase end-to-end — real syntax,
+excerpted from `examples/06_flash_adc.vams` (a `mod Dac[N]`/generic
+successive-approximation state machine, as an earlier PHDL-era draft of this
+appendix sketched, used generics and an `enum` state register that have no
+Verilog-AMS equivalent in Piperine's supported subset; this is the real,
+buildable substitute):
 
-```phdl
-enum SarState : Bit[2] { Idle, Convert, Done }
+```verilogams
+`include "disciplines.vams"
 
-mod Dac[N] ( input code : Bit[N], inout out : Electrical, inout gnd : Electrical ) {
-    param vref : Real = 1.8;
-}
-analog Dac {
-    var acc = 0.0;
-    for i in 0..N {
-        if (code[i] == 1) {
-            acc = acc + vref * pow(2.0, Real::from(i)) / pow(2.0, Real::from(N));
-        }
-    }
-    V(out, gnd) <- acc;
-}
+module FlashAdc (input electrical vin, inout electrical gnd, inout electrical rec);
+    integer q1;
+    integer q0;
+    real code;
+    always @(*) begin
+        q1 = V(vin, gnd) > 2.0;
+        q0 = (V(vin, gnd) > 3.0) || ((V(vin, gnd) > 1.0) && !(V(vin, gnd) > 2.0));
+        code = 0.0;
+        if (q1 == 1) code = code + 2.0;
+        if (q0 == 1) code = code + 1.0;
+    end
+    analog begin
+        V(rec, gnd) <+ code;
+    end
+endmodule
 
-mod SarAdc[N] ( input clk : Bit, input start : Bit, input vin : Electrical,
-                inout gnd : Electrical, output result : Bit[N], output done : Bit ) {
-    wire dout : Electrical;  wire cmp : Bit;
-    var state : SarState = Idle;  var code : Bit[N] = 0;  var idx : Natural = 0;
-    param cload : Real = 50f;
-    dac  : Dac[N]     ( code, dout, gnd );
-    comp : Comparator ( vin, dout, cmp );
-}
-analog SarAdc { I(dac.out, gnd) <+ cload * ddt(V(dac.out, gnd)); }
-digital SarAdc {
-    result <- code;  done <- (state == Done);
-    @ posedge(clk) {
-        match state {
-            Idle    => { if (start == 1) { state = Convert; idx = N-1; code = 0; code[N-1] = 1; } }
-            Convert => { if (cmp == 0) { code[idx] = 0; }
-                         if (idx == 0) { state = Done; } else { idx = idx - 1; code[idx-1] = 1; } }
-            Done    => { if (start == 0) { state = Idle; } }
-        }
-    }
-}
+module AdcBoard ();
+    electrical gnd;
+    electrical vin;
+    electrical rec;
+    VoltageSource #(.voltage(0.5)) src (.p(vin), .n(gnd));
+    FlashAdc adc (.vin(vin), .gnd(gnd), .rec(rec));
+endmodule
 ```
 
 ### A.2.2 Electrothermal
 
-Two disciplines (`Electrical` and `Thermal`) coupled inside one device. No converter is
-needed because no single net crosses a discipline boundary — the coupling is inside the
-`analog` block.
+Two disciplines (`electrical` and `thermal`, both from the Annex D
+`disciplines.vams` standard library) coupled inside one device — a bang-bang
+thermostat: a thermal RC plant heated by a controller whose `@(above(...))`
+events implement the hysteresis comparator (`examples/07_thermostat.vams`,
+verbatim):
 
-```phdl
-discipline Thermal { potential temp : Real (unit = "K", abstol = 1e-4);
-                     flow pwr      : Real (unit = "W", abstol = 1e-9); }
-mod HeatedResistor ( inout p : Electrical, inout n : Electrical, inout th : Thermal ) {
-    param r0 : Real = 1k; param t0 : Real = 300.0; param tc : Real = 0.004;
-}
-analog HeatedResistor {
-    var rt = r0 * (1.0 + tc * (Temp(th) - t0));
-    I(p, n) <+ V(p, n) / rt;
-    Pwr(th) <+ V(p, n) * V(p, n) / rt;
-}
+```verilogams
+`include "disciplines.vams"
+
+// Heat capacity + leak to ambient.
+module ThermalPlant (inout electrical temp, inout electrical gnd);
+    parameter real tamb = 20.0;
+    parameter real rth = 10.0;     // C per W
+    parameter real cth = 1e-3;     // tau = rth*cth = 10 ms
+    analog begin
+        I(temp, gnd) <+ cth * ddt(V(temp, gnd));
+        I(temp, gnd) <+ (V(temp, gnd) - tamb) / rth;
+    end
+endmodule
+
+// The controller injects heat while `heater` is on; the events implement
+// the hysteresis comparator. `heater` is persistent analog state
+// (module-scope `real`): seeded once at `initial_step`, then flipped only
+// by the `above` events.
+module Controller (inout electrical temp, inout electrical gnd);
+    parameter real t_high = 25.0;
+    parameter real t_low = 22.0;
+    parameter real power = 1.0;    // W -> +10 C above ambient when always-on
+    real heater;
+    analog begin
+        @(initial_step) heater = 1.0;
+        I(temp, gnd) <+ -heater * power;
+        @(above(V(temp, gnd) - t_high)) heater = 0.0;
+        @(above(t_low - V(temp, gnd))) heater = 1.0;
+    end
+endmodule
+
+module Thermostat ();
+    electrical gnd;
+    electrical temp;
+    ThermalPlant plant (.temp(temp), .gnd(gnd));
+    Controller    ctrl  (.temp(temp), .gnd(gnd));
+endmodule
 ```
 
-### A.2.3 LC oscillator
+(This example encodes temperature on an `electrical` node — 1 V = 1 °C — rather
+than a genuine cross-branch `thermal` net; that is the real file's own
+modeling choice, not a language limitation. `disciplines.vams` does ship a
+standard `thermal` discipline with `Temp`/`Pwr` access functions for designs
+that want a real conservative thermal branch.)
 
-An analog initial condition with no stable DC operating point. The `@ initial` event
-seeds the voltage; the oscillation is self-sustaining.
+### A.2.3 Single-pole op-amp macromodel (analog feedback, non-singular loop)
 
-```phdl
-mod LcTank ( inout p : Electrical, inout n : Electrical ) {
-    param l : Real = 1u; param c : Real = 1n;
-}
-analog LcTank {
-    I(p, n) <+ c * ddt(V(p, n)) + idt(V(p, n)) / l;
-    @ initial { V(p, n) <- 1.0; }
-}
+A finite-gain macromodel (`gm` into `rp`‖`cp`, ideal output buffer) wired as a
+unity follower — `examples/12_opamp_follower.vams`, verbatim:
+
+```verilogams
+`include "disciplines.vams"
+
+// A0 = gm*rp = 1e4, pole fp = 1/(2*pi*rp*cp) = 10 Hz, GBW = A0*fp = 100 kHz.
+// The compensation node is a pin so the testbench can preset it.
+module OpAmp (input electrical inp, input electrical inn,
+              inout electrical pole, inout electrical out, inout electrical gnd);
+    parameter real gm = 1e-3;
+    parameter real rp = 1e7;
+    parameter real cp = 1.5915e-9;
+    analog begin
+        I(pole, gnd) <+ -gm * (V(inp, gnd) - V(inn, gnd));
+        I(pole, gnd) <+ V(pole, gnd) / rp;
+        I(pole, gnd) <+ cp * ddt(V(pole, gnd));
+        V(out, gnd) <+ V(pole, gnd);
+    end
+endmodule
+
+module Follower ();
+    electrical gnd;
+    electrical vin;
+    electrical comp;
+    electrical out;
+    VoltageSource #(.voltage(1.0)) src (.p(vin), .n(gnd));
+    OpAmp amp (.inp(vin), .inn(out), .pole(comp), .out(out), .gnd(gnd));
+endmodule
 ```
 
-### A.2.4 SR latch
+### A.2.4 D flip-flop chain (register state held across module boundaries)
 
-Bistability as event-held state. The register `st` is updated on either `posedge(s)` or
-`posedge(r)`.
+A shift register built from four separate `Dff` module instances, clocked by
+an analog square wave crossing the A2D bridge — `examples/21_shift_register_tran.vams`
+(excerpt; the full file also has the clock/high-rail sources feeding the
+comparators):
 
-```phdl
-mod SrLatch ( input s : Bit, input r : Bit, output q : Bit ) { var st : Bit = 0; }
-digital SrLatch {
-    q <- st;
-    @ (posedge(s) | posedge(r)) { if (s == 1) { st = 1; } else { st = 0; } }
-}
+```verilogams
+// Rising-edge D flip-flop (canonical 1364 idiom: no intermediate state, the
+// new q is latched directly from d at each posedge).
+module Dff (input logic clk, input logic d, output logic q);
+    always @(posedge clk) q <= d;
+endmodule
+
+module ShiftReg4 (input logic clk, input logic din,
+                  output logic q0, output logic q1, output logic q2, output logic q3);
+    Dff f0 (.clk(clk), .d(din), .q(q0));
+    Dff f1 (.clk(clk), .d(q0),  .q(q1));
+    Dff f2 (.clk(clk), .d(q1),  .q(q2));
+    Dff f3 (.clk(clk), .d(q2),  .q(q3));
+endmodule
 ```
 
-### A.2.5 Ideal op-amp
+### A.2.5 Ripple-carry adder (structural composition across module boundaries)
 
-Finite-gain VCVS. The gain is large-but-finite (1M) so the system is non-singular.
+Four 1-bit `FullAdder` instances chained by their carry — the thing that
+matters across module boundaries: the carry propagates `fa0 -> fa1 -> fa2 ->
+fa3`, and this is also the correctness oracle for the fused digital-network
+JIT (`piperine-codegen/docs/DIGITAL_JIT.md`). `examples/17_ripple_adder_4bit.vams`,
+excerpted (the full file also declares the `BitDriver` stageable inputs):
 
-```phdl
-mod OpAmp ( input inp : Electrical, input inn : Electrical, inout out : Electrical ) {
-    param gain : Real = 1M;
-}
-analog OpAmp { V(out) <- gain * V(inp, inn); }
+```verilogams
+// 1-bit full adder: sum = a XOR b XOR cin, cout = majority(a, b, cin).
+module FullAdder (input logic a, input logic b, input logic cin,
+                  output logic sum, output logic cout);
+    always @(*) begin
+        sum <= (a != b) != cin;
+        cout <= (a && b) || (cin && (a != b));
+    end
+endmodule
+
+module Adder4 (input logic a0, a1, a2, a3, input logic b0, b1, b2, b3,
+              output logic s0, s1, s2, s3, output logic cout);
+    logic zero, c0, c1, c2;
+    FullAdder fa0 (.a(a0), .b(b0), .cin(zero), .sum(s0), .cout(c0));
+    FullAdder fa1 (.a(a1), .b(b1), .cin(c0),  .sum(s1), .cout(c1));
+    FullAdder fa2 (.a(a2), .b(b2), .cin(c1),  .sum(s2), .cout(c2));
+    FullAdder fa3 (.a(a3), .b(b3), .cin(c2),  .sum(s3), .cout(cout));
+endmodule
 ```
 
-### A.2.6 Tri-state bus
+### A.2.6 Structural generation (`generate`/`genvar`)
 
-Resolved multi-driver via `Quad` storage with `resolve tri`. Drivers output `0qZ`
-(high-impedance) when disabled.
+A `generate for` loop instantiates a bank of matched resistors as the bottom
+leg of a divider — `examples/11_resistor_string.vams`, verbatim (this is the
+real replacement for an earlier PHDL-era draft's `mod Ladder[N]` generic —
+Verilog-AMS expresses repeated structure with `generate`/`genvar` over a
+`parameter integer`, not a generic module):
 
-```phdl
-discipline DataLine { storage Quad; resolve tri; }
-mod Driver[N] ( input en : Bit, input val : Logic[N], inout bus : DataLine[N] );
-digital Driver { if (en == 1) { bus <- val; } else { bus <- [0qZ; N]; } }
+```verilogams
+`include "disciplines.vams"
+
+module ParallelBank ();
+    electrical gnd;
+    electrical top;
+    electrical mid;
+    genvar i;
+    VoltageSource src (.p(top), .n(gnd));
+    Resistor r_top (.p(top), .n(mid));
+    generate
+        for (i = 0; i < 4; i = i + 1) begin : bank
+            Resistor r (.p(mid), .n(gnd));
+        end
+    endgenerate
+endmodule
 ```
 
-### A.2.7 Synchronizer
+### A.2.7 Mixed-signal transient: both bridges in one circuit
 
-Two clock domains. The register chain (`m`, `n`) is a pipeline — within the clocked
-block, reads see the pre-edge value.
+A ramp voltage source drives a 3-comparator level ADC; the digital block reads
+the analog ramp through the A2D bridge and the analog block reads the digital
+bits back through the D2A bridge, reconstructing a monotonic staircase — one
+circuit, both bridges, both directions. `examples/23_mixed_signal_adc.vams`,
+verbatim:
 
-```phdl
-mod Synchronizer ( input d : Bit, input clk_b : Bit, output q : Bit ) {
-    var m : Bit = 0; var n : Bit = 0;
-}
-digital Synchronizer {
-    q <- n;
-    @ posedge(clk_b) { m = d; n = m; }
-}
-```
+```verilogams
+`include "disciplines.vams"
 
-### A.2.8 First-order delta-sigma
+module RampSource (inout electrical p, inout electrical n);
+    parameter real slope = 4.0e5;   // V/s  (0.4 V/us -> 0..4 V over 10 us)
+    analog begin
+        V(p, n) <+ slope * $abstime;
+    end
+endmodule
 
-A closed loop crossing the analog/digital boundary twice. The register `q` is the unit
-delay that makes the loop well-posed — without it, there would be a zero-delay algebraic
-loop.
+module LevelAdc (input electrical vin, inout electrical gnd,
+                 output logic d2, output logic d1, output logic d0,
+                 inout electrical rec);
+    real v;
+    always @(*) begin
+        d0 = V(vin, gnd) > 1.0;
+        d1 = V(vin, gnd) > 2.0;
+        d2 = V(vin, gnd) > 3.0;
+    end
+    analog begin
+        v = 0.0;
+        if (d0 == 1) v = v + 1.0;
+        if (d1 == 1) v = v + 1.0;
+        if (d2 == 1) v = v + 1.0;
+        V(rec, gnd) <+ v;
+    end
+endmodule
 
-```phdl
-mod DeltaSigma ( input vin : Electrical, inout gnd : Ground, input clk : Bit, output dout : Bit ) {
-    param c : Real = 1p; param r : Real = 1k; param vref : Real = 1.0;
-    wire intg : Electrical;  var q : Bit = 0;
-}
-analog DeltaSigma {
-    var vfb = if (q == 1) { vref } else { -vref };
-    I(intg, gnd) <+ c * ddt(V(intg, gnd));
-    I(intg, gnd) <+ (vfb - V(vin)) / r;
-}
-digital DeltaSigma {
-    dout <- q;
-    @ posedge(clk) { q = (V(intg) > 0.0); }
-}
-```
-
-### A.2.9 Ring oscillator
-
-Feedback is the `analog` mechanism itself — a finite-bandwidth ODE with no stable DC
-point on an odd ring. (The same topology in `digital` would be a zero-delay loop with
-no fixed point — an error.)
-
-```phdl
-mod Inverter ( input a : Electrical, inout y : Electrical, inout gnd : Ground ) {
-    param gain : Real = 10.0; param c : Real = 1f; param r : Real = 1k;
-}
-analog Inverter {
-    var target = -gain * V(a, gnd);
-    I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - target) / r;
-}
-
-mod RingOsc[N] ( inout gnd : Ground ) {                     // N odd
-    wire node : Electrical[N];
-    for i in 0..N { Inverter ( node[i], node[(i + 1) % N], gnd ); }
-}
-```
-
-### A.2.10 RC ladder with per-tap parasitics
-
-Named-instance arrays; the parent reaches each tap via `name[i].port`. Layout intent
-rides on an attribute (`@route(shield = true)`).
-
-```phdl
-mod Ladder[N] ( inout bus : Electrical, inout gnd : Ground ) {
-    param r : Real = 1k; param cpar : Real = 5f;
-    wire tap : Electrical[N];
-    for i in 0..N {
-        rseg[i] : Resistor ( bus, tap[i] ) { .r = r };
-        @route(shield = true) rgnd[i] : Resistor ( tap[i], gnd ) { .r = r };
-    }
-}
-analog Ladder {
-    for i in 0..N { I(rseg[i].n, gnd) <+ cpar * ddt(V(rseg[i].n, gnd)); }
-}
-```
-
-### A.2.11 Generic pipelined accumulator
-
-Generics + register inference. The accumulator updates on the clock edge when `en` is
-asserted; `sum` reflects the accumulated value combinationally.
-
-```phdl
-mod Accumulator[W] ( input clk : Bit, input en : Bit, input x : UInt[W], output sum : UInt[W] ) {
-    var acc : UInt[W] = 0;
-}
-digital Accumulator {
-    sum <- acc;
-    @ posedge(clk) when (en) { acc = acc + x; }
-}
+module AdcDemo ();
+    electrical gnd;
+    electrical vin;
+    electrical rec;
+    logic d2, d1, d0;
+    RampSource #(.slope(4.0e5)) src (.p(vin), .n(gnd));
+    LevelAdc adc (.vin(vin), .gnd(gnd), .d2(d2), .d1(d1), .d0(d0), .rec(rec));
+endmodule
 ```
 
 ## A.3 Worked testbenches (host API)
 
-The interpreted `bench` block was removed — testbenches are Python files
-(Part VIII). One runnable twin exists per `.phdl` circuit in `examples/`;
-a minimal one:
+There is no in-language bench block — testbenches are Python files (Part
+VIII). One runnable twin exists per `.vams` circuit in `examples/`; a minimal
+one:
 
 ```python
-# switch_open_tb.py
+# 01_voltage_divider.py (excerpt)
 import piperine
 
-m = piperine.load("switch.phdl").module("SwitchOpenTest")
-r = m.op()
-assert r.v("signal") < 1e-6, "open switch pulls the node to ground"
+design = piperine.load("01_voltage_divider.vams")
+board = design.module("DividerBoard")
+op = board.op()
+assert abs(op.v("mid") - 2.0) < 1e-6, "divider ratio is R2/(R1+R2)"
 ```
 
-Run with `piperine test` (discovers `*_tb.py`) or `piperine run switch_open_tb.py`.
+Run with `piperine test` (discovers `*_tb.py`/the example gallery's own
+Python twins) or `piperine run 01_voltage_divider.py`.
 
 ## A.4 Host devices and testers (dv-tester)
 
 The host device library (Part VII §20, Part VIII §17) writes a device *in*
-the host language rather than in PHDL. Both examples below reflect the
+the host language rather than in Verilog-AMS. Both examples below reflect the
 actually-delivered surface — `crates/piperine-api/src/device/`,
 `crates/piperine-python/src/sequencer_bridge.rs`/`signal_bridge.rs` — not
 `ideal.md`'s aspirational sketches (`t.arm`/`t.install`/`b.vsource` are not
@@ -271,16 +349,17 @@ asymmetry).
 
 ### A.4.1 A host device — Rust, level 0 + level 1 composed
 
-The declaration is ordinary PHDL — `@device` with a plugin binding and a
-host registration both able to satisfy it (Part I §10.7):
+The declaration is ordinary Verilog-AMS — a `(* device = …, type = … *)`
+attribute-instance module with a plugin binding and a host registration both
+able to satisfy it (Part I §10.7):
 
-```phdl
-discipline Electrical { potential v : Real; flow i : Real; }
+```verilogams
+`include "disciplines.vams"
 
-@device(plugin = "none", type = "SoftStartLoad")
-mod SoftStartLoad ( inout p : Electrical, inout n : Electrical ) {
-    param r : Real = 1e3;
-}
+(* device = "none", type = "SoftStartLoad" *)
+module SoftStartLoad (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+endmodule
 ```
 
 The implementation is a Rust `HostElement`: a resistive load stamped
@@ -333,42 +412,50 @@ registry.register("SoftStartLoad", |spec| {
 });
 ```
 
-`SessionBuilder::host_registry(Rc::new(registry))` (Appendix C §2) wires it; the same
-`@device` declaration would resolve to a plugin binding instead if one were
-wired with `SessionBuilder::provider(...)` — the PHDL never changes between
-the two modes (Part I §10.7's graduation path).
+`SessionBuilder::host_registry(Rc::new(registry))` (Appendix C §2) wires it; the
+same `device` attribute would resolve to a plugin binding instead if one
+were wired with `SessionBuilder::provider(...)` — the Verilog-AMS source
+never changes between the two modes (Part I §10.7's graduation path).
 
 ### A.4.2 A tester — Python `Sequencer`
 
 A `pip.Sequencer` subclass is the coroutine-shaped tester itself —
 `run(self, t)` is a generator, `yield t.advance(dt)`/`yield
 t.wait(pip.edge(...))` are the wake forms, `t.expect`/`t.warn` report
-findings. `@pip.device(type_id)` declares which `@device(plugin = "none",
-type = type_id)` PHDL instance it binds to, exactly as a plain host device
-does (Part I §10.7):
+findings. `@pip.device(type_id)` declares which `(* device = "none", type =
+type_id *)` instance it binds to, exactly as a plain host device does (Part I
+§10.7):
 
 ```python
 # regulator_tb.py
 import piperine as pip
 
-PHDL = """
-discipline Electrical { potential v : Real; flow i : Real; }
+REGULATOR_VAMS = """
+`include "disciplines.vams"
 
-mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
-analog VSource { V(p, n) <- dc; }
+module VSource (inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
 
-mod Regulator ( inout vin : Electrical, inout vout : Electrical, inout gnd : Electrical );
-analog Regulator { V(vout, gnd) <+ min(V(vin, gnd), 1.8); }
+module Regulator (inout electrical vin, inout electrical vout, inout electrical gnd);
+    analog begin
+        V(vout, gnd) <+ min(V(vin, gnd), 1.8);
+    end
+endmodule
 
-@device(plugin = "none", type = "RegulatorTest")
-mod RegulatorTest ( inout vout : Electrical, inout gnd : Electrical );
+(* device = "none", type = "RegulatorTest" *)
+module RegulatorTest (inout electrical vout, inout electrical gnd);
+endmodule
 
-mod Top () {
-    wire vin : Electrical; wire vout : Electrical; wire gnd : Electrical;
-    src : VSource ( vin, gnd ) { .dc = 3.3 };
-    reg : Regulator ( vin, vout, gnd );
-    tst : RegulatorTest ( vout, gnd );
-}
+module Top ();
+    electrical vin, vout, gnd;
+    VSource #(.dc(3.3)) src (.p(vin), .n(gnd));
+    Regulator reg (.vin(vin), .vout(vout), .gnd(gnd));
+    RegulatorTest tst (.vout(vout), .gnd(gnd));
+endmodule
 """
 
 @pip.device('RegulatorTest')
