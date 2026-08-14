@@ -57,7 +57,7 @@ pub(super) const UNRESOLVED: &str = "";
 pub(super) struct ResolveDisciplines;
 
 impl ElabPass for ResolveDisciplines {
-    fn run(&self, _elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+    fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
         // Iterate to a fixed point: resolving one net in one module can
         // supply the discipline a connected net in *another* module needs
         // next round (an instance's port, seen from the callee side, is
@@ -66,7 +66,7 @@ impl ElabPass for ResolveDisciplines {
         loop {
             let mut progress = false;
             for name in &names {
-                progress |= resolve_one_round(name, design)?;
+                progress |= resolve_one_round(elab, name, design)?;
             }
             if !progress {
                 break;
@@ -130,7 +130,7 @@ fn unresolved_err(net: &str, module: &str) -> ElabError {
 /// known, adopt it; if the local net is already resolved to something
 /// else, that's a conflict (both directions are checked, since either
 /// side could be the unresolved one). Returns whether anything changed.
-fn resolve_one_round(name: &str, design: &mut Design) -> Result<bool, ElabError> {
+fn resolve_one_round(elab: &Elaborator, name: &str, design: &mut Design) -> Result<bool, ElabError> {
     let module = design.modules.get(name).cloned().ok_or_else(|| {
         ElabError::from(ElabErrorKind::Other(format!("ResolveDisciplines: unknown module `{name}`")))
     })?;
@@ -174,12 +174,24 @@ fn resolve_one_round(name: &str, design: &mut Design) -> Result<bool, ElabError>
                         (Some(Domain::Discrete), Some(Domain::Continuous)) => {
                             resolved.insert(port_ref.net().to_string(), callee_disc.to_string());
                         }
+                        _ if super::connect::eligible_bridge(elab, d, callee_disc).is_some() => {
+                            // A registered `connectrules` block covers
+                            // this exact pair (T8, LRMC-C7-01) — defer to
+                            // `InsertConnectModules` instead of vetoing
+                            // the connection here. The net keeps its
+                            // current discipline `d` unchanged; both sides
+                            // still carry their real, different
+                            // disciplines when `InsertConnectModules` runs
+                            // next, which is exactly what connect-module
+                            // selection needs to act on.
+                        }
                         _ => {
-                            // Same domain (different names) — T8's shared
-                            // connectrules-eligibility check isn't built
-                            // yet (design.md P0.3 depends-on note); until
-                            // then this is the same hard failure as
-                            // before.
+                            // Same domain (different names) with no
+                            // eligible connectrules pair, or domain
+                            // unknown for either side — still the same
+                            // hard failure as before (spec Edge Case: two
+                            // genuinely incompatible disciplines must
+                            // still hard-fail).
                             return Err(ElabError::from(ElabErrorKind::DisciplineResolutionFailed {
                                 net: port_ref.net().to_string(),
                                 module: name.to_string(),

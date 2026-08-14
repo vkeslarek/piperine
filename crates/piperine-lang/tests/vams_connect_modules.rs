@@ -3,12 +3,12 @@
 //! MD-25 (derived-artifact) unit tests live with the pass itself
 //! (`crates/piperine-lang/src/elab/lower/connect.rs`, `#[cfg(test)]`,
 //! per this feature's established pattern — see `flatten.rs`'s own tests
-//! for precedent) since they need to construct a `Design`/`Elaborator`
-//! directly (bypassing `ResolveDisciplines`, whose current hard-fail-on-
-//! mismatch behavior is documented in `connect.rs`'s own module doc as
-//! the reason a genuine cross-discipline connection can't reach this pass
-//! through the full pipeline yet — SPEC_DEVIATION, carried forward).
-//! This target proves the *pipeline-level* claims: `connectrules`/
+//! for precedent); since T8 (LRMC-C7-01) those tests run a genuine
+//! cross-discipline connection through the real, full
+//! `parse_and_elaborate` pipeline too — `ResolveDisciplines` no longer
+//! unconditionally vetoes a connectrules-eligible mismatch before this
+//! pass gets a chance (`eligible_bridge`, shared by both passes). This
+//! target proves the *pipeline-level* claims: `connectrules`/
 //! `connectmodule` declarations parse and elaborate without disturbing an
 //! ordinary design, and the pass is correctly positioned in `PASSES`
 //! (after `ResolveDisciplines`, before `FlattenHierarchy`).

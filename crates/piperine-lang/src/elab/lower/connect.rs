@@ -12,34 +12,21 @@
 //! `ConnectModuleAmbiguous`), naming every candidate found in the `issue`
 //! text (E-STD 3).
 //!
-//! **SPEC_DEVIATION (documented, carried forward — found while
-//! implementing, not assumed away):** `ResolveDisciplines` (T26,
-//! `disciplines.rs::resolve_one_round`) already hard-fails
-//! (`DisciplineResolutionFailed`, E4003) the instant it sees an instance
-//! port connected to a net whose *already-resolved* discipline differs
-//! from the port's declared discipline — see that function's own
-//! `Some(d) if d != callee_disc => Err(...)` arm
-//! (`disciplines.rs:122-131`). Since `InsertConnectModules` runs *after*
-//! `ResolveDisciplines` in `PASSES` (per this task's own stated position,
-//! "after `ResolveDisciplines`, before `FlattenHierarchy`"), a genuine
-//! cross-discipline connection in a real `.vams` source **never survives
-//! to reach this pass** — elaboration already aborted one pass earlier.
-//! Closing this gap for real needs `ResolveDisciplines` itself to treat a
-//! connectrules-eligible mismatch as "defer to `InsertConnectModules`"
-//! rather than an unconditional conflict — a coupled change to
-//! `disciplines.rs`, outside this task's stated `Where`
-//! (`elab/lower/connect.rs`, `passes.rs`, the test file). Carried forward
-//! as documented debt, exactly as `disciplines.rs`'s own module doc
-//! already flagged: "`connect`/`connectrules`-driven resolution (ch.
-//! 7/10) is future work (T52, `InsertConnectModules`)" — T52, on
-//! inspection, still needs that follow-up to close the loop. What this
-//! pass delivers today: the selection algorithm (independently proven
-//! correct by unit tests that construct a `Design`/`Elaborator` directly,
-//! bypassing `ResolveDisciplines` entirely — the same technique
-//! `flatten.rs`'s own tests use for derived-artifact assertions), wired
-//! into `PASSES` at the stated position, and provably a no-op (zero
-//! regressions) over every design in today's corpus, since none of them
-//! can reach this pass with a live mismatch for it to act on.
+//! **Formerly unreachable, now fixed (LRMC-C7-01, T8):** `ResolveDisciplines`
+//! (`disciplines.rs::resolve_one_round`) used to hard-fail
+//! (`DisciplineResolutionFailed`, E4003) the instant it saw an instance
+//! port connected to a net whose already-resolved discipline differed
+//! from the port's declared discipline — so a genuine cross-discipline
+//! connection in a real `.vams` source never survived to reach this pass.
+//! [`eligible_bridge`] is now shared by both passes: `ResolveDisciplines`
+//! calls it before hard-failing a same-domain mismatch (a
+//! different-*domain* mismatch is `ResolveDisciplines`'s own
+//! continuous-over-discrete rule, LRMC-C10-18, resolved without ever
+//! reaching here) and lets a connectrules-eligible pair through
+//! unresolved-but-unchanged, so it reaches `InsertConnectModules` with
+//! both sides still carrying their real, different disciplines — exactly
+//! what [`select_connect_module`] needs. `PASSES`' order is unchanged
+//! (`ResolveDisciplines` still runs first); only the *veto* moved.
 
 use crate::ast::ModuleKind;
 
@@ -108,6 +95,25 @@ fn local_net_discipline(module: &crate::pom::Module, net: &str) -> Option<String
         .or_else(|| module.wires.iter().find(|w| w.name == net).map(|w| w.ty.discipline_name().to_string()))
 }
 
+/// A discipline pair is "eligible for bridging" if some registered
+/// `connectrules` block declares a `connect` rule naming both — shared by
+/// `ResolveDisciplines` (T8, `disciplines.rs`) and `InsertConnectModules`
+/// (this pass) so a bridgeable same-domain mismatch is no longer vetoed by
+/// `ResolveDisciplines` before it ever reaches connect-module selection
+/// (LRMC-C7-01). Returns `Some(())` (present/absent, not a specific rule
+/// id — no caller needs to know *which* rule matched, only whether one
+/// did) rather than a bool so a future caller that wants the win itself
+/// borrow-checks the same as an `Option`-returning lookup would.
+pub(super) fn eligible_bridge(elab: &Elaborator, a: &str, b: &str) -> Option<()> {
+    let eligible = elab
+        .syms
+        .connectrules
+        .values()
+        .flat_map(|cr| &cr.rules)
+        .any(|rule| rule.disciplines.iter().any(|d| d == a) && rule.disciplines.iter().any(|d| d == b));
+    eligible.then_some(())
+}
+
 /// LRM ch. 7 connect-module selection for the discipline pair
 /// `(from_discipline, to_discipline)`. Eligibility requires a registered
 /// `connectrules` block naming both disciplines in one `connect` rule;
@@ -120,11 +126,7 @@ pub(super) fn select_connect_module(
     from_discipline: &str,
     to_discipline: &str,
 ) -> Result<String, ElabError> {
-    let eligible = elab.syms.connectrules.values().flat_map(|cr| &cr.rules).any(|rule| {
-        rule.disciplines.iter().any(|d| d == from_discipline)
-            && rule.disciplines.iter().any(|d| d == to_discipline)
-    });
-    if !eligible {
+    if eligible_bridge(elab, from_discipline, to_discipline).is_none() {
         return Err(ambiguous_err(
             from_discipline,
             to_discipline,
@@ -180,7 +182,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use crate::ast::{ConnectRule, ConnectrulesDecl, ModuleDecl, ModuleKind, Span};
-    use crate::pom::{Direction, Module, NetRef, NetType, Port};
+    use crate::pom::{Direction, Module, NetType, Port};
 
     fn span() -> Span {
         Span::new(0, 0)
@@ -311,92 +313,84 @@ mod tests {
         assert!(matches!(err.kind, ElabErrorKind::ConnectModuleAmbiguous { .. }));
     }
 
-    /// MD-25 + the pass's own scan: a genuine mismatch (constructed
-    /// directly, bypassing `ResolveDisciplines` — see this module's own
-    /// scope-note doc comment for why that pass would otherwise veto the
-    /// scenario first) produces a bridge instance that lands only in
-    /// `Elaborator::generated_instances`, never in `Design::modules`.
+    /// MD-25 + the pass's own scan, now through the **real, full**
+    /// elaboration pipeline (T8, LRMC-C7-01) — `ResolveDisciplines` no
+    /// longer vetoes this genuine same-domain-unknown mismatch before
+    /// `InsertConnectModules` gets a chance, because `` electrical `` is
+    /// declared nowhere (domain unknown) and `` logic ``/`` electrical ``
+    /// is an eligible `connectrules` pair (`eligible_bridge`). The bridge
+    /// instance lands only in `Design::flat_module` (the derived form),
+    /// never in `Design::module` (the authored form) — this was a
+    /// hand-built `Design`/`Elaborator` bypassing `ResolveDisciplines`
+    /// before this task; it now runs the source through
+    /// `parse_and_elaborate` like any real `.vams` file.
     #[test]
     fn matched_bridge_lands_only_in_generated_instances_not_design_modules() {
-        let mut elab = elab_with(
-            vec![("bridge", ModuleKind::Connectmodule), ("leaf", ModuleKind::Module)],
-            connectrules_naming(&["logic", "electrical"]),
+        const SRC: &str = "
+            discipline logic;
+                domain discrete;
+            enddiscipline
+
+            connectrules basic_rules;
+                connect logic, electrical;
+            endconnectrules
+
+            connectmodule bridge (inout logic a, inout electrical b);
+            endmodule
+
+            module analog_leaf (inout electrical p);
+            endmodule
+
+            module digital_leaf (inout logic p);
+            endmodule
+
+            module top ();
+                analog_leaf a1 (n);
+                digital_leaf d1 (n);
+            endmodule
+        ";
+        let design = crate::parse_and_elaborate(SRC, &crate::SourceMap::dummy())
+            .expect("a genuine cross-discipline connection with an eligible connectrules pair elaborates");
+
+        // `Design::module` (the authored form) is completely unchanged —
+        // still exactly the two authored instances, never the bridge.
+        let top_authored = design.module("top").expect("top elaborated");
+        assert_eq!(top_authored.instances.len(), 2, "authored instances: a1, d1 only");
+        assert!(top_authored.instances.iter().all(|i| i.module != "bridge"));
+
+        // The bridge instance lands in the derived-only flattened form.
+        let top_flat = design.flat_module("top").expect("top's flattened form");
+        assert_eq!(top_flat.instances.len(), 3, "authored 2 + 1 inserted bridge");
+        assert!(
+            top_flat.instances.iter().any(|i| i.module == "bridge"),
+            "a bridge instance was inserted: {:?}",
+            top_flat.instances.iter().map(|i| &i.module).collect::<Vec<_>>()
         );
-        let mut design = Design::new();
-        design.modules_map_mut().insert(
-            "bridge".to_string(),
-            plain_module("bridge", vec![port("a", "logic"), port("b", "electrical")]),
-        );
-        design.modules_map_mut().insert("leaf".to_string(), plain_module("leaf", vec![port("p", "logic")]));
-        let mut top = plain_module("top", vec![]);
-        top.wires.push(crate::pom::Wire {
-            span: None,
-            attributes: vec![],
-            doc: None,
-            name: "n".to_string(),
-            ty: NetType::Discipline("electrical".to_string()),
-        });
-        top.instances.push(Instance {
-            span: None,
-            label_span: None,
-            type_span: None,
-            attributes: vec![],
-            doc: None,
-            label: Some("u1".to_string()),
-            module: "leaf".to_string(),
-            ports: vec![NetRef::simple("n")],
-            params: vec![],
-        });
-        design.modules_map_mut().insert("top".to_string(), top);
-
-        let design_before_len: usize = design.modules().map(|m| m.instances.len()).sum();
-
-        InsertConnectModules.run(&mut elab, &mut design).unwrap();
-
-        // `Design::modules` is completely unchanged — still exactly the
-        // one authored instance (`u1`), never the connect bridge.
-        let design_after_len: usize = design.modules().map(|m| m.instances.len()).sum();
-        assert_eq!(design_before_len, design_after_len, "Design::modules must be untouched (MD-25)");
-        let top_after = design.modules.get("top").unwrap();
-        assert_eq!(top_after.instances.len(), 1);
-        assert_eq!(top_after.instances[0].name(), "u1");
-
-        // The bridge instance lands in the derived-only bookkeeping.
-        let generated = elab.generated_instances.get("top").expect("a bridge was generated for `top`");
-        assert_eq!(generated.len(), 1);
-        assert_eq!(generated[0].module, "bridge");
     }
 
+    /// Same real-pipeline treatment (T8): no discipline crossing at all
+    /// (every connection stays within one discipline) means no bridge is
+    /// ever needed — the flattened and authored forms must have the exact
+    /// same instance count.
     #[test]
     fn matching_disciplines_produce_no_bridge() {
-        let mut elab = elab_with(
-            vec![("leaf", ModuleKind::Module)],
-            connectrules_naming(&["electrical", "electrical"]),
-        );
-        let mut design = Design::new();
-        design.modules_map_mut().insert("leaf".to_string(), plain_module("leaf", vec![port("p", "electrical")]));
-        let mut top = plain_module("top", vec![]);
-        top.wires.push(crate::pom::Wire {
-            span: None,
-            attributes: vec![],
-            doc: None,
-            name: "n".to_string(),
-            ty: NetType::Discipline("electrical".to_string()),
-        });
-        top.instances.push(Instance {
-            span: None,
-            label_span: None,
-            type_span: None,
-            attributes: vec![],
-            doc: None,
-            label: Some("u1".to_string()),
-            module: "leaf".to_string(),
-            ports: vec![NetRef::simple("n")],
-            params: vec![],
-        });
-        design.modules_map_mut().insert("top".to_string(), top);
+        const SRC: &str = "
+            module leaf (inout electrical p);
+            endmodule
 
-        InsertConnectModules.run(&mut elab, &mut design).unwrap();
-        assert!(elab.generated_instances.get("top").is_none(), "no discipline crossing => no bridge inserted");
+            module top ();
+                leaf u1 (n);
+            endmodule
+        ";
+        let design = crate::parse_and_elaborate(SRC, &crate::SourceMap::dummy())
+            .expect("a same-discipline design elaborates");
+        let top_authored = design.module("top").expect("top elaborated");
+        let top_flat = design.flat_module("top").expect("top's flattened form");
+        assert_eq!(top_authored.instances.len(), 1);
+        assert_eq!(
+            top_flat.instances.len(),
+            top_authored.instances.len(),
+            "no discipline crossing => no bridge inserted"
+        );
     }
 }

@@ -30,7 +30,13 @@ use super::Elaborator;
 
 /// One elaboration stage. `run` mutates the shared `Elaborator` state and
 /// the `Design` under construction; the first error aborts the pipeline.
-pub(crate) trait ElabPass {
+///
+/// `: std::any::Any` costs nothing on any impl (every pass here is a
+/// `'static` unit struct, which is `Any` automatically) and lets
+/// `tests::resolve_disciplines_runs_strictly_before_insert_connect_modules`
+/// identify a `PASSES` entry's concrete type via `downcast_ref` (trait
+/// upcasting, stable) instead of a fragile reflection trick.
+pub(crate) trait ElabPass: std::any::Any {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError>;
 }
 
@@ -112,5 +118,45 @@ impl ElabPass for Typecheck {
             .into_iter()
             .next()
             .map_or(Ok(()), Err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::connect::InsertConnectModules;
+    use super::super::disciplines::ResolveDisciplines;
+
+    /// T8 (LRMC-C7-01): `eligible_bridge` only makes sense if
+    /// `ResolveDisciplines` still runs strictly before
+    /// `InsertConnectModules` — this is the ordering invariant the fix
+    /// depends on, asserted mechanically so a future reorder can't
+    /// silently break it. Trait-object identity is read via
+    /// `std::any::type_name_of_val` (stable through `&dyn Trait`, unlike
+    /// `Any::downcast`, which every pass here — zero-sized unit structs —
+    /// would need `'static` + explicit `as &dyn Any` plumbing for no
+    /// benefit over just reading the concrete type name).
+    #[test]
+    fn resolve_disciplines_runs_strictly_before_insert_connect_modules() {
+        let resolve_idx = PASSES
+            .iter()
+            .position(|p| (*p as &dyn std::any::Any).downcast_ref::<ResolveDisciplines>().is_some())
+            .expect("ResolveDisciplines is in PASSES");
+        let insert_idx = PASSES
+            .iter()
+            .position(|p| (*p as &dyn std::any::Any).downcast_ref::<InsertConnectModules>().is_some())
+            .expect("InsertConnectModules is in PASSES");
+        assert!(
+            resolve_idx < insert_idx,
+            "ResolveDisciplines (index {resolve_idx}) must run before InsertConnectModules \
+             (index {insert_idx}) — eligible_bridge's deferral only works in this order"
+        );
+    }
+
+    /// `PASSES`' exact length and shape — a coarse guard against a pass
+    /// silently disappearing or a duplicate being added.
+    #[test]
+    fn passes_has_the_documented_eight_stages() {
+        assert_eq!(PASSES.len(), 8);
     }
 }
