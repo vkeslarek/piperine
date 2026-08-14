@@ -2,6 +2,19 @@
 //! port/net declared with no explicit discipline, by propagating the
 //! discipline of whatever it connects to.
 //!
+//! **Domain-aware conflict resolution (LRMC-C10-18/19, design.md P0.3):**
+//! when two connected nets carry *different* disciplines, this pass now
+//! reads each discipline's declared `domain` (`design.discipline(name)`)
+//! before deciding — Annex F §7.4.4.1's own headline rule is that
+//! **continuous wins over discrete**, so a domain mismatch is resolved,
+//! not an error. A discipline with no declaration in this design (domain
+//! unknown) can't take this shortcut, and two disciplines that share a
+//! domain but are still genuinely different still hard-fail exactly as
+//! before (T8's shared connectrules-eligibility check, not yet built,
+//! will add a third option here). A net left unresolved after the
+//! fixed-point loop consults an in-force `` `default_discipline ``
+//! directive (Annex F step 4.b) before finally being declared unknown.
+//!
 //! **Annex F method chosen (T26 decision, per the task's own "decided
 //! in-task against the LRM's worked examples" instruction): Basic
 //! discipline resolution (§7.4.4.1).** The LRM names it as *the default*
@@ -60,9 +73,30 @@ impl ElabPass for ResolveDisciplines {
             }
         }
 
-        // Anything still unresolved after the fixed point has no
-        // connection that could supply a discipline — fail loud naming
-        // the method and the reason (E4003).
+        // Annex F §7.4.4.1 step 4.b: a net that never received a
+        // discipline from any connection consults an in-force
+        // `` `default_discipline `` directive before being declared
+        // unknown (LRMC-C10-19) — applied once, after the fixed point, so
+        // it never pre-empts a real connection's discipline.
+        if let Some(default) = design.directives().default_discipline.clone() {
+            for name in &names {
+                let m = design.modules.get_mut(name).unwrap();
+                for p in &mut m.ports {
+                    if p.ty.discipline_name() == UNRESOLVED {
+                        p.ty = crate::pom::NetType::Discipline(default.clone());
+                    }
+                }
+                for w in &mut m.wires {
+                    if w.ty.discipline_name() == UNRESOLVED {
+                        w.ty = crate::pom::NetType::Discipline(default.clone());
+                    }
+                }
+            }
+        }
+
+        // Anything still unresolved (no connection supplied a discipline,
+        // and no `default_discipline` was in force) has no way to get
+        // one — fail loud naming the method and the reason (E4003).
         for name in &names {
             let m = &design.modules[name];
             for p in &m.ports {
@@ -116,16 +150,48 @@ fn resolve_one_round(name: &str, design: &mut Design) -> Result<bool, ElabError>
                     resolved.insert(port_ref.net().to_string(), callee_disc.to_string());
                 }
                 Some(d) if d != callee_disc => {
-                    return Err(ElabError::from(ElabErrorKind::DisciplineResolutionFailed {
-                        net: port_ref.net().to_string(),
-                        module: name.to_string(),
-                        method: "basic discipline resolution (LRM §7.4.4.1)".to_string(),
-                        reason: format!(
-                            "incompatible disciplines on drivers and receivers — `{d}` vs `{callee_disc}` (from instance `{}`)",
-                            inst.name()
-                        ),
-                        span: None,
-                    }));
+                    // Annex F §7.4.4.1's headline rule: when the two
+                    // discipline *domains* are known and differ,
+                    // continuous wins over discrete — this is Basic
+                    // resolution's own conflict-avoidance rule, not a
+                    // genuine incompatibility (LRMC-C10-18). Domain is
+                    // read from each discipline's own declaration
+                    // (`design.discipline(name)`); a discipline with no
+                    // declaration in this design (domain unknown) can't
+                    // participate in this shortcut and falls through to
+                    // the existing hard failure below, same as a
+                    // genuinely same-domain-incompatible pair (spec Edge
+                    // Case: the fix narrows the false-positive case, it
+                    // does not loosen real incompatibility detection).
+                    let d_domain = design.discipline(d).and_then(|dd| dd.domain);
+                    let callee_domain = design.discipline(callee_disc).and_then(|dd| dd.domain);
+                    use crate::ast::Domain;
+                    match (d_domain, callee_domain) {
+                        (Some(Domain::Continuous), Some(Domain::Discrete)) => {
+                            // `d` (the local net's current discipline) is
+                            // already continuous — nothing to change.
+                        }
+                        (Some(Domain::Discrete), Some(Domain::Continuous)) => {
+                            resolved.insert(port_ref.net().to_string(), callee_disc.to_string());
+                        }
+                        _ => {
+                            // Same domain (different names) — T8's shared
+                            // connectrules-eligibility check isn't built
+                            // yet (design.md P0.3 depends-on note); until
+                            // then this is the same hard failure as
+                            // before.
+                            return Err(ElabError::from(ElabErrorKind::DisciplineResolutionFailed {
+                                net: port_ref.net().to_string(),
+                                module: name.to_string(),
+                                method: "basic discipline resolution (LRM §7.4.4.1)".to_string(),
+                                reason: format!(
+                                    "incompatible disciplines on drivers and receivers — `{d}` vs `{callee_disc}` (from instance `{}`)",
+                                    inst.name()
+                                ),
+                                span: None,
+                            }));
+                        }
+                    }
                 }
                 _ => {}
             }
