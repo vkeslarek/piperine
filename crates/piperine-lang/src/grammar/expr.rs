@@ -79,6 +79,11 @@ impl Grammar {
     pub fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         let cond = self.parse_expr_bp(0)?;
         if self.eat_punct("?") {
+            // §2.9 Example 8: `b ? (* no_glitch *) c : d` — an attribute
+            // instance may suffix the `?` before the then-branch operand.
+            // Otherwise inert (LRMC-C1-05): accepted and discarded, no
+            // semantic effect on the ternary.
+            self.parse_attr_instances()?;
             let then_branch = self.parse_expr()?;
             self.expect_punct(":")?;
             let else_branch = self.parse_expr()?;
@@ -104,6 +109,10 @@ impl Grammar {
                 break;
             }
             self.bump();
+            // §2.9 Example 6: `b + (* mode = "cla" *) c` — an attribute
+            // instance may suffix a binary operator before its rhs operand.
+            // Otherwise inert (LRMC-C1-05): accepted and discarded.
+            self.parse_attr_instances()?;
             let rhs = self.parse_expr_bp(rbp)?;
             let span = crate::error::Span::new(lhs.span().start, rhs.span().end);
             lhs = Expr::Binary { span, op, lhs: Box::new(lhs), rhs: Box::new(rhs) };
@@ -196,6 +205,19 @@ impl Grammar {
             }
             Tok::Ident(name) => {
                 self.bump();
+                // §2.9 Example 7: `add (* mode = "cla" *) (b, c)` — an
+                // attribute instance may suffix a function name before its
+                // argument list. Otherwise inert (LRMC-C1-05): accepted and
+                // discarded, no semantic effect on the call. Only legal
+                // when a call actually follows (the LRM's own wording:
+                // "suffix ... to a Verilog-AMS function name"), so a bare
+                // identifier followed by `(* ... *)` with no `(` after it
+                // is still rejected rather than silently swallowing the
+                // attribute.
+                let has_call_attrs = self.at_punct("(*");
+                if has_call_attrs {
+                    self.parse_attr_instances()?;
+                }
                 if self.at_punct("(") {
                     // Any `name(args)` is a call — user function (§5.9), a
                     // §4.3 math function, or a §4.5 time-domain/analog
@@ -205,6 +227,11 @@ impl Grammar {
                     // a parse-time distinction.
                     let args = self.parse_optional_arg_list()?;
                     return Ok(Expr::Call { span, name, args });
+                }
+                if has_call_attrs {
+                    return Err(self.unexpected(
+                        "'(' after an attribute instance on a function name (LRM §2.9 Example 7)".to_string(),
+                    ));
                 }
                 Ok(Expr::Ident { span, name })
             }

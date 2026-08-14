@@ -280,6 +280,88 @@ fn multidimensional_nested_assignment_pattern_parses_from_lrm_3_4_8() {
     }
 }
 
+// ── LRMC-C1-05: expression-level attribute instances (§2.9/§2.9.1) ─────
+
+#[test]
+fn attribute_instance_after_binary_operator_parses_from_lrm_example_6() {
+    // §2.9 Example 6: `a = b + (* mode = "cla" *) c;` — the initializer
+    // expression alone.
+    let e = parse_expr(r#"b + (* mode = "cla" *) c"#);
+    match e {
+        Expr::Binary { op: piperine_lang::ast::BinOp::Add, lhs, rhs, .. } => {
+            assert_eq!(*lhs, Expr::Ident { span: lhs.span(), name: "b".to_string() });
+            assert_eq!(*rhs, Expr::Ident { span: rhs.span(), name: "c".to_string() });
+        }
+        other => panic!("expected Expr::Binary(Add, b, c), got {other:?}"),
+    }
+}
+
+#[test]
+fn attribute_instance_on_function_name_parses_from_lrm_example_7() {
+    // §2.9 Example 7: `a = add (* mode = "cla" *) (b, c);`
+    let e = parse_expr(r#"add (* mode = "cla" *) (b, c)"#);
+    match e {
+        Expr::Call { name, args, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0], Expr::Ident { span: args[0].span(), name: "b".to_string() });
+            assert_eq!(args[1], Expr::Ident { span: args[1].span(), name: "c".to_string() });
+        }
+        other => panic!("expected Expr::Call(\"add\", [b, c]), got {other:?}"),
+    }
+}
+
+#[test]
+fn attribute_instance_after_ternary_question_mark_parses_from_lrm_example_8() {
+    // §2.9 Example 8: `a = b ? (* no_glitch *) c : d;`
+    let e = parse_expr("b ? (* no_glitch *) c : d");
+    match e {
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            assert_eq!(*cond, Expr::Ident { span: cond.span(), name: "b".to_string() });
+            assert_eq!(*then_branch, Expr::Ident { span: then_branch.span(), name: "c".to_string() });
+            assert_eq!(*else_branch, Expr::Ident { span: else_branch.span(), name: "d".to_string() });
+        }
+        other => panic!("expected Expr::Ternary(b, c, d), got {other:?}"),
+    }
+}
+
+#[test]
+fn attribute_instance_with_no_assigned_value_also_parses() {
+    // §2.9: "If a value is not specifically assigned to the attribute,
+    // then its value shall be 1" — `(* no_glitch *)` (Example 8's own
+    // form) has no `=value` and must still parse, exercised standalone
+    // against the binary-operator site too.
+    let e = parse_expr("b + (* full_case *) c");
+    assert!(matches!(e, Expr::Binary { op: piperine_lang::ast::BinOp::Add, .. }));
+}
+
+#[test]
+fn attribute_instance_is_otherwise_inert_shape_matches_unattributed_form() {
+    // LRMC-C1-05's own Done-when: attributes attach to the expression site
+    // but cause no semantic change. The parsed shape (operator, operand
+    // names) of an attributed expression must be identical to the same
+    // expression with the attribute instance removed — the attribute text
+    // is discarded, never folded into the tree as a new node kind or a
+    // field that would change what the expression evaluates to.
+    let attributed = parse_expr(r#"b + (* mode = "cla" *) c"#);
+    let plain = parse_expr("b + c");
+    match (&attributed, &plain) {
+        (
+            Expr::Binary { op: op_a, lhs: lhs_a, rhs: rhs_a, .. },
+            Expr::Binary { op: op_b, lhs: lhs_b, rhs: rhs_b, .. },
+        ) => {
+            assert_eq!(op_a, op_b);
+            assert!(
+                matches!((lhs_a.as_ref(), lhs_b.as_ref()), (Expr::Ident { name: a, .. }, Expr::Ident { name: b, .. }) if a == b)
+            );
+            assert!(
+                matches!((rhs_a.as_ref(), rhs_b.as_ref()), (Expr::Ident { name: a, .. }, Expr::Ident { name: b, .. }) if a == b)
+            );
+        }
+        _ => panic!("both must parse to Expr::Binary"),
+    }
+}
+
 #[test]
 fn hex_digits_remain_fully_legal_in_hex_base() {
     // Every hex_digit (0-9, a-f, A-F) must still lex under `'h` — the
