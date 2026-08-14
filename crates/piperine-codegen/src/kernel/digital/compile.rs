@@ -66,6 +66,9 @@ impl<'m> DigitalCompiler<'m> {
         for f in math::MATH_FNS {
             jit_builder.symbol(f.name, f.symbol);
         }
+        for f in crate::emit::runtime_io::TASK_FNS {
+            jit_builder.symbol(f.name, f.ptr);
+        }
         let mut jit = JITModule::new(jit_builder);
         let mut math_ids = HashMap::new();
         for f in math::MATH_FNS {
@@ -454,6 +457,9 @@ impl NetworkComb {
             .map_err(|e| CodegenError::Module(e.to_string()))?;
         for f in math::MATH_FNS {
             jit_builder.symbol(f.name, f.symbol);
+        }
+        for f in crate::emit::runtime_io::TASK_FNS {
+            jit_builder.symbol(f.name, f.ptr);
         }
         let mut jit = JITModule::new(jit_builder);
         let mut math_ids: HashMap<&'static str, FuncId> = HashMap::new();

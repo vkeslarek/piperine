@@ -190,6 +190,9 @@ impl<'m> AnalogCompiler<'m> {
         for f in LIMIT_FNS {
             jit_builder.symbol(f.name, f.symbol);
         }
+        for f in crate::emit::runtime_io::TASK_FNS {
+            jit_builder.symbol(f.name, f.ptr);
+        }
         let mut jit = JITModule::new(jit_builder);
 
         let mut math_ids = HashMap::new();
@@ -903,6 +906,13 @@ impl<'m> AnalogCompiler<'m> {
         let initial_conditions = ic_values_id.map(|id| get(&self.jit, id));
         let opvars = opvar_id.map(|id| get(&self.jit, id));
         let diagnostics = std::mem::take(&mut self.flat.diagnostics);
+        // Compile-time interning (design.md P0.1: "no per-call allocation") —
+        // each diagnostic's format string is registered in the process-wide
+        // `FormatPool` once here, not per accepted step at runtime.
+        let diagnostic_fmt_ids: Vec<u32> = diagnostics
+            .iter()
+            .map(|d| crate::emit::runtime_io::FormatPool::intern(&d.format))
+            .collect();
 
         let digital_terminals: Vec<bool> = self
             .terminals
@@ -984,6 +994,7 @@ impl<'m> AnalogCompiler<'m> {
             event_triggers,
             event_actions,
             diagnostics,
+            diagnostic_fmt_ids,
             bound_step,
             disto2,
             disto2_pairs,

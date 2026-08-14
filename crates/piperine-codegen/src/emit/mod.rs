@@ -15,6 +15,7 @@ pub mod cse;
 pub mod digital_expr;
 pub mod jit;
 pub mod resolver;
+pub mod runtime_io;
 pub mod stmt;
 
 pub use abi::SimCtx;

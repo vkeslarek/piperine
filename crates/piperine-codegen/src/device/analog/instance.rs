@@ -1305,6 +1305,12 @@ impl AnalogInstance {
         }
         self.detect_events(&volts, t);
         self.last_volts = volts;
+        // Diagnostics fire exactly once per accepted step here — never per
+        // Newton iteration (design.md Risks table; see
+        // `AnalogKernel::emit_diagnostics`'s own doc comment for the full
+        // rationale). This is `AnalogKernel::diagnostics()`'s only
+        // production caller (P0.1/LRMC-C7-07 enabler).
+        self.kernel.emit_diagnostics(&mut self.sim);
     }
 
     /// Stash the run's check posture (DVC-12). The solver hands every
@@ -1521,6 +1527,10 @@ impl AnalogInstance {
         self.sim.temperature = context.tolerances.temperature;
         self.sim.gmin = context.tolerances.gmin;
         self.sim.current_analysis = crate::device::analysis_code(analysis);
+        // Borrow the run's real sink (P0.1) instead of `SimCtx::default()`'s
+        // `StdoutSink` singleton — `context.io` outlives every call made
+        // through this borrowed pointer within the same analysis.
+        self.sim.io = std::rc::Rc::as_ptr(&context.io);
         // Outside transient there is no integration step; companion terms
         // that scale with `sim.step` (the `idt` in-step coupling) vanish.
         if analysis != Analysis::Tran {

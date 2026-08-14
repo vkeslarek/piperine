@@ -209,6 +209,11 @@ pub struct AnalogKernel {
     pub(super) event_triggers: Option<AnalogFn>,
     pub(super) event_actions: Option<AnalogFn>,
     pub(super) diagnostics: Vec<FlatDiagnostic>,
+    /// Each `diagnostics[i]`'s format string, interned into the process-wide
+    /// `FormatPool` exactly once at compile time (`AnalogCompiler`'s final
+    /// assembly) — the trampoline call at runtime passes this id, never a
+    /// string, per call (design.md P0.1: "no per-call allocation").
+    pub(super) diagnostic_fmt_ids: Vec<u32>,
     /// Minimum `$bound_step` expression; `None` without bound steps.
     pub(super) bound_step: Option<AnalogFn>,
     /// `.disto` 2nd-derivative kernel (DISTO-03): one compiled function per
@@ -692,6 +697,40 @@ impl AnalogKernel {
     /// Diagnostics collected (not executed) from the analog body.
     pub fn diagnostics(&self) -> &[FlatDiagnostic] {
         &self.diagnostics
+    }
+
+    /// Emits every collected `$display`/`$write`/... diagnostic through
+    /// `ctx.io`'s sink (`emit::runtime_io`'s `pip_task_*` trampolines).
+    /// **Callers must invoke this at most once per accepted (converged,
+    /// committed) solution point — never per Newton iteration** (design.md
+    /// Risks table: naive per-iteration wiring "prints thousands of
+    /// duplicate lines"). `AnalogInstance::accept_timestep` is this
+    /// method's only production caller, itself only reachable from
+    /// `Element::accept_timestep`'s own accepted-step contract.
+    ///
+    /// A diagnostic with an empty format string is skipped — today the
+    /// only producer of an empty format is `` @(final_step) ``'s
+    /// unsupported-but-not-yet-fail-loud placeholder
+    /// (`flatten/analog.rs`'s `EventSource::FinalStep` arm), not a real
+    /// `$display` call; firing it here would print a spurious blank line
+    /// every accepted step for any design using that construct
+    /// (SPEC_DEVIATION: fixing `final_step` itself is out of this task's
+    /// scope — LRMC-C5-04's own event-source work, not C7-07's).
+    pub fn emit_diagnostics(&self, ctx: &mut SimCtx) {
+        for (d, &fmt_id) in self.diagnostics.iter().zip(&self.diagnostic_fmt_ids) {
+            if d.format.is_empty() {
+                continue;
+            }
+            let ctx_ptr = ctx as *mut SimCtx;
+            match d.severity {
+                crate::resolve::Severity::Fatal => {
+                    crate::emit::runtime_io::pip_task_fatal(ctx_ptr, fmt_id, 0, std::ptr::null());
+                }
+                _ => {
+                    crate::emit::runtime_io::pip_task_display(ctx_ptr, fmt_id, 0, std::ptr::null());
+                }
+            }
+        }
     }
 
     pub fn has_reactive(&self) -> bool {

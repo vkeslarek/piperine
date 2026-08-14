@@ -34,7 +34,29 @@ pub struct SimCtx {
     /// everywhere except while the source-stepping homotopy ramps the DC
     /// operating point. Appended last to preserve JIT-ABI field offsets.
     pub srcfact: f64,
+    /// The runtime I/O sink `pip_task_*` trampolines (`emit::runtime_io`)
+    /// write through — a *borrowed* reference (`SimCtx` stays `Copy`,
+    /// unlike an owned `Rc<dyn SimOutput>` would allow), valid for the
+    /// duration of the call that provided this `SimCtx`. Defaults to a
+    /// `'static` [`piperine_solver::prelude::StdoutSink`] singleton.
+    /// Appended last, per this struct's own established convention, to
+    /// preserve every prior field's byte offset — a mis-ordered field here
+    /// silently corrupts every JIT-compiled device (see
+    /// `runtime_io.rs::tests::io_field_is_appended_last`).
+    pub io: *const dyn piperine_solver::prelude::SimOutput,
 }
+
+// SAFETY: `SimCtx` is `Copy`/`Send`/`Sync` in the same sense every other
+// raw-pointer-carrying JIT-ABI struct in this codebase is — the pointer is
+// never dereferenced except by the `pip_task_*` trampolines, which uphold
+// their own `# Safety` contract (a live `SimCtx` whose `io` outlives the
+// call). No thread-safety is claimed for `*const dyn SimOutput` itself.
+unsafe impl Send for SimCtx {}
+unsafe impl Sync for SimCtx {}
+
+/// The default sink every `SimCtx::default()` (and `at_temperature`) points
+/// `io` at — a zero-sized singleton, so no allocation backs the default.
+static DEFAULT_SINK: piperine_solver::prelude::StdoutSink = piperine_solver::prelude::StdoutSink;
 
 impl SimCtx {
     /// Boltzmann constant over elementary charge in V/K, so
@@ -60,6 +82,7 @@ impl Default for SimCtx {
             current_analysis: 0,
             frequency: 0.0,
             srcfact: 1.0,
+            io: &DEFAULT_SINK as *const dyn piperine_solver::prelude::SimOutput,
         }
     }
 }
