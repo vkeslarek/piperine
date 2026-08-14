@@ -10,7 +10,9 @@
 //! whatever richer runtime const-folding VAMS actually needs (e.g.
 //! `analog function` bodies), not reintroduced here speculatively.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::ast::{BinOp, Expr, UnOp};
 use crate::lexer::NumberLit;
@@ -47,6 +49,11 @@ pub enum ConstEvalError {
     /// Edge Case).
     #[error("a four-state (x/z) value has no defined numeric interpretation here (LRM §2.6.1) — `{0}`")]
     FourStateInNumericContext(String),
+    /// An assignment-pattern array initializer's element count doesn't
+    /// match its declared dimension — LRMC-C1-06 (§3.4.4/§3.4.8): shape
+    /// mismatch fails loud, never truncates/pads silently.
+    #[error("array initializer has {found} element(s), expected {expected} (LRM §3.4.4/§3.4.8)")]
+    ArityMismatch { expected: u64, found: usize },
 }
 
 /// A lexical-scope environment for compile-time constant evaluation.
@@ -300,6 +307,63 @@ impl ConstEnv {
             Value::Int(n) => Ok(n as f64),
             Value::Nat(n) => Ok(n as f64),
             _ => Err(ConstEvalError::TypeMismatch),
+        }
+    }
+
+    /// Evaluates an assignment-pattern initializer (`'{...}`) shaped by
+    /// `dims` (outermost dimension first, one width per `[msb:lsb]` a
+    /// `parameter`/`var` declared, §3.4.4 one dim / §3.4.8 multiple) into a
+    /// `Value::List`. `dims == []` means "no array dimension" — falls back
+    /// to plain scalar [`Self::eval`] (so a scalar `param` default keeps
+    /// using the ordinary path; this method exists only for the array
+    /// case, LRMC-C1-06's FUNCTIONALITY half). Each level's element count
+    /// must match its `dims` entry exactly — [`ConstEvalError::ArityMismatch`]
+    /// on any shape mismatch, never silent truncation/padding.
+    pub fn eval_array(&self, expr: &Expr, dims: &[u64]) -> Result<Value, ConstEvalError> {
+        let Some((&want, rest)) = dims.split_first() else {
+            return self.eval(expr);
+        };
+        let parts = self.assignment_pattern_parts(expr)?;
+        if parts.len() as u64 != want {
+            return Err(ConstEvalError::ArityMismatch { expected: want, found: parts.len() });
+        }
+        let items = parts.iter().map(|p| self.eval_array(p, rest)).collect::<Result<Vec<_>, _>>()?;
+        Ok(Value::List(Rc::new(RefCell::new(items))))
+    }
+
+    /// Evaluates a *flat* assignment-pattern into its element values, with
+    /// no expected-length check — the shape used by an enumerated
+    /// `from`/`exclude '{...}` valid-value list (§3.4.6), where there is no
+    /// separately-declared dimension to match against (unlike
+    /// [`Self::eval_array`]'s array-initializer use).
+    pub fn eval_value_list(&self, expr: &Expr) -> Result<Vec<Value>, ConstEvalError> {
+        self.assignment_pattern_parts(expr)?.iter().map(|p| self.eval(p)).collect()
+    }
+
+    /// Expands an `Expr::AssignmentPattern` into its flat element list,
+    /// resolving the replicated form (`` '{count{expr, ...}} ``, §4.2.14)
+    /// by evaluating `count` as an elaboration constant and repeating
+    /// `parts` that many times. Anything other than an assignment pattern
+    /// is a [`ConstEvalError::NotConst`] — an array-shaped initializer must
+    /// actually be array syntax, not e.g. a bare scalar expression standing
+    /// in for one.
+    fn assignment_pattern_parts(&self, expr: &Expr) -> Result<Vec<Expr>, ConstEvalError> {
+        match expr {
+            Expr::AssignmentPattern { replicate: None, parts, .. } => Ok(parts.clone()),
+            Expr::AssignmentPattern { replicate: Some(count), parts, .. } => {
+                let n = self.eval_int(count)?;
+                if n < 0 {
+                    return Err(ConstEvalError::TypeMismatch);
+                }
+                let mut out = Vec::with_capacity(parts.len() * n as usize);
+                for _ in 0..n {
+                    out.extend(parts.iter().cloned());
+                }
+                Ok(out)
+            }
+            _ => Err(ConstEvalError::NotConst(
+                "expected an assignment pattern '{...} for an array initializer (LRM §3.4.4/§3.4.8)".into(),
+            )),
         }
     }
 }

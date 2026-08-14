@@ -176,6 +176,19 @@ pub struct ParamRange {
     pub hi_exclusive: bool,
 }
 
+/// One `name [dims] = expr` parameter declarator/initializer pair — Annex
+/// A.2.4 `param_assignment`'s array alternative
+/// (`parameter_identifier range constant_arrayinit`) generalized to zero
+/// or more `[msb:lsb]` dimensions, alongside the plain scalar alternative
+/// (`dims` empty). §3.4.4 (one dimension) and §3.4.8 (multidimensional,
+/// e.g. `parameter real c[0:2][0:2] = ...;`) — outermost dimension first.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamAssignment {
+    pub name: String,
+    pub dims: Vec<Range>,
+    pub value: Expr,
+}
+
 /// `parameter`/`localparam` declaration — §3.4, Annex A.2.1.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamDecl {
@@ -183,7 +196,7 @@ pub struct ParamDecl {
     pub attrs: Vec<Attr>,
     pub is_local: bool,
     pub ty: Option<ParamType>,
-    pub names: Vec<(String, Expr)>,
+    pub names: Vec<ParamAssignment>,
     pub ranges: Vec<ParamRange>,
 }
 

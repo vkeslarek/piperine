@@ -8,7 +8,7 @@
 //! design (declaration-family seams), never duplicated.
 
 use crate::ast::*;
-use crate::error::{ParseError, Span};
+use crate::error::{ParseError, ParseErrorKind, Span};
 use crate::grammar::cursor::Grammar;
 use crate::lexer::{NumberLit, Tok};
 
@@ -472,11 +472,32 @@ impl Grammar {
         }
     }
 
-    fn parse_param_assignment(&mut self) -> Result<(String, Expr), ParseError> {
+    /// `parameter_identifier constant_mintypmax_expression` (scalar) or
+    /// `parameter_identifier range { range } constant_arrayinit`
+    /// (array/multidimensional-array, §3.4.4/§3.4.8) — Annex A.2.4
+    /// `param_assignment`. `range` reuses [`Self::parse_range`], the same
+    /// `[msb:lsb]` production nets/ports declare with.
+    fn parse_param_assignment(&mut self) -> Result<ParamAssignment, ParseError> {
         let (name, _) = self.expect_ident()?;
+        let mut dims = vec![];
+        while self.at_punct("[") {
+            dims.push(self.parse_range()?);
+        }
         self.expect_punct("=")?;
         let value = self.parse_expr()?;
-        Ok((name, value))
+        Ok(ParamAssignment { name, dims, value })
+    }
+
+    /// `'[' expr ':' expr ']'` — a single `[msb:lsb]` range, shared by
+    /// declarators (`parse_declarator`) and parameter array dimensions
+    /// (`parse_param_assignment`).
+    fn parse_range(&mut self) -> Result<Range, ParseError> {
+        self.expect_punct("[")?;
+        let msb = self.parse_expr()?;
+        self.expect_punct(":")?;
+        let lsb = self.parse_expr()?;
+        let end = self.expect_punct("]")?;
+        Ok(Range { span: end, msb, lsb })
     }
 
     /// `{ value_range }`, §3.4.2 — `from range` / `exclude range`, where
@@ -538,12 +559,30 @@ impl Grammar {
     fn parse_specparam(&mut self) -> Result<SpecparamDecl, ParseError> {
         let attrs = self.parse_attr_instances()?;
         let start = self.expect_kw("specparam")?;
-        let mut names = vec![self.parse_param_assignment()?];
+        let mut names = vec![self.parse_specparam_assignment()?];
         while self.eat_punct(",") {
-            names.push(self.parse_param_assignment()?);
+            names.push(self.parse_specparam_assignment()?);
         }
         let end = self.expect_punct(";")?;
         Ok(SpecparamDecl { span: Span::new(start.start, end.end), attrs, names })
+    }
+
+    /// `specparam`'s own `name = expr` pair — reuses
+    /// [`Self::parse_param_assignment`] (the array-dimension form,
+    /// §3.4.4/§3.4.8, is a `parameter`-only production; a `[...]` here is
+    /// rejected rather than silently dropped).
+    fn parse_specparam_assignment(&mut self) -> Result<(String, Expr), ParseError> {
+        let p = self.parse_param_assignment()?;
+        if let Some(dim) = p.dims.first() {
+            return Err(ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    expected: "'=' (specparam does not take an array dimension)".into(),
+                    found: "'['".into(),
+                },
+                dim.span,
+            ));
+        }
+        Ok((p.name, p.value))
     }
 
     /// `hierarchical_identifier`, Annex A.9.3 — `ident {'.' ident}`, joined

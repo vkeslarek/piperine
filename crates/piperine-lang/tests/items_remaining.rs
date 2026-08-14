@@ -136,7 +136,7 @@ fn paramset_declares_module_target_and_params() {
     assert_eq!(p.name, "ps");
     assert_eq!(p.module_name, "resistor");
     assert_eq!(p.params.len(), 1);
-    assert_eq!(p.params[0].names[0].0, "r");
+    assert_eq!(p.params[0].names[0].name, "r");
 }
 
 // ── connectrules, chapter 7 ────────────────────────────────────────────

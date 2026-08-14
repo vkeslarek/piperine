@@ -68,15 +68,15 @@ impl Elaborator {
                     }
                 }
                 ModuleItem::Param(p) => {
-                    let ty = param_value_type(p.ty);
-                    for (name, expr) in &p.names {
-                        let value = eval_and_define_param(name, expr, &p.ranges, &mut env)?;
+                    let base_ty = param_value_type(p.ty);
+                    for pa in &p.names {
+                        let (ty, value) = eval_and_define_param_assignment(pa, &base_ty, &p.ranges, &mut env)?;
                         params.push(Param {
                             span: None,
                             attributes: Vec::new(),
                             doc: None,
-                            name: name.clone(),
-                            ty: ty.clone(),
+                            name: pa.name.clone(),
+                            ty,
                             default: Some(value),
                             bundle_origin: None,
                             distribution: None,
@@ -612,7 +612,7 @@ fn var_kind_value_type(kind: VarKind) -> ValueType {
 /// consumed directly by `piperine-codegen`'s digital kernel
 /// (`resolve/pom/body.rs` reads `Module::vars()` to populate
 /// `DigitalBody::regs`/`reg_inits`). `init` is always `None`: unlike a
-/// `parameter` (`ParamDecl::names: Vec<(String, Expr)>`, a mandatory
+/// `parameter` (`ParamDecl::names: Vec<ParamAssignment>`, a mandatory
 /// default), VAMS's `VarDecl`/`Declarator` carries no initializer
 /// expression at all (LRM's own `variable_type ::= variable_identifier
 /// { dimension } [ '=' constant_arrayinit ] | variable_identifier '='
@@ -673,6 +673,62 @@ fn eval_and_define_param(
     Ok(value)
 }
 
+/// Evaluates one `ast::ParamAssignment` — scalar (`pa.dims` empty, defers
+/// to [`eval_and_define_param`] unchanged) or array (§3.4.4 one dimension /
+/// §3.4.8 multidimensional, LRMC-C1-06's FUNCTIONALITY half): each
+/// `[msb:lsb]` in `pa.dims` becomes one level of `ValueType::Array`
+/// (outermost dimension first, mirroring [`var_declarator_to_var`]'s width
+/// computation), and `pa.value` — required to be an assignment pattern
+/// `'{...}` at array shape — evaluates through [`ConstEnv::eval_array`]
+/// against those widths. `from`/`exclude` ranges are a scalar-only
+/// construct (§3.4.2); an array declarator combining the two fails loud
+/// rather than silently ignoring the ranges.
+fn eval_and_define_param_assignment(
+    pa: &crate::ast::ParamAssignment,
+    base_ty: &ValueType,
+    ranges: &[crate::ast::ParamRange],
+    env: &mut ConstEnv,
+) -> Result<(ValueType, Value), ElabError> {
+    if pa.dims.is_empty() {
+        let value = eval_and_define_param(&pa.name, &pa.value, ranges, env)?;
+        return Ok((base_ty.clone(), value));
+    }
+    if !ranges.is_empty() {
+        return Err(ElabError::from(ElabErrorKind::Other(format!(
+            "parameter `{}`: `from`/`exclude` constraints are not supported on an array parameter (LRM §3.4.2 applies to scalar defaults only)",
+            pa.name
+        ))));
+    }
+    let widths = pa
+        .dims
+        .iter()
+        .map(|r| {
+            let msb = env.eval_int(&r.msb).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("parameter `{}` array dimension msb", pa.name),
+                    source: e,
+                })
+            })?;
+            let lsb = env.eval_int(&r.lsb).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("parameter `{}` array dimension lsb", pa.name),
+                    source: e,
+                })
+            })?;
+            Ok((msb - lsb).unsigned_abs() + 1)
+        })
+        .collect::<Result<Vec<u64>, ElabError>>()?;
+    let value = env.eval_array(&pa.value, &widths).map_err(|e| {
+        ElabError::from(ElabErrorKind::ConstEval {
+            context: format!("parameter `{}` array initializer", pa.name),
+            source: e,
+        })
+    })?;
+    let ty = widths.iter().rev().fold(base_ty.clone(), |acc, &w| ValueType::Array(Box::new(acc), w));
+    env.define(pa.name.clone(), value.clone());
+    Ok((ty, value))
+}
+
 /// Builds a `ConstEnv` populated with every `parameter`/`localparam` a
 /// module declares, in source order (the same sequential
 /// `eval_and_define_param` order `elab_module`'s own item loop uses so a
@@ -688,8 +744,9 @@ pub(super) fn module_param_env(decl: &ModuleDecl) -> Result<ConstEnv, ElabError>
     let mut env = ConstEnv::new();
     for item in &decl.items {
         if let ModuleItem::Param(p) = item {
-            for (name, expr) in &p.names {
-                eval_and_define_param(name, expr, &p.ranges, &mut env)?;
+            let base_ty = param_value_type(p.ty);
+            for pa in &p.names {
+                eval_and_define_param_assignment(pa, &base_ty, &p.ranges, &mut env)?;
             }
         }
     }
@@ -848,6 +905,14 @@ fn check_param_ranges(
     if ranges.is_empty() {
         return Ok(());
     }
+    // §3.4.6: `from '{ "NPN", "PNP" }`/`exclude '{...}` is an enumerated
+    // valid-value list (any `Value` type, most commonly `Str`), not a
+    // numeric `[lo:hi]` range — the bare-value parse shorthand
+    // (`ParamRange.lo` with no `hi`) also captures an assignment-pattern
+    // expression there, so branch on that shape before assuming numeric.
+    if ranges.iter().any(|r| r.hi.is_none() && matches!(r.lo, Some(Expr::AssignmentPattern { .. }))) {
+        return check_param_value_list(name, value, ranges, env);
+    }
     let v = value.coerce_real().map_err(|_| {
         ElabError::from(ElabErrorKind::Other(format!(
             "parameter `{name}`: a `from`/`exclude` range requires a numeric default"
@@ -893,6 +958,59 @@ fn check_param_ranges(
                 reason: "falls in a declared `exclude` range".to_string(),
                 span: None,
             }));
+        }
+    }
+    Ok(())
+}
+
+/// The enumerated-valid-value-list branch of [`check_param_ranges`]
+/// (§3.4.6) — membership by [`Value`]'s own structural `PartialEq`, not
+/// numeric range containment.
+fn check_param_value_list(
+    name: &str,
+    value: &Value,
+    ranges: &[crate::ast::ParamRange],
+    env: &ConstEnv,
+) -> Result<(), ElabError> {
+    let eval_list = |e: &Expr| -> Result<Vec<Value>, ElabError> {
+        env.eval_value_list(e).map_err(|e| {
+            ElabError::from(ElabErrorKind::ConstEval {
+                context: format!("parameter `{name}` valid-value list"),
+                source: e,
+            })
+        })
+    };
+
+    let froms: Vec<_> = ranges.iter().filter(|r| !r.excluded).collect();
+    if !froms.is_empty() {
+        let mut in_any = false;
+        for r in &froms {
+            if let Some(e) = &r.lo {
+                if eval_list(e)?.contains(value) {
+                    in_any = true;
+                    break;
+                }
+            }
+        }
+        if !in_any {
+            return Err(ElabError::from(ElabErrorKind::ParamRangeViolation {
+                param: name.to_string(),
+                value: value.to_string(),
+                reason: "not within any declared `from` valid-value list".to_string(),
+                span: None,
+            }));
+        }
+    }
+    for r in ranges.iter().filter(|r| r.excluded) {
+        if let Some(e) = &r.lo {
+            if eval_list(e)?.contains(value) {
+                return Err(ElabError::from(ElabErrorKind::ParamRangeViolation {
+                    param: name.to_string(),
+                    value: value.to_string(),
+                    reason: "falls in a declared `exclude` valid-value list".to_string(),
+                    span: None,
+                }));
+            }
         }
     }
     Ok(())

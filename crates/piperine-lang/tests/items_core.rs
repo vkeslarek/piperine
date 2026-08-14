@@ -122,7 +122,7 @@ fn module_parameter_port_list_parses() {
     let src = "module resistor #(parameter real r = 1.0e3) (inout electrical p, inout electrical n); endmodule";
     let m = grammar(src).parse_module_decl().unwrap();
     assert_eq!(m.param_ports.len(), 1);
-    assert_eq!(m.param_ports[0].names[0].0, "r");
+    assert_eq!(m.param_ports[0].names[0].name, "r");
 }
 
 // ── ground, §3.6.4 ────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ fn string_parameter_parses() {
     match &m.items[0] {
         ModuleItem::Param(p) => {
             assert_eq!(p.ty, Some(ParamType::String));
-            assert!(matches!(p.names[0].1, Expr::Str { .. }));
+            assert!(matches!(p.names[0].value, Expr::Str { .. }));
         }
         other => panic!("expected ModuleItem::Param, got {other:?}"),
     }
