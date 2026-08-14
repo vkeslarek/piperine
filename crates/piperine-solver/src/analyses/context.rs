@@ -221,16 +221,49 @@ impl AnalysisKind {
 /// simulation time reaches elements through their analysis context or as an
 /// explicit argument (MD-04). The posture fields are pure run data —
 /// changing them between analyses triggers no recompilation (MD-18).
-#[derive(Debug, Clone, Default)]
+///
+/// `Debug`/`Default` are hand-written (not derived) because `io`'s
+/// `Rc<dyn SimOutput>` can't derive either — see the impls below.
+#[derive(Clone)]
 pub struct Context {
     pub tolerances: Tolerances,
     /// How the analysis reacts to findings and margin crossings (DVC-12).
     pub checks: CheckPosture,
     /// Which analyses an unscoped `require` holds in (D2).
     pub require_scope: RequireScope,
+    /// The runtime output sink every executing body (analog JIT, digital
+    /// JIT, elaboration-time system tasks) writes through (P0.1,
+    /// design.md). Defaults to [`crate::core::output::StdoutSink`]; a host
+    /// swaps it (e.g. for a [`crate::core::output::BufferSink`] in tests)
+    /// by constructing a `Context` directly rather than via `default()`.
+    pub io: std::rc::Rc<dyn crate::core::output::SimOutput>,
     /// `cover`'s own posture (dv-tester T33, DVT-41, D9) — separate from
     /// [`Self::checks`].
     pub cover: CoverPosture,
+}
+
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("tolerances", &self.tolerances)
+            .field("checks", &self.checks)
+            .field("require_scope", &self.require_scope)
+            .field("io", &"<dyn SimOutput>")
+            .field("cover", &self.cover)
+            .finish()
+    }
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            tolerances: Tolerances::default(),
+            checks: CheckPosture::default(),
+            require_scope: RequireScope::default(),
+            io: std::rc::Rc::new(crate::core::output::StdoutSink),
+            cover: CoverPosture::default(),
+        }
+    }
 }
 
 impl Context {

@@ -2,7 +2,7 @@
 //! ([`Scale`]) and the tolerances + convergence tunables every analysis reads
 //! before it solves ([`SolverConfig`]).
 
-use piperine_solver::prelude::{CheckPosture, Context, Policy, RequireScope};
+use piperine_solver::prelude::{CheckPosture, Context, Policy, RequireScope, StdoutSink};
 
 /// Frequency-sweep geometry (HOST-23): `Lin` steps `points` values evenly
 /// over `[fstart, fstop]`; `Dec`/`Oct` step logarithmically (decade/octave
@@ -83,6 +83,10 @@ impl SolverConfig {
             },
             checks: self.checks,
             require_scope: self.require_scope,
+            // No host-facing output-sink dial exists yet (that's T5/T43's
+            // scope, the JIT trampolines and `SessionBuilder::output(...)`)
+            // — every `Session` gets the default `StdoutSink` for now.
+            io: std::rc::Rc::new(StdoutSink),
             // `cover`'s own posture (dv-tester T33, D9) is not yet exposed
             // on `SolverConfig` — this task's scope is the solver/codegen
             // mechanism (`piperine-codegen/src/kernel/analog/`,

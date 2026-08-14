@@ -21,6 +21,7 @@ pub use crate::core::introspect::{
     SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
+pub use crate::core::output::{BufferSink, Channel, FileError, FileId, FileTable, SimOutput, StdoutSink};
 pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
 pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
 pub use crate::digital::{DigitalNet, LogicValue};
