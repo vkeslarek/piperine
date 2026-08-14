@@ -17,5 +17,8 @@ pub mod tasks;
 pub use crate::value;
 
 pub use error::EvalError;
-pub use tasks::{Conversions, SimEnvironment, SystemTaskError, SystemTaskKind, SystemTasks, format_display};
+pub use tasks::{
+    Conversions, SimEnvironment, SystemTaskError, SystemTaskKind, SystemTasks, VpiTaskKind, VpiTaskRegistry,
+    format_display,
+};
 pub use value::{Closure, InvokeClosure, Object, Value};

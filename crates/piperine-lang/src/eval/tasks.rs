@@ -24,6 +24,19 @@
 //! so that whichever pass eventually lowers `TaskCall`/`SystemFunctionCall`
 //! (a follow-up, not speculative here) has a ready, independently-verified
 //! implementation to call into — never a second, ad hoc copy.
+//!
+//! **T53 (VAMS-21) adds ch. 11's VPI-associated surface**: [`VpiTaskKind`]
+//! and [`VpiTaskRegistry`] model the `vpi_register_systf`/
+//! `vpi_register_analog_systf` mechanism (§11.2.1) by which a `$name`
+//! becomes a valid, callable system task/function beyond [`SystemTasks`]'s
+//! closed ch. 9 table — the language-level surface every ch. 11
+//! VPI-associated task/function needs to parse and elaborate without an
+//! unknown-identifier failure, per spec's Out of Scope table ("VPI's
+//! language-level surface... routes through [Piperine's native plugin ABI]
+//! instead", never a `dlopen`'d IEEE-VPI C shim). This crate stays free of
+//! any `piperine-plugin` dependency (MD-15); `piperine_plugin::host`
+//! (`PluginHost::register_system_task`/`call_system_task`) owns the actual
+//! native-handler dispatch on the other side of that boundary.
 
 use crate::value::Value;
 
@@ -332,6 +345,98 @@ impl Conversions {
     }
 }
 
+/// LRM §11.2.1 — the registration form a native handler was submitted
+/// under. `vpi_register_systf()` covers `SysTask`/`SysFunc`/`SysRealFunc`
+/// (the LRM's `systf_type` field: `vpiSysTask`, `vpiSysFunc`,
+/// `vpiSysRealFunc`); `vpi_register_analog_systf()` additionally allows a
+/// task/function usable inside `analog` blocks (`AnalogSysTask`/
+/// `AnalogSysFunc`, the Verilog-AMS-specific extension of §11.2.1's final
+/// paragraph, paired with the derivative-aware `vpi_handle_multi`/
+/// `vpi_put_value` described in §11.3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VpiTaskKind {
+    /// Registered via `vpi_register_systf`, `systf_type = vpiSysTask`.
+    SysTask,
+    /// Registered via `vpi_register_systf`, `systf_type = vpiSysFunc`.
+    SysFunc,
+    /// Registered via `vpi_register_systf`, `systf_type = vpiSysRealFunc`.
+    SysRealFunc,
+    /// Registered via `vpi_register_analog_systf`, usable from an `analog`
+    /// block, no return value.
+    AnalogSysTask,
+    /// Registered via `vpi_register_analog_systf`, usable from an `analog`
+    /// block, returns a value (and may carry a derivative, §11.3.2).
+    AnalogSysFunc,
+}
+
+/// The table of user-defined system tasks/functions registered through
+/// `vpi_register_systf`/`vpi_register_analog_systf` (LRM §11.2.1) — the
+/// mechanism by which a `$name` becomes callable from `.vams` source beyond
+/// [`SystemTasks`]'s closed ch. 9 table, without Piperine ever hosting a
+/// literal VPI C shim (spec's Out of Scope table: "VPI's language-level
+/// surface... routes through [the native plugin ABI] instead"). Pure
+/// name/kind bookkeeping — `piperine-plugin`'s host owns the actual native
+/// handler each entry dispatches to; this crate has no dependency on
+/// `piperine-plugin` (MD-15), so the handler itself lives on that side of
+/// the boundary.
+#[derive(Debug, Default)]
+pub struct VpiTaskRegistry {
+    entries: std::collections::HashMap<String, VpiTaskKind>,
+}
+
+impl VpiTaskRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers `name` under `kind`. Fails loud (never silently
+    /// overwrites, C6):
+    /// - `name` collides with a ch. 9 builtin ([`SystemTasks::TABLE`]) — a
+    ///   VPI application cannot shadow a language builtin, per §11.2.1's
+    ///   "user-defined system task or function" framing (E4010).
+    /// - `name` is already registered — two `vpi_register_systf` calls for
+    ///   one name is a real conflict the LRM leaves undefined; Piperine
+    ///   resolves it as a hard error, never last-writer-wins (E4011).
+    pub fn register(&mut self, name: &str, kind: VpiTaskKind) -> Result<(), SystemTaskError> {
+        if SystemTasks::TABLE.iter().any(|(n, _)| *n == name) {
+            return Err(SystemTaskError::vpi_collides_with_builtin(name));
+        }
+        if self.entries.contains_key(name) {
+            return Err(SystemTaskError::vpi_duplicate_registration(name));
+        }
+        self.entries.insert(name.to_string(), kind);
+        Ok(())
+    }
+
+    /// Resolves `name` to its registered [`VpiTaskKind`]. An unregistered
+    /// name fails loud (E4012) with near-match suggestions drawn from the
+    /// *registered* names (not ch. 9's table — a VPI-name typo should
+    /// suggest other VPI names, not an unrelated builtin).
+    pub fn resolve(&self, name: &str) -> Result<VpiTaskKind, SystemTaskError> {
+        self.entries.get(name).copied().ok_or_else(|| {
+            let table: Vec<&str> = self.entries.keys().map(String::as_str).collect();
+            SystemTaskError::unknown_vpi(name, Self::near_matches(name, &table))
+        })
+    }
+
+    /// Whether `name` has a live registration.
+    pub fn is_registered(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
+    }
+
+    fn near_matches(name: &str, table: &[&str]) -> Vec<String> {
+        const MAX_DISTANCE: usize = 3;
+        const MAX_SUGGESTIONS: usize = 3;
+        let mut scored: Vec<(usize, &str)> = table
+            .iter()
+            .map(|n| (SystemTasks::levenshtein(name, n), *n))
+            .filter(|(d, _)| *d <= MAX_DISTANCE)
+            .collect();
+        scored.sort_by_key(|(d, _)| *d);
+        scored.into_iter().take(MAX_SUGGESTIONS).map(|(_, n)| n.to_string()).collect()
+    }
+}
+
 /// Errors raised evaluating LRM ch. 9 system tasks/functions (E-STD).
 #[derive(Debug, Clone, thiserror::Error, miette::Diagnostic)]
 pub enum SystemTaskError {
@@ -381,6 +486,44 @@ pub enum SystemTaskError {
         #[label("offending argument")]
         span: Option<miette::SourceSpan>,
     },
+    /// VAMS E4010 — a `vpi_register_systf`/`vpi_register_analog_systf`
+    /// registration (§11.2.1) named a ch. 9 builtin. `span` carries the
+    /// same not-yet-wired caveat as [`Self::Unknown`].
+    #[error("`{name}` cannot be registered via VPI: it already names a ch. 9 builtin system task/function")]
+    #[diagnostic(
+        code(E4010),
+        help("LRM §11.2.1 registers *user-defined* system tasks/functions; `{name}` is a language builtin (ch. 9) and cannot be shadowed. Choose a different name.")
+    )]
+    VpiCollidesWithBuiltin {
+        name: String,
+        #[label("VPI registration attempted here")]
+        span: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4011 — two `vpi_register_systf`/`vpi_register_analog_systf`
+    /// calls registered the same name. `span` carries the same
+    /// not-yet-wired caveat as [`Self::Unknown`].
+    #[error("`{name}` is already registered via VPI")]
+    #[diagnostic(
+        code(E4011),
+        help("LRM §11.2.1 leaves a duplicate `vpi_register_systf`/`vpi_register_analog_systf` name undefined; Piperine treats it as a conflict rather than last-writer-wins. Register `{name}` once, or under a distinct name.")
+    )]
+    VpiDuplicateRegistration {
+        name: String,
+        #[label("duplicate VPI registration")]
+        span: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4012 — `name` was called but no `vpi_register_systf`/
+    /// `vpi_register_analog_systf` registration (§11.2.1) exists for it.
+    /// `span` carries the same not-yet-wired caveat as [`Self::Unknown`].
+    #[error("no VPI registration for system task or function `{name}`")]
+    #[diagnostic(code(E4012), help("{help}"))]
+    UnknownVpiTask {
+        name: String,
+        suggestions: Vec<String>,
+        help: String,
+        #[label("no such VPI-registered task or function")]
+        span: Option<miette::SourceSpan>,
+    },
 }
 
 impl SystemTaskError {
@@ -410,6 +553,33 @@ impl SystemTaskError {
             )
         };
         Self::Unknown { name: name.to_string(), suggestions, help, span: None }
+    }
+
+    /// Builds a `VpiCollidesWithBuiltin` (E4010).
+    fn vpi_collides_with_builtin(name: &str) -> Self {
+        Self::VpiCollidesWithBuiltin { name: name.to_string(), span: None }
+    }
+
+    /// Builds a `VpiDuplicateRegistration` (E4011).
+    fn vpi_duplicate_registration(name: &str) -> Self {
+        Self::VpiDuplicateRegistration { name: name.to_string(), span: None }
+    }
+
+    /// Builds an `UnknownVpiTask` (E4012), precomputing its "did you mean"
+    /// help text (E-STD 4) from the near-match list, same shape as
+    /// [`Self::unknown`].
+    fn unknown_vpi(name: &str, suggestions: Vec<String>) -> Self {
+        let help = if suggestions.is_empty() {
+            "LRM §11.2.1 defines VPI-registered system tasks/functions; no close match was found \
+             among the names currently registered."
+                .to_string()
+        } else {
+            format!(
+                "LRM §11.2.1 defines VPI-registered system tasks/functions. Did you mean: {}?",
+                suggestions.join(", ")
+            )
+        };
+        Self::UnknownVpiTask { name: name.to_string(), suggestions, help, span: None }
     }
 }
 
@@ -518,5 +688,67 @@ mod tests {
     fn conversions_reject_non_numeric() {
         let err = Conversions::itor(&Value::Str("x".into())).unwrap_err();
         assert!(matches!(err, SystemTaskError::InvalidArgument { .. }));
+    }
+
+    #[test]
+    fn vpi_registers_and_resolves() {
+        let mut reg = VpiTaskRegistry::new();
+        reg.register("$my_task", VpiTaskKind::SysTask).unwrap();
+        reg.register("$my_real_func", VpiTaskKind::SysRealFunc).unwrap();
+        assert_eq!(reg.resolve("$my_task").unwrap(), VpiTaskKind::SysTask);
+        assert_eq!(reg.resolve("$my_real_func").unwrap(), VpiTaskKind::SysRealFunc);
+        assert!(reg.is_registered("$my_task"));
+        assert!(!reg.is_registered("$not_registered"));
+    }
+
+    #[test]
+    fn vpi_analog_registration_kinds() {
+        let mut reg = VpiTaskRegistry::new();
+        reg.register("$my_analog_task", VpiTaskKind::AnalogSysTask).unwrap();
+        reg.register("$my_analog_func", VpiTaskKind::AnalogSysFunc).unwrap();
+        assert_eq!(reg.resolve("$my_analog_task").unwrap(), VpiTaskKind::AnalogSysTask);
+        assert_eq!(reg.resolve("$my_analog_func").unwrap(), VpiTaskKind::AnalogSysFunc);
+    }
+
+    #[test]
+    fn vpi_cannot_shadow_a_ch9_builtin() {
+        let mut reg = VpiTaskRegistry::new();
+        let err = reg.register("$display", VpiTaskKind::SysTask).unwrap_err();
+        assert!(matches!(err, SystemTaskError::VpiCollidesWithBuiltin { .. }));
+        assert!(!reg.is_registered("$display"));
+    }
+
+    #[test]
+    fn vpi_duplicate_registration_fails_loud() {
+        let mut reg = VpiTaskRegistry::new();
+        reg.register("$my_task", VpiTaskKind::SysTask).unwrap();
+        let err = reg.register("$my_task", VpiTaskKind::SysFunc).unwrap_err();
+        assert!(matches!(err, SystemTaskError::VpiDuplicateRegistration { .. }));
+        // The original registration is untouched by the failed re-registration.
+        assert_eq!(reg.resolve("$my_task").unwrap(), VpiTaskKind::SysTask);
+    }
+
+    #[test]
+    fn vpi_unregistered_name_fails_loud_with_near_match() {
+        let mut reg = VpiTaskRegistry::new();
+        reg.register("$my_task", VpiTaskKind::SysTask).unwrap();
+        let err = reg.resolve("$my_tas").unwrap_err();
+        match err {
+            SystemTaskError::UnknownVpiTask { name, suggestions, .. } => {
+                assert_eq!(name, "$my_tas");
+                assert!(suggestions.contains(&"$my_task".to_string()), "{suggestions:?}");
+            }
+            other => panic!("expected UnknownVpiTask, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vpi_unregistered_name_no_registrations_yet() {
+        let reg = VpiTaskRegistry::new();
+        let err = reg.resolve("$anything").unwrap_err();
+        match err {
+            SystemTaskError::UnknownVpiTask { suggestions, .. } => assert!(suggestions.is_empty()),
+            other => panic!("expected UnknownVpiTask, got {other:?}"),
+        }
     }
 }

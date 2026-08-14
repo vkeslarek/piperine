@@ -1,12 +1,27 @@
 //! [`PluginHost`] — the one orchestrator: discover → verify → load →
 //! register → dispatch. An empty `[plugins]` section yields an inert host;
 //! the zero-plugin path costs one `is_empty` check.
+//!
+//! **T53 (VAMS-21)**: [`PluginHost::register_system_task`]/
+//! [`Self::resolve_system_task`]/[`Self::call_system_task`] are the native
+//! ABI ch. 11's `vpi_register_systf`/`vpi_register_analog_systf` (§11.2.1)
+//! route through — Piperine never hosts a literal VPI C shim (spec's Out of
+//! Scope table); a plugin registers a [`SystemTaskHandler`] under a name and
+//! [`piperine_lang::eval::tasks::VpiTaskKind`], and calls to that `$name`
+//! dispatch to it directly, in-process. Name bookkeeping (collision with a
+//! ch. 9 builtin, duplicate registration, unknown-name lookup) is
+//! [`piperine_lang::eval::tasks::VpiTaskRegistry`]'s own typed E4010–E4012
+//! errors, reused here rather than duplicated.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use piperine::SimHooks;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
 use piperine_lang::elab::registry::ElabContext;
+use piperine_lang::eval::tasks::{VpiTaskKind, VpiTaskRegistry};
+use piperine_lang::value::Value;
 use piperine_lang::Design;
 use piperine_project::lockfile::PiperineLock;
 use piperine_project::release::{GitHubClient, PluginCache, ReleaseError, ReleaseRef};
@@ -55,6 +70,17 @@ enum PluginInstance {
     InProcess(Box<dyn Plugin>),
 }
 
+/// A native Rust handler for one VPI-registered system task/function
+/// (LRM §11.2.1's `vpi_register_systf`/`vpi_register_analog_systf`
+/// mechanism), dispatched in-process through Piperine's own plugin ABI —
+/// never a `dlopen`'d IEEE-VPI C shim (`plugin-abi-custom` decision).
+pub trait SystemTaskHandler: Send + Sync {
+    /// Runs the task/function with its call-site arguments. `Ok(None)` for
+    /// a `SysTask`/`AnalogSysTask` (no return value); `Ok(Some(_))` for a
+    /// `SysFunc`/`SysRealFunc`/`AnalogSysFunc`.
+    fn call(&self, args: &[Value]) -> Result<Option<Value>, String>;
+}
+
 /// The plugin host: loaded plugins in deterministic (alphabetical) order
 /// plus their merged contributions.
 pub struct PluginHost {
@@ -63,6 +89,11 @@ pub struct PluginHost {
     /// Where `Piperine.toml` lives — every capability-gated path resolves
     /// against this.
     project_root: PathBuf,
+    /// LRM §11.2.1 VPI-associated system task/function registrations
+    /// (T53, VAMS-21) — name/kind bookkeeping.
+    system_tasks: VpiTaskRegistry,
+    /// The native handler each registered name dispatches to.
+    system_task_handlers: HashMap<String, Arc<dyn SystemTaskHandler>>,
 }
 
 impl PluginHost {
@@ -72,6 +103,8 @@ impl PluginHost {
             plugins: Vec::new(),
             contributions: Contributions::default(),
             project_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            system_tasks: VpiTaskRegistry::new(),
+            system_task_handlers: HashMap::new(),
         }
     }
 
@@ -389,6 +422,52 @@ impl PluginHost {
     /// and a direct `parse_and_elaborate_seeded(.., seed_device_port_schemas)`
     /// call (used by this crate's own tests and `piperine-api`'s) always
     /// agree.
+    /// Registers a native handler for a VPI-associated system task/function
+    /// (LRM §11.2.1) under `name` and `kind` — the native-ABI equivalent of
+    /// a `vpi_register_systf`/`vpi_register_analog_systf` call. Fails loud
+    /// (E4010/E4011, via [`VpiTaskRegistry::register`]) on a name colliding
+    /// with a ch. 9 builtin or a duplicate registration; never silently
+    /// overwrites (C6).
+    pub fn register_system_task(
+        &mut self,
+        name: &str,
+        kind: VpiTaskKind,
+        handler: impl SystemTaskHandler + 'static,
+    ) -> PluginResult<()> {
+        self.system_tasks
+            .register(name, kind)
+            .map_err(|e| PluginError::Other { plugin: "<system-task>".into(), message: e.to_string() })?;
+        self.system_task_handlers.insert(name.to_string(), Arc::new(handler));
+        Ok(())
+    }
+
+    /// Looks up a registered VPI system task/function's [`VpiTaskKind`].
+    /// Fails loud (E4012, via [`VpiTaskRegistry::resolve`]) with near-match
+    /// suggestions when `name` has no registration — never a silent
+    /// unknown-identifier pass-through (C6).
+    pub fn resolve_system_task(&self, name: &str) -> PluginResult<VpiTaskKind> {
+        self.system_tasks
+            .resolve(name)
+            .map_err(|e| PluginError::Other { plugin: "<system-task>".into(), message: e.to_string() })
+    }
+
+    /// Dispatches a call to `name`'s registered native handler. `None` when
+    /// nothing registered `name` — the same not-silently-absent shape as
+    /// [`Self::run_script`] (a caller that needs "unknown" to be an error
+    /// should check [`Self::resolve_system_task`] first).
+    pub fn call_system_task(
+        &self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Option<Value>, PluginError>> {
+        let handler = self.system_task_handlers.get(name)?;
+        Some(handler.call(args).map_err(|message| PluginError::HookFailed {
+            hook: "system_task",
+            plugin: name.to_string(),
+            message,
+        }))
+    }
+
     pub fn seed_schemas(&self, ctx: &mut ElabContext) {
         if self.is_empty() {
             return;
@@ -465,5 +544,75 @@ impl DeviceProvider for PluginHost {
             ));
         }
         entry.factory.instantiate(&spec)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Echo;
+    impl SystemTaskHandler for Echo {
+        fn call(&self, args: &[Value]) -> Result<Option<Value>, String> {
+            Ok(args.first().cloned())
+        }
+    }
+
+    struct AlwaysFails;
+    impl SystemTaskHandler for AlwaysFails {
+        fn call(&self, _args: &[Value]) -> Result<Option<Value>, String> {
+            Err("boom".to_string())
+        }
+    }
+
+    #[test]
+    fn registers_resolves_and_dispatches() {
+        let mut host = PluginHost::empty();
+        host.register_system_task("$my_func", VpiTaskKind::SysFunc, Echo).unwrap();
+        assert_eq!(host.resolve_system_task("$my_func").unwrap(), VpiTaskKind::SysFunc);
+        let out = host.call_system_task("$my_func", &[Value::Int(42)]).unwrap().unwrap();
+        assert_eq!(out, Some(Value::Int(42)));
+    }
+
+    #[test]
+    fn analog_registration_kinds_round_trip() {
+        let mut host = PluginHost::empty();
+        host.register_system_task("$my_analog_func", VpiTaskKind::AnalogSysFunc, Echo).unwrap();
+        assert_eq!(host.resolve_system_task("$my_analog_func").unwrap(), VpiTaskKind::AnalogSysFunc);
+    }
+
+    #[test]
+    fn unregistered_call_is_none_not_a_panic() {
+        let host = PluginHost::empty();
+        assert!(host.call_system_task("$nope", &[]).is_none());
+    }
+
+    #[test]
+    fn unregistered_resolve_fails_loud() {
+        let host = PluginHost::empty();
+        assert!(host.resolve_system_task("$nope").is_err());
+    }
+
+    #[test]
+    fn cannot_shadow_a_ch9_builtin() {
+        let mut host = PluginHost::empty();
+        let err = host.register_system_task("$display", VpiTaskKind::SysTask, Echo).unwrap_err();
+        assert!(err.to_string().contains("$display"));
+    }
+
+    #[test]
+    fn duplicate_registration_fails_loud() {
+        let mut host = PluginHost::empty();
+        host.register_system_task("$my_task", VpiTaskKind::SysTask, Echo).unwrap();
+        let err = host.register_system_task("$my_task", VpiTaskKind::SysFunc, Echo).unwrap_err();
+        assert!(err.to_string().contains("$my_task"));
+    }
+
+    #[test]
+    fn handler_failure_surfaces_as_hook_failed() {
+        let mut host = PluginHost::empty();
+        host.register_system_task("$boom", VpiTaskKind::SysTask, AlwaysFails).unwrap();
+        let err = host.call_system_task("$boom", &[]).unwrap().unwrap_err();
+        assert!(matches!(err, PluginError::HookFailed { .. }));
     }
 }

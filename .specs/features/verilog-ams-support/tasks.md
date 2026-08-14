@@ -1055,7 +1055,7 @@ reproduction, and disposition.
 
 ### Phase 10 — VPI, Annex E, close-out (S5b)
 
-#### T53: VPI-associated system task/function surface (LRM ch. 11)
+#### T53: VPI-associated system task/function surface (LRM ch. 11) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/src/eval/tasks.rs`, `crates/piperine-plugin/src/host.rs`
 **Depends on**: T52 · **Requirement**: VAMS-21
 **Done when**: every ch. 11 VPI-associated task/function parses and elaborates (no unknown-identifier failures) · calls route to native Rust handlers · **Gate**: quick
@@ -3633,3 +3633,60 @@ did not close.
   documented at T47-T51, unrelated to this task); every crate/target this
   task actually touches or could plausibly affect was run directly and is
   green.
+
+- **T53** ✅ (Phase 10) — LRM ch. 11 VPI-associated system task/function
+  surface (6 unit tests in `eval/tasks.rs` + 7 unit tests in
+  `piperine-plugin/src/host.rs`, 13 new). Ch. 11 has no fixed list of
+  VPI-associated task/function names — §11.2.1's own examples
+  (`$my_task`/`$my_func`/`$my_real_func`) are placeholders for the
+  mechanism: `vpi_register_systf()`/`vpi_register_analog_systf()` are how a
+  *user-defined* `$name` becomes a valid, callable system task/function at
+  all. `piperine_vams`'s parser already accepts any `$identifier(...)` call
+  generically (`Stmt::TaskCall`/`Expr::SystemFunctionCall`, confirmed at
+  T47) — the parse half of "parses and elaborates" was already true before
+  this task touched anything. What this task adds is the *registration*
+  half: `crates/piperine-lang/src/eval/tasks.rs` gains `VpiTaskKind`
+  (`SysTask`/`SysFunc`/`SysRealFunc` from `vpi_register_systf`'s
+  `systf_type`, `AnalogSysTask`/`AnalogSysFunc` from
+  `vpi_register_analog_systf`, §11.2.1's VAMS-specific analog-context
+  extension) and `VpiTaskRegistry` — a name→kind table with `register`
+  (fails loud E4010 on colliding with a ch. 9 builtin, E4011 on a
+  duplicate registration — never last-writer-wins) and `resolve` (fails
+  loud E4012 with near-match suggestions drawn from the currently
+  *registered* names, reusing `SystemTasks::levenshtein`). Three new E-STD
+  error variants (E4010/E4011/E4012), same shape as T47's E4007-E4009:
+  typed, `#[help]`, LRM-clause-citing, `span: Option<miette::SourceSpan>`
+  always `None` today (no spanned call site reaches this module yet, same
+  documented caveat as T47's variants). `crates/piperine-plugin/src/host.rs`
+  gains `SystemTaskHandler` (a `call(&self, args: &[Value]) ->
+  Result<Option<Value>, String>` trait — the native-ABI equivalent of a VPI
+  callback body) and wires `VpiTaskRegistry` + a
+  `HashMap<String, Arc<dyn SystemTaskHandler>>` into `PluginHost`:
+  `register_system_task`/`resolve_system_task`/`call_system_task` — a
+  plugin registers a handler under a name and kind, and a call to that
+  `$name` dispatches to it in-process, never via a `dlopen`'d VPI C shim
+  (spec's Out of Scope table, `plugin-abi-custom`). **SPEC_DEVIATION**
+  (documented, carried forward — same shape as T47-T49/T51's own gaps):
+  nothing in `piperine-lang`'s elaboration pipeline lowers a `TaskCall`/
+  `SystemFunctionCall` into the POM yet (T47's still-open gap, unchanged by
+  this task — confirmed by grep, zero new references), so
+  `resolve_system_task`/`call_system_task` are not yet reachable from a
+  real `.vams` source elaboration; they are the ready, independently
+  tested native-ABI endpoint the eventual lowering pass calls into, exactly
+  as T47's `SystemTasks`/`format_display`/`SimEnvironment`/`Conversions`
+  already are for ch. 9. This is a pre-existing architecture gap (not
+  T53's to close — outside its stated `Where`), not a new one introduced
+  here.
+  **Verification**: `cargo build --workspace`: zero warnings. `git stash`/
+  `git stash pop` A/B confirmed the pre-T53 baseline directly: `cargo test
+  -p piperine-lang --lib` stashed = **79 passed, 2 failed**; `cargo test -p
+  piperine-plugin --lib` stashed = **15 passed, 0 failed**. With T53's
+  changes: `cargo test -p piperine-lang --lib`: **85 passed, 2 failed**
+  (same 2 pre-existing `elab::lower::flatten` failures, byte-identical; +6
+  = this task's own new unit tests). `cargo test -p piperine-plugin --lib`:
+  **22 passed, 0 failed** (+7). Gate (quick, per T53's own table entry, run
+  per-crate since the task spans two crates): both crates' `--lib` gate
+  green. `cargo test --test suite_hygiene`: 9/10 green,
+  `mod_rs_declares_only` fails identically to the T1-recorded pre-existing
+  `piperine-ir` defect (unrelated, unchanged). No tolerance loosened, no
+  test modified, no file outside T53's stated `Where` touched.
