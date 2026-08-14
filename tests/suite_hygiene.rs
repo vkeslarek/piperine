@@ -602,18 +602,31 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// One entry. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// Two entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/ngspice/` and the golden targets — so it links no workspace crate,
-/// the same standing this file has (skipped as [`SELF`]). An entry added here
-/// must move the expected set in [`root_targets_match_the_naming_rule`] with
-/// it, so the exemption cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 1] = [(
-    "ngspice_parity_matrix.rs",
-    "NGP-15/MD-31 parity registry over the whole ngspice corpus — a repo-policy proof \
-     (data table + filesystem walk), not a host-surface or cross-crate one",
-)];
+/// the same standing this file has (skipped as [`SELF`]).
+/// `lrm_conformance_matrix.rs` is the lrm-conformance-closure LRMC-ID
+/// registry (MD-31, T9): a data table plus `include_str!`-parsing of
+/// `.specs/features/lrm-conformance-closure/spec.md` and a filesystem read
+/// of each closing test's file — same repo-policy-proof standing, no
+/// workspace crate linked. An entry added here must move the expected set
+/// in [`root_targets_match_the_naming_rule`] with it, so the exemption
+/// cannot be granted quietly.
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 2] = [
+    (
+        "lrm_conformance_matrix.rs",
+        "lrm-conformance-closure LRMC-ID registry (MD-31, T9) — a repo-policy proof \
+         (data table + spec.md parse + filesystem read of each closing test), not a \
+         host-surface or cross-crate one",
+    ),
+    (
+        "ngspice_parity_matrix.rs",
+        "NGP-15/MD-31 parity registry over the whole ngspice corpus — a repo-policy proof \
+         (data table + filesystem walk), not a host-surface or cross-crate one",
+    ),
+];
 
 fn registered_root_exemption(file: &str) -> Option<&'static str> {
     ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
