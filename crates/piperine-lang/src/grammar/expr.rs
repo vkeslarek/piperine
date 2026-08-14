@@ -184,6 +184,7 @@ impl Grammar {
                 Ok(e)
             }
             Tok::Punct("{") => self.parse_concat_or_replication(),
+            Tok::Punct("'{") => self.parse_assignment_pattern(),
             Tok::SystemIdent(name) => {
                 self.bump();
                 let args = self.parse_optional_arg_list()?;
@@ -273,5 +274,38 @@ impl Grammar {
         let end = self.expect_punct("}")?;
         let span = crate::error::Span::new(start.start, end.end);
         Ok(Expr::Concat { span, parts })
+    }
+
+    /// `` '{' expr {',' expr} '}' `` (plain list) or
+    /// `` '{' constant_expr '{' expr {',' expr} '}' '}' `` (replicated
+    /// list) — assignment pattern, Annex A.8.1 `assignment_pattern`,
+    /// §4.2.14 Syntax 4-2. A dedicated node ([`Expr::AssignmentPattern`]),
+    /// not a desugaring to [`Expr::Concat`]/[`Expr::Replication`] — see
+    /// that node's own doc comment. Mirrors
+    /// [`Self::parse_concat_or_replication`]'s shape since the replicated
+    /// form's inner syntax is identical (`count{expr, ...}`), but the
+    /// outer delimiter is the lexically distinct `` '{ `` token.
+    fn parse_assignment_pattern(&mut self) -> Result<Expr, ParseError> {
+        let start = self.expect_punct("'{")?;
+        let first = self.parse_expr()?;
+        if self.at_punct("{") {
+            // Replicated form: `first` was the replication count.
+            self.bump();
+            let mut parts = vec![self.parse_expr()?];
+            while self.eat_punct(",") {
+                parts.push(self.parse_expr()?);
+            }
+            self.expect_punct("}")?;
+            let end = self.expect_punct("}")?;
+            let span = crate::error::Span::new(start.start, end.end);
+            return Ok(Expr::AssignmentPattern { span, replicate: Some(Box::new(first)), parts });
+        }
+        let mut parts = vec![first];
+        while self.eat_punct(",") {
+            parts.push(self.parse_expr()?);
+        }
+        let end = self.expect_punct("}")?;
+        let span = crate::error::Span::new(start.start, end.end);
+        Ok(Expr::AssignmentPattern { span, replicate: None, parts })
     }
 }

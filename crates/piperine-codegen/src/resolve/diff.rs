@@ -340,15 +340,17 @@ fn differentiate(
             else_branch: Box::new(differentiate(else_branch, seed, ident_seed, resolve_node, tapes)),
         },
 
-        // Concat/replication/index/part-select have no continuous
-        // derivative in this analog Real-valued form (they're the
-        // bit/vector-selection forms inherited from 1364 digital
-        // expressions) — zero-derivative, not reached by any flattened
-        // analog contribution today (flatten only ever feeds this
-        // differentiator resistive/charge Real-valued expressions).
-        Expr::Concat { .. } | Expr::Replication { .. } | Expr::Index { .. } | Expr::PartSelect { .. } => {
-            lit(0.0)
-        }
+        // Concat/replication/index/part-select/assignment-pattern have no
+        // continuous derivative in this analog Real-valued form (they're
+        // the bit/vector-selection and literal-list forms) —
+        // zero-derivative, not reached by any flattened analog
+        // contribution today (flatten only ever feeds this differentiator
+        // resistive/charge Real-valued expressions).
+        Expr::Concat { .. }
+        | Expr::Replication { .. }
+        | Expr::Index { .. }
+        | Expr::PartSelect { .. }
+        | Expr::AssignmentPattern { .. } => lit(0.0),
     }
 }
 
@@ -488,6 +490,14 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
             walk(else_branch, f);
         }
         Expr::Concat { parts, .. } | Expr::Replication { parts, .. } => {
+            for p in parts {
+                walk(p, f);
+            }
+        }
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            if let Some(r) = replicate {
+                walk(r, f);
+            }
             for p in parts {
                 walk(p, f);
             }

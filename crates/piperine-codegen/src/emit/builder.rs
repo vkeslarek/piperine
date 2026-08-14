@@ -979,6 +979,11 @@ fn subst_expr(expr: &Expr, subst: &HashMap<String, Expr>) -> Expr {
             count: Box::new(subst_expr(count, subst)),
             parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
         },
+        Expr::AssignmentPattern { span, replicate, parts } => Expr::AssignmentPattern {
+            span: *span,
+            replicate: replicate.as_ref().map(|r| Box::new(subst_expr(r, subst))),
+            parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
+        },
         Expr::Number { .. } | Expr::Str { .. } => expr.clone(),
     }
 }

@@ -124,6 +124,14 @@ fn limit_branches_into(
                 limit_branches_into(p, temps, resolve, seen_temps, out);
             }
         }
+        PomExpr::AssignmentPattern { replicate, parts, .. } => {
+            if let Some(r) = replicate {
+                limit_branches_into(r, temps, resolve, seen_temps, out);
+            }
+            for p in parts {
+                limit_branches_into(p, temps, resolve, seen_temps, out);
+            }
+        }
         PomExpr::Index { base, index, .. } => {
             limit_branches_into(base, temps, resolve, seen_temps, out);
             limit_branches_into(index, temps, resolve, seen_temps, out);

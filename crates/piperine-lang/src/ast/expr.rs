@@ -62,6 +62,16 @@ pub enum Expr {
     /// A `$`-prefixed system function call used as a value, e.g.
     /// `$abstime`, `$temperature` — LRM chapter 9.
     SystemFunctionCall { span: Span, name: String, args: Vec<Expr> },
+    /// `'{expr, expr, ...}` (plain list) or `'{count{expr, expr, ...}}`
+    /// (replicated list) — an assignment pattern, LRM §4.2.14/Annex A.8.1
+    /// `assignment_pattern`. A distinct node from [`Expr::Concat`]/
+    /// [`Expr::Replication`] on purpose: an assignment pattern is a
+    /// literal list for a parameter array, a string valid-value list
+    /// (§3.4.6), or a multidimensional initializer (§3.4.8) — not a
+    /// bit-concatenation value, even though the replicated form's syntax
+    /// mirrors `{count{...}}`. `replicate` is `Some(count)` for the
+    /// `'{count{...}}` form, `None` for the plain `'{a, b, ...}` form.
+    AssignmentPattern { span: Span, replicate: Option<Box<Expr>>, parts: Vec<Expr> },
 }
 
 impl Expr {
@@ -79,7 +89,8 @@ impl Expr {
             | Expr::PartSelect { span, .. }
             | Expr::Call { span, .. }
             | Expr::AccessFunction { span, .. }
-            | Expr::SystemFunctionCall { span, .. } => *span,
+            | Expr::SystemFunctionCall { span, .. }
+            | Expr::AssignmentPattern { span, .. } => *span,
         }
     }
 }

@@ -69,7 +69,7 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C1-03", story: "P1", clause: "§2.6.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_ch1_lexical_form.rs", test_fn: "whitespace_after_base_letter_is_accepted" } },
     Entry { id: "LRMC-C1-04", story: "P1", clause: "§2.6.1/§2.6.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_ch1_lexical_form.rs", test_fn: "underscore_immediately_after_decimal_point_is_rejected" } },
     Entry { id: "LRMC-C1-05", story: "P1", clause: "§2.9/§2.9.1", status: Status::Pending },
-    Entry { id: "LRMC-C1-06", story: "P1", clause: "§3.4.2/3.4.4/3.4.6/3.4.8/4.2.14", status: Status::Pending },
+    Entry { id: "LRMC-C1-06", story: "P1", clause: "§3.4.2/3.4.4/3.4.6/3.4.8/4.2.14", status: Status::Pending /* FORM half closed by vams_ch1_lexical_form.rs's assignment-pattern tests; kept Pending until T14's FUNCTIONALITY half (elaboration) also lands, per this ID's own two-half Done-when */ },
     Entry { id: "LRMC-C1-07", story: "P1", clause: "§3.4.7", status: Status::Pending },
     Entry { id: "LRMC-C1-08", story: "P1", clause: "§4.4/§3.6.1.2", status: Status::Pending },
     Entry { id: "LRMC-C1-09", story: "P1", clause: "§4.4/§5.4.2/§5.4.3", status: Status::Pending },

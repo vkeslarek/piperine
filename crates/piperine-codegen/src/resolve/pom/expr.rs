@@ -103,6 +103,14 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
                 walk(p, f);
             }
         }
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            if let Some(r) = replicate {
+                walk(r, f);
+            }
+            for p in parts {
+                walk(p, f);
+            }
+        }
         Expr::Index { base, index, .. } => {
             walk(base, f);
             walk(index, f);
@@ -178,6 +186,16 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
         Expr::Replication { span, count, parts } => Expr::Replication {
             span: *span,
             count: Box::new(resolve_expr(count, ctx)),
+            parts: parts.iter().map(|p| resolve_expr(p, ctx)).collect(),
+        },
+        // Structural pass-through only — kept as a distinct node (not
+        // desugared) so a later consumer (e.g. the `laplace_*` coefficient
+        // arguments, LRMC-C1-12/C5-01) can still pattern-match on it; no
+        // semantic handling of assignment patterns is implemented here
+        // (that's LRMC-C1-06's elaboration follow-up task).
+        Expr::AssignmentPattern { span, replicate, parts } => Expr::AssignmentPattern {
+            span: *span,
+            replicate: replicate.as_ref().map(|r| Box::new(resolve_expr(r, ctx))),
             parts: parts.iter().map(|p| resolve_expr(p, ctx)).collect(),
         },
         Expr::Index { span, base, index } => Expr::Index {
@@ -364,6 +382,11 @@ pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, 
         Expr::Replication { span, count, parts } => Expr::Replication {
             span: *span,
             count: Box::new(subst_expr(count, subst)),
+            parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
+        },
+        Expr::AssignmentPattern { span, replicate, parts } => Expr::AssignmentPattern {
+            span: *span,
+            replicate: replicate.as_ref().map(|r| Box::new(subst_expr(r, subst))),
             parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
         },
         Expr::Number { .. } | Expr::Str { .. } => expr.clone(),

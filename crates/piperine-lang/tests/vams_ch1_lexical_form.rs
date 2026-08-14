@@ -4,7 +4,14 @@
 //! examples (spec.md's Edge Cases + Fixture rule), not from this crate's
 //! implementation.
 
-use piperine_lang::{BasedNumber, Lexer, NumberBase, NumberLit, ParseErrorKind, Tok, UnderscorePosition};
+use piperine_lang::ast::Expr;
+use piperine_lang::{BasedNumber, Grammar, Lexer, NumberBase, NumberLit, ParseErrorKind, Tok, UnderscorePosition};
+
+fn parse_expr(src: &str) -> Expr {
+    let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
+    let mut g = Grammar::new(toks);
+    g.parse_expr().unwrap_or_else(|e| panic!("parse error for {src:?}: {e}"))
+}
 
 fn toks(src: &str) -> Vec<Tok> {
     Lexer::new(src)
@@ -184,6 +191,93 @@ fn legal_underscore_separators_still_accepted() {
             digits: "FF_FF".to_string(),
         }))]
     );
+}
+
+// ── LRMC-C1-06 (FORM half): assignment pattern `'{...}` (§4.2.14) ──────
+
+#[test]
+fn plain_list_assignment_pattern_parses_from_lrm_3_4_4() {
+    // §3.4.4's own worked example: `parameter real poles[0:3] = '{ 1.0,
+    // 3.198, 4.554, 2.00 };` — the initializer expression alone.
+    let e = parse_expr("'{ 1.0, 3.198, 4.554, 2.00 }");
+    match e {
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            assert!(replicate.is_none(), "plain list form must not carry a replication count");
+            assert_eq!(parts.len(), 4);
+            for (part, expected) in parts.iter().zip([1.0, 3.198, 4.554, 2.00]) {
+                match part {
+                    Expr::Number { value: NumberLit::Real(v), .. } => assert_eq!(*v, expected),
+                    other => panic!("expected Real({expected}), got {other:?}"),
+                }
+            }
+        }
+        other => panic!("expected Expr::AssignmentPattern, got {other:?}"),
+    }
+}
+
+#[test]
+fn string_valid_value_list_assignment_pattern_parses_from_lrm_3_4_6() {
+    // §3.4.6's own worked example: `parameter string transistortype =
+    // "NPN" from '{ "NPN", "PNP" };` — the `from` clause's list.
+    let e = parse_expr(r#"'{ "NPN", "PNP" }"#);
+    match e {
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            assert!(replicate.is_none());
+            assert_eq!(parts.len(), 2);
+            assert_eq!(parts[0], Expr::Str { span: parts[0].span(), value: "NPN".to_string() });
+            assert_eq!(parts[1], Expr::Str { span: parts[1].span(), value: "PNP".to_string() });
+        }
+        other => panic!("expected Expr::AssignmentPattern, got {other:?}"),
+    }
+}
+
+#[test]
+fn replicated_assignment_pattern_parses() {
+    // §4.2.14's own second example: `parameter real data2[0:4] = '{
+    // 5{0.0} };` — the replicated form, `count` = 5.
+    let e = parse_expr("'{ 5{0.0} }");
+    match e {
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            match replicate.as_deref() {
+                Some(Expr::Number { value: NumberLit::Integer(5), .. }) => {}
+                other => panic!("expected replicate count 5, got {other:?}"),
+            }
+            assert_eq!(parts.len(), 1);
+            match &parts[0] {
+                Expr::Number { value: NumberLit::Real(v), .. } => assert_eq!(*v, 0.0),
+                other => panic!("expected Real(0.0), got {other:?}"),
+            }
+        }
+        other => panic!("expected Expr::AssignmentPattern, got {other:?}"),
+    }
+}
+
+#[test]
+fn multidimensional_nested_assignment_pattern_parses_from_lrm_3_4_8() {
+    // §3.4.8's own worked example: `real distort[0:2][0:2] = '{ 3{ '{3{0.0}}}};`
+    // — a replicated pattern whose replicated part is itself a nested
+    // assignment pattern (not a Concat/Replication).
+    let e = parse_expr("'{ 3{ '{3{0.0}} } }");
+    match e {
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            match replicate.as_deref() {
+                Some(Expr::Number { value: NumberLit::Integer(3), .. }) => {}
+                other => panic!("expected outer replicate count 3, got {other:?}"),
+            }
+            assert_eq!(parts.len(), 1);
+            match &parts[0] {
+                Expr::AssignmentPattern { replicate: inner_rep, parts: inner_parts, .. } => {
+                    match inner_rep.as_deref() {
+                        Some(Expr::Number { value: NumberLit::Integer(3), .. }) => {}
+                        other => panic!("expected inner replicate count 3, got {other:?}"),
+                    }
+                    assert_eq!(inner_parts.len(), 1);
+                }
+                other => panic!("expected a nested Expr::AssignmentPattern, got {other:?}"),
+            }
+        }
+        other => panic!("expected Expr::AssignmentPattern, got {other:?}"),
+    }
 }
 
 #[test]

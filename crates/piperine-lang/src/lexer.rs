@@ -161,6 +161,15 @@ impl<'a> Lexer<'a> {
             b'$' => self.lex_prefixed_ident(start, b'$', Tok::SystemIdent as fn(String) -> Tok),
             b'`' => self.lex_prefixed_ident(start, b'`', Tok::Directive as fn(String) -> Tok),
             b'0'..=b'9' => self.lex_number(start),
+            // `` '{ `` — assignment-pattern open delimiter (§4.2.14 Syntax
+            // 4-2's `assignment_pattern`), lexically distinct from a based
+            // number (no base letter can be `{`) and from plain `{`
+            // concatenation. Maximal-munch as its own 2-character lexeme,
+            // mirroring how `(*`/`*)` are handled below in `PUNCT_TABLE`.
+            b'\'' if self.peek_at(1) == Some(b'{') => {
+                self.pos += 2;
+                Ok(Lexed { tok: Tok::Punct("'{"), span: Span::new(start, self.pos) })
+            }
             b'\'' => self.lex_based_number_no_size(start),
             b if is_ident_start(b) => self.lex_ident(start),
             _ => self.lex_punct(start),

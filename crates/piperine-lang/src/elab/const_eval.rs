@@ -119,6 +119,14 @@ impl ConstEnv {
             | Expr::SystemFunctionCall { .. } => Err(ConstEvalError::NotConst(
                 "not yet supported by the elaboration-constant evaluator".into(),
             )),
+            // LRMC-C1-06's FUNCTIONALITY half (parameter arrays, string
+            // valid-value lists, multidimensional initializers) is a
+            // follow-up task — this scalar `eval` is not where it lands
+            // (assignment patterns are array-shaped, not scalar). Fail
+            // loud rather than silently mis-evaluating as a scalar.
+            Expr::AssignmentPattern { .. } => Err(ConstEvalError::NotConst(
+                "assignment patterns are not yet supported by the scalar elaboration-constant evaluator".into(),
+            )),
         }
     }
 

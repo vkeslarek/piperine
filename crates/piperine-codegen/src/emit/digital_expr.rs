@@ -82,6 +82,9 @@ impl Codegen for Expr {
             Expr::Concat { .. } | Expr::Replication { .. } => Err(CodegenError::unsupported(format!(
                 "vector concatenation/replication in digital codegen: {self:?}"
             ))),
+            Expr::AssignmentPattern { .. } => Err(CodegenError::unsupported(format!(
+                "assignment pattern in digital codegen: {self:?}"
+            ))),
         }
     }
 }

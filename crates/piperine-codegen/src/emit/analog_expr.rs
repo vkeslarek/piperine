@@ -93,6 +93,16 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             Expr::Concat { .. } | Expr::Replication { .. } | Expr::Index { .. } | Expr::PartSelect { .. } => {
                 Err(CodegenError::unsupported("vector/bit-select expression in an analog contribution"))
             }
+
+            // An assignment pattern (`'{...}`) is a literal list, not a
+            // scalar — it has no `f64` Cranelift value of its own. Its
+            // legal use sites (parameter-array initializers, `laplace_*`
+            // coefficient arguments) consume it before it ever reaches
+            // scalar emission; reaching this arm means it flowed
+            // somewhere emission can't yet handle it.
+            Expr::AssignmentPattern { .. } => {
+                Err(CodegenError::unsupported("assignment pattern in a scalar analog expression"))
+            }
         }
     }
 

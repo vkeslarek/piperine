@@ -288,6 +288,14 @@ pub(crate) fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
                 visit_all(p, f);
             }
         }
+        PomExpr::AssignmentPattern { replicate, parts, .. } => {
+            if let Some(r) = replicate {
+                visit_all(r, f);
+            }
+            for p in parts {
+                visit_all(p, f);
+            }
+        }
         PomExpr::Index { base, index, .. } => {
             visit_all(base, f);
             visit_all(index, f);
@@ -1007,6 +1015,11 @@ fn subst_scope(expr: &PomExpr, scope: &Scope) -> PomExpr {
             count: Box::new(subst_scope(count, scope)),
             parts: parts.iter().map(|p| subst_scope(p, scope)).collect(),
         },
+        PomExpr::AssignmentPattern { span, replicate, parts } => PomExpr::AssignmentPattern {
+            span: *span,
+            replicate: replicate.as_ref().map(|r| Box::new(subst_scope(r, scope))),
+            parts: parts.iter().map(|p| subst_scope(p, scope)).collect(),
+        },
         PomExpr::Number { .. } | PomExpr::Str { .. } => expr.clone(),
     }
 }
@@ -1156,6 +1169,11 @@ pub(crate) fn rewrite_expr(expr: &PomExpr, f: &mut impl FnMut(&PomExpr) -> PomEx
         PomExpr::Replication { span, count, parts } => PomExpr::Replication {
             span: *span,
             count: Box::new(rewrite_expr(count, f)),
+            parts: parts.iter().map(|p| rewrite_expr(p, f)).collect(),
+        },
+        PomExpr::AssignmentPattern { span, replicate, parts } => PomExpr::AssignmentPattern {
+            span: *span,
+            replicate: replicate.as_ref().map(|r| Box::new(rewrite_expr(r, f))),
             parts: parts.iter().map(|p| rewrite_expr(p, f)).collect(),
         },
     };
