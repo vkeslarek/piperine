@@ -1079,7 +1079,7 @@ reproduction, and disposition.
 
 ---
 
-#### T56: LRM Coverage Map audit
+#### T56: LRM Coverage Map audit — ✅ DONE (see Progress Log)
 **What**: Prove the spec's "100% dos pontos do LRM" claim mechanically.
 **Where**: `.specs/features/verilog-ams-support/spec.md` (coverage map), test evidence
 **Depends on**: T55 · **Requirement**: all
@@ -3835,3 +3835,51 @@ did not close.
   every one green or identically-pre-failing, no regression. No tolerance
   loosened, no test modified, no file outside T55's stated `Where`
   (`crates/piperine-lang/src/`, `tests/vams_annex_e.rs`) touched.
+
+- **T56** ✅ (Phase 10) — LRM Coverage Map audit. `spec.md`'s "LRM Coverage
+  Map" table (18 rows: ch. 1–12, Annex A–H) gained a "Test Evidence"
+  column citing `target::function` for every chapter/annex row (Annex G/H
+  get "Not a test — informative annex, ported to project docs by T57"
+  instead, per this task's own "Annex G/H marked docs-only" bar). Every
+  cited target was **run directly** during this audit (`cargo test -p
+  <crate> --test <target>` or root `cargo test --test <target>`) and
+  confirmed green — not cross-referenced from an existing doc claim, per
+  this task's own instruction ("actually run it and confirm, don't just
+  trust the table"). No gap found: every one of the 16 normative
+  chapter/annex rows already has at least one passing, independently
+  runnable test from a prior task (T1–T55) — ch. 1 (KCL/systems) →
+  `tests/vams_vertical_slice.rs::vams_rc_circuit_dc_operating_point`; ch.
+  2 (lexical) → `piperine-vams/tests/lexical.rs` (29/29); ch. 3 (data
+  types) → `piperine-lang/tests/pom_nature.rs`; ch. 4 (expressions) →
+  `piperine-vams/tests/expressions.rs` (21/21); ch. 5 (analog behavior) →
+  `piperine-lang/tests/vams_lower_analog.rs`; ch. 6 (hierarchy) →
+  `piperine-lang/tests/vams_lower_structure.rs`; ch. 7 (mixed signal) →
+  `tests/vams_connect_modules_e2e.rs` (T52); ch. 8 (scheduling) →
+  `piperine-solver/tests/vams_stratified_regions.rs` (T51); ch. 9 (system
+  tasks) → `piperine-lang/tests/vams_system_tasks.rs` (T47) +
+  `piperine-plugin/src/host.rs::tests` (T53, VPI-associated half); ch. 10
+  (compiler directives) → `piperine-vams/tests/preprocessor.rs` (23/23);
+  ch. 11/12 (VPI) → `piperine-plugin/tests/vpi_routines.rs` (T53/T54);
+  Annex A (grammar) → `piperine-vams/tests/annex_a_grammar.rs`; Annex B
+  (keywords) → `piperine-vams/tests/annex_b_keywords.rs`; Annex C (analog
+  subset) → `piperine-lang/tests/vams_annex_c.rs`; Annex D (stdlib) →
+  `piperine-lang/tests/vams_headers.rs`; Annex E (SPICE) →
+  `tests/vams_annex_e.rs` (T55, this phase); Annex F (discipline
+  resolution) → `piperine-lang/tests/vams_discipline_resolution.rs`. No
+  fix task generated — the coverage claim holds, evidenced rather than
+  merely asserted; this task's own contingency ("any gap becomes a fix
+  task, never a silent pass") was not triggered because no gap was found.
+  **Verification**: `cargo build --workspace`: zero warnings (docs-only
+  change to `spec.md`, no code touched — nothing recompiled by this task
+  itself). Every cited target re-run individually during this session,
+  all green: `piperine-vams` (`lexical` 29/29, `expressions` 21/21,
+  `annex_a_grammar` 3/3, `annex_b_keywords` 5/5, `items_core` 23/23,
+  `preprocessor` 23/23), `piperine-lang` (`vams_lower_analog` 8/8,
+  `vams_lower_structure` 13/13, `vams_annex_c` 5/5, `vams_headers` 4/4,
+  `vams_discipline_resolution` 4/4, `vams_connect_modules` 2/2,
+  `vams_system_tasks` 7/7, `pom_nature` 9/9, `pom_branch` 13/13),
+  `piperine-codegen` (`vams_gates` 4/4, `vams_udp` 3/3), `piperine-solver`
+  (`vams_stratified_regions` 2/2), `piperine-plugin` (`vpi_routines`
+  4/4), root (`vams_connect_modules_e2e` 1/1, `vams_annex_e` 9/9,
+  `vams_vertical_slice` 3/3). No test modified, no file outside T56's
+  stated `Where` (`spec.md`) touched.

@@ -490,28 +490,36 @@ Every clause of `VAMS-LRM-2-4.md`'s own table of contents, mapped to the
 requirement(s) that cover it — this is the literal answer to "bata 100% dos
 pontos do LRM": nothing in the LRM's own chapter/annex list is unmapped.
 
-| LRM Chapter/Annex | Title | Requirement(s) | Phase |
-|---|---|---|---|
-| 1 | Verilog-AMS introduction (concepts, Kirchhoff's laws, systems) | VAMS-01, VAMS-02 | P1 |
-| 2 | Lexical conventions | VAMS-07, VAMS-24 | P1 |
-| 3 | Data types (incl. nature/discipline/net/parameter/genvar) | VAMS-01 | P1 |
-| 4 | Expressions | VAMS-07 | P1 |
-| 5 | Analog behavior | VAMS-02 | P1 |
-| 6 | Hierarchical structures | VAMS-04 | P1 |
-| 7 | Mixed signal | VAMS-03, VAMS-20 | P1 (subset) / P3 (full) |
-| 8 | Scheduling semantics | VAMS-03, VAMS-20 | P1 (subset) / P3 (full) |
-| 9 | System tasks and functions | VAMS-15 (general), VAMS-21 (VPI-associated) | P2 / P3 |
-| 10 | Compiler directives | VAMS-16 | P2 |
-| 11 | Using VPI routines | VAMS-21 | P3 |
-| 12 | VPI routine definitions | VAMS-21 | P3 |
-| A | Formal syntax definition (BNF) | VAMS-23 | Ongoing, P1–P3 |
-| B | List of keywords | VAMS-24 | Ongoing, P1–P3 |
-| C | Analog language subset | VAMS-25 | Ongoing, P1–P3 |
-| D | Standard definitions | VAMS-01, VAMS-09 | P1 / P2 |
-| E | SPICE compatibility | VAMS-22 | P3 |
-| F | Discipline resolution methods | VAMS-17 | P2 |
-| G | Change history (informative) | VAMS-26 | P3, docs-only |
-| H | Glossary (informative) | VAMS-26 | P3, docs-only |
+| LRM Chapter/Annex | Title | Requirement(s) | Phase | Test Evidence (T56 audit — run and confirmed passing) |
+|---|---|---|---|---|
+| 1 | Verilog-AMS introduction (concepts, Kirchhoff's laws, systems) | VAMS-01, VAMS-02 | P1 | `tests/vams_vertical_slice.rs::vams_rc_circuit_dc_operating_point` |
+| 2 | Lexical conventions | VAMS-07, VAMS-24 | P1 | `crates/piperine-vams/tests/lexical.rs::sized_based_hex_integer` (29/29 in target) |
+| 3 | Data types (incl. nature/discipline/net/parameter/genvar) | VAMS-01 | P1 | `crates/piperine-lang/tests/pom_nature.rs::base_nature_lowers_its_standard_attributes` |
+| 4 | Expressions | VAMS-07 | P1 | `crates/piperine-vams/tests/expressions.rs::every_binary_operator_parses_to_its_binop` (21/21 in target) |
+| 5 | Analog behavior | VAMS-02 | P1 | `crates/piperine-lang/tests/vams_lower_analog.rs::contribution_through_a_named_branch_sets_its_kind` |
+| 6 | Hierarchical structures | VAMS-04 | P1 | `crates/piperine-lang/tests/vams_lower_structure.rs::declaration_list_ports_lower_with_direction_and_discipline` |
+| 7 | Mixed signal | VAMS-03, VAMS-20 | P1 (subset) / P3 (full) | `tests/vams_connect_modules_e2e.rs::mixed_analog_digital_fixture_with_a_connectmodule_bridge_simulates_end_to_end` |
+| 8 | Scheduling semantics | VAMS-03, VAMS-20 | P1 (subset) / P3 (full) | `crates/piperine-solver/tests/vams_stratified_regions.rs::active_inactive_nba_monitor_regions_are_ordered_per_the_lrm_cycle` |
+| 9 | System tasks and functions | VAMS-15 (general), VAMS-21 (VPI-associated) | P2 / P3 | `crates/piperine-lang/tests/vams_system_tasks.rs::display_format_executes_per_lrm_table_9_1` (general); `crates/piperine-plugin/src/host.rs::tests::registers_resolves_and_dispatches` (VPI-associated) |
+| 10 | Compiler directives | VAMS-16 | P2 | `crates/piperine-vams/tests/preprocessor.rs::object_like_macro_expands` (23/23 in target) |
+| 11 | Using VPI routines | VAMS-21 | P3 | `crates/piperine-plugin/tests/vpi_routines.rs::systf_and_analog_systf_route_through_t53s_native_abi` |
+| 12 | VPI routine definitions | VAMS-21 | P3 | `crates/piperine-plugin/tests/vpi_routines.rs::every_lrm_11_4_category_is_audited` |
+| A | Formal syntax definition (BNF) | VAMS-23 | Ongoing, P1–P3 | `crates/piperine-vams/tests/annex_a_grammar.rs::every_annex_a_section_is_implemented_or_carries_a_written_reason` |
+| B | List of keywords | VAMS-24 | Ongoing, P1–P3 | `crates/piperine-vams/tests/annex_b_keywords.rs::every_annex_b_keyword_is_reserved` |
+| C | Analog language subset | VAMS-25 | Ongoing, P1–P3 | `crates/piperine-lang/tests/vams_annex_c.rs::non_blocking_assignment_inside_analog_block_fails_loud_citing_annex_c` |
+| D | Standard definitions | VAMS-01, VAMS-09 | P1 / P2 | `crates/piperine-lang/tests/vams_headers.rs::disciplines_vams_elaborates_standalone_and_matches_the_phdl_electrical_discipline` |
+| E | SPICE compatibility | VAMS-22 | P3 | `tests/vams_annex_e.rs::table_e1_diode_bjt_mosfet_jfet`, `::table_e2_limiting_functions_reachable_through_dollar_limit` |
+| F | Discipline resolution methods | VAMS-17 | P2 | `crates/piperine-lang/tests/vams_discipline_resolution.rs::undeclared_wire_resolves_from_a_connected_instance_port` |
+| G | Change history (informative) | VAMS-26 | P3, docs-only | Not a test — informative annex, ported to project docs by T57 (review, not a passing-test bar) |
+| H | Glossary (informative) | VAMS-26 | P3, docs-only | Not a test — informative annex, ported to project docs by T57 (review, not a passing-test bar) |
+
+**T56 audit method**: every chapter/annex row's cited target was run directly
+(`cargo test -p <crate> --test <target>` or root `cargo test --test <target>`)
+during this audit and confirmed green — not merely cross-referenced from an
+existing doc claim. No chapter/annex row is unmapped; none relies on a target
+that fails to compile or run. Annex G/H are the two rows this table itself
+marks docs-only (T57's job, not a test gate) — consistent with the LRM
+Coverage Map's own header note above ("Annex G/H marked docs-only").
 
 ---
 
