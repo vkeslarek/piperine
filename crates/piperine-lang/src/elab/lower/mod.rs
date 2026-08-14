@@ -26,9 +26,10 @@
 
 use std::collections::HashMap;
 
-use piperine_vams::ast::{DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFile};
+use piperine_vams::ast::{ConnectrulesDecl, DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFile};
 use crate::pom::{ElabError, Design};
 
+mod connect;
 mod disciplines;
 mod flatten;
 mod generate;
@@ -42,6 +43,12 @@ pub struct SymbolTable {
     pub disciplines: HashMap<String, DisciplineDecl>,
     pub natures: HashMap<String, NatureDecl>,
     pub module_decls: HashMap<String, ModuleDecl>,
+    /// `connectrules name { connect A, B; ... } endconnectrules` blocks
+    /// (LRM ch. 7), keyed by name — read by `InsertConnectModules` (T52).
+    /// Registered (not silently dropped) starting T52; before this task
+    /// `register.rs` matched `Item::Connectrules(_) => {}` and discarded
+    /// it (see that file's own historical comment).
+    pub connectrules: HashMap<String, ConnectrulesDecl>,
 }
 
 impl SymbolTable {
@@ -50,6 +57,7 @@ impl SymbolTable {
             disciplines: HashMap::new(),
             natures: HashMap::new(),
             module_decls: HashMap::new(),
+            connectrules: HashMap::new(),
         }
     }
 }

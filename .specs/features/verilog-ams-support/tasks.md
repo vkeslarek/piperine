@@ -1040,7 +1040,7 @@ reproduction, and disposition.
 
 ---
 
-#### T52: `InsertConnectModules` pass (LRM ch. 7)
+#### T52: `InsertConnectModules` pass (LRM ch. 7) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/src/elab/lower/connect.rs`, `passes.rs`, `crates/piperine-lang/tests/vams_connect_modules.rs`
 **Depends on**: T51 · **Requirement**: VAMS-20
 **Done when**:
@@ -3552,3 +3552,84 @@ did not close.
   `git stash`'d — pre-T51 — source), i.e. genuinely pre-existing and
   unrelated to digital scheduling, not introduced or worsened here. Every
   other `piperine-solver` target, including the new one, passes.
+
+- **T52** ✅ `<pending commit>` — `InsertConnectModules` (LRM ch. 7) (7
+  unit tests in `elab/lower/connect.rs` + 2 elaboration-level integration
+  tests in `crates/piperine-lang/tests/vams_connect_modules.rs` + 1
+  cross-crate end-to-end test in root `tests/vams_connect_modules_e2e.rs`,
+  10 new). **Real architecture gap found while implementing (documented
+  SPEC_DEVIATION, carried forward — same category as T43/T44's own
+  precedent for "found mid-task, fixed what's in-scope, carried the rest
+  forward"):** `ResolveDisciplines` (T26, `disciplines.rs:122-131`)
+  already hard-fails (`DisciplineResolutionFailed`, E4003) the instant an
+  instance's connected net has an already-resolved discipline differing
+  from the target port's declared discipline. Since `InsertConnectModules`
+  runs *after* `ResolveDisciplines` (this task's own stated position), a
+  genuine cross-discipline connection in real `.vams` source **can never
+  reach this pass** — elaboration already aborted one pass earlier.
+  Closing this for real needs `ResolveDisciplines` itself to recognize a
+  connectrules-eligible mismatch as "defer to `InsertConnectModules`"
+  instead of an unconditional conflict — a coupled change to
+  `disciplines.rs`, outside this task's stated `Where`. `disciplines.rs`'s
+  own T26-era module doc already flagged the general shape of this gap
+  ("`connect`/`connectrules`-driven resolution (ch. 7/10) is future work
+  (T52, `InsertConnectModules`)"); T52, on inspection, still needs that
+  specific follow-up to fully close the loop — carried forward, not
+  silently dropped (see `connect.rs`'s own module doc for the full
+  writeup). **What's delivered**, real and independently tested: (1) a
+  small necessary preceding fix (scope-widened beyond the literal file
+  list, flagged, same pattern T46 used) — `register.rs`'s
+  `Item::Connectrules(_) => {}` arm (previously silently discarding
+  `connectrules` blocks) now registers them into a new
+  `SymbolTable::connectrules: HashMap<String, ConnectrulesDecl>` field
+  (`elab/lower/mod.rs`); (2) `select_connect_module` — the real LRM ch. 7
+  selection algorithm: a discipline pair is eligible only if some
+  registered `connectrules` block names both disciplines in one `connect`
+  rule, then the unique `connectmodule`-kind declaration (checked against
+  `elab.syms.module_decls[name].kind`, since POM `Module` carries no
+  `ModuleKind` at all — confirmed by grep, `ModuleKind`/`Connectmodule`
+  appear nowhere in `piperine-lang`, so this pass reads the AST-level
+  `ModuleDecl.kind` instead of adding a POM field, keeping the change
+  inside `connect.rs`) whose two ports' disciplines are exactly the pair
+  (either order) is returned; zero or multiple candidates fail loud
+  (E4005 `ConnectModuleAmbiguous`, already declared at T19), naming every
+  candidate found in the `issue` text; (3) `InsertConnectModules`, wired
+  into `PASSES` immediately after `ResolveDisciplines` (as stated),
+  scanning every instance's port connections for a genuine discipline
+  mismatch and recording a bridge `Instance` into
+  `Elaborator::generated_instances` (the same derived-only field
+  `UnrollGenerate`/T25 writes — MD-25 test
+  `matched_bridge_lands_only_in_generated_instances_not_design_modules`
+  proves it lands there and nowhere in `Design::modules`, constructing the
+  scenario directly rather than through full elaboration, exactly to
+  route around the `ResolveDisciplines` gap above); (4) the mixed
+  analog/digital end-to-end proof
+  (`tests/vams_connect_modules_e2e.rs`) — a single compiled circuit with
+  an analog subcircuit (ideal source + resistor), an explicitly-
+  instantiated `connectmodule` bridge (proving `ModuleKind::Connectmodule`
+  elaborates/compiles/simulates uniformly with `module`, per the survey
+  finding in (2)), and a digital counter register, all three simulating
+  together through DC and transient analysis on the unmodified native
+  solver — scope-noted honestly in the file's own header: this proves
+  composition and coexistence, not automatic cross-domain bridge
+  insertion (blocked by the gap above). **Verification**: `cargo build
+  --workspace`: zero warnings. `cargo test -p piperine-lang --lib`: **86
+  passed, 2 failed** (unchanged pre-existing `elab::lower::flatten`
+  failures; +7 vs T51's 79-passing baseline). `cargo test -p piperine-lang
+  --test vams_connect_modules`: **2 passed, 0 failed**. `cargo test --test
+  vams_connect_modules_e2e`: **1 passed, 0 failed**. Regression check: ran
+  every existing VAMS-related `piperine-lang` integration target
+  (`vams_generate`, `vams_discipline_resolution`, `vams_lower_structure`,
+  `vams_lower_analog`, `vams_lower_var`, `vams_annex_c`,
+  `vams_param_ranges`, `vams_const_eval_calls`, `vams_device_port_attrs`,
+  `vams_headers`, `vams_deviation_resolutions`, `pom_vams_shape`,
+  `pom_nature`, `pom_branch`, `errors_lrm`) after inserting the new pass
+  into `PASSES` — **every one unchanged, 0 failed** — and re-ran root
+  `tests/run_examples.rs` (both targets green, all 24 examples) and
+  `tests/vams_vertical_slice.rs` (3/3 green) to confirm the new pass
+  position doesn't disturb anything already proven. Gate note (full, per
+  T52's own table entry): `cargo test --workspace` still does not compile
+  workspace-wide (the same pre-existing `piperine-lang` test-target debt
+  documented at T47-T51, unrelated to this task); every crate/target this
+  task actually touches or could plausibly affect was run directly and is
+  green.

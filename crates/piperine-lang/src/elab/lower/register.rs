@@ -29,13 +29,15 @@ impl Elaborator {
                 Item::Module(m) => {
                     self.syms.module_decls.insert(m.name.clone(), m.clone());
                 }
-                // `paramset`/`connectrules`/`config`/`primitive` (UDP) land
-                // in later phases (T22 extends this list as their own POM
+                // `connectrules` (LRM ch. 7) registered starting T52 —
+                // `InsertConnectModules` reads `elab.syms.connectrules`.
+                Item::Connectrules(cr) => {
+                    self.syms.connectrules.insert(cr.name.clone(), cr.clone());
+                }
+                // `paramset`/`config`/`primitive` (UDP) land in later
+                // phases (T22 extends this list as their own POM
                 // collections are wired up).
-                Item::Paramset(_)
-                | Item::Connectrules(_)
-                | Item::Config(_)
-                | Item::Primitive(_) => {}
+                Item::Paramset(_) | Item::Config(_) | Item::Primitive(_) => {}
             }
         }
         Ok(())

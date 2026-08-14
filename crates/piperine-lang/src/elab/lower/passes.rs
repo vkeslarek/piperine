@@ -22,6 +22,7 @@
 
 use crate::pom::{Design, ElabError};
 
+use super::connect::InsertConnectModules;
 use super::disciplines::ResolveDisciplines;
 use super::flatten::FlattenHierarchy;
 use super::generate::UnrollGenerate;
@@ -40,11 +41,23 @@ pub(crate) trait ElabPass {
 /// needs every module already registered — and before `FlattenHierarchy`,
 /// which reads `Elaborator::generated_instances` when building the derived
 /// flat form (design §6 ordering).
+///
+/// `InsertConnectModules` (T52) runs immediately after `ResolveDisciplines`
+/// and before `UnrollGenerate`/`FlattenHierarchy`, per this task's own
+/// stated position ("after `ResolveDisciplines`, before
+/// `FlattenHierarchy`" — both hold with this placement). It writes only
+/// `Elaborator::generated_instances` (the same derived-only field
+/// `UnrollGenerate` writes), so ordering between the two doesn't matter
+/// for correctness — see `connect.rs`'s own module doc for the documented
+/// SPEC_DEVIATION on why this pass is a no-op over every design in
+/// today's corpus (`ResolveDisciplines` already rejects the only inputs
+/// it would otherwise act on).
 pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &Register,
     &LowerDeclarations,
     &ElabModules,
     &ResolveDisciplines,
+    &InsertConnectModules,
     &UnrollGenerate,
     &Typecheck,
     &FlattenHierarchy,
