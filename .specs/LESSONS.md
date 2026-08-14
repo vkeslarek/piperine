@@ -158,6 +158,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: ROADMAP.md:94; passives.phdl:255-257; mos.phdl:507-513 (docs/traceability)
 - last seen: 2026-08-07T02:43:33Z
 
+### L-025 — When a spec AC names a specific test harness (e.g. an existing ToleranceContract), and the implementer must substitute a lower-level equivalent because the named harness's dependency chain is broken mid-feature, add a follow-up task to swap back to the real harness once the blocker clears — don't leave the substitution permanent without revisiting it.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `testing` · harmful: 0
+- features: verilog-ams-support
+- evidence: tests/vams_vertical_slice.rs:16-30 (VAMS-06/AC6) (testing)
+- last seen: 2026-08-14T01:23:11Z
+
+### L-026 — When a retarget task documents a list of test files broken by the change, verify the list by actually running every target in the crate (not just the ones that fail to compile) — a target that compiles but fails at runtime on stale fixture syntax is invisible to a compile-error scan and will be silently undercounted.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `testing` · harmful: 0
+- features: verilog-ams-support
+- evidence: crates/piperine-codegen/tests/{margin_tran_points,cover_bin_mapping,margin_evaluation}.rs (undocumented runtime failures) (testing)
+- last seen: 2026-08-14T01:23:18Z
+
+### L-027 — A gate level defined in tasks.md as a literal command (e.g. 'full' = cargo test --workspace) must be re-validated as actually runnable before the feature is marked closed — don't let per-task '~ deferred, see progress log' entries accumulate across dozens of tasks without a dedicated closing task that either fixes the command or formally re-scopes the gate definition.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `process` · harmful: 0
+- features: verilog-ams-support
+- evidence: cargo test --workspace (does not compile at feature close: piperine-lang tests/elab.rs, 25 errors) (process)
+- last seen: 2026-08-14T01:23:24Z
+
+### L-028 — When an open item's own text says a follow-up task MUST be added before a phase closes, add a checklist gate at that phase's close-out task that fails loud if the follow-up was never created — an open item stated as a hard requirement is not self-enforcing just because it was written down.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `process` · harmful: 0
+- features: verilog-ams-support
+- evidence: VAMS-14 (constraint-block semantics via attribute instances) — tasks.md Open Item #5 said a task 'MUST be added before Phase 7 is considered closed' (process)
+- last seen: 2026-08-14T01:23:30Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
