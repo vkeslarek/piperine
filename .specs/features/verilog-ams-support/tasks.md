@@ -1003,7 +1003,7 @@ reproduction, and disposition.
 
 ---
 
-#### T48: Gate primitives
+#### T48: Gate primitives — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-codegen/src/kernel/digital/`, `crates/piperine-codegen/tests/vams_gates.rs`
 **Depends on**: T47 · **Requirement**: VAMS-18
 **Done when**: every 1364 primitive's truth table asserted; drive strengths honored · **Gate**: quick
@@ -3399,3 +3399,45 @@ did not close.
   and after this task's changes; `--lib` plus the task's own new
   integration target is the practically-runnable form of the gate, per
   the same documented pattern T28 through T32 used.
+
+- **T48** ✅ `<pending commit>` — IEEE 1364 gate-primitive truth tables and
+  drive-strength resolution (14 unit tests in `kernel/digital/gates.rs` +
+  4 integration tests in `crates/piperine-codegen/tests/vams_gates.rs`, 18
+  new). **SPEC_DEVIATION** (documented, carried forward — same category as
+  T47's gap, found by this task's own pre-implementation survey):
+  `piperine_vams::ast::item::{GateKind, GateInstantiation}` (parsed at T11)
+  are not lowered by any `piperine-lang` elaboration pass into the POM, and
+  nothing in `piperine-codegen` reads them (confirmed by grep — zero
+  references outside `piperine-vams` itself); the fused digital-network JIT
+  (`kernel/digital/network.rs`/`compile.rs`) compiles `LoweredBody` module
+  semantics (`always`/`initial` blocks), not raw gate instances. Wiring a
+  `GateInstantiation` all the way to a JIT'd `Element` is a POM-lowering +
+  codegen-instantiation change outside T48's stated `Where`
+  (`kernel/digital/` only). What's delivered instead, pure and
+  independently tested: `GatePrimitive::eval_n` — the `n`-input gates
+  (`and`/`nand`/`or`/`nor`/`xor`/`xnor`, LRM Table 7-4/7-5/7-6, reduced
+  pairwise, associative for these primitives); `GatePrimitive::eval1` —
+  `buf`/`not` (Table 7-9) and the tristate `bufif0`/`bufif1`/`notif0`/
+  `notif1` (Table 7-10); `Strength` + `Strength::resolve` — the §7.9
+  Table 7-3 drive-strength contention table (`Supply`/`Strong`/`Pull`/
+  `Weak`/`HighZ`, stronger wins, equal-strength opposing values contend to
+  `X`, `HighZ` always yields). Built on `piperine_solver::abi::LogicValue`
+  (existing quad-value type, not duplicated). **Further out-of-scope,
+  documented not silently dropped:** the switch-level primitives
+  (`nmos`/`pmos`/`cmos`/`r{n,p,c}mos`, `tran`/`rtran`/`tranif0/1`/
+  `rtranif0/1`, `pullup`/`pulldown`) are bidirectional resistive
+  connections between nets, not value-producing functions of their
+  inputs — `GatePrimitive` covers the unidirectional logic-gate family
+  only; `GateKind`'s switch variants have no `GatePrimitive` counterpart
+  yet (stated in the module's own `//!` header, not left implicit).
+  **Verification**: `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine-codegen --lib`: **23 passed, 2 failed**
+  (unchanged pre-existing `device::builder` failures, T32's recorded "2
+  pre-existing-syntax failures" baseline; +14 vs the prior 9-passing count
+  = the 14 unit tests in `kernel/digital/gates.rs`). `cargo test -p
+  piperine-codegen --test vams_gates`: **4 passed, 0 failed**. Gate note
+  (same SPEC_DEVIATION shape as T47/T28-T32): the literal quick-gate
+  command `cargo test -p piperine-codegen` (all targets) does not fully
+  compile — T32 already documented 6/39 pre-existing broken integration
+  targets, untouched and unworsened by this task; `--lib` plus the task's
+  own new integration target is the practically-runnable form.
