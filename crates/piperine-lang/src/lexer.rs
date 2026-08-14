@@ -433,6 +433,13 @@ impl<'a> Lexer<'a> {
             }
         };
         self.pos += 1; // consume base letter
+        // LRMC-C1-03 (§2.6.1 Example 2, `` 'D 3 ``): "The unsigned number
+        // token shall immediately follow the base format, optionally
+        // preceded by white space." Only inline whitespace — a newline
+        // does not count (the digit run still can't span a line break),
+        // so the following "at least one digit" check still fires if the
+        // base letter is immediately followed by a newline.
+        self.skip_inline_whitespace();
         let digits_start = self.pos;
         while let Some(b) = self.peek() {
             if is_based_digit(base, b) {

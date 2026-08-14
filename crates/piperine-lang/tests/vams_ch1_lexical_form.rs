@@ -81,6 +81,61 @@ fn four_state_digits_remain_legal_in_every_base() {
     }
 }
 
+// ── LRMC-C1-03: whitespace between base letter and digits (§2.6.1) ─────
+
+#[test]
+fn whitespace_after_base_letter_is_accepted() {
+    // LRM §2.6.1 Example 2's own worked example: `` 'D 3 `` — "a 5-bit
+    // decimal number" (unsized here since no size prefix in the example).
+    assert_eq!(
+        toks("'D 3"),
+        vec![Tok::Number(NumberLit::Based(BasedNumber {
+            size: None,
+            signed: false,
+            base: NumberBase::Decimal,
+            digits: "3".to_string(),
+        }))]
+    );
+
+    // LRM §2.6.1 Example 1: `` 'h 837FF `` — "is a hexadecimal number".
+    assert_eq!(
+        toks("'h 837FF"),
+        vec![Tok::Number(NumberLit::Based(BasedNumber {
+            size: None,
+            signed: false,
+            base: NumberBase::Hex,
+            digits: "837FF".to_string(),
+        }))]
+    );
+
+    // LRM §2.6.1 Example 5: `` 32 'h 12ab_f001 `` — sized, with whitespace
+    // after the base letter and underscores in the digit run.
+    assert_eq!(
+        toks("32'h 12ab_f001"),
+        vec![Tok::Number(NumberLit::Based(BasedNumber {
+            size: Some(32),
+            signed: false,
+            base: NumberBase::Hex,
+            digits: "12ab_f001".to_string(),
+        }))]
+    );
+}
+
+#[test]
+fn newline_after_base_letter_still_errors() {
+    // Whitespace is legal there per §2.6.1's own wording ("optionally
+    // preceded by white space"), but a line break is not inline
+    // whitespace — the digit run still can't cross it, so this must
+    // still fail (as "at least one digit after the base" — a newline
+    // right after the base letter leaves zero digits before it).
+    let err = piperine_lang::Lexer::new("'h\nFF").tokenize().unwrap_err();
+    assert!(
+        matches!(err.kind, ParseErrorKind::UnexpectedEof { .. }),
+        "expected UnexpectedEof, got {:?}",
+        err.kind
+    );
+}
+
 #[test]
 fn hex_digits_remain_fully_legal_in_hex_base() {
     // Every hex_digit (0-9, a-f, A-F) must still lex under `'h` — the
