@@ -391,7 +391,12 @@ impl AnalogOpRegistry {
         r.register(&["transition"], Transition);
         r.register(&["slew"], Slew);
         r.register(&["table"], Table);
-        for variant in ["np", "zp", "pm", "nm", "npm"] {
+        // §4.5.11: laplace_zd/laplace_nd/laplace_zp/laplace_np are the four
+        // real LRM spellings (z-domain/s-domain numerator/denominator
+        // coefficient forms) -- LRMC-C1-12/C5-01. `pm`/`nm`/`npm` were a
+        // registry typo with no LRM basis; removed so those spellings fail
+        // loud as unknown operators instead of silently resolving.
+        for variant in ["zd", "nd", "zp", "np"] {
             r.register(&[&format!("laplace_{variant}")], Laplace { variant });
         }
         for variant in ["zd", "zp", "nd", "np"] {
@@ -410,4 +415,71 @@ impl AnalogOpRegistry {
 pub(crate) fn analog_ops() -> &'static AnalogOpRegistry {
     static REGISTRY: LazyLock<AnalogOpRegistry> = LazyLock::new(AnalogOpRegistry::with_builtins);
     &REGISTRY
+}
+
+/// LRMC-C1-12/C5-01 registry/keyword guard: the exact bug class that let
+/// `laplace_pm`/`nm`/`npm` (no LRM basis) into the registry while the
+/// real `laplace_zd`/`laplace_nd` spellings sat unregistered, mechanically
+/// caught from now on. `AnalogOpRegistry` and its `ops` field are
+/// `pub(crate)`, so this lives as an inline unit test (same crate) rather
+/// than an integration test under `tests/`, which cannot see them.
+///
+/// **Guard proven able to fail** (T21): temporarily reverted the
+/// `laplace_*` variant list to `["np", "zp", "pm", "nm", "npm"]`, ran
+/// `every_laplace_and_zi_keyword_is_registered` and watched it fail on
+/// the missing `laplace_zd`/`laplace_nd` keys, then reverted back to the
+/// fix. Not left in the tree — the mutation itself isn't part of the
+/// shipped gate, only this record of it (same convention T9's
+/// `lrm_conformance_matrix.rs` guard used).
+#[cfg(test)]
+mod registry_keyword_guard {
+    use super::*;
+    use piperine_lang::Keywords;
+
+    #[test]
+    fn every_registry_key_is_a_reserved_keyword() {
+        // `"delay"` is a pre-existing internal alias for the `absdelay`
+        // operator (registered alongside it, `register(&["delay",
+        // "absdelay"], Delay)`), not itself an LRM name -- a real gap
+        // (a user's own `delay` function is silently shadowed), but
+        // unrelated to LRMC-C1-12/C5-01's laplace_* registry-typo class
+        // and out of this task's scope to fix. Disclosed, not silently
+        // excluded.
+        const KNOWN_NON_KEYWORD_ALIASES: &[&str] = &["delay"];
+        let reg = AnalogOpRegistry::with_builtins();
+        for key in reg.ops.keys() {
+            if KNOWN_NON_KEYWORD_ALIASES.contains(&key.as_str()) {
+                continue;
+            }
+            assert!(
+                Keywords::is_reserved(key),
+                "operator registry key `{key}` is not a reserved keyword in keywords.rs \
+                 (every registered operator name must be reserved, or it could collide \
+                 with a user identifier)"
+            );
+        }
+    }
+
+    #[test]
+    fn every_laplace_and_zi_keyword_is_registered() {
+        let reg = AnalogOpRegistry::with_builtins();
+        for variant in ["zd", "nd", "zp", "np"] {
+            let laplace_name = format!("laplace_{variant}");
+            let zi_name = format!("zi_{variant}");
+            assert!(Keywords::is_reserved(&laplace_name), "`{laplace_name}` must be a reserved keyword");
+            assert!(reg.ops.contains_key(&laplace_name), "`{laplace_name}` must be registered");
+            assert!(Keywords::is_reserved(&zi_name), "`{zi_name}` must be a reserved keyword");
+            assert!(reg.ops.contains_key(&zi_name), "`{zi_name}` must be registered");
+        }
+    }
+
+    #[test]
+    fn fabricated_laplace_variants_are_gone() {
+        for variant in ["pm", "nm", "npm"] {
+            let name = format!("laplace_{variant}");
+            assert!(!Keywords::is_reserved(&name), "`{name}` has no LRM basis and must not be a keyword");
+            let reg = AnalogOpRegistry::with_builtins();
+            assert!(!reg.ops.contains_key(&name), "`{name}` must not be registered");
+        }
+    }
 }
