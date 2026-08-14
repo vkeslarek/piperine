@@ -36,6 +36,11 @@ pub struct Attr {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceFile {
     pub items: Vec<Item>,
+    /// Ch.10 compiler-directive state the preprocessor accumulated while
+    /// scanning this source unit (design.md P0.3) — attached by
+    /// [`crate::parser::Parser::parse`] after `Grammar::parse_source_file`
+    /// returns (the grammar layer itself has no preprocessor access).
+    pub directives: crate::directives::DirectiveState,
 }
 
 /// A top-level source item — Annex A.1.1 `description`.

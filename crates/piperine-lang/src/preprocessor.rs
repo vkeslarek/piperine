@@ -64,6 +64,10 @@ struct CondFrame {
 pub struct Preprocessor {
     resolver: Box<dyn IncludeResolver>,
     macros: HashMap<String, MacroDef>,
+    /// Ch.10 directive state accumulated so far (design.md P0.3) — written
+    /// by `` `default_discipline ``/`` `default_transition ``'s directive
+    /// arms in [`Preprocessor::handle_directive_or_macro`].
+    directives: crate::directives::DirectiveState,
 }
 
 impl Default for Preprocessor {
@@ -74,11 +78,21 @@ impl Default for Preprocessor {
 
 impl Preprocessor {
     pub fn new() -> Self {
-        Self { resolver: Box::new(NoIncludes), macros: HashMap::new() }
+        Self { resolver: Box::new(NoIncludes), macros: HashMap::new(), directives: Default::default() }
     }
 
     pub fn with_include_resolver(resolver: impl IncludeResolver + 'static) -> Self {
-        Self { resolver: Box::new(resolver), macros: HashMap::new() }
+        Self {
+            resolver: Box::new(resolver),
+            macros: HashMap::new(),
+            directives: Default::default(),
+        }
+    }
+
+    /// The ch.10 directive state accumulated by the most recent
+    /// [`Preprocessor::run`] call.
+    pub fn directives(&self) -> &crate::directives::DirectiveState {
+        &self.directives
     }
 
     /// Runs the full preprocessing pass over `source`, returning the
@@ -255,6 +269,12 @@ impl Preprocessor {
                 self.handle_include(source, directive_start, name_end, out, include_stack, expanding)
             }
             "include" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "default_discipline" if active_now => Ok(self.handle_default_discipline(source, name_end)),
+            "default_discipline" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "default_transition" if active_now => {
+                self.handle_default_transition(source, directive_start, name_end)
+            }
+            "default_transition" => Ok(skip_to_end_of_logical_line(source, name_end)),
             "timescale" | "resetall" if active_now => {
                 // Textually inert for this preprocessor's purposes — LRM
                 // §10 places these among the 1364-2005-inherited
@@ -285,6 +305,59 @@ impl Preprocessor {
         let (body, after_body) = scan_macro_body(source, after_params);
         self.macros.insert(name, MacroDef { params, body });
         Ok(after_body)
+    }
+
+    /// LRM §10.2 — `` `default_discipline [discipline_identifier [qualifier]] ``.
+    /// A bare directive (no name) clears the default; a name sets it,
+    /// overriding any prior default (LRMC-C10-01). The optional qualifier
+    /// (`integer`/`real`/`reg`/... — Syntax 10-1) is consumed so it isn't
+    /// mistaken for a separate macro invocation, but not itself recorded
+    /// (`DirectiveState.default_discipline`'s own doc comment: this task
+    /// tracks one unqualified default, not per-qualifier precedence).
+    fn handle_default_discipline(&mut self, source: &str, name_end: usize) -> usize {
+        let (name, after_name) = scan_identifier_after_ws(source, name_end);
+        if name.is_empty() {
+            self.directives.default_discipline = None;
+            return name_end;
+        }
+        self.directives.default_discipline = Some(name);
+        let (qualifier, after_qualifier) = scan_identifier_after_ws(source, after_name);
+        const QUALIFIERS: &[&str] = &[
+            "integer", "real", "reg", "wreal", "wire", "tri", "wand", "triand", "wor", "trior",
+            "trireg", "tri0", "tri1", "supply0", "supply1",
+        ];
+        if QUALIFIERS.contains(&qualifier.as_str()) { after_qualifier } else { after_name }
+    }
+
+    /// LRM §10.3 — `` `default_transition transition_time `` (LRMC-C10-02's
+    /// parse half). `transition_time` is formally a `constant_expression`;
+    /// this preprocessor-stage handler accepts a plain real-number literal
+    /// (the overwhelmingly common case, and the only form representable in
+    /// `DirectiveState.default_transition: Option<(f64, f64)>` without
+    /// deferring evaluation to elaboration, out of this task's scope) and
+    /// fails loud on anything else rather than silently defaulting.
+    fn handle_default_transition(
+        &mut self,
+        source: &str,
+        directive_start: usize,
+        name_end: usize,
+    ) -> Result<usize, ParseError> {
+        let ws_end = skip_inline_ws(source, name_end);
+        let (text, after) = scan_real_literal(source, ws_end);
+        let value: f64 = text.trim().parse().map_err(|_| {
+            ParseError::new(
+                ParseErrorKind::MalformedDirective {
+                    directive: "default_transition".to_string(),
+                    reason: format!(
+                        "expected a real-valued transition_time constant, found `{}`",
+                        if text.is_empty() { "<nothing>" } else { &text }
+                    ),
+                },
+                Span::new(directive_start, name_end),
+            )
+        })?;
+        self.directives.default_transition = Some((value, value));
+        Ok(after)
     }
 
     /// LRM §10.1: a compiler directive's scope extends "across all files
@@ -443,6 +516,45 @@ fn skip_inline_ws(source: &str, start: usize) -> usize {
 /// preceding white space is expected (immediately after `` ` ``).
 fn scan_identifier_after_ws(source: &str, start: usize) -> (String, usize) {
     scan_bare_identifier(source, skip_inline_ws(source, start))
+}
+
+/// Scans a plain real-number literal (optional sign, digits, optional
+/// `.digits`, optional `e`/`E` exponent) — used for
+/// `` `default_transition ``'s `transition_time` argument. Not the full
+/// LRM `real_number` grammar (no SI scale-factor suffix, no `` ` `` macro
+/// substitution inside the literal) — see `handle_default_transition`'s
+/// own doc comment for the scope boundary.
+fn scan_real_literal(source: &str, start: usize) -> (String, usize) {
+    let bytes = source.as_bytes();
+    let mut pos = start;
+    if matches!(bytes.get(pos), Some(b'-') | Some(b'+')) {
+        pos += 1;
+    }
+    let mut seen_digit = false;
+    while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+        pos += 1;
+        seen_digit = true;
+    }
+    if bytes.get(pos) == Some(&b'.') {
+        pos += 1;
+        while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+            pos += 1;
+            seen_digit = true;
+        }
+    }
+    if seen_digit && matches!(bytes.get(pos), Some(b'e') | Some(b'E')) {
+        let mut epos = pos + 1;
+        if matches!(bytes.get(epos), Some(b'+') | Some(b'-')) {
+            epos += 1;
+        }
+        if epos < bytes.len() && bytes[epos].is_ascii_digit() {
+            while epos < bytes.len() && bytes[epos].is_ascii_digit() {
+                epos += 1;
+            }
+            pos = epos;
+        }
+    }
+    (source[start..pos].to_string(), pos)
 }
 
 fn scan_bare_identifier(source: &str, start: usize) -> (String, usize) {

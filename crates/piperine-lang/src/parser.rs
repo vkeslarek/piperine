@@ -42,8 +42,11 @@ impl Parser {
     /// parse — never an outer "somewhere in this file" span.
     pub fn parse(mut self, source: &str) -> Result<SourceFile, ParseError> {
         let preprocessed = self.preprocessor.run(source)?;
+        let directives = self.preprocessor.directives().clone();
         let toks = Lexer::new(&preprocessed).tokenize()?;
-        Grammar::new(toks).parse_source_file()
+        let mut file = Grammar::new(toks).parse_source_file()?;
+        file.directives = directives;
+        Ok(file)
     }
 }
 

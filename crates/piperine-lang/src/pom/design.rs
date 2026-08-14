@@ -159,6 +159,13 @@ pub struct Design {
     pub(crate) overrides: Rc<RefCell<OverrideMap>>,
     /// The top module name, if set by the user or inferred.
     pub(crate) top_module: Option<String>,
+    /// Ch.10 compiler-directive state the preprocessor accumulated
+    /// (design.md P0.3) — copied from `SourceFile::directives` by
+    /// `Elaborator::elaborate`. Not reflection data (same rule as
+    /// `disciplines`/`natures`/`paramsets`): skipped on serialize, rebuilt
+    /// by re-elaboration.
+    #[serde(skip)]
+    pub(crate) directives: crate::directives::DirectiveState,
 }
 
 impl Design {
@@ -173,7 +180,15 @@ impl Design {
             project: Project::default(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
+            directives: Default::default(),
         }
+    }
+
+    /// Ch.10 compiler-directive state accumulated during preprocessing
+    /// (design.md P0.3) — `` `default_discipline ``/`` `default_transition ``
+    /// and (structurally, for later tasks) the remaining ch.10 directives.
+    pub fn directives(&self) -> &crate::directives::DirectiveState {
+        &self.directives
     }
 
     // ── POM navigation ────────────────────────────────────────────────────

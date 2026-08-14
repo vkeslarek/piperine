@@ -81,6 +81,10 @@ pub enum ParseErrorKind {
     /// A function-like macro invocation's argument count did not match its
     /// `` `define ``d parameter count.
     MacroArityMismatch { name: String, expected: usize, found: usize },
+    /// A ch.10 compiler directive's argument did not match its LRM syntax
+    /// (e.g. `` `default_transition `` without a parseable real-valued
+    /// `transition_time`, LRM §10.3 Syntax 10-2).
+    MalformedDirective { directive: String, reason: String },
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -120,6 +124,9 @@ impl fmt::Display for ParseErrorKind {
             }
             ParseErrorKind::MacroArityMismatch { name, expected, found } => {
                 write!(f, "`{name} expects {expected} argument(s), found {found}")
+            }
+            ParseErrorKind::MalformedDirective { directive, reason } => {
+                write!(f, "`{directive} directive is malformed: {reason}")
             }
         }
     }

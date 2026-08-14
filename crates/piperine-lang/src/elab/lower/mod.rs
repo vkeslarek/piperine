@@ -100,6 +100,7 @@ impl Elaborator {
     pub fn elaborate(&mut self, source: SourceFile) -> Result<Design, ElabError> {
         self.pending_items = source.items;
         let mut design = Design::new();
+        design.directives = source.directives;
         for pass in passes::PASSES {
             pass.run(self, &mut design)?;
         }

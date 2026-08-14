@@ -53,6 +53,7 @@
 //! | [`pom`] | Piperine Object Model — Design, Module, Port, Value, OverrideMap, ... |
 
 pub mod ast;
+pub mod directives;
 pub mod error;
 pub mod fmt;
 pub mod grammar;
