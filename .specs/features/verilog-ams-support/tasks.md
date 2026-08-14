@@ -1096,7 +1096,7 @@ reproduction, and disposition.
 
 ---
 
-#### T58: Record MD-42/MD-43 and the MD-25 VAMS clause
+#### T58: Record MD-42/MD-43 and the MD-25 VAMS clause — ✅ DONE (see Progress Log)
 **Where**: `.specs/STATE.md`
 **Depends on**: T57 · **Requirement**: design §9
 **Done when**: MD-42 (VAMS is the frontend; PHDL retired; MD-24 re-spelled), MD-43 (`piperine-vams` purity exception to MD-15), MD-25's VAMS clause (generate/connect are derived-artifact producers) all written with status + date · superseded entries updated · **Gate**: build
@@ -3959,3 +3959,55 @@ did not close.
   task. Final `grep -rn -i phdl README.md AGENTS.md CLAUDE.md` confirms
   every remaining mention is a correctly-historical retirement/supersession
   reference, never a live "PHDL is the/a ..." claim.
+
+- **T58** ✅ (Phase 10, final task) — record MD-42/MD-43 and the MD-25
+  VAMS clause in `.specs/STATE.md`, per design.md §9's plan to record them
+  "once this design is approved." **MD-42** ("Verilog-AMS is the frontend;
+  PHDL is retired") transcribed with both its stated effects on earlier
+  locked decisions: supersedes MD-39's *subject* (the "no device that
+  PHDL already is" reasoning survives verbatim, only the frontend name
+  changes) and re-spells MD-24 (the `extern` declaration mechanism is
+  **gone**, not retargeted — only `@device`/`@port` survives, re-anchored
+  on `(* ... *)` attribute instances). **MD-43** (`piperine-vams` is a
+  zero-dependency, purity-gated parse crate) transcribed as the second
+  sanctioned MD-15 no-proliferation exception, alongside `piperine-ir` —
+  cross-checked directly against `crates/piperine-vams/Cargo.toml`'s empty
+  `[dependencies]` table and `crates/piperine-vams/tests/purity.rs` (which
+  itself says "Matches `piperine-ir`'s purity contract", confirming the
+  precedent this entry cites is real, not asserted). **MD-25's VAMS
+  clause** appended to the existing MD-25 entry (not a new decision
+  number, per design.md's own framing): `generate for`/`genvar`
+  (`UnrollGenerate`, T25) and connect-module insertion
+  (`InsertConnectModules`, T52) are both derived-artifact producers under
+  MD-25's existing rule — cross-checked against
+  `crates/piperine-lang/tests/vams_generate.rs::
+  for_generate_is_absent_from_the_authored_module` and
+  `crates/piperine-lang/src/elab/lower/connect.rs`'s own unit test
+  `matched_bridge_lands_only_in_generated_instances_not_design_modules`
+  (both confirmed to exist and be named exactly as cited, not
+  paraphrased). **Superseded entries updated**: MD-39's status line gained
+  a "Superseded in subject by MD-42" pointer; MD-24's status line gained a
+  "Re-spelled by MD-42" pointer explaining precisely what changed and what
+  didn't. Every new entry carries a status line with both the decision
+  date and the recording date (2026-08-13, T58), per the section's own
+  format (problem → decision → consequence → status), matching MD-44/
+  MD-45/MD-46's precedent.
+  **Verification**: `cargo build --workspace`: zero warnings (docs-only
+  change to `.specs/STATE.md`, cache hit, nothing recompiled). Gate
+  (build, per T58's own table entry): build clean; no test file touched,
+  no test count to report — the same "docs-only change, nothing
+  recompiled" shape as T50's own STATE.md-only entry.
+
+---
+
+## Phase 10 close (T53–T58) — batch summary
+
+All six Phase 10 tasks landed, one commit each, strictly sequential:
+T53 `c256268e`, T54 `0a1c1b9a`, T55 `277819fe`, T56 `38d84d1b`, T57
+`245565fd`, T58 (this commit). This closes the `verilog-ams-support`
+feature's full task list (T1–T58) per `tasks.md`'s Phase Execution Map.
+**No self-verification performed** — per the skill's author≠verifier rule,
+an independent Verifier pass (per
+`.claude/skills/tlc-spec-driven/references/validate.md`) is the documented
+next step before the feature is considered truly closed, not run by this
+worker.

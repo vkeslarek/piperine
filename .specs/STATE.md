@@ -296,6 +296,21 @@ on-demand (Out of Scope for this feature, follow-up). Binary operators
 (`+`/`-`/`*`/`/`/`==`/`<`/etc.) are pure grammar (Out of Scope per spec) —
 `Add`/`Sub`/`Eq`/etc. capability declarations remain user-type machinery,
 not primitive-type native methods (T26's documented "none found" finding).
+**Re-spelled by MD-42 (2026-08-13, `verilog-ams-support` T58):** the seven
+`extern` textual-declaration forms described above do not exist in
+Verilog-AMS (no Annex A production) and were deleted in full, not
+retargeted, when the PHDL parser was removed (MD-45) — this is not a
+syntax rename of the mechanism, the mechanism itself is gone. Only its
+"no silent fallback" *principle* survives: `@device`/`@port` are the one
+remaining declared-surface schema pair, re-anchored on VAMS
+`(* device = ... *)`/`(* port = ... *)` attribute instances and a
+name-only `ElabContext::schemas` registry (T35, VAMS-12/13) — an
+unrecognized schema still fails loud. Every other previously-`extern`
+surface (primitive types, math intrinsics, system tasks, runtime
+operators, type-cast methods) is now a native LRM builtin the
+parser/elaborator/codegen recognize directly, exactly as real Verilog-A
+never needed a declaration for `sin`/`ddt`/`$display` either. See
+`CLAUDE.md`'s "Declared language surface" section for the current shape.
 
 ---
 
@@ -324,6 +339,29 @@ design review; the rule was the user's "UNBREAKABLE RULE" override that
 rejected an in-place destructive flatten design). MD-13 (binding Rust
 idiom rules) governs *how* the pass is written; MD-25 governs *what* it is
 allowed to touch.
+
+**VAMS clause (2026-08-13, `verilog-ams-support` T58, design.md §9):**
+Verilog-AMS's own generate-block (ch. 6/Annex A `generate for`/`genvar`,
+`UnrollGenerate` pass, T25) and connect-module insertion (ch. 7,
+`InsertConnectModules` pass, T52) are both derived-artifact producers
+under the same rule `FlattenHierarchy` already upholds — neither writes
+into `Design::modules`. A `generate` block's authored source (the loop
+itself, unexpanded) is what a reader gets back from `Design::modules`;
+its unrolled instances land only in the derived flat form
+(`Design::flat_modules`, consumed by `FlattenHierarchy`/`CircuitCompiler`
+the same way any other flattening input is). A connect-module bridge
+`InsertConnectModules` inserts for a genuine cross-discipline mismatch is
+recorded in `Elaborator::generated_instances` (the same derived-only
+field `UnrollGenerate` writes to) — never spliced into the authored
+module's own instance list. `crates/piperine-lang/tests/vams_generate.rs`
+(`for_generate_is_absent_from_the_authored_module`) and
+`crates/piperine-lang/src/elab/lower/connect.rs`'s own unit test
+(`matched_bridge_lands_only_in_generated_instances_not_design_modules`)
+are the regression proofs. This is not a new rule — it is MD-25's existing
+invariant, restated for the two VAMS-native constructs that could
+plausibly tempt a future pass to mutate `Design::modules` directly, the
+same way the rule was originally drafted against `FlattenHierarchy`
+itself.
 
 ### MD-26: Introspection metadata = atomic attributes, not role bundles
 
@@ -615,7 +653,13 @@ features), because a compact deep-submicron MOS model is capability PHDL cannot
 express as a wrapper over what exists.
 
 **Status:** Locked (2026-08-04 — user rejected `asrc`/`vbic` on merit during
-`ngspice-parity` specification).
+`ngspice-parity` specification). **Superseded in subject by MD-42
+(2026-08-13, `verilog-ams-support` T58):** the reasoning above survives
+unchanged — a device earns a port only when it adds capability the
+frontend lacks — but "PHDL" throughout is now read as "Verilog-AMS", the
+frontend PHDL was retired in favor of. `V(p,n) <+ <expr>` inside an
+`analog begin...end` block is the VAMS-native behavioural source with the
+identical role `B` would otherwise fill.
 
 ---
 
@@ -742,6 +786,75 @@ R7's tension unresolved in the reader's head.
 **Status:** Locked (user, 2026-08-12 — resolves design.md §8's R7; the
 spec amendment itself is `spec.md`'s "Changing `piperine-solver`/..." Out
 of Scope row, amended in the same commit as this entry).
+
+---
+
+### MD-42: Verilog-AMS is the frontend; PHDL is retired
+
+`verilog-ams-support` (Phase 1–10, T1–T57) replaced Piperine's own PHDL
+language with standard Verilog-AMS (LRM 2.4) as the sole frontend — not a
+dual-frontend period, not an opt-in alternative. `piperine-vams` (LRM
+Annex A grammar only, C7) parses; `piperine-lang` elaborates the parsed
+AST straight into the POM. Zero `.phdl` sources remain in the tree
+(`tests/suite_hygiene.rs::phdl_corpus_does_not_grow` is the regression
+guard). This decision has two concrete effects on the project's earlier
+locked decisions:
+
+1. **Supersedes MD-39's subject, not its reasoning.** MD-39 ("no device
+   that PHDL already is") argued that a SPICE device earns a port only
+   when it adds capability the frontend lacks. That reasoning is sound
+   independent of which frontend it's stated against — only its subject
+   changes, from PHDL to Verilog-AMS. See MD-39's own status line for the
+   pointer back.
+2. **Re-spells MD-24.** "Every referenceable name resolves to a textual
+   declaration" was PHDL's `extern type`/`fn`/`task`/`operator`/
+   `attribute`/`impl` mechanism — a PHDL-syntax-only construct with no
+   Verilog-AMS Annex A production, deleted in full (not retargeted) along
+   with `piperine-lang/src/parse/` (MD-45). What survives of MD-24's
+   *principle* ("no silent fallback into a Rust-native registry for
+   something that should be declared") is narrower now: only
+   `@device`/`@port`, re-anchored on LRM Annex D + `(* ... *)` attribute
+   instances instead of `extern` declarations. Every other previously-
+   `extern` surface (primitive types, math intrinsics, system tasks,
+   runtime operators, cast methods) is now a native LRM builtin the
+   parser/elaborator/codegen recognize directly — Verilog-A never needed
+   a textual declaration for `sin`/`ddt`/`$display` either, and Piperine
+   no longer invents one. See MD-24's own status line for the pointer
+   back, and `CLAUDE.md`'s "Declared language surface" section for the
+   current shape.
+
+**Status:** Locked (user, 2026-08-12, mid-`verilog-ams-support` Execute —
+the pivot itself first recorded at MD-44/MD-45; MD-42 is this decision's
+permanent home in the numbering, added retroactively at T58 per
+design.md §9's plan to record it once the design was approved). Recorded
+2026-08-13 (T58, Phase 10 close).
+
+---
+
+### MD-43: `piperine-vams` is a zero-dependency, purity-gated parse crate
+
+`piperine-vams` (the Verilog-AMS lexer/preprocessor/parser, MD-42) has an
+empty `[dependencies]` — no `thiserror`, no `miette`, no filesystem I/O.
+`` `include`` resolution is injected via a trait `piperine-lang`
+implements (`IncludeResolver`), keeping the parse crate pure while
+`` `include`` still works, reusing the existing `SourceMap` search-path
+logic. Its own errors are a hand-written typed enum carrying every
+structured field (including the LRM clause citation, E-STD rule 5)
+plus one `Display` impl and `std::error::Error` — no `thiserror`
+convenience macro, because the crate cannot depend on it.
+`crates/piperine-vams/tests/purity.rs` is the mechanical guard (mirrors
+`piperine-signal`'s own purity guard, MD-36).
+
+This is the **second** sanctioned exception to MD-15's no-proliferation
+stance (the first being `piperine-ir`, on the same grounds: a genuinely
+distinct concern — grammar/lexing purity — that a shared crate cannot
+carry without pulling in dependencies the shared crate has no business
+holding). A new crate is not "proliferation" when its whole reason to
+exist is the isolation MD-15 itself would otherwise ask a single crate to
+fake with internal module boundaries.
+
+**Status:** Locked (design.md §9, approved 2026-08-12; recorded 2026-08-13,
+T58, Phase 10 close).
 
 ---
 
