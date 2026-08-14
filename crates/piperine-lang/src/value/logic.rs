@@ -232,6 +232,12 @@ impl LogicVec {
         let w = width.unwrap_or(total_bits.max(32));
         let mut v = Self::zero(w);
         let mut bit_pos = 0u32;
+        // The most-significant (leftmost) digit's kind — used below to
+        // extend a sized literal wider than its digit string per §2.6.1
+        // ("the unfilled left-most bits are filled with the value of the
+        // left-most character": 0 for a concrete digit, x/z if that digit
+        // was x/z).
+        let mut msd_kind = DigitKind::Concrete(0);
         for &c in chars.iter().rev() {
             let kind = parse_digit(base, c)?;
             for b in 0..bpd {
@@ -252,6 +258,16 @@ impl LogicVec {
                 v.set_bit(bit_pos, lv);
                 bit_pos += 1;
             }
+            msd_kind = kind;
+        }
+        let extension = match msd_kind {
+            DigitKind::X => LogicValue::X,
+            DigitKind::Z => LogicValue::Z,
+            DigitKind::Concrete(_) => LogicValue::Zero,
+        };
+        while bit_pos < w {
+            v.set_bit(bit_pos, extension);
+            bit_pos += 1;
         }
         Some(v)
     }

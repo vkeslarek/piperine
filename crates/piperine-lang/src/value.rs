@@ -405,6 +405,7 @@ impl PartialEq for Value {
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Complex(ar, ai), Value::Complex(br, bi)) => ar == br && ai == bi,
             (Value::Quad(a), Value::Quad(b)) => a == b,
+            (Value::Logic(a), Value::Logic(b)) => a == b,
             (Value::EnumVariant(ae, av), Value::EnumVariant(be, bv)) => ae == be && av == bv,
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::List(a), Value::List(b)) => *a.borrow() == *b.borrow(),

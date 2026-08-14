@@ -16,6 +16,7 @@ use crate::ast::{BinOp, Expr, UnOp};
 use crate::lexer::NumberLit;
 use thiserror::Error;
 
+use crate::value::logic::{Base, LogicVec};
 use crate::value::Value;
 
 /// Errors that can occur during constant evaluation.
@@ -33,6 +34,19 @@ pub enum ConstEvalError {
     /// The operands of a const expression have incompatible types.
     #[error("type mismatch in constant expression")]
     TypeMismatch,
+    /// A based literal's digit is illegal for its declared base (e.g. `'d1F`).
+    /// LRMC-C1-01's full per-base validation lands at the lexer (a later
+    /// task); this is the const-eval-level backstop so an illegal digit
+    /// never silently becomes `0` in the meantime.
+    #[error("illegal digit for base in literal `{0}` (LRM §2.6.1)")]
+    IllegalBasedDigit(String),
+    /// A four-state (`x`/`z`) value flowed into a context with no defined
+    /// four-state numeric semantics (array bound, bit width, generate
+    /// bound) — LRM §2.6.1 defines `x`/`z` only for logic/net contexts, not
+    /// as an integer. Never silently truncated to a two-state value (spec
+    /// Edge Case).
+    #[error("a four-state (x/z) value has no defined numeric interpretation here (LRM §2.6.1) — `{0}`")]
+    FourStateInNumericContext(String),
 }
 
 /// A lexical-scope environment for compile-time constant evaluation.
@@ -79,7 +93,7 @@ impl ConstEnv {
     /// Evaluates a compile-time expression to a scalar [`Value`].
     pub fn eval(&self, expr: &Expr) -> Result<Value, ConstEvalError> {
         match expr {
-            Expr::Number { value, .. } => Ok(number_lit_to_value(value)),
+            Expr::Number { value, .. } => number_lit_to_value(value),
             Expr::Str { value, .. } => Ok(Value::Str(value.clone())),
             Expr::Ident { name, .. } => self
                 .lookup(name)
@@ -240,6 +254,14 @@ impl ConstEnv {
             Value::Nat(n) => Ok(n),
             Value::Int(n) if n >= 0 => Ok(n as u64),
             Value::Real(r) if r >= 0.0 && r.fract() == 0.0 => Ok(r as u64),
+            Value::Logic(lv) => match lv.to_i64_exact() {
+                Some(n) if n >= 0 => Ok(n as u64),
+                _ => Err(ConstEvalError::FourStateInNumericContext(
+                    "a natural-valued context (array bound, bit width, generate bound) requires \
+                     a fully-determined non-negative value"
+                        .into(),
+                )),
+            },
             _ => Err(ConstEvalError::TypeMismatch),
         }
     }
@@ -250,6 +272,13 @@ impl ConstEnv {
             Value::Int(n) => Ok(n),
             Value::Nat(n) => Ok(n as i64),
             Value::Real(r) if r.fract() == 0.0 => Ok(r as i64),
+            Value::Logic(lv) => lv.to_i64_exact().ok_or_else(|| {
+                ConstEvalError::FourStateInNumericContext(
+                    "an integer-valued context (array bound, bit width, generate bound) requires \
+                     a fully-determined value"
+                        .into(),
+                )
+            }),
             _ => Err(ConstEvalError::TypeMismatch),
         }
     }
@@ -294,23 +323,36 @@ fn truthy(v: &Value) -> Result<bool, ConstEvalError> {
     }
 }
 
-fn number_lit_to_value(lit: &NumberLit) -> Value {
+fn number_lit_to_value(lit: &NumberLit) -> Result<Value, ConstEvalError> {
     match lit {
-        NumberLit::Integer(i) => Value::Int(*i),
-        NumberLit::Real(r) => Value::Real(*r),
+        NumberLit::Integer(i) => Ok(Value::Int(*i)),
+        NumberLit::Real(r) => Ok(Value::Real(*r)),
         NumberLit::Based(b) => {
             let digits: String = b.digits.chars().filter(|c| *c != '_').collect();
-            let radix = match b.base {
-                crate::lexer::NumberBase::Decimal => 10,
-                crate::lexer::NumberBase::Binary => 2,
-                crate::lexer::NumberBase::Octal => 8,
-                crate::lexer::NumberBase::Hex => 16,
+            let base = match b.base {
+                crate::lexer::NumberBase::Decimal => Base::Decimal,
+                crate::lexer::NumberBase::Binary => Base::Binary,
+                crate::lexer::NumberBase::Octal => Base::Octal,
+                crate::lexer::NumberBase::Hex => Base::Hex,
             };
-            let magnitude = i64::from_str_radix(&digits, radix).unwrap_or(0);
+            let lv = LogicVec::from_based_literal(base, &digits, b.size).ok_or_else(|| {
+                let size_desc = b.size.map(|s| s.to_string()).unwrap_or_else(|| "<unsized>".to_string());
+                ConstEvalError::IllegalBasedDigit(format!("{size_desc}'{:?} {}", b.base, b.digits))
+            })?;
+            if lv.has_unknown() {
+                // LRMC-C1-02: represent the four-state value — never
+                // silently coerce to 0.
+                return Ok(Value::Logic(lv));
+            }
+            // Fully-determined (two-state) literal: preserve the prior
+            // Int/Nat representation so every existing two-state consumer
+            // is unaffected (`to_i64_exact` always succeeds here since
+            // `has_unknown` is false).
+            let magnitude = lv.to_i64_exact().expect("two-state LogicVec always converts exactly");
             if b.signed {
-                Value::Int(magnitude)
+                Ok(Value::Int(magnitude))
             } else {
-                Value::Nat(magnitude as u64)
+                Ok(Value::Nat(magnitude as u64))
             }
         }
     }
