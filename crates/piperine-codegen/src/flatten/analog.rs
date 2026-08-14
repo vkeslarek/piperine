@@ -74,9 +74,12 @@ fn event_expr_to_sources(event: &EventExpr) -> Vec<EventSource> {
         "final_step" => vec![EventSource::FinalStep],
         // First arg is the watched expression; a missing arg defaults to a
         // zero literal (the elaborator rejects genuinely arg-less events).
+        // Second arg is the direction (§5.10.3.1): a LRM-mandated
+        // compile-time constant, `+1`/`-1`/`0` -> rising/falling/either,
+        // omitted -> either (LRMC-C5-02).
         "cross" => vec![EventSource::Cross {
             expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
-            dir: CrossDir::Either,
+            dir: args.get(1).map(cross_dir_from_arg).unwrap_or(CrossDir::Either),
         }],
         "above" => vec![EventSource::Above {
             expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
@@ -91,6 +94,30 @@ fn event_expr_to_sources(event: &EventExpr) -> Vec<EventSource> {
             vec![EventSource::Timer { period, phase }]
         }
         _ => vec![],
+    }
+}
+
+/// `cross(expr, dir, ...)`'s `dir` argument (§5.10.3.1, a required
+/// compile-time constant) to `CrossDir` — `+1` rising, `-1` falling, `0`
+/// (or any other/non-literal shape) either, matching this file's own
+/// permissive-default style for a constant it cannot statically read.
+fn cross_dir_from_arg(expr: &PomExpr) -> CrossDir {
+    // A negative literal (`-1`) lexes as `Unary{Neg, Number(1)}`, not a
+    // single negative `Number` token — unwrap that one level before
+    // reading the magnitude, or `-1` silently falls through as `Either`.
+    let (expr, negate) = match expr {
+        PomExpr::Unary { op: UnOp::Neg, operand, .. } => (operand.as_ref(), true),
+        other => (other, false),
+    };
+    let n = match expr {
+        PomExpr::Number { value: NumberLit::Integer(n), .. } => *n,
+        PomExpr::Number { value: NumberLit::Real(r), .. } => *r as i64,
+        _ => return CrossDir::Either,
+    };
+    match if negate { -n } else { n } {
+        1 => CrossDir::Rising,
+        -1 => CrossDir::Falling,
+        _ => CrossDir::Either,
     }
 }
 
