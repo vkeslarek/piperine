@@ -59,6 +59,16 @@ pub enum Expr {
     /// A branch access function — `V(p)`, `V(p,n)`, `I(br)`, `I(p,n)` —
     /// LRM §5.3/§5.4/Annex A.8.3 `branch_probe_function_call`.
     AccessFunction { span: Span, function: String, pos: Box<Expr>, neg: Option<Box<Expr>> },
+    /// A port access function — `I(<a>)` — §4.4/§5.4.3. Delimited by
+    /// `< >` rather than `( )`'s plain argument list, and takes exactly
+    /// one scalar port identifier (never a branch or a net pair). Distinct
+    /// from [`Expr::AccessFunction`] because it is elaborated differently
+    /// (LRMC-C1-10): a port has no branch of its own to probe, so
+    /// `elab::lower::vams` rewrites every `PortAccess` into the
+    /// KCL-equivalent signed sum of the module's own branch flows
+    /// touching that port before the module ever leaves the elaborator —
+    /// this variant never survives into a `Design` handed to codegen.
+    PortAccess { span: Span, function: String, port: String },
     /// A `$`-prefixed system function call used as a value, e.g.
     /// `$abstime`, `$temperature` — LRM chapter 9.
     SystemFunctionCall { span: Span, name: String, args: Vec<Expr> },
@@ -89,6 +99,7 @@ impl Expr {
             | Expr::PartSelect { span, .. }
             | Expr::Call { span, .. }
             | Expr::AccessFunction { span, .. }
+            | Expr::PortAccess { span, .. }
             | Expr::SystemFunctionCall { span, .. }
             | Expr::AssignmentPattern { span, .. } => *span,
         }

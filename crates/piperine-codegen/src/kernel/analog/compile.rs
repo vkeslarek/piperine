@@ -141,7 +141,10 @@ fn limit_branches_into(
             limit_branches_into(msb, temps, resolve, seen_temps, out);
             limit_branches_into(lsb, temps, resolve, seen_temps, out);
         }
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } => {}
+        // PortAccess never reaches codegen: elab::lower::vams rewrites it
+        // into a sum of AccessFunction reads before a Module leaves the
+        // elaborator (LRMC-C1-10).
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } => {}
     }
 }
 

@@ -85,6 +85,11 @@ impl Codegen for Expr {
             Expr::AssignmentPattern { .. } => Err(CodegenError::unsupported(format!(
                 "assignment pattern in digital codegen: {self:?}"
             ))),
+            // Never reaches codegen — see emit/analog_expr.rs's own
+            // PortAccess arm.
+            Expr::PortAccess { .. } => Err(CodegenError::unsupported(format!(
+                "unresolved port access in digital codegen: {self:?}"
+            ))),
         }
     }
 }

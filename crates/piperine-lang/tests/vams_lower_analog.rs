@@ -3,6 +3,7 @@
 //! (§3.6.2), and named/implicit `branch`es resolved from access-function
 //! call sites inside `analog` behaviors (§5.4).
 
+use piperine_lang::ast::{Expr, Stmt};
 use piperine_lang::pom::BranchKind;
 use piperine_lang::{parse_and_elaborate, SourceMap};
 
@@ -204,4 +205,83 @@ fn branch_kind_conflict_fires_for_a_non_electrical_discipline_too() {
     );
     let msg = elab_err(&src);
     assert!(msg.contains("br"), "names the conflicting branch: {msg}");
+}
+
+// ── LRMC-C1-10: port access function I(<port>) (§4.4/§5.4.3) ───────────
+
+/// §5.4.3 Example 1's own `diode` module, verbatim in structure (ANSI
+/// port-list form; the LRM's non-ANSI `inout a, c; electrical a, c;`
+/// pre-declaration style is grammar-equivalent and already covered by
+/// other fixtures, so this test isolates LRMC-C1-10's own claim rather
+/// than re-proving name-list port parsing).
+const DIODE: &str = r#"
+module diode (inout electrical a, inout electrical c);
+    branch (a, c) i_diode, junc_cap;
+    parameter real is = 1e-14, tf = 0, cjo = 0, imax = 1, phi = 0.7;
+    analog begin
+        I(i_diode) <+ is*(limexp(V(i_diode)/$vt) - 1);
+        I(junc_cap) <+ ddt(tf*I(i_diode) - 2*cjo*sqrt(phi*(phi*V(junc_cap))));
+        if (I(<a>) > imax)
+            $strobe("Warning: diode is melting!");
+    end
+endmodule
+"#;
+
+#[test]
+fn port_access_parses_and_elaborates_from_lrm_5_4_3_diode_example() {
+    let d = elab(DIODE);
+    let m = d.module("diode").expect("diode elaborated");
+    let analog = m.behaviors().iter().find(|b| b.is_analog()).expect("an analog behavior");
+    let if_stmt = analog.body().iter().find(|s| matches!(s, Stmt::If { .. })).expect("the if statement");
+    let Stmt::If { cond, .. } = if_stmt else { unreachable!() };
+    // `I(<a>) > imax` must no longer contain a PortAccess node after
+    // elaboration (LRMC-C1-10's own Done-when: it is rewritten into the
+    // KCL-equivalent sum of the branches touching port `a`, both of which
+    // are `(a, c)` here, so the sum is `I(a,c) + I(a,c)`).
+    let Expr::Binary { op: piperine_lang::ast::BinOp::Gt, lhs, .. } = cond else {
+        panic!("expected `I(<a>) > imax`, got {cond:?}");
+    };
+    let Expr::Binary { op: piperine_lang::ast::BinOp::Add, lhs: t1, rhs: t2, .. } = lhs.as_ref() else {
+        panic!("expected the port access rewritten into a sum of two branch-flow terms, got {lhs:?}");
+    };
+    for term in [t1.as_ref(), t2.as_ref()] {
+        match term {
+            Expr::AccessFunction { function, pos, neg, .. } => {
+                assert_eq!(function, "I");
+                assert!(matches!(pos.as_ref(), Expr::Ident { name, .. } if name == "a"));
+                assert!(matches!(neg.as_deref(), Some(Expr::Ident { name, .. }) if name == "c"));
+            }
+            other => panic!("expected an I(a,c) term, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn port_access_on_an_unconnected_port_rewrites_to_zero() {
+    // No branch touches port `b` at all — the KCL sum is empty, so the
+    // rewrite must fall back to a literal `0`, not panic or leave a
+    // PortAccess node behind.
+    let d = elab(
+        r#"
+        module iso (inout electrical a, inout electrical b);
+            branch (a, a) self_loop;
+            analog begin
+                I(self_loop) <+ 1.0;
+                if (I(<b>) > 0.0)
+                    $strobe("unreachable");
+            end
+        endmodule
+        "#,
+    );
+    let m = d.module("iso").expect("iso elaborated");
+    let analog = m.behaviors().iter().find(|b| b.is_analog()).expect("an analog behavior");
+    let if_stmt = analog.body().iter().find(|s| matches!(s, Stmt::If { .. })).expect("the if statement");
+    let Stmt::If { cond, .. } = if_stmt else { unreachable!() };
+    let Expr::Binary { op: piperine_lang::ast::BinOp::Gt, lhs, .. } = cond else {
+        panic!("expected `I(<b>) > 0.0`, got {cond:?}");
+    };
+    assert!(
+        matches!(lhs.as_ref(), Expr::Number { value: piperine_lang::NumberLit::Integer(0), .. }),
+        "expected a literal 0 for an unconnected port, got {lhs:?}"
+    );
 }

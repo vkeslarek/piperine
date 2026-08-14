@@ -256,14 +256,25 @@ impl Grammar {
         }
     }
 
-    /// `V(...)`/`I(...)` branch access function — §5.3/§5.4, one or two
-    /// terminal/branch arguments.
+    /// `V(...)`/`I(...)` branch access function (§5.3/§5.4, one or two
+    /// terminal/branch arguments) or `I(<port>)` port access function
+    /// (§4.4/§5.4.3, LRMC-C1-10) — the `<` right after `(` is the port
+    /// form's own distinct delimiter, never a less-than comparison inside
+    /// an access-function argument list (the LRM reserves `< >` here
+    /// exclusively for a port name).
     fn parse_access_function(
         &mut self,
         start: crate::error::Span,
         function: String,
     ) -> Result<Expr, ParseError> {
         self.expect_punct("(")?;
+        if self.eat_punct("<") {
+            let (port, _) = self.expect_ident()?;
+            self.expect_punct(">")?;
+            let end = self.expect_punct(")")?;
+            let span = crate::error::Span::new(start.start, end.end);
+            return Ok(Expr::PortAccess { span, function, port });
+        }
         let pos = self.parse_expr()?;
         let neg = if self.eat_punct(",") { Some(Box::new(self.parse_expr()?)) } else { None };
         let end = self.expect_punct(")")?;

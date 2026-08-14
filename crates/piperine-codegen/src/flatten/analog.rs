@@ -272,7 +272,9 @@ fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::resolve::Var
 pub(crate) fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
     f(expr);
     match expr {
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } => {}
+        // Never reaches codegen — see this file's other PortAccess arm
+        // (rewrite_expr) for why.
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } => {}
         PomExpr::Unary { operand, .. } => visit_all(operand, f),
         PomExpr::Binary { lhs, rhs, .. } => {
             visit_all(lhs, f);
@@ -1020,7 +1022,8 @@ fn subst_scope(expr: &PomExpr, scope: &Scope) -> PomExpr {
             replicate: replicate.as_ref().map(|r| Box::new(subst_scope(r, scope))),
             parts: parts.iter().map(|p| subst_scope(p, scope)).collect(),
         },
-        PomExpr::Number { .. } | PomExpr::Str { .. } => expr.clone(),
+        // Never reaches codegen — see this file's other PortAccess arms.
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::PortAccess { .. } => expr.clone(),
     }
 }
 
@@ -1121,7 +1124,12 @@ fn substitute_marker(expr: &PomExpr, names: &[&str], with_arg: bool) -> Result<P
 /// Bottom-up rewrite: children first, then `f` on the rebuilt node.
 pub(crate) fn rewrite_expr(expr: &PomExpr, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> PomExpr {
     let rewritten = match expr {
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } => expr.clone(),
+        // PortAccess never reaches codegen: elab::lower::vams rewrites it
+        // into a sum of AccessFunction reads before a Module leaves the
+        // elaborator (LRMC-C1-10).
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } => {
+            expr.clone()
+        }
         PomExpr::SystemFunctionCall { span, name, args } => PomExpr::SystemFunctionCall {
             span: *span,
             name: name.clone(),

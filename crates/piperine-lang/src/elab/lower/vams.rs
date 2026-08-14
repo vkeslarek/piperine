@@ -17,8 +17,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    BranchDecl, Declarator, Direction as AstDirection, Expr, ModuleDecl, ModuleItem, ParamType,
-    PortConnection, PortDecl, Stmt, VarKind,
+    BranchDecl, CaseArm, Declarator, Direction as AstDirection, EventExpr, Expr, ModuleDecl,
+    ModuleItem, ParamType, PortConnection, PortDecl, Stmt, VarKind,
 };
 
 use crate::elab::const_eval::ConstEnv;
@@ -227,6 +227,22 @@ impl Elaborator {
             for stmt in behavior.body() {
                 resolve_contribution_branches(stmt, &decl.name, &mut module.branches, access_kinds)?;
             }
+        }
+
+        // LRMC-C1-10: `I(<port>)` port-access reads have no branch of
+        // their own — rewrite each into the KCL-equivalent sum of this
+        // module's own branch flows touching that port (§4.4/§5.4.3),
+        // using the branches `resolve_contribution_branches` just
+        // finished resolving above. Runs over every behavior (not only
+        // analog — a `PortAccess` cannot occur in digital source, but the
+        // rewrite is a no-op there) so `Expr::PortAccess` never survives
+        // past this function.
+        let port_branches = module.branches.clone();
+        for behavior in &mut module.behaviors {
+            behavior.body = std::mem::take(&mut behavior.body)
+                .into_iter()
+                .map(|stmt| rewrite_port_access_stmt(stmt, &port_branches))
+                .collect();
         }
 
         Ok(module)
@@ -916,6 +932,169 @@ fn resolve_contribution_branches(
         | Stmt::NonBlockingAssign { .. }
         | Stmt::Disable { .. }
         | Stmt::TaskCall { .. } => Ok(()),
+    }
+}
+
+/// LRMC-C1-10: replaces every [`Expr::PortAccess`] reachable from `expr`
+/// with the KCL-equivalent signed sum of the module's own branch flows
+/// touching that port — §5.4.3: the current flowing into the module
+/// through a port equals, by Kirchhoff's current law, the sum of the
+/// currents flowing from that port into every module-internal branch
+/// connected to it. For a branch whose `pos` terminal is the port, that's
+/// `I(port, other)` directly (the branch is already oriented port→other);
+/// for a branch whose `neg` terminal is the port, current flowing *out of*
+/// the port through that branch is the negated orientation, which is the
+/// same `I(port, other)` form (LRM's own `I(a,b) == -I(b,a)` convention) —
+/// so both cases produce an identical term shape, only `other` differs.
+/// Reuses the port access's own `function` name (not hardcoded to `I`) so
+/// a non-electrical discipline's flow accessor round-trips correctly. A
+/// port touched by no branch rewrites to a literal `0` — no current path
+/// exists to sum.
+fn rewrite_port_access_expr(expr: Expr, branches: &[Branch]) -> Expr {
+    match expr {
+        Expr::PortAccess { span, function, port } => {
+            let terms: Vec<Expr> = branches
+                .iter()
+                .filter_map(|b| {
+                    let other: Option<Option<String>> = if b.pos.net() == port {
+                        Some(b.neg.as_ref().map(|n| n.net().to_string()))
+                    } else if b.neg.as_ref().map(|n| n.net()) == Some(port.as_str()) {
+                        Some(Some(b.pos.net().to_string()))
+                    } else {
+                        None
+                    };
+                    other.map(|other_net| {
+                        let pos = Box::new(Expr::Ident { span, name: port.clone() });
+                        let neg = other_net.map(|n| Box::new(Expr::Ident { span, name: n }));
+                        Expr::AccessFunction { span, function: function.clone(), pos, neg }
+                    })
+                })
+                .collect();
+            terms
+                .into_iter()
+                .reduce(|acc, t| Expr::Binary { span, op: crate::ast::BinOp::Add, lhs: Box::new(acc), rhs: Box::new(t) })
+                .unwrap_or(Expr::Number { span, value: crate::lexer::NumberLit::Integer(0) })
+        }
+        Expr::Unary { span, op, operand } => {
+            Expr::Unary { span, op, operand: Box::new(rewrite_port_access_expr(*operand, branches)) }
+        }
+        Expr::Binary { span, op, lhs, rhs } => Expr::Binary {
+            span,
+            op,
+            lhs: Box::new(rewrite_port_access_expr(*lhs, branches)),
+            rhs: Box::new(rewrite_port_access_expr(*rhs, branches)),
+        },
+        Expr::Ternary { span, cond, then_branch, else_branch } => Expr::Ternary {
+            span,
+            cond: Box::new(rewrite_port_access_expr(*cond, branches)),
+            then_branch: Box::new(rewrite_port_access_expr(*then_branch, branches)),
+            else_branch: Box::new(rewrite_port_access_expr(*else_branch, branches)),
+        },
+        Expr::Concat { span, parts } => {
+            Expr::Concat { span, parts: parts.into_iter().map(|p| rewrite_port_access_expr(p, branches)).collect() }
+        }
+        Expr::Replication { span, count, parts } => Expr::Replication {
+            span,
+            count: Box::new(rewrite_port_access_expr(*count, branches)),
+            parts: parts.into_iter().map(|p| rewrite_port_access_expr(p, branches)).collect(),
+        },
+        Expr::Index { span, base, index } => Expr::Index {
+            span,
+            base: Box::new(rewrite_port_access_expr(*base, branches)),
+            index: Box::new(rewrite_port_access_expr(*index, branches)),
+        },
+        Expr::PartSelect { span, base, msb, lsb } => Expr::PartSelect {
+            span,
+            base: Box::new(rewrite_port_access_expr(*base, branches)),
+            msb: Box::new(rewrite_port_access_expr(*msb, branches)),
+            lsb: Box::new(rewrite_port_access_expr(*lsb, branches)),
+        },
+        Expr::Call { span, name, args } => {
+            Expr::Call { span, name, args: args.into_iter().map(|a| rewrite_port_access_expr(a, branches)).collect() }
+        }
+        Expr::AccessFunction { span, function, pos, neg } => Expr::AccessFunction {
+            span,
+            function,
+            pos: Box::new(rewrite_port_access_expr(*pos, branches)),
+            neg: neg.map(|n| Box::new(rewrite_port_access_expr(*n, branches))),
+        },
+        Expr::SystemFunctionCall { span, name, args } => Expr::SystemFunctionCall {
+            span,
+            name,
+            args: args.into_iter().map(|a| rewrite_port_access_expr(a, branches)).collect(),
+        },
+        Expr::AssignmentPattern { span, replicate, parts } => Expr::AssignmentPattern {
+            span,
+            replicate: replicate.map(|c| Box::new(rewrite_port_access_expr(*c, branches))),
+            parts: parts.into_iter().map(|p| rewrite_port_access_expr(p, branches)).collect(),
+        },
+        other @ (Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. }) => other,
+    }
+}
+
+/// Statement-tree counterpart of [`rewrite_port_access_expr`] — recurses
+/// into every `Expr`-bearing field of every `Stmt` kind so a `PortAccess`
+/// reachable from any statement position (an `if` condition, a case
+/// selector, a task-call argument, ...) is rewritten too, not only
+/// contribution targets/values.
+fn rewrite_port_access_stmt(stmt: Stmt, branches: &[Branch]) -> Stmt {
+    let e = |expr: Expr| rewrite_port_access_expr(expr, branches);
+    let s = |stmt: Box<Stmt>| Box::new(rewrite_port_access_stmt(*stmt, branches));
+    match stmt {
+        Stmt::Null { .. } | Stmt::Disable { .. } => stmt,
+        Stmt::Assign { span, target, value } => Stmt::Assign { span, target: e(target), value: e(value) },
+        Stmt::NonBlockingAssign { span, target, value } => {
+            Stmt::NonBlockingAssign { span, target: e(target), value: e(value) }
+        }
+        Stmt::Contribution { span, target, value } => Stmt::Contribution { span, target: e(target), value: e(value) },
+        Stmt::Block { span, name, decls, stmts } => Stmt::Block {
+            span,
+            name,
+            decls,
+            stmts: stmts.into_iter().map(|st| rewrite_port_access_stmt(st, branches)).collect(),
+        },
+        Stmt::If { span, cond, then_branch, else_branch } => Stmt::If {
+            span,
+            cond: e(cond),
+            then_branch: s(then_branch),
+            else_branch: else_branch.map(s),
+        },
+        Stmt::Case { span, kind, selector, arms } => Stmt::Case {
+            span,
+            kind,
+            selector: e(selector),
+            arms: arms
+                .into_iter()
+                .map(|arm| CaseArm {
+                    span: arm.span,
+                    labels: arm.labels.map(|ls| ls.into_iter().map(&e).collect()),
+                    body: s(arm.body),
+                })
+                .collect(),
+        },
+        Stmt::For { span, init, cond, step, body } => {
+            Stmt::For { span, init: s(init), cond: e(cond), step: s(step), body: s(body) }
+        }
+        Stmt::While { span, cond, body } => Stmt::While { span, cond: e(cond), body: s(body) },
+        Stmt::Repeat { span, count, body } => Stmt::Repeat { span, count: e(count), body: s(body) },
+        Stmt::Forever { span, body } => Stmt::Forever { span, body: s(body) },
+        Stmt::EventControl { span, events, body } => Stmt::EventControl {
+            span,
+            events: events
+                .into_iter()
+                .map(|ev| match ev {
+                    EventExpr::Level(x) => EventExpr::Level(e(x)),
+                    EventExpr::Posedge(x) => EventExpr::Posedge(e(x)),
+                    EventExpr::Negedge(x) => EventExpr::Negedge(e(x)),
+                    EventExpr::ImplicitAll => EventExpr::ImplicitAll,
+                })
+                .collect(),
+            body: s(body),
+        },
+        Stmt::DelayControl { span, delay, body } => Stmt::DelayControl { span, delay: e(delay), body: s(body) },
+        Stmt::TaskCall { span, name, args } => {
+            Stmt::TaskCall { span, name, args: args.into_iter().map(&e).collect() }
+        }
     }
 }
 

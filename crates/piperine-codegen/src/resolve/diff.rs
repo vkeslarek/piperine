@@ -346,11 +346,16 @@ fn differentiate(
         // zero-derivative, not reached by any flattened analog
         // contribution today (flatten only ever feeds this differentiator
         // resistive/charge Real-valued expressions).
+        // PortAccess never reaches codegen: elab::lower::vams rewrites it
+        // into a sum of AccessFunction reads before a Module leaves the
+        // elaborator (LRMC-C1-10) — zero-derivative here only satisfies
+        // exhaustiveness, matching the other structurally-unreached forms.
         Expr::Concat { .. }
         | Expr::Replication { .. }
         | Expr::Index { .. }
         | Expr::PartSelect { .. }
-        | Expr::AssignmentPattern { .. } => lit(0.0),
+        | Expr::AssignmentPattern { .. }
+        | Expr::PortAccess { .. } => lit(0.0),
     }
 }
 
@@ -478,7 +483,9 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
         return;
     }
     match expr {
-        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } => {}
+        // PortAccess never reaches codegen — see this file's other `walk`
+        // arm above.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } => {}
         Expr::Unary { operand, .. } => walk(operand, f),
         Expr::Binary { lhs, rhs, .. } => {
             walk(lhs, f);

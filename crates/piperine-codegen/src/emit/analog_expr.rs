@@ -103,6 +103,14 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             Expr::AssignmentPattern { .. } => {
                 Err(CodegenError::unsupported("assignment pattern in a scalar analog expression"))
             }
+
+            // A PortAccess (`I(<port>)`) never reaches codegen:
+            // elab::lower::vams rewrites every occurrence into a sum of
+            // AccessFunction reads before a Module leaves the elaborator
+            // (LRMC-C1-10). Reaching this arm means that invariant broke.
+            Expr::PortAccess { .. } => {
+                Err(CodegenError::unsupported("unresolved port access in a scalar analog expression"))
+            }
         }
     }
 

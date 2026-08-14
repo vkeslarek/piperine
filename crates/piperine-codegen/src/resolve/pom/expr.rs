@@ -87,7 +87,11 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
         return;
     }
     match expr {
-        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } => {}
+        // PortAccess never reaches codegen: elab::lower::vams rewrites
+        // every occurrence into a KCL-equivalent sum of AccessFunction
+        // reads before a Module leaves the elaborator (LRMC-C1-10). A leaf
+        // arm here only satisfies exhaustiveness for the shared Expr type.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } => {}
         Expr::Unary { operand, .. } => walk(operand, f),
         Expr::Binary { lhs, rhs, .. } => {
             walk(lhs, f);
@@ -141,7 +145,8 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
 /// see `body.rs`), V/I/math kept as-is (Builder resolves at emit time).
 pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
     match expr {
-        Expr::Number { .. } | Expr::Str { .. } => expr.clone(),
+        // Never reaches codegen — see `walk`'s own PortAccess arm above.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } => expr.clone(),
 
         Expr::Ident { name, .. } => {
             if let Some(c) = ctx.consts.get(name) {
@@ -389,7 +394,8 @@ pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, 
             replicate: replicate.as_ref().map(|r| Box::new(subst_expr(r, subst))),
             parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
         },
-        Expr::Number { .. } | Expr::Str { .. } => expr.clone(),
+        // Never reaches codegen — see `walk`'s own PortAccess arm above.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } => expr.clone(),
     }
 }
 

@@ -73,7 +73,7 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C1-07", story: "P1", clause: "§3.4.7", status: Status::Pending },
     Entry { id: "LRMC-C1-08", story: "P1", clause: "§4.4/§3.6.1.2", status: Status::Closed { file: "crates/piperine-lang/tests/expressions.rs", test_fn: "a_custom_discipline_access_name_parses_as_a_plain_call" } },
     Entry { id: "LRMC-C1-09", story: "P1", clause: "§4.4/§5.4.2/§5.4.3", status: Status::Closed { file: "crates/piperine-lang/tests/vams_lower_analog.rs", test_fn: "custom_discipline_accessor_resolves_potential_via_named_branch" } },
-    Entry { id: "LRMC-C1-10", story: "P1", clause: "§4.4/§5.4.3", status: Status::Pending },
+    Entry { id: "LRMC-C1-10", story: "P1", clause: "§4.4/§5.4.3", status: Status::Closed { file: "crates/piperine-lang/tests/vams_lower_analog.rs", test_fn: "port_access_parses_and_elaborates_from_lrm_5_4_3_diode_example" } },
     Entry { id: "LRMC-C1-11", story: "P1", clause: "§4.2.1.1", status: Status::Pending },
     Entry { id: "LRMC-C1-12", story: "P1", clause: "§4.5.11.1-4", status: Status::Pending },
     Entry { id: "LRMC-C5-01", story: "P2", clause: "§5.6", status: Status::Pending },
