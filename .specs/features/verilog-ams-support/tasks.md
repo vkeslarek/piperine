@@ -1019,15 +1019,15 @@ reproduction, and disposition.
 
 ---
 
-#### T50: **Spec amendment — digital scheduler scope (R7)**
+#### T50: **Spec amendment — digital scheduler scope (R7)** — ✅ DONE (see Progress Log)
 **What**: Resolve the design's flagged contradiction *before* building on it.
 **Where**: `.specs/features/verilog-ams-support/spec.md`, `.specs/STATE.md`
 **Depends on**: T49 · **Requirement**: R7
 **Done when**:
-- [ ] User confirms: "solver out of scope" means no analog-solver/`Element`-ABI redesign; extending the **digital** event scheduler is in scope for VAMS-20
-- [ ] Spec's Out of Scope row amended to say so explicitly
-- [ ] **If the user declines, T51 is re-scoped or dropped — do not proceed silently**
-- [ ] **Gate**: build (docs-only)
+- [x] User confirms: "solver out of scope" means no analog-solver/`Element`-ABI redesign; extending the **digital** event scheduler is in scope for VAMS-20 — pre-resolved 2026-08-12 (recorded in this file's own "Open items before Execute" #2 before this batch started)
+- [x] Spec's Out of Scope row amended to say so explicitly
+- [x] **If the user declines, T51 is re-scoped or dropped — do not proceed silently** — n/a, user confirmed
+- [x] **Gate**: build (docs-only)
 **Commit**: `docs(spec): scope the digital scheduler work for VAMS-20`
 
 ---
@@ -3475,3 +3475,20 @@ did not close.
   `cargo test -p piperine-codegen` still blocked by T32's pre-existing,
   unworsened compile failures); `--lib` + the task's own integration
   target is the practically-runnable form.
+
+- **T50** ✅ `<pending commit>` — spec amendment resolving design.md §8's
+  R7 (docs-only, no tests). The confirmation this task's "Done when"
+  calls for was already on record before this batch started (this file's
+  own "Open items before Execute" #2: "RESOLVED 2026-08-12 (user):
+  'extending the digital event scheduler is in-scope for VAMS-20 — solver
+  out of scope means no analog-solver/Element-ABI redesign'"); T50's job
+  was to make that resolution load-bearing in the two documents that need
+  it, not to re-ask. `spec.md`'s "Changing `piperine-solver`/..." Out of
+  Scope row gained an explicit amendment sentence stating the analog/
+  digital split. `.specs/STATE.md` gained **MD-46** (next number after
+  MD-45), following MD-44/MD-45's own format (problem → decision →
+  consequence-for-tasks.md → status), recording the same split as a
+  locked macro decision so future tasks don't have to re-derive it from
+  a buried spec footnote. **Verification**: `cargo build --workspace`:
+  zero warnings (docs-only change, nothing recompiled). No code touched,
+  no test count to report.

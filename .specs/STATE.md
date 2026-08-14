@@ -712,6 +712,39 @@ for the value-layer subset of `piperine-lang/src/parse/ast.rs`).
 
 ---
 
+### MD-46: "Solver out of scope" means no analog-solver/`Element`-ABI redesign — the digital event scheduler is in-scope for VAMS-20
+
+`verilog-ams-support/design.md` §8 flagged R7: `spec.md`'s Out of Scope
+table says "changing `piperine-solver`/... is out of scope," but VAMS-20
+(full LRM ch. 7–8 mixed-signal scheduling — `InsertConnectModules` +
+stratified event regions) plausibly requires changes inside
+`piperine-solver`'s digital scheduler. R7 flagged this as a contradiction
+that must be resolved by explicit user confirmation before S5 (Phase 9)
+proceeds, not silently assumed either way.
+
+**Decision (user, 2026-08-12, T50):** "solver out of scope" in the Out of
+Scope table means no redesign of the **analog** solver or the `Element`
+ABI. Extending `piperine-solver`'s **digital** event scheduler
+(`crates/piperine-solver/src/digital/`) to the LRM ch. 8 stratified
+simulation cycle (active/inactive/NBA/monitor region ordering) is
+in-scope-by-necessity for VAMS-20 and is not blocked by that row. T51
+(stratified event scheduler) and T52 (`InsertConnectModules`) proceed on
+this basis; neither may touch `core/element.rs`'s trait surface, MNA/
+matrix code, or anything under `analyses/` — that boundary is what stays
+frozen.
+
+**Consequence for tasks.md:** T51's `Where` (`kernel/digital/` and/or
+`piperine-solver/src/`) is confirmed correct as scoped; no re-scoping or
+dropping needed. `spec.md`'s Out of Scope row is amended in place (this
+commit) to state the digital/analog split explicitly, rather than leaving
+R7's tension unresolved in the reader's head.
+
+**Status:** Locked (user, 2026-08-12 — resolves design.md §8's R7; the
+spec amendment itself is `spec.md`'s "Changing `piperine-solver`/..." Out
+of Scope row, amended in the same commit as this entry).
+
+---
+
 ## Handoff Snapshot
 
 **Last updated:** 2026-08-06 — `ngspice-parity` DELIVERED (T1–T24 + Fix A/B,

@@ -106,7 +106,7 @@ executes); only its C-ABI hosting mechanism is re-anchored (see next table).
 | OSDI / `piperine-osdi` in any form (native Verilog-A→OSDI compilation, OSDI-wrapper loading, OSDI as a target ABI) | User decision this round: OSDI is a strict subset of Piperine's native `Element` ABI (MD-11: "OSDI as checklist, not ABI"). Compact models parsed from `.va` bind to the native ABI directly — OSDI is not pursued at all, not even deferred to a later phase |
 | Automated PHDL→VAMS source translator | User chose manual rewrite; an automated translator is extra tooling never used past the one-time migration, not LRM content |
 | Annex G (informative change history), Annex H (informative glossary) | Explicitly marked **informative**, not **normative**, by the LRM itself (front matter, §1.4) — no behavior to implement; ported into project docs as reference material only (VAMS-26, P3), not a compiler requirement |
-| Changing `piperine-solver`/`piperine-api`/anything downstream of the POM | This feature is a frontend replacement; the native solver, `Element` ABI, and host API are unaffected by design — not LRM content, an existing architecture boundary |
+| Changing `piperine-solver`/`piperine-api`/anything downstream of the POM | This feature is a frontend replacement; the native solver, `Element` ABI, and host API are unaffected by design — not LRM content, an existing architecture boundary. **Scoped by T50/MD-46 (2026-08-13, resolving design.md §8's R7):** this row means no redesign of the **analog** solver or the `Element` ABI — extending `piperine-solver`'s **digital event scheduler** to the LRM ch. 8 stratified event queue (active/inactive/NBA/monitor regions) is in-scope-by-necessity for VAMS-20 and is not blocked by this row |
 
 ---
 
