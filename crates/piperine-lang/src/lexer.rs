@@ -435,8 +435,21 @@ impl<'a> Lexer<'a> {
         self.pos += 1; // consume base letter
         let digits_start = self.pos;
         while let Some(b) = self.peek() {
-            if is_based_digit(b) {
+            if is_based_digit(base, b) {
                 self.pos += 1;
+            } else if b.is_ascii_alphanumeric() {
+                // LRMC-C1-01: a character that could plausibly continue a
+                // digit run (alphanumeric) but is not one of the base's
+                // legal digits (per §2.6.1's `*_digit` productions) — fail
+                // loud naming the base and the offending digit, rather
+                // than silently ending the literal early.
+                return Err(ParseError::new(
+                    ParseErrorKind::IllegalBasedDigit {
+                        base: base_letter(base),
+                        digit: b as char,
+                    },
+                    Span::new(self.pos, self.pos + 1),
+                ));
             } else {
                 break;
             }
@@ -572,6 +585,29 @@ fn is_ident_continue(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
 }
 
-fn is_based_digit(b: u8) -> bool {
-    b.is_ascii_hexdigit() || b == b'x' || b == b'X' || b == b'z' || b == b'Z' || b == b'?' || b == b'_'
+/// LRM §2.6.1's per-base digit legality (`binary_digit`/`octal_digit`/
+/// `decimal_digit`/`hex_digit` productions), plus the always-legal
+/// four-state digits (`x_digit`/`z_digit`) and the `_` separator, legal in
+/// every base per those same productions' `{ '_' | ... }` repetition.
+fn is_based_digit(base: NumberBase, b: u8) -> bool {
+    if b == b'_' || matches!(b, b'x' | b'X' | b'z' | b'Z' | b'?') {
+        return true;
+    }
+    match base {
+        NumberBase::Binary => matches!(b, b'0' | b'1'),
+        NumberBase::Octal => (b'0'..=b'7').contains(&b),
+        NumberBase::Decimal => b.is_ascii_digit(),
+        NumberBase::Hex => b.is_ascii_hexdigit(),
+    }
+}
+
+/// The base letter as written in an error message (lowercased), for
+/// `ParseErrorKind::IllegalBasedDigit`.
+fn base_letter(base: NumberBase) -> char {
+    match base {
+        NumberBase::Decimal => 'd',
+        NumberBase::Binary => 'b',
+        NumberBase::Octal => 'o',
+        NumberBase::Hex => 'h',
+    }
 }

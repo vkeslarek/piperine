@@ -58,6 +58,12 @@ pub enum ParseErrorKind {
     /// A numeric literal's digits/suffix did not form a valid integer or
     /// real constant per LRM §2.6.
     InvalidNumberLiteral { text: String },
+    /// A based-literal digit was illegal for its declared base (LRM
+    /// §2.6.1's `binary_digit`/`octal_digit`/`decimal_digit`/`hex_digit`
+    /// productions), e.g. `'o89` (8/9 are not octal digits) or `'d1F` (`F`
+    /// is not a decimal digit). `base` is the base letter as written
+    /// (`d`/`b`/`o`/`h`, lowercased); `digit` is the offending character.
+    IllegalBasedDigit { base: char, digit: char },
     /// The parser expected one of a set of token kinds and found something
     /// else. `expected` is a human-readable description of what was
     /// expected (e.g. `"';'"`, `"an expression"`), not a token enum name.
@@ -100,6 +106,9 @@ impl fmt::Display for ParseErrorKind {
             }
             ParseErrorKind::InvalidNumberLiteral { text } => {
                 write!(f, "invalid number literal `{text}`")
+            }
+            ParseErrorKind::IllegalBasedDigit { base, digit } => {
+                write!(f, "`{digit}` is not a legal digit for base `{base}`")
             }
             ParseErrorKind::UnexpectedToken { expected, found } => {
                 write!(f, "expected {expected}, found {found}")
