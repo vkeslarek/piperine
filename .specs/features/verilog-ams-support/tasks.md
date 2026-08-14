@@ -3337,7 +3337,7 @@ did not close.
   **Commit**: `docs(examples): migrate the example gallery to Verilog-AMS`
   (examples + fixes)
 
-- **T47** ✅ `<pending commit>` — LRM ch. 9 general system tasks/functions
+- **T47** ✅ `0d53def3` — LRM ch. 9 general system tasks/functions
   (20 unit tests in `eval/tasks.rs` + 7 integration tests in
   `crates/piperine-lang/tests/vams_system_tasks.rs`, 27 new). **SPEC_DEVIATION**
   (documented, carried forward — same category as T48-T52's own gaps found
@@ -3400,7 +3400,7 @@ did not close.
   integration target is the practically-runnable form of the gate, per
   the same documented pattern T28 through T32 used.
 
-- **T48** ✅ `<pending commit>` — IEEE 1364 gate-primitive truth tables and
+- **T48** ✅ `553949dc` — IEEE 1364 gate-primitive truth tables and
   drive-strength resolution (14 unit tests in `kernel/digital/gates.rs` +
   4 integration tests in `crates/piperine-codegen/tests/vams_gates.rs`, 18
   new). **SPEC_DEVIATION** (documented, carried forward — same category as
@@ -3442,7 +3442,7 @@ did not close.
   targets, untouched and unworsened by this task; `--lib` plus the task's
   own new integration target is the practically-runnable form.
 
-- **T49** ✅ `<pending commit>` — UDP (user-defined primitive) state-table
+- **T49** ✅ `b3f5ddf1` — UDP (user-defined primitive) state-table
   evaluation (12 unit tests in `kernel/digital/udp.rs` + 3 integration
   tests in `crates/piperine-codegen/tests/vams_udp.rs`, 15 new).
   **SPEC_DEVIATION** (documented, carried forward — same shape as T48's
@@ -3476,7 +3476,7 @@ did not close.
   unworsened compile failures); `--lib` + the task's own integration
   target is the practically-runnable form.
 
-- **T50** ✅ `<pending commit>` — spec amendment resolving design.md §8's
+- **T50** ✅ `9f853688` — spec amendment resolving design.md §8's
   R7 (docs-only, no tests). The confirmation this task's "Done when"
   calls for was already on record before this batch started (this file's
   own "Open items before Execute" #2: "RESOLVED 2026-08-12 (user):
@@ -3493,7 +3493,7 @@ did not close.
   zero warnings (docs-only change, nothing recompiled). No code touched,
   no test count to report.
 
-- **T51** ✅ `<pending commit>` — LRM ch. 8 stratified event-region
+- **T51** ✅ `f00d179e` — LRM ch. 8 stratified event-region
   ordering (5 unit tests in `digital/regions.rs` + 2 integration tests in
   `crates/piperine-solver/tests/vams_stratified_regions.rs`, 7 new).
   **SPEC_DEVIATION** (documented, carried forward, same shape as T47-T49's
@@ -3553,7 +3553,7 @@ did not close.
   unrelated to digital scheduling, not introduced or worsened here. Every
   other `piperine-solver` target, including the new one, passes.
 
-- **T52** ✅ `<pending commit>` — `InsertConnectModules` (LRM ch. 7) (7
+- **T52** ✅ `21a4f498` — `InsertConnectModules` (LRM ch. 7) (7
   unit tests in `elab/lower/connect.rs` + 2 elaboration-level integration
   tests in `crates/piperine-lang/tests/vams_connect_modules.rs` + 1
   cross-crate end-to-end test in root `tests/vams_connect_modules_e2e.rs`,
