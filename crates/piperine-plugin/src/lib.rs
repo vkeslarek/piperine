@@ -31,6 +31,7 @@ mod registry;
 mod scripted;
 mod trust;
 mod view;
+mod vpi;
 
 pub use backend::native::ABI_VERSION;
 pub use capability::HostCtx;
@@ -51,6 +52,7 @@ pub use trust::{
     ensure_trusted as trust_check, TrustMode,
 };
 pub use view::{DesignStaging, SolveResultView};
+pub use vpi::{VpiCategories, VpiCategory, VpiCategoryEntry, VpiSupport};
 
 // Re-exported so plugin authors depend on one crate for the whole contract.
 pub use piperine_codegen::device::{PluginDeviceSpec, PluginPort, PortBinding};

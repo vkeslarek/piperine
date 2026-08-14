@@ -1063,7 +1063,7 @@ reproduction, and disposition.
 
 ---
 
-#### T54: VPI routine categories (LRM ch. 12)
+#### T54: VPI routine categories (LRM ch. 12) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-plugin/src/`, `crates/piperine-plugin/tests/vpi_routines.rs`
 **Depends on**: T53 · **Requirement**: VAMS-21
 **Done when**: each ch. 12 routine category has a native equivalent **or** a documented, typed not-supported result — never silently absent (C6) · **Gate**: quick
@@ -3690,3 +3690,75 @@ did not close.
   `mod_rs_declares_only` fails identically to the T1-recorded pre-existing
   `piperine-ir` defect (unrelated, unchanged). No tolerance loosened, no
   test modified, no file outside T53's stated `Where` touched.
+
+- **T54** ✅ (Phase 10) — LRM ch. 12 VPI routine categories, audited
+  against §11.4's own taxonomy (Table 11-1 through Table 11-10 — ch. 12
+  itself defines the same routines alphabetically, §12.1, with no separate
+  category scheme of its own). New file `crates/piperine-plugin/src/
+  vpi.rs`: `VpiCategory` (the 10 §11.4 categories), `VpiSupport`
+  (`Native`/`Partial`/`NotSupported`), `VpiCategoryEntry`
+  (category + support + a prose `mechanism` field naming the concrete
+  native equivalent or the concrete gap), and `VpiCategories` — a data
+  table (MD-13: no loose functions, no `match`) covering all 10 with one
+  entry each, `all()`/`entry()`/`support()` reading it. 7 unit tests in
+  `vpi.rs` + 4 integration tests in the task's own stated file
+  `crates/piperine-plugin/tests/vpi_routines.rs`, 11 new.
+  Audit result, category by category: **Native** — `SystfCallbacks`/
+  `AnalogSystfCallbacks` (T53's `PluginHost::register_system_task`/
+  `resolve_system_task` is the native equivalent of
+  `vpi_register_systf()`/`vpi_register_analog_systf()` and their
+  `_info()` counterparts), `HdlHierarchyTraversal`/`ObjectProperties`/
+  `ObjectsFromProperties` (a native Rust plugin already holds a typed
+  `&piperine_lang::Design` in `after_elaborate`/`transform_design`/
+  `before_lower` — direct field access and iteration over `Design::
+  modules`/instance maps *is* the native equivalent of `vpi_handle`/
+  `vpi_iterate`/`vpi_scan`/`vpi_get`-family/`vpi_handle_by_name`, since
+  the opaque `vpiHandle` indirection in the C API exists only because C
+  has no borrow-checked references; `vpi_handle_multi()`'s specific
+  many-to-one use case has no POM-level equivalent yet, noted inline
+  without demoting the whole category). **Partial** —
+  `SimulationCallbacks` (registration via `HookPhase` is Native;
+  `vpi_remove_cb()` is NotSupported by design — a loaded plugin's hooks
+  live for the whole run), `ValueProcessing` (read via
+  `SimHooks::after_solve`'s `node_voltages` is Native; `vpi_put_value()`
+  live-injection is NotSupported — no `SimHooks` method exists for it),
+  `TimeProcessing` (`SimEnvironment::abstime` (T47) covers
+  `vpi_get_time()`; the three small-signal/continuous-domain routines
+  have no equivalent), `MiscUtilities` (`vpi_printf`/`vpi_chk_error`
+  (native `Result<T, PluginError>` *is* the equivalent — the type system
+  makes "forgot to check" impossible, which is what `vpi_chk_error`'s
+  poll pattern approximates in C)/`vpi_free_object` (satisfied by
+  ownership/`Drop` making it unnecessary, not by an absence)/
+  `vpi_compare_objects`/`vpi_get_vlog_info` (via `Manifest`/
+  `ABI_VERSION`) are Native; the four `vpi_mcd_*` multi-channel-file
+  routines are NotSupported). **NotSupported (a real, named gap)** —
+  `DelayProcessing`: Piperine's digital kernel has no `#delay`/
+  timing-check model to read or write at all (the fused-cone JIT compiles
+  `always`/`initial` semantics, not gate/module-path delay annotations) —
+  stated as a real gap, not papered over. **SPEC_DEVIATION** (documented,
+  same shape as T47-T53's carried-forward gaps): the `Partial`/
+  `NotSupported` entries above are real, load-bearing gaps this task's own
+  scope (`crates/piperine-plugin/src/`) cannot close — `vpi_put_value`
+  needs a new `SimHooks` method (cross-crate ABI change, outside `Where`),
+  `#delay` needs a digital-kernel timing model (`piperine-codegen`,
+  outside `Where`), and `vpi_mcd_*` needs a file-handle abstraction no
+  part of the plugin ABI currently has a reason to carry. Each is named at
+  its own `VpiCategoryEntry.mechanism` (not left implicit), matching the
+  task's own "Done when": every category has a native equivalent **or** a
+  documented, typed not-supported result — never silently absent.
+  **Verification**: `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine-plugin --lib`: **29 passed, 0 failed** (+7 vs
+  T53's 22-passing count — the `vpi.rs` unit tests). `cargo test -p
+  piperine-plugin --test vpi_routines`: **4 passed, 0 failed**. Gate
+  (quick, per T54's own table entry): `cargo test -p piperine-plugin`
+  (all targets) still fails to fully run — `tests/e2e.rs`'s 6 targets fail
+  identically before and after this task (confirmed via `git stash`/`git
+  stash pop` A/B: same 6 failures, same `E1005` parse errors from a stale
+  `discipline Electrical { ... }` brace-block fixture syntax, unrelated to
+  VPI and pre-existing since before this task touched anything); `--lib`
+  plus the task's own new integration target is the practically-runnable
+  form, same pattern as T47-T53. `cargo test --test suite_hygiene`: 9/10
+  green, `mod_rs_declares_only` fails identically to the T1-recorded
+  pre-existing `piperine-ir` defect (unrelated, unchanged). No tolerance
+  loosened, no test modified, no file outside T54's stated `Where`
+  touched.
