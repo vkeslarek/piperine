@@ -212,6 +212,121 @@ pub fn refine_crossing(
     Prediction { t_cross, error_bound: width }
 }
 
+// ── absdelta: sampled-event detector (LRMC-C5-03, §5.10.3.4) ───────────
+//
+// Distinct from the tier-1 `EventDetector` above: `cross`/`above`/`timer`
+// watch a *sign*/*schedule*; `absdelta` watches a *magnitude of change*
+// relative to the value at the last `absdelta` event it fired, plus a
+// direction-reversal rule and an `enable` gate — none of which fit
+// `Trigger`'s shape, so this is its own small state machine rather than a
+// fourth `Trigger` variant.
+
+/// Per-event `absdelta` state: the value/time of the last event it fired
+/// (the reference `delta` compares against), the previous *sampled*
+/// value/direction (for the direction-reversal rule, independent of
+/// whether an event fired), and the previous `enable` value (for the
+/// zero-to-nonzero edge rule).
+#[derive(Debug, Clone, Copy)]
+pub struct AbsDeltaDetector {
+    seeded: bool,
+    last_event_value: f64,
+    last_event_time: f64,
+    prev_value: f64,
+    /// Sign of the most recent nonzero value-to-value change: `1`, `-1`,
+    /// or `0` (no change observed yet).
+    prev_direction: i8,
+    prev_enable: f64,
+}
+
+impl Default for AbsDeltaDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AbsDeltaDetector {
+    pub fn new() -> Self {
+        Self { seeded: false, last_event_value: 0.0, last_event_time: 0.0, prev_value: 0.0, prev_direction: 0, prev_enable: 0.0 }
+    }
+
+    /// Whether an `absdelta` event fires for this sample, updating the
+    /// detector's state. `delta` must be non-negative (a negative `delta`
+    /// is a caller/elaboration-time error, not this detector's concern —
+    /// it is treated as `0.0`, the LRM's own "every change" case, rather
+    /// than silently doing nothing).
+    ///
+    /// Implements §5.10.3.4's four firing conditions:
+    /// 1. The first sample ("during initialization or dc sweep analysis").
+    /// 2. `enable` transitioning from zero to nonzero.
+    /// 3. `|value - last_event_value| > delta`, unless the current time is
+    ///    within `time_tol` of the last event (`delta == 0.0` fires on
+    ///    every value change instead, tolerances ignored, per the LRM's
+    ///    own zero-delta carve-out).
+    /// 4. A direction reversal whose magnitude is at least `expr_tol`.
+    ///
+    /// While `enable` is zero, no event fires (rule 2's own edge aside) —
+    /// "the absdelta() function is inactive". `prev_value`/`prev_direction`
+    /// still track while disabled so a later re-enable's comparisons are
+    /// against real history, not a stale pre-disable snapshot.
+    pub fn fired(&mut self, value: f64, time: f64, delta: f64, time_tol: f64, expr_tol: f64, enable: f64) -> bool {
+        let delta = delta.max(0.0);
+
+        if !self.seeded {
+            self.seeded = true;
+            self.last_event_value = value;
+            self.last_event_time = time;
+            self.prev_value = value;
+            self.prev_direction = 0;
+            self.prev_enable = enable;
+            return true;
+        }
+
+        let enable_rising = self.prev_enable == 0.0 && enable != 0.0;
+        self.prev_enable = enable;
+
+        if enable == 0.0 {
+            self.prev_value = value;
+            return false;
+        }
+
+        let direction: i8 = if value > self.prev_value {
+            1
+        } else if value < self.prev_value {
+            -1
+        } else {
+            0
+        };
+        let change_since_prev = (value - self.prev_value).abs();
+
+        let mut fired = enable_rising;
+
+        if delta == 0.0 {
+            if value != self.prev_value {
+                fired = true;
+            }
+        } else {
+            let delta_since_event = (value - self.last_event_value).abs();
+            let time_since_event = time - self.last_event_time;
+            if delta_since_event > delta && time_since_event >= time_tol {
+                fired = true;
+            }
+            if direction != 0 && self.prev_direction != 0 && direction != self.prev_direction && change_since_prev >= expr_tol {
+                fired = true;
+            }
+        }
+
+        if fired {
+            self.last_event_value = value;
+            self.last_event_time = time;
+        }
+        if direction != 0 {
+            self.prev_direction = direction;
+        }
+        self.prev_value = value;
+        fired
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +486,94 @@ mod tests {
         // resolved.
         assert!(p.error_bound >= step_floor - 1e-15);
         assert!(p.error_bound < 1.0, "actually narrowed from the initial bracket");
+    }
+
+    // ── absdelta (LRMC-C5-03) ────────────────────────────────────────
+
+    #[test]
+    fn absdelta_fires_on_the_first_sample_initialization() {
+        let mut d = AbsDeltaDetector::new();
+        assert!(d.fired(0.0, 0.0, 0.1, 0.0, 0.0, 1.0), "first sample is always an event (initialization)");
+    }
+
+    #[test]
+    fn absdelta_does_not_fire_below_the_delta_threshold() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 0.1, 0.0, 0.0, 1.0); // seed at value=1.0
+        assert!(!d.fired(1.05, 1.0, 0.1, 0.0, 0.0, 1.0), "0.05 change < 0.1 delta must not fire");
+    }
+
+    #[test]
+    fn absdelta_fires_once_the_delta_threshold_is_exceeded() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 0.1, 0.0, 0.0, 1.0); // seed at value=1.0
+        assert!(d.fired(1.2, 1.0, 0.1, 0.0, 0.0, 1.0), "0.2 change > 0.1 delta must fire");
+    }
+
+    #[test]
+    fn absdelta_suppresses_a_delta_event_within_time_tol_of_the_previous_event() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 0.1, 0.5, 0.0, 1.0); // seed (event) at t=0
+        // Big enough delta, but t=0.2 is within time_tol=0.5 of the last event.
+        assert!(!d.fired(2.0, 0.2, 0.1, 0.5, 0.0, 1.0), "within time_tol of the last event must not fire");
+        // Past time_tol, the same delta now fires.
+        assert!(d.fired(2.0, 0.6, 0.1, 0.5, 0.0, 1.0), "past time_tol, an exceeded delta must fire");
+    }
+
+    #[test]
+    fn absdelta_with_zero_delta_fires_on_every_value_change_ignoring_tolerances() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 0.0, 1000.0, 1000.0, 1.0); // seed
+        // time_tol/expr_tol are huge but must be ignored when delta == 0.0.
+        assert!(d.fired(1.0000001, 0.001, 0.0, 1000.0, 1000.0, 1.0), "any change must fire when delta == 0");
+        assert!(!d.fired(1.0000001, 0.002, 0.0, 1000.0, 1000.0, 1.0), "no change must not fire");
+    }
+
+    #[test]
+    fn absdelta_fires_on_a_direction_reversal_past_expr_tol() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(0.0, 0.0, 10.0, 0.0, 0.05, 1.0); // seed, huge delta so it never fires from magnitude
+        d.fired(1.0, 1.0, 10.0, 0.0, 0.05, 1.0); // rising
+        d.fired(2.0, 2.0, 10.0, 0.0, 0.05, 1.0); // still rising
+        // Reverses direction (falling) by 0.5, past expr_tol = 0.05.
+        assert!(d.fired(1.5, 3.0, 10.0, 0.0, 0.05, 1.0), "a direction reversal past expr_tol must fire");
+    }
+
+    #[test]
+    fn absdelta_ignores_a_direction_reversal_within_expr_tol() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(0.0, 0.0, 10.0, 0.0, 0.05, 1.0);
+        d.fired(1.0, 1.0, 10.0, 0.0, 0.05, 1.0);
+        // Reverses direction but by only 0.01, under expr_tol = 0.05.
+        assert!(!d.fired(0.99, 2.0, 10.0, 0.0, 0.05, 1.0), "a reversal under expr_tol must not fire");
+    }
+
+    #[test]
+    fn absdelta_fires_when_enable_rises_from_zero_to_nonzero() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 10.0, 0.0, 0.0, 0.0); // seed, disabled
+        assert!(!d.fired(1.0, 1.0, 10.0, 0.0, 0.0, 0.0), "still disabled, no fire");
+        assert!(d.fired(1.0, 2.0, 10.0, 0.0, 0.0, 1.0), "enable rising from 0 to nonzero must fire");
+    }
+
+    #[test]
+    fn absdelta_is_inactive_while_enable_is_zero() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 0.1, 0.0, 0.0, 1.0); // seed, enabled
+        // A huge delta change would normally fire, but enable == 0.
+        assert!(!d.fired(5.0, 1.0, 0.1, 0.0, 0.0, 0.0), "no event while enable == 0, regardless of delta");
+    }
+
+    #[test]
+    fn absdelta_no_trigger_case_stays_silent() {
+        let mut d = AbsDeltaDetector::new();
+        d.fired(1.0, 0.0, 0.1, 0.0, 0.0, 1.0); // seed
+        for i in 1..10 {
+            let t = i as f64 * 0.1;
+            // Small oscillation, always under delta and under expr_tol,
+            // enable stays on: no event should ever fire again.
+            let v = 1.0 + 0.01 * (i as f64 % 2.0);
+            assert!(!d.fired(v, t, 0.1, 0.0, 0.02, 1.0), "no rule should fire at t={t}, v={v}");
+        }
     }
 }
