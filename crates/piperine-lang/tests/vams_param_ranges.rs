@@ -97,3 +97,61 @@ fn aliasparam_lowers_with_its_target_name() {
     let alias = m.params().iter().find(|p| p.name == "ralias").expect("ralias param");
     assert_eq!(alias.bundle_origin, Some(("aliasparam".to_string(), "r".to_string())));
 }
+
+// ── LRMC-C1-07: aliasparam inherits the aliased parameter's type ───────
+
+#[test]
+fn aliasparam_over_an_integer_parameter_carries_integer_type() {
+    let d = elab(
+        r#"
+        module res (inout electrical p, inout electrical n);
+            parameter integer n_fingers = 4;
+            aliasparam fingers = n_fingers;
+        endmodule
+        "#,
+    );
+    let m = d.module("res").expect("res elaborated");
+    let alias = m.params().iter().find(|p| p.name == "fingers").expect("fingers param");
+    assert_eq!(alias.ty, piperine_lang::pom::ValueType::Integer);
+}
+
+#[test]
+fn aliasparam_over_a_string_parameter_carries_string_type() {
+    let d = elab(
+        r#"
+        module res (inout electrical p, inout electrical n);
+            parameter string kind = "NPN";
+            aliasparam device_kind = kind;
+        endmodule
+        "#,
+    );
+    let m = d.module("res").expect("res elaborated");
+    let alias = m.params().iter().find(|p| p.name == "device_kind").expect("device_kind param");
+    assert_eq!(alias.ty, piperine_lang::pom::ValueType::Str);
+}
+
+#[test]
+fn aliasparam_over_a_real_parameter_still_carries_real_type() {
+    let d = elab(
+        r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0;
+            aliasparam ralias = r;
+        endmodule
+        "#,
+    );
+    let m = d.module("res").expect("res elaborated");
+    let alias = m.params().iter().find(|p| p.name == "ralias").expect("ralias param");
+    assert_eq!(alias.ty, piperine_lang::pom::ValueType::Real);
+}
+
+#[test]
+fn aliasparam_of_an_undeclared_target_fails_loud() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            aliasparam ralias = nonexistent;
+        endmodule
+    "#;
+    let msg = elab_err(src);
+    assert!(msg.contains("nonexistent"), "names the undeclared target: {msg}");
+}

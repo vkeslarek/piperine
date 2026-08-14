@@ -122,14 +122,30 @@ impl Elaborator {
                 // codegen retarget) — recording the alias link here keeps
                 // it visible on the POM (`bundle_origin` is reused as the
                 // (alias, target) carrier since both are "this param's
-                // value comes from elsewhere", not a new field).
+                // value comes from elsewhere", not a new field). `ty`
+                // mirrors the aliased parameter's own declared type
+                // (LRMC-C1-07) — an alias over an `integer`/`string`
+                // parameter must carry that type, not be hardcoded to
+                // `Real`; `target` must already be declared earlier in
+                // this same module (§3.4.7 gives no forward-reference
+                // rule), so an unknown target fails loud by name.
                 ModuleItem::AliasParam(a) => {
+                    let target_ty = params
+                        .iter()
+                        .find(|p| p.name == a.target)
+                        .map(|p| p.ty.clone())
+                        .ok_or_else(|| {
+                            ElabError::from(ElabErrorKind::Other(format!(
+                                "aliasparam `{}`: target parameter `{}` is not declared (§3.4.7)",
+                                a.name, a.target
+                            )))
+                        })?;
                     params.push(Param {
                         span: None,
                         attributes: Vec::new(),
                         doc: None,
                         name: a.name.clone(),
-                        ty: ValueType::Real,
+                        ty: target_ty,
                         default: None,
                         bundle_origin: Some(("aliasparam".to_string(), a.target.clone())),
                         distribution: None,
