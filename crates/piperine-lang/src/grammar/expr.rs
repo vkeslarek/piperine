@@ -199,7 +199,19 @@ impl Grammar {
                 let args = self.parse_optional_arg_list()?;
                 Ok(Expr::SystemFunctionCall { span, name, args })
             }
-            Tok::Ident(name) if name == "V" || name == "I" => {
+            // §4.4: `V`/`I` are electrical-discipline examples of a
+            // branch/net access function — any discipline's own `access`
+            // name is equally an access function (§3.6.1.2), and
+            // `potential`/`flow` are the LRM's own discipline-independent
+            // generic spellings (§4.4, §5.5.1) — same one/two-branch-term
+            // argument shape as `V`/`I`. The grammar has no symbol table,
+            // so a *custom* discipline access name (unknown here) still
+            // parses as a plain `Expr::Call`; the elaborator promotes it
+            // once it knows the discipline (LRMC-C1-09). Only the four
+            // names statically known to always be access functions —
+            // regardless of which discipline is in scope — get the
+            // dedicated `AccessFunction` shape at parse time.
+            Tok::Ident(name) if name == "V" || name == "I" || name == "potential" || name == "flow" => {
                 self.bump();
                 self.parse_access_function(span, name)
             }

@@ -292,6 +292,65 @@ fn access_function_two_arg_form() {
     }
 }
 
+// ── LRMC-C1-08: access-function grammar generalization (§4.4) ────────────
+
+#[test]
+fn generic_potential_access_function_parses_like_v() {
+    // §4.4 Table 4-16: `potential(b1)` — "Alternative access of the
+    // voltage across the branch b1", same one-arg shape as `V(b1)`.
+    match parse("potential(b1)") {
+        Expr::AccessFunction { function, pos, neg, .. } => {
+            assert_eq!(function, "potential");
+            assert!(matches!(*pos, Expr::Ident { .. }));
+            assert!(neg.is_none());
+        }
+        other => panic!("expected one-arg AccessFunction, got {other:?}"),
+    }
+}
+
+#[test]
+fn generic_flow_access_function_parses_like_i() {
+    // §4.4 Table 4-16: `flow(n1)` — "Alternative access of the current
+    // flowing in the unnamed branch from n1 to ground", same shape as
+    // `I(n1)`.
+    match parse("flow(n1)") {
+        Expr::AccessFunction { function, pos, neg, .. } => {
+            assert_eq!(function, "flow");
+            assert!(matches!(*pos, Expr::Ident { .. }));
+            assert!(neg.is_none());
+        }
+        other => panic!("expected one-arg AccessFunction, got {other:?}"),
+    }
+}
+
+#[test]
+fn flow_two_arg_form_parses_like_i() {
+    match parse("flow(p, n)") {
+        Expr::AccessFunction { function, pos, neg, .. } => {
+            assert_eq!(function, "flow");
+            assert!(matches!(*pos, Expr::Ident { .. }));
+            assert!(matches!(neg.as_deref(), Some(Expr::Ident { .. })));
+        }
+        other => panic!("expected two-arg AccessFunction, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_custom_discipline_access_name_parses_as_a_plain_call() {
+    // The grammar has no symbol table, so an access-function name that
+    // isn't one of the four statically-known ones (V/I/potential/flow)
+    // parses as an ordinary call — "the shape the elaborator can promote"
+    // once it knows the discipline's `access` attribute (LRMC-C1-09,
+    // resolved at elaboration, not here).
+    match parse("Volts(b1)") {
+        Expr::Call { name, args, .. } => {
+            assert_eq!(name, "Volts");
+            assert_eq!(args.len(), 1);
+        }
+        other => panic!("expected a plain Expr::Call, got {other:?}"),
+    }
+}
+
 // ── system function calls, chapter 9 (used as a value) ───────────────────
 
 #[test]
