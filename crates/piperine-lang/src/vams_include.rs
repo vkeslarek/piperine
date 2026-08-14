@@ -1,5 +1,5 @@
 //! [`SourceMapIncludeResolver`] — the `` `include`` search-path resolver
-//! `piperine_vams::preprocessor::IncludeResolver` needs (LRM ch. 10,
+//! `crate::preprocessor::IncludeResolver` needs (LRM ch. 10,
 //! VAMS-16). `piperine-vams` is purity-gated (no filesystem I/O in the
 //! parse crate); this is the boundary where that I/O happens, reusing
 //! [`SourceMap`]'s existing namespace/root-path search order rather than
@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use piperine_vams::preprocessor::IncludeResolver;
+use crate::preprocessor::IncludeResolver;
 
 use crate::source_map::SourceMap;
 

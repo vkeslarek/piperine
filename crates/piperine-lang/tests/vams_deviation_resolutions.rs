@@ -1,10 +1,10 @@
 //! VAMS pre-T21 deviations commit — closes the two SPEC_DEVIATIONs left by
-//! T19 (From<piperine_vams::ParseError>) and T20 (Design::paramsets).
+//! T19 (From<piperine_lang::ParseError>) and T20 (Design::paramsets).
 //!
 //! Both deviations required the piperine-vams dependency, which this
 //! commit wires in. The tests prove:
 //!
-//! 1. `From<piperine_vams::ParseError> for ElabError` carries the typed
+//! 1. `From<piperine_lang::ParseError> for ElabError` carries the typed
 //!    `ParseErrorKind` through unchanged and converts the byte span into
 //!    a miette `SourceSpan` (VAMS-05).
 //! 2. The wrapping `ElabErrorKind::VamsParse` variant renders with the
@@ -15,7 +15,7 @@
 
 use miette::Diagnostic;
 use piperine_lang::pom::{Design, ElabError, ElabErrorKind};
-use piperine_vams::{ParseError, ParseErrorKind, Span};
+use piperine_lang::{ParseError, ParseErrorKind, Span};
 
 #[test]
 fn from_vams_parse_error_carries_typed_kind_through_unchanged() {

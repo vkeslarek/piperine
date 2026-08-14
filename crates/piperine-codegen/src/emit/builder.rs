@@ -8,7 +8,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, FuncRef, InstBuilder, MemFlags, Value};
 use cranelift_frontend::FunctionBuilder;
 
-use piperine_vams::ast::Expr;
+use piperine_lang::ast::Expr;
 
 use crate::resolve::{BinOp, LoweredBody, NodeId, ParamId, Type, UnOp, VarId};
 use crate::kernel::digital::compile::{Pointers, VarReads};
@@ -879,7 +879,7 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
     match e? {
         // Hierarchical/scoped names (`load.p`) are already one joined
         // `Ident` string by the time they reach the AST — the grammar does
-        // the joining (`piperine_vams::ast::expr`'s own doc comment).
+        // the joining (`piperine_lang::ast::expr`'s own doc comment).
         Expr::Ident { name, .. } => Some(name.clone()),
         _ => None,
     }
@@ -894,12 +894,12 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 /// digital `Codegen` path, which walks the same raw POM `Stmt`/`Expr` AST
 /// but never runs through that resolved-analog lowering pass.
 fn inline_fn_stmts(
-    stmts: &[piperine_vams::ast::Stmt],
+    stmts: &[piperine_lang::ast::Stmt],
     fn_name: &str,
     subst: &mut HashMap<String, Expr>,
     out: &mut Option<Expr>,
 ) -> Result<(), CodegenError> {
-    use piperine_vams::ast::Stmt as S;
+    use piperine_lang::ast::Stmt as S;
     for stmt in stmts {
         match stmt {
             S::Assign { target: Expr::Ident { name: bind_name, .. }, value, .. }
@@ -984,6 +984,6 @@ fn subst_expr(expr: &Expr, subst: &HashMap<String, Expr>) -> Expr {
 }
 
 /// Map a VAMS `BinOp` to the IR `BinOp` (shared by digital and analog paths).
-pub(crate) fn lower_binop_pom(op: piperine_vams::ast::BinOp) -> crate::resolve::BinOp {
+pub(crate) fn lower_binop_pom(op: piperine_lang::ast::BinOp) -> crate::resolve::BinOp {
     crate::resolve::BinOp::from_pom(op)
 }

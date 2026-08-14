@@ -3,8 +3,8 @@
 //! the deepest meaningful span rather than an outer "somewhere in this
 //! file" span.
 
-use piperine_vams::error::ParseErrorKind;
-use piperine_vams::{IncludeResolver, Parser};
+use piperine_lang::error::ParseErrorKind;
+use piperine_lang::{IncludeResolver, Parser};
 
 #[test]
 fn parses_a_minimal_module_end_to_end() {

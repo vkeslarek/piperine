@@ -2,16 +2,16 @@
 //! statements, and [`Function`]/[`ImplBlock`] (value-layer computation).
 
 use crate::value::Value;
-use piperine_vams::ast::BehaviorKind;
+use crate::ast::BehaviorKind;
 use crate::pom::net_type::TypeRef;
 use crate::pom::node::Kind;
 use crate::pom::traits::{Kinded, Named};
 
-/// Behavior bodies are the surface [`Stmt`](piperine_vams::ast::Stmt) type
+/// Behavior bodies are the surface [`Stmt`](crate::ast::Stmt) type
 /// directly (design F1, preserved across the MD-44 frontend swap — only the
 /// surface AST's identity changed, `piperine_lang::parse::ast` →
-/// `piperine_vams::ast`).
-pub use piperine_vams::ast::Stmt as BehaviorStmt;
+/// `crate::ast`).
+pub use crate::ast::Stmt as BehaviorStmt;
 
 /// A behavior block inside a module (analog or digital).
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ pub struct Function {
     /// `None` for a non-defaulted (leading) param, `Some(expr)` for a
     /// trailing defaulted one (the language spec Part I §9.1). Defaults are
     /// elaboration constants.
-    pub defaults: Vec<Option<piperine_vams::ast::Expr>>,
+    pub defaults: Vec<Option<crate::ast::Expr>>,
     /// Return type.
     pub ret: TypeRef,
     /// Function body statements.
@@ -95,7 +95,7 @@ impl Function {
     /// The function parameters (name, type).
     pub fn params(&self) -> &[(String, TypeRef)] { &self.params }
     /// Default value expressions, parallel to [`params`](Self::params).
-    pub fn defaults(&self) -> &[Option<piperine_vams::ast::Expr>] { &self.defaults }
+    pub fn defaults(&self) -> &[Option<crate::ast::Expr>] { &self.defaults }
     /// The function return type.
     pub fn ret(&self) -> &TypeRef { &self.ret }
     /// The function body statements.

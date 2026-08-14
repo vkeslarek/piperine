@@ -3,7 +3,7 @@
 //! span, and — the hard constraint — the module contains no free-string
 //! catch-all variant and no `From<String>`/`From<&str>` escape hatch.
 
-use piperine_vams::{ParseError, ParseErrorKind, Span};
+use piperine_lang::{ParseError, ParseErrorKind, Span};
 
 #[test]
 fn unexpected_character_carries_the_offending_char_and_span() {

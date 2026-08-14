@@ -26,7 +26,7 @@ impl Kinded for Attribute { fn kind(&self) -> Kind { Kind::Attribute } }
 
 // ─────────────────────────────── Port ────────────────────────────────────────
 
-/// Port direction — mirrors `piperine_vams::ast::Direction` (LRM §3.7); a
+/// Port direction — mirrors `crate::ast::Direction` (LRM §3.7); a
 /// separate POM-native type because the AST crate is serde-free by purity
 /// contract (T1) and `Port` crosses the serialization boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -36,12 +36,12 @@ pub enum Direction {
     Inout,
 }
 
-impl From<piperine_vams::ast::Direction> for Direction {
-    fn from(d: piperine_vams::ast::Direction) -> Self {
+impl From<crate::ast::Direction> for Direction {
+    fn from(d: crate::ast::Direction) -> Self {
         match d {
-            piperine_vams::ast::Direction::Input => Direction::Input,
-            piperine_vams::ast::Direction::Output => Direction::Output,
-            piperine_vams::ast::Direction::Inout => Direction::Inout,
+            crate::ast::Direction::Input => Direction::Input,
+            crate::ast::Direction::Output => Direction::Output,
+            crate::ast::Direction::Inout => Direction::Inout,
         }
     }
 }

@@ -1648,7 +1648,6 @@ dependencies = [
  "piperine-ir",
  "piperine-lang",
  "piperine-solver",
- "piperine-vams",
  "thiserror 2.0.18",
 ]
 
@@ -1664,7 +1663,6 @@ dependencies = [
  "piperine-plugin",
  "piperine-project",
  "piperine-python",
- "piperine-vams",
  "tempfile",
  "thiserror 2.0.18",
  "toml_edit",
@@ -1683,7 +1681,6 @@ dependencies = [
  "piperine-ir",
  "piperine-lang",
  "piperine-solver",
- "piperine-vams",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -1698,7 +1695,6 @@ version = "0.2.0"
 dependencies = [
  "miette",
  "num-complex",
- "piperine-vams",
  "serde",
  "serde_json",
  "tempfile",
@@ -1715,7 +1711,6 @@ dependencies = [
  "miette",
  "piperine-lang",
  "piperine-project",
- "piperine-vams",
  "serde",
  "serde_json",
  "url",
@@ -1783,7 +1778,6 @@ dependencies = [
  "piperine-plugin",
  "piperine-project",
  "piperine-solver",
- "piperine-vams",
  "pyo3",
 ]
 
@@ -1807,10 +1801,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
 ]
-
-[[package]]
-name = "piperine-vams"
-version = "0.2.0"
 
 [[package]]
 name = "pkg-config"

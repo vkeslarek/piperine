@@ -41,7 +41,7 @@
 //! regressions) over every design in today's corpus, since none of them
 //! can reach this pass with a live mismatch for it to act on.
 
-use piperine_vams::ast::ModuleKind;
+use crate::ast::ModuleKind;
 
 use crate::pom::{Design, ElabError, ElabErrorKind, Instance};
 
@@ -179,7 +179,7 @@ fn ambiguous_err(from_discipline: &str, to_discipline: &str, issue: String) -> E
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use piperine_vams::ast::{ConnectRule, ConnectrulesDecl, ModuleDecl, ModuleKind, Span};
+    use crate::ast::{ConnectRule, ConnectrulesDecl, ModuleDecl, ModuleKind, Span};
     use crate::pom::{Direction, Module, NetRef, NetType, Port};
 
     fn span() -> Span {

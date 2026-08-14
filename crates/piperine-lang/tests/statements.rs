@@ -3,8 +3,8 @@
 //! blocking/non-blocking assignment, control flow, event control, and
 //! task calls.
 
-use piperine_vams::ast::{CaseKind, EventExpr, Expr, Stmt};
-use piperine_vams::{Grammar, Lexer};
+use piperine_lang::ast::{CaseKind, EventExpr, Expr, Stmt};
+use piperine_lang::{Grammar, Lexer};
 
 fn parse(src: &str) -> Stmt {
     let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
@@ -254,7 +254,7 @@ fn malformed_statement_is_a_typed_parse_error() {
     let mut g = Grammar::new(toks);
     let err = g.parse_stmt().unwrap_err();
     assert!(
-        matches!(err.kind, piperine_vams::ParseErrorKind::UnexpectedToken { .. }),
+        matches!(err.kind, piperine_lang::ParseErrorKind::UnexpectedToken { .. }),
         "expected UnexpectedToken, got {:?}",
         err.kind
     );

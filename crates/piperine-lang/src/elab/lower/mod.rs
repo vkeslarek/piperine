@@ -26,7 +26,7 @@
 
 use std::collections::HashMap;
 
-use piperine_vams::ast::{ConnectrulesDecl, DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFile};
+use crate::ast::{ConnectrulesDecl, DisciplineDecl, Item, ModuleDecl, NatureDecl, SourceFile};
 use crate::pom::{ElabError, Design};
 
 mod connect;

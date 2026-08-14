@@ -13,9 +13,9 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
 
     let result = state.documents.get(&uri).and_then(|doc| {
         // A document that does not lex/parse must not be formatted —
-        // `piperine_vams::Formatter::format` (T15) fails loud on either,
+        // `piperine_lang::Formatter::format` (T15) fails loud on either,
         // matching the old "do not replace with garbage" guard.
-        let formatted = piperine_vams::Formatter::format(&doc.source).ok()?;
+        let formatted = piperine_lang::Formatter::format(&doc.source).ok()?;
 
         if formatted == doc.source {
             return Some(Vec::new());

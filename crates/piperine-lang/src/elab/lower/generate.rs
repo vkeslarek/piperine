@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use piperine_vams::ast::{
+use crate::ast::{
     CaseGenerate, GenerateBlock, GenerateRegion, IfGenerate, LoopGenerate, ModuleDecl, ModuleItem,
 };
 

@@ -3,7 +3,7 @@ use lsp_types::{InlayHint, InlayHintLabel, InlayHintParams};
 
 use super::{ConnectionExt, RequestExt};
 use crate::state::ServerState;
-use piperine_vams::lexer::{Lexer, NumberLit, Tok};
+use piperine_lang::lexer::{Lexer, NumberLit, Tok};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let Some((id, params)) = req.parse::<InlayHintParams>(connection) else { return };

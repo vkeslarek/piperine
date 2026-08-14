@@ -5,8 +5,8 @@
 //! and parameter/localparam/aliasparam/specparam (incl. value ranges,
 //! string params, arrays).
 
-use piperine_vams::ast::*;
-use piperine_vams::{Grammar, Lexer};
+use piperine_lang::ast::*;
+use piperine_lang::{Grammar, Lexer};
 
 fn grammar(src: &str) -> Grammar {
     let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
@@ -271,12 +271,12 @@ fn specparam_parses() {
 fn unterminated_nature_is_a_typed_eof_error() {
     let mut g = grammar("nature Voltage; units = \"V\";");
     let err = g.parse_nature_decl().unwrap_err();
-    assert!(matches!(err.kind, piperine_vams::ParseErrorKind::UnexpectedEof { .. }));
+    assert!(matches!(err.kind, piperine_lang::ParseErrorKind::UnexpectedEof { .. }));
 }
 
 #[test]
 fn malformed_module_item_is_a_typed_error() {
     let mut g = grammar("module m(); ??? endmodule");
     let err = g.parse_module_decl().unwrap_err();
-    assert!(matches!(err.kind, piperine_vams::ParseErrorKind::UnexpectedToken { .. }));
+    assert!(matches!(err.kind, piperine_lang::ParseErrorKind::UnexpectedToken { .. }));
 }

@@ -22,7 +22,7 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
         && let Some(ast) = &doc.ast
     {
         for item in &ast.items {
-            use piperine_vams::ast::Item;
+            use piperine_lang::ast::Item;
             let span = match item {
                 Item::Module(m) => m.span,
                 Item::Discipline(d) => d.span,

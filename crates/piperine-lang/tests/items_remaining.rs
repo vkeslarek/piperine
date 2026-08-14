@@ -4,8 +4,8 @@
 //! connectrules/connect, config — plus the `parse_source_file` top-level
 //! entry point that ties every `Item` kind together.
 
-use piperine_vams::ast::*;
-use piperine_vams::{Grammar, Lexer};
+use piperine_lang::ast::*;
+use piperine_lang::{Grammar, Lexer};
 
 fn grammar(src: &str) -> Grammar {
     let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
@@ -204,7 +204,7 @@ fn unterminated_udp_table_is_a_typed_eof_error_naming_endtable() {
     let mut g = grammar("primitive p (q, a); output q; input a; table 0 : 0;");
     let err = g.parse_primitive_decl().unwrap_err();
     match err.kind {
-        piperine_vams::ParseErrorKind::UnexpectedEof { expected } => {
+        piperine_lang::ParseErrorKind::UnexpectedEof { expected } => {
             assert_eq!(expected, "'endtable'");
         }
         other => panic!("expected UnexpectedEof, got {other:?}"),
@@ -215,5 +215,5 @@ fn unterminated_udp_table_is_a_typed_eof_error_naming_endtable() {
 fn unknown_top_level_item_is_a_typed_error() {
     let mut g = grammar("frobnicate x;");
     let err = g.parse_source_file().unwrap_err();
-    assert!(matches!(err.kind, piperine_vams::ParseErrorKind::UnexpectedToken { .. }));
+    assert!(matches!(err.kind, piperine_lang::ParseErrorKind::UnexpectedToken { .. }));
 }

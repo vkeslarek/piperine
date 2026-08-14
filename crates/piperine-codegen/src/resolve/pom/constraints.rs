@@ -15,7 +15,7 @@
 //! machinery doesn't need touching in this retarget; only the producer that
 //! depended on the deleted POM type is removed.
 
-use piperine_vams::ast::Expr as PomExpr;
+use piperine_lang::ast::Expr as PomExpr;
 
 /// A quantity's analysis class — kept as a plain local copy since
 /// `piperine_lang::pom::QuantityClass` was deleted with `ConstraintBlock`

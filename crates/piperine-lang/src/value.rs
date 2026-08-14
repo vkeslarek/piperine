@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
-use piperine_vams::ast::Expr;
+use crate::ast::Expr;
 
 use crate::eval::error::EvalError;
 

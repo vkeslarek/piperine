@@ -12,7 +12,7 @@
 //!   POM mirrors authored source, never synthesised content.
 //!
 //! The lowering that fills these collections from
-//! `piperine_vams::ast::*` is T23+; this target proves the POM-shape
+//! `piperine_lang::ast::*` is T23+; this target proves the POM-shape
 //! contract on its own.
 
 use piperine_lang::pom::{

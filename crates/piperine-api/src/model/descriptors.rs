@@ -15,7 +15,7 @@
 
 use piperine_lang::pom::Direction;
 use piperine_lang::{Value, ValueType};
-use piperine_vams::ast::BehaviorKind;
+use piperine_lang::ast::BehaviorKind;
 
 /// A reflected port — its name, direction, and net (discipline) type.
 #[derive(Debug, Clone)]

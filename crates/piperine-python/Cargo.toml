@@ -9,7 +9,6 @@ numpy = "0.23"
 num-complex.workspace = true
 ndarray.workspace = true
 piperine-lang = { path = "../piperine-lang" }
-piperine-vams = { path = "../piperine-vams" }
 piperine-codegen = { path = "../piperine-codegen" }
 piperine-api = { path = "../piperine-api" }
 piperine-ir = { path = "../piperine-ir" }

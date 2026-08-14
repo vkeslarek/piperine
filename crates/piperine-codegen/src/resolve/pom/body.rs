@@ -12,7 +12,7 @@ use piperine_lang::pom::Design;
 
 use crate::resolve::*;
 
-use piperine_vams::ast::{Expr as PomExpr, Stmt as PomStmt};
+use piperine_lang::ast::{Expr as PomExpr, Stmt as PomStmt};
 use super::structure::{build_symbols_and_ports, value_to_pom_expr};
 use super::stmt::resolve_stmts;
 
@@ -408,7 +408,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 .map(|(node, var)| {
                     let var_name = bodies[i].symbols.var(*var).name.clone();
                     let node_name = bodies[i].symbols.node(*node).name.clone();
-                    let nospan = piperine_vams::error::Span::new(0, 0);
+                    let nospan = piperine_lang::error::Span::new(0, 0);
                     PomStmt::Assign {
                         span: nospan,
                         target: PomExpr::Ident { span: nospan, name: var_name },

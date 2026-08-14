@@ -7,7 +7,7 @@
 //! - user-defined attributes (§3.6.1.3) live in a separate map;
 //! - the type implements `Named`/`Kinded` like every other POM node.
 //!
-//! The elaboration that lowers `piperine_vams::ast::NatureDecl` into this
+//! The elaboration that lowers `piperine_lang::ast::NatureDecl` into this
 //! type is T23; this target proves the type's contract on its own.
 
 use std::collections::HashMap;

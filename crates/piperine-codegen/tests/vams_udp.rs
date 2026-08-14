@@ -6,7 +6,7 @@
 
 use piperine_codegen::kernel::digital::UdpTable;
 use piperine_solver::abi::LogicValue::{One, X, Zero};
-use piperine_vams::ast::{PrimitiveDecl, Span, UdpTableRow};
+use piperine_lang::ast::{PrimitiveDecl, Span, UdpTableRow};
 
 fn span() -> Span {
     Span::new(0, 0)

@@ -2,9 +2,9 @@
 //! and the value-type/const conversions they need.
 
 use piperine_lang::pom::{Module, NetType, ValueType, Design};
-use piperine_vams::ast::{Domain as VamsDomain, DisciplineDecl};
-use piperine_vams::error::Span;
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::{Domain as VamsDomain, DisciplineDecl};
+use piperine_lang::error::Span;
+use piperine_lang::lexer::NumberLit;
 use crate::resolve::*;
 
 const NOSPAN: Span = Span { start: 0, end: 0 };
@@ -139,15 +139,15 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> Type {
     }
 }
 
-pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> piperine_vams::ast::Expr {
+pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> piperine_lang::ast::Expr {
     value_to_pom_expr(v)
 }
 
 /// Convert a POM runtime `Value` to a POM AST `Expr` for the analog/digital
 /// paths. The Builder evaluates these via `Codegen`-trait dispatch.
-pub(crate) fn value_to_pom_expr(v: &piperine_lang::value::Value) -> piperine_vams::ast::Expr {
+pub(crate) fn value_to_pom_expr(v: &piperine_lang::value::Value) -> piperine_lang::ast::Expr {
     use piperine_lang::value::Value;
-    use piperine_vams::ast::Expr;
+    use piperine_lang::ast::Expr;
     match v {
         Value::Real(f) => Expr::Number { span: NOSPAN, value: NumberLit::Real(*f) },
         Value::Int(i) => Expr::Number { span: NOSPAN, value: NumberLit::Integer(*i) },

@@ -1,6 +1,6 @@
 //! # Elaboration phase
 //!
-//! Transforms a parsed [`piperine_vams::ast::SourceFile`] into a fully
+//! Transforms a parsed [`crate::ast::SourceFile`] into a fully
 //! resolved [`Design`].
 //!
 //! ```text
@@ -23,13 +23,13 @@ pub mod resolution;
 use crate::pom::{Design, ElabError};
 pub use lower::Elaborator;
 
-use piperine_vams::ast::SourceFile;
+use crate::ast::SourceFile;
 
 impl Elaborator {
     /// Elaborate a parsed VAMS `SourceFile` directly — VAMS has no
     /// PHDL-style `use` declaration to expand or prelude to inject before
     /// elaboration proper (`` `include`` is a preprocessor-level, textual
-    /// concern `piperine_vams::Parser` already resolved before this AST
+    /// concern `crate::Parser` already resolved before this AST
     /// existed).
     pub fn elaborate_source(source: SourceFile) -> Result<Design, ElabError> {
         let mut elaborator = Elaborator::new();

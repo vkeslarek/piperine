@@ -3,8 +3,8 @@
 //! attach only at the sites LRM Syntax 2-5..2-10 permit — encoded in the
 //! types themselves, not merely checked at parse time.
 
-use piperine_vams::ast::*;
-use piperine_vams::Span;
+use piperine_lang::ast::*;
+use piperine_lang::Span;
 
 fn span() -> Span {
     Span::new(0, 1)
@@ -92,7 +92,7 @@ fn generate_constructs_are_attribute_bearing() {
         span: span(),
         attrs: vec![],
         genvar: "i".into(),
-        init: Expr::Number { span: span(), value: piperine_vams::NumberLit::Integer(0) },
+        init: Expr::Number { span: span(), value: piperine_lang::NumberLit::Integer(0) },
         cond: Expr::Ident { span: span(), name: "i".into() },
         step_var: "i".into(),
         step_value: Expr::Ident { span: span(), name: "i".into() },
@@ -162,7 +162,7 @@ fn expr_span_covers_every_variant() {
     let e = Expr::Binary {
         span: span(),
         op: BinOp::Add,
-        lhs: Box::new(Expr::Number { span: span(), value: piperine_vams::NumberLit::Integer(1) }),
+        lhs: Box::new(Expr::Number { span: span(), value: piperine_lang::NumberLit::Integer(1) }),
         rhs: Box::new(Expr::Ident { span: span(), name: "x".into() }),
     };
     assert_eq!(e.span(), span());
@@ -193,7 +193,7 @@ fn stmt_span_covers_contribution_and_control_flow() {
     let contrib = Stmt::Contribution {
         span: span(),
         target: Expr::Ident { span: span(), name: "V(p,n)".into() },
-        value: Expr::Number { span: span(), value: piperine_vams::NumberLit::Real(1.0) },
+        value: Expr::Number { span: span(), value: piperine_lang::NumberLit::Real(1.0) },
     };
     assert_eq!(contrib.span(), span());
 

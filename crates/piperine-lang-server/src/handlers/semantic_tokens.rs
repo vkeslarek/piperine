@@ -13,15 +13,15 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let mut tokens = Vec::new();
 
     if let Some(doc) = state.documents.get(&uri) {
-        let lexer = piperine_vams::lexer::Lexer::new(&doc.source);
+        let lexer = piperine_lang::lexer::Lexer::new(&doc.source);
         if let Ok(lexed_tokens) = lexer.tokenize() {
             let mut prev_line = 0;
             let mut prev_start = 0;
 
             for lexed in lexed_tokens {
                 let token_type_and_mod = match &lexed.tok {
-                    piperine_vams::lexer::Tok::SystemIdent(_) => Some((5, 0)), // MACRO
-                    piperine_vams::lexer::Tok::Ident(word) => {
+                    piperine_lang::lexer::Tok::SystemIdent(_) => Some((5, 0)), // MACRO
+                    piperine_lang::lexer::Tok::Ident(word) => {
                         let mut kind = None;
                         if let Some(design) = &doc.design {
                             if design.module(word).is_some() {

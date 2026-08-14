@@ -87,7 +87,7 @@ fn disciplines_vams_elaborates_standalone_and_matches_the_phdl_electrical_discip
         .disciplines()
         .find(|(name, _)| name.as_str() == "logic")
         .expect("discipline `logic`");
-    assert_eq!(logic.domain, Some(piperine_vams::ast::Domain::Discrete));
+    assert_eq!(logic.domain, Some(piperine_lang::ast::Domain::Discrete));
     assert!(logic.potential.is_none() && logic.flow.is_none());
 }
 

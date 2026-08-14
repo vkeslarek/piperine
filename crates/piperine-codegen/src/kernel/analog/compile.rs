@@ -13,9 +13,9 @@ use crate::flatten::analog::{visit_all, FlatAnalog, FlatContrib, FlatEventTrigge
 use crate::error::CodegenError;
 use piperine_lang::math;
 
-use piperine_vams::ast::Expr as PomExpr;
-use piperine_vams::error::Span;
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::Expr as PomExpr;
+use piperine_lang::error::Span;
+use piperine_lang::lexer::NumberLit;
 
 use super::{
     AnalogCore, AnalogFn, AnalogKernel, AnalogParamFn, CompiledEvent, CompiledTrigger, RuntimeState, RuntimeStateSpec,

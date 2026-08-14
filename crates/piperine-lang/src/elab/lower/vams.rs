@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use piperine_vams::ast::{
+use crate::ast::{
     BranchDecl, Declarator, Direction as AstDirection, Expr, ModuleDecl, ModuleItem, ParamType,
     PortConnection, PortDecl, Stmt, VarKind,
 };
@@ -117,7 +117,7 @@ impl Elaborator {
                 }
                 ModuleItem::Behavior(b) => {
                     let stmts = match b.body.as_ref() {
-                        piperine_vams::ast::Stmt::Block { stmts, .. } => stmts.clone(),
+                        crate::ast::Stmt::Block { stmts, .. } => stmts.clone(),
                         other => vec![other.clone()],
                     };
                     behaviors.push(Behavior::new(decl.name.clone(), b.kind, stmts));
@@ -303,7 +303,7 @@ impl Elaborator {
     pub(super) fn lower_instance(
         &self,
         module_name: &str,
-        ast_inst: &piperine_vams::ast::Instance,
+        ast_inst: &crate::ast::Instance,
         param_overrides: &[PortConnection],
         env: &ConstEnv,
     ) -> Result<Instance, ElabError> {
@@ -444,7 +444,7 @@ fn lower_port_decl(
 /// `plugin` field, a required sibling `type` attribute is the `type`
 /// field — the exact spelling `design.md`'s P2 story quotes.
 fn lower_module_attrs(
-    attrs: &[piperine_vams::ast::Attr],
+    attrs: &[crate::ast::Attr],
     known_schemas: &HashSet<String>,
 ) -> Result<Vec<Attribute>, ElabError> {
     let mut out = Vec::new();
@@ -472,7 +472,7 @@ fn lower_module_attrs(
 /// PHDL's `port { name: String, kind: String? }` schema. Same
 /// sibling-attribute SPEC_DEVIATION as [`lower_module_attrs`].
 fn lower_port_attrs(
-    attrs: &[piperine_vams::ast::Attr],
+    attrs: &[crate::ast::Attr],
     known_schemas: &HashSet<String>,
 ) -> Result<Vec<Attribute>, ElabError> {
     let mut out = Vec::new();
@@ -495,7 +495,7 @@ fn lower_port_attrs(
 }
 
 fn lower_device_attr(
-    attrs: &[piperine_vams::ast::Attr],
+    attrs: &[crate::ast::Attr],
     known_schemas: &HashSet<String>,
 ) -> Result<Option<Attribute>, ElabError> {
     let Some(dev) = attrs.iter().find(|a| a.name == "device") else { return Ok(None) };
@@ -521,7 +521,7 @@ fn lower_device_attr(
 }
 
 fn lower_port_attr(
-    attrs: &[piperine_vams::ast::Attr],
+    attrs: &[crate::ast::Attr],
     known_schemas: &HashSet<String>,
 ) -> Result<Option<Attribute>, ElabError> {
     let Some(p) = attrs.iter().find(|a| a.name == "port") else { return Ok(None) };
@@ -539,7 +539,7 @@ fn lower_port_attr(
 }
 
 fn attr_string_value(
-    attr: &piperine_vams::ast::Attr,
+    attr: &crate::ast::Attr,
     schema: &str,
     field: &str,
     env: &ConstEnv,
@@ -664,7 +664,7 @@ fn eval_param_default(expr: &Expr, env: &ConstEnv) -> Result<Value, ElabError> {
 fn eval_and_define_param(
     name: &str,
     expr: &Expr,
-    ranges: &[piperine_vams::ast::ParamRange],
+    ranges: &[crate::ast::ParamRange],
     env: &mut ConstEnv,
 ) -> Result<Value, ElabError> {
     let value = eval_param_default(expr, env)?;
@@ -731,8 +731,8 @@ fn expr_to_string(expr: &Expr) -> Result<String, ElabError> {
 }
 
 /// `byte range` → `miette::SourceSpan`, mirroring
-/// `From<piperine_vams::ParseError>`'s conversion (`pom/error.rs`).
-fn to_miette_span(span: piperine_vams::Span) -> miette::SourceSpan {
+/// `From<crate::ParseError>`'s conversion (`pom/error.rs`).
+fn to_miette_span(span: crate::Span) -> miette::SourceSpan {
     miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
 }
 
@@ -842,7 +842,7 @@ fn resolve_or_create_branch<'a>(
 fn check_param_ranges(
     name: &str,
     value: &Value,
-    ranges: &[piperine_vams::ast::ParamRange],
+    ranges: &[crate::ast::ParamRange],
     env: &ConstEnv,
 ) -> Result<(), ElabError> {
     if ranges.is_empty() {
@@ -900,7 +900,7 @@ fn check_param_ranges(
 
 fn in_from_range(
     v: f64,
-    r: &piperine_vams::ast::ParamRange,
+    r: &crate::ast::ParamRange,
     eval_bound: &impl Fn(&Expr) -> Result<f64, ElabError>,
 ) -> Result<bool, ElabError> {
     let lo_ok = match &r.lo {

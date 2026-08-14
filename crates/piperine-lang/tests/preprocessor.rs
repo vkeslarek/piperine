@@ -4,7 +4,7 @@
 //! family, `` `include `` via an injected [`IncludeResolver`] (no
 //! filesystem I/O in the crate), and the fail-loud error paths.
 
-use piperine_vams::{IncludeResolver, ParseErrorKind, Preprocessor};
+use piperine_lang::{IncludeResolver, ParseErrorKind, Preprocessor};
 use std::collections::HashMap;
 
 struct MapResolver(HashMap<String, String>);

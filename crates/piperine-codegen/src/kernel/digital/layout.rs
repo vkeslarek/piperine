@@ -173,7 +173,7 @@ impl DigitalLayout {
 /// through the module's symbol table. Walks nested `if`/`match`/`@`-event
 /// bodies — a var written only inside a clocked block is still written.
 fn collect_written(
-    stmts: &[piperine_vams::ast::Stmt],
+    stmts: &[piperine_lang::ast::Stmt],
     by_name: &HashMap<&str, VarId>,
     _regs: &[VarId],
     out: &mut std::collections::HashSet<VarId>,
@@ -187,12 +187,12 @@ fn collect_written(
 /// `EventControl`/etc. bodies are one `Stmt` (often a `Block`), not a
 /// statement list, unlike PHDL's `Block { stmts, .. }` everywhere.
 fn collect_written_one(
-    stmt: &piperine_vams::ast::Stmt,
+    stmt: &piperine_lang::ast::Stmt,
     by_name: &HashMap<&str, VarId>,
     regs: &[VarId],
     out: &mut std::collections::HashSet<VarId>,
 ) {
-    use piperine_vams::ast::{Expr, Stmt};
+    use piperine_lang::ast::{Expr, Stmt};
     match stmt {
         // VAMS has no `VarDecl`-with-default statement (LRM local
         // declarations are name-only, `BlockItemDecl`) — a register's

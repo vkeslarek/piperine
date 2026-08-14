@@ -1,5 +1,5 @@
 //! Operator types shared by digital and analog codegen. Codegen dispatches on
-//! POM `Expr` (`piperine_vams::ast::Expr`) directly; these are the operator
+//! POM `Expr` (`piperine_lang::ast::Expr`) directly; these are the operator
 //! enums that form carries.
 
 /// A resolved analysis kind returned by `$analysis`.
@@ -51,8 +51,8 @@ impl BinOp {
     /// comparison cannot be expressed; they fall back to ordinary
     /// (in)equality, a documented, non-silent approximation (not a `0.0`
     /// no-op) until the resolved form gains a 4-state value representation.
-    pub fn from_pom(op: piperine_vams::ast::BinOp) -> Self {
-        use piperine_vams::ast::BinOp as P;
+    pub fn from_pom(op: piperine_lang::ast::BinOp) -> Self {
+        use piperine_lang::ast::BinOp as P;
         match op {
             P::Add => BinOp::Add,
             P::Sub => BinOp::Sub,
@@ -79,8 +79,8 @@ impl BinOp {
 
     /// Map this enum back to a VAMS AST `BinOp` (used by `diff.rs` to
     /// rebuild an `Expr` node after differentiating).
-    pub fn to_pom(self) -> piperine_vams::ast::BinOp {
-        use piperine_vams::ast::BinOp as P;
+    pub fn to_pom(self) -> piperine_lang::ast::BinOp {
+        use piperine_lang::ast::BinOp as P;
         match self {
             BinOp::Add => P::Add,
             BinOp::Sub => P::Sub,
@@ -123,8 +123,8 @@ impl UnOp {
     /// Map a VAMS AST `UnOp` (LRM §4.1.3) to this enum. `Plus` (`+x`) is a
     /// no-op at the value level — callers should drop the wrapping node
     /// entirely rather than call this for it (see `pom_eval_const`/`diff.rs`).
-    pub fn from_pom(op: piperine_vams::ast::UnOp) -> Self {
-        use piperine_vams::ast::UnOp as P;
+    pub fn from_pom(op: piperine_lang::ast::UnOp) -> Self {
+        use piperine_lang::ast::UnOp as P;
         match op {
             P::Neg => UnOp::Neg,
             P::LogNot => UnOp::Not,
@@ -145,10 +145,10 @@ impl UnOp {
 /// resolves parameter references by name. Anything runtime-dependent
 /// (branch access functions, system functions) is an error.
 pub fn pom_eval_const(
-    expr: &piperine_vams::ast::Expr,
+    expr: &piperine_lang::ast::Expr,
     resolve_param: &impl Fn(&str) -> Option<f64>,
 ) -> Result<f64, String> {
-    use piperine_vams::ast::{BinOp as P, Expr, UnOp as U};
+    use piperine_lang::ast::{BinOp as P, Expr, UnOp as U};
     let eval = |e: &Expr| pom_eval_const(e, resolve_param);
     match expr {
         Expr::Number { value, .. } => Ok(number_lit_to_f64(value)),
@@ -193,18 +193,18 @@ pub fn pom_eval_const(
     }
 }
 
-fn number_lit_to_f64(lit: &piperine_vams::lexer::NumberLit) -> f64 {
-    use piperine_vams::lexer::NumberLit;
+fn number_lit_to_f64(lit: &piperine_lang::lexer::NumberLit) -> f64 {
+    use piperine_lang::lexer::NumberLit;
     match lit {
         NumberLit::Integer(i) => *i as f64,
         NumberLit::Real(r) => *r,
         NumberLit::Based(b) => {
             let digits: String = b.digits.chars().filter(|c| *c != '_').collect();
             let radix = match b.base {
-                piperine_vams::lexer::NumberBase::Decimal => 10,
-                piperine_vams::lexer::NumberBase::Binary => 2,
-                piperine_vams::lexer::NumberBase::Octal => 8,
-                piperine_vams::lexer::NumberBase::Hex => 16,
+                piperine_lang::lexer::NumberBase::Decimal => 10,
+                piperine_lang::lexer::NumberBase::Binary => 2,
+                piperine_lang::lexer::NumberBase::Octal => 8,
+                piperine_lang::lexer::NumberBase::Hex => 16,
             };
             i64::from_str_radix(&digits, radix).map(|v| v as f64).unwrap_or(0.0)
         }

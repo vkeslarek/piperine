@@ -2,7 +2,7 @@
 //! that populates the `Elaborator`'s symbol tables before anything is
 //! resolved or elaborated.
 
-use piperine_vams::ast::Item;
+use crate::ast::Item;
 
 use crate::pom::ElabError;
 

@@ -31,7 +31,7 @@ use crate::emit::OwnedJit;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use piperine_vams::ast::{EventExpr, Expr, Stmt};
+use piperine_lang::ast::{EventExpr, Expr, Stmt};
 
 use crate::emit::{Builder, Codegen, DigTy, Resolver};
 use crate::resolve::{

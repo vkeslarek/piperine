@@ -10,8 +10,8 @@ use cranelift_codegen::ir::{types, InstBuilder, MemFlags, Value};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_frontend::FunctionBuilder;
 
-use piperine_vams::ast::{BinOp, Expr, UnOp};
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::{BinOp, Expr, UnOp};
+use piperine_lang::lexer::NumberLit;
 use piperine_lang::math;
 use crate::error::CodegenError;
 use crate::emit::abi::SimCtx;
@@ -285,7 +285,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
         // Find the slot by structural equality against the limits table.
         let limits = self.limits.as_ref().expect("analog context");
-        let nospan = piperine_vams::error::Span::new(0, 0);
+        let nospan = piperine_lang::error::Span::new(0, 0);
         let probe = Expr::SystemFunctionCall { span: nospan, name: full_name.to_string(), args: args.to_vec() };
         let slot = limits.iter().position(|l| expr_structural_eq(l, &probe))
             .ok_or_else(|| CodegenError::Invalid("$limit expression missing from slot table".into()))?;

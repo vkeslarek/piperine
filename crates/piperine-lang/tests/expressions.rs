@@ -4,8 +4,8 @@
 //! part-select/index, math and time-domain functions, and both access
 //! function arities.
 
-use piperine_vams::ast::{BinOp, Expr, UnOp};
-use piperine_vams::{Grammar, Lexer};
+use piperine_lang::ast::{BinOp, Expr, UnOp};
+use piperine_lang::{Grammar, Lexer};
 
 fn parse(src: &str) -> Expr {
     let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
@@ -317,7 +317,7 @@ fn unclosed_paren_is_a_typed_parse_error() {
     let mut g = Grammar::new(toks);
     let err = g.parse_expr().unwrap_err();
     match err.kind {
-        piperine_vams::ParseErrorKind::UnexpectedToken { expected, found } => {
+        piperine_lang::ParseErrorKind::UnexpectedToken { expected, found } => {
             assert_eq!(expected, "')'");
             assert_eq!(found, "end of file");
         }

@@ -11,7 +11,6 @@ members = [
     "crates/piperine-plugin-macros",
     "crates/piperine-python",
     "crates/piperine-ir",
-    "crates/piperine-vams",
 ]
 
 [workspace.package]

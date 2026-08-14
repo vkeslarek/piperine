@@ -98,7 +98,7 @@ pub struct ClockedSpec {
 #[derive(Debug, Clone)]
 pub struct RegInit {
     pub var: VarId,
-    pub init: piperine_vams::ast::Expr,
+    pub init: piperine_lang::ast::Expr,
 }
 
 /// A compiled digital kernel.

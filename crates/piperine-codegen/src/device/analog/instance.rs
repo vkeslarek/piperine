@@ -194,7 +194,7 @@ impl AnalogInstance {
             .iter()
             .map(|spec| {
                 let param_names = kernel.param_names();
-                let value = |expr: &piperine_vams::ast::Expr| {
+                let value = |expr: &piperine_lang::ast::Expr| {
                     let resolve = |name: &str| -> Option<f64> {
                         param_names.iter().position(|n| n == name)
                             .and_then(|i| params.get(i).copied())

@@ -58,7 +58,7 @@ pub struct AnalogBody {
     /// Operator state slots referenced by this body (ids into `symbols.states`).
     pub states: Vec<StateId>,
     pub noise: Vec<NoiseSource>,
-    pub stmts: Vec<piperine_vams::ast::Stmt>,
+    pub stmts: Vec<piperine_lang::ast::Stmt>,
 }
 
 /// Digital behavior: the PHDL model — combinational logic with inferred
@@ -78,11 +78,11 @@ pub struct DigitalBody {
     /// it; VAMS has nothing to scan for, so this is now a first-class
     /// field the elaboration pass (`resolve/pom/body.rs`) populates
     /// directly instead.
-    pub reg_inits: Vec<(VarId, piperine_vams::ast::Expr)>,
+    pub reg_inits: Vec<(VarId, piperine_lang::ast::Expr)>,
     /// Combinational statements plus clocked `@`-blocks, kept as the POM
     /// `Stmt` tree (the AST type). The `Codegen` trait emits these directly
     /// to Cranelift via the `Builder` — no `IrStmt` intermediate.
-    pub stmts: Vec<piperine_vams::ast::Stmt>,
+    pub stmts: Vec<piperine_lang::ast::Stmt>,
 }
 
 // ─── Ports ────────────────────────────────────────────────────────────────────

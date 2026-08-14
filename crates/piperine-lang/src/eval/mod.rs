@@ -6,7 +6,7 @@
 //! (`tasks::TaskRegistry`) were deleted with `piperine-lang/src/parse/` —
 //! they were built directly against the PHDL `fn`-body grammar (SPEC Part I
 //! §9), which has no VAMS equivalent. `crate::elab::const_eval::ConstEnv`
-//! now evaluates `piperine_vams::ast::Expr` directly (VAMS's own expression
+//! now evaluates `crate::ast::Expr` directly (VAMS's own expression
 //! grammar has no blocks/lambdas/statements to walk, so it needs no
 //! host-trait indirection). A runtime evaluator for VAMS `analog
 //! function`/`task` bodies, if one is needed beyond const-eval, is future

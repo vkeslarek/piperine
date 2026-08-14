@@ -44,7 +44,7 @@ pub struct DocumentState {
     /// (LSP-17); set by `ServerState::analyze_document`.
     pub project_root: Option<PathBuf>,
     /// The raw parsed AST.
-    pub ast: Option<piperine_vams::ast::SourceFile>,
+    pub ast: Option<piperine_lang::ast::SourceFile>,
     /// Parse/elaboration error messages if any.
     pub errors: Vec<ParseError>,
 }
@@ -130,7 +130,7 @@ impl DocumentState {
     /// hover, goto-definition and outline continue working on the last
     /// valid snapshot instead of going completely dark.
     ///
-    /// **T37 (MD-44/MD-45) regression, documented**: `piperine_vams::
+    /// **T37 (MD-44/MD-45) regression, documented**: `piperine_lang::
     /// Parser` is fail-fast — no tolerant mode (`parse_str_tolerant`'s
     /// PHDL-era "return a partial AST plus every accumulated error"
     /// contract has no VAMS-native equivalent) and `Elaborator::elaborate`
@@ -147,7 +147,7 @@ impl DocumentState {
     pub fn analyze(&mut self, source_map: &piperine_lang::SourceMap) {
         self.errors.clear();
 
-        let parser = piperine_vams::Parser::with_include_resolver(
+        let parser = piperine_lang::Parser::with_include_resolver(
             piperine_lang::SourceMapIncludeResolver::new(source_map),
         );
         let source_file = match parser.parse(&self.source) {

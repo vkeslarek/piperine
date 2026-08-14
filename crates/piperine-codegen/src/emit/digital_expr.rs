@@ -1,10 +1,10 @@
-//! The `Codegen` trait: dispatch from POM `Expr` (`piperine_vams::ast::Expr`)
+//! The `Codegen` trait: dispatch from POM `Expr` (`piperine_lang::ast::Expr`)
 //! to Cranelift `Value` via the [`Builder`]. Adding a new expression variant
 //! = one match arm here.
 
 use cranelift_codegen::ir::InstBuilder;
-use piperine_vams::ast::{Expr, UnOp as VUnOp};
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::{Expr, UnOp as VUnOp};
+use piperine_lang::lexer::NumberLit;
 
 use crate::resolve::UnOp;
 use crate::error::CodegenError;
@@ -39,10 +39,10 @@ impl Codegen for Expr {
                         return Ok(Typed::quad(b.builder_i64(2))); // X
                     }
                     let radix = match based.base {
-                        piperine_vams::lexer::NumberBase::Decimal => 10,
-                        piperine_vams::lexer::NumberBase::Binary => 2,
-                        piperine_vams::lexer::NumberBase::Octal => 8,
-                        piperine_vams::lexer::NumberBase::Hex => 16,
+                        piperine_lang::lexer::NumberBase::Decimal => 10,
+                        piperine_lang::lexer::NumberBase::Binary => 2,
+                        piperine_lang::lexer::NumberBase::Octal => 8,
+                        piperine_lang::lexer::NumberBase::Hex => 16,
                     };
                     let v = i64::from_str_radix(&digits, radix).unwrap_or(0);
                     Ok(Typed::int(b.builder_i64(v)))

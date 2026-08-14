@@ -2,8 +2,8 @@
 
 ## Project summary
 
-Piperine compiles **Verilog-AMS** (LRM 2.4, `.vams`/`.va` — `piperine-vams` is the parser,
-written from `VAMS-LRM-2-4.md` Annex A only) straight into a **native in-house circuit
+Piperine compiles **Verilog-AMS** (LRM 2.4, `.vams`/`.va` — `piperine-lang` is the
+parser+elaborator, written from `VAMS-LRM-2-4.md` Annex A only) straight into a **native in-house circuit
 solver** (Cranelift-JIT analog devices + an event-driven digital interpreter). No external
 SPICE dependency. Verilog-A device models also load as compiled OSDI (v0.4) shared
 libraries through the **`piperine-osdi` plugin** (external repo — the solver core has no
@@ -77,8 +77,7 @@ both a package and the workspace) — always pass `--workspace`.
 
 | Crate | Role |
 |-------|------|
-| `piperine-vams` | The Verilog-AMS (LRM 2.4) lexer/preprocessor/parser: `` `define``/`` `include``/`` `ifdef`` (`preprocess/`), the Annex A grammar (`parse/`) into `ast::SourceFile`. Zero-dependency, purity-gated (no `thiserror`/`miette`/filesystem I/O — `` `include`` resolution is injected via a trait `piperine-lang` implements) — grammar and semantics come from `VAMS-LRM-2-4.md` Annex A only, never a third-party Verilog-A compiler. |
-| `piperine-lang` | Elaborator over `piperine-vams`'s parsed Verilog-AMS AST: source → POM `Design` (`elab/`, `pom/`), a const evaluator over `piperine_vams::ast::Expr` directly (`elab/const_eval.rs` — no PHDL-era tree-walking `Interpreter`/`Host`, see `eval/mod.rs`'s own `//!`), and pure ch. 9 system-task/VPI-registration helpers in `eval/tasks.rs`. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (Annex D: `constants.vams`, `disciplines.vams`) and `headers/spice/` (the ngspice-faithful `.va` device models — `` `include "spice/<file>.va" `` resolves in any project with no dependency, via the builtin `spice` namespace `SourceMap` seeds). |
+| `piperine-lang` | Parser **and** elaborator for Verilog-AMS (LRM 2.4) in one crate (MD-47 — merged from the former `piperine-vams` + `piperine-lang` split, MD-43's purity-gate boundary retired as a cost with no independent consumer). Lexer/preprocessor/grammar (`` `define``/`` `include``/`` `ifdef`` in `preprocessor.rs`, the Annex A grammar in `grammar/`) into `ast::SourceFile`, then the elaborator over that AST: source → POM `Design` (`elab/`, `pom/`), a const evaluator over `ast::Expr` directly (`elab/const_eval.rs` — no PHDL-era tree-walking `Interpreter`/`Host`, see `eval/mod.rs`'s own `//!`), and pure ch. 9 system-task/VPI-registration helpers in `eval/tasks.rs`. `parse_and_elaborate` is the entry point. Grammar/semantics come from `VAMS-LRM-2-4.md` Annex A only, never a third-party Verilog-A compiler. Builtin stdlib headers in `headers/` (Annex D: `constants.vams`, `disciplines.vams`) and `headers/spice/` (the ngspice-faithful `.va` device models — `` `include "spice/<file>.va" `` resolves in any project with no dependency, via the builtin `spice` namespace `SourceMap` seeds). |
 | `piperine-codegen` | POM → devices, one module per pipeline stage: `pom::Design ─▶ resolve ─▶ flatten ─▶ emit ─▶ kernel ─▶ device`. `resolve/` (resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `flatten/` (resolved analog → `FlatAnalog`, crate-private). `emit/` (Cranelift emission machinery: `Builder`, `Codegen` trait, CSE, `SimCtx` ABI, crate-private). `kernel/`: `analog/` (`AnalogKernel`, capability sub-structs behind `Option`), `digital/`. `device/`: `analog/` (`AnalogInstance`, capability files `forces.rs`/`limits.rs`/`operators.rs`/`events.rs`), `digital.rs`, `circuit.rs`/`builder.rs`/`fusion.rs`/`plugin.rs` (`CircuitCompiler`) → `PiperineDevice` (implements `Element`). Public surface is a single `lib.rs` façade (MD-23) — `resolve`/`kernel`/`device` stay `pub`, `emit`/`flatten`/`error` are crate-private. |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`analyses/convergence.rs`), `TrBdf2` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
 | `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
@@ -181,10 +180,11 @@ Regression guard (rewritten for VAMS, T36, design R9 "rewritten, never deleted")
 
 ## Files not to edit casually
 
-- `crates/piperine-vams/src/parse/` — the hand-written, LRM-Annex-A-only recursive-descent
-  Verilog-AMS parser; changes ripple through all parsing. Provenance rule (C7): grammar and
-  semantics come from `VAMS-LRM-2-4.md` only — never a third-party Verilog-A compiler, and
-  the deleted `piperine-ams` is off-limits as a source.
+- `crates/piperine-lang/src/{grammar,lexer.rs,preprocessor.rs,parser.rs}` — the
+  hand-written, LRM-Annex-A-only recursive-descent Verilog-AMS parser; changes ripple
+  through all parsing. Provenance rule (C7): grammar and semantics come from
+  `VAMS-LRM-2-4.md` only — never a third-party Verilog-A compiler, and the deleted
+  `piperine-ams` is off-limits as a source.
 - `crates/piperine-codegen/src/resolve/` — the resolved expression/statement form and its
   symbolic differentiation; the correctness-critical core.
 - `crates/piperine-codegen/src/emit/analog_expr.rs` — `emit_analog`, the shared JIT

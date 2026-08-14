@@ -18,7 +18,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use piperine_vams::Parser;
+use piperine_lang::Parser;
 
 const CORPUS_ENV_VAR: &str = "PIPERINE_VAMS_CORPUS";
 

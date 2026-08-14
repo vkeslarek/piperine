@@ -6,9 +6,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use piperine_vams::ast::{BinOp as VBinOp, Expr};
-use piperine_vams::error::Span;
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::{BinOp as VBinOp, Expr};
+use piperine_lang::error::Span;
+use piperine_lang::lexer::NumberLit;
 
 use crate::resolve::*;
 

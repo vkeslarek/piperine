@@ -4,8 +4,8 @@
 //! instantiation (named+ordered connections, parameter overrides,
 //! defparam) and continuous assign.
 
-use piperine_vams::ast::*;
-use piperine_vams::{Grammar, Lexer};
+use piperine_lang::ast::*;
+use piperine_lang::{Grammar, Lexer};
 
 fn module_items(src: &str) -> Vec<ModuleItem> {
     let full = format!("module m(); {src} endmodule");
@@ -57,7 +57,7 @@ fn analog_construct_parses() {
     match one_item("analog V(p,n) <+ 1.0;") {
         ModuleItem::Behavior(b) => {
             assert_eq!(b.kind, BehaviorKind::Analog);
-            assert!(matches!(*b.body, piperine_vams::ast::Stmt::Contribution { .. }));
+            assert!(matches!(*b.body, piperine_lang::ast::Stmt::Contribution { .. }));
         }
         other => panic!("expected ModuleItem::Behavior, got {other:?}"),
     }
@@ -289,7 +289,7 @@ fn unterminated_function_is_a_typed_error_naming_endfunction() {
     let mut g = Grammar::new(toks);
     let err = g.parse_module_decl().unwrap_err();
     match err.kind {
-        piperine_vams::ParseErrorKind::UnexpectedToken { expected, found } => {
+        piperine_lang::ParseErrorKind::UnexpectedToken { expected, found } => {
             assert_eq!(expected, "'endfunction'");
             assert_eq!(found, "end of file");
         }

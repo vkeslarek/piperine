@@ -1,11 +1,11 @@
 //! Expression resolution for analog bodies: walks POM `Expr`
-//! (`piperine_vams::ast::Expr`) and resolves constants, analog operators
+//! (`piperine_lang::ast::Expr`) and resolves constants, analog operators
 //! (→ `__ddt(id, x)` markers), and V/I/math left as-is (the Builder
 //! resolves names to ids at JIT emit time via the `Resolver`).
 
-use piperine_vams::ast::Expr;
-use piperine_vams::error::Span;
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::Expr;
+use piperine_lang::error::Span;
+use piperine_lang::lexer::NumberLit;
 
 use crate::resolve::*;
 
@@ -291,10 +291,10 @@ fn inline_user_fn(fn_id: FnId, name: &str, args: &[Expr], ctx: &mut LowerCtx) ->
 }
 
 fn inline_fn_body(
-    stmts: &[piperine_vams::ast::Stmt],
+    stmts: &[piperine_lang::ast::Stmt],
     subst: &mut std::collections::HashMap<String, Expr>,
 ) -> Expr {
-    use piperine_vams::ast::Stmt as S;
+    use piperine_lang::ast::Stmt as S;
     for s in stmts {
         match s {
             S::Assign { target: Expr::Ident { name, .. }, value, .. } => {
@@ -372,8 +372,8 @@ pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, 
 
 /// Resolve a single VAMS `Stmt`'s expressions (analog path — keeps POM
 /// `Stmt` structure; the flattener/Builder dispatch on it directly).
-pub(crate) fn resolve_stmt(stmt: &piperine_vams::ast::Stmt, ctx: &mut LowerCtx) -> piperine_vams::ast::Stmt {
-    use piperine_vams::ast::Stmt as S;
+pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) -> piperine_lang::ast::Stmt {
+    use piperine_lang::ast::Stmt as S;
     match stmt {
         S::Null { span } => S::Null { span: *span },
         S::Assign { span, target, value } => {
@@ -411,7 +411,7 @@ pub(crate) fn resolve_stmt(stmt: &piperine_vams::ast::Stmt, ctx: &mut LowerCtx) 
             selector: resolve_expr(selector, ctx),
             arms: arms
                 .iter()
-                .map(|arm| piperine_vams::ast::CaseArm {
+                .map(|arm| piperine_lang::ast::CaseArm {
                     span: arm.span,
                     labels: arm.labels.as_ref().map(|ls| ls.iter().map(|l| resolve_expr(l, ctx)).collect()),
                     body: Box::new(resolve_stmt(&arm.body, ctx)),
@@ -451,8 +451,8 @@ pub(crate) fn resolve_stmt(stmt: &piperine_vams::ast::Stmt, ctx: &mut LowerCtx) 
     }
 }
 
-fn resolve_event_expr(e: &piperine_vams::ast::EventExpr, ctx: &mut LowerCtx) -> piperine_vams::ast::EventExpr {
-    use piperine_vams::ast::EventExpr as E;
+fn resolve_event_expr(e: &piperine_lang::ast::EventExpr, ctx: &mut LowerCtx) -> piperine_lang::ast::EventExpr {
+    use piperine_lang::ast::EventExpr as E;
     match e {
         E::Level(x) => E::Level(resolve_expr(x, ctx)),
         E::Posedge(x) => E::Posedge(resolve_expr(x, ctx)),

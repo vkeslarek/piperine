@@ -11,7 +11,7 @@
 //! now a thin per-statement-list driver rather than a dispatcher between
 //! two bind forms (MD-45-consistent deletion — documented, not silent).
 
-use piperine_vams::ast::Stmt;
+use piperine_lang::ast::Stmt;
 
 use super::expr::resolve_stmt;
 use super::LowerCtx;

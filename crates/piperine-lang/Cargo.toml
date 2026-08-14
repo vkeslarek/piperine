@@ -9,17 +9,6 @@ num-complex.workspace = true
 miette = { version = "7.6.0", features = ["fancy"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = "1"
-# The Verilog-AMS frontend (MD-44: VAMS is the sole parser, PHDL is dead).
-# Zero in-tree deps on the piperine-vams side (purity contract, see its
-# `tests/purity.rs`); piperine-lang consumes its AST + ParseError and
-# owns the miette rendering boundary.
-piperine-vams = { path = "../piperine-vams" }
 
 [dev-dependencies]
-# MD-45 (2026-08-12): piperine-codegen/piperine-solver were dev-only deps
-# for the two through-codegen pipeline test targets (bundle_param.rs,
-# spec_simulation.rs) — both PHDL-syntax end-to-end tests, deleted with
-# `parse/` (bundle literals, generics and the pre-VAMS pipeline they drove
-# have no VAMS equivalent yet). Re-added when Phase 6 (codegen retarget)
-# gives piperine-lang's test suite a working through-codegen path again.
 tempfile.workspace = true

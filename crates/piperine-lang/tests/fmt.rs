@@ -2,7 +2,7 @@
 //! Phase 1-2 test corpus, comment preservation, and macro line-continuation
 //! preservation.
 
-use piperine_vams::Formatter;
+use piperine_lang::Formatter;
 
 #[test]
 fn round_trip_is_idempotent_on_a_representative_module() {

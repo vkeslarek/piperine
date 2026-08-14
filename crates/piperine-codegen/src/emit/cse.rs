@@ -1,10 +1,10 @@
 //! Common-subexpression bookkeeping for analog emission: the CSE key space,
 //! [`SimCtx`](crate::emit::SimCtx) field offsets, load-bank/op tags, and
-//! structural equality for POM `Expr` (`piperine_vams::ast::Expr`, used for
+//! structural equality for POM `Expr` (`piperine_lang::ast::Expr`, used for
 //! `$limit` slot deduplication).
 
-use piperine_vams::ast::Expr;
-use piperine_vams::lexer::NumberLit;
+use piperine_lang::ast::Expr;
+use piperine_lang::lexer::NumberLit;
 
 // ─── Analog CSE infrastructure (copied from jit/emit.rs) ──────────────────────
 
@@ -82,7 +82,7 @@ pub(crate) fn bin_tag(op: crate::resolve::BinOp) -> u8 {
 }
 
 /// Structural equality for POM `Expr` (which doesn't derive `PartialEq`...
-/// actually `piperine_vams::ast::Expr` *does* derive `PartialEq`, but this
+/// actually `piperine_lang::ast::Expr` *does* derive `PartialEq`, but this
 /// helper predates that and stays as the one place `$limit` slot lookup
 /// goes through, kept for minimal-diff continuity).
 /// Used for `$limit` slot deduplication.

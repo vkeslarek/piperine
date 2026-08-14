@@ -15,7 +15,7 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     for (uri, doc) in &state.documents {
         if let Some(ast) = &doc.ast {
             for item in &ast.items {
-                use piperine_vams::ast::Item;
+                use piperine_lang::ast::Item;
                 // MD-45: VAMS's own `Item` (Annex A) has no `BehaviorDecl`/
                 // `FnDecl`/`BundleDecl`/`EnumDecl`/`ConstDecl` counterpart —
                 // those were PHDL-only value-layer declarations, gone at

@@ -7,7 +7,7 @@
 //! - the §5.6.5 switch-branch exception is modelled as a distinct kind,
 //!   not by relaxing the conflict check.
 //!
-//! The lowering that produces these from `piperine_vams::ast::BranchDecl`
+//! The lowering that produces these from `piperine_lang::ast::BranchDecl`
 //! and from access-function call sites is T23; this target proves the POM
 //! type's contract on its own.
 

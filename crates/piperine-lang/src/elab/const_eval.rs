@@ -1,9 +1,9 @@
-//! Compile-time constant evaluation over `piperine_vams::ast::Expr`.
+//! Compile-time constant evaluation over `crate::ast::Expr`.
 //!
 //! **MD-45 note:** before the PHDL→VAMS frontend swap this delegated to
 //! `crate::eval::Interpreter` (a general tree-walking evaluator shared with
 //! runtime const-folding). That evaluator was PHDL-`Stmt`/`Expr`-shaped and
-//! died with `parse/`. VAMS's own `Expr` (LRM ch. 4, `piperine_vams::ast::
+//! died with `parse/`. VAMS's own `Expr` (LRM ch. 4, `crate::ast::
 //! Expr`) is self-contained — no blocks, lambdas, or statements to walk —
 //! so this is a small direct recursive evaluator instead of a host-trait
 //! indirection; `crate::eval::interp` is rebuilt separately (T24) for
@@ -12,8 +12,8 @@
 
 use std::collections::HashMap;
 
-use piperine_vams::ast::{BinOp, Expr, UnOp};
-use piperine_vams::lexer::NumberLit;
+use crate::ast::{BinOp, Expr, UnOp};
+use crate::lexer::NumberLit;
 use thiserror::Error;
 
 use crate::value::Value;
@@ -301,10 +301,10 @@ fn number_lit_to_value(lit: &NumberLit) -> Value {
         NumberLit::Based(b) => {
             let digits: String = b.digits.chars().filter(|c| *c != '_').collect();
             let radix = match b.base {
-                piperine_vams::lexer::NumberBase::Decimal => 10,
-                piperine_vams::lexer::NumberBase::Binary => 2,
-                piperine_vams::lexer::NumberBase::Octal => 8,
-                piperine_vams::lexer::NumberBase::Hex => 16,
+                crate::lexer::NumberBase::Decimal => 10,
+                crate::lexer::NumberBase::Binary => 2,
+                crate::lexer::NumberBase::Octal => 8,
+                crate::lexer::NumberBase::Hex => 16,
             };
             let magnitude = i64::from_str_radix(&digits, radix).unwrap_or(0);
             if b.signed {

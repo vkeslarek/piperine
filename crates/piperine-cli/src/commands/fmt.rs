@@ -21,10 +21,10 @@ pub fn execute(file: Option<String>) {
         std::process::exit(1);
     });
 
-    // T37: `piperine_vams::Formatter::format` (T15) replaces the deleted
+    // T37: `piperine_lang::Formatter::format` (T15) replaces the deleted
     // PHDL `Lexer`+`TokenFormatter` pipeline — see
     // `piperine-lang-server/src/handlers/formatting.rs`'s matching retarget.
-    let formatted = piperine_vams::Formatter::format(&input).unwrap_or_else(|e| {
+    let formatted = piperine_lang::Formatter::format(&input).unwrap_or_else(|e| {
         eprintln!("Format error: {e}");
         std::process::exit(1);
     });

@@ -19,7 +19,7 @@
 //! add more Annex-C-restricted constructs to the same walk rather than
 //! opening a second mechanism.
 
-use piperine_vams::ast::{EventExpr, Stmt};
+use crate::ast::{EventExpr, Stmt};
 
 use crate::pom::{Design, ElabError, ElabErrorKind};
 
@@ -53,7 +53,7 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
             errors.push(annex_c_error("non-blocking assignment `<=`", *span));
         }
         Stmt::Case { kind, arms, selector: _, span } => {
-            use piperine_vams::ast::CaseKind;
+            use crate::ast::CaseKind;
             if matches!(kind, CaseKind::Casex | CaseKind::Casez) {
                 let name = if matches!(kind, CaseKind::Casex) { "`casex`" } else { "`casez`" };
                 errors.push(annex_c_error(name, *span));
@@ -90,7 +90,7 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
     }
 }
 
-fn annex_c_error(construct_kind: &str, span: piperine_vams::Span) -> ElabError {
+fn annex_c_error(construct_kind: &str, span: crate::Span) -> ElabError {
     ElabError::from(ElabErrorKind::AnnexCSubsetViolation {
         construct_kind: construct_kind.to_string(),
         context: "analog block".to_string(),

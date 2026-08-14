@@ -1,8 +1,8 @@
 //! Statement-level types used by the analog event/flattening machinery.
 //! They carry POM `Expr` directly.
 
-use piperine_vams::ast::Expr as PomExpr;
-use piperine_vams::ast::Stmt as PomStmt;
+use piperine_lang::ast::Expr as PomExpr;
+use piperine_lang::ast::Stmt as PomStmt;
 
 use super::symbols::StateId;
 

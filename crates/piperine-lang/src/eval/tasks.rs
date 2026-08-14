@@ -1,6 +1,6 @@
 //! LRM chapter 9 — general system tasks and functions.
 //!
-//! **Scope of this file (T47, VAMS-15).** `piperine_vams::ast::Stmt::TaskCall`
+//! **Scope of this file (T47, VAMS-15).** `crate::ast::Stmt::TaskCall`
 //! and `Expr::SystemFunctionCall` are parsed (`crates/piperine-vams`) but —
 //! per the T47 survey — nothing in `piperine-lang`'s elaboration pipeline
 //! lowers a `$`-task call into the POM yet; there is no VAMS-shaped runtime

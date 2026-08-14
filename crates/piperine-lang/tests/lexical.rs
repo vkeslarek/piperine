@@ -2,7 +2,7 @@
 //! this task's "Done when" lists gets a positive test, and each malformed
 //! form gets a negative test asserting the right `ParseErrorKind` + span.
 
-use piperine_vams::{BasedNumber, Lexer, NumberBase, NumberLit, Tok};
+use piperine_lang::{BasedNumber, Lexer, NumberBase, NumberLit, Tok};
 
 fn toks(src: &str) -> Vec<Tok> {
     Lexer::new(src)
@@ -190,14 +190,14 @@ fn string_octal_escape() {
 #[test]
 fn unterminated_string_is_an_error() {
     let err = Lexer::new("\"no closing quote").tokenize().unwrap_err();
-    assert!(matches!(err.kind, piperine_vams::ParseErrorKind::UnterminatedString));
+    assert!(matches!(err.kind, piperine_lang::ParseErrorKind::UnterminatedString));
 }
 
 #[test]
 fn invalid_escape_is_an_error() {
     let err = Lexer::new(r#""bad \q escape""#).tokenize().unwrap_err();
     match err.kind {
-        piperine_vams::ParseErrorKind::InvalidEscape { found } => assert_eq!(found, 'q'),
+        piperine_lang::ParseErrorKind::InvalidEscape { found } => assert_eq!(found, 'q'),
         other => panic!("expected InvalidEscape, got {other:?}"),
     }
 }
@@ -249,7 +249,7 @@ fn block_comment() {
 #[test]
 fn unterminated_block_comment_is_an_error() {
     let err = Lexer::new("/* never closed").tokenize().unwrap_err();
-    assert!(matches!(err.kind, piperine_vams::ParseErrorKind::UnterminatedComment));
+    assert!(matches!(err.kind, piperine_lang::ParseErrorKind::UnterminatedComment));
 }
 
 // ── Newline preservation (needed by the preprocessor, T5) ───────────────
@@ -265,7 +265,7 @@ fn newlines_are_preserved_as_their_own_token() {
 fn unexpected_character_is_an_error() {
     let err = Lexer::new("\x01").tokenize().unwrap_err();
     match err.kind {
-        piperine_vams::ParseErrorKind::UnexpectedCharacter { found } => assert_eq!(found, '\x01'),
+        piperine_lang::ParseErrorKind::UnexpectedCharacter { found } => assert_eq!(found, '\x01'),
         other => panic!("expected UnexpectedCharacter, got {other:?}"),
     }
 }

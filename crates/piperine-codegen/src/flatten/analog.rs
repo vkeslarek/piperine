@@ -1,5 +1,5 @@
 //! Analog body flattening: from the POM `Stmt` tree
-//! (`piperine_vams::ast::Stmt`) to pure per-branch expressions. Operates
+//! (`piperine_lang::ast::Stmt`) to pure per-branch expressions. Operates
 //! entirely on POM `Expr`/`Stmt`.
 //!
 //! - Variable assignments resolved symbolically (`Ident(name)` → scope value),
@@ -27,9 +27,9 @@
 
 use std::collections::HashMap;
 
-use piperine_vams::ast::{BinOp, Expr as PomExpr, EventExpr, Stmt as PomStmt, UnOp};
-use piperine_vams::lexer::NumberLit;
-use piperine_vams::error::Span;
+use piperine_lang::ast::{BinOp, Expr as PomExpr, EventExpr, Stmt as PomStmt, UnOp};
+use piperine_lang::lexer::NumberLit;
+use piperine_lang::error::Span;
 
 use crate::resolve::{
     CrossDir, EventSource, AnalogEvent, LoweredBody,
@@ -1174,7 +1174,7 @@ fn chain_guards(guard: Option<&PomExpr>, no_prior: &Option<PomExpr>, cond: &PomE
 /// (unreachable — the grammar requires at least one label or `default`),
 /// the OR of `scrutinee == label` for a labeled arm, `true` for the
 /// `default` arm (`labels: None`).
-fn case_arm_cond(scrutinee: &PomExpr, arm: &piperine_vams::ast::CaseArm) -> PomExpr {
+fn case_arm_cond(scrutinee: &PomExpr, arm: &piperine_lang::ast::CaseArm) -> PomExpr {
     match &arm.labels {
         None => lit(1.0),
         Some(labels) => labels.iter().fold(lit(0.0), |acc, label| {

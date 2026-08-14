@@ -1,12 +1,12 @@
 //! Symbolic differentiation of analog expressions (POM `Expr`,
-//! `piperine_vams::ast::Expr`).
+//! `piperine_lang::ast::Expr`).
 //!
 //! The Jacobian is built by differentiating each flattened contribution
 //! w.r.t. every branch voltage it reads, then emitting the derivative like
 //! any other expression. `__state_load` / `__ddt` reads are constants within
 //! a Newton iteration (reactive parts are handled by the charge Jacobian).
 
-use piperine_vams::ast::{BinOp, Expr, UnOp};
+use piperine_lang::ast::{BinOp, Expr, UnOp};
 
 use super::symbols::NodeId;
 
@@ -293,7 +293,7 @@ fn differentiate(
                 }
             }
             if let Some(deriv_marker) = tape_hit {
-                if let Some(Expr::Number { value: piperine_vams::lexer::NumberLit::Integer(id), span }) =
+                if let Some(Expr::Number { value: piperine_lang::lexer::NumberLit::Integer(id), span }) =
                     args.first()
                 {
                     return Expr::Call {
@@ -301,7 +301,7 @@ fn differentiate(
                         name: deriv_marker.into(),
                         args: vec![Expr::Number {
                             span: *span,
-                            value: piperine_vams::lexer::NumberLit::Integer(*id),
+                            value: piperine_lang::lexer::NumberLit::Integer(*id),
                         }],
                     };
                 }
@@ -525,15 +525,15 @@ fn ident_str(e: &Expr) -> Option<String> {
 // ── Constant-folding constructors ──
 
 fn lit(v: f64) -> Expr {
-    Expr::Number { span: piperine_vams::error::Span::new(0, 0), value: piperine_vams::lexer::NumberLit::Real(v) }
+    Expr::Number { span: piperine_lang::error::Span::new(0, 0), value: piperine_lang::lexer::NumberLit::Real(v) }
 }
 
 fn is_zero(e: &Expr) -> bool {
-    matches!(e, Expr::Number { value: piperine_vams::lexer::NumberLit::Real(v), .. } if *v == 0.0)
+    matches!(e, Expr::Number { value: piperine_lang::lexer::NumberLit::Real(v), .. } if *v == 0.0)
 }
 
 fn is_one(e: &Expr) -> bool {
-    matches!(e, Expr::Number { value: piperine_vams::lexer::NumberLit::Real(v), .. } if *v == 1.0)
+    matches!(e, Expr::Number { value: piperine_lang::lexer::NumberLit::Real(v), .. } if *v == 1.0)
 }
 
 fn add(a: Expr, b: Expr) -> Expr {
@@ -561,7 +561,7 @@ fn div(a: Expr, b: Expr) -> Expr {
 }
 
 fn neg(a: Expr) -> Expr {
-    if let Expr::Number { value: piperine_vams::lexer::NumberLit::Real(v), .. } = &a {
+    if let Expr::Number { value: piperine_lang::lexer::NumberLit::Real(v), .. } = &a {
         return lit(-v);
     }
     Expr::Unary { span: a.span(), op: UnOp::Neg, operand: Box::new(a) }

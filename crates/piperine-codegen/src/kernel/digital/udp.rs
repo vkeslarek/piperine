@@ -1,7 +1,7 @@
 //! User-defined primitive (UDP) state-table evaluation (T49, VAMS-19).
 //!
 //! **Scope of this file**, mirroring T48's own gap (see `gates.rs`'s `//!`
-//! header): `piperine_vams::ast::item::PrimitiveDecl` is parsed (T11) but
+//! header): `piperine_lang::ast::item::PrimitiveDecl` is parsed (T11) but
 //! nothing in `piperine-lang`'s elaboration pipeline lowers a `primitive`
 //! declaration or its instantiation into the POM — confirmed by the same
 //! grep the T48 survey ran (zero references outside `piperine-vams`
@@ -29,7 +29,7 @@
 //! strength or high impedance on its inputs"), not a documented gap.
 
 use piperine_solver::abi::LogicValue;
-use piperine_vams::ast::PrimitiveDecl;
+use piperine_lang::ast::PrimitiveDecl;
 
 /// A parsed UDP's state table, ready to evaluate.
 pub struct UdpTable<'a> {
@@ -173,7 +173,7 @@ fn level_value(symbol: &str) -> Result<LogicValue, UdpError> {
 mod tests {
     use super::*;
     use LogicValue::*;
-    use piperine_vams::ast::{Span, UdpTableRow};
+    use piperine_lang::ast::{Span, UdpTableRow};
 
     fn span() -> Span {
         Span::new(0, 0)

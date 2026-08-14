@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_vams::ast::DisciplineDecl;
+use crate::ast::DisciplineDecl;
 use crate::pom::{
     ElabError, ElabErrorKind, IntrospectionMeta, ModelId, Module,
     OverrideMap, TermMeta, VAR_KINDS, Value, VarMeta, TERMINAL_KINDS,
@@ -149,7 +149,7 @@ pub struct Design {
     /// reusable parameter sets bound to a module. Top-level only — same
     /// rule as disciplines/natures. Skipped on serialize.
     #[serde(skip)]
-    pub(crate) paramsets: HashMap<String, piperine_vams::ast::ParamsetDecl>,
+    pub(crate) paramsets: HashMap<String, crate::ast::ParamsetDecl>,
     pub(crate) consts: HashMap<String, Value>,
     /// Project metadata (name, version, dependencies).
     pub(crate) project: Project,
@@ -283,12 +283,12 @@ impl Design {
 
     /// Every Verilog-AMS paramset declaration (LRM §6.4). Top-level
     /// only — paramsets do not nest inside modules.
-    pub fn paramsets(&self) -> impl Iterator<Item = (&String, &piperine_vams::ast::ParamsetDecl)> {
+    pub fn paramsets(&self) -> impl Iterator<Item = (&String, &crate::ast::ParamsetDecl)> {
         self.paramsets.iter()
     }
 
     /// Look up a paramset declaration by name (LRM §6.4).
-    pub fn paramset(&self, name: &str) -> Option<&piperine_vams::ast::ParamsetDecl> {
+    pub fn paramset(&self, name: &str) -> Option<&crate::ast::ParamsetDecl> {
         self.paramsets.get(name)
     }
 
@@ -705,30 +705,30 @@ impl Design {
     // ── Internal access (pub(crate)) ──────────────────────────────────────
 
     /// Mutable access to the modules map. For internal elaboration use
-    /// (T22 lowers `piperine_vams::ast::ModuleDecl` into POM `Module`
+    /// (T22 lowers `crate::ast::ModuleDecl` into POM `Module`
     /// through here).
     pub(crate) fn modules_map_mut(&mut self) -> &mut HashMap<String, Module> {
         &mut self.modules
     }
     /// Mutable access to the disciplines map. For internal elaboration use
-    /// (T23 lowers `piperine_vams::ast::DisciplineDecl` into this map).
+    /// (T23 lowers `crate::ast::DisciplineDecl` into this map).
     pub(crate) fn disciplines_map_mut(&mut self) -> &mut HashMap<String, DisciplineDecl> {
         &mut self.disciplines
     }
     /// Mutable access to the natures map. For internal elaboration use
-    /// (T23 lowers `piperine_vams::ast::NatureDecl` into POM `Nature`
+    /// (T23 lowers `crate::ast::NatureDecl` into POM `Nature`
     /// through here).
     pub(crate) fn natures_map_mut(&mut self) -> &mut HashMap<String, crate::pom::Nature> {
         &mut self.natures
     }
     /// Mutable access to the paramsets map. For internal elaboration use
-    /// (T22+ lowers `piperine_vams::ast::ParamsetDecl` through here).
+    /// (T22+ lowers `crate::ast::ParamsetDecl` through here).
     #[allow(dead_code, reason = "wired by T22+ — VAMS→POM paramset lowering")]
-    pub(crate) fn paramsets_map_mut(&mut self) -> &mut HashMap<String, piperine_vams::ast::ParamsetDecl> {
+    pub(crate) fn paramsets_map_mut(&mut self) -> &mut HashMap<String, crate::ast::ParamsetDecl> {
         &mut self.paramsets
     }
     /// Mutable access to the consts map. For internal elaboration use
-    /// (T24 folds `piperine_vams::ast::ParamDecl`/`localparam` globals
+    /// (T24 folds `crate::ast::ParamDecl`/`localparam` globals
     /// through here).
     #[allow(dead_code, reason = "wired by T24 — VAMS const-eval retarget")]
     pub(crate) fn consts_map_mut(&mut self) -> &mut HashMap<String, Value> {
@@ -840,8 +840,8 @@ mod flat_module_tests {
         assert!(design.paramset("nmos_fast").is_none());
         design.paramsets_map_mut().insert(
             "nmos_fast".into(),
-            piperine_vams::ast::ParamsetDecl {
-                span: piperine_vams::Span::new(0, 0),
+            crate::ast::ParamsetDecl {
+                span: crate::Span::new(0, 0),
                 name: "nmos_fast".into(),
                 module_name: "nmos".into(),
                 params: Vec::new(),

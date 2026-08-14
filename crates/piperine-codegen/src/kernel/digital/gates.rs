@@ -1,6 +1,6 @@
 //! IEEE 1364 gate-primitive evaluation (T48, VAMS-18).
 //!
-//! **Scope of this file.** The T48 survey found that `piperine_vams::ast::
+//! **Scope of this file.** The T48 survey found that `piperine_lang::ast::
 //! item::{GateKind, GateInstantiation}` (parsed at T11) are not lowered by
 //! any `piperine-lang` elaboration pass into the POM, and nothing in
 //! `piperine-codegen` reads them — the fused digital-network JIT
@@ -29,7 +29,7 @@
 //! their inputs — they need a switch-level (charge-sharing/resistive)
 //! network model, which is a different mechanism from a truth table and a
 //! larger undertaking than this task's scope. `GatePrimitive` covers the
-//! unidirectional logic-gate family only; `piperine_vams::ast::item::
+//! unidirectional logic-gate family only; `piperine_lang::ast::item::
 //! GateKind`'s switch variants have no `GatePrimitive` counterpart yet.
 
 use piperine_solver::abi::LogicValue;

@@ -853,8 +853,48 @@ holding). A new crate is not "proliferation" when its whole reason to
 exist is the isolation MD-15 itself would otherwise ask a single crate to
 fake with internal module boundaries.
 
-**Status:** Locked (design.md §9, approved 2026-08-12; recorded 2026-08-13,
-T58, Phase 10 close).
+**Status:** Superseded by MD-47 (2026-08-13) — the purity-gate boundary this
+decision locked in was dissolved the same day, on the user's explicit
+call ("Certeza que o purity pode ser obsoleto!"). Kept here as the record
+of why the split existed in the first place; MD-47 is the current state.
+
+### MD-47: `piperine-vams` merged into `piperine-lang`; the purity gate is retired
+
+User decision, post-Phase-10 close: MD-43's parser/elaborator crate split
+was a real architectural cost — an external-crate seam between "text ->
+AST" (`piperine-vams`) and "AST -> POM" (`piperine-lang`) that nothing
+downstream ever depended on independently; every consumer reached both
+crates together, always in that order. The purity gate it protected
+(`crates/piperine-vams/tests/purity.rs`, zero-dependency + banned-token +
+provenance scan) is dropped outright — not weakened, deleted.
+
+**Mechanics:** `piperine-vams`'s `ast`/`grammar`/`lexer`/`preprocessor`/
+`parser`/`error`/`fmt`/`keywords` modules and `piperine-lang`'s `elab`/
+`pom`/`eval`/`annex_e`/`value`/`source_map`/`math`/`vams_include` modules
+now live in one crate. The physical merge landed inside the (then)
+`piperine-vams` directory — its own `[dependencies]` already carried
+everything the elaborator needs (`thiserror`, `miette`, `serde`,
+`serde_json`, `num-complex`) — and the crate was renamed `piperine-lang`
+afterward, so every downstream `piperine_lang::…` path and every
+`piperine-lang = { path = "../piperine-lang" }` Cargo dependency line
+kept working unchanged; only the five crates that depended on **both**
+crates (`piperine-codegen`, `piperine-lang-server`, `piperine-api`,
+`piperine-cli`, `piperine-python`) needed their now-redundant
+`piperine-vams` dependency line removed and `piperine_vams::` call sites
+repointed at `piperine_lang::`.
+
+**Verification (not self-assessed — A/B'd against the pre-merge tree via
+`git stash`):** every test target that compiled before the merge compiles
+after it; every test that passed before passes after; the two crates'
+pre-existing failure sets (`piperine-lang`'s 22 dead-PHDL-AST-debt targets
+— `elab.rs`/`parse_elab.rs`/`extern_grammar.rs`/etc — and
+`piperine-codegen`'s 6, e.g. `digital_jit`/`param_diff`) are byte-identical
+pre- and post-merge, confirmed target-by-target, not just in aggregate
+count. `cargo build --workspace`: zero warnings, both before and after.
+`suite_hygiene`'s `no_dead_architecture_identifiers` and
+`every_integration_target_declares_its_scope` both stay green post-rename.
+
+**Status:** Locked (user decision, 2026-08-13).
 
 ---
 

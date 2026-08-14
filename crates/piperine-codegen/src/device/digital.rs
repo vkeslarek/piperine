@@ -62,7 +62,7 @@ impl EdgeKind {
 /// `resolve::pom_eval_const` — the same constant-folding this crate already
 /// uses at codegen time, not a second implementation).
 fn eval_const_expr(
-    expr: &piperine_vams::ast::Expr,
+    expr: &piperine_lang::ast::Expr,
     param_lookup: &impl Fn(&str) -> Option<f64>,
 ) -> Option<f64> {
     crate::resolve::pom_eval_const(expr, param_lookup).ok()

@@ -91,11 +91,11 @@ impl ProjectUnit {
             // Mirrors `DocumentState::analyze`'s own pipeline (parse,
             // then elaboration, T37) so a project file's errors surface
             // through the same `ParseError` shape a directly-opened
-            // document's do. `piperine_vams::Parser` has no tolerant
+            // document's do. `piperine_lang::Parser` has no tolerant
             // mode (state.rs's matching doc comment) — a parse failure
             // yields exactly one error and no `Design` for this file.
             let mut file_errors: Vec<crate::state::ParseError> = Vec::new();
-            let parser = piperine_vams::Parser::with_include_resolver(
+            let parser = piperine_lang::Parser::with_include_resolver(
                 piperine_lang::SourceMapIncludeResolver::new(source_map),
             );
             let source_file = match parser.parse(&body) {

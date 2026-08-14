@@ -13,7 +13,7 @@ use pyo3::prelude::*;
 use piperine_api::SolverConfig;
 use piperine_lang::pom::Direction;
 use piperine_lang::ValueType;
-use piperine_vams::ast::BehaviorKind;
+use piperine_lang::ast::BehaviorKind;
 
 use crate::instance::InstanceResolver;
 use crate::results::_AcTrace;

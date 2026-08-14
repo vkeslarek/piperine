@@ -1,12 +1,12 @@
 //! Statement-level emission: [`Builder::emit_stmt`] dispatches on the POM
-//! `Stmt` (`piperine_vams::ast::Stmt`) — a fixed set that doesn't need a
+//! `Stmt` (`piperine_lang::ast::Stmt`) — a fixed set that doesn't need a
 //! trait — plus its helpers (assignment, `case`, guarded/if-else control
 //! flow).
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, InstBuilder, MemFlags, TrapCode, Value};
 
-use piperine_vams::ast::{CaseArm, CaseKind, Expr, Stmt};
+use piperine_lang::ast::{CaseArm, CaseKind, Expr, Stmt};
 
 use crate::error::CodegenError;
 use crate::resolve::{NodeId, Type, VarId};

@@ -11,7 +11,7 @@
 //!    a plain `Tok::Ident` (§2.8.2: a keyword is lexically an identifier;
 //!    only a grammar-level "expect identifier" check distinguishes them).
 
-use piperine_vams::{Keywords, Lexer, ParseErrorKind, Span, Tok};
+use piperine_lang::{Keywords, Lexer, ParseErrorKind, Span, Tok};
 use std::collections::BTreeSet;
 use std::path::Path;
 
