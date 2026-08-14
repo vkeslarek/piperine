@@ -12,6 +12,21 @@
 
 use std::fmt;
 
+/// The two lexically illegal underscore positions LRM §2.6.1 ("legal
+/// anywhere in a number except as the first character") and §2.6.2
+/// ("...except as the first character of the constant or the first
+/// character after the decimal point") carve out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnderscorePosition {
+    /// Immediately after a real number's decimal point (§2.6.2), e.g.
+    /// `1._5`.
+    AfterDecimalPoint,
+    /// The first character of a based literal's digit run, immediately
+    /// after the base letter — e.g. `` 'h_FF `` (§2.6.1: legal anywhere
+    /// in a number "except as the first character").
+    FirstBasedDigit,
+}
+
 /// A byte-offset range into the (preprocessed) source buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -64,6 +79,10 @@ pub enum ParseErrorKind {
     /// is not a decimal digit). `base` is the base letter as written
     /// (`d`/`b`/`o`/`h`, lowercased); `digit` is the offending character.
     IllegalBasedDigit { base: char, digit: char },
+    /// An underscore separator appeared in one of the two lexically
+    /// illegal positions LRM §2.6.1/§2.6.2 carve out (elsewhere in a
+    /// number, `_` is a legal, ignored separator).
+    IllegalUnderscorePlacement(UnderscorePosition),
     /// The parser expected one of a set of token kinds and found something
     /// else. `expected` is a human-readable description of what was
     /// expected (e.g. `"';'"`, `"an expression"`), not a token enum name.
@@ -109,6 +128,17 @@ impl fmt::Display for ParseErrorKind {
             }
             ParseErrorKind::IllegalBasedDigit { base, digit } => {
                 write!(f, "`{digit}` is not a legal digit for base `{base}`")
+            }
+            ParseErrorKind::IllegalUnderscorePlacement(pos) => {
+                let where_ = match pos {
+                    UnderscorePosition::AfterDecimalPoint => {
+                        "immediately after a decimal point"
+                    }
+                    UnderscorePosition::FirstBasedDigit => {
+                        "as the first digit of a based literal's digit run"
+                    }
+                };
+                write!(f, "`_` is not legal {where_}")
             }
             ParseErrorKind::UnexpectedToken { expected, found } => {
                 write!(f, "expected {expected}, found {found}")

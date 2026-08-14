@@ -4,7 +4,7 @@
 //! examples (spec.md's Edge Cases + Fixture rule), not from this crate's
 //! implementation.
 
-use piperine_lang::{BasedNumber, Lexer, NumberBase, NumberLit, ParseErrorKind, Tok};
+use piperine_lang::{BasedNumber, Lexer, NumberBase, NumberLit, ParseErrorKind, Tok, UnderscorePosition};
 
 fn toks(src: &str) -> Vec<Tok> {
     Lexer::new(src)
@@ -133,6 +133,56 @@ fn newline_after_base_letter_still_errors() {
         matches!(err.kind, ParseErrorKind::UnexpectedEof { .. }),
         "expected UnexpectedEof, got {:?}",
         err.kind
+    );
+}
+
+// ── LRMC-C1-04: underscore placement rules (§2.6.1/§2.6.2) ─────────────
+
+#[test]
+fn underscore_immediately_after_decimal_point_is_rejected() {
+    // `1._5` — §2.6.2: underscore illegal as "the first character after
+    // the decimal point".
+    let err = Lexer::new("1._5").tokenize().unwrap_err();
+    assert!(
+        matches!(
+            err.kind,
+            ParseErrorKind::IllegalUnderscorePlacement(UnderscorePosition::AfterDecimalPoint)
+        ),
+        "expected IllegalUnderscorePlacement(AfterDecimalPoint), got {:?}",
+        err.kind
+    );
+}
+
+#[test]
+fn underscore_as_first_based_digit_is_rejected() {
+    // `` 'h_FF `` — §2.6.1: underscore illegal "as the first character"
+    // of the digit run.
+    let err = Lexer::new("'h_FF").tokenize().unwrap_err();
+    assert!(
+        matches!(
+            err.kind,
+            ParseErrorKind::IllegalUnderscorePlacement(UnderscorePosition::FirstBasedDigit)
+        ),
+        "expected IllegalUnderscorePlacement(FirstBasedDigit), got {:?}",
+        err.kind
+    );
+}
+
+#[test]
+fn legal_underscore_separators_still_accepted() {
+    // `1_000` — a plain decimal integer with a mid-run separator.
+    assert_eq!(toks("1_000"), vec![Tok::Number(NumberLit::Integer(1000))]);
+
+    // `` 'h FF_FF `` — a based literal with whitespace after the base
+    // letter (LRMC-C1-03) and a mid-run separator in the digit string.
+    assert_eq!(
+        toks("'h FF_FF"),
+        vec![Tok::Number(NumberLit::Based(BasedNumber {
+            size: None,
+            signed: false,
+            base: NumberBase::Hex,
+            digits: "FF_FF".to_string(),
+        }))]
     );
 }
 

@@ -67,7 +67,7 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C1-01", story: "P1", clause: "§2.6.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_ch1_lexical_form.rs", test_fn: "illegal_digit_for_declared_base_is_a_typed_lex_error" } },
     Entry { id: "LRMC-C1-02", story: "P1", clause: "§2.6.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_four_state_literals.rs", test_fn: "sixteen_bit_hex_x_evaluates_to_a_four_state_logic_value_not_zero" } },
     Entry { id: "LRMC-C1-03", story: "P1", clause: "§2.6.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_ch1_lexical_form.rs", test_fn: "whitespace_after_base_letter_is_accepted" } },
-    Entry { id: "LRMC-C1-04", story: "P1", clause: "§2.6.1/§2.6.2", status: Status::Pending },
+    Entry { id: "LRMC-C1-04", story: "P1", clause: "§2.6.1/§2.6.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_ch1_lexical_form.rs", test_fn: "underscore_immediately_after_decimal_point_is_rejected" } },
     Entry { id: "LRMC-C1-05", story: "P1", clause: "§2.9/§2.9.1", status: Status::Pending },
     Entry { id: "LRMC-C1-06", story: "P1", clause: "§3.4.2/3.4.4/3.4.6/3.4.8/4.2.14", status: Status::Pending },
     Entry { id: "LRMC-C1-07", story: "P1", clause: "§3.4.7", status: Status::Pending },

@@ -11,7 +11,7 @@
 //! rescanning, and this is the newline-preserving property the design
 //! (design.md §4.1) requires of this module.
 
-use crate::error::{ParseError, ParseErrorKind, Span};
+use crate::error::{ParseError, ParseErrorKind, Span, UnderscorePosition};
 
 /// One lexical token with its source span.
 #[derive(Debug, Clone, PartialEq)]
@@ -362,8 +362,23 @@ impl<'a> Lexer<'a> {
         }
 
         // Real number: decimal point form or scale-factor/exponent form.
-        if self.peek() == Some(b'.') && self.peek_at(1).is_some_and(|c| c.is_ascii_digit()) {
-            return self.lex_real_after_int_part(start);
+        if self.peek() == Some(b'.') {
+            if self.peek_at(1).is_some_and(|c| c.is_ascii_digit()) {
+                return self.lex_real_after_int_part(start);
+            }
+            if self.peek_at(1) == Some(b'_') {
+                // LRMC-C1-04 (§2.6.2): "...except as the first character
+                // of the constant or the first character after the
+                // decimal point" — `1._5` is illegal, not a silent
+                // reinterpretation as `1`, `.`, `_5`.
+                let underscore_pos = self.pos + 1;
+                return Err(ParseError::new(
+                    ParseErrorKind::IllegalUnderscorePlacement(
+                        UnderscorePosition::AfterDecimalPoint,
+                    ),
+                    Span::new(underscore_pos, underscore_pos + 1),
+                ));
+            }
         }
         // Integer digits directly followed by an exponent (`39e8`) or a
         // Table 2-1 scale factor (`7k`) — a real number with no decimal
@@ -441,6 +456,16 @@ impl<'a> Lexer<'a> {
         // base letter is immediately followed by a newline.
         self.skip_inline_whitespace();
         let digits_start = self.pos;
+        if self.peek() == Some(b'_') {
+            // LRMC-C1-04 (§2.6.1): "The underscore character shall be
+            // legal anywhere in a number except as the first character"
+            // — `` 'h_FF `` is illegal, not silently `'hFF` with the
+            // separator dropped.
+            return Err(ParseError::new(
+                ParseErrorKind::IllegalUnderscorePlacement(UnderscorePosition::FirstBasedDigit),
+                Span::new(self.pos, self.pos + 1),
+            ));
+        }
         while let Some(b) = self.peek() {
             if is_based_digit(base, b) {
                 self.pos += 1;

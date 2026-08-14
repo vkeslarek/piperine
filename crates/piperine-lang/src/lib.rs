@@ -71,7 +71,7 @@ pub mod source_map;
 pub mod math;
 mod vams_include;
 
-pub use error::{ParseError, ParseErrorKind, Span};
+pub use error::{ParseError, ParseErrorKind, Span, UnderscorePosition};
 pub use fmt::Formatter;
 pub use keywords::Keywords;
 pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
