@@ -48,28 +48,36 @@ fn call(name: &str, args: Vec<PomExpr>) -> PomExpr {
 /// functions, seen as ordinary `Call` expressions inside an `EventExpr`) to
 /// `EventSource`s for the flattener. Expressions are NOT substituted here —
 /// `add_event` does that.
-fn event_exprs_to_sources(events: &[EventExpr]) -> Vec<EventSource> {
-    events.iter().flat_map(event_expr_to_sources).collect()
+fn event_exprs_to_sources(events: &[EventExpr]) -> Result<Vec<EventSource>, CodegenError> {
+    let mut out = Vec::new();
+    for event in events {
+        out.extend(event_expr_to_sources(event)?);
+    }
+    Ok(out)
 }
 
-fn event_expr_to_sources(event: &EventExpr) -> Vec<EventSource> {
+fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenError> {
     let EventExpr::Level(e) = event else {
         // Posedge/Negedge/ImplicitAll are digital-only forms — Annex C
         // (T27) rejects them inside an analog behavior before flattening
         // ever runs; this is a defensive empty list, not a live path.
-        return vec![];
+        return Ok(vec![]);
     };
     // `initial_step`/`final_step` take no mandatory args, so the parser
     // accepts the bare-identifier spelling (`@(initial_step)`, no parens)
     // as well as the zero/multi-arg call form (`@(initial_step("dc"))`) —
-    // LRM §5.6's analog event functions. `cross`/`above`/`timer` always
-    // carry at least one arg and so only ever parse as `Call`.
-    let (name, args): (&str, &[PomExpr]) = match e {
-        PomExpr::Call { name, args, .. } => (name.as_str(), args.as_slice()),
-        PomExpr::Ident { name, .. } => (name.as_str(), &[]),
-        _ => return vec![],
+    // LRM §5.6's analog event functions. `cross`/`above`/`timer`/`absdelta`
+    // always carry at least one arg and so only ever parse as `Call`.
+    // `is_call` distinguishes a genuine (mis-typed or unimplemented)
+    // function call, which must fail loud below, from a bare signal-name
+    // event (`@(clk)`, no parens — a legitimate LRM form this codegen
+    // doesn't implement yet, defensively empty, not this task's scope).
+    let (name, args, is_call): (&str, &[PomExpr], bool) = match e {
+        PomExpr::Call { name, args, .. } => (name.as_str(), args.as_slice(), true),
+        PomExpr::Ident { name, .. } => (name.as_str(), &[], false),
+        _ => return Ok(vec![]),
     };
-    match name {
+    let sources = match name {
         "initial_step" => vec![EventSource::InitialStep],
         "final_step" => vec![EventSource::FinalStep],
         // First arg is the watched expression; a missing arg defaults to a
@@ -93,8 +101,28 @@ fn event_expr_to_sources(event: &EventExpr) -> Vec<EventSource> {
             let phase = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
             vec![EventSource::Timer { period, phase }]
         }
+        // §5.10.3.4: expr/delta required; time_tol/expr_tol/enable
+        // optional, tool-chosen when omitted — 0 tolerances and always-on
+        // (1) are the LRM's own stated fallback ("if the tolerances are
+        // not specified, then the tool sets them"; an absent enable means
+        // unconditionally active, matching the LRM's own example, which
+        // never passes one).
+        "absdelta" => vec![EventSource::AbsDelta {
+            expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
+            delta: args.get(1).cloned().unwrap_or_else(|| lit(0.0)),
+            time_tol: args.get(2).cloned().unwrap_or_else(|| lit(0.0)),
+            expr_tol: args.get(3).cloned().unwrap_or_else(|| lit(0.0)),
+            enable: args.get(4).cloned().unwrap_or_else(|| lit(1.0)),
+        }],
+        _ if is_call => {
+            return Err(CodegenError::unsupported(format!(
+                "unknown analog event function `{name}(...)` — LRM Annex A.6.5 defines only \
+                 cross/above/timer/absdelta (plus initial_step/final_step)"
+            )));
+        }
         _ => vec![],
-    }
+    };
+    Ok(sources)
 }
 
 /// `cross(expr, dir, ...)`'s `dir` argument (§5.10.3.1, a required
@@ -167,6 +195,11 @@ pub enum FlatEventTrigger {
     Cross { expr: PomExpr, dir: CrossDir },
     Above { expr: PomExpr },
     Timer { period: PomExpr, phase: PomExpr },
+    /// §5.10.3.4 — `expr` is the per-step trigger row (same role as
+    /// `Cross`/`Above`'s own `expr`); `delta`/`time_tol`/`expr_tol`/
+    /// `enable` are evaluated once at elaboration (`kernel/analog/compile.rs`
+    /// mirrors `Timer`'s `period`/`phase` treatment).
+    AbsDelta { expr: PomExpr, delta: PomExpr, time_tol: PomExpr, expr_tol: PomExpr, enable: PomExpr },
 }
 
 #[derive(Debug, Clone)]
@@ -185,7 +218,9 @@ impl FlatEvent {
     pub fn trigger_expr(&self) -> Option<&PomExpr> {
         match &self.trigger {
             FlatEventTrigger::Initial => None,
-            FlatEventTrigger::Cross { expr, .. } | FlatEventTrigger::Above { expr } => Some(expr),
+            FlatEventTrigger::Cross { expr, .. }
+            | FlatEventTrigger::Above { expr }
+            | FlatEventTrigger::AbsDelta { expr, .. } => Some(expr),
             FlatEventTrigger::Timer { period, .. } => Some(period),
         }
     }
@@ -603,7 +638,7 @@ impl<'m> AnalogFlattener<'m> {
                     }
                 }
                 PomStmt::EventControl { events, body, .. } => {
-                    for source in event_exprs_to_sources(events) {
+                    for source in event_exprs_to_sources(events)? {
                         let event_body = match body.as_ref() {
                             PomStmt::Block { stmts, .. } => stmts.clone(),
                             other => vec![other.clone()],
@@ -927,6 +962,20 @@ impl<'m> AnalogFlattener<'m> {
                 FlatEventTrigger::Timer {
                     period: self.finish_expr(ep)?,
                     phase: self.finish_expr(ph)?,
+                }
+            }
+            EventSource::AbsDelta { expr, delta, time_tol, expr_tol, enable } => {
+                let e = self.inline_temps(&self.subst(expr)?);
+                let d = self.inline_temps(&self.subst(delta)?);
+                let tt = self.inline_temps(&self.subst(time_tol)?);
+                let et = self.inline_temps(&self.subst(expr_tol)?);
+                let en = self.inline_temps(&self.subst(enable)?);
+                FlatEventTrigger::AbsDelta {
+                    expr: self.finish_expr(e)?,
+                    delta: self.finish_expr(d)?,
+                    time_tol: self.finish_expr(tt)?,
+                    expr_tol: self.finish_expr(et)?,
+                    enable: self.finish_expr(en)?,
                 }
             }
         };

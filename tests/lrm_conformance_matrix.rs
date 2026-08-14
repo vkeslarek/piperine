@@ -78,7 +78,7 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C1-12", story: "P1", clause: "§4.5.11.1-4", status: Status::Closed { file: "crates/piperine-codegen/tests/vams_laplace_registry.rs", test_fn: "fabricated_laplace_pm_fails_loud" } },
     Entry { id: "LRMC-C5-01", story: "P2", clause: "§5.6", status: Status::Closed { file: "crates/piperine-codegen/tests/vams_laplace_registry.rs", test_fn: "laplace_nd_resolves" } },
     Entry { id: "LRMC-C5-02", story: "P2", clause: "§5.10.3.1", status: Status::Closed { file: "tests/vams_cross_direction_e2e.rs", test_fn: "rising_direction_fires_on_a_rising_crossing" } },
-    Entry { id: "LRMC-C5-03", story: "P2", clause: "§5.10.3.4", status: Status::Pending },
+    Entry { id: "LRMC-C5-03", story: "P2", clause: "§5.10.3.4", status: Status::Closed { file: "tests/vams_absdelta_e2e.rs", test_fn: "absdelta_event_re_evaluates_at_the_lrm_specified_points" } },
     Entry { id: "LRMC-C5-04", story: "P2", clause: "§5.10.4", status: Status::Pending },
     Entry { id: "LRMC-C5-05", story: "P2", clause: "§5.10.5", status: Status::Pending },
     Entry { id: "LRMC-C5-06", story: "P2", clause: "§6.3.1", status: Status::Pending },

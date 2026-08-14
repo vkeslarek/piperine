@@ -6,7 +6,7 @@
 //! counterpart, it is `@initial` dispatch, not a detector), and the
 //! `@initial`/fired-event variable-action dispatch.
 
-use piperine_ir::events::{CrossDir as SignalCrossDir, EventDetector, Trigger};
+use piperine_ir::events::{AbsDeltaDetector, CrossDir as SignalCrossDir, EventDetector, Trigger};
 
 use crate::emit::abi::SimCtx;
 use crate::error::CodegenError;
@@ -27,25 +27,37 @@ fn to_signal_cross_dir(dir: CrossDir) -> SignalCrossDir {
 }
 
 /// One detector per runtime event, in kernel event order, plus each event's
-/// (parameter-constant) timer period (`0` for non-timers).
+/// (parameter-constant) timer period (`0` for non-timers). `absdelta`
+/// events additionally get their own `AbsDeltaDetector` (its `fired` shape
+/// doesn't fit `Trigger`, see `piperine-ir`'s own doc comment) and their
+/// four parameter-constant arguments, `None`/zeros for every other trigger
+/// kind — a parallel `Vec` aligned by event index rather than an enum
+/// wrapping both detector kinds, since only one event in a handful is
+/// typically `absdelta`.
 pub(super) struct EventSystem {
     detectors: Vec<EventDetector>,
     periods: Vec<(f64, f64)>,
+    abs_delta: Vec<Option<AbsDeltaDetector>>,
+    /// `(delta, time_tol, expr_tol, enable)` per event — `enable` is a
+    /// per-step trigger value in the LRM's own grammar, but treated as an
+    /// elaboration-time constant here (documented scope limit, matching
+    /// `Timer`'s own `period`/`phase` precedent); the common idiom
+    /// (§5.10.3.4's own example) passes parameters for all four anyway.
+    abs_delta_args: Vec<(f64, f64, f64, f64)>,
 }
 
 impl EventSystem {
     pub(super) fn new(kernel: &AnalogKernel, params: &[f64]) -> Result<Self, CodegenError> {
+        let param_names = kernel.param_names();
+        let resolve = |name: &str| -> Option<f64> {
+            param_names.iter().position(|n| n == name).and_then(|i| params.get(i).copied())
+        };
         // Timer periods are parameter-constant, evaluated once.
         let periods = kernel
             .events()
             .iter()
             .map(|e| match &e.trigger {
                 CompiledTrigger::Timer { period, phase } => {
-                    let param_names = kernel.param_names();
-                    let resolve = |name: &str| -> Option<f64> {
-                        param_names.iter().position(|n| n == name)
-                            .and_then(|i| params.get(i).copied())
-                    };
                     let p = crate::resolve::pom_eval_const(period, &resolve)
                         .map_err(CodegenError::ConstEval)?;
                     // First fire at `phase` (a phased timer `@timer(period, phase)`),
@@ -57,13 +69,32 @@ impl EventSystem {
                 _ => Ok((0.0, 0.0)),
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let abs_delta_args = kernel
+            .events()
+            .iter()
+            .map(|e| match &e.trigger {
+                CompiledTrigger::AbsDelta { delta, time_tol, expr_tol, enable } => {
+                    let d = crate::resolve::pom_eval_const(delta, &resolve).map_err(CodegenError::ConstEval)?;
+                    let tt = crate::resolve::pom_eval_const(time_tol, &resolve).map_err(CodegenError::ConstEval)?;
+                    let et = crate::resolve::pom_eval_const(expr_tol, &resolve).map_err(CodegenError::ConstEval)?;
+                    let en = crate::resolve::pom_eval_const(enable, &resolve).map_err(CodegenError::ConstEval)?;
+                    Ok((d, tt, et, en))
+                }
+                _ => Ok((0.0, 0.0, 0.0, 0.0)),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let detectors = kernel
             .events()
             .iter()
             .zip(&periods)
             .map(|(_, &(_period, first_fire))| EventDetector::new(first_fire))
             .collect();
-        Ok(Self { detectors, periods })
+        let abs_delta = kernel
+            .events()
+            .iter()
+            .map(|e| matches!(e.trigger, CompiledTrigger::AbsDelta { .. }).then(AbsDeltaDetector::new))
+            .collect();
+        Ok(Self { detectors, periods, abs_delta, abs_delta_args })
     }
 
     /// Absolute landing points this instance's `@timer` events fire at
@@ -98,6 +129,16 @@ impl EventSystem {
         kernel.eval_event_triggers(volts, params, state, vars, sim, &mut triggers);
         let mut fired = vec![false; num_events];
         for (i, detector) in self.detectors.iter_mut().enumerate() {
+            // `AbsDelta` runs through its own `AbsDeltaDetector`, not the
+            // tier-1 `EventDetector`/`Trigger` shape below — dispatched
+            // first and skipped in the tier-1 loop.
+            if let CompiledTrigger::AbsDelta { .. } = &kernel.events()[i].trigger {
+                let (delta, time_tol, expr_tol, enable) = self.abs_delta_args[i];
+                if let Some(det) = self.abs_delta[i].as_mut() {
+                    fired[i] = det.fired(triggers[i], time, delta, time_tol, expr_tol, enable);
+                }
+                continue;
+            }
             // `Initial` is `@initial` dispatch (handled once, at construction,
             // by `fire_initial_events`), not a detector — short-circuited
             // here exactly as the old inline `Initial => false` arm did,
@@ -107,6 +148,7 @@ impl EventSystem {
                 CompiledTrigger::Above => Some(Trigger::Above),
                 CompiledTrigger::Cross(dir) => Some(Trigger::Cross(to_signal_cross_dir(*dir))),
                 CompiledTrigger::Timer { .. } => Some(Trigger::Timer),
+                CompiledTrigger::AbsDelta { .. } => unreachable!("handled above"),
             }) else {
                 continue;
             };

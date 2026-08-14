@@ -73,6 +73,12 @@ pub enum EventSource {
     Cross { expr: PomExpr, dir: CrossDir },
     Above { expr: PomExpr },
     Timer { period: PomExpr, phase: PomExpr },
+    /// `absdelta(expr, delta, [time_tol, [expr_tol, [enable]]])` —
+    /// §5.10.3.4, LRMC-C5-03. `delta`/`time_tol`/`expr_tol`/`enable` are
+    /// evaluated once at elaboration (`pom_eval_const`), mirroring
+    /// `Timer`'s existing `period`/`phase` treatment above — only `expr`
+    /// is a genuine per-step trigger row.
+    AbsDelta { expr: PomExpr, delta: PomExpr, time_tol: PomExpr, expr_tol: PomExpr, enable: PomExpr },
 }
 
 /// An analog event: a trigger plus a statement body.

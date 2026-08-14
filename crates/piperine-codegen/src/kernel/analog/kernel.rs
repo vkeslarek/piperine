@@ -106,6 +106,11 @@ pub enum CompiledTrigger {
     /// Fires every `period` seconds, first fire at `phase` (both
     /// parameter-constant). `phase = 0` reproduces `@timer(period)`.
     Timer { period: PomExpr, phase: Box<PomExpr> },
+    /// §5.10.3.4 — `delta`/`time_tol`/`expr_tol`/`enable` are all
+    /// parameter-constant (evaluated once, same treatment as `Timer`'s
+    /// `period`/`phase`); the per-step trigger value itself comes from
+    /// `eval_event_triggers` like `Cross`/`Above`.
+    AbsDelta { delta: PomExpr, time_tol: Box<PomExpr>, expr_tol: Box<PomExpr>, enable: Box<PomExpr> },
 }
 
 /// A compiled runtime analog event: its trigger plus the vars-bank slots its
