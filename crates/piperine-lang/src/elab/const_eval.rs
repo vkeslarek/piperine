@@ -269,7 +269,12 @@ impl ConstEnv {
         match self.eval(expr)? {
             Value::Nat(n) => Ok(n),
             Value::Int(n) if n >= 0 => Ok(n as u64),
-            Value::Real(r) if r >= 0.0 && r.fract() == 0.0 => Ok(r as u64),
+            // §4.2.1.1: implicit real->integer conversion rounds to the
+            // nearest integer, ties away from zero (`f64::round`'s own
+            // documented tie-breaking rule matches the LRM's exactly) --
+            // LRMC-C1-11. A round result that's still negative isn't a
+            // legal Natural and fails loud below, same as a negative Int.
+            Value::Real(r) if r.round() >= 0.0 => Ok(r.round() as u64),
             Value::Logic(lv) => match lv.to_i64_exact() {
                 Some(n) if n >= 0 => Ok(n as u64),
                 _ => Err(ConstEvalError::FourStateInNumericContext(
@@ -287,7 +292,8 @@ impl ConstEnv {
         match self.eval(expr)? {
             Value::Int(n) => Ok(n),
             Value::Nat(n) => Ok(n as i64),
-            Value::Real(r) if r.fract() == 0.0 => Ok(r as i64),
+            // §4.2.1.1, LRMC-C1-11: round to nearest, ties away from zero.
+            Value::Real(r) => Ok(r.round() as i64),
             Value::Logic(lv) => lv.to_i64_exact().ok_or_else(|| {
                 ConstEvalError::FourStateInNumericContext(
                     "an integer-valued context (array bound, bit width, generate bound) requires \
