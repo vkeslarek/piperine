@@ -136,6 +136,14 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> Type {
         ValueType::Array(inner, _) => elab_value_type_to_ir(inner),
         ValueType::FnPtr(_, _) => Type::Real,
         ValueType::Tuple(_) => Type::Real,
+        // Logic(width): four-state values (LRMC-C1-02, `piperine-lang`'s
+        // `value::LogicVec`). No VAMS construct types a `Param`/`Var` this
+        // way yet (that needs further lrm-conformance-closure work beyond
+        // this exhaustiveness fix), so — like the PHDL-only arms above —
+        // this is an unreachable-but-total fallback for now. `Type::Quad`
+        // is the nearest existing multi-state IR representation (a strict
+        // superset of four-state); it is not a silent numeric coercion.
+        ValueType::Logic(_) => Type::Quad,
     }
 }
 

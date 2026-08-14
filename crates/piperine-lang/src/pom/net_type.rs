@@ -71,6 +71,9 @@ impl NetType {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ValueType {
     Real, Natural, Integer, Complex, Boolean, Quad, Str,
+    /// A four-state (`0`/`1`/`x`/`z`) bit vector of the given width —
+    /// LRMC-C1-02. Backed by `crate::value::LogicVec`.
+    Logic(u32),
     Enum(String),
     /// A value bundle (`param model : DiodeModel`, `fn f(m : DiodeModel)`).
     /// Consumers flatten it per-field; a context that cannot fails loud.

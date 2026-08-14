@@ -22,6 +22,9 @@ use crate::ast::Expr;
 
 use crate::eval::error::EvalError;
 
+pub mod logic;
+pub use logic::LogicVec;
+
 /// A runtime value.
 ///
 /// **Serialization (SPEC Part IV §7):** `Value` is the POM's own value
@@ -43,6 +46,10 @@ pub enum Value {
     Complex(f64, f64),
     /// 8-level logic value (backed by a `u8`) — POM attribute surface.
     Quad(u8),
+    /// A four-state (`0`/`1`/`x`/`z`) bit vector — LRMC-C1-02. `LogicValue`
+    /// (`piperine_solver::abi::LogicValue`-shaped) stays the 1-bit
+    /// projection; this is the frontend's only four-state *value* form.
+    Logic(LogicVec),
     EnumVariant(String, String),
     Tuple(Vec<Value>),
     /// A `Vec`-like value-layer list. Shared/mutable so `.push(...)` is visible
@@ -157,6 +164,7 @@ impl Value {
             Self::Str(_) => "String",
             Self::Complex(..) => "Complex",
             Self::Quad(_) => "Quad",
+            Self::Logic(_) => "Logic",
             Self::EnumVariant(..) => "EnumVariant",
             Self::Tuple(_) => "Tuple",
             Self::List(_) => "List",
@@ -488,6 +496,23 @@ mod tests {
     fn value_string_construction_and_access() {
         let v = Value::Str("hello".into());
         assert_eq!(v.as_string(), Some("hello"));
+    }
+
+    #[test]
+    fn value_logic_type_name_and_serde_round_trip() {
+        let mut lv = logic::LogicVec::zero(8);
+        lv.set_bit(0, logic::LogicValue::X);
+        lv.set_bit(1, logic::LogicValue::Z);
+        lv.set_bit(2, logic::LogicValue::One);
+        let v = Value::Logic(lv);
+        assert_eq!(v.type_name(), "Logic");
+
+        let json = serde_json::to_string(&v).expect("Value::Logic serializes");
+        let round_tripped: Value = serde_json::from_str(&json).expect("Value::Logic deserializes");
+        match (&v, &round_tripped) {
+            (Value::Logic(a), Value::Logic(b)) => assert_eq!(a, b),
+            _ => panic!("round-trip changed variant"),
+        }
     }
 
     #[test]

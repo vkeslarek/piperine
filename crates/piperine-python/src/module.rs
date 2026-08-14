@@ -578,6 +578,7 @@ impl _Param {
                 ValueType::Complex => "Complex",
                 ValueType::Boolean => "Boolean",
                 ValueType::Quad => "Quad",
+                ValueType::Logic(_) => "Logic",
                 ValueType::Str => "String",
                 ValueType::Enum(name) | ValueType::Bundle(name) => name,
                 ValueType::Tuple(_) => "Tuple",
