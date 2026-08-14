@@ -40,6 +40,7 @@
 pub mod elab;
 pub mod eval;
 pub mod pom;
+pub mod annex_e;
 pub mod value;
 pub mod source_map;
 pub mod math;

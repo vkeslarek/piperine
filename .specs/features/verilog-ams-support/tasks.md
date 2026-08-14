@@ -1071,7 +1071,7 @@ reproduction, and disposition.
 
 ---
 
-#### T55: Annex E SPICE compatibility
+#### T55: Annex E SPICE compatibility — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/src/`, `tests/vams_annex_e.rs`
 **Depends on**: T54 · **Requirement**: VAMS-22
 **Done when**: each Annex E mapping implemented and cited by clause in doc comments/tests · **Gate**: full
@@ -3762,3 +3762,76 @@ did not close.
   pre-existing `piperine-ir` defect (unrelated, unchanged). No tolerance
   loosened, no test modified, no file outside T54's stated `Where`
   touched.
+
+- **T55** ✅ (Phase 10) — LRM Annex E (SPICE compatibility), audited
+  against Piperine's actual SPICE-facing tooling rather than against a
+  raw-netlist reader Piperine doesn't have (spec's own P3 framing: "the
+  existing SPICE-import path (MD-39)... doesn't depend on this annex").
+  Confirmed by grep across the whole tree: no `.subckt`/`.model` parser
+  exists anywhere — Annex E's E.2/E.3.2 (`port_discipline` attribute)/
+  E.3.3 (name-scoping precedence between a raw SPICE primitive and a
+  same-named module) all presuppose that netlist-reading capability and
+  are out of this task's implementable scope for that reason (a real,
+  documented gap, not silently skipped — see `annex_e.rs`'s own `//!`
+  header). What Annex E's *content* (Table E.1's 19-row primitive/port/
+  parameter table, E.3.1's unsupported-primitive list, Table E.2's 3
+  limiting functions) maps onto instead: the hand-authored,
+  ngspice-source-faithful `.va` library `headers/spice/` (frozen corpus,
+  T41–T43, outside this task's `Where` to rename) plus `$limit()`'s
+  `pnjlim`/`fetlim`/`limvds` (`piperine-codegen/src/kernel/analog/
+  limits.rs`). New `crates/piperine-lang/src/annex_e.rs` (declared in
+  `lib.rs`): `AnnexESupport` (`ExactMatch`/`AliasedName`/`NotSupported`),
+  `AnnexEPrimitive`/`AnnexELimitFn`, and `AnnexE::{PRIMITIVES, LIMIT_FNS,
+  E_3_1_NOTE}` — a data table (MD-13) with one entry per Table E.1 row and
+  one per Table E.2 row, each citing its clause and naming the concrete
+  Piperine module (or the concrete gap). Audit result: 16/19 Table E.1
+  primitives map to a real `headers/spice/` module (`resistor`→`res`,
+  `capacitor`→`cap`, `inductor`→`ind`, `iexp`/`ipulse`/`isine`→`isrc`'s
+  `wave`-selector, `vexp`/`vpulse`/`vsine`→`vsrc`'s `wave`-selector,
+  `tline`→`tline`, `vccs`→`vccs`, `vcvs`→`vcvs`, `diode`→`dio`, `bjt`→
+  `bjt`, `mosfet`→`mos1`(/`mos2`/`mos3`), `jfet`→`jfet`) — every one under
+  Piperine's own port/param naming (ngspice source convention) rather than
+  Table E.1's literal names, documented row-by-row rather than assumed;
+  `ipwl`/`vpwl` (no PWL waveform in the `wave` selector) and `mesfet` (no
+  model exists) are real, named gaps. All 3 Table E.2 limiting functions
+  work: `pnjlim`/`fetlim` match the LRM names exactly; `vdslim` is
+  implemented as `limvds` — a naming mismatch in the `$limit()` call-site
+  string, root-caused to `emit/analog_expr.rs` (one of `CLAUDE.md`'s
+  explicitly-named "files not to edit casually", outside a language-crate
+  task's remit) — **SPEC_DEVIATION**, carried forward, cited at the
+  `LIMIT_FNS` entry itself. E.3.1's "unsupported primitives" (`ccvs`/
+  `cccs`/mutual inductors) are, on inspection, actually implemented in
+  `headers/spice/controlled.va`/`passives.va` — the LRM only forbids the
+  specific SPICE technique of passing an instance name as a parameter,
+  which Verilog-A never had reason to need; Piperine's modules use
+  explicit control-branch ports instead, delivering the *behavior* E.3.1
+  lists as unsupported (`AnnexE::E_3_1_NOTE`). New root
+  `tests/vams_annex_e.rs` (12 tests) instantiates a representative
+  `.vams` module per Table E.1 family (passives, SIN/PULSE/EXP waveform
+  selectors, `tline`, `vccs`/`vcvs`, and the existing `tests/spice/
+  junction.vams` fixture for diode/bjt/mosfet/jfet) plus all three
+  `$limit()` kinds, and elaborates/simulates each — passing tests as
+  Annex E clause evidence, not just doc-comment claims (T56's own later
+  "at least one passing test" bar, satisfied a task early). 5 unit tests
+  in `annex_e.rs` (table completeness, gap enumeration) + 9 integration
+  tests in `tests/vams_annex_e.rs` (some counted together above), 14 new.
+  **Verification**: `cargo build --workspace`: zero warnings. `cargo test
+  -p piperine-lang --lib`: **90 passed, 2 failed** (unchanged pre-existing
+  `elab::lower::flatten` failures; +5 vs T54's 85-passing count).
+  `cargo test --test vams_annex_e`: **9 passed, 0 failed**. Gate (full,
+  per T55's own table entry): `cargo test --workspace` still does not
+  compile workspace-wide (the same pre-existing `piperine-lang`
+  test-target debt documented since T21/T45-T54, unrelated to this task,
+  reconfirmed via a fresh `--no-fail-fast` run: same `elab.rs` compile
+  errors, same missing `piperine_vams`-era symbols). Every runnable
+  numeric-oracle target re-verified directly: `tests/ngspice_validation.rs`
+  49/49, `tests/ngspice_ac.rs` 24/24, `tests/ngspice_noise.rs` 29/29,
+  `tests/ngspice_temp.rs` 24/24, `tests/ngspice_parity_matrix.rs` 4/4,
+  `tests/ngspice_tran.rs` 23/25
+  (unchanged `uic_rc`/`uic_mos`, NGP-10 debt, untouched),
+  `tests/run_examples.rs` 2/2, `tests/vams_vertical_slice.rs` 7/7,
+  `tests/spice_smoke.rs` 3/3, `tests/suite_hygiene.rs` 9/10
+  (`mod_rs_declares_only` unchanged pre-existing `piperine-ir` defect) —
+  every one green or identically-pre-failing, no regression. No tolerance
+  loosened, no test modified, no file outside T55's stated `Where`
+  (`crates/piperine-lang/src/`, `tests/vams_annex_e.rs`) touched.
