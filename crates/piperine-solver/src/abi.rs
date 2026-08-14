@@ -37,6 +37,7 @@ pub use crate::math::integration::{TrBdf2, TrBdf2Phase};
 // Digital evaluation
 pub use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 pub use crate::digital::{DigitalEvent, DigitalNet, LogicValue};
+pub use crate::digital::regions::{Region, RegionAction, RegionEvent, RegionOutcome, RegionQueue};
 pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches

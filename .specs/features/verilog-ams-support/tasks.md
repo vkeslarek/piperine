@@ -1032,7 +1032,7 @@ reproduction, and disposition.
 
 ---
 
-#### T51: Stratified event scheduler (LRM ch. 8)
+#### T51: Stratified event scheduler (LRM ch. 8) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-codegen/src/kernel/digital/`, `crates/piperine-solver/src/` (scope per T50)
 **Depends on**: T50 · **Requirement**: VAMS-20
 **Done when**: active/inactive/NBA/monitor regions ordered per the LRM simulation cycle · determinism test over a race-prone fixture · **Gate**: full
@@ -3492,3 +3492,63 @@ did not close.
   a buried spec footnote. **Verification**: `cargo build --workspace`:
   zero warnings (docs-only change, nothing recompiled). No code touched,
   no test count to report.
+
+- **T51** ✅ `<pending commit>` — LRM ch. 8 stratified event-region
+  ordering (5 unit tests in `digital/regions.rs` + 2 integration tests in
+  `crates/piperine-solver/tests/vams_stratified_regions.rs`, 7 new).
+  **SPEC_DEVIATION** (documented, carried forward, same shape as T47-T49's
+  gaps — scoped per T50/MD-46): `DigitalState::evaluate_dag_ordered`/
+  `evaluate_until_stable` (`scheduler.rs`) already implement a two-phase
+  delta cycle (seq-phase register commit before any comb-phase
+  re-evaluation) that gets blocking-vs-non-blocking ordering right for
+  what those two phases cover, but neither `Element`/`DigitalEvent`
+  carries a region tag, so there is no live hook to drive a general
+  four-region (`Active`/`Inactive`/`Nba`/`Monitor`) model through the
+  production scheduler. Retrofitting `core/element.rs`'s trait surface or
+  `DigitalEvent` to carry a region is a larger, correctness-critical
+  change to the existing (heavily-relied-on) scheduler than this task's
+  risk tolerance allows in one pass — and MD-46 explicitly did not
+  authorize touching `core/element.rs`'s trait surface or anything under
+  `analyses/`. What's delivered instead, additive and independently
+  tested: `Region` (`Active`/`Inactive`/`Nba`/`Monitor`, `Ord`-derived
+  priority order matching LRM §8.3's per-time-step processing order),
+  `RegionAction` (`Update`/`Observe`), and `RegionQueue` — a standalone
+  stratified priority queue (`BinaryHeap` keyed on `(region, seq)`) whose
+  `run` drains strictly in region-then-submission order regardless of
+  scheduling call order. New file `crates/piperine-solver/src/digital/
+  regions.rs`, wired into `digital/mod.rs` (module declaration) and
+  `abi.rs` (the device-author-facing re-export point, matching where
+  `DigitalEvent`/`DigitalNet`/`LogicValue` are already re-exported for
+  the same reason `mod.rs`'s own re-export was flagged "unused" by rustc
+  — `abi.rs` is the crate's public façade, not `digital/mod.rs` itself,
+  confirmed by the compiler when a duplicate re-export was tried and
+  removed). The determinism test
+  (`blocking_and_nonblocking_write_race_resolves_deterministically`/
+  `two_processes_racing_on_the_same_net_resolve_deterministically`) is
+  the race-prone fixture the "Done when" calls for: two processes drive
+  the same net in the same time step, one via a blocking (`Active`-region)
+  write, one via a non-blocking (`Nba`-region) write; run twice with
+  submission order reversed, asserting the final net value and every
+  `Observe` reader's captured value are identical both times — the LRM
+  guarantee (NBA always lands after Active, regardless of which process's
+  statement textually/temporally fires first) reproduced as a passing
+  test, not just asserted in prose. Intra-region ordering across
+  independent processes is LRM-implementation-defined (§8.3 doesn't
+  mandate an order there); `RegionQueue`'s own documented, deterministic
+  policy is submission-order FIFO within a region — stated in the
+  module's `//!` header, not left ambiguous.
+  **Verification**: `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine-solver --lib digital::regions`: **5 passed, 0
+  failed**. `cargo test -p piperine-solver --test
+  vams_stratified_regions`: **2 passed, 0 failed**. Gate note (full, per
+  T51's own table entry): `cargo test --workspace` does not compile
+  workspace-wide (pre-existing `piperine-lang` test-target debt already
+  documented at T47-T49, unrelated to this task, confirmed unchanged by
+  `git status`); `cargo test -p piperine-solver --no-fail-fast` (the
+  crate this task actually touches): 5 pre-existing target failures
+  (`adjoint_dc`, `adjoint_vs_sens`, `pss`, `sens`, `transient_reentry`) —
+  confirmed **byte-identical** before and after this task's changes via
+  `git stash`/`git stash pop` A/B (same 5 targets fail identically on
+  `git stash`'d — pre-T51 — source), i.e. genuinely pre-existing and
+  unrelated to digital scheduling, not introduced or worsened here. Every
+  other `piperine-solver` target, including the new one, passes.
