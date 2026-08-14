@@ -995,7 +995,7 @@ reproduction, and disposition.
 
 ### Phase 9 — Full 1364 digital (S5a)
 
-#### T47: General system tasks/functions (LRM ch. 9)
+#### T47: General system tasks/functions (LRM ch. 9) — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-lang/src/eval/tasks.rs`, `crates/piperine-lang/tests/vams_system_tasks.rs`
 **Depends on**: T46 · **Requirement**: VAMS-15
 **Done when**: `$display`-family, `$abstime`, `$temperature`, `$bound_step`, conversion functions execute per LRM · unknown `$name` fails loud listing near-matches · **Gate**: quick
@@ -3336,3 +3336,66 @@ did not close.
   are real fixes with the run_examples suite as their regression guard.
   **Commit**: `docs(examples): migrate the example gallery to Verilog-AMS`
   (examples + fixes)
+
+- **T47** ✅ `<pending commit>` — LRM ch. 9 general system tasks/functions
+  (20 unit tests in `eval/tasks.rs` + 7 integration tests in
+  `crates/piperine-lang/tests/vams_system_tasks.rs`, 27 new). **SPEC_DEVIATION**
+  (documented, carried forward — same category as T48-T52's own gaps found
+  by this task's own pre-implementation survey): `piperine_vams::ast::
+  Stmt::TaskCall`/`Expr::SystemFunctionCall` are parsed but nothing in
+  `piperine-lang`'s elaboration pipeline lowers a `$`-call into the POM yet
+  (confirmed by grep — zero references to either AST node outside
+  `piperine-vams` itself), and `eval/mod.rs`'s own `//!` header records that
+  the PHDL-era `Interpreter`/`Host` that would have driven such a call died
+  with `parse/` at MD-45 ("a replacement... is future work — not
+  reintroduced speculatively here"). Building that lowering pass/runtime
+  is out of T47's stated `Where` (`eval/tasks.rs` only). What's delivered
+  instead, all pure and independently tested: `SystemTasks::resolve` — a
+  20-entry data table (`$write`/`$strobe`/`$display`/`$monitor`, `$info`/
+  `$warning`/`$error`/`$fatal`/`$finish`/`$stop`/`$discontinuity`,
+  `$bound_step`, `$abstime`/`$temperature`, `$itor`/`$rtoi`/`$realtobits`/
+  `$bitstoreal`/`$signed`/`$unsigned`) with fail-loud near-match
+  suggestions for unknown names (E4007, Levenshtein distance <= 3, top 3,
+  hand-written since no suggestion/fuzzy-match helper existed anywhere in
+  the repo to reuse — confirmed by grep before writing one); `format_display`
+  — the `$write`/`$strobe`/`$display`/`$monitor`-shared LRM Table 9-1
+  format-string evaluator (`%d`/`%o`/`%b`/`%h`/`%c`/`%s`/`%e`/`%f`/`%g`/
+  `%t`/`%v`/`%m`/`%%`); `SimEnvironment` — `$abstime`/`$temperature`/
+  `$bound_step` as pure queries against a caller-supplied environment
+  (positive-bound validation fails loud, E4009); `Conversions` — the
+  §9.13 numeric conversions, round-trip tested. Three new E-STD error
+  variants: E4007 `Unknown` (near-match help text), E4008
+  `MalformedFormat`, E4009 `InvalidArgument` — every variant carries a
+  `span: Option<miette::SourceSpan>` field per E-STD rule 6, but it is
+  always `None` today (no spanned call site reaches this module yet); the
+  field exists so the eventual lowering pass can populate it without a
+  breaking type change — documented on `SystemTaskError::Unknown`'s own
+  doc comment, not silently left unspanned. Also rewrote
+  `crates/piperine-lang/tests/vams_system_tasks.rs` fresh (T47's own
+  stated file) rather than touching the pre-existing (and already broken)
+  `system_task_migration_completeness.rs` (a stale PHDL-era fixture using
+  `mod Top() {}`/`digital Top {}` syntax against a deleted `CallableRegistry`
+  — confirmed broken on `main` before this task touched anything, via
+  `git status` showing zero other files modified when it was run
+  standalone: 12/12 failures, all "expected a top-level declaration...
+  found 'mod'"). Left untouched, out of T47's file scope, tracked as
+  pre-existing debt (not introduced or worsened here).
+  **Verification**: `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine-lang --lib`: **72 passed, 2 failed** (unchanged
+  pre-existing `elab::lower::flatten` failures, T45/T46's recorded
+  baseline; +13 vs the prior 59-passing count = the 13 unit tests in
+  `eval/tasks.rs`). `cargo test -p piperine-lang --test vams_system_tasks`:
+  **7 passed, 0 failed**. Gate note (SPEC_DEVIATION, same shape as T28-T32's
+  "dark middle"): the literal quick-gate command `cargo test -p
+  piperine-lang` (all targets) does not compile — 7 pre-existing targets
+  fail to compile (`callable_registry`, `constraint_class`,
+  `constraint_elab`, `constraint_pom`, `overload_resolution`, `parse_elab`,
+  `prelude`, all referencing PHDL-only surface MD-45 deleted:
+  `piperine_lang::parse`, `pom::QuantityClass`, `elab::registry::
+  CallableRegistry`, `Design::capability`, `Module::constraints`) plus 2
+  more that compile but fail at runtime (`fmt_doc_comment`,
+  `system_task_migration_completeness`) — confirmed pre-existing via `git
+  status` (no file outside this task's own additions was touched) before
+  and after this task's changes; `--lib` plus the task's own new
+  integration target is the practically-runnable form of the gate, per
+  the same documented pattern T28 through T32 used.
