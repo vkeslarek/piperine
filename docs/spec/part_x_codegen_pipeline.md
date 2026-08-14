@@ -101,10 +101,12 @@ The resolved form SHALL satisfy, for every module it covers:
   resolved form is monomorphic by construction, mirroring the POM it reads.
 
 *Note.* The resolved form is **codegen-private**. Nothing outside this crate
-depends on its shape; PHDL is the pipeline's only frontend, so there is no
-cross-crate IR contract to keep stable (a former standalone IR crate existed
-when a Verilog-AMS frontend also fed it — that frontend is gone, and the
-resolved form retreated to being this crate's internal stage).
+depends on its shape; Verilog-AMS (`piperine-vams`) is the pipeline's sole
+frontend (PHDL retired, MD-44/MD-45), so there is no cross-crate IR contract
+to keep stable (a former standalone IR crate existed when PHDL and an earlier
+Verilog-AMS frontend attempt both fed it — that dual-frontend era is gone,
+and the resolved form retreated to being this crate's internal stage, now fed
+by the one surviving frontend).
 
 ### 2.2 The lowering pass — one resolved body per module
 

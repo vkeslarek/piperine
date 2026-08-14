@@ -2,15 +2,16 @@
 
 <img src="assets/logo.svg" alt="Piperine Logo" width="50%"/>
 
-**A modern hardware-description language and a native analog / mixed-signal simulator — in one toolchain.**
+**A Verilog-AMS compiler and a native analog / mixed-signal simulator — in one toolchain.**
 
-Design a circuit in **PHDL**, simulate it on a **pure-Rust in-house solver** (no SPICE underneath), and verify it with **real Python** — not a `.measure` mini-language.
+Design a circuit in **Verilog-AMS** (LRM 2.4), simulate it on a **pure-Rust in-house solver** (no SPICE underneath), and verify it with **real Python** — not a `.measure` mini-language.
 
 </div>
 
 > ⚠️ **Work in progress — not production ready.** APIs, syntax, and behavior
 > change without notice. Use it to explore and contribute, not for anything you
-> depend on. PHDL is an **experimental** language.
+> depend on. Piperine's own PHDL language has been **retired in full** in favor
+> of standard Verilog-AMS — see `CLAUDE.md` for the pivot.
 
 ---
 
@@ -22,47 +23,51 @@ products without Cadence-class tooling. One language and one host cover the whol
 loop: design entry, SPICE-class simulation, mixed-signal, and interactive
 verification.
 
-- **PHDL** (`.phdl`) is a real language — generics with const parameters,
-  capabilities (traits), bundles, enums, SI-suffixed literals (`2.2u`, `10k`),
-  typed attributes — resolved at elaboration by a pure evaluator, **never a macro
-  stage**.
+- **Verilog-AMS** (`.vams`/`.va`, LRM 2.4) is the frontend — SI-suffixed literals
+  (`2.2u`, `10k`), `nature`/`discipline`, `parameter`s, `generate` blocks, typed
+  `(* attribute *)` instances — parsed from the LRM's own Annex A grammar
+  (`piperine-vams`, written from `VAMS-LRM-2-4.md` only) and resolved at
+  elaboration by a pure evaluator, **never a macro stage**.
 - It compiles **straight into a native in-house solver**: analog devices are
   JIT-compiled to machine code via **Cranelift**, digital behavior runs on an
-  **event-driven interpreter**. No external SPICE, no Verilog-AMS — PHDL is the
-  frontend.
+  **event-driven interpreter**. No external SPICE simulator underneath.
 - The device Jacobian is **symbolically differentiated** and JIT-compiled next to
   its residual — your model's derivative is exact, not finite-difference.
 - Verification is **code**: `import piperine` gives you the elaborated design,
   the analyses, and numpy waveforms. No TCL, no hidden state.
 
 ```
-PHDL (.phdl) ──► elaborated design ──► Cranelift-JIT analog devices ──► native solver
-                                            + event-driven digital interpreter
-                                            + optional OSDI (.osdi) Verilog-A models
-   hosts: Python (import piperine) · Rust (piperine-api) — drive analyses & measurement
+Verilog-AMS (.vams/.va) ──► elaborated design ──► Cranelift-JIT analog devices ──► native solver
+                                                        + event-driven digital interpreter
+                                                        + optional OSDI (.osdi) Verilog-A models
+      hosts: Python (import piperine) · Rust (piperine-api) — drive analyses & measurement
 ```
 
 ---
 
 ## See it in 60 seconds
 
-Describe a resistive divider in PHDL:
+Describe a resistive divider in Verilog-AMS:
 
-```phdl
-discipline Electrical { potential v : Real; flow i : Real; }
+```verilog-ams
+`include "disciplines.vams"
 
-mod VoltageSource(inout p : Electrical, inout n : Electrical) { param voltage : Real = 5.0; }
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 5.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p : Electrical, inout n : Electrical) { param r : Real = 1e3; }
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod DividerBoard() {
-    wire gnd : Electrical;  wire vin : Electrical;  wire mid : Electrical;
-    source : VoltageSource(.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top  : Resistor(.p = vin, .n = mid)      { .r = 3e3 };
-    r_bot  : Resistor(.p = mid, .n = gnd)      { .r = 2e3 };
-}
+module DividerBoard ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) source (vin, gnd);
+    Resistor      #(.r(3e3))       r_top  (vin, mid);
+    Resistor      #(.r(2e3))       r_bot  (mid, gnd);
+endmodule
 ```
 
 Verify it in Python — the sweep is a `for` loop, the assertion is an `assert`:
@@ -70,7 +75,7 @@ Verify it in Python — the sweep is a `for` loop, the assertion is an `assert`:
 ```python
 import piperine
 
-m = piperine.load("divider.phdl").module("DividerBoard")
+m = piperine.load("divider.vams").module("DividerBoard")
 
 r = m.op()
 assert abs(r.v("mid", "gnd") - 2.0) < 1e-6          # 5·R2/(R1+R2)
@@ -91,25 +96,30 @@ Run it: `piperine run divider_tb.py` (or `piperine test` to discover every
 
 ### True mixed-signal — one model, both domains
 
-`analog` and `digital` blocks share the same module. The boundary is explicit and
-type-checked: a digital register read *inside* an analog contribution is a
-feature, not a hack. Here a first-order delta-sigma modulator crosses it twice:
+`analog begin...end` and `always`/digital `logic` share the same module. The
+boundary is explicit and type-checked: a digital register read *inside* an
+analog contribution is a feature, not a hack. Here a first-order delta-sigma
+modulator crosses it twice:
 
-```phdl
-mod DeltaSigma ( input vin : Electrical, inout gnd : Ground, input clk : Bit, output dout : Bit ) {
-    param c : Real = 1.0e-12;  param r : Real = 1.0e3;  param vref : Real = 1.0;
-    wire intg : Electrical;            // integrator output
-    var  q : Bit = 0;                  // quantizer register, held across clocks
-}
-analog DeltaSigma {
-    var vfb : Real = if (q == 1) { vref } else { -vref };   // digital state read in analog
-    I(intg, gnd) <+ c * ddt(V(intg, gnd));                  // integrating capacitor
-    I(intg, gnd) <+ (vfb - V(vin)) / r;                     // (feedback − input) drives the node
-}
-digital DeltaSigma {
-    dout <- q;
-    @ posedge(clk) { q = (V(intg) > 0.0); }                 // clocked 1-bit quantizer
-}
+```verilog-ams
+`include "disciplines.vams"
+
+module DeltaSigma (input electrical vin, inout electrical gnd, input logic clk, output logic dout);
+    parameter real c = 1.0e-12;  parameter real r = 1.0e3;  parameter real vref = 1.0;
+    electrical intg;            // integrator output
+    logic q;                    // quantizer register, held across clocks
+    real vfb;
+
+    assign dout = q;
+
+    always @(posedge clk) q <= (V(intg, gnd) > 0.0);        // clocked 1-bit quantizer
+
+    analog begin
+        vfb = (q == 1'b1) ? vref : -vref;                   // digital state read in analog
+        I(intg, gnd) <+ c * ddt(V(intg, gnd));               // integrating capacitor
+        I(intg, gnd) <+ (vfb - V(vin, gnd)) / r;             // (feedback − input) drives the node
+    end
+endmodule
 ```
 
 A ramp-driven 3-comparator ADC — the analog block reads digital (D2A), the digital
@@ -141,7 +151,7 @@ A Python testbench drives the analyses; matplotlib does the rest. RC step
 response vs. the analytic `1 − e^(−t/τ)`, straight from a transient:
 
 ```python
-t = piperine.load("rc.phdl").module("RcStep").tran(
+t = piperine.load("rc.vams").module("RcStep").tran(
         piperine.TranConfig(stop=6e-4, step=2e-6, ic={"out": 0.0}))
 v = t.v("out", "gnd")                 # a Waveform: .values / .axis (numpy), .at, .cross, .rms
 plt.plot(v.axis, v.values)            # your own matplotlib, no wrapper in the way
@@ -175,54 +185,54 @@ assert session.rebuilds == 0              # pure value sets never re-elaborate
 Measured **≥ 10× faster** than re-elaborating per point, bit-for-bit equal to
 fresh builds — the foundation the design-centering optimizer builds on.
 
-### Parametric generation, resolved at compile time
+### Parametric generation, resolved at elaboration
 
-Structural and behavioral scaling is native `for`-loop data generation with const
-parameters `[N]` — no external netlist generators:
+Structural scaling is the LRM's own `generate for` + `genvar` (ch. 6/Annex A) —
+no external netlist generators. The generate block itself never lands in the
+elaborated design (MD-25: the authored source stays walkable exactly as
+written); only its *derived*, flattened instances do:
 
-```phdl
-mod Ladder[N] ( inout bus : Electrical, inout gnd : Ground ) {
-    param r : Real = 1.0e3;  param cpar : Real = 5.0e-15;
-    wire tap : Electrical[N];
-    for i in 0..N {
-        rseg[i] : Resistor ( bus, tap[i] ) { .r = r };
-        rgnd[i] : Resistor ( tap[i], gnd ) { .r = r };
-    }
-}
-analog Ladder {
-    for i in 0..N { I(rseg[i].n, gnd) <+ cpar * ddt(V(rseg[i].n, gnd)); }
-}
+```verilog-ams
+`include "disciplines.vams"
+
+module Ladder (inout electrical bus, inout electrical gnd);
+    parameter integer n = 8;
+    parameter real r = 1.0e3;
+    parameter real cpar = 5.0e-15;
+    electrical tap [n-1:0];
+    genvar i;
+
+    generate for (i = 0; i < n; i = i + 1) begin: seg
+        Resistor #(.r(r)) rseg (bus, tap[i]);
+        Resistor #(.r(r)) rgnd (tap[i], gnd);
+        analog I(tap[i], gnd) <+ cpar * ddt(V(tap[i], gnd));
+    end endgenerate
+endmodule
 ```
 
-### A real type system — model cards, capabilities, bounded polymorphism
+### Real device modeling — parameters, range constraints, LRM builtins
 
-PHDL has generics, **capabilities** (traits), **bundles**, enums, `fn`
-functions, and `Map`/`Vec`/`Option` value types. A SPICE model card is just a
-value bundle with a capability on top — and the *same* method runs both inside
-the JIT-compiled analog contribution and in const evaluation:
+Verilog-AMS's model-card idiom is a module with a rich `parameter` set — every
+declaration can carry a **range constraint** the elaborator enforces before
+simulation ever starts, and every contribution is a normal expression over
+LRM builtins (`exp`, `ln`, `ddt`, ...), symbolically differentiated:
 
-```phdl
-bundle DiodeModel { isat : Real = 1e-14, vt : Real = 0.02585 }
+```verilog-ams
+`include "disciplines.vams"
+`include "constants.vams"
 
-capability Junction {
-    fn current(self, v : Real) -> Real;
-    fn forward_drop(self, i : Real) -> Real;
-}
-impl Junction for DiodeModel {
-    fn current(self, v : Real) -> Real      { return self.isat * (exp(v / self.vt) - 1.0); }
-    fn forward_drop(self, i : Real) -> Real { return self.vt * ln(i / self.isat); }
-}
-
-mod Diode(inout a : Electrical, inout c : Electrical) {
-    param model : Junction = DiodeModel { };   // typed by the *capability*, not the bundle
-}
-analog Diode {
-    I(a, c) <+ model.current(V(a, c));         // capability method, inlined into the contribution
-}
+module Diode (inout electrical a, inout electrical c);
+    parameter real isat = 1e-14 from (0:inf);
+    parameter real vt   = 0.02585 from (0:inf);
+    analog begin
+        I(a, c) <+ isat * (limexp(V(a, c) / vt) - 1.0);
+    end
+endmodule
 ```
 
-Disciplines are user-defined too (`potential`/`flow`), so the same solver runs
-**electro-thermal** and other multi-physics couplings — not just `Electrical`.
+Disciplines are user-defined too (`nature`/`discipline`, `potential`/`flow`),
+so the same solver runs **electro-thermal** and other multi-physics
+couplings — not just `electrical`.
 
 ### Rich behavioral operators
 
@@ -286,18 +296,23 @@ piperine.extract(trace, {"peak": lambda t: t.v("out").max(), "rms": lambda t: t.
 - **Builtin SPICE model library** — a complete ngspice-faithful device set in
   any project with **no dependency** (see [The SPICE standard library](#the-spice-standard-library-use-spice) below), plus the disciplines,
   math, constants, and collections preludes.
-- **Extensible via plugins** — write a device (`@device(plugin = …)`), an
+- **Extensible via plugins** — write a device (`(* device = "plugin", type = "..." *)`), an
   attribute schema, a lifecycle hook, or a script as a **native (dlopen)** or
-  **Python** plugin. TOFU-trusted, with published `extern.phdl` stubs so a
-  plugin's names resolve in the editor like any other.
-- **OSDI support** — load `.osdi` v0.4 compiled Verilog-A device models alongside
-  JIT-compiled PHDL devices — the standard Verilog-A compilation target, as an
-  interop path for external models.
-- **Typed attributes** — layout/routing/floorplan intent attaches as
-  schema-validated attributes, not unstructured `PRAGMA` comments:
-  ```phdl
-  @layout(min_width = 2.0e-6, layer = "m3")
-  wire clk : Electrical;
+  **Python** plugin. TOFU-trusted; plugins contribute no textual declaration
+  surface of their own — `@device`/`@port` are the only plugin-facing schema
+  names, seeded by the plugin system itself so two device plugins never
+  collide.
+- **OSDI support** — load `.osdi` v0.4 compiled Verilog-A device models
+  alongside JIT-compiled Verilog-AMS devices — an interop path for external
+  models Piperine's own `.va`/`.vams` stdlib doesn't cover.
+- **Typed attributes** — the LRM's own `(* ... *)` attribute-instance syntax
+  (§2.9) carries structured, schema-validated intent, not unstructured
+  `PRAGMA` comments — an attribute naming an unrecognized schema fails loud
+  at elaboration rather than being silently accepted. `@device`/`@port` (the
+  plugin system's own schemas) are the built-in example:
+  ```verilog-ams
+  (* device = "my_plugin", type = "MyDevice" *)
+  module Resistor (inout electrical p, inout electrical n);
   ```
 - **Rich `Waveform`** — measurements (`slew_rate`/`rise_time`/`fall_time`/
   `overshoot`/`settling_time`/`delay`), transforms (`fft`/`resample`/
@@ -311,12 +326,12 @@ piperine.extract(trace, {"peak": lambda t: t.v("out").max(), "rms": lambda t: t.
 
 ---
 
-## The SPICE standard library — `use spice::…`
+## The SPICE standard library — `` `include "spice/…" ``
 
-Piperine ships a **complete, ngspice-faithful device library** as PHDL stdlib
-headers — available in any project with **zero dependency**, and translated
-**line-by-line from the ngspice C sources** (each model header cites the exact
-`.c` files and line numbers it came from). Every model is
+Piperine ships a **complete, ngspice-faithful device library** as Verilog-A
+stdlib headers — available in any project with **zero dependency**, and
+translated **line-by-line from the ngspice C sources** (each model header
+cites the exact `.c` files and line numbers it came from). Every model is
 **cross-validated against ngspice** to numerical agreement.
 
 | Namespace | Devices |
@@ -335,75 +350,80 @@ headers — available in any project with **zero dependency**, and translated
 These aren't toy models. The resistor carries the **full SPICE model card** —
 sheet-resistance geometry (`rsh`, `w`, `l`, `narrow`), temperature coefficients
 (`tc1`/`tc2`, `tnom`), thermal *and* flicker noise (`kf`/`af`), SOA limits
-(`bv_max`) — and ngspice's `XXXGiven` flags map cleanly onto PHDL optionals
-(`T?` + `.get_or(default)`), so "was this param set?" is a language feature, not a
-sentinel. A half-wave rectifier, fully from the stdlib:
+(`bv_max`) — and ngspice's `XXXGiven` flags map cleanly onto a negative-sentinel
+default (`x >= 0.0` stands in for "was this param set?"), since Verilog-A has
+no optional-parameter type of its own. A half-wave rectifier, fully from the
+stdlib:
 
-```phdl
-use spice::sources;
-use spice::passives;
-use spice::diode;
+```verilog-ams
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "diode.va"
 
-mod HalfWave() {
-    wire vin : Electrical;  wire out : Electrical;  wire gnd : Electrical;
-    v1 : vsrc(.p = vin, .n = gnd) { .wave = 1, .sin_va = 5.0, .sin_freq = 60.0 };  // 5 V, 60 Hz sine
-    d1 : dio (.p = vin, .n = out) { };                                            // rectifier
-    rl : res (.p = out, .n = gnd) { .r = 1e3 };
-    cl : cap (.p = out, .n = gnd) { .c = 10e-6 };                                  // smoothing cap
-}
+module HalfWave ();
+    electrical vin, out, gnd;
+    vsrc #(.wave(1), .sin_va(5.0), .sin_freq(60.0)) v1 (.p(vin), .n(gnd));  // 5 V, 60 Hz sine
+    dio  d1 (.p(vin), .n(out));                                             // rectifier
+    res  #(.r(1e3))    rl (.p(out), .n(gnd));
+    cap  #(.c(10e-6))  cl (.p(out), .n(gnd));                                // smoothing cap
+endmodule
 ```
 
-The **model card travels with the instance** — a `BjtModel`/`Mos1Model` bundle
-sets the device physics right where it's used. A BJT common-emitter stage:
+The **model card travels with the instance** — instance parameters set the
+device physics right where it's used. A BJT common-emitter stage:
 
-```phdl
-use spice::sources;  use spice::passives;  use spice::bjt;
+```verilog-ams
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "bjt.va"
 
-mod CommonEmitter() {
-    wire gnd : Electrical;  wire vcc : Electrical;  wire vb : Electrical;
-    wire base : Electrical;  wire col : Electrical;
-    vc  : vsrc(.p = vcc, .n = gnd)  { .dc = 5.0 };
-    vbb : vsrc(.p = vb,  .n = gnd)  { .dc = 2.0 };
-    rb  : res (.p = vb,  .n = base) { .r = 10e3 };
-    rc  : res (.p = vcc, .n = col)  { .r = 1e3 };
-    q1  : bjt (.c = col, .b = base, .e = gnd, .sub = gnd)
-          { .model = BjtModel { .is = 1e-16, .bf = 100.0 } };     // β = 100
-}
+module CommonEmitter ();
+    electrical gnd, vcc, vb, base, col;
+    vsrc #(.dc(5.0)) vc  (.p(vcc), .n(gnd));
+    vsrc #(.dc(2.0)) vbb (.p(vb),  .n(gnd));
+    res  #(.r(10e3)) rb  (.p(vb),  .n(base));
+    res  #(.r(1e3))  rc  (.p(vcc), .n(col));
+    bjt  #(.is(1e-16), .bf(100.0)) q1 (.c(col), .b(base), .e(gnd), .sub(gnd));  // β = 100
+endmodule
 ```
 
-A diode-connected NMOS (level 1) with a resistive load — geometry (`w`/`l`) on
-the instance, physics (`vto`/`kp`) on the model card:
+A diode-connected NMOS (level 1) with a resistive load — geometry (`w`/`l`)
+and physics (`vto`/`kp`) are both instance parameters:
 
-```phdl
-use spice::sources;  use spice::passives;  use spice::mos;
+```verilog-ams
+`include "disciplines.vams"
+`include "sources.va"
+`include "passives.va"
+`include "mos.va"
 
-mod NmosLoad() {
-    wire gnd : Electrical;  wire vdd : Electrical;  wire d : Electrical;
-    v1 : vsrc(.p = vdd, .n = gnd) { .dc = 5.0 };
-    r1 : res (.p = vdd, .n = d)   { .r = 10e3 };
-    m1 : mos1(.d = d, .g = d, .s = gnd, .b = gnd)
-         { .l = 2e-6, .w = 10e-6, .model = Mos1Model { .vto = 1.0, .kp = 2e-5 } };
-}
+module NmosLoad ();
+    electrical gnd, vdd, d;
+    vsrc #(.dc(5.0)) v1 (.p(vdd), .n(gnd));
+    res  #(.r(10e3)) r1 (.p(vdd), .n(d));
+    mos1 #(.l(2e-6), .w(10e-6), .vto(1.0), .kp(2e-5)) m1 (.d(d), .g(d), .s(gnd), .b(gnd));
+endmodule
 ```
 
-Two coupled inductors as a transformer, straight from `passives`:
+Two coupled inductors as a transformer, straight from `passives.va`:
 
-```phdl
-use spice::passives;
-// primary (p1,n1) ↔ secondary (p2,n2), coupling k
-t1 : xfmr(.p1 = in_p, .n1 = in_n, .p2 = out_p, .n2 = out_n) { .l1 = 1e-3, .l2 = 4e-3, .k = 0.98 };
+```verilog-ams
+`include "passives.va"
+// primary (p1,n1) <-> secondary (p2,n2), coupling k
+xfmr #(.l1(1e-3), .l2(4e-3), .k(0.98)) t1 (.p1(in_p), .n1(in_n), .p2(out_p), .n2(out_n));
 ```
 
-Need a device Piperine doesn't ship? Hand-port it to PHDL like the stdlib did, or
-load a compiled Verilog-A model via OSDI. Models are **always native PHDL** —
-OSDI is an interop path, never the home of the library.
+Need a device Piperine doesn't ship? Hand-port it to Verilog-A like the stdlib
+did, or load a compiled model via OSDI. Models are **always native
+Verilog-AMS** — OSDI is an interop path, never the home of the library.
 
 ---
 
 ## Example gallery
 
 `examples/` holds 23+ self-contained, numerically-validated designs — **every
-`.phdl` elaborates and every `.py` runs green in CI** (`tests/run_examples.rs`):
+`.vams` elaborates and every `.py` runs green in CI** (`tests/run_examples.rs`):
 
 voltage divider · RC low-pass + step response · diode clipper · sine source ·
 binary DAC · flash ADC · bang-bang thermostat · Johnson noise · coulomb counter ·
@@ -417,11 +437,11 @@ comparator · shift register · **mixed-signal ADC** · live optimization.
 
 ```sh
 piperine new my_chip             # scaffold a project (Piperine.toml + src/)
-piperine check src/main.phdl     # parse, elaborate, sanity-check
-piperine fmt   src/main.phdl     # canonical formatting
+piperine check src/main.vams     # parse, elaborate, sanity-check
+piperine fmt   src/main.vams     # canonical formatting
 piperine test                    # discover and run every *_tb.py testbench
 piperine run script.py           # run a Python script (embedded CPython)
-piperine run -i src/main.phdl    # interactive REPL with the design pre-loaded
+piperine run -i src/main.vams    # interactive REPL with the design pre-loaded
 piperine add <git-url>           # add a dependency (resolved via git)
 piperine tree                    # show the dependency tree
 ```
@@ -443,7 +463,8 @@ tokens, references / rename, folding, and inlay hints (SI-literal expansion:
 
 | Document | What it covers |
 |----------|----------------|
-| `docs/spec/` (Parts I–VII + appendices) | The formal PHDL specification |
+| `VAMS-LRM-2-4.md` | The Verilog-AMS language reference (LRM 2.4) — the sole grammar/semantics source for the frontend |
+| `docs/spec/` (Parts I–X + appendices) | Piperine's own architecture spec (elaboration, solver, host API, plugins, codegen) — written against the now-retired PHDL originally, retained as historical/architectural reference; see the supersession notice in `docs/spec/index.md` |
 | `docs/spec/part_viii_host_api.md` | The Python + Rust host APIs (load / Design / Module / Session, uniform analyses, introspection, CLI) |
 | `CLAUDE.md` | Architecture overview (the pipeline, crate responsibilities) |
 | `ROADMAP.md` | Where it's going — the pillars to V1, and the post-V1 gallery |

@@ -1088,7 +1088,7 @@ reproduction, and disposition.
 
 ---
 
-#### T57: Annex G/H → project docs; update `CLAUDE.md`/`AGENTS.md`/`docs/spec/`
+#### T57: Annex G/H → project docs; update `CLAUDE.md`/`AGENTS.md`/`docs/spec/` — ✅ DONE (see Progress Log)
 **Where**: `docs/`, `CLAUDE.md`, `AGENTS.md`, `README.md`
 **Depends on**: T56 · **Requirement**: VAMS-26, spec Success Criteria
 **Done when**: pipeline diagram and crate table describe VAMS not PHDL · every "PHDL is the only frontend" claim corrected · Annex G/H ported as reference · **Gate**: build
@@ -3883,3 +3883,79 @@ did not close.
   4/4), root (`vams_connect_modules_e2e` 1/1, `vams_annex_e` 9/9,
   `vams_vertical_slice` 3/3). No test modified, no file outside T56's
   stated `Where` (`spec.md`) touched.
+
+- **T57** ✅ (Phase 10) — de-PHDL-ify the project docs; port Annex G/H.
+  `CLAUDE.md`: project summary, pipeline diagram, "100% coverage" line,
+  crate table (added the missing `piperine-vams` row; `piperine-lang`'s row
+  rewritten off the deleted PHDL `Interpreter`/`Host`/`parse/`; fixed the
+  stale `use spice::…` claim to the real `` `include`` mechanism; fixed
+  `piperine-plugin`'s "pure-PHDL" shape name to the real `PluginShape::Pure`
+  and the plugin-routes-VPI-tasks T53 addition), "Known gaps" (dropped the
+  reference to deleted `headers/operators.phdl`), "Naming & conventions",
+  the whole "Declared language surface (MD-24)" section (rewritten: the
+  `extern type`/`fn`/`task`/`operator`/`attribute`/`impl` mechanism is
+  **gone**, not retargeted — MD-45 deleted it with `piperine-lang/src/
+  parse/`; only `@device`/`@port`'s name-only `ElabContext::schemas`
+  registry survives, seeded via `(* device = ... *)`/`(* port = ... *)`
+  attribute instances, matching design.md §9's MD-42 "MD-24 re-spelled"),
+  "Files not to edit casually" (`piperine-lang/src/parse/` →
+  `piperine-vams/src/parse/`), "Where the tests are" (`examples/*.phdl` →
+  `*.vams`), and "Documentation" (LRM added as the primary reference,
+  `docs/spec/` reframed as historical/architectural, not "the formal
+  spec"). `AGENTS.md`: "What Piperine is", pipeline diagram, workspace map
+  (added `piperine-vams`), "Hard rules" (parser path), test-placement table
+  (`.phdl` → `.vams`), "Documentation". `README.md`: tagline, intro bullets,
+  pipeline diagram, the "See it in 60 seconds" divider example rewritten in
+  real Verilog-AMS syntax (verified against this phase's own working test
+  patterns — `module`/`endmodule`, `` `include``, `#(.param(val))``
+  instantiation), the mixed-signal delta-sigma example (real `logic`/
+  `always @(posedge clk)` digital half, confirmed syntax from
+  `examples/21_shift_register_tran.vams`), the parametric-generation example
+  rewritten as a real `generate for`/`genvar` block (confirmed syntax from
+  `crates/piperine-lang/tests/vams_generate.rs`), the "capabilities/traits/
+  bundles" section **replaced** rather than syntax-swapped — those PHDL
+  features have no Verilog-AMS Annex A production and don't exist post-MD-45
+  (confirmed: `extern_coverage_guard.rs` documents the whole
+  callable/type/operator/constraint-helper/impl-method registry family as
+  deleted), so the section now shows real, working range-constrained
+  `parameter`s instead of a fabricated `capability`/`impl` example that
+  would never elaborate — the "Batteries included" bullets (plugin
+  `(* device = "plugin", type = "..." *)` syntax, confirmed against
+  `crates/piperine-lang/tests/vams_device_port_attrs.rs`; OSDI wording;
+  the `@layout` example rewritten as a real attribute instance), the full
+  SPICE-stdlib section (headline + all four code examples rewritten to
+  `` `include``-based real syntax, params cross-checked against
+  `headers/spice/passives.va`/`bjt.va`/`mos.va` field-by-field, not
+  guessed), the example-gallery line, the CLI usage block, and the
+  documentation table. New `docs/reference/annex_g_change_history.md`
+  (LRM Table G.1's 17-row change table + G.2's four obsolete-construct
+  notes, each cross-checked against what Piperine's parser actually
+  implements) and `docs/reference/annex_h_glossary.md` (the LRM's full
+  Annex H term list, each definition ported, several annotated with the
+  Piperine-specific implementation that realizes the concept — e.g. "NR
+  method" → `ConvergencePlan`/`NewtonStrategy`). `docs/index.md` updated to
+  point at both new reference docs and describe VAMS as the frontend.
+  `docs/spec/index.md` gained a supersession notice (Parts I-V describe a
+  retired language and are not normative for `.vams` source; Parts VI-X
+  describe backend/host concerns still substantially accurate) rather than
+  a full rewrite of the ten-part PHDL grammar spec, which duplicates
+  `VAMS-LRM-2-4.md` itself and is outside a docs-sweep task's scope — a
+  deliberate, documented boundary, not an oversight.
+  `docs/spec/part_x_codegen_pipeline.md` had one factually-backwards note
+  fixed (it claimed "PHDL is the pipeline's only frontend... a former
+  Verilog-AMS frontend... is gone" — exactly inverted from the current
+  truth). Deliberately **not** touched: every incidental historical PHDL
+  mention describing what already happened (T40-T56 Progress Log entries,
+  `docs/spec/index.md`'s own "as PHDL existed before its retirement"
+  framing, changelog-shaped text) — per this task's own scope note, only
+  genuine "PHDL is the frontend/only language" factual claims were
+  corrected, not every historical footnote.
+  **Verification**: `cargo build --workspace`: zero warnings (docs-only
+  change, cache hit — nothing recompiled). Gate (build, per T57's own
+  table entry): `cargo test --workspace --no-fail-fast` reproduces the
+  same pre-existing `piperine-codegen`/`piperine-lang` compile-failure
+  debt documented since T21/T45-T56 (confirmed unrelated — a docs-only
+  commit cannot change Rust compile errors); no test file touched by this
+  task. Final `grep -rn -i phdl README.md AGENTS.md CLAUDE.md` confirms
+  every remaining mention is a correctly-historical retirement/supersession
+  reference, never a live "PHDL is the/a ..." claim.

@@ -5,25 +5,28 @@ diagram, crate table, known gaps) — read both before making changes.
 
 ## What Piperine is
 
-A hardware-description language (PHDL, `.phdl`) and simulator for analog and mixed-signal
-circuits. The frontend elaborates to a POM `Design`, which codegen resolves into its own
-private form and compiles via Cranelift JIT (analog) + an event-driven interpreter
-(digital) into the solver's **`Element`** ABI. Verilog-A device models load as compiled
-OSDI (v0.4) shared libraries through an external plugin. Simulations are driven by
+A Verilog-AMS (LRM 2.4, `.vams`/`.va`) compiler and simulator for analog and mixed-signal
+circuits — **not PHDL**, which was retired in full (MD-44/MD-45; zero `.phdl` sources
+remain in the tree). The `piperine-vams` frontend parses (Annex A grammar only, C7 — never
+a third-party Verilog-A compiler), `piperine-lang` elaborates to a POM `Design`, which
+codegen resolves into its own private form and compiles via Cranelift JIT (analog) + an
+event-driven interpreter (digital) into the solver's **`Element`** ABI. Verilog-A device
+models also load as compiled OSDI (v0.4) shared libraries through an external plugin, for
+models Piperine's own `.va`/`.vams` stdlib doesn't cover. Simulations are driven by
 **hosts**: Python (`import piperine`, the scripting host) or Rust (`piperine-api`, the
 library face — MD-20; the root `piperine` crate is a thin re-export shell over it).
 
 ```
-.phdl ──► piperine-lang (parse/ elab/) ──► Design (POM)
-                                           │
-                                           ▼
-                    piperine-codegen (resolve/ → flatten/ → emit/ → kernel/ → device/)
-                                           │
-                                           ▼
-                              piperine-solver (Element ABI, DC/AC/tran/noise/TF)
-                                           │
-                                           ▼
-                              hosts: `piperine-api` (Rust) / `import piperine` (Python)
+.vams/.va ──► piperine-vams (parse/) ──► piperine-lang (elab/) ──► Design (POM)
+                                                                    │
+                                                                    ▼
+                             piperine-codegen (resolve/ → flatten/ → emit/ → kernel/ → device/)
+                                                                    │
+                                                                    ▼
+                                       piperine-solver (Element ABI, DC/AC/tran/noise/TF)
+                                                                    │
+                                                                    ▼
+                                       hosts: `piperine-api` (Rust) / `import piperine` (Python)
 ```
 
 Dependency direction (MD-20): `api → {lang, codegen, solver}`; `python → api`;
@@ -46,7 +49,9 @@ cargo test  --workspace     # the whole suite; bare `cargo test` only runs the r
 src/lib.rs                root `piperine` shell (MD-20): `pub use piperine_api::*`
 │                         and nothing else; root tests/ = host + cross-crate suites
 crates/
-├── piperine-lang/          PHDL frontend: parse/ elab/ pom/ eval/ (+ headers/)
+├── piperine-vams/          Verilog-AMS lexer/preprocessor/parser (LRM 2.4 Annex A only,
+│                           zero-dependency purity-gated crate, MD-43)
+├── piperine-lang/          Elaborator over piperine-vams's AST: elab/ pom/ eval/ (+ headers/)
 ├── piperine-codegen/       POM → devices, one module per pipeline stage (MD-23):
 │                           resolve/ (private resolved form + diff) → flatten/ → emit/
 │                           (Cranelift) → kernel/ (AnalogKernel, DigitalKernel) →
@@ -73,7 +78,7 @@ crates/
 - **No `unwrap()`/`expect()`** on user-input paths (LSP protocol I/O included — every
   request id must receive a response).
 - **Frozen corpora:** `headers/`, `tests/fixtures*` — do not edit.
-- **Hand-written parsers** (`piperine-lang/src/parse/`) — change only with tests proving
+- **Hand-written parsers** (`piperine-vams/src/parse/`) — change only with tests proving
   intent.
 
 ### Rust idiom rules (binding — recorded as MD-13)
@@ -116,7 +121,7 @@ and cross-crate proofs. Do not maintain a file list anywhere — enumerate with
 | What | Where |
 |------|-------|
 | host API (session/results/waveform) | root `tests/session*.rs`, `tests/host_*.rs` |
-| example gallery (dual contract) | root `tests/run_examples.rs` (every `.phdl` elaborates + every `.py` runs) |
+| example gallery (dual contract) | root `tests/run_examples.rs` (every `.vams` elaborates + every `.py` runs) |
 | ngspice cross-validation | root `tests/ngspice_{validation,ac,noise,tran,temp}.rs` — one target per domain over the `tests/ngspice/` fixture twins, sharing `tests/support/ngspice.rs` (harness, `WrData`, the per-domain `ToleranceContract`) |
 | ngspice parity coverage gate | root `tests/ngspice_parity_matrix.rs` (model × domain: `Covered` by a fixture or `NotApplicable` with a reason) |
 | syntax/elaboration gates | `piperine-lang/tests/{parse_elab,elab,bench_removed}.rs` |
@@ -127,7 +132,10 @@ and cross-crate proofs. Do not maintain a file list anywhere — enumerate with
 
 ## Documentation
 
-- Formal spec: `docs/spec/` (Parts I–VII + appendices A/B)
+- Verilog-AMS language reference: `VAMS-LRM-2-4.md` (the sole grammar/semantics source)
+- `docs/spec/` (Parts I–X + appendices A/B/C) — Piperine's own architecture spec, written
+  against PHDL originally and retained as historical/architectural reference; see
+  `docs/spec/index.md`'s supersession notice
 - Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

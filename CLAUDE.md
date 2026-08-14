@@ -2,17 +2,21 @@
 
 ## Project summary
 
-Piperine is a PHDL (`.phdl`/`.ppr`) hardware-description language compiled straight into a
-**native in-house circuit solver** (Cranelift-JIT analog devices + an event-driven digital
-interpreter). No external SPICE dependency. Verilog-A device models load as compiled OSDI
-(v0.4) shared libraries through the **`piperine-osdi` plugin** (external repo — the solver
-core has no OSDI/libloading dependency). Verilog-AMS has been dropped entirely — PHDL is
-the only frontend. Rust workspace, edition 2024.
+Piperine compiles **Verilog-AMS** (LRM 2.4, `.vams`/`.va` — `piperine-vams` is the parser,
+written from `VAMS-LRM-2-4.md` Annex A only) straight into a **native in-house circuit
+solver** (Cranelift-JIT analog devices + an event-driven digital interpreter). No external
+SPICE dependency. Verilog-A device models also load as compiled OSDI (v0.4) shared
+libraries through the **`piperine-osdi` plugin** (external repo — the solver core has no
+OSDI/libloading dependency) for models Piperine's own `.va`/`.vams` stdlib doesn't cover.
+**PHDL (`.phdl`/`.ppr`) has been retired entirely** (MD-44/MD-45, `verilog-ams-support`
+feature) — Verilog-AMS is the sole frontend, zero `.phdl` sources remain in the tree
+(`tests/suite_hygiene.rs::phdl_corpus_does_not_grow` is the regression guard). Rust
+workspace, edition 2024.
 
 ## Pipeline (the spine)
 
 ```
-PHDL (.phdl) ──parse_and_elaborate──► Design (POM)
+Verilog-AMS (.vams/.va) ──parse_and_elaborate──► Design (POM)
                                         │
                                         ▼
                             piperine_codegen::resolve::lower_bodies
@@ -39,7 +43,7 @@ e.g. `resolve::pom::LoweredBody`) but nothing outside `piperine-codegen` depends
 A resolved body covers one module's *own* behavior; `CircuitCompiler` reads all instance
 structure (connections, param overrides) straight from the POM
 `Design`/`Module`/`Instance` at circuit-build time.
-"100% coverage" means: every PHDL construct lowers to executable device code. When
+"100% coverage" means: every Verilog-AMS construct lowers to executable device code. When
 something cannot be faithfully lowered, **fail loud** (`CodegenError::Unsupported`) — never
 silently emit `0.0` or a no-op.
 
@@ -73,12 +77,13 @@ both a package and the workspace) — always pass `--workspace`.
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), const evaluator (`eval/`: `Interpreter`, `Host` trait, pure system tasks in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
+| `piperine-vams` | The Verilog-AMS (LRM 2.4) lexer/preprocessor/parser: `` `define``/`` `include``/`` `ifdef`` (`preprocess/`), the Annex A grammar (`parse/`) into `ast::SourceFile`. Zero-dependency, purity-gated (no `thiserror`/`miette`/filesystem I/O — `` `include`` resolution is injected via a trait `piperine-lang` implements) — grammar and semantics come from `VAMS-LRM-2-4.md` Annex A only, never a third-party Verilog-A compiler. |
+| `piperine-lang` | Elaborator over `piperine-vams`'s parsed Verilog-AMS AST: source → POM `Design` (`elab/`, `pom/`), a const evaluator over `piperine_vams::ast::Expr` directly (`elab/const_eval.rs` — no PHDL-era tree-walking `Interpreter`/`Host`, see `eval/mod.rs`'s own `//!`), and pure ch. 9 system-task/VPI-registration helpers in `eval/tasks.rs`. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (Annex D: `constants.vams`, `disciplines.vams`) and `headers/spice/` (the ngspice-faithful `.va` device models — `` `include "spice/<file>.va" `` resolves in any project with no dependency, via the builtin `spice` namespace `SourceMap` seeds). |
 | `piperine-codegen` | POM → devices, one module per pipeline stage: `pom::Design ─▶ resolve ─▶ flatten ─▶ emit ─▶ kernel ─▶ device`. `resolve/` (resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `flatten/` (resolved analog → `FlatAnalog`, crate-private). `emit/` (Cranelift emission machinery: `Builder`, `Codegen` trait, CSE, `SimCtx` ABI, crate-private). `kernel/`: `analog/` (`AnalogKernel`, capability sub-structs behind `Option`), `digital/`. `device/`: `analog/` (`AnalogInstance`, capability files `forces.rs`/`limits.rs`/`operators.rs`/`events.rs`), `digital.rs`, `circuit.rs`/`builder.rs`/`fusion.rs`/`plugin.rs` (`CircuitCompiler`) → `PiperineDevice` (implements `Element`). Public surface is a single `lib.rs` façade (MD-23) — `resolve`/`kernel`/`device` stay `pub`, `emit`/`flatten`/`error` are crate-private. |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`analyses/convergence.rs`), `TrBdf2` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
 | `piperine-api` | The library face (MD-20): the one host entry point `Session` + `SessionBuilder`, the sweep drivers, and `SolverConfig` (`session/`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine` (root) | Thin re-export shell over `piperine-api` (`pub use piperine_api::*`) — external Rust hosts keep `use piperine::…`; the tests of record live here as the shell's parity proof. The `piperine` binary target lives in `piperine-cli`. |
-| `piperine-plugin` | Plugin SDK + host (v2): native-dlopen + embedded-Python backends only, three shapes (pure-PHDL / scripted / device) inferred from the manifest keys, TOFU trust + permissions consent, `@device` loading, release-asset device binaries, CLI scripts. Plugins contribute **no** attribute schemas and no `extern`. |
+| `piperine-plugin` | Plugin SDK + host (v2): native-dlopen + embedded-Python backends only, three shapes (`Pure` / scripted / device, `PluginShape`, inferred from the manifest keys) — a pure-code plugin is a `.vams`/`.va` library resolved via `` `include``, no PHDL-specific meaning survives the frontend swap — TOFU trust + permissions consent, `@device` loading, release-asset device binaries, CLI scripts, and (T53/VAMS-21) native routing for VPI-associated system tasks (`PluginHost::register_system_task`). Plugins contribute **no** attribute schemas and no textual declaration surface. |
 | `piperine-plugin-macros` | The `#[pip::device]` / `#[pip::script]` / `#[pip::hook(phase)]` proc-macros — declaration-coupled contributions (depend on it as `pip` so it spells like the Python `@pip.…`). |
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
@@ -120,9 +125,10 @@ both a package and the workspace) — always pass `--workspace`.
 
 ## Known gaps (all fail loud — see `ROADMAP.md`)
 
-- `laplace_*`, `zi_*` — **not declared at all** (`headers/operators.phdl` has no
-  `extern operator` for either), so MD-24 stops a call at elaboration; they never reach
-  codegen. Language backlog, tracked in `ROADMAP.md`.
+- `laplace_*`, `zi_*` — **not recognized at all** by the operator/analog-function
+  resolution codegen reads from (no VAMS Annex A production reaches these names), so a
+  call fails loud at elaboration/codegen; they never reach the JIT. Language backlog,
+  tracked in `ROADMAP.md`.
 - `.disto` on MOS2/MOS3 — the 2nd/3rd-derivative kernels emit one JIT function per
   *ordered* controlling-branch combination and overrun Cranelift (`TryFromIntError`).
   They are opt-in (`SessionBuilder::disto(true)`, default off) and `Session::disto`
@@ -138,47 +144,47 @@ both a package and the workspace) — always pass `--workspace`.
 ## Naming & conventions
 
 - Ground net → MNA reference; gnd-family names: `gnd/GND/vss/VSS`.
-- PHDL pre-folds param defaults during elaboration; `fn` default parameters are elaboration
-  constants honored by both the interpreter and codegen's fn inliner (`flatten/analog.rs`).
+- Elaboration pre-folds `parameter` defaults; `analog function`/`function` default
+  arguments are elaboration constants honored by codegen's fn inliner
+  (`flatten/analog.rs`).
 
-## Declared language surface (MD-24)
+## Declared language surface (MD-24, re-spelled for VAMS — see MD-42)
 
-Every referenceable PHDL name resolves to a **textual declaration** in
-`crates/piperine-lang/headers/`. Name lookup that finds no declaration is a fail-loud compile error,
-never a silent fallback into a Rust-native registry. The seven `extern`
-forms cover every previously-magic surface:
+**PHDL-era mechanism, gone (MD-45, not retargeted):** every referenceable name used to
+resolve to a textual `extern type`/`fn`/`task`/`operator`/`attribute`/`impl` declaration
+in `crates/piperine-lang/headers/*.phdl`. That mechanism has no Verilog-AMS Annex A
+production and was deleted in full with `piperine-lang/src/parse/` (T21) — there is no
+`extern` keyword in VAMS, and `ElabContext` lost every sub-registry
+(`callables`/`types`/`operators`/`constraint_helpers`/`impl_methods`) that backed it.
 
-- `extern type Real;` — primitive value types (`headers/types.phdl`).
-- `extern fn sin(x: Real) -> Real;` — libm intrinsics (`headers/math.phdl`).
-- `extern task $display() -> Unit;` — system tasks (`headers/tasks.phdl`).
-- `extern operator ddt(x: Real) -> Real;` — runtime operators
-  (`headers/operators.phdl`).
-- `extern attribute device { plugin: String, type: String }` — plugin
-  system's own `@device`/`@port` schemas (`headers/device_port.phdl`).
-- `extern impl Real { fn from(x: Integer) -> Real; ... }` — type methods
-  (T17's cast-replacement surface; overload-resolved by argument type).
-- `extern impl Capability for TypeName { ... }` — capability impls
-  (reserved for future native capability dispatch on primitives; binary
-  operators are pure grammar, not dispatched through capabilities today).
+**What's real today:** primitive types, math/libm functions, system tasks, and runtime
+operators are LRM builtins the parser/elaborator/codegen recognize natively (Annex A
+grammar productions, ch. 4/9 tables) — no textual declaration step, because Verilog-A
+never had one either. The **only** surviving declared-surface mechanism is
+`@device`/`@port`: `ElabContext::schemas` (T35, VAMS-12/13) is a name-only registry,
+seeded before elaboration by `piperine_lang::seed_device_port_schemas`/
+`PluginHost::seed_schemas` (the plugin *system's* own schema authority, MD-21/D2, so two
+device plugins never collide), and consulted by `elab::lower::vams`'s `(* device = ...
+*)`/`(* port = ... *)` attribute-instance lowering — an unrecognized schema still fails
+loud (`ElabErrorKind::UnknownAttrSchema`), MD-24's "no silent fallback" rule carried over
+verbatim even though its declaration vehicle changed. **Plugins contribute no
+declarations** — no attribute schemas, no per-plugin stub (the PHDL-era `extern.phdl`
+stub mechanism is deleted; `crates/piperine-plugin/tests/extern_stub.rs` is the guard
+proving a plugin shipping such a file is inert).
 
-**Plugins contribute no declarations** — no `extern`, no attribute schemas,
-no per-plugin stub (MD-21/D2). The per-plugin `extern.phdl` stub mechanism is
-deleted: a plugin shipping such a file is inert and cannot mint a schema name
-(`crates/piperine-plugin/tests/extern_stub.rs` is the guard). The
-`@device`/`@port` schemas are seeded by the plugin *system* itself
-(`PluginHost::seed_schemas`), so two device plugins never collide on them.
+Known gap: four analog operators (`idtmod`, `absdelay`, `table`, `ac_stim`) resolve
+through codegen's own operator registry rather than a language-level declaration —
+tracked in `docs/spec/part_v_builtins.md` §2 and `ROADMAP.md`.
 
-Known MD-24 gap: four analog operators (`idtmod`, `absdelay`, `table`,
-`ac_stim`) carry no `extern operator` declaration and resolve through codegen's
-operator registry instead — see `docs/spec/part_v_builtins.md` §2's declaration
-column and `ROADMAP.md`.
-
-Permanent regression guard: `crates/piperine-lang/tests/extern_coverage_guard.rs`.
+Regression guard (rewritten for VAMS, T36, design R9 "rewritten, never deleted"):
+`crates/piperine-lang/tests/extern_coverage_guard.rs`.
 
 ## Files not to edit casually
 
-- `crates/piperine-lang/src/parse/` — hand-written recursive-descent parsers; changes
-  ripple through all parsing.
+- `crates/piperine-vams/src/parse/` — the hand-written, LRM-Annex-A-only recursive-descent
+  Verilog-AMS parser; changes ripple through all parsing. Provenance rule (C7): grammar and
+  semantics come from `VAMS-LRM-2-4.md` only — never a third-party Verilog-A compiler, and
+  the deleted `piperine-ams` is off-limits as a source.
 - `crates/piperine-codegen/src/resolve/` — the resolved expression/statement form and its
   symbolic differentiation; the correctness-critical core.
 - `crates/piperine-codegen/src/emit/analog_expr.rs` — `emit_analog`, the shared JIT
@@ -208,12 +214,20 @@ no list here — the tree is the list, and a guard keeps it honest.
   and the per-domain `ToleranceContract`, which is the *only* place a numeric
   tolerance is written); `tests/ngspice_parity_matrix.rs` is the coverage gate
   that keeps a parity claim from being unfalsifiable. Root
-  `tests/run_examples.rs` is the **only** copy of the "every `examples/*.phdl`
+  `tests/run_examples.rs` is the **only** copy of the "every `examples/*.vams`
   elaborates and every `examples/*.py` runs" gate.
 
 ## Documentation
 
-- Formal spec: `docs/spec/` (Parts I–X + appendices A/B/C; `index.md` is the map)
+- Verilog-AMS language reference: `VAMS-LRM-2-4.md` (LRM 2.4, the sole grammar/semantics
+  source, C7) — Annex G (change history) and Annex H (glossary) are additionally ported as
+  reference material under `docs/reference/` (T57).
+- `docs/spec/` (Parts I–X + appendices A/B/C; `index.md` is the map) — Piperine's own
+  formal specification of elaboration/solver/host-API/plugin/codegen architecture, written
+  against PHDL originally; retained as historical/architectural reference (most of it
+  describes backend concerns that outlived the frontend swap) but its concrete grammar
+  text (Parts I–IV) is superseded by `VAMS-LRM-2-4.md` — see each file's own supersession
+  notice.
 - Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

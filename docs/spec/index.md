@@ -2,12 +2,27 @@
 
 **Version {{ phdl_version }}**
 
+> **Supersession notice (2026-08, `verilog-ams-support` feature, MD-42/MD-44/MD-45).**
+> PHDL is retired — zero `.phdl` sources remain in the tree. **Verilog-AMS (LRM 2.4,
+> `.vams`/`.va`) is the sole frontend**; its grammar and semantics are defined by
+> `VAMS-LRM-2-4.md` (Annex A) alone, not by this document. This Part set is retained as
+> **historical/architectural reference**: Parts VI–X (plugins, solver, host APIs,
+> `piperine-signal`, codegen pipeline) describe backend/host concerns that mostly outlived
+> the frontend swap and are still substantially accurate; Parts I–V (the concrete PHDL
+> grammar, elaboration-over-PHDL-AST, the removed interpreted `bench` context, POM
+> reflection over PHDL shapes, and the PHDL builtins table) describe a language that no
+> longer exists as a frontend and are **not** normative for anything a `.vams` source file
+> does today. See `CLAUDE.md`'s "Documentation" section and
+> `.specs/features/verilog-ams-support/` for the current pipeline. Annex G (LRM change
+> history) and Annex H (LRM glossary) are ported as reference material under
+> `docs/reference/`.
+
 The authoritative specification of the Piperine Hardware Description Language (PHDL)
-and its mixed-signal simulation environment.
+and its mixed-signal simulation environment, as PHDL existed before its retirement.
 
 ## Scope
 
-PHDL is a single, strongly-typed, mixed-signal hardware description language with **one
+PHDL was a single, strongly-typed, mixed-signal hardware description language with **one
 grammar and two execution contexts**:
 
 1. **Elaboration** — `mod` bodies, type annotations, structural control. Resolved once
@@ -16,11 +31,12 @@ grammar and two execution contexts**:
    analog kernels and an event-driven digital interpreter. Executed by the solver
    engines during DC/AC/tran/noise/TF analyses.
 
-The grammar is *the same* across both contexts (`fn`-body grammar — `var`, `if`/
-`else`, `match`, `for`, `return`, expressions). What differs is **purity**, **effect
-availability**, and **system tasks**. Driving analyses, measuring, and verifying are
+The grammar was *the same* across both contexts (`fn`-body grammar — `var`, `if`/
+`else`, `match`, `for`, `return`, expressions). What differed was **purity**, **effect
+availability**, and **system tasks**. Driving analyses, measuring, and verifying were
 **host** concerns — the Python/Rust host APIs (Part VIII), not language constructs.
-(The former third context, interpreted `bench` blocks, was removed — see Part III.)
+(The former third context, interpreted `bench` blocks, was removed before PHDL's own
+retirement — see Part III.)
 
 ## Document set
 
