@@ -96,10 +96,16 @@ impl ElabPass for LowerDeclarations {
 struct ElabModules;
 impl ElabPass for ElabModules {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        // LRMC-C1-09: every discipline's `access` name -> BranchKind,
+        // built once from the disciplines/natures `LowerDeclarations`
+        // already populated, so every module's contribution resolution
+        // (elab_module -> resolve_contribution_branches) can promote a
+        // custom access name, not only V/I/potential/flow.
+        let access_kinds = super::vams::build_access_kind_map(design);
         let names: Vec<String> = elab.syms.module_decls.keys().cloned().collect();
         for name in &names {
             let decl = elab.syms.module_decls[name].clone();
-            let module = elab.elab_module(&decl)?;
+            let module = elab.elab_module(&decl, &access_kinds)?;
             design.modules_map_mut().insert(name.clone(), module);
         }
         Ok(())

@@ -30,11 +30,42 @@ use crate::pom::{
 
 use super::Elaborator;
 
+/// Maps every discipline's own `access` name (§3.6.1.2, via its
+/// `potential`/`flow` nature binding's `Nature::access()`) to the
+/// [`BranchKind`] a contribution through that name records — LRMC-C1-09.
+/// Built once per elaboration run from `Design::disciplines`/`natures`
+/// (populated by the `LowerDeclarations` pass, which runs before
+/// `ElabModules`, so this is always complete by the time module bodies are
+/// lowered). `V`/`I`/`potential`/`flow` are NOT included here — they are
+/// the LRM's own always-legal names, handled directly by
+/// [`resolve_contribution_branches`] regardless of what any discipline
+/// declares, exactly as before this task.
+pub(super) fn build_access_kind_map(design: &Design) -> HashMap<String, BranchKind> {
+    let mut map = HashMap::new();
+    for (_, disc) in design.disciplines() {
+        if let Some(nat_name) = &disc.potential {
+            if let Some(access) = design.nature(nat_name).and_then(Nature::access) {
+                map.entry(access.to_string()).or_insert(BranchKind::Potential);
+            }
+        }
+        if let Some(nat_name) = &disc.flow {
+            if let Some(access) = design.nature(nat_name).and_then(Nature::access) {
+                map.entry(access.to_string()).or_insert(BranchKind::Flow);
+            }
+        }
+    }
+    map
+}
+
 impl Elaborator {
     /// Elaborates one `ModuleDecl` into a POM `Module`. Structural
     /// (no cross-module resolution beyond looking up an instantiated
     /// module's port order in the already-registered symbol table).
-    pub(crate) fn elab_module(&self, decl: &ModuleDecl) -> Result<Module, ElabError> {
+    pub(crate) fn elab_module(
+        &self,
+        decl: &ModuleDecl,
+        access_kinds: &HashMap<String, BranchKind>,
+    ) -> Result<Module, ElabError> {
         // Mutable so each parameter becomes visible to elaboration-constant
         // evaluation for everything declared after it in this same module
         // (a later param's default, a net's array-range bound, a
@@ -194,7 +225,7 @@ impl Elaborator {
                 continue;
             }
             for stmt in behavior.body() {
-                resolve_contribution_branches(stmt, &decl.name, &mut module.branches)?;
+                resolve_contribution_branches(stmt, &decl.name, &mut module.branches, access_kinds)?;
             }
         }
 
@@ -808,47 +839,77 @@ fn lower_branch_decl(b: &BranchDecl, out: &mut Vec<Branch>) {
     }
 }
 
-/// Walks a statement tree looking for `V(...)`/`I(...)` access functions
-/// used as a contribution target (`V(p,n) <+ expr;`, §5.4), resolving each
-/// to a branch (a name lookup for `V(br)`, or find-or-create for the
+/// Walks a statement tree looking for an access-function call used as a
+/// contribution target (`V(p,n) <+ expr;`, §5.4), resolving each to a
+/// branch (a name lookup for `V(br)`, or find-or-create for the
 /// two-terminal/ground-referenced implicit form, §5.4.1) and recording the
-/// contribution's kind (`V` → potential, `I` → flow) — the T18
-/// `record_contribution` conflict check fires here.
+/// contribution's kind — the T18 `record_contribution` conflict check
+/// (§5.4.2's `BranchKindConflict`) fires here, for every discipline, not
+/// only electrical.
 ///
-/// Scope note: only the conventional `V`/`I` access-function spellings are
-/// recognized; a custom discipline's own `access` name (§3.6.1.2) is not
-/// yet resolved to potential/flow here (needs the nature→discipline→access
-/// lookup chain, deferred past T23's stated scope).
-fn resolve_contribution_branches(stmt: &Stmt, module: &str, branches: &mut Vec<Branch>) -> Result<(), ElabError> {
+/// `V`/`I`/`potential`/`flow` (parsed as `Expr::AccessFunction` since T16)
+/// are always potential/flow respectively, regardless of which discipline
+/// is in scope — the LRM's own always-legal generic/example names (§4.4).
+/// A custom discipline's own `access` name (§3.6.1.2) has no dedicated AST
+/// shape (the grammar has no symbol table, T16) — it parses as a plain
+/// `Expr::Call`, promoted here to the same branch resolution via
+/// `access_kinds` (LRMC-C1-09, [`build_access_kind_map`]).
+fn resolve_contribution_branches(
+    stmt: &Stmt,
+    module: &str,
+    branches: &mut Vec<Branch>,
+    access_kinds: &HashMap<String, BranchKind>,
+) -> Result<(), ElabError> {
     match stmt {
         Stmt::Contribution { target, span, .. } => {
-            if let Expr::AccessFunction { function, pos, neg, .. } = target {
-                let kind = match function.as_str() {
-                    "V" => BranchKind::Potential,
-                    "I" => BranchKind::Flow,
-                    _ => return Ok(()),
-                };
-                let branch = resolve_or_create_branch(pos, neg.as_deref(), branches)?;
-                branch.record_contribution(kind, Some(to_miette_span(*span)), module)?;
+            match target {
+                Expr::AccessFunction { function, pos, neg, .. } => {
+                    let kind = match function.as_str() {
+                        "V" | "potential" => BranchKind::Potential,
+                        "I" | "flow" => BranchKind::Flow,
+                        other => match access_kinds.get(other) {
+                            Some(kind) => *kind,
+                            None => return Ok(()),
+                        },
+                    };
+                    let branch = resolve_or_create_branch(pos, neg.as_deref(), branches)?;
+                    branch.record_contribution(kind, Some(to_miette_span(*span)), module)?;
+                }
+                Expr::Call { name, args, .. } => {
+                    let Some(kind) = access_kinds.get(name.as_str()) else { return Ok(()) };
+                    let (pos, neg) = match args.as_slice() {
+                        [pos] => (pos, None),
+                        [pos, neg] => (pos, Some(neg)),
+                        _ => {
+                            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                                "access function `{name}` (§4.4) takes a branch identifier or one/two net expressions, got {} argument(s)",
+                                args.len()
+                            ))));
+                        }
+                    };
+                    let branch = resolve_or_create_branch(pos, neg, branches)?;
+                    branch.record_contribution(*kind, Some(to_miette_span(*span)), module)?;
+                }
+                _ => {}
             }
             Ok(())
         }
         Stmt::Block { stmts, .. } => {
-            stmts.iter().try_for_each(|s| resolve_contribution_branches(s, module, branches))
+            stmts.iter().try_for_each(|s| resolve_contribution_branches(s, module, branches, access_kinds))
         }
         Stmt::If { then_branch, else_branch, .. } => {
-            resolve_contribution_branches(then_branch, module, branches)?;
+            resolve_contribution_branches(then_branch, module, branches, access_kinds)?;
             if let Some(e) = else_branch {
-                resolve_contribution_branches(e, module, branches)?;
+                resolve_contribution_branches(e, module, branches, access_kinds)?;
             }
             Ok(())
         }
-        Stmt::Case { arms, .. } => {
-            arms.iter().try_for_each(|arm| resolve_contribution_branches(&arm.body, module, branches))
-        }
+        Stmt::Case { arms, .. } => arms
+            .iter()
+            .try_for_each(|arm| resolve_contribution_branches(&arm.body, module, branches, access_kinds)),
         Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Forever { body, .. }
         | Stmt::EventControl { body, .. } | Stmt::DelayControl { body, .. } => {
-            resolve_contribution_branches(body, module, branches)
+            resolve_contribution_branches(body, module, branches, access_kinds)
         }
         Stmt::Null { .. }
         | Stmt::Assign { .. }
