@@ -305,6 +305,12 @@ pub struct Module {
     /// design §5.3).
     #[serde(default)]
     pub genvars: Vec<String>,
+    /// Verilog-AMS `event` names declared in this module (LRM §5.10.4,
+    /// Annex A.2.1.3) — the `-> name;` trigger and `@(name)` sensitivity
+    /// resolve against this list. Authored form (MD-25), same simplicity
+    /// as `genvars` above — LRMC-C5-04.
+    #[serde(default)]
+    pub events: Vec<String>,
     pub origin: Option<String>,
 }
 
@@ -327,7 +333,7 @@ impl Module {
             span: None, attributes: Vec::new(), doc: None, name,
             ports, params, wires, vars: Vec::new(), instances, connections,
             behaviors,
-            branches: Vec::new(), genvars: Vec::new(), origin: None,
+            branches: Vec::new(), genvars: Vec::new(), events: Vec::new(), origin: None,
         }
     }
 
@@ -358,6 +364,8 @@ impl Module {
     pub fn branches(&self) -> &[crate::pom::Branch] { &self.branches }
     /// All `genvar` names declared in this module (LRM §3.5).
     pub fn genvars(&self) -> &[String] { &self.genvars }
+    /// All `event` names declared in this module (LRM §5.10.4).
+    pub fn events(&self) -> &[String] { &self.events }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

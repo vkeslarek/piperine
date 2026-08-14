@@ -116,6 +116,12 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 Err(CodegenError::unsupported("`#delay` control in digital codegen"))
             }
             S::Disable { .. } => Err(CodegenError::unsupported("`disable` in digital codegen")),
+            // Parses and lowers into the POM (LRMC-C5-04 FORM half, T25);
+            // runtime triggering (waking a `@(event_name)` sensitivity
+            // elsewhere) is T26 — not yet emitted here.
+            S::EventTrigger { name, .. } => {
+                Err(CodegenError::unsupported(format!("event trigger `-> {name}` in digital codegen")))
+            }
         }
     }
 

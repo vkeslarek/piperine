@@ -84,6 +84,9 @@ pub enum Stmt {
     Disable { span: Span, name: String },
     /// A task call or `$`-system-task call used as a statement.
     TaskCall { span: Span, name: String, args: Vec<Expr> },
+    /// `-> event_name;` — event trigger, §5.10.4/Annex A.6.5. Fires a
+    /// named event, waking any `@(event_name)` sensitivity elsewhere.
+    EventTrigger { span: Span, name: String },
 }
 
 impl Stmt {
@@ -103,7 +106,8 @@ impl Stmt {
             | Stmt::EventControl { span, .. }
             | Stmt::DelayControl { span, .. }
             | Stmt::Disable { span, .. }
-            | Stmt::TaskCall { span, .. } => *span,
+            | Stmt::TaskCall { span, .. }
+            | Stmt::EventTrigger { span, .. } => *span,
         }
     }
 }

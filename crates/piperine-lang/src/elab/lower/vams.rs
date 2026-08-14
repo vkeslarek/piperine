@@ -82,6 +82,7 @@ impl Elaborator {
         let mut behaviors = Vec::new();
         let mut branches = Vec::new();
         let mut vars = Vec::new();
+        let mut events: Vec<String> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
@@ -182,11 +183,14 @@ impl Elaborator {
                         vars.push(var_declarator_to_var(d, ty.clone(), &env)?);
                     }
                 }
-                // genvar/generate (T25), ground/event declarations,
-                // continuous assign, specify/gates: not yet lowered — later
-                // tasks extend this match.
+                // `event name1, name2, ...;` (§5.10.4, LRMC-C5-04) — an
+                // authored declaration list, same simplicity as `genvars`
+                // (MD-25: navigable exactly as written).
+                ModuleItem::Event(e) => events.extend(e.names.iter().cloned()),
+                // genvar/generate (T25), ground declarations, continuous
+                // assign, specify/gates: not yet lowered — later tasks
+                // extend this match.
                 ModuleItem::Ground(_)
-                | ModuleItem::Event(_)
                 | ModuleItem::Genvar(_)
                 | ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
@@ -230,7 +234,16 @@ impl Elaborator {
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
         module.branches = branches;
         module.vars = vars;
+        module.events = events;
         module.attributes = lower_module_attrs(&decl.attrs, &self.ctx.schemas)?;
+
+        // LRMC-C5-04: `-> event_name;` must name a declared `event` —
+        // undeclared fails loud citing the trigger, not a silent no-op.
+        for behavior in &module.behaviors {
+            for stmt in behavior.body() {
+                check_event_triggers(stmt, &module.events, &decl.name)?;
+            }
+        }
 
         // Access-function call sites inside analog behaviors (§5.4.1) bind
         // to a branch, named or implicit, and drive its BranchKind —
@@ -947,6 +960,47 @@ fn resolve_contribution_branches(
         | Stmt::Assign { .. }
         | Stmt::NonBlockingAssign { .. }
         | Stmt::Disable { .. }
+        | Stmt::TaskCall { .. }
+        | Stmt::EventTrigger { .. } => Ok(()),
+    }
+}
+
+/// LRMC-C5-04: walks a statement tree looking for `-> event_name;`
+/// triggers, failing loud if `event_name` isn't in `declared` (§5.10.4:
+/// "An event name shall be declared explicitly before it is used").
+fn check_event_triggers(stmt: &Stmt, declared: &[String], module: &str) -> Result<(), ElabError> {
+    match stmt {
+        Stmt::EventTrigger { name, .. } => {
+            if !declared.iter().any(|e| e == name) {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "module `{module}`: `-> {name};` triggers an undeclared event (§5.10.4) — \
+                     add `event {name};`"
+                ))));
+            }
+            Ok(())
+        }
+        Stmt::Block { stmts, .. } => {
+            stmts.iter().try_for_each(|s| check_event_triggers(s, declared, module))
+        }
+        Stmt::If { then_branch, else_branch, .. } => {
+            check_event_triggers(then_branch, declared, module)?;
+            if let Some(e) = else_branch {
+                check_event_triggers(e, declared, module)?;
+            }
+            Ok(())
+        }
+        Stmt::Case { arms, .. } => {
+            arms.iter().try_for_each(|arm| check_event_triggers(&arm.body, declared, module))
+        }
+        Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Forever { body, .. }
+        | Stmt::EventControl { body, .. } | Stmt::DelayControl { body, .. } => {
+            check_event_triggers(body, declared, module)
+        }
+        Stmt::Null { .. }
+        | Stmt::Assign { .. }
+        | Stmt::NonBlockingAssign { .. }
+        | Stmt::Contribution { .. }
+        | Stmt::Disable { .. }
         | Stmt::TaskCall { .. } => Ok(()),
     }
 }
@@ -1111,6 +1165,7 @@ fn rewrite_port_access_stmt(stmt: Stmt, branches: &[Branch]) -> Stmt {
         Stmt::TaskCall { span, name, args } => {
             Stmt::TaskCall { span, name, args: args.into_iter().map(&e).collect() }
         }
+        Stmt::EventTrigger { .. } => stmt,
     }
 }
 

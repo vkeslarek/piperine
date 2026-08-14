@@ -654,6 +654,11 @@ impl<'m> AnalogFlattener<'m> {
                         "runtime loop/delay-control statement in an analog body",
                     ));
                 }
+                // Parses and lowers into the POM (LRMC-C5-04 FORM half,
+                // T25); runtime triggering is T26 — not yet wired here.
+                PomStmt::EventTrigger { name, .. } => {
+                    return Err(CodegenError::unsupported(format!("event trigger `-> {name}` in an analog body")));
+                }
             }
         }
         Ok(())

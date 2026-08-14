@@ -41,6 +41,9 @@ impl Grammar {
         if self.at_punct("@") {
             return self.parse_event_control();
         }
+        if self.at_punct("->") {
+            return self.parse_event_trigger();
+        }
         if let Tok::SystemIdent(_) = self.peek() {
             return self.parse_task_call();
         }
@@ -215,6 +218,19 @@ impl Grammar {
         let (name, name_span) = self.expect_ident()?;
         self.expect_punct(";")?;
         Ok(Stmt::Disable { span: Span::new(start.start, name_span.end), name })
+    }
+
+    /// `event_trigger ::= '->' hierarchical_event_identifier ';'` — §5.10.4,
+    /// Annex A.6.5. Legal in both analog and digital statement positions
+    /// (this method is the shared statement entry point, so no separate
+    /// analog/digital dispatch is needed) — LRMC-C5-04. Only a bare
+    /// identifier is supported (no hierarchical `.`-joined path yet,
+    /// matching `defparam`'s own target scope note).
+    fn parse_event_trigger(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_punct("->")?;
+        let (name, _) = self.expect_ident()?;
+        let end = self.expect_punct(";")?;
+        Ok(Stmt::EventTrigger { span: Span::new(start.start, end.end), name })
     }
 
     /// `'@' ( '(' event_expression ')' | '*' ) statement` — §5.6/Annex A.6.5.

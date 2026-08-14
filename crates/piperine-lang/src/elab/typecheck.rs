@@ -86,7 +86,11 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
         | Stmt::Assign { .. }
         | Stmt::Contribution { .. }
         | Stmt::Disable { .. }
-        | Stmt::TaskCall { .. } => {}
+        | Stmt::TaskCall { .. }
+        // §5.10.4: "Named events can be triggered ... from an analog
+        // event statement" — explicitly legal inside analog, not an
+        // Annex C violation.
+        | Stmt::EventTrigger { .. } => {}
     }
 }
 

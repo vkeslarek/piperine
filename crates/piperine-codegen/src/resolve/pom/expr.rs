@@ -477,6 +477,9 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
             name: name.clone(),
             args: args.iter().map(|a| resolve_expr(a, ctx)).collect(),
         },
+        // No expression to resolve — `name` is an event identifier, not a
+        // value.
+        S::EventTrigger { span, name } => S::EventTrigger { span: *span, name: name.clone() },
     }
 }
 

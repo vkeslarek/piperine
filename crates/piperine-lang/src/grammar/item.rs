@@ -217,6 +217,9 @@ impl Grammar {
         if kw == Some("ground") {
             return Ok(ModuleItem::Ground(self.parse_ground_decl()?));
         }
+        if kw == Some("event") {
+            return Ok(ModuleItem::Event(self.parse_event_decl()?));
+        }
         if kw == Some("parameter") || kw == Some("localparam") {
             return Ok(ModuleItem::Param(self.parse_param_decl_body(false)?));
         }
@@ -358,6 +361,25 @@ impl Grammar {
         let (name, _) = self.expect_ident()?;
         self.expect_punct(";")?;
         Ok(GroundDecl { span: start, name })
+    }
+
+    /// `event_declaration ::= event list_of_event_identifiers ;` — §5.10.4,
+    /// Annex A.2.1.3/Syntax 5-20. `list_of_event_identifiers` allows an
+    /// array dimension per name (`event e[0:3];`) — not yet representable
+    /// (`ast::EventDecl` is a flat name list, matching `ast::GenvarDecl`'s
+    /// own scope note precedent), so a `[` after a name is a genuine parse
+    /// error here rather than silently dropped.
+    fn parse_event_decl(&mut self) -> Result<EventDecl, ParseError> {
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("event")?;
+        let (first, _) = self.expect_ident()?;
+        let mut names = vec![first];
+        while self.eat_punct(",") {
+            let (name, _) = self.expect_ident()?;
+            names.push(name);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(EventDecl { span: Span::new(start.start, end.end), attrs, names })
     }
 
     /// `integer_declaration`/`real_declaration`/`time_declaration`/
