@@ -1011,7 +1011,7 @@ reproduction, and disposition.
 
 ---
 
-#### T49: UDP evaluation
+#### T49: UDP evaluation — ✅ DONE (see Progress Log)
 **Where**: `crates/piperine-codegen/src/kernel/digital/`, `crates/piperine-codegen/tests/vams_udp.rs`
 **Depends on**: T48 · **Requirement**: VAMS-19
 **Done when**: combinational and sequential UDPs evaluate against their state tables per LRM/1364 · **Gate**: quick
@@ -3441,3 +3441,37 @@ did not close.
   compile — T32 already documented 6/39 pre-existing broken integration
   targets, untouched and unworsened by this task; `--lib` plus the task's
   own new integration target is the practically-runnable form.
+
+- **T49** ✅ `<pending commit>` — UDP (user-defined primitive) state-table
+  evaluation (12 unit tests in `kernel/digital/udp.rs` + 3 integration
+  tests in `crates/piperine-codegen/tests/vams_udp.rs`, 15 new).
+  **SPEC_DEVIATION** (documented, carried forward — same shape as T48's
+  gap): `piperine_vams::ast::PrimitiveDecl` (parsed at T11) has no
+  POM-lowering path either (same grep, same reason). `UdpTable::
+  eval_combinational` matches LRM §7.4.3 level symbols (`0`/`1`/`x`/`?`/
+  `b`) against every row until one matches all columns; an unlisted input
+  combination yields `X` per the LRM's own default (not an error — the
+  LRM states this explicitly, distinguishing it from T48's gates, where
+  every input combination has a defined truth-table entry).
+  `UdpTable::eval_sequential` additionally matches the current-state
+  column and supports edge symbols (`r`/`f`/`p`/`n`/`*`) on input
+  columns, matching the `prev -> curr` transition rather than a bare
+  level; `-` in the output column means "no change" (state holds). `Z`
+  on any UDP input/state is coerced to `X` before matching (LRM §7.4: UDPs
+  have no strength/high-Z model on their own terms) — stated in the
+  module's `//!` header, not a silent surprise. Test fixtures build
+  `PrimitiveDecl`/`UdpTableRow` values directly (not through the real
+  parser) since T11's grammar tokenizes each `level_symbol` one character
+  at a time and this evaluator's own scope doesn't include fixing that;
+  the fixtures use single-character edge/level symbols only (`r`/`f`/`p`/
+  `n`/`*`/`?`/`b`/`0`/`1`/`x`/`-`), which is what real UDP tables
+  overwhelmingly use — parenthesized multi-symbol columns are a rarer
+  syntax form, out of this task's scope, not exercised.
+  **Verification**: `cargo build --workspace`: zero warnings.
+  `cargo test -p piperine-codegen --lib`: **35 passed, 2 failed**
+  (unchanged pre-existing `device::builder` failures; +12 vs T48's
+  23-passing count). `cargo test -p piperine-codegen --test vams_udp`:
+  **3 passed, 0 failed**. Same gate-command caveat as T47/T48 (whole-crate
+  `cargo test -p piperine-codegen` still blocked by T32's pre-existing,
+  unworsened compile failures); `--lib` + the task's own integration
+  target is the practically-runnable form.
