@@ -13,6 +13,7 @@
 //! work — not reintroduced speculatively here.
 
 pub mod error;
+pub mod rng;
 pub mod tasks;
 pub use crate::value;
 

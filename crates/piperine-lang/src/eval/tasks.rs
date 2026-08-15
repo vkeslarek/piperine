@@ -135,6 +135,24 @@ pub enum SystemTaskKind {
     Fflush,
     /// `$fgetc(fd)` — §9.5.
     Fgetc,
+    /// `$random`/`$arandom` (§9.13.1) — a new 32-bit signed random number,
+    /// updating the `inout` seed.
+    Random,
+    Arandom,
+    /// `$rdist_uniform(seed, start, end[, type])` — §9.13.2.
+    RdistUniform,
+    /// `$rdist_normal(seed, mean, stddev[, type])` — §9.13.2.
+    RdistNormal,
+    /// `$rdist_exponential(seed, mean[, type])` — §9.13.2.
+    RdistExponential,
+    /// `$rdist_poisson(seed, mean[, type])` — §9.13.2.
+    RdistPoisson,
+    /// `$rdist_chi_square(seed, degree_of_freedom[, type])` — §9.13.2.
+    RdistChiSquare,
+    /// `$rdist_t(seed, degree_of_freedom[, type])` — §9.13.2.
+    RdistT,
+    /// `$rdist_erlang(seed, k_stage, mean[, type])` — §9.13.2.
+    RdistErlang,
 }
 
 /// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
@@ -216,6 +234,15 @@ impl SystemTasks {
         ("$feof", SystemTaskKind::Feof),
         ("$fflush", SystemTaskKind::Fflush),
         ("$fgetc", SystemTaskKind::Fgetc),
+        ("$random", SystemTaskKind::Random),
+        ("$arandom", SystemTaskKind::Arandom),
+        ("$rdist_uniform", SystemTaskKind::RdistUniform),
+        ("$rdist_normal", SystemTaskKind::RdistNormal),
+        ("$rdist_exponential", SystemTaskKind::RdistExponential),
+        ("$rdist_poisson", SystemTaskKind::RdistPoisson),
+        ("$rdist_chi_square", SystemTaskKind::RdistChiSquare),
+        ("$rdist_t", SystemTaskKind::RdistT),
+        ("$rdist_erlang", SystemTaskKind::RdistErlang),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
@@ -811,12 +838,12 @@ impl SystemTaskError {
     /// Builds a `MalformedFormat` — a struct method (MD-13) so every
     /// construction site shares one place that fills the not-yet-wired
     /// `span` (see [`Self::Unknown`]'s doc comment).
-    fn malformed(fmt: &str, reason: String) -> Self {
+    pub(crate) fn malformed(fmt: &str, reason: String) -> Self {
         Self::MalformedFormat { fmt: fmt.to_string(), reason, span: None }
     }
 
     /// Builds an `InvalidArgument` — see [`Self::malformed`].
-    fn invalid_argument(task: &str, reason: String) -> Self {
+    pub(crate) fn invalid_argument(task: &str, reason: String) -> Self {
         Self::InvalidArgument { task: task.to_string(), reason, span: None }
     }
 

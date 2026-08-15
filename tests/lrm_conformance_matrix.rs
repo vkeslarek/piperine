@@ -148,7 +148,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "display_format_b_and_h_render_unknown_and_highz_bits",
         },
     },
-    Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-09",
+        story: "P3",
+        clause: "§9.2-9.23",
+        status: Status::Closed {
+            file: "crates/piperine-lang/src/eval/rng.rs",
+            test_fn: "random_is_deterministic_given_the_same_seed",
+        },
+    },
     Entry {
         id: "LRMC-C7-10",
         story: "P3",
