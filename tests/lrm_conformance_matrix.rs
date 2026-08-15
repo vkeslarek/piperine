@@ -135,7 +135,15 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
     Entry { id: "LRMC-C7-10", story: "P3", clause: "§9.2", status: Status::Pending },
     Entry { id: "LRMC-C7-11", story: "P3", clause: "§9.17.1", status: Status::Pending },
-    Entry { id: "LRMC-C7-12", story: "P3", clause: "§8.3", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-12",
+        story: "P3",
+        clause: "§8.3",
+        status: Status::Closed {
+            file: "crates/piperine-solver/src/digital/events.rs",
+            test_fn: "stratified_regions_resolve_the_canonical_active_nba_race_through_evaluate_until_stable",
+        },
+    },
     Entry { id: "LRMC-C7-13", story: "P3", clause: "§8.5.3.5", status: Status::Pending },
     Entry { id: "LRMC-C7-14", story: "P3", clause: "§8.4.6", status: Status::Pending },
     Entry { id: "LRMC-C10-01", story: "P4", clause: "§10.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "default_discipline_sets_the_named_discipline" } },

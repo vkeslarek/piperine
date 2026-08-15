@@ -13,7 +13,7 @@
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
-use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue, Region};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 
 const FIXTURE: &str = r#"
@@ -57,14 +57,14 @@ fn digital_trigger_wakes_an_analog_named_event_sensitivity_in_order() {
             net: DigitalNet(clk_idx),
             value: LogicValue::Zero,
             source: usize::MAX,
-            seq: (2 * i) as u64,
+            seq: (2 * i) as u64, region: Region::Active,
         });
         circuit.digital_state.schedule(DigitalEvent {
             time: base + 1.0,
             net: DigitalNet(clk_idx),
             value: LogicValue::One,
             source: usize::MAX,
-            seq: (2 * i + 1) as u64,
+            seq: (2 * i + 1) as u64, region: Region::Active,
         });
     }
 

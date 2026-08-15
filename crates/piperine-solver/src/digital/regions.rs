@@ -5,24 +5,31 @@
 //! event scheduler to the LRM's stratified regions is in-scope-by-
 //! necessity for VAMS-20.
 //!
-//! **Scope of this file.** `DigitalState::evaluate_dag_ordered`/
-//! `evaluate_until_stable` (`scheduler.rs`) already implement a two-phase
-//! delta cycle (register/`seq_phase` commit before any `comb_phase`
-//! re-evaluation) that gets blocking-vs-non-blocking ordering right for
-//! the cases those two phases cover. What they do **not** have is a
-//! general four-region model — `Region::{Active, Inactive, Nba, Monitor}`
-//! per LRM §8.3 — because `Element`/`DigitalEvent` carry no region tag to
-//! drive one. Retrofitting `core/element.rs`'s trait surface or
-//! `DigitalEvent` to carry a region is a larger, correctness-critical
-//! change to the existing (heavily-relied-on) scheduler than this task's
-//! risk tolerance allows in one pass, and MD-46 didn't authorize touching
-//! `core/element.rs`'s trait surface — **SPEC_DEVIATION**, carried
-//! forward like T47-T49's own documented gaps. What this file delivers
-//! instead: [`RegionQueue`] — a standalone, independently-verified
-//! ordering primitive that any future device-dispatch integration can
-//! schedule through, proving the ordering rule itself (region-priority
-//! beats submission order, ties within a region are FIFO-deterministic)
-//! against a race-prone fixture before it's wired into the live scheduler.
+//! **Wired into the live scheduler (T38/LRMC-C7-12).** `DigitalEvent`
+//! (`events.rs`) now carries a [`Region`] field, and its `Ord` compares
+//! `(time, region, seq)` instead of `(time, seq)` — the exact ordering
+//! rule this file's [`RegionQueue`] independently proved
+//! (region-priority beats submission order, FIFO within a region) is now
+//! *the* tie-break the production event queue itself (`DigitalState::
+//! event_queue`, a `BinaryHeap<Reverse<DigitalEvent>>`) uses. Both
+//! `evaluate_until_stable` and `evaluate_dag_ordered` (`scheduler.rs`)
+//! drain that same heap via successive `pop()`, which already yields
+//! events in ascending `Ord` — so both production paths now apply a
+//! same-timestamp batch in strict region-priority order with **no
+//! further change to either method's own code**: extending `DigitalEvent`
+//! instead of literally invoking `RegionQueue::run()` in the hot delta-
+//! cycle loop avoids adding a second heap/allocation to the
+//! (heavily-relied-on) scheduler's inner loop, while reusing the same
+//! ordering rule `RegionQueue` proved correct. `core/element.rs`'s trait
+//! surface is untouched (MD-46) — every existing event source (the JIT
+//! `QueueSink::emit` runtime path) stamps `Region::Active`, so this is a
+//! behavior-preserving superset for every pre-T38 caller (see
+//! `events.rs`'s own `stratified_regions_resolve_the_canonical_active_
+//! nba_race_through_evaluate_until_stable`/`inactive_region_lands_
+//! after_active_...`/`monitor_region_lands_last_...` — the production-
+//! path proofs). `RegionQueue` itself stays as the independently-verified
+//! reference oracle its own tests already exercise; nothing here forces a
+//! caller to *also* route through it.
 //!
 //! **The four regions, in per-time-step processing order (LRM §8.3):**
 //! 1. `Active` — blocking assignments, continuous assigns, `$display`.

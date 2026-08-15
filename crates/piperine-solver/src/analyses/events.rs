@@ -526,7 +526,7 @@ mod tests {
                 net: DigitalNet(0),
                 value: LogicValue::One,
                 source: 0,
-                seq: 0,
+                seq: 0, region: crate::digital::regions::Region::Active,
             },
             "u0",
         );
@@ -554,7 +554,7 @@ mod tests {
                 net: DigitalNet(0),
                 value: LogicValue::One,
                 source: 0,
-                seq: 0,
+                seq: 0, region: crate::digital::regions::Region::Active,
             },
             "u0",
         );

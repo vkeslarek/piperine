@@ -38,7 +38,7 @@
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
-use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue, Region};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 
 /// T37 (LRMC-C7-01): a genuine `electrical<->logic` crossing with *no*
@@ -210,14 +210,14 @@ fn mixed_analog_digital_fixture_with_a_connectmodule_bridge_simulates_end_to_end
             net: DigitalNet(clk_idx),
             value: LogicValue::Zero,
             source: usize::MAX,
-            seq: (2 * i) as u64,
+            seq: (2 * i) as u64, region: Region::Active,
         });
         circuit.digital_state.schedule(DigitalEvent {
             time: base + 1.0,
             net: DigitalNet(clk_idx),
             value: LogicValue::One,
             source: usize::MAX,
-            seq: (2 * i + 1) as u64,
+            seq: (2 * i + 1) as u64, region: Region::Active,
         });
     }
 

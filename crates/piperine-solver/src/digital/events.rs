@@ -1,6 +1,18 @@
 //! Digital events and logic values: `LogicValue`, the `DigitalNet`
 //! handle, and the time-ordered `DigitalEvent` the scheduler queues.
+//!
+//! **T38 (LRMC-C7-12):** `DigitalEvent` now carries a §8.3 [`Region`]
+//! (`super::regions`) — same-timestamp events order by `(time, region,
+//! seq)` instead of `(time, seq)`. Every existing event source (the JIT
+//! `pip_*`/`QueueSink::emit` runtime path, every hand-built fixture
+//! across the workspace) stamps `Region::Active`, so this is a
+//! behavior-preserving superset for all of them: `region` is always
+//! equal within a same-source batch, so the new key component never
+//! changes relative order there. `scheduler.rs` is what actually drains
+//! by region now — see its own doc comment.
 use std::cmp::Ordering;
+
+use super::regions::Region;
 
 // ---------------------------------------------------------------------------
 // LogicValue
@@ -41,6 +53,10 @@ pub struct DigitalEvent {
     pub value: LogicValue,
     pub source: usize,
     pub seq: u64,
+    /// LRM §8.3 stratified region (T38/LRMC-C7-12) — `Active` for every
+    /// event source that predates this field (the common case: an
+    /// ordinary blocking-assign-derived write).
+    pub region: Region,
 }
 
 impl PartialEq for DigitalEvent {
@@ -49,7 +65,8 @@ impl PartialEq for DigitalEvent {
         self.seq == other.seq &&
         self.net == other.net &&
         self.value == other.value &&
-        self.source == other.source
+        self.source == other.source &&
+        self.region == other.region
     }
 }
 
@@ -66,6 +83,10 @@ impl Ord for DigitalEvent {
         let time_cmp = self.time.total_cmp(&other.time);
         if time_cmp != Ordering::Equal {
             return time_cmp;
+        }
+        let region_cmp = self.region.cmp(&other.region);
+        if region_cmp != Ordering::Equal {
+            return region_cmp;
         }
         self.seq.cmp(&other.seq)
     }
@@ -141,7 +162,7 @@ mod tests {
             net: DigitalNet(0),
             value: LogicValue::Zero,
             source: 99,
-            seq: 0,
+            seq: 0, region: Region::Active,
         });
 
         let mut devices: Vec<Box<dyn Element>> = vec![
@@ -170,7 +191,7 @@ mod tests {
             net: DigitalNet(0),
             value: LogicValue::Zero,
             source: 0,
-            seq: 0,
+            seq: 0, region: Region::Active,
         });
 
         assert_eq!(state.nets[0], LogicValue::One);
@@ -186,9 +207,9 @@ mod tests {
     fn test_event_ordering() {
         let mut state = DigitalState::new(1);
 
-        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 2 });
-        state.schedule(DigitalEvent { time: 3.0, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 0 });
-        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::Z, source: 0, seq: 1 });
+        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 2, region: Region::Active });
+        state.schedule(DigitalEvent { time: 3.0, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active });
+        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::Z, source: 0, seq: 1, region: Region::Active });
 
         let mut extracted = Vec::new();
         while let Some(Reverse(e)) = state.event_queue.pop() {
@@ -200,6 +221,105 @@ mod tests {
             (5.0, LogicValue::Z),
             (5.0, LogicValue::One),
         ]);
+    }
+
+    /// T38 (LRMC-C7-12) — §8.3's canonical race, through the *production*
+    /// path (`evaluate_until_stable`, not `RegionQueue` standalone):
+    /// two same-timestamp writes to the same net, one `Active`
+    /// (blocking-assign-derived) and one `Nba` (non-blocking-assign-
+    /// derived), scheduled in submission order that would give the wrong
+    /// answer if region were ignored. Regardless of submission order, the
+    /// LRM's stratified regions guarantee the final value is the `Nba`
+    /// write (`Region`'s derived `Ord` — `Active < Nba` — now the event
+    /// queue's own tie-break, ahead of `seq`).
+    #[test]
+    fn stratified_regions_resolve_the_canonical_active_nba_race_through_evaluate_until_stable() {
+        for (active_seq, nba_seq) in [(0u64, 1u64), (1u64, 0u64)] {
+            let mut state = DigitalState::new(1);
+            state.schedule(DigitalEvent {
+                time: 1.0,
+                net: DigitalNet(0),
+                value: LogicValue::Zero,
+                source: 0,
+                seq: active_seq,
+                region: Region::Active,
+            });
+            state.schedule(DigitalEvent {
+                time: 1.0,
+                net: DigitalNet(0),
+                value: LogicValue::One,
+                source: 1,
+                seq: nba_seq,
+                region: Region::Nba,
+            });
+            state.evaluate_until_stable(1.0, &mut [], Default::default(), &[]).unwrap();
+            assert_eq!(
+                state.nets[0],
+                LogicValue::One,
+                "the Nba write must win regardless of submission order (active_seq={active_seq}, nba_seq={nba_seq})"
+            );
+        }
+    }
+
+    /// T38: `Inactive` (`#0`-delay) is exercised through the production
+    /// path too — scheduled at the same timestamp as an `Active` write to
+    /// the same net, `Inactive` must land after `Active` per §8.3's
+    /// region order (`Active < Inactive < Nba < Monitor`).
+    #[test]
+    fn inactive_region_lands_after_active_at_the_same_timestamp() {
+        let mut state = DigitalState::new(1);
+        state.schedule(DigitalEvent {
+            time: 2.0,
+            net: DigitalNet(0),
+            value: LogicValue::One,
+            source: 0,
+            seq: 0,
+            region: Region::Inactive,
+        });
+        state.schedule(DigitalEvent {
+            time: 2.0,
+            net: DigitalNet(0),
+            value: LogicValue::Zero,
+            source: 1,
+            seq: 1,
+            region: Region::Active,
+        });
+        state.evaluate_until_stable(2.0, &mut [], Default::default(), &[]).unwrap();
+        assert_eq!(state.nets[0], LogicValue::One, "Inactive (#0) must land after Active at the same timestamp");
+    }
+
+    /// T38: `Monitor` sits last in the region order (`Active < Inactive <
+    /// Nba < Monitor`) — a same-timestamp `Monitor` write overrides every
+    /// other region's write to the same net, through the production path.
+    #[test]
+    fn monitor_region_lands_last_at_the_same_timestamp() {
+        let mut state = DigitalState::new(1);
+        state.schedule(DigitalEvent {
+            time: 3.0,
+            net: DigitalNet(0),
+            value: LogicValue::X,
+            source: 0,
+            seq: 0,
+            region: Region::Monitor,
+        });
+        state.schedule(DigitalEvent {
+            time: 3.0,
+            net: DigitalNet(0),
+            value: LogicValue::One,
+            source: 1,
+            seq: 1,
+            region: Region::Nba,
+        });
+        state.schedule(DigitalEvent {
+            time: 3.0,
+            net: DigitalNet(0),
+            value: LogicValue::Zero,
+            source: 2,
+            seq: 2,
+            region: Region::Active,
+        });
+        state.evaluate_until_stable(3.0, &mut [], Default::default(), &[]).unwrap();
+        assert_eq!(state.nets[0], LogicValue::X, "Monitor drains last, overriding Active/Nba at the same timestamp");
     }
 
     #[test]

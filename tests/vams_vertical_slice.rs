@@ -57,7 +57,7 @@
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
-use piperine_solver::abi::{DigitalEvent, DigitalNet, ElementCapabilities, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, ElementCapabilities, LogicValue, Region};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 
 /// The exact `.vams` translation of `examples/22_rc_step_response.phdl`'s
@@ -257,14 +257,14 @@ fn vams_digital_counter_register_increments_on_posedge() {
             net: DigitalNet(clk_idx),
             value: LogicValue::Zero,
             source: usize::MAX,
-            seq: (2 * i) as u64,
+            seq: (2 * i) as u64, region: Region::Active,
         });
         circuit.digital_state.schedule(DigitalEvent {
             time: base + 1.0,
             net: DigitalNet(clk_idx),
             value: LogicValue::One,
             source: usize::MAX,
-            seq: (2 * i + 1) as u64,
+            seq: (2 * i + 1) as u64, region: Region::Active,
         });
     }
 

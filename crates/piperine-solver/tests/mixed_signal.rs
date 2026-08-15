@@ -19,7 +19,7 @@ use piperine_solver::abi::{AnalogReference, Netlist, NodeIdentifier};
 use piperine_solver::abi::DcAnalysisState;
 use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink, QueueSink};
-use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue, Region};
 use piperine_solver::abi::CircularArrayBuffer2;
 use piperine_solver::abi::Stamp;
 use piperine_solver::prelude::Context;
@@ -924,7 +924,7 @@ fn test_a2d_drives_digital_chain() {
     let mut state = DigitalState::new(2);
 
     // Inject comparator result: net 0 = One at t=1ns
-    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
+    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(SimpleInverter { input: DigitalNet(0), output: DigitalNet(1), id: 0 }),

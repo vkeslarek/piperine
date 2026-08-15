@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue, Region};
 
 use crate::resolve::{EdgeKind, Type};
 use crate::kernel::digital::{DigitalAbi, DigitalKernel};
@@ -490,6 +490,7 @@ impl DigitalInstance {
             value: Quad::to_logic(value),
             source: self.device_id,
             seq: self.seq,
+            region: Region::Active,
         }));
         self.seq += 1;
     }
