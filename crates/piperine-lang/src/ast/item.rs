@@ -545,12 +545,34 @@ pub struct ConnectRule {
     pub body: Vec<Stmt>,
 }
 
-/// `connectrules name { connect_rule* } endconnectrules` — chapter 7.
+/// `connect_resolution ::= connect discipline_identifier {,
+/// discipline_identifier} resolveto discipline_identifier_or_exclude ;`
+/// — §7.7.2 Syntax 7-7 (LRMC-C7-04/C10-20, T33).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConnectResolutionTarget {
+    Discipline(String),
+    Exclude,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConnectResolution {
+    pub span: Span,
+    pub disciplines: Vec<String>,
+    pub target: ConnectResolutionTarget,
+}
+
+/// `connectrules name { (connect_rule | connect_resolution)* }
+/// endconnectrules` — chapter 7. The two statement kinds share the
+/// `connect` keyword but are otherwise disjoint productions (a
+/// `connect_resolution` always ends in `resolveto`, a `connect_rule`
+/// never does), so they're kept in separate lists rather than one
+/// mixed-kind enum vec.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectrulesDecl {
     pub span: Span,
     pub name: String,
     pub rules: Vec<ConnectRule>,
+    pub resolutions: Vec<ConnectResolution>,
 }
 
 /// `config name; design ...; endconfig` — 1364 configuration declarations,

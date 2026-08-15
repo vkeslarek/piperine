@@ -103,7 +103,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "split_segments_one_connect_module_instance_per_port",
         },
     },
-    Entry { id: "LRMC-C7-04", story: "P3", clause: "§7.4.4.3", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-04",
+        story: "P3",
+        clause: "§7.4.4.3",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/vams_discipline_resolution.rs",
+            test_fn: "resolveto_forces_the_named_discipline_instead_of_failing_loud",
+        },
+    },
     Entry { id: "LRMC-C7-05", story: "P3", clause: "§7.6/§9.22-9.23", status: Status::Pending },
     Entry { id: "LRMC-C7-06", story: "P3", clause: "§7.3.6", status: Status::Pending },
     Entry { id: "LRMC-C7-07", story: "P3", clause: "§9.2/Table 9-1", status: Status::Pending },
@@ -133,7 +141,15 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C10-17", story: "Out of Scope", clause: "Annex E.2.1/E.3.2", status: Status::OutOfScope },
     Entry { id: "LRMC-C10-18", story: "P4", clause: "Annex F §7.4.4.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_annex_f_domain.rs", test_fn: "continuous_wins_over_discrete_matching_figure_7_3" } },
     Entry { id: "LRMC-C10-19", story: "P4", clause: "Annex F §7.4.4.1 step 4.b", status: Status::Closed { file: "crates/piperine-lang/tests/vams_annex_f_domain.rs", test_fn: "unresolved_net_falls_back_to_default_discipline_directive" } },
-    Entry { id: "LRMC-C10-20", story: "P4", clause: "Annex F §7.4.1", status: Status::Pending },
+    Entry {
+        id: "LRMC-C10-20",
+        story: "P4",
+        clause: "Annex F §7.4.1",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/vams_discipline_resolution.rs",
+            test_fn: "narrowest_resolveto_rule_wins_over_a_broader_one",
+        },
+    },
 ];
 
 fn workspace_root() -> PathBuf {

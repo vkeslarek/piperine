@@ -64,6 +64,20 @@ impl ElabPass for InsertConnectModules {
                     if local_disc == callee_disc || local_disc.is_empty() || callee_disc.is_empty() {
                         continue;
                     }
+                    // §7.7.2 (T33): `connect ... resolveto` unifies two
+                    // discipline *names* (typically two compatible
+                    // discrete variants, LRM Figure 7-5's cmos1-4) without
+                    // an inserted device — `ResolveDisciplines` already
+                    // applied the forced name to this net; the remaining
+                    // mismatch here is just the callee's own fixed port
+                    // declaration, not a genuine analog/discrete crossing
+                    // that needs a connect module. `resolveto exclude`
+                    // never reaches this pass (`ResolveDisciplines` fails
+                    // loud on it directly), so only the `Discipline(_)`
+                    // arm is live here.
+                    if resolve_via_resolveto(elab, &local_disc, callee_disc).is_some() {
+                        continue;
+                    }
                     let (target, mode, params) = resolve_connect_rule(elab, design, &local_disc, callee_disc)?;
                     let new_inst = Instance {
                         span: None,
@@ -114,6 +128,26 @@ fn local_net_discipline(module: &crate::pom::Module, net: &str) -> Option<String
         .find(|p| p.name == net)
         .map(|p| p.ty.discipline_name().to_string())
         .or_else(|| module.wires.iter().find(|w| w.name == net).map(|w| w.ty.discipline_name().to_string()))
+}
+
+/// §7.7.2/§7.4.4.3 (LRMC-C7-04/C10-20, T33): the *narrowest* registered
+/// `connect_resolution` rule whose discipline set contains both `a` and
+/// `b` — narrowest wins so a specific pair rule (`connect x,y resolveto
+/// x;`) takes priority over a broader one covering more disciplines
+/// (`connect x,y,a resolveto a;`), exactly LRM §7.7.2 Example 1's own
+/// worked result (`x,y` → `x`; `x,y,a` → `a`; `y,a` → `a`, inherited from
+/// the only rule that names both `y` and `a`). Competing same-size rules
+/// naming different targets (Example 2's "resolve ... with a warning"
+/// case) pick the first declared — a documented simplification, not
+/// Example 2's own warning mechanism (out of this task's scope).
+pub(super) fn resolve_via_resolveto(elab: &Elaborator, a: &str, b: &str) -> Option<crate::ast::ConnectResolutionTarget> {
+    elab.syms
+        .connectrules
+        .values()
+        .flat_map(|cr| &cr.resolutions)
+        .filter(|res| res.disciplines.iter().any(|d| d == a) && res.disciplines.iter().any(|d| d == b))
+        .min_by_key(|res| res.disciplines.len())
+        .map(|res| res.target.clone())
 }
 
 /// A discipline pair is "eligible for bridging" if some registered
@@ -343,6 +377,7 @@ mod tests {
                     overrides: None,
                     body: vec![],
                 }],
+                resolutions: vec![],
             },
         );
         m

@@ -12,6 +12,15 @@ use crate::error::{ParseError, ParseErrorKind, Span};
 use crate::grammar::cursor::Grammar;
 use crate::lexer::{NumberLit, Tok};
 
+/// Parse-time-only result of one `connect ...;` statement inside a
+/// `connectrules` block — [`Grammar::parse_connect_item`] returns this;
+/// [`Grammar::parse_connectrules_decl`] sorts it into
+/// [`ConnectrulesDecl`]'s `rules`/`resolutions` list.
+enum ConnectItem {
+    Rule(ConnectRule),
+    Resolution(ConnectResolution),
+}
+
 /// True when `t` is one of the three port-direction keywords — used to
 /// resolve the port-list comma ambiguity (§Syntax 2-6): a comma followed by
 /// one of these starts a new `port_declaration` rather than continuing the
@@ -1198,30 +1207,36 @@ impl Grammar {
         Ok(ParamsetStatement { span: Span::new(start.start, end.end), target, value })
     }
 
-    /// `connectrules_declaration`, LRM chapter 7/Annex F.
+    /// `connectrules_declaration`, Annex A.1.8 — LRM chapter 7/Annex F.
     pub fn parse_connectrules_decl(&mut self) -> Result<ConnectrulesDecl, ParseError> {
         let start = self.expect_kw("connectrules")?;
         let (name, _) = self.expect_ident()?;
         self.expect_punct(";")?;
         let mut rules = vec![];
+        let mut resolutions = vec![];
         while !self.at_kw("endconnectrules") {
             if self.at_eof() {
                 return Err(self.eof_error("'endconnectrules'".to_string()));
             }
-            rules.push(self.parse_connect_rule()?);
+            match self.parse_connect_item()? {
+                ConnectItem::Rule(r) => rules.push(r),
+                ConnectItem::Resolution(r) => resolutions.push(r),
+            }
         }
         let end = self.expect_kw("endconnectrules")?;
-        Ok(ConnectrulesDecl { span: Span::new(start.start, end.end), name, rules })
+        Ok(ConnectrulesDecl { span: Span::new(start.start, end.end), name, rules, resolutions })
     }
 
-    /// `connect_rule`. Two productions distinguished by lookahead after the
-    /// first identifier: a bare `,` next means the legacy shell's
-    /// discipline-pair form (`connect A, B;`); anything else means the
-    /// first identifier is a `connectmodule_identifier` and what follows is
-    /// `connect_insertion`, §7.7.1 Syntax 7-6:
-    /// `connect connectmodule_identifier [connect_mode]
-    /// [parameter_value_assignment] [connect_port_overrides] ;`
-    fn parse_connect_rule(&mut self) -> Result<ConnectRule, ParseError> {
+    /// One `connect ...;` statement — either a `connect_rule` (legacy
+    /// shell or `connect_insertion`) or a `connect_resolution` (§7.7.2
+    /// Syntax 7-7, T33), distinguished by lookahead after the first
+    /// identifier: a bare `,` next means a comma-separated discipline
+    /// list, which is either the legacy shell's pair form (`connect A,
+    /// B;`) or — if the list is followed by the `resolveto` keyword — a
+    /// `connect_resolution`; anything else after the first identifier
+    /// means it's a `connectmodule_identifier` and what follows is
+    /// `connect_insertion`, §7.7.1 Syntax 7-6.
+    fn parse_connect_item(&mut self) -> Result<ConnectItem, ParseError> {
         let start = self.expect_kw("connect")?;
         let (first, _) = self.expect_ident()?;
 
@@ -1229,6 +1244,19 @@ impl Grammar {
             let mut disciplines = vec![first];
             while self.eat_punct(",") {
                 disciplines.push(self.expect_ident()?.0);
+            }
+            if self.eat_kw("resolveto") {
+                let target = if self.eat_kw("exclude") {
+                    ConnectResolutionTarget::Exclude
+                } else {
+                    ConnectResolutionTarget::Discipline(self.expect_ident()?.0)
+                };
+                let end = self.expect_punct(";")?;
+                return Ok(ConnectItem::Resolution(ConnectResolution {
+                    span: Span::new(start.start, end.end),
+                    disciplines,
+                    target,
+                }));
             }
             let mut body = vec![];
             let end = if self.eat_punct("{") {
@@ -1242,7 +1270,7 @@ impl Grammar {
             } else {
                 self.expect_punct(";")?
             };
-            return Ok(ConnectRule {
+            return Ok(ConnectItem::Rule(ConnectRule {
                 span: Span::new(start.start, end.end),
                 connectmodule: None,
                 disciplines,
@@ -1250,7 +1278,7 @@ impl Grammar {
                 params: vec![],
                 overrides: None,
                 body,
-            });
+            }));
         }
 
         let connectmodule = first;
@@ -1321,7 +1349,7 @@ impl Grammar {
         } else {
             self.expect_punct(";")?
         };
-        Ok(ConnectRule {
+        Ok(ConnectItem::Rule(ConnectRule {
             span: Span::new(start.start, end.end),
             connectmodule: Some(connectmodule),
             disciplines,
@@ -1329,7 +1357,7 @@ impl Grammar {
             params,
             overrides,
             body,
-        })
+        }))
     }
 
     /// `config_declaration`, inherited from 1364 (Annex A.1.1). Piperine

@@ -58,7 +58,7 @@ const SECTIONS: &[Section] = &[
     Section {
         id: "A.1.8",
         title: "Connectrules Declaration",
-        coverage: Coverage::OutOfScope("connectrules — T31 parses Syntax 7-6's connect_insertion form (connectmodule_identifier [connect_mode] [parameter_value_assignment] [connect_port_overrides]) in full, plus the legacy bare discipline-pair shell (T11); the `connect_resolution`/`resolveto` production (§7.7.2, Syntax 7-7) is still unparsed, deferred to T33"),
+        coverage: Coverage::Implemented,
     },
     Section { id: "A.1.9", title: "Paramset Declaration", coverage: Coverage::Implemented },
     Section { id: "A.2.1.1", title: "Module parameter declarations", coverage: Coverage::Implemented },

@@ -28,9 +28,8 @@
 //! silently half-done).
 //!
 //! **Scope note (documented, not silently narrowed):** the full LRM
-//! algorithm resolves across the *entire* hierarchy and vendor-specific
-//! `connect ... resolveto` statements (§7.4.4.3, ch. 10). This pass
-//! resolves within one module at a time — an unresolved port/net takes its
+//! algorithm resolves across the *entire* hierarchy. This pass resolves
+//! within one module at a time — an unresolved port/net takes its
 //! discipline from any instance port it's directly connected to whose
 //! callee-side discipline is already known (declared, or itself already
 //! resolved this round) — iterated to a fixed point. Cross-module
@@ -38,8 +37,11 @@
 //! unresolved being connected to another unresolved port) is exactly what
 //! the per-module fixed-point loop over the whole design (not just one
 //! module) already gives it, since `design.modules` all resolve in the
-//! same pass; `connect`/`connectrules`-driven resolution (ch. 7/10) is
-//! future work (T52, `InsertConnectModules`).
+//! same pass. `connect ... resolveto` (§7.4.4.3, T33/LRMC-C7-04/C10-20) is
+//! implemented — [`super::connect::resolve_via_resolveto`] takes priority
+//! over the domain-based (continuous-wins) conflict rule right below it,
+//! exactly the LRM's own "shall be used unless the `resolveto` connect
+//! statement overrides" ordering.
 
 use std::collections::HashMap;
 
@@ -150,6 +152,43 @@ fn resolve_one_round(elab: &Elaborator, name: &str, design: &mut Design) -> Resu
                     resolved.insert(port_ref.net().to_string(), callee_disc.to_string());
                 }
                 Some(d) if d != callee_disc => {
+                    // §7.4.4.3 (LRMC-C7-04/C10-20, T33): an explicit
+                    // `connect ... resolveto` naming this pair overrides
+                    // every other rule below, coercion included — "if an
+                    // interconnect is assigned a discipline, that
+                    // discipline shall be used unless the `resolveto`
+                    // connect statement overrides the discipline."
+                    // `exclude` means the pair is forbidden outright.
+                    if let Some(target) = super::connect::resolve_via_resolveto(elab, d, callee_disc) {
+                        match target {
+                            crate::ast::ConnectResolutionTarget::Discipline(forced) => {
+                                // No-op guard: once the net already carries
+                                // the forced discipline, a *different*
+                                // connected port whose own discipline is
+                                // fixed to something else would otherwise
+                                // re-trigger this same conflict branch
+                                // every round forever (the fixed-point loop
+                                // never converges) — the forced value
+                                // itself is the fixed point, not a
+                                // candidate for further resolution.
+                                if d != forced {
+                                    resolved.insert(port_ref.net().to_string(), forced);
+                                }
+                            }
+                            crate::ast::ConnectResolutionTarget::Exclude => {
+                                return Err(ElabError::from(ElabErrorKind::DisciplineResolutionFailed {
+                                    net: port_ref.net().to_string(),
+                                    module: name.to_string(),
+                                    method: "connect ... resolveto exclude (LRM §7.7.2)".to_string(),
+                                    reason: format!(
+                                        "disciplines `{d}` and `{callee_disc}` are explicitly excluded from resolving together"
+                                    ),
+                                    span: None,
+                                }));
+                            }
+                        }
+                        continue;
+                    }
                     // Annex F §7.4.4.1's headline rule: when the two
                     // discipline *domains* are known and differ,
                     // continuous wins over discrete — this is Basic

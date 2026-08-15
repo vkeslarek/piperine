@@ -251,6 +251,38 @@ fn connect_insertion_full_form_with_mode_params_and_overrides_parses() {
     );
 }
 
+// ── connect_resolution, §7.7.2 Syntax 7-7 (LRMC-C7-04/C10-20, T33) ──────
+
+#[test]
+fn connect_resolution_two_discipline_form_parses() {
+    let src = "connectrules cr; connect x, y resolveto x; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert!(cr.rules.is_empty());
+    assert_eq!(cr.resolutions.len(), 1);
+    let res = &cr.resolutions[0];
+    assert_eq!(res.disciplines, vec!["x".to_string(), "y".to_string()]);
+    assert_eq!(res.target, ConnectResolutionTarget::Discipline("x".to_string()));
+}
+
+#[test]
+fn connect_resolution_three_discipline_form_parses() {
+    // LRM §7.7.2 Example 1's own worked rule set.
+    let src = "connectrules cr; connect x,y,a resolveto a; connect x,y resolveto x; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(cr.resolutions.len(), 2);
+    assert_eq!(cr.resolutions[0].disciplines, vec!["x".to_string(), "y".to_string(), "a".to_string()]);
+    assert_eq!(cr.resolutions[0].target, ConnectResolutionTarget::Discipline("a".to_string()));
+    assert_eq!(cr.resolutions[1].disciplines, vec!["x".to_string(), "y".to_string()]);
+    assert_eq!(cr.resolutions[1].target, ConnectResolutionTarget::Discipline("x".to_string()));
+}
+
+#[test]
+fn connect_resolution_exclude_target_parses() {
+    let src = "connectrules cr; connect x, y resolveto exclude; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(cr.resolutions[0].target, ConnectResolutionTarget::Exclude);
+}
+
 #[test]
 fn legacy_bare_discipline_pair_shell_still_parses_unchanged() {
     // T11's pre-existing shell form (no connectmodule_identifier) must
