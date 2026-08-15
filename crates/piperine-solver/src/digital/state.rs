@@ -2,7 +2,7 @@
 //! checkpoint/rollback snapshots the analog accept gate relies on.
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
-use crate::digital::{LogicValue, DigitalNet, DigitalEvent};
+use crate::digital::{LogicValue, DigitalNet, DigitalEvent, DriverTable};
 
 /// Frozen scheduler snapshot for checkpoint/rollback.
 #[derive(Clone)]
@@ -10,6 +10,7 @@ struct Checkpoint {
     nets: Vec<LogicValue>,
     queue: BinaryHeap<Reverse<DigitalEvent>>,
     labels: Vec<String>,
+    driver_table: DriverTable,
 }
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,10 @@ pub struct DigitalState {
     /// lookup then falls back to the anonymous `d{idx}` form.
     labels: Vec<String>,
     checkpoint: Option<Checkpoint>,
+    /// LRM §7.9 per-net driver records (T34/LRMC-C7-05) — rolled back
+    /// alongside `nets`/`event_queue` so a rejected transient step can't
+    /// leave a stale driver contribution behind.
+    pub driver_table: DriverTable,
 }
 
 impl DigitalState {
@@ -33,6 +38,7 @@ impl DigitalState {
             event_queue: BinaryHeap::new(),
             labels: Vec::new(),
             checkpoint: None,
+            driver_table: DriverTable::new(),
         }
     }
 
@@ -48,6 +54,7 @@ impl DigitalState {
             event_queue: BinaryHeap::new(),
             labels,
             checkpoint: None,
+            driver_table: DriverTable::new(),
         }
     }
 
@@ -84,6 +91,7 @@ impl DigitalState {
             nets: self.nets.clone(),
             queue: self.event_queue.clone(),
             labels: self.labels.clone(),
+            driver_table: self.driver_table.clone(),
         });
     }
 
@@ -92,6 +100,7 @@ impl DigitalState {
             self.nets = chk.nets;
             self.event_queue = chk.queue;
             self.labels = chk.labels;
+            self.driver_table = chk.driver_table;
         }
     }
 
