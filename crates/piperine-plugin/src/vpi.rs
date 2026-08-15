@@ -186,21 +186,26 @@ impl VpiCategories {
         },
         VpiCategoryEntry {
             category: VpiCategory::MiscUtilities,
-            support: VpiSupport::Partial,
-            mechanism: "`vpi_printf()`: `piperine_lang::eval::tasks::format_display` (T47) is \
-                the native formatter; plain `println!`/a host's own logging is the sink — no \
-                `vpi_mcd_*` multi-channel-descriptor abstraction is needed for that. \
-                `vpi_chk_error()`: Rust's `Result<T, PluginError>` (returned directly from \
-                every fallible call in this crate) *is* the native equivalent — the whole \
-                point of `Result` is that a caller cannot forget to check it, which is \
-                exactly what `vpi_chk_error()`'s poll-after-call pattern exists to \
-                approximate in C. `vpi_free_object()`: ownership/`Drop` make an explicit \
-                free routine structurally unnecessary — satisfied by not needing to exist, \
-                not by an absence. `vpi_compare_objects()`: two `&Design`/`&Module` \
+            support: VpiSupport::Native,
+            mechanism: "`vpi_printf()`: `PluginHost::vpi_printf` (T63) writes to a `SimOutput` \
+                sink's stdout channel — the *same* sink `mcd_printf`'s stdout bit \
+                (`McdTable::STDOUT`) routes through, formatted text itself coming from \
+                `piperine_lang::eval::tasks::format_display` (T47). `vpi_mcd_open()`/ \
+                `vpi_mcd_close()`/`vpi_mcd_printf()`/`vpi_mcd_name()` (T63, LRMC-C10-14): \
+                `PluginHost::mcd_open`/`mcd_close`/`mcd_printf`/`mcd_name`, over \
+                `piperine_solver::core::output::McdTable` — a bitmask where each set bit \
+                names a channel over the *same* `FileTable` `$fopen`-family tasks already use \
+                (T4), bit 0 always the standard-output channel; proved to write to every \
+                selected channel with one call, and to stop writing to a closed one \
+                (`tests/mcd_family.rs`). `vpi_chk_error()`: Rust's `Result<T, PluginError>` \
+                (returned directly from every fallible call in this crate) *is* the native \
+                equivalent — the whole point of `Result` is that a caller cannot forget to \
+                check it, which is exactly what `vpi_chk_error()`'s poll-after-call pattern \
+                exists to approximate in C. `vpi_free_object()`: ownership/`Drop` make an \
+                explicit free routine structurally unnecessary — satisfied by not needing to \
+                exist, not by an absence. `vpi_compare_objects()`: two `&Design`/`&Module` \
                 references support `std::ptr::eq`/structural `==` directly. \
-                `vpi_mcd_open()`/`vpi_mcd_close()`/`vpi_mcd_printf()`/`vpi_mcd_name()`: no \
-                native equivalent exists — NotSupported, a real (minor) gap named here \
-                rather than silently absent. `vpi_get_vlog_info()`: `Manifest`/`ABI_VERSION` \
+                `vpi_get_vlog_info()`: `Manifest`/`ABI_VERSION` \
                 (`backend::native::ABI_VERSION`) carry the equivalent product-invocation \
                 metadata a plugin can already read from its `HostCtx`.",
         },

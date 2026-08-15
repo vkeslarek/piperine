@@ -135,6 +135,8 @@ pub enum FileError {
     WriteFailed { path: String, reason: String },
     #[error("read from `{path}` failed: {reason}")]
     ReadFailed { path: String, reason: String },
+    #[error("no free multi-channel-descriptor bit available (all {0} channel slots in use)")]
+    TooManyChannels(u32),
 }
 
 struct FileEntry {
@@ -219,6 +221,12 @@ impl FileTable {
         self.open.contains_key(&id)
     }
 
+    /// `id`'s open path, if it's currently open — `vpi_mcd_name()`'s
+    /// underlying data (`McdTable::name`).
+    pub fn path(&self, id: FileId) -> Option<&str> {
+        self.open.get(&id).map(|e| e.path.as_str())
+    }
+
     /// `$fflush` (§9.5): flushes buffered writes to disk.
     pub fn flush(&mut self, id: FileId) -> Result<(), FileError> {
         let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
@@ -277,6 +285,124 @@ impl FileTable {
     }
 }
 
+// ---------------------------------------------------------------------------
+// McdTable
+// ---------------------------------------------------------------------------
+
+/// `vpi_mcd_open`/`vpi_mcd_close`/`vpi_mcd_printf`/`vpi_mcd_name`'s native
+/// model (LRM §11.4 Table 11-10, T63/LRMC-C10-14): a multi-channel
+/// descriptor is a 32-bit mask where each set bit names one channel — bit
+/// 0 is always the standard-output channel (permanently open, never
+/// allocated or closed, matching 1364's own MCD convention), the
+/// remaining 31 bits are allocated one-per-open-file over the *same*
+/// [`FileTable`] every `$fopen`-family task already uses (no separate
+/// file-handle universe). Writing to a combined mask writes to every
+/// channel named by its set bits — the multi-channel part of "multi-
+/// channel descriptor".
+#[derive(Debug, Default)]
+pub struct McdTable {
+    /// bit index (1..=30) -> the `FileId` bound to that channel.
+    channels: HashMap<u32, FileId>,
+    next_bit: u32,
+}
+
+impl McdTable {
+    /// The standard-output channel's mask — always open, always includes
+    /// bit 0.
+    pub const STDOUT: u32 = 1;
+
+    /// The highest allocatable bit (31 total channel bits: bit 0 is
+    /// stdout, bits 1..=30 are `open`-allocatable, matching the 1364
+    /// convention that the top bit unused so file-mask values stay
+    /// positive as a 31-bit `int`).
+    const MAX_BIT: u32 = 30;
+
+    pub fn new() -> Self {
+        Self { channels: HashMap::new(), next_bit: 1 }
+    }
+
+    /// `vpi_mcd_open()`: opens `path` (via `files`) and allocates it the
+    /// next free channel bit. Returns the single-bit mask naming that new
+    /// channel — combine with other masks (bitwise OR) to write to
+    /// several channels with one `mcd_printf`.
+    pub fn open(&mut self, files: &mut FileTable, path: &str) -> Result<u32, FileError> {
+        if self.next_bit > Self::MAX_BIT {
+            return Err(FileError::TooManyChannels(Self::MAX_BIT));
+        }
+        let id = files.open(path)?;
+        let bit = self.next_bit;
+        self.next_bit += 1;
+        self.channels.insert(bit, id);
+        Ok(1u32 << bit)
+    }
+
+    /// `vpi_mcd_close()`: closes every file-backed channel named by a set
+    /// bit in `mcd` (bit 0/stdout is silently skipped — it can never be
+    /// closed). Fails loud with the first `FileError` a real close hits,
+    /// same as `FileTable::close`'s own contract.
+    pub fn close(&mut self, files: &mut FileTable, mcd: u32) -> Result<(), FileError> {
+        for bit in 1..=Self::MAX_BIT {
+            if mcd & (1 << bit) != 0 {
+                if let Some(id) = self.channels.remove(&bit) {
+                    files.close(id)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `vpi_mcd_printf()`: writes `text` to every channel named by a set
+    /// bit in `mcd` — bit 0 through `sink` (the same `SimOutput` a plain
+    /// `vpi_printf()`/`$display` write goes through), every other set bit
+    /// through its bound `FileTable` entry. A bit with no bound channel
+    /// (never allocated, or already closed) is silently skipped — matching
+    /// 1364's own "an invalid bit in the mask is ignored" MCD semantics,
+    /// not a per-bit error return.
+    pub fn printf(&self, files: &mut FileTable, sink: &dyn SimOutput, mcd: u32, text: &str) {
+        if mcd & Self::STDOUT != 0 {
+            sink.write(Channel::Stdout, text);
+        }
+        for bit in 1..=Self::MAX_BIT {
+            if mcd & (1 << bit) != 0 {
+                if let Some(&id) = self.channels.get(&bit) {
+                    let _ = files.write(id, text);
+                }
+            }
+        }
+    }
+
+    /// `vpi_mcd_name()`: the path bound to `mcd`'s lowest set file-backed
+    /// bit (a real MCD is usually a single-bit mask in practice — 1364's
+    /// own routine takes one descriptor's name at a time). `None` for the
+    /// stdout bit (no path) or a mask with no allocated file bit set.
+    pub fn name(&self, mcd: u32) -> Option<(u32, FileId)> {
+        for bit in 1..=Self::MAX_BIT {
+            if mcd & (1 << bit) != 0 {
+                if let Some(&id) = self.channels.get(&bit) {
+                    return Some((bit, id));
+                }
+            }
+        }
+        None
+    }
+
+    /// `vpi_mcd_flush()`-equivalent (1364 also exposes this as
+    /// `$fflush(mcd)` over a channel mask): flushes every channel named by
+    /// a set bit in `mcd`.
+    pub fn flush(&self, files: &mut FileTable, sink: &dyn SimOutput, mcd: u32) {
+        if mcd & Self::STDOUT != 0 {
+            sink.flush();
+        }
+        for bit in 1..=Self::MAX_BIT {
+            if mcd & (1 << bit) != 0 {
+                if let Some(&id) = self.channels.get(&bit) {
+                    let _ = files.flush(id);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +424,62 @@ mod tests {
         sink.write(Channel::Stdout, "2");
         sink.write(Channel::Stdout, "3");
         assert_eq!(sink.stdout(), "123");
+    }
+
+    #[test]
+    fn mcd_printf_writes_to_stdout_bit_through_the_shared_sink() {
+        let sink = BufferSink::new();
+        let mut files = FileTable::new();
+        let mcd = McdTable::new();
+        mcd.printf(&mut files, &sink, McdTable::STDOUT, "hello\n");
+        assert_eq!(sink.stdout(), "hello\n");
+    }
+
+    #[test]
+    fn mcd_open_allocates_a_distinct_bit_per_channel() {
+        let mut files = FileTable::new();
+        let mut mcd = McdTable::new();
+        let dir = std::env::temp_dir();
+        let a = mcd.open(&mut files, dir.join("mcd_a.txt").to_str().unwrap()).unwrap();
+        let b = mcd.open(&mut files, dir.join("mcd_b.txt").to_str().unwrap()).unwrap();
+        assert_ne!(a, b, "each mcd_open call gets its own bit");
+        assert_eq!(a & b, 0, "distinct channels never share a bit");
+        assert_eq!(a & McdTable::STDOUT, 0, "an allocated channel never reuses the stdout bit");
+
+        mcd.close(&mut files, a | b).unwrap();
+        let _ = std::fs::remove_file(dir.join("mcd_a.txt"));
+        let _ = std::fs::remove_file(dir.join("mcd_b.txt"));
+    }
+
+    #[test]
+    fn mcd_printf_writes_to_every_bit_in_a_combined_mask() {
+        let sink = BufferSink::new();
+        let mut files = FileTable::new();
+        let mut mcd = McdTable::new();
+        let dir = std::env::temp_dir();
+        let path = dir.join("mcd_combined.txt");
+        let _ = std::fs::remove_file(&path);
+        let file_bit = mcd.open(&mut files, path.to_str().unwrap()).unwrap();
+
+        let combined = McdTable::STDOUT | file_bit;
+        mcd.printf(&mut files, &sink, combined, "both channels\n");
+        mcd.flush(&mut files, &sink, combined);
+
+        assert_eq!(sink.stdout(), "both channels\n");
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, "both channels\n");
+
+        mcd.close(&mut files, file_bit).unwrap();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn mcd_close_never_touches_the_stdout_bit() {
+        let mut files = FileTable::new();
+        let mut mcd = McdTable::new();
+        // Closing bit 0 (stdout) alone must succeed as a no-op — no
+        // FileTable entry exists for it to fail against.
+        assert!(mcd.close(&mut files, McdTable::STDOUT).is_ok());
     }
 
     #[test]

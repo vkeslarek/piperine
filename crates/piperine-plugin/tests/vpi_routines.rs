@@ -81,6 +81,14 @@ fn value_processing_is_native_after_t62() {
     assert_eq!(VpiCategories::support(VpiCategory::ValueProcessing), VpiSupport::Native);
 }
 
+/// T63 (LRMC-C10-14): `MiscUtilities` (Table 11-10, the `vpi_mcd_*`
+/// family + `vpi_printf`) flipped from `Partial` to `Native` — proved
+/// separately in `tests/mcd_family.rs`.
+#[test]
+fn misc_utilities_is_native_after_t63() {
+    assert_eq!(VpiCategories::support(VpiCategory::MiscUtilities), VpiSupport::Native);
+}
+
 #[test]
 fn no_category_is_silently_dropped_from_the_public_surface() {
     // Regression guard for the exact defect C6 forbids: a category that

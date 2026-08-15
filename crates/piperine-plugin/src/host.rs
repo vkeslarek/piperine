@@ -29,7 +29,7 @@ use piperine_project::release::{GitHubClient, PluginCache, ReleaseError, Release
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
 use piperine_solver::abi::{DigitalNet, Element};
-use piperine_solver::{DelayTable, PathDelay};
+use piperine_solver::{Channel, DelayTable, FileError, FileTable, McdTable, PathDelay, SimOutput};
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
@@ -181,6 +181,56 @@ impl PluginHost {
         session
             .set(label, param, value)
             .map_err(|e| PluginError::Other { plugin: "<vpi_put_value>".into(), message: e.to_string() })
+    }
+
+    /// `vpi_printf()`'s native equivalent (T63, LRMC-C10-14): writes
+    /// `text` to `sink`'s standard-output channel — the *same* sink
+    /// `Self::mcd_printf`'s bit-0 (`McdTable::STDOUT`) case routes
+    /// through, so `vpi_printf` and an `mcd_printf` targeting only stdout
+    /// are indistinguishable in destination, matching 1364's own "`vpi_
+    /// printf` behaves as though it were `vpi_mcd_printf` to the standard
+    /// output channel" framing.
+    pub fn vpi_printf(&self, sink: &dyn SimOutput, text: &str) {
+        sink.write(Channel::Stdout, text);
+    }
+
+    /// `vpi_mcd_open()`'s native equivalent: opens `path` and allocates it
+    /// a fresh channel bit in `mcd`, over the shared `files` table (T4's
+    /// `FileTable` — the same descriptor space `$fopen`-family tasks use,
+    /// per this task's own "multi-channel descriptors as a channel mask
+    /// over the same file table" framing).
+    pub fn mcd_open(&self, mcd: &mut McdTable, files: &mut FileTable, path: &str) -> Result<u32, FileError> {
+        mcd.open(files, path)
+    }
+
+    /// `vpi_mcd_close()`'s native equivalent: closes every file-backed
+    /// channel named by a set bit in `channel_mask` (the stdout bit is
+    /// silently skipped — it can never be closed).
+    pub fn mcd_close(&self, mcd: &mut McdTable, files: &mut FileTable, channel_mask: u32) -> Result<(), FileError> {
+        mcd.close(files, channel_mask)
+    }
+
+    /// `vpi_mcd_printf()`'s native equivalent: writes `text` to every
+    /// channel named by a set bit in `channel_mask` — stdout (bit 0)
+    /// through `sink`, every other bit through its bound `FileTable`
+    /// entry.
+    pub fn mcd_printf(&self, mcd: &McdTable, files: &mut FileTable, sink: &dyn SimOutput, channel_mask: u32, text: &str) {
+        mcd.printf(files, sink, channel_mask, text);
+    }
+
+    /// `vpi_mcd_flush()`-equivalent (1364 also exposes this as
+    /// `$fflush(mcd)` over a channel mask): flushes every channel named by
+    /// a set bit in `channel_mask`.
+    pub fn mcd_flush(&self, mcd: &McdTable, files: &mut FileTable, sink: &dyn SimOutput, channel_mask: u32) {
+        mcd.flush(files, sink, channel_mask);
+    }
+
+    /// `vpi_mcd_name()`'s native equivalent: the path bound to
+    /// `channel_mask`'s lowest set file-backed bit. `None` for the stdout
+    /// bit or an unallocated/closed bit.
+    pub fn mcd_name(&self, mcd: &McdTable, files: &FileTable, channel_mask: u32) -> Option<String> {
+        let (_, id) = mcd.name(channel_mask)?;
+        files.path(id).map(str::to_string)
     }
 
     pub fn is_empty(&self) -> bool {

@@ -64,8 +64,8 @@ pub use piperine_solver::abi::{
     ElementCapabilities, EvalCtx, EventSink, Introspect, LogicValue,
 };
 pub use piperine_solver::{
-    CircuitInstance, DelayTable, Netlist, PathDelay, TimingCheckKind, TimingCheckLimit,
-    TimingCheckTable,
+    BufferSink, Channel, CircuitInstance, DelayTable, FileError, FileId, FileTable, McdTable,
+    Netlist, PathDelay, SimOutput, StdoutSink, TimingCheckKind, TimingCheckLimit, TimingCheckTable,
 };
 
 /// Implementation details the `#[pip::…]` macro expansions reference. Not
