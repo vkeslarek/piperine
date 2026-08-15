@@ -137,6 +137,7 @@ impl AnalogInstance {
         terminals: &[NodeIdentifier],
         params: Vec<f64>,
         param_given_mask: u64,
+        port_connected_mask: u64,
         netlist: &mut Netlist,
     ) -> Result<Self, CodegenError> {
         if terminals.len() != kernel.num_terminals() {
@@ -262,7 +263,7 @@ impl AnalogInstance {
             .position(|n| n == "mfactor")
             .and_then(|i| params.get(i).copied())
             .unwrap_or(1.0);
-        let sim = SimCtx { param_given_mask, mfactor, ..Default::default() };
+        let sim = SimCtx { param_given_mask, mfactor, port_connected_mask, ..Default::default() };
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
         let num_limits = kernel.num_limits();

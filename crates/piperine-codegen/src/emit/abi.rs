@@ -44,6 +44,13 @@ pub struct SimCtx {
     /// silently corrupts every JIT-compiled device (see
     /// `runtime_io.rs::tests::io_field_is_appended_last`).
     pub io: *const dyn piperine_solver::prelude::SimOutput,
+    /// Bitmask of ports connected at this instance's own instantiation
+    /// (`$port_connected`, §9.19, LRMC-C7-09, T50), one bit per port in
+    /// declared order, 64 ports max (the same convention/cap
+    /// `param_given_mask` already uses). Appended after `io` — that
+    /// field's own doc comment explains why append-only ordering
+    /// matters for this struct.
+    pub port_connected_mask: u64,
 }
 
 // SAFETY: `SimCtx` is `Copy`/`Send`/`Sync` in the same sense every other
@@ -83,6 +90,10 @@ impl Default for SimCtx {
             frequency: 0.0,
             srcfact: 1.0,
             io: &DEFAULT_SINK as *const dyn piperine_solver::prelude::SimOutput,
+            // Every port connected by default — the common case; a real
+            // instance's own mask (computed from its actual connections,
+            // `device/builder.rs`) overrides this.
+            port_connected_mask: u64::MAX,
         }
     }
 }

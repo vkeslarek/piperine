@@ -661,22 +661,30 @@ fn instance_range(ast_inst: &crate::ast::Instance, env: &ConstEnv) -> Result<Opt
 
 fn resolve_instance_ports(
     ast_inst: &crate::ast::Instance,
-    type_name: &str,
+    _type_name: &str,
     target_port_names: &[String],
     env: &ConstEnv,
 ) -> Result<Vec<NetRef>, ElabError> {
     let all_positional = ast_inst.connections.iter().all(|c| c.name.is_none());
     let mut ports = Vec::new();
     if all_positional {
-        for c in &ast_inst.connections {
-            let expr = c.value.as_ref().ok_or_else(|| {
-                ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: a port connection with no value is only legal for an unconnected port (`.p()`), \
-                     which is not yet supported",
-                    ast_inst.name
-                )))
-            })?;
-            ports.push(expr_to_net_ref(expr, env)?);
+        // §9.19 (LRMC-C7-09, T50): `.p()` or a blank positional slot
+        // (`mod inst(a, , c)`) leaves that port genuinely unconnected —
+        // legal Verilog-AMS, not an error. `NetRef::unconnected()`'s
+        // sentinel carries this through to `$port_connected()`.
+        for (i, c) in ast_inst.connections.iter().enumerate() {
+            match &c.value {
+                Some(expr) => ports.push(expr_to_net_ref(expr, env)?),
+                None => ports.push(NetRef::unconnected(&format!("{}.{i}", ast_inst.name))),
+            }
+        }
+        // Fewer positional connections than declared ports, with no
+        // trailing blank slots to mark it (`myclk c1 (q1);` against two
+        // declared ports) — §9.19: the missing trailing ports are just
+        // as unconnected as an explicit blank slot would be.
+        while ports.len() < target_port_names.len() {
+            let i = ports.len();
+            ports.push(NetRef::unconnected(&format!("{}.{i}", ast_inst.name)));
         }
     } else {
         let mut by_name: HashMap<&str, &Expr> = HashMap::new();
@@ -692,13 +700,16 @@ fn resolve_instance_ports(
             }
         }
         for port_name in target_port_names {
-            let expr = by_name.get(port_name.as_str()).ok_or_else(|| {
-                ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: no connection given for port `{port_name}` of `{type_name}`",
-                    ast_inst.name
-                )))
-            })?;
-            ports.push(expr_to_net_ref(expr, env)?);
+            match by_name.get(port_name.as_str()) {
+                // A named connection with a value (`.p(net)`).
+                Some(expr) => ports.push(expr_to_net_ref(expr, env)?),
+                // Either `.p()` (present, blank) or the port's name
+                // never appeared at all (§9.19: both are "unconnected",
+                // not an error — a design may omit ports it doesn't
+                // need, exactly the clock-module example the LRM's own
+                // `$port_connected()` motivation text gives).
+                None => ports.push(NetRef::unconnected(&format!("{}.{port_name}", ast_inst.name))),
+            }
         }
     }
     Ok(ports)

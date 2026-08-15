@@ -41,6 +41,11 @@ impl SimField {
     pub(crate) const CURRENT_ANALYSIS: i32 = 56;
     // FREQUENCY (offset 64) is consumed Rust-side only (noise PSD scaling).
     pub(crate) const SRCFACT: i32 = 72;
+    /// Computed via `offset_of!` (not a hand-counted literal like the
+    /// fields above) — `io` is a fat pointer, whose size isn't a
+    /// portably-hardcodable constant the way every field before it
+    /// (plain `f64`/`u64`) was.
+    pub(crate) const PORT_CONNECTED_MASK: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, port_connected_mask) as i32;
 }
 
 // Load-bank tags.

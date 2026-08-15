@@ -36,7 +36,7 @@ analog Dut {{ I(p, n) <+ V(p, n) / 1e3; }}
 fn instance(label: &str, kernel: Arc<AnalogKernel>, params: Vec<f64>) -> AnalogInstance {
     let mut netlist = Netlist::new();
     let terminals = [NodeIdentifier::Anonymous(0), NodeIdentifier::Anonymous(1)];
-    AnalogInstance::new(label, kernel, &terminals, params, 0b1, &mut netlist).expect("instance")
+    AnalogInstance::new(label, kernel, &terminals, params, 0b1, u64::MAX, &mut netlist).expect("instance")
 }
 
 fn accept(inst: &mut AnalogInstance, v: f64, t: f64) {

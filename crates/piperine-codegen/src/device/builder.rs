@@ -223,6 +223,16 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         let param_given_mask = overrides
             .iter()
             .fold(0u64, |mask, (id, _)| mask | (1 << id.0.min(63)));
+        // §9.19 (LRMC-C7-09, T50): one bit per port, in declared order —
+        // set unless that position's connection is the `NetRef::
+        // unconnected()` sentinel (T50's own elaboration-time fix for
+        // `.p()`/blank positional slots, previously a hard elaboration
+        // error).
+        let port_connected_mask: u64 = instance
+            .ports()
+            .iter()
+            .enumerate()
+            .fold(0u64, |mask, (i, p)| if p.is_unconnected() { mask } else { mask | (1 << i.min(63)) });
 
         let analog_terminals: Option<Vec<NodeIdentifier>> = compiled.analog().map(|kernel| {
             // Terminal identifiers: connected parent nodes for ports,
@@ -265,6 +275,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 &terminals,
                 params.clone(),
                 param_given_mask,
+                port_connected_mask,
                 &mut self.netlist,
             )?),
             _ => None,
@@ -435,6 +446,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     &terminals,
                     params.clone(),
                     param_given_mask,
+                    u64::MAX, // the top has no "instance" of its own — every port trivially connected
                     &mut self.netlist,
                 )
             })

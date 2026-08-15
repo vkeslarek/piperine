@@ -266,7 +266,57 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 let matches = self.builder.ins().icmp(IntCC::Equal, current, target);
                 Ok(self.bool_to_f64(matches))
             }
+            // §9.19 (LRMC-C7-09, T50): `$port_connected(port_identifier)`
+            // — a bare port identifier (Syntax 9-14), not a string
+            // literal (unlike `$param_given`'s own, differently-shaped
+            // argument). `SimCtx.port_connected_mask` (T50) is a
+            // per-instance constant, computed once at instance
+            // construction (`device/builder.rs`) exactly the way
+            // `param_given_mask` already is.
+            "port_connected" => {
+                let pname = match args.first() {
+                    Some(Expr::Ident { name, .. }) => name.clone(),
+                    _ => {
+                        return Err(CodegenError::Invalid(
+                            "$port_connected expects a bare port identifier".to_string(),
+                        ));
+                    }
+                };
+                let node = self.resolver.nodes.get(&pname).copied().ok_or_else(|| {
+                    CodegenError::Invalid(format!("$port_connected: `{pname}` is not a declared net"))
+                })?;
+                let idx = self.module.ports.iter().position(|p| p.node == node).ok_or_else(|| {
+                    CodegenError::Invalid(format!("$port_connected: `{pname}` is not a port of this module"))
+                })?;
+                let sim_ptr = self.sim_ptr();
+                let mask = self.builder.ins().load(
+                    types::I64,
+                    MemFlags::trusted(),
+                    sim_ptr,
+                    SimField::PORT_CONNECTED_MASK,
+                );
+                let shifted = self.builder.ins().ushr_imm(mask, idx as i64);
+                let bit = self.builder.ins().band_imm(shifted, 1);
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let is_set = self.builder.ins().icmp(IntCC::NotEqual, bit, zero);
+                Ok(self.bool_to_f64(is_set))
+            }
             "limit" => self.emit_analog_limit(name, args),
+            // §9.20 (LRMC-C7-09, T50): `$analog_node_alias`/
+            // `$analog_port_alias` unify a local node with an arbitrary
+            // hierarchical-reference-string net at runtime, re-evaluated
+            // "each sweep point of a dc sweep" (§9.20's own text) — a
+            // genuine per-sweep-point *topology* change, which MD-18
+            // ("elaboration fixes devices; sweeps restamp on the
+            // compiled circuit, never re-elaborate") forbids outright,
+            // not merely a feature this task didn't reach. Fails loud
+            // naming the real architectural reason, not a generic
+            // "unsupported syscall" — a future implementation would need
+            // a documented MD exception, not just more code here.
+            "analog_node_alias" | "analog_port_alias" => Err(CodegenError::unsupported(format!(
+                "${name}: dynamic per-sweep-point node aliasing conflicts with MD-18 \
+                 (no re-JIT/re-topology during simulation — elaboration fixes devices once)"
+            ))),
             _ => Err(CodegenError::unsupported(format!("syscall `{name}` in an analog expression"))),
         }
     }

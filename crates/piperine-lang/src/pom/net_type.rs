@@ -34,6 +34,31 @@ impl NetRef {
     pub fn net(&self) -> &str { &self.net }
     /// The bus index, if this is an indexed reference.
     pub fn index(&self) -> Option<u64> { self.index }
+
+    /// The sentinel prefix every [`Self::unconnected`] net name starts
+    /// with. A leading digit makes it unreachable by any real
+    /// Verilog-AMS identifier (identifiers never start with a digit),
+    /// so it can never collide with an authored net.
+    const UNCONNECTED_PREFIX: &'static str = "0$unconnected";
+
+    /// The sentinel connection for a port left unconnected at
+    /// instantiation (`.p()` or a blank positional slot, §9.19,
+    /// LRMC-C7-09, T50) — `$port_connected()` queries this.
+    ///
+    /// `disambiguator` (typically `"instance_label.port_name"`) makes
+    /// each unconnected port its own distinct net: two *different*
+    /// unconnected ports must never resolve to the identical net name,
+    /// or the circuit builder would electrically short them together —
+    /// a real bug this crate's own tests caught before this doc comment
+    /// was written.
+    pub fn unconnected(disambiguator: &str) -> Self {
+        Self::simple(format!("{}.{disambiguator}", Self::UNCONNECTED_PREFIX))
+    }
+
+    /// True if this is one of [`Self::unconnected`]'s sentinels.
+    pub fn is_unconnected(&self) -> bool {
+        self.net.starts_with(Self::UNCONNECTED_PREFIX)
+    }
 }
 
 impl std::fmt::Display for NetRef {

@@ -54,6 +54,7 @@ fn dtemp_instance_composes_into_effective_temperature() {
         &terms,
         vec![1000.0, 10.0],
         1,
+        u64::MAX,
         &mut netlist,
     )
     .expect("instance builds");
@@ -99,7 +100,7 @@ fn no_dtemp_param_caches_received_temperature() {
     let mut netlist = Netlist::new();
     let terms = vec![NodeIdentifier::Anonymous(1), NodeIdentifier::Anonymous(2)];
     let a_inst =
-        piperine_codegen::device::AnalogInstance::new("r1", kernel, &terms, vec![1000.0], 1, &mut netlist)
+        piperine_codegen::device::AnalogInstance::new("r1", kernel, &terms, vec![1000.0], 1, u64::MAX, &mut netlist)
             .expect("instance builds");
 
     assert!(a_inst.param("dtemp").is_none(), "no dtemp param declared");
@@ -133,6 +134,7 @@ fn analog_instance_caches_effective_temperature() {
         &terms,
         vec![1000.0, 10.0],
         1,
+        u64::MAX,
         &mut netlist,
     )
     .expect("instance builds");

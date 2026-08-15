@@ -181,6 +181,13 @@ pub enum SystemTaskKind {
     /// `$hflip`/`$vflip` — §9.18, instance mirroring.
     Hflip,
     Vflip,
+    /// `$port_connected(port)` — §9.19: was this port connected at
+    /// instantiation.
+    PortConnected,
+    /// `$analog_node_alias`/`$analog_port_alias` — §9.20: dynamic
+    /// hierarchical node aliasing.
+    AnalogNodeAlias,
+    AnalogPortAlias,
 }
 
 /// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
@@ -284,6 +291,9 @@ impl SystemTasks {
         ("$angle", SystemTaskKind::Angle),
         ("$hflip", SystemTaskKind::Hflip),
         ("$vflip", SystemTaskKind::Vflip),
+        ("$port_connected", SystemTaskKind::PortConnected),
+        ("$analog_node_alias", SystemTaskKind::AnalogNodeAlias),
+        ("$analog_port_alias", SystemTaskKind::AnalogPortAlias),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
