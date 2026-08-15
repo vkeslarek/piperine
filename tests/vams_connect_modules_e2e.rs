@@ -17,21 +17,116 @@
 //! necessary scope-widening for the "simulates end-to-end" claim, in the
 //! same spirit T46's own progress-log entry documented for its CLI fixes.
 //!
-//! **Scope note on "mixed"**: the connectmodule here bridges two
-//! same-hierarchy `electrical` nets (an identity/zero-volt bridge) rather
-//! than an automatically-inserted `electrical<->logic` bridge — true
-//! automatic cross-domain insertion is the SPEC_DEVIATION documented in
-//! `connect.rs`'s own module doc (blocked upstream by
-//! `ResolveDisciplines`'s current hard-fail-on-mismatch behavior). What
-//! this test proves instead, honestly: a `connectmodule`-kind instance
-//! coexists in the same compiled circuit as genuine analog *and* digital
-//! content, and all three simulate together without any special-casing
-//! anywhere in the pipeline.
+//! **Scope note on "mixed"**: the first fixture below bridges two
+//! same-hierarchy `electrical` nets (an identity/zero-volt bridge)
+//! through an *explicitly instantiated* `connectmodule`, proving a
+//! connectmodule-kind instance coexists in the same compiled circuit as
+//! genuine analog *and* digital content, simulating together without any
+//! special-casing anywhere in the pipeline.
+//!
+//! **T37 (LRMC-C7-01) closes the gap this note used to name**: the
+//! second fixture/test below (`auto_inserted_connect_module_bridges_...`)
+//! is a genuine `electrical<->logic` crossing with *no* explicit
+//! connectmodule instance written anywhere — `InsertConnectModules`
+//! (T8/`connect.rs`) auto-splices the bridge into `Design::flat_modules`,
+//! and `CircuitCompiler` (which always builds from the flat form, never
+//! `Design::modules` — MD-25) compiles and simulates it exactly like any
+//! authored instance. The `passes.rs` doc comment that used to claim
+//! `InsertConnectModules` "is a no-op over every design in today's
+//! corpus" was already stale before this task (T8 fixed the underlying
+//! veto) — corrected alongside this test, not left to drift further.
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
+
+/// T37 (LRMC-C7-01): a genuine `electrical<->logic` crossing with *no*
+/// explicit connectmodule instance — `d1`'s `logic` port `p` is
+/// connected straight to `top`'s `electrical` net `vmid`.
+/// `InsertConnectModules` (`connect.rs`, driven by `connectrules basic_
+/// rules`'s `connect logic, electrical;` eligibility rule) auto-splices
+/// a `bridge` instance into `Design::flat_modules`; `CircuitCompiler`
+/// always builds from the flat form, so the auto-inserted bridge reaches
+/// the compiled circuit and DC-solves exactly like an authored instance.
+const AUTO_INSERTED_FIXTURE: &str = r#"
+    discipline logic;
+        domain discrete;
+    enddiscipline
+
+    connectrules basic_rules;
+        connect logic, electrical;
+    endconnectrules
+
+    connectmodule bridge (inout logic a, inout electrical b);
+        analog begin
+            V(b) <+ 1.0;
+        end
+    endmodule
+
+    module digital_leaf (inout logic p);
+    endmodule
+
+    module top ();
+        electrical vmid;
+        digital_leaf d1 (vmid);
+    endmodule
+"#;
+
+#[test]
+fn auto_inserted_connect_module_bridges_a_genuine_discipline_crossing_end_to_end() {
+    let design = parse_and_elaborate(AUTO_INSERTED_FIXTURE, &piperine_lang::SourceMap::dummy())
+        .expect("a genuine electrical<->logic crossing with an eligible connectrules pair elaborates");
+
+    // MD-25: the authored form never gained the bridge; only the derived
+    // flat form did.
+    let top_authored = design.module("top").expect("top elaborated");
+    assert_eq!(top_authored.instances.len(), 1, "authored: only `d1`");
+    let top_flat = design.flat_module("top").expect("top's flattened form");
+    assert_eq!(top_flat.instances.len(), 2, "authored `d1` + auto-inserted bridge");
+    assert!(top_flat.instances.iter().any(|i| i.module == "bridge"));
+
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowers");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let (mut circuit, info) = compiler
+        .build_circuit_mapped("top")
+        .expect("CircuitCompiler compiles a circuit containing the auto-inserted connect module");
+
+    let dc_result = circuit.dc(Context::default()).expect("dc analysis starts").solve().expect("dc converges");
+    let vmid = info.nets.get("vmid").expect("net `vmid` (the auto-inserted bridge's electrical side)");
+    let v_mid = dc_result.get_node(vmid).expect("v(vmid)");
+    assert!((v_mid - 1.0).abs() < 1e-6, "the auto-inserted bridge drives v(vmid) to 1.0V, got {v_mid}");
+}
+
+/// T37 (LRMC-C7-01): a discipline crossing with NO `connectrules` block
+/// registered anywhere in the design (unlike the fixture above) is
+/// ineligible for auto-insertion and must still fail loud — naming the
+/// missing rule, not a stale generic message.
+#[test]
+fn discipline_crossing_with_no_eligible_connectrule_still_errors_naming_the_missing_rule() {
+    let src = "
+        discipline logic;
+            domain discrete;
+        enddiscipline
+
+        discipline electrical;
+            domain continuous;
+        enddiscipline
+
+        module digital_leaf (inout logic p);
+        endmodule
+
+        module top ();
+            electrical vmid;
+            digital_leaf d1 (vmid);
+        endmodule
+    ";
+    let err = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy())
+        .expect_err("a discipline crossing with no connectrules coverage must fail loud");
+    let msg = format!("{err}");
+    assert!(msg.contains("logic") && msg.contains("electrical"), "names the mismatched pair: {msg}");
+    assert!(msg.contains("no `connectrules` rule"), "names the missing rule as the reason: {msg}");
+}
 
 const MIXED_FIXTURE: &str = r#"
     discipline logic;

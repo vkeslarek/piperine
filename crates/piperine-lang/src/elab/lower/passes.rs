@@ -54,10 +54,18 @@ pub(crate) trait ElabPass: std::any::Any {
 /// `FlattenHierarchy`" — both hold with this placement). It writes only
 /// `Elaborator::generated_instances` (the same derived-only field
 /// `UnrollGenerate` writes), so ordering between the two doesn't matter
-/// for correctness — see `connect.rs`'s own module doc for the documented
-/// SPEC_DEVIATION on why this pass is a no-op over every design in
-/// today's corpus (`ResolveDisciplines` already rejects the only inputs
-/// it would otherwise act on).
+/// for correctness.
+///
+/// **Corrected (T37, LRMC-C7-01):** this comment used to claim the pass
+/// "is a no-op over every design in today's corpus" — stale even before
+/// T37, since T8 already fixed `ResolveDisciplines` to defer (not veto) a
+/// connectrules-eligible mismatch via the shared `eligible_bridge` check.
+/// A genuine cross-discipline crossing with an eligible `connectrules`
+/// pair and no explicit connectmodule instance now reaches this pass,
+/// gets bridged, and simulates end-to-end from real `.vams` source — see
+/// root `tests/vams_connect_modules_e2e.rs`'s
+/// `auto_inserted_connect_module_bridges_a_genuine_discipline_crossing_
+/// end_to_end`.
 pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &Register,
     &LowerDeclarations,

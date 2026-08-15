@@ -84,7 +84,15 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C5-06", story: "P2", clause: "§6.3.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_defparam.rs", test_fn: "defparam_changes_the_named_instance_effective_parameter_value" } },
     Entry { id: "LRMC-C5-07", story: "P2", clause: "§6.4", status: Status::Closed { file: "crates/piperine-lang/tests/vams_paramset.rs", test_fn: "paramset_instance_resolves_to_the_associated_module_with_bound_params" } },
     Entry { id: "LRMC-C5-08", story: "P2", clause: "§6.2.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_array_of_instances.rs", test_fn: "array_of_instances_parses_and_elaborates_to_the_specified_range" } },
-    Entry { id: "LRMC-C7-01", story: "P3", clause: "§7.4.4.1/§7.4.4.3/§7.5-7.8", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-01",
+        story: "P3",
+        clause: "§7.4.4.1/§7.4.4.3/§7.5-7.8",
+        status: Status::Closed {
+            file: "tests/vams_connect_modules_e2e.rs",
+            test_fn: "auto_inserted_connect_module_bridges_a_genuine_discipline_crossing_end_to_end",
+        },
+    },
     Entry {
         id: "LRMC-C7-02",
         story: "P3",
