@@ -9,8 +9,11 @@
 //! 1. This file's hardcoded [`REGISTRY`] — every LRMC-ID from
 //!    `.specs/features/lrm-conformance-closure/spec.md`'s own Requirement
 //!    Traceability table, each carrying its LRM clause, story, and a
-//!    [`Status`] (`Pending`, `OutOfScope`, or `Closed` naming the real test
-//!    that closes it) — is cross-checked against the *live* table text
+//!    [`Status`] (`OutOfScope`, or `Closed` naming the real test
+//!    that closes it — T67 flipped the last `Pending` entry, so the
+//!    variant itself is gone: this registry stays a permanent lock, never
+//!    reverts to tracking in-progress work) — is cross-checked against the
+//!    *live* table text
 //!    (`include_str!`, so a spec.md edit that adds/removes/renames an ID is
 //!    caught, never silently drifting) for an exact ID-set match: no
 //!    registry entry without a matching spec row, no spec row without a
@@ -44,8 +47,6 @@ use std::path::PathBuf;
 
 /// The status of one LRMC-ID's closure.
 enum Status {
-    /// Not yet closed by any task in this batch.
-    Pending,
     /// Explicitly excluded from closure per spec.md's own Out of Scope
     /// table — never expected to gain a `Closed` status.
     OutOfScope,
@@ -120,7 +121,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "resolveto_forces_the_named_discipline_instead_of_failing_loud",
         },
     },
-    Entry { id: "LRMC-C7-05", story: "P3", clause: "§7.6/§9.22-9.23", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-05",
+        story: "P3",
+        clause: "§7.6/§9.22-9.23",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/vams_system_tasks.rs",
+            test_fn: "driver_access_calls_parse_and_elaborate_inside_a_connectmodule_body",
+        },
+    },
     Entry {
         id: "LRMC-C7-06",
         story: "P3",
@@ -193,23 +202,31 @@ const REGISTRY: &[Entry] = &[
             test_fn: "gate_primitives_simulate_end_to_end_and_produce_lrm_truth_table_values",
         },
     },
-    Entry { id: "LRMC-C7-14", story: "P3", clause: "§8.4.6", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-14",
+        story: "P3",
+        clause: "§8.4.6",
+        status: Status::Closed {
+            file: "crates/piperine-solver/src/digital/interface.rs",
+            test_fn: "a2d_crossing_interpolates_within_the_published_error_bound",
+        },
+    },
     Entry { id: "LRMC-C10-01", story: "P4", clause: "§10.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "default_discipline_sets_the_named_discipline" } },
-    Entry { id: "LRMC-C10-02", story: "P4", clause: "§10.3", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "default_transition_sets_rise_and_fall_to_the_same_value" } },
-    Entry { id: "LRMC-C10-03", story: "P4", clause: "§10.5", status: Status::Pending },
-    Entry { id: "LRMC-C10-04", story: "P4", clause: "§10.6", status: Status::Pending },
-    Entry { id: "LRMC-C10-05", story: "P4", clause: "ch.10 table", status: Status::Pending },
-    Entry { id: "LRMC-C10-06", story: "P4", clause: "ch.10 table", status: Status::Pending },
-    Entry { id: "LRMC-C10-07", story: "P4", clause: "ch.10 table", status: Status::Pending },
-    Entry { id: "LRMC-C10-08", story: "P4", clause: "ch.10 table", status: Status::Pending },
-    Entry { id: "LRMC-C10-09", story: "P4", clause: "ch.10 table", status: Status::Pending },
-    Entry { id: "LRMC-C10-10", story: "P4", clause: "ch.10 table", status: Status::Pending },
-    Entry { id: "LRMC-C10-11", story: "P4→P5", clause: "§11.2.1/Table 11-1", status: Status::Pending },
-    Entry { id: "LRMC-C10-12", story: "P4→P5", clause: "§11.4 Table 11-7", status: Status::Pending },
-    Entry { id: "LRMC-C10-13", story: "P4→P5", clause: "§11.4 Table 11-8", status: Status::Pending },
-    Entry { id: "LRMC-C10-14", story: "P4→P5", clause: "§11.4 Table 11-10", status: Status::Pending },
+    Entry { id: "LRMC-C10-02", story: "P4", clause: "§10.3", status: Status::Closed { file: "crates/piperine-codegen/tests/default_transition_semantics.rs", test_fn: "transition_without_explicit_times_uses_the_directive_value" } },
+    Entry { id: "LRMC-C10-03", story: "P4", clause: "§10.5", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "vams_enable_ifdef_takes_the_ams_branch" } },
+    Entry { id: "LRMC-C10-04", story: "P4", clause: "§10.6", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "section_10_6_own_example_parses_and_records_the_version" } },
+    Entry { id: "LRMC-C10-05", story: "P4", clause: "ch.10 table (celldefine/endcelldefine)", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "celldefine_endcelldefine_records_the_enclosed_span" } },
+    Entry { id: "LRMC-C10-06", story: "P4", clause: "ch.10 table (line)", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "line_directive_remaps_reported_line_numbers" } },
+    Entry { id: "LRMC-C10-07", story: "P4", clause: "ch.10 table (pragma)", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "all_1364_inherited_directives_no_longer_raise_undefined_macro" } },
+    Entry { id: "LRMC-C10-08", story: "P4", clause: "ch.10 table (default_nettype)", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "default_nettype_none_makes_an_undeclared_net_an_error" } },
+    Entry { id: "LRMC-C10-09", story: "P4", clause: "ch.10 table (unconnected_drive)", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "unconnected_drive_sets_pull0_or_pull1" } },
+    Entry { id: "LRMC-C10-10", story: "P4", clause: "ch.10 table (timescale/resetall)", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "timescale_1ns_1ps_records_the_expected_exponents" } },
+    Entry { id: "LRMC-C10-11", story: "P4→P5", clause: "§11.2.1/Table 11-1", status: Status::Closed { file: "crates/piperine-plugin/tests/callback_registry.rs", test_fn: "register_cb_fires_at_exactly_the_requested_event" } },
+    Entry { id: "LRMC-C10-12", story: "P4→P5", clause: "§11.4 Table 11-7", status: Status::Closed { file: "crates/piperine-plugin/tests/delay_processing.rs", test_fn: "put_delays_changes_observed_event_timing_in_a_live_run" } },
+    Entry { id: "LRMC-C10-13", story: "P4→P5", clause: "§11.4 Table 11-8", status: Status::Closed { file: "crates/piperine-plugin/tests/put_value.rs", test_fn: "put_value_changes_the_subsequent_solve_numerically" } },
+    Entry { id: "LRMC-C10-14", story: "P4→P5", clause: "§11.4 Table 11-10", status: Status::Closed { file: "crates/piperine-plugin/tests/mcd_family.rs", test_fn: "mcd_printf_writes_to_every_selected_channel" } },
     Entry { id: "LRMC-C10-15", story: "Out of Scope", clause: "Annex C.4", status: Status::OutOfScope },
-    Entry { id: "LRMC-C10-16", story: "P4", clause: "Annex D.3", status: Status::Pending },
+    Entry { id: "LRMC-C10-16", story: "P4", clause: "Annex D.3", status: Status::Closed { file: "crates/piperine-lang/tests/vams_headers.rs", test_fn: "driver_access_vams_bit_values_match_the_lrm_exactly" } },
     Entry { id: "LRMC-C10-17", story: "Out of Scope", clause: "Annex E.2.1/E.3.2", status: Status::OutOfScope },
     Entry { id: "LRMC-C10-18", story: "P4", clause: "Annex F §7.4.4.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_annex_f_domain.rs", test_fn: "continuous_wins_over_discrete_matching_figure_7_3" } },
     Entry { id: "LRMC-C10-19", story: "P4", clause: "Annex F §7.4.4.1 step 4.b", status: Status::Closed { file: "crates/piperine-lang/tests/vams_annex_f_domain.rs", test_fn: "unresolved_net_falls_back_to_default_discipline_directive" } },
