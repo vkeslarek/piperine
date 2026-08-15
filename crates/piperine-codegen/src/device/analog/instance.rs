@@ -241,7 +241,28 @@ impl AnalogInstance {
 
         let events = EventSystem::new(&kernel, &params)?;
 
-        let sim = SimCtx { param_given_mask, ..Default::default() };
+        // §9.18/§6.3.6 (LRMC-C7-09, T49): `$mfactor`'s per-instance value —
+        // a module that declares an ordinary `parameter real mfactor =
+        // 1.0;` gets that value read into `sim.mfactor` instead of the
+        // ABI default. SPEC_DEVIATION, disclosed: this is the single-
+        // instance-level half of Table 9-29's rule
+        // (`$mfactor_specified`); the full hierarchical
+        // `$mfactor_specified * $mfactor_hier` accumulation through
+        // nested instances (each ancestor's own mfactor multiplying
+        // together down to this leaf) needs FlattenHierarchy to carry
+        // and multiply an mfactor accumulator while it inlines nested
+        // instances — out of this task's reach today, so a leaf several
+        // levels deep with ancestor-level mfactor overrides still reads
+        // only its own, not the accumulated product. `$mfactor` remains
+        // its own declared parameter's default (1.0) when the module
+        // never declares one, matching Table 9-29's own top-level value.
+        let mfactor = kernel
+            .param_names()
+            .iter()
+            .position(|n| n == "mfactor")
+            .and_then(|i| params.get(i).copied())
+            .unwrap_or(1.0);
+        let sim = SimCtx { param_given_mask, mfactor, ..Default::default() };
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
         let num_limits = kernel.num_limits();

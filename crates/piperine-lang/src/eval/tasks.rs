@@ -168,6 +168,19 @@ pub enum SystemTaskKind {
     /// `$value$plusargs(str, var)` — §9.12: parses a `+name=value`
     /// command-line argument into `var` per `str`'s format spec.
     ValuePlusargs,
+    /// `$simprobe(inst_name, param_name[, expr])` — §9.16: queries a
+    /// sibling instance's output variable at runtime.
+    Simprobe,
+    /// `$mfactor` — §9.18, the shunt multiplicity factor.
+    Mfactor,
+    /// `$xposition`/`$yposition` — §9.18, instance placement offsets.
+    Xposition,
+    Yposition,
+    /// `$angle` — §9.18, instance rotation.
+    Angle,
+    /// `$hflip`/`$vflip` — §9.18, instance mirroring.
+    Hflip,
+    Vflip,
 }
 
 /// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
@@ -264,6 +277,13 @@ impl SystemTasks {
         ("$timeformat", SystemTaskKind::Timeformat),
         ("$test$plusargs", SystemTaskKind::TestPlusargs),
         ("$value$plusargs", SystemTaskKind::ValuePlusargs),
+        ("$simprobe", SystemTaskKind::Simprobe),
+        ("$mfactor", SystemTaskKind::Mfactor),
+        ("$xposition", SystemTaskKind::Xposition),
+        ("$yposition", SystemTaskKind::Yposition),
+        ("$angle", SystemTaskKind::Angle),
+        ("$hflip", SystemTaskKind::Hflip),
+        ("$vflip", SystemTaskKind::Vflip),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
@@ -675,6 +695,35 @@ pub fn format_time(abstime_seconds: f64, fmt: &TimeFormat) -> String {
         format!("{:>width$}", body, width = fmt.min_width)
     } else {
         body
+    }
+}
+
+/// §9.18's five hierarchical parameter functions Piperine has no
+/// instance-placement/geometry data for anywhere in the POM (`$mfactor`
+/// is the one with real simulation effect — wired separately in
+/// `piperine-codegen::device::analog::instance::AnalogInstance::new`,
+/// T49). LRM: "the remaining hierarchical system parameters do not have
+/// any automatic effect on the simulation" — so returning each one's
+/// documented Table 9-29 *top-level* value (never combined with an
+/// instance override this crate has nowhere to read from) is a
+/// disclosed, reasonable simplification, not a silently-wrong guess.
+pub struct HierarchicalParams;
+
+impl HierarchicalParams {
+    pub fn xposition() -> Value {
+        Value::Real(0.0)
+    }
+    pub fn yposition() -> Value {
+        Value::Real(0.0)
+    }
+    pub fn angle() -> Value {
+        Value::Real(0.0)
+    }
+    pub fn hflip() -> Value {
+        Value::Int(1)
+    }
+    pub fn vflip() -> Value {
+        Value::Int(1)
     }
 }
 
@@ -1202,6 +1251,17 @@ mod tests {
 
         let padded = TimeFormat { units_exponent: 0, precision: 0, suffix: String::new(), min_width: 8 };
         assert_eq!(format_time(3.0, &padded), "       3");
+    }
+
+    /// LRMC-C7-09 (T49): the five no-simulation-effect hierarchical
+    /// parameters return Table 9-29's own documented top-level values.
+    #[test]
+    fn hierarchical_params_return_table_9_29_top_level_values() {
+        assert_eq!(HierarchicalParams::xposition(), Value::Real(0.0));
+        assert_eq!(HierarchicalParams::yposition(), Value::Real(0.0));
+        assert_eq!(HierarchicalParams::angle(), Value::Real(0.0));
+        assert_eq!(HierarchicalParams::hflip(), Value::Int(1));
+        assert_eq!(HierarchicalParams::vflip(), Value::Int(1));
     }
 
     #[test]

@@ -122,6 +122,37 @@ impl Session {
         self.opts.plusargs.as_ref().is_some_and(|p| p.test(name))
     }
 
+    /// `$simprobe(inst_name, param_name[, expr])` (§9.16, T49): queries
+    /// a sibling instance's output variable — here, any instance's
+    /// `read_opvars()` snapshot by (instance label, opvar name).
+    /// `fallback` is the LRM's own `expr` argument: `Some(v)` returns
+    /// `v` instead of erroring when `inst_name`/`param_name` doesn't
+    /// resolve; `None` fails loud (the LRM: "If either ... cannot be
+    /// resolved, and the optional expression is not supplied, then an
+    /// error shall be generated").
+    ///
+    /// **SPEC_DEVIATION, disclosed:** the LRM's own "sibling instance"
+    /// framing (looked up relative to the *calling* instance's parent)
+    /// isn't meaningful here — `read_opvars()` is snapshotted by flat
+    /// instance label across the whole compiled circuit (MD-25's own
+    /// flattening), and this is a *host*-level query (the Rust caller
+    /// asks a compiled `Session`), not a `.vams` body calling
+    /// `$simprobe(...)` during its own evaluation — that needs JIT
+    /// dispatch this task didn't reach, the same tier `$test$plusargs`/
+    /// `$fopen`/`$random` already live at.
+    pub fn simprobe(&self, inst_name: &str, param_name: &str, fallback: Option<f64>) -> Result<f64, Error> {
+        let opvars = Self::snapshot_opvars(&self.circuit);
+        let found = opvars
+            .get(inst_name)
+            .and_then(|vars| vars.iter().find(|(n, _)| n == param_name))
+            .map(|(_, v)| *v);
+        found.or(fallback).ok_or_else(|| {
+            Error::Measurement(format!(
+                "$simprobe({inst_name:?}, {param_name:?}): not found and no fallback expression given"
+            ))
+        })
+    }
+
     /// `$value$plusargs("name=%spec", var)` (§9.12, T48) — see
     /// `piperine_lang::eval::tasks::PlusArgs::value` for the exact spec
     /// grammar and error conditions.
