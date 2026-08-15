@@ -9,10 +9,9 @@
 //! Newton while still reacting to the circuit at every iteration.
 //!
 //! **`BehaviorKind` is the extension point** (§3.7, §12.2): closed in
-//! Python (`pip.Behavior.*` is what ships), open in Rust — implementing
-//! this trait outside this module composes exactly like a shipped kind, no
-//! plugin and no build ceremony. The shape is `ideal.md`'s verbatim.
-
+//! Python (`pip.Behavior.*` ships), open in Rust — implementing this
+//! trait elsewhere composes like a shipped kind, no plugin, no build
+//! ceremony; the shape is `ideal.md`'s verbatim.
 pub mod fd_oracle;
 pub mod kinds;
 pub mod table;

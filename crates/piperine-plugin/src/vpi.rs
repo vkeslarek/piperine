@@ -12,6 +12,16 @@
 //! never hosts a `dlopen`'d IEEE-VPI C shim); it means the *behavior* the
 //! category exists to provide is reachable some other way in Piperine's
 //! own native plugin ABI — named concretely in each entry's `mechanism`.
+//!
+//! **T64 (spec Success Criteria 4, LRMC-C10-11..14)**: `SimulationCallbacks`
+//! (T59), `DelayProcessing` (T60/T61), `ValueProcessing` (T62), and
+//! `MiscUtilities` (T63) — the exact four categories P5 names — are now
+//! all `Native`, locked by `tests/vpi_routines.rs`'s
+//! `every_p5_covered_category_is_locked_at_native` (with its own
+//! `p5_lock_lets_a_real_regression_fail` proving the lock can actually
+//! fail, not a vacuous check). `TimeProcessing` stays `Partial`
+//! (`vpi_get_analog_time`/`_delta`/`_freq` have no equivalent) —
+//! deliberately: it is not one of P5's four tracked IDs.
 
 /// One of §11.4's ten VPI routine functional categories (Table 11-1
 /// through Table 11-10).

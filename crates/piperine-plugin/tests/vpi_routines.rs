@@ -89,6 +89,48 @@ fn misc_utilities_is_native_after_t63() {
     assert_eq!(VpiCategories::support(VpiCategory::MiscUtilities), VpiSupport::Native);
 }
 
+// ── T64: lock the P5-covered categories at Native (spec Success Criteria 4) ──
+
+/// The exact four categories `spec.md`'s Success Criteria 4 names as
+/// P5's scope (LRMC-C10-11..14) — `TimeProcessing`'s remaining
+/// `vpi_get_analog_time`/`_delta`/`_freq` gap is explicitly *not* one of
+/// these four IDs, so it correctly stays `Partial` and this lock does not
+/// touch it.
+const P5_CATEGORIES: &[(VpiCategory, &str)] = &[
+    (VpiCategory::SimulationCallbacks, "LRMC-C10-11"),
+    (VpiCategory::DelayProcessing, "LRMC-C10-12"),
+    (VpiCategory::ValueProcessing, "LRMC-C10-13"),
+    (VpiCategory::MiscUtilities, "LRMC-C10-14"),
+];
+
+/// The assertion T64's lock actually runs — pulled into its own function
+/// so [`p5_lock_lets_a_real_regression_fail`] can drive it with a
+/// deliberately-wrong support level and prove the lock is a real trap,
+/// not a vacuously-true check.
+fn assert_p5_category_is_native(category: VpiCategory, support: VpiSupport, lrmc_id: &str) {
+    assert_eq!(support, VpiSupport::Native, "{lrmc_id} ({category:?}) regressed off Native — spec Success Criteria 4");
+}
+
+/// No `Partial`/`NotSupported` remains for anything P5 covers (spec
+/// Success Criteria 4, LRMC-C10-11..14) — the actual lock, read from the
+/// live `VpiCategories` table.
+#[test]
+fn every_p5_covered_category_is_locked_at_native() {
+    for &(category, lrmc_id) in P5_CATEGORIES {
+        assert_p5_category_is_native(category, VpiCategories::support(category), lrmc_id);
+    }
+}
+
+/// Proves the lock above is able to fail: feeding `assert_p5_category_is_native`
+/// a deliberately-`Partial` value (not read from the live table — a
+/// synthetic regression) panics, exactly as it must if a real category
+/// ever regressed off `Native`.
+#[test]
+#[should_panic(expected = "LRMC-C10-11")]
+fn p5_lock_lets_a_real_regression_fail() {
+    assert_p5_category_is_native(VpiCategory::SimulationCallbacks, VpiSupport::Partial, "LRMC-C10-11");
+}
+
 #[test]
 fn no_category_is_silently_dropped_from_the_public_surface() {
     // Regression guard for the exact defect C6 forbids: a category that
