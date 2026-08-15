@@ -282,8 +282,20 @@ fn render_spec(spec: char, arg: &Value, fmt: &str) -> Result<String, SystemTaskE
     match spec {
         'd' | 'D' => Ok(format!("{}", need_int()?)),
         'o' | 'O' => Ok(format!("{:o}", need_int()?)),
-        'b' | 'B' => Ok(format!("{:b}", need_int()?)),
-        'h' | 'H' | 'x' | 'X' => Ok(format!("{:x}", need_int()?)),
+        // LRMC-C7-08 (T44): a four-state `Value::Logic` renders per bit
+        // (`0`/`1`/`x`/`z`), not coerced through a 2-state integer first
+        // (which would silently turn every `x`/`z` bit into `0`) — the
+        // `need_int()` 2-state fallback below is for plain
+        // integer/natural arguments, still LRM-legal (§9.2's own
+        // `%b`/`%h` accept any expression, not only a `reg`/`wire`).
+        'b' | 'B' => match arg {
+            Value::Logic(lv) => Ok(render_bits(lv)),
+            _ => Ok(format!("{:b}", need_int()?)),
+        },
+        'h' | 'H' | 'x' | 'X' => match arg {
+            Value::Logic(lv) => Ok(render_hex(lv)),
+            _ => Ok(format!("{:x}", need_int()?)),
+        },
         'c' | 'C' => {
             let code = need_int()?;
             let byte = u8::try_from(code)
@@ -295,12 +307,69 @@ fn render_spec(spec: char, arg: &Value, fmt: &str) -> Result<String, SystemTaskE
         'f' | 'F' => Ok(format!("{:.6}", need_real()?)),
         'g' | 'G' => Ok(format!("{}", need_real()?)),
         't' | 'T' => Ok(format!("{}", need_real()?)),
-        'v' | 'V' => Ok(format!("{}", need_int()?)),
+        // `%v` (§17.5 net-strength display) needs drive-strength data
+        // `Value` doesn't carry — a documented scope limit (this task's
+        // own stated `Where` is `format_display`/`render_spec`, not a
+        // new strength-carrying value type): a `Value::Logic` renders
+        // its bits the same way `%b` does (at least honest about
+        // unknown/high-Z bits, unlike the prior plain-integer coercion);
+        // a plain integer/natural renders as before.
+        'v' | 'V' => match arg {
+            Value::Logic(lv) => Ok(render_bits(lv)),
+            _ => Ok(format!("{}", need_int()?)),
+        },
         other => Err(SystemTaskError::malformed(
             fmt,
             format!("`%{other}` is not a recognized LRM Table 9-1 specifier"),
         )),
     }
+}
+
+/// `%b`-style rendering (§9.2/Table 9-1, LRMC-C7-08): every bit, MSB
+/// first, as `0`/`1`/`x`/`z` — never silently folding an unknown bit to
+/// `0` the way a `{:b}`-over-`i64` coercion would.
+fn render_bits(lv: &crate::value::LogicVec) -> String {
+    (0..lv.width())
+        .rev()
+        .map(|i| match lv.bit(i) {
+            crate::value::logic::LogicValue::Zero => '0',
+            crate::value::logic::LogicValue::One => '1',
+            crate::value::logic::LogicValue::X => 'x',
+            crate::value::logic::LogicValue::Z => 'z',
+        })
+        .collect()
+}
+
+/// `%h`-style rendering (§9.2/Table 9-1, LRMC-C7-08): one hex digit per
+/// 4-bit group, MSB group first. A group entirely `z` renders `z`; a
+/// group that is any other mix of unknown (`x`/`z`) and known bits
+/// renders `x` (the LRM's own "any bit of the group is unknown" rule —
+/// only an all-`z` group gets its own distinct symbol); a fully-known
+/// group renders its hex digit.
+fn render_hex(lv: &crate::value::LogicVec) -> String {
+    use crate::value::logic::LogicValue::*;
+    let width = lv.width();
+    let num_groups = width.div_ceil(4);
+    (0..num_groups)
+        .rev()
+        .map(|g| {
+            let bits: Vec<crate::value::logic::LogicValue> =
+                (0..4).filter_map(|b| { let i = g * 4 + b; (i < width).then(|| lv.bit(i)) }).collect();
+            if bits.iter().all(|&b| b == Z) {
+                'z'
+            } else if bits.iter().any(|&b| b == X || b == Z) {
+                'x'
+            } else {
+                let mut nibble = 0u8;
+                for (b, &v) in bits.iter().enumerate() {
+                    if v == One {
+                        nibble |= 1 << b;
+                    }
+                }
+                std::char::from_digit(nibble as u32, 16).unwrap_or('?')
+            }
+        })
+        .collect()
 }
 
 /// The live values `$abstime`/`$temperature`/`$bound_step` read — supplied
@@ -721,6 +790,51 @@ mod tests {
     fn display_format_percent_literal_and_hierarchical_name() {
         assert_eq!(format_display("100%%", &[], "top").unwrap(), "100%");
         assert_eq!(format_display("in %m", &[], "top.sub").unwrap(), "in top.sub");
+    }
+
+    /// LRMC-C7-08 (T44): `%b`/`%h` render `x`/`z` bits from a four-state
+    /// `Value::Logic`, never silently folding them to `0`.
+    #[test]
+    fn display_format_b_and_h_render_unknown_and_highz_bits() {
+        use crate::value::logic::LogicValue as Lv;
+        use crate::value::LogicVec;
+
+        let mut bits = LogicVec::zero(4);
+        bits.set_bit(3, Lv::One);
+        bits.set_bit(2, Lv::Zero);
+        bits.set_bit(1, Lv::X);
+        bits.set_bit(0, Lv::Z);
+        let arg = Value::Logic(bits);
+        assert_eq!(format_display("%b", std::slice::from_ref(&arg), "top").unwrap(), "10xz");
+        // The single 4-bit group is a mix of known/unknown -> 'x'.
+        assert_eq!(format_display("%h", std::slice::from_ref(&arg), "top").unwrap(), "x");
+
+        let all_z = Value::Logic({
+            let mut v = LogicVec::zero(4);
+            for i in 0..4 {
+                v.set_bit(i, Lv::Z);
+            }
+            v
+        });
+        assert_eq!(format_display("%b", &[all_z.clone()], "top").unwrap(), "zzzz");
+        assert_eq!(format_display("%h", &[all_z], "top").unwrap(), "z");
+
+        // A fully-known 8-bit value still renders its exact hex digits.
+        let known = Value::Logic(LogicVec::from_int(0xAB, 8));
+        assert_eq!(format_display("%h", &[known], "top").unwrap(), "ab");
+    }
+
+    /// Escape sequences (§2.7 Table 2-2, LRMC-C7-08): `\n`/`\t`/`\\`/`\"`/
+    /// octal `\ddd` are lexer-level (proven here through the real
+    /// `Lexer`, not `format_display` — they apply to every string
+    /// literal, not only a `$display` format argument); `\%` — the one
+    /// this task's own audit found missing — alongside them.
+    #[test]
+    fn string_literal_escape_sequences_decode_per_table_2_2() {
+        let src = r#""a\nb\tc\\d\"e\%f\101""#;
+        let toks = crate::Lexer::new(src).tokenize().expect("lexes");
+        let crate::lexer::Tok::Str(s) = &toks[0].tok else { panic!("expected a string token") };
+        assert_eq!(s, "a\nb\tc\\d\"e%fA", "\\101 (octal) is 'A' (0x41)");
     }
 
     #[test]

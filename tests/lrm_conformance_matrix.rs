@@ -139,7 +139,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "session_builder_output_captures_display_through_a_real_session",
         },
     },
-    Entry { id: "LRMC-C7-08", story: "P3", clause: "§9.2/§9.4.2/§9.4.4", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-08",
+        story: "P3",
+        clause: "§9.2/§9.4.2/§9.4.4",
+        status: Status::Closed {
+            file: "crates/piperine-lang/src/eval/tasks.rs",
+            test_fn: "display_format_b_and_h_render_unknown_and_highz_bits",
+        },
+    },
     Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
     Entry { id: "LRMC-C7-10", story: "P3", clause: "§9.2", status: Status::Pending },
     Entry {

@@ -260,6 +260,16 @@ impl<'a> Lexer<'a> {
                             value.push('"');
                             self.pos += 1;
                         }
+                        // §2.7 Table 2-2 (LRMC-C7-08, T44): `\%` — a
+                        // literal `%`, distinct from `format_display`'s
+                        // own `%%` format-*specifier* escape
+                        // (`eval/tasks.rs`) — this one is a plain string
+                        // escape, usable in any string literal, not only
+                        // a `$display`-family format argument.
+                        Some(b'%') => {
+                            value.push('%');
+                            self.pos += 1;
+                        }
                         Some(c) if c.is_ascii_digit() && c <= b'7' => {
                             let mut digits = String::new();
                             for _ in 0..3 {
