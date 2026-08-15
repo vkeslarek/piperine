@@ -13,6 +13,7 @@
 //! [`piperine_lang::eval::tasks::VpiTaskRegistry`]'s own typed E4010–E4012
 //! errors, reused here rather than duplicated.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,7 +35,7 @@ use crate::capability::HostCtx;
 use crate::contributions::Contributions;
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::Manifest;
-use crate::registry::{HookCall, HookPhase};
+use crate::registry::{CallbackId, CallbackRegistry, HookCall, HookPhase, SimEvent};
 use crate::trust::{artifact_hash, ensure_release_trusted, ensure_trusted, TrustMode};
 use crate::view::{DesignStaging, SolveResultView};
 use crate::Plugin;
@@ -94,6 +95,11 @@ pub struct PluginHost {
     system_tasks: VpiTaskRegistry,
     /// The native handler each registered name dispatches to.
     system_task_handlers: HashMap<String, Arc<dyn SystemTaskHandler>>,
+    /// T59 (LRMC-C10-11): runtime event-grained callbacks, orthogonal to
+    /// the static `HookPhase` mechanism above — `RefCell` because
+    /// `register_cb`/`remove_cb` are reachable from `&self` (a plugin may
+    /// register from inside a running hook, not just at setup).
+    callbacks: RefCell<CallbackRegistry>,
 }
 
 impl PluginHost {
@@ -105,7 +111,27 @@ impl PluginHost {
             project_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             system_tasks: VpiTaskRegistry::new(),
             system_task_handlers: HashMap::new(),
+            callbacks: RefCell::new(CallbackRegistry::new()),
         }
+    }
+
+    /// Registers `callback` to fire every time `event` occurs (T59,
+    /// LRMC-C10-11) — the native equivalent of `vpi_register_cb()`.
+    /// Returns a [`CallbackId`] usable with [`Self::remove_cb`].
+    pub fn register_cb(&self, event: SimEvent, callback: impl FnMut() + 'static) -> CallbackId {
+        self.callbacks.borrow_mut().register_cb(event, callback)
+    }
+
+    /// Deregisters `id` — the native equivalent of `vpi_remove_cb()`.
+    /// Returns `true` if it was registered and is now removed.
+    pub fn remove_cb(&self, id: CallbackId) -> bool {
+        self.callbacks.borrow_mut().remove_cb(id)
+    }
+
+    /// How many runtime callbacks are currently registered (any event) —
+    /// test/introspection only.
+    pub fn callback_count(&self) -> usize {
+        self.callbacks.borrow().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -351,6 +377,7 @@ impl PluginHost {
 
     /// Hook 1 — fired by whoever drives parsing (CLI), on the raw source.
     pub fn fire_after_parse(&self, source: &str) -> Result<(), String> {
+        self.callbacks.borrow_mut().fire(&SimEvent::AfterParse);
         self.fire("after_parse", |p, cx| p.after_parse(cx, source))?;
         self.fire_declared(HookPhase::AfterParse, Some(source), None, None)
     }
@@ -358,6 +385,7 @@ impl PluginHost {
     /// Hook 2 — fired once the design elaborates. Native/in-process
     /// plugins see the real `&Design`; nothing is snapshotted for them.
     pub fn fire_after_elaborate(&self, design: &Design) -> Result<(), String> {
+        self.callbacks.borrow_mut().fire(&SimEvent::AfterElaborate);
         if self.is_empty() {
             return Ok(());
         }
@@ -481,6 +509,7 @@ impl PluginHost {
 /// analysis, through this.
 impl SimHooks for PluginHost {
     fn transform_design(&self, design: &Design) -> Result<(), String> {
+        self.callbacks.borrow_mut().fire(&SimEvent::TransformDesign);
         if self.is_empty() {
             return Ok(());
         }
@@ -506,6 +535,7 @@ impl SimHooks for PluginHost {
     }
 
     fn before_lower(&self, design: &Design) -> Result<(), String> {
+        self.callbacks.borrow_mut().fire(&SimEvent::BeforeLower);
         if self.is_empty() {
             return Ok(());
         }
@@ -514,6 +544,7 @@ impl SimHooks for PluginHost {
     }
 
     fn after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), String> {
+        self.callbacks.borrow_mut().fire(&SimEvent::AfterSolve(analysis.to_string()));
         if self.is_empty() {
             return Ok(());
         }

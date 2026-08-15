@@ -55,6 +55,16 @@ fn systf_and_analog_systf_route_through_t53s_native_abi() {
     assert_eq!(VpiCategories::support(VpiCategory::AnalogSystfCallbacks), VpiSupport::Native);
 }
 
+/// T59 (LRMC-C10-11): `SimulationCallbacks` (Table 11-1,
+/// `vpi_register_cb`/`vpi_remove_cb`) flipped from `Partial` to `Native` —
+/// `PluginHost::register_cb`/`remove_cb` is a real, event-grained,
+/// deregisterable runtime mechanism now, proved separately in
+/// `tests/callback_registry.rs`.
+#[test]
+fn simulation_callbacks_is_native_after_t59() {
+    assert_eq!(VpiCategories::support(VpiCategory::SimulationCallbacks), VpiSupport::Native);
+}
+
 #[test]
 fn no_category_is_silently_dropped_from_the_public_surface() {
     // Regression guard for the exact defect C6 forbids: a category that

@@ -77,16 +77,21 @@ impl VpiCategories {
     const TABLE: &'static [VpiCategoryEntry] = &[
         VpiCategoryEntry {
             category: VpiCategory::SimulationCallbacks,
-            support: VpiSupport::Partial,
-            mechanism: "Registration/info: `PluginHost`'s `HookPhase` lifecycle \
-                (after_parse/after_elaborate/transform_design/before_lower/after_solve, \
-                `crate::registry::HookPhase`) is the native equivalent of \
-                `vpi_register_cb()`/`vpi_get_cb_info()` — phase-grained rather than \
-                per-event-grained, but the same \"call me when X happens\" contract, \
-                dispatched in-process (no callback-function-pointer marshaling). \
-                `vpi_remove_cb()` has no equivalent: a loaded plugin's hooks live for \
-                the whole run, by design (Plugin plan D-series) — NotSupported, not \
-                silently ignored.",
+            support: VpiSupport::Native,
+            mechanism: "T59 (LRMC-C10-11): `PluginHost::register_cb`/`remove_cb` \
+                (`crate::registry::{SimEvent, CallbackId, CallbackRegistry}`) is a real, \
+                runtime, event-grained mechanism — `vpi_register_cb()`'s native equivalent, \
+                returning a `CallbackId` `vpi_remove_cb()`'s native equivalent \
+                (`PluginHost::remove_cb`) genuinely deregisters (asserted: no further fire, \
+                `tests/callback_registry.rs`). Events distinguish by analysis kind \
+                (`SimEvent::AfterSolve(\"tran\")` vs `\"op\"`/`\"ac\"`), the finest granularity \
+                actually observable at the plugin-host boundary — `piperine-solver`'s digital \
+                scheduler (T38's `Region`) has no dependency on `piperine-plugin` and exposes no \
+                per-net/per-timestep callback seam, a real architectural boundary \
+                (`CLAUDE.md`'s crate table), so per-region-drain events are not reachable and \
+                are not claimed here. `HookPhase`'s static, macro-declared, whole-run-lifetime \
+                mechanism (`vpi_register_cb()`/`vpi_get_cb_info()`'s coarser prior equivalent) \
+                is unaffected — a second, orthogonal mechanism, not a replacement.",
         },
         VpiCategoryEntry {
             category: VpiCategory::SystfCallbacks,

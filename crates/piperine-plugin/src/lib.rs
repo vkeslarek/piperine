@@ -44,7 +44,8 @@ pub use error::{PluginError, PluginResult};
 pub use host::PluginHost;
 pub use manifest::{DeviceSource, Manifest, Permissions, PluginShape};
 pub use registry::{
-    DeviceRegistration, HookCall, HookPhase, HookRegistration, Registry, ScriptRegistration,
+    CallbackId, CallbackRegistry, DeviceRegistration, HookCall, HookPhase, HookRegistration,
+    Registry, ScriptRegistration, SimEvent,
 };
 pub use scripted::ScriptedHost;
 pub use trust::{

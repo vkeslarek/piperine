@@ -109,6 +109,97 @@ impl HookRegistration {
 
 inventory::collect!(HookRegistration);
 
+// ─── Event-grained callback registry (T59, LRMC-C10-11) ───────────────────
+
+/// One concrete simulation event a runtime-registered callback can fire on
+/// — `vpi_register_cb()`'s event argument, native-ABI equivalent. Finer
+/// grained than [`HookPhase`] in the one place Piperine's pipeline
+/// actually distinguishes sub-events: an analysis's *kind*
+/// (`"op"`/`"tran"`/`"ac"`/`"noise"`, `SimHooks::after_solve`'s own
+/// `analysis: &str` parameter) — a callback registered for
+/// `AfterSolve("tran")` never fires for a `"dc"` or `"ac"` run, where
+/// `HookPhase::AfterSolve` fires for every one indiscriminately.
+///
+/// **Disclosed scope**: this is *not* per-net/per-timestep/per-digital-
+/// region-drain granularity — `piperine-solver`'s digital scheduler (T38's
+/// `Region`) has no dependency on, and exposes no callback seam to,
+/// `piperine-plugin` (`CLAUDE.md`'s own crate table: the solver "does not
+/// depend on codegen", and has no plugin dependency either — a real
+/// architectural boundary, not an oversight). The finest-grained concrete
+/// event actually observable at the plugin host boundary today is the
+/// per-analysis-kind `after_solve`; that is what this event set covers.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SimEvent {
+    AfterParse,
+    AfterElaborate,
+    TransformDesign,
+    BeforeLower,
+    /// Fires only when the completed analysis's kind matches.
+    AfterSolve(String),
+}
+
+/// A handle returned by [`CallbackRegistry::register_cb`] — the native
+/// equivalent of a `vpiHandle` returned from `vpi_register_cb()`, opaque
+/// and usable only to name the registration to
+/// [`CallbackRegistry::remove_cb`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CallbackId(u64);
+
+/// Runtime event-grained callback registration, with real deregistration
+/// (`vpi_remove_cb()`'s native equivalent — `vpi.rs`'s own prior note:
+/// "`vpi_remove_cb()` has no equivalent: a loaded plugin's hooks live for
+/// the whole run, by design" described [`HookPhase`]'s *static*,
+/// macro-declared mechanism; this is a second, orthogonal, *runtime*
+/// mechanism specifically built to have one). [`HookPhase`] hooks are
+/// unaffected — this never reads or writes the `inventory`-collected
+/// tables.
+#[derive(Default)]
+pub struct CallbackRegistry {
+    next_id: u64,
+    entries: Vec<(CallbackId, SimEvent, Box<dyn FnMut() + 'static>)>,
+}
+
+impl CallbackRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers `callback` to fire every time `event` occurs. Returns a
+    /// [`CallbackId`] usable with [`Self::remove_cb`].
+    pub fn register_cb(&mut self, event: SimEvent, callback: impl FnMut() + 'static) -> CallbackId {
+        let id = CallbackId(self.next_id);
+        self.next_id += 1;
+        self.entries.push((id, event, Box::new(callback)));
+        id
+    }
+
+    /// Deregisters `id`. Returns `true` if it was registered (and is now
+    /// removed), `false` if `id` was already removed or never existed —
+    /// never a silent no-op either way, the caller can tell which
+    /// happened.
+    pub fn remove_cb(&mut self, id: CallbackId) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|(entry_id, _, _)| *entry_id != id);
+        self.entries.len() != before
+    }
+
+    /// Fires every callback currently registered for `event`, in
+    /// registration order.
+    pub fn fire(&mut self, event: &SimEvent) {
+        for (_, registered_event, callback) in &mut self.entries {
+            if registered_event == event {
+                callback();
+            }
+        }
+    }
+
+    /// How many callbacks are currently registered (any event) — test/
+    /// introspection only.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
 /// The read side of the macro registry. Zero-sized: every method reads the
 /// calling binary's own registry (see the module doc for attribution).
 pub struct Registry;
