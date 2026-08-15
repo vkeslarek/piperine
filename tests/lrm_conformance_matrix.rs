@@ -113,7 +113,15 @@ const REGISTRY: &[Entry] = &[
         },
     },
     Entry { id: "LRMC-C7-05", story: "P3", clause: "§7.6/§9.22-9.23", status: Status::Pending },
-    Entry { id: "LRMC-C7-06", story: "P3", clause: "§7.3.6", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-06",
+        story: "P3",
+        clause: "§7.3.6",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/vams_cross_domain_concurrency.rs",
+            test_fn: "analog_event_sampled_variable_drives_a_digital_event_control",
+        },
+    },
     Entry { id: "LRMC-C7-07", story: "P3", clause: "§9.2/Table 9-1", status: Status::Pending },
     Entry { id: "LRMC-C7-08", story: "P3", clause: "§9.2/§9.4.2/§9.4.4", status: Status::Pending },
     Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
