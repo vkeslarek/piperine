@@ -72,6 +72,11 @@ pub struct Preprocessor {
     /// if any — paired off into `directives.celldefine_spans` by the next
     /// `` `endcelldefine ``.
     open_celldefine: Option<usize>,
+    /// Open `` `begin_keywords "version" `` frames, `(version,
+    /// directive-start byte offset)` — a stack so nested scopes balance;
+    /// closed off into `directives.keyword_scopes` by the matching
+    /// `` `end_keywords ``.
+    open_keywords: Vec<(String, usize)>,
 }
 
 impl Default for Preprocessor {
@@ -106,6 +111,7 @@ impl Preprocessor {
             macros: predefined_macro_table(),
             directives: Default::default(),
             open_celldefine: None,
+            open_keywords: Vec::new(),
         }
     }
 
@@ -115,6 +121,7 @@ impl Preprocessor {
             macros: predefined_macro_table(),
             directives: Default::default(),
             open_celldefine: None,
+            open_keywords: Vec::new(),
         }
     }
 
@@ -135,6 +142,12 @@ impl Preprocessor {
         if let Some(frame) = cond_stack.pop() {
             return Err(ParseError::new(
                 ParseErrorKind::UnterminatedConditional { directive: frame.opener },
+                Span::new(source.len(), source.len()),
+            ));
+        }
+        if !self.open_keywords.is_empty() {
+            return Err(ParseError::new(
+                ParseErrorKind::UnterminatedKeywords,
                 Span::new(source.len(), source.len()),
             ));
         }
@@ -332,6 +345,23 @@ impl Preprocessor {
                 Ok(name_end)
             }
             "nounconnected_drive" => Ok(name_end),
+            "begin_keywords" if active_now => {
+                let (version, after) = scan_quoted_path(source, skip_inline_ws(source, name_end));
+                self.open_keywords.push((version, directive_start));
+                Ok(after)
+            }
+            "begin_keywords" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "end_keywords" if active_now => {
+                let Some((version, start)) = self.open_keywords.pop() else {
+                    return Err(ParseError::new(ParseErrorKind::UnmatchedEndKeywords, Span::new(directive_start, name_end)));
+                };
+                self.directives.keyword_scopes.push(crate::directives::KeywordScope {
+                    version,
+                    span: Some(Span::new(start, name_end)),
+                });
+                Ok(name_end)
+            }
+            "end_keywords" => Ok(name_end),
             "timescale" if active_now => {
                 let (ts, after) = self.parse_timescale(source, name_end);
                 if let Some(ts) = ts {

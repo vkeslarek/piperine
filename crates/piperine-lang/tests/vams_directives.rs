@@ -328,3 +328,51 @@ fn undef_has_no_effect_on_predefined_macros() {
     );
     assert!(msg.contains("del"), "undef must not have cleared __VAMS_ENABLE__: {msg}");
 }
+
+// ── T55: `begin_keywords`/`end_keywords` scoping (LRMC-C10-04) ──────────
+
+/// LRM §10.6's own second example: `` `begin_keywords "1364-2005"``, a
+/// module using `sin` as a port name, `` `end_keywords``. Parses (the
+/// directive pair itself no longer raises `UndefinedMacro`, matching
+/// T52-54's established pattern) and records the version string.
+#[test]
+fn section_10_6_own_example_parses_and_records_the_version() {
+    let d = elab(
+        "`begin_keywords \"1364-2005\"\n\
+         module m2 (inout electrical sin); endmodule\n\
+         `end_keywords\n",
+    );
+    assert!(d.module("m2").is_some());
+    assert_eq!(d.directives().keyword_scopes.len(), 1);
+    assert_eq!(d.directives().keyword_scopes[0].version, "1364-2005");
+}
+
+/// An unbalanced `` `begin_keywords `` (no matching `` `end_keywords ``
+/// before the source ends) fails loud.
+#[test]
+fn unbalanced_begin_keywords_fails_loud() {
+    let msg = elab_err("`begin_keywords \"VAMS-2.3\"\nmodule m(); endmodule\n");
+    assert!(msg.to_lowercase().contains("keywords"), "must name the directive: {msg}");
+}
+
+/// A stray `` `end_keywords `` with no open `` `begin_keywords `` also
+/// fails loud, not a silent no-op.
+#[test]
+fn stray_end_keywords_fails_loud() {
+    let msg = elab_err("`end_keywords\nmodule m(); endmodule\n");
+    assert!(msg.to_lowercase().contains("keywords"), "must name the directive: {msg}");
+}
+
+/// Nested `` `begin_keywords ``/`` `end_keywords `` scopes balance
+/// correctly (a stack, not a single flag).
+#[test]
+fn nested_keyword_scopes_balance() {
+    let d = elab(
+        "`begin_keywords \"VAMS-2.3\"\n\
+         `begin_keywords \"1364-2005\"\n\
+         module m(); endmodule\n\
+         `end_keywords\n\
+         `end_keywords\n",
+    );
+    assert_eq!(d.directives().keyword_scopes.len(), 2);
+}

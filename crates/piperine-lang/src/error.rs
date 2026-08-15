@@ -110,6 +110,12 @@ pub enum ParseErrorKind {
     /// (e.g. `` `default_transition `` without a parseable real-valued
     /// `transition_time`, LRM §10.3 Syntax 10-2).
     MalformedDirective { directive: String, reason: String },
+    /// A `` `begin_keywords `` (§10.6, LRMC-C10-04) was never closed by a
+    /// matching `` `end_keywords `` before the source ended.
+    UnterminatedKeywords,
+    /// An `` `end_keywords `` (§10.6) appeared with no open
+    /// `` `begin_keywords `` to match.
+    UnmatchedEndKeywords,
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -166,6 +172,12 @@ impl fmt::Display for ParseErrorKind {
             }
             ParseErrorKind::MalformedDirective { directive, reason } => {
                 write!(f, "`{directive} directive is malformed: {reason}")
+            }
+            ParseErrorKind::UnterminatedKeywords => {
+                write!(f, "`begin_keywords was never closed by a matching `end_keywords")
+            }
+            ParseErrorKind::UnmatchedEndKeywords => {
+                write!(f, "`end_keywords has no matching `begin_keywords")
             }
         }
     }
