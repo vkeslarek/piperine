@@ -161,6 +161,28 @@ impl PluginHost {
         table.set(net, delay);
     }
 
+    /// `vpi_put_value()`'s native equivalent (T62, LRMC-C10-13): drives
+    /// `label`.`param` into `session`'s running solve, symmetric with the
+    /// read path (`SimHooks::after_solve`'s `SolveResultView`). A thin
+    /// wrapper over `piperine::Session::set` — which already is MD-18-
+    /// compliant (restamps the compiled circuit, never re-JITs) and
+    /// already fails loud on a structural write or an out-of-bounds
+    /// value; this method exists to give the mechanism a named,
+    /// `vpi_*`-shaped entry point in this crate's own surface, the same
+    /// reason `get_delays`/`put_delays` exist rather than callers reaching
+    /// into `piperine-solver` directly.
+    pub fn put_value(
+        &self,
+        session: &mut piperine::Session,
+        label: &str,
+        param: &str,
+        value: f64,
+    ) -> PluginResult<()> {
+        session
+            .set(label, param, value)
+            .map_err(|e| PluginError::Other { plugin: "<vpi_put_value>".into(), message: e.to_string() })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.plugins.is_empty()
     }

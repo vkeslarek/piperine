@@ -73,6 +73,14 @@ fn delay_processing_is_native_after_t60_t61() {
     assert_eq!(VpiCategories::support(VpiCategory::DelayProcessing), VpiSupport::Native);
 }
 
+/// T62 (LRMC-C10-13): `ValueProcessing` (Table 11-8, `vpi_put_value`'s
+/// write half) flipped from `Partial` to `Native` — proved separately in
+/// `tests/put_value.rs`.
+#[test]
+fn value_processing_is_native_after_t62() {
+    assert_eq!(VpiCategories::support(VpiCategory::ValueProcessing), VpiSupport::Native);
+}
+
 #[test]
 fn no_category_is_silently_dropped_from_the_public_surface() {
     // Regression guard for the exact defect C6 forbids: a category that

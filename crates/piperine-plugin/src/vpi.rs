@@ -161,13 +161,19 @@ impl VpiCategories {
         },
         VpiCategoryEntry {
             category: VpiCategory::ValueProcessing,
-            support: VpiSupport::Partial,
+            support: VpiSupport::Native,
             mechanism: "Read half: `SimHooks::after_solve`'s `node_voltages: &[(String, f64)]` \
                 (`view.rs::SolveResultView`) is `vpi_get_value()`/`vpi_get_analog_value()`'s \
                 native equivalent — a plugin reads every net's resolved value post-solve. \
-                Write half: no `SimHooks` method injects a value back into a live solve \
-                (`transform_design`/`before_lower` only see the *design*, pre-solve) — \
-                `vpi_put_value()` is NotSupported, a live-value-injection API is future work.",
+                Write half (T62, LRMC-C10-13): `PluginHost::put_value` is \
+                `vpi_put_value()`'s native equivalent — a thin wrapper over the existing \
+                `piperine::Session::set` (already MD-18-compliant: restamps the compiled \
+                circuit, never re-JITs, and already fails loud on a structural write or bad \
+                value), proved to change a subsequent solve numerically \
+                (`tests/put_value.rs`). Scope: this drives a *device parameter*, the object \
+                kind Piperine's architecture actually lets a caller set post-compile — a raw \
+                solved node-voltage force (overriding Kirchhoff's laws) or an arbitrary digital \
+                net force outside its driver mechanism have no equivalent and are not claimed.",
         },
         VpiCategoryEntry {
             category: VpiCategory::TimeProcessing,
@@ -281,9 +287,12 @@ mod tests {
         assert_eq!(VpiCategories::support(VpiCategory::DelayProcessing), VpiSupport::Native);
     }
 
+    /// T62 (LRMC-C10-13) closed ValueProcessing's write half — was
+    /// `Partial`, now `Native` (`PluginHost::put_value`). TimeProcessing
+    /// stays `Partial`, never silently absent either way.
     #[test]
-    fn value_and_time_processing_are_partial_never_silently_absent() {
-        assert_eq!(VpiCategories::support(VpiCategory::ValueProcessing), VpiSupport::Partial);
+    fn value_processing_is_native_after_t62_time_processing_stays_partial() {
+        assert_eq!(VpiCategories::support(VpiCategory::ValueProcessing), VpiSupport::Native);
         assert_eq!(VpiCategories::support(VpiCategory::TimeProcessing), VpiSupport::Partial);
     }
 
