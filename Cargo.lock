@@ -1793,6 +1793,7 @@ dependencies = [
  "num-complex",
  "num-traits",
  "piperine-codegen",
+ "piperine-ir",
  "piperine-lang",
  "rand_distr",
  "rayon",

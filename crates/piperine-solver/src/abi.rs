@@ -35,7 +35,7 @@ pub use crate::analyses::transient::{
 // Integration (kernels read phase/coeffs)
 pub use crate::math::integration::{TrBdf2, TrBdf2Phase};
 // Digital evaluation
-pub use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
+pub use crate::digital::interface::{interpolate_a2d_crossing, CrossDir, DigitalPorts, EvalCtx, EventSink, QueueSink};
 pub use crate::digital::{DigitalEvent, DigitalNet, DriverId, DriverKind, DriverRecord, DriverTable, LogicValue, Strength};
 pub use crate::digital::regions::{Region, RegionAction, RegionEvent, RegionOutcome, RegionQueue};
 pub use crate::digital::state::DigitalState;

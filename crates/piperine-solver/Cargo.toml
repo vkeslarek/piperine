@@ -16,6 +16,11 @@ log = "0.4"
 rayon.workspace = true
 bitflags = "2.6"
 thiserror.workspace = true
+# LRMC-C7-14 (T41): A2D crossing-time interpolation reuses
+# `piperine_ir::events::predict_crossing` — `piperine-ir` is a pure
+# mechanism crate with no solver/JIT dependency of its own (CLAUDE.md),
+# so this edge is one-directional and adds no cycle.
+piperine-ir = { path = "../piperine-ir" }
 
 [dev-dependencies]
 tempfile.workspace = true
