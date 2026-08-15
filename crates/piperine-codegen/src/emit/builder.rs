@@ -31,6 +31,12 @@ pub struct Builder<'a, 'f, 'm> {
     pub module: &'m LoweredBody,
     pub resolver: &'a Resolver,
     pub math: &'a HashMap<&'static str, FuncRef>,
+    /// `pip_task_display`/`pip_task_write`/`pip_task_fatal` (LRMC-C7-07,
+    /// T43) — digital-only (`Some` from `new_digital`, `None` from
+    /// `new_analog`): analog dispatches `$display`-family through
+    /// `AnalogKernel::emit_diagnostics`'s own direct Rust call, not a
+    /// JIT-emitted one — see that method's doc comment.
+    pub tasks: Option<&'a HashMap<&'static str, FuncRef>>,
     pub watch_out: Option<Value>,
     // ── Digital context (Some for digital, None for analog) ──
     pub layout: Option<&'a DigitalLayout>,
@@ -83,6 +89,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         pointers: Pointers,
         reads: VarReads,
         math: &'a HashMap<&'static str, FuncRef>,
+        tasks: &'a HashMap<&'static str, FuncRef>,
         watch_out: Option<Value>,
     ) -> Self {
         Self {
@@ -90,6 +97,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             module,
             resolver,
             math,
+            tasks: Some(tasks),
             watch_out,
             layout: Some(layout),
             pointers: Some(pointers),
@@ -130,6 +138,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             module,
             resolver,
             math,
+            tasks: None,
             watch_out: None,
             layout: None,
             pointers: None,

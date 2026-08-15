@@ -83,9 +83,11 @@ impl SolverConfig {
             },
             checks: self.checks,
             require_scope: self.require_scope,
-            // No host-facing output-sink dial exists yet (that's T5/T43's
-            // scope, the JIT trampolines and `SessionBuilder::output(...)`)
-            // — every `Session` gets the default `StdoutSink` for now.
+            // The default sink — `Session::context_for` (entry.rs)
+            // substitutes `SessionBuilder::output(...)`'s sink in when one
+            // was set (LRMC-C7-07, T43); a caller that builds a `Context`
+            // directly from `SolverConfig` (bypassing `Session`) gets
+            // `StdoutSink` here.
             io: std::rc::Rc::new(StdoutSink),
             // `cover`'s own posture (dv-tester T33, D9) is not yet exposed
             // on `SolverConfig` — this task's scope is the solver/codegen

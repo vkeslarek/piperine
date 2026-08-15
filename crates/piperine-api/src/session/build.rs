@@ -34,6 +34,13 @@ pub(super) struct BuildOptions {
     /// `Session::ac` can ask `HostDeviceRegistry::has_sequencer()` — the
     /// generic `DeviceProvider` trait carries no such query.
     pub(super) host_registry: Option<Rc<crate::device::HostDeviceRegistry>>,
+    /// `$display`-family output sink (LRMC-C7-07, T43) —
+    /// [`SessionBuilder::output`](super::SessionBuilder::output). `None`
+    /// (the default) means every analysis gets `StdoutSink` via
+    /// `SolverConfig::to_context`'s own default, unchanged from before
+    /// this task; `Some` overrides that default for every analysis this
+    /// session runs (`Session::context_for`).
+    pub(super) output: Option<Rc<dyn piperine_solver::prelude::SimOutput>>,
 }
 
 /// The one build recipe: consume `design`'s staged overrides, lower to

@@ -130,7 +130,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "analog_event_sampled_variable_drives_a_digital_event_control",
         },
     },
-    Entry { id: "LRMC-C7-07", story: "P3", clause: "§9.2/Table 9-1", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-07",
+        story: "P3",
+        clause: "§9.2/Table 9-1",
+        status: Status::Closed {
+            file: "tests/vams_session_output.rs",
+            test_fn: "session_builder_output_captures_display_through_a_real_session",
+        },
+    },
     Entry { id: "LRMC-C7-08", story: "P3", clause: "§9.2/§9.4.2/§9.4.4", status: Status::Pending },
     Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
     Entry { id: "LRMC-C7-10", story: "P3", clause: "§9.2", status: Status::Pending },

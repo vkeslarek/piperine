@@ -58,6 +58,18 @@ pub struct Session {
 }
 
 impl Session {
+    /// `config.to_context()`, with this session's own output sink
+    /// (`SessionBuilder::output`, LRMC-C7-07/T43) substituted in when one
+    /// was set — the single place every analysis method below builds its
+    /// `Context`, so `output` reaches all of them uniformly.
+    fn context_for(&self, config: &SolverConfig) -> piperine_solver::abi::Context {
+        let mut ctx = config.to_context();
+        if let Some(sink) = &self.opts.output {
+            ctx.io = sink.clone();
+        }
+        ctx
+    }
+
     /// Compile `module` of `design` **once**: fork the design, apply staged
     /// overrides, lower + JIT, and hold the built circuit. Every subsequent
     /// analysis runs on this same compilation (MD-18). The no-options
@@ -202,7 +214,7 @@ impl Session {
         nodeset: Option<&HashMap<String, f64>>,
     ) -> Result<OpResult, Error> {
         let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
-        let mut dc = self.circuit.dc(config.to_context())?;
+        let mut dc = self.circuit.dc(self.context_for(config))?;
         dc.policy = config.to_policy();
         dc.apply_initial_conditions(ivs);
         let result = dc.solve()?;
@@ -254,7 +266,7 @@ impl Session {
         .with_record_from(start);
         opts.record_device_state = record_device_state;
         opts.probe_selection = build_probe_selection(probe)?;
-        let mut solver = self.circuit.transient(opts, config.to_context())?;
+        let mut solver = self.circuit.transient(opts, self.context_for(config))?;
         solver.policy = config.to_policy();
         solver.apply_initial_conditions(ivs);
         for (t, label, param, value) in &scheduled {
@@ -313,7 +325,7 @@ impl Session {
             steps: points,
             logarithmic: logarithmic.into(),
         };
-        let mut ac = self.circuit.ac(config.to_context())?;
+        let mut ac = self.circuit.ac(self.context_for(config))?;
         ac.policy = config.to_policy();
         let result = ac.solve_sweep(opts)?;
         drop(ac);
@@ -352,7 +364,7 @@ impl Session {
             reference_node: reference,
             input_source_name: None,
         };
-        let result = self.circuit.noise(opts, config.to_context())?.solve()?;
+        let result = self.circuit.noise(opts, self.context_for(config))?.solve()?;
         self.fire_after_solve("noise", &[])?;
         Ok(NoiseTrace::new(result))
     }
@@ -426,7 +438,7 @@ impl Session {
                         None => piperine_solver::prelude::AdjointOptions::new(out_net, params.to_vec()),
                     };
                     let out_label = opts.output.label().to_string();
-                    let mut solver = self.circuit.adjoint(opts, config.to_context())?;
+                    let mut solver = self.circuit.adjoint(opts, self.context_for(config))?;
                     solver.policy = config.to_policy();
                     let inner = solver.solve()?;
                     let mut d = HashMap::new();
@@ -485,7 +497,7 @@ impl Session {
             .ok_or_else(|| Error::Measurement(format!("net `{metric}` is not a solved analog net")))?;
         let opts = piperine_solver::prelude::AdjointOptions::new(out_net.clone(), params.to_vec());
         let out_label = out_net.label().to_string();
-        let mut solver = self.circuit.adjoint(opts, config.to_context())?;
+        let mut solver = self.circuit.adjoint(opts, self.context_for(config))?;
         solver.policy = config.to_policy();
         let inner = solver.solve()?;
         let mut d = HashMap::new();
@@ -543,7 +555,7 @@ impl Session {
                     }
                     None => piperine_solver::prelude::AdjointOptions::new(out_net, params.to_vec()),
                 };
-                let mut solver = self.circuit.adjoint(opts, config.to_context())?;
+                let mut solver = self.circuit.adjoint(opts, self.context_for(config))?;
                 solver.policy = config.to_policy();
                 let inner = solver.solve()?;
                 let mut d = std::collections::HashMap::new();
@@ -616,7 +628,7 @@ impl Session {
             params: params.to_vec(),
             dp_rel,
         };
-        let mut solver = self.circuit.sens(opts, config.to_context())?;
+        let mut solver = self.circuit.sens(opts, self.context_for(config))?;
         solver.policy = config.to_policy();
         let inner = solver.solve()?;
         let mut d = HashMap::new();
@@ -640,7 +652,7 @@ impl Session {
         config: &SolverConfig,
     ) -> Result<crate::results::PssResult, Error> {
         let opts = piperine_solver::prelude::PssAnalysisOptions::new(period).with_tstab(tstab);
-        let mut solver = self.circuit.pss(opts, config.to_context())?;
+        let mut solver = self.circuit.pss(opts, self.context_for(config))?;
         solver.policy = config.to_policy();
         let inner = solver.solve()?;
         self.fire_after_solve("pss", &[])?;
@@ -665,7 +677,7 @@ impl Session {
             output: piperine_solver::abi::AnalogVariable::Node(output_node),
             output_ref: output_ref_node,
         };
-        let solver = self.circuit.pz(options, config.to_context())?;
+        let solver = self.circuit.pz(options, self.context_for(config))?;
         let poles = solver.poles()?;
         let zeros = solver.zeros()?;
         self.fire_after_solve("pz", &[])?;
@@ -703,7 +715,7 @@ impl Session {
             output: piperine_solver::abi::AnalogVariable::Node(output_node),
             output_ref: output_ref_node,
         };
-        let mut solver = self.circuit.disto(options, config.to_context())?;
+        let mut solver = self.circuit.disto(options, self.context_for(config))?;
         let result = solver.solve()?;
         self.fire_after_solve("disto", &[])?;
         Ok(result.into())
@@ -735,7 +747,7 @@ impl Session {
                 logarithmic,
             },
         };
-        let mut solver = self.circuit.sp(options, config.to_context())?;
+        let mut solver = self.circuit.sp(options, self.context_for(config))?;
         let result = solver.solve_sweep()?;
         self.fire_after_solve("sp", &[])?;
         Ok(result.into())
@@ -760,7 +772,7 @@ impl Session {
             output_ref: output_ref_node,
             input_source: piperine_solver::abi::BranchIdentifier::new(input_source, "force0"),
         };
-        let mut solver = self.circuit.transfer_function(options, config.to_context())?;
+        let mut solver = self.circuit.transfer_function(options, self.context_for(config))?;
         let result = solver.solve()?;
         self.fire_after_solve("tf", &[])?;
         Ok(crate::results::TfResult::from_solver(result))
@@ -789,7 +801,7 @@ impl Session {
             self.circuit.set_element_param(label, param, Value::Real(v))?;
             mirror_param(&mut self.info, label, param, v);
             let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
-            let mut dc = self.circuit.dc(config.to_context())?;
+            let mut dc = self.circuit.dc(self.context_for(config))?;
             dc.policy = config.to_policy();
             dc.apply_initial_conditions(ivs);
             let result = dc.solve()?;
@@ -880,6 +892,16 @@ impl SessionBuilder<'_> {
     /// analysis solve (`after_solve`).
     pub fn hooks(mut self, hooks: Rc<dyn crate::hooks::SimHooks>) -> Self {
         self.opts.hooks = Some(hooks);
+        self
+    }
+
+    /// Sets this session's `$display`-family output sink (LRMC-C7-07,
+    /// T43) — every analysis run through this session writes through it
+    /// instead of the default `StdoutSink` (`SolverConfig::to_context`'s
+    /// own default). A `BufferSink` here is how a host captures
+    /// simulation output deterministically (tests; an embedding UI).
+    pub fn output(mut self, sink: Rc<dyn piperine_solver::prelude::SimOutput>) -> Self {
+        self.opts.output = Some(sink);
         self
     }
 

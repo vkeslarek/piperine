@@ -189,6 +189,9 @@ impl AnalogDevice for PiperineDevice {
             analog.set_check_posture(ctx.checks);
             analog.set_cover_posture(ctx.cover);
         }
+        if let Some(digital) = self.digital.as_mut() {
+            digital.sync_sim(ctx);
+        }
     }
 
     fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {

@@ -50,6 +50,13 @@ pub(crate) struct DigitalCompiler<'m> {
     layout: DigitalLayout,
     jit: JITModule,
     math_ids: HashMap<&'static str, FuncId>,
+    /// `pip_task_display`/`pip_task_write`/`pip_task_fatal` — the `$display`-
+    /// family trampolines (LRMC-C7-07, T43), all sharing one signature
+    /// (`extern "C" fn(ctx: *mut SimCtx, fmt_id: u32, argc: u32, argv: *const
+    /// TaskArg)`). `TASK_FNS` is already registered as a JIT symbol in `new`
+    /// below (was — before this task — never actually declared/called from
+    /// either compiled function, only registered).
+    task_ids: HashMap<&'static str, FuncId>,
     fb_ctx: FunctionBuilderContext,
     resolver: Resolver,
 }
@@ -82,6 +89,18 @@ impl<'m> DigitalCompiler<'m> {
                 .map_err(|e| CodegenError::Module(e.to_string()))?;
             math_ids.insert(f.name, id);
         }
+        let mut task_ids = HashMap::new();
+        for name in ["pip_task_display", "pip_task_write", "pip_task_fatal"] {
+            let mut sig = jit.make_signature();
+            sig.params.push(AbiParam::new(types::I64)); // ctx: *mut SimCtx
+            sig.params.push(AbiParam::new(types::I32)); // fmt_id
+            sig.params.push(AbiParam::new(types::I32)); // argc
+            sig.params.push(AbiParam::new(types::I64)); // argv: *const TaskArg
+            let id = jit
+                .declare_function(name, Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            task_ids.insert(name, id);
+        }
 
         Ok(Self {
             layout: DigitalLayout::build(module, body),
@@ -89,6 +108,7 @@ impl<'m> DigitalCompiler<'m> {
             body,
             jit,
             math_ids,
+            task_ids,
             fb_ctx: FunctionBuilderContext::new(),
             resolver: Resolver::from_symbols(&module.symbols),
         })
@@ -289,6 +309,11 @@ impl<'m> DigitalCompiler<'m> {
             .iter()
             .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
             .collect();
+        let tasks: HashMap<&'static str, FuncRef> = self
+            .task_ids
+            .iter()
+            .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
+            .collect();
 
         let entry = builder.create_block();
         builder.append_block_params_for_function_params(entry);
@@ -324,6 +349,7 @@ impl<'m> DigitalCompiler<'m> {
             pointers,
             reads,
             &math,
+            &tasks,
             watch_out,
         );
         body(&mut b)?;
@@ -474,6 +500,18 @@ impl NetworkComb {
                 .map_err(|e| CodegenError::Module(e.to_string()))?;
             math_ids.insert(f.name, id);
         }
+        let mut task_ids: HashMap<&'static str, FuncId> = HashMap::new();
+        for name in ["pip_task_display", "pip_task_write", "pip_task_fatal"] {
+            let mut sig = jit.make_signature();
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I32));
+            sig.params.push(AbiParam::new(types::I32));
+            sig.params.push(AbiParam::new(types::I64));
+            let id = jit
+                .declare_function(name, Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            task_ids.insert(name, id);
+        }
 
         let ptr_ty = jit.target_config().pointer_type();
         let mut sig = Signature::new(jit.isa().default_call_conv());
@@ -533,6 +571,10 @@ impl NetworkComb {
             .iter()
             .map(|(&name, &id)| (name, jit.declare_func_in_func(id, builder.func)))
             .collect();
+        let tasks: HashMap<&'static str, FuncRef> = task_ids
+            .iter()
+            .map(|(&name, &id)| (name, jit.declare_func_in_func(id, builder.func)))
+            .collect();
 
         let entry = builder.create_block();
         builder.append_block_params_for_function_params(entry);
@@ -570,6 +612,7 @@ impl NetworkComb {
                 pointers,
                 VarReads::Live,
                 &math,
+                &tasks,
                 None,
             );
             let body = m.module.digital.as_ref().unwrap();

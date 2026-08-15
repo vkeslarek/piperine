@@ -133,6 +133,18 @@ impl DigitalInstance {
         })
     }
 
+    /// Refreshes `self.sim`'s run-scoped fields from the host `Context`
+    /// (LRMC-C7-07, T43) — mirrors `AnalogInstance::sync_sim`'s `io`
+    /// wiring, which digital never had: `sim.io` was set once at
+    /// construction to `SimCtx::default()`'s `StdoutSink` singleton and
+    /// never updated, so a host-configured sink (`BufferSink`, a test's
+    /// own capture) never reached the digital `$display`-family dispatch
+    /// this task adds. Called from `PiperineDevice::update`, the same
+    /// per-step hook every `Element` already receives `Context` through.
+    pub fn sync_sim(&mut self, context: &piperine_solver::abi::Context) {
+        self.sim.io = std::rc::Rc::as_ptr(&context.io);
+    }
+
     pub fn input_nets(&self) -> &[DigitalNet] {
         &self.in_nets
     }
