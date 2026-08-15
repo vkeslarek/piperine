@@ -30,6 +30,7 @@ use crate::ast::{ConnectrulesDecl, DisciplineDecl, Item, ModuleDecl, NatureDecl,
 use crate::pom::{ElabError, Design};
 
 mod connect;
+mod defparam;
 mod disciplines;
 mod flatten;
 mod generate;

@@ -81,7 +81,7 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C5-03", story: "P2", clause: "§5.10.3.4", status: Status::Closed { file: "tests/vams_absdelta_e2e.rs", test_fn: "absdelta_event_re_evaluates_at_the_lrm_specified_points" } },
     Entry { id: "LRMC-C5-04", story: "P2", clause: "§5.10.4", status: Status::Closed { file: "tests/vams_named_events_e2e.rs", test_fn: "digital_trigger_wakes_an_analog_named_event_sensitivity_in_order" } },
     Entry { id: "LRMC-C5-05", story: "P2", clause: "§5.10.5", status: Status::Closed { file: "tests/vams_digital_events_in_analog_e2e.rs", test_fn: "analog_block_sensitive_to_a_digital_posedge_elaborates_and_simulates" } },
-    Entry { id: "LRMC-C5-06", story: "P2", clause: "§6.3.1", status: Status::Pending },
+    Entry { id: "LRMC-C5-06", story: "P2", clause: "§6.3.1", status: Status::Closed { file: "crates/piperine-lang/tests/vams_defparam.rs", test_fn: "defparam_changes_the_named_instance_effective_parameter_value" } },
     Entry { id: "LRMC-C5-07", story: "P2", clause: "§6.4", status: Status::Pending },
     Entry { id: "LRMC-C5-08", story: "P2", clause: "§6.2.2", status: Status::Pending },
     Entry { id: "LRMC-C7-01", story: "P3", clause: "§7.4.4.1/§7.4.4.3/§7.5-7.8", status: Status::Pending },

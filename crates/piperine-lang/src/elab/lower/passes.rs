@@ -62,6 +62,7 @@ pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &Register,
     &LowerDeclarations,
     &ElabModules,
+    &super::defparam::ApplyDefparams,
     &ResolveDisciplines,
     &InsertConnectModules,
     &UnrollGenerate,

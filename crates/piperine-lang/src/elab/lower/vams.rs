@@ -206,6 +206,9 @@ impl Elaborator {
                         });
                     }
                 }
+                // `defparam` is applied by its own later pass
+                // (`elab::lower::defparam::ApplyDefparams`, LRMC-C5-06) —
+                // a no-op here by design, not "not yet lowered".
                 // genvar/generate (T25), ground declarations, continuous
                 // assign, specify/gates: not yet lowered — later tasks
                 // extend this match.
