@@ -12,3 +12,11 @@ serde_json = "1"
 
 [dev-dependencies]
 tempfile.workspace = true
+# T45 (LRMC-C7-10): `system_task_migration_completeness.rs` asserts each
+# system task's real *effect*, which needs a compiled kernel — the same
+# dev-dependency-cycle shape `piperine-solver`'s own test suite already
+# has on `piperine-lang`+`piperine-codegen` (a dev-only edge, not a real
+# build cycle: `piperine-codegen` depends on `piperine-lang` normally,
+# this is the reverse edge, live only while running `cargo test`).
+piperine-codegen = { path = "../piperine-codegen" }
+piperine-solver = { path = "../piperine-solver" }

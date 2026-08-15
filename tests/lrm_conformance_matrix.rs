@@ -149,7 +149,15 @@ const REGISTRY: &[Entry] = &[
         },
     },
     Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
-    Entry { id: "LRMC-C7-10", story: "P3", clause: "§9.2", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-10",
+        story: "P3",
+        clause: "§9.2",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/system_task_migration_completeness.rs",
+            test_fn: "undeclared_diagnostic_name_still_fails_loud_at_compile_time",
+        },
+    },
     Entry {
         id: "LRMC-C7-11",
         story: "P3",
