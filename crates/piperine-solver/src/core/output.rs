@@ -218,6 +218,63 @@ impl FileTable {
     pub fn is_open(&self, id: FileId) -> bool {
         self.open.contains_key(&id)
     }
+
+    /// `$fflush` (§9.5): flushes buffered writes to disk.
+    pub fn flush(&mut self, id: FileId) -> Result<(), FileError> {
+        let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
+        entry.file.flush().map_err(|e| FileError::WriteFailed { path: entry.path.clone(), reason: e.to_string() })
+    }
+
+    /// `$ftell` (§9.5): the current read/write position, bytes from start.
+    pub fn tell(&mut self, id: FileId) -> Result<u64, FileError> {
+        let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
+        entry.file.stream_position().map_err(|e| FileError::ReadFailed { path: entry.path.clone(), reason: e.to_string() })
+    }
+
+    /// `$fseek` (§9.5): repositions to `offset` bytes from start.
+    pub fn seek(&mut self, id: FileId, offset: u64) -> Result<(), FileError> {
+        let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
+        entry
+            .file
+            .seek(SeekFrom::Start(offset))
+            .map(|_| ())
+            .map_err(|e| FileError::ReadFailed { path: entry.path.clone(), reason: e.to_string() })
+    }
+
+    /// `$rewind` (§9.5): repositions to the start — `seek(id, 0)`.
+    pub fn rewind(&mut self, id: FileId) -> Result<(), FileError> {
+        self.seek(id, 0)
+    }
+
+    /// `$feof` (§9.5): true once a read has consumed the file to its end.
+    /// Probes by attempting a zero-effect read: reads one byte, then seeks
+    /// back if it succeeded (never consumes past what the caller sees).
+    pub fn eof(&mut self, id: FileId) -> Result<bool, FileError> {
+        let pos = self.tell(id)?;
+        let mut buf = [0u8; 1];
+        let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
+        let n = entry.file.read(&mut buf).map_err(|e| FileError::ReadFailed { path: entry.path.clone(), reason: e.to_string() })?;
+        self.seek(id, pos)?;
+        Ok(n == 0)
+    }
+
+    /// `$fgetc` (§9.5): reads and consumes one byte, `None` at EOF.
+    pub fn getc(&mut self, id: FileId) -> Result<Option<u8>, FileError> {
+        let mut buf = [0u8; 1];
+        let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
+        let n = entry.file.read(&mut buf).map_err(|e| FileError::ReadFailed { path: entry.path.clone(), reason: e.to_string() })?;
+        Ok((n == 1).then_some(buf[0]))
+    }
+
+    /// `$fscanf`'s underlying data source: reads every remaining byte from
+    /// the current position (unlike [`Self::read_to_string`], which always
+    /// rewinds to the start first) — the incremental-parse counterpart.
+    pub fn read_remaining(&mut self, id: FileId) -> Result<String, FileError> {
+        let entry = self.open.get_mut(&id).ok_or(FileError::UnknownDescriptor(id))?;
+        let mut s = String::new();
+        entry.file.read_to_string(&mut s).map_err(|e| FileError::ReadFailed { path: entry.path.clone(), reason: e.to_string() })?;
+        Ok(s)
+    }
 }
 
 #[cfg(test)]

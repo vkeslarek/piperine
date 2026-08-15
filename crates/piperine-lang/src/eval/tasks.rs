@@ -104,6 +104,37 @@ pub enum SystemTaskKind {
     /// its current state (the task counterpart of the seven `$driver_*`
     /// query functions above).
     DriverUpdate,
+    /// `$fopen(path)` — §9.5, opens a file, returning a descriptor.
+    Fopen,
+    /// `$fclose(fd)` — §9.5.
+    Fclose,
+    /// `$fdisplay(fd, ...)` — §9.5, `$display`'s file-routed twin.
+    Fdisplay,
+    /// `$fwrite(fd, ...)` — §9.5, `$write`'s file-routed twin.
+    Fwrite,
+    /// `$fstrobe(fd, ...)` — §9.5.
+    Fstrobe,
+    /// `$fmonitor(fd, ...)` — §9.5.
+    Fmonitor,
+    /// `$fscanf(fd, fmt, ...)` — §9.5, reads formatted values from a file.
+    Fscanf,
+    /// `$sscanf(str, fmt, ...)` — §9.5, reads formatted values from a
+    /// string (same specifier grammar as `$fscanf`, no descriptor).
+    Sscanf,
+    /// `$rewind(fd)` — §9.5, repositions to the start.
+    Rewind,
+    /// `$fseek(fd, offset, op)` — §9.5.
+    Fseek,
+    /// `$ftell(fd)` — §9.5.
+    Ftell,
+    /// `$ferror(fd)` — §9.5.
+    Ferror,
+    /// `$feof(fd)` — §9.5.
+    Feof,
+    /// `$fflush(fd)` — §9.5.
+    Fflush,
+    /// `$fgetc(fd)` — §9.5.
+    Fgetc,
 }
 
 /// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
@@ -170,6 +201,21 @@ impl SystemTasks {
         ("$driver_next_strength", SystemTaskKind::DriverNextStrength),
         ("$driver_type", SystemTaskKind::DriverType),
         ("driver_update", SystemTaskKind::DriverUpdate),
+        ("$fopen", SystemTaskKind::Fopen),
+        ("$fclose", SystemTaskKind::Fclose),
+        ("$fdisplay", SystemTaskKind::Fdisplay),
+        ("$fwrite", SystemTaskKind::Fwrite),
+        ("$fstrobe", SystemTaskKind::Fstrobe),
+        ("$fmonitor", SystemTaskKind::Fmonitor),
+        ("$fscanf", SystemTaskKind::Fscanf),
+        ("$sscanf", SystemTaskKind::Sscanf),
+        ("$rewind", SystemTaskKind::Rewind),
+        ("$fseek", SystemTaskKind::Fseek),
+        ("$ftell", SystemTaskKind::Ftell),
+        ("$ferror", SystemTaskKind::Ferror),
+        ("$feof", SystemTaskKind::Feof),
+        ("$fflush", SystemTaskKind::Fflush),
+        ("$fgetc", SystemTaskKind::Fgetc),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
@@ -370,6 +416,115 @@ fn render_hex(lv: &crate::value::LogicVec) -> String {
             }
         })
         .collect()
+}
+
+/// `$fscanf`/`$sscanf` (§9.5, LRMC-C7-09, T46) — the reverse of
+/// [`format_display`]: reads typed [`Value`]s out of `input` per `fmt`'s
+/// specifiers (Table 9-1's `%d`/`%h`/`%x`/`%o`/`%b`/`%f`/`%e`/`%g`/`%s`/
+/// `%c`), classic-`scanf` conventions: a run of whitespace in `fmt`
+/// matches any run of whitespace in `input` (including none); a literal
+/// character in `fmt` must match the next `input` character exactly; a
+/// numeric/string specifier skips leading input whitespace, then
+/// consumes up to the next whitespace run (`%c` never skips, and
+/// consumes exactly one character). Fails loud (never a partial silent
+/// result) the moment a literal mismatches, a token fails to parse for
+/// its specifier's radix, or `input` runs out before `fmt` does.
+pub fn parse_scanf(fmt: &str, input: &str) -> Result<Vec<Value>, SystemTaskError> {
+    let mut out = Vec::new();
+    let mut fmt_chars = fmt.chars().peekable();
+    let mut input_chars = input.chars().peekable();
+
+    while let Some(fc) = fmt_chars.next() {
+        if fc.is_whitespace() {
+            while fmt_chars.peek().is_some_and(|c| c.is_whitespace()) {
+                fmt_chars.next();
+            }
+            while input_chars.peek().is_some_and(|c| c.is_whitespace()) {
+                input_chars.next();
+            }
+            continue;
+        }
+        if fc != '%' {
+            match input_chars.next() {
+                Some(ic) if ic == fc => continue,
+                other => {
+                    return Err(SystemTaskError::malformed(
+                        fmt,
+                        format!("expected literal `{fc}`, got {:?}", other),
+                    ));
+                }
+            }
+        }
+        let spec = fmt_chars
+            .next()
+            .ok_or_else(|| SystemTaskError::malformed(fmt, "trailing `%` with no specifier".to_string()))?;
+        if spec == '%' {
+            match input_chars.next() {
+                Some('%') => continue,
+                other => {
+                    return Err(SystemTaskError::malformed(fmt, format!("expected literal `%`, got {other:?}")));
+                }
+            }
+        }
+        if spec == 'c' || spec == 'C' {
+            let c = input_chars
+                .next()
+                .ok_or_else(|| SystemTaskError::malformed(fmt, "`%c` ran out of input".to_string()))?;
+            out.push(Value::Int(c as i64));
+            continue;
+        }
+        while input_chars.peek().is_some_and(|c| c.is_whitespace()) {
+            input_chars.next();
+        }
+        // Numeric specifiers stop at the first character that can't
+        // belong to their radix (classic `scanf` behavior: `%d` in
+        // `"1,"` reads `1`, not `1,`) — an optional leading `-`/`+`, then
+        // digits valid for the radix. `%s` is the LRM's own exception:
+        // it consumes the whole whitespace-delimited token regardless of
+        // content.
+        let is_token_char = |c: char, first: bool| -> bool {
+            match spec {
+                's' | 'S' => !c.is_whitespace(),
+                'd' | 'D' => c.is_ascii_digit() || (first && (c == '-' || c == '+')),
+                'h' | 'H' | 'x' | 'X' => c.is_ascii_hexdigit(),
+                'o' | 'O' => c.is_digit(8),
+                'b' | 'B' => c.is_digit(2),
+                'f' | 'F' | 'e' | 'E' | 'g' | 'G' => {
+                    c.is_ascii_digit() || matches!(c, '-' | '+' | '.' | 'e' | 'E')
+                }
+                _ => !c.is_whitespace(),
+            }
+        };
+        let mut token = String::new();
+        while let Some(&c) = input_chars.peek() {
+            if !is_token_char(c, token.is_empty()) {
+                break;
+            }
+            token.push(c);
+            input_chars.next();
+        }
+        if token.is_empty() {
+            return Err(SystemTaskError::malformed(fmt, format!("`%{spec}` found no token (input exhausted)")));
+        }
+        let parse_err = |radix_name: &str| {
+            SystemTaskError::malformed(fmt, format!("`%{spec}` token {token:?} is not valid {radix_name}"))
+        };
+        out.push(match spec {
+            'd' | 'D' => Value::Int(token.parse::<i64>().map_err(|_| parse_err("decimal"))?),
+            'h' | 'H' | 'x' | 'X' => Value::Int(i64::from_str_radix(&token, 16).map_err(|_| parse_err("hex"))?),
+            'o' | 'O' => Value::Int(i64::from_str_radix(&token, 8).map_err(|_| parse_err("octal"))?),
+            'b' | 'B' => Value::Int(i64::from_str_radix(&token, 2).map_err(|_| parse_err("binary"))?),
+            'f' | 'F' | 'e' | 'E' | 'g' | 'G' => Value::Real(token.parse::<f64>().map_err(|_| parse_err("real"))?),
+            's' | 'S' => Value::Str(token),
+            other => {
+                return Err(SystemTaskError::malformed(
+                    fmt,
+                    format!("`%{other}` is not a recognized LRM Table 9-1 specifier"),
+                ));
+            }
+        });
+    }
+    Ok(out)
 }
 
 /// The live values `$abstime`/`$temperature`/`$bound_step` read — supplied
