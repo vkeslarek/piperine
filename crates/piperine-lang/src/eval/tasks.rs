@@ -41,7 +41,7 @@
 use crate::value::Value;
 
 /// One LRM ch. 9 system task/function this module implements.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemTaskKind {
     /// `$write` — like `$display` but no trailing newline (§9.2).
     Write,
@@ -83,8 +83,57 @@ pub enum SystemTaskKind {
     Signed,
     /// `$unsigned` — reinterpret bits as unsigned (§9.13).
     Unsigned,
+    /// `$driver_count(net)` — number of drivers on `net` (§7.6/§9.22-9.23,
+    /// LRMC-C7-05). Data source: `piperine_solver::digital::DriverTable::
+    /// driver_count`.
+    DriverCount,
+    /// `$driver_state(net, i)` — driver `i`'s current logic value.
+    DriverState,
+    /// `$driver_strength(net, i)` — driver `i`'s current drive strength.
+    DriverStrength,
+    /// `$driver_delay(net, i)` — driver `i`'s propagation delay.
+    DriverDelay,
+    /// `$driver_next_state(net, i)` — driver `i`'s pending next value.
+    DriverNextState,
+    /// `$driver_next_strength(net, i)` — driver `i`'s pending next strength.
+    DriverNextStrength,
+    /// `$driver_type(net, i)` — driver `i`'s kind (ordinary vs connect
+    /// module, §7.9's segregation classes).
+    DriverType,
+    /// `driver_update` — commits every driver's pending next-state onto
+    /// its current state (the task counterpart of the seven `$driver_*`
+    /// query functions above).
+    DriverUpdate,
 }
 
+/// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
+/// functions and `driver_update` above are registered here — the same
+/// "pure semantics, name-level recognition" tier every other entry in
+/// [`SystemTasks::TABLE`] lives at — but *not* wired further: reaching
+/// "returns live data inside a connectmodule body" needs a live
+/// `piperine_solver::digital::DriverTable` pointer threaded through
+/// `piperine-codegen`'s analog JIT ABI (`emit::abi::SimCtx`, the same way
+/// `io`/`SimOutput` already is), which this task's stated `Where`
+/// (`eval/tasks.rs` only) doesn't reach. More load-bearing: that
+/// `DriverTable` is *never populated* by anything today — no gate,
+/// module, or connect-module instance calls `DriverTable::set_driver`
+/// yet, because §7.9's actual driver-receiver segregation routing (which
+/// module output feeds which table entry) is T36-T40's job, not T34/T35's.
+/// Wiring live JIT reads against a table nothing ever writes to would be
+/// architecturally present but semantically untestable — every call
+/// would read `driver_count() == 0` forever, which is not "simulates
+/// correctly" (T35's own Done-when), it's a silently-empty result dressed
+/// up as live data. `piperine-codegen`'s existing generic
+/// `CodegenError::unsupported(format!("syscall \`{name}\` in an analog
+/// expression"))` fail-loud path (already exercised by every other
+/// currently-unimplemented syscall name) is the CLAUDE.md-correct
+/// behavior for these eight names until T36-T40 land the population side
+/// — deliberately left alone rather than special-cased with a misleading
+/// "coming soon" message that would drift out of sync. `DriverTable`
+/// itself already exposes every per-index accessor these seven functions
+/// need (`drivers`, `driver_count`, `resolved` — T34); this task adds
+/// nothing further there.
+///
 /// The empty type this module hangs its table lookups and helpers off of
 /// (MD-13: no loose functions).
 pub struct SystemTasks;
@@ -113,6 +162,14 @@ impl SystemTasks {
         ("$bitstoreal", SystemTaskKind::BitsToReal),
         ("$signed", SystemTaskKind::Signed),
         ("$unsigned", SystemTaskKind::Unsigned),
+        ("$driver_count", SystemTaskKind::DriverCount),
+        ("$driver_state", SystemTaskKind::DriverState),
+        ("$driver_strength", SystemTaskKind::DriverStrength),
+        ("$driver_delay", SystemTaskKind::DriverDelay),
+        ("$driver_next_state", SystemTaskKind::DriverNextState),
+        ("$driver_next_strength", SystemTaskKind::DriverNextStrength),
+        ("$driver_type", SystemTaskKind::DriverType),
+        ("driver_update", SystemTaskKind::DriverUpdate),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
@@ -591,6 +648,29 @@ mod tests {
     fn resolves_every_table_entry() {
         for (name, kind) in SystemTasks::TABLE {
             assert_eq!(SystemTasks::resolve(name).unwrap(), *kind);
+        }
+    }
+
+    /// T35/LRMC-C7-05: the seven `$driver_*` functions plus `driver_update`
+    /// each resolve to their own distinct kind — a real regression guard
+    /// against two of the eight silently colliding on one enum variant.
+    #[test]
+    fn driver_access_names_resolve_to_distinct_kinds() {
+        use SystemTaskKind::*;
+        let cases = [
+            ("$driver_count", DriverCount),
+            ("$driver_state", DriverState),
+            ("$driver_strength", DriverStrength),
+            ("$driver_delay", DriverDelay),
+            ("$driver_next_state", DriverNextState),
+            ("$driver_next_strength", DriverNextStrength),
+            ("$driver_type", DriverType),
+            ("driver_update", DriverUpdate),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for (name, expected) in cases {
+            assert_eq!(SystemTasks::resolve(name).unwrap(), expected);
+            assert!(seen.insert(expected), "{name} collides with another driver-access kind");
         }
     }
 

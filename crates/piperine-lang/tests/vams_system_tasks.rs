@@ -58,6 +58,57 @@ fn conversion_functions_execute() {
     assert_eq!(Conversions::bitstoreal(&bits).unwrap(), Value::Real(3.25));
 }
 
+// ── driver-access functions, §7.6/§9.22-9.23 (LRMC-C7-05, T35) ──────────
+
+#[test]
+fn driver_access_names_all_resolve() {
+    for name in [
+        "$driver_count",
+        "$driver_state",
+        "$driver_strength",
+        "$driver_delay",
+        "$driver_next_state",
+        "$driver_next_strength",
+        "$driver_type",
+        "driver_update",
+    ] {
+        assert!(SystemTasks::resolve(name).is_ok(), "{name} must resolve");
+    }
+}
+
+/// The `$driver_*` names parse and elaborate freely inside a
+/// `connectmodule` body, same as any other syntactically valid
+/// `$name(...)` call — `piperine-lang`'s elaborator never validates a
+/// system-function/task name against [`SystemTasks::TABLE`] (this
+/// module's own scope note: nothing lowers a `$`-call into the POM yet,
+/// name recognition is a codegen-time concern, mirrored by the
+/// `idtmod`/`absdelay`/`table`/`ac_stim` operator family). This proves
+/// Done-when's "parse, elaborate" half concretely, at the pipeline level.
+#[test]
+fn driver_access_calls_parse_and_elaborate_inside_a_connectmodule_body() {
+    let src = r#"
+        connectmodule bridge (inout logic a, inout electrical b);
+            integer n, i;
+            analog begin
+                n = $driver_count(a);
+                i = $driver_state(a, 0);
+                i = $driver_strength(a, 0);
+                i = $driver_delay(a, 0);
+                i = $driver_next_state(a, 0);
+                i = $driver_next_strength(a, 0);
+                i = $driver_type(a, 0);
+            end
+        endmodule
+
+        discipline logic;
+            domain discrete;
+        enddiscipline
+    "#;
+    let design =
+        piperine_lang::parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("driver-access calls elaborate");
+    assert!(design.module("bridge").is_some());
+}
+
 #[test]
 fn unknown_system_task_fails_loud_listing_near_matches() {
     let err = SystemTasks::resolve("$displya").unwrap_err();
