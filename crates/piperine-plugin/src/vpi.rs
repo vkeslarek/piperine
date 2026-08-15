@@ -142,12 +142,22 @@ impl VpiCategories {
         },
         VpiCategoryEntry {
             category: VpiCategory::DelayProcessing,
-            support: VpiSupport::NotSupported,
-            mechanism: "Piperine's digital kernel has no `#delay`/timing-check model to read \
-                or write (the fused-cone JIT compiles `always`/`initial` semantics, not \
-                Verilog gate/module-path delay annotations) — a real, named gap, not a \
-                silent no-op. `vpi_get_delays()`/`vpi_put_delays()` have nothing to route to \
-                until that model exists.",
+            support: VpiSupport::Native,
+            mechanism: "T60/T61 (LRMC-C10-12): `piperine_solver::digital::delays::DelayTable` \
+                (per-net `PathDelay` — rise/fall/turn-off) and `TimingCheckTable` (per-net \
+                `$setup`/`$hold`/`$width`-family limits) are the model; \
+                `PluginHost::get_delays`/`put_delays` (`host.rs`) are \
+                `vpi_get_delays()`/`vpi_put_delays()`'s native equivalents — a real read/write \
+                surface over a caller-supplied `DelayTable` (e.g. \
+                `circuit.digital_state.delay_table`), proved to change subsequently scheduled \
+                event timing in a live run (`tests/delay_processing.rs`), not merely record \
+                values nothing consults. Disclosed scope: no shipped gate/model in this tree \
+                consults `DelayTable` yet (`piperine-codegen`'s `GateElement` still uses its \
+                own fixed `#delay` scalar) — `delay_processing.rs`'s own demonstration device \
+                proves the mechanism; wiring a shipped model to read the table is separate, \
+                future work outside this task's `Where`. Timing-check *enforcement* (raising a \
+                violation during a transient run) is likewise out of scope — the table only \
+                makes the limits themselves readable/writable.",
         },
         VpiCategoryEntry {
             category: VpiCategory::ValueProcessing,
@@ -264,9 +274,11 @@ mod tests {
         assert_eq!(VpiCategories::support(VpiCategory::ObjectsFromProperties), VpiSupport::Native);
     }
 
+    /// T60/T61 (LRMC-C10-12) closed this — was `NotSupported`, now `Native`
+    /// via `PluginHost::get_delays`/`put_delays` over `DelayTable`.
     #[test]
-    fn delay_processing_is_a_documented_gap() {
-        assert_eq!(VpiCategories::support(VpiCategory::DelayProcessing), VpiSupport::NotSupported);
+    fn delay_processing_is_native_after_t60_t61() {
+        assert_eq!(VpiCategories::support(VpiCategory::DelayProcessing), VpiSupport::Native);
     }
 
     #[test]

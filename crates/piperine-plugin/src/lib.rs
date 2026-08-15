@@ -59,7 +59,14 @@ pub use vpi::{VpiCategories, VpiCategory, VpiCategoryEntry, VpiSupport};
 pub use piperine_codegen::device::{PluginDeviceSpec, PluginPort, PortBinding};
 pub use piperine_lang::elab::registry::ElabContext;
 pub use piperine_lang::pom::Design;
-pub use piperine_solver::abi::Element;
+pub use piperine_solver::abi::{
+    AnalogDevice, DigitalDevice, DigitalEvent, DigitalNet, DigitalPorts, Element,
+    ElementCapabilities, EvalCtx, EventSink, Introspect, LogicValue,
+};
+pub use piperine_solver::{
+    CircuitInstance, DelayTable, Netlist, PathDelay, TimingCheckKind, TimingCheckLimit,
+    TimingCheckTable,
+};
 
 /// Implementation details the `#[pip::…]` macro expansions reference. Not
 /// public API — no stability guarantee across versions.

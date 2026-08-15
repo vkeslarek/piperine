@@ -28,7 +28,8 @@ use piperine_project::lockfile::PiperineLock;
 use piperine_project::release::{GitHubClient, PluginCache, ReleaseError, ReleaseRef};
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
-use piperine_solver::abi::Element;
+use piperine_solver::abi::{DigitalNet, Element};
+use piperine_solver::{DelayTable, PathDelay};
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
@@ -132,6 +133,32 @@ impl PluginHost {
     /// test/introspection only.
     pub fn callback_count(&self) -> usize {
         self.callbacks.borrow().len()
+    }
+
+    /// `vpi_get_delays()`'s native equivalent (T61, LRMC-C10-12 surface
+    /// half): reads `net`'s recorded [`PathDelay`] from `table` (T60's
+    /// model — `piperine_solver::abi::DigitalState::delay_table`, e.g.
+    /// `circuit.digital_state.delay_table`). `PluginHost` holds no live
+    /// circuit state itself (MD-18: a compiled circuit belongs to the
+    /// host/`Session` driving it, never re-elaborated or owned mid-run by
+    /// the plugin layer) — this is a thin, named routine over the caller-
+    /// supplied table, the same "native equivalent, not a literal
+    /// `vpiHandle`" shape every other `vpi_*` entry in this crate takes
+    /// (`vpi.rs`'s own module doc).
+    pub fn get_delays(&self, table: &DelayTable, net: DigitalNet) -> PathDelay {
+        table.get(net)
+    }
+
+    /// `vpi_put_delays()`'s native equivalent — writes `net`'s
+    /// [`PathDelay`] into `table`. Takes effect for any future scheduled
+    /// transition that consults the table (a gate/model whose `comb_phase`
+    /// reads `delay_table.get(...)` per evaluation, e.g. this crate's own
+    /// `tests/delay_processing.rs`); an event already queued before the
+    /// write keeps its originally-computed time (MD-18's "restamp on the
+    /// compiled circuit, never re-elaborate" extends naturally to "never
+    /// retroactively rewrite an already-scheduled event").
+    pub fn put_delays(&self, table: &mut DelayTable, net: DigitalNet, delay: PathDelay) {
+        table.set(net, delay);
     }
 
     pub fn is_empty(&self) -> bool {

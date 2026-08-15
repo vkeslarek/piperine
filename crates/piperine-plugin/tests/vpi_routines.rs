@@ -65,6 +65,14 @@ fn simulation_callbacks_is_native_after_t59() {
     assert_eq!(VpiCategories::support(VpiCategory::SimulationCallbacks), VpiSupport::Native);
 }
 
+/// T60/T61 (LRMC-C10-12): `DelayProcessing` (Table 11-7,
+/// `vpi_get_delays`/`vpi_put_delays`) flipped from `NotSupported` to
+/// `Native` — proved separately in `tests/delay_processing.rs`.
+#[test]
+fn delay_processing_is_native_after_t60_t61() {
+    assert_eq!(VpiCategories::support(VpiCategory::DelayProcessing), VpiSupport::Native);
+}
+
 #[test]
 fn no_category_is_silently_dropped_from_the_public_surface() {
     // Regression guard for the exact defect C6 forbids: a category that
