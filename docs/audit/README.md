@@ -1,5 +1,14 @@
 # LRM Conformance Audit — `VAMS-LRM-2-4.md` vs. `piperine-lang`/`piperine-codegen`
 
+**Closure status (2026-08-15)**: every finding below is now closed by the
+`lrm-conformance-closure` feature, except Annex E's `mesfet` gap (deliberately
+left open — no ngspice source exists to translate from) and the two findings
+`.specs/features/lrm-conformance-closure/spec.md` marks Out of Scope (Annex
+E.2.1/E.3.2, Annex C.4). Each of the four reports below now carries its own
+"Closure status" section with a closing commit hash per finding.
+[`followup-2026.md`](followup-2026.md) is the independent re-verification
+pass; `tests/lrm_conformance_matrix.rs` is the mechanical regression gate.
+
 **Date**: 2026-08-14
 **Scope**: every normative chapter (1–12) and annex (A–H) of `VAMS-LRM-2-4.md`,
 audited chunk by chunk against the actual parser/elaborator/codegen source — not

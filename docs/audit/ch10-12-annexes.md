@@ -162,3 +162,28 @@ pointing at closed tasks). Annex B: `annex_b_keywords.rs` runs clean (5/5 tests)
 one-sentence content spot-checks against `docs/reference/annex_g_change_history.md` and
 `annex_h_glossary.md` found both faithfully ported, not garbled. No mismatch found in any of
 the four.
+
+## Closure status (updated 2026-08-15, `lrm-conformance-closure` feature)
+
+Every non-Conformant, non-OutOfScope row above is now closed. Closing commit
+per finding (see `docs/audit/followup-2026.md` for the re-verification
+evidence):
+
+| Finding (LRM clause) | Closing commit(s) |
+|---|---|
+| §10.2 `` `default_discipline `` | `6ff31cd2` |
+| §10.3 `` `default_transition `` (parse) | `6ff31cd2` |
+| §10.3 `` `default_transition `` (semantic weight) | `53ec1ff8` |
+| §10.5 predefined macros | `4505d34b` |
+| §10.6 `` `begin_keywords``/`` `end_keywords`` | `28fcbec8` |
+| `` `celldefine``/`` `endcelldefine``/`` `line``/`` `pragma``/`` `default_nettype``/`` `unconnected_drive`` | `d81cf3d8` |
+| `` `timescale``/`` `resetall`` | `318b9bef` |
+| §11.2.1 Table 11-1, `vpi_register_cb`/`vpi_remove_cb` | `d82ff417` |
+| §11.4 Table 11-7, `vpi_get_delays`/`vpi_put_delays` | `bf1b5026`, `9fb004b8` |
+| §11.4 Table 11-8, `vpi_put_value` | `71a83e05` |
+| §11.4 Table 11-10, `vpi_mcd_*` family | `b14a4814` |
+| Annex D.3 `driver_access.vams` | `0daa46ed` |
+| Annex E, `vdslim`/`limvds` naming + `ipwl`/`vpwl` | `26224919` |
+| Annex E, `mesfet` | Deliberately not closed — see `annex_e.rs`'s own note; no faithful ngspice source exists |
+| Annex F, continuous-over-discrete precedence + `` `default_discipline `` fallback | `2f287f9f` |
+| Annex F, `connect ... resolveto` | `3a039597` |

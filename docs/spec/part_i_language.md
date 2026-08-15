@@ -287,8 +287,10 @@ special-cased header-loading path distinct from an ordinary project `` `include`
   `ROADMAP.md`'s "P1 backlog" table and CLAUDE.md's "Known gaps" section both currently
   read as though these operators are undeclared and fail loud at elaboration. That is
   **not what the source on this branch does**: `piperine-codegen`'s
-  `AnalogOpRegistry::with_builtins` (`resolve/pom/analog_ops.rs`) registers all five
-  `laplace_*` and all four `zi_*` LRM variants, and they resolve exactly like `ddt`/
+  `AnalogOpRegistry::with_builtins` (`resolve/pom/analog_ops.rs`) registers all four
+  `laplace_*` (`np`/`zp`/`nd`/`zd` — the LRM defines exactly four, §4.5.11; a prior
+  registry-typo bug had registered three fabricated names instead, fixed under
+  LRMC-C1-12/C5-01) and all four `zi_*` LRM variants, and they resolve exactly like `ddt`/
   `idt`. See Part V §2 for the full grounding and the direct quote from the registry
   source. `.disto` on MOS2/MOS3 (a Cranelift function-count explosion on the
   second/third-derivative kernel, opt-in via `SessionBuilder::disto(true)`, default

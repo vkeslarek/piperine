@@ -99,7 +99,7 @@ the flattener and Cranelift `Builder` dispatch on by name:
 | `transition` | `transition` | piecewise-smoothed step |
 | `slew` | `slew` | rate-limited follower |
 | `table` | `table` | 1-D interpolation (`piperine-signal::behavior::table`, Part IX) |
-| `laplace_np`/`_zp`/`_pm`/`_nm`/`_npm` | `laplace_{np,zp,pm,nm,npm}` | s-domain transfer function, all five LRM variants registered |
+| `laplace_np`/`_zp`/`_nd`/`_zd` | `laplace_{np,zp,nd,zd}` | s-domain transfer function, all four LRM variants registered (§4.5.11 — the LRM defines exactly four, not five; a prior registry-typo bug registered three fabricated names, `pm`/`nm`/`npm`, that have no LRM basis, while leaving the real `nd`/`zd` unregistered — fixed, LRMC-C1-12/C5-01) |
 | `zi_zd`/`_zp`/`_nd`/`_np` | `zi_{zd,zp,nd,np}` | z-domain transfer function, all four LRM variants registered |
 | `ac_stim` | `ac_stim` | AC-only stimulus contribution; phasor-summed across multiple calls on one contribution (`flatten/analog.rs::split_ac_stim`) |
 | `white_noise`/`flicker_noise` | `white_noise`, `flicker_noise` | noise-current PSD sources |
@@ -108,7 +108,8 @@ the flattener and Cranelift `Builder` dispatch on by name:
 section, both stale relative to the source on this branch:** both currently claim
 `laplace_*`/`zi_*` are "not declared at all" and fail loud at elaboration. That was true
 of an earlier state of the codebase; **the registry above is live and populated with
-all nine LRM variants** (`analog_ops.rs:393-399`, `AnalogOpRegistry::with_builtins`).
+all eight LRM variants** (four `laplace_*` + four `zi_*`, `analog_ops.rs:393-406`,
+`AnalogOpRegistry::with_builtins`).
 `laplace_*`/`zi_*` calls reach `piperine-codegen` unresolved (§0 — VAMS elaboration
 performs no operator-name check) and resolve successfully through this registry, the
 same as `ddt`/`idt`. This spec text is grounded directly in the registry's own source,
