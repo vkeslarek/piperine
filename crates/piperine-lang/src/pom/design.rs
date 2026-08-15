@@ -150,6 +150,15 @@ pub struct Design {
     /// rule as disciplines/natures. Skipped on serialize.
     #[serde(skip)]
     pub(crate) paramsets: HashMap<String, crate::ast::ParamsetDecl>,
+    /// `primitive` (UDP) declarations, Annex A.5.1 — top-level only, same
+    /// rule as disciplines/natures/paramsets. Unlike `paramsets` (fully
+    /// consumed within `piperine-lang`'s own elaboration), a UDP's port
+    /// order and truth table are needed downstream by `piperine-codegen`'s
+    /// digital compiler (T40/LRMC-C7-13) — so this field is `pub(crate)`
+    /// but read through the public `udp`/`udps` accessors below, unlike
+    /// `paramsets`' fully-private field.
+    #[serde(skip)]
+    pub(crate) udps: HashMap<String, crate::ast::PrimitiveDecl>,
     pub(crate) consts: HashMap<String, Value>,
     /// Project metadata (name, version, dependencies).
     pub(crate) project: Project,
@@ -176,6 +185,7 @@ impl Design {
             disciplines: HashMap::new(),
             natures: HashMap::new(),
             paramsets: HashMap::new(),
+            udps: HashMap::new(),
             consts: HashMap::new(),
             project: Project::default(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
@@ -289,6 +299,24 @@ impl Design {
     /// only — natures do not nest inside modules.
     pub fn natures(&self) -> impl Iterator<Item = (&String, &crate::pom::Nature)> {
         self.natures.iter()
+    }
+
+    /// Look up a UDP (`primitive`) declaration by name (Annex A.5.1,
+    /// LRMC-C7-13, T39) — its port order and truth table, for
+    /// `piperine-codegen`'s digital compiler (T40) to dispatch a UDP
+    /// instance against.
+    pub fn udp(&self, name: &str) -> Option<&crate::ast::PrimitiveDecl> {
+        self.udps.get(name)
+    }
+
+    /// Every registered UDP declaration.
+    pub fn udps(&self) -> impl Iterator<Item = (&String, &crate::ast::PrimitiveDecl)> {
+        self.udps.iter()
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn udps_map_mut(&mut self) -> &mut HashMap<String, crate::ast::PrimitiveDecl> {
+        &mut self.udps
     }
 
     /// Look up a nature declaration by name (LRM §3.6.1).

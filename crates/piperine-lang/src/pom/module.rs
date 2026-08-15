@@ -318,7 +318,33 @@ pub struct Module {
     /// as `genvars` above — LRMC-C5-04.
     #[serde(default)]
     pub events: Vec<String>,
+    /// Gate-primitive instances (`and g1(y, a, b);`, Annex A.4.2,
+    /// LRMC-C7-13, T39) — a gate is not a module instance (no port
+    /// declarations to resolve against), so it gets its own list rather
+    /// than joining `instances`. Authored form (MD-25); a UDP instance
+    /// (`primitive`-declared, syntactically identical to a module
+    /// instantiation) lands in `instances` instead, distinguished
+    /// downstream by `Design::udp(&inst.module).is_some()`.
+    #[serde(default)]
+    pub gates: Vec<GateInstance>,
     pub origin: Option<String>,
+}
+
+/// One gate-primitive instance lowered into the POM (Annex A.4.2,
+/// LRMC-C7-13, T39). `kind` reuses `ast::GateKind` directly — a mirror
+/// type would add nothing (the same closed keyword set, no elaboration-
+/// time transformation happens to it).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GateInstance {
+    pub name: Option<String>,
+    pub kind: crate::ast::GateKind,
+    pub terminals: Vec<NetRef>,
+    /// `#delay`, if present — a single scalar (Annex A.4.2's `delay2`/
+    /// `delay3` rise/fall/turn-off triad collapses to one value; finer
+    /// per-transition delay is out of this task's scope, same
+    /// simplification the grammar's own `parse_gate_instantiation` doc
+    /// comment already made for drive strength).
+    pub delay: Option<f64>,
 }
 
 impl Module {
@@ -340,7 +366,7 @@ impl Module {
             span: None, attributes: Vec::new(), doc: None, name,
             ports, params, wires, vars: Vec::new(), instances, connections,
             behaviors,
-            branches: Vec::new(), genvars: Vec::new(), events: Vec::new(), origin: None,
+            branches: Vec::new(), genvars: Vec::new(), events: Vec::new(), gates: Vec::new(), origin: None,
         }
     }
 

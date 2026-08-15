@@ -409,7 +409,7 @@ pub struct SpecifyBlock {
     pub items: Vec<Stmt>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GateKind {
     And, Nand, Or, Nor, Xor, Xnor,
     Buf, Not,

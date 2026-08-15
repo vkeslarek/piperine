@@ -129,6 +129,17 @@ impl FlattenHierarchy {
 
         let mut kept = Vec::new();
         for inst in authored_instances {
+            // LRMC-C7-13 (T39): a UDP instance (`primitive`-declared,
+            // syntactically identical to a module instantiation, T39) has
+            // no sub-hierarchy to flatten into — `design.udps`, not
+            // `design.modules`, is where its declaration lives. Treated
+            // as a leaf directly, the same outcome an ordinary
+            // hierarchy-free module would get, without ever calling
+            // `flatten_module` (which only knows `design.modules`).
+            if design.udps.contains_key(&inst.module) {
+                kept.push(inst);
+                continue;
+            }
             let child = Self::flatten_module(&inst.module, design, generated, in_progress)?;
             if Self::is_leaf(&child) {
                 kept.push(inst);

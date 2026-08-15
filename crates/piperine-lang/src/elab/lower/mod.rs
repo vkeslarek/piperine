@@ -55,6 +55,13 @@ pub struct SymbolTable {
     /// instance naming a paramset resolves to `(paramset.module_name,
     /// bound params)` instead of failing `UndefinedModule`.
     pub paramsets: HashMap<String, crate::ast::ParamsetDecl>,
+    /// `primitive name (...); ... endprimitive` UDP declarations (Annex
+    /// A.5), keyed by name — read by `lower_instance` (LRMC-C7-13, T39)
+    /// so an instance naming a UDP (syntactically identical to a module
+    /// instantiation) resolves against the UDP's own port list instead
+    /// of failing `UndefinedModule`. Registered starting T39; before this
+    /// task `register.rs` matched `Item::Primitive(_) => {}`.
+    pub primitives: HashMap<String, crate::ast::PrimitiveDecl>,
 }
 
 impl SymbolTable {
@@ -65,6 +72,7 @@ impl SymbolTable {
             module_decls: HashMap::new(),
             connectrules: HashMap::new(),
             paramsets: HashMap::new(),
+            primitives: HashMap::new(),
         }
     }
 }

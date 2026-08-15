@@ -83,6 +83,7 @@ impl Elaborator {
         let mut branches = Vec::new();
         let mut vars = Vec::new();
         let mut events: Vec<String> = Vec::new();
+        let mut gates: Vec<crate::pom::GateInstance> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
@@ -223,8 +224,49 @@ impl Elaborator {
                 | ModuleItem::IfGenerate(_)
                 | ModuleItem::CaseGenerate(_)
                 | ModuleItem::GenerateRegion(_)
-                | ModuleItem::Specify(_)
-                | ModuleItem::Gate(_) => {}
+                | ModuleItem::Specify(_) => {}
+                // Gate primitives, Annex A.4.2 (LRMC-C7-13, T39). The 12
+                // digital gate keywords (and/nand/or/nor/xor/xnor/buf/not/
+                // bufif0/bufif1/notif0/notif1) reach the POM; the 12
+                // switch-level keywords (nmos/pmos/cmos/r{n,p,c}mos/
+                // pullup/pulldown/tran/rtran/tranif{0,1}/rtranif{0,1})
+                // have no `piperine-codegen::kernel::digital::gates::
+                // GatePrimitive` counterpart (switch-level device physics,
+                // not a truth table) and fail loud naming the gap rather
+                // than silently dropping — same "fail loud, never a
+                // no-op" rule the flattener's own event dispatch follows.
+                ModuleItem::Gate(g) => {
+                    if is_switch_level_gate(g.kind) {
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
+                            "gate primitive `{:?}`: switch-level primitives are not supported \
+                             (Annex A.4.2) — no truth-table model exists for device-physics-level \
+                             MOS/pass-transistor gates",
+                            g.kind
+                        ))));
+                    }
+                    let delay = g
+                        .delay
+                        .as_ref()
+                        .map(|e| {
+                            env.eval(e).map_err(|err| {
+                                ElabError::from(ElabErrorKind::ConstEval { context: "gate delay".into(), source: err })
+                            })
+                        })
+                        .transpose()?
+                        .map(|v| v.coerce_real().unwrap_or(0.0));
+                    for gi in &g.instances {
+                        let mut terminals = Vec::new();
+                        for t in &gi.terminals {
+                            terminals.push(expr_to_net_ref(t, &env)?);
+                        }
+                        gates.push(crate::pom::GateInstance {
+                            name: gi.name.clone(),
+                            kind: g.kind,
+                            terminals,
+                            delay,
+                        });
+                    }
+                }
             }
         }
 
@@ -257,6 +299,7 @@ impl Elaborator {
         module.branches = branches;
         module.vars = vars;
         module.events = events;
+        module.gates = gates;
         module.attributes = lower_module_attrs(&decl.attrs, &self.ctx.schemas)?;
 
         // LRMC-C5-04: `-> event_name;` must name a declared `event` —
@@ -308,6 +351,7 @@ impl Elaborator {
     pub(crate) fn lower_declarations(&self, design: &mut Design) -> Result<(), ElabError> {
         *design.disciplines_map_mut() = self.syms.disciplines.clone();
         *design.paramsets_map_mut() = self.syms.paramsets.clone();
+        *design.udps_map_mut() = self.syms.primitives.clone();
 
         let names: Vec<String> = self.syms.natures.keys().cloned().collect();
         for name in names {
@@ -411,6 +455,37 @@ impl Elaborator {
         // §6.4's own indirection.
         if let Some(ps) = self.syms.paramsets.get(module_name) {
             return self.lower_paramset_instance(module_name, ps, ast_inst, param_overrides, env);
+        }
+
+        // LRMC-C7-13 (T39): a UDP instantiation is syntactically
+        // identical to a module instantiation (Annex A.5's own
+        // `udp_instance` production reuses `name_of_instance
+        // (terminal...)`) — resolved the same way a paramset instance is,
+        // against the UDP's own canonical port order instead of a
+        // module's. UDPs take no `#(...)` parameter overrides (Annex
+        // A.5.1 has no such production); a non-empty `param_overrides`
+        // here fails loud rather than silently discarding it.
+        if let Some(udp) = self.syms.primitives.get(module_name) {
+            if !param_overrides.is_empty() {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: UDP `{module_name}` does not accept `#(...)` parameter overrides",
+                    ast_inst.name
+                ))));
+            }
+            let target_port_names = udp_port_order(udp);
+            let ports = resolve_instance_ports(ast_inst, module_name, &target_port_names, env)?;
+            return Ok(Instance {
+                span: None,
+                label_span: None,
+                type_span: None,
+                attributes: Vec::new(),
+                doc: None,
+                label: Some(ast_inst.name.clone()),
+                module: module_name.to_string(),
+                ports,
+                params: Vec::new(),
+                range: instance_range(ast_inst, env)?,
+            });
         }
 
         let target = self.syms.module_decls.get(module_name).ok_or_else(|| {
@@ -627,6 +702,36 @@ fn resolve_instance_ports(
         }
     }
     Ok(ports)
+}
+
+/// Switch-level gate keywords (Annex A.4.2) — device-physics MOS/pass-
+/// transistor primitives with no truth-table model, distinct from the 12
+/// digital gate keywords that reach the POM (LRMC-C7-13, T39).
+fn is_switch_level_gate(kind: crate::ast::GateKind) -> bool {
+    use crate::ast::GateKind::*;
+    matches!(
+        kind,
+        Nmos | Pmos | Cmos | Rnmos | Rpmos | Rcmos | Pullup | Pulldown | Tran | Rtran | Tranif0 | Tranif1
+            | Rtranif0 | Rtranif1
+    )
+}
+
+/// A UDP's canonical port order (Annex A.5.1: the first port is always
+/// the output, followed by inputs in declaration order) — flattened from
+/// `PrimitiveDecl::ports` the same way `target_port_order` flattens a
+/// module's port list. `Reg` entries are the output's `reg` re-
+/// declaration, not a distinct port, and are skipped.
+fn udp_port_order(decl: &crate::ast::PrimitiveDecl) -> Vec<String> {
+    decl.ports
+        .iter()
+        .flat_map(|p| -> Vec<String> {
+            match p {
+                crate::ast::UdpPortDecl::Output { name, .. } => vec![name.clone()],
+                crate::ast::UdpPortDecl::Input { names, .. } => names.clone(),
+                crate::ast::UdpPortDecl::Reg { .. } => vec![],
+            }
+        })
+        .collect()
 }
 
 fn target_port_order(decl: &ModuleDecl) -> Vec<String> {

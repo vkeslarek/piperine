@@ -39,8 +39,14 @@ impl Elaborator {
                 Item::Paramset(p) => {
                     self.syms.paramsets.insert(p.name.clone(), p.clone());
                 }
-                // `config`/`primitive` (UDP) land in later phases.
-                Item::Config(_) | Item::Primitive(_) => {}
+                // `primitive` (UDP) registered starting T39 (LRMC-C7-13)
+                // — `lower_instance` reads `elab.syms.primitives`.
+                Item::Primitive(p) => {
+                    self.syms.primitives.insert(p.name.clone(), p.clone());
+                }
+                // `config` (1364 configuration-selection) lands in a
+                // later phase (spec Out of Scope).
+                Item::Config(_) => {}
             }
         }
         Ok(())
