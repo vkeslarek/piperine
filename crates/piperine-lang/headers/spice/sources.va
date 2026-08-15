@@ -38,7 +38,7 @@ module vsrc (inout electrical p, inout electrical n);
     parameter real ac_mag   = 0.0;        // AC magnitude
     parameter real ac_phase = 0.0;        // AC phase (degrees)
 
-    // Waveform selector: 0=dc, 1=sin, 2=pulse, 3=exp, 4=sffm, 5=am
+    // Waveform selector: 0=dc, 1=sin, 2=pulse, 3=exp, 4=sffm, 5=am, 6=pwl
     parameter integer wave = 0;
 
     // SIN params (0 sentinels resolve to ngspice defaults: freq -> 1/tstop)
@@ -79,6 +79,33 @@ module vsrc (inout electrical p, inout electrical n);
     parameter real am_mf = 0.0;
     parameter real am_fc = 0.0;
     parameter real am_td = 0.0;
+
+    // PWL(t0,v0 t1,v1 ... t7,v7) — LRM Annex E Table E.1's `vpwl`/`ipwl`
+    // (T58, LRMC-C10-17). ngspice's real PWL source takes an arbitrary-
+    // length breakpoint list; this Verilog-A codegen has no array-
+    // parameter support (SPEC_DEVIATION, disclosed: `annex_e.rs`'s own
+    // note on this gap) so this is a fixed 8-point PWL instead — the
+    // widest structural approximation reachable with scalar parameters.
+    // Points must be strictly increasing (pwl_t0 < pwl_t1 < ... < pwl_t7);
+    // before pwl_t0 the value holds at pwl_v0, after pwl_t7 it holds at
+    // pwl_v7 (ngspice isrcload.c/vsrcload.c's own PWL before-first/after-
+    // last behavior).
+    parameter real pwl_t0 = 0.0;
+    parameter real pwl_v0 = 0.0;
+    parameter real pwl_t1 = 1.0;
+    parameter real pwl_v1 = 0.0;
+    parameter real pwl_t2 = 2.0;
+    parameter real pwl_v2 = 0.0;
+    parameter real pwl_t3 = 3.0;
+    parameter real pwl_v3 = 0.0;
+    parameter real pwl_t4 = 4.0;
+    parameter real pwl_v4 = 0.0;
+    parameter real pwl_t5 = 5.0;
+    parameter real pwl_v5 = 0.0;
+    parameter real pwl_t6 = 6.0;
+    parameter real pwl_v6 = 0.0;
+    parameter real pwl_t7 = 7.0;
+    parameter real pwl_v7 = 0.0;
 
     real t, tstep, tstop, val, vval;
     real tp, phase_rad;                       // ng_sin scratch
@@ -154,6 +181,29 @@ module vsrc (inout electrical p, inout electrical n);
             end else begin
                 val = am_va * (am_vo + sin(2.0 * `M_PI * mf * tp)) * sin(2.0 * `M_PI * am_fc * tp);
             end
+        end else if (wave == 6) begin
+            // PWL(t0,v0 ... t7,v7) — linear interpolation between the
+            // bracketing breakpoints, held flat before the first and
+            // after the last.
+            if (t <= pwl_t0) begin
+                val = pwl_v0;
+            end else if (t >= pwl_t7) begin
+                val = pwl_v7;
+            end else if (t < pwl_t1) begin
+                val = pwl_v0 + (pwl_v1 - pwl_v0) * (t - pwl_t0) / (pwl_t1 - pwl_t0);
+            end else if (t < pwl_t2) begin
+                val = pwl_v1 + (pwl_v2 - pwl_v1) * (t - pwl_t1) / (pwl_t2 - pwl_t1);
+            end else if (t < pwl_t3) begin
+                val = pwl_v2 + (pwl_v3 - pwl_v2) * (t - pwl_t2) / (pwl_t3 - pwl_t2);
+            end else if (t < pwl_t4) begin
+                val = pwl_v3 + (pwl_v4 - pwl_v3) * (t - pwl_t3) / (pwl_t4 - pwl_t3);
+            end else if (t < pwl_t5) begin
+                val = pwl_v4 + (pwl_v5 - pwl_v4) * (t - pwl_t4) / (pwl_t5 - pwl_t4);
+            end else if (t < pwl_t6) begin
+                val = pwl_v5 + (pwl_v6 - pwl_v5) * (t - pwl_t5) / (pwl_t6 - pwl_t5);
+            end else begin
+                val = pwl_v6 + (pwl_v7 - pwl_v6) * (t - pwl_t6) / (pwl_t7 - pwl_t6);
+            end
         end
 
         // DC operating point uses the dc value; transient uses the waveform.
@@ -175,7 +225,7 @@ module isrc (inout electrical p, inout electrical n);
     parameter real ac_mag   = 0.0;
     parameter real ac_phase = 0.0;
     parameter real m        = 1.0;        // parallel multiplier
-    parameter integer wave  = 0;
+    parameter integer wave  = 0;          // 0=dc, 1=sin, 2=pulse, 3=exp, 4=sffm, 5=am, 6=pwl
 
     // SIN params (0 sentinels resolve to ngspice defaults)
     parameter real sin_vo    = 0.0;
@@ -215,6 +265,24 @@ module isrc (inout electrical p, inout electrical n);
     parameter real am_mf = 0.0;
     parameter real am_fc = 0.0;
     parameter real am_td = 0.0;
+
+    // PWL — see `vsrc`'s own params for the disclosed 8-point scope note.
+    parameter real pwl_t0 = 0.0;
+    parameter real pwl_v0 = 0.0;
+    parameter real pwl_t1 = 1.0;
+    parameter real pwl_v1 = 0.0;
+    parameter real pwl_t2 = 2.0;
+    parameter real pwl_v2 = 0.0;
+    parameter real pwl_t3 = 3.0;
+    parameter real pwl_v3 = 0.0;
+    parameter real pwl_t4 = 4.0;
+    parameter real pwl_v4 = 0.0;
+    parameter real pwl_t5 = 5.0;
+    parameter real pwl_v5 = 0.0;
+    parameter real pwl_t6 = 6.0;
+    parameter real pwl_v6 = 0.0;
+    parameter real pwl_t7 = 7.0;
+    parameter real pwl_v7 = 0.0;
 
     real t, tstep, tstop, val;
     real tp, phase_rad;
@@ -282,6 +350,26 @@ module isrc (inout electrical p, inout electrical n);
                 val = 0.0;
             end else begin
                 val = am_va * (am_vo + sin(2.0 * `M_PI * mf * tp)) * sin(2.0 * `M_PI * am_fc * tp);
+            end
+        end else if (wave == 6) begin
+            if (t <= pwl_t0) begin
+                val = pwl_v0;
+            end else if (t >= pwl_t7) begin
+                val = pwl_v7;
+            end else if (t < pwl_t1) begin
+                val = pwl_v0 + (pwl_v1 - pwl_v0) * (t - pwl_t0) / (pwl_t1 - pwl_t0);
+            end else if (t < pwl_t2) begin
+                val = pwl_v1 + (pwl_v2 - pwl_v1) * (t - pwl_t1) / (pwl_t2 - pwl_t1);
+            end else if (t < pwl_t3) begin
+                val = pwl_v2 + (pwl_v3 - pwl_v2) * (t - pwl_t2) / (pwl_t3 - pwl_t2);
+            end else if (t < pwl_t4) begin
+                val = pwl_v3 + (pwl_v4 - pwl_v3) * (t - pwl_t3) / (pwl_t4 - pwl_t3);
+            end else if (t < pwl_t5) begin
+                val = pwl_v4 + (pwl_v5 - pwl_v4) * (t - pwl_t4) / (pwl_t5 - pwl_t4);
+            end else if (t < pwl_t6) begin
+                val = pwl_v5 + (pwl_v6 - pwl_v5) * (t - pwl_t5) / (pwl_t6 - pwl_t5);
+            end else begin
+                val = pwl_v6 + (pwl_v7 - pwl_v6) * (t - pwl_t6) / (pwl_t7 - pwl_t6);
             end
         end
 

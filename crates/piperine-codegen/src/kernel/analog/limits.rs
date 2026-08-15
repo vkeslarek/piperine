@@ -36,15 +36,19 @@ impl Limits {
     /// zero `$limit` signature change (an omitted reason defaults to the
     /// kind-inferred value, PIA-16/18). The `_` arm is defensive: emit's
     /// `emit_analog_limit` rejects unknown kinds before this is stored.
+    /// `"vdslim"` (LRM Table E.2's own preferred spelling, T58) reports
+    /// with its own name in the catalog, not silently renamed to
+    /// `"limvds"`, while resolving to the same `VdsStep` reason.
     pub(super) fn catalog_entry_for_kind(kind: &str) -> (&'static str, LimitReason) {
         let name: &'static str = match kind {
             "pnjlim" => "pnjlim",
             "fetlim" => "fetlim",
             "limvds" => "limvds",
+            "vdslim" => "vdslim",
             _ => "limit",
         };
         let reason = match kind {
-            "limvds" => LimitReason::VdsStep,
+            "limvds" | "vdslim" => LimitReason::VdsStep,
             _ => LimitReason::VoltageStep,
         };
         (name, reason)

@@ -12,14 +12,16 @@
 //! `cap`, `inductor`→`ind`, `iexp`/`ipulse`/`isine`→`isrc`, `vexp`/
 //! `vpulse`/`vsine`→`vsrc`, `tline`→`tline`, `vccs`→`vccs`, `vcvs`→`vcvs`,
 //! `diode`→`dio`, `bjt`→`bjt`, `mosfet`→`mos1`/`mos2`/`mos3`, `jfet`→
-//! `jfet`. `ipwl`/`vpwl`/`mesfet` have no equivalent — proved absent by
+//! `jfet`, `ipwl`/`vpwl`→`isrc`/`vsrc` (`wave = 6`, T58, an 8-point bounded
+//! PWL). `mesfet` has no equivalent — proved absent by
 //! `piperine_lang::annex_e::AnnexE::PRIMITIVES` itself (unit-tested in
 //! `crates/piperine-lang/src/annex_e.rs`), not re-proved here (there is
-//! nothing to instantiate).
+//! nothing to instantiate; see that module's own note on why this one
+//! stays a genuine, disclosed gap).
 //!
-//! §E.3.4 (Table E.2) limiting functions: `fetlim`/`pnjlim`/`vdslim`
-//! (accepted as `"limvds"`, a documented naming mismatch) all reachable
-//! through `$limit()`.
+//! §E.3.4 (Table E.2) limiting functions: `fetlim`/`pnjlim`/`vdslim`, all
+//! reachable through `$limit()` — `"vdslim"` (T58) and `"limvds"`
+//! (ngspice's own naming, kept as a synonym) both work.
 
 use std::path::PathBuf;
 
@@ -135,6 +137,53 @@ fn table_e1_vexp_via_wave_selector() {
     let _ = op(&design, "ExpDrive");
 }
 
+/// T58 (LRMC-C10-17): `vpwl`/`ipwl` — `vsrc`/`isrc` with `wave = 6`
+/// (PWL), the 8-point bounded approximation (`annex_e.rs`'s own disclosed
+/// scope note: no array-parameter support to take an arbitrary-length
+/// breakpoint list). Numeric, over a real transient run, not just DC: a
+/// ramp 0V->2V over [0,1us], flat at 2V over [1,2us], ramp back down over
+/// [2,3us] — `vsrc` is an ideal voltage source, so `v(vin)` should track
+/// the PWL waveform exactly regardless of the resistor load.
+#[test]
+fn table_e1_vpwl_via_wave_selector() {
+    let src = r#"
+        `include "disciplines.vams"
+        `include "sources.va"
+        `include "passives.va"
+        module PwlDrive ();
+            electrical gnd, vin;
+            vsrc #(.wave(6),
+                   .pwl_t0(0.0),   .pwl_v0(0.0),
+                   .pwl_t1(1.0e-6), .pwl_v1(2.0),
+                   .pwl_t2(2.0e-6), .pwl_v2(2.0),
+                   .pwl_t3(3.0e-6), .pwl_v3(0.0),
+                   .pwl_t4(10.0e-6), .pwl_v4(0.0),
+                   .pwl_t5(11.0e-6), .pwl_v5(0.0),
+                   .pwl_t6(12.0e-6), .pwl_v6(0.0),
+                   .pwl_t7(13.0e-6), .pwl_v7(0.0)) vs (.p(vin), .n(gnd));
+            res #(.r(1.0e3)) r1 (.p(vin), .n(gnd));
+        endmodule
+    "#;
+    let design = elaborate(src);
+    let trace = Session::compile(&design, "PwlDrive")
+        .expect("session compiles")
+        .tran(3.5e-6, Some(5.0e-8), 0.0, &SolverConfig::default(), None, false, &[])
+        .unwrap_or_else(|e| panic!("PwlDrive tran failed: {e}"));
+
+    let v = trace.v("vin").expect("v(vin)");
+    let at = |target: f64| -> f64 {
+        v.points()
+            .iter()
+            .min_by(|(t1, _), (t2, _)| (t1 - target).abs().partial_cmp(&(t2 - target).abs()).unwrap())
+            .map(|(_, val)| *val)
+            .expect("a sample near the target time")
+    };
+
+    assert!((at(0.5e-6) - 1.0).abs() < 0.15, "midpoint of the rising ramp ~1.0V, got {}", at(0.5e-6));
+    assert!((at(1.5e-6) - 2.0).abs() < 0.05, "flat top ~2.0V, got {}", at(1.5e-6));
+    assert!((at(2.5e-6) - 1.0).abs() < 0.15, "midpoint of the falling ramp ~1.0V, got {}", at(2.5e-6));
+}
+
 /// Table E.1 `tline`.
 #[test]
 fn table_e1_tline() {
@@ -196,12 +245,14 @@ fn table_e1_diode_bjt_mosfet_jfet() {
     assert!(vjfet.is_finite());
 }
 
-/// Table E.2 `pnjlim`/`fetlim`/`vdslim` (accepted as `"limvds"`) — all
-/// reachable through `$limit()` (LRM §9.17.3, cited by `AnnexE::LIMIT_FNS`).
-/// `$limit`'s codegen (`emit/analog_expr.rs::emit_analog_limit`) always
-/// takes exactly 5 args — `(kind, vnew, vseed, vte, vcrit)` — regardless of
-/// kind; unused positions for a given kind (e.g. `limvds` ignores `vte`/
-/// `vcrit`) are still supplied.
+/// Table E.2 `pnjlim`/`fetlim`/`vdslim` — all reachable through `$limit()`
+/// (LRM §9.17.3, cited by `AnnexE::LIMIT_FNS`). `$limit`'s codegen
+/// (`emit/analog_expr.rs::emit_analog_limit`) always takes exactly 5 args
+/// — `(kind, vnew, vseed, vte, vcrit)` — regardless of kind; unused
+/// positions for a given kind (e.g. `vdslim` ignores `vte`/`vcrit`) are
+/// still supplied. T58 (LRMC-C10-17): `"vdslim"`, Table E.2's own
+/// preferred spelling, now works directly — `"limvds"` (ngspice's naming)
+/// still works too, kept as a synonym.
 #[test]
 fn table_e2_limiting_functions_reachable_through_dollar_limit() {
     let src = r#"
@@ -211,9 +262,27 @@ fn table_e2_limiting_functions_reachable_through_dollar_limit() {
             analog begin
                 la = $limit("pnjlim", V(a), 0.0, 0.025, 0.7);
                 lb = $limit("fetlim", V(b), 0.0, 1.0, 0.0);
-                lc = $limit("limvds", V(c), 0.0, 0.0, 0.0);
+                lc = $limit("vdslim", V(c), 0.0, 0.0, 0.0);
                 I(a) <+ la * 1.0e-3;
                 I(b) <+ lb * 1.0e-3;
+                I(c) <+ lc * 1.0e-3;
+            end
+        endmodule
+    "#;
+    elaborate(src);
+}
+
+/// `"limvds"` (ngspice's own naming) still works as a synonym for
+/// `"vdslim"` — a regression guard, since existing callers may already
+/// use it.
+#[test]
+fn limvds_synonym_still_works() {
+    let src = r#"
+        `include "disciplines.vams"
+        module Limited (inout electrical c);
+            real lc;
+            analog begin
+                lc = $limit("limvds", V(c), 0.0, 0.0, 0.0);
                 I(c) <+ lc * 1.0e-3;
             end
         endmodule
@@ -225,12 +294,14 @@ fn table_e2_limiting_functions_reachable_through_dollar_limit() {
 /// surface (not just `piperine-lang`'s own internal unit tests) — proves
 /// `T55`'s deliverable is actually load-bearing outside its own crate.
 #[test]
-fn annex_e_table_is_public_and_names_the_three_real_gaps() {
+fn annex_e_table_is_public_and_names_the_one_remaining_real_gap() {
     let gaps: Vec<&str> = AnnexE::PRIMITIVES
         .iter()
         .filter(|p| p.support == AnnexESupport::NotSupported)
         .map(|p| p.lrm_name)
         .collect();
-    assert_eq!(gaps, ["ipwl", "vpwl", "mesfet"]);
+    // T58 closed `ipwl`/`vpwl`; `mesfet` stays `NotSupported` — no ngspice
+    // source file exists to translate it from (this module's own note).
+    assert_eq!(gaps, ["mesfet"]);
     assert!(AnnexE::LIMIT_FNS.iter().all(|f| f.support != AnnexESupport::NotSupported));
 }

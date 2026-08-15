@@ -110,11 +110,16 @@ impl AnnexE {
         },
         AnnexEPrimitive {
             lrm_name: "ipwl",
-            piperine_module: None,
-            support: AnnexESupport::NotSupported,
-            note: "`isrc`'s `wave` selector covers dc/sin/pulse/exp/sffm/am (ngspice's own \
-                waveform set) — PWL (piecewise-linear, a `wave[]` array argument) is not one of \
-                them. A real gap: no PWL source exists in `headers/spice/` today.",
+            piperine_module: Some("isrc"),
+            support: AnnexESupport::AliasedName,
+            note: "`isrc` with `wave = 6` (PWL, T58/LRMC-C10-17) — a fixed 8-point breakpoint \
+                list (`pwl_t0..pwl_t7`/`pwl_v0..pwl_v7`) rather than Table E.1's arbitrary-length \
+                `wave[]` array argument: this codegen has no array-parameter support (no other \
+                `headers/spice/*.va` module uses one either), so an unbounded point list isn't \
+                reachable — a real, disclosed, bounded approximation, not a silent stub \
+                (`tests/vams_annex_e.rs`'s \
+                `table_e1_vpwl_via_wave_selector` proves it numerically over a real transient \
+                run).",
         },
         AnnexEPrimitive {
             lrm_name: "isine",
@@ -140,9 +145,10 @@ impl AnnexE {
         },
         AnnexEPrimitive {
             lrm_name: "vpwl",
-            piperine_module: None,
-            support: AnnexESupport::NotSupported,
-            note: "Same gap as `ipwl` — no PWL waveform in `vsrc`'s `wave` selector.",
+            piperine_module: Some("vsrc"),
+            support: AnnexESupport::AliasedName,
+            note: "`vsrc` with `wave = 6` (PWL, T58) — same 8-point bounded scope as `ipwl` \
+                above.",
         },
         AnnexEPrimitive {
             lrm_name: "vsine",
@@ -219,9 +225,16 @@ impl AnnexE {
             lrm_name: "mesfet",
             piperine_module: None,
             support: AnnexESupport::NotSupported,
-            note: "No MESFET model exists in `headers/spice/` — a real gap (ngspice itself has \
-                no built-in MESFET either; this primitive has always been implementation-defined \
-                beyond Table E.1's port/param names).",
+            note: "Deliberately left `NotSupported` (T58, spec P5 AC5), not merely un-ported: \
+                `headers/spice/` is built by ngspice-source-faithful translation \
+                (`sources.va`'s own header: \"Source: ngspice/src/spicelib/devices/...\", every \
+                other module here traces to a real ngspice device file) and ngspice itself ships \
+                no MESFET model to translate from — there is no faithful source for this crate's \
+                sourcing discipline to port. Fabricating MESFET equations from general \
+                Schottky-gate FET theory (not an ngspice source file) would break that discipline \
+                the same way inventing VAMS grammar from a third-party compiler would break C7's \
+                provenance rule for the parser — a genuine, disclosed scope boundary, not an \
+                oversight.",
         },
     ];
 
@@ -245,18 +258,16 @@ impl AnnexE {
         },
         AnnexELimitFn {
             lrm_name: "vdslim",
-            piperine_name: "limvds",
-            support: AnnexESupport::AliasedName,
-            note: "`piperine_ir::limit::limvds`, reachable via `$limit(x, \"limvds\", ...)` — \
-                same 2-argument arity and behavior (drain-to-source voltage step limiting) Table \
-                E.2 describes for `vdslim`, but the accepted `$limit()` kind string is \
-                `\"limvds\"`, not `\"vdslim\"` (`piperine-codegen/src/emit/analog_expr.rs`, \
-                `piperine-codegen/src/kernel/analog/limits.rs`). Fixing the string itself means \
-                touching `emit/analog_expr.rs`, one of `CLAUDE.md`'s explicitly-named \
-                \"files not to edit casually\" — outside this task's `Where` \
-                (`crates/piperine-lang/src/`) and outside a language-crate task's remit to \
-                casually touch codegen's JIT emission. SPEC_DEVIATION, carried forward as \
-                documented debt, not silently papered over.",
+            piperine_name: "vdslim",
+            support: AnnexESupport::ExactMatch,
+            note: "`piperine_ir::limit::limvds`, reachable via *either* `$limit(x, \"vdslim\", \
+                ...)` (Table E.2's own preferred spelling) or `$limit(x, \"limvds\", ...)` \
+                (ngspice's naming, kept as a working synonym — T58, `emit/analog_expr.rs`'s \
+                `emit_analog_limit` and `kernel/analog/limits.rs`'s `catalog_entry_for_kind` both \
+                accept both spellings). Previously `AliasedName`-only (the LRM's own name was \
+                rejected); this task's own `Where` explicitly names `emit/analog_expr.rs` \
+                (CLAUDE.md's \"files not to edit casually\") as sanctioned for this specific fix, \
+                with the ngspice numeric-oracle suite as the compensating safety net.",
         },
     ];
 
@@ -311,21 +322,25 @@ mod tests {
         }
     }
 
+    /// T58 closed `ipwl`/`vpwl` (a bounded PWL waveform now exists);
+    /// `mesfet` stays `NotSupported` — deliberately, per its own note: no
+    /// ngspice source file exists to translate from, and this crate's
+    /// SPICE tooling is source-faithful translation, not invented physics.
     #[test]
-    fn exactly_three_table_e1_rows_are_real_gaps() {
+    fn exactly_one_table_e1_row_is_a_real_gap() {
         let gaps: Vec<&str> = AnnexE::PRIMITIVES
             .iter()
             .filter(|p| p.support == AnnexESupport::NotSupported)
             .map(|p| p.lrm_name)
             .collect();
-        assert_eq!(gaps, ["ipwl", "vpwl", "mesfet"]);
+        assert_eq!(gaps, ["mesfet"]);
     }
 
     #[test]
-    fn limiting_functions_have_no_real_gaps_only_a_naming_mismatch() {
+    fn limiting_functions_have_no_gaps_and_no_naming_mismatch() {
         assert!(AnnexE::LIMIT_FNS.iter().all(|f| f.support != AnnexESupport::NotSupported));
         let vdslim = AnnexE::LIMIT_FNS.iter().find(|f| f.lrm_name == "vdslim").unwrap();
-        assert_eq!(vdslim.piperine_name, "limvds");
-        assert_eq!(vdslim.support, AnnexESupport::AliasedName);
+        assert_eq!(vdslim.piperine_name, "vdslim");
+        assert_eq!(vdslim.support, AnnexESupport::ExactMatch);
     }
 }

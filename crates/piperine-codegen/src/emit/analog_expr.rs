@@ -367,10 +367,14 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         let vold = self.cse_load(BANK_STATE, self.state_ptr(), ((self.limit_base + slot) * 8) as i32);
         // For `fetlim`/`limvds` the `vte` argument slot carries `vto` (the
         // threshold); `limvds` ignores it. `vcrit` still seeds `vold`.
+        // `"vdslim"` (LRM Table E.2's own preferred name, T58/LRMC-C10-17)
+        // is accepted as a synonym for `"limvds"` (ngspice's own naming,
+        // kept working so existing callers don't break) — both link
+        // against the identical `wrappers::limvds` JIT symbol.
         let vlim = match kind {
             "pnjlim" => self.emit_limit_call("pnjlim", &[vnew, vold, vte, vcrit])?,
             "fetlim" => self.emit_limit_call("fetlim", &[vnew, vold, vte])?,
-            "limvds" => self.emit_limit_call("limvds", &[vnew, vold])?,
+            "limvds" | "vdslim" => self.emit_limit_call("limvds", &[vnew, vold])?,
             other => return Err(CodegenError::unsupported(format!("$limit kind `{other}`"))),
         };
         self.cse.as_mut().expect("analog context").insert(key, vlim);
