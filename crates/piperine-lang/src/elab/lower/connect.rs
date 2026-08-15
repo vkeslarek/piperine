@@ -66,6 +66,7 @@ impl ElabPass for InsertConnectModules {
                         module: target,
                         ports: vec![port_ref.clone(), port_ref.clone()],
                         params: vec![],
+                        range: None,
                     });
                 }
             }

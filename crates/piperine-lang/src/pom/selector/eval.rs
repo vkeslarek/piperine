@@ -299,11 +299,13 @@ mod tests {
             module: "Child".into(),
             ports: vec![],
             params: vec![],
+            range: None,
         };
         let inst2 = crate::pom::Instance { span: None, label_span: None, type_span: None, attributes: vec![], doc: None, label: Some("c2".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],
+            range: None,
         };
         let top_mod = Module::new(
             "Top".into(),

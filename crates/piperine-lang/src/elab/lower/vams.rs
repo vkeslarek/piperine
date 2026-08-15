@@ -446,6 +446,7 @@ impl Elaborator {
             module: module_name.to_string(),
             ports,
             params,
+            range: instance_range(ast_inst, env)?,
         })
     }
 
@@ -545,6 +546,11 @@ impl Elaborator {
             module: ps.module_name.clone(),
             ports,
             params,
+            // Array-of-instances via a paramset (`ps8 [7:0] (...)`) is out
+            // of LRMC-C5-07/C5-08's own combined scope — not asserted by
+            // either task's Done-when, disclosed rather than silently
+            // dropped: `ast_inst.range` is simply not read on this branch.
+            range: None,
         })
     }
 }
@@ -557,6 +563,27 @@ impl Elaborator {
 /// and paramset instantiation (`lower_paramset_instance`), whose ports
 /// resolve the same way against the paramset's *associated module*'s port
 /// order.
+/// Evaluates an instance's optional `[msb:lsb]` array range (§6.2.2,
+/// LRMC-C5-08) into `(msb, lsb)` — `None` for an ordinary (non-array)
+/// instance. Stored on the authored `pom::Instance` as-is; expansion into
+/// per-element leaf instances is `FlattenHierarchy`'s job (MD-25).
+fn instance_range(ast_inst: &crate::ast::Instance, env: &ConstEnv) -> Result<Option<(i64, i64)>, ElabError> {
+    let Some(r) = &ast_inst.range else { return Ok(None) };
+    let msb = env.eval_int(&r.msb).map_err(|e| {
+        ElabError::from(ElabErrorKind::ConstEval {
+            context: format!("instance `{}` array range msb", ast_inst.name),
+            source: e,
+        })
+    })?;
+    let lsb = env.eval_int(&r.lsb).map_err(|e| {
+        ElabError::from(ElabErrorKind::ConstEval {
+            context: format!("instance `{}` array range lsb", ast_inst.name),
+            source: e,
+        })
+    })?;
+    Ok(Some((msb, lsb)))
+}
+
 fn resolve_instance_ports(
     ast_inst: &crate::ast::Instance,
     type_name: &str,

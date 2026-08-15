@@ -161,9 +161,10 @@ mod tests {
     }
 
     /// `PASSES`' exact length and shape — a coarse guard against a pass
-    /// silently disappearing or a duplicate being added.
+    /// silently disappearing or a duplicate being added. Nine stages as
+    /// of T28 (LRMC-C5-06): `ApplyDefparams` inserted after `ElabModules`.
     #[test]
-    fn passes_has_the_documented_eight_stages() {
-        assert_eq!(PASSES.len(), 8);
+    fn passes_has_the_documented_nine_stages() {
+        assert_eq!(PASSES.len(), 9);
     }
 }

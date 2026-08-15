@@ -288,8 +288,40 @@ impl Grammar {
         // anything else (`,`/`;`/`[`) means the first identifier was
         // already the sole declarator's discipline.
         if kw.is_some() {
+            // `name [msb:lsb] (...)` — an array-of-instances range
+            // (LRMC-C5-08) sits between the instance name and its port
+            // list, so the plain "second ident directly followed by `(`"
+            // check below needs to look *past* a bracketed range first
+            // (an ordinary net declarator can equally carry one, e.g.
+            // `electrical bus[3:0];` — only what follows the closing `]`
+            // disambiguates the two).
+            let ranged_instantiation = matches!(self.peek_at(1), Tok::Ident(_))
+                && matches!(self.peek_at(2), Tok::Punct("["))
+                && {
+                    let mut off = 2;
+                    let mut depth = 0i32;
+                    loop {
+                        match self.peek_at(off) {
+                            Tok::Punct("[") => {
+                                depth += 1;
+                                off += 1;
+                            }
+                            Tok::Punct("]") => {
+                                depth -= 1;
+                                off += 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            Tok::Eof => break,
+                            _ => off += 1,
+                        }
+                    }
+                    matches!(self.peek_at(off), Tok::Punct("("))
+                };
             let looks_like_instantiation = matches!(self.peek_at(1), Tok::Punct("#"))
-                || (matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Punct("(")));
+                || (matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Punct("(")))
+                || ranged_instantiation;
             if looks_like_instantiation {
                 return Ok(ModuleItem::Instantiation(self.parse_module_instantiation()?));
             }
@@ -903,6 +935,9 @@ impl Grammar {
     fn parse_instance(&mut self) -> Result<Instance, ParseError> {
         let start = self.peek_span();
         let (name, _) = self.expect_ident()?;
+        // `name_of_module_instance ::= module_instance_identifier [ range
+        // ]` — an array-of-instances range, LRMC-C5-08.
+        let range = if self.at_punct("[") { Some(self.parse_range()?) } else { None };
         self.expect_punct("(")?;
         let mut connections = vec![];
         if !self.at_punct(")") {
@@ -912,7 +947,7 @@ impl Grammar {
             }
         }
         let end = self.expect_punct(")")?;
-        Ok(Instance { span: Span::new(start.start, end.end), name, connections })
+        Ok(Instance { span: Span::new(start.start, end.end), name, range, connections })
     }
 
     /// `module_instantiation`, Annex A.4.1. Attribute-bearing.

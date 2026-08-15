@@ -321,6 +321,10 @@ pub struct PortConnection {
 pub struct Instance {
     pub span: Span,
     pub name: String,
+    /// `name_of_module_instance ::= module_instance_identifier [ range ]`
+    /// — Annex A.4.1/§6.2.2: an array-of-instances range (`buf8 [7:0]
+    /// (...)`, LRMC-C5-08). `None` for an ordinary single instance.
+    pub range: Option<Range>,
     pub connections: Vec<PortConnection>,
 }
 

@@ -114,6 +114,19 @@ impl FlattenHierarchy {
             authored_instances.extend(gen_insts.iter().cloned());
         }
 
+        // LRMC-C5-08: expand each `name [msb:lsb] (...)` instance into
+        // `msb.abs_diff(lsb) + 1` leaf instances on the derived side only
+        // (MD-25 — `authored_instances` came from `m` which is itself a
+        // clone of the untouched `design.modules` entry; `Self::expand_array`
+        // never mutates its input).
+        let authored_instances = authored_instances
+            .into_iter()
+            .map(|inst| Self::expand_array(inst, &m.wires))
+            .collect::<Result<Vec<Vec<Instance>>, ElabError>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<Instance>>();
+
         let mut kept = Vec::new();
         for inst in authored_instances {
             let child = Self::flatten_module(&inst.module, design, generated, in_progress)?;
@@ -130,6 +143,70 @@ impl FlattenHierarchy {
         in_progress.remove(name);
         design.flat_modules.insert(name.to_string(), m.clone());
         Ok(m)
+    }
+
+    /// Expands one instance into `msb.abs_diff(lsb) + 1` leaf instances if
+    /// it carries an array range (`Instance::range`, LRMC-C5-08), else
+    /// returns it unchanged as the sole element. Each expanded instance's
+    /// port connections are sliced per element: a connection naming a wire
+    /// whose declared width equals the instance count becomes a single-bit
+    /// `NetRef::indexed` (bit `v`, the element's own position in the
+    /// `[msb:lsb]` range — the connected bus is assumed declared with the
+    /// same `[msb:lsb]`, the common real-world convention this task's own
+    /// `buf8 [7:0] (out[7:0], in[7:0])` example itself follows); a
+    /// scalar-width wire (or an already-indexed connection) is shared,
+    /// unchanged, across every element (a fan-out idiom — e.g. a shared
+    /// power/ground net); any other width is a genuine mismatch and fails
+    /// loud.
+    fn expand_array(inst: Instance, wires: &[Wire]) -> Result<Vec<Instance>, ElabError> {
+        let Some((msb, lsb)) = inst.range else { return Ok(vec![inst]) };
+        let count = msb.abs_diff(lsb) + 1;
+        let bits: Vec<i64> = if msb >= lsb { (lsb..=msb).rev().collect() } else { (msb..=lsb).collect() };
+        let base_label = inst.label.clone().unwrap_or_default();
+
+        bits.into_iter()
+            .map(|v| {
+                let ports = inst
+                    .ports
+                    .iter()
+                    .map(|nr| {
+                        if nr.index().is_some() {
+                            return Ok(nr.clone());
+                        }
+                        let Some(wire) = wires.iter().find(|w| w.name() == nr.net()) else {
+                            // Not a declared wire of this module (a port
+                            // passed straight through, or a constant) —
+                            // no width to check against; share unchanged.
+                            return Ok(nr.clone());
+                        };
+                        let width = wire.ty.width();
+                        if width == u64::from(count) {
+                            Ok(NetRef::indexed(nr.net().to_string(), v as u64))
+                        } else if width == 1 {
+                            Ok(nr.clone())
+                        } else {
+                            Err(ElabError::from(ElabErrorKind::Other(format!(
+                                "array of instances `{base_label} [{msb}:{lsb}]`: connected net `{}` has width {width}, \
+                                 which matches neither the instance count ({count}) nor a scalar (1)",
+                                nr.net()
+                            ))))
+                        }
+                    })
+                    .collect::<Result<Vec<NetRef>, ElabError>>()?;
+                Ok(Instance {
+                    span: inst.span,
+                    label_span: None,
+                    type_span: None,
+                    attributes: inst.attributes.clone(),
+                    doc: inst.doc.clone(),
+                    label: Some(format!("{base_label}[{v}]")),
+                    module: inst.module.clone(),
+                    ports,
+                    params: inst.params.clone(),
+                    range: None,
+                })
+            })
+            .collect()
     }
 
     /// Inline a non-leaf `child` (already flat) into the parent, producing
@@ -198,6 +275,7 @@ impl FlattenHierarchy {
                 module: s.module.clone(),
                 ports: new_ports,
                 params: s.params.clone(),
+                range: s.range,
             });
         }
 
@@ -361,6 +439,7 @@ mod tests {
                 module: "Resistor".to_string(),
                 ports: vec![NetRef::indexed(net, index), NetRef::simple("p")],
                 params: Vec::new(),
+                range: None,
             }],
             Vec::new(),
         )
@@ -385,6 +464,7 @@ mod tests {
                     module: "Seg".to_string(),
                     ports: top_bindings,
                     params: Vec::new(),
+                    range: None,
                 }],
             ),
         );
@@ -414,6 +494,7 @@ mod tests {
             module: module.to_string(),
             ports: Vec::new(),
             params: Vec::new(),
+            range: None,
         }
     }
 
@@ -428,6 +509,7 @@ mod tests {
             module: module.to_string(),
             ports: ports.iter().map(|p| NetRef::simple(*p)).collect(),
             params: Vec::new(),
+            range: None,
         }
     }
 

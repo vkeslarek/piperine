@@ -198,6 +198,13 @@ pub struct Instance {
     pub module: String,
     pub ports: Vec<NetRef>,
     pub params: Vec<(String, Value)>,
+    /// `name [msb:lsb] (...)` — an array-of-instances range (§6.2.2,
+    /// LRMC-C5-08), `(msb, lsb)`. Authored form only (MD-25): stays a
+    /// single `Instance` with this field set; `FlattenHierarchy` expands
+    /// it into `msb.abs_diff(lsb) + 1` leaf instances in `flat_modules`
+    /// only, never here.
+    #[serde(default)]
+    pub range: Option<(i64, i64)>,
 }
 
 impl Instance {
