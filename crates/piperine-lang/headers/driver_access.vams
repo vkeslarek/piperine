@@ -1,0 +1,61 @@
+// driver_access.vams — LRM 2.4 Annex D.3, "The driver_access.vams file"
+// (VAMS-LRM-2-4.md, Annex D, normative). Ported by hand from the LRM's own
+// listing (T57, LRMC-C10-16) — the LRM's markdown extraction squashes
+// whitespace between the width specifier, the `'b` binary-literal marker,
+// and the trailing comment on every `` `define `` line (e.g. the source
+// text reads `` `define DRIVER_UNKNOWN32’b00000000000// No information``);
+// this file restores normal Verilog spacing and the ASCII `'` the `32'b`
+// literal syntax actually requires (the LRM's own typographic “’” is a PDF
+// rendering artifact, the same issue `` ` `` directives have elsewhere in
+// this document) while keeping every name, bit pattern, and comment text
+// unchanged — except each comment is placed on the line *above* its
+// `` `define `` rather than trailing it: `scan_macro_body`
+// (preprocessor.rs) captures a macro's body verbatim to end of line,
+// comment included, so a trailing `// ...` would become part of the
+// macro's *expansion text* and eat the token after every use site (caught
+// by this file's own test failing to parse before this reordering).
+// `tests/vams_headers.rs` cross-checks the twelve macro bit-values against
+// a value extracted straight from `VAMS-LRM-2-4.md` at test time,
+// independent of this file, mirroring `annex_b_keywords.rs`'s own
+// "re-derive from the LRM, don't just copy it" methodology.
+//
+// Copyright(c) 2009-2014 Accellera Systems Initiative Inc.
+// 1370 Trancas Street #163, Napa, CA 94558, USA.
+//
+// The material in driver_access.vams is an essential part of the Accellera Systems
+// Initiative ("Accellera") Verilog-AMS Language Standard. Verbatim copies of
+// the material in this Annex may be used and distributed without restriction.
+// All other uses require permission from Accellera IP Committee
+// (ipr-chair@lists.accellera.org).
+// All other rights reserved.
+//
+// Version 2.4.0
+
+`ifdef DRIVER_ACCESS_VAMS
+`else
+`define DRIVER_ACCESS_VAMS 1
+// No information
+`define DRIVER_UNKNOWN 32'b00000000000
+// driver has fixed delay
+`define DRIVER_DELAYED 32'b00000000001
+// driver is a primitive
+`define DRIVER_GATE 32'b00000000010
+// driver is a user defined primitive
+`define DRIVER_UDP 32'b00000000100
+// driver is a continuous assignment
+`define DRIVER_ASSIGN 32'b00000001000
+// driver is a reg
+`define DRIVER_BEHAVIORAL 32'b00000010000
+// driver is from backannotated code
+`define DRIVER_SDF 32'b00000100000
+// events won't be deleted
+`define DRIVER_NODELETE 32'b00001000000
+// events won't be preempted
+`define DRIVER_NOPREEMPT 32'b00010000000
+// added by kernel (wor/wand)
+`define DRIVER_KERNEL 32'b00100000000
+// driver is on a wor net
+`define DRIVER_WOR 32'b01000000000
+// driver is on a wand net
+`define DRIVER_WAND 32'b10000000000
+`endif
