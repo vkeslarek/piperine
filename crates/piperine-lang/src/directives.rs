@@ -88,3 +88,28 @@ pub struct DirectiveState {
     /// written.
     pub line_map: LineMap,
 }
+
+impl DirectiveState {
+    /// The LRM §10's user-facing line number for a byte `offset` into the
+    /// *fully preprocessed* text — 1-based physical line count, unless a
+    /// `` `line number "file" level `` directive is in force at or before
+    /// `offset`, in which case it's `number` plus however many newlines
+    /// separate the directive from `offset` (§10's remapping is exactly
+    /// this: "the following line" starts counting from `number`).
+    pub fn line_for_offset(&self, source: &str, offset: usize) -> usize {
+        let offset = offset.min(source.len());
+        let most_recent = self.line_map.entries.iter().filter(|(pos, _, _)| *pos <= offset).next_back();
+        match most_recent {
+            Some((pos, _file, line_no)) => {
+                // `pos` is recorded at the tail of the (now-erased)
+                // `` `line `` directive's own line, before its still-
+                // emitted trailing newline — so the first newline after
+                // `pos` only completes *that* line, and `line_no` names
+                // the line after it. Subtract one to not double-count it.
+                let delta = source[*pos..offset].matches('\n').count().saturating_sub(1);
+                line_no + delta
+            }
+            None => 1 + source[..offset].matches('\n').count(),
+        }
+    }
+}

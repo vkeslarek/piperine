@@ -321,6 +321,18 @@ pub enum ElabErrorKind {
         #[label("`{param}` declared here")]
         span: Option<miette::SourceSpan>,
     },
+    /// LRM §10 (`` `default_nettype none ``, 1364-2005-inherited): an
+    /// identifier used as an instance port connection names neither a
+    /// declared port nor a declared net, and implicit net declaration is
+    /// disabled by an in-force `` `default_nettype none `` — normally this
+    /// would silently register an implicit 1-bit net (LRM §3.7); with
+    /// `none` in force it is an error instead (T52, LRMC-C10-06).
+    #[error("net `{name}` is undeclared and `` `default_nettype none `` is in force — implicit net declaration is disabled (LRM §10, §3.7)")]
+    #[diagnostic(
+        code(E4007),
+        help("Declare the net explicitly (e.g. `electrical {name};`) before using it, or remove the `default_nettype none` directive if implicit nets are wanted here.")
+    )]
+    UndeclaredNetDefaultNettypeNone { name: String },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

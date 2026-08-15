@@ -112,3 +112,103 @@ fn default_transition_accepts_scientific_notation() {
     let d = elab("`default_transition 100e-12\nmodule m(); endmodule\n");
     assert_eq!(d.directives().default_transition, Some((100e-12, 100e-12)));
 }
+
+// ── T52: 1364-inherited directives (LRMC-C10-05..09) ─────────────────────
+
+/// None of celldefine/endcelldefine/line/pragma/default_nettype/
+/// unconnected_drive/nounconnected_drive raise `UndefinedMacro` anymore.
+#[test]
+fn all_1364_inherited_directives_no_longer_raise_undefined_macro() {
+    let _ = elab(
+        "`celldefine\n\
+         module m(); endmodule\n\
+         `endcelldefine\n\
+         `line 100 \"other.v\" 0\n\
+         `pragma foo bar=1\n\
+         `default_nettype none\n\
+         `unconnected_drive pull1\n\
+         `nounconnected_drive\n\
+         `default_nettype wire\n",
+    );
+}
+
+#[test]
+fn celldefine_endcelldefine_records_the_enclosed_span() {
+    let d = elab("`celldefine\nmodule m(); endmodule\n`endcelldefine\n`default_nettype wire\n");
+    assert_eq!(d.directives().celldefine_spans.len(), 1);
+}
+
+#[test]
+fn default_nettype_none_makes_an_undeclared_net_an_error() {
+    let msg = elab_err(
+        "`default_nettype none\n\
+         module leaf (inout electrical p, inout electrical n); endmodule\n\
+         module top (); leaf u1 (undeclared_net, undeclared_net); endmodule\n",
+    );
+    assert!(msg.contains("undeclared_net"), "must name the offending net: {msg}");
+    assert!(msg.to_lowercase().contains("default_nettype"), "must cite the directive: {msg}");
+}
+
+/// The same source with the default (implicit `wire`) `default_nettype`
+/// elaborates fine — proves the `none` case above is the directive's
+/// effect, not some unrelated regression.
+#[test]
+fn without_default_nettype_none_an_undeclared_net_is_still_implicit() {
+    let d = elab(
+        "module leaf (inout electrical p, inout electrical n); endmodule\n\
+         module top (); leaf u1 (undeclared_net, undeclared_net); endmodule\n",
+    );
+    assert!(d.module("top").is_some());
+}
+
+#[test]
+fn unconnected_drive_sets_pull0_or_pull1() {
+    use piperine_lang::directives::Drive;
+    let d = elab("`unconnected_drive pull0\nmodule m(); endmodule\n");
+    assert_eq!(d.directives().unconnected_drive, Some(Drive::Pull0));
+
+    let d = elab("`unconnected_drive pull1\nmodule m(); endmodule\n");
+    assert_eq!(d.directives().unconnected_drive, Some(Drive::Pull1));
+}
+
+#[test]
+fn nounconnected_drive_clears_it() {
+    let d = elab("`unconnected_drive pull1\n`nounconnected_drive\nmodule m(); endmodule\n");
+    assert_eq!(d.directives().unconnected_drive, None);
+}
+
+/// `` `line `` remaps the line number reported for source after it —
+/// tested directly against `DirectiveState::line_for_offset` (the
+/// preprocessor's own remapping helper) rather than end-to-end error
+/// text, since that keeps the assertion tied to the directive's actual
+/// recorded state instead of a diagnostic renderer's formatting.
+#[test]
+fn line_directive_remaps_reported_line_numbers() {
+    use piperine_lang::directives::DirectiveState;
+    use piperine_lang::preprocessor::Preprocessor;
+
+    let src = "`line 100 \"other.v\" 0\nsecond_line\nthird_line\n";
+    let mut pp = Preprocessor::new();
+    let expanded = pp.run(src).expect("preprocesses");
+    let directives: &DirectiveState = pp.directives();
+
+    // Offset of "second_line" in the *expanded* text (the directive itself
+    // is consumed, not passed through) should read back as line 100; the
+    // following "third_line" should read back as line 101.
+    let second_offset = expanded.find("second_line").unwrap();
+    let third_offset = expanded.find("third_line").unwrap();
+    assert_eq!(directives.line_for_offset(&expanded, second_offset), 100);
+    assert_eq!(directives.line_for_offset(&expanded, third_offset), 101);
+}
+
+/// Without any `` `line `` directive, `line_for_offset` falls back to a
+/// plain 1-based physical line count.
+#[test]
+fn line_for_offset_without_a_line_directive_is_the_physical_line() {
+    use piperine_lang::directives::DirectiveState;
+    let d = DirectiveState::default();
+    let src = "one\ntwo\nthree\n";
+    assert_eq!(d.line_for_offset(src, 0), 1);
+    assert_eq!(d.line_for_offset(src, src.find("two").unwrap()), 2);
+    assert_eq!(d.line_for_offset(src, src.find("three").unwrap()), 3);
+}

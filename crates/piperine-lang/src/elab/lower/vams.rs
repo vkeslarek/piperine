@@ -65,6 +65,7 @@ impl Elaborator {
         &self,
         decl: &ModuleDecl,
         access_kinds: &HashMap<String, BranchKind>,
+        default_nettype: crate::directives::NetTypeDefault,
     ) -> Result<Module, ElabError> {
         // Mutable so each parameter becomes visible to elaboration-constant
         // evaluation for everything declared after it in this same module
@@ -283,6 +284,11 @@ impl Elaborator {
             for net_ref in &inst.ports {
                 let n = net_ref.net();
                 if !declared.contains(n) && implicit_seen.insert(n.to_string()) {
+                    if default_nettype == crate::directives::NetTypeDefault::None && !net_ref.is_unconnected() {
+                        return Err(ElabError::from(ElabErrorKind::UndeclaredNetDefaultNettypeNone {
+                            name: n.to_string(),
+                        }));
+                    }
                     wires.push(Wire {
                         span: None,
                         attributes: Vec::new(),

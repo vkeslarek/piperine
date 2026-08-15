@@ -68,6 +68,10 @@ pub struct Preprocessor {
     /// by `` `default_discipline ``/`` `default_transition ``'s directive
     /// arms in [`Preprocessor::handle_directive_or_macro`].
     directives: crate::directives::DirectiveState,
+    /// The byte offset of the most recently seen unmatched `` `celldefine ``,
+    /// if any — paired off into `directives.celldefine_spans` by the next
+    /// `` `endcelldefine ``.
+    open_celldefine: Option<usize>,
 }
 
 impl Default for Preprocessor {
@@ -78,7 +82,12 @@ impl Default for Preprocessor {
 
 impl Preprocessor {
     pub fn new() -> Self {
-        Self { resolver: Box::new(NoIncludes), macros: HashMap::new(), directives: Default::default() }
+        Self {
+            resolver: Box::new(NoIncludes),
+            macros: HashMap::new(),
+            directives: Default::default(),
+            open_celldefine: None,
+        }
     }
 
     pub fn with_include_resolver(resolver: impl IncludeResolver + 'static) -> Self {
@@ -86,6 +95,7 @@ impl Preprocessor {
             resolver: Box::new(resolver),
             macros: HashMap::new(),
             directives: Default::default(),
+            open_celldefine: None,
         }
     }
 
@@ -275,6 +285,30 @@ impl Preprocessor {
                 self.handle_default_transition(source, directive_start, name_end)
             }
             "default_transition" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "celldefine" if active_now => {
+                self.open_celldefine = Some(directive_start);
+                Ok(name_end)
+            }
+            "endcelldefine" if active_now => {
+                if let Some(start) = self.open_celldefine.take() {
+                    self.directives.celldefine_spans.push(Span::new(start, name_end));
+                }
+                Ok(name_end)
+            }
+            "celldefine" | "endcelldefine" => Ok(name_end),
+            "line" if active_now => Ok(self.handle_line(source, name_end, out)),
+            "line" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "pragma" if active_now => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "pragma" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "default_nettype" if active_now => Ok(self.handle_default_nettype(source, name_end)),
+            "default_nettype" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "unconnected_drive" if active_now => Ok(self.handle_unconnected_drive(source, name_end)),
+            "unconnected_drive" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "nounconnected_drive" if active_now => {
+                self.directives.unconnected_drive = None;
+                Ok(name_end)
+            }
+            "nounconnected_drive" => Ok(name_end),
             "timescale" | "resetall" if active_now => {
                 // Textually inert for this preprocessor's purposes — LRM
                 // §10 places these among the 1364-2005-inherited
@@ -358,6 +392,61 @@ impl Preprocessor {
         })?;
         self.directives.default_transition = Some((value, value));
         Ok(after)
+    }
+
+    /// 1364-2005-inherited `` `line number "filename" level `` (LRMC-C10-08,
+    /// T52) — the VAMS LRM defers this directive's syntax wholesale to
+    /// 1364-2005 (§10.1's table lists it `[1364-2005]` with no VAMS-local
+    /// grammar of its own); this is the well-known Verilog form (a decimal
+    /// line number, a quoted file name, a `0`/`1`/`2` nesting level),
+    /// disclosed here rather than pulled from a third-party VA compiler.
+    /// Records `(expanded-output byte offset, filename, line number)` so
+    /// later span reporting (the lexer/grammar operate on the
+    /// preprocessor's *output*, design.md's `Preprocessor -> Lexer ->
+    /// Grammar` order) can remap; `out.len()` at the point the directive is
+    /// consumed is exactly where the directive's effect starts, since
+    /// `` `line `` itself emits no text. Parses leniently (any malformed
+    /// piece just stops the scan there) since `` `line `` is advisory, not
+    /// something a missing/odd argument should hard-fail elaboration over.
+    fn handle_line(&mut self, source: &str, name_end: usize, out: &str) -> usize {
+        let (num_text, after_num) = scan_real_literal(source, skip_inline_ws(source, name_end));
+        let Ok(line_no) = num_text.trim().parse::<usize>() else {
+            return skip_to_end_of_logical_line(source, name_end);
+        };
+        let (path, after_path) = scan_quoted_path(source, skip_inline_ws(source, after_num));
+        let (_level, after_level) = scan_identifier_after_ws(source, after_path);
+        self.directives.line_map.entries.push((out.len(), path, line_no));
+        skip_to_end_of_logical_line(source, after_level)
+    }
+
+    /// 1364-2005-inherited `` `default_nettype net_type `` (LRMC-C10-07,
+    /// T52) — same wholesale-deferral note as `handle_line`. `none`
+    /// disables implicit net declaration (checked later by elaboration,
+    /// `elab_module`'s implicit-net loop); every other net-type keyword
+    /// (`wire`/`tri`/`wand`/...) maps to
+    /// [`crate::directives::NetTypeDefault::Wire`] — `NetTypeDefault`
+    /// distinguishes only "implicit nets allowed" from "not", not each
+    /// individual net kind (design.md P0.3's struct shape).
+    fn handle_default_nettype(&mut self, source: &str, name_end: usize) -> usize {
+        let (kind, after) = scan_identifier_after_ws(source, name_end);
+        self.directives.default_nettype = if kind == "none" {
+            crate::directives::NetTypeDefault::None
+        } else {
+            crate::directives::NetTypeDefault::Wire
+        };
+        after
+    }
+
+    /// 1364-2005-inherited `` `unconnected_drive pull0|pull1 `` (LRMC-C10-09,
+    /// T52) — same wholesale-deferral note as `handle_line`.
+    fn handle_unconnected_drive(&mut self, source: &str, name_end: usize) -> usize {
+        let (kind, after) = scan_identifier_after_ws(source, name_end);
+        self.directives.unconnected_drive = match kind.as_str() {
+            "pull0" => Some(crate::directives::Drive::Pull0),
+            "pull1" => Some(crate::directives::Drive::Pull1),
+            _ => self.directives.unconnected_drive,
+        };
+        after
     }
 
     /// LRM §10.1: a compiler directive's scope extends "across all files

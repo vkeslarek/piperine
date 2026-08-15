@@ -111,10 +111,11 @@ impl ElabPass for ElabModules {
         // (elab_module -> resolve_contribution_branches) can promote a
         // custom access name, not only V/I/potential/flow.
         let access_kinds = super::vams::build_access_kind_map(design);
+        let default_nettype = design.directives().default_nettype;
         let names: Vec<String> = elab.syms.module_decls.keys().cloned().collect();
         for name in &names {
             let decl = elab.syms.module_decls[name].clone();
-            let module = elab.elab_module(&decl, &access_kinds)?;
+            let module = elab.elab_module(&decl, &access_kinds, default_nettype)?;
             design.modules_map_mut().insert(name.clone(), module);
         }
         Ok(())
