@@ -126,6 +126,11 @@ pub(crate) struct LowerCtx<'a> {
     /// module's digital body (creating one if the module has none) after
     /// every behavior is lowered.
     pub digital_shadows: Vec<(NodeId, VarId)>,
+    /// The in-force `` `default_transition ``'s `(rise, fall)` value
+    /// (LRM §10.3, LRMC-C10-02, T56), if any — `analog_ops.rs::Transition`
+    /// falls back to this instead of `0.0` for an omitted `rise`/`fall`
+    /// argument. `None` when no such directive was seen.
+    pub default_transition: Option<(f64, f64)>,
 }
 
 impl<'a> LowerCtx<'a> {
@@ -147,6 +152,7 @@ impl<'a> LowerCtx<'a> {
             instance_ports: HashMap::new(),
             consts: HashMap::new(),
             digital_shadows: Vec::new(),
+            default_transition: None,
         }
     }
 
@@ -320,6 +326,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital);
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
+            ctx.default_transition = prog.directives().default_transition;
 
             if is_digital {
                 // Digital path: keep the POM `Stmt` tree directly — the

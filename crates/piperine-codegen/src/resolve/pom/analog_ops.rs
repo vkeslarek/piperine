@@ -149,12 +149,18 @@ impl AnalogOp for Delay {
 
 struct Transition;
 impl AnalogOp for Transition {
+    /// §10.3/LRMC-C10-02: an omitted `rise`/`fall` argument uses the
+    /// in-force `` `default_transition `` value instead of `0.0`, when one
+    /// is recorded (`ctx.default_transition`, T56) — an *explicit*
+    /// argument still wins, since `arg` only falls back when the caller's
+    /// `args` list doesn't reach that position at all.
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
+        let (default_rise, default_fall) = ctx.default_transition.unwrap_or((0.0, 0.0));
         let delay = arg(args, 1, ctx, 0.0);
-        let rise = arg(args, 2, ctx, 0.0);
-        let fall = arg(args, 3, ctx, 0.0);
+        let rise = arg(args, 2, ctx, default_rise);
+        let fall = arg(args, 3, ctx, default_fall);
         let tol = arg(args, 4, ctx, 0.0);
         let id = ctx.alloc_state(
             StateKind::Transition { delay: delay.clone(), rise: rise.clone(), fall: fall.clone(), tol: tol.clone() },
