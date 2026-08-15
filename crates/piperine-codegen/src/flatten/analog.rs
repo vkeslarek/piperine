@@ -120,7 +120,13 @@ fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenE
                  cross/above/timer/absdelta (plus initial_step/final_step)"
             )));
         }
-        _ => vec![],
+        // A bare signal/named-event sensitivity (§5.6/§5.10.4, LRMC-C5-04):
+        // fires on any change of `name`'s value — a named event (declared
+        // `event e;`, elaborated as a hidden integer var T25/T26 toggles
+        // on `-> e;`) or an ordinary signal used the same way. Resolution
+        // of whether `name` actually exists happens downstream (`finish_expr`/
+        // emission), same as every other bare identifier in this codegen.
+        _ => vec![EventSource::Named { expr: PomExpr::Ident { span: NOSPAN, name: name.to_string() } }],
     };
     Ok(sources)
 }
@@ -200,6 +206,9 @@ pub enum FlatEventTrigger {
     /// `enable` are evaluated once at elaboration (`kernel/analog/compile.rs`
     /// mirrors `Timer`'s `period`/`phase` treatment).
     AbsDelta { expr: PomExpr, delta: PomExpr, time_tol: PomExpr, expr_tol: PomExpr, enable: PomExpr },
+    /// A bare signal/named-event sensitivity (§5.6/§5.10.4, LRMC-C5-04) —
+    /// fires on any change of `expr`'s value.
+    Named { expr: PomExpr },
 }
 
 #[derive(Debug, Clone)]
@@ -220,7 +229,8 @@ impl FlatEvent {
             FlatEventTrigger::Initial => None,
             FlatEventTrigger::Cross { expr, .. }
             | FlatEventTrigger::Above { expr }
-            | FlatEventTrigger::AbsDelta { expr, .. } => Some(expr),
+            | FlatEventTrigger::AbsDelta { expr, .. }
+            | FlatEventTrigger::Named { expr } => Some(expr),
             FlatEventTrigger::Timer { period, .. } => Some(period),
         }
     }
@@ -654,10 +664,28 @@ impl<'m> AnalogFlattener<'m> {
                         "runtime loop/delay-control statement in an analog body",
                     ));
                 }
-                // Parses and lowers into the POM (LRMC-C5-04 FORM half,
-                // T25); runtime triggering is T26 — not yet wired here.
-                PomStmt::EventTrigger { name, .. } => {
-                    return Err(CodegenError::unsupported(format!("event trigger `-> {name}` in an analog body")));
+                // `-> e;` (§5.10.4, LRMC-C5-04): `e` is the hidden integer
+                // var `elab::lower::vams` allocates per declared `event`
+                // (T25/T26) — triggering toggles it (`e = 1 - e;`, 0/1
+                // alternating) so any `Trigger::AnyChange` watcher (`@(e)`
+                // here or in the digital domain, T26's own cross-domain
+                // proof) sees a real value change. A toggle rather than an
+                // unbounded increment: only one bit ever differs between 0
+                // and 1, so a single trigger can't fan out into more than
+                // one net-level change event on the digital side (see
+                // `emit/stmt.rs`'s matching arm for the observed failure
+                // mode this avoids). Desugars to an ordinary `Assign` and
+                // recurses through the exact same var-write path — no
+                // second mechanism.
+                PomStmt::EventTrigger { span, name } => {
+                    let target = PomExpr::Ident { span: *span, name: name.clone() };
+                    let value = PomExpr::Binary {
+                        span: *span,
+                        op: BinOp::Sub,
+                        lhs: Box::new(PomExpr::Number { span: *span, value: NumberLit::Integer(1) }),
+                        rhs: Box::new(target.clone()),
+                    };
+                    self.walk(&[PomStmt::Assign { span: *span, target, value }], guard)?;
                 }
             }
         }
@@ -983,6 +1011,10 @@ impl<'m> AnalogFlattener<'m> {
                     enable: self.finish_expr(en)?,
                 }
             }
+            EventSource::Named { expr } => {
+                let e = self.inline_temps(&self.subst(expr)?);
+                FlatEventTrigger::Named { expr: self.finish_expr(e)? }
+            }
         };
         let mut actions = Vec::new();
         self.collect_event_actions(&event.body, guard, &mut actions)?;
@@ -1025,6 +1057,25 @@ impl<'m> AnalogFlattener<'m> {
                     if let Some(eb) = else_branch {
                         self.collect_event_actions(std::slice::from_ref(eb.as_ref()), Some(&else_guard), actions)?;
                     }
+                }
+                // `-> e;` inside an event action body (e.g. `@(cross(...))
+                // -> e;`, chaining one event into another) — same toggle
+                // desugaring as the main-body `walk` arm, routed through
+                // this function's own Assign handling instead of
+                // recursing into `walk` (this function's own scope).
+                PomStmt::EventTrigger { span, name } => {
+                    let target = PomExpr::Ident { span: *span, name: name.clone() };
+                    let value = PomExpr::Binary {
+                        span: *span,
+                        op: BinOp::Sub,
+                        lhs: Box::new(PomExpr::Number { span: *span, value: NumberLit::Integer(1) }),
+                        rhs: Box::new(target.clone()),
+                    };
+                    self.collect_event_actions(
+                        &[PomStmt::Assign { span: *span, target, value }],
+                        guard,
+                        actions,
+                    )?;
                 }
                 _ => {}
             }

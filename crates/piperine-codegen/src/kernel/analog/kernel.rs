@@ -111,6 +111,10 @@ pub enum CompiledTrigger {
     /// `period`/`phase`); the per-step trigger value itself comes from
     /// `eval_event_triggers` like `Cross`/`Above`.
     AbsDelta { delta: PomExpr, time_tol: Box<PomExpr>, expr_tol: Box<PomExpr>, enable: Box<PomExpr> },
+    /// A bare signal/named-event sensitivity (§5.6/§5.10.4) — the per-step
+    /// trigger value comes from `eval_event_triggers` like `Cross`/`Above`;
+    /// fires on any change (`piperine_ir::events::Trigger::AnyChange`).
+    Named,
 }
 
 /// A compiled runtime analog event: its trigger plus the vars-bank slots its

@@ -186,7 +186,26 @@ impl Elaborator {
                 // `event name1, name2, ...;` (§5.10.4, LRMC-C5-04) — an
                 // authored declaration list, same simplicity as `genvars`
                 // (MD-25: navigable exactly as written).
-                ModuleItem::Event(e) => events.extend(e.names.iter().cloned()),
+                // LRMC-C5-04 runtime half (T26): each declared event also
+                // gets a hidden `integer` var codegen increments on
+                // `-> e;` and watches for any-change on `@(e)` — the
+                // actual mechanism a trigger/sensitivity pair communicates
+                // through, in either domain. `module.events` (above) stays
+                // the authored declaration surface (MD-25); this hidden
+                // var is the derived runtime plumbing.
+                ModuleItem::Event(e) => {
+                    events.extend(e.names.iter().cloned());
+                    for name in &e.names {
+                        vars.push(Var {
+                            span: None,
+                            attributes: Vec::new(),
+                            doc: None,
+                            name: name.clone(),
+                            ty: ValueType::Integer,
+                            init: None,
+                        });
+                    }
+                }
                 // genvar/generate (T25), ground declarations, continuous
                 // assign, specify/gates: not yet lowered — later tasks
                 // extend this match.

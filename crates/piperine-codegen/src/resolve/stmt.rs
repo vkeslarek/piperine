@@ -79,6 +79,10 @@ pub enum EventSource {
     /// `Timer`'s existing `period`/`phase` treatment above — only `expr`
     /// is a genuine per-step trigger row.
     AbsDelta { expr: PomExpr, delta: PomExpr, time_tol: PomExpr, expr_tol: PomExpr, enable: PomExpr },
+    /// `@(signal_name)` — a bare signal/named-event sensitivity (§5.6,
+    /// §5.10.4): fires whenever `expr`'s value changes, in either
+    /// direction (`piperine_ir::events::Trigger::AnyChange`) — LRMC-C5-04.
+    Named { expr: PomExpr },
 }
 
 /// An analog event: a trigger plus a statement body.

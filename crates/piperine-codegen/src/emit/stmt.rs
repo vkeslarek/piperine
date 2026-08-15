@@ -6,7 +6,8 @@
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, InstBuilder, MemFlags, TrapCode, Value};
 
-use piperine_lang::ast::{CaseArm, CaseKind, Expr, Stmt};
+use piperine_lang::ast::{BinOp, CaseArm, CaseKind, Expr, Stmt};
+use piperine_lang::lexer::NumberLit;
 
 use crate::error::CodegenError;
 use crate::resolve::{NodeId, Type, VarId};
@@ -116,11 +117,29 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 Err(CodegenError::unsupported("`#delay` control in digital codegen"))
             }
             S::Disable { .. } => Err(CodegenError::unsupported("`disable` in digital codegen")),
-            // Parses and lowers into the POM (LRMC-C5-04 FORM half, T25);
-            // runtime triggering (waking a `@(event_name)` sensitivity
-            // elsewhere) is T26 — not yet emitted here.
-            S::EventTrigger { name, .. } => {
-                Err(CodegenError::unsupported(format!("event trigger `-> {name}` in digital codegen")))
+            // `-> e;` (§5.10.4, LRMC-C5-04): `e` is the hidden `integer`
+            // var `elab::lower::vams` allocates per declared `event`
+            // (T25/T26) — triggering toggles it (`e = 1 - e;`, alternating
+            // 0/1) so any `Trigger::AnyChange` watcher (`@(e)`, digital
+            // `EdgeKind::Any` already fires on any var write with zero
+            // changes needed here, or analog's own `Named` trigger, T26's
+            // cross-domain proof) sees a real change. A *toggle*, not an
+            // unbounded increment: only ever one bit differs between 0 and
+            // 1 in the digital var's own multi-bit net representation, so
+            // a single trigger never fans out into more than one net-level
+            // change event (an increment across a multi-bit boundary,
+            // e.g. 1->2, flips more than one bit at once and was observed
+            // to wake `@(e)` more than once per logical trigger). Desugars
+            // and recurses through the exact same assignment path.
+            S::EventTrigger { span, name } => {
+                let target = Expr::Ident { span: *span, name: name.clone() };
+                let value = Expr::Binary {
+                    span: *span,
+                    op: BinOp::Sub,
+                    lhs: Box::new(Expr::Number { span: *span, value: NumberLit::Integer(1) }),
+                    rhs: Box::new(target.clone()),
+                };
+                self.emit_stmt(&Stmt::Assign { span: *span, target, value })
             }
         }
     }

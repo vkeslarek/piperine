@@ -39,6 +39,11 @@ pub enum Trigger {
     /// `timer(period, phase)` — fires when `time` reaches `next_fire`,
     /// advancing `next_fire` by whole periods.
     Timer,
+    /// `@(signal_name)` — a bare signal/named-event sensitivity (§5.6,
+    /// §5.10.4): fires whenever the watched value differs from the
+    /// previous accepted sample, in either direction (not sign-based like
+    /// `Cross`/`Above`). Never fires unseeded, same convention as `Cross`.
+    AnyChange,
 }
 
 /// Per-event transition detector: remembers the previous accepted trigger
@@ -85,6 +90,7 @@ impl EventDetector {
                 }
                 fires
             }
+            Trigger::AnyChange => self.seeded && value != self.prev,
         };
         self.prev = value;
         self.seeded = true;
@@ -361,6 +367,33 @@ mod tests {
         // compare against).
         assert!(!d.fired(Trigger::Cross(CrossDir::Rising), 1.0, 0.0, 0.0));
         assert!(!d.fired(Trigger::Cross(CrossDir::Either), 1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn any_change_fires_on_a_rising_step() {
+        let mut d = EventDetector::new(0.0);
+        d.fired(Trigger::AnyChange, 0.0, 0.0, 0.0);
+        assert!(d.fired(Trigger::AnyChange, 1.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn any_change_fires_on_a_falling_step_unlike_above() {
+        let mut d = EventDetector::new(0.0);
+        d.fired(Trigger::AnyChange, 1.0, 0.0, 0.0);
+        assert!(d.fired(Trigger::AnyChange, 0.0, 1.0, 0.0), "AnyChange must fire on a falling step too");
+    }
+
+    #[test]
+    fn any_change_does_not_fire_when_the_value_is_unchanged() {
+        let mut d = EventDetector::new(0.0);
+        d.fired(Trigger::AnyChange, 1.0, 0.0, 0.0);
+        assert!(!d.fired(Trigger::AnyChange, 1.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn unseeded_any_change_never_fires() {
+        let mut d = EventDetector::new(0.0);
+        assert!(!d.fired(Trigger::AnyChange, 1.0, 0.0, 0.0));
     }
 
     #[test]

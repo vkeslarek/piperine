@@ -749,7 +749,8 @@ impl<'m> AnalogCompiler<'m> {
                 .map(|e| match &e.trigger {
                     FlatEventTrigger::Cross { expr, .. }
                     | FlatEventTrigger::Above { expr }
-                    | FlatEventTrigger::AbsDelta { expr, .. } => expr.clone(),
+                    | FlatEventTrigger::AbsDelta { expr, .. }
+                    | FlatEventTrigger::Named { expr } => expr.clone(),
                     FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => real(0.0),
                 })
                 .collect();
@@ -783,6 +784,7 @@ impl<'m> AnalogCompiler<'m> {
                             enable: Box::new(enable.clone()),
                         }
                     }
+                    FlatEventTrigger::Named { .. } => CompiledTrigger::Named,
                 },
                 action_vars: e.actions.iter().map(|a| a.var).collect(),
             })

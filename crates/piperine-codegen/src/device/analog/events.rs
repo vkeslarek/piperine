@@ -148,6 +148,7 @@ impl EventSystem {
                 CompiledTrigger::Above => Some(Trigger::Above),
                 CompiledTrigger::Cross(dir) => Some(Trigger::Cross(to_signal_cross_dir(*dir))),
                 CompiledTrigger::Timer { .. } => Some(Trigger::Timer),
+                CompiledTrigger::Named => Some(Trigger::AnyChange),
                 CompiledTrigger::AbsDelta { .. } => unreachable!("handled above"),
             }) else {
                 continue;

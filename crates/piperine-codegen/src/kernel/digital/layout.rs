@@ -224,6 +224,17 @@ fn collect_written_one(
         | Stmt::Repeat { body, .. }
         | Stmt::Forever { body, .. }
         | Stmt::DelayControl { body, .. } => collect_written_one(body, by_name, regs, out),
+        // `-> e;` (LRMC-C5-04, T26) desugars to a write of `e` at emission
+        // time (`emit/stmt.rs`), not a structural `Assign` node in this
+        // tree — this pre-pass must know about that write independently,
+        // or `e` never gets exported to the D2A bridge (`export_vars`
+        // only exports vars in `self.written`) and a digital `-> e;`
+        // silently never reaches an analog `@(e)` sensitivity.
+        Stmt::EventTrigger { name, .. } => {
+            if let Some(&id) = by_name.get(name.as_str()) {
+                out.insert(id);
+            }
+        }
         _ => {}
     }
 }
