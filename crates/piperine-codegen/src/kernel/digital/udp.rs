@@ -1,17 +1,16 @@
 //! User-defined primitive (UDP) state-table evaluation (T49, VAMS-19).
 //!
-//! **Scope of this file**, mirroring T48's own gap (see `gates.rs`'s `//!`
-//! header): `piperine_lang::ast::item::PrimitiveDecl` is parsed (T11) but
-//! nothing in `piperine-lang`'s elaboration pipeline lowers a `primitive`
-//! declaration or its instantiation into the POM — confirmed by the same
-//! grep the T48 survey ran (zero references outside `piperine-vams`
-//! itself). Wiring a `PrimitiveDecl` instance to a JIT'd `Element` is a
-//! POM-lowering + codegen-instantiation change outside this task's stated
-//! `Where` (`kernel/digital/` only) — **SPEC_DEVIATION**, carried forward.
-//! What's delivered instead: [`UdpTable`], evaluating an already-parsed
-//! `PrimitiveDecl`'s state table (both combinational and sequential, LRM
-//! Annex A.5.3 / §7.4.3-7.4.6) against live input values — the semantics
-//! a future lowering pass calls into.
+//! [`UdpTable`] evaluates an already-parsed `PrimitiveDecl`'s state table
+//! (both combinational and sequential, LRM Annex A.5.3 / §7.4.3-7.4.6)
+//! against live input values. `piperine_lang::ast::item::PrimitiveDecl`
+//! is lowered into the POM (`Design::udps`, T39/LRMC-C7-13) and a UDP
+//! instance is dispatched against this table by
+//! `piperine-codegen::device::prim::UdpElement` (T40) — a plain `Element`
+//! impl, not a Cranelift kernel, since a UDP's state table is a closed
+//! LRM-fixed lookup with no user-authored expression to JIT. See
+//! `device/prim.rs`'s own module doc for the dispatch side (including its
+//! sequential-UDP scope note) and root `tests/vams_gates_and_udps_e2e.rs`
+//! for the end-to-end proof.
 //!
 //! **Symbol model.** A `UdpTableRow`'s `inputs`/`current_state`/
 //! `next_state` fields carry raw one-token symbol text (`piperine-vams`'s

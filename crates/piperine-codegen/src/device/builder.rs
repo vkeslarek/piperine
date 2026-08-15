@@ -43,6 +43,10 @@ pub(super) struct InstanceBuilder<'c, 'p> {
     /// One `Arc<LoweredBody>` per digital module name, cloned lazily for
     /// fused-network members.
     module_arcs: HashMap<String, Arc<LoweredBody>>,
+    /// One shared `Arc<PrimitiveDecl>` per UDP name (LRMC-C7-13, T40) —
+    /// mirrors `module_arcs` so multiple instances of the same UDP share
+    /// one parsed table instead of each cloning it.
+    udp_arcs: HashMap<String, Arc<piperine_lang::ast::PrimitiveDecl>>,
     /// Canonical-node map (NGP-18 codegen integration, Fix B). A structural
     /// `connection tap[0] = p;` aliases two `NodeId`s — every device that
     /// connects to `tap[0]` actually connects to `p`. The alias map records
@@ -92,6 +96,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             next_anon,
             fusion_candidates: Vec::new(),
             module_arcs: HashMap::new(),
+            udp_arcs: HashMap::new(),
             build_info: CircuitBuildInfo {
                 nets,
                 digital_nets: HashMap::new(),
@@ -106,18 +111,27 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     /// this module's `NodeId`s — structural work done here, once per
     /// instantiation, directly from the POM.
     pub(super) fn resolve_connections(&self, instance: &Instance) -> Result<Vec<NodeId>, CodegenError> {
-        instance
-            .ports()
-            .iter()
+        Self::resolve_net_refs(self.top_body, instance.ports(), instance.name())
+    }
+
+    /// Resolves a bare `&[NetRef]` list against `body`'s node symbols —
+    /// the same mechanism [`Self::resolve_connections`] uses for an
+    /// ordinary instance's ports, generalized (T40/LRMC-C7-13) for a gate
+    /// primitive's terminals or a UDP instance's ports, neither of which
+    /// carries a `piperine_lang::pom::Instance` to read `.ports()` off of
+    /// in the gate case (`GateInstance::terminals`).
+    pub(super) fn resolve_net_refs(
+        body: &LoweredBody,
+        refs: &[piperine_lang::pom::NetRef],
+        owner_name: &str,
+    ) -> Result<Vec<NodeId>, CodegenError> {
+        refs.iter()
             .map(|r| {
                 let name = r.to_string();
-                CircuitCompiler::resolve_node(self.top_body, &name)
-                    .or_else(|| CircuitCompiler::resolve_node(self.top_body, r.net()))
+                CircuitCompiler::resolve_node(body, &name)
+                    .or_else(|| CircuitCompiler::resolve_node(body, r.net()))
                     .ok_or_else(|| {
-                        CodegenError::Invalid(format!(
-                            "instance `{}`: unresolved net `{name}`",
-                            instance.name()
-                        ))
+                        CodegenError::Invalid(format!("`{owner_name}`: unresolved net `{name}`"))
                     })
             })
             .collect()
@@ -161,6 +175,13 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     }
 
     pub(super) fn add_instance(&mut self, device_id: usize, instance: &Instance) -> Result<(), CodegenError> {
+        // LRMC-C7-13 (T39/T40): a UDP instance is syntactically identical
+        // to a module instantiation — resolved against `Design::udps`
+        // (T39) before falling through to the ordinary module lookup,
+        // the same precedence a paramset instance gets.
+        if self.compiler.udp(instance.module_name()).is_some() {
+            return self.add_udp_instance(instance);
+        }
         let child = self.compiler.module(instance.module_name())?;
         // A `@device`-annotated module's behavior is provided by a plugin,
         // not by PHDL analog/digital blocks (SPEC Part VI §7).
@@ -327,6 +348,65 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             self.fusion_candidates.push(c);
         }
         self.devices.push(Box::new(device));
+        Ok(())
+    }
+
+    /// Maps a resolved `NodeId` to its digital-net slot, allocating a
+    /// fresh one on first sight — the same pooling `add_instance`'s own
+    /// `map_nets` closure does for an ordinary digital kernel's ports,
+    /// generalized so a gate/UDP's terminals share the same pool (a gate
+    /// wired to the same net as a module's digital port must resolve to
+    /// the identical `DigitalNet`).
+    fn map_digital_net(&mut self, node: NodeId) -> DigitalNet {
+        let next = self.digital_nets.len();
+        *self.digital_nets.entry(node).or_insert(DigitalNet(next))
+    }
+
+    /// One UDP instance (Annex A.5, T40) — `instance.module_name()` names
+    /// a registered `primitive`, not a module; dispatched to
+    /// [`super::prim::UdpElement`] instead of the ordinary
+    /// kernel-compile path `add_instance` continues into below.
+    fn add_udp_instance(&mut self, instance: &Instance) -> Result<(), CodegenError> {
+        let udp = self.compiler.udp(instance.module_name()).ok_or_else(|| {
+            CodegenError::Invalid(format!("UDP `{}` vanished between lookup and dispatch", instance.module_name()))
+        })?;
+        let arc = match self.udp_arcs.get(instance.module_name()) {
+            Some(arc) => arc.clone(),
+            None => {
+                let arc = Arc::new(udp.clone());
+                self.udp_arcs.insert(instance.module_name().to_string(), arc.clone());
+                arc
+            }
+        };
+        let nodes = self.resolve_connections(instance)?;
+        if nodes.is_empty() {
+            return Err(CodegenError::Invalid(format!(
+                "UDP instance `{}`: no port connections (a UDP's first port is always its output)",
+                instance.name()
+            )));
+        }
+        let mapped: Vec<DigitalNet> = nodes.iter().map(|&n| self.map_digital_net(n)).collect();
+        let element = super::prim::UdpElement::new(arc, instance.name().to_string(), mapped[0], mapped[1..].to_vec());
+        self.devices.push(Box::new(element));
+        Ok(())
+    }
+
+    /// One gate-primitive instance (Annex A.4.2, T40) — `Module::gates`
+    /// entries never appear in `instances()`, so this is called from a
+    /// separate walk (`circuit.rs::build_circuit_mapped`).
+    pub(super) fn add_gate_instance(
+        &mut self,
+        device_id: usize,
+        gate: &piperine_lang::pom::GateInstance,
+    ) -> Result<(), CodegenError> {
+        let owner = gate.name.as_deref().unwrap_or("<unnamed gate>");
+        let nodes = Self::resolve_net_refs(self.top_body, &gate.terminals, owner)?;
+        if nodes.is_empty() {
+            return Err(CodegenError::Invalid(format!("gate `{owner}`: no terminals")));
+        }
+        let mapped: Vec<DigitalNet> = nodes.iter().map(|&n| self.map_digital_net(n)).collect();
+        let element = super::prim::GateElement::new(gate, device_id, mapped[0], mapped[1..].to_vec())?;
+        self.devices.push(Box::new(element));
         Ok(())
     }
 

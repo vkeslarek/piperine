@@ -144,7 +144,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "stratified_regions_resolve_the_canonical_active_nba_race_through_evaluate_until_stable",
         },
     },
-    Entry { id: "LRMC-C7-13", story: "P3", clause: "§8.5.3.5", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-13",
+        story: "P3",
+        clause: "§8.5.3.5",
+        status: Status::Closed {
+            file: "tests/vams_gates_and_udps_e2e.rs",
+            test_fn: "gate_primitives_simulate_end_to_end_and_produce_lrm_truth_table_values",
+        },
+    },
     Entry { id: "LRMC-C7-14", story: "P3", clause: "§8.4.6", status: Status::Pending },
     Entry { id: "LRMC-C10-01", story: "P4", clause: "§10.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "default_discipline_sets_the_named_discipline" } },
     Entry { id: "LRMC-C10-02", story: "P4", clause: "§10.3", status: Status::Closed { file: "crates/piperine-lang/tests/vams_directives.rs", test_fn: "default_transition_sets_rise_and_fall_to_the_same_value" } },

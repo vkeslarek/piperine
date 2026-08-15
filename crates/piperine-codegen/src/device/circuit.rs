@@ -139,6 +139,13 @@ impl<'p> CircuitCompiler<'p> {
         self.design.flat_module(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
 
+    /// A UDP declaration by name (Annex A.5, LRMC-C7-13 T39/T40) — `None`
+    /// when `name` isn't a registered `primitive` (the common case: an
+    /// ordinary module instantiation).
+    pub(super) fn udp(&self, name: &str) -> Option<&'p piperine_lang::ast::PrimitiveDecl> {
+        self.design.udp(name)
+    }
+
     pub(super) fn body(&self, name: &str) -> Result<&'p LoweredBody, CodegenError> {
         self.bodies.get(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
@@ -202,6 +209,14 @@ impl<'p> CircuitCompiler<'p> {
         let mut builder = InstanceBuilder::new(self, top_module, top_body, top_params);
         for (index, instance) in top_module.instances().iter().enumerate() {
             builder.add_instance(index, instance)?;
+        }
+        // Gate primitives (Annex A.4.2, LRMC-C7-13, T40) — `Module::gates`
+        // entries never appear in `instances()` (a gate is not a module
+        // instance), so they get their own walk, continuing the device-id
+        // sequence.
+        for gate in &top_module.gates {
+            let device_id = builder.devices.len();
+            builder.add_gate_instance(device_id, gate)?;
         }
         // SPEC §7.3, B.1, B.10: if the top has its own behavior bodies AND
         // child instances, compile the top's behavior into a device that

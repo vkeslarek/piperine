@@ -1,26 +1,16 @@
 //! IEEE 1364 gate-primitive evaluation (T48, VAMS-18).
 //!
-//! **Scope of this file.** The T48 survey found that `piperine_lang::ast::
-//! item::{GateKind, GateInstantiation}` (parsed at T11) are not lowered by
-//! any `piperine-lang` elaboration pass into the POM, and nothing in
-//! `piperine-codegen` reads them — the fused digital-network JIT
-//! (`kernel/digital/network.rs`, `compile.rs`) compiles `LoweredBody`
-//! module semantics (`always`/`initial` blocks), not raw gate instances.
-//! Wiring a `GateInstantiation` all the way to a JIT'd `Element` is a
-//! POM-lowering + codegen-instantiation change outside this task's stated
-//! `Where` (`kernel/digital/` only) — **SPEC_DEVIATION**, carried forward
-//! like T47's own documented gap. What this file delivers instead: the
-//! LRM-faithful truth-table/strength-resolution *semantics* as pure,
-//! independently tested functions —
-//!
-//! - [`GatePrimitive::eval`] — every §7.2/§7.3 logic-gate primitive's truth
-//!   table (`and`/`nand`/`or`/`nor`/`xor`/`xnor`, Table 7-4; `buf`/`not`,
-//!   Table 7-9; `bufif0`/`bufif1`/`notif0`/`notif1`, Table 7-10).
-//! - [`Strength`] + [`Strength::resolve`] — §7.9's drive-strength table
-//!   (Table 7-3) for combining two drivers on the same net.
-//!
-//! so that whichever pass eventually lowers `GateInstantiation` has a
-//! ready, LRM-verified implementation to call into.
+//! [`GatePrimitive::eval_n`]/`eval1` — every §7.2/§7.3 logic-gate
+//! primitive's truth table (`and`/`nand`/`or`/`nor`/`xor`/`xnor`, Table
+//! 7-4; `buf`/`not`, Table 7-9; `bufif0`/`bufif1`/`notif0`/`notif1`,
+//! Table 7-10) — plus [`Strength`]/`Strength::resolve` (§7.9's
+//! drive-strength table, Table 7-3), dispatched against real
+//! `GateInstance`s (T39's POM lowering) by `piperine-codegen::device::
+//! prim::GateElement` (T40/LRMC-C7-13) — a plain `Element` impl, not a
+//! Cranelift kernel, since a gate's truth table is a closed LRM-fixed
+//! lookup with no user-authored expression to JIT. See
+//! `device/prim.rs`'s own module doc for the dispatch side; root
+//! `tests/vams_gates_and_udps_e2e.rs` is the end-to-end proof.
 //!
 //! **Out of scope, documented not silently dropped:** the switch-level
 //! primitives (`nmos`/`pmos`/`cmos`/`r{n,p,c}mos`, `tran`/`rtran`/
