@@ -80,11 +80,30 @@ impl Default for Preprocessor {
     }
 }
 
+/// §10.5's two predefined macros (LRMC-C10-03, T54) — "shall always be
+/// defined during the parsing of Verilog-AMS source text": `__VAMS_ENABLE__`
+/// unconditionally (Piperine parses nothing but Verilog-AMS), and
+/// `__VAMS_COMPACT_MODELING__` "if and only if all the compact modeling
+/// extensions are supported by the simulator" — `ddx`, the extension named
+/// in the LRM's own §10.5 worked example, is implemented
+/// (`resolve/diff.rs`), and this crate's provenance rule (CLAUDE.md C7)
+/// means every construct that parses at all either lowers faithfully or
+/// fails loud, so there is no silently-unsupported compact-modeling
+/// extension to gate this on.
+const PREDEFINED_MACROS: &[&str] = &["__VAMS_ENABLE__", "__VAMS_COMPACT_MODELING__"];
+
+fn predefined_macro_table() -> HashMap<String, MacroDef> {
+    PREDEFINED_MACROS
+        .iter()
+        .map(|&name| (name.to_string(), MacroDef { params: None, body: String::new() }))
+        .collect()
+}
+
 impl Preprocessor {
     pub fn new() -> Self {
         Self {
             resolver: Box::new(NoIncludes),
-            macros: HashMap::new(),
+            macros: predefined_macro_table(),
             directives: Default::default(),
             open_celldefine: None,
         }
@@ -93,7 +112,7 @@ impl Preprocessor {
     pub fn with_include_resolver(resolver: impl IncludeResolver + 'static) -> Self {
         Self {
             resolver: Box::new(resolver),
-            macros: HashMap::new(),
+            macros: predefined_macro_table(),
             directives: Default::default(),
             open_celldefine: None,
         }
@@ -271,7 +290,11 @@ impl Preprocessor {
             "define" => Ok(skip_to_end_of_logical_line(source, name_end)),
             "undef" if active_now => {
                 let (arg, after) = scan_identifier_after_ws(source, name_end);
-                self.macros.remove(&arg);
+                // §10.5: "the `undef` compiler directive shall have no
+                // effect on predefined Verilog-AMS macros."
+                if !PREDEFINED_MACROS.contains(&arg.as_str()) {
+                    self.macros.remove(&arg);
+                }
                 Ok(after)
             }
             "undef" => Ok(skip_to_end_of_logical_line(source, name_end)),

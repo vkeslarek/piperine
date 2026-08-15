@@ -272,3 +272,59 @@ fn resetall_clears_directive_state_and_parses() {
     assert_eq!(d.directives().default_nettype, NetTypeDefault::Wire);
     assert_eq!(d.directives().unconnected_drive, None);
 }
+
+// ── T54: §10.5 predefined macros (LRMC-C10-03) ───────────────────────────
+
+/// The LRM's own §10.5 portability idiom (Example, `not_gate`, adapted so
+/// the branches are numerically distinguishable): the `` `ifdef
+/// __VAMS_ENABLE__`` branch, with its `from [1:100]` range clause, is
+/// taken rather than the plain, unconstrained `` `else`` branch — proven
+/// by a default deliberately *outside* that range failing elaboration
+/// with a range-violation error. If the `else` branch (no `from` clause)
+/// ran instead, this would elaborate cleanly.
+#[test]
+fn vams_enable_ifdef_takes_the_ams_branch() {
+    let msg = elab_err(
+        "module not_gate (input in, output out);\n\
+         `ifdef __VAMS_ENABLE__\n\
+         parameter integer del = 200 from [1:100];\n\
+         `else\n\
+         parameter integer del = 200;\n\
+         `endif\n\
+         endmodule\n",
+    );
+    assert!(msg.contains("del"), "must name the out-of-range param: {msg}");
+}
+
+#[test]
+fn vams_compact_modeling_ifdef_takes_the_compact_branch() {
+    let msg = elab_err(
+        "module m ();\n\
+         `ifdef __VAMS_COMPACT_MODELING__\n\
+         parameter integer compact = 200 from [1:100];\n\
+         `else\n\
+         parameter integer compact = 200;\n\
+         `endif\n\
+         endmodule\n",
+    );
+    assert!(msg.contains("compact"), "must name the out-of-range param: {msg}");
+}
+
+/// §10.5: "the `undef` compiler directive shall have no effect on
+/// predefined Verilog-AMS macros" — an attempted `` `undef __VAMS_ENABLE__``
+/// does not clear it; the `ifdef` branch (and its range enforcement) is
+/// still taken afterward.
+#[test]
+fn undef_has_no_effect_on_predefined_macros() {
+    let msg = elab_err(
+        "`undef __VAMS_ENABLE__\n\
+         module not_gate (input in, output out);\n\
+         `ifdef __VAMS_ENABLE__\n\
+         parameter integer del = 200 from [1:100];\n\
+         `else\n\
+         parameter integer del = 200;\n\
+         `endif\n\
+         endmodule\n",
+    );
+    assert!(msg.contains("del"), "undef must not have cleared __VAMS_ENABLE__: {msg}");
+}
