@@ -178,6 +178,46 @@ mod tests {
         assert_eq!(state.nets[3], LogicValue::One);
     }
 
+    /// T60 (LRMC-C10-12, model half): a nonzero `#delay` produces an
+    /// output event at exactly `input_time + delay` — not before, not at
+    /// some other offset. `evaluate_until_stable` is the scheduler
+    /// primitive every gate-primitive/UDP dispatch (`piperine-codegen`'s
+    /// `device/prim.rs::GateElement`, which threads its own `#delay`
+    /// straight into `EventSink::emit`'s `delay` argument) and every
+    /// module-path delay ultimately runs on, so proving it here proves it
+    /// for every caller without needing `piperine-codegen`'s own types
+    /// (which this crate must not depend on).
+    #[test]
+    fn nonzero_gate_delay_produces_a_correctly_timed_event() {
+        let mut state = DigitalState::new(2);
+        let input = DigitalNet(0);
+        let output = DigitalNet(1);
+        let delay = 2.0e-6;
+        let mut devices: Vec<Box<dyn Element>> =
+            vec![Box::new(MockInverter { id: 0, input, output, delay })];
+
+        let t_input = 1.0e-6;
+        state.schedule(DigitalEvent {
+            time: t_input,
+            net: input,
+            value: LogicValue::One,
+            source: 0,
+            seq: 0,
+            region: Region::Active,
+        });
+        state.evaluate_until_stable(t_input, &mut devices, Default::default(), &[]).unwrap();
+        assert_eq!(state.nets[output.0], LogicValue::X, "output must not flip before the delay elapses");
+
+        // Just short of the delay: still unchanged.
+        let just_before = t_input + delay - 1.0e-9;
+        state.evaluate_until_stable(just_before, &mut devices, Default::default(), &[]).unwrap();
+        assert_eq!(state.nets[output.0], LogicValue::X, "output must not flip early");
+
+        // Exactly at input_time + delay: the queued event drains and applies.
+        state.evaluate_until_stable(t_input + delay, &mut devices, Default::default(), &[]).unwrap();
+        assert_eq!(state.nets[output.0], LogicValue::Zero, "inverter of One flips exactly at input_time + delay");
+    }
+
     #[test]
     fn test_checkpoint_rollback() {
         let mut state = DigitalState::new(1);

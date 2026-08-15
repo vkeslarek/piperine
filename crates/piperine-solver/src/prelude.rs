@@ -25,6 +25,7 @@ pub use crate::core::output::{BufferSink, Channel, FileError, FileId, FileTable,
 pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
 pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
 pub use crate::digital::{DigitalNet, LogicValue};
+pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;

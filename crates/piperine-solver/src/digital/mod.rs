@@ -6,6 +6,7 @@
 //! comment for why), and the LRM §7.9 per-net driver-receiver table
 //! (`drivers.rs`, T34/LRMC-C7-05).
 
+pub mod delays;
 pub mod drivers;
 pub mod events;
 pub mod interface;
@@ -14,6 +15,7 @@ pub mod scheduler;
 pub mod state;
 pub mod topology;
 
+pub use delays::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
 pub use drivers::{DriverId, DriverKind, DriverRecord, DriverTable, Strength};
 pub use events::{DigitalEvent, DigitalNet, LogicValue};
 pub use state::DigitalState;

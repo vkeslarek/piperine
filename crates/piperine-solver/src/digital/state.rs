@@ -3,6 +3,7 @@
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent, DriverTable};
+use crate::digital::delays::{DelayTable, TimingCheckTable};
 
 /// Frozen scheduler snapshot for checkpoint/rollback.
 #[derive(Clone)]
@@ -29,6 +30,13 @@ pub struct DigitalState {
     /// alongside `nets`/`event_queue` so a rejected transient step can't
     /// leave a stale driver contribution behind.
     pub driver_table: DriverTable,
+    /// LRM §10 per-net delay/timing-check records (T60, LRMC-C10-12 model
+    /// half — `vpi_get_delays`/`vpi_put_delays`'s native equivalent reads/
+    /// writes through these, T61). Static per-net configuration, not
+    /// rolled-back-per-timestep simulation state, so unlike `nets`/
+    /// `event_queue`/`driver_table` these are not part of [`Checkpoint`].
+    pub delay_table: DelayTable,
+    pub timing_checks: TimingCheckTable,
 }
 
 impl DigitalState {
@@ -39,6 +47,8 @@ impl DigitalState {
             labels: Vec::new(),
             checkpoint: None,
             driver_table: DriverTable::new(),
+            delay_table: DelayTable::new(),
+            timing_checks: TimingCheckTable::new(),
         }
     }
 
@@ -55,6 +65,8 @@ impl DigitalState {
             labels,
             checkpoint: None,
             driver_table: DriverTable::new(),
+            delay_table: DelayTable::new(),
+            timing_checks: TimingCheckTable::new(),
         }
     }
 
