@@ -48,6 +48,16 @@ pub struct LineMap {
     pub entries: Vec<(usize, String, usize)>,
 }
 
+/// `` `timescale time_unit / time_precision `` (1364-2005-inherited, T53,
+/// LRMC-C10-10): both fields as base-10 exponents relative to one second
+/// (e.g. `-9` for `ns`), since every legal `` `timescale `` value is
+/// `{1,10,100} × {s,ms,us,ns,ps,fs}` — an exact power of ten.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Timescale {
+    pub unit_exponent: i32,
+    pub precision_exponent: i32,
+}
+
 /// State the preprocessor accumulates while scanning ch.10 compiler
 /// directives.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
@@ -87,6 +97,9 @@ pub struct DirectiveState {
     /// `` `line ``'s remapping table — structurally present, not yet
     /// written.
     pub line_map: LineMap,
+    /// The most recent `` `timescale ``'s `(unit, precision)` exponents —
+    /// `None` before any such directive is seen.
+    pub timescale: Option<Timescale>,
 }
 
 impl DirectiveState {

@@ -212,3 +212,63 @@ fn line_for_offset_without_a_line_directive_is_the_physical_line() {
     assert_eq!(d.line_for_offset(src, src.find("two").unwrap()), 2);
     assert_eq!(d.line_for_offset(src, src.find("three").unwrap()), 3);
 }
+
+// ── T53: `timescale`/`resetall` real behavior (LRMC-C10-10) ─────────────
+
+/// Before this fix, `` `timescale`` text was pushed through untouched by
+/// the preprocessor and lexed as an orphan `Tok::Directive` nothing in
+/// the grammar consumed, so a file containing it failed to parse.
+#[test]
+fn a_file_containing_timescale_parses() {
+    let d = elab("`timescale 1ns/1ps\nmodule m(); endmodule\n");
+    assert!(d.module("m").is_some());
+}
+
+#[test]
+fn timescale_1ns_1ps_records_the_expected_exponents() {
+    use piperine_lang::directives::Timescale;
+    let d = elab("`timescale 1ns/1ps\nmodule m(); endmodule\n");
+    assert_eq!(d.directives().timescale, Some(Timescale { unit_exponent: -9, precision_exponent: -12 }));
+}
+
+/// LRM §6991's own worked value (`` `timescale 1ns / 100ps``) — with
+/// spaces around the slash, which the scanner must tolerate.
+#[test]
+fn timescale_tolerates_spaces_around_the_slash() {
+    use piperine_lang::directives::Timescale;
+    let d = elab("`timescale 1ns / 100ps\nmodule m(); endmodule\n");
+    assert_eq!(d.directives().timescale, Some(Timescale { unit_exponent: -9, precision_exponent: -10 }));
+}
+
+/// `` `timescale ``'s recorded state feeds `%t`'s default rendering
+/// (before any explicit `$timeformat` call) via `TimeFormat::from_timescale`.
+#[test]
+fn timescale_feeds_the_default_time_format() {
+    use piperine_lang::directives::Timescale;
+    use piperine_lang::eval::tasks::{TimeFormat, format_time};
+
+    let ts = Timescale { unit_exponent: -9, precision_exponent: -12 };
+    let fmt = TimeFormat::from_timescale(&ts);
+    assert_eq!(fmt.suffix, "ns");
+    assert_eq!(fmt.precision, 3, "unit ns (-9) to precision ps (-12) is 3 fractional digits");
+    assert_eq!(format_time(2.5e-9, &fmt), "2.500ns");
+}
+
+/// `` `resetall `` clears `default_discipline`/`default_nettype`/
+/// `unconnected_drive` (§10.2's own explicit "in addition to resetall"
+/// clause), and — like `timescale` — leaves no orphan `Tok::Directive`
+/// behind for the grammar to choke on.
+#[test]
+fn resetall_clears_directive_state_and_parses() {
+    use piperine_lang::directives::NetTypeDefault;
+    let d = elab(
+        "`default_discipline ddiscrete\n\
+         `default_nettype none\n\
+         `unconnected_drive pull1\n\
+         `resetall\n\
+         module m(); endmodule\n",
+    );
+    assert_eq!(d.directives().default_discipline, None);
+    assert_eq!(d.directives().default_nettype, NetTypeDefault::Wire);
+    assert_eq!(d.directives().unconnected_drive, None);
+}

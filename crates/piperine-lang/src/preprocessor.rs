@@ -309,15 +309,32 @@ impl Preprocessor {
                 Ok(name_end)
             }
             "nounconnected_drive" => Ok(name_end),
-            "timescale" | "resetall" if active_now => {
-                // Textually inert for this preprocessor's purposes — LRM
-                // §10 places these among the 1364-2005-inherited
-                // directives with no macro-substitution role. They pass
-                // through as directive text for the grammar layer.
-                out.push_str(&source[directive_start..name_end]);
+            "timescale" if active_now => {
+                let (ts, after) = self.parse_timescale(source, name_end);
+                if let Some(ts) = ts {
+                    self.directives.timescale = Some(ts);
+                }
+                Ok(after)
+            }
+            "timescale" => Ok(skip_to_end_of_logical_line(source, name_end)),
+            "resetall" if active_now => {
+                // §10.2: "in addition to `resetall`, if [`default_
+                // discipline`] is used without a discipline name,
+                // discipline resolution will not use a default discipline"
+                // — `resetall` achieves the same clearing effect. The
+                // remaining resets (`default_nettype` back to `wire`,
+                // `unconnected_drive` off, any open `celldefine` closed
+                // without being recorded) follow the same "back to the
+                // language default" reading, consistent with 1364-2005's
+                // own `resetall` (deferred wholesale, like the other
+                // directives in this block — see `handle_line`'s note).
+                self.directives.default_discipline = None;
+                self.directives.default_nettype = crate::directives::NetTypeDefault::Wire;
+                self.directives.unconnected_drive = None;
+                self.open_celldefine = None;
                 Ok(name_end)
             }
-            "timescale" | "resetall" => Ok(name_end),
+            "resetall" => Ok(name_end),
             _ if active_now => {
                 self.handle_macro_invocation(source, directive_start, name_end, name, out, expanding)
             }
@@ -392,6 +409,30 @@ impl Preprocessor {
         })?;
         self.directives.default_transition = Some((value, value));
         Ok(after)
+    }
+
+    /// 1364-2005-inherited `` `timescale time_unit / time_precision ``
+    /// (LRMC-C10-10, T53) — same wholesale-deferral note as `handle_line`.
+    /// The standard form: each of `time_unit`/`time_precision` is a
+    /// `{1,10,100}` multiplier immediately followed by a `{s,ms,us,ns,ps,
+    /// fs}` unit, no space (e.g. `1ns`, `100ps`). Returns `None` (and
+    /// leaves the directive's state untouched) rather than guessing on a
+    /// malformed value — `` `timescale `` is advisory, not something a
+    /// bad argument should hard-fail elaboration over.
+    fn parse_timescale(&self, source: &str, name_end: usize) -> (Option<crate::directives::Timescale>, usize) {
+        let ws_end = skip_inline_ws(source, name_end);
+        let Some((unit_exponent, after_unit)) = scan_time_literal(source, ws_end) else {
+            return (None, skip_to_end_of_logical_line(source, name_end));
+        };
+        let after_slash = skip_inline_ws(source, after_unit);
+        if source.as_bytes().get(after_slash) != Some(&b'/') {
+            return (None, skip_to_end_of_logical_line(source, name_end));
+        }
+        let after_slash_ws = skip_inline_ws(source, after_slash + 1);
+        let Some((precision_exponent, after_prec)) = scan_time_literal(source, after_slash_ws) else {
+            return (None, skip_to_end_of_logical_line(source, name_end));
+        };
+        (Some(crate::directives::Timescale { unit_exponent, precision_exponent }), after_prec)
     }
 
     /// 1364-2005-inherited `` `line number "filename" level `` (LRMC-C10-08,
@@ -714,6 +755,43 @@ fn scan_macro_body(source: &str, start: usize) -> (String, usize) {
         }
     }
     (body.trim().to_string(), pos)
+}
+
+/// Scans one `` `timescale `` field: a `{1,10,100}` multiplier immediately
+/// followed by a `{s,ms,us,ns,ps,fs}` unit, no intervening space. Returns
+/// the value as a base-10 exponent relative to one second, or `None` if
+/// `start` isn't the beginning of a well-formed field.
+fn scan_time_literal(source: &str, start: usize) -> Option<(i32, usize)> {
+    let bytes = source.as_bytes();
+    let mut pos = start;
+    let digits_start = pos;
+    while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+        pos += 1;
+    }
+    if pos == digits_start {
+        return None;
+    }
+    let mult: u32 = source[digits_start..pos].parse().ok()?;
+    let mult_exp = match mult {
+        1 => 0,
+        10 => 1,
+        100 => 2,
+        _ => return None,
+    };
+    let unit_start = pos;
+    while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
+        pos += 1;
+    }
+    let base_exp = match &source[unit_start..pos] {
+        "s" => 0,
+        "ms" => -3,
+        "us" => -6,
+        "ns" => -9,
+        "ps" => -12,
+        "fs" => -15,
+        _ => return None,
+    };
+    Some((base_exp + mult_exp, pos))
 }
 
 fn scan_quoted_path(source: &str, start: usize) -> (String, usize) {

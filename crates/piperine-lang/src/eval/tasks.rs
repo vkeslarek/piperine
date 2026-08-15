@@ -703,6 +703,32 @@ impl Default for TimeFormat {
     }
 }
 
+impl TimeFormat {
+    /// Base IEEE 1364's own default `%t` formatting rule, before any
+    /// explicit `$timeformat` call overrides it: display at the module's
+    /// `` `timescale `` time *unit*, with enough fractional digits to
+    /// resolve down to the time *precision* (T53, LRMC-C10-10 — feeds
+    /// `` `timescale ``'s recorded state into `%t` rendering). Piperine
+    /// tracks one crate-global most-recent `` `timescale `` rather than a
+    /// per-module one (`Timescale`'s own doc comment: LRM allows a design
+    /// spanning multiple timescale-bearing files; this is a disclosed
+    /// simplification, not silently wrong — `$timeformat`, once called,
+    /// still overrides this unconditionally).
+    pub fn from_timescale(ts: &crate::directives::Timescale) -> Self {
+        let suffix = match ts.unit_exponent {
+            0 => "s",
+            -3 => "ms",
+            -6 => "us",
+            -9 => "ns",
+            -12 => "ps",
+            -15 => "fs",
+            _ => "",
+        };
+        let precision = (ts.unit_exponent - ts.precision_exponent).max(0) as usize;
+        Self { units_exponent: ts.unit_exponent, precision, suffix: suffix.to_string(), min_width: 0 }
+    }
+}
+
 /// Renders `abstime_seconds` per `fmt` — the `%t` specifier's real
 /// behavior once `$timeformat` has been called.
 pub fn format_time(abstime_seconds: f64, fmt: &TimeFormat) -> String {
