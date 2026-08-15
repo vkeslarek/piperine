@@ -57,11 +57,27 @@ fn event_exprs_to_sources(events: &[EventExpr]) -> Result<Vec<EventSource>, Code
 }
 
 fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenError> {
-    let EventExpr::Level(e) = event else {
-        // Posedge/Negedge/ImplicitAll are digital-only forms — Annex C
-        // (T27) rejects them inside an analog behavior before flattening
-        // ever runs; this is a defensive empty list, not a live path.
-        return Ok(vec![]);
+    // §5.10.5 (LRMC-C5-05): "analog behavior can be made sensitive to
+    // digital events, including posedge events, negedge events" — no
+    // longer rejected by Annex C (`elab::typecheck`'s own T27 narrowing),
+    // so this is a live path, not defensive. A digital signal reads as
+    // 0/1 through the D2A bridge (the same var bank `Named`/T26 uses), so
+    // `posedge sig`/`negedge sig` is exactly a rising/falling crossing of
+    // that value through zero — reuses `Cross` rather than inventing a
+    // separate digital-edge detector.
+    let e = match event {
+        EventExpr::Posedge(e) => {
+            return Ok(vec![EventSource::Cross { expr: e.clone(), dir: CrossDir::Rising }]);
+        }
+        EventExpr::Negedge(e) => {
+            return Ok(vec![EventSource::Cross { expr: e.clone(), dir: CrossDir::Falling }]);
+        }
+        // `@*`/`@(*)` (ImplicitAll) has no fixed watched-expression shape
+        // (it means "every signal read in the body") — a distinct,
+        // larger feature (needs body-wide signal collection), genuinely
+        // out of LRMC-C5-05's scope, still a defensive empty list.
+        EventExpr::ImplicitAll => return Ok(vec![]),
+        EventExpr::Level(e) => e,
     };
     // `initial_step`/`final_step` take no mandatory args, so the parser
     // accepts the bare-identifier spelling (`@(initial_step)`, no parens)

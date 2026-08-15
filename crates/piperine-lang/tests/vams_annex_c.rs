@@ -30,7 +30,11 @@ fn non_blocking_assignment_inside_analog_block_fails_loud_citing_annex_c() {
 }
 
 #[test]
-fn posedge_event_control_inside_analog_block_fails_loud() {
+fn posedge_event_control_inside_analog_block_is_legal_per_5_10_5() {
+    // LRMC-C5-05 (T27): §5.10.5 explicitly permits "analog behavior ...
+    // made sensitive to digital events, including posedge events" — this
+    // was a real, undisclosed over-broad rejection before T27 (the whole
+    // point of this LRMC-ID), not a construct the LRM ever restricted.
     let src = "
         module m (inout electrical p, inout electrical n);
             analog begin
@@ -38,9 +42,8 @@ fn posedge_event_control_inside_analog_block_fails_loud() {
             end
         endmodule
     ";
-    let msg = elab_err(src);
-    assert!(msg.contains("posedge"), "names the offending construct: {msg}");
-    assert!(msg.contains("Annex C"), "cites the LRM annex: {msg}");
+    let d = elab(src);
+    d.module("m").expect("posedge inside analog elaborates per §5.10.5");
 }
 
 #[test]

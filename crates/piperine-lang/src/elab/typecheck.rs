@@ -12,14 +12,21 @@
 //! fails loud citing the clause (E4002 `AnnexCSubsetViolation`, declared
 //! at T19). Checked today: non-blocking assignment (`<=`, digital-only —
 //! LRM §5.5 restricts analog blocks to blocking `=` and contribution
-//! `<+`), digital edge-sensitive event control (`posedge`/`negedge`
-//! inside `@(...)`), and `casex`/`casez` (Annex C.7: "`casex` and `casez`
-//! are not supported in Verilog-A"). This is deliberately an **ongoing**
-//! gate (VAMS-25): later phases (full 1364 digital, ch. 7 mixed-signal)
-//! add more Annex-C-restricted constructs to the same walk rather than
+//! `<+`) and `casex`/`casez` (Annex C.7: "`casex` and `casez` are not
+//! supported in Verilog-A"). This is deliberately an **ongoing** gate
+//! (VAMS-25): later phases (full 1364 digital, ch. 7 mixed-signal) add
+//! more Annex-C-restricted constructs to the same walk rather than
 //! opening a second mechanism.
+//!
+//! **T27 (LRMC-C5-05) narrowing:** digital edge/state-change/named-event
+//! sensitivity (`@(posedge clk)`, `@(negedge clk)`, `@(some_signal)`,
+//! `@(named_event)`) inside `analog` is explicitly legal per §5.10.5 —
+//! removed from this gate rather than merely un-enforced (the blanket
+//! `posedge`/`negedge` rejection was over-broad from day one, since the
+//! LRM's own restriction only ever covered *behavior*, not this specific
+//! sensitivity form).
 
-use crate::ast::{EventExpr, Stmt};
+use crate::ast::Stmt;
 
 use crate::pom::{Design, ElabError, ElabErrorKind};
 
@@ -62,12 +69,12 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
                 check_analog_subset(&arm.body, errors);
             }
         }
-        Stmt::EventControl { events, body, span } => {
-            for e in events {
-                if matches!(e, EventExpr::Posedge(_) | EventExpr::Negedge(_)) {
-                    errors.push(annex_c_error("digital edge-sensitive event control (`posedge`/`negedge`)", *span));
-                }
-            }
+        // §5.10.5: "analog behavior can be made sensitive to digital
+        // events, including posedge events, negedge events, state change
+        // events, and named events" — explicitly legal (LRMC-C5-05), not
+        // an Annex C violation. Still recurses into the body for whatever
+        // it contains.
+        Stmt::EventControl { body, .. } => {
             check_analog_subset(body, errors);
         }
         Stmt::Block { stmts, .. } => stmts.iter().for_each(|s| check_analog_subset(s, errors)),
