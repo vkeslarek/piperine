@@ -501,12 +501,47 @@ pub struct ParamsetStatement {
     pub value: Expr,
 }
 
-/// One `connect A_discipline, B_discipline;` rule inside a `connectrules`
-/// block, LRM chapter 7 / Annex F.
+/// `connect_mode`, §7.7.1 Syntax 7-6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectMode {
+    Merged,
+    Split,
+}
+
+/// `connect_port_overrides`, §7.7.1 Syntax 7-6 — the four alternatives,
+/// each a discipline pair with an optional per-side direction qualifier.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConnectPortOverrides {
+    /// `discipline_identifier , discipline_identifier`
+    Both(String, String),
+    /// `input discipline_identifier , output discipline_identifier`
+    InputOutput(String, String),
+    /// `output discipline_identifier , input discipline_identifier`
+    OutputInput(String, String),
+    /// `inout discipline_identifier , inout discipline_identifier`
+    InOut(String, String),
+}
+
+/// One rule inside a `connectrules` block, LRM chapter 7 / Annex F.
+///
+/// Two forms coexist here: the legacy bare `connect A_discipline,
+/// B_discipline;` shell (T11) — `connectmodule: None`, `disciplines` holds
+/// the pair, `mode`/`params`/`overrides` empty — used by
+/// [`super::super::elab::lower::connect::eligible_bridge`]'s discipline-pair
+/// eligibility check; and the real `connect_insertion` production
+/// (§7.7.1 Syntax 7-6, T31/LRMC-C7-02): `connect connectmodule_identifier
+/// [connect_mode] [parameter_value_assignment] [connect_port_overrides] ;`
+/// — `connectmodule: Some(name)`, with `disciplines` still populated from
+/// `overrides` (either side, flattened) so `eligible_bridge`'s pair lookup
+/// works unchanged for both forms.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectRule {
     pub span: Span,
+    pub connectmodule: Option<String>,
     pub disciplines: Vec<String>,
+    pub mode: Option<ConnectMode>,
+    pub params: Vec<PortConnection>,
+    pub overrides: Option<ConnectPortOverrides>,
     pub body: Vec<Stmt>,
 }
 

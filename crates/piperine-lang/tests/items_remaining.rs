@@ -158,6 +158,109 @@ fn connectrules_with_semicolon_only_rule_parses() {
     assert!(cr.rules[0].body.is_empty());
 }
 
+// ── connect_insertion, §7.7.1 Syntax 7-6 (LRMC-C7-02, T31) ──────────────
+
+#[test]
+fn connect_insertion_bare_module_name_parses() {
+    let src = "connectrules cr; connect bridge; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    let rule = &cr.rules[0];
+    assert_eq!(rule.connectmodule, Some("bridge".to_string()));
+    assert_eq!(rule.mode, None);
+    assert!(rule.params.is_empty());
+    assert_eq!(rule.overrides, None);
+}
+
+#[test]
+fn connect_insertion_with_merged_mode_parses() {
+    let src = "connectrules cr; connect bridge merged; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(cr.rules[0].mode, Some(ConnectMode::Merged));
+}
+
+#[test]
+fn connect_insertion_with_split_mode_parses() {
+    let src = "connectrules cr; connect bridge split; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(cr.rules[0].mode, Some(ConnectMode::Split));
+}
+
+#[test]
+fn connect_insertion_with_parameter_value_assignment_parses() {
+    let src = "connectrules cr; connect bridge #(.res(50)); endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    let rule = &cr.rules[0];
+    assert_eq!(rule.params.len(), 1);
+}
+
+#[test]
+fn connect_insertion_bare_port_overrides_parses() {
+    let src = "connectrules cr; connect bridge logic, electrical; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    let rule = &cr.rules[0];
+    assert_eq!(rule.connectmodule, Some("bridge".to_string()));
+    assert_eq!(
+        rule.overrides,
+        Some(ConnectPortOverrides::Both("logic".to_string(), "electrical".to_string()))
+    );
+    assert_eq!(rule.disciplines, vec!["logic".to_string(), "electrical".to_string()]);
+}
+
+#[test]
+fn connect_insertion_input_output_overrides_parses() {
+    let src = "connectrules cr; connect bridge input logic, output electrical; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(
+        cr.rules[0].overrides,
+        Some(ConnectPortOverrides::InputOutput("logic".to_string(), "electrical".to_string()))
+    );
+}
+
+#[test]
+fn connect_insertion_output_input_overrides_parses() {
+    let src = "connectrules cr; connect bridge output logic, input electrical; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(
+        cr.rules[0].overrides,
+        Some(ConnectPortOverrides::OutputInput("logic".to_string(), "electrical".to_string()))
+    );
+}
+
+#[test]
+fn connect_insertion_inout_overrides_parses() {
+    let src = "connectrules cr; connect bridge inout logic, inout electrical; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(
+        cr.rules[0].overrides,
+        Some(ConnectPortOverrides::InOut("logic".to_string(), "electrical".to_string()))
+    );
+}
+
+#[test]
+fn connect_insertion_full_form_with_mode_params_and_overrides_parses() {
+    // Every optional piece of Syntax 7-6 present at once.
+    let src = "connectrules cr; connect bridge merged #(.res(50)) logic, electrical; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    let rule = &cr.rules[0];
+    assert_eq!(rule.connectmodule, Some("bridge".to_string()));
+    assert_eq!(rule.mode, Some(ConnectMode::Merged));
+    assert_eq!(rule.params.len(), 1);
+    assert_eq!(
+        rule.overrides,
+        Some(ConnectPortOverrides::Both("logic".to_string(), "electrical".to_string()))
+    );
+}
+
+#[test]
+fn legacy_bare_discipline_pair_shell_still_parses_unchanged() {
+    // T11's pre-existing shell form (no connectmodule_identifier) must
+    // keep working: `connectmodule` stays `None`.
+    let src = "connectrules cr; connect electrical, logic; endconnectrules";
+    let cr = grammar(src).parse_connectrules_decl().unwrap();
+    assert_eq!(cr.rules[0].connectmodule, None);
+    assert_eq!(cr.rules[0].disciplines, vec!["electrical".to_string(), "logic".to_string()]);
+}
+
 // ── config ─────────────────────────────────────────────────────────────
 
 #[test]

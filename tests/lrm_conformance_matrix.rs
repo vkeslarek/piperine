@@ -85,7 +85,15 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C5-07", story: "P2", clause: "§6.4", status: Status::Closed { file: "crates/piperine-lang/tests/vams_paramset.rs", test_fn: "paramset_instance_resolves_to_the_associated_module_with_bound_params" } },
     Entry { id: "LRMC-C5-08", story: "P2", clause: "§6.2.2", status: Status::Closed { file: "crates/piperine-lang/tests/vams_array_of_instances.rs", test_fn: "array_of_instances_parses_and_elaborates_to_the_specified_range" } },
     Entry { id: "LRMC-C7-01", story: "P3", clause: "§7.4.4.1/§7.4.4.3/§7.5-7.8", status: Status::Pending },
-    Entry { id: "LRMC-C7-02", story: "P3", clause: "§7.7.1", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-02",
+        story: "P3",
+        clause: "§7.7.1",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/items_remaining.rs",
+            test_fn: "connect_insertion_full_form_with_mode_params_and_overrides_parses",
+        },
+    },
     Entry { id: "LRMC-C7-03", story: "P3", clause: "§7.7.3/§7.7.4", status: Status::Pending },
     Entry { id: "LRMC-C7-04", story: "P3", clause: "§7.4.4.3", status: Status::Pending },
     Entry { id: "LRMC-C7-05", story: "P3", clause: "§7.6/§9.22-9.23", status: Status::Pending },

@@ -1214,12 +1214,101 @@ impl Grammar {
         Ok(ConnectrulesDecl { span: Span::new(start.start, end.end), name, rules })
     }
 
+    /// `connect_rule`. Two productions distinguished by lookahead after the
+    /// first identifier: a bare `,` next means the legacy shell's
+    /// discipline-pair form (`connect A, B;`); anything else means the
+    /// first identifier is a `connectmodule_identifier` and what follows is
+    /// `connect_insertion`, §7.7.1 Syntax 7-6:
+    /// `connect connectmodule_identifier [connect_mode]
+    /// [parameter_value_assignment] [connect_port_overrides] ;`
     fn parse_connect_rule(&mut self) -> Result<ConnectRule, ParseError> {
         let start = self.expect_kw("connect")?;
-        let mut disciplines = vec![self.expect_ident()?.0];
-        while self.eat_punct(",") {
-            disciplines.push(self.expect_ident()?.0);
+        let (first, _) = self.expect_ident()?;
+
+        if self.at_punct(",") {
+            let mut disciplines = vec![first];
+            while self.eat_punct(",") {
+                disciplines.push(self.expect_ident()?.0);
+            }
+            let mut body = vec![];
+            let end = if self.eat_punct("{") {
+                while !self.at_punct("}") {
+                    if self.at_eof() {
+                        return Err(self.eof_error("'}'".to_string()));
+                    }
+                    body.push(self.parse_stmt()?);
+                }
+                self.expect_punct("}")?
+            } else {
+                self.expect_punct(";")?
+            };
+            return Ok(ConnectRule {
+                span: Span::new(start.start, end.end),
+                connectmodule: None,
+                disciplines,
+                mode: None,
+                params: vec![],
+                overrides: None,
+                body,
+            });
         }
+
+        let connectmodule = first;
+        let mode = if self.eat_kw("merged") {
+            Some(ConnectMode::Merged)
+        } else if self.eat_kw("split") {
+            Some(ConnectMode::Split)
+        } else {
+            None
+        };
+
+        let mut params = vec![];
+        if self.eat_punct("#") {
+            self.expect_punct("(")?;
+            if !self.at_punct(")") {
+                params.push(self.parse_port_connection()?);
+                while self.eat_punct(",") {
+                    params.push(self.parse_port_connection()?);
+                }
+            }
+            self.expect_punct(")")?;
+        }
+
+        let overrides = if self.eat_kw("input") {
+            let (d1, _) = self.expect_ident()?;
+            self.expect_punct(",")?;
+            self.expect_kw("output")?;
+            let (d2, _) = self.expect_ident()?;
+            Some(ConnectPortOverrides::InputOutput(d1, d2))
+        } else if self.eat_kw("output") {
+            let (d1, _) = self.expect_ident()?;
+            self.expect_punct(",")?;
+            self.expect_kw("input")?;
+            let (d2, _) = self.expect_ident()?;
+            Some(ConnectPortOverrides::OutputInput(d1, d2))
+        } else if self.eat_kw("inout") {
+            let (d1, _) = self.expect_ident()?;
+            self.expect_punct(",")?;
+            self.expect_kw("inout")?;
+            let (d2, _) = self.expect_ident()?;
+            Some(ConnectPortOverrides::InOut(d1, d2))
+        } else if !self.at_punct(";") && !self.at_punct("{") {
+            let (d1, _) = self.expect_ident()?;
+            self.expect_punct(",")?;
+            let (d2, _) = self.expect_ident()?;
+            Some(ConnectPortOverrides::Both(d1, d2))
+        } else {
+            None
+        };
+
+        let disciplines = match &overrides {
+            Some(ConnectPortOverrides::Both(a, b))
+            | Some(ConnectPortOverrides::InputOutput(a, b))
+            | Some(ConnectPortOverrides::OutputInput(a, b))
+            | Some(ConnectPortOverrides::InOut(a, b)) => vec![a.clone(), b.clone()],
+            None => vec![],
+        };
+
         let mut body = vec![];
         let end = if self.eat_punct("{") {
             while !self.at_punct("}") {
@@ -1232,7 +1321,15 @@ impl Grammar {
         } else {
             self.expect_punct(";")?
         };
-        Ok(ConnectRule { span: Span::new(start.start, end.end), disciplines, body })
+        Ok(ConnectRule {
+            span: Span::new(start.start, end.end),
+            connectmodule: Some(connectmodule),
+            disciplines,
+            mode,
+            params,
+            overrides,
+            body,
+        })
     }
 
     /// `config_declaration`, inherited from 1364 (Annex A.1.1). Piperine

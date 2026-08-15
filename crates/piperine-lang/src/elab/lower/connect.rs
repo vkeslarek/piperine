@@ -217,7 +217,11 @@ mod tests {
                 name: "rules".to_string(),
                 rules: vec![ConnectRule {
                     span: span(),
+                    connectmodule: None,
                     disciplines: disciplines.iter().map(|s| s.to_string()).collect(),
+                    mode: None,
+                    params: vec![],
+                    overrides: None,
                     body: vec![],
                 }],
             },
