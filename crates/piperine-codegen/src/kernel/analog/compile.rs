@@ -800,6 +800,21 @@ impl<'m> AnalogCompiler<'m> {
             Some(self.compile_rows("bound_step", &[min])?)
         };
 
+        // LRMC-C7-11 (T42): `$discontinuity` fired-this-evaluation flag —
+        // folded via logical-or (`max` over 0.0/1.0 flags, mirroring
+        // bound_step's `min` fold) across every `$discontinuity(...)`
+        // call site, so any one firing anywhere in the behavior sets it.
+        let discontinuities = std::mem::take(&mut self.flat.discontinuities);
+        let discontinuity_id = if discontinuities.is_empty() {
+            None
+        } else {
+            let any = discontinuities
+                .into_iter()
+                .reduce(|a, b| call("max", vec![a, b]))
+                .expect("non-empty");
+            Some(self.compile_rows("discontinuity", &[any])?)
+        };
+
         self.jit
             .finalize_definitions()
             .map_err(|e| CodegenError::Module(e.to_string()))?;
@@ -913,6 +928,7 @@ impl<'m> AnalogCompiler<'m> {
         let event_triggers = event_triggers_id.map(|id| get(&self.jit, id));
         let event_actions = event_actions_id.map(|id| get(&self.jit, id));
         let bound_step = bound_step_id.map(|id| get(&self.jit, id));
+        let discontinuity = discontinuity_id.map(|id| get(&self.jit, id));
         // Extracted before `self.jit` moves into `core` (same pattern as every
         // other finalized function pointer above).
         let param_jacobian = param_jac_id.map(|id| get_param(&self.jit, id));
@@ -1017,6 +1033,7 @@ impl<'m> AnalogCompiler<'m> {
             diagnostics,
             diagnostic_fmt_ids,
             bound_step,
+            discontinuity,
             disto2,
             disto2_pairs,
             disto3,

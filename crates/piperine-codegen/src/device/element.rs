@@ -176,6 +176,10 @@ impl AnalogDevice for PiperineDevice {
             .map_or(f64::INFINITY, AnalogInstance::bound_step_hint)
     }
 
+    fn discontinuity(&self) -> bool {
+        self.analog.as_ref().is_some_and(AnalogInstance::discontinuity)
+    }
+
     /// Forward the run's check posture to the analog half (DVC-12): the
     /// solver calls `update` with the `Context` each assemble, so the
     /// accept hook always sees the current posture — run data, not

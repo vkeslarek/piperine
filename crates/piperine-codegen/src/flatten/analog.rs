@@ -278,6 +278,11 @@ pub struct FlatAnalog {
     pub forces: Vec<FlatForce>,
     pub ac_stims: Vec<FlatAcStim>,
     pub bound_steps: Vec<PomExpr>,
+    /// `$discontinuity(...)` call sites (LRMC-C7-11, T42): each entry is
+    /// `guard ? 1.0 : 0.0` (unconditional `1.0` when `guard` is `None`) —
+    /// `kernel/analog/compile.rs` folds them via `max` into one
+    /// fired-this-evaluation flag.
+    pub discontinuities: Vec<PomExpr>,
     pub noise: Vec<(NodeId, NodeId, PomExpr, Option<PomExpr>)>,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub runtime_states: Vec<(StateId, PomExpr)>,
@@ -644,7 +649,25 @@ impl<'m> AnalogFlattener<'m> {
                         "finish" | "stop" => {
                             return Err(CodegenError::unsupported("$finish in an analog body"));
                         }
-                        "discontinuity" => {}
+                        // §8.4.4/§9.5.3 (LRMC-C7-11, T42): folded into a
+                        // fired-this-evaluation flag by `compile.rs`, not
+                        // discarded. `degree` (LRM: which derivative order
+                        // is discontinuous) is accepted but not consulted
+                        // — every fire forces the same restart
+                        // (`prev_h = 0`, drop to backward Euler for the
+                        // next TR stage) regardless of degree; a
+                        // degree-sensitive order selection is a documented
+                        // scope limit (mirrors `$bound_step`'s own
+                        // unconditional-collection precedent this arm
+                        // otherwise follows exactly).
+                        "discontinuity" => {
+                            let _ = args;
+                            let flag = match guard {
+                                None => lit(1.0),
+                                Some(g) => select(g.clone(), lit(1.0), lit(0.0)),
+                            };
+                            self.out.discontinuities.push(flag);
+                        }
                         n @ ("display" | "write" | "strobe" | "monitor"
                             | "warning" | "warn" | "error" | "fatal" | "info") =>
                         {

@@ -225,6 +225,9 @@ pub struct AnalogKernel {
     pub(super) diagnostic_fmt_ids: Vec<u32>,
     /// Minimum `$bound_step` expression; `None` without bound steps.
     pub(super) bound_step: Option<AnalogFn>,
+    /// `$discontinuity` fired-this-evaluation flag (LRMC-C7-11, T42);
+    /// `None` without any `$discontinuity` call.
+    pub(super) discontinuity: Option<AnalogFn>,
     /// `.disto` 2nd-derivative kernel (DISTO-03): one compiled function per
     /// ordered branch pair `(j, k)` in `disto2_pairs` (same index), each
     /// writing `∂²(contrib)/∂V(j)∂V(k)` per contribution (resistive first,
@@ -750,6 +753,10 @@ impl AnalogKernel {
         self.bound_step.is_some()
     }
 
+    pub fn has_discontinuity(&self) -> bool {
+        self.discontinuity.is_some()
+    }
+
     /// Bounds contract for every `eval_*` entry point: the JIT'd code
     /// loads `volts[0..num_terminals]`, `params[0..num_params]`,
     /// `state[0..num_state_slots]`, and `vars[0..num_vars]` unchecked —
@@ -930,6 +937,22 @@ impl AnalogKernel {
                 out[0]
             }
             None => f64::INFINITY,
+        }
+    }
+
+    /// Whether `$discontinuity` fired anywhere in this device's behavior
+    /// for the given inputs — a compiled boolean-as-`f64` (nonzero = true,
+    /// matching the `select`-built flag `flatten/analog.rs` folds every
+    /// `$discontinuity(...)` call site into).
+    pub fn eval_discontinuity(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx) -> bool {
+        match self.discontinuity {
+            Some(f) => {
+                self.check_input_lens(volts, params, state, vars);
+                let mut out = [0.0];
+                Self::call(f, volts, params, state, vars, sim, &mut out);
+                out[0] != 0.0
+            }
+            None => false,
         }
     }
 

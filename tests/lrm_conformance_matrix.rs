@@ -134,7 +134,15 @@ const REGISTRY: &[Entry] = &[
     Entry { id: "LRMC-C7-08", story: "P3", clause: "§9.2/§9.4.2/§9.4.4", status: Status::Pending },
     Entry { id: "LRMC-C7-09", story: "P3", clause: "§9.2-9.23", status: Status::Pending },
     Entry { id: "LRMC-C7-10", story: "P3", clause: "§9.2", status: Status::Pending },
-    Entry { id: "LRMC-C7-11", story: "P3", clause: "§9.17.1", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-11",
+        story: "P3",
+        clause: "§9.17.1",
+        status: Status::Closed {
+            file: "crates/piperine-codegen/tests/vams_discontinuity.rs",
+            test_fn: "discontinuity_prevents_step_control_mis_stepping_across_the_jump",
+        },
+    },
     Entry {
         id: "LRMC-C7-12",
         story: "P3",

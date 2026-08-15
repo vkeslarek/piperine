@@ -190,6 +190,17 @@ pub trait AnalogDevice: Send + Sync {
     /// Largest timestep the element can tolerate from here (`$bound_step`).
     fn bound_step_hint(&self) -> f64 { f64::INFINITY }
 
+    /// Whether `$discontinuity` fired anywhere in this element's behavior
+    /// during the just-accepted step (§8.4.4/§9.5.3, LRMC-C7-11) — "the
+    /// simulator shall not use information prior to the current time step
+    /// in any prediction for time steps after this one." Read once per
+    /// accepted step, alongside a scheduled-parameter-set jump
+    /// (`analyses/transient.rs`'s own `apply_scheduled_sets` check) — both
+    /// force the same restart: the next TR stage's previous-derivative
+    /// term is dropped rather than re-derived across the jump. Default
+    /// `false` — an element without a `$discontinuity` call inherits this.
+    fn discontinuity(&self) -> bool { false }
+
     /// Absolute landing points this element requires the integrator to hit
     /// within `(from, from + horizon]`. Time-varying source models (pulse
     /// edges, PWL corners, `@timer` fires) and digital switching times declare

@@ -1042,6 +1042,14 @@ impl<'a> TransientSolver<'a> {
             // must not re-derive a previous current across it.
             landed_on_breakpoint = true;
         }
+        // LRMC-C7-11 (T42): a device announcing `$discontinuity` at this
+        // accepted point gets the identical treatment — "the simulator
+        // shall not use information prior to the current time step in any
+        // prediction for time steps after this one" (§8.4.4/§9.5.3), the
+        // same restart a scheduled-set jump or a landed breakpoint forces.
+        if self.system.circuit.devices.iter().any(|dev| dev.discontinuity()) {
+            landed_on_breakpoint = true;
+        }
         // This step's size seeds the next step's TR-stage
         // previous-current re-derivation — UNLESS the step landed on a
         // declared discontinuity, in which case the history spans a

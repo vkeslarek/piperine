@@ -1512,6 +1512,16 @@ impl AnalogInstance {
             .eval_bound_step(&self.last_volts, &self.params, &self.state, &self.vars, &self.sim)
     }
 
+    /// Whether `$discontinuity` fired anywhere in this device's behavior
+    /// at the last accepted point (LRMC-C7-11, T42).
+    pub fn discontinuity(&self) -> bool {
+        if !self.kernel.has_discontinuity() {
+            return false;
+        }
+        self.kernel
+            .eval_discontinuity(&self.last_volts, &self.params, &self.state, &self.vars, &self.sim)
+    }
+
     /// The last accepted terminal voltages (kernel terminal order).
     /// Used by the A2D bridge to pass analog voltages to the digital side.
     pub fn last_volts(&self) -> &[f64] {
