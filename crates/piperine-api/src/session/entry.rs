@@ -115,6 +115,23 @@ impl Session {
         &self.module
     }
 
+    /// `$test$plusargs(name)` (§9.12, T48) — true if `SessionBuilder::
+    /// plusargs` was given a `+name...` token. `false` (never an error)
+    /// when no `plusargs` were set at all.
+    pub fn test_plusarg(&self, name: &str) -> bool {
+        self.opts.plusargs.as_ref().is_some_and(|p| p.test(name))
+    }
+
+    /// `$value$plusargs("name=%spec", var)` (§9.12, T48) — see
+    /// `piperine_lang::eval::tasks::PlusArgs::value` for the exact spec
+    /// grammar and error conditions.
+    pub fn value_plusarg(&self, spec: &str) -> Result<Option<piperine_lang::Value>, Error> {
+        match &self.opts.plusargs {
+            Some(p) => p.value(spec).map_err(|e| Error::Measurement(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
     /// The top module's digital net values as reals (0/1; X/Z read as NaN so
     /// an assertion on an undriven net fails loud, never silently passes).
     /// Public: hosts that drive `CircuitInstance` directly (the Python live
@@ -902,6 +919,26 @@ impl SessionBuilder<'_> {
     /// simulation output deterministically (tests; an embedding UI).
     pub fn output(mut self, sink: Rc<dyn piperine_solver::prelude::SimOutput>) -> Self {
         self.opts.output = Some(sink);
+        self
+    }
+
+    /// Sets this session's `+plusarg` tokens (§9.12, LRMC-C7-09, T48) —
+    /// queryable through `Session::test_plusarg`/`value_plusarg`.
+    /// `args` are typically the host process's own `argv`, unfiltered:
+    /// non-`+`-prefixed entries are ignored (`PlusArgs::new`).
+    ///
+    /// **SPEC_DEVIATION, disclosed:** this reaches the *host* surface
+    /// (a Rust caller queries the compiled `Session`), not yet a
+    /// `.vams` source calling `$test$plusargs`/`$value$plusargs` inside
+    /// an analog/digital body — that needs JIT dispatch this task
+    /// didn't reach (the same "pure semantics + host API now, JIT
+    /// wiring later" tier `$fopen`/`$random`/the driver-access family
+    /// already live at). The Python binding (MD-22's other named
+    /// surface) isn't touched here either — this task's own
+    /// investigation didn't extend into `piperine-python`'s PyO3
+    /// surface, a separate crate this session had no prior context on.
+    pub fn plusargs(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.opts.plusargs = Some(piperine_lang::eval::tasks::PlusArgs::new(args));
         self
     }
 

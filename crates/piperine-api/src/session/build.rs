@@ -41,6 +41,11 @@ pub(super) struct BuildOptions {
     /// this task; `Some` overrides that default for every analysis this
     /// session runs (`Session::context_for`).
     pub(super) output: Option<Rc<dyn piperine_solver::prelude::SimOutput>>,
+    /// `$test$plusargs`/`$value$plusargs` (§9.12, LRMC-C7-09, T48) — the
+    /// host's own `+plusarg` tokens, queryable through `Session::
+    /// test_plusarg`/`value_plusarg`. `None` (the default) behaves like
+    /// an empty `PlusArgs` (every `test` false, every `value` `None`).
+    pub(super) plusargs: Option<piperine_lang::eval::tasks::PlusArgs>,
 }
 
 /// The one build recipe: consume `design`'s staged overrides, lower to

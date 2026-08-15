@@ -153,6 +153,21 @@ pub enum SystemTaskKind {
     RdistT,
     /// `$rdist_erlang(seed, k_stage, mean[, type])` — §9.13.2.
     RdistErlang,
+    /// `$time` — §9.10 (base IEEE 1364, unchanged by VAMS): scaled
+    /// simulation time as a 64-bit unsigned integer.
+    Time,
+    /// `$realtime` — like `$time`, but a real number.
+    Realtime,
+    /// `$stime` — like `$time`, truncated to the low 32 bits.
+    Stime,
+    /// `$timeformat` — sets the `%t` format specifier's rendering.
+    Timeformat,
+    /// `$test$plusargs(str)` — §9.12: true if `+str` was passed on the
+    /// command line.
+    TestPlusargs,
+    /// `$value$plusargs(str, var)` — §9.12: parses a `+name=value`
+    /// command-line argument into `var` per `str`'s format spec.
+    ValuePlusargs,
 }
 
 /// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
@@ -243,6 +258,12 @@ impl SystemTasks {
         ("$rdist_chi_square", SystemTaskKind::RdistChiSquare),
         ("$rdist_t", SystemTaskKind::RdistT),
         ("$rdist_erlang", SystemTaskKind::RdistErlang),
+        ("$time", SystemTaskKind::Time),
+        ("$realtime", SystemTaskKind::Realtime),
+        ("$stime", SystemTaskKind::Stime),
+        ("$timeformat", SystemTaskKind::Timeformat),
+        ("$test$plusargs", SystemTaskKind::TestPlusargs),
+        ("$value$plusargs", SystemTaskKind::ValuePlusargs),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
@@ -590,6 +611,121 @@ impl SimEnvironment {
             ));
         }
         Ok(self.time_step.min(requested))
+    }
+
+    /// `$realtime` (§9.10, base IEEE 1364, unchanged by VAMS): scaled
+    /// simulation time as a real number.
+    ///
+    /// **SPEC_DEVIATION, disclosed:** base 1364's `$time`/`$realtime`/
+    /// `$stime` scale by the active `` `timescale``/time-precision unit
+    /// (an integer count of, e.g., nanoseconds) — Piperine has no
+    /// `` `timescale``/time-precision tracking anywhere in the pipeline
+    /// (`$abstime` is the *only* time primitive that exists, already a
+    /// raw real-seconds value, T35/CLAUDE.md's own "declared surface"
+    /// section). These three treat one time unit as one second (the
+    /// simplest faithful assumption absent any declared scale) rather
+    /// than silently mis-scaling against a unit this crate never tracks.
+    pub fn realtime(&self) -> Value {
+        Value::Real(self.abstime)
+    }
+
+    /// `$time` (§9.10): `$realtime` rounded to a 64-bit unsigned integer
+    /// count of time units (see [`Self::realtime`]'s own scope note).
+    pub fn time(&self) -> Value {
+        Value::Nat(self.abstime.round().max(0.0) as u64)
+    }
+
+    /// `$stime` (§9.10): `$time`, truncated to the low 32 bits.
+    pub fn stime(&self) -> Value {
+        let full = self.abstime.round().max(0.0) as u64;
+        Value::Nat(full & 0xFFFF_FFFF)
+    }
+}
+
+/// `$timeformat(units_number, precision, suffix, min_width)` (§9.10,
+/// base IEEE 1364) — how a `%t` format specifier renders a time value.
+/// A pure value this crate's caller sets and reads; wiring it into
+/// `format_display`'s own `%t` dispatch (currently a bare `{}`-formatted
+/// real) is future work, matching the "pure semantics, not yet
+/// consumer-wired" tier most of this module's newer entries live at.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimeFormat {
+    /// Power-of-ten scale relative to seconds (e.g. `-9` for `ns`).
+    pub units_exponent: i32,
+    /// Digits after the decimal point.
+    pub precision: usize,
+    /// Trailing unit label (e.g. `"ns"`).
+    pub suffix: String,
+    /// Minimum total field width, space-padded on the left.
+    pub min_width: usize,
+}
+
+impl Default for TimeFormat {
+    fn default() -> Self {
+        Self { units_exponent: 0, precision: 0, suffix: String::new(), min_width: 0 }
+    }
+}
+
+/// Renders `abstime_seconds` per `fmt` — the `%t` specifier's real
+/// behavior once `$timeformat` has been called.
+pub fn format_time(abstime_seconds: f64, fmt: &TimeFormat) -> String {
+    let scaled = abstime_seconds / 10f64.powi(fmt.units_exponent);
+    let body = format!("{scaled:.*}{}", fmt.precision, fmt.suffix);
+    if body.len() < fmt.min_width {
+        format!("{:>width$}", body, width = fmt.min_width)
+    } else {
+        body
+    }
+}
+
+/// `$test$plusargs`/`$value$plusargs` (§9.12, base IEEE 1364) — matches
+/// against the host's own `+plusarg` command-line tokens (SPEC Part VI:
+/// the same shape `argv` conventionally takes, `+name` or
+/// `+name=value`), reused verbatim by `SessionBuilder::plusargs`
+/// (`piperine-api`, T48).
+#[derive(Debug, Clone, Default)]
+pub struct PlusArgs {
+    args: Vec<String>,
+}
+
+impl PlusArgs {
+    /// `args` are the raw `+...` tokens (the leading `+` included, the
+    /// LRM's own on-the-command-line shape) — non-`+`-prefixed tokens
+    /// are ignored, so a caller can hand this the whole `argv` slice
+    /// unfiltered.
+    pub fn new(args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self { args: args.into_iter().map(Into::into).filter(|a: &String| a.starts_with('+')).collect() }
+    }
+
+    /// `$test$plusargs(name)` — true if some `+name...` token was passed
+    /// (a prefix match, per the LRM's own "matches the beginning of the
+    /// plusarg" rule).
+    pub fn test(&self, name: &str) -> bool {
+        let needle = format!("+{name}");
+        self.args.iter().any(|a| a.starts_with(&needle))
+    }
+
+    /// `$value$plusargs("name=%d", var)`-style lookup: `spec` is
+    /// `"name=%d"`/`"name=%s"`/... (a name, `=`, then exactly one
+    /// `format_display`-style specifier); returns the parsed [`Value`]
+    /// from the matching `+name=value` token, or `None` if no such
+    /// token was passed. A malformed `spec` (no `=`, no specifier) or a
+    /// value that doesn't parse for the requested specifier fails loud.
+    pub fn value(&self, spec: &str) -> Result<Option<Value>, SystemTaskError> {
+        let Some((name, rest)) = spec.split_once('=') else {
+            return Err(SystemTaskError::invalid_argument(
+                "$value$plusargs",
+                format!("spec {spec:?} has no `=name=%specifier` shape"),
+            ));
+        };
+        let prefix = format!("+{name}=");
+        let Some(token) = self.args.iter().find(|a| a.starts_with(&prefix)) else {
+            return Ok(None);
+        };
+        let raw = &token[prefix.len()..];
+        let values = parse_scanf(rest, raw)
+            .map_err(|e| SystemTaskError::invalid_argument("$value$plusargs", format!("{e}")))?;
+        Ok(values.into_iter().next())
     }
 }
 
@@ -1038,6 +1174,53 @@ mod tests {
         assert_eq!(env.temperature(), Value::Real(300.0));
         assert_eq!(env.bound_step(2e-9).unwrap(), 1e-9);
         assert_eq!(env.bound_step(0.5e-9).unwrap(), 0.5e-9);
+    }
+
+    /// LRMC-C7-09 (T48): `$time`/`$realtime`/`$stime` differ correctly —
+    /// realtime is the raw real value, time/stime round it to an
+    /// integer, and stime additionally truncates to 32 bits.
+    #[test]
+    fn time_realtime_and_stime_differ_per_the_lrm() {
+        let env = SimEnvironment::new(12.6, 300.0, 1e-9);
+        assert_eq!(env.realtime(), Value::Real(12.6));
+        assert_eq!(env.time(), Value::Nat(13), "rounds to nearest integer");
+
+        let big = SimEnvironment::new((1u64 << 33) as f64 + 5.0, 300.0, 1e-9);
+        let Value::Nat(stime) = big.stime() else { panic!("expected Nat") };
+        assert_eq!(stime, 5, "stime truncates to the low 32 bits");
+        let Value::Nat(time) = big.time() else { panic!("expected Nat") };
+        assert_eq!(time, (1u64 << 33) + 5, "time keeps the full width");
+    }
+
+    #[test]
+    fn timeformat_affects_percent_t_rendering() {
+        let default_fmt = TimeFormat::default();
+        assert_eq!(format_time(1.5, &default_fmt), "2");
+
+        let ns = TimeFormat { units_exponent: -9, precision: 3, suffix: "ns".to_string(), min_width: 0 };
+        assert_eq!(format_time(1.5e-6, &ns), "1500.000ns");
+
+        let padded = TimeFormat { units_exponent: 0, precision: 0, suffix: String::new(), min_width: 8 };
+        assert_eq!(format_time(3.0, &padded), "       3");
+    }
+
+    #[test]
+    fn plusargs_test_and_value_lookups() {
+        let args = PlusArgs::new(["+seed=42", "+verbose", "notaplusarg", "+name=hello"]);
+        assert!(args.test("seed"));
+        assert!(args.test("verbose"));
+        assert!(!args.test("missing"));
+
+        assert_eq!(args.value("seed=%d").unwrap(), Some(Value::Int(42)));
+        assert_eq!(args.value("name=%s").unwrap(), Some(Value::Str("hello".into())));
+        assert_eq!(args.value("absent=%d").unwrap(), None, "no matching token -> None, not an error");
+    }
+
+    #[test]
+    fn plusargs_value_fails_loud_on_a_malformed_spec() {
+        let args = PlusArgs::new(["+seed=42"]);
+        let err = args.value("no_equals_sign").unwrap_err();
+        assert!(matches!(err, SystemTaskError::InvalidArgument { .. }));
     }
 
     #[test]
