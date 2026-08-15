@@ -126,7 +126,7 @@ fn udp_primitive_and_ports_are_attribute_bearing() {
 #[test]
 fn paramset_connectrules_config_are_not_attribute_bearing() {
     // These three are absent from Syntax 2-5..2-10 — no attrs field exists.
-    let ps = ParamsetDecl { span: span(), name: "ps".into(), module_name: "m".into(), params: vec![] };
+    let ps = ParamsetDecl { span: span(), name: "ps".into(), module_name: "m".into(), params: vec![], statements: vec![] };
     let cr = ConnectrulesDecl { span: span(), name: "cr".into(), rules: vec![] };
     let cfg = ConfigDecl { span: span(), name: "cfg".into(), body: String::new() };
     assert_eq!(ps.name, "ps");
@@ -146,7 +146,7 @@ fn source_file_holds_all_seven_top_level_item_kinds() {
             span: span(), attrs: vec![], kind: ModuleKind::Module, name: "m".into(),
             param_ports: vec![], ports: None, items: vec![],
         }),
-        Item::Paramset(ParamsetDecl { span: span(), name: "ps".into(), module_name: "m".into(), params: vec![] }),
+        Item::Paramset(ParamsetDecl { span: span(), name: "ps".into(), module_name: "m".into(), params: vec![], statements: vec![] }),
         Item::Connectrules(ConnectrulesDecl { span: span(), name: "cr".into(), rules: vec![] }),
         Item::Config(ConfigDecl { span: span(), name: "cfg".into(), body: String::new() }),
         Item::Primitive(PrimitiveDecl {

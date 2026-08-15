@@ -34,10 +34,13 @@ impl Elaborator {
                 Item::Connectrules(cr) => {
                     self.syms.connectrules.insert(cr.name.clone(), cr.clone());
                 }
-                // `paramset`/`config`/`primitive` (UDP) land in later
-                // phases (T22 extends this list as their own POM
-                // collections are wired up).
-                Item::Paramset(_) | Item::Config(_) | Item::Primitive(_) => {}
+                // `paramset` registered starting T29 (LRMC-C5-07) —
+                // `lower_instance` reads `elab.syms.paramsets`.
+                Item::Paramset(p) => {
+                    self.syms.paramsets.insert(p.name.clone(), p.clone());
+                }
+                // `config`/`primitive` (UDP) land in later phases.
+                Item::Config(_) | Item::Primitive(_) => {}
             }
         }
         Ok(())

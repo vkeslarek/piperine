@@ -479,6 +479,22 @@ pub struct ParamsetDecl {
     pub name: String,
     pub module_name: String,
     pub params: Vec<ParamDecl>,
+    /// `.module_parameter_identifier = paramset_constant_expression;`
+    /// statements (§6.4, Syntax 6-4's `paramset_statement`'s first
+    /// alternative) — binds a value to a parameter of the associated
+    /// module (`module_name`). The other three `paramset_statement`
+    /// alternatives (module output variable, system parameter,
+    /// `analog_function_statement`) are out of LRMC-C5-07's scope.
+    pub statements: Vec<ParamsetStatement>,
+}
+
+/// One `.field = expr;` binding inside a `paramset` body — see
+/// [`ParamsetDecl::statements`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamsetStatement {
+    pub span: Span,
+    pub target: String,
+    pub value: Expr,
 }
 
 /// One `connect A_discipline, B_discipline;` rule inside a `connectrules`

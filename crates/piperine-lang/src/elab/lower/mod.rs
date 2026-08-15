@@ -50,6 +50,11 @@ pub struct SymbolTable {
     /// `register.rs` matched `Item::Connectrules(_) => {}` and discarded
     /// it (see that file's own historical comment).
     pub connectrules: HashMap<String, ConnectrulesDecl>,
+    /// `paramset name (module); ... endparamset` blocks (LRM §6.4),
+    /// keyed by name — read by `lower_instance` (LRMC-C5-07, T29) so an
+    /// instance naming a paramset resolves to `(paramset.module_name,
+    /// bound params)` instead of failing `UndefinedModule`.
+    pub paramsets: HashMap<String, crate::ast::ParamsetDecl>,
 }
 
 impl SymbolTable {
@@ -59,6 +64,7 @@ impl SymbolTable {
             natures: HashMap::new(),
             module_decls: HashMap::new(),
             connectrules: HashMap::new(),
+            paramsets: HashMap::new(),
         }
     }
 }

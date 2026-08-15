@@ -1134,14 +1134,33 @@ impl Grammar {
         self.expect_punct(")")?;
         self.expect_punct(";")?;
         let mut params = vec![];
+        let mut statements = vec![];
         while !self.at_kw("endparamset") {
             if self.at_eof() {
                 return Err(self.eof_error("'endparamset'".to_string()));
             }
-            params.push(self.parse_param_decl_body(false)?);
+            if self.at_punct(".") {
+                statements.push(self.parse_paramset_statement()?);
+            } else {
+                params.push(self.parse_param_decl_body(false)?);
+            }
         }
         let end = self.expect_kw("endparamset")?;
-        Ok(ParamsetDecl { span: Span::new(start.start, end.end), name, module_name, params })
+        Ok(ParamsetDecl { span: Span::new(start.start, end.end), name, module_name, params, statements })
+    }
+
+    /// `.module_parameter_identifier = paramset_constant_expression;` —
+    /// §6.4 Syntax 6-4's `paramset_statement`, first alternative
+    /// (LRMC-C5-07's own scope; the other three alternatives — module
+    /// output variable, system parameter, `analog_function_statement` —
+    /// are not parsed here).
+    fn parse_paramset_statement(&mut self) -> Result<ParamsetStatement, ParseError> {
+        let start = self.expect_punct(".")?;
+        let (target, _) = self.expect_ident()?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(ParamsetStatement { span: Span::new(start.start, end.end), target, value })
     }
 
     /// `connectrules_declaration`, LRM chapter 7/Annex F.

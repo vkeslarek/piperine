@@ -307,6 +307,7 @@ impl Elaborator {
     /// `parent` inheritance chain into one flat, evaluated `Nature`.
     pub(crate) fn lower_declarations(&self, design: &mut Design) -> Result<(), ElabError> {
         *design.disciplines_map_mut() = self.syms.disciplines.clone();
+        *design.paramsets_map_mut() = self.syms.paramsets.clone();
 
         let names: Vec<String> = self.syms.natures.keys().cloned().collect();
         for name in names {
@@ -405,47 +406,18 @@ impl Elaborator {
         param_overrides: &[PortConnection],
         env: &ConstEnv,
     ) -> Result<Instance, ElabError> {
+        // LRMC-C5-07: an instance may name a `paramset` instead of a
+        // module — resolves to `(paramset.module_name, bound params)`,
+        // §6.4's own indirection.
+        if let Some(ps) = self.syms.paramsets.get(module_name) {
+            return self.lower_paramset_instance(module_name, ps, ast_inst, param_overrides, env);
+        }
+
         let target = self.syms.module_decls.get(module_name).ok_or_else(|| {
             ElabError::from(ElabErrorKind::UndefinedModule(module_name.to_string()))
         })?;
         let target_port_names = target_port_order(target);
-
-        let all_positional = ast_inst.connections.iter().all(|c| c.name.is_none());
-        let mut ports = Vec::new();
-        if all_positional {
-            for c in &ast_inst.connections {
-                let expr = c.value.as_ref().ok_or_else(|| {
-                    ElabError::from(ElabErrorKind::Other(format!(
-                        "instance `{}`: a port connection with no value is only legal for an unconnected port (`.p()`), \
-                         which is not yet supported",
-                        ast_inst.name
-                    )))
-                })?;
-                ports.push(expr_to_net_ref(expr, env)?);
-            }
-        } else {
-            let mut by_name: HashMap<&str, &Expr> = HashMap::new();
-            for c in &ast_inst.connections {
-                let name = c.name.as_deref().ok_or_else(|| {
-                    ElabError::from(ElabErrorKind::Other(format!(
-                        "instance `{}`: cannot mix ordered and named port connections",
-                        ast_inst.name
-                    )))
-                })?;
-                if let Some(v) = &c.value {
-                    by_name.insert(name, v);
-                }
-            }
-            for port_name in &target_port_names {
-                let expr = by_name.get(port_name.as_str()).ok_or_else(|| {
-                    ElabError::from(ElabErrorKind::Other(format!(
-                        "instance `{}`: no connection given for port `{port_name}` of module `{module_name}`",
-                        ast_inst.name
-                    )))
-                })?;
-                ports.push(expr_to_net_ref(expr, env)?);
-            }
-        }
+        let ports = resolve_instance_ports(ast_inst, module_name, &target_port_names, env)?;
 
         let mut params = Vec::new();
         for ov in param_overrides {
@@ -476,11 +448,160 @@ impl Elaborator {
             params,
         })
     }
+
+    /// An instance naming a `paramset` (§6.4) resolves to the paramset's
+    /// associated module, with `params` computed from the paramset's own
+    /// `.field = expr;` statements — evaluated against the paramset's own
+    /// parameters (seeded with their defaults, then overridden by this
+    /// instance's `#(...)`, exactly like an ordinary module instantiation,
+    /// just against the paramset's param list instead of a module's).
+    /// "An instance ... that attempts to override any of the other
+    /// parameters of the underlying module ... would generate an error"
+    /// (§6.4's own text) — an override naming anything other than one of
+    /// the paramset's own declared parameters fails loud. Likewise, a
+    /// `.field = expr;` statement naming a parameter the associated
+    /// module doesn't declare fails loud (the paramset's own ".model
+    /// style filtering/type-check").
+    fn lower_paramset_instance(
+        &self,
+        paramset_name: &str,
+        ps: &crate::ast::ParamsetDecl,
+        ast_inst: &crate::ast::Instance,
+        param_overrides: &[PortConnection],
+        env: &ConstEnv,
+    ) -> Result<Instance, ElabError> {
+        let target = self.syms.module_decls.get(&ps.module_name).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "paramset `{paramset_name}`: associated module `{}` does not exist",
+                ps.module_name
+            )))
+        })?;
+        let target_port_names = target_port_order(target);
+        let ports = resolve_instance_ports(ast_inst, paramset_name, &target_port_names, env)?;
+        let target_param_names: HashSet<&str> =
+            target.items.iter().filter_map(|item| match item {
+                ModuleItem::Param(p) => Some(p.names.iter().map(|pa| pa.name.as_str())),
+                _ => None,
+            }).flatten().collect();
+
+        // The paramset's own parameters, defaults first, then this
+        // instance's overrides applied on top (in declaration order, so a
+        // later default may reference an earlier override — same rule
+        // `module_param_env` already follows for ordinary module params).
+        let mut ps_env = ConstEnv::new();
+        for p in &ps.params {
+            for pa in &p.names {
+                let value = eval_param_default(&pa.value, &ps_env)?;
+                ps_env.define(pa.name.clone(), value);
+            }
+        }
+        for ov in param_overrides {
+            let name = ov.name.clone().ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: `#(...)` parameter overrides must be named",
+                    ast_inst.name
+                )))
+            })?;
+            if !ps.params.iter().any(|p| p.names.iter().any(|pa| pa.name == name)) {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: `{name}` is not a parameter of paramset `{paramset_name}` \
+                     (only the paramset's own declared parameters may be overridden, §6.4)",
+                    ast_inst.name
+                ))));
+            }
+            let expr = ov.value.as_ref().ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: parameter override `{name}` has no value",
+                    ast_inst.name
+                )))
+            })?;
+            ps_env.define(name, eval_param_default(expr, env)?);
+        }
+
+        let mut params = Vec::new();
+        for stmt in &ps.statements {
+            if !target_param_names.contains(stmt.target.as_str()) {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "paramset `{paramset_name}`: `.{}` names no parameter of module `{}`",
+                    stmt.target, ps.module_name
+                ))));
+            }
+            let value = ps_env.eval(&stmt.value).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("paramset `{paramset_name}` statement `.{}`", stmt.target),
+                    source: e,
+                })
+            })?;
+            params.push((stmt.target.clone(), value));
+        }
+
+        Ok(Instance {
+            span: None,
+            label_span: None,
+            type_span: None,
+            attributes: Vec::new(),
+            doc: None,
+            label: Some(ast_inst.name.clone()),
+            module: ps.module_name.clone(),
+            ports,
+            params,
+        })
+    }
 }
 
 /// The target module's port order (declaration-list style first, else
 /// name-list style items in declaration order) — needed to resolve
 /// positional (ordered) instance connections (§6.3).
+/// Resolves an instance's port connections (ordered or named, never mixed)
+/// against `target_port_names` — shared by ordinary module instantiation
+/// and paramset instantiation (`lower_paramset_instance`), whose ports
+/// resolve the same way against the paramset's *associated module*'s port
+/// order.
+fn resolve_instance_ports(
+    ast_inst: &crate::ast::Instance,
+    type_name: &str,
+    target_port_names: &[String],
+    env: &ConstEnv,
+) -> Result<Vec<NetRef>, ElabError> {
+    let all_positional = ast_inst.connections.iter().all(|c| c.name.is_none());
+    let mut ports = Vec::new();
+    if all_positional {
+        for c in &ast_inst.connections {
+            let expr = c.value.as_ref().ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: a port connection with no value is only legal for an unconnected port (`.p()`), \
+                     which is not yet supported",
+                    ast_inst.name
+                )))
+            })?;
+            ports.push(expr_to_net_ref(expr, env)?);
+        }
+    } else {
+        let mut by_name: HashMap<&str, &Expr> = HashMap::new();
+        for c in &ast_inst.connections {
+            let name = c.name.as_deref().ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: cannot mix ordered and named port connections",
+                    ast_inst.name
+                )))
+            })?;
+            if let Some(v) = &c.value {
+                by_name.insert(name, v);
+            }
+        }
+        for port_name in target_port_names {
+            let expr = by_name.get(port_name.as_str()).ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: no connection given for port `{port_name}` of `{type_name}`",
+                    ast_inst.name
+                )))
+            })?;
+            ports.push(expr_to_net_ref(expr, env)?);
+        }
+    }
+    Ok(ports)
+}
+
 fn target_port_order(decl: &ModuleDecl) -> Vec<String> {
     if let Some(ports) = &decl.ports {
         ports.iter().flat_map(|p| p.names.iter().map(|d| d.name.clone())).collect()
