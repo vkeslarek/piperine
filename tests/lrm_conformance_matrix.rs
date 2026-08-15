@@ -94,7 +94,15 @@ const REGISTRY: &[Entry] = &[
             test_fn: "connect_insertion_full_form_with_mode_params_and_overrides_parses",
         },
     },
-    Entry { id: "LRMC-C7-03", story: "P3", clause: "§7.7.3/§7.7.4", status: Status::Pending },
+    Entry {
+        id: "LRMC-C7-03",
+        story: "P3",
+        clause: "§7.7.3/§7.7.4",
+        status: Status::Closed {
+            file: "crates/piperine-lang/tests/vams_connect_modules.rs",
+            test_fn: "split_segments_one_connect_module_instance_per_port",
+        },
+    },
     Entry { id: "LRMC-C7-04", story: "P3", clause: "§7.4.4.3", status: Status::Pending },
     Entry { id: "LRMC-C7-05", story: "P3", clause: "§7.6/§9.22-9.23", status: Status::Pending },
     Entry { id: "LRMC-C7-06", story: "P3", clause: "§7.3.6", status: Status::Pending },

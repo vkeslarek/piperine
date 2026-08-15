@@ -28,7 +28,10 @@
 //! what [`select_connect_module`] needs. `PASSES`' order is unchanged
 //! (`ResolveDisciplines` still runs first); only the *veto* moved.
 
-use crate::ast::ModuleKind;
+use std::collections::HashMap;
+
+use crate::ast::{ConnectMode, ModuleKind};
+use crate::elab::const_eval::ConstEnv;
 
 use crate::pom::{Design, ElabError, ElabErrorKind, Instance};
 
@@ -42,7 +45,13 @@ impl ElabPass for InsertConnectModules {
         let names: Vec<String> = design.modules.keys().cloned().collect();
         for name in &names {
             let module = design.modules[name].clone();
-            let mut inserted = Vec::new();
+            // §7.8.3: `connect_mode` (default `merged`) decides whether
+            // every port on the same net sharing a target connect module
+            // shares one inserted instance (`merged`) or gets its own
+            // (`split`) — grouped by `(target module, net)` below, after
+            // every crossing in this module scope has been resolved.
+            let mut grouped: HashMap<(String, String), (ConnectMode, Instance)> = HashMap::new();
+            let mut split_insertions: Vec<Instance> = Vec::new();
             for inst in &module.instances {
                 let Some(callee) = design.modules.get(&inst.module) else { continue };
                 for (i, port_ref) in inst.ports.iter().enumerate() {
@@ -55,21 +64,32 @@ impl ElabPass for InsertConnectModules {
                     if local_disc == callee_disc || local_disc.is_empty() || callee_disc.is_empty() {
                         continue;
                     }
-                    let target = select_connect_module(elab, design, &local_disc, callee_disc)?;
-                    inserted.push(Instance {
+                    let (target, mode, params) = resolve_connect_rule(elab, design, &local_disc, callee_disc)?;
+                    let new_inst = Instance {
                         span: None,
                         label_span: None,
                         type_span: None,
                         attributes: vec![],
                         doc: None,
                         label: Some(format!("__connect_{}_{}", inst.name(), port_ref.net())),
-                        module: target,
+                        module: target.clone(),
                         ports: vec![port_ref.clone(), port_ref.clone()],
-                        params: vec![],
+                        params: params.clone(),
                         range: None,
-                    });
+                    };
+                    match mode {
+                        ConnectMode::Split => split_insertions.push(new_inst),
+                        ConnectMode::Merged => {
+                            // §7.8.3.1: one shared instance per (target,
+                            // net) — first occurrence wins, later ports on
+                            // the same net reuse it.
+                            grouped.entry((target, port_ref.net().to_string())).or_insert((mode, new_inst));
+                        }
+                    }
                 }
             }
+            let mut inserted: Vec<Instance> = grouped.into_values().map(|(_, inst)| inst).collect();
+            inserted.extend(split_insertions);
             if !inserted.is_empty() {
                 // MD-25: appended to the *derived* instance list, never to
                 // `design.modules` — the same field `UnrollGenerate` (T25)
@@ -165,6 +185,105 @@ pub(super) fn select_connect_module(
             to_discipline,
             format!("is ambiguous — {n} candidates matched: {}", candidates.join(", ")),
         )),
+    }
+}
+
+/// A `connect_rule`'s discipline pair, either order, disregarding whether
+/// it's the legacy bare-shell form (T11) or `connect_insertion`'s
+/// `connect_port_overrides` (T31).
+fn rule_pair(rule: &crate::ast::ConnectRule) -> Option<(&str, &str)> {
+    match rule.disciplines.as_slice() {
+        [a, b] => Some((a.as_str(), b.as_str())),
+        _ => None,
+    }
+}
+
+fn pair_matches(rule: &crate::ast::ConnectRule, a: &str, b: &str) -> bool {
+    rule_pair(rule).is_some_and(|(x, y)| (x == a && y == b) || (x == b && y == a))
+}
+
+/// §7.7.3/§7.7.4 (LRMC-C7-03): resolves the discipline pair to
+/// `(connect-module name, connect_mode, evaluated parameter overrides)`.
+///
+/// The target module is chosen exactly as [`select_connect_module`] always
+/// has (pure port-discipline matching, independent of which `connect_rule`
+/// named it). `connect_mode`/parameters come from the `connect_insertion`
+/// rule(s) (T31) that both name this pair *and* this specific target
+/// module explicitly (`connectmodule: Some(target)`); the legacy bare-pair
+/// shell (`connectmodule: None`) contributes neither — LRM §7.8.3's
+/// default (`merged`, no parameter overrides) applies when no such rule
+/// exists. Two rules naming the same pair and target with *different*
+/// `connect_mode`/parameters is a genuine competing-rule ambiguity (E4005,
+/// the `pom/error.rs:299` help text's "disambiguate ... with a
+/// `connect_mode` annotation" mechanism made real).
+pub(super) fn resolve_connect_rule(
+    elab: &Elaborator,
+    design: &Design,
+    from_discipline: &str,
+    to_discipline: &str,
+) -> Result<(String, ConnectMode, Vec<(String, crate::pom::Value)>), ElabError> {
+    let target = select_connect_module(elab, design, from_discipline, to_discipline)?;
+
+    let naming_target: Vec<&crate::ast::ConnectRule> = elab
+        .syms
+        .connectrules
+        .values()
+        .flat_map(|cr| &cr.rules)
+        .filter(|rule| rule.connectmodule.as_deref() == Some(target.as_str()) && pair_matches(rule, from_discipline, to_discipline))
+        .collect();
+
+    let evaluated = |rule: &crate::ast::ConnectRule| -> Result<Vec<(String, crate::pom::Value)>, ElabError> {
+        let env = ConstEnv::new();
+        rule.params
+            .iter()
+            .map(|pc| {
+                let pname = pc.name.clone().unwrap_or_default();
+                let value = pc
+                    .value
+                    .as_ref()
+                    .map(|e| env.eval(e))
+                    .transpose()
+                    .map_err(|e| {
+                        ElabError::from(ElabErrorKind::ConnectModuleAmbiguous {
+                            from_discipline: from_discipline.to_string(),
+                            to_discipline: to_discipline.to_string(),
+                            issue: format!("parameter `{pname}` in a `connect` rule's `#(...)` failed to const-evaluate: {e}"),
+                            from_span: None,
+                            to_span: None,
+                        })
+                    })?
+                    .unwrap_or(crate::pom::Value::Real(0.0));
+                Ok((pname, value))
+            })
+            .collect()
+    };
+
+    match naming_target.len() {
+        0 => Ok((target, ConnectMode::Merged, Vec::new())),
+        1 => {
+            let rule = naming_target[0];
+            let mode = rule.mode.unwrap_or(ConnectMode::Merged);
+            Ok((target, mode, evaluated(rule)?))
+        }
+        _ => {
+            let first_mode = naming_target[0].mode.unwrap_or(ConnectMode::Merged);
+            let first_params = evaluated(naming_target[0])?;
+            let all_agree = naming_target.iter().skip(1).all(|r| {
+                r.mode.unwrap_or(ConnectMode::Merged) == first_mode && evaluated(r).ok().as_ref() == Some(&first_params)
+            });
+            if all_agree {
+                Ok((target, first_mode, first_params))
+            } else {
+                Err(ambiguous_err(
+                    from_discipline,
+                    to_discipline,
+                    format!(
+                        "matched {} competing `connect {target} ...` rules with different connect_mode/parameter overrides — disambiguate with a single rule",
+                        naming_target.len()
+                    ),
+                ))
+            }
+        }
     }
 }
 
