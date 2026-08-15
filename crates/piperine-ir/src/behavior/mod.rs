@@ -16,6 +16,7 @@
 pub mod fd_oracle;
 pub mod kinds;
 pub mod table;
+pub mod table_model;
 
 use crate::events::CrossDir;
 

@@ -109,6 +109,35 @@ fn driver_access_calls_parse_and_elaborate_inside_a_connectmodule_body() {
     assert!(design.module("bridge").is_some());
 }
 
+// ── $table_model, §9.21 (LRMC-C7-09, T51) ────────────────────────────────
+
+/// `$table_model`'s own evaluation semantics (multidimensional isoline
+/// interpolation, matching the LRM's §9.21.5 worked example exactly) live
+/// in `piperine_ir::behavior::table_model::TableModel` — that crate is the
+/// numerical oracle, not this one. Here, only name-level recognition and
+/// parse/elaborate acceptance are in scope, same tier as the `$driver_*`
+/// family above.
+#[test]
+fn table_model_name_resolves() {
+    assert_eq!(SystemTasks::resolve("$table_model").unwrap(), SystemTaskKind::TableModel);
+}
+
+/// A `$table_model` call in an analog contribution — the LRM's own
+/// §9.21.5 example shape — parses and elaborates.
+#[test]
+fn table_model_call_parses_and_elaborates() {
+    let src = r#"
+        module example_tb (inout electrical a, inout electrical b);
+            analog begin
+                I(a, b) <+ $table_model(0.0, V(a, b), "sample.dat");
+            end
+        endmodule
+    "#;
+    let design =
+        piperine_lang::parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("table_model call elaborates");
+    assert!(design.module("example_tb").is_some());
+}
+
 #[test]
 fn unknown_system_task_fails_loud_listing_near_matches() {
     let err = SystemTasks::resolve("$displya").unwrap_err();

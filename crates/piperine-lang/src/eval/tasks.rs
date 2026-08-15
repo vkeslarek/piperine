@@ -188,6 +188,12 @@ pub enum SystemTaskKind {
     /// hierarchical node aliasing.
     AnalogNodeAlias,
     AnalogPortAlias,
+    /// `$table_model` — §9.21: multidimensional isoline interpolation and
+    /// lookup. Evaluation lives in `piperine_ir::behavior::table_model`
+    /// (`TableModel`); this variant is name-level recognition only, same
+    /// tier as the `$driver_*` family above — see that block's
+    /// SPEC_DEVIATION note for why JIT dispatch is separately scoped.
+    TableModel,
 }
 
 /// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
@@ -294,6 +300,7 @@ impl SystemTasks {
         ("$port_connected", SystemTaskKind::PortConnected),
         ("$analog_node_alias", SystemTaskKind::AnalogNodeAlias),
         ("$analog_port_alias", SystemTaskKind::AnalogPortAlias),
+        ("$table_model", SystemTaskKind::TableModel),
     ];
 
     /// Resolves a `$name` to its [`SystemTaskKind`]. Unknown names fail loud
