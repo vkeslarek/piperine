@@ -3,11 +3,11 @@ use piperine_lang::pom::Design;
 use miette::SourceSpan;
 use std::path::PathBuf;
 
-/// Convert a pure-crate `piperine_lang::error::Span` (a plain byte range,
+/// Convert a pure-crate `piperine_lang::error::PreprocessedSpan` (a plain byte range,
 /// T1's purity contract) into the `miette::SourceSpan` every `Resolution`
 /// carries — `Design::disciplines()` keeps the surface AST shape verbatim
 /// (design F1), so its span type never got the POM's own conversion.
-pub(crate) fn vams_span_to_miette(span: piperine_lang::error::Span) -> SourceSpan {
+pub(crate) fn vams_span_to_miette(span: piperine_lang::error::PreprocessedSpan) -> SourceSpan {
     SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
 }
 

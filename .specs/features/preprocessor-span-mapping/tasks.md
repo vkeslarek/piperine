@@ -243,8 +243,8 @@ other hit)
 - Skill: NONE
 
 **Done when**:
-- [ ] `cargo build -p piperine-lang-server` is clean
-- [ ] `cargo test -p piperine-lang-server` — existing passing targets still pass byte-identical
+- [x] `cargo build -p piperine-lang-server` is clean
+- [x] `cargo test -p piperine-lang-server` — existing passing targets still pass byte-identical
 
 **Tests**: none new (rename)
 **Gate**: build + full existing suite
