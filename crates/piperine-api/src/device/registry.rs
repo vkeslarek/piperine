@@ -1,7 +1,7 @@
 //! `@device` gains a host binding mode (T17, DVT-20/21): [`HostDeviceRegistry`]
 //! is a [`DeviceProvider`] that tries a wired plugin binding first and a
 //! host registration second, failing loud naming both when neither is
-//! found — the same `@device` PHDL declaration, unchanged, serves either
+//! found — the same `@device` declaration, unchanged, serves either
 //! mode (`ideal.md` §8.7, `design.md` §C3). No new macro (MD-13 rule 5): a
 //! Rust host device registers with [`HostDeviceRegistry::register`], an
 //! explicit call, never `#[pip::device]`'s plugin-binary `inventory`
@@ -22,7 +22,7 @@ pub struct HostDeviceSpec {
     pub type_id: String,
     /// The instance label in the parent module.
     pub instance_label: String,
-    /// Resolved port bindings, in PHDL port order.
+    /// Resolved port bindings, in declaration port order.
     pub ports: Vec<PortBinding>,
     /// Instance parameter overrides, unevaluated.
     pub params: Vec<(String, piperine_lang::Value)>,
@@ -63,7 +63,7 @@ impl HostDeviceRegistry {
     /// A registry that tries `plugin` first, falling back to any host
     /// registration — the shape a session wires when both binding modes
     /// coexist (`ideal.md` §8.7's promotion path: a device can move from
-    /// this registry into `plugin` with no PHDL change).
+    /// this registry into `plugin` with no declaration change).
     pub fn with_plugin(plugin: Rc<dyn DeviceProvider>) -> Self {
         Self { plugin: Some(plugin), hosts: RefCell::new(HashMap::new()), sequencer_ids: RefCell::new(HashSet::new()) }
     }
@@ -147,22 +147,39 @@ mod tests {
     use std::rc::Rc;
 
     const DIVIDER_WITH_HOST_DEVICE: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+nature Voltage;
+  units = \"V\";
+  access = V;
+  abstol = 1e-6;
+endnature
+nature Current;
+  units = \"A\";
+  access = I;
+  abstol = 1e-12;
+endnature
+discipline electrical;
+  potential Voltage;
+  flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param voltage: Real = 0.0; }
-analog V { V(p, n) <+ voltage; }
+module Vsrc(p, n);
+  inout electrical p, n;
+  parameter real voltage = 0.0;
+  analog V(p, n) <+ voltage;
+endmodule
 
-@device(plugin = \"none\", type = \"host_resistor\")
-mod HostR(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
+(* device = \"none\", type = \"host_resistor\" *)
+module HostR(p, n);
+  inout electrical p, n;
+  parameter real r = 1e3;
+endmodule
 
-mod Divider() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire mid : Electrical;
-    src : V(.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : HostR(.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : HostR(.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider();
+  electrical gnd, vin, mid;
+  Vsrc #(.voltage(5.0)) src (vin, gnd);
+  HostR #(.r(3e3)) r_top (vin, mid);
+  HostR #(.r(2e3)) r_bot (mid, gnd);
+endmodule
 ";
 
     struct HostR {
@@ -249,7 +266,7 @@ mod Divider() {
     /// The same `@device` declaration serves a plugin binding **and** a
     /// host binding unchanged — only the registration differs.
     #[test]
-    fn the_same_phdl_declaration_serves_either_binding_mode() {
+    fn the_same_device_declaration_serves_either_binding_mode() {
         struct FakePluginHost;
         impl DeviceProvider for FakePluginHost {
             fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
@@ -284,7 +301,7 @@ mod Divider() {
             .v(NetRef { name: "mid".into() })
             .expect("v(mid)");
 
-        // Bound as a host registration — no PHDL change.
+        // Bound as a host registration — no declaration change.
         let host_registry = Rc::new(HostDeviceRegistry::new());
         host_registry.register("host_resistor", host_r_factory);
         let mut via_host = Session::builder(&design, "Divider")

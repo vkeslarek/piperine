@@ -1022,29 +1022,35 @@ mod tests {
     use pyo3::prelude::*;
     use pyo3::types::PyModule;
 
-    /// The runnable divider fixture (mirrors `tests/common`'s `ANALYSIS_PHDL`):
-    /// `mid = 5·r_bot/(r_top+r_bot)` — 3 k/2 k → 2.0 V; `r_top = 2e3` → 2.5 V.
+    /// The runnable divider fixture (mirrors `tests/common`'s VAMS analog
+    /// fixtures): `mid = 5·r_bot/(r_top+r_bot)` — 3 k/2 k → 2.0 V;
+    /// `r_top = 2e3` → 2.5 V.
     const DIVIDER: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+nature Voltage; units = \"V\"; access = V; abstol = 1e-6; endnature
+nature Current; units = \"A\"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+  potential Voltage;
+  flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource(p, n);
+  inout electrical p, n;
+  parameter real voltage = 0.0;
+  analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor(p, n);
+  inout electrical p, n;
+  parameter real r = 1e3;
+  analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider();
+  electrical gnd, vin, mid;
+  VoltageSource #(.voltage(5.0)) src   (vin, gnd);
+  Resistor      #(.r(3e3))       r_top (vin, mid);
+  Resistor      #(.r(2e3))       r_bot (mid, gnd);
+endmodule
 ";
 
     /// LIVE-10 (single build) + LIVE-11 (errors) + LIVE-13 (result shapes):
@@ -1151,36 +1157,45 @@ mod Divider() {
     /// given (`get_or` → `$param_given`, the presence machinery the real
     /// `spice::diode` sidewall uses).
     const DIO: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+nature Voltage; units = \"V\"; access = V; abstol = 1e-6; endnature
+nature Current; units = \"A\"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+  potential Voltage;
+  flow Current;
+enddiscipline
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) {
-    param dc: Real = 5.0;
-}
-analog Vsrc { V(p, n) <- dc; }
+module Vsrc(p, n);
+  inout electrical p, n;
+  parameter real dc = 5.0;
+  analog V(p, n) <+ dc;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e4;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor(p, n);
+  inout electrical p, n;
+  parameter real r = 1e4;
+  analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Dio(inout p: Electrical, inout n: Electrical) {
-    param isat: Real = 1e-14;
-    param vt: Real = 0.02585;
-    param ns: Real? = none;
-}
-analog Dio {
+module Dio(p, n);
+  inout electrical p, n;
+  parameter real isat = 1e-14;
+  parameter real vt = 0.02585;
+  // param_given is not yet wired in codegen -- a negative-sentinel
+  // default stands in for was-this-param-given, same as passives.va.
+  parameter real ns = -1.0;
+  analog begin
     I(p, n) <+ isat * (exp(V(p, n) / vt) - 1.0);
-    I(p, n) <+ ns.get_or(0.0) * 1e-4 * V(p, n);
-}
+    if (ns >= 0.0)
+      I(p, n) <+ ns * 1e-4 * V(p, n);
+  end
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : Vsrc(.p = vin, .n = gnd) {};
-    r1 : Resistor(.p = vin, .n = out) {};
-    d1 : Dio(.p = out, .n = gnd) {};
-}
+module Top();
+  electrical gnd, vin, out;
+  Vsrc v1(vin, gnd);
+  Resistor r1(vin, out);
+  Dio d1(out, gnd);
+endmodule
 ";
 
     /// LIVE-14/15/17: a structural set (`ns` none→given) auto re-elaborates
@@ -1189,6 +1204,24 @@ mod Top() {
     /// as the next solve's warm start (fewer Newton iterations than a cold
     /// build); a failing re-elaboration surfaces the error and keeps the
     /// previous circuit fully usable.
+    ///
+    /// **Blocked** (real gap, found migrating this fixture off PHDL): PHDL's
+    /// optional-parameter type (`Real?`/`.get_or(default)`) made a
+    /// none→given transition a genuine *structural* (compile-shape) change,
+    /// which is what drove `rebuilds` here. VAMS has no optional-parameter
+    /// type; its closest equivalent, `$param_given` (LRM §9.19), is not yet
+    /// wired in codegen (`headers/spice/passives.va`'s own doc comment,
+    /// T47 scope) — the fixture below uses the project's established
+    /// negative-sentinel-default workaround instead (same as
+    /// `passives.va`), but a plain `parameter` value change through a
+    /// runtime `if` never triggers `LiveSession`'s structural-rebuild path:
+    /// MD-18 JITs analog code once with every branch already compiled in,
+    /// so there is nothing "structural" about crossing the sentinel at
+    /// runtime. `rebuilds` stays 0 where PHDL's optional-param mechanism
+    /// made it 1 — a real, not-yet-portable feature gap (`$param_given`
+    /// landing in codegen would close it), left failing rather than
+    /// weakened/deleted (test-integrity rule) or silently ignored
+    /// (`#[ignore]` is repo-banned, `tests/suite_hygiene.rs`).
     #[test]
     fn structural_set_auto_rebuilds_with_state_carry_and_failure_keeps_old_circuit()
     -> PyResult<()> {
@@ -1284,37 +1317,46 @@ mod Top() {
     /// c1 (1 nF), plus `d1` whose optional `ns` adds a `ns·1e-3 S` leak at
     /// `out` when given — the LIVE-16 mid-transient structural set target.
     const RC_STRUCTURAL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+nature Voltage; units = \"V\"; access = V; abstol = 1e-6; endnature
+nature Current; units = \"A\"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+  potential Voltage;
+  flow Current;
+enddiscipline
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) {
-    param dc: Real = 5.0;
-}
-analog Vsrc { V(p, n) <- dc; }
+module Vsrc(p, n);
+  inout electrical p, n;
+  parameter real dc = 5.0;
+  analog V(p, n) <+ dc;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 2e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor(p, n);
+  inout electrical p, n;
+  parameter real r = 2e3;
+  analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Cap(inout p: Electrical, inout n: Electrical) {
-    param c: Real = 1e-9;
-}
-analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
+module Cap(p, n);
+  inout electrical p, n;
+  parameter real c = 1e-9;
+  analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Leak(inout p: Electrical, inout n: Electrical) {
-    param ns: Real? = none;
-}
-analog Leak { I(p, n) <+ ns.get_or(0.0) * 1e-3 * V(p, n); }
+module Leak(p, n);
+  inout electrical p, n;
+  // param_given is not yet wired in codegen -- negative-sentinel default.
+  parameter real ns = -1.0;
+  analog if (ns >= 0.0)
+    I(p, n) <+ ns * 1e-3 * V(p, n);
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : Vsrc(.p = vin, .n = gnd) {};
-    r1 : Resistor(.p = vin, .n = out) {};
-    c1 : Cap(.p = out, .n = gnd) {};
-    d1 : Leak(.p = out, .n = gnd) {};
-}
+module Top();
+  electrical gnd, vin, out;
+  Vsrc v1(vin, gnd);
+  Resistor r1(vin, out);
+  Cap c1(out, gnd);
+  Leak d1(out, gnd);
+endmodule
 ";
 
     /// LIVE-16: a structural set scheduled mid-transient auto re-elaborates
@@ -1323,6 +1365,12 @@ mod Top() {
     /// `t` (matches the two-phase closed form within reltol) and the post-t
     /// behavior reflects the new structure. An idle live set applied before
     /// the run (r 2k→1k) must survive the rebuild (the replay ledger).
+    ///
+    /// **Blocked**: same root cause as
+    /// `structural_set_auto_rebuilds_with_state_carry_and_failure_keeps_old_circuit`'s
+    /// doc comment — `$param_given` not yet wired in codegen means a plain
+    /// VAMS `parameter` change never registers as structural, so the
+    /// scheduled set here restamps instead of rebuilding.
     #[test]
     fn mid_transient_structural_set_restarts_from_t_with_carried_state() -> PyResult<()> {
         let path = std::env::temp_dir().join("piperine_python_live_t10_test.vams");
