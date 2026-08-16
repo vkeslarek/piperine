@@ -11,6 +11,18 @@
 //! `test_e2e_lsp_server_memory_connection`). The harness's `start()` is the
 //! literal init step: spawning the server thread and wiring the memory
 //! connection is everything "initialize" would otherwise need to unblock.
+//!
+//! **lang-server-vams-migration (T8)**: fixtures below are real VAMS.
+//! `rfport` no longer exists — retargeted onto `device`. Several tests are
+//! blocked by the feature's documented `span: None` gap
+//! (`elab/lower/vams.rs` never populates `Module`/`Port`/`Behavior::span`)
+//! — this file surfaces the gap at two NEW severities beyond hover/
+//! completion: `handlers/goto_def.rs` and `handlers/rename.rs` both
+//! `let decl_span = resolution.decl_span?;` as their very first step, so
+//! goto-definition and rename are unconditionally blocked for ANY symbol
+//! whose resolution has no span — including a plain same-file `module`
+//! goto (Module::span is always None too, not just Param/Wire/Var). Each
+//! blocked test below is documented individually.
 
 use crossbeam_channel::Receiver;
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
@@ -232,9 +244,9 @@ fn uri(s: &str) -> Uri {
 
 #[test]
 fn harness_drives_hover_round_trip() {
-    let uri = uri("file:///protocol_hover.phdl");
-    let mut h = Harness::start(&uri, "mod R (inout p: Electrical, inout n: Electrical) {}\ndiscipline Electrical { potential v: Real; flow i: Real; }\n");
-    let hover = h.hover(&uri, 0, 4).expect("expected a hover result on `R`");
+    let uri = uri("file:///protocol_hover.vams");
+    let mut h = Harness::start(&uri, "module R(inout electrical p, n);\nendmodule\n");
+    let hover = h.hover(&uri, 0, 7).expect("expected a hover result on `R`");
     let text = match hover.contents {
         lsp_types::HoverContents::Markup(m) => m.value,
         _ => panic!("expected markup contents"),
@@ -245,9 +257,9 @@ fn harness_drives_hover_round_trip() {
 
 #[test]
 fn harness_drives_completion_round_trip() {
-    let uri = uri("file:///protocol_completion.phdl");
-    let mut h = Harness::start(&uri, "mod Top() {}\n");
-    // Simulate a mid-edit `@rf` completion trigger without re-triggering
+    let uri = uri("file:///protocol_completion.vams");
+    let mut h = Harness::start(&uri, "module Top();\nendmodule\n");
+    // Simulate a mid-edit `@dev` completion trigger without re-triggering
     // analysis (matches `integration_test.rs`'s own stale-but-valid pattern
     // for schema completion) by editing the buffer directly via didChange.
     let change = lsp_types::DidChangeTextDocumentParams {
@@ -255,25 +267,33 @@ fn harness_drives_completion_round_trip() {
         content_changes: vec![lsp_types::TextDocumentContentChangeEvent {
             range: None,
             range_length: None,
-            text: "mod Top() {}\n@rf".to_string(),
+            text: "module Top();\nendmodule\n@dev".to_string(),
         }],
     };
     h.notify(lsp_types::notification::DidChangeTextDocument::METHOD, change);
-    let items = h.completion(&uri, 1, 3);
+    let items = h.completion(&uri, 2, 4);
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-    assert!(labels.contains(&"rfport"), "expected `rfport` completion, got: {labels:?}");
+    assert!(labels.contains(&"device"), "expected `device` completion, got: {labels:?}");
     h.shutdown();
 }
 
+/// **Blocked**: `handlers/goto_def.rs::handle` requires `resolution.
+/// decl_span` as its very first step (`let decl_span = resolution.
+/// decl_span?;`) before it does anything else — including the same-file
+/// case below, which never touches cross-file/`use` logic at all. Since
+/// `Module::span` is always `None` for VAMS (`elab/lower/vams.rs`), EVERY
+/// goto-definition on a module (same-file or cross-file) returns `None`
+/// today. This is the feature's documented `span: None` gap, surfacing at
+/// a severity the hover/completion tests don't reach.
 #[test]
 fn harness_drives_goto_definition_round_trip() {
-    let uri = uri("file:///protocol_goto.phdl");
-    let src = "mod R (inout p: Electrical, inout n: Electrical) {}\ndiscipline Electrical { potential v: Real; flow i: Real; }\nmod Top() { r1: R(); }\n";
+    let uri = uri("file:///protocol_goto.vams");
+    let src = "module R(inout electrical p, n);\nendmodule\nmodule Top();\n  electrical a, b;\n  R r1(.p(a), .n(b));\nendmodule\n";
     let mut h = Harness::start(&uri, src);
-    // "R" inside `r1: R();` on line 2.
-    let line_start = src.lines().nth(2).unwrap();
-    let col = line_start.find("R()").unwrap() as u32;
-    let resp = h.goto_definition(&uri, 2, col).expect("expected a goto-definition result");
+    // "R" inside `R r1(...)` on line 4.
+    let line_start = src.lines().nth(4).unwrap();
+    let col = line_start.find("R r1").unwrap() as u32;
+    let resp = h.goto_definition(&uri, 4, col).expect("expected a goto-definition result");
     let location = match resp {
         GotoDefinitionResponse::Scalar(loc) => loc,
         GotoDefinitionResponse::Array(mut locs) => locs.remove(0),
@@ -283,13 +303,20 @@ fn harness_drives_goto_definition_round_trip() {
     h.shutdown();
 }
 
+/// **Blocked**: `handlers/references.rs` is backed entirely by
+/// `occurrences_at`, which is backed by `index_design` — whose `insert`
+/// helper skips every span-less POM binding. Every VAMS binding has
+/// `span: None`, so `index_design` always returns an empty index and
+/// `occurrences_at` always returns `[]` (the feature's documented
+/// `span: None` gap, its most severe form — see `document_highlight.rs`
+/// and `symbol_resolution.rs` for the same finding).
 #[test]
 fn harness_drives_references_round_trip() {
-    let uri = uri("file:///protocol_references.phdl");
-    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod Top (inout p: Electrical, inout n: Electrical) { param power: Real = 1.0; }\n";
+    let uri = uri("file:///protocol_references.vams");
+    let src = "module Top(p, n);\n  inout electrical p, n;\n  parameter real power = 1.0;\nendmodule\n";
     let mut h = Harness::start(&uri, src);
-    let line = src[..src.find("param power").unwrap()].matches('\n').count() as u32;
-    let col = "mod Top (inout p: Electrical, inout n: Electrical) { param ".chars().count() as u32;
+    let line = src[..src.find("real power").unwrap()].matches('\n').count() as u32;
+    let col = "  parameter real ".chars().count() as u32;
     let refs = h.references(&uri, line, col);
     assert!(!refs.is_empty(), "expected at least the declaration site as a reference to `power`");
     h.shutdown();
@@ -351,39 +378,49 @@ fn position_to_byte(source: &str, pos: Position) -> usize {
 /// LSP-02/LSP-26: a local var shadows an outer param of the same name
 /// (`x`) inside one module; hover on the inner (shadowed) `x` must resolve
 /// to the local var, not the outer param — the innermost binding in scope.
+///
+/// **Blocked**: this scenario is exactly what cursor-context resolution
+/// (`symbol_index.rs` step 2) exists to prove, and it never engages
+/// (`Module::span: None`) — there is no step-3 fallback for `Param`/`Var`
+/// at all, so hovering `x` here returns no resolution whatsoever (`null`
+/// hover), not merely the wrong one.
 #[test]
 fn protocol_shadowing_fixture_resolves_to_the_innermost_binding() {
-    let uri = uri("file:///protocol_shadowing.phdl");
-    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod Outer (inout p: Electrical, inout n: Electrical) {\n    param x: Real = 1.0;\n    wire x: Electrical;\n}\n";
+    let uri = uri("file:///protocol_shadowing.vams");
+    let src = "module Outer(p, n);\n  inout electrical p, n;\n  parameter real x = 1.0;\n  real x;\nendmodule\n";
     let mut h = Harness::start(&uri, src);
 
-    // The `wire x` declaration shadows `param x` within the same module —
-    // hover on the `wire x` declaration site must report kind "wire", not
-    // "param" (the innermost/most-recently-declared binding for the name
-    // `x` in this module's own scope).
-    let wire_line = src[..src.find("wire x").unwrap()].matches('\n').count() as u32;
-    let wire_col = "    wire ".chars().count() as u32;
+    // The `real x` var declaration shadows `parameter real x` within the
+    // same module — hover on the `real x` declaration site must report
+    // kind "var", not "param" (the innermost/most-recently-declared
+    // binding for the name `x` in this module's own scope).
+    let var_line = src[..src.rfind("real x").unwrap()].matches('\n').count() as u32;
+    let var_col = "  real ".chars().count() as u32;
 
-    let hover = h.hover(&uri, wire_line, wire_col).expect("expected a hover result on `x`");
+    let hover = h.hover(&uri, var_line, var_col).expect("expected a hover result on `x`");
     let text = match hover.contents {
         lsp_types::HoverContents::Markup(m) => m.value,
         _ => panic!("expected markup contents"),
     };
-    assert!(text.contains("wire"), "expected the innermost (wire) binding, got: {text}");
+    assert!(text.contains("var"), "expected the innermost (var) binding, got: {text}");
     assert!(!text.contains("**param**"), "must not resolve to the shadowed param binding: {text}");
     h.shutdown();
 }
 
 /// LSP-08/LSP-26: a `///` doc comment above a module declaration renders as
 /// Markdown on hover.
+///
+/// **Blocked**: `elab/lower/vams.rs` hardcodes every POM node's `doc`
+/// field to `None` — VAMS lowering never captures `///` comments (see
+/// `hover.rs`'s file-level doc for the same finding).
 #[test]
 fn protocol_doc_comment_fixture_renders_on_hover() {
-    let uri = uri("file:///protocol_doc.phdl");
-    let src = "/// A two-terminal resistor.\nmod Res (inout p: Electrical, inout n: Electrical) {}\ndiscipline Electrical { potential v: Real; flow i: Real; }\n";
+    let uri = uri("file:///protocol_doc.vams");
+    let src = "/// A two-terminal resistor.\nmodule Res(inout electrical p, n);\nendmodule\n";
     let mut h = Harness::start(&uri, src);
 
     let line = 1u32;
-    let col = "mod ".chars().count() as u32;
+    let col = "module ".chars().count() as u32;
     let hover = h.hover(&uri, line, col).expect("expected a hover result on `Res`");
     let text = match hover.contents {
         lsp_types::HoverContents::Markup(m) => m.value,
@@ -395,35 +432,51 @@ fn protocol_doc_comment_fixture_renders_on_hover() {
 
 /// LSP-15/LSP-12/LSP-26: a two-file project fixture — cross-file goto opens
 /// the declaring file, and cross-file rename edits every referencing file.
+///
+/// **Blocked, doubly**: VAMS has no `use pkg::item;` cross-file import
+/// syntax at all (dropped, see `import_goto.rs`'s file-level doc) — the
+/// closest VAMS equivalent is `` `include ``, which never populates
+/// `Project::origins`/`item_files` (nothing does, for VAMS — the field is
+/// only ever written by PHDL's deleted `use` resolver). So
+/// `goto_def.rs::cross_file_location`'s `design.project().origin_of
+/// (&target_name)?` always returns `None` for VAMS content, meaning
+/// `resolve_at`'s `decl_span?` (which is *also* always `None` —
+/// `Module::span`) is the actual blocker reached first. Both goto and
+/// rename are unconditionally blocked; kept as one `` `include ``-based
+/// two-file fixture (closest VAMS equivalent to the deleted `use`
+/// scenario) rather than dropped outright, since — unlike `import_goto.rs`'s
+/// use-path-click sub-scenarios — this scenario's *shape* (two files, an
+/// instantiation referencing the other) still exists in VAMS; only the
+/// provenance wiring behind it doesn't.
 #[test]
 fn protocol_cross_file_fixture_goto_and_rename_both_work() {
     let scratch = ScratchProject::new("t23_cross_file");
-    let a_src = "pub discipline Electrical { potential v: Real; flow i: Real; }\npub mod A (inout p: Electrical, inout n: Electrical) { param gain: Real = 1.0; }\n";
-    let a_path = scratch.write_src("a.phdl", a_src);
-    let b_src = "use scratch_proj::a;\nmod B (inout p: Electrical, inout n: Electrical) {\n    inst: A(.p = p, .n = n);\n}\n";
-    let b_path = scratch.write_src("b.phdl", b_src);
+    let a_src = "module A(p, n);\n  inout electrical p, n;\n  parameter real gain = 1.0;\nendmodule\n";
+    let a_path = scratch.write_src("a.vams", a_src);
+    let b_src = "`include \"a.vams\"\nmodule B(p, n);\n  inout electrical p, n;\n  A inst(.p(p), .n(n));\nendmodule\n";
+    let b_path = scratch.write_src("b.vams", b_src);
 
     let a_uri: Uri = format!("file://{}", a_path.display()).parse().unwrap();
     let b_uri: Uri = format!("file://{}", b_path.display()).parse().unwrap();
 
     let mut h = Harness::start(&b_uri, b_src);
 
-    // Cross-file goto: cursor on `A` inside `inst: A(...)`.
-    let goto_line = 2u32;
-    let goto_col = "    inst: ".chars().count() as u32;
+    // Cross-file goto: cursor on `A` inside `A inst(...)`.
+    let goto_line = b_src[..b_src.find("A inst").unwrap()].matches('\n').count() as u32;
+    let goto_col = "  ".chars().count() as u32;
     let goto_resp = h.goto_definition(&b_uri, goto_line, goto_col).expect("expected a goto-definition result");
     let loc = match goto_resp {
         GotoDefinitionResponse::Scalar(loc) => loc,
         other => panic!("expected a scalar goto-definition response, got: {other:?}"),
     };
-    assert_eq!(loc.uri, a_uri, "goto on `A` must open a.phdl, not b.phdl");
+    assert_eq!(loc.uri, a_uri, "goto on `A` must open a.vams, not b.vams");
     let target_offset = position_to_byte(a_src, loc.range.start);
-    let mod_a_start = a_src.find("pub mod A").unwrap();
+    let mod_a_start = a_src.find("module A").unwrap();
     assert!(target_offset >= mod_a_start, "goto target must land inside `A`'s own declaration");
 
-    // Cross-file rename: renaming `A` from its use site in b.phdl (the
+    // Cross-file rename: renaming `A` from its use site in b.vams (the
     // instance's type name) must produce a `WorkspaceEdit` covering both
-    // the declaring file (a.phdl) and the referencing file (b.phdl).
+    // the declaring file (a.vams) and the referencing file (b.vams).
     let edit = h.rename(&b_uri, goto_line, goto_col, "AResistor").expect("expected a rename WorkspaceEdit");
     let paths: Vec<Uri> = match (&edit.changes, &edit.document_changes) {
         (Some(changes), _) => changes.keys().cloned().collect(),
@@ -432,19 +485,24 @@ fn protocol_cross_file_fixture_goto_and_rename_both_work() {
         }
         _ => panic!("expected either `changes` or `document_changes` on the rename edit"),
     };
-    assert!(paths.contains(&a_uri), "rename must edit a.phdl (the declaration): {paths:?}");
-    assert!(paths.contains(&b_uri), "rename must edit b.phdl (a use site) too: {paths:?}");
+    assert!(paths.contains(&a_uri), "rename must edit a.vams (the declaration): {paths:?}");
+    assert!(paths.contains(&b_uri), "rename must edit b.vams (a use site) too: {paths:?}");
 
     h.shutdown();
 }
 
+/// **Blocked**: `handlers/rename.rs::handle_rename` requires `resolution.
+/// decl_span` as its first step, same as goto-definition — `Param::span`
+/// is always `None` for VAMS with no cursor-context fallback (see
+/// `hover.rs`'s parameter tests for the same finding), so rename on a
+/// parameter is unconditionally blocked today.
 #[test]
 fn harness_drives_rename_round_trip() {
-    let uri = uri("file:///protocol_rename.phdl");
-    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod Top (inout p: Electrical, inout n: Electrical) { param power: Real = 1.0; }\n";
+    let uri = uri("file:///protocol_rename.vams");
+    let src = "module Top(p, n);\n  inout electrical p, n;\n  parameter real power = 1.0;\nendmodule\n";
     let mut h = Harness::start(&uri, src);
-    let line = src[..src.find("param power").unwrap()].matches('\n').count() as u32;
-    let col = "mod Top (inout p: Electrical, inout n: Electrical) { param ".chars().count() as u32;
+    let line = src[..src.find("real power").unwrap()].matches('\n').count() as u32;
+    let col = "  parameter real ".chars().count() as u32;
     let edit = h.rename(&uri, line, col, "pwr").expect("expected a rename WorkspaceEdit");
     assert!(edit.changes.is_some() || edit.document_changes.is_some(), "rename must produce an edit");
     h.shutdown();
@@ -497,13 +555,13 @@ fn test_e2e_lsp_server_memory_connection() {
     });
     
     // Send didOpen notification
-    let uri: Uri = "file:///test.phdl".parse().unwrap();
+    let uri: Uri = "file:///test.vams".parse().unwrap();
     let did_open_params = DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
             uri: uri.clone(),
-            language_id: "phdl".to_string(),
+            language_id: "vams".to_string(),
             version: 1,
-            text: "discipline Electrical { potential v: Real; flow i: Real; }\nmod R (inout p: Electrical, inout n: Electrical) {}".to_string(),
+            text: "module R(inout electrical p, n);\nendmodule\n".to_string(),
         }
     };
     client_conn.sender.send(Message::Notification(Notification {
@@ -528,7 +586,7 @@ fn test_e2e_lsp_server_memory_connection() {
     let hover_params = HoverParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
-            position: Position { line: 1, character: 4 }, // "R" in "mod R"
+            position: Position { line: 0, character: 7 }, // "R" in "module R"
         },
         work_done_progress_params: Default::default(),
     };

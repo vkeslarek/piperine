@@ -313,11 +313,11 @@ publishing scenarios and core protocol handshake/lifecycle scenarios.
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] Every fixture string in these 2 files is valid VAMS
-- [ ] Every PHDL-syntax-only failure now passes
-- [ ] Any `span:None`-only failure documented per T6's pattern
-- [ ] Previously-passing tests unchanged (diagnostics 3/8, protocol 3/12)
-- [ ] Gate check passes: `cargo test -p piperine-lang-server --test diagnostics --test protocol`
+- [x] Every fixture string in these 2 files is valid VAMS
+- [x] Every PHDL-syntax-only failure now passes
+- [x] Any `span:None`-only failure documented per T6's pattern
+- [x] Previously-passing tests unchanged (diagnostics 3/8, protocol 3/12)
+- [x] Gate check passes: `cargo test -p piperine-lang-server --test diagnostics --test protocol`
 
 **Tests**: integration (existing files, rewritten fixtures)
 **Gate**: quick
