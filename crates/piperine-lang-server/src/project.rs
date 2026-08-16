@@ -47,7 +47,7 @@ impl ProjectContext {
     }
 }
 
-/// A project-wide multi-file index (T12/LSP-14): every `.phdl` file under
+/// A project-wide multi-file index (T12/LSP-14): every Verilog-AMS (`.va`/`.vams`) file under
 /// the project's `src/` directory, elaborated against the shared project
 /// `SourceMap`, keyed by its path, plus one [`ResolutionIndex`] merging all
 /// of their bindings with [`BindingInfo::file`][piperine_lang::BindingInfo]
@@ -71,7 +71,7 @@ pub struct ProjectUnit {
     pub root: PathBuf,
     pub designs: HashMap<PathBuf, piperine_lang::Design>,
     pub index: ResolutionIndex,
-    /// Every discovered `.phdl` file's parse/elaboration errors — empty for
+    /// Every discovered Verilog-AMS (`.va`/`.vams`) file's parse/elaboration errors — empty for
     /// a file that elaborated cleanly. Keyed by the same paths as
     /// `designs`'s keys would be for a failing file (a path is in exactly
     /// one of `designs` or `errors` with a non-empty vec, never both).
@@ -79,7 +79,7 @@ pub struct ProjectUnit {
 }
 
 impl ProjectUnit {
-    /// Elaborate every `.phdl` file under `root/src/` against `source_map`
+    /// Elaborate every Verilog-AMS (`.va`/`.vams`) file under `root/src/` against `source_map`
     /// and merge their `ResolutionIndex`es into one project-wide index.
     pub fn build(root: &Path, source_map: &SourceMap) -> Self {
         let mut designs = HashMap::new();

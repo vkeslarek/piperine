@@ -46,6 +46,7 @@ Explicitly excluded. Documented to prevent scope creep.
 |---|---|
 | Multi-error diagnostics (VAMS parser/elaborator is fail-fast, only the first error per file becomes a `Diagnostic`; PHDL's old tolerant multi-error mode is gone) | Real, known gap — but an architectural change to the parser/elaborator's error-recovery strategy, not a lang-server/extension wiring fix. Separate follow-up feature. |
 | `Module`/`Port`/`Behavior::span` always `None` in `elab/lower/vams.rs` (blocks hover/goto/rename/highlight from ever resolving on those node kinds, even once everything in this feature is fixed) | Real, known gap (surfaced during `preprocessor-span-mapping`'s T13) — an elaborator change, not a lang-server/extension wiring fix. Separate follow-up feature. This feature's test-fixture migration (below) will surface exactly which hover/goto/rename cases stay dark because of it — expected, not a regression this feature introduces. |
+| Every POM node's `doc` field also hardcoded `None` in `elab/lower/vams.rs` (blocks doc-comment hover even where `span` did resolve) | Newly discovered during this feature's own test migration (T6, `hover.rs`) — same root cause/same follow-up feature as the `span:None` row above, not a separate elaborator change. Documented here retroactively (Verifier-flagged spec-precision gap) so `hover.rs`'s in-code citation of this table is accurate. |
 | New LSP capabilities (semantic tokens, inlay hints, code actions, etc.) not already implemented | Scope is fixing what's wired but broken/stale, not adding new capability surface |
 | Windows/macOS binary packaging validation (can't build/test those targets in this environment) | The Linux x86_64 path is what's verifiable here; the Windows/macOS suffix logic in `extension.js` is fixed by the same code change (one shared function) but not independently tested on those platforms |
 | Publishing the rebuilt `.vsix` anywhere (marketplace, release asset) | Out of scope — rebuilding and validating locally only; publishing is a user decision outside this feature |
@@ -253,28 +254,31 @@ any user-visible string or active glob/regex).
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| LSPMIG-01 | P1: `.vams`/`.va` activates the extension | Tasks | Pending |
-| LSPMIG-02 | P1: `source.vams` grammar applies | Tasks | Pending |
-| LSPMIG-03 | P1: dead `phdl` language id fully removed | Tasks | Pending |
-| LSPMIG-04 | P2: embedded `.vsix` binary auto-discovery fixed | Tasks | Pending |
-| LSPMIG-05 | P2: local dev build auto-discovery regression guard | Tasks | Pending |
-| LSPMIG-06 | P3: `.vsix` rebuilt current | Tasks | Pending |
-| LSPMIG-07 | P4: all 11 test files migrated to real VAMS fixtures | Tasks | Pending |
-| LSPMIG-08 | P4: PHDL-syntax-only failures now pass | Tasks | Pending |
-| LSPMIG-09 | P4: `span:None`-only failures left failing, documented | Tasks | Pending |
-| LSPMIG-10 | P4: previously-passing 9/53 still pass | Tasks | Pending |
-| LSPMIG-11 | P5: rename error message text | Tasks | Pending |
-| LSPMIG-12 | P5: doc comments describe VAMS | Tasks | Pending |
-| LSPMIG-13 | P5: Test Explorer dead scanner fixed/removed | Tasks | Pending |
-| LSPMIG-14 | P5: `.phdl`/`.ppr` removed from recognized extensions | Tasks | Pending |
+| LSPMIG-01 | P1: `.vams`/`.va` activates the extension | Verified | ✅ Verified |
+| LSPMIG-02 | P1: `source.vams` grammar applies | Verified | ✅ Verified |
+| LSPMIG-03 | P1: dead `phdl` language id fully removed | Verified | ✅ Verified |
+| LSPMIG-04 | P2: embedded `.vsix` binary auto-discovery fixed | Verified | ✅ Verified |
+| LSPMIG-05 | P2: local dev build auto-discovery regression guard | Verified | ✅ Verified |
+| LSPMIG-06 | P3: `.vsix` rebuilt current | Verified | ✅ Verified |
+| LSPMIG-07 | P4: all 11 test files migrated to real VAMS fixtures | Verified | ✅ Verified |
+| LSPMIG-08 | P4: PHDL-syntax-only failures now pass | Verified | ✅ Verified |
+| LSPMIG-09 | P4: `span:None`-only failures left failing, documented | Verified | ✅ Verified |
+| LSPMIG-10 | P4: previously-passing 9/53 still pass | Verified | ✅ Verified |
+| LSPMIG-11 | P5: rename error message text | Verified | ✅ Verified |
+| LSPMIG-12 | P5: doc comments describe VAMS | Verified | ✅ Verified |
+| LSPMIG-13 | P5: Test Explorer dead scanner fixed/removed | Verified | ✅ Verified |
+| LSPMIG-14 | P5: `.phdl`/`.ppr` removed from recognized extensions | Verified | ✅ Verified |
 
 **ID format:** `LSPMIG-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing →
 Verified
 
-**Coverage:** 14 total, 0 mapped to tasks (Tasks phase not yet run), 14
-unmapped ⚠️ (expected at end of Specify)
+**Coverage:** 14 total, 14 mapped to tasks and independently verified
+(`.specs/features/lang-server-vams-migration/validation.md`). 12/14
+clean PASS; 2 (LSPMIG-09, LSPMIG-14) verified functionally but flagged
+with a minor non-blocking documentation-accuracy gap each — see
+validation.md's Fix Plans.
 
 ---
 
