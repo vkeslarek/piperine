@@ -157,12 +157,12 @@ file)
 - Skill: NONE
 
 **Done when**:
-- [ ] `resolve()` correctly maps a segment-covered offset to its real `(source_id, local_offset)`
-- [ ] `resolve()` on a zero-length `PreprocessedSpan` returns a valid zero-width `Span` (spec Edge Case)
-- [ ] `resolve()` on a span that straddles two segments resolves using the segment covering the span's *start* (spec Edge Case, matches existing "unterminated X anchors on start" convention)
-- [ ] The empty/test constructor's `resolve()` degrades to a synthetic `<test>` source name rather than the loud-fail path
-- [ ] Gate check passes: `cargo test -p piperine-lang --test source_provenance`
-- [ ] Test count: at least one test per Done-when bullet above (no silent deletions)
+- [x] `resolve()` correctly maps a segment-covered offset to its real `(source_id, local_offset)`
+- [x] `resolve()` on a zero-length `PreprocessedSpan` returns a valid zero-width `Span` (spec Edge Case)
+- [x] `resolve()` on a span that straddles two segments resolves using the segment covering the span's *start* (spec Edge Case, matches existing "unterminated X anchors on start" convention)
+- [x] The empty/test constructor's `resolve()` degrades to a synthetic `<test>` source name rather than the loud-fail path
+- [x] Gate check passes: `cargo test -p piperine-lang --test source_provenance`
+- [x] Test count: at least one test per Done-when bullet above (no silent deletions)
 
 **Tests**: unit/integration (`source_provenance.rs`, per matrix)
 **Gate**: quick
