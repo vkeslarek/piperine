@@ -344,11 +344,11 @@ polish after)).
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] Every fixture string in these 3 files is valid VAMS
-- [ ] Every PHDL-syntax-only failure now passes
-- [ ] Any `span:None`-only failure documented per T6's pattern
-- [ ] Previously-passing tests unchanged (references_and_rename 1/4)
-- [ ] Gate check passes: `cargo test -p piperine-lang-server --test instance_highlight --test project_index --test references_and_rename`
+- [x] Every fixture string in these 3 files is valid VAMS
+- [x] Every PHDL-syntax-only failure now passes
+- [x] Any `span:None`-only failure documented per T6's pattern
+- [x] Previously-passing tests unchanged (references_and_rename 1/4)
+- [x] Gate check passes: `cargo test -p piperine-lang-server --test instance_highlight --test project_index --test references_and_rename`
 
 **Tests**: integration (existing files, rewritten fixtures)
 **Gate**: quick
