@@ -5,7 +5,49 @@ use std::path::PathBuf;
 use lsp_types::Uri;
 
 use piperine_lang::elab::registry::ElabContext;
+use piperine_lang::source_provenance::{SourceId, SourceProvenance};
 use piperine_lang::Design;
+
+/// The span an `ElabError` actually carries — mirrors
+/// `piperine_lang::lib.rs::resolve_elab_error`'s own "effective span"
+/// logic exactly, since the same "exactly one of these is ever populated"
+/// invariant applies here: `err.span` only when `with_span` set it,
+/// otherwise the wrapped `VamsParse` variant's own span (a plain parse
+/// failure's `From<ParseError>` conversion always leaves the outer field
+/// `None`, relying on `VamsParse { span, .. }` instead).
+pub(crate) fn effective_span(err: &piperine_lang::ElabError) -> Option<miette::SourceSpan> {
+    err.span.or_else(|| match &err.kind {
+        piperine_lang::pom::ElabErrorKind::VamsParse { span, .. } => *span,
+        _ => None,
+    })
+}
+
+/// Resolves `err`'s effective span (a flat-preprocessed-buffer
+/// `miette::SourceSpan`, the same coordinate space `PreprocessedSpan`
+/// uses) through `prov` (T12, SPANMAP-08). When the resolved location
+/// falls inside the top-level document's own text (`SourceId(0)` —
+/// `Preprocessor::run` always names its top-level input source that way),
+/// returns the real local span in *this document's own* coordinate space,
+/// matching the CLI's render-boundary fix (T8). When it falls inside a
+/// different source (an `` `include ``d file, or macro-expanded text
+/// anchored there), returns `None` for the span (never a wrong
+/// in-document range) plus that source's own name, so the caller can
+/// degrade to a clearly-labeled "originates in `<path>`, not this
+/// document" diagnostic (spec P3 AC1(b)).
+pub(crate) fn resolve_span_origin(
+    err: &piperine_lang::ElabError,
+    prov: &SourceProvenance,
+) -> (Option<miette::SourceSpan>, Option<String>) {
+    let Some(sp) = effective_span(err) else { return (None, None) };
+    let flat = piperine_lang::PreprocessedSpan::new(sp.offset(), sp.offset() + sp.len());
+    let resolved = prov.resolve(flat);
+    if resolved.source_id == SourceId(0) {
+        let local = miette::SourceSpan::new(resolved.start.into(), resolved.end.saturating_sub(resolved.start));
+        (Some(local), None)
+    } else {
+        (None, Some(prov.name(resolved.source_id).to_string()))
+    }
+}
 
 /// Holds the current state of each open document.
 pub struct ServerState {
@@ -53,7 +95,12 @@ pub struct DocumentState {
 #[derive(Debug, Clone)]
 pub struct ParseError {
     pub message: String,
-    /// Span in the source.
+    /// Span in the source — always in `DocumentState::source`'s own
+    /// coordinate space (T12, SPANMAP-08). `None` either because the
+    /// error carried no span at all, or because it resolved to a
+    /// different source (`external_origin` is `Some` in that case) —
+    /// a span from another file is never reported as if it were in this
+    /// document's own text.
     pub span: Option<miette::SourceSpan>,
     /// The structured diagnostic code (T17/LSP-19), e.g. `"E2002"` for
     /// `ElabErrorKind::UndefinedType` or `"E1002"` for a parser
@@ -63,6 +110,13 @@ pub struct ParseError {
     /// not happen for `piperine_lang::parse::error::ParseError`/`ElabError`
     /// today — both enums are fully coded).
     pub code: Option<String>,
+    /// Set when the error's real (resolved) span falls inside a different
+    /// source than this document's own text — e.g. an `` `include ``d
+    /// header (T12, SPANMAP-08/P3-AC1(b)). Carries that source's own
+    /// name/path so `parse_error_to_diagnostic` can degrade to a
+    /// clearly-labeled "originates in `<path>`, not this document" note
+    /// instead of a wrong in-document range.
+    pub external_origin: Option<String>,
 }
 
 impl ServerState {
@@ -155,11 +209,27 @@ impl DocumentState {
             Err(e) => {
                 let elab_err = piperine_lang::ElabError::from(e);
                 let code = miette::Diagnostic::code(&elab_err.kind).map(|c| c.to_string());
-                self.errors.push(ParseError { message: elab_err.to_string(), span: elab_err.span, code });
+                // `Parser::parse`'s own error path doesn't carry a
+                // `SourceProvenance` out (the failure happened before a
+                // `SourceFile` could be built) — a second, cheap
+                // preprocessor pass recovers it, same trick
+                // `piperine_lang::lib.rs::parse_and_elaborate_seeded_with_context`
+                // already uses for its own render boundary (T8).
+                let mut pp = piperine_lang::Preprocessor::with_include_resolver(
+                    piperine_lang::SourceMapIncludeResolver::new(source_map),
+                );
+                let (span, external_origin) = match pp.run(&self.source) {
+                    Ok((_, prov)) => resolve_span_origin(&elab_err, &prov),
+                    Err(_) => (effective_span(&elab_err), None),
+                };
+                self.errors.push(ParseError { message: elab_err.to_string(), span, code, external_origin });
                 return;
             }
         };
         self.ast = Some(source_file.clone());
+        // Captured before `elaborate` consumes `source_file` by value —
+        // the same provenance a successful `Design` would carry (T7).
+        let prov = source_file.source_provenance.clone();
 
         // Seed the plugin system's own `@device`/`@port` attribute
         // schemas (T35, VAMS-12/13) unconditionally — the LSP has no
@@ -183,9 +253,11 @@ impl DocumentState {
                 // language features (hover, go-to-def, outline) keep
                 // working.
                 let code = miette::Diagnostic::code(&e.kind).map(|c| c.to_string());
-                self.errors.push(ParseError { message: e.to_string(), span: e.span, code });
+                let (span, external_origin) = resolve_span_origin(&e, &prov);
+                self.errors.push(ParseError { message: e.to_string(), span, code, external_origin });
                 // `self.design`/`self.ctx` intentionally left unchanged
                 // (stale-but-valid).
+                return;
             }
         }
     }

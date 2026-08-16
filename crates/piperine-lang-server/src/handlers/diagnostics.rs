@@ -100,7 +100,29 @@ fn send_diagnostics(
 }
 
 /// Convert a ParseError into an LSP Diagnostic with position if available.
+///
+/// T12/SPANMAP-08/spec P3 AC1(b): when `error.external_origin` is set, the
+/// error's real location is a different source (typically an
+/// `` `include ``d file) than `source` (this document's own text) — there
+/// is no correct in-document range to show, so the diagnostic degrades to
+/// a clearly-labeled "originates in `<path>`, not this document" note at
+/// a sentinel `(0,0)` range instead of guessing a wrong line.
 fn parse_error_to_diagnostic(source: &str, error: &ParseError) -> Diagnostic {
+    if let Some(origin) = &error.external_origin {
+        return Diagnostic {
+            range: Range { start: Position { line: 0, character: 0 }, end: Position { line: 0, character: 1 } },
+            severity: Some(severity_for_code(error.code.as_deref())),
+            code: error
+                .code
+                .clone()
+                .map(NumberOrString::String)
+                .or_else(|| Some(NumberOrString::String("parse-error".into()))),
+            source: Some("piperine".into()),
+            message: format!("{} (originates in `{origin}`, not this document)", error.message),
+            ..Default::default()
+        };
+    }
+
     let range = error.span.map_or(
         Range {
             start: Position { line: 0, character: 0 },
@@ -155,6 +177,7 @@ pub fn extract_error_range(source: &str, error: &str) -> Range {
             })
             .map(|offset| miette::SourceSpan::new(offset.into(), 1)),
         code: None,
+        external_origin: None,
     };
     parse_error_to_diagnostic(source, &pe).range
 }

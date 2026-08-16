@@ -1,9 +1,52 @@
 //! Diagnostics: structured parse/elab error codes, per-file fan-out across a
 //! project, standalone documents, and the attribute-argument diagnostics that
 //! must point at the offending argument.
+//!
+//! Also covers T12 (`.specs/features/preprocessor-span-mapping/tasks.md`,
+//! SPANMAP-08): a diagnostic whose real cause lives inside `` `include ``d
+//! content degrades to a clearly-labeled "originates in `<path>`, not this
+//! document" note instead of a wrong in-document range.
 
 mod common;
 use common::*;
+
+/// SPANMAP-08 (T12): a diagnostic whose real cause is inside `` `include ``d
+/// content (`inc.vams`, included by the opened `top.vams`) degrades to the
+/// "originates in `<path>`, not this document" form — the error still
+/// surfaces against the including document's own URI (existing fan-out
+/// behavior, unaffected), but its range is a safe sentinel, never a
+/// fabricated line pointing at unrelated text in `top.vams`.
+#[test]
+fn include_error_degrades_to_originates_in_note_not_wrong_in_document_line() {
+    let scratch = ScratchProject::new("diag_include_origin");
+    // Deliberately malformed — the same crash-repro shape span_resolution.rs
+    // (piperine-lang, T8) uses: an unterminated port list.
+    let inc_src = "module Bad(;\nendmodule\n";
+    scratch.write_src("inc.vams", inc_src);
+    let top_src = "`include \"inc.vams\"\n";
+    let top_path = scratch.write_src("top.vams", top_src);
+
+    let top_uri: Uri = format!("file://{}", top_path.display()).parse().unwrap();
+    let by_uri = lsp_collect_diagnostics(&top_uri, top_src, 800);
+
+    let uri_str = top_uri.to_string();
+    let diags = by_uri.get(&uri_str).unwrap_or_else(|| {
+        panic!("expected a PublishDiagnostics notification for top.vams, got URIs: {:?}", by_uri.keys().collect::<Vec<_>>())
+    });
+    assert!(!diags.is_empty(), "the include's own parse error must still surface as a diagnostic on the including document");
+
+    let d = &diags[0];
+    assert!(d.message.contains("inc.vams"), "diagnostic should name the file the error actually originates in, got: {}", d.message);
+    assert!(
+        d.message.contains("not this document"),
+        "diagnostic should be clearly labeled as not originating in this document, got: {}",
+        d.message
+    );
+    // No wrong in-document range: degrades to the (0,0) sentinel, never a
+    // fabricated line/column pointing at unrelated text in top.vams.
+    assert_eq!(d.range.start, lsp_types::Position { line: 0, character: 0 });
+    assert_eq!(d.range.end, lsp_types::Position { line: 0, character: 1 });
+}
 
 /// LSP-16 Independent Test: an error in `a.phdl` publishes against
 /// `a.phdl`'s own URI, not the document that was actually opened

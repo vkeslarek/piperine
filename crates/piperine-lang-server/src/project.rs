@@ -103,15 +103,28 @@ impl ProjectUnit {
                 Err(e) => {
                     let elab_err = piperine_lang::ElabError::from(e);
                     let code = miette::Diagnostic::code(&elab_err.kind).map(|c| c.to_string());
+                    // Same T12/SPANMAP-08 second-pass trick `DocumentState::
+                    // analyze` uses: `Parser::parse`'s error path has no
+                    // `SourceProvenance` of its own to resolve through.
+                    let mut pp = piperine_lang::Preprocessor::with_include_resolver(
+                        piperine_lang::SourceMapIncludeResolver::new(source_map),
+                    );
+                    let (span, external_origin) = match pp.run(&body) {
+                        Ok((_, prov)) => crate::state::resolve_span_origin(&elab_err, &prov),
+                        Err(_) => (crate::state::effective_span(&elab_err), None),
+                    };
                     file_errors.push(crate::state::ParseError {
                         message: elab_err.to_string(),
-                        span: elab_err.span,
+                        span,
                         code,
+                        external_origin,
                     });
                     errors.insert(path, file_errors);
                     continue;
                 }
             };
+            // Captured before `elaborate` consumes `source_file` by value.
+            let prov = source_file.source_provenance.clone();
 
             let mut elaborator = piperine_lang::elab::Elaborator::new();
             piperine_lang::seed_device_port_schemas(&mut elaborator.ctx);
@@ -126,7 +139,8 @@ impl ProjectUnit {
                     // `ElabError::kind` carries the `#[diagnostic(code(...))]`,
                     // not `ElabError` itself — see state.rs's matching comment.
                     let code = miette::Diagnostic::code(&e.kind).map(|c| c.to_string());
-                    file_errors.push(crate::state::ParseError { message: e.to_string(), span: e.span, code });
+                    let (span, external_origin) = crate::state::resolve_span_origin(&e, &prov);
+                    file_errors.push(crate::state::ParseError { message: e.to_string(), span, code, external_origin });
                 }
             }
 

@@ -448,9 +448,9 @@ AC1(b) instead of guessing a wrong in-document range.
 - Skill: NONE
 
 **Done when**:
-- [ ] New test in `diagnostics.rs`: a diagnostic whose real cause is inside `` `include ``d content renders the "originates in `<path>`" degraded form, no crash, no wrong-line pointer into the open document
-- [ ] Existing `diagnostics.rs` tests for plain (non-directive) files still pass unchanged
-- [ ] Gate check passes: `cargo test -p piperine-lang-server --test diagnostics`
+- [x] New test in `diagnostics.rs`: a diagnostic whose real cause is inside `` `include ``d content renders the "originates in `<path>`" degraded form, no crash, no wrong-line pointer into the open document
+- [x] Existing `diagnostics.rs` tests for plain (non-directive) files still pass unchanged
+- [x] Gate check passes: `cargo test -p piperine-lang-server --test diagnostics`
 
 **Tests**: integration (extend `diagnostics.rs`, per matrix)
 **Gate**: quick
