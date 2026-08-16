@@ -29,7 +29,7 @@ echo "==> Building piperine binaries ($PROFILE)..."
 cargo build $CARGO_FLAG \
     --manifest-path "$PROJECT_ROOT/Cargo.toml" \
     -p piperine-lang-server \
-    -p piperine
+    -p piperine-cli
 
 TARGET_DIR="$PROJECT_ROOT/target/$PROFILE"
 BIN_DIR="$VSCODE_DIR/bin"
