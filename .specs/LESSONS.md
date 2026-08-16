@@ -200,6 +200,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: CARGO_TARGET_DIR=/var/tmp/piperine-target shared across git worktrees (verification-tooling)
 - last seen: 2026-08-16T18:06:19Z
 
+### L-032 — When a test comment cites a spec's Out of Scope table to justify a documented-but-failing test, verify that exact gap is actually listed there — a newly-discovered gap found mid-implementation needs the spec amended, not just the test commented.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `lang-server` · harmful: 0
+- features: lang-server-vams-migration
+- evidence: crates/piperine-lang-server/tests/hover.rs:42-44 (LSPMIG-09), spec.md Out of Scope table (lang-server)
+- last seen: 2026-08-16T19:16:37Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

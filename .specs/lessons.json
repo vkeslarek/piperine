@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 32,
+  "next_id": 33,
   "lessons": [
     {
       "id": "L-001",
@@ -562,6 +562,24 @@
       ],
       "created": "2026-08-16T18:06:19Z",
       "last_seen": "2026-08-16T18:06:19Z"
+    },
+    {
+      "id": "L-032",
+      "key": "spec_precision_gap::when a test comment cites a spec s out of scope table to justify a documented but failing test verify that exact gap is actually listed there a newly discovered gap found mid implementation needs the spec amended not just the test commented",
+      "text": "When a test comment cites a spec's Out of Scope table to justify a documented-but-failing test, verify that exact gap is actually listed there — a newly-discovered gap found mid-implementation needs the spec amended, not just the test commented.",
+      "signal": "spec_precision_gap",
+      "scope": "lang-server",
+      "status": "candidate",
+      "features": [
+        "lang-server-vams-migration"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-lang-server/tests/hover.rs:42-44 (LSPMIG-09), spec.md Out of Scope table (lang-server)"
+      ],
+      "created": "2026-08-16T19:16:37Z",
+      "last_seen": "2026-08-16T19:16:37Z"
     }
   ]
 }
