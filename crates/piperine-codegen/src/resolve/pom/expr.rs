@@ -4,7 +4,7 @@
 //! resolves names to ids at JIT emit time via the `Resolver`).
 
 use piperine_lang::ast::Expr;
-use piperine_lang::error::Span;
+use piperine_lang::error::PreprocessedSpan;
 use piperine_lang::lexer::NumberLit;
 
 use crate::resolve::*;
@@ -12,7 +12,7 @@ use crate::resolve::*;
 use super::analog_ops::analog_ops;
 use super::LowerCtx;
 
-const NOSPAN: Span = Span { start: 0, end: 0 };
+const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 
 fn real(v: f64) -> Expr {
     Expr::Number { span: NOSPAN, value: NumberLit::Real(v) }
@@ -232,7 +232,7 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
     }
 }
 
-fn resolve_call(name: &str, args: &[Expr], ctx: &mut LowerCtx, span: Span) -> Expr {
+fn resolve_call(name: &str, args: &[Expr], ctx: &mut LowerCtx, span: PreprocessedSpan) -> Expr {
     if name == "V" || name == "I" {
         // Should not normally reach here (V/I are AccessFunction nodes, not
         // Call nodes, in the VAMS grammar) — kept as a defensive fallback,

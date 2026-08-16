@@ -3,11 +3,11 @@
 
 use piperine_lang::pom::{Module, NetType, ValueType, Design};
 use piperine_lang::ast::{Domain as VamsDomain, DisciplineDecl};
-use piperine_lang::error::Span;
+use piperine_lang::error::PreprocessedSpan;
 use piperine_lang::lexer::NumberLit;
 use crate::resolve::*;
 
-const NOSPAN: Span = Span { start: 0, end: 0 };
+const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 
 // ─── Module conversion ───────────────────────────────────────────────────────
 

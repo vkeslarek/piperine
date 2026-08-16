@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use piperine_lang::ast::{BinOp, Expr as PomExpr, EventExpr, Stmt as PomStmt, UnOp};
 use piperine_lang::lexer::NumberLit;
-use piperine_lang::error::Span;
+use piperine_lang::error::PreprocessedSpan;
 
 use crate::resolve::{
     CrossDir, EventSource, AnalogEvent, LoweredBody,
@@ -38,7 +38,7 @@ use crate::resolve::{
 
 use crate::error::CodegenError;
 
-const NOSPAN: Span = Span { start: 0, end: 0 };
+const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 
 fn call(name: &str, args: Vec<PomExpr>) -> PomExpr {
     PomExpr::Call { span: NOSPAN, name: name.to_string(), args }

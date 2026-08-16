@@ -415,7 +415,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 .map(|(node, var)| {
                     let var_name = bodies[i].symbols.var(*var).name.clone();
                     let node_name = bodies[i].symbols.node(*node).name.clone();
-                    let nospan = piperine_lang::error::Span::new(0, 0);
+                    let nospan = piperine_lang::error::PreprocessedSpan::new(0, 0);
                     PomStmt::Assign {
                         span: nospan,
                         target: PomExpr::Ident { span: nospan, name: var_name },

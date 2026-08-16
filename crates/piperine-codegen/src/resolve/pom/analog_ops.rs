@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
 use piperine_lang::ast::{BinOp as VBinOp, Expr};
-use piperine_lang::error::Span;
+use piperine_lang::error::PreprocessedSpan;
 use piperine_lang::lexer::NumberLit;
 
 use crate::resolve::*;
@@ -15,7 +15,7 @@ use crate::resolve::*;
 use super::expr::resolve_expr;
 use super::LowerCtx;
 
-const NOSPAN: Span = Span { start: 0, end: 0 };
+const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 
 fn real(v: f64) -> Expr {
     Expr::Number { span: NOSPAN, value: NumberLit::Real(v) }

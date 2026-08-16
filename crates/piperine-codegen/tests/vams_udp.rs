@@ -6,10 +6,10 @@
 
 use piperine_codegen::kernel::digital::UdpTable;
 use piperine_solver::abi::LogicValue::{One, X, Zero};
-use piperine_lang::ast::{PrimitiveDecl, Span, UdpTableRow};
+use piperine_lang::ast::{PrimitiveDecl, PreprocessedSpan, UdpTableRow};
 
-fn span() -> Span {
-    Span::new(0, 0)
+fn span() -> PreprocessedSpan {
+    PreprocessedSpan::new(0, 0)
 }
 
 fn row(inputs: &[&str], current_state: Option<&str>, next_state: &str) -> UdpTableRow {

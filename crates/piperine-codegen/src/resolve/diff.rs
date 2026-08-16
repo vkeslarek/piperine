@@ -542,7 +542,7 @@ fn ident_str(e: &Expr) -> Option<String> {
 // ── Constant-folding constructors ──
 
 fn lit(v: f64) -> Expr {
-    Expr::Number { span: piperine_lang::error::Span::new(0, 0), value: piperine_lang::lexer::NumberLit::Real(v) }
+    Expr::Number { span: piperine_lang::error::PreprocessedSpan::new(0, 0), value: piperine_lang::lexer::NumberLit::Real(v) }
 }
 
 fn is_zero(e: &Expr) -> bool {

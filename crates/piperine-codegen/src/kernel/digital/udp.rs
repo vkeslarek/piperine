@@ -172,10 +172,10 @@ fn level_value(symbol: &str) -> Result<LogicValue, UdpError> {
 mod tests {
     use super::*;
     use LogicValue::*;
-    use piperine_lang::ast::{Span, UdpTableRow};
+    use piperine_lang::ast::{PreprocessedSpan, UdpTableRow};
 
-    fn span() -> Span {
-        Span::new(0, 0)
+    fn span() -> PreprocessedSpan {
+        PreprocessedSpan::new(0, 0)
     }
 
     fn row(inputs: &[&str], current_state: Option<&str>, next_state: &str) -> UdpTableRow {

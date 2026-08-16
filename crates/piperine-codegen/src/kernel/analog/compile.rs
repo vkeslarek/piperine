@@ -14,7 +14,7 @@ use crate::error::CodegenError;
 use piperine_lang::math;
 
 use piperine_lang::ast::Expr as PomExpr;
-use piperine_lang::error::Span;
+use piperine_lang::error::PreprocessedSpan;
 use piperine_lang::lexer::NumberLit;
 
 use super::{
@@ -26,7 +26,7 @@ use super::limits::{Limits, LIMIT_FNS};
 use super::noise::Noise;
 use super::reactive::Reactive;
 
-const NOSPAN: Span = Span { start: 0, end: 0 };
+const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 
 fn real(v: f64) -> PomExpr {
     PomExpr::Number { span: NOSPAN, value: NumberLit::Real(v) }
