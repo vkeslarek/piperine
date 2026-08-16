@@ -14,7 +14,7 @@ proceed without it.**
 ---
 
 **Design**: `.specs/features/preprocessor-span-mapping/design.md`
-**Status**: Draft
+**Status**: Done (Verifier PASS, 2 fix/re-verify iterations)
 
 ---
 

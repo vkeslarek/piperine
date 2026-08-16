@@ -1,7 +1,7 @@
 # Preprocessor Span-Mapping Design
 
 **Spec**: `.specs/features/preprocessor-span-mapping/spec.md`
-**Status**: Draft
+**Status**: Approved (implemented, Verifier PASS)
 
 ---
 

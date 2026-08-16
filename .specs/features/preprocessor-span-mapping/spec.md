@@ -288,25 +288,26 @@ trace-mode output.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| SPANMAP-01 | P1: Correct file+line on include-touched diagnostics | Tasks (T8) | Implementing |
-| SPANMAP-02 | P1: Include longer than including file (the crash case) | Tasks (T8) | Implementing |
-| SPANMAP-03 | P1: Repeated inclusion resolves to one stable file identity | Tasks (T6) | Implementing |
-| SPANMAP-04 | P2: Macro invocation site as primary label | Design | Pending |
-| SPANMAP-05 | P2: Macro definition site as secondary "expanded from here" label | Design | Pending |
-| SPANMAP-06 | P2: Nested macro expansion chain (N-deep) | Design | Pending |
-| SPANMAP-07 | P1/P2: Zero regression on the no-directives case | Tasks (T8) | Implementing |
-| SPANMAP-08 | P3: LSP position resolution for include/macro-touched spans | Design | Pending |
-| SPANMAP-09 | P2.5: macro invocation arguments recoverable from `ExpansionFrame` | Design | Pending |
-| SPANMAP-10 | P2.5: `piperine expand <file>` prints fully preprocessed text | Design | Pending |
-| SPANMAP-11 | P2.5: `piperine expand --trace` annotates macro name/args/location | Design | Pending |
+| SPANMAP-01 | P1: Correct file+line on include-touched diagnostics | Tasks (T8, fix `cef91386`) | ✅ Verified |
+| SPANMAP-02 | P1: Include longer than including file (the crash case) | Tasks (T8) | ✅ Verified |
+| SPANMAP-03 | P1: Repeated inclusion resolves to one stable file identity | Tasks (T6) | ✅ Verified |
+| SPANMAP-04 | P2: Macro invocation site as primary label | Tasks (T9/T10) | ✅ Verified |
+| SPANMAP-05 | P2: Macro definition site as secondary "expanded from here" label | Tasks (T9/T10) | ✅ Verified |
+| SPANMAP-06 | P2: Nested macro expansion chain (N-deep) | Tasks (T9) | ✅ Verified |
+| SPANMAP-07 | P1/P2: Zero regression on the no-directives case | Tasks (T8, fix `cef91386`) | ✅ Verified |
+| SPANMAP-08 | P3: LSP position resolution for include/macro-touched spans | Tasks (T11/T12/T13) | ✅ Verified (T13 partial — see validation.md) |
+| SPANMAP-09 | P2.5: macro invocation arguments recoverable from `ExpansionFrame` | Tasks (T9) | ✅ Verified |
+| SPANMAP-10 | P2.5: `piperine expand <file>` prints fully preprocessed text | Tasks (T14) | ✅ Verified |
+| SPANMAP-11 | P2.5: `piperine expand --trace` annotates macro name/args/location | Tasks (T15) | ✅ Verified |
 
 **ID format:** `SPANMAP-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing →
 Verified
 
-**Coverage:** 11 total, 0 mapped to tasks (Design phase not yet run), 11
-unmapped ⚠️ (expected at end of Specify)
+**Coverage:** 11 total, 11 mapped to tasks, 0 unmapped. Verifier PASS
+(2 fix→re-verify iterations) — see
+`.specs/features/preprocessor-span-mapping/validation.md`.
 
 ---
 

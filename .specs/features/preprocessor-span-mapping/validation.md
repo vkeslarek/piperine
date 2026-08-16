@@ -165,3 +165,56 @@ was touched. Both worktrees removed after use.
 3. SPANMAP-08/T13 is accurately self-scoped by the implementer as inert-pending-a-different-fix — not a new finding, but independently confirmed true.
 
 **Next steps**: Land Fix 1 immediately (trivial). Decide and land Fix 2's approach (thread the real path into the CLI's provenance, or amend the spec). Re-verify gate + AC table after both land.
+
+---
+
+## Re-verification
+
+**Date**: 2026-08-16
+**Commits checked**: `1911c6e9` (fix(lang): make `scale_factor_value` `pub(crate)` for preprocessor reuse — Fix 1), `cef91386` (fix(lang): suppress synthetic `<input>` source name for path-less callers — Fix 2)
+**HEAD at time of re-verification**: `cef91386` (`git log --oneline -1` confirmed)
+**Scope**: focused re-check of the two named gaps + a targeted regression sweep, not a from-scratch pass. Real working tree used directly (no worktree needed this time — the check is narrow); unrelated uncommitted LRM-conformance WIP (`.specs/LESSONS.md`, `.specs/STATE.md`, `.specs/lessons.json`, `elab/lower/vams.rs`, `vams_include.rs`) left untouched throughout, confirmed via `git status --short` before and after.
+
+### Gap 1 — `scale_factor_value` not `pub(crate)` (Blocker) — ✅ FIXED
+
+- `grep -n "pub(crate) fn scale_factor_value" crates/piperine-lang/src/lexer.rs` → `598:pub(crate) fn scale_factor_value(b: u8) -> Option<f64> {` — matches.
+- `cargo build --workspace` at HEAD (`cef91386`): clean, zero warnings, all 9 workspace crates compile (`piperine-lang`, `piperine-codegen`, `piperine-project`, `piperine-lang-server`, `piperine-api`, `piperine`, `piperine-plugin`, `piperine-python`, `piperine-cli`). No E0603, no other error.
+- `cargo build -p piperine-lang` in isolation: succeeds as part of the workspace build (transitively verified — it's the first crate compiled and had zero errors).
+
+### Gap 2 — spurious `<input>:` name label (Major) — ✅ FIXED
+
+- Live repro of the previous report's exact scenario (parse error, no `` `include ``/macro, real on-disk file, no path threading workaround needed): wrote `bad.va` containing `module Bad(` to a scratch dir and ran the built `piperine check bad.va` binary. Rendered output:
+  ```
+  Error in file bad.va:
+    × expected an identifier, found end of file
+    ╰─▶ E1005
+          × expected an identifier, found end of file
+           ╭────
+         1 │ module Bad(
+           ╰────
+  ```
+  No `<input>` token anywhere in the output — confirms the fix at the CLI boundary.
+- `cargo test -p piperine-lang --test span_resolution`: 2/2 pass, including `error_in_plain_source_resolves_to_the_top_level_file_unchanged`. Read the test body directly (not just the name): it asserts `!rendered.contains("<input>")` with an explicit comment tying it to SPANMAP-01's zero-regression AC ("no synthetic `<input>:` name label ever appeared pre-feature, and none may now") — this is a real, non-shallow assertion, not eyeballing.
+
+### Targeted regression sweep
+
+| Command | Result | Comparison to original validation.md's known-failure list |
+| --- | --- | --- |
+| `cargo test -p piperine-lang --test span_resolution --test macro_expansion_span --test source_provenance --test corpus --test preprocessor` | `span_resolution` 2/2 ok, `macro_expansion_span` 6/6 ok, `corpus` 3/3 ok, `preprocessor` 24/25 ok — 1 failure: `timescale_and_resetall_pass_through_as_directive_text` | Matches the original report's explicitly-named pre-existing failure exactly (same test name, same assertion). Not new. |
+| `cargo test -p piperine-codegen` | Fails to *build* the `margin_lowering` test target (`E0432`/`E0433`, `piperine_lang::parse`/`piperine_lang::pom::QuantityClass` don't exist) | Verified pre-existing by direct A/B: checked out `crates/piperine-codegen/tests/margin_lowering.rs` from baseline `3f53f287` into the working tree and rebuilt — **identical** compile errors at baseline, before this feature touched anything. File reverted with `git checkout HEAD --`. Neither fix commit (`1911c6e9`, `cef91386`) touches `piperine-codegen` at all (confirmed via `git show --stat` on both). Pre-existing dead PHDL-debt test-target build failure, not a new regression. |
+| `cargo test -p piperine-codegen --lib` (run separately since the test-target compile failure above aborts the crate's full `cargo test`) | 47 passed, 2 failed: `device::builder::tests::structural_connection_produces_one_mna_unknown_per_alias_group`, `device::builder::tests::structural_connection_unifies_tap0_with_p` | Count and unrelated nature match the original report's "2 pre-existing `piperine-codegen --lib` failures (unrelated)" line exactly. |
+| `cargo test -p piperine-lang-server` | unit tests 6/6 ok; `completion_and_symbols.rs` 0/5 ok, all 5 fail (`source must elaborate cleanly` / `doc.ctx.is_some()` panics) | Matches the original report's "5 lang-server completion/outline tests" pre-existing-failure line exactly (same 5 test names, same failure mode). |
+| `cargo test -p piperine-cli` | All targets pass: `add_cmd` 6/6, `build_cmd` 5/5, `check_cmd` 1/1, `expand_cmd` 6/6, `test_tb` 11/11 | Zero failures — no regressions, and `expand_cmd`'s 6 tests (including the SPANMAP-10/11 ACs) remain fully green after both fixes. |
+
+No failure found anywhere in the sweep falls outside the original validation.md's documented pre-existing/unrelated list. No new regressions introduced by either fix commit.
+
+### Gap-by-gap verdict
+
+| Gap | Status |
+| --- | --- |
+| Gap 1 (build-breaking E0603, Blocker) | ✅ Fixed — confirmed via grep, workspace build, and isolated crate build |
+| Gap 2 (spurious `<input>:` regression, Major) | ✅ Fixed — confirmed via live repro (no `<input>` in rendered output) and a non-shallow test assertion in `span_resolution.rs` |
+
+### Overall re-verification verdict: ✅ PASS
+
+Both gaps from the original FAIL report are closed with direct evidence (not just re-reading the fix diff). The targeted regression sweep found zero new failures — every failure present is byte-for-byte the same pre-existing/unrelated failure already catalogued in the original report's Gate Check section. The feature (`preprocessor-span-mapping`) is done.

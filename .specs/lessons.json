@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 29,
+  "next_id": 32,
   "lessons": [
     {
       "id": "L-001",
@@ -508,6 +508,60 @@
       ],
       "created": "2026-08-14T01:23:30Z",
       "last_seen": "2026-08-14T01:23:30Z"
+    },
+    {
+      "id": "L-029",
+      "key": "gate_fail::verify a feature s build test gate in a clean checkout of its own final commit fresh worktree or stash never against a working tree that also carries other uncommitted work an unrelated file fixed by chance in the sibling wip can mask a real compile break introduced by the feature itself",
+      "text": "Verify a feature's build/test gate in a clean checkout of its own final commit (fresh worktree or stash), never against a working tree that also carries other uncommitted work — an unrelated file fixed by chance in the sibling WIP can mask a real compile break introduced by the feature itself.",
+      "signal": "gate_fail",
+      "scope": "piperine-lang",
+      "status": "candidate",
+      "features": [
+        "preprocessor-span-mapping"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-lang/src/preprocessor.rs:544 (E0603 vs lexer.rs:598), fb447cd1 (piperine-lang)"
+      ],
+      "created": "2026-08-16T18:06:19Z",
+      "last_seen": "2026-08-16T18:06:19Z"
+    },
+    {
+      "id": "L-030",
+      "key": "spec_precision_gap::when a spec demands byte for byte identical rendered output text on a no op path assert the exact string or diff against the pre change baseline not just substring containment substring checks let a new stray token e g a placeholder source name slip through as a silent regression",
+      "text": "When a spec demands byte-for-byte identical rendered/output text on a no-op path, assert the exact string (or diff against the pre-change baseline), not just substring containment — substring checks let a new stray token (e.g. a placeholder source name) slip through as a silent regression.",
+      "signal": "spec_precision_gap",
+      "scope": "rendering",
+      "status": "candidate",
+      "features": [
+        "preprocessor-span-mapping"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SPANMAP-01 AC1, crates/piperine-lang/tests/span_resolution.rs:52-61 vs spec.md Success Criteria 'byte-for-byte the same rendered output' (rendering)"
+      ],
+      "created": "2026-08-16T18:06:19Z",
+      "last_seen": "2026-08-16T18:06:19Z"
+    },
+    {
+      "id": "L-031",
+      "key": "gate_fail::set a distinct cargo target dir per git worktree checkout during verification a shared target dir can serve a stale test binary compiled from a different worktree s source without recompiling silently hiding new tests or stale failures",
+      "text": "Set a distinct CARGO_TARGET_DIR per git worktree/checkout during verification — a shared target dir can serve a stale test binary compiled from a different worktree's source without recompiling, silently hiding new tests or stale failures.",
+      "signal": "gate_fail",
+      "scope": "verification-tooling",
+      "status": "candidate",
+      "features": [
+        "preprocessor-span-mapping"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "CARGO_TARGET_DIR=/var/tmp/piperine-target shared across git worktrees (verification-tooling)"
+      ],
+      "created": "2026-08-16T18:06:19Z",
+      "last_seen": "2026-08-16T18:06:19Z"
     }
   ]
 }

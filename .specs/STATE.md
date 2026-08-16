@@ -896,6 +896,33 @@ count. `cargo build --workspace`: zero warnings, both before and after.
 
 **Status:** Locked (user decision, 2026-08-13).
 
+### MD-48: `Span` is a resolved, human-facing type — `PreprocessedSpan` is the internal, unresolved one
+
+`preprocessor-span-mapping` design decision (2026-08-16). Today's `Span
+{start, end}` was a flat byte offset into the preprocessor's expanded
+output buffer, silently misused at every render boundary as if it
+indexed the *original file's own text* — the root cause of the
+`vams-corpus` sweep's `OutOfBounds` diagnostic crashes. Fix: rename
+today's type to `PreprocessedSpan` (pure mechanical rename, no logic
+change, ~80 call sites across `grammar/*.rs`/`lexer.rs`/
+`piperine-codegen`) and introduce a new `Span {source_id, start, end,
+expansion_chain}` that can only be constructed via a new
+`SourceProvenance::resolve(PreprocessedSpan) -> Span` registry (design
+doc: `.specs/features/preprocessor-span-mapping/design.md`). Convention
+for future features: **any position type minted before final
+file-identity is known must not share a name with the resolved,
+render-ready type** — a bare offset must never be presentable to a
+diagnostic/LSP boundary as if it were already real. `SourceProvenance` is
+deliberately named to avoid colliding with the existing
+`piperine_lang::SourceMap` (namespace → `` `include `` search-path
+resolver, `source_map.rs`) — a different, unrelated concept.
+
+**Status:** Locked (implemented and Verifier-PASSed 2026-08-16, 17
+commits on `feature/device-verification`, `3847fc18`..`cef91386` — see
+`.specs/features/preprocessor-span-mapping/validation.md`). `piperine
+expand`/`--trace` (SPANMAP-09/10/11) shipped as part of the same
+feature, added mid-flight per user request.
+
 ---
 
 ## Handoff Snapshot

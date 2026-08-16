@@ -182,6 +182,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: VAMS-14 (constraint-block semantics via attribute instances) — tasks.md Open Item #5 said a task 'MUST be added before Phase 7 is considered closed' (process)
 - last seen: 2026-08-14T01:23:30Z
 
+### L-029 — Verify a feature's build/test gate in a clean checkout of its own final commit (fresh worktree or stash), never against a working tree that also carries other uncommitted work — an unrelated file fixed by chance in the sibling WIP can mask a real compile break introduced by the feature itself.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `piperine-lang` · harmful: 0
+- features: preprocessor-span-mapping
+- evidence: crates/piperine-lang/src/preprocessor.rs:544 (E0603 vs lexer.rs:598), fb447cd1 (piperine-lang)
+- last seen: 2026-08-16T18:06:19Z
+
+### L-030 — When a spec demands byte-for-byte identical rendered/output text on a no-op path, assert the exact string (or diff against the pre-change baseline), not just substring containment — substring checks let a new stray token (e.g. a placeholder source name) slip through as a silent regression.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `rendering` · harmful: 0
+- features: preprocessor-span-mapping
+- evidence: SPANMAP-01 AC1, crates/piperine-lang/tests/span_resolution.rs:52-61 vs spec.md Success Criteria 'byte-for-byte the same rendered output' (rendering)
+- last seen: 2026-08-16T18:06:19Z
+
+### L-031 — Set a distinct CARGO_TARGET_DIR per git worktree/checkout during verification — a shared target dir can serve a stale test binary compiled from a different worktree's source without recompiling, silently hiding new tests or stale failures.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `verification-tooling` · harmful: 0
+- features: preprocessor-span-mapping
+- evidence: CARGO_TARGET_DIR=/var/tmp/piperine-target shared across git worktrees (verification-tooling)
+- last seen: 2026-08-16T18:06:19Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
