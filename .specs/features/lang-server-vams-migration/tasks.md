@@ -400,9 +400,9 @@ either way).
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] No code path scans for `bench NAME { fn ... }` over `.phdl` files
-- [ ] Either a working `*_tb.py`-based Test Explorer exists, or the dead feature is fully removed (no orphaned controller/watcher left registered doing nothing)
-- [ ] `node --check editors/vscode/extension.js` exits 0
+- [x] No code path scans for `bench NAME { fn ... }` over `.phdl` files
+- [x] Either a working `*_tb.py`-based Test Explorer exists, or the dead feature is fully removed (no orphaned controller/watcher left registered doing nothing)
+- [x] `node --check editors/vscode/extension.js` exits 0
 
 **Tests**: scripted verification
 **Gate**: scripted
