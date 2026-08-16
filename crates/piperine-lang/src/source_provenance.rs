@@ -176,6 +176,40 @@ impl SourceProvenance {
         self.sources.get(source_id.0 as usize).map(|(n, _)| n.as_str()).unwrap_or("<test>")
     }
 
+    /// Reverse lookup (T11, SPANMAP-08): every `PreprocessedSpan` in the
+    /// flat preprocessed buffer whose segment maps back to `source_id` and
+    /// overlaps `local_range` in that source's own text. Needed so the LSP
+    /// can go from "cursor position in the open document" to "which
+    /// AST-space span(s) in the lexer/grammar's preprocessed-buffer
+    /// coordinate system does this correspond to". A segment produced by
+    /// macro expansion maps every position in its buffer range to one
+    /// fixed local offset (the invocation's anchor, `Segment::local_start`)
+    /// — querying that anchor position returns the segment(s) the
+    /// expansion produced, per the same anchor-collapse convention forward
+    /// `resolve()` already uses.
+    pub fn segments_covering(
+        &self,
+        source_id: SourceId,
+        local_range: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = crate::error::PreprocessedSpan> + '_ {
+        self.segments.iter().filter_map(move |seg| {
+            if seg.source_id != source_id {
+                return None;
+            }
+            let seg_local_len = seg.buffer_range.end - seg.buffer_range.start;
+            let seg_local_start = seg.local_start;
+            let seg_local_end = seg_local_start + seg_local_len;
+            let overlap_start = seg_local_start.max(local_range.start);
+            let overlap_end = seg_local_end.min(local_range.end);
+            if overlap_start >= overlap_end {
+                return None;
+            }
+            let buf_start = seg.buffer_range.start + (overlap_start - seg_local_start);
+            let buf_end = buf_start + (overlap_end - overlap_start);
+            Some(crate::error::PreprocessedSpan::new(buf_start, buf_end))
+        })
+    }
+
     /// Finds the segment covering `pos`. `None` only for a genuinely empty
     /// registry (the documented empty/test degrade path) — any non-empty,
     /// correctly built registry covers every offset up to its buffer's

@@ -420,9 +420,9 @@ interface — given `(source_id, local_range)`, return every
 - Skill: NONE
 
 **Done when**:
-- [ ] New test: a known `(source_id, local_offset)` inside a plain-text region returns the expected `PreprocessedSpan`(s)
-- [ ] New test: a `(source_id, local_offset)` at a macro invocation site returns the span(s) of the resulting expansion
-- [ ] Gate check passes: `cargo test -p piperine-lang --test source_provenance`
+- [x] New test: a known `(source_id, local_offset)` inside a plain-text region returns the expected `PreprocessedSpan`(s)
+- [x] New test: a `(source_id, local_offset)` at a macro invocation site returns the span(s) of the resulting expansion
+- [x] Gate check passes: `cargo test -p piperine-lang --test source_provenance`
 
 **Tests**: unit (extend `source_provenance.rs`)
 **Gate**: quick

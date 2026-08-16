@@ -131,3 +131,44 @@ fn source_id_is_copy_eq() {
     let b = a;
     assert_eq!(a, b);
 }
+
+/// SPANMAP-08 (T11): a known `(source_id, local_offset)` inside a
+/// plain-text region returns the expected `PreprocessedSpan` — the
+/// identity-mapped case (segment's `local_start` equals its buffer
+/// start), same offsets on both sides.
+#[test]
+fn segments_covering_plain_text_returns_expected_span() {
+    let mut b = Builder::new();
+    // "before " (7 bytes, plain) + "RESULT" (6 bytes, macro-expanded,
+    // anchored at local offset 7 — the `` `M(1) `` invocation's own start)
+    // + " after" (6 bytes, plain, resuming at local offset 12).
+    let top = b.add_source("top.vams", "before `M(1) after");
+    b.record(0..7, top, 0, Vec::new());
+    b.record(7..13, top, 7, Vec::new());
+    b.record(13..19, top, 12, Vec::new());
+    let prov = b.build();
+
+    // "before" is local offsets [0, 6) in top.vams.
+    let hits: Vec<_> = prov.segments_covering(top, 0..6).collect();
+    assert_eq!(hits, vec![PreSpan::new(0, 6)]);
+}
+
+/// SPANMAP-08 (T11): a `(source_id, local_offset)` at a macro invocation
+/// site returns the span(s) of the resulting expansion in the flat
+/// buffer — not an unrelated plain-text segment.
+#[test]
+fn segments_covering_macro_invocation_site_returns_expansion_span() {
+    let mut b = Builder::new();
+    let top = b.add_source("top.vams", "before `M(1) after");
+    b.record(0..7, top, 0, Vec::new());
+    b.record(7..13, top, 7, Vec::new());
+    b.record(13..19, top, 12, Vec::new());
+    let prov = b.build();
+
+    // Local offsets [7, 12) in top.vams are the `` `M(1) `` invocation
+    // text itself — querying that range must hit the macro-expansion
+    // segment (buffer [7, 13)), not the plain "before "/" after" segments.
+    let hits: Vec<_> = prov.segments_covering(top, 7..12).collect();
+    assert_eq!(hits.len(), 1, "exactly the macro-expansion segment overlaps");
+    assert!(hits[0].start >= 7 && hits[0].end <= 13, "hit falls inside the expansion's own buffer range, got {:?}", hits[0]);
+}
