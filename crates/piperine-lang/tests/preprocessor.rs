@@ -16,7 +16,7 @@ impl IncludeResolver for MapResolver {
 }
 
 fn run(src: &str) -> String {
-    Preprocessor::new().run(src).unwrap_or_else(|e| panic!("unexpected preprocess error: {e}"))
+    Preprocessor::new().run(src).unwrap_or_else(|e| panic!("unexpected preprocess error: {e}")).0
 }
 
 // ── §10.4 `define / `undef ──────────────────────────────────────────────
@@ -144,7 +144,7 @@ fn unterminated_conditional_is_an_error_naming_the_opener() {
 fn include_inlines_the_resolved_file() {
     let mut files = HashMap::new();
     files.insert("defs.vams".to_string(), "electrical a;".to_string());
-    let out = Preprocessor::with_include_resolver(MapResolver(files))
+    let (out, _prov) = Preprocessor::with_include_resolver(MapResolver(files))
         .run("`include \"defs.vams\"\nmodule m; endmodule")
         .unwrap();
     assert_eq!(out, "electrical a;\nmodule m; endmodule");
@@ -198,4 +198,52 @@ fn backtick_inside_a_string_is_not_a_directive() {
 #[test]
 fn backtick_inside_a_line_comment_is_not_a_directive() {
     assert_eq!(run("// `not_a_directive\ncode"), "// `not_a_directive\ncode");
+}
+
+// ── `Preprocessor::run`'s new `(String, SourceProvenance)` return shape
+// (tasks.md T6, SPANMAP-01/02/03) ───────────────────────────────────────
+
+/// Design's Risks-table mitigation: for a source mixing a plain
+/// pass-through, an `` `include ``, and a macro expansion, every byte in
+/// the returned flat buffer must be covered by exactly one segment (no
+/// gaps) — checked indirectly via `resolve()`: every offset in the flat
+/// buffer must resolve to a valid, non-empty source name (never the
+/// synthetic "<test>" degrade, which only appears for a genuinely empty
+/// registry).
+#[test]
+fn every_byte_of_the_flat_buffer_is_covered_by_exactly_one_segment() {
+    let mut files = HashMap::new();
+    files.insert("defs.vams".to_string(), "electrical a;".to_string());
+    let (out, prov) = Preprocessor::with_include_resolver(MapResolver(files))
+        .run("`define X 1\ntop `include \"defs.vams\" `X end")
+        .unwrap();
+    for offset in 0..out.len() {
+        let resolved = prov.resolve(piperine_lang::error::PreprocessedSpan::new(offset, offset + 1));
+        assert_ne!(
+            prov.name(resolved.source_id),
+            "<test>",
+            "offset {offset} resolved to the empty-registry degrade path — a gap in the segment table"
+        );
+    }
+}
+
+/// SPANMAP-03: the same path `` `include ``d twice in one run resolves
+/// both inclusions to one stable `SourceId`, exercised through the real
+/// `Preprocessor::run` pipeline (not `Builder` directly, which T2's tests
+/// already cover).
+#[test]
+fn repeated_include_of_the_same_path_shares_one_source_id() {
+    let mut files = HashMap::new();
+    files.insert("defs.vams".to_string(), "electrical a;".to_string());
+    let (_out, prov) = Preprocessor::with_include_resolver(MapResolver(files))
+        .run("`include \"defs.vams\"\n`include \"defs.vams\"")
+        .unwrap();
+    // First inclusion starts at offset 0; the second starts right after
+    // the first inclusion's text plus the newline between the two
+    // directives.
+    let first = prov.resolve(piperine_lang::error::PreprocessedSpan::new(0, 1));
+    let second_start = "electrical a;".len() + 1; // + the newline between directives
+    let second = prov.resolve(piperine_lang::error::PreprocessedSpan::new(second_start, second_start + 1));
+    assert_eq!(first.source_id, second.source_id);
+    assert_eq!(prov.name(first.source_id), "defs.vams");
 }

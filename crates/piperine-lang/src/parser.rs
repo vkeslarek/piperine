@@ -41,7 +41,9 @@ impl Parser {
     /// grammar failure carries the span of the construct that didn't
     /// parse — never an outer "somewhere in this file" span.
     pub fn parse(mut self, source: &str) -> Result<SourceFile, ParseError> {
-        let preprocessed = self.preprocessor.run(source)?;
+        // T7 threads `source_provenance` onto the returned `SourceFile`;
+        // T6's own scope is only `Preprocessor::run`'s new return shape.
+        let (preprocessed, _source_provenance) = self.preprocessor.run(source)?;
         let directives = self.preprocessor.directives().clone();
         let toks = Lexer::new(&preprocessed).tokenize()?;
         let mut file = Grammar::new(toks).parse_source_file()?;

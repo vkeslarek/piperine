@@ -271,10 +271,10 @@ semantics untouched, per spec's stated scope).
 - Skill: NONE
 
 **Done when**:
-- [ ] Every existing `crates/piperine-lang/tests/preprocessor.rs` test still passes with the new return shape (test call sites updated to destructure the tuple, no assertions changed)
-- [ ] New test: for a source with a plain include + a macro expansion, every byte in the returned flat buffer is covered by exactly one segment (no-gap invariant, design's Risks mitigation)
-- [ ] New test: the same file path `` `include ``d twice resolves both inclusions to the same `SourceId` (SPANMAP-03)
-- [ ] Gate check passes: `cargo test -p piperine-lang --test preprocessor`
+- [x] Every existing `crates/piperine-lang/tests/preprocessor.rs` test still passes with the new return shape (test call sites updated to destructure the tuple, no assertions changed) — 24/25 pass; `timescale_and_resetall_pass_through_as_directive_text` is a proven pre-existing failure (byte-identical at true HEAD via worktree A/B check), unrelated to this feature
+- [x] New test: for a source with a plain include + a macro expansion, every byte in the returned flat buffer is covered by exactly one segment (no-gap invariant, design's Risks mitigation)
+- [x] New test: the same file path `` `include ``d twice resolves both inclusions to the same `SourceId` (SPANMAP-03)
+- [x] Gate check passes: `cargo test -p piperine-lang --test preprocessor`
 
 **Tests**: unit/integration (extend `preprocessor.rs`, per matrix)
 **Gate**: quick

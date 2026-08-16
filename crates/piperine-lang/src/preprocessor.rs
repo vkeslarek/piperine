@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 
 use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
+use crate::source_provenance::{Builder, SourceId};
 
 /// Resolves an `` `include "path" `` request to file contents. Returning
 /// `None` becomes a typed [`ParseErrorKind::IncludeNotFound`] naming the
@@ -59,6 +60,45 @@ struct CondFrame {
     /// `` `elsif `` after a match takes the "already satisfied" path
     /// (deactivated) rather than re-testing its condition.
     already_taken: bool,
+}
+
+/// Threads "which real source is this `process()` call's text coming from,
+/// and how does a position within it map to that source's own local
+/// offset" through the recursive preprocessing pass, so every pushed byte
+/// range gets a paired [`SourceProvenance`](crate::source_provenance::SourceProvenance)
+/// record (T6).
+struct RecCtx<'a> {
+    source_id: SourceId,
+    /// `None`: a position in the current `source` slice maps 1:1 to a
+    /// local offset in `source_id`'s own text — true for top-level
+    /// pass-through and `` `include ``d content, since both are scanned
+    /// directly over a real file's own unmodified text.
+    ///
+    /// `Some(anchor)`: every position in the current `source` slice maps
+    /// to this one fixed local offset instead — used for macro-expanded
+    /// text (`` `NAME(args) `` substituted output), which is not verbatim
+    /// present in any file, so there's no real per-character offset to
+    /// report. `anchor` is the macro invocation's own start offset,
+    /// giving every span inside the expansion a valid, in-bounds location
+    /// at (or very near) the invocation site. SPEC_DEVIATION: full
+    /// per-character macro-expansion provenance and the invocation/
+    /// definition dual-attribution chain are T9's job (out of this
+    /// batch, SPANMAP-04/05/06) — T6's scope is SPANMAP-01/02/03 only
+    /// (never out of bounds, resolves near the real location).
+    anchor: Option<usize>,
+    builder: &'a mut Builder,
+}
+
+impl<'a> RecCtx<'a> {
+    /// Records that `out[buf_start..buf_end]` (just pushed) came from
+    /// `pos_in_source` in the current `source` slice.
+    fn record_push(&mut self, buf_start: usize, buf_end: usize, pos_in_source: usize) {
+        if buf_start == buf_end {
+            return;
+        }
+        let local_start = self.anchor.unwrap_or(pos_in_source);
+        self.builder.record(buf_start..buf_end, self.source_id, local_start, None);
+    }
 }
 
 pub struct Preprocessor {
@@ -133,12 +173,18 @@ impl Preprocessor {
 
     /// Runs the full preprocessing pass over `source`, returning the
     /// expanded, directive-free (for the directives in scope) text ready
-    /// for the lexer.
-    pub fn run(&mut self, source: &str) -> Result<String, ParseError> {
+    /// for the lexer, alongside the [`SourceProvenance`](crate::source_provenance::SourceProvenance)
+    /// mapping every byte of that text back to its real origin (T6).
+    pub fn run(&mut self, source: &str) -> Result<(String, crate::source_provenance::SourceProvenance), ParseError> {
         let mut out = String::new();
         let mut cond_stack: Vec<CondFrame> = Vec::new();
         let mut include_stack: Vec<String> = Vec::new();
-        self.process(source, &mut out, &mut cond_stack, &mut include_stack, &mut Vec::new())?;
+        let mut builder = Builder::new();
+        let top_id = builder.add_source("<input>", source.to_string());
+        {
+            let mut rec = RecCtx { source_id: top_id, anchor: None, builder: &mut builder };
+            self.process(source, &mut out, &mut cond_stack, &mut include_stack, &mut Vec::new(), &mut rec)?;
+        }
         if let Some(frame) = cond_stack.pop() {
             return Err(ParseError::new(
                 ParseErrorKind::UnterminatedConditional { directive: frame.opener },
@@ -151,14 +197,15 @@ impl Preprocessor {
                 PreprocessedSpan::new(source.len(), source.len()),
             ));
         }
-        Ok(out)
+        Ok((out, builder.build()))
     }
 
     /// Scans `source`, appending emitted text to `out`. `expanding` tracks
     /// macro names currently being expanded on the call stack (rescan
     /// self-reference guard): a macro that invokes itself, directly or
     /// indirectly, is emitted literally at the point of self-reference
-    /// instead of expanding forever.
+    /// instead of expanding forever. `rec` records where every pushed byte
+    /// range came from (T6).
     #[allow(clippy::too_many_arguments)]
     fn process(
         &mut self,
@@ -167,6 +214,7 @@ impl Preprocessor {
         cond_stack: &mut Vec<CondFrame>,
         include_stack: &mut Vec<String>,
         expanding: &mut Vec<String>,
+        rec: &mut RecCtx,
     ) -> Result<(), ParseError> {
         let bytes = source.as_bytes();
         let mut pos = 0usize;
@@ -177,21 +225,27 @@ impl Preprocessor {
                 b'"' => {
                     let end = scan_string(source, pos);
                     if active(cond_stack) {
+                        let buf_start = out.len();
                         out.push_str(&source[pos..end]);
+                        rec.record_push(buf_start, out.len(), pos);
                     }
                     pos = end;
                 }
                 b'/' if bytes.get(pos + 1) == Some(&b'/') => {
                     let end = scan_line_comment(source, pos);
                     if active(cond_stack) {
+                        let buf_start = out.len();
                         out.push_str(&source[pos..end]);
+                        rec.record_push(buf_start, out.len(), pos);
                     }
                     pos = end;
                 }
                 b'/' if bytes.get(pos + 1) == Some(&b'*') => {
                     let end = scan_block_comment(source, pos);
                     if active(cond_stack) {
+                        let buf_start = out.len();
                         out.push_str(&source[pos..end]);
+                        rec.record_push(buf_start, out.len(), pos);
                     }
                     pos = end;
                 }
@@ -202,7 +256,9 @@ impl Preprocessor {
                         // not this module's concern (a lexical error the
                         // lexer will raise); pass it through.
                         if active(cond_stack) {
+                            let buf_start = out.len();
                             out.push('`');
+                            rec.record_push(buf_start, out.len(), pos);
                         }
                         pos += 1;
                         continue;
@@ -216,12 +272,15 @@ impl Preprocessor {
                         cond_stack,
                         include_stack,
                         expanding,
+                        rec,
                     )?;
                 }
                 _ => {
                     let ch_len = source[pos..].chars().next().map(char::len_utf8).unwrap_or(1);
                     if active(cond_stack) {
+                        let buf_start = out.len();
                         out.push_str(&source[pos..pos + ch_len]);
+                        rec.record_push(buf_start, out.len(), pos);
                     }
                     pos += ch_len;
                 }
@@ -241,6 +300,7 @@ impl Preprocessor {
         cond_stack: &mut Vec<CondFrame>,
         include_stack: &mut Vec<String>,
         expanding: &mut Vec<String>,
+        rec: &mut RecCtx,
     ) -> Result<usize, ParseError> {
         let active_now = cond_stack.iter().all(|f| f.branch_active);
 
@@ -312,7 +372,7 @@ impl Preprocessor {
             }
             "undef" => Ok(skip_to_end_of_logical_line(source, name_end)),
             "include" if active_now => {
-                self.handle_include(source, directive_start, name_end, out, include_stack, expanding)
+                self.handle_include(source, directive_start, name_end, out, include_stack, expanding, rec)
             }
             "include" => Ok(skip_to_end_of_logical_line(source, name_end)),
             "default_discipline" if active_now => Ok(self.handle_default_discipline(source, name_end)),
@@ -389,7 +449,7 @@ impl Preprocessor {
             }
             "resetall" => Ok(name_end),
             _ if active_now => {
-                self.handle_macro_invocation(source, directive_start, name_end, name, out, expanding)
+                self.handle_macro_invocation(source, directive_start, name_end, name, out, expanding, rec)
             }
             _ => Ok(skip_macro_invocation_args(source, name_end)),
         }
@@ -552,6 +612,7 @@ impl Preprocessor {
     /// T5's "Done when" list). `` `define ``/`` `undef `` state (the
     /// `macros` map) *does* cross file boundaries correctly, since it is
     /// `&mut self` state shared across the whole run.
+    #[allow(clippy::too_many_arguments)]
     fn handle_include(
         &mut self,
         source: &str,
@@ -560,6 +621,7 @@ impl Preprocessor {
         out: &mut String,
         include_stack: &mut Vec<String>,
         expanding: &mut Vec<String>,
+        rec: &mut RecCtx,
     ) -> Result<usize, ParseError> {
         let (path, after_path) = scan_quoted_path(source, after_include);
         if include_stack.iter().any(|p| p == &path) {
@@ -574,9 +636,15 @@ impl Preprocessor {
                 PreprocessedSpan::new(directive_start, after_path),
             ));
         };
+        // SPANMAP-03: the same path shares one stable SourceId across every
+        // inclusion — `Builder::add_source` dedups by name.
+        let inc_id = rec.builder.add_source(path.clone(), contents.clone());
         include_stack.push(path);
         let mut cond_stack = Vec::new();
-        self.process(&contents, out, &mut cond_stack, include_stack, expanding)?;
+        {
+            let mut inner_rec = RecCtx { source_id: inc_id, anchor: None, builder: &mut *rec.builder };
+            self.process(&contents, out, &mut cond_stack, include_stack, expanding, &mut inner_rec)?;
+        }
         if let Some(frame) = cond_stack.pop() {
             include_stack.pop();
             return Err(ParseError::new(
@@ -591,6 +659,7 @@ impl Preprocessor {
     /// Expands a `` `NAME `` or `` `NAME(args) `` macro invocation,
     /// rescanning the expansion (CPP-style) so nested macro references
     /// inside the body are themselves expanded.
+    #[allow(clippy::too_many_arguments)]
     fn handle_macro_invocation(
         &mut self,
         source: &str,
@@ -599,6 +668,7 @@ impl Preprocessor {
         name: &str,
         out: &mut String,
         expanding: &mut Vec<String>,
+        rec: &mut RecCtx,
     ) -> Result<usize, ParseError> {
         let Some(def) = self.macros.get(name).cloned() else {
             return Err(ParseError::new(
@@ -633,14 +703,25 @@ impl Preprocessor {
             // recursing forever. This bounds `define` recursion; the
             // recursive-*include* case (a distinct, spec-required error)
             // is handled separately in `handle_include`.
+            let buf_start = out.len();
             out.push_str(&expanded);
+            rec.record_push(buf_start, out.len(), directive_start);
             return Ok(after);
         }
 
         expanding.push(name.to_string());
         let mut cond_stack = Vec::new();
         let mut include_stack = Vec::new();
-        self.process(&expanded, out, &mut cond_stack, &mut include_stack, expanding)?;
+        // T6: macro-expanded text isn't verbatim present in any file, so
+        // every position within it maps to the invocation's own start
+        // offset (`anchor`) — a valid, in-bounds location near the real
+        // cause, never out of bounds. Full per-character/dual-attribution
+        // provenance is T9 (out of this batch, SPANMAP-04/05/06).
+        {
+            let mut inner_rec =
+                RecCtx { source_id: rec.source_id, anchor: Some(directive_start), builder: &mut *rec.builder };
+            self.process(&expanded, out, &mut cond_stack, &mut include_stack, expanding, &mut inner_rec)?;
+        }
         expanding.pop();
         Ok(after)
     }
