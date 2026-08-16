@@ -15,21 +15,9 @@ async function startClient(context) {
     const config = vscode.workspace.getConfiguration("piperine.server");
     let serverBaseName = config.get("path", "piperine-lang-server");
 
-    function getOsSpecificBinaryName(baseName) {
-        const isWindows = process.platform === "win32";
-        const isMac = process.platform === "darwin";
-        
-        let suffix = "-linux-x86_64";
-        if (isWindows) suffix = "-windows-x86_64.exe";
-        else if (isMac) suffix = "-macos-aarch64"; // Assuming we only package aarch64 for macos for now
-        
-        return baseName + suffix;
-    }
-
     let serverPath = serverBaseName;
 
     if (!path.isAbsolute(serverPath)) {
-        const osSpecificName = getOsSpecificBinaryName(serverBaseName);
         const candidates = [
             // Workspace target directories
             ...(vscode.workspace.workspaceFolders || []).map(
@@ -38,8 +26,10 @@ async function startClient(context) {
             ...(vscode.workspace.workspaceFolders || []).map(
                 (f) => path.join(f.uri.fsPath, "target", "debug", serverBaseName),
             ),
-            // Embedded OS-specific binary inside the extension itself
-            path.join(context.extensionPath, "bin", osSpecificName),
+            // Embedded binary inside the extension itself (build-vsix.sh copies
+            // plain, unsuffixed binaries into bin/ — each .vsix is already
+            // platform-specific, so no OS-suffix candidate is needed here)
+            path.join(context.extensionPath, "bin", serverBaseName),
             // Cargo global install
             path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", serverBaseName),
         ];
@@ -90,21 +80,9 @@ function getPiperineCliPath(context) {
     const config = vscode.workspace.getConfiguration("piperine.cli");
     let cliBaseName = config.get("path", "piperine");
 
-    function getOsSpecificBinaryName(baseName) {
-        const isWindows = process.platform === "win32";
-        const isMac = process.platform === "darwin";
-        
-        let suffix = "-linux-x86_64";
-        if (isWindows) suffix = "-windows-x86_64.exe";
-        else if (isMac) suffix = "-macos-aarch64";
-        
-        return baseName + suffix;
-    }
-
     let cliPath = cliBaseName;
 
     if (!path.isAbsolute(cliPath)) {
-        const osSpecificName = getOsSpecificBinaryName(cliBaseName);
         const candidates = [
             // Workspace target directories
             ...(vscode.workspace.workspaceFolders || []).map(
@@ -113,8 +91,10 @@ function getPiperineCliPath(context) {
             ...(vscode.workspace.workspaceFolders || []).map(
                 (f) => path.join(f.uri.fsPath, "target", "debug", cliBaseName),
             ),
-            // Embedded OS-specific binary inside the extension itself
-            path.join(context.extensionPath, "bin", osSpecificName),
+            // Embedded binary inside the extension itself (build-vsix.sh copies
+            // plain, unsuffixed binaries into bin/ — each .vsix is already
+            // platform-specific, so no OS-suffix candidate is needed here)
+            path.join(context.extensionPath, "bin", cliBaseName),
             // Cargo global install
             path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", cliBaseName),
         ];
