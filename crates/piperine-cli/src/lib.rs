@@ -35,6 +35,11 @@ pub enum Commands {
     Expand {
         /// The file to expand
         file: Option<String>,
+        /// Annotate each macro-expanded region with the macro name, its
+        /// argument values, and the invocation's real file:line
+        /// (SPANMAP-11).
+        #[arg(long, short = 'v')]
+        trace: bool,
     },
     /// Run a simulation explicitly, a Python script, or an interactive REPL
     Run {
@@ -121,8 +126,8 @@ pub fn execute() {
         Commands::Build { file } => {
             commands::build::execute(file);
         }
-        Commands::Expand { file } => {
-            commands::expand::execute(file);
+        Commands::Expand { file, trace } => {
+            commands::expand::execute(file, trace);
         }
         Commands::Run {
             entry,

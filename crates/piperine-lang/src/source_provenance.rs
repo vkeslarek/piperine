@@ -164,6 +164,17 @@ impl SourceProvenance {
         Span { source_id: seg.source_id, start: local_start, end: local_end, expansion_chain }
     }
 
+    /// Iterates every segment of the flat preprocessed buffer, in buffer
+    /// order — `(buffer_range, expansion_chain)` per segment, an empty
+    /// slice for plain/`` `include ``-only text. `Segment` itself stays
+    /// crate-private (an internal implementation detail no consumer
+    /// outside this module needs the concrete shape of); this is the one
+    /// public read-only view T15's `piperine expand --trace` needs to
+    /// annotate macro-expanded regions in buffer order (SPANMAP-11).
+    pub fn segments_in_order(&self) -> impl Iterator<Item = (std::ops::Range<usize>, &[ExpansionFrame])> {
+        self.segments.iter().map(|s| (s.buffer_range.clone(), s.expanded_from.as_slice()))
+    }
+
     /// The named source's own full text (for `NamedSource`/LSP document
     /// lookups).
     pub fn text(&self, source_id: SourceId) -> &str {

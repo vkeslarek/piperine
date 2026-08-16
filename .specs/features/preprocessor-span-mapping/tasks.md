@@ -535,9 +535,9 @@ for ("os argumentos da expansion para poder debugar").
 - Skill: NONE
 
 **Done when**:
-- [ ] New test: `piperine expand --trace` on a multi-argument macro invocation shows the macro name, every `param=value` pair, and the real invocation file:line in the annotation
-- [ ] New test: `piperine expand --trace` on a plain (non-macro) file shows no annotations (matches the "no noise on the common case" convention from T9)
-- [ ] Gate check passes: `cargo test -p piperine-cli --test expand_cmd`
+- [x] New test: `piperine expand --trace` on a multi-argument macro invocation shows the macro name, every `param=value` pair, and the real invocation file:line in the annotation
+- [x] New test: `piperine expand --trace` on a plain (non-macro) file shows no annotations (matches the "no noise on the common case" convention from T9)
+- [x] Gate check passes: `cargo test -p piperine-cli --test expand_cmd`
 
 **Tests**: integration (extend `expand_cmd.rs`)
 **Gate**: full (closes Phase 6)

@@ -1,13 +1,14 @@
 //! `piperine expand` on a real Verilog-AMS fixture: the command prints the
 //! fully preprocessed text (SPANMAP-10) and reuses the same typed error
 //! path `check` would for an unresolvable target
-//! (`.specs/features/preprocessor-span-mapping/tasks.md` T14).
+//! (`.specs/features/preprocessor-span-mapping/tasks.md` T14), plus
+//! `--trace` mode's macro-name/args/location annotations (T15, SPANMAP-11).
 //!
 //! Exercises the `expand` command's front-door wiring (file detection +
 //! `Preprocessor::run` + error rendering), matching `check_cmd.rs`'s
 //! convention (call the command's own `_file`-suffixed function directly).
 
-use piperine_cli::commands::expand::{expand_file, ExpandError};
+use piperine_cli::commands::expand::{expand_file, render_trace, ExpandError};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -83,4 +84,49 @@ fn expand_rejects_unrecognized_extension() {
     let p = tmp_ams(dir.path(), "not_vams.txt", "module R; endmodule\n");
     let err = expand_file(&p, &piperine_lang::SourceMap::dummy()).expect_err("must reject .txt");
     assert!(matches!(err, ExpandError::UnrecognizedExtension));
+}
+
+/// SPANMAP-11 (T15): `piperine expand --trace` on a multi-argument macro
+/// invocation (the `` `MPRnb(name, default, units, desc)``-shaped idiom
+/// spec.md's own P2.5 Independent Test names) shows the macro name, every
+/// `param=value` pair, and the real invocation file:line in the
+/// annotation.
+#[test]
+fn expand_trace_shows_macro_name_args_and_location() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top_body = "`define MPRnb(name,default,units,desc) parameter real name = default;\n\
+`MPRnb(rs, 1.0, \"ohms\", \"series resistance\")\n";
+    let p = tmp_ams(dir.path(), "top.vams", top_body);
+
+    let (text, prov) = expand_file(&p, &piperine_lang::SourceMap::dummy()).expect("expand_file ok");
+    let traced = render_trace(&text, &prov, &p.display().to_string());
+
+    assert!(traced.contains("expanded from macro `MPRnb`"), "trace must name the macro, got:\n{traced}");
+    assert!(traced.contains("name=rs"), "trace must show the `name` argument's real value, got:\n{traced}");
+    assert!(traced.contains("default=1.0"), "trace must show the `default` argument's real value, got:\n{traced}");
+    assert!(traced.contains("units=\"ohms\""), "trace must show the `units` argument's real value, got:\n{traced}");
+    assert!(traced.contains("desc=\"series resistance\""), "trace must show the `desc` argument's real value, got:\n{traced}");
+    assert!(
+        traced.contains(&format!("at {}:2", p.display())),
+        "trace must show the invocation's real file:line, got:\n{traced}"
+    );
+    // The expanded (substituted) body must still appear, after the
+    // annotation line.
+    assert!(traced.contains("parameter real rs = 1.0;"), "the expanded body must still be present, got:\n{traced}");
+}
+
+/// SPANMAP-11 (T15), matching T9's "no noise on the common case"
+/// convention: `piperine expand --trace` on a plain (non-macro) file shows
+/// no annotations at all.
+#[test]
+fn expand_trace_on_plain_file_shows_no_annotations() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = "module R (inout electrical p, n);\nendmodule\n";
+    let p = tmp_ams(dir.path(), "plain.vams", body);
+
+    let (text, prov) = expand_file(&p, &piperine_lang::SourceMap::dummy()).expect("expand_file ok");
+    let traced = render_trace(&text, &prov, &p.display().to_string());
+
+    assert!(!traced.contains("expanded from macro"), "a plain file must carry no expansion-chain annotation, got:\n{traced}");
+    assert_eq!(traced, body, "with no macro expansion, trace output is identical to plain expand output");
 }
