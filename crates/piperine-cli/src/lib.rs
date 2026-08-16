@@ -28,6 +28,14 @@ pub enum Commands {
         /// The file to build
         file: Option<String>,
     },
+    /// Print the fully preprocessed (`` `include ``/`` `define ``-expanded)
+    /// text a designer or `piperine-lang` developer can read directly —
+    /// the Verilog-AMS-toolchain equivalent of `cargo expand`
+    /// (P2.5, SPANMAP-10/11).
+    Expand {
+        /// The file to expand
+        file: Option<String>,
+    },
     /// Run a simulation explicitly, a Python script, or an interactive REPL
     Run {
         /// The file to run: `foo.py` (Python
@@ -112,6 +120,9 @@ pub fn execute() {
         }
         Commands::Build { file } => {
             commands::build::execute(file);
+        }
+        Commands::Expand { file } => {
+            commands::expand::execute(file);
         }
         Commands::Run {
             entry,

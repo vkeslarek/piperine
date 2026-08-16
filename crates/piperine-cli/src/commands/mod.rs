@@ -2,6 +2,7 @@ pub mod add;
 pub mod build;
 pub mod check;
 pub mod clean;
+pub mod expand;
 pub mod fmt;
 pub mod new;
 pub mod plugin;

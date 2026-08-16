@@ -506,10 +506,10 @@ Verilog-AMS-toolchain equivalent of `cargo expand`. Errors (unresolved
 - Skill: NONE
 
 **Done when**:
-- [ ] New test: `piperine expand` on a file with zero directives prints output byte-identical to the input file (SPANMAP-10 AC4)
-- [ ] New test: `piperine expand` on a file with `` `include ``s/`` `define ``s prints the fully resolved/expanded text
-- [ ] New test: `piperine expand` on a file with an unresolvable `` `include `` reports the same typed error `piperine check` would (SPANMAP-10 AC3)
-- [ ] Gate check passes: `cargo test -p piperine-cli --test expand_cmd` (new file, matching the existing `check_cmd.rs`/`build_cmd.rs` convention)
+- [x] New test: `piperine expand` on a file with zero directives prints output byte-identical to the input file (SPANMAP-10 AC4)
+- [x] New test: `piperine expand` on a file with `` `include ``s/`` `define ``s prints the fully resolved/expanded text
+- [x] New test: `piperine expand` on a file with an unresolvable `` `include `` reports the same typed error `piperine check` would (SPANMAP-10 AC3)
+- [x] Gate check passes: `cargo test -p piperine-cli --test expand_cmd` (new file, matching the existing `check_cmd.rs`/`build_cmd.rs` convention)
 
 **Tests**: integration (new `crates/piperine-cli/tests/expand_cmd.rs`, matching `check_cmd.rs`'s pattern)
 **Gate**: quick

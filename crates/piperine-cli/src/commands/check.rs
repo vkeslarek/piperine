@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 /// Recognized source extensions: `.vams`/`.va` (Verilog-AMS/Verilog-A,
 /// parsed with `piperine_lang::parse_and_elaborate`).
-fn is_recognized_source(path: &Path) -> bool {
+pub(crate) fn is_recognized_source(path: &Path) -> bool {
     matches!(path.extension().and_then(|s| s.to_str()), Some("vams") | Some("va"))
 }
 
