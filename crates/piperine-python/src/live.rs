@@ -1057,7 +1057,7 @@ mod Divider() {
     /// concurrent tests.)
     #[test]
     fn live_session_set_op_matches_fresh_builds_and_keeps_result_shapes() -> PyResult<()> {
-        let path = std::env::temp_dir().join("piperine_python_live_t6_test.phdl");
+        let path = std::env::temp_dir().join("piperine_python_live_t6_test.vams");
         std::fs::write(&path, DIVIDER)?;
         let path_str = path
             .to_str()
@@ -1192,7 +1192,7 @@ mod Top() {
     #[test]
     fn structural_set_auto_rebuilds_with_state_carry_and_failure_keeps_old_circuit()
     -> PyResult<()> {
-        let path = std::env::temp_dir().join("piperine_python_live_t9_test.phdl");
+        let path = std::env::temp_dir().join("piperine_python_live_t9_test.vams");
         std::fs::write(&path, DIO)?;
         let path_str = path
             .to_str()
@@ -1325,7 +1325,7 @@ mod Top() {
     /// the run (r 2k→1k) must survive the rebuild (the replay ledger).
     #[test]
     fn mid_transient_structural_set_restarts_from_t_with_carried_state() -> PyResult<()> {
-        let path = std::env::temp_dir().join("piperine_python_live_t10_test.phdl");
+        let path = std::env::temp_dir().join("piperine_python_live_t10_test.vams");
         std::fs::write(&path, RC_STRUCTURAL)?;
         let path_str = path
             .to_str()

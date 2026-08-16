@@ -299,7 +299,7 @@ mod Divider() {
 
         assert!(
             (v_plugin - v_host).abs() < 1e-9,
-            "identical PHDL, two binding modes, identical result: plugin={v_plugin} host={v_host}"
+            "identical device, two binding modes, identical result: plugin={v_plugin} host={v_host}"
         );
     }
 }

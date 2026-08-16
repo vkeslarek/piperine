@@ -99,9 +99,9 @@ mod tests {
     #[test]
     fn globs() {
         assert!(glob_match("*.cir", "rectifier.cir"));
-        assert!(glob_match("out/*", "out/a.phdl"));
+        assert!(glob_match("out/*", "out/a.vams"));
         assert!(glob_match("*", "anything"));
-        assert!(!glob_match("*.cir", "rectifier.phdl"));
-        assert!(!glob_match("out/*", "elsewhere/a.phdl"));
+        assert!(!glob_match("*.cir", "rectifier.vams"));
+        assert!(!glob_match("out/*", "elsewhere/a.vams"));
     }
 }
