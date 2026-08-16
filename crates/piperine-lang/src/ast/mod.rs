@@ -20,13 +20,13 @@ pub use expr::*;
 pub use item::*;
 pub use stmt::*;
 
-pub use crate::error::Span;
+pub use crate::error::PreprocessedSpan;
 
 /// One attribute instance entry, `name` or `name = value`, from an
 /// `attr_spec` inside `(* ... *)` (§2.9.1, Syntax 2-11/2-12).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attr {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     pub value: Option<Expr>,
 }

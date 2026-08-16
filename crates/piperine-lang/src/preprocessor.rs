@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 
-use crate::error::{ParseError, ParseErrorKind, Span};
+use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
 
 /// Resolves an `` `include "path" `` request to file contents. Returning
 /// `None` becomes a typed [`ParseErrorKind::IncludeNotFound`] naming the
@@ -142,13 +142,13 @@ impl Preprocessor {
         if let Some(frame) = cond_stack.pop() {
             return Err(ParseError::new(
                 ParseErrorKind::UnterminatedConditional { directive: frame.opener },
-                Span::new(source.len(), source.len()),
+                PreprocessedSpan::new(source.len(), source.len()),
             ));
         }
         if !self.open_keywords.is_empty() {
             return Err(ParseError::new(
                 ParseErrorKind::UnterminatedKeywords,
-                Span::new(source.len(), source.len()),
+                PreprocessedSpan::new(source.len(), source.len()),
             ));
         }
         Ok(out)
@@ -264,7 +264,7 @@ impl Preprocessor {
                 if cond_stack.is_empty() {
                     return Err(ParseError::new(
                         ParseErrorKind::UnmatchedConditionalDirective { directive: "elsif".to_string() },
-                        Span::new(directive_start, name_end),
+                        PreprocessedSpan::new(directive_start, name_end),
                     ));
                 }
                 let last = cond_stack.len() - 1;
@@ -283,7 +283,7 @@ impl Preprocessor {
                 let Some(frame) = cond_stack.last_mut() else {
                     return Err(ParseError::new(
                         ParseErrorKind::UnmatchedConditionalDirective { directive: "else".to_string() },
-                        Span::new(directive_start, name_end),
+                        PreprocessedSpan::new(directive_start, name_end),
                     ));
                 };
                 frame.branch_active = !frame.already_taken;
@@ -294,7 +294,7 @@ impl Preprocessor {
                 if cond_stack.pop().is_none() {
                     return Err(ParseError::new(
                         ParseErrorKind::UnmatchedConditionalDirective { directive: "endif".to_string() },
-                        Span::new(directive_start, name_end),
+                        PreprocessedSpan::new(directive_start, name_end),
                     ));
                 }
                 Ok(name_end)
@@ -327,7 +327,7 @@ impl Preprocessor {
             }
             "endcelldefine" if active_now => {
                 if let Some(start) = self.open_celldefine.take() {
-                    self.directives.celldefine_spans.push(Span::new(start, name_end));
+                    self.directives.celldefine_spans.push(PreprocessedSpan::new(start, name_end));
                 }
                 Ok(name_end)
             }
@@ -353,11 +353,11 @@ impl Preprocessor {
             "begin_keywords" => Ok(skip_to_end_of_logical_line(source, name_end)),
             "end_keywords" if active_now => {
                 let Some((version, start)) = self.open_keywords.pop() else {
-                    return Err(ParseError::new(ParseErrorKind::UnmatchedEndKeywords, Span::new(directive_start, name_end)));
+                    return Err(ParseError::new(ParseErrorKind::UnmatchedEndKeywords, PreprocessedSpan::new(directive_start, name_end)));
                 };
                 self.directives.keyword_scopes.push(crate::directives::KeywordScope {
                     version,
-                    span: Some(Span::new(start, name_end)),
+                    span: Some(PreprocessedSpan::new(start, name_end)),
                 });
                 Ok(name_end)
             }
@@ -457,7 +457,7 @@ impl Preprocessor {
                         if text.is_empty() { "<nothing>" } else { &text }
                     ),
                 },
-                Span::new(directive_start, name_end),
+                PreprocessedSpan::new(directive_start, name_end),
             )
         })?;
         self.directives.default_transition = Some((value, value));
@@ -565,13 +565,13 @@ impl Preprocessor {
         if include_stack.iter().any(|p| p == &path) {
             return Err(ParseError::new(
                 ParseErrorKind::RecursiveInclude { path },
-                Span::new(directive_start, after_path),
+                PreprocessedSpan::new(directive_start, after_path),
             ));
         }
         let Some(contents) = self.resolver.resolve(&path) else {
             return Err(ParseError::new(
                 ParseErrorKind::IncludeNotFound { path },
-                Span::new(directive_start, after_path),
+                PreprocessedSpan::new(directive_start, after_path),
             ));
         };
         include_stack.push(path);
@@ -581,7 +581,7 @@ impl Preprocessor {
             include_stack.pop();
             return Err(ParseError::new(
                 ParseErrorKind::UnterminatedConditional { directive: frame.opener },
-                Span::new(after_path, after_path),
+                PreprocessedSpan::new(after_path, after_path),
             ));
         }
         include_stack.pop();
@@ -603,7 +603,7 @@ impl Preprocessor {
         let Some(def) = self.macros.get(name).cloned() else {
             return Err(ParseError::new(
                 ParseErrorKind::UndefinedMacro { name: name.to_string() },
-                Span::new(directive_start, name_end),
+                PreprocessedSpan::new(directive_start, name_end),
             ));
         };
 
@@ -620,7 +620,7 @@ impl Preprocessor {
                         expected: params.len(),
                         found: args.len(),
                     },
-                    Span::new(directive_start, after),
+                    PreprocessedSpan::new(directive_start, after),
                 ));
             }
             substitute_params(&def.body, params, &args)

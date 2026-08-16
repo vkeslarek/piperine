@@ -3,7 +3,7 @@
 //! primitive (UDP) forms. LRM Annex A.1-A.5, A.7, A.9.
 
 use crate::ast::{Attr, Expr, Stmt};
-use crate::error::Span;
+use crate::error::PreprocessedSpan;
 
 // ─────────────────────────── nature / discipline ──────────────────────────
 
@@ -12,7 +12,7 @@ use crate::error::Span;
 /// 2-5..2-10's attribute-instance sites.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NatureDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     /// `nature Voltage : Potential;` — a derived nature, §3.6.1.1.
     pub parent: Option<String>,
@@ -41,7 +41,7 @@ pub enum Domain {
 /// Annex A.1.5. Not attribute-bearing (same reasoning as `NatureDecl`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisciplineDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     pub domain: Option<Domain>,
     pub potential: Option<String>,
@@ -67,7 +67,7 @@ pub enum Direction {
 /// A `[msb:lsb]` bit/array range.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Range {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub msb: Expr,
     pub lsb: Expr,
 }
@@ -84,7 +84,7 @@ pub struct Declarator {
 /// style or re-declared in the body — §3.7/Annex A.1.3/A.1.4.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PortDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub dir: Direction,
     pub discipline: Option<String>,
@@ -94,7 +94,7 @@ pub struct PortDecl {
 /// A net declaration inside a module body — §3.6.3/3.7.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub discipline: Option<String>,
     /// `ground` nets are represented via [`GroundDecl`], not here.
@@ -106,14 +106,14 @@ pub struct NetDecl {
 /// `ground name;` — §3.6.4.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroundDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
 }
 
 /// `branch (pos[,neg]) name1 [, name2 ...];` — §5.2, Annex A.1.4.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BranchDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub pos: String,
     pub neg: Option<String>,
@@ -132,7 +132,7 @@ pub enum VarKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub kind: VarKind,
     pub names: Vec<Declarator>,
@@ -141,7 +141,7 @@ pub struct VarDecl {
 /// `event name;` — §Annex A.2.1.3.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub names: Vec<String>,
 }
@@ -149,7 +149,7 @@ pub struct EventDecl {
 /// `genvar name;` — §6, Annex A.2.1.3.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenvarDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub names: Vec<String>,
 }
@@ -168,7 +168,7 @@ pub enum ParamType {
 /// A parameter value-range constraint, `from`/`exclude` — §3.4.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamRange {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub excluded: bool,
     pub lo: Option<Expr>,
     pub lo_exclusive: bool,
@@ -192,7 +192,7 @@ pub struct ParamAssignment {
 /// `parameter`/`localparam` declaration — §3.4, Annex A.2.1.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub is_local: bool,
     pub ty: Option<ParamType>,
@@ -203,7 +203,7 @@ pub struct ParamDecl {
 /// `aliasparam name = target;` — §3.4.7.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AliasParam {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     pub target: String,
 }
@@ -212,7 +212,7 @@ pub struct AliasParam {
 /// verbatim by Verilog-AMS. Attribute-bearing, §2.9 Syntax 2-7.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecparamDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub names: Vec<(String, Expr)>,
 }
@@ -220,7 +220,7 @@ pub struct SpecparamDecl {
 /// `defparam target = expr;` — §Annex A.2.1.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Defparam {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub target: String,
     pub value: Expr,
@@ -231,7 +231,7 @@ pub struct Defparam {
 /// A `function`/`analog function`/`task` formal port — §5.9/Annex A.2.6/A.2.7.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PortItemDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub dir: Direction,
     pub ty: Option<ParamType>,
@@ -248,7 +248,7 @@ pub enum FunctionKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub kind: FunctionKind,
     pub name: String,
@@ -263,7 +263,7 @@ pub struct FunctionDecl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub name: String,
     pub ports: Vec<PortItemDecl>,
@@ -290,7 +290,7 @@ pub enum BehaviorKind {
 /// Annex A.1.4/A.6.2. All four are attribute-bearing, §2.9 Syntax 2-7.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BehaviorConstruct {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub kind: BehaviorKind,
     pub body: Box<Stmt>,
@@ -299,7 +299,7 @@ pub struct BehaviorConstruct {
 /// `assign lvalue = expr;` — a continuous assignment, §Annex A.6.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContinuousAssign {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub target: Expr,
     pub value: Expr,
@@ -309,7 +309,7 @@ pub struct ContinuousAssign {
 /// named. Attribute-bearing, §2.9 Syntax 2-9.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PortConnection {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub name: Option<String>,
     pub value: Option<Expr>,
@@ -319,7 +319,7 @@ pub struct PortConnection {
 /// §6.3, Annex A.4.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     /// `name_of_module_instance ::= module_instance_identifier [ range ]`
     /// — Annex A.4.1/§6.2.2: an array-of-instances range (`buf8 [7:0]
@@ -332,7 +332,7 @@ pub struct Instance {
 /// instantiation, Annex A.4.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleInstantiation {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub module_name: String,
     pub param_overrides: Vec<PortConnection>,
@@ -345,7 +345,7 @@ pub struct ModuleInstantiation {
 /// named (`begin : label`) — §6.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerateBlock {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: Option<String>,
     pub items: Vec<ModuleItem>,
 }
@@ -353,7 +353,7 @@ pub struct GenerateBlock {
 /// `for (genvar = init; cond; step) generate_block` — §6.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopGenerate {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub genvar: String,
     pub init: Expr,
@@ -366,7 +366,7 @@ pub struct LoopGenerate {
 /// `if (cond) generate_block [else generate_block]` — §6.3.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfGenerate {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub cond: Expr,
     pub then_branch: GenerateBlock,
@@ -376,7 +376,7 @@ pub struct IfGenerate {
 /// One `case_generate` arm.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerateCaseArm {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub labels: Option<Vec<Expr>>,
     pub body: GenerateBlock,
 }
@@ -384,7 +384,7 @@ pub struct GenerateCaseArm {
 /// `case (selector) case_generate_item* endcase` — §6.4.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaseGenerate {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub selector: Expr,
     pub arms: Vec<GenerateCaseArm>,
@@ -394,7 +394,7 @@ pub struct CaseGenerate {
 /// region (no loop/conditional), §6.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerateRegion {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub items: Vec<ModuleItem>,
 }
 
@@ -405,7 +405,7 @@ pub struct GenerateRegion {
 /// concern, not this task's scope).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecifyBlock {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub items: Vec<Stmt>,
 }
 
@@ -422,7 +422,7 @@ pub enum GateKind {
 /// One gate instance, `[name] (terminals)`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateInstance {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: Option<String>,
     pub terminals: Vec<Expr>,
 }
@@ -430,7 +430,7 @@ pub struct GateInstance {
 /// A gate-primitive instantiation — §Annex A.4.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateInstantiation {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub kind: GateKind,
     pub strength0: Option<String>,
@@ -445,9 +445,9 @@ pub struct GateInstantiation {
 /// port declaration, §Annex A.5.2. Attribute-bearing, §2.9 Syntax 2-10.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UdpPortDecl {
-    Output { span: Span, attrs: Vec<Attr>, name: String, is_reg: bool, init: Option<Expr> },
-    Input { span: Span, attrs: Vec<Attr>, names: Vec<String> },
-    Reg { span: Span, attrs: Vec<Attr>, name: String },
+    Output { span: PreprocessedSpan, attrs: Vec<Attr>, name: String, is_reg: bool, init: Option<Expr> },
+    Input { span: PreprocessedSpan, attrs: Vec<Attr>, names: Vec<String> },
+    Reg { span: PreprocessedSpan, attrs: Vec<Attr>, name: String },
 }
 
 /// One row of a UDP state table, §Annex A.5.3 — kept as raw symbol text
@@ -455,7 +455,7 @@ pub enum UdpPortDecl {
 /// elaboration/codegen concern (VAMS-19).
 #[derive(Debug, Clone, PartialEq)]
 pub struct UdpTableRow {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub inputs: Vec<String>,
     pub current_state: Option<String>,
     pub next_state: String,
@@ -465,7 +465,7 @@ pub struct UdpTableRow {
 /// endprimitive` — §Annex A.5.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrimitiveDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub name: String,
     pub ports: Vec<UdpPortDecl>,
@@ -479,7 +479,7 @@ pub struct PrimitiveDecl {
 /// reusable parameter set (not covered by §2.9's attribute sites).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamsetDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     pub module_name: String,
     pub params: Vec<ParamDecl>,
@@ -496,7 +496,7 @@ pub struct ParamsetDecl {
 /// [`ParamsetDecl::statements`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamsetStatement {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub target: String,
     pub value: Expr,
 }
@@ -536,7 +536,7 @@ pub enum ConnectPortOverrides {
 /// works unchanged for both forms.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectRule {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub connectmodule: Option<String>,
     pub disciplines: Vec<String>,
     pub mode: Option<ConnectMode>,
@@ -556,7 +556,7 @@ pub enum ConnectResolutionTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectResolution {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub disciplines: Vec<String>,
     pub target: ConnectResolutionTarget,
 }
@@ -569,7 +569,7 @@ pub struct ConnectResolution {
 /// mixed-kind enum vec.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectrulesDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     pub rules: Vec<ConnectRule>,
     pub resolutions: Vec<ConnectResolution>,
@@ -581,7 +581,7 @@ pub struct ConnectrulesDecl {
 /// requirement) beyond parsing so a source using one is not rejected.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub name: String,
     pub body: String,
 }
@@ -619,7 +619,7 @@ pub enum ModuleItem {
 /// §2.9 Syntax 2-5.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleDecl {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub kind: ModuleKind,
     pub name: String,

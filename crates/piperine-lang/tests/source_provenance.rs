@@ -3,7 +3,7 @@
 //! domain types and forward `resolve()`. 1:1 to SPANMAP-01/02/03/07 plus
 //! the spec's zero-length-span and straddling-span edge cases.
 
-use piperine_lang::error::Span as PreSpan;
+use piperine_lang::error::PreprocessedSpan as PreSpan;
 use piperine_lang::source_provenance::{Builder, SourceId, SourceProvenance};
 
 /// SPANMAP-01/02: a segment-covered offset maps to its real

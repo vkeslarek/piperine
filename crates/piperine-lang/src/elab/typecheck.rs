@@ -101,7 +101,7 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
     }
 }
 
-fn annex_c_error(construct_kind: &str, span: crate::Span) -> ElabError {
+fn annex_c_error(construct_kind: &str, span: crate::PreprocessedSpan) -> ElabError {
     ElabError::from(ElabErrorKind::AnnexCSubsetViolation {
         construct_kind: construct_kind.to_string(),
         context: "analog block".to_string(),

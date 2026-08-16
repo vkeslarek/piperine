@@ -8,7 +8,7 @@
 //! design (declaration-family seams), never duplicated.
 
 use crate::ast::*;
-use crate::error::{ParseError, ParseErrorKind, Span};
+use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
 use crate::grammar::cursor::Grammar;
 use crate::lexer::{NumberLit, Tok};
 
@@ -93,7 +93,7 @@ impl Grammar {
             self.expect_punct(";")?;
         }
         let end = self.expect_kw("endnature")?;
-        n.span = Span::new(start.start, end.end);
+        n.span = PreprocessedSpan::new(start.start, end.end);
         Ok(n)
     }
 
@@ -131,7 +131,7 @@ impl Grammar {
             return Err(self.unexpected("'domain', 'potential', or 'flow'".to_string()));
         }
         let end = self.expect_kw("enddiscipline")?;
-        d.span = Span::new(start.start, end.end);
+        d.span = PreprocessedSpan::new(start.start, end.end);
         Ok(d)
     }
 
@@ -201,7 +201,7 @@ impl Grammar {
         }
         let end = self.expect_kw("endmodule")?;
         Ok(ModuleDecl {
-            span: Span::new(start.start, end.end),
+            span: PreprocessedSpan::new(start.start, end.end),
             attrs,
             kind,
             name,
@@ -374,7 +374,7 @@ impl Grammar {
         }
         let end = self.peek_span();
         self.eat_punct(";");
-        Ok(PortDecl { span: Span::new(start.start, end.start), attrs, dir, discipline, names })
+        Ok(PortDecl { span: PreprocessedSpan::new(start.start, end.start), attrs, dir, discipline, names })
     }
 
     /// `net_declaration`, §3.6.3/3.7 — a bare `discipline_identifier
@@ -388,7 +388,7 @@ impl Grammar {
         let nodeset = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
         self.expect_punct(";")?;
         Ok(NetDecl {
-            span: Span::new(start.start, start.end),
+            span: PreprocessedSpan::new(start.start, start.end),
             attrs,
             discipline: Some(discipline),
             names,
@@ -420,7 +420,7 @@ impl Grammar {
             names.push(name);
         }
         let end = self.expect_punct(";")?;
-        Ok(EventDecl { span: Span::new(start.start, end.end), attrs, names })
+        Ok(EventDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, names })
     }
 
     /// `integer_declaration`/`real_declaration`/`time_declaration`/
@@ -447,7 +447,7 @@ impl Grammar {
         };
         let names = self.parse_declarator_list()?;
         let end = self.expect_punct(";")?;
-        Ok(VarDecl { span: Span::new(start.start, end.end), attrs, kind, names })
+        Ok(VarDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, kind, names })
     }
 
     /// A discipline name where present, distinguished from "no discipline,
@@ -614,7 +614,7 @@ impl Grammar {
         self.expect_punct("=")?;
         let (target, _) = self.expect_ident()?;
         let end = self.expect_punct(";")?;
-        Ok(AliasParam { span: Span::new(start.start, end.end), name, target })
+        Ok(AliasParam { span: PreprocessedSpan::new(start.start, end.end), name, target })
     }
 
     /// `specparam_declaration`, inherited from 1364 — §Syntax 2-7
@@ -627,7 +627,7 @@ impl Grammar {
             names.push(self.parse_specparam_assignment()?);
         }
         let end = self.expect_punct(";")?;
-        Ok(SpecparamDecl { span: Span::new(start.start, end.end), attrs, names })
+        Ok(SpecparamDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, names })
     }
 
     /// `specparam`'s own `name = expr` pair — reuses
@@ -676,7 +676,7 @@ impl Grammar {
             names.push(self.expect_ident()?.0);
         }
         let end = self.expect_punct(";")?;
-        Ok(BranchDecl { span: Span::new(start.start, end.end), attrs, pos, neg, names })
+        Ok(BranchDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, pos, neg, names })
     }
 
     // ─────────────────────────── behavior constructs ──────────────────────
@@ -702,7 +702,7 @@ impl Grammar {
             BehaviorKind::Always
         };
         let body = Box::new(self.parse_stmt()?);
-        Ok(BehaviorConstruct { span: Span::new(start.start, body.span().end), attrs, kind, body })
+        Ok(BehaviorConstruct { span: PreprocessedSpan::new(start.start, body.span().end), attrs, kind, body })
     }
 
     // ───────────────────────────── functions / tasks ───────────────────────
@@ -728,7 +728,7 @@ impl Grammar {
             names.push(self.expect_ident()?.0);
         }
         let end = self.expect_punct(";")?;
-        Ok(PortItemDecl { span: Span::new(start.start, end.end), attrs, dir, ty, names })
+        Ok(PortItemDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, dir, ty, names })
     }
 
     /// `analog_function_declaration` / `function_declaration`, §5.9/
@@ -756,7 +756,7 @@ impl Grammar {
         }
         let body = Box::new(self.parse_stmt()?);
         let end = self.expect_kw("endfunction")?;
-        Ok(FunctionDecl { span: Span::new(start.start, end.end), attrs, kind, name, ret, ports, decls, body })
+        Ok(FunctionDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, kind, name, ret, ports, decls, body })
     }
 
     /// `task_declaration`, Annex A.2.7. Attribute-bearing, §Syntax 2-7.
@@ -775,7 +775,7 @@ impl Grammar {
         }
         let body = Box::new(self.parse_stmt()?);
         let end = self.expect_kw("endtask")?;
-        Ok(TaskDecl { span: Span::new(start.start, end.end), attrs, name, ports, decls, body })
+        Ok(TaskDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, name, ports, decls, body })
     }
 
     // ────────────────────────────── genvar / generate ──────────────────────
@@ -789,7 +789,7 @@ impl Grammar {
             names.push(self.expect_ident()?.0);
         }
         let end = self.expect_punct(";")?;
-        Ok(GenvarDecl { span: Span::new(start.start, end.end), attrs, names })
+        Ok(GenvarDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, names })
     }
 
     /// `generate_block`, §6 — `begin [':' name] module_or_generate_item*
@@ -807,7 +807,7 @@ impl Grammar {
                 items.push(self.parse_module_item()?);
             }
             let end = self.expect_kw("end")?;
-            return Ok(GenerateBlock { span: Span::new(start.start, end.end), name, items });
+            return Ok(GenerateBlock { span: PreprocessedSpan::new(start.start, end.end), name, items });
         }
         let item = self.parse_module_item()?;
         Ok(GenerateBlock { span: self.peek_span(), name: None, items: vec![item] })
@@ -830,7 +830,7 @@ impl Grammar {
         self.expect_punct(")")?;
         let body = self.parse_generate_block()?;
         Ok(LoopGenerate {
-            span: Span::new(start.start, body.span.end),
+            span: PreprocessedSpan::new(start.start, body.span.end),
             attrs,
             genvar,
             init,
@@ -851,7 +851,7 @@ impl Grammar {
         let then_branch = self.parse_generate_block()?;
         let else_branch = if self.eat_kw("else") { Some(self.parse_generate_block()?) } else { None };
         let end = else_branch.as_ref().map(|b| b.span).unwrap_or(then_branch.span);
-        Ok(IfGenerate { span: Span::new(start.start, end.end), attrs, cond, then_branch, else_branch })
+        Ok(IfGenerate { span: PreprocessedSpan::new(start.start, end.end), attrs, cond, then_branch, else_branch })
     }
 
     /// `conditional_generate_construct` (case-form), §6.4. Attribute-bearing.
@@ -879,10 +879,10 @@ impl Grammar {
                 Some(labels)
             };
             let body = self.parse_generate_block()?;
-            arms.push(GenerateCaseArm { span: Span::new(arm_start.start, body.span.end), labels, body });
+            arms.push(GenerateCaseArm { span: PreprocessedSpan::new(arm_start.start, body.span.end), labels, body });
         }
         let end = self.expect_kw("endcase")?;
-        Ok(CaseGenerate { span: Span::new(start.start, end.end), attrs, selector, arms })
+        Ok(CaseGenerate { span: PreprocessedSpan::new(start.start, end.end), attrs, selector, arms })
     }
 
     /// `generate_region`, §6.1 — a bare `generate ... endgenerate` with no
@@ -897,7 +897,7 @@ impl Grammar {
             items.push(self.parse_module_item()?);
         }
         let end = self.expect_kw("endgenerate")?;
-        Ok(GenerateRegion { span: Span::new(start.start, end.end), items })
+        Ok(GenerateRegion { span: PreprocessedSpan::new(start.start, end.end), items })
     }
 
     // ─────────────────────── instantiation / assign / defparam ─────────────
@@ -910,7 +910,7 @@ impl Grammar {
         self.expect_punct("=")?;
         let value = self.parse_expr()?;
         let end = self.expect_punct(";")?;
-        Ok(Defparam { span: Span::new(start.start, end.end), attrs, target, value })
+        Ok(Defparam { span: PreprocessedSpan::new(start.start, end.end), attrs, target, value })
     }
 
     /// `continuous_assign`, Annex A.6.1. Attribute-bearing, §Syntax 2-7.
@@ -921,7 +921,7 @@ impl Grammar {
         self.expect_punct("=")?;
         let value = self.parse_expr()?;
         let end = self.expect_punct(";")?;
-        Ok(ContinuousAssign { span: Span::new(start.start, end.end), attrs, target, value })
+        Ok(ContinuousAssign { span: PreprocessedSpan::new(start.start, end.end), attrs, target, value })
     }
 
     /// One port/parameter connection at an instantiation site — ordered or
@@ -934,11 +934,11 @@ impl Grammar {
             self.expect_punct("(")?;
             let value = if self.at_punct(")") { None } else { Some(self.parse_expr()?) };
             let end = self.expect_punct(")")?;
-            return Ok(PortConnection { span: Span::new(start.start, end.end), attrs, name: Some(name), value });
+            return Ok(PortConnection { span: PreprocessedSpan::new(start.start, end.end), attrs, name: Some(name), value });
         }
         let value = if self.at_punct(",") || self.at_punct(")") { None } else { Some(self.parse_expr()?) };
         let end = value.as_ref().map(|v| v.span()).unwrap_or(start);
-        Ok(PortConnection { span: Span::new(start.start, end.end), attrs, name: None, value })
+        Ok(PortConnection { span: PreprocessedSpan::new(start.start, end.end), attrs, name: None, value })
     }
 
     fn parse_instance(&mut self) -> Result<Instance, ParseError> {
@@ -956,7 +956,7 @@ impl Grammar {
             }
         }
         let end = self.expect_punct(")")?;
-        Ok(Instance { span: Span::new(start.start, end.end), name, range, connections })
+        Ok(Instance { span: PreprocessedSpan::new(start.start, end.end), name, range, connections })
     }
 
     /// `module_instantiation`, Annex A.4.1. Attribute-bearing.
@@ -984,7 +984,7 @@ impl Grammar {
         }
         let end = self.expect_punct(";")?;
         Ok(ModuleInstantiation {
-            span: Span::new(start.start, end.end),
+            span: PreprocessedSpan::new(start.start, end.end),
             attrs,
             module_name,
             param_overrides,
@@ -1008,7 +1008,7 @@ impl Grammar {
             self.bump();
         }
         let end = self.expect_kw("endspecify")?;
-        Ok(SpecifyBlock { span: Span::new(start.start, end.end), items: vec![] })
+        Ok(SpecifyBlock { span: PreprocessedSpan::new(start.start, end.end), items: vec![] })
     }
 
     /// `gate_instantiation`, Annex A.4.2. Attribute-bearing. Drive strength
@@ -1029,7 +1029,7 @@ impl Grammar {
         }
         let end = self.expect_punct(";")?;
         Ok(GateInstantiation {
-            span: Span::new(start.start, end.end),
+            span: PreprocessedSpan::new(start.start, end.end),
             attrs,
             kind,
             strength0: None,
@@ -1052,7 +1052,7 @@ impl Grammar {
             terminals.push(self.parse_expr()?);
         }
         let end = self.expect_punct(")")?;
-        Ok(GateInstance { span: Span::new(start.start, end.end), name, terminals })
+        Ok(GateInstance { span: PreprocessedSpan::new(start.start, end.end), name, terminals })
     }
 
     // ─────────────────────────────────── UDP ────────────────────────────────
@@ -1091,7 +1091,7 @@ impl Grammar {
         self.expect_kw("endtable")?;
         let is_sequential = table.iter().any(|r| r.current_state.is_some());
         let end = self.expect_kw("endprimitive")?;
-        Ok(PrimitiveDecl { span: Span::new(start.start, end.end), attrs, name, ports, table, is_sequential })
+        Ok(PrimitiveDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, name, ports, table, is_sequential })
     }
 
     /// `udp_port_declaration`, Annex A.5.2. Attribute-bearing.
@@ -1104,7 +1104,7 @@ impl Grammar {
             let init = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
             let end = self.expect_punct(";")?;
             return Ok(UdpPortDecl::Output {
-                span: Span::new(start.start, end.end),
+                span: PreprocessedSpan::new(start.start, end.end),
                 attrs,
                 name,
                 is_reg,
@@ -1117,12 +1117,12 @@ impl Grammar {
                 names.push(self.expect_ident()?.0);
             }
             let end = self.expect_punct(";")?;
-            return Ok(UdpPortDecl::Input { span: Span::new(start.start, end.end), attrs, names });
+            return Ok(UdpPortDecl::Input { span: PreprocessedSpan::new(start.start, end.end), attrs, names });
         }
         self.expect_kw("reg")?;
         let (name, _) = self.expect_ident()?;
         let end = self.expect_punct(";")?;
-        Ok(UdpPortDecl::Reg { span: Span::new(start.start, end.end), attrs, name })
+        Ok(UdpPortDecl::Reg { span: PreprocessedSpan::new(start.start, end.end), attrs, name })
     }
 
     /// One `table` row, Annex A.5.3 — `level_symbol+ ':' level_symbol
@@ -1142,7 +1142,7 @@ impl Grammar {
             (None, first)
         };
         let end = self.expect_punct(";")?;
-        Ok(UdpTableRow { span: Span::new(start.start, end.end), inputs, current_state, next_state })
+        Ok(UdpTableRow { span: PreprocessedSpan::new(start.start, end.end), inputs, current_state, next_state })
     }
 
     /// One UDP level symbol (`0`/`1`/`x`/`?`/`-`/`*`/`b`/`r`/`f`/`p`/`n`) —
@@ -1190,7 +1190,7 @@ impl Grammar {
             }
         }
         let end = self.expect_kw("endparamset")?;
-        Ok(ParamsetDecl { span: Span::new(start.start, end.end), name, module_name, params, statements })
+        Ok(ParamsetDecl { span: PreprocessedSpan::new(start.start, end.end), name, module_name, params, statements })
     }
 
     /// `.module_parameter_identifier = paramset_constant_expression;` —
@@ -1204,7 +1204,7 @@ impl Grammar {
         self.expect_punct("=")?;
         let value = self.parse_expr()?;
         let end = self.expect_punct(";")?;
-        Ok(ParamsetStatement { span: Span::new(start.start, end.end), target, value })
+        Ok(ParamsetStatement { span: PreprocessedSpan::new(start.start, end.end), target, value })
     }
 
     /// `connectrules_declaration`, Annex A.1.8 — LRM chapter 7/Annex F.
@@ -1224,7 +1224,7 @@ impl Grammar {
             }
         }
         let end = self.expect_kw("endconnectrules")?;
-        Ok(ConnectrulesDecl { span: Span::new(start.start, end.end), name, rules, resolutions })
+        Ok(ConnectrulesDecl { span: PreprocessedSpan::new(start.start, end.end), name, rules, resolutions })
     }
 
     /// One `connect ...;` statement — either a `connect_rule` (legacy
@@ -1253,7 +1253,7 @@ impl Grammar {
                 };
                 let end = self.expect_punct(";")?;
                 return Ok(ConnectItem::Resolution(ConnectResolution {
-                    span: Span::new(start.start, end.end),
+                    span: PreprocessedSpan::new(start.start, end.end),
                     disciplines,
                     target,
                 }));
@@ -1271,7 +1271,7 @@ impl Grammar {
                 self.expect_punct(";")?
             };
             return Ok(ConnectItem::Rule(ConnectRule {
-                span: Span::new(start.start, end.end),
+                span: PreprocessedSpan::new(start.start, end.end),
                 connectmodule: None,
                 disciplines,
                 mode: None,
@@ -1350,7 +1350,7 @@ impl Grammar {
             self.expect_punct(";")?
         };
         Ok(ConnectItem::Rule(ConnectRule {
-            span: Span::new(start.start, end.end),
+            span: PreprocessedSpan::new(start.start, end.end),
             connectmodule: Some(connectmodule),
             disciplines,
             mode,
@@ -1375,7 +1375,7 @@ impl Grammar {
             self.bump();
         }
         let end = self.expect_kw("endconfig")?;
-        Ok(ConfigDecl { span: Span::new(start.start, end.end), name, body: String::new() })
+        Ok(ConfigDecl { span: PreprocessedSpan::new(start.start, end.end), name, body: String::new() })
     }
 
     // ─────────────────────────────── source file ───────────────────────────

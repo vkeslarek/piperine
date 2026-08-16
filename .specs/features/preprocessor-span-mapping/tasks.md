@@ -190,10 +190,10 @@ the old thing)
 - Skill: NONE
 
 **Done when**:
-- [ ] `grep -rn "\bSpan::new(" crates/piperine-lang/src/{lexer.rs,grammar}` returns zero matches (all renamed to `PreprocessedSpan::new(`)
-- [ ] No `pub use ... as Span` alias exists anywhere in `piperine-lang` pointing at the old type
-- [ ] `cargo build -p piperine-lang` is clean (zero warnings)
-- [ ] Full existing `piperine-lang` test suite (targets that compiled before this task) passes byte-identical to pre-rename, per MD-47's own A/B'd-via-git-stash verification method — this task explicitly re-runs that method
+- [x] `grep -rn "\bSpan::new(" crates/piperine-lang/src/{lexer.rs,grammar}` returns zero matches (all renamed to `PreprocessedSpan::new(`)
+- [x] No `pub use ... as Span` alias exists anywhere in `piperine-lang` pointing at the old type
+- [x] `cargo build -p piperine-lang` is clean (zero warnings)
+- [x] Full existing `piperine-lang` test suite (targets that compiled before this task) passes byte-identical to pre-rename, per MD-47's own A/B'd-via-git-stash verification method — this task explicitly re-runs that method
 
 **Tests**: none new (rename — existing suite is the regression gate)
 **Gate**: build + full existing suite (targeted, excluding the pre-existing dead-PHDL-debt targets per the Gate Check Commands table)
@@ -217,8 +217,8 @@ Design (`resolve/pom/{expr,structure,body,analog_ops}.rs`,
 - Skill: NONE
 
 **Done when**:
-- [ ] `cargo build -p piperine-codegen` is clean
-- [ ] `cargo test -p piperine-codegen` — existing passing targets (excluding the ~6 pre-existing dead targets per MD-47's record) still pass byte-identical
+- [x] `cargo build -p piperine-codegen` is clean
+- [x] `cargo test -p piperine-codegen` — existing passing targets (excluding the ~6 pre-existing dead targets per MD-47's record) still pass byte-identical
 
 **Tests**: none new (rename)
 **Gate**: build + full existing suite (scoped, per Gate Check Commands)

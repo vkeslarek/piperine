@@ -4,7 +4,7 @@
 //! named by what they parse, not by "helpers").
 
 use crate::ast::Attr;
-use crate::error::{ParseError, ParseErrorKind, Span};
+use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
 use crate::lexer::{Lexed, Tok};
 
 /// Wraps a token stream with whitespace/comment tokens already filtered
@@ -35,7 +35,7 @@ impl Grammar {
         matches!(self.peek(), Tok::Eof)
     }
 
-    pub(crate) fn peek_span(&self) -> Span {
+    pub(crate) fn peek_span(&self) -> PreprocessedSpan {
         self.toks[self.pos.min(self.toks.len() - 1)].span
     }
 
@@ -60,7 +60,7 @@ impl Grammar {
         }
     }
 
-    pub(crate) fn expect_punct(&mut self, p: &str) -> Result<Span, ParseError> {
+    pub(crate) fn expect_punct(&mut self, p: &str) -> Result<PreprocessedSpan, ParseError> {
         if self.at_punct(p) {
             Ok(self.bump().span)
         } else {
@@ -83,7 +83,7 @@ impl Grammar {
         }
     }
 
-    pub(crate) fn expect_kw(&mut self, word: &str) -> Result<Span, ParseError> {
+    pub(crate) fn expect_kw(&mut self, word: &str) -> Result<PreprocessedSpan, ParseError> {
         if self.at_kw(word) {
             Ok(self.bump().span)
         } else {
@@ -91,7 +91,7 @@ impl Grammar {
         }
     }
 
-    pub(crate) fn expect_ident(&mut self) -> Result<(String, Span), ParseError> {
+    pub(crate) fn expect_ident(&mut self) -> Result<(String, PreprocessedSpan), ParseError> {
         match self.peek().clone() {
             Tok::Ident(s) | Tok::EscapedIdent(s) => {
                 let span = self.bump().span;

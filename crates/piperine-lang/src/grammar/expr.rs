@@ -87,7 +87,7 @@ impl Grammar {
             let then_branch = self.parse_expr()?;
             self.expect_punct(":")?;
             let else_branch = self.parse_expr()?;
-            let span = crate::error::Span::new(cond.span().start, else_branch.span().end);
+            let span = crate::error::PreprocessedSpan::new(cond.span().start, else_branch.span().end);
             return Ok(Expr::Ternary {
                 span,
                 cond: Box::new(cond),
@@ -114,7 +114,7 @@ impl Grammar {
             // Otherwise inert (LRMC-C1-05): accepted and discarded.
             self.parse_attr_instances()?;
             let rhs = self.parse_expr_bp(rbp)?;
-            let span = crate::error::Span::new(lhs.span().start, rhs.span().end);
+            let span = crate::error::PreprocessedSpan::new(lhs.span().start, rhs.span().end);
             lhs = Expr::Binary { span, op, lhs: Box::new(lhs), rhs: Box::new(rhs) };
         }
         Ok(lhs)
@@ -127,7 +127,7 @@ impl Grammar {
             if let Some(op) = punct_to_unop(&p) {
                 let start = self.bump().span;
                 let operand = self.parse_unary()?;
-                let span = crate::error::Span::new(start.start, operand.span().end);
+                let span = crate::error::PreprocessedSpan::new(start.start, operand.span().end);
                 return Ok(Expr::Unary { span, op, operand: Box::new(operand) });
             }
         }
@@ -154,7 +154,7 @@ impl Grammar {
                 if self.eat_punct(":") {
                     let lsb = self.parse_expr()?;
                     let end = self.expect_punct("]")?;
-                    let span = crate::error::Span::new(base.span().start, end.end);
+                    let span = crate::error::PreprocessedSpan::new(base.span().start, end.end);
                     base = Expr::PartSelect {
                         span,
                         base: Box::new(base),
@@ -163,7 +163,7 @@ impl Grammar {
                     };
                 } else {
                     let end = self.expect_punct("]")?;
-                    let span = crate::error::Span::new(base.span().start, end.end);
+                    let span = crate::error::PreprocessedSpan::new(base.span().start, end.end);
                     base = Expr::Index { span, base: Box::new(base), index: Box::new(first) };
                 }
             } else {
@@ -264,7 +264,7 @@ impl Grammar {
     /// exclusively for a port name).
     fn parse_access_function(
         &mut self,
-        start: crate::error::Span,
+        start: crate::error::PreprocessedSpan,
         function: String,
     ) -> Result<Expr, ParseError> {
         self.expect_punct("(")?;
@@ -272,13 +272,13 @@ impl Grammar {
             let (port, _) = self.expect_ident()?;
             self.expect_punct(">")?;
             let end = self.expect_punct(")")?;
-            let span = crate::error::Span::new(start.start, end.end);
+            let span = crate::error::PreprocessedSpan::new(start.start, end.end);
             return Ok(Expr::PortAccess { span, function, port });
         }
         let pos = self.parse_expr()?;
         let neg = if self.eat_punct(",") { Some(Box::new(self.parse_expr()?)) } else { None };
         let end = self.expect_punct(")")?;
-        let span = crate::error::Span::new(start.start, end.end);
+        let span = crate::error::PreprocessedSpan::new(start.start, end.end);
         Ok(Expr::AccessFunction { span, function, pos: Box::new(pos), neg })
     }
 
@@ -314,7 +314,7 @@ impl Grammar {
             }
             self.expect_punct("}")?;
             let end = self.expect_punct("}")?;
-            let span = crate::error::Span::new(start.start, end.end);
+            let span = crate::error::PreprocessedSpan::new(start.start, end.end);
             return Ok(Expr::Replication { span, count: Box::new(first), parts });
         }
         let mut parts = vec![first];
@@ -322,7 +322,7 @@ impl Grammar {
             parts.push(self.parse_expr()?);
         }
         let end = self.expect_punct("}")?;
-        let span = crate::error::Span::new(start.start, end.end);
+        let span = crate::error::PreprocessedSpan::new(start.start, end.end);
         Ok(Expr::Concat { span, parts })
     }
 
@@ -347,7 +347,7 @@ impl Grammar {
             }
             self.expect_punct("}")?;
             let end = self.expect_punct("}")?;
-            let span = crate::error::Span::new(start.start, end.end);
+            let span = crate::error::PreprocessedSpan::new(start.start, end.end);
             return Ok(Expr::AssignmentPattern { span, replicate: Some(Box::new(first)), parts });
         }
         let mut parts = vec![first];
@@ -355,7 +355,7 @@ impl Grammar {
             parts.push(self.parse_expr()?);
         }
         let end = self.expect_punct("}")?;
-        let span = crate::error::Span::new(start.start, end.end);
+        let span = crate::error::PreprocessedSpan::new(start.start, end.end);
         Ok(Expr::AssignmentPattern { span, replicate: None, parts })
     }
 }

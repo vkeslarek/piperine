@@ -3,32 +3,32 @@
 //! span, and — the hard constraint — the module contains no free-string
 //! catch-all variant and no `From<String>`/`From<&str>` escape hatch.
 
-use piperine_lang::{ParseError, ParseErrorKind, Span};
+use piperine_lang::{ParseError, ParseErrorKind, PreprocessedSpan};
 
 #[test]
 fn unexpected_character_carries_the_offending_char_and_span() {
-    let err = ParseError::new(ParseErrorKind::UnexpectedCharacter { found: '#' }, Span::new(3, 4));
+    let err = ParseError::new(ParseErrorKind::UnexpectedCharacter { found: '#' }, PreprocessedSpan::new(3, 4));
     assert_eq!(err.kind, ParseErrorKind::UnexpectedCharacter { found: '#' });
-    assert_eq!(err.span, Span::new(3, 4));
+    assert_eq!(err.span, PreprocessedSpan::new(3, 4));
     assert_eq!(err.to_string(), "unexpected character `#` (at byte 3..4)");
 }
 
 #[test]
 fn unterminated_string_carries_its_span() {
-    let err = ParseError::new(ParseErrorKind::UnterminatedString, Span::new(10, 20));
-    assert_eq!(err.span, Span::new(10, 20));
+    let err = ParseError::new(ParseErrorKind::UnterminatedString, PreprocessedSpan::new(10, 20));
+    assert_eq!(err.span, PreprocessedSpan::new(10, 20));
     assert_eq!(err.to_string(), "unterminated string literal (at byte 10..20)");
 }
 
 #[test]
 fn unterminated_comment_carries_its_span() {
-    let err = ParseError::new(ParseErrorKind::UnterminatedComment, Span::new(0, 5));
+    let err = ParseError::new(ParseErrorKind::UnterminatedComment, PreprocessedSpan::new(0, 5));
     assert_eq!(err.to_string(), "unterminated block comment (at byte 0..5)");
 }
 
 #[test]
 fn invalid_escape_carries_the_offending_char() {
-    let err = ParseError::new(ParseErrorKind::InvalidEscape { found: 'q' }, Span::new(7, 9));
+    let err = ParseError::new(ParseErrorKind::InvalidEscape { found: 'q' }, PreprocessedSpan::new(7, 9));
     assert_eq!(err.kind, ParseErrorKind::InvalidEscape { found: 'q' });
     assert_eq!(err.to_string(), "invalid escape sequence `\\q` (at byte 7..9)");
 }
@@ -37,7 +37,7 @@ fn invalid_escape_carries_the_offending_char() {
 fn invalid_number_literal_carries_the_offending_text() {
     let err = ParseError::new(
         ParseErrorKind::InvalidNumberLiteral { text: "1.2.3".to_string() },
-        Span::new(0, 5),
+        PreprocessedSpan::new(0, 5),
     );
     assert_eq!(
         err.kind,
@@ -53,7 +53,7 @@ fn unexpected_token_carries_expected_and_found_structured_not_a_sentence() {
             expected: "';'".to_string(),
             found: "identifier `foo`".to_string(),
         },
-        Span::new(12, 15),
+        PreprocessedSpan::new(12, 15),
     );
     assert_eq!(
         err.kind,
@@ -69,7 +69,7 @@ fn unexpected_token_carries_expected_and_found_structured_not_a_sentence() {
 fn unexpected_eof_carries_what_was_expected() {
     let err = ParseError::new(
         ParseErrorKind::UnexpectedEof { expected: "'endmodule'".to_string() },
-        Span::new(100, 100),
+        PreprocessedSpan::new(100, 100),
     );
     assert_eq!(
         err.to_string(),
@@ -79,7 +79,7 @@ fn unexpected_eof_carries_what_was_expected() {
 
 #[test]
 fn parse_error_implements_std_error() {
-    let err = ParseError::new(ParseErrorKind::UnterminatedString, Span::new(0, 1));
+    let err = ParseError::new(ParseErrorKind::UnterminatedString, PreprocessedSpan::new(0, 1));
     let _: &dyn std::error::Error = &err;
 }
 

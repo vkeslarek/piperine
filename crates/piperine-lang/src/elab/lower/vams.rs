@@ -1157,7 +1157,7 @@ fn expr_to_string(expr: &Expr) -> Result<String, ElabError> {
 
 /// `byte range` → `miette::SourceSpan`, mirroring
 /// `From<crate::ParseError>`'s conversion (`pom/error.rs`).
-fn to_miette_span(span: crate::Span) -> miette::SourceSpan {
+fn to_miette_span(span: crate::PreprocessedSpan) -> miette::SourceSpan {
     miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
 }
 

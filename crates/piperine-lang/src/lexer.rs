@@ -11,13 +11,13 @@
 //! rescanning, and this is the newline-preserving property the design
 //! (design.md §4.1) requires of this module.
 
-use crate::error::{ParseError, ParseErrorKind, Span, UnderscorePosition};
+use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan, UnderscorePosition};
 
 /// One lexical token with its source span.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lexed {
     pub tok: Tok,
-    pub span: Span,
+    pub span: PreprocessedSpan,
 }
 
 /// A base-4 (2/4/8/16) number literal, LRM §2.6.1 Syntax 2-2. `digits` is
@@ -139,20 +139,20 @@ impl<'a> Lexer<'a> {
 
         let start = self.pos;
         let Some(b) = self.peek() else {
-            return Ok(Lexed { tok: Tok::Eof, span: Span::new(start, start) });
+            return Ok(Lexed { tok: Tok::Eof, span: PreprocessedSpan::new(start, start) });
         };
 
         match b {
             b'\n' => {
                 self.pos += 1;
-                Ok(Lexed { tok: Tok::Newline, span: Span::new(start, self.pos) })
+                Ok(Lexed { tok: Tok::Newline, span: PreprocessedSpan::new(start, self.pos) })
             }
             b'\r' => {
                 self.pos += 1;
                 if self.peek() == Some(b'\n') {
                     self.pos += 1;
                 }
-                Ok(Lexed { tok: Tok::Newline, span: Span::new(start, self.pos) })
+                Ok(Lexed { tok: Tok::Newline, span: PreprocessedSpan::new(start, self.pos) })
             }
             b'/' if self.peek_at(1) == Some(b'/') => self.lex_line_comment(start),
             b'/' if self.peek_at(1) == Some(b'*') => self.lex_block_comment(start),
@@ -168,7 +168,7 @@ impl<'a> Lexer<'a> {
             // mirroring how `(*`/`*)` are handled below in `PUNCT_TABLE`.
             b'\'' if self.peek_at(1) == Some(b'{') => {
                 self.pos += 2;
-                Ok(Lexed { tok: Tok::Punct("'{"), span: Span::new(start, self.pos) })
+                Ok(Lexed { tok: Tok::Punct("'{"), span: PreprocessedSpan::new(start, self.pos) })
             }
             b'\'' => self.lex_based_number_no_size(start),
             b if is_ident_start(b) => self.lex_ident(start),
@@ -197,7 +197,7 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
         let text = self.src[text_start..self.pos].to_string();
-        Ok(Lexed { tok: Tok::LineComment(text), span: Span::new(start, self.pos) })
+        Ok(Lexed { tok: Tok::LineComment(text), span: PreprocessedSpan::new(start, self.pos) })
     }
 
     fn lex_block_comment(&mut self, start: usize) -> Result<Lexed, ParseError> {
@@ -208,7 +208,7 @@ impl<'a> Lexer<'a> {
                 None => {
                     return Err(ParseError::new(
                         ParseErrorKind::UnterminatedComment,
-                        Span::new(start, self.pos),
+                        PreprocessedSpan::new(start, self.pos),
                     ));
                 }
                 Some(b'*') if self.peek_at(1) == Some(b'/') => {
@@ -216,7 +216,7 @@ impl<'a> Lexer<'a> {
                     self.pos += 2;
                     return Ok(Lexed {
                         tok: Tok::BlockComment(text),
-                        span: Span::new(start, self.pos),
+                        span: PreprocessedSpan::new(start, self.pos),
                     });
                 }
                 Some(_) => self.pos += 1,
@@ -233,12 +233,12 @@ impl<'a> Lexer<'a> {
                 None | Some(b'\n') | Some(b'\r') => {
                     return Err(ParseError::new(
                         ParseErrorKind::UnterminatedString,
-                        Span::new(start, self.pos),
+                        PreprocessedSpan::new(start, self.pos),
                     ));
                 }
                 Some(b'"') => {
                     self.pos += 1;
-                    return Ok(Lexed { tok: Tok::Str(value), span: Span::new(start, self.pos) });
+                    return Ok(Lexed { tok: Tok::Str(value), span: PreprocessedSpan::new(start, self.pos) });
                 }
                 Some(b'\\') => {
                     let esc_start = self.pos;
@@ -287,13 +287,13 @@ impl<'a> Lexer<'a> {
                         Some(c) => {
                             return Err(ParseError::new(
                                 ParseErrorKind::InvalidEscape { found: c as char },
-                                Span::new(esc_start, self.pos + 1),
+                                PreprocessedSpan::new(esc_start, self.pos + 1),
                             ));
                         }
                         None => {
                             return Err(ParseError::new(
                                 ParseErrorKind::UnterminatedString,
-                                Span::new(start, self.pos),
+                                PreprocessedSpan::new(start, self.pos),
                             ));
                         }
                     }
@@ -319,7 +319,7 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
         let name = self.src[text_start..self.pos].to_string();
-        Ok(Lexed { tok: Tok::EscapedIdent(name), span: Span::new(start, self.pos) })
+        Ok(Lexed { tok: Tok::EscapedIdent(name), span: PreprocessedSpan::new(start, self.pos) })
     }
 
     /// `$name` (§2.8.3) or `` `name `` (§2.8.4) — a prefix byte followed by
@@ -342,11 +342,11 @@ impl<'a> Lexer<'a> {
         if self.pos == text_start {
             return Err(ParseError::new(
                 ParseErrorKind::UnexpectedCharacter { found: prefix as char },
-                Span::new(start, self.pos),
+                PreprocessedSpan::new(start, self.pos),
             ));
         }
         let name = self.src[text_start..self.pos].to_string();
-        Ok(Lexed { tok: make(name), span: Span::new(start, self.pos) })
+        Ok(Lexed { tok: make(name), span: PreprocessedSpan::new(start, self.pos) })
     }
 
     fn lex_ident(&mut self, start: usize) -> Result<Lexed, ParseError> {
@@ -358,7 +358,7 @@ impl<'a> Lexer<'a> {
             }
         }
         let text = self.src[start..self.pos].to_string();
-        Ok(Lexed { tok: Tok::Ident(text), span: Span::new(start, self.pos) })
+        Ok(Lexed { tok: Tok::Ident(text), span: PreprocessedSpan::new(start, self.pos) })
     }
 
     /// Entry point for anything starting with a digit: either a plain
@@ -374,7 +374,7 @@ impl<'a> Lexer<'a> {
             let size: u32 = size_text.parse().map_err(|_| {
                 ParseError::new(
                     ParseErrorKind::InvalidNumberLiteral { text: size_text.clone() },
-                    Span::new(start, self.pos),
+                    PreprocessedSpan::new(start, self.pos),
                 )
             })?;
             return self.lex_based_digits(start, Some(size));
@@ -395,7 +395,7 @@ impl<'a> Lexer<'a> {
                     ParseErrorKind::IllegalUnderscorePlacement(
                         UnderscorePosition::AfterDecimalPoint,
                     ),
-                    Span::new(underscore_pos, underscore_pos + 1),
+                    PreprocessedSpan::new(underscore_pos, underscore_pos + 1),
                 ));
             }
         }
@@ -408,12 +408,12 @@ impl<'a> Lexer<'a> {
             let value = parse_real_literal(&real_text).ok_or_else(|| {
                 ParseError::new(
                     ParseErrorKind::InvalidNumberLiteral { text: real_text.clone() },
-                    Span::new(start, self.pos),
+                    PreprocessedSpan::new(start, self.pos),
                 )
             })?;
             return Ok(Lexed {
                 tok: Tok::Number(NumberLit::Real(value)),
-                span: Span::new(start, self.pos),
+                span: PreprocessedSpan::new(start, self.pos),
             });
         }
 
@@ -422,10 +422,10 @@ impl<'a> Lexer<'a> {
         let value: i64 = text.parse().map_err(|_| {
             ParseError::new(
                 ParseErrorKind::InvalidNumberLiteral { text: text.clone() },
-                Span::new(start, self.pos),
+                PreprocessedSpan::new(start, self.pos),
             )
         })?;
-        Ok(Lexed { tok: Tok::Number(NumberLit::Integer(value)), span: Span::new(start, self.pos) })
+        Ok(Lexed { tok: Tok::Number(NumberLit::Integer(value)), span: PreprocessedSpan::new(start, self.pos) })
     }
 
     /// `'base digits` with no leading size — legal per Syntax 2-2 (`size`
@@ -456,13 +456,13 @@ impl<'a> Lexer<'a> {
                     ParseErrorKind::InvalidNumberLiteral {
                         text: format!("'{}{c}", if signed { "s" } else { "" }),
                     },
-                    Span::new(start, self.pos + 1),
+                    PreprocessedSpan::new(start, self.pos + 1),
                 ));
             }
             None => {
                 return Err(ParseError::new(
                     ParseErrorKind::UnexpectedEof { expected: "a base letter (d/b/o/h)".into() },
-                    Span::new(start, self.pos),
+                    PreprocessedSpan::new(start, self.pos),
                 ));
             }
         };
@@ -482,7 +482,7 @@ impl<'a> Lexer<'a> {
             // separator dropped.
             return Err(ParseError::new(
                 ParseErrorKind::IllegalUnderscorePlacement(UnderscorePosition::FirstBasedDigit),
-                Span::new(self.pos, self.pos + 1),
+                PreprocessedSpan::new(self.pos, self.pos + 1),
             ));
         }
         while let Some(b) = self.peek() {
@@ -499,7 +499,7 @@ impl<'a> Lexer<'a> {
                         base: base_letter(base),
                         digit: b as char,
                     },
-                    Span::new(self.pos, self.pos + 1),
+                    PreprocessedSpan::new(self.pos, self.pos + 1),
                 ));
             } else {
                 break;
@@ -508,13 +508,13 @@ impl<'a> Lexer<'a> {
         if self.pos == digits_start {
             return Err(ParseError::new(
                 ParseErrorKind::UnexpectedEof { expected: "at least one digit after the base".into() },
-                Span::new(start, self.pos),
+                PreprocessedSpan::new(start, self.pos),
             ));
         }
         let digits = self.src[digits_start..self.pos].to_string();
         Ok(Lexed {
             tok: Tok::Number(NumberLit::Based(BasedNumber { size, signed, base, digits })),
-            span: Span::new(start, self.pos),
+            span: PreprocessedSpan::new(start, self.pos),
         })
     }
 
@@ -533,10 +533,10 @@ impl<'a> Lexer<'a> {
         let value = parse_real_literal(&text).ok_or_else(|| {
             ParseError::new(
                 ParseErrorKind::InvalidNumberLiteral { text: text.clone() },
-                Span::new(start, end),
+                PreprocessedSpan::new(start, end),
             )
         })?;
-        Ok(Lexed { tok: Tok::Number(NumberLit::Real(value)), span: Span::new(start, end) })
+        Ok(Lexed { tok: Tok::Number(NumberLit::Real(value)), span: PreprocessedSpan::new(start, end) })
     }
 
     fn consume_decimal_digits(&mut self) {
@@ -584,13 +584,13 @@ impl<'a> Lexer<'a> {
             let len = candidate.len();
             if self.src.as_bytes()[self.pos..].starts_with(candidate.as_bytes()) {
                 self.pos += len;
-                return Ok(Lexed { tok: Tok::Punct(candidate), span: Span::new(start, self.pos) });
+                return Ok(Lexed { tok: Tok::Punct(candidate), span: PreprocessedSpan::new(start, self.pos) });
             }
         }
         let found = self.src[start..].chars().next().unwrap();
         Err(ParseError::new(
             ParseErrorKind::UnexpectedCharacter { found },
-            Span::new(start, start + found.len_utf8()),
+            PreprocessedSpan::new(start, start + found.len_utf8()),
         ))
     }
 }

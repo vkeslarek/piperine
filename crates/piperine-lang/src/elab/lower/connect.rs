@@ -335,11 +335,11 @@ fn ambiguous_err(from_discipline: &str, to_discipline: &str, issue: String) -> E
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use crate::ast::{ConnectRule, ConnectrulesDecl, ModuleDecl, ModuleKind, Span};
+    use crate::ast::{ConnectRule, ConnectrulesDecl, ModuleDecl, ModuleKind, PreprocessedSpan};
     use crate::pom::{Direction, Module, NetType, Port};
 
-    fn span() -> Span {
-        Span::new(0, 0)
+    fn span() -> PreprocessedSpan {
+        PreprocessedSpan::new(0, 0)
     }
 
     fn port(name: &str, discipline: &str) -> Port {

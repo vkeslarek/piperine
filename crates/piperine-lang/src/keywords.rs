@@ -9,7 +9,7 @@
 //! this table contains — `Keywords::is_reserved` only ever receives
 //! `Tok::Ident` text from a caller that already made that distinction.
 
-use crate::error::{ParseError, ParseErrorKind, Span};
+use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
 
 /// All 212 keywords in Table B.1, in the table's own left-to-right,
 /// top-to-bottom reading order. Extracted programmatically from the table
@@ -69,7 +69,7 @@ impl Keywords {
     /// naming the keyword when `word` is reserved — the mechanism that
     /// makes "keywords cannot be used as identifiers" an enforced rule
     /// rather than a documented one.
-    pub fn expect_identifier(word: &str, span: Span) -> Result<(), ParseError> {
+    pub fn expect_identifier(word: &str, span: PreprocessedSpan) -> Result<(), ParseError> {
         if Self::is_reserved(word) {
             return Err(ParseError::new(
                 ParseErrorKind::UnexpectedToken {

@@ -35,7 +35,7 @@ impl From<ElabErrorKind> for ElabError {
 
 /// VAMS-parse-failure → elaboration error. Carries the typed
 /// [`crate::ParseErrorKind`] through unchanged and converts the
-/// pure-crate byte [`crate::Span`] into a miette `SourceSpan`
+/// pure-crate byte [`crate::PreprocessedSpan`] into a miette `SourceSpan`
 /// (VAMS-05, design.md §10). The diagnostic code, label text, and help
 /// are supplied by [`ElabErrorKind::VamsParse`] (E1005).
 impl From<crate::ParseError> for ElabError {

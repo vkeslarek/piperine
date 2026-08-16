@@ -15,7 +15,7 @@
 
 use miette::Diagnostic;
 use piperine_lang::pom::{Design, ElabError, ElabErrorKind};
-use piperine_lang::{ParseError, ParseErrorKind, Span};
+use piperine_lang::{ParseError, ParseErrorKind, PreprocessedSpan};
 
 #[test]
 fn from_vams_parse_error_carries_typed_kind_through_unchanged() {
@@ -27,7 +27,7 @@ fn from_vams_parse_error_carries_typed_kind_through_unchanged() {
             expected: "';'".into(),
             found: "'+'".into(),
         },
-        Span::new(42, 43),
+        PreprocessedSpan::new(42, 43),
     );
     let elab: ElabError = pe.into();
     let ElabErrorKind::VamsParse { kind, span } = &elab.kind else {
@@ -40,7 +40,7 @@ fn from_vams_parse_error_carries_typed_kind_through_unchanged() {
         }
         other => panic!("expected UnexpectedToken, got {other:?}"),
     }
-    // Span round-trips through the byte→SourceSpan conversion.
+    // PreprocessedSpan round-trips through the byte→SourceSpan conversion.
     let span = span.expect("span must be carried");
     assert_eq!(span.offset(), 42);
     assert_eq!(span.len(), 1);
@@ -50,7 +50,7 @@ fn from_vams_parse_error_carries_typed_kind_through_unchanged() {
 fn from_vams_parse_error_handles_zero_length_span() {
     // saturating_sub on a zero-length span (start == end) yields a
     // zero-length SourceSpan, not a panic.
-    let pe = ParseError::new(ParseErrorKind::UnexpectedEof { expected: "'endmodule'".into() }, Span::new(100, 100));
+    let pe = ParseError::new(ParseErrorKind::UnexpectedEof { expected: "'endmodule'".into() }, PreprocessedSpan::new(100, 100));
     let elab: ElabError = pe.into();
     let ElabErrorKind::VamsParse { span, .. } = &elab.kind else { panic!() };
     let span = span.expect("span carried");
@@ -64,7 +64,7 @@ fn vams_parse_variant_renders_with_e1005_code_and_clause_citation() {
     // E-STD 5: LRM clause cited for parse failures (ch. 2 / Annex A).
     let pe = ParseError::new(
         ParseErrorKind::InvalidNumberLiteral { text: "1.2Q".into() },
-        Span::new(7, 11),
+        PreprocessedSpan::new(7, 11),
     );
     let elab: ElabError = pe.into();
     assert_eq!(
@@ -93,7 +93,7 @@ fn vams_parse_variant_renders_every_distinct_kind_with_descriptive_text() {
         (ParseErrorKind::MacroArityMismatch { name: "FOO".into(), expected: 2, found: 1 }, "expects 2 argument(s)"),
     ];
     for (kind, needle) in cases {
-        let pe = ParseError::new(kind, Span::new(0, 1));
+        let pe = ParseError::new(kind, PreprocessedSpan::new(0, 1));
         let elab: ElabError = pe.into();
         let msg = elab.kind.to_string();
         assert!(msg.contains(needle), "rendered message must contain `{needle}`: {msg}");

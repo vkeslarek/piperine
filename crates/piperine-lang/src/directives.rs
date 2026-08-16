@@ -12,7 +12,7 @@
 //! in this task ... the other fields are structurally present ... don't
 //! implement their semantics now, just don't block the struct shape").
 
-use crate::error::Span;
+use crate::error::PreprocessedSpan;
 
 /// The `` `default_nettype `` net kind in force — structurally present,
 /// not yet written by any directive handler.
@@ -29,7 +29,7 @@ pub enum NetTypeDefault {
 pub struct KeywordScope {
     pub version: String,
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<PreprocessedSpan>,
 }
 
 /// The drive strength `` `unconnected_drive `` sets for unconnected ports
@@ -91,7 +91,7 @@ pub struct DirectiveState {
     /// `` `celldefine ``/`` `endcelldefine `` spans — structurally
     /// present, not yet written.
     #[serde(skip)]
-    pub celldefine_spans: Vec<Span>,
+    pub celldefine_spans: Vec<PreprocessedSpan>,
     /// `` `unconnected_drive `` — structurally present, not yet written.
     pub unconnected_drive: Option<Drive>,
     /// `` `line ``'s remapping table — structurally present, not yet

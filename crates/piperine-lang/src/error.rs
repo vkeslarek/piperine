@@ -1,6 +1,6 @@
 //! Typed parse errors (E-STD, `.specs/features/verilog-ams-support/tasks.md`
 //! Standing Constraint C8). One variant per failure mode, every variant
-//! carrying structured fields and a byte [`Span`] — no free-string
+//! carrying structured fields and a byte [`PreprocessedSpan`] — no free-string
 //! catch-all, no `From<String>`/`From<&str>` escape hatch. This crate has
 //! an empty `[dependencies]` table (purity contract, `tests/purity.rs`), so
 //! `Display`/`std::error::Error` are implemented by hand instead of via
@@ -29,12 +29,12 @@ pub enum UnderscorePosition {
 
 /// A byte-offset range into the (preprocessed) source buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
+pub struct PreprocessedSpan {
     pub start: usize,
     pub end: usize,
 }
 
-impl Span {
+impl PreprocessedSpan {
     pub fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
@@ -45,11 +45,11 @@ impl Span {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub kind: ParseErrorKind,
-    pub span: Span,
+    pub span: PreprocessedSpan,
 }
 
 impl ParseError {
-    pub fn new(kind: ParseErrorKind, span: Span) -> Self {
+    pub fn new(kind: ParseErrorKind, span: PreprocessedSpan) -> Self {
         Self { kind, span }
     }
 }

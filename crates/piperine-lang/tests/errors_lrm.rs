@@ -201,7 +201,7 @@ fn e4005_connect_module_no_rule_renders_with_same_variant() {
 
 #[test]
 fn every_e4xxx_variant_carries_a_span_field() {
-    // E-STD 6: "Span always carried. Every variant has a span."
+    // E-STD 6: "PreprocessedSpan always carried. Every variant has a span."
     // Construct each variant with None spans and confirm the build
     // succeeds (i.e. the span fields exist) — the structural guarantee.
     let _e1 = ElabErrorKind::BranchKindConflict {

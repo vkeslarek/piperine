@@ -137,7 +137,7 @@ impl SourceProvenance {
 
     /// Forward lookup: maps an unresolved (preprocessed-buffer) span to its
     /// real originating file and local byte range.
-    pub fn resolve(&self, span: crate::error::Span) -> Span {
+    pub fn resolve(&self, span: crate::error::PreprocessedSpan) -> Span {
         let Some(seg) = self.segment_covering(span.start) else {
             // Documented empty/test degrade path (see `empty_for_test`).
             return Span {

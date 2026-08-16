@@ -3,7 +3,7 @@
 //! Annex A.6.4/A.6.6/A.6.7/A.6.8.
 
 use crate::ast::{BlockItemDecl, CaseArm, CaseKind, EventExpr, Stmt};
-use crate::error::{ParseError, Span};
+use crate::error::{ParseError, PreprocessedSpan};
 use crate::grammar::cursor::Grammar;
 use crate::lexer::Tok;
 
@@ -67,7 +67,7 @@ impl Grammar {
             stmts.push(self.parse_stmt()?);
         }
         let end = self.expect_kw("end")?;
-        Ok(Stmt::Block { span: Span::new(start.start, end.end), name, decls, stmts })
+        Ok(Stmt::Block { span: PreprocessedSpan::new(start.start, end.end), name, decls, stmts })
     }
 
     /// `block_item_declaration`, Annex A.2.8 — the scalar-variable subset
@@ -129,7 +129,7 @@ impl Grammar {
         let else_branch =
             if self.eat_kw("else") { Some(Box::new(self.parse_stmt()?)) } else { None };
         let end = else_branch.as_ref().map(|s| s.span()).unwrap_or_else(|| then_branch.span());
-        Ok(Stmt::If { span: Span::new(start.start, end.end), cond, then_branch, else_branch })
+        Ok(Stmt::If { span: PreprocessedSpan::new(start.start, end.end), cond, then_branch, else_branch })
     }
 
     /// `('case'|'casex'|'casez'|'analog_case') '(' expr ')' case_item*
@@ -155,7 +155,7 @@ impl Grammar {
             arms.push(self.parse_case_arm()?);
         }
         let end = self.expect_kw("endcase")?;
-        Ok(Stmt::Case { span: Span::new(start.start, end.end), kind, selector, arms })
+        Ok(Stmt::Case { span: PreprocessedSpan::new(start.start, end.end), kind, selector, arms })
     }
 
     /// One `case_item`: `expr {',' expr} ':' stmt` or `'default' [':'] stmt`.
@@ -164,7 +164,7 @@ impl Grammar {
         if self.eat_kw("default") {
             self.eat_punct(":");
             let body = Box::new(self.parse_stmt()?);
-            return Ok(CaseArm { span: Span::new(start.start, body.span().end), labels: None, body });
+            return Ok(CaseArm { span: PreprocessedSpan::new(start.start, body.span().end), labels: None, body });
         }
         let mut labels = vec![self.parse_expr()?];
         while self.eat_punct(",") {
@@ -172,7 +172,7 @@ impl Grammar {
         }
         self.expect_punct(":")?;
         let body = Box::new(self.parse_stmt()?);
-        Ok(CaseArm { span: Span::new(start.start, body.span().end), labels: Some(labels), body })
+        Ok(CaseArm { span: PreprocessedSpan::new(start.start, body.span().end), labels: Some(labels), body })
     }
 
     /// `'for' '(' assign ';' expr ';' assign ')' statement` — Annex A.6.8.
@@ -186,7 +186,7 @@ impl Grammar {
         let step = Box::new(self.parse_assign_or_contribution_no_semi()?);
         self.expect_punct(")")?;
         let body = Box::new(self.parse_stmt()?);
-        Ok(Stmt::For { span: Span::new(start.start, body.span().end), init, cond, step, body })
+        Ok(Stmt::For { span: PreprocessedSpan::new(start.start, body.span().end), init, cond, step, body })
     }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
@@ -195,7 +195,7 @@ impl Grammar {
         let cond = self.parse_expr()?;
         self.expect_punct(")")?;
         let body = Box::new(self.parse_stmt()?);
-        Ok(Stmt::While { span: Span::new(start.start, body.span().end), cond, body })
+        Ok(Stmt::While { span: PreprocessedSpan::new(start.start, body.span().end), cond, body })
     }
 
     fn parse_repeat(&mut self) -> Result<Stmt, ParseError> {
@@ -204,20 +204,20 @@ impl Grammar {
         let count = self.parse_expr()?;
         self.expect_punct(")")?;
         let body = Box::new(self.parse_stmt()?);
-        Ok(Stmt::Repeat { span: Span::new(start.start, body.span().end), count, body })
+        Ok(Stmt::Repeat { span: PreprocessedSpan::new(start.start, body.span().end), count, body })
     }
 
     fn parse_forever(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_kw("forever")?;
         let body = Box::new(self.parse_stmt()?);
-        Ok(Stmt::Forever { span: Span::new(start.start, body.span().end), body })
+        Ok(Stmt::Forever { span: PreprocessedSpan::new(start.start, body.span().end), body })
     }
 
     fn parse_disable(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_kw("disable")?;
         let (name, name_span) = self.expect_ident()?;
         self.expect_punct(";")?;
-        Ok(Stmt::Disable { span: Span::new(start.start, name_span.end), name })
+        Ok(Stmt::Disable { span: PreprocessedSpan::new(start.start, name_span.end), name })
     }
 
     /// `event_trigger ::= '->' hierarchical_event_identifier ';'` — §5.10.4,
@@ -230,7 +230,7 @@ impl Grammar {
         let start = self.expect_punct("->")?;
         let (name, _) = self.expect_ident()?;
         let end = self.expect_punct(";")?;
-        Ok(Stmt::EventTrigger { span: Span::new(start.start, end.end), name })
+        Ok(Stmt::EventTrigger { span: PreprocessedSpan::new(start.start, end.end), name })
     }
 
     /// `'@' ( '(' event_expression ')' | '*' ) statement` — §5.6/Annex A.6.5.
@@ -263,7 +263,7 @@ impl Grammar {
             }
         };
         let body = Box::new(self.parse_stmt()?);
-        Ok(Stmt::EventControl { span: Span::new(start.start, body.span().end), events, body })
+        Ok(Stmt::EventControl { span: PreprocessedSpan::new(start.start, body.span().end), events, body })
     }
 
     fn parse_event_expr(&mut self) -> Result<EventExpr, ParseError> {
@@ -294,7 +294,7 @@ impl Grammar {
             self.expect_punct(")")?;
         }
         let end = self.expect_punct(";")?;
-        Ok(Stmt::TaskCall { span: Span::new(span.start, end.end), name, args })
+        Ok(Stmt::TaskCall { span: PreprocessedSpan::new(span.start, end.end), name, args })
     }
 
     /// `lvalue '=' expr ';'` / `lvalue '<=' expr ';'` / `lvalue '<+' expr
@@ -318,7 +318,7 @@ impl Grammar {
         if self.eat_punct("<+") {
             let value = self.parse_expr()?;
             return Ok(Stmt::Contribution {
-                span: Span::new(span_start, value.span().end),
+                span: PreprocessedSpan::new(span_start, value.span().end),
                 target,
                 value,
             });
@@ -326,14 +326,14 @@ impl Grammar {
         if self.eat_punct("<=") {
             let value = self.parse_expr()?;
             return Ok(Stmt::NonBlockingAssign {
-                span: Span::new(span_start, value.span().end),
+                span: PreprocessedSpan::new(span_start, value.span().end),
                 target,
                 value,
             });
         }
         if self.eat_punct("=") {
             let value = self.parse_expr()?;
-            return Ok(Stmt::Assign { span: Span::new(span_start, value.span().end), target, value });
+            return Ok(Stmt::Assign { span: PreprocessedSpan::new(span_start, value.span().end), target, value });
         }
         // A bare call used as a statement, e.g. `my_task(a, b);`.
         if let crate::ast::Expr::Call { span, name, args } = target {

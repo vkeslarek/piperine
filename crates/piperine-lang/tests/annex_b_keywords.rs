@@ -11,7 +11,7 @@
 //!    a plain `Tok::Ident` (§2.8.2: a keyword is lexically an identifier;
 //!    only a grammar-level "expect identifier" check distinguishes them).
 
-use piperine_lang::{Keywords, Lexer, ParseErrorKind, Span, Tok};
+use piperine_lang::{Keywords, Lexer, ParseErrorKind, PreprocessedSpan, Tok};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -90,7 +90,7 @@ fn every_annex_b_keyword_lexes_as_a_plain_identifier() {
 #[test]
 fn every_annex_b_keyword_is_rejected_as_an_identifier_with_a_named_error() {
     for kw in Keywords::all() {
-        let err = Keywords::expect_identifier(kw, Span::new(0, kw.len()))
+        let err = Keywords::expect_identifier(kw, PreprocessedSpan::new(0, kw.len()))
             .expect_err(&format!("{kw} should be rejected as an identifier"));
         match err.kind {
             ParseErrorKind::UnexpectedToken { expected, found } => {
@@ -99,12 +99,12 @@ fn every_annex_b_keyword_is_rejected_as_an_identifier_with_a_named_error() {
             }
             other => panic!("{kw}: expected UnexpectedToken, got {other:?}"),
         }
-        assert_eq!(err.span, Span::new(0, kw.len()));
+        assert_eq!(err.span, PreprocessedSpan::new(0, kw.len()));
     }
 }
 
 #[test]
 fn a_non_keyword_identifier_is_accepted() {
     assert!(!Keywords::is_reserved("my_signal_name"));
-    assert!(Keywords::expect_identifier("my_signal_name", Span::new(0, 14)).is_ok());
+    assert!(Keywords::expect_identifier("my_signal_name", PreprocessedSpan::new(0, 14)).is_ok());
 }

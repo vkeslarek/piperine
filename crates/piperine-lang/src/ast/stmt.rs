@@ -2,7 +2,7 @@
 //! Verilog-AMS inherits for digital `always`/`initial` bodies, Annex A.6.
 
 use crate::ast::{Attr, Expr};
-use crate::error::Span;
+use crate::error::PreprocessedSpan;
 
 /// One entry in an event-control expression `@(...)` — LRM §5.6/Annex A.6.5,
 /// plus the analog event functions (`cross`/`above`/`timer`/`initial_step`/
@@ -21,7 +21,7 @@ pub enum EventExpr {
 /// A `case`/`casex`/`casez` arm — LRM Annex A.6.7.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaseArm {
-    pub span: Span,
+    pub span: PreprocessedSpan,
     /// `None` marks the `default` arm.
     pub labels: Option<Vec<Expr>>,
     pub body: Box<Stmt>,
@@ -53,44 +53,44 @@ pub enum BlockItemDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     /// The empty statement (`;`).
-    Null { span: Span },
+    Null { span: PreprocessedSpan },
     /// `lvalue = expr;` — blocking assignment, §5.5/1364.
-    Assign { span: Span, target: Expr, value: Expr },
+    Assign { span: PreprocessedSpan, target: Expr, value: Expr },
     /// `lvalue <= expr;` — non-blocking assignment (digital only).
-    NonBlockingAssign { span: Span, target: Expr, value: Expr },
+    NonBlockingAssign { span: PreprocessedSpan, target: Expr, value: Expr },
     /// `V(p,n) <+ expr;` / `I(br) <+ expr;` — a contribution statement,
     /// §5.4. Piperine's PHDL predecessor called this the behavioral-source
     /// primitive (MD-39); this is its Verilog-AMS spelling.
-    Contribution { span: Span, target: Expr, value: Expr },
+    Contribution { span: PreprocessedSpan, target: Expr, value: Expr },
     /// `begin [: name] block_item_decl* stmt* end` — §Annex A.6.3.
-    Block { span: Span, name: Option<String>, decls: Vec<BlockItemDecl>, stmts: Vec<Stmt> },
-    If { span: Span, cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
-    Case { span: Span, kind: CaseKind, selector: Expr, arms: Vec<CaseArm> },
+    Block { span: PreprocessedSpan, name: Option<String>, decls: Vec<BlockItemDecl>, stmts: Vec<Stmt> },
+    If { span: PreprocessedSpan, cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
+    Case { span: PreprocessedSpan, kind: CaseKind, selector: Expr, arms: Vec<CaseArm> },
     For {
-        span: Span,
+        span: PreprocessedSpan,
         init: Box<Stmt>,
         cond: Expr,
         step: Box<Stmt>,
         body: Box<Stmt>,
     },
-    While { span: Span, cond: Expr, body: Box<Stmt> },
-    Repeat { span: Span, count: Expr, body: Box<Stmt> },
-    Forever { span: Span, body: Box<Stmt> },
+    While { span: PreprocessedSpan, cond: Expr, body: Box<Stmt> },
+    Repeat { span: PreprocessedSpan, count: Expr, body: Box<Stmt> },
+    Forever { span: PreprocessedSpan, body: Box<Stmt> },
     /// `@(events) stmt` — an event-controlled statement, §5.6.
-    EventControl { span: Span, events: Vec<EventExpr>, body: Box<Stmt> },
+    EventControl { span: PreprocessedSpan, events: Vec<EventExpr>, body: Box<Stmt> },
     /// `#delay stmt` — a delay-controlled statement (digital contexts).
-    DelayControl { span: Span, delay: Expr, body: Box<Stmt> },
+    DelayControl { span: PreprocessedSpan, delay: Expr, body: Box<Stmt> },
     /// `disable name;` — §Annex A.6.4.
-    Disable { span: Span, name: String },
+    Disable { span: PreprocessedSpan, name: String },
     /// A task call or `$`-system-task call used as a statement.
-    TaskCall { span: Span, name: String, args: Vec<Expr> },
+    TaskCall { span: PreprocessedSpan, name: String, args: Vec<Expr> },
     /// `-> event_name;` — event trigger, §5.10.4/Annex A.6.5. Fires a
     /// named event, waking any `@(event_name)` sensitivity elsewhere.
-    EventTrigger { span: Span, name: String },
+    EventTrigger { span: PreprocessedSpan, name: String },
 }
 
 impl Stmt {
-    pub fn span(&self) -> Span {
+    pub fn span(&self) -> PreprocessedSpan {
         match self {
             Stmt::Null { span }
             | Stmt::Assign { span, .. }

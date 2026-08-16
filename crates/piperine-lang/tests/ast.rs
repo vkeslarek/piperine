@@ -4,10 +4,10 @@
 //! types themselves, not merely checked at parse time.
 
 use piperine_lang::ast::*;
-use piperine_lang::Span;
+use piperine_lang::PreprocessedSpan;
 
-fn span() -> Span {
-    Span::new(0, 1)
+fn span() -> PreprocessedSpan {
+    PreprocessedSpan::new(0, 1)
 }
 
 #[test]

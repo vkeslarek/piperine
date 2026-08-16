@@ -885,7 +885,7 @@ mod flat_module_tests {
         design.paramsets_map_mut().insert(
             "nmos_fast".into(),
             crate::ast::ParamsetDecl {
-                span: crate::Span::new(0, 0),
+                span: crate::PreprocessedSpan::new(0, 0),
                 name: "nmos_fast".into(),
                 module_name: "nmos".into(),
                 params: Vec::new(),

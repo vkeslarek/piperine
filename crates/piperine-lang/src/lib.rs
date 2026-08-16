@@ -26,7 +26,7 @@
 //! external-crate seam between two layers that only ever ship together)
 //! for a guarantee nothing downstream relied on independently. Diagnostic
 //! rendering (`miette`, source spans tied to file identity) now happens
-//! in the same crate as the plain byte `Span`s it renders.
+//! in the same crate as the plain byte `PreprocessedSpan`s it renders.
 //!
 //! ## Pipeline
 //!
@@ -72,7 +72,7 @@ pub mod source_map;
 pub mod math;
 mod vams_include;
 
-pub use error::{ParseError, ParseErrorKind, Span, UnderscorePosition};
+pub use error::{ParseError, ParseErrorKind, PreprocessedSpan, UnderscorePosition};
 pub use fmt::Formatter;
 pub use keywords::Keywords;
 pub use lexer::{BasedNumber, Lexed, Lexer, NumberBase, NumberLit, Tok};
