@@ -1,6 +1,13 @@
 //! Hover: what the server renders for modules, disciplines, `extern`
 //! operators, and attribute-schema uses — including the documented vs
 //! undocumented and module-vs-same-named-behavior cases.
+//!
+//! Also covers T13 (`.specs/features/preprocessor-span-mapping/tasks.md`,
+//! SPANMAP-08): `symbol_index::resolve_at` translates a cursor's raw
+//! document byte offset into the flat-preprocessed-buffer coordinate
+//! space (via `SourceProvenance::segments_covering`, T11) before matching
+//! it against any POM `decl_span`, so a document with `` `include ``/
+//! `` `define `` directives before the cursor doesn't misalign.
 
 mod common;
 use common::*;
@@ -139,3 +146,53 @@ fn hover_on_attr_schema_use_lists_its_fields() {
     assert!(contents.contains("num"), "expected `num` field in hover: {contents}");
     assert!(contents.contains("z0"), "expected `z0` field in hover: {contents}");
 }
+
+/// T13/SPANMAP-08: hovering a module name declared *after* a `` `define ``
+/// directive (which shrinks the flat-preprocessed buffer relative to the
+/// open document's own raw text — the directive's own text is eaten
+/// entirely, emitting nothing) still resolves the module correctly and
+/// without crashing.
+///
+/// **Bounded scope, documented (not silently overstated):** ideally this
+/// test would prove the *cursor-context* disambiguation
+/// (`resolve_at`'s `flat_offset` translation, T11's `segments_covering`
+/// feeding `span_contains(m.span, flat_offset)`) picks the right
+/// *enclosing module* when two modules collide, exactly as
+/// `hover_on_module_with_same_named_behavior_resolves_the_module_not_the_behavior`
+/// does for the plain (no-directive) case. That isn't observable today:
+/// `piperine-lang`'s VAMS lowering (`elab/lower/vams.rs`) never populates
+/// `Module`/`Port`/`Behavior::span` — every one is built with a literal
+/// `span: None` — so `span_contains` is unconditionally `false` and every
+/// resolution in this file (including the pre-existing ones above) falls
+/// back to name-only matching, independent of any span-mapping fix. This
+/// is a distinct, pre-existing gap in VAMS POM span population (predates
+/// and is out of scope for `preprocessor-span-mapping`), not something
+/// this feature's `resolve_at`/`segments_covering` plumbing can paper
+/// over. What *is* verified here: the translation runs (no panic/no
+/// gap-in-buffer failure) on a directive-shifted document and the module
+/// still resolves by its real name — a real regression guard, even though
+/// it cannot yet exercise the offset-disambiguation path this task's
+/// design intends to fix once module span population lands.
+#[test]
+fn hover_on_module_after_a_shrinking_define_directive_still_resolves() {
+    // A long, unused object-like macro definition — its own directive text
+    // is eaten entirely by the preprocessor (T6), so everything after it
+    // sits at a real flat-buffer offset far below its raw-document offset.
+    let long_name = "A".repeat(120);
+    let source = format!("`define {long_name} 1\nmodule M(inout electrical p, n);\nendmodule\n");
+    let doc = analyzed(&source);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let m_offset = source.find("module M").unwrap() + "module ".len();
+    let resolution = doc.resolve_at(m_offset).expect("module name must still resolve after a shrinking `define`");
+    assert_eq!(resolution.kind, SymbolKind::Module);
+    assert_eq!(resolution.name, "M");
+
+    let pos = byte_to_position(&source, m_offset);
+    let contents = lsp_hover_markdown(&source, pos.line, pos.character);
+    assert!(contents.contains("**module** `M`"), "hover must resolve the module despite the preceding shrinking directive, got: {contents}");
+}
+
+
+
+

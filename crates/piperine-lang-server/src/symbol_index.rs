@@ -194,11 +194,33 @@ pub fn resolve_at(
     byte_offset: usize,
     ctx: Option<&ElabContext>,
 ) -> Option<Resolution> {
-    // 1. Identify what we are hovering over.
+    // 1. Identify what we are hovering over. `byte_offset` here is a byte
+    // offset into `source` — the open document's own raw text — and
+    // `word_at_position`/`byte_to_position` (text_pos.rs) stay in that same
+    // coordinate space unchanged (T13's own scope note: "already works
+    // correctly for the open document's own coordinate space").
     let word = crate::text_pos::word_at_position(
         source,
         crate::text_pos::byte_to_position(source, byte_offset),
     )?;
+
+    // 1b. Every `decl_span`/`span_contains` check below matches against
+    // POM spans, which live in the *flat preprocessed buffer*'s coordinate
+    // space (T3's mechanical rename didn't change what a `Span` numerically
+    // means) — identical to `source`'s own coordinates only when the
+    // document has no `` `include ``/`` `define `` directives. When it
+    // does, `byte_offset` (a raw-document offset) must first be translated
+    // into that flat-buffer space via the reverse lookup (T11,
+    // SPANMAP-08) before it can be compared against any `decl_span`. A
+    // document with no directives has one segment mapping the whole buffer
+    // 1:1 to itself, so `segments_covering` degrades to the identity
+    // translation — no behavior change on the common case.
+    let flat_offset = design
+        .source_provenance
+        .segments_covering(piperine_lang::source_provenance::SourceId(0), byte_offset..byte_offset + 1)
+        .next()
+        .map(|s| s.start)
+        .unwrap_or(byte_offset);
 
     // 2. Cursor context (LSP-01): if the cursor sits inside a module's own
     // declaration span, resolve `word` against *that* module's scope first,
@@ -218,8 +240,8 @@ pub fn resolve_at(
     // cursor position in the current document.
     if let Some(m) = design
         .modules()
-        .find(|m| design.project().origin_of(&m.name).is_none() && span_contains(m.span, byte_offset))
-        && let Some(res) = resolve_in_module(m, &word, byte_offset) {
+        .find(|m| design.project().origin_of(&m.name).is_none() && span_contains(m.span, flat_offset))
+        && let Some(res) = resolve_in_module(m, &word, flat_offset) {
             return Some(res);
         }
 
