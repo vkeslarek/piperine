@@ -26,7 +26,7 @@ verification.
 - **Verilog-AMS** (`.vams`/`.va`, LRM 2.4) is the frontend — SI-suffixed literals
   (`2.2u`, `10k`), `nature`/`discipline`, `parameter`s, `generate` blocks, typed
   `(* attribute *)` instances — parsed from the LRM's own Annex A grammar
-  (`piperine-vams`, written from `VAMS-LRM-2-4.md` only) and resolved at
+  (`piperine-lang`, written from `VAMS-LRM-2-4.md` only) and resolved at
   elaboration by a pure evaluator, **never a macro stage**.
 - It compiles **straight into a native in-house solver**: analog devices are
   JIT-compiled to machine code via **Cranelift**, digital behavior runs on an
@@ -438,6 +438,7 @@ comparator · shift register · **mixed-signal ADC** · live optimization.
 ```sh
 piperine new my_chip             # scaffold a project (Piperine.toml + src/)
 piperine check src/main.vams     # parse, elaborate, sanity-check
+piperine expand src/main.vams    # preview fully preprocessed output (`include`/`define` resolved)
 piperine fmt   src/main.vams     # canonical formatting
 piperine test                    # discover and run every *_tb.py testbench
 piperine run script.py           # run a Python script (embedded CPython)
@@ -455,7 +456,10 @@ Build from source with `cargo build --workspace` (Rust, edition 2024).
 `piperine-lang-server` speaks LSP: diagnostics with real spans, hover,
 context-aware completion, go-to-definition, document symbols, formatting, semantic
 tokens, references / rename, folding, and inlay hints (SI-literal expansion:
-`10k` → `= 10000`). The VS Code extension lives in `editors/vscode/`.
+`10k` → `= 10000`). Go-to-definition and hover are `` `include``-aware —
+clicking a discipline, module, or the include directive itself lands you
+in the real declaring file, not a wrong line in the current buffer. The
+VS Code extension (`editors/vscode/`) activates on `.vams`/`.va`.
 
 ---
 
