@@ -369,10 +369,10 @@ comment ("LSP server for PHDL") updated to describe Verilog-AMS.
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] `grep -n "PHDL" crates/piperine-lang-server/src/handlers/rename.rs` returns nothing
-- [ ] `grep -rn "PHDL" crates/piperine-lang-server/src/{main.rs,lib.rs}` returns nothing
-- [ ] `references_and_rename.rs`'s invalid-identifier test asserts on the new string and passes
-- [ ] Gate check passes: `cargo test -p piperine-lang-server --test references_and_rename`
+- [x] `grep -n "PHDL" crates/piperine-lang-server/src/handlers/rename.rs` returns nothing
+- [x] `grep -rn "PHDL" crates/piperine-lang-server/src/{main.rs,lib.rs}` returns nothing
+- [x] `references_and_rename.rs`'s invalid-identifier test asserts on the new string and passes
+- [x] Gate check passes: `cargo test -p piperine-lang-server --test references_and_rename`
 
 **Tests**: integration (existing test, assertion text updated)
 **Gate**: quick

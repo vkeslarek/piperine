@@ -15,6 +15,55 @@
 mod common;
 use common::*;
 
+/// LSPMIG-11: renaming to an invalid identifier (leading digit) must be
+/// rejected with an error naming Verilog-AMS, never PHDL — the
+/// `is_valid_identifier` check runs before any symbol resolution, so this
+/// is not affected by the span:None gap blocking the rest of this file.
+#[test]
+fn rename_to_invalid_identifier_reports_a_verilog_ams_error() {
+    let (client_conn, server_conn) = Connection::memory();
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let uri: Uri = "file:///rename_invalid_test.vams".parse().unwrap();
+    let src = "module Top(p, n);\n  inout electrical p, n;\n  parameter real power = 1.0;\nendmodule\n";
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem { uri: uri.clone(), language_id: "vams".to_string(), version: 1, text: src.to_string() },
+        }).unwrap(),
+    })).unwrap();
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let line = src[..src.find("real power").unwrap()].matches('\n').count() as u32;
+    let character = "  parameter real ".chars().count() as u32;
+    let rename_params = lsp_types::RenameParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        new_name: "1bad".to_string(),
+        work_done_progress_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::Rename::METHOD.to_string(),
+        params: serde_json::to_value(rename_params).unwrap(),
+    })).unwrap();
+
+    let resp = recv_response(&client_conn.receiver, RequestId::from(1), 1000);
+    let error = resp.error.expect("an invalid new_name must produce an LSP error response");
+    assert!(error.message.contains("Verilog-AMS identifier"), "got: {}", error.message);
+    assert!(!error.message.contains("PHDL"), "got: {}", error.message);
+}
+
 /// LSP-10: references on a declared binding return only that binding's
 /// recorded occurrences — a `// power` comment mention and an unrelated
 /// module's own `power` declaration must never appear.

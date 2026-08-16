@@ -1,4 +1,4 @@
-//! piperine-lang-server — LSP server for PHDL.
+//! piperine-lang-server — LSP server for Verilog-AMS.
 //!
 //! Public API for testing and embedding.
 

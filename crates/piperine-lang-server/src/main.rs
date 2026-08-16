@@ -1,4 +1,4 @@
-//! Piperine Language Server — LSP server for PHDL.
+//! Piperine Language Server — LSP server for Verilog-AMS.
 
 use lsp_server::Connection;
 use piperine_lang_server::server::{LanguageServer, server_capabilities};

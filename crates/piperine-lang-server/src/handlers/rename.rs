@@ -18,7 +18,7 @@ pub fn handle_rename(state: &mut ServerState, req: Request, connection: &Connect
     let new_name = params.new_name;
 
     if !is_valid_identifier(&new_name) {
-        connection.respond_invalid(id, format!("`{new_name}` is not a valid PHDL identifier"));
+        connection.respond_invalid(id, format!("`{new_name}` is not a valid Verilog-AMS identifier"));
         return;
     }
 
@@ -238,7 +238,7 @@ pub fn handle_prepare_rename(state: &mut ServerState, req: Request, connection: 
     connection.respond(id, result);
 }
 
-/// PHDL identifier shape: ASCII letter or `_` first, ASCII alphanumerics
+/// Verilog-AMS identifier shape: ASCII letter or `_` first, ASCII alphanumerics
 /// and `_` after. Mirrors the lexer's ident rule.
 fn is_valid_identifier(name: &str) -> bool {
     let mut chars = name.chars();
