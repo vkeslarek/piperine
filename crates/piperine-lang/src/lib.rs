@@ -120,15 +120,66 @@ pub fn parse_and_elaborate_seeded_with_context(
     seed: impl FnOnce(&mut elab::registry::ElabContext),
 ) -> Result<(Design, elab::registry::ElabContext), miette::Report> {
     let parser = crate::Parser::with_include_resolver(SourceMapIncludeResolver::new(source_map));
-    let source = parser
-        .parse(input)
-        .map_err(|e| miette::Report::from(ElabError::from(e)).with_source_code(input.to_string()))?;
+    let source = parser.parse(input).map_err(|e| {
+        // `Parser::parse`'s own `Result<SourceFile, ParseError>` signature
+        // (consumed by piperine-lang-server and this crate's own test
+        // suite, beyond this task's lib.rs-only scope) doesn't carry a
+        // `SourceProvenance` out on its error path. A genuine
+        // preprocessor-stage failure (e.g. `IncludeNotFound`) therefore has
+        // none to resolve through — spec's own Edge Cases section states
+        // that exact path is unaffected by this feature, so it keeps
+        // today's raw-input rendering (the `Err` arm below). A lexer/
+        // grammar failure only happens *after* preprocessing itself
+        // already succeeded, which is the case this feature exists to fix
+        // (SPANMAP-01/02) — a second, cheap preprocessor pass recovers the
+        // provenance `Parser::parse` had internally but couldn't surface.
+        let mut pp = crate::preprocessor::Preprocessor::with_include_resolver(SourceMapIncludeResolver::new(source_map));
+        match pp.run(input) {
+            Ok((_, prov)) => resolve_elab_error(ElabError::from(e), &prov),
+            Err(_) => miette::Report::from(ElabError::from(e)).with_source_code(input.to_string()),
+        }
+    })?;
     let mut elaborator = elab::Elaborator::new();
     seed(&mut elaborator.ctx);
-    let design = elaborator
-        .elaborate(source)
-        .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))?;
+    // Captured before `elaborate` consumes `source` by value — the same
+    // provenance a successful `Design` would carry (T7).
+    let prov = source.source_provenance.clone();
+    let design = elaborator.elaborate(source).map_err(|e| resolve_elab_error(e, &prov))?;
     Ok((design, elaborator.ctx))
+}
+
+/// Resolves `err`'s flat-preprocessed-buffer span (if any) to its real
+/// originating file and local byte range via `prov`, rewriting the error's
+/// own span field(s) in place — `miette::SourceSpan { offset, len }` is
+/// numerically identical to the `PreprocessedSpan` it was built from, so
+/// this reconstructs and re-resolves it — then attaches a `NamedSource`
+/// built from that file's own text. This is the render-boundary fix this
+/// feature exists for (SPANMAP-01/02/03/07): the CLI/host no longer
+/// blindly assumes every span indexes into the top-level `input` string.
+fn resolve_elab_error(mut err: ElabError, prov: &source_provenance::SourceProvenance) -> miette::Report {
+    // Exactly one of these is ever populated by construction: `with_span`
+    // only sets the outer field when it was `None`, and `From<ParseError>`
+    // deliberately leaves the outer field `None`, relying on the wrapped
+    // `VamsParse` variant's own span instead.
+    let effective = err.span.or_else(|| match &err.kind {
+        pom::ElabErrorKind::VamsParse { span, .. } => *span,
+        _ => None,
+    });
+    let Some(sp) = effective else {
+        // No span recorded at all — nothing to resolve; render exactly as
+        // today (an un-spanned diagnostic never had a location to get
+        // wrong).
+        return miette::Report::from(err);
+    };
+    let flat = error::PreprocessedSpan::new(sp.offset(), sp.offset() + sp.len());
+    let resolved = prov.resolve(flat);
+    let (named, local_span) = resolved.to_named_source_span(prov);
+    if err.span.is_some() {
+        err.span = Some(local_span);
+    } else if let pom::ElabErrorKind::VamsParse { span, .. } = &mut err.kind {
+        *span = Some(local_span);
+    }
+    miette::Report::from(err).with_source_code(named)
 }
 
 /// Register the `@device`/`@port` schemas into an elaboration context — the

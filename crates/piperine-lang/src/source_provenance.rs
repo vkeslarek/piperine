@@ -29,6 +29,20 @@ pub struct Span {
     pub expansion_chain: Vec<ExpansionFrame>,
 }
 
+impl Span {
+    /// Builds the `(NamedSource, SourceSpan)` pair every human-facing
+    /// render boundary (miette `Report`, LSP) needs to point at this
+    /// span's real file and byte range — the single helper T8's render-
+    /// boundary fix and future consumers (T9/T10's dual-attribution
+    /// labels, T12's LSP diagnostics) share instead of each hand-rolling
+    /// the same `NamedSource`/`SourceSpan` construction.
+    pub fn to_named_source_span(&self, prov: &SourceProvenance) -> (miette::NamedSource<String>, miette::SourceSpan) {
+        let named = miette::NamedSource::new(prov.name(self.source_id).to_string(), prov.text(self.source_id).to_string());
+        let span = miette::SourceSpan::new(self.start.into(), self.end.saturating_sub(self.start));
+        (named, span)
+    }
+}
+
 /// One hop in a macro-expansion chain — the invocation site's `Span`, the
 /// macro's own `` `define `` body location, and the resolved argument
 /// spans passed at this invocation.

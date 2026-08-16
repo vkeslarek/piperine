@@ -18,7 +18,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use piperine_lang::Parser;
+use piperine_lang::{Parser, SourceMap};
 
 const CORPUS_ENV_VAR: &str = "PIPERINE_VAMS_CORPUS";
 
@@ -54,6 +54,49 @@ fn real_model_corpus_parses_or_names_the_failing_construct() {
          construct the parser rejected:\n{}",
         failures.join("\n")
     );
+
+    // preprocessor-span-mapping T8: the render boundary (the actual path
+    // `piperine check` uses) must never crash/report OutOfBounds on any
+    // corpus file, whether it parses cleanly or fails with a diagnostic —
+    // the exact failure mode (`vsine.vams`'s `` `include ``d-header-longer-
+    // than-the-file-that-includes-it crash) this feature exists to close.
+    let render_crashes = render_boundary_crashes(dir);
+    eprintln!("real-model corpus: {} render-boundary crashes/OutOfBounds", render_crashes.len());
+    assert!(
+        render_crashes.is_empty(),
+        "the following corpus files crashed or reported OutOfBounds at the render boundary:\n{}",
+        render_crashes.join("\n")
+    );
+}
+
+/// Runs every corpus file through the real render boundary
+/// (`parse_and_elaborate`, the same path `piperine check` uses) and
+/// returns an entry for every file whose rendered diagnostic panics or
+/// contains `OutOfBounds` — files that parse/elaborate cleanly, or that
+/// fail with a normal (non-crashing) diagnostic, are not failures here.
+fn render_boundary_crashes(dir: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    collect_va_files(dir, &mut files);
+    let source_map = SourceMap::new(dir.to_path_buf());
+
+    let mut crashes = Vec::new();
+    for file in &files {
+        let Ok(source) = fs::read_to_string(file) else { continue };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            piperine_lang::parse_and_elaborate(&source, &source_map)
+        }));
+        match result {
+            Err(_) => crashes.push(format!("{}: panicked while rendering", file.display())),
+            Ok(Err(report)) => {
+                let rendered = format!("{report:?}");
+                if rendered.contains("OutOfBounds") {
+                    crashes.push(format!("{}: rendered OutOfBounds", file.display()));
+                }
+            }
+            Ok(Ok(_)) => {}
+        }
+    }
+    crashes
 }
 
 /// A deterministic, committed proof of the "every file parses or names the

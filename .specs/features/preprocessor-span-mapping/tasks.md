@@ -328,11 +328,11 @@ crash the whole feature exists to close.
 - Skill: NONE
 
 **Done when**:
-- [ ] New deterministic test (no env var, always runs): a short top-level file `` `include ``ing a header longer than itself, with an error inside the included content — asserts the rendered `miette::Report`'s source name/snippet is the *included* file's, and asserts no panic/`OutOfBounds` (this is the committed repro of the exact crash `vsine.vams` hit)
-- [ ] New deterministic test: a file with zero directives still renders byte-identical to today's output (spec's stated zero-regression edge case)
-- [ ] Extend `corpus.rs`'s opt-in `PIPERINE_VAMS_CORPUS` test: assert no failure message contains `OutOfBounds` and no test-process panic occurs across the full sweep (run manually against `/home/keslarek/Git/vams-corpus/sources` as the local verification evidence for this task, not committed as a hard CI dependency — matches the existing opt-in pattern)
-- [ ] Gate check passes: `cargo test -p piperine-lang --test span_resolution` and `cargo test -p piperine-lang --test corpus`
-- [ ] Manual verification: `cargo run -q -p piperine-cli -- check /home/keslarek/Git/vams-corpus/sources/gnucap-modelgen-vams/vsine.vams` no longer crashes/prints `OutOfBounds`
+- [x] New deterministic test (no env var, always runs): a short top-level file `` `include ``ing a header longer than itself, with an error inside the included content — asserts the rendered `miette::Report`'s source name/snippet is the *included* file's, and asserts no panic/`OutOfBounds` (this is the committed repro of the exact crash `vsine.vams` hit)
+- [x] New deterministic test: a file with zero directives still renders byte-identical to today's output (spec's stated zero-regression edge case)
+- [x] Extend `corpus.rs`'s opt-in `PIPERINE_VAMS_CORPUS` test: assert no failure message contains `OutOfBounds` and no test-process panic occurs across the full sweep (run manually against `/home/keslarek/Git/vams-corpus/sources` as the local verification evidence for this task, not committed as a hard CI dependency — matches the existing opt-in pattern) — manual run: 86 files checked, 0 crashes/OutOfBounds
+- [x] Gate check passes: `cargo test -p piperine-lang --test span_resolution` and `cargo test -p piperine-lang --test corpus`
+- [x] Manual verification: `cargo run -q -p piperine-cli -- check /home/keslarek/Git/vams-corpus/sources/gnucap-modelgen-vams/vsine.vams` no longer crashes/prints `OutOfBounds` (confirmed via worktree A/B that true HEAD crashes with `OutOfBounds` at byte offset 5953; this branch renders a valid diagnostic instead)
 
 **Tests**: integration (new `span_resolution.rs` + extend `corpus.rs`, per matrix)
 **Gate**: full
