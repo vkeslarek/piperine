@@ -56,6 +56,67 @@ actually reserves. The lexical layer is otherwise unremarkable LRM ch. 2 — thi
 does not restate token grammar; Appendix B's B.1 conformance-gate description is the
 authoritative pointer to how lexical/grammar coverage is checked.
 
+### §1.1 Documentation comments (`///`) — a Piperine extension
+
+The LRM knows two comment forms and assigns neither any meaning beyond "ignore this
+text" (§2.3). Piperine **extends** the line-comment form: a run of consecutive `///`
+lines immediately above a declaration is that declaration's documentation, carried
+through elaboration onto the model object and surfaced by the language server as
+Markdown on hover. An ordinary `//` comment is never documentation — the distinction is
+the third slash and nothing else.
+
+```verilog-ams
+/// A two-terminal resistor.
+/// Obeys Ohm's law; `r` is the resistance in ohms.
+module Resistor (inout electrical p, inout electrical n);
+    /// Resistance, in ohms. Must be positive.
+    parameter real r = 1e3 from (0:inf);
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
+```
+
+**Which declarations carry documentation.** `module`/`macromodule`, `parameter`/
+`localparam`, port declarations, net (discipline) declarations, variable declarations
+(`integer`/`real`/`time`/`realtime`), `nature`, and `discipline`. Each reaches a `doc:
+Option<String>` field on its POM node (`crates/piperine-lang/src/pom/module.rs`,
+`pom/nature.rs`), readable from either host through the accessors Part VIII describes
+(`Module::doc()`, `Param::doc()`, …) — the editor and a programmatic consumer read the
+same string. A discipline is re-exported as its surface AST node verbatim (Part IV's
+design F1), so its documentation is read from `ast::DisciplineDecl` rather than a POM
+mirror.
+
+**Attachment rules**, all three mechanically gated by
+`crates/piperine-lang/tests/vams_doc_comments.rs`:
+
+- Consecutive `///` lines form **one** run, joined with newlines; each line's marker and
+  surrounding whitespace are stripped. Blank lines between `///` lines do not break the
+  run — an intervening ordinary `//` comment does.
+- The run attaches to the declaration's **first token**, captured before anything is
+  consumed. A doc comment above an attribute-instanced declaration therefore still
+  attaches to it, because the `(*` of the `(* device = … *)` instance (§8) is that first
+  token, not the `module` keyword.
+- A run with no following declaration (a trailing `///` at end of file) is discarded, and
+  an undocumented declaration keeps `doc: None` — documentation never leaks from one
+  declaration onto the next.
+
+**Where the text is carried.** The lexer already preserves comment text
+(`Tok::LineComment`), but `grammar/cursor.rs` filters every comment out of the token
+stream before the grammar sees it: each production in `grammar/{expr,stmt,item}.rs` is
+written against a comment-free positional stream, and leaving comments in would force
+every one of them to skip them by hand. `Grammar::new` therefore builds a **side table**
+from the raw stream first — doc run → the buffer offset of the next meaningful token —
+which `Grammar::doc_at` reads at the single point each declaration is constructed. Token
+indexing is byte-identical to a parse with no doc comments in it. This is the same
+derived-side-artifact shape `Design::flat_modules` (Part II) and `SourceProvenance`
+(Part X) already use, for the same reason: the authored structure stays untouched and the
+derived data rides alongside it.
+
+Constructs with no authored declaration behind them are correctly undocumentable: the
+implicit nets §3.7 creates from an instance connection, and implicit branches. Node kinds
+whose AST nodes carry no `doc` field yet — `aliasparam`, `event`, instance labels,
+`branch` — resolve to `None`; adding one is mechanical if they ever need hover
+documentation.
+
 ## §2 Types: nature, discipline, net, parameter, genvar (LRM ch. 3)
 
 **Nature** (§3.6.1) and **discipline** (§3.6.2) are top-level declarations, lowered by
