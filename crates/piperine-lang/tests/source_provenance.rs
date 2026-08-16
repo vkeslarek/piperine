@@ -17,8 +17,8 @@ fn resolve_maps_segment_covered_offset_to_real_source_and_local_offset() {
     // top-level file's own length in the original crash (SPANMAP-02).
     let top = b.add_source("top.vams", "AAAA");
     let inc = b.add_source("inc.vams", "xxxxBBBBBBBBxxxx");
-    b.record(0..4, top, 0, None);
-    b.record(4..12, inc, 4, None);
+    b.record(0..4, top, 0, Vec::new());
+    b.record(4..12, inc, 4, Vec::new());
     let prov = b.build();
 
     // Offset 6 in the flat buffer (inside "BBBBBBBB") must resolve to
@@ -38,7 +38,7 @@ fn resolve_maps_segment_covered_offset_to_real_source_and_local_offset() {
 fn resolve_top_level_only_span_is_identity_mapped() {
     let mut b = Builder::new();
     let top = b.add_source("top.vams", "module m; endmodule");
-    b.record(0..20, top, 0, None);
+    b.record(0..20, top, 0, Vec::new());
     let prov = b.build();
 
     let resolved = prov.resolve(PreSpan::new(0, 6));
@@ -64,7 +64,7 @@ fn repeated_source_name_shares_one_source_id() {
 fn resolve_zero_length_span_is_valid_and_zero_width() {
     let mut b = Builder::new();
     let top = b.add_source("top.vams", "module m; endmodule");
-    b.record(0..20, top, 0, None);
+    b.record(0..20, top, 0, Vec::new());
     let prov = b.build();
 
     let resolved = prov.resolve(PreSpan::new(5, 5));
@@ -82,8 +82,8 @@ fn resolve_straddling_span_uses_start_segment() {
     let mut b = Builder::new();
     let top = b.add_source("top.vams", "AAAA");
     let inc = b.add_source("inc.vams", "xxxxBBBB");
-    b.record(0..4, top, 0, None);
-    b.record(4..8, inc, 4, None);
+    b.record(0..4, top, 0, Vec::new());
+    b.record(4..8, inc, 4, Vec::new());
     let prov = b.build();
 
     // Span starts in top-level text (offset 2) but its end (offset 6) lands
@@ -113,7 +113,7 @@ fn resolve_no_directives_case_is_identity_for_whole_file() {
     let mut b = Builder::new();
     let text = "module m;\n  parameter real x = 1.0;\nendmodule";
     let top = b.add_source("top.vams", text);
-    b.record(0..text.len(), top, 0, None);
+    b.record(0..text.len(), top, 0, Vec::new());
     let prov = b.build();
 
     let resolved = prov.resolve(PreSpan::new(0, text.len()));

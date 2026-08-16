@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 
 use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
-use crate::source_provenance::{Builder, SourceId};
+use crate::source_provenance::{Builder, ExpansionFrame, SourceId, Span};
 
 /// Resolves an `` `include "path" `` request to file contents. Returning
 /// `None` becomes a typed [`ParseErrorKind::IncludeNotFound`] naming the
@@ -47,6 +47,11 @@ struct MacroDef {
     /// with no intervening white space (§10.4/1364-2005).
     params: Option<Vec<String>>,
     body: String,
+    /// Where this macro's own `` `define `` body text lives — the
+    /// secondary "expanded from here" label an `ExpansionFrame` attaches
+    /// to every invocation of this macro (SPANMAP-05), resolved eagerly at
+    /// `` `define `` time.
+    definition: Span,
 }
 
 /// One open `` `ifdef ``/`` `ifndef `` frame.
@@ -80,12 +85,15 @@ struct RecCtx<'a> {
     /// present in any file, so there's no real per-character offset to
     /// report. `anchor` is the macro invocation's own start offset,
     /// giving every span inside the expansion a valid, in-bounds location
-    /// at (or very near) the invocation site. SPEC_DEVIATION: full
-    /// per-character macro-expansion provenance and the invocation/
-    /// definition dual-attribution chain are T9's job (out of this
-    /// batch, SPANMAP-04/05/06) — T6's scope is SPANMAP-01/02/03 only
-    /// (never out of bounds, resolves near the real location).
+    /// at (or very near) the invocation site. The full macro-expansion
+    /// dual-attribution chain (invocation + definition + argument spans,
+    /// SPANMAP-04/05/06/09) lives in `chain` below, not in `anchor` itself.
     anchor: Option<usize>,
+    /// The macro-expansion chain (innermost first) attributed to any text
+    /// pushed through this `RecCtx` — empty for plain/`` `include ``d
+    /// text; gains one more frame each time `handle_macro_invocation`
+    /// recurses into a macro's substituted body (T9, SPANMAP-06).
+    chain: Vec<ExpansionFrame>,
     builder: &'a mut Builder,
 }
 
@@ -97,7 +105,19 @@ impl<'a> RecCtx<'a> {
             return;
         }
         let local_start = self.anchor.unwrap_or(pos_in_source);
-        self.builder.record(buf_start..buf_end, self.source_id, local_start, None);
+        self.builder.record(buf_start..buf_end, self.source_id, local_start, self.chain.clone());
+    }
+
+    /// Resolves a `[start, end)` range in the *current* `source` slice to a
+    /// real [`Span`] — the same anchor-collapse rule `record_push` uses,
+    /// exposed so callers building an `ExpansionFrame` (invocation/
+    /// definition/argument sites) can eagerly resolve a `Span` without a
+    /// separate `SourceProvenance::resolve()` pass (design's "resolved
+    /// eagerly when the chain is built").
+    fn local_span(&self, start: usize, end: usize) -> Span {
+        let local_start = self.anchor.unwrap_or(start);
+        let local_end = if self.anchor.is_some() { local_start } else { end };
+        Span { source_id: self.source_id, start: local_start, end: local_end, expansion_chain: Vec::new() }
     }
 }
 
@@ -138,9 +158,14 @@ impl Default for Preprocessor {
 const PREDEFINED_MACROS: &[&str] = &["__VAMS_ENABLE__", "__VAMS_COMPACT_MODELING__"];
 
 fn predefined_macro_table() -> HashMap<String, MacroDef> {
+    // Synthetic zero-width definition site: these macros have no real
+    // `` `define `` text anywhere in source (they're always-defined
+    // language builtins, §10.5), so there is no real location an "expanded
+    // from here" label could point at.
+    let synthetic_definition = Span { source_id: SourceId(0), start: 0, end: 0, expansion_chain: Vec::new() };
     PREDEFINED_MACROS
         .iter()
-        .map(|&name| (name.to_string(), MacroDef { params: None, body: String::new() }))
+        .map(|&name| (name.to_string(), MacroDef { params: None, body: String::new(), definition: synthetic_definition.clone() }))
         .collect()
 }
 
@@ -182,7 +207,7 @@ impl Preprocessor {
         let mut builder = Builder::new();
         let top_id = builder.add_source("<input>", source.to_string());
         {
-            let mut rec = RecCtx { source_id: top_id, anchor: None, builder: &mut builder };
+            let mut rec = RecCtx { source_id: top_id, anchor: None, chain: Vec::new(), builder: &mut builder };
             self.process(source, &mut out, &mut cond_stack, &mut include_stack, &mut Vec::new(), &mut rec)?;
         }
         if let Some(frame) = cond_stack.pop() {
@@ -359,7 +384,7 @@ impl Preprocessor {
                 }
                 Ok(name_end)
             }
-            "define" if active_now => self.handle_define(source, name_end),
+            "define" if active_now => self.handle_define(source, name_end, rec),
             "define" => Ok(skip_to_end_of_logical_line(source, name_end)),
             "undef" if active_now => {
                 let (arg, after) = scan_identifier_after_ws(source, name_end);
@@ -458,7 +483,7 @@ impl Preprocessor {
     /// `` `define NAME body `` or `` `define NAME(p1,p2) body ``. The body
     /// runs to end of logical line (a trailing `\` continues onto the next
     /// physical line).
-    fn handle_define(&mut self, source: &str, after_define: usize) -> Result<usize, ParseError> {
+    fn handle_define(&mut self, source: &str, after_define: usize, rec: &RecCtx) -> Result<usize, ParseError> {
         let (name, after_name) = scan_identifier_after_ws(source, after_define);
         let bytes = source.as_bytes();
         let (params, after_params) = if bytes.get(after_name) == Some(&b'(') {
@@ -467,7 +492,8 @@ impl Preprocessor {
             (None, after_name)
         };
         let (body, after_body) = scan_macro_body(source, after_params);
-        self.macros.insert(name, MacroDef { params, body });
+        let definition = rec.local_span(after_params, after_body);
+        self.macros.insert(name, MacroDef { params, body, definition });
         Ok(after_body)
     }
 
@@ -507,8 +533,20 @@ impl Preprocessor {
         name_end: usize,
     ) -> Result<usize, ParseError> {
         let ws_end = skip_inline_ws(source, name_end);
-        let (text, after) = scan_real_literal(source, ws_end);
-        let value: f64 = text.trim().parse().map_err(|_| {
+        let (text, mut after) = scan_real_literal(source, ws_end);
+        // Table 2-1 scale-factor suffix (e.g. `30p`) — same single trailing
+        // letter the main lexer's `parse_real_literal` recognizes on an
+        // ordinary real literal; this directive's own ad-hoc scanner has to
+        // repeat the check since it runs at the preprocessor stage, before
+        // any token reaches that lexer.
+        let mut scale = 1.0f64;
+        if let Some(&b) = source.as_bytes().get(after) {
+            if let Some(s) = crate::lexer::scale_factor_value(b) {
+                scale = s;
+                after += 1;
+            }
+        }
+        let value: f64 = text.trim().parse::<f64>().map(|v| v * scale).map_err(|_| {
             ParseError::new(
                 ParseErrorKind::MalformedDirective {
                     directive: "default_transition".to_string(),
@@ -642,7 +680,8 @@ impl Preprocessor {
         include_stack.push(path);
         let mut cond_stack = Vec::new();
         {
-            let mut inner_rec = RecCtx { source_id: inc_id, anchor: None, builder: &mut *rec.builder };
+            let mut inner_rec =
+                RecCtx { source_id: inc_id, anchor: None, chain: rec.chain.clone(), builder: &mut *rec.builder };
             self.process(&contents, out, &mut cond_stack, include_stack, expanding, &mut inner_rec)?;
         }
         if let Some(frame) = cond_stack.pop() {
@@ -677,10 +716,11 @@ impl Preprocessor {
             ));
         };
 
-        let (args, after) = match &def.params {
+        let (arg_specs, after) = match &def.params {
             None => (Vec::new(), name_end),
             Some(_) => scan_call_args(source, name_end),
         };
+        let args: Vec<String> = arg_specs.iter().map(|(text, _)| text.clone()).collect();
 
         let expanded = if let Some(params) = &def.params {
             if args.len() != params.len() {
@@ -698,6 +738,40 @@ impl Preprocessor {
             def.body.clone()
         };
 
+        // SPANMAP-09: each declared parameter paired with the resolved
+        // `Span` of the actual argument text passed at this invocation —
+        // resolved in the *calling* `rec`'s coordinate space (the args
+        // live in `source`, the text this invocation was scanned from).
+        let arg_frames: Vec<(String, Span)> = def
+            .params
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .cloned()
+            .zip(arg_specs.iter())
+            .map(|(pname, (_, range))| (pname, rec.local_span(range.start, range.end)))
+            .collect();
+        let invocation = rec.local_span(directive_start, after);
+        // The real (already-resolved) anchor for text produced by this
+        // expansion — reused below instead of the raw `directive_start`,
+        // which is only meaningful in the *current* `source` slice's own
+        // coordinate space. When this invocation itself sits inside
+        // another macro's already-expanded (fictional) text, `rec.anchor`
+        // is `Some`, and `local_span` has already collapsed through to the
+        // real, outer-resolved offset — reusing that (not raw
+        // `directive_start`) is what keeps a doubly-nested expansion's own
+        // body text anchored to a real location instead of a fictional
+        // in-buffer offset (SPANMAP-06).
+        let resolved_anchor = invocation.start;
+        let frame = ExpansionFrame {
+            macro_name: name.to_string(),
+            invocation,
+            definition: def.definition.clone(),
+            args: arg_frames,
+        };
+        let mut chain = vec![frame];
+        chain.extend(rec.chain.iter().cloned());
+
         if expanding.contains(&name.to_string()) {
             // Self-reference during expansion: emit literally rather than
             // recursing forever. This bounds `define` recursion; the
@@ -712,14 +786,15 @@ impl Preprocessor {
         expanding.push(name.to_string());
         let mut cond_stack = Vec::new();
         let mut include_stack = Vec::new();
-        // T6: macro-expanded text isn't verbatim present in any file, so
-        // every position within it maps to the invocation's own start
-        // offset (`anchor`) — a valid, in-bounds location near the real
-        // cause, never out of bounds. Full per-character/dual-attribution
-        // provenance is T9 (out of this batch, SPANMAP-04/05/06).
+        // Macro-expanded text isn't verbatim present in any file, so every
+        // position within it maps to the invocation's own start offset
+        // (`anchor`) — a valid, in-bounds location near the real cause,
+        // never out of bounds. The dual-attribution chain (invocation +
+        // definition + argument spans, SPANMAP-04/05/06/09) travels via
+        // `chain`, built above and carried on `inner_rec`.
         {
             let mut inner_rec =
-                RecCtx { source_id: rec.source_id, anchor: Some(directive_start), builder: &mut *rec.builder };
+                RecCtx { source_id: rec.source_id, anchor: Some(resolved_anchor), chain, builder: &mut *rec.builder };
             self.process(&expanded, out, &mut cond_stack, &mut include_stack, expanding, &mut inner_rec)?;
         }
         expanding.pop();
@@ -946,9 +1021,25 @@ fn scan_quoted_path(source: &str, start: usize) -> (String, usize) {
     (path, (pos + 1).min(source.len()))
 }
 
+/// Trims `current` (an argument's raw, untrimmed accumulated text, which is
+/// always byte-identical to `source[start..start + current.len()]` since
+/// every push into `current` copies source bytes verbatim) and computes the
+/// trimmed text's own `(start, end)` range in `source` — the raw offsets
+/// `scan_call_args` needs for SPANMAP-09's per-argument `Span`s.
+fn trimmed_arg(start: usize, current: &str) -> (String, std::ops::Range<usize>) {
+    let text = current.trim();
+    let leading = current.len() - current.trim_start().len();
+    let trimmed_start = start + leading;
+    let trimmed_end = trimmed_start + text.len();
+    (text.to_string(), trimmed_start..trimmed_end)
+}
+
 /// Parses a balanced-parens, comma-separated argument list for a
-/// function-like macro invocation `` `NAME(a, b) ``.
-fn scan_call_args(source: &str, name_end: usize) -> (Vec<String>, usize) {
+/// function-like macro invocation `` `NAME(a, b) ``. Returns each
+/// argument's trimmed text paired with its raw `(start, end)` byte range in
+/// `source` (SPANMAP-09 — the offsets an `ExpansionFrame`'s `args` need),
+/// alongside the position just past the closing `)`.
+fn scan_call_args(source: &str, name_end: usize) -> (Vec<(String, std::ops::Range<usize>)>, usize) {
     let bytes = source.as_bytes();
     let mut pos = name_end;
     while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
@@ -960,25 +1051,46 @@ fn scan_call_args(source: &str, name_end: usize) -> (Vec<String>, usize) {
     pos += 1;
     let mut args = Vec::new();
     let mut current = String::new();
+    let mut arg_start = pos;
     let mut depth = 0i32;
+    // A `,`/`(`/`)` inside a quoted string argument (e.g. a `desc`-style
+    // text literal) is not an argument separator or paren nesting — track
+    // whether we're inside an (unescaped-quote-delimited) string literal
+    // and pass those bytes through verbatim.
+    let mut in_string = false;
     loop {
         match bytes.get(pos) {
             None => break,
-            Some(b')') if depth == 0 => {
+            Some(b'"') => {
+                in_string = !in_string;
+                current.push('"');
+                pos += 1;
+            }
+            Some(b'\\') if in_string => {
+                current.push('\\');
+                pos += 1;
+                if pos < bytes.len() {
+                    let ch_len = source[pos..].chars().next().map(char::len_utf8).unwrap_or(1);
+                    current.push_str(&source[pos..pos + ch_len]);
+                    pos += ch_len;
+                }
+            }
+            Some(b')') if depth == 0 && !in_string => {
                 pos += 1;
                 break;
             }
-            Some(b',') if depth == 0 => {
-                args.push(current.trim().to_string());
+            Some(b',') if depth == 0 && !in_string => {
+                args.push(trimmed_arg(arg_start, &current));
                 current.clear();
                 pos += 1;
+                arg_start = pos;
             }
-            Some(b'(') => {
+            Some(b'(') if !in_string => {
                 depth += 1;
                 current.push('(');
                 pos += 1;
             }
-            Some(b')') => {
+            Some(b')') if !in_string => {
                 depth -= 1;
                 current.push(')');
                 pos += 1;
@@ -991,7 +1103,7 @@ fn scan_call_args(source: &str, name_end: usize) -> (Vec<String>, usize) {
         }
     }
     if !current.trim().is_empty() || !args.is_empty() {
-        args.push(current.trim().to_string());
+        args.push(trimmed_arg(arg_start, &current));
     }
     (args, pos)
 }

@@ -69,17 +69,13 @@ struct Segment {
     /// Where `buffer_range.start` maps to in `source_id`'s own text (the
     /// rest of the range follows contiguously).
     local_start: usize,
-    /// `Some` only for segments produced by macro-body substitution — the
-    /// frame linking this expanded text back to its invocation.
-    ///
-    /// SPEC_DEVIATION: single-level only here — this is `resolve()`'s
-    /// chain of length <= 1. T9 (out of this batch) replaces this with
-    /// proper N-deep recursive chain-walking (nested macro-of-macro
-    /// expansion, SPANMAP-06); tasks.md's own T9 "Where" field names this
-    /// exact stub explicitly ("resolve()'s chain-walking, if T2 stubbed
-    /// it"), so this is the intended shape at T2's boundary, not scope
-    /// creep or an oversight.
-    expanded_from: Option<ExpansionFrame>,
+    /// Empty for segments produced by plain pass-through/`` `include ``
+    /// text. Non-empty for segments produced by macro-body substitution —
+    /// the full chain of expansion frames (innermost first, SPANMAP-06)
+    /// linking this expanded text back through every enclosing invocation
+    /// to its outermost caller. `Preprocessor::run` builds this chain
+    /// eagerly as it recurses into nested macro expansions (T9).
+    expanded_from: Vec<ExpansionFrame>,
 }
 
 /// Built by `Preprocessor::run`; consulted by every render boundary. The
@@ -129,7 +125,7 @@ impl Builder {
         buffer_range: std::ops::Range<usize>,
         source_id: SourceId,
         local_start: usize,
-        expanded_from: Option<ExpansionFrame>,
+        expanded_from: Vec<ExpansionFrame>,
     ) {
         self.segments.push(Segment { buffer_range, source_id, local_start, expanded_from });
     }
@@ -164,7 +160,7 @@ impl SourceProvenance {
         };
         let local_start = seg.local_start + (span.start - seg.buffer_range.start);
         let local_end = local_start + (span.end - span.start);
-        let expansion_chain = seg.expanded_from.iter().cloned().collect();
+        let expansion_chain = seg.expanded_from.clone();
         Span { source_id: seg.source_id, start: local_start, end: local_end, expansion_chain }
     }
 
