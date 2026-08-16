@@ -11,15 +11,20 @@ let outputChannel;
 // Binary resolution
 // ---------------------------------------------------------------------------
 
-/// Of the two workspace target dirs (`target/release`, `target/debug`),
-/// picks whichever binary was actually built most recently, not a fixed
-/// "release always wins" order. The repo's own dev workflow
-/// (`.vscode/tasks.json`'s `build-lang-server` preLaunchTask) only ever
-/// builds `debug` — a stale `release` binary left over from an earlier
-/// `build-vsix.sh` packaging run would otherwise silently shadow every
-/// fresh debug rebuild forever, with no error (found testing: a real fix
-/// committed to source never reached the running server because of this
-/// exact static ordering).
+/// Picks whichever candidate binary was actually built most recently.
+///
+/// **Why mtime and not a fixed candidate order** (both failure modes were
+/// hit for real while testing this extension against a live editor):
+///  1. `.vscode/tasks.json`'s `build-lang-server` preLaunchTask only ever
+///     builds `target/debug`, but the old code checked `target/release`
+///     first — one stale release binary from an earlier `build-vsix.sh`
+///     run silently shadowed every fresh debug rebuild, forever, with no
+///     error shown anywhere.
+///  2. The packaged `bin/` binary (shipped inside the `.vsix`) shadowed
+///     dev builds the same way. It races on mtime here too, so a fresh
+///     `cargo build` always wins in a dev checkout while an installed
+///     `.vsix` (which has no workspace target dirs at all) still resolves
+///     to its own embedded binary.
 function newestExisting(paths) {
     let best = null;
     let bestMtime = -Infinity;
@@ -37,24 +42,67 @@ function newestExisting(paths) {
     return best;
 }
 
+/// Walks up from `start` looking for the Cargo workspace root (the first
+/// ancestor holding a `Cargo.toml`), returning every ancestor that has
+/// one — the outermost is the workspace root whose `target/` cargo
+/// actually writes to.
+///
+/// **Why walking up is required**: `.vscode/launch.json` opens
+/// `${workspaceFolder}/examples` in the Extension Development Host, so
+/// `workspaceFolders[0]` is `<repo>/examples` — NOT the repo root. Only
+/// looking at `<workspace>/target/...` therefore found nothing in the
+/// project's own dev workflow and fell through to the stale packaged
+/// `bin/` binary on every single F5. That is the whole reason
+/// source-level LSP fixes appeared not to work in the editor while
+/// passing their own tests against the real binary.
+function cargoRootsAbove(start) {
+    const roots = [];
+    let dir = start;
+    for (;;) {
+        if (fs.existsSync(path.join(dir, "Cargo.toml"))) {
+            roots.push(dir);
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) {
+            return roots;
+        }
+        dir = parent;
+    }
+}
+
 function resolveBinaryPath(context, baseName, configPath) {
     if (path.isAbsolute(configPath)) {
         return configPath;
     }
-    const workspaceTargets = (vscode.workspace.workspaceFolders || []).flatMap((f) => [
-        path.join(f.uri.fsPath, "target", "release", baseName),
-        path.join(f.uri.fsPath, "target", "debug", baseName),
-    ]);
-    const fromWorkspace = newestExisting(workspaceTargets);
-    if (fromWorkspace) {
-        return fromWorkspace;
+
+    // Every Cargo root above the open workspace folder(s) AND above the
+    // extension itself (a dev checkout runs the extension straight out of
+    // `<repo>/editors/vscode`, so the repo root sits two levels up even
+    // when the opened folder is somewhere else entirely).
+    const searchBases = [
+        ...(vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath),
+        context.extensionPath,
+    ];
+    const cargoRoots = [...new Set(searchBases.flatMap(cargoRootsAbove))];
+
+    const targetDirs = cargoRoots.map((root) => path.join(root, "target"));
+    // `CARGO_TARGET_DIR` redirects every build out of `<root>/target`; a
+    // checkout that sets it (this repo's own does) would otherwise have
+    // no discoverable build output at all.
+    if (process.env.CARGO_TARGET_DIR) {
+        targetDirs.push(process.env.CARGO_TARGET_DIR);
     }
-    // Embedded binary inside the extension itself (build-vsix.sh copies
-    // plain, unsuffixed binaries into bin/ — each .vsix is already
-    // platform-specific, so no OS-suffix candidate is needed here).
-    const embedded = path.join(context.extensionPath, "bin", baseName);
-    if (fs.existsSync(embedded)) {
-        return embedded;
+
+    const candidates = targetDirs.flatMap((t) => [
+        path.join(t, "release", baseName),
+        path.join(t, "debug", baseName),
+    ]);
+    // The packaged binary races on mtime alongside them (see `newestExisting`).
+    candidates.push(path.join(context.extensionPath, "bin", baseName));
+
+    const best = newestExisting(candidates);
+    if (best) {
+        return best;
     }
     // Cargo global install.
     const cargoBin = path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", baseName);
