@@ -110,7 +110,7 @@ impl Elaborator {
                             port.ty = declarator_net_type(d, discipline, &env)?;
                             continue;
                         }
-                        wires.push(declarator_to_wire(d, discipline, n.span, &env)?);
+                        wires.push(declarator_to_wire(d, discipline, n.span, n.doc.clone(), &env)?);
                     }
                 }
                 ModuleItem::Param(p) => {
@@ -120,7 +120,7 @@ impl Elaborator {
                         params.push(Param {
                             span: Some(to_miette_span(p.span)),
                             attributes: Vec::new(),
-                            doc: None,
+                            doc: p.doc.clone(),
                             name: pa.name.clone(),
                             ty,
                             default: Some(value),
@@ -194,7 +194,7 @@ impl Elaborator {
                 ModuleItem::Var(v) => {
                     let ty = var_kind_value_type(v.kind);
                     for d in &v.names {
-                        vars.push(var_declarator_to_var(d, ty.clone(), v.span, &env)?);
+                        vars.push(var_declarator_to_var(d, ty.clone(), v.span, v.doc.clone(), &env)?);
                     }
                 }
                 // `event name1, name2, ...;` (§5.10.4, LRMC-C5-04) — an
@@ -315,6 +315,7 @@ impl Elaborator {
         let mut module =
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
         module.span = Some(to_miette_span(decl.span));
+        module.doc = decl.doc.clone();
         module.branches = branches;
         module.vars = vars;
         module.events = events;
@@ -443,7 +444,7 @@ impl Elaborator {
 
         Ok(Nature {
             span: Some(to_miette_span(decl.span)),
-            doc: None,
+            doc: decl.doc.clone(),
             name: name.to_string(),
             parent: decl.parent.clone(),
             abstol,
@@ -800,7 +801,7 @@ fn lower_port_decl(
         out.push(Port {
             span: Some(to_miette_span(p.span)),
             attributes: attributes.clone(),
-            doc: None,
+            doc: p.doc.clone(),
             direction,
             name: d.name.clone(),
             ty: declarator_net_type(d, discipline, &env)?,
@@ -952,12 +953,13 @@ fn declarator_to_wire(
     d: &Declarator,
     discipline: &str,
     span: crate::PreprocessedSpan,
+    doc: Option<String>,
     env: &ConstEnv,
 ) -> Result<Wire, ElabError> {
     Ok(Wire {
         span: Some(to_miette_span(span)),
         attributes: Vec::new(),
-        doc: None,
+        doc,
         name: d.name.clone(),
         ty: declarator_net_type(d, discipline, env)?,
     })
@@ -1014,6 +1016,7 @@ fn var_declarator_to_var(
     d: &Declarator,
     ty: ValueType,
     span: crate::PreprocessedSpan,
+    doc: Option<String>,
     env: &ConstEnv,
 ) -> Result<Var, ElabError> {
     let ty = match &d.range {
@@ -1029,7 +1032,7 @@ fn var_declarator_to_var(
             ValueType::Array(Box::new(ty), width)
         }
     };
-    Ok(Var { span: Some(to_miette_span(span)), attributes: Vec::new(), doc: None, name: d.name.clone(), ty, init: None })
+    Ok(Var { span: Some(to_miette_span(span)), attributes: Vec::new(), doc, name: d.name.clone(), ty, init: None })
 }
 
 fn param_value_type(ty: Option<ParamType>) -> ValueType {

@@ -18,7 +18,7 @@ fn nature_decl_carries_no_attrs_field() {
     // constructing one exhaustively: if a field were added later without
     // updating this test, the struct literal below would fail to compile.
     let n = NatureDecl {
-        span: span(),
+        span: span(), doc: None,
         name: "Voltage".into(),
         parent: Some("Potential".into()),
         abstol: None,
@@ -35,7 +35,7 @@ fn nature_decl_carries_no_attrs_field() {
 #[test]
 fn discipline_decl_carries_no_attrs_field() {
     let d = DisciplineDecl {
-        span: span(),
+        span: span(), doc: None,
         name: "Electrical".into(),
         domain: Some(Domain::Continuous),
         potential: Some("Voltage".into()),
@@ -48,7 +48,7 @@ fn discipline_decl_carries_no_attrs_field() {
 fn module_decl_is_attribute_bearing() {
     // Syntax 2-5: module_declaration permits `{ attribute_instance }`.
     let m = ModuleDecl {
-        span: span(),
+        span: span(), doc: None,
         attrs: vec![Attr { span: span(), name: "device".into(), value: None }],
         kind: ModuleKind::Module,
         name: "resistor".into(),
@@ -64,7 +64,7 @@ fn module_decl_is_attribute_bearing() {
 fn port_decl_is_attribute_bearing() {
     // Syntax 2-6: port_declaration permits attribute instances.
     let p = PortDecl {
-        span: span(),
+        span: span(), doc: None,
         attrs: vec![],
         dir: Direction::Inout,
         discipline: Some("Electrical".into()),
@@ -137,13 +137,13 @@ fn paramset_connectrules_config_are_not_attribute_bearing() {
 #[test]
 fn source_file_holds_all_seven_top_level_item_kinds() {
     let items = vec![
-        Item::Discipline(DisciplineDecl { span: span(), name: "d".into(), domain: None, potential: None, flow: None }),
+        Item::Discipline(DisciplineDecl { span: span(), doc: None, name: "d".into(), domain: None, potential: None, flow: None }),
         Item::Nature(NatureDecl {
-            span: span(), name: "n".into(), parent: None, abstol: None, access: None,
+            span: span(), doc: None, name: "n".into(), parent: None, abstol: None, access: None,
             units: None, idt_nature: None, ddt_nature: None, user_attrs: vec![],
         }),
         Item::Module(ModuleDecl {
-            span: span(), attrs: vec![], kind: ModuleKind::Module, name: "m".into(),
+            span: span(), doc: None, attrs: vec![], kind: ModuleKind::Module, name: "m".into(),
             param_ports: vec![], ports: None, items: vec![],
         }),
         Item::Paramset(ParamsetDecl { span: span(), name: "ps".into(), module_name: "m".into(), params: vec![], statements: vec![] }),

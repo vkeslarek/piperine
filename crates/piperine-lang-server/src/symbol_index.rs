@@ -402,10 +402,10 @@ pub fn resolve_at(
                 name: name.clone(),
                 decl_span: Some(vams_span_to_miette(d.span)),
                 type_info: None,
-                // `piperine_lang::ast::DisciplineDecl` carries no `///`
-                // doc-comment field (design F1: the POM re-exports the
-                // surface AST verbatim) — no doc to show.
-                doc: None,
+                // A discipline is re-exported as the surface AST node
+                // verbatim (design F1), so its `///` run comes straight
+                // off `ast::DisciplineDecl` rather than a POM mirror.
+                doc: d.doc.clone(),
                 file: item_file(name),
             });
         }

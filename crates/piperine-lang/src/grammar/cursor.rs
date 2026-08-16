@@ -14,17 +14,44 @@ use crate::lexer::{Lexed, Tok};
 pub struct Grammar {
     toks: Vec<Lexed>,
     pos: usize,
+    /// `///` doc-comment runs, keyed by the buffer offset of the first
+    /// meaningful token that follows the run — see [`Self::doc_at`].
+    docs: std::collections::HashMap<usize, String>,
 }
 
 impl Grammar {
     /// Each production method's doc comment names the Annex A production
     /// it implements (VAMS-23's conformance gate indexes these names).
     pub fn new(toks: Vec<Lexed>) -> Self {
+        let docs = collect_doc_runs(&toks);
         let toks: Vec<Lexed> = toks
             .into_iter()
             .filter(|l| !matches!(l.tok, Tok::Newline | Tok::LineComment(_) | Tok::BlockComment(_)))
             .collect();
-        Self { toks, pos: 0 }
+        Self { toks, pos: 0, docs }
+    }
+
+    /// The `///` doc-comment run immediately preceding the token at
+    /// `span`, if any — the text with each line's leading `///` and
+    /// surrounding whitespace stripped, joined by newlines.
+    ///
+    /// **Why a side table instead of keeping comments in the stream:**
+    /// every production method in `expr.rs`/`stmt.rs`/`item.rs` is written
+    /// against a comment-free token stream (positional `peek`/`bump`);
+    /// leaving `LineComment`s in would force each one to skip them by
+    /// hand — a wide, error-prone change to a hand-written parser
+    /// `CLAUDE.md` explicitly flags as ripple-prone. Attaching them out of
+    /// band keeps token indexing byte-identical and makes the lookup a
+    /// single map hit at the one place each declaration is constructed.
+    /// (Same "derived side artifact" shape `Design::flat_modules` and
+    /// `SourceProvenance` already use.)
+    ///
+    /// Callers pass the span of the declaration's **first** token, taken
+    /// with `peek_span()` before consuming anything — attribute instances
+    /// (`(* ... *)`) included, so a doc comment above an attributed
+    /// declaration still lands on it.
+    pub(crate) fn doc_at(&self, span: PreprocessedSpan) -> Option<String> {
+        self.docs.get(&span.start).cloned()
     }
 
     pub(crate) fn peek(&self) -> &Tok {
@@ -164,6 +191,39 @@ impl Grammar {
     pub(crate) fn eof_error(&self, expected: String) -> ParseError {
         ParseError::new(ParseErrorKind::UnexpectedEof { expected }, self.peek_span())
     }
+}
+
+/// Builds [`Grammar::doc_at`]'s lookup table from the raw (unfiltered)
+/// token stream: every run of consecutive `///` line comments is attached
+/// to the first meaningful token after it.
+///
+/// The lexer stores a line comment's text with the leading `//` already
+/// consumed, so a `///` line arrives here as a `LineComment` whose text
+/// starts with `/` — that leading slash is what distinguishes a doc
+/// comment from an ordinary `//` one, and it is stripped along with
+/// surrounding whitespace.
+///
+/// Newlines do not break a run (a multi-line `///` block is one doc); a
+/// plain `//` comment or any meaningful token does. A run with no
+/// following declaration (trailing doc at end of file) is simply dropped.
+fn collect_doc_runs(toks: &[Lexed]) -> std::collections::HashMap<usize, String> {
+    let mut docs = std::collections::HashMap::new();
+    let mut pending: Vec<String> = Vec::new();
+    for l in toks {
+        match &l.tok {
+            Tok::LineComment(text) if text.starts_with('/') => {
+                pending.push(text[1..].trim().to_string());
+            }
+            Tok::Newline => {}
+            Tok::LineComment(_) | Tok::BlockComment(_) => pending.clear(),
+            _ => {
+                if !pending.is_empty() {
+                    docs.insert(l.span.start, std::mem::take(&mut pending).join("\n"));
+                }
+            }
+        }
+    }
+    docs
 }
 
 fn describe(t: &Tok) -> String {

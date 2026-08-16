@@ -13,6 +13,9 @@ use crate::error::PreprocessedSpan;
 #[derive(Debug, Clone, PartialEq)]
 pub struct NatureDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub name: String,
     /// `nature Voltage : Potential;` — a derived nature, §3.6.1.1.
     pub parent: Option<String>,
@@ -42,6 +45,9 @@ pub enum Domain {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisciplineDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub name: String,
     pub domain: Option<Domain>,
     pub potential: Option<String>,
@@ -85,6 +91,9 @@ pub struct Declarator {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PortDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub attrs: Vec<Attr>,
     pub dir: Direction,
     pub discipline: Option<String>,
@@ -95,6 +104,9 @@ pub struct PortDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub attrs: Vec<Attr>,
     pub discipline: Option<String>,
     /// `ground` nets are represented via [`GroundDecl`], not here.
@@ -133,6 +145,9 @@ pub enum VarKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VarDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub attrs: Vec<Attr>,
     pub kind: VarKind,
     pub names: Vec<Declarator>,
@@ -193,6 +208,9 @@ pub struct ParamAssignment {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub attrs: Vec<Attr>,
     pub is_local: bool,
     pub ty: Option<ParamType>,
@@ -620,6 +638,9 @@ pub enum ModuleItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleDecl {
     pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this
+    /// declaration, if any (LSP hover renders it as Markdown).
+    pub doc: Option<String>,
     pub attrs: Vec<Attr>,
     pub kind: ModuleKind,
     pub name: String,

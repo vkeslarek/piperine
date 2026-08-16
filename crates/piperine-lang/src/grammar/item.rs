@@ -60,12 +60,14 @@ impl Grammar {
     /// `nature_declaration`, Annex A.1.6 — §3.6.1. Not attribute-bearing
     /// (absent from Syntax 2-5..2-10).
     pub fn parse_nature_decl(&mut self) -> Result<NatureDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let start = self.expect_kw("nature")?;
         let (name, _) = self.expect_ident()?;
         let parent = if self.eat_punct(":") { Some(self.expect_ident()?.0) } else { None };
         self.eat_punct(";");
 
         let mut n = NatureDecl {
+            doc,
             span: start,
             name,
             parent,
@@ -99,11 +101,12 @@ impl Grammar {
 
     /// `discipline_declaration`, Annex A.1.7 — §3.6.2. Not attribute-bearing.
     pub fn parse_discipline_decl(&mut self) -> Result<DisciplineDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let start = self.expect_kw("discipline")?;
         let (name, _) = self.expect_ident()?;
         self.eat_punct(";");
 
-        let mut d = DisciplineDecl { span: start, name, domain: None, potential: None, flow: None };
+        let mut d = DisciplineDecl { span: start, doc, name, domain: None, potential: None, flow: None };
         while !self.at_kw("enddiscipline") {
             if matches!(self.peek(), Tok::Eof) {
                 return Err(self.eof_error("'enddiscipline'".to_string()));
@@ -139,6 +142,7 @@ impl Grammar {
 
     /// `module_declaration`, Annex A.1.2 — §Syntax 2-5 (attribute-bearing).
     pub fn parse_module_decl(&mut self) -> Result<ModuleDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let attrs = self.parse_attr_instances()?;
         let (kind, start) = if self.at_kw("module") {
             (ModuleKind::Module, self.bump().span)
@@ -201,6 +205,7 @@ impl Grammar {
         }
         let end = self.expect_kw("endmodule")?;
         Ok(ModuleDecl {
+            doc,
             span: PreprocessedSpan::new(start.start, end.end),
             attrs,
             kind,
@@ -347,6 +352,7 @@ impl Grammar {
 
     /// `port_declaration`, Annex A.1.3 — §Syntax 2-6 (attribute-bearing).
     fn parse_port_decl(&mut self) -> Result<PortDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let attrs = self.parse_attr_instances()?;
         let start = self.peek_span();
         let dir = if self.eat_kw("input") {
@@ -374,13 +380,14 @@ impl Grammar {
         }
         let end = self.peek_span();
         self.eat_punct(";");
-        Ok(PortDecl { span: PreprocessedSpan::new(start.start, end.start), attrs, dir, discipline, names })
+        Ok(PortDecl { span: PreprocessedSpan::new(start.start, end.start), doc, attrs, dir, discipline, names })
     }
 
     /// `net_declaration`, §3.6.3/3.7 — a bare `discipline_identifier
     /// declarator_list ';'`, optionally followed by a nodeset value
     /// (§3.6.3.2: `net_discipline_identifier name <initial_value>;`).
     fn parse_net_decl(&mut self) -> Result<NetDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let attrs = self.parse_attr_instances()?;
         let start = self.peek_span();
         let (discipline, _) = self.expect_ident()?;
@@ -388,6 +395,7 @@ impl Grammar {
         let nodeset = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
         self.expect_punct(";")?;
         Ok(NetDecl {
+            doc,
             span: PreprocessedSpan::new(start.start, start.end),
             attrs,
             discipline: Some(discipline),
@@ -433,6 +441,7 @@ impl Grammar {
     /// parses the declarator-list form only; a bare `=` here is a genuine
     /// parse error, not a silently dropped initializer.
     fn parse_var_decl(&mut self) -> Result<VarDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let attrs = self.parse_attr_instances()?;
         let start = self.peek_span();
         let kind = if self.eat_kw("integer") {
@@ -447,7 +456,7 @@ impl Grammar {
         };
         let names = self.parse_declarator_list()?;
         let end = self.expect_punct(";")?;
-        Ok(VarDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, kind, names })
+        Ok(VarDecl { span: PreprocessedSpan::new(start.start, end.end), doc, attrs, kind, names })
     }
 
     /// A discipline name where present, distinguished from "no discipline,
@@ -493,6 +502,7 @@ impl Grammar {
     /// Annex A.2.1.1 — §Syntax 2-7 (attribute-bearing; `in_port_list`
     /// suppresses the trailing `;` for the `#(...)` port-list form).
     fn parse_param_decl_body(&mut self, in_port_list: bool) -> Result<ParamDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
         let attrs = self.parse_attr_instances()?;
         let start = self.peek_span();
         let is_local = if self.eat_kw("localparam") {
@@ -516,7 +526,7 @@ impl Grammar {
         if !in_port_list {
             self.expect_punct(";")?;
         }
-        Ok(ParamDecl { span: start, attrs, is_local, ty, names, ranges })
+        Ok(ParamDecl { span: start, doc, attrs, is_local, ty, names, ranges })
     }
 
     fn parse_optional_param_type(&mut self) -> Option<ParamType> {
