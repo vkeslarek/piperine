@@ -8,39 +8,70 @@ let client;
 let outputChannel;
 
 // ---------------------------------------------------------------------------
+// Binary resolution
+// ---------------------------------------------------------------------------
+
+/// Of the two workspace target dirs (`target/release`, `target/debug`),
+/// picks whichever binary was actually built most recently, not a fixed
+/// "release always wins" order. The repo's own dev workflow
+/// (`.vscode/tasks.json`'s `build-lang-server` preLaunchTask) only ever
+/// builds `debug` — a stale `release` binary left over from an earlier
+/// `build-vsix.sh` packaging run would otherwise silently shadow every
+/// fresh debug rebuild forever, with no error (found testing: a real fix
+/// committed to source never reached the running server because of this
+/// exact static ordering).
+function newestExisting(paths) {
+    let best = null;
+    let bestMtime = -Infinity;
+    for (const p of paths) {
+        try {
+            const mtime = fs.statSync(p).mtimeMs;
+            if (mtime > bestMtime) {
+                best = p;
+                bestMtime = mtime;
+            }
+        } catch {
+            // Doesn't exist — not a candidate.
+        }
+    }
+    return best;
+}
+
+function resolveBinaryPath(context, baseName, configPath) {
+    if (path.isAbsolute(configPath)) {
+        return configPath;
+    }
+    const workspaceTargets = (vscode.workspace.workspaceFolders || []).flatMap((f) => [
+        path.join(f.uri.fsPath, "target", "release", baseName),
+        path.join(f.uri.fsPath, "target", "debug", baseName),
+    ]);
+    const fromWorkspace = newestExisting(workspaceTargets);
+    if (fromWorkspace) {
+        return fromWorkspace;
+    }
+    // Embedded binary inside the extension itself (build-vsix.sh copies
+    // plain, unsuffixed binaries into bin/ — each .vsix is already
+    // platform-specific, so no OS-suffix candidate is needed here).
+    const embedded = path.join(context.extensionPath, "bin", baseName);
+    if (fs.existsSync(embedded)) {
+        return embedded;
+    }
+    // Cargo global install.
+    const cargoBin = path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", baseName);
+    if (fs.existsSync(cargoBin)) {
+        return cargoBin;
+    }
+    return configPath;
+}
+
+// ---------------------------------------------------------------------------
 // Language Server client
 // ---------------------------------------------------------------------------
 
 async function startClient(context) {
     const config = vscode.workspace.getConfiguration("piperine.server");
-    let serverBaseName = config.get("path", "piperine-lang-server");
-
-    let serverPath = serverBaseName;
-
-    if (!path.isAbsolute(serverPath)) {
-        const candidates = [
-            // Workspace target directories
-            ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "release", serverBaseName),
-            ),
-            ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "debug", serverBaseName),
-            ),
-            // Embedded binary inside the extension itself (build-vsix.sh copies
-            // plain, unsuffixed binaries into bin/ — each .vsix is already
-            // platform-specific, so no OS-suffix candidate is needed here)
-            path.join(context.extensionPath, "bin", serverBaseName),
-            // Cargo global install
-            path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", serverBaseName),
-        ];
-
-        for (const candidate of candidates) {
-            if (fs.existsSync(candidate)) {
-                serverPath = candidate;
-                break;
-            }
-        }
-    }
+    const serverBaseName = config.get("path", "piperine-lang-server");
+    const serverPath = resolveBinaryPath(context, serverBaseName, serverBaseName);
 
     outputChannel.appendLine(`piperine-lang-server path: ${serverPath}`);
 
@@ -78,34 +109,8 @@ async function startClient(context) {
 
 function getPiperineCliPath(context) {
     const config = vscode.workspace.getConfiguration("piperine.cli");
-    let cliBaseName = config.get("path", "piperine");
-
-    let cliPath = cliBaseName;
-
-    if (!path.isAbsolute(cliPath)) {
-        const candidates = [
-            // Workspace target directories
-            ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "release", cliBaseName),
-            ),
-            ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "debug", cliBaseName),
-            ),
-            // Embedded binary inside the extension itself (build-vsix.sh copies
-            // plain, unsuffixed binaries into bin/ — each .vsix is already
-            // platform-specific, so no OS-suffix candidate is needed here)
-            path.join(context.extensionPath, "bin", cliBaseName),
-            // Cargo global install
-            path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", cliBaseName),
-        ];
-
-        for (const candidate of candidates) {
-            if (fs.existsSync(candidate)) {
-                return candidate;
-            }
-        }
-    }
-    return cliPath;
+    const cliBaseName = config.get("path", "piperine");
+    return resolveBinaryPath(context, cliBaseName, cliBaseName);
 }
 
 // ---------------------------------------------------------------------------
