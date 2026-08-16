@@ -58,4 +58,12 @@ fn error_in_plain_source_resolves_to_the_top_level_file_unchanged() {
     // The only source text involved is `src` itself — its own malformed
     // module text must appear in the rendered snippet.
     assert!(rendered.contains("Bad"), "rendered report should show the top-level file's own text, got:\n{rendered}");
+    // SPANMAP-01's zero-regression AC: a caller that never gave a real
+    // file path (`parse_and_elaborate`'s public API takes a bare `&str`)
+    // must render exactly as it did before this feature — no synthetic
+    // `<input>:` name label ever appeared pre-feature, and none may now.
+    assert!(
+        !rendered.contains("<input>"),
+        "rendered report must not show the internal top-level sentinel name, got:\n{rendered}"
+    );
 }

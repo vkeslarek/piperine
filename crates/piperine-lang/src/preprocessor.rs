@@ -205,7 +205,7 @@ impl Preprocessor {
         let mut cond_stack: Vec<CondFrame> = Vec::new();
         let mut include_stack: Vec<String> = Vec::new();
         let mut builder = Builder::new();
-        let top_id = builder.add_source("<input>", source.to_string());
+        let top_id = builder.add_source(crate::source_provenance::TOP_LEVEL_SENTINEL_NAME, source.to_string());
         {
             let mut rec = RecCtx { source_id: top_id, anchor: None, chain: Vec::new(), builder: &mut builder };
             self.process(source, &mut out, &mut cond_stack, &mut include_stack, &mut Vec::new(), &mut rec)?;

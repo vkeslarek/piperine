@@ -9,6 +9,16 @@
 //! only by [`SourceProvenance::resolve`] — never constructed directly by a
 //! consumer.
 
+/// Sentinel name [`crate::preprocessor::Preprocessor::run`] registers the
+/// top-level input string under when the caller gave it no real file
+/// path — `piperine_lang::parse_and_elaborate`'s public API only ever
+/// takes a bare `&str`. A render boundary checks for this exact name to
+/// fall back to an unnamed `source_code` (matching this crate's
+/// pre-`preprocessor-span-mapping` behavior byte-for-byte, SPANMAP-01's
+/// zero-regression AC) instead of showing a synthetic `<input>:` label
+/// no caller ever asked for.
+pub const TOP_LEVEL_SENTINEL_NAME: &str = "<input>";
+
 /// Opaque handle into [`SourceProvenance`]'s source table — one per unique
 /// loaded file path (repeated `` `include ``s of the same path share one
 /// id) plus one for the top-level input string itself.

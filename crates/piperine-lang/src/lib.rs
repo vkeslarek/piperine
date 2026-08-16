@@ -260,10 +260,24 @@ fn resolve_elab_error(mut err: ElabError, prov: &source_provenance::SourceProven
             ExpandedFromHere { macro_name: frame.macro_name.clone(), span: def_span, src: def_named }
         })
         .collect();
+    // `piperine_lang::parse_and_elaborate`'s public API takes a bare
+    // `&str`, no file path — when the resolved span's source is still the
+    // preprocessor's top-level sentinel (SPANMAP-01's zero-regression
+    // AC), attaching a `NamedSource` would print a synthetic `<input>:`
+    // label this crate never showed before this feature. Fall back to
+    // the unnamed text directly, byte-for-byte matching pre-feature
+    // rendering; a real `` `include ``d/macro-expanded source keeps its
+    // real name exactly as `named` already carries it.
+    let source_code: std::sync::Arc<dyn miette::SourceCode> =
+        if prov.name(resolved.source_id) == source_provenance::TOP_LEVEL_SENTINEL_NAME {
+            std::sync::Arc::new(prov.text(resolved.source_id).to_string())
+        } else {
+            std::sync::Arc::new(named)
+        };
     if related.is_empty() {
-        miette::Report::from(err).with_source_code(named)
+        miette::Report::from(err).with_source_code(source_code)
     } else {
-        miette::Report::from(WithExpansionChain { err, related }).with_source_code(named)
+        miette::Report::from(WithExpansionChain { err, related }).with_source_code(source_code)
     }
 }
 
