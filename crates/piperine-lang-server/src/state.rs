@@ -330,7 +330,27 @@ impl DocumentState {
             .map(|idx| crate::occurrences::occurrences_for_decl_span(idx, decl_span))
             .unwrap_or_default();
         let spans = if spans.is_empty() { vec![decl_span] } else { spans };
-        spans.iter().map(|s| (s.offset(), s.offset() + s.len())).collect()
+        // Every span here is a flat-preprocessed-buffer offset (same root
+        // cause `goto_def`'s `resolve_decl_location` fixes) — resolving
+        // through `source_provenance` translates it back to this
+        // document's own local coordinates. An occurrence that resolves
+        // to a *different* source (declared inside `` `include ``d
+        // content) isn't text in this document at all — highlighting it
+        // here would be a fabricated range; cross-file highlight/rename
+        // is a separate, not-yet-built feature, so those are dropped
+        // rather than mis-rendered.
+        let Some(design) = self.design.as_ref() else {
+            return spans.iter().map(|s| (s.offset(), s.offset() + s.len())).collect();
+        };
+        spans
+            .iter()
+            .filter_map(|s| {
+                let flat = piperine_lang::error::PreprocessedSpan::new(s.offset(), s.offset() + s.len());
+                let resolved = design.source_provenance.resolve(flat);
+                (resolved.source_id == piperine_lang::source_provenance::SourceId(0))
+                    .then_some((resolved.start, resolved.end))
+            })
+            .collect()
     }
 
     /// Byte ranges of every whole-word occurrence of `word` in the source.

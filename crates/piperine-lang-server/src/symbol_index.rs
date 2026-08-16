@@ -3,6 +3,118 @@ use piperine_lang::pom::Design;
 use miette::SourceSpan;
 use std::path::PathBuf;
 
+/// Resolves any POM `decl_span` (always in the preprocessor's flat
+/// buffer coordinate space — T3's mechanical rename never changed what
+/// the numbers mean, only the type's name) to a real, correctly-placed
+/// `Location` — same-document or a genuine `` `include ``d file.
+///
+/// **Why this exists**: every `Resolution::decl_span` is minted from an
+/// AST node's `PreprocessedSpan` (`elab/lower/vams.rs`'s span-population
+/// fix), which is a *flat-buffer* offset — identical to the open
+/// document's own byte offsets only when nothing before the declaration
+/// expanded (no earlier `` `include ``/`` `define ``). The moment
+/// anything expands earlier in the file, every later declaration's flat
+/// offset runs ahead of where that text actually sits in the document's
+/// own raw source — building a `Location`/`Range` straight from
+/// `decl_span.offset()` against `doc.source` silently mispoints (same
+/// file, wrong line) or, when the declaration came from `` `include ``d
+/// content entirely, points miles past the document's own length. This
+/// is the single root cause behind three of four VS Code Ctrl+click bugs
+/// found testing this feature: disciplines/natures from `` `include ``d
+/// headers "resolving" into the current file, instances of modules
+/// declared via `` `include `` not resolving at all, and even a
+/// same-document instance-connection argument (a plain local `Wire`)
+/// landing on the wrong line once any `` `include `` precedes it.
+///
+/// `design.source_provenance` (built by the same parse this `Design`
+/// came from) already carries the real per-`` `include ``-file identity
+/// and full captured text (T6/T7, `preprocessor-span-mapping`) — no
+/// filesystem re-read needed for content, only for resolving the
+/// `` `include ``d file's *path* (its `SourceProvenance` name is the raw
+/// `` `include "…" `` argument string, not a resolved on-disk path;
+/// `resolve_include_source_path` below does that resolution the same
+/// way `SourceMapIncludeResolver` does, for URI purposes only).
+pub(crate) fn resolve_decl_location(
+    design: &Design,
+    current_uri: &lsp_types::Uri,
+    source_map: Option<&piperine_lang::SourceMap>,
+    span: SourceSpan,
+) -> Option<lsp_types::Location> {
+    let flat = piperine_lang::error::PreprocessedSpan::new(span.offset(), span.offset() + span.len());
+    let resolved = design.source_provenance.resolve(flat);
+    if resolved.source_id == piperine_lang::source_provenance::SourceId(0) {
+        // The document's own top-level source — build the range against
+        // its own text directly (no read/URI change needed), matching
+        // `SourceProvenance::text(SourceId(0))` byte-for-byte.
+        let text = design.source_provenance.text(resolved.source_id);
+        return Some(lsp_types::Location {
+            uri: current_uri.clone(),
+            range: crate::text_pos::byte_range(text, resolved.start, resolved.end),
+        });
+    }
+    // A real `` `include ``d file — its captured text is already in
+    // `SourceProvenance` (no disk re-read for content); only the URI
+    // needs the actual on-disk path, resolved the same way the
+    // preprocessor's own `IncludeResolver` found it.
+    let raw_include_arg = design.source_provenance.name(resolved.source_id);
+    let path = source_map.and_then(|sm| resolve_include_source_path(sm, raw_include_arg))?;
+    let text = design.source_provenance.text(resolved.source_id);
+    let uri: lsp_types::Uri = format!("file://{}", path.display()).parse().ok()?;
+    Some(lsp_types::Location { uri, range: crate::text_pos::byte_range(text, resolved.start, resolved.end) })
+}
+
+/// If `byte_offset` lands inside an `` `include "path" `` directive's
+/// quoted path text in `source` (the *document's own raw text* — this
+/// runs before any preprocessing, so no flat-buffer translation is
+/// needed here, unlike every other resolution in this module), returns
+/// the raw path string. Go-to-definition on the include directive itself
+/// opens that file — a different action from resolving a *symbol* the
+/// included content declares (handled entirely separately by
+/// `resolve_at`/`resolve_decl_location`).
+pub(crate) fn include_directive_path_at(source: &str, byte_offset: usize) -> Option<String> {
+    let bytes = source.as_bytes();
+    let mut search_from = 0usize;
+    while let Some(rel) = source[search_from..].find("`include") {
+        let directive_start = search_from + rel;
+        let mut p = directive_start + "`include".len();
+        while matches!(bytes.get(p), Some(b' ') | Some(b'\t')) {
+            p += 1;
+        }
+        if bytes.get(p) != Some(&b'"') {
+            search_from = directive_start + 1;
+            continue;
+        }
+        let quote_start = p + 1;
+        let mut q = quote_start;
+        while q < bytes.len() && bytes[q] != b'"' {
+            q += 1;
+        }
+        if byte_offset >= quote_start && byte_offset <= q {
+            return Some(source[quote_start..q].to_string());
+        }
+        search_from = (q + 1).min(bytes.len());
+    }
+    None
+}
+
+/// Mirrors `piperine_lang::SourceMapIncludeResolver::resolve`'s exact
+/// search order (each namespace, then `root_path`, then as-is) but
+/// checks for existence instead of reading content — the LSP crate
+/// already touches the filesystem directly elsewhere (unlike the pure
+/// `piperine-lang` crate, MD-43/47), so this doesn't cross a purity
+/// boundary; it's only needed to turn a raw `` `include`` argument
+/// string back into a URI, since `SourceProvenance` itself never
+/// resolves to on-disk paths (T6 only ever recorded the argument text).
+pub(crate) fn resolve_include_source_path(source_map: &piperine_lang::SourceMap, raw_path: &str) -> Option<PathBuf> {
+    source_map
+        .namespaces
+        .values()
+        .map(|ns| ns.join(raw_path))
+        .chain(std::iter::once(source_map.root_path.join(raw_path)))
+        .chain(std::iter::once(PathBuf::from(raw_path)))
+        .find(|candidate| candidate.is_file())
+}
+
 /// Convert a pure-crate `piperine_lang::error::PreprocessedSpan` (a plain byte range,
 /// T1's purity contract) into the `miette::SourceSpan` every `Resolution`
 /// carries — `Design::disciplines()` keeps the surface AST shape verbatim

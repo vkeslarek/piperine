@@ -18,56 +18,136 @@
 //! direct VAMS equivalent — `` `include "spice/passives.va"`` + an
 //! instance of the stdlib `res` module — and is kept below, migrated.
 //!
-//! **Blocked** (a newly discovered gap, parallel to but distinct from the
-//! feature's documented `span: None` gap): `symbol_index::resolve_at`'s
-//! cross-file `file` field is populated from `design.project().item_file
-//! (name)` (`pom/design.rs`'s `Project::item_files`/`use_files` maps).
-//! Those maps are filled in exclusively by `crate::resolve::Resolver::
-//! item_files` — PHDL's own `use`-resolution pass, which no longer exists
-//! in this crate at all (deleted with the PHDL parser, MD-45/T21; `grep -n
-//! "struct Resolver" crates/piperine-lang/src/` finds nothing). Nothing
-//! populates `item_files`/`use_files` for VAMS's `` `include`` mechanism —
-//! confirmed directly: `design.project().item_file("res")` returns `None`
-//! even after a clean `` `include "spice/passives.va"``-based elaboration.
-//! So `resolve_at`'s `file` field is always `None` for VAMS content — the
-//! module NAME itself still resolves correctly (step 3's global
-//! module-name scan doesn't need `item_file` or any span), but "opens its
-//! real declaring file" cannot be proven until VAMS gets its own
-//! cross-file provenance wiring (an elaborator feature, out of scope for
-//! this lang-server-wiring feature).
+//! **Fixed**: `goto_def::handle` no longer relies on `Project::item_files`/
+//! `use_files` (PHDL's own dead `use`-resolution pass, MD-45/T21 — nothing
+//! populates them for VAMS's `` `include`` mechanism, confirmed directly:
+//! `design.project().item_file("res")` still returns `None` after a clean
+//! `` `include "spice/passives.va"``-based elaboration). Instead,
+//! `symbol_index::resolve_decl_location` resolves *any* `decl_span`
+//! through `Design::source_provenance` — the same real per-`` `include ``
+//! -file identity `preprocessor-span-mapping` already built — so the
+//! actual LSP `textDocument/definition` response now jumps to the real
+//! declaring file, independent of the still-dead `item_files` map.
 
-use piperine_lang_server::state::DocumentState;
+mod common;
+use common::*;
 
-fn analyzed(src: &str) -> DocumentState {
-    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = piperine_lang::SourceMap::new(headers.clone());
-    map.add_namespace("piperine", headers.clone());
-    map.add_namespace("spice", headers.join("spice"));
-    let mut doc = DocumentState::new(src.to_string(), 1);
-    doc.analyze(&map);
-    assert!(doc.design.is_some(), "elaborates: {:?}", doc.errors);
-    doc
-}
-
-/// **Blocked**: see the file-level doc — an `` `include``d module's type
-/// name resolves correctly by NAME (`resolution.kind == Module`, `name ==
-/// "res"`), but `resolution.file` is always `None` for VAMS content
-/// because nothing populates `Project::item_files` outside the deleted
-/// PHDL `use` resolver.
+/// An `` `include``d module's type name resolves to its real declaring
+/// file — driven through the real `textDocument/definition` round trip
+/// (not `resolve_at` directly, since the fix lives in how `goto_def`
+/// turns a `decl_span` into a `Location`, not in `Resolution` itself).
+/// Uses a `ScratchProject` (a real on-disk `Piperine.toml` + `src/`) so
+/// `` `include`` resolves through the project's own `SourceMap` — the
+/// crate's builtin `piperine`/`spice` header namespaces are not reachable
+/// from `SourceMap::dummy()`'s relative paths under this crate's own test
+/// working directory, so a self-contained two-file project is the correct
+/// (and only reliable) way to exercise a real `` `include``.
 #[test]
 fn goto_on_imported_module_type_resolves_to_its_real_declaring_file() {
-    let src = "\
-`include \"spice/passives.va\"
+    let scratch = ScratchProject::new("import_goto_cross_file");
+    let inc_src = "\
+module res(p, n);
+  inout electrical p, n;
+  parameter real r = 1.0;
+  analog V(p,n) <+ r * I(p,n);
+endmodule
+";
+    let inc_path = scratch.write_src("inc.vams", inc_src);
+    let top_src = "\
+`include \"inc.vams\"
 module Board();
   electrical a, gnd;
   res r1 (.p(a), .n(gnd));
 endmodule
 ";
-    let doc = analyzed(src);
+    let top_path = scratch.write_src("top.vams", top_src);
+    let top_uri: Uri = format!("file://{}", top_path.display()).parse().unwrap();
 
-    // Click on `res` at the instantiation site.
-    let mod_off = src.find("res r1").unwrap();
-    let r = doc.resolve_at(mod_off).expect("imported module resolves by name");
-    assert_eq!(r.name, "res");
-    assert!(r.file.as_ref().unwrap().ends_with("headers/spice/passives.va"), "res -> passives.va, got {:?}", r.file);
+    // `res r1` — land the cursor on `res`.
+    let off = top_src.find("res r1").unwrap();
+    let pos = byte_to_position(top_src, off);
+    let resp = lsp_goto_definition_at(&top_uri, top_src, pos.line, pos.character);
+    let loc = match &resp {
+        lsp_types::GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+    let inc_uri: Uri = format!("file://{}", inc_path.display()).parse().unwrap();
+    assert_eq!(loc.uri.as_str(), inc_uri.as_str(), "res -> inc.vams, got {}", loc.uri.as_str());
+    // The location must also land on the real declaration line inside
+    // inc.vams, not offset (0,0)/garbage — `module res(p, n);` is line 0.
+    assert_eq!(loc.range.start.line, 0, "must point at inc.vams's own module declaration line");
+}
+
+/// A click on the `` `include "path" `` directive itself opens that file
+/// (Ctrl+click on an include line, not on a symbol it declares — a
+/// separate bug found testing the VS Code extension).
+#[test]
+fn click_on_include_directive_opens_the_included_file() {
+    let scratch = ScratchProject::new("import_goto_include_click");
+    let inc_path = scratch.write_src("inc.vams", "module res(p, n);\nendmodule\n");
+    let top_src = "`include \"inc.vams\"\nmodule Board();\nendmodule\n";
+    let top_path = scratch.write_src("top.vams", top_src);
+    let top_uri: Uri = format!("file://{}", top_path.display()).parse().unwrap();
+
+    let off = top_src.find("inc.vams").unwrap();
+    let pos = byte_to_position(top_src, off);
+    let resp = lsp_goto_definition_at(&top_uri, top_src, pos.line, pos.character);
+    let loc = match &resp {
+        lsp_types::GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+    let inc_uri: Uri = format!("file://{}", inc_path.display()).parse().unwrap();
+    assert_eq!(loc.uri.as_str(), inc_uri.as_str(), "clicking the include path must open inc.vams, got {}", loc.uri.as_str());
+}
+
+/// A discipline declared inside `` `include``d content (`disciplines.vams`
+/// via the crate's own `piperine` header namespace) resolves to that real
+/// file, not a wrong location inside the current document — the exact
+/// scenario found testing the VS Code extension (Ctrl+click on
+/// `electrical` "pointed at the same file even though it's declared in an
+/// include").
+#[test]
+fn goto_on_include_declared_discipline_resolves_to_its_real_file() {
+    let scratch = ScratchProject::new("import_goto_discipline");
+    let disc_path = scratch.write_src(
+        "disc.vams",
+        "\
+nature Voltage;
+  units = \"V\";
+  access = V;
+  abstol = 1e-6;
+endnature
+nature Current;
+  units = \"A\";
+  access = I;
+  abstol = 1e-12;
+endnature
+discipline electrical;
+  potential Voltage;
+  flow Current;
+enddiscipline
+",
+    );
+    let top_src = "\
+`include \"disc.vams\"
+module Board();
+  electrical a, gnd;
+endmodule
+";
+    let top_path = scratch.write_src("top.vams", top_src);
+    let top_uri: Uri = format!("file://{}", top_path.display()).parse().unwrap();
+
+    // The `electrical` in `electrical a, gnd;` — not the include line.
+    let off = top_src.rfind("electrical").unwrap();
+    let pos = byte_to_position(top_src, off);
+    let resp = lsp_goto_definition_at(&top_uri, top_src, pos.line, pos.character);
+    let loc = match &resp {
+        lsp_types::GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+    let disc_uri: Uri = format!("file://{}", disc_path.display()).parse().unwrap();
+    assert_eq!(loc.uri.as_str(), disc_uri.as_str(), "electrical -> disc.vams, got {}", loc.uri.as_str());
+    let disc_src = std::fs::read_to_string(&disc_path).unwrap();
+    let want_line = disc_src[..disc_src.find("discipline electrical").unwrap()].matches('\n').count() as u32;
+    assert_eq!(loc.range.start.line, want_line, "must point at disc.vams's own discipline declaration line");
 }
