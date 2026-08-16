@@ -595,7 +595,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-fn scale_factor_value(b: u8) -> Option<f64> {
+pub(crate) fn scale_factor_value(b: u8) -> Option<f64> {
     Some(match b {
         b'T' => 1e12,
         b'G' => 1e9,
