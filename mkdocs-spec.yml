@@ -5,7 +5,7 @@ site_description: Piperine PHDL Simulator and Language Specification
 # Change this field when the PHDL language version evolves.
 # Independent of the Rust simulator codebase version.
 extra:
-  phdl_version: "0.1.1"
+  phdl_version: "0.3.0"
 # ===================================
 theme:
   name: material
@@ -17,7 +17,7 @@ plugins:
       output_path: pdf/piperine-spec.pdf
       cover_title: "Piperine Hardware Definition Language"
       cover_subtitle: "Complete Specification"
-      cover_version: "v0.1.1" # Update here as well to reflect on the PDF cover
+      cover_version: "v0.3.0" # Update here as well to reflect on the PDF cover
 
 nav:
   - Specification (PHDL):
