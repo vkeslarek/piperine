@@ -298,9 +298,9 @@ side-artifact precedent (design's Tech Decisions).
 - Skill: NONE
 
 **Done when**:
-- [ ] `Design::source_provenance` field exists, populated on every successful `parse_and_elaborate*` call
-- [ ] `Design`'s existing `serde` round-trip tests (`pom_serde.rs`/`pom_vams_shape.rs`) still pass unchanged (the field is skipped, not serialized — no round-trip diff)
-- [ ] `cargo build -p piperine-lang` clean
+- [x] `Design::source_provenance` field exists, populated on every successful `parse_and_elaborate*` call
+- [x] `Design`'s existing `serde` round-trip tests (`pom_serde.rs`/`pom_vams_shape.rs`) still pass unchanged (the field is skipped, not serialized — no round-trip diff)
+- [x] `cargo build -p piperine-lang` clean
 
 **Tests**: covered by existing `Design` serde tests (no new test file needed — this task only threads a field, T2/T6 already cover the type's own behavior)
 **Gate**: quick

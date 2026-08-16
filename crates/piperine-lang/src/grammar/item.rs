@@ -1387,7 +1387,7 @@ impl Grammar {
         while !self.at_eof() {
             items.push(self.parse_item()?);
         }
-        Ok(SourceFile { items, directives: Default::default() })
+        Ok(SourceFile { items, directives: Default::default(), source_provenance: Default::default() })
     }
 
     /// `description`, Annex A.1.1 — one top-level declaration.

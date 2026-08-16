@@ -116,6 +116,7 @@ impl Elaborator {
         self.pending_items = source.items;
         let mut design = Design::new();
         design.directives = source.directives;
+        design.source_provenance = source.source_provenance;
         for pass in passes::PASSES {
             pass.run(self, &mut design)?;
         }

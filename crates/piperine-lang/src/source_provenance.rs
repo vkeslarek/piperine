@@ -48,7 +48,7 @@ pub struct ExpansionFrame {
 
 /// One contiguous run of the preprocessor's flat output buffer, mapped back
 /// to a real source's own text.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Segment {
     buffer_range: std::ops::Range<usize>,
     source_id: SourceId,
@@ -71,7 +71,7 @@ struct Segment {
 /// Built by `Preprocessor::run`; consulted by every render boundary. The
 /// registry of every loaded source text plus a segment table mapping
 /// preprocessed-buffer byte ranges back to real `(source_id, local_offset)`.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SourceProvenance {
     /// `(name/path, full text)`, indexed by `SourceId`.
     sources: Vec<(String, String)>,

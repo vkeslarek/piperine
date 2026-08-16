@@ -41,6 +41,12 @@ pub struct SourceFile {
     /// [`crate::parser::Parser::parse`] after `Grammar::parse_source_file`
     /// returns (the grammar layer itself has no preprocessor access).
     pub directives: crate::directives::DirectiveState,
+    /// Maps every `PreprocessedSpan` minted while lexing/parsing this
+    /// source unit back to its real originating file (and, for
+    /// macro-expanded text, invocation context) — built by
+    /// `Preprocessor::run`, attached by [`crate::parser::Parser::parse`]
+    /// alongside `directives` (preprocessor-span-mapping feature, T7).
+    pub source_provenance: crate::source_provenance::SourceProvenance,
 }
 
 /// A top-level source item — Annex A.1.1 `description`.

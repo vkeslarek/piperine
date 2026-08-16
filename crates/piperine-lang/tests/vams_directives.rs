@@ -189,7 +189,7 @@ fn line_directive_remaps_reported_line_numbers() {
 
     let src = "`line 100 \"other.v\" 0\nsecond_line\nthird_line\n";
     let mut pp = Preprocessor::new();
-    let expanded = pp.run(src).expect("preprocesses");
+    let (expanded, _prov) = pp.run(src).expect("preprocesses");
     let directives: &DirectiveState = pp.directives();
 
     // Offset of "second_line" in the *expanded* text (the directive itself

@@ -153,7 +153,7 @@ fn source_file_holds_all_seven_top_level_item_kinds() {
             span: span(), attrs: vec![], name: "p".into(), ports: vec![], table: vec![], is_sequential: false,
         }),
     ];
-    let sf = SourceFile { items, directives: Default::default() };
+    let sf = SourceFile { items, directives: Default::default(), source_provenance: Default::default() };
     assert_eq!(sf.items.len(), 7);
 }
 

@@ -175,6 +175,13 @@ pub struct Design {
     /// by re-elaboration.
     #[serde(skip)]
     pub(crate) directives: crate::directives::DirectiveState,
+    /// Maps every `PreprocessedSpan` minted while parsing this design back
+    /// to its real originating file (and macro-expansion context) —
+    /// copied from `SourceFile::source_provenance` by `Elaborator::elaborate`,
+    /// same `#[serde(skip)]`/derived-artifact treatment as `flat_modules`
+    /// (POM-navigability rule: a side artifact, not authored structure).
+    #[serde(skip)]
+    pub source_provenance: crate::source_provenance::SourceProvenance,
 }
 
 impl Design {
@@ -191,6 +198,7 @@ impl Design {
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
             directives: Default::default(),
+            source_provenance: Default::default(),
         }
     }
 
