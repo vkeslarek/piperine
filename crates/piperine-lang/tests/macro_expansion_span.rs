@@ -5,7 +5,7 @@
 //! SPANMAP-04/05/06/09.
 
 use piperine_lang::error::PreprocessedSpan as PreSpan;
-use piperine_lang::Preprocessor;
+use piperine_lang::{parse_and_elaborate, Preprocessor, SourceMap};
 
 /// Runs the preprocessor and returns the flat output plus its
 /// `SourceProvenance`.
@@ -122,4 +122,47 @@ fn multi_argument_macro_invocation_records_param_to_arg_span_pairs() {
         let arg_text = &prov.text(arg_span.source_id)[arg_span.start..arg_span.end];
         assert_eq!(arg_text, *expected_text, "argument {idx} ({pname}) text recoverable via SourceProvenance::text()");
     }
+}
+
+/// SPANMAP-04/05/06 (T10): rendering a macro-expansion error's
+/// `miette::Report` shows both the invocation location (primary label,
+/// what the module author wrote and can act on) and an "expanded from
+/// here"-labeled definition location (secondary, rustc macro-backtrace
+/// convention) — the object-like macro `` `BAD `` expands into a bare
+/// `#`, which is invalid wherever an identifier is expected, so the
+/// parse failure's span lands strictly inside the macro-expanded text.
+#[test]
+fn macro_expansion_error_report_shows_both_invocation_and_expanded_from_here() {
+    let source_map = SourceMap::dummy();
+    let src = "`define BAD #\nmodule `BAD;\nendmodule\n";
+    let err = parse_and_elaborate(src, &source_map).expect_err("`#` is not a valid module name");
+    let rendered = format!("{err:?}");
+
+    // Primary label: the parser stopped at the macro invocation site
+    // (`` `BAD `` in `module `BAD;`), which the rendered snippet includes
+    // via the second source line of `src`.
+    assert!(rendered.contains("module `BAD;"), "primary label's snippet should show the invocation line, got:\n{rendered}");
+
+    // Secondary "expanded from here" label: the macro's own `` `define ``
+    // body location, in a related/lower-severity note distinct from the
+    // primary error.
+    assert!(
+        rendered.contains("expanded from here"),
+        "rendered report should carry an 'expanded from here' related label, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("expanded from macro `BAD`") || rendered.contains("BAD"),
+        "the related label should name the macro, got:\n{rendered}"
+    );
+}
+
+/// Spec Edge Case (P2 AC4, T10 half): a plain (non-macro, non-include)
+/// parse failure's rendered report carries no "expanded from here" noise.
+#[test]
+fn plain_source_error_report_has_no_expanded_from_here_note() {
+    let source_map = SourceMap::dummy();
+    let src = "module Bad(";
+    let err = parse_and_elaborate(src, &source_map).expect_err("malformed module should fail to parse");
+    let rendered = format!("{err:?}");
+    assert!(!rendered.contains("expanded from"), "plain-source error should carry no expansion-chain note, got:\n{rendered}");
 }

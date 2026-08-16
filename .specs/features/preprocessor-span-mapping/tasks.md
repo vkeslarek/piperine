@@ -367,11 +367,11 @@ invocation, `resolve()` walks all of them).
 - Skill: NONE
 
 **Done when**:
-- [ ] New test: an error inside a single-level macro expansion resolves with a one-frame `expansion_chain` carrying the correct invocation and definition spans (SPANMAP-04/05)
-- [ ] New test: an error inside a doubly-nested macro expansion (a macro invoking another macro) resolves with a two-frame chain, innermost first (SPANMAP-06)
-- [ ] New test: an error in plain (non-macro) text has an empty `expansion_chain` (spec Edge Case — no noise on the common case)
-- [ ] New test: a multi-argument macro invocation (e.g. a 4-param `` `MPRnb(name,default,units,desc)``-shaped macro) records `args` with the correct param name → argument-text `Span` pairing, and the argument's text is recoverable via `SourceProvenance::text()` at that span (SPANMAP-09)
-- [ ] Gate check passes: `cargo test -p piperine-lang --test macro_expansion_span`
+- [x] New test: an error inside a single-level macro expansion resolves with a one-frame `expansion_chain` carrying the correct invocation and definition spans (SPANMAP-04/05)
+- [x] New test: an error inside a doubly-nested macro expansion (a macro invoking another macro) resolves with a two-frame chain, innermost first (SPANMAP-06)
+- [x] New test: an error in plain (non-macro) text has an empty `expansion_chain` (spec Edge Case — no noise on the common case)
+- [x] New test: a multi-argument macro invocation (e.g. a 4-param `` `MPRnb(name,default,units,desc)``-shaped macro) records `args` with the correct param name → argument-text `Span` pairing, and the argument's text is recoverable via `SourceProvenance::text()` at that span (SPANMAP-09)
+- [x] Gate check passes: `cargo test -p piperine-lang --test macro_expansion_span`
 
 **Tests**: unit/integration (new `macro_expansion_span.rs`, per matrix)
 **Gate**: quick
@@ -395,8 +395,8 @@ per the rustc-backtrace convention the spec locked in.
 - Skill: NONE
 
 **Done when**:
-- [ ] New test: rendering a macro-expansion error's `Report` (via `format!("{:?}", report)` or miette's own rendered-string API, matching how `errors_lrm.rs`/`vams_deviation_resolutions.rs` already assert on rendered output) contains both the invocation location and an "expanded from here"-labeled definition location
-- [ ] Gate check passes: `cargo test -p piperine-lang --test macro_expansion_span`
+- [x] New test: rendering a macro-expansion error's `Report` (via `format!("{:?}", report)` or miette's own rendered-string API, matching how `errors_lrm.rs`/`vams_deviation_resolutions.rs` already assert on rendered output) contains both the invocation location and an "expanded from here"-labeled definition location
+- [x] Gate check passes: `cargo test -p piperine-lang --test macro_expansion_span`
 
 **Tests**: integration (extend `macro_expansion_span.rs`)
 **Gate**: quick

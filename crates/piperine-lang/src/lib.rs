@@ -148,6 +148,76 @@ pub fn parse_and_elaborate_seeded_with_context(
     Ok((design, elaborator.ctx))
 }
 
+/// One "expanded from here" secondary diagnostic — one per macro-expansion
+/// chain hop (SPANMAP-05/06). The primary label (the invocation site) is
+/// carried by the wrapped `ElabError` itself; this is purely the related,
+/// lower-severity note pointing at the macro's own `` `define `` body.
+#[derive(Debug, Clone, thiserror::Error, miette::Diagnostic)]
+#[error("expanded from macro `{macro_name}`")]
+#[diagnostic(severity(Advice))]
+struct ExpandedFromHere {
+    macro_name: String,
+    #[label("expanded from here")]
+    span: miette::SourceSpan,
+    #[source_code]
+    src: miette::NamedSource<String>,
+}
+
+/// Wraps an already-resolved `ElabError` (primary label at the invocation
+/// site) with one related "expanded from here" diagnostic per
+/// `expansion_chain` frame — miette's `related()` mechanism, rustc
+/// macro-backtrace style (SPANMAP-04/05/06). Only ever constructed with a
+/// non-empty `related` (see `resolve_elab_error`'s guard) — a plain/
+/// include-only span never gains this wrapper, so no chain noise on the
+/// common case (spec Edge Case). `Diagnostic`/`Error` are hand-implemented
+/// (not derived) so every property but `related()` delegates straight
+/// through to the wrapped `ElabError` — `#[diagnostic(transparent)]`
+/// only accepts a single-field struct, which can't also hold `related`.
+#[derive(Debug, Clone)]
+struct WithExpansionChain {
+    err: ElabError,
+    related: Vec<ExpandedFromHere>,
+}
+
+impl std::fmt::Display for WithExpansionChain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.err, f)
+    }
+}
+
+impl std::error::Error for WithExpansionChain {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.err.source()
+    }
+}
+
+impl miette::Diagnostic for WithExpansionChain {
+    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.err.code()
+    }
+    fn severity(&self) -> Option<miette::Severity> {
+        self.err.severity()
+    }
+    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.err.help()
+    }
+    fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.err.url()
+    }
+    fn source_code(&self) -> Option<&dyn miette::SourceCode> {
+        self.err.source_code()
+    }
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
+        self.err.labels()
+    }
+    fn related<'a>(&'a self) -> Option<Box<dyn Iterator<Item = &'a dyn miette::Diagnostic> + 'a>> {
+        Some(Box::new(self.related.iter().map(|r| r as &dyn miette::Diagnostic)))
+    }
+    fn diagnostic_source(&self) -> Option<&dyn miette::Diagnostic> {
+        self.err.diagnostic_source()
+    }
+}
+
 /// Resolves `err`'s flat-preprocessed-buffer span (if any) to its real
 /// originating file and local byte range via `prov`, rewriting the error's
 /// own span field(s) in place — `miette::SourceSpan { offset, len }` is
@@ -156,6 +226,9 @@ pub fn parse_and_elaborate_seeded_with_context(
 /// built from that file's own text. This is the render-boundary fix this
 /// feature exists for (SPANMAP-01/02/03/07): the CLI/host no longer
 /// blindly assumes every span indexes into the top-level `input` string.
+/// When the resolved span fell inside macro-expanded text, additionally
+/// attaches one related "expanded from here" diagnostic per
+/// `expansion_chain` frame (T10, SPANMAP-04/05/06).
 fn resolve_elab_error(mut err: ElabError, prov: &source_provenance::SourceProvenance) -> miette::Report {
     // Exactly one of these is ever populated by construction: `with_span`
     // only sets the outer field when it was `None`, and `From<ParseError>`
@@ -179,7 +252,19 @@ fn resolve_elab_error(mut err: ElabError, prov: &source_provenance::SourceProven
     } else if let pom::ElabErrorKind::VamsParse { span, .. } = &mut err.kind {
         *span = Some(local_span);
     }
-    miette::Report::from(err).with_source_code(named)
+    let related: Vec<ExpandedFromHere> = resolved
+        .expansion_chain
+        .iter()
+        .map(|frame| {
+            let (def_named, def_span) = frame.definition.to_named_source_span(prov);
+            ExpandedFromHere { macro_name: frame.macro_name.clone(), span: def_span, src: def_named }
+        })
+        .collect();
+    if related.is_empty() {
+        miette::Report::from(err).with_source_code(named)
+    } else {
+        miette::Report::from(WithExpansionChain { err, related }).with_source_code(named)
+    }
 }
 
 /// Register the `@device`/`@port` schemas into an elaboration context — the
