@@ -420,9 +420,9 @@ either way).
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] The extensions list no longer contains `"phdl"`/`"ppr"`
-- [ ] `cargo build -p piperine-project` is clean
-- [ ] `cargo test -p piperine-project` (existing suite) shows no new failure
+- [x] The extensions list no longer contains `"phdl"`/`"ppr"` (found in `crates/piperine-lang-server/src/project.rs`, not `piperine-project` — noted in the commit)
+- [x] `cargo build -p piperine-lang-server` (the crate actually containing the constant) is clean; `cargo build -p piperine-project` also clean (unaffected)
+- [x] `cargo test -p piperine-project` (existing suite) shows no new failure; `cargo test -p piperine-lang-server` shows no new failure beyond the already-documented span:None gaps
 
 **Tests**: build gate only (per Test Coverage Matrix — no dedicated test for this exact list found)
 **Gate**: build

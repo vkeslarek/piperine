@@ -153,13 +153,11 @@ impl ProjectUnit {
     }
 }
 
-/// Every Verilog-AMS source file (`.va`/`.vams`) — plus, during the
-/// migration window (VAMS-11's monotonic-shrink gate), any straggling
-/// `.phdl`/`.ppr` file — under `root/src/` (recursive). Mirrors
-/// `piperine-cli check`'s own project-file discovery
+/// Every Verilog-AMS source file (`.va`/`.vams`) under `root/src/`
+/// (recursive). Mirrors `piperine-cli check`'s own project-file discovery
 /// (`crates/piperine-cli/src/commands/check.rs::execute`).
 fn discover_project_files(root: &Path) -> Vec<PathBuf> {
-    const EXTENSIONS: [&str; 4] = ["va", "vams", "phdl", "ppr"];
+    const EXTENSIONS: [&str; 2] = ["va", "vams"];
     let mut paths = Vec::new();
     let src_dir = root.join("src");
     if src_dir.exists() {
