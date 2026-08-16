@@ -12,7 +12,7 @@ let outputChannel;
 // ---------------------------------------------------------------------------
 
 async function startClient(context) {
-    const config = vscode.workspace.getConfiguration("phdl.server");
+    const config = vscode.workspace.getConfiguration("piperine.server");
     let serverBaseName = config.get("path", "piperine-lang-server");
 
     function getOsSpecificBinaryName(baseName) {
@@ -61,11 +61,11 @@ async function startClient(context) {
 
     const clientOptions = {
         documentSelector: [
-            { scheme: "file", language: "phdl" },
-            { scheme: "untitled", language: "phdl" },
+            { scheme: "file", language: "vams" },
+            { scheme: "untitled", language: "vams" },
         ],
         synchronize: {
-            fileEvents: vscode.workspace.createFileSystemWatcher("**/*.phdl"),
+            fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{vams,va}"),
         },
         outputChannel,
         traceOutputChannel: outputChannel,
@@ -87,7 +87,7 @@ async function startClient(context) {
 // ---------------------------------------------------------------------------
 
 function getPiperineCliPath(context) {
-    const config = vscode.workspace.getConfiguration("phdl.cli");
+    const config = vscode.workspace.getConfiguration("piperine.cli");
     let cliBaseName = config.get("path", "piperine");
 
     function getOsSpecificBinaryName(baseName) {
