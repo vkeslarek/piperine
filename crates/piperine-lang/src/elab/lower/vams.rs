@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     BranchDecl, CaseArm, Declarator, Direction as AstDirection, EventExpr, Expr, ModuleDecl,
-    ModuleItem, ParamType, PortConnection, PortDecl, Stmt, VarKind,
+    ModuleItem, ParamType, PortConnection, PortDecl, Stmt, UnOp, VarKind,
 };
 
 use crate::elab::const_eval::ConstEnv;
@@ -98,7 +98,19 @@ impl Elaborator {
                 ModuleItem::Net(n) => {
                     let discipline = n.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
                     for d in &n.names {
-                        wires.push(declarator_to_wire(d, discipline, &env)?);
+                        // Two-step port declaration (LRM §3.6/Annex F worked
+                        // examples, e.g. `input p; electrical p;`): a
+                        // `discipline_type` net decl naming an already-known
+                        // port merges its discipline into that port rather
+                        // than shadowing it with a same-named wire — the
+                        // module ends up with one `p`, not a discipline-less
+                        // port plus an orphan wire ResolveDisciplines can
+                        // never connect back to it.
+                        if let Some(port) = ports.iter_mut().find(|p| p.name == d.name) {
+                            port.ty = declarator_net_type(d, discipline, &env)?;
+                            continue;
+                        }
+                        wires.push(declarator_to_wire(d, discipline, n.span, &env)?);
                     }
                 }
                 ModuleItem::Param(p) => {
@@ -106,7 +118,7 @@ impl Elaborator {
                     for pa in &p.names {
                         let (ty, value) = eval_and_define_param_assignment(pa, &base_ty, &p.ranges, &mut env)?;
                         params.push(Param {
-                            span: None,
+                            span: Some(to_miette_span(p.span)),
                             attributes: Vec::new(),
                             doc: None,
                             name: pa.name.clone(),
@@ -144,7 +156,7 @@ impl Elaborator {
                             )))
                         })?;
                     params.push(Param {
-                        span: None,
+                        span: Some(to_miette_span(a.span)),
                         attributes: Vec::new(),
                         doc: None,
                         name: a.name.clone(),
@@ -182,7 +194,7 @@ impl Elaborator {
                 ModuleItem::Var(v) => {
                     let ty = var_kind_value_type(v.kind);
                     for d in &v.names {
-                        vars.push(var_declarator_to_var(d, ty.clone(), &env)?);
+                        vars.push(var_declarator_to_var(d, ty.clone(), v.span, &env)?);
                     }
                 }
                 // `event name1, name2, ...;` (§5.10.4, LRMC-C5-04) — an
@@ -199,7 +211,7 @@ impl Elaborator {
                     events.extend(e.names.iter().cloned());
                     for name in &e.names {
                         vars.push(Var {
-                            span: None,
+                            span: Some(to_miette_span(e.span)),
                             attributes: Vec::new(),
                             doc: None,
                             name: name.clone(),
@@ -302,6 +314,7 @@ impl Elaborator {
 
         let mut module =
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
+        module.span = Some(to_miette_span(decl.span));
         module.branches = branches;
         module.vars = vars;
         module.events = events;
@@ -429,7 +442,7 @@ impl Elaborator {
         }
 
         Ok(Nature {
-            span: None,
+            span: Some(to_miette_span(decl.span)),
             doc: None,
             name: name.to_string(),
             parent: decl.parent.clone(),
@@ -481,7 +494,7 @@ impl Elaborator {
             let target_port_names = udp_port_order(udp);
             let ports = resolve_instance_ports(ast_inst, module_name, &target_port_names, env)?;
             return Ok(Instance {
-                span: None,
+                span: Some(to_miette_span(ast_inst.span)),
                 label_span: None,
                 type_span: None,
                 attributes: Vec::new(),
@@ -518,7 +531,7 @@ impl Elaborator {
         }
 
         Ok(Instance {
-            span: None,
+            span: Some(to_miette_span(ast_inst.span)),
             label_span: None,
             type_span: None,
             attributes: Vec::new(),
@@ -618,7 +631,7 @@ impl Elaborator {
         }
 
         Ok(Instance {
-            span: None,
+            span: Some(to_miette_span(ast_inst.span)),
             label_span: None,
             type_span: None,
             attributes: Vec::new(),
@@ -785,7 +798,7 @@ fn lower_port_decl(
     let attributes = lower_port_attrs(&p.attrs, known_schemas)?;
     for d in &p.names {
         out.push(Port {
-            span: None,
+            span: Some(to_miette_span(p.span)),
             attributes: attributes.clone(),
             doc: None,
             direction,
@@ -935,9 +948,14 @@ fn attr_string_value(
     }
 }
 
-fn declarator_to_wire(d: &Declarator, discipline: &str, env: &ConstEnv) -> Result<Wire, ElabError> {
+fn declarator_to_wire(
+    d: &Declarator,
+    discipline: &str,
+    span: crate::PreprocessedSpan,
+    env: &ConstEnv,
+) -> Result<Wire, ElabError> {
     Ok(Wire {
-        span: None,
+        span: Some(to_miette_span(span)),
         attributes: Vec::new(),
         doc: None,
         name: d.name.clone(),
@@ -992,7 +1010,12 @@ fn var_kind_value_type(kind: VarKind) -> ValueType {
 ///
 /// A `[msb:lsb]` range widens the scalar type into `ValueType::Array`,
 /// same width computation as `declarator_net_type` uses for nets/ports.
-fn var_declarator_to_var(d: &Declarator, ty: ValueType, env: &ConstEnv) -> Result<Var, ElabError> {
+fn var_declarator_to_var(
+    d: &Declarator,
+    ty: ValueType,
+    span: crate::PreprocessedSpan,
+    env: &ConstEnv,
+) -> Result<Var, ElabError> {
     let ty = match &d.range {
         None => ty,
         Some(r) => {
@@ -1006,7 +1029,7 @@ fn var_declarator_to_var(d: &Declarator, ty: ValueType, env: &ConstEnv) -> Resul
             ValueType::Array(Box::new(ty), width)
         }
     };
-    Ok(Var { span: None, attributes: Vec::new(), doc: None, name: d.name.clone(), ty, init: None })
+    Ok(Var { span: Some(to_miette_span(span)), attributes: Vec::new(), doc: None, name: d.name.clone(), ty, init: None })
 }
 
 fn param_value_type(ty: Option<ParamType>) -> ValueType {
@@ -1522,7 +1545,22 @@ fn check_param_ranges(
         )))
     })?;
 
+    // `value_range_expression ::= constant_expression | '-inf' | 'inf'`
+    // (§3.4.2 Annex A.2.5) — `inf`/`-inf` are grammar-level literals only
+    // valid in a `from`/`exclude` bound, not general identifiers, so they
+    // never reach the const-eval scope's identifier namespace.
     let eval_bound = |e: &Expr| -> Result<f64, ElabError> {
+        match e {
+            Expr::Ident { name, .. } if name == "inf" => return Ok(f64::INFINITY),
+            Expr::Unary { op: UnOp::Neg, operand, .. } => {
+                if let Expr::Ident { name, .. } = operand.as_ref() {
+                    if name == "inf" {
+                        return Ok(f64::NEG_INFINITY);
+                    }
+                }
+            }
+            _ => {}
+        }
         env.eval_f64(e).map_err(|e| {
             ElabError::from(ElabErrorKind::ConstEval { context: format!("parameter `{name}` range bound"), source: e })
         })
