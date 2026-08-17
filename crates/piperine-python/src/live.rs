@@ -1180,12 +1180,13 @@ module Dio(p, n);
   inout electrical p, n;
   parameter real isat = 1e-14;
   parameter real vt = 0.02585;
-  // param_given is not yet wired in codegen -- a negative-sentinel
-  // default stands in for was-this-param-given, same as passives.va.
-  parameter real ns = -1.0;
+  // PHDL's optional `param ns: Real? = none` has no VAMS spelling; LRM
+  // §9.19's `$param_given` is the same presence query, and codegen
+  // classifies a write to a presence-queried param as rebuild-class.
+  parameter real ns = 0.0;
   analog begin
     I(p, n) <+ isat * (exp(V(p, n) / vt) - 1.0);
-    if (ns >= 0.0)
+    if ($param_given(\"ns\"))
       I(p, n) <+ ns * 1e-4 * V(p, n);
   end
 endmodule
@@ -1205,23 +1206,10 @@ endmodule
     /// build); a failing re-elaboration surfaces the error and keeps the
     /// previous circuit fully usable.
     ///
-    /// **Blocked** (real gap, found migrating this fixture off PHDL): PHDL's
-    /// optional-parameter type (`Real?`/`.get_or(default)`) made a
-    /// none→given transition a genuine *structural* (compile-shape) change,
-    /// which is what drove `rebuilds` here. VAMS has no optional-parameter
-    /// type; its closest equivalent, `$param_given` (LRM §9.19), is not yet
-    /// wired in codegen (`headers/spice/passives.va`'s own doc comment,
-    /// T47 scope) — the fixture below uses the project's established
-    /// negative-sentinel-default workaround instead (same as
-    /// `passives.va`), but a plain `parameter` value change through a
-    /// runtime `if` never triggers `LiveSession`'s structural-rebuild path:
-    /// MD-18 JITs analog code once with every branch already compiled in,
-    /// so there is nothing "structural" about crossing the sentinel at
-    /// runtime. `rebuilds` stays 0 where PHDL's optional-param mechanism
-    /// made it 1 — a real, not-yet-portable feature gap (`$param_given`
-    /// landing in codegen would close it), left failing rather than
-    /// weakened/deleted (test-integrity rule) or silently ignored
-    /// (`#[ignore]` is repo-banned, `tests/suite_hygiene.rs`).
+    /// PHDL made the none→given transition structural with its optional
+    /// parameter type (`Real?`/`.get_or(default)`); VAMS spells the same
+    /// presence query `$param_given("ns")` (LRM §9.19), which codegen
+    /// classifies rebuild-class — so `rebuilds` still goes 0 → 1 here.
     #[test]
     fn structural_set_auto_rebuilds_with_state_carry_and_failure_keeps_old_circuit()
     -> PyResult<()> {
@@ -1344,9 +1332,9 @@ endmodule
 
 module Leak(p, n);
   inout electrical p, n;
-  // param_given is not yet wired in codegen -- negative-sentinel default.
-  parameter real ns = -1.0;
-  analog if (ns >= 0.0)
+  // PHDL's optional `param ns: Real? = none` -> LRM §9.19 `$param_given`.
+  parameter real ns = 0.0;
+  analog if ($param_given(\"ns\"))
     I(p, n) <+ ns * 1e-3 * V(p, n);
 endmodule
 
@@ -1365,12 +1353,6 @@ endmodule
     /// `t` (matches the two-phase closed form within reltol) and the post-t
     /// behavior reflects the new structure. An idle live set applied before
     /// the run (r 2k→1k) must survive the rebuild (the replay ledger).
-    ///
-    /// **Blocked**: same root cause as
-    /// `structural_set_auto_rebuilds_with_state_carry_and_failure_keeps_old_circuit`'s
-    /// doc comment — `$param_given` not yet wired in codegen means a plain
-    /// VAMS `parameter` change never registers as structural, so the
-    /// scheduled set here restamps instead of rebuilding.
     #[test]
     fn mid_transient_structural_set_restarts_from_t_with_carried_state() -> PyResult<()> {
         let path = std::env::temp_dir().join("piperine_python_live_t10_test.vams");

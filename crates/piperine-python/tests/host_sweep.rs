@@ -32,11 +32,17 @@ enddiscipline
 
 module G (inout electrical p, inout electrical n);
     parameter real g = 1.0e-3;
-    // PHDL's `param ns: Real? = none` has no VAMS spelling; the project's
-    // established negative-sentinel workaround (`headers/spice/passives.va`)
-    // stands in for the presence query.
-    parameter real ns = -1.0;
-    analog I(p, n) <+ (g + (ns > 0.0 ? ns : 0.0) * 1.0e-3) * V(p, n);
+    // PHDL's `param ns: Real? = none` has no VAMS spelling; LRM §9.19's
+    // `$param_given` is the same presence query, and codegen classifies a
+    // write to a presence-queried param as rebuild-class (the none->given
+    // transition this test is about).
+    parameter real ns = 0.0;
+    real gtot;
+    analog begin
+        gtot = g;
+        if ($param_given("ns")) gtot = g + ns * 1.0e-3;
+        I(p, n) <+ gtot * V(p, n);
+    end
 endmodule
 
 module Vsrc (inout electrical p, inout electrical n);
@@ -60,13 +66,9 @@ endmodule
 /// and every point's `.op().v("mid")` matches an independent fresh
 /// `design.compile()` with `ns` given directly in the source.
 ///
-/// **Blocked** (missing mechanism: PHDL optional parameters, `Real?`/
-/// `.get_or()`, whose none→given transition is what made a write to `r2.ns`
-/// structural). VAMS has no optional-parameter type and `$param_given`
-/// (LRM §9.19) is not wired in codegen yet, so the sentinel-default fixture
-/// below restamps instead of rebuilding and `s.rebuilds` stays 0 — the same
-/// gap `piperine-python/src/live.rs`'s two blocked tests document. Left
-/// failing rather than weakened (`#[ignore]` is repo-banned).
+/// PHDL spelled the presence flip with an optional parameter (`Real?` +
+/// `.get_or()`); VAMS spells it `$param_given("ns")` (LRM §9.19), which
+/// codegen already classifies rebuild-class — so the flip is the same one.
 #[test]
 fn python_sweep_rebuilds_once_and_matches_fresh_builds() {
     let never_given = write_temp("piperine_host_sweep_never_given.vams", &divider_phdl(""));
