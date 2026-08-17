@@ -14,46 +14,41 @@ use piperine_solver::prelude::{Context, PssAnalysisOptions};
 /// Sine-driven RC: f = 1 kHz, τ = RC = 1 ms → ωRC ≈ 6.283.
 /// |H| = 1/√(1+(ωRC)²) ≈ 0.157167; steady-state out amplitude = 5·|H|.
 const FIXTURE: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
-    discipline Bit { storage Boolean; }
+    `include "disciplines.vams"
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod C (inout p : Electrical, inout n : Electrical) {
-        param c : Real = 1.0e-6;
-    }
-    analog C { I(p, n) <+ c * ddt(V(p, n)); }
+    module C (inout electrical p, inout electrical n);
+        parameter real c = 1.0e-6;
+        analog I(p, n) <+ c * ddt(V(p, n));
+    endmodule
 
-    mod Vsine (inout p : Electrical, inout n : Electrical) {
-        param amp : Real = 5.0;
-        param freq : Real = 1.0e3;
-    }
-    analog Vsine { V(p, n) <- amp * sin(2.0 * 3.14159265358979 * freq * $abstime); }
+    module Vsine (inout electrical p, inout electrical n);
+        parameter real amp = 5.0;
+        parameter real freq = 1.0e3;
+        analog V(p, n) <+ amp * sin(2.0 * 3.14159265358979 * freq * $abstime);
+    endmodule
 
-    mod Vramp (inout p : Electrical, inout n : Electrical) {
-    }
-    analog Vramp { V(p, n) <- 1.0e3 * $abstime; }
+    module Vramp (inout electrical p, inout electrical n);
+        analog V(p, n) <+ 1.0e3 * $abstime;
+    endmodule
 
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire out : Electrical;
-        v1 : Vsine(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = out) {};
-        c1 : C(.p = out, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, out;
+        Vsine v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(out));
+        C c1 (.p(out), .n(gnd));
+    endmodule
 
-    mod RampTop () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire out : Electrical;
-        v1 : Vramp(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = out) {};
-        c1 : C(.p = out, .n = gnd) {};
-    }
+    module RampTop ();
+        electrical gnd, top, out;
+        Vramp v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(out));
+        C c1 (.p(out), .n(gnd));
+    endmodule
 
     // Digital toggle clocked by an analog square wave at period T (rising
     // edges at T/4, 5T/4, …): its output period is 2·T — the classic
@@ -61,40 +56,45 @@ const FIXTURE: &str = r#"
     // at T/4 and 3T/4 so every comparison-relevant net is stable in a whole
     // neighborhood of the k·T boundaries (a stimulus wrapping exactly at the
     // boundary would be phase-jittered by floating-point rounding).
-    mod ClockSrc (inout clk_a : Electrical, inout gnd : Electrical) {
-        param period : Real = 1.0e-3;
-    }
-    analog ClockSrc {
-        var ph : Real = $abstime - period * floor($abstime / period);
-        V(clk_a, gnd) <- if (ph > period * 0.25 && ph < period * 0.75) { 1.0 } else { 0.0 };
-    }
+    module ClockSrc (inout electrical clk_a, inout electrical gnd);
+        parameter real period = 1.0e-3;
+        real ph;
+        analog begin
+            ph = $abstime - period * floor($abstime / period);
+            V(clk_a, gnd) <+ (ph > period * 0.25 && ph < period * 0.75) ? 1.0 : 0.0;
+        end
+    endmodule
 
-    mod Comparator (input a : Electrical, input n : Electrical, output y : Bit) { }
-    digital Comparator { y <- V(a, n) > 0.5; }
+    module Comparator (input electrical a, input electrical n, output logic y);
+        always @(*) begin
+            y <= V(a, n) > 0.5;
+        end
+    endmodule
 
-    mod ToggleDff (input clk : Bit, output q : Bit) {
-        var st : Bit = 0;
-    }
-    digital ToggleDff {
-        q <- st;
-        @ (posedge(clk)) { st = !st; }
-    }
+    // Divide-by-2: one clocked block counts posedges into the module-level
+    // `integer` register and republishes its parity on `q`, so `q` flips on
+    // every rising clock edge and its period is 2·T.
+    module ToggleDff (input logic clk, output logic q);
+        integer st;
+        always begin
+            q <= (st % 2) > 0;
+            @(posedge clk) st = st + 1;
+        end
+    endmodule
 
-    mod DivTop () {
-        wire gnd : Electrical;
-        wire clk_a : Electrical;
-        wire clk : Bit;
-        wire q : Bit;
-        ck : ClockSrc(.clk_a = clk_a, .gnd = gnd) { .period = 1.0e-3 };
-        cmp : Comparator(.a = clk_a, .n = gnd, .y = clk);
-        tg : ToggleDff(.clk = clk, .q = q);
-    }
+    module DivTop ();
+        electrical gnd, clk_a;
+        logic clk, q;
+        ClockSrc #(.period(1.0e-3)) ck (.clk_a(clk_a), .gnd(gnd));
+        Comparator cmp (.a(clk_a), .n(gnd), .y(clk));
+        ToggleDff tg (.clk(clk), .q(q));
+    endmodule
 "#;
 
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

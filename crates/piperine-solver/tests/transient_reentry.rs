@@ -26,37 +26,35 @@ fn discharged_ic(
 }
 
 const RC: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    `include "disciplines.vams"
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod C (inout p : Electrical, inout n : Electrical) {
-        param c : Real = 1.0e-6;
-    }
-    analog C { I(p, n) <+ c * ddt(V(p, n)); }
+    module C (inout electrical p, inout electrical n);
+        parameter real c = 1.0e-6;
+        analog I(p, n) <+ c * ddt(V(p, n));
+    endmodule
 
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 5.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 5.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire out : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = out) {};
-        c1 : C(.p = out, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, out;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(out));
+        C c1 (.p(out), .n(gnd));
+    endmodule
 "#;
 
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

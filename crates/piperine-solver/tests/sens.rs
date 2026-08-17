@@ -9,65 +9,60 @@ use piperine_lang::SourceMap;
 use piperine_solver::prelude::{Context, Net, SensAnalysisOptions};
 
 const DIVIDER: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    `include "disciplines.vams"
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod D (inout p : Electrical, inout n : Electrical) {
-        param is_sat : Real = 1.0e-14;
-    }
-    analog D { I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0); }
+    module D (inout electrical p, inout electrical n);
+        parameter real is_sat = 1.0e-14;
+        analog I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0);
+    endmodule
 
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 10.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 10.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = mid) {};
-        r2 : R(.p = mid, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        R r2 (.p(mid), .n(gnd));
+    endmodule
 
-    mod DiodeTop () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) { .dc = 1.0 };
-        r1 : R(.p = top, .n = mid) {};
-        d1 : D(.p = mid, .n = gnd) {};
-    }
+    module DiodeTop ();
+        electrical gnd, top, mid;
+        Vsrc #(.dc(1.0)) v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        D d1 (.p(mid), .n(gnd));
+    endmodule
 
-    mod ROpt (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-        param w : Real? = none;
-    }
-    analog ROpt {
-        var g : Real = 1.0e-3;
-        if (w.is_present()) { g = w.get_or(1.0e-3); }
-        I(p, n) <+ V(p, n) * g;
-    }
+    module ROpt (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        parameter real w = 1.0e-3;
+        real g;
+        analog begin
+            g = 1.0e-3;
+            if ($param_given("w")) g = w;
+            I(p, n) <+ V(p, n) * g;
+        end
+    endmodule
 
-    mod OptTop () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : ROpt(.p = top, .n = mid) {};
-        r2 : ROpt(.p = mid, .n = gnd) {};
-    }
+    module OptTop ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        ROpt r1 (.p(top), .n(mid));
+        ROpt r2 (.p(mid), .n(gnd));
+    endmodule
 "#;
 
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -84,7 +79,7 @@ fn build(top: &str) -> (piperine_solver::prelude::CircuitInstance, piperine_code
     (circuit, info)
 }
 
-/// Resolve a PHDL net name to its solver [`Net`] through the build info's
+/// Resolve a Verilog-AMS net name to its solver [`Net`] through the build info's
 /// name→node map (solver labels are internal ids).
 fn net_for(
     circuit: &piperine_solver::prelude::CircuitInstance,

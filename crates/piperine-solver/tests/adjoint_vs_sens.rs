@@ -26,64 +26,59 @@ use piperine_lang::SourceMap;
 use piperine_solver::prelude::{AdjointOptions, Context, Net, SensAnalysisOptions};
 
 const DIVIDER: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    `include "disciplines.vams"
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod C (inout p : Electrical, inout n : Electrical) {
-        param c : Real = 1.0e-9;
-    }
-    analog C { }
+    module C (inout electrical p, inout electrical n);
+        parameter real c = 1.0e-9;
+        analog begin
+        end
+    endmodule
 
-    mod D (inout p : Electrical, inout n : Electrical) {
-        param is_sat : Real = 1.0e-14;
-    }
-    analog D { I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0); }
+    module D (inout electrical p, inout electrical n);
+        parameter real is_sat = 1.0e-14;
+        analog I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0);
+    endmodule
 
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 10.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 10.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = mid) {};
-        r2 : R(.p = mid, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        R r2 (.p(mid), .n(gnd));
+    endmodule
 
     // RC: a resistor feeding a capacitor to ground. The DC solution is
     // V(mid) = V·r2/(r1+r2) (capacitor is an open at DC), and `c` is a
     // differentiable restamp-class parameter whose DC gradient of V(mid)
     // is zero — a clean "both engines agree on zero" check.
-    mod RcTop () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = mid) {};
-        c1 : C(.p = mid, .n = gnd) {};
-    }
+    module RcTop ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        C c1 (.p(mid), .n(gnd));
+    endmodule
 
-    mod DiodeTop () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) { .dc = 1.0 };
-        r1 : R(.p = top, .n = mid) {};
-        d1 : D(.p = mid, .n = gnd) {};
-    }
+    module DiodeTop ();
+        electrical gnd, top, mid;
+        Vsrc #(.dc(1.0)) v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        D d1 (.p(mid), .n(gnd));
+    endmodule
 "#;
 
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
