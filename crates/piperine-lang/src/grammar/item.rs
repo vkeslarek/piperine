@@ -10,6 +10,7 @@
 use crate::ast::*;
 use crate::error::{ParseError, ParseErrorKind, PreprocessedSpan};
 use crate::grammar::cursor::Grammar;
+use crate::keywords::Keywords;
 use crate::lexer::{NumberLit, Tok};
 
 /// Parse-time-only result of one `connect ...;` statement inside a
@@ -257,6 +258,9 @@ impl Grammar {
         }
         if kw == Some("initial") || kw == Some("always") {
             return Ok(ModuleItem::Behavior(self.parse_behavior_construct()?));
+        }
+        if kw == Some("constraint") {
+            return Ok(ModuleItem::Constraint(self.parse_constraint_block()?));
         }
         if kw == Some("function") {
             return Ok(ModuleItem::Function(self.parse_function_decl()?));
@@ -690,6 +694,64 @@ impl Grammar {
     }
 
     // ─────────────────────────── behavior constructs ──────────────────────
+
+    /// `constraint begin { require … } end` — a sanctioned Piperine
+    /// extension (MD-49): one more module body, mirroring
+    /// `analog begin … end`'s shape. `constraint`/`require`/`tol` are
+    /// contextual keywords — identifier text matched here only, never
+    /// added to Annex B's reserved set. Anything inside the block that is
+    /// not a `require` statement is a typed error naming the token —
+    /// never a silent skip.
+    fn parse_constraint_block(&mut self) -> Result<ConstraintBlockDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
+        let attrs = self.parse_attr_instances()?;
+        let start = self.expect_kw("constraint")?;
+        self.expect_kw("begin")?;
+        let mut requires = Vec::new();
+        while !self.at_kw("end") {
+            if self.at_kw("require") {
+                requires.push(self.parse_require_stmt()?);
+            } else {
+                return Err(self.unexpected(
+                    "a `require` statement (`require name : predicate;`) — `var`/`target`/`cover` are not part of the core extension".to_string(),
+                ));
+            }
+        }
+        let end = self.expect_kw("end")?;
+        Ok(ConstraintBlockDecl {
+            span: PreprocessedSpan::new(start.start, end.end),
+            doc,
+            attrs,
+            requires,
+        })
+    }
+
+    /// `require <name> : <predicate> [tol <scale>] ;` — one named
+    /// per-point constraint. The label must be a plain identifier (an
+    /// Annex B keyword is rejected with a typed error, §2.8.2); `tol` is
+    /// a contextual keyword naming the normalization scale.
+    fn parse_require_stmt(&mut self) -> Result<RequireDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
+        let start = self.expect_kw("require")?;
+        let (name, name_span) = self.expect_ident()?;
+        Keywords::expect_identifier(&name, name_span)?;
+        self.expect_punct(":")?;
+        let pred = self.parse_expr()?;
+        let tol = if self.at_kw("tol") {
+            self.bump();
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        let end = self.expect_punct(";")?;
+        Ok(RequireDecl {
+            span: PreprocessedSpan::new(start.start, end.end),
+            doc,
+            name,
+            pred,
+            tol,
+        })
+    }
 
     /// `analog_construct` / `initial_construct` / `always_construct` —
     /// §5.7/Annex A.1.4. Attribute-bearing, §Syntax 2-7. `analog`'s body
