@@ -1,4 +1,4 @@
-//! End-to-end: PHDL `@device` instances built by the fixture plugin through
+//! End-to-end: Verilog-AMS `@device` instances built by the fixture plugin through
 //! an in-process host — analog (`Fixture::Resistor` in a DC solve) and
 //! digital (`Fixture::Inverter` through the event scheduler) — driven
 //! through the root host API (`Session`). This is the Phase-2 gate of
@@ -40,26 +40,30 @@ fn net(name: &str) -> NetRef {
     NetRef { name: name.to_string() }
 }
 
-const ANALOG: &str = "
-    discipline Electrical { potential v: Real; flow i: Real; }
+const ANALOG: &str = r#"
+    nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+    nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+    discipline electrical;
+        potential Voltage;
+        flow Current;
+    enddiscipline
 
-    mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-        param voltage: Real = 0.0;
-    }
-    analog VoltageSource { V(p, n) <- voltage; }
+    module VoltageSource (inout electrical p, inout electrical n);
+        parameter real voltage = 0.0;
+        analog V(p, n) <+ voltage;
+    endmodule
 
-    @device(plugin = \"fixture\", type = \"Fixture::Resistor\")
-    mod PluginResistor(inout p: Electrical, inout n: Electrical) {
-        param r: Real = 100.0;
-    }
+    (* device = "fixture", type = "Fixture::Resistor" *)
+    module PluginResistor (inout electrical p, inout electrical n);
+        parameter real r = 100.0;
+    endmodule
 
-    mod Top() {
-        wire gnd : Electrical;
-        wire vin : Electrical;
-        source : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-        r1     : PluginResistor (.p = vin, .n = gnd);
-    }
-";
+    module Top ();
+        electrical gnd, vin;
+        VoltageSource #(.voltage(5.0)) source (.p(vin), .n(gnd));
+        PluginResistor r1 (.p(vin), .n(gnd));
+    endmodule
+"#;
 
 #[test]
 fn plugin_resistor_solves_dc() {
@@ -76,33 +80,37 @@ fn plugin_resistor_solves_dc() {
 fn plugin_resistor_honors_param_override() {
     // Same circuit, r overridden to 50R → 100 mA.
     let src = ANALOG.replace(
-        "r1     : PluginResistor (.p = vin, .n = gnd);",
-        "r1     : PluginResistor (.p = vin, .n = gnd) { .r = 50.0 };",
+        "PluginResistor r1 (.p(vin), .n(gnd));",
+        "PluginResistor #(.r(50.0)) r1 (.p(vin), .n(gnd));",
     );
     let op = run_op(&src, "Top").expect("op solves");
     let i = op.i((net("vin"), net("gnd"))).expect("i(vin,gnd)");
     assert!((0.0099..0.0101).contains(&(i * i)), "|i| ~ 100 mA, got {i}");
 }
 
-const DIGITAL: &str = "
-    discipline Bit { storage Boolean; }
+const DIGITAL: &str = r#"
+    discipline logic;
+        domain discrete;
+    enddiscipline
 
-    mod High(output y: Bit);
-    digital High { y <- 1; }
+    module High (output logic y);
+        always @(*) begin
+            y <= 1;
+        end
+    endmodule
 
-    @device(plugin = \"fixture\", type = \"Fixture::Inverter\")
-    mod PluginInv(
-        @port(name = \"a\", kind = \"digital\") input a: Bit,
-        @port(name = \"y\", kind = \"digital\") output y: Bit,
-    );
+    (* device = "fixture", type = "Fixture::Inverter" *)
+    module PluginInv (a, y);
+        (* port = "a", kind = "digital" *) input logic a;
+        (* port = "y", kind = "digital" *) output logic y;
+    endmodule
 
-    mod DTop() {
-        wire a : Bit;
-        wire y : Bit;
-        hi  : High (.y = a);
-        inv : PluginInv (.a = a, .y = y);
-    }
-";
+    module DTop ();
+        logic a, y;
+        High hi (.y(a));
+        PluginInv inv (.a(a), .y(y));
+    endmodule
+"#;
 
 #[test]
 fn plugin_inverter_runs_through_scheduler() {

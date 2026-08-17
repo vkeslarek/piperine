@@ -34,27 +34,30 @@ fn v(op: &OpResult, net: &str) -> f64 {
 
 /// r1 dangles until the plugin injects `r_par` from `out` to `gnd`,
 /// turning the circuit into a divider: `out = 5 V · 1k/(1k+1k) = 2.5 V`.
-const DIVIDER: &str = "
-    discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER: &str = r#"
+    nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+    nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+    discipline electrical;
+        potential Voltage;
+        flow Current;
+    enddiscipline
 
-    mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-        param voltage: Real = 0.0;
-    }
-    analog VoltageSource { V(p, n) <- voltage; }
+    module VoltageSource (inout electrical p, inout electrical n);
+        parameter real voltage = 0.0;
+        analog V(p, n) <+ voltage;
+    endmodule
 
-    mod Resistor(inout p: Electrical, inout n: Electrical) {
-        param r: Real = 1e3;
-    }
-    analog Resistor { I(p, n) <+ V(p, n) / r; }
+    module Resistor (inout electrical p, inout electrical n);
+        parameter real r = 1e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod Top() {
-        wire gnd : Electrical;
-        wire vin : Electrical;
-        wire out : Electrical;
-        src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-        r1  : Resistor (.p = vin, .n = out);
-    }
-";
+    module Top ();
+        electrical gnd, vin, out;
+        VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+        Resistor r1 (.p(vin), .n(out));
+    endmodule
+"#;
 
 /// The rc-parasitics reference case (SPEC Part VI §8.3): stages a declared
 /// `Resistor` from `out` to `gnd`, turning the dangling r1 into a divider.

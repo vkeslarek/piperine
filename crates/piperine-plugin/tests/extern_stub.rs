@@ -1,7 +1,8 @@
 //! Plugin `extern` ban (plugin-interface v2: PLG-07, PLG-08, PLG-09). The
 //! per-plugin `extern.phdl` stub mechanism is deleted — a plugin cannot
 //! mint new attribute-schema names; only the stdlib `@device`/`@port`
-//! schemas (`headers/device_port.phdl`) are seeded when a plugin loads.
+//! schemas (`piperine_lang::seed_device_port_schemas`) are seeded when a
+//! plugin loads.
 //! Driven through the real `load_for_project` path (build the fixture
 //! cdylib, point a throwaway project's `[plugins]` at it).
 
@@ -69,12 +70,22 @@ fn shipped_extern_stub_is_inert_and_only_stdlib_schemas_seed() {
     assert_eq!(host.plugin_names(), vec!["fixture"]);
 
     // The stdlib `@device`/`@port` schemas still seed (PLG-09).
-    let stdlib_src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
-                      @device(plugin = \"fixture\", type = \"Fixture::Resistor\")\n\
-                      mod PluginResistor(inout p: Electrical, inout n: Electrical) {\n\
-                          param r: Real = 100.0;\n\
-                      }\n\
-                      mod Top() {}\n";
+    let stdlib_src = r#"
+        nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+        nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+        discipline electrical;
+            potential Voltage;
+            flow Current;
+        enddiscipline
+
+        (* device = "fixture", type = "Fixture::Resistor" *)
+        module PluginResistor (inout electrical p, inout electrical n);
+            parameter real r = 100.0;
+        endmodule
+
+        module Top ();
+        endmodule
+    "#;
     let design = piperine_lang::parse_and_elaborate_seeded(stdlib_src, &SourceMap::dummy(), |ctx| {
         host.seed_schemas(ctx);
     })
@@ -83,8 +94,18 @@ fn shipped_extern_stub_is_inert_and_only_stdlib_schemas_seed() {
 
     // The plugin-shipped schema name does NOT resolve (PLG-07/08): the
     // stub is never imported, so `@widget_meta` is an unknown schema.
-    let stub_src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
-                    mod Top ( inout p : Electrical ) { @widget_meta(rating = 4.5) wire w : Electrical; }";
+    let stub_src = r#"
+        nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+        nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+        discipline electrical;
+            potential Voltage;
+            flow Current;
+        enddiscipline
+
+        (* widget_meta = 4.5 *)
+        module Top (inout electrical p);
+        endmodule
+    "#;
     let err = piperine_lang::parse_and_elaborate_seeded(stub_src, &SourceMap::dummy(), |ctx| {
         host.seed_schemas(ctx);
     })
