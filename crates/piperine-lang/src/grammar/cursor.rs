@@ -203,23 +203,44 @@ impl Grammar {
 /// comment from an ordinary `//` one, and it is stripped along with
 /// surrounding whitespace.
 ///
-/// Newlines do not break a run (a multi-line `///` block is one doc); a
-/// plain `//` comment or any meaningful token does. A run with no
-/// following declaration (trailing doc at end of file) is simply dropped.
+/// A run is broken by a **blank line**, a plain `//`/`/* */` comment, or
+/// any meaningful token. A `///` with no text after it is *not* a blank
+/// line — it is a paragraph break inside the run, and continues it (same
+/// rule rustdoc uses). This distinction is what keeps a file header from
+/// silently becoming the first declaration's documentation:
+///
+/// ```text
+/// /// This file implements a resistor library.   <- file header
+///                                                <- blank line ends the run
+/// module Resistor(p, n);                         <- gets no doc, correctly
+/// ```
+///
+/// A run with no following declaration (a trailing doc at end of file) is
+/// simply dropped.
 fn collect_doc_runs(toks: &[Lexed]) -> std::collections::HashMap<usize, String> {
     let mut docs = std::collections::HashMap::new();
     let mut pending: Vec<String> = Vec::new();
+    // A doc line's own terminating newline is expected; a *second*
+    // consecutive one is a blank line, which ends the run.
+    let mut newlines_since_doc_line = 0usize;
     for l in toks {
         match &l.tok {
             Tok::LineComment(text) if text.starts_with('/') => {
                 pending.push(text[1..].trim().to_string());
+                newlines_since_doc_line = 0;
             }
-            Tok::Newline => {}
+            Tok::Newline => {
+                newlines_since_doc_line += 1;
+                if newlines_since_doc_line > 1 {
+                    pending.clear();
+                }
+            }
             Tok::LineComment(_) | Tok::BlockComment(_) => pending.clear(),
             _ => {
                 if !pending.is_empty() {
                     docs.insert(l.span.start, std::mem::take(&mut pending).join("\n"));
                 }
+                newlines_since_doc_line = 0;
             }
         }
     }

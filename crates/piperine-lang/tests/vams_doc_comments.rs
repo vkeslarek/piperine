@@ -102,22 +102,43 @@ fn doc_attaches_across_an_attribute_instance() {
     );
 }
 
-/// A blank line inside a `///` run does not end it — the run is still one
-/// document (Part I §1.1: only an ordinary comment or a real token breaks
-/// it). Guards the exact claim the spec makes.
+/// An *empty `///` line* is a paragraph break inside the run, not a break
+/// of the run — same rule rustdoc uses. Distinct from a genuinely blank
+/// line, which does end it (see below).
 #[test]
-fn a_blank_line_does_not_break_a_doc_run() {
+fn an_empty_doc_line_is_a_paragraph_break_not_a_run_break() {
     let design = elaborate(
         "`include \"disciplines.vams\"\n\
          /// First paragraph.\n\
          ///\n\
-         /// Second paragraph, after a blank doc line.\n\
+         /// Second paragraph, after an empty doc line.\n\
          module Spaced (inout electrical p, inout electrical n);\n\
          endmodule\n",
     );
     assert_eq!(
         design.module("Spaced").expect("elaborates").doc(),
-        Some("First paragraph.\n\nSecond paragraph, after a blank doc line."),
+        Some("First paragraph.\n\nSecond paragraph, after an empty doc line."),
+    );
+}
+
+/// A genuinely blank line ends the run. Without this, a **file header**
+/// separated from the first declaration by a blank line would silently
+/// become that declaration's documentation — the exact defect this rule
+/// exists to prevent, and the reason an empty `///` line (above) and an
+/// empty source line are treated differently.
+#[test]
+fn a_blank_line_ends_the_run_so_a_file_header_does_not_leak() {
+    let design = elaborate(
+        "`include \"disciplines.vams\"\n\
+         /// This file implements a resistor library.\n\
+         \n\
+         module Detached (inout electrical p, inout electrical n);\n\
+         endmodule\n",
+    );
+    assert_eq!(
+        design.module("Detached").expect("elaborates").doc(),
+        None,
+        "a file header must not become the first declaration's doc"
     );
 }
 

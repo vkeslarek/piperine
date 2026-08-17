@@ -89,8 +89,16 @@ mirror.
 `crates/piperine-lang/tests/vams_doc_comments.rs`:
 
 - Consecutive `///` lines form **one** run, joined with newlines; each line's marker and
-  surrounding whitespace are stripped. Blank lines between `///` lines do not break the
-  run — an intervening ordinary `//` comment does.
+  surrounding whitespace are stripped. An *empty `///` line* is a paragraph break inside
+  the run and continues it (the rule rustdoc uses); a **genuinely blank line** ends it, as
+  does an intervening ordinary `//` comment. The blank-line rule is what keeps a file
+  header from silently becoming the first declaration's documentation:
+
+  ```verilog-ams
+  /// This file implements a resistor library.
+                                          ← blank line ends the run
+  module Resistor (inout electrical p, inout electrical n);   ← undocumented, correctly
+  ```
 - The run attaches to the declaration's **first token**, captured before anything is
   consumed. A doc comment above an attribute-instanced declaration therefore still
   attaches to it, because the `(*` of the `(* device = … *)` instance (§8) is that first
