@@ -382,13 +382,36 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
 
                 let stmts: Vec<PomStmt> = behavior.body().to_vec();
 
-                bodies[i].digital = Some(DigitalBody {
-                    inputs,
-                    outputs,
-                    regs,
-                    reg_inits,
-                    stmts,
-                });
+                // A module may declare more than one digital behavior —
+                // two `always` blocks are independent concurrent processes
+                // in Verilog, and BOTH run. Their statements therefore
+                // *append* to one `DigitalBody` rather than replacing it:
+                // assigning unconditionally here kept only the last
+                // behavior and dropped every earlier one silently, with no
+                // diagnostic — the exact "silently emit a no-op" failure
+                // the crate's fail-loud contract forbids.
+                //
+                // Appending is the faithful lowering, not a workaround:
+                // `inputs`/`outputs` derive from the module's ports and
+                // `regs`/`reg_inits` from its vars, so every behavior of a
+                // given module computes the identical values for them —
+                // only `stmts` differ. Downstream,
+                // `kernel::digital::compile` splits `stmts` per statement
+                // (each `EventControl` routed to its clocked or
+                // combinational list), so concatenated behaviors split
+                // exactly as separately-compiled ones would.
+                match &mut bodies[i].digital {
+                    Some(body) => body.stmts.extend(stmts),
+                    None => {
+                        bodies[i].digital = Some(DigitalBody {
+                            inputs,
+                            outputs,
+                            regs,
+                            reg_inits,
+                            stmts,
+                        });
+                    }
+                }
             } else {
                 // Analog path: resolve POM `Stmt` (keep POM structure, mark
                 // analog operators with state ids). The flattener and Builder
