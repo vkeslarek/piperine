@@ -23,4 +23,4 @@ pub use builder::Builder;
 pub use cse::expr_structural_eq;
 pub use digital_expr::Codegen;
 pub use jit::OwnedJit;
-pub use resolver::{DigTy, Resolver};
+pub use resolver::{param_given_arg_name, DigTy, Resolver};

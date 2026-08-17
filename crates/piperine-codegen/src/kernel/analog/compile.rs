@@ -324,10 +324,15 @@ impl<'m> AnalogCompiler<'m> {
             };
             for expr in self.flat.exprs() {
                 visit_all(expr, &mut |e| {
+                    // Both the LRM's bare-identifier spelling and the
+                    // string-literal form reach the presence mask — see
+                    // `emit::param_given_arg_name`. Missing one here would
+                    // silently misclassify the param as restamp-class
+                    // instead of rebuild-class.
                     if let PomExpr::SystemFunctionCall { name, args, .. } = e
                         && name.trim_start_matches('$') == "param_given"
-                        && let Some(PomExpr::Str { value: pname, .. }) = args.first()
-                        && let Some(id) = resolve(pname)
+                        && let Some(pname) = crate::emit::param_given_arg_name(args.first())
+                        && let Some(id) = resolve(&pname)
                     {
                         presence_mask |= 1 << id.min(63);
                     }

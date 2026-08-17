@@ -224,10 +224,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 }
             }
             "param_given" => {
-                let pname = match args.first() {
-                    Some(Expr::Str { value, .. }) => value.clone(),
-                    _ => "?".into(),
-                };
+                // Accepts both the LRM's bare-identifier spelling and the
+                // string-literal form — see `param_given_arg_name`.
+                let pname = crate::emit::param_given_arg_name(args.first()).unwrap_or_else(|| "?".into());
                 let id = self.resolver.param_given(&pname).ok_or_else(|| {
                     CodegenError::Invalid(format!("$param_given: unresolved param `{pname}`"))
                 })?;

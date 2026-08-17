@@ -7,6 +7,27 @@ use cranelift_codegen::ir::Value;
 
 use crate::resolve::{FnId, NodeId, ParamId, SymbolTable, VarId};
 
+/// The parameter name a `$param_given` call is asking about (LRM §9.19).
+///
+/// **Both spellings are accepted.** The LRM's own §9.19 example writes a
+/// bare identifier — `if ($param_given(coeff1) && coeff1 != 0.0)` — while
+/// this codebase originally accepted only a string literal
+/// (`$param_given("coeff1")`), which meant LRM-conformant source failed to
+/// compile here with `unresolved param \`?\``. Piperine is a **superset**
+/// of Verilog-AMS, never a subset: standard-conformant source must always
+/// compile, and the string form stays valid as the piperine extension it
+/// already was.
+///
+/// Returns `None` for any other argument shape, so the caller keeps its
+/// own fail-loud path rather than this silently inventing a name.
+pub fn param_given_arg_name(arg: Option<&piperine_lang::ast::Expr>) -> Option<String> {
+    match arg? {
+        piperine_lang::ast::Expr::Str { value, .. } => Some(value.clone()),
+        piperine_lang::ast::Expr::Ident { name, .. } => Some(name.clone()),
+        _ => None,
+    }
+}
+
 // ─── Name resolution ──────────────────────────────────────────────────────────
 
 /// Name → resolved id maps, built once from the `SymbolTable`.
