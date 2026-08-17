@@ -11,14 +11,14 @@ use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::SimCtx;
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
 
 /// Compile the two-terminal module `Dut` (params `params`, body `body`).
 fn kernel(params: &str, body: &str) -> AnalogKernel {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ {params} }}
-analog Dut {{ {body} }}
+        "module Dut(inout electrical p, inout electrical n);
+    {params}
+    analog begin {body} end
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
@@ -40,7 +40,7 @@ fn one_param_indexed_function_regardless_of_parameter_count() {
     // yields the right derivative for each — proving it is parameter-indexed
     // (one function), not parameter-specialized (two).
     let kernel = kernel(
-        "param g: Real = 2e-3; param k: Real = 0.5;",
+        "parameter real g = 2e-3; parameter real k = 0.5;",
         "I(p, n) <+ g * V(p, n) + k;",
     );
     assert!(kernel.has_param_jacobian(), "a body with Real params emits the kernel");
@@ -80,7 +80,7 @@ fn a_mos1_sized_model_card_compiles_into_one_function() {
     // all 60 as dispatch blocks inside a single function.
     let mut params = String::new();
     for i in 0..60 {
-        params.push_str(&format!("param p{i}: Real = 1.0; "));
+        params.push_str(&format!("parameter real p{i} = 1.0; "));
     }
     // The body uses a handful; the rest still get zero-derivative dispatch
     // blocks (one function, sixty blocks).
@@ -121,10 +121,14 @@ fn param_jacobian_is_emitted_once_and_not_reemitted_by_a_set_loop() {
     // kernel lives on the per-module AnalogKernel, Arc-shared across instances
     // — a `set` mutates instance param storage, not the compiled code.
     let src = format!(
-        "{DISCIPLINE}
-mod R(inout p: Electrical, inout n: Electrical) {{ param g: Real = 1e-3; }}
-analog R {{ I(p, n) <+ g * V(p, n); }}
-mod Top() {{ wire gnd : Electrical; wire a : Electrical; r : R(.p = a, .n = gnd) {{}}; }}
+        "module R(inout electrical p, inout electrical n);
+    parameter real g = 1e-3;
+    analog I(p, n) <+ g * V(p, n);
+endmodule
+module Top();
+    electrical gnd, a;
+    R r (.p(a), .n(gnd));
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
@@ -158,7 +162,7 @@ mod Top() {{ wire gnd : Electrical; wire a : Electrical; r : R(.p = a, .n = gnd)
 #[test]
 fn param_jacobian_matches_finite_difference_of_the_residual() {
     let kernel = kernel(
-        "param is: Real = 1e-14;",
+        "parameter real is = 1e-14;",
         "I(p, n) <+ is * (exp(V(p, n) / $vt) - 1.0);",
     );
     let is = idx_of(&kernel, "is");

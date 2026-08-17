@@ -21,10 +21,15 @@ fn from_ir(design: &piperine_lang::pom::Design, bodies: &HashMap<String, Lowered
 /// register) and `prev_watch` (clock-edge detection memory).
 fn register_circuit() -> CircuitInstance {
     let src = "
-        discipline Bit { storage Boolean; }
-        mod Reg (input clk: Bit, input D: Bit, output Q: Bit) {}
-        digital Reg { @ posedge(clk) { Q <- D; } }
-        mod Top (input clk: Bit, input D: Bit, output Q: Bit) { Reg(clk, D, Q); }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module Reg (input Bit clk, input Bit D, output Bit Q);
+            always @(posedge clk) Q = D;
+        endmodule
+        module Top (input Bit clk, input Bit D, output Bit Q);
+            Reg r1 (clk, D, Q);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
@@ -97,16 +102,19 @@ fn digital_registers_round_trip_through_checkpoint_restore() {
 #[test]
 fn combined_limiter_and_digital_round_trip() {
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        discipline Bit { storage Boolean; }
-        mod M (inout d: Electrical, inout s: Electrical,
-               input clk: Bit, output Q: Bit) {
-            param vto: Real = 1.0;
-        }
-        analog M { I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0); }
-        digital M { @ posedge(clk) { Q <- 1; } }
-        mod Top (inout a: Electrical, inout b: Electrical,
-                 input clk: Bit, output Q: Bit) { M(a, b, clk, Q); }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module M (inout electrical d, inout electrical s,
+                  input Bit clk, output Bit Q);
+            parameter real vto = 1.0;
+            analog I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+            always @(posedge clk) Q = 1;
+        endmodule
+        module Top (inout electrical a, inout electrical b,
+                    input Bit clk, output Bit Q);
+            M m1 (a, b, clk, Q);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");

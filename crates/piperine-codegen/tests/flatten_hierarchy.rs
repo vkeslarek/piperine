@@ -17,32 +17,28 @@ use piperine_solver::prelude::Context;
 /// `Top` instantiates `Seg` — a 3-level hierarchy that codegen rejected
 /// before flattening.
 const LADDER: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    module Resistor (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod Resistor (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog Resistor { I(p, n) <+ V(p, n) / r; }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 1.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 1.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
+    module Seg (inout electrical p, inout electrical n);
+        electrical mid;
+        Resistor r1 (.p(p),   .n(mid));
+        Resistor r2 (.p(mid), .n(n));
+    endmodule
 
-    mod Seg (inout p : Electrical, inout n : Electrical) {
-        wire mid : Electrical;
-        r1 : Resistor(.p = p,   .n = mid);
-        r2 : Resistor(.p = mid, .n = n);
-    }
-
-    mod Top () {
-        wire gnd : Electrical;
-        wire in  : Electrical;
-        wire out : Electrical;
-        v1 : Vsrc(.p = in, .n = gnd);
-        x  : Seg(.p = in, .n = out);
-        rl : Resistor(.p = out, .n = gnd);
-    }
+    module Top ();
+        electrical gnd, in, out;
+        Vsrc v1 (.p(in), .n(gnd));
+        Seg x (.p(in), .n(out));
+        Resistor rl (.p(out), .n(gnd));
+    endmodule
 "#;
 
 fn elaborate(src: &str) -> (Design, HashMap<String, LoweredBody>) {
@@ -109,20 +105,20 @@ fn flattened_ladder_simulates_correctly() {
 #[test]
 fn two_mid_level_instances_produce_distinct_spliced_labels() {
     let src = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod Resistor (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
-        analog Resistor { I(p, n) <+ V(p, n) / r; }
-        mod Seg (inout p : Electrical, inout n : Electrical) {
-            wire mid : Electrical;
-            r1 : Resistor(.p = p,   .n = mid);
-            r2 : Resistor(.p = mid, .n = n);
-        }
-        mod Top () {
-            wire gnd : Electrical;
-            wire in  : Electrical;
-            a : Seg(.p = in, .n = gnd);
-            b : Seg(.p = in, .n = gnd);
-        }
+        module Resistor (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module Seg (inout electrical p, inout electrical n);
+            electrical mid;
+            Resistor r1 (.p(p),   .n(mid));
+            Resistor r2 (.p(mid), .n(n));
+        endmodule
+        module Top ();
+            electrical gnd, in;
+            Seg a (.p(in), .n(gnd));
+            Seg b (.p(in), .n(gnd));
+        endmodule
     "#;
     let (design, bodies) = elaborate(src);
     let mut compiler = CircuitCompiler::new(&design, &bodies);
@@ -151,24 +147,25 @@ fn two_mid_level_instances_produce_distinct_spliced_labels() {
 #[test]
 fn override_on_spliced_label_restamps_flat_instance() {
     let src = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod Resistor (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
-        analog Resistor { I(p, n) <+ V(p, n) / r; }
-        mod Vsrc (inout p : Electrical, inout n : Electrical) { param dc : Real = 1.0; }
-        analog Vsrc { V(p, n) <- dc; }
-        mod Seg (inout p : Electrical, inout n : Electrical) {
-            wire mid : Electrical;
-            r1 : Resistor(.p = p,   .n = mid);
-            r2 : Resistor(.p = mid, .n = n);
-        }
-        mod Top () {
-            wire gnd : Electrical;
-            wire in  : Electrical;
-            wire out : Electrical;
-            v1 : Vsrc(.p = in, .n = gnd);
-            x  : Seg(.p = in, .n = out);
-            rl : Resistor(.p = out, .n = gnd);
-        }
+        module Resistor (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module Vsrc (inout electrical p, inout electrical n);
+            parameter real dc = 1.0;
+            analog V(p, n) <+ dc;
+        endmodule
+        module Seg (inout electrical p, inout electrical n);
+            electrical mid;
+            Resistor r1 (.p(p),   .n(mid));
+            Resistor r2 (.p(mid), .n(n));
+        endmodule
+        module Top ();
+            electrical gnd, in, out;
+            Vsrc v1 (.p(in), .n(gnd));
+            Seg x (.p(in), .n(out));
+            Resistor rl (.p(out), .n(gnd));
+        endmodule
     "#;
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
 
@@ -225,18 +222,18 @@ fn override_on_spliced_label_restamps_flat_instance() {
 #[test]
 fn override_on_unknown_spliced_label_fails_loud() {
     let src = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod Resistor (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
-        analog Resistor { I(p, n) <+ V(p, n) / r; }
-        mod Seg (inout p : Electrical, inout n : Electrical) {
-            wire mid : Electrical;
-            r1 : Resistor(.p = p, .n = mid);
-        }
-        mod Top () {
-            wire gnd : Electrical;
-            wire in  : Electrical;
-            x  : Seg(.p = in, .n = gnd);
-        }
+        module Resistor (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module Seg (inout electrical p, inout electrical n);
+            electrical mid;
+            Resistor r1 (.p(p), .n(mid));
+        endmodule
+        module Top ();
+            electrical gnd, in;
+            Seg x (.p(in), .n(gnd));
+        endmodule
     "#;
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
     design.set_param("x.nonexistent", "r", piperine_lang::pom::Value::Real(2.0e3));

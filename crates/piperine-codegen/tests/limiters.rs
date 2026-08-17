@@ -71,9 +71,10 @@ fn ref_fetlim(vnew: f64, vold: f64, vto: f64) -> f64 {
 /// controlled directly by the terminal voltages and `vold` seeds a state slot.
 fn jit_limit(kind: &str, vnew: f64, vold: f64, vto: f64) -> f64 {
     let src = format!(
-        "discipline Electrical {{ potential v: Real; flow i: Real; }}
-mod L (inout d: Electrical, inout s: Electrical) {{ param vto: Real = 1.0; }}
-analog L {{ I(d, s) <+ $limit(\"{kind}\", V(d, s), 0.0, vto, 0.0); }}"
+        "module L (inout electrical d, inout electrical s);
+    parameter real vto = 1.0;
+    analog I(d, s) <+ $limit(\"{kind}\", V(d, s), 0.0, vto, 0.0);
+endmodule"
     );
     let elab = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
         .expect("PHDL parses + elaborates");
@@ -161,12 +162,11 @@ fn fetlim_matches_ngspice_reference() {
 #[test]
 fn a_repeated_structurally_equal_limit_collapses_to_one_slot_not_two() {
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
-        analog L {
-            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0)
-                     + $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
-        }
+        module L (inout electrical d, inout electrical s);
+            parameter real vto = 1.0;
+            analog I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0)
+                            + $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
@@ -194,57 +194,22 @@ fn a_repeated_structurally_equal_limit_collapses_to_one_slot_not_two() {
     );
 }
 
-/// AC 12: `$limit` inside a `fn` body that gets inlined into the analog
-/// contribution must emit the same call as writing it directly — every
-/// emission site delegates, not only the primary residual path.
-#[test]
-fn limit_inside_an_inlined_fn_still_emits_the_call() {
-    let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        fn clamp(v: Real, vto: Real) -> Real { return $limit(\"fetlim\", v, 0.0, vto, 0.0); }
-        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
-        analog L { I(d, s) <+ clamp(V(d, s), vto); }
-    ";
-    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
-    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
-    let kernel = AnalogKernel::compile(&bodies["L"]).expect("compile fn-inlined $limit device");
-    assert_eq!(kernel.num_limits(), 1, "the inlined $limit claims its vold slot");
+// `limit_inside_an_inlined_fn_still_emits_the_call` (AC 12) is gone with the
+// PHDL frontend: VAMS `function`/`analog function` declarations are not
+// lowered into the POM (`resolve/pom/body.rs` Pass 1.5, MD-45), so there is
+// no inlined call site to emit `$limit` from.
 
-    let params = vec![1.0];
-    let vars = vec![0.0; kernel.num_vars()];
-    let state = vec![0.0; kernel.num_state_slots()];
-    let volts = vec![5.0, 0.0];
-    let sim = SimCtx::default();
-    let mut out = [0.0; 2];
-    kernel.eval_residual(&volts, &params, &state, &vars, &sim, &mut out);
-
-    // Must match calling fetlim directly (same kind/args) outside a fn —
-    // proving the inlined call site delegates identically to the direct one.
-    let want = jit_limit("fetlim", 5.0, 0.0, 1.0);
-    assert!(
-        (out[0] - want).abs() < 1e-9,
-        "fn-inlined $limit must match the direct call: got {} vs {want}",
-        out[0]
-    );
-}
-
-// ── phdl-introspection-attributes PIA-15/16 (T7, kernel side) ──────────────
-// The per-slot `(limiter_name, reason)` catalog is collected from each
-// `$limit` call-site `kind`, in slot order. `limvds` → VdsStep; the junction
-// limiters (pnjlim/fetlim) → VoltageStep. The device-side report (T8) reads
-// this catalog to name the slot that clamped.
-
-/// PIA-15: `limit_catalog()` carries the call-site kind per slot.
 #[test]
 fn limit_catalog_records_kind_per_slot() {
     use piperine_solver::abi::LimitReason;
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
-        analog L {
-            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
-            I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
-        }
+        module L (inout electrical d, inout electrical s);
+            parameter real vto = 1.0;
+            analog begin
+                I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+                I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+            end
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
@@ -270,9 +235,9 @@ fn limit_catalog_records_kind_per_slot() {
 fn limit_catalog_pnjlim_infers_voltage_step() {
     use piperine_solver::abi::LimitReason;
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod D (inout p: Electrical, inout n: Electrical) {}
-        analog D { I(p, n) <+ $limit(\"pnjlim\", V(p, n), 0.0, 0.7, 0.7); }
+        module D (inout electrical p, inout electrical n);
+            analog I(p, n) <+ $limit(\"pnjlim\", V(p, n), 0.0, 0.7, 0.7);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
@@ -291,13 +256,16 @@ fn limiting_report_names_the_actual_limiter_not_hardcoded_pnjlim() {
     use piperine_codegen::{resolve::lower_bodies, CircuitCompiler};
 
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
-        analog L {
-            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
-            I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { L(a, b); }
+        module L (inout electrical d, inout electrical s);
+            parameter real vto = 1.0;
+            analog begin
+                I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+                I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+            end
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            L l1 (a, b);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
     let bodies = lower_bodies(&elab).expect("lowering");

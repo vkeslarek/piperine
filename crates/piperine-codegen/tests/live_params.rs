@@ -1,14 +1,17 @@
-//! PHDL path parity for live parameter sets (LIVE-01): the solver's element
+//! Path parity for live parameter sets (LIVE-01): the solver's element
 //! labels are exactly the POM instance paths `Design::set_param` accepts, so
 //! one addressing scheme works before and after compilation.
 //!
 //! Path grammar note (spec assumption, verified here): elaboration produces
-//! a flat top module — instance labels are the flat paths (`"r2"`), and
-//! bundle-typed params flatten into `{param}_{field}` scalars
-//! (`"model_r0"`). Nested hierarchy is fail-loud at circuit build
-//! ("flatten during elaboration"), so every path the POM accepts for a
-//! *compilable* design is a flat label — parity is asserted over that
-//! grammar, bundle params included.
+//! a flat top module — instance labels are the flat paths (`"r2"`). Nested
+//! hierarchy is fail-loud at circuit build ("flatten during elaboration"),
+//! so every path the POM accepts for a *compilable* design is a flat label
+//! — parity is asserted over that grammar.
+//!
+//! PHDL's `bundle`-typed params (which flattened into `{param}_{field}`
+//! scalars, `"model_r0"`) have no Verilog-AMS counterpart — the bundle layer
+//! was deleted with the PHDL value layer (MD-45) — so the parity below is
+//! asserted over plain scalar params only.
 
 use std::collections::HashMap;
 
@@ -18,31 +21,24 @@ use piperine_codegen::resolve::LoweredBody;
 use piperine_codegen::CircuitCompiler;
 use piperine_solver::prelude::{Context, Value};
 
-/// Divider with bundle-param resistors: v1 (10 V) over r1 (top→mid) and
-/// r2 (mid→gnd); each resistance is `model.r0 * model.k` from a bundle.
+/// Divider: v1 (10 V) over r1 (top→mid) and r2 (mid→gnd), 1 kΩ each.
 const DIVIDER: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    bundle RModel { r0 : Real = 1.0e3, k : Real = 1.0 }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 10.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param model : RModel = RModel {};
-    }
-    analog R { I(p, n) <+ V(p, n) / (model.r0 * model.k); }
-
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 10.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
-
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = mid) {};
-        r2 : R(.p = mid, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        R r2 (.p(mid), .n(gnd));
+    endmodule
 "#;
 
 fn elaborate() -> (Design, HashMap<String, LoweredBody>) {
@@ -55,9 +51,9 @@ fn elaborate() -> (Design, HashMap<String, LoweredBody>) {
 /// LIVE-01: the same path + param addresses the same instance through the
 /// POM staging oracle (`Design::set_param` → re-elaborate → rebuild) and
 /// through the live solver set on the already-compiled circuit — including
-/// a bundle param flattened to `model_r0`.
+/// its scalar params.
 #[test]
-fn solver_set_matches_pom_path_for_flat_and_bundle_params() {
+fn solver_set_matches_pom_path_for_flat_params() {
     let (design, bodies) = elaborate();
 
     // Element labels are exactly the POM instance paths.
@@ -78,15 +74,15 @@ fn solver_set_matches_pom_path_for_flat_and_bundle_params() {
     let base = circuit.dc(Context::default()).unwrap().solve().unwrap();
     assert!((read_mid(&base) - 5.0).abs() < 1e-9);
 
-    // Solver path: live set of the flattened bundle field on the compiled
-    // circuit — no re-elaboration, no rebuild.
+    // Solver path: live set on the compiled circuit — no re-elaboration,
+    // no rebuild.
     circuit
-        .set_element_param("r2", "model_r0", Value::Real(3000.0))
+        .set_element_param("r2", "r", Value::Real(3000.0))
         .expect("live set by pom path");
     let live = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
     // POM oracle: stage the same (path, param, value), re-elaborate, rebuild.
-    design.set_param("r2", "model_r0", piperine_lang::pom::Value::Real(3000.0));
+    design.set_param("r2", "r", piperine_lang::pom::Value::Real(3000.0));
     let staged_design = design.with_overrides_applied("Top").expect("override applies");
     let staged_bodies =
         piperine_codegen::resolve::lower_bodies(&staged_design).expect("staged design lowers");
@@ -111,15 +107,15 @@ fn solver_set_matches_pom_path_for_flat_and_bundle_params() {
 }
 
 /// The addressing errors stay loud on JIT-compiled devices too: unknown
-/// labels echo the path, unknown params list the flattened candidates.
+/// labels echo the path, unknown params list the candidates.
 #[test]
-fn jit_device_set_errors_are_loud_with_flattened_param_names() {
+fn jit_device_set_errors_are_loud_with_param_names() {
     let (design, bodies) = elaborate();
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let mut circuit = compiler.build_circuit("Top").expect("circuit builds");
 
     let err = circuit
-        .set_element_param("x9", "model_r0", Value::Real(1.0))
+        .set_element_param("x9", "r", Value::Real(1.0))
         .expect_err("unknown label");
     assert!(err.to_string().contains("x9"), "{err}");
 
@@ -128,10 +124,7 @@ fn jit_device_set_errors_are_loud_with_flattened_param_names() {
         .expect_err("unknown param");
     let msg = err.to_string();
     assert!(msg.contains("resistance"), "{msg}");
-    assert!(
-        msg.contains("model_r0") && msg.contains("model_k"),
-        "lists the flattened bundle params: {msg}"
-    );
+    assert!(msg.contains("r"), "lists the device's own params: {msg}");
 }
 
 /// LIVE-14 (solver-level half): a live write to a presence-queried optional
@@ -144,27 +137,24 @@ fn jit_device_set_errors_are_loud_with_flattened_param_names() {
 #[test]
 fn presence_flipping_set_returns_typed_rebuild_without_applying() {
     const OPTIONAL: &str = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
+        module G (inout electrical p, inout electrical n);
+            parameter real g = 1.0e-3;
+            // given => extra ns*1e-3 S in parallel
+            parameter real ns = 0.0;
+            analog I(p, n) <+ (g + ($param_given("ns") ? ns : 0.0) * 1.0e-3) * V(p, n);
+        endmodule
 
-        mod G (inout p : Electrical, inout n : Electrical) {
-            param g : Real = 1.0e-3;
-            param ns : Real? = none;  // given => extra ns*1e-3 S in parallel
-        }
-        analog G { I(p, n) <+ (g + ns.get_or(0.0) * 1.0e-3) * V(p, n); }
+        module Vsrc (inout electrical p, inout electrical n);
+            parameter real dc = 10.0;
+            analog V(p, n) <+ dc;
+        endmodule
 
-        mod Vsrc (inout p : Electrical, inout n : Electrical) {
-            param dc : Real = 10.0;
-        }
-        analog Vsrc { V(p, n) <- dc; }
-
-        mod Top () {
-            wire gnd : Electrical;
-            wire top : Electrical;
-            wire mid : Electrical;
-            v1 : Vsrc(.p = top, .n = gnd) {};
-            r1 : G(.p = top, .n = mid) {};
-            r2 : G(.p = mid, .n = gnd) {};
-        }
+        module Top ();
+            electrical gnd, top, mid;
+            Vsrc v1 (.p(top), .n(gnd));
+            G r1 (.p(top), .n(mid));
+            G r2 (.p(mid), .n(gnd));
+        endmodule
     "#;
     let design = parse_and_elaborate(OPTIONAL, &piperine_lang::SourceMap::dummy())
         .expect("optional fixture elaborates");
@@ -225,31 +215,27 @@ fn presence_flipping_set_returns_typed_rebuild_without_applying() {
 #[test]
 fn mid_transient_r_set_switches_the_rc_time_constant_at_the_breakpoint() {
     const RC: &str = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 2.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
 
-        mod R (inout p : Electrical, inout n : Electrical) {
-            param r : Real = 2.0e3;
-        }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module C (inout electrical p, inout electrical n);
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ c * ddt(V(p, n));
+        endmodule
 
-        mod C (inout p : Electrical, inout n : Electrical) {
-            param c : Real = 1.0e-9;
-        }
-        analog C { I(p, n) <+ c * ddt(V(p, n)); }
+        module Vsrc (inout electrical p, inout electrical n);
+            parameter real dc = 0.0;
+            analog V(p, n) <+ dc;
+        endmodule
 
-        mod Vsrc (inout p : Electrical, inout n : Electrical) {
-            param dc : Real = 0.0;
-        }
-        analog Vsrc { V(p, n) <- dc; }
-
-        mod Top () {
-            wire gnd : Electrical;
-            wire vin : Electrical;
-            wire out : Electrical;
-            v1 : Vsrc(.p = vin, .n = gnd) {};
-            r1 : R(.p = vin, .n = out) {};
-            c1 : C(.p = out, .n = gnd) {};
-        }
+        module Top ();
+            electrical gnd, vin, out;
+            Vsrc v1 (.p(vin), .n(gnd));
+            R r1 (.p(vin), .n(out));
+            C c1 (.p(out), .n(gnd));
+        endmodule
     "#;
     let design = parse_and_elaborate(RC, &piperine_lang::SourceMap::dummy())
         .expect("rc elaborates");
@@ -325,31 +311,27 @@ fn mid_transient_r_set_switches_the_rc_time_constant_at_the_breakpoint() {
 #[test]
 fn mid_transient_c_jump_stays_accurate_and_storm_free() {
     const RC: &str = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
 
-        mod R (inout p : Electrical, inout n : Electrical) {
-            param r : Real = 1.0e3;
-        }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module C (inout electrical p, inout electrical n);
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ ddt(c * V(p, n));
+        endmodule
 
-        mod C (inout p : Electrical, inout n : Electrical) {
-            param c : Real = 1.0e-9;
-        }
-        analog C { I(p, n) <+ ddt(c * V(p, n)); }
+        module Vsrc (inout electrical p, inout electrical n);
+            parameter real dc = 0.0;
+            analog V(p, n) <+ dc;
+        endmodule
 
-        mod Vsrc (inout p : Electrical, inout n : Electrical) {
-            param dc : Real = 0.0;
-        }
-        analog Vsrc { V(p, n) <- dc; }
-
-        mod Top () {
-            wire gnd : Electrical;
-            wire vin : Electrical;
-            wire out : Electrical;
-            v1 : Vsrc(.p = vin, .n = gnd) {};
-            r1 : R(.p = vin, .n = out) {};
-            c1 : C(.p = out, .n = gnd) {};
-        }
+        module Top ();
+            electrical gnd, vin, out;
+            Vsrc v1 (.p(vin), .n(gnd));
+            R r1 (.p(vin), .n(out));
+            C c1 (.p(out), .n(gnd));
+        endmodule
     "#;
     let design = parse_and_elaborate(RC, &piperine_lang::SourceMap::dummy()).expect("elab");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
@@ -410,31 +392,27 @@ fn mid_transient_c_jump_stays_accurate_and_storm_free() {
 #[test]
 fn mid_transient_l_jump_stays_accurate_and_storm_free() {
     const RL: &str = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
 
-        mod R (inout p : Electrical, inout n : Electrical) {
-            param r : Real = 1.0e3;
-        }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module L (inout electrical p, inout electrical n);
+            parameter real l = 1.0e-2;
+            analog V(p, n) <+ l * ddt(I(p, n));
+        endmodule
 
-        mod L (inout p : Electrical, inout n : Electrical) {
-            param l : Real = 1.0e-2;
-        }
-        analog L { V(p, n) <- l * ddt(I(p, n)); }
+        module Vsrc (inout electrical p, inout electrical n);
+            parameter real dc = 0.0;
+            analog V(p, n) <+ dc;
+        endmodule
 
-        mod Vsrc (inout p : Electrical, inout n : Electrical) {
-            param dc : Real = 0.0;
-        }
-        analog Vsrc { V(p, n) <- dc; }
-
-        mod Top () {
-            wire gnd : Electrical;
-            wire vin : Electrical;
-            wire mid : Electrical;
-            v1 : Vsrc(.p = vin, .n = gnd) {};
-            r1 : R(.p = vin, .n = mid) {};
-            l1 : L(.p = mid, .n = gnd) {};
-        }
+        module Top ();
+            electrical gnd, vin, mid;
+            Vsrc v1 (.p(vin), .n(gnd));
+            R r1 (.p(vin), .n(mid));
+            L l1 (.p(mid), .n(gnd));
+        endmodule
     "#;
     let design = parse_and_elaborate(RL, &piperine_lang::SourceMap::dummy()).expect("elab");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");

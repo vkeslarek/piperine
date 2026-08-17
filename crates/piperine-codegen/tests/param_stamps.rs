@@ -9,23 +9,24 @@ use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::{AnalogDevice, Stamp};
 use piperine_solver::prelude::Context;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
 
 /// A 0.7 V source across a parametric conductor `g` (1 mA at g = 1e-3). At the
 /// DC operating point V(a) = 0.7, so ∂(g·V)/∂g = V(a) = 0.7.
 fn circuit() -> piperine_solver::prelude::CircuitInstance {
     let src = format!(
-        "{DISCIPLINE}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 0.7; }}
-analog Vsrc {{ V(p, n) <- dc; }}
-mod G(inout p: Electrical, inout n: Electrical) {{ param g: Real = 1e-3; }}
-analog G {{ I(p, n) <+ g * V(p, n); }}
-mod Top() {{
-    wire gnd : Electrical;
-    wire a   : Electrical;
-    v : Vsrc(.p = a, .n = gnd);
-    r : G(.p = a, .n = gnd);
-}}
+        "module Vsrc(inout electrical p, inout electrical n);
+    parameter real dc = 0.7;
+    analog V(p, n) <+ dc;
+endmodule
+module G(inout electrical p, inout electrical n);
+    parameter real g = 1e-3;
+    analog I(p, n) <+ g * V(p, n);
+endmodule
+module Top();
+    electrical gnd, a;
+    Vsrc v (.p(a), .n(gnd));
+    G r (.p(a), .n(gnd));
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");

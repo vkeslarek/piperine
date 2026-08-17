@@ -29,10 +29,13 @@ fn build(src: &str, top: &str) -> CircuitInstance {
 fn reactive_device_declares_state_observable() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod C (inout p: Electrical, inout n: Electrical) { param c: Real = 1.0e-9; }
-        analog C { I(p, n) <+ c * ddt(V(p, n)); }
-        mod TopC (inout a: Electrical, inout b: Electrical) { C(a, b); }
+        module C (inout electrical p, inout electrical n);
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ c * ddt(V(p, n));
+        endmodule
+        module TopC (inout electrical a, inout electrical b);
+            C x1 (a, b);
+        endmodule
         ",
         "TopC",
     );
@@ -52,18 +55,18 @@ fn reactive_device_declares_state_observable() {
 fn device_with_vars_declares_var_observables() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            var g : Real = 0.0;
-            var gs : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            gs = 2.0 * g;
-            I(p, n) <+ gs * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            real g, gs;
+            analog begin
+                g = 1.0 / r;
+                gs = 2.0 * g;
+                I(p, n) <+ gs * V(p, n);
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -91,15 +94,14 @@ fn device_with_force_current_declares_branch_current_observable() {
     // surfaces a force terminal pair with a series-R current term.
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod VsrcR (inout p: Electrical, inout n: Electrical) {
-            param dc: Real = 1.0;
-            param rout: Real = 1.0;
-        }
-        analog VsrcR {
-            V(p, n) <- dc + rout * (0.0 - I(p, n));
-        }
-        mod TopV (inout a: Electrical, inout b: Electrical) { VsrcR(a, b); }
+        module VsrcR (inout electrical p, inout electrical n);
+            parameter real dc = 1.0;
+            parameter real rout = 1.0;
+            analog V(p, n) <+ dc + rout * (0.0 - I(p, n));
+        endmodule
+        module TopV (inout electrical a, inout electrical b);
+            VsrcR x1 (a, b);
+        endmodule
         ",
         "TopV",
     );
@@ -120,18 +122,20 @@ fn device_with_force_current_declares_branch_current_observable() {
 fn digital_only_device_declares_no_observables() {
     let circuit = build(
         "
-        discipline Bit {
-            storage Boolean;
-        }
-        mod BitDriver(output q : Bit) {
-            param level : Real = 0.0;
-            var b : Bit = 0;
-        }
-        digital BitDriver {
-            b = level > 0.5;
-            q <- b;
-        }
-        mod TopD(output qout : Bit) { BitDriver(qout); }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module BitDriver(output Bit q);
+            parameter real level = 0.0;
+            integer b;
+            always @(*) begin
+                b = level > 0.5;
+                q = b;
+            end
+        endmodule
+        module TopD(output Bit qout);
+            BitDriver x1 (qout);
+        endmodule
         ",
         "TopD",
     );
@@ -154,15 +158,14 @@ fn digital_only_device_declares_no_observables() {
 fn observable_costs_are_in_unit_range() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod RC (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            param c: Real = 1.0e-9;
-        }
-        analog RC {
-            I(p, n) <+ V(p, n) / r + c * ddt(V(p, n));
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
+        module RC (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ V(p, n) / r + c * ddt(V(p, n));
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            RC x1 (a, b);
+        endmodule
         ",
         "Top",
     );
@@ -182,73 +185,11 @@ fn observable_costs_are_in_unit_range() {
 // and kind (NOT positional var[k]); the SAME @name feeds the opvar-query
 // catalog too (one declaration, both catalogs).
 
-/// PIA-06: `@name`/`@kind` on a var → `ObservableDescriptor` named and kinded
-/// by the attributes, NOT a positional `var[k]`.
-#[test]
-fn observable_named_and_kinded_by_at_name_and_at_kind() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            @name(value = \"i_d\") @kind(value = \"State\")
-            var id : Real = 0.0;
-        }
-        analog R {
-            id = V(p, n) / r;
-            I(p, n) <+ id;
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
-        ",
-        "TopR",
-    );
-    let dev = &circuit.all_devices()[0];
-    let observables = dev.list_observables();
-    // Named by @name, NOT the positional `var[k]` or the kernel id `id`.
-    let id_obs = observables
-        .iter()
-        .find(|o| o.name == "i_d")
-        .expect("observable named `i_d` via @name");
-    assert_eq!(id_obs.kind, ObservableKind::State, "@kind(State) sets the observable kind");
-    assert!(
-        !observables.iter().any(|o| o.name.starts_with("var[")),
-        "a var with @name must NOT fall back to positional `var[k]`: {observables:?}"
-    );
-}
+// `observable_named_and_kinded_by_at_name_and_at_kind` /
+// `at_name_feeds_both_query_and_observable_catalogs` were
+// dropped with the PHDL frontend: Verilog-AMS attribute instances `(* … *)`
+// reach no introspection schema (only `device`/`port` are seeded, and
+// `lower_port_attrs` materialises only `port`), so nothing in VAMS source can
+// produce this metadata — the frontend-dark call ed575c85 already made for
+// `introspection_meta`/`introspection_attrs`.
 
-/// PIA-07: the SAME `@name(value)` is the name in BOTH `list_queries` and
-/// `list_observables` — one declaration, two consistent catalogs (the
-/// inconsistency is structurally impossible).
-#[test]
-fn at_name_feeds_both_query_and_observable_catalogs() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            @name(value = \"gm\") @unit(value = \"S\")
-            var g : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
-        ",
-        "TopR",
-    );
-    let dev = &circuit.all_devices()[0];
-    let query_has_gm = dev.list_queries().iter().any(|q| q.name == "gm");
-    let observable_has_gm = dev.list_observables().iter().any(|o| o.name == "gm");
-    assert!(query_has_gm, "the @name `gm` must appear in the query catalog");
-    assert!(observable_has_gm, "the @name `gm` must appear in the observable catalog");
-    // Neither catalog leaks the kernel id `g` once @name is set.
-    assert!(
-        dev.list_queries().iter().all(|q| q.name != "g"),
-        "query catalog must not surface the kernel id `g` once @name is set"
-    );
-    assert!(
-        dev.list_observables().iter().all(|o| o.name != "g"),
-        "observable catalog must not surface the kernel id `g` once @name is set"
-    );
-}

@@ -632,138 +632,144 @@ fn canonicalize(node: NodeId, aliases: &HashMap<NodeId, NodeId>) -> NodeId {
 #[cfg(test)]
 mod tests {
     //! Structural-connection unification (NGP-18 codegen integration,
-    //! Fix B). A structural `connection tap[0] = p; tap[N] = n;` aliases
-    //! two NodeIds. The circuit builder must produce one MNA unknown per
-    //! alias group — otherwise the segment at `tap[0]` floats on its own
-    //! unknown and the DC solve diverges. These tests cover the alias
-    //! map's construction (`build_node_aliases`), its canonical lookup
-    //! (`canonicalize`), and the end-to-end build path through
-    //! `CircuitCompiler::build_circuit_mapped` on a tiny RC chain with
-    //! an array-wire-tap module.
+    //! Fix B). A structural connection aliases two NodeIds. The circuit
+    //! builder must produce one MNA unknown per alias group — otherwise
+    //! the segment at the first tap floats on its own unknown and the DC
+    //! solve diverges. These tests cover the alias map's construction
+    //! (`build_node_aliases`), its canonical lookup (`canonicalize`), and
+    //! the end-to-end build path through
+    //! `CircuitCompiler::build_circuit_mapped`.
+    //!
+    //! The connections come from the POM staging API
+    //! (`Design::stage_connection`, SPEC Part VI §8.2) rather than from
+    //! source text: Verilog-AMS has no net-alias statement and no array
+    //! analog nets, so `tap : Electrical[3]` + `tap[0] = p;` (PHDL, the
+    //! shape `urc[N]` used) has no spelling in the current frontend —
+    //! staging is the live producer of `Module::connections` that
+    //! survives it. Scalar taps stand in for the array's elements; the
+    //! alias-group assertions are unchanged.
 
     use super::{build_node_aliases, canonicalize};
     use crate::resolve::pom::lower_bodies;
     use crate::CircuitCompiler;
+    use piperine_lang::pom::staging::ConnectionSpec;
+    use piperine_lang::pom::Design;
     use piperine_lang::{parse_and_elaborate, SourceMap};
     use piperine_solver::abi::NodeIdentifier;
 
-    const PRELUDE: &str = "
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod res (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0; }
-        analog res { I(p, n) <+ V(p, n) / r; }
-        mod cap (inout p : Electrical, inout n : Electrical) { param c : Real = 1.0e-9; }
-        analog cap { I(p, n) <+ c * ddt(V(p, n)); }
-        mod vsrc_external (inout p : Electrical, inout n : Electrical) {}
-        analog vsrc_external { V(p, n) <- 1.0; }
-    ";
-
-    /// A tiny generic chain with an array wire and structural connections
-    /// — the shape `urc[N]` uses. Two `res` segments separated by an
-    /// array-wire tap; `tap[0]` aliases the input port `p`, `tap[2]`
-    /// aliases the output port `n`.
+    /// Two `res` segments separated by taps; `tap0` aliases the source
+    /// node `vin`, `tap2` aliases the load node `vout`.
     const CHAIN_SRC: &str = "
-        mod Chain (inout p : Electrical, inout n : Electrical) {
-            wire tap : Electrical[3];
-            tap[0] = p;
-            tap[2] = n;
-            r0 : res (.p=tap[0], .n=tap[1]) { .r = 1.0 };
-            r1 : res (.p=tap[1], .n=tap[2]) { .r = 1.0 };
-        }
-        mod Top () {
-            wire gnd : Electrical;
-            wire vin : Electrical;
-            wire vout : Electrical;
-            v : vsrc_external (vin, gnd);
-            u : Chain (.p=vin, .n=vout);
-        }
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module vsrc_external (inout electrical p, inout electrical n);
+            analog V(p, n) <+ 1.0;
+        endmodule
+        module Top ();
+            electrical gnd, vin, vout;
+            electrical tap0, tap1, tap2;
+            vsrc_external v (vin, gnd);
+            res r0 (.p(tap0), .n(tap1));
+            res r1 (.p(tap1), .n(tap2));
+        endmodule
     ";
 
-    /// `build_node_aliases` collapses the alias group `tap[0] = p` so the
-    /// tap element and the port share a canonical NodeId. After flatten,
-    /// the chain's structural connections land on flat-Top as
-    /// `u.tap[0] = vin` and `u.tap[2] = vout` (the chain's ports `p` and
-    /// `n` are renamed to the parent's bindings).
+    /// Elaborate `CHAIN_SRC` and stage the two structural connections
+    /// (`tap0 = vin`, `tap2 = vout`) onto `Top`.
+    fn chain_design() -> Design {
+        let design = parse_and_elaborate(CHAIN_SRC, &SourceMap::dummy()).expect("elaborates");
+        design
+            .stage_connection(
+                "Top",
+                ConnectionSpec { lhs: "tap0".into(), rhs: "vin".into() },
+            )
+            .expect("stage tap0 = vin");
+        design
+            .stage_connection(
+                "Top",
+                ConnectionSpec { lhs: "tap2".into(), rhs: "vout".into() },
+            )
+            .expect("stage tap2 = vout");
+        design.with_overrides_applied("Top").expect("overrides apply")
+    }
+
+    /// `build_node_aliases` collapses the alias group `tap0 = vin` so the
+    /// tap element and the source node share a canonical NodeId.
     #[test]
     fn structural_connection_unifies_tap0_with_p() {
-        let src = format!("{PRELUDE}{CHAIN_SRC}");
-        let design = parse_and_elaborate(&src, &SourceMap::dummy())
-            .expect("elaborates");
+        let design = chain_design();
         let bodies = lower_bodies(&design).expect("lowers");
         let flat = design.flat_module("Top").expect("Top flat form");
         let top_body = &bodies["Top"];
         let aliases = build_node_aliases(top_body, flat);
 
-        // Flat-Top carries the spliced `Chain` connections as
-        // `u.tap[0] = vin` and `u.tap[2] = vout`. The alias map must
-        // resolve `u.tap[0]` and `vin` to the same canonical NodeId, and
-        // likewise `u.tap[2]` and `vout`.
         let vin_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "vin")
             .expect("vin resolves");
-        let tap0_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "u.tap[0]")
-            .expect("u.tap[0] resolves");
+        let tap0_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "tap0")
+            .expect("tap0 resolves");
         let vout_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "vout")
             .expect("vout resolves");
-        let tap2_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "u.tap[2]")
-            .expect("u.tap[2] resolves");
+        let tap2_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "tap2")
+            .expect("tap2 resolves");
 
         assert_eq!(
             canonicalize(tap0_id, &aliases),
             canonicalize(vin_id, &aliases),
-            "tap[0] aliases vin — they share a canonical NodeId"
+            "tap0 aliases vin — they share a canonical NodeId"
         );
         assert_eq!(
             canonicalize(tap2_id, &aliases),
             canonicalize(vout_id, &aliases),
-            "tap[2] aliases vout — they share a canonical NodeId"
+            "tap2 aliases vout — they share a canonical NodeId"
         );
         assert_ne!(
             canonicalize(tap0_id, &aliases),
             canonicalize(tap2_id, &aliases),
             "the two alias groups stay distinct"
         );
-        // The middle tap (tap[1]) is not in any structural connection —
+        // The middle tap is not in any structural connection —
         // it canonicalizes to itself.
-        let tap1_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "u.tap[1]")
-            .expect("u.tap[1] resolves");
+        let tap1_id = crate::device::circuit::CircuitCompiler::resolve_node(top_body, "tap1")
+            .expect("tap1 resolves");
         assert_eq!(
             canonicalize(tap1_id, &aliases),
             tap1_id,
-            "tap[1] is unaliased — its own canonical node"
+            "tap1 is unaliased — its own canonical node"
         );
     }
 
-    /// End-to-end build: the Chain module's two structural connections
-    /// reduce the per-segment topology to one DC path from `vin` to
-    /// `vout`, and the resulting `nets` map shows `u.tap[0]` and `vin`
-    /// sharing one NodeIdentifier (likewise `u.tap[2]` and `vout`).
+    /// End-to-end build: the two structural connections reduce the
+    /// per-segment topology to one DC path from `vin` to `vout`, and the
+    /// resulting `nets` map shows `tap0` and `vin` sharing one
+    /// NodeIdentifier (likewise `tap2` and `vout`).
     #[test]
     fn structural_connection_produces_one_mna_unknown_per_alias_group() {
-        let src = format!("{PRELUDE}{CHAIN_SRC}");
-        let design = parse_and_elaborate(&src, &SourceMap::dummy())
-            .expect("elaborates");
+        let design = chain_design();
         let bodies = lower_bodies(&design).expect("lowers");
         let mut compiler = CircuitCompiler::new(&design, &bodies);
         let (_circuit, info) = compiler.build_circuit_mapped("Top").expect("builds");
 
-        let tap0_node = info.nets.get("u.tap[0]").cloned();
+        let tap0_node = info.nets.get("tap0").cloned();
         let vin_node = info.nets.get("vin").cloned();
-        let tap2_node = info.nets.get("u.tap[2]").cloned();
+        let tap2_node = info.nets.get("tap2").cloned();
         let vout_node = info.nets.get("vout").cloned();
-        let tap1_node = info.nets.get("u.tap[1]").cloned();
+        let tap1_node = info.nets.get("tap1").cloned();
 
-        assert!(tap0_node.is_some(), "u.tap[0] in nets");
-        assert!(tap1_node.is_some(), "u.tap[1] in nets");
-        assert!(tap2_node.is_some(), "u.tap[2] in nets");
+        assert!(tap0_node.is_some(), "tap0 in nets");
+        assert!(tap1_node.is_some(), "tap1 in nets");
+        assert!(tap2_node.is_some(), "tap2 in nets");
         assert_eq!(
             tap0_node, vin_node,
-            "u.tap[0] and vin share a NodeIdentifier (one MNA unknown)"
+            "tap0 and vin share a NodeIdentifier (one MNA unknown)"
         );
         assert_eq!(
             tap2_node, vout_node,
-            "u.tap[2] and vout share a NodeIdentifier (one MNA unknown)"
+            "tap2 and vout share a NodeIdentifier (one MNA unknown)"
         );
-        // The three alias groups — {vin, u.tap[0]}, {u.tap[1]},
-        // {vout, u.tap[2]} — produce three distinct NodeIdentifiers.
+        // The three alias groups — {vin, tap0}, {tap1}, {vout, tap2} —
+        // produce three distinct NodeIdentifiers.
         let groups = [
             tap0_node.as_ref().unwrap(),
             tap1_node.as_ref().unwrap(),

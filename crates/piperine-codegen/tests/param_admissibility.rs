@@ -16,13 +16,13 @@ use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
 
 fn kernel(params: &str, body: &str) -> AnalogKernel {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ {params} }}
-analog Dut {{ {body} }}
+        "module Dut(inout electrical p, inout electrical n);
+    {params}
+    analog begin {body} end
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
@@ -40,11 +40,11 @@ fn idx_of(kernel: &AnalogKernel, name: &str) -> usize {
 fn a_discrete_parameter_emits_no_derivative() {
     // `n` is Integer; `g` is Real. Only `g` is analytic; `n` finds no block.
     let kernel = kernel(
-        "param g: Real = 1e-3; param n: Integer = 3;",
+        "parameter real g = 1e-3; parameter integer nk = 3;",
         "I(p, n) <+ g * V(p, n);",
     );
     let g = idx_of(&kernel, "g");
-    let n = idx_of(&kernel, "n");
+    let n = idx_of(&kernel, "nk");
     assert!(kernel.has_param_jacobian(), "g is differentiable → kernel emitted");
     let admissible: Vec<usize> = kernel.param_jacobian_indices().to_vec();
     assert!(admissible.contains(&g), "g (Real) is admissible");
@@ -73,10 +73,10 @@ fn a_rebuild_class_parameter_emits_no_derivative() {
     // kernel excludes it. `g` is plain Real restamp-class, so the kernel still
     // emits (for `g`), just not `p`.
     let kernel = kernel(
-        "param p : Real? = none; param g : Real = 1e-3;",
-        "I(p, n) <+ p.get_or(0.0) * V(p, n) + g * V(p, n);",
+        "parameter real popt = 0.0; parameter real g = 1e-3;",
+        "I(p, n) <+ ($param_given(\"popt\") ? popt : 0.0) * V(p, n) + g * V(p, n);",
     );
-    let p = idx_of(&kernel, "p");
+    let p = idx_of(&kernel, "popt");
     let g = idx_of(&kernel, "g");
     assert!(kernel.has_param_jacobian(), "g is differentiable → kernel emitted");
     let admissible: Vec<usize> = kernel.param_jacobian_indices().to_vec();
@@ -110,7 +110,7 @@ fn a_circuit_with_no_differentiable_params_emits_no_kernel() {
     assert_eq!(resistor.num_param_jacobian_functions(), 0);
 
     // Only a discrete param: still nothing analytic.
-    let discrete_only = kernel("param n: Integer = 3;", "I(p, n) <+ n * V(p, n);");
+    let discrete_only = kernel("parameter integer nk = 3;", "I(p, n) <+ nk * V(p, n);");
     assert!(
         !discrete_only.has_param_jacobian(),
         "only an Integer param → no ∂F/∂p kernel"
@@ -118,8 +118,8 @@ fn a_circuit_with_no_differentiable_params_emits_no_kernel() {
 
     // Only a presence-queried (rebuild-class) Real param: excluded → no kernel.
     let rebuild_only = kernel(
-        "param p : Real? = none;",
-        "I(p, n) <+ p.get_or(0.0) * V(p, n);",
+        "parameter real popt = 0.0;",
+        "I(p, n) <+ ($param_given(\"popt\") ? popt : 0.0) * V(p, n);",
     );
     assert!(
         !rebuild_only.has_param_jacobian(),
@@ -135,10 +135,15 @@ fn compile_count_is_unchanged_across_a_set_loop_on_a_sensitivity_enabled_circuit
     // emitted). Setting a restamp-class parameter restamps only — the kernel
     // is shared per module and never recompiled (MD-18).
     let src = format!(
-        "{DISCIPLINE}
-mod G(inout p: Electrical, inout n: Electrical) {{ param g: Real = 1e-3; param r: Real = 1e3; }}
-analog G {{ I(p, n) <+ g * V(p, n) + V(p, n) / r; }}
-mod Top() {{ wire gnd : Electrical; wire a : Electrical; x : G(.p = a, .n = gnd) {{}}; }}
+        "module G(inout electrical p, inout electrical n);
+    parameter real g = 1e-3;
+    parameter real r = 1e3;
+    analog I(p, n) <+ g * V(p, n) + V(p, n) / r;
+endmodule
+module Top();
+    electrical gnd, a;
+    G x (.p(a), .n(gnd));
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");

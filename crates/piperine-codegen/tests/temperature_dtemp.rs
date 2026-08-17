@@ -15,13 +15,11 @@ use piperine_solver::prelude::Context;
 /// A module that declares `dtemp` (the SPICE convention) so the codegen
 /// device exposes it as an instance param the override composes against.
 const DTEMP_MODULE: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
-
-    mod TempRes (inout p : Electrical, inout n : Electrical) {
-        param r    : Real = 1.0e3;
-        param dtemp: Real = 0.0;
-    }
-    analog TempRes { I(p, n) <+ V(p, n) / r; }
+    module TempRes (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        parameter real dtemp = 0.0;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 "#;
 
 fn compile_module(src: &str, name: &str) -> (std::sync::Arc<AnalogKernel>, LoweredBody) {
@@ -88,11 +86,10 @@ fn no_dtemp_param_caches_received_temperature() {
     use piperine_codegen::device::PiperineDevice;
     let (kernel, _body) = compile_module(
         r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod R (inout p : Electrical, inout n : Electrical) {
-            param r : Real = 1.0e3;
-        }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
     "#,
         "R",
     );

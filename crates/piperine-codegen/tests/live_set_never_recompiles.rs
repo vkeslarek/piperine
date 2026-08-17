@@ -16,26 +16,22 @@ use piperine_solver::abi::{
 use piperine_solver::prelude::{Bounds, Context, NodeIdentifier};
 
 const DIVIDER: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 10.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 10.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
-
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = mid) {};
-        r2 : R(.p = mid, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        R r2 (.p(mid), .n(gnd));
+    endmodule
 "#;
 
 /// A temperature-dependent resistor whose `temp` write reports

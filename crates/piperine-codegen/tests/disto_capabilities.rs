@@ -32,14 +32,15 @@ fn build(src: &str, top: &str) -> CircuitInstance {
 fn nonlinear_device_declares_disto2_and_disto3_resistor_neither() {
     let nonlinear = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Poly (inout p: Electrical, inout n: Electrical) {
-            param g1: Real = 0.1;
-            param g2: Real = 0.02;
-            param g3: Real = 0.003;
-        }
-        analog Poly { I(p, n) <+ g1*V(p,n) + g2*V(p,n)*V(p,n) + g3*V(p,n)*V(p,n)*V(p,n); }
-        mod Top (inout a: Electrical, inout b: Electrical) { Poly(a, b); }
+        module Poly (inout electrical p, inout electrical n);
+            parameter real g1 = 0.1;
+            parameter real g2 = 0.02;
+            parameter real g3 = 0.003;
+            analog I(p, n) <+ g1*V(p,n) + g2*V(p,n)*V(p,n) + g3*V(p,n)*V(p,n)*V(p,n);
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            Poly x1 (a, b);
+        endmodule
         ",
         "Top",
     );
@@ -55,10 +56,13 @@ fn nonlinear_device_declares_disto2_and_disto3_resistor_neither() {
 
     let linear = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -80,13 +84,14 @@ fn nonlinear_device_declares_disto2_and_disto3_resistor_neither() {
 fn quadratic_device_declares_disto2_only() {
     let quad = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Quad (inout p: Electrical, inout n: Electrical) {
-            param g1: Real = 0.1;
-            param g2: Real = 0.02;
-        }
-        analog Quad { I(p, n) <+ g1*V(p,n) + g2*V(p,n)*V(p,n); }
-        mod TopQ (inout a: Electrical, inout b: Electrical) { Quad(a, b); }
+        module Quad (inout electrical p, inout electrical n);
+            parameter real g1 = 0.1;
+            parameter real g2 = 0.02;
+            analog I(p, n) <+ g1*V(p,n) + g2*V(p,n)*V(p,n);
+        endmodule
+        module TopQ (inout electrical a, inout electrical b);
+            Quad x1 (a, b);
+        endmodule
         ",
         "TopQ",
     );
@@ -109,14 +114,15 @@ fn quadratic_device_declares_disto2_only() {
 fn jit_device_never_declares_numeric_jacobian() {
     let nonlinear = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Poly (inout p: Electrical, inout n: Electrical) {
-            param g1: Real = 0.1;
-            param g2: Real = 0.02;
-            param g3: Real = 0.003;
-        }
-        analog Poly { I(p, n) <+ g1*V(p,n) + g2*V(p,n)*V(p,n) + g3*V(p,n)*V(p,n)*V(p,n); }
-        mod Top (inout a: Electrical, inout b: Electrical) { Poly(a, b); }
+        module Poly (inout electrical p, inout electrical n);
+            parameter real g1 = 0.1;
+            parameter real g2 = 0.02;
+            parameter real g3 = 0.003;
+            analog I(p, n) <+ g1*V(p,n) + g2*V(p,n)*V(p,n) + g3*V(p,n)*V(p,n)*V(p,n);
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            Poly x1 (a, b);
+        endmodule
         ",
         "Top",
     );

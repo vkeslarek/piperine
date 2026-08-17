@@ -25,9 +25,10 @@ fn from_ir(design: &Design, bodies: &HashMap<String, LoweredBody>, top: &str) ->
 fn from_ir_resistor_va_yields_circuit() {
     // Leaf device: PHDL resistor with no child instances
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
@@ -43,10 +44,13 @@ fn from_ir_resistor_va_yields_circuit() {
 #[test]
 fn from_ir_ppr_resistor_yields_circuit() {
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            R r1 (a, b);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parse_and_elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
@@ -59,10 +63,13 @@ fn jit_device_exposes_params_through_introspection() {
     use piperine_solver::prelude::{Invalidation, ParamError, Value};
 
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            R r1 (a, b);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse+elab");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
@@ -89,9 +96,10 @@ fn jit_device_exposes_params_through_introspection() {
 #[test]
 fn from_ir_unknown_top_returns_err() {
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");

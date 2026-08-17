@@ -6,7 +6,7 @@ use piperine_codegen::resolve::NodeId;
 use piperine_codegen::{CompiledModule, SimCtx};
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }\n";
+const DISCIPLINE: &str = "";
 
 /// Compile `src` (module defs only) and return the kernel + the named
 /// module's node-id resolver.
@@ -52,17 +52,17 @@ fn compile_err(src: &str, name: &str) -> piperine_codegen::CodegenError {
 fn disto2_polynomial_vccs_matches_symbolic_second_derivative() {
     let src = format!(
         "{DISCIPLINE}
-mod PolyVccs ( inout inp : Electrical, inout inn : Electrical,
-               inout outp : Electrical, inout outn : Electrical ) {{
-    param g1 : Real = 0.1;
-    param g2 : Real = 0.02;
-    param g3 : Real = 0.003;
-}}
-analog PolyVccs {{
-    var v_in : Real;
-    v_in = V(inp, inn);
-    I(outp, outn) <+ g1 * v_in + g2 * v_in * v_in + g3 * v_in * v_in * v_in;
-}}
+module PolyVccs ( inout electrical inp, inout electrical inn,
+                  inout electrical outp, inout electrical outn );
+    parameter real g1 = 0.1;
+    parameter real g2 = 0.02;
+    parameter real g3 = 0.003;
+    analog begin: body
+        real v_in;
+        v_in = V(inp, inn);
+        I(outp, outn) <+ g1 * v_in + g2 * v_in * v_in + g3 * v_in * v_in * v_in;
+    end
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "PolyVccs");
@@ -96,13 +96,11 @@ analog PolyVccs {{
 fn disto2_cross_derivative_matches_symbolic_reference() {
     let src = format!(
         "{DISCIPLINE}
-mod CrossDev ( inout inp : Electrical, inout inn : Electrical,
-               inout outp : Electrical, inout outn : Electrical ) {{
-    param k : Real = 0.5;
-}}
-analog CrossDev {{
-    I(outp, outn) <+ k * V(outp, outn) * V(inp, inn);
-}}
+module CrossDev ( inout electrical inp, inout electrical inn,
+                  inout electrical outp, inout electrical outn );
+    parameter real k = 0.5;
+    analog I(outp, outn) <+ k * V(outp, outn) * V(inp, inn);
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "CrossDev");
@@ -134,13 +132,11 @@ analog CrossDev {{
 fn disto2_nonlinear_charge_second_derivative() {
     let src = format!(
         "{DISCIPLINE}
-mod NlCap ( inout p : Electrical, inout n : Electrical ) {{
-    param c1 : Real = 1e-6;
-    param c2 : Real = 1e-7;
-}}
-analog NlCap {{
-    I(p, n) <+ ddt(c1 * V(p, n) + c2 * V(p, n) * V(p, n));
-}}
+module NlCap ( inout electrical p, inout electrical n );
+    parameter real c1 = 1e-6;
+    parameter real c2 = 1e-7;
+    analog I(p, n) <+ ddt(c1 * V(p, n) + c2 * V(p, n) * V(p, n));
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "NlCap");
@@ -170,12 +166,10 @@ analog NlCap {{
 fn disto2_branch_current_read_fails_loud_naming_device() {
     let src = format!(
         "{DISCIPLINE}
-mod ProbeDev ( inout p : Electrical, inout n : Electrical, inout q : Electrical ) {{
-    param k : Real = 1.0;
-}}
-analog ProbeDev {{
-    I(p, n) <+ k * V(p, n) * I(q, 0);
-}}
+module ProbeDev ( inout electrical p, inout electrical n, inout electrical q );
+    parameter real k = 1.0;
+    analog I(p, n) <+ k * V(p, n) * I(q, 0);
+endmodule
 "
     );
     let err = compile_err(&src, "ProbeDev");
@@ -196,17 +190,16 @@ analog ProbeDev {{
 fn disto2_nested_temp_chain_reads_the_correct_branch_tapes() {
     let src = format!(
         "{DISCIPLINE}
-mod NestedVar ( inout inp : Electrical, inout inn : Electrical,
-                inout outp : Electrical, inout outn : Electrical ) {{
-    param g2 : Real = 0.02;
-}}
-analog NestedVar {{
-    var t1 : Real;
-    var t2 : Real;
-    t1 = V(inp, inn);
-    t2 = t1 * t1;
-    I(outp, outn) <+ g2 * t2;
-}}
+module NestedVar ( inout electrical inp, inout electrical inn,
+                   inout electrical outp, inout electrical outn );
+    parameter real g2 = 0.02;
+    analog begin: body
+        real t1, t2;
+        t1 = V(inp, inn);
+        t2 = t1 * t1;
+        I(outp, outn) <+ g2 * t2;
+    end
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "NestedVar");
@@ -237,15 +230,15 @@ analog NestedVar {{
 fn disto3_cubic_vccs_matches_symbolic_third_derivative() {
     let src = format!(
         "{DISCIPLINE}
-mod CubicVccs ( inout inp : Electrical, inout inn : Electrical,
-                inout outp : Electrical, inout outn : Electrical ) {{
-    param g3 : Real = 0.003;
-}}
-analog CubicVccs {{
-    var v_in : Real;
-    v_in = V(inp, inn);
-    I(outp, outn) <+ g3 * v_in * v_in * v_in;
-}}
+module CubicVccs ( inout electrical inp, inout electrical inn,
+                   inout electrical outp, inout electrical outn );
+    parameter real g3 = 0.003;
+    analog begin: body
+        real v_in;
+        v_in = V(inp, inn);
+        I(outp, outn) <+ g3 * v_in * v_in * v_in;
+    end
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "CubicVccs");
@@ -271,13 +264,11 @@ analog CubicVccs {{
 fn disto3_cross_third_derivative_matches_symbolic_reference() {
     let src = format!(
         "{DISCIPLINE}
-mod Cross3 ( inout inp : Electrical, inout inn : Electrical,
-             inout outp : Electrical, inout outn : Electrical ) {{
-    param k : Real = 0.5;
-}}
-analog Cross3 {{
-    I(outp, outn) <+ k * V(outp, outn) * V(outp, outn) * V(inp, inn);
-}}
+module Cross3 ( inout electrical inp, inout electrical inn,
+                inout electrical outp, inout electrical outn );
+    parameter real k = 0.5;
+    analog I(outp, outn) <+ k * V(outp, outn) * V(outp, outn) * V(inp, inn);
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "Cross3");
@@ -308,12 +299,10 @@ analog Cross3 {{
 fn disto3_cubic_charge_third_derivative() {
     let src = format!(
         "{DISCIPLINE}
-mod CubicCap ( inout p : Electrical, inout n : Electrical ) {{
-    param c3 : Real = 1e-7;
-}}
-analog CubicCap {{
-    I(p, n) <+ ddt(c3 * V(p, n) * V(p, n) * V(p, n));
-}}
+module CubicCap ( inout electrical p, inout electrical n );
+    parameter real c3 = 1e-7;
+    analog I(p, n) <+ ddt(c3 * V(p, n) * V(p, n) * V(p, n));
+endmodule
 "
     );
     let (kernel, node) = compile_module(&src, "CubicCap");

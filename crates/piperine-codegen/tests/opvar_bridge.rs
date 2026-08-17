@@ -35,16 +35,17 @@ fn build(src: &str, top: &str) -> CircuitInstance {
 fn read_opvars_returns_compiled_module_vars() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            var g : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            real g;
+            analog begin
+                g = 1.0 / r;
+                I(p, n) <+ g * V(p, n);
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -67,19 +68,19 @@ fn read_opvars_returns_compiled_module_vars() {
 fn read_opvars_returns_every_module_var() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            param scale: Real = 2.0;
-            var g : Real = 0.0;
-            var gs : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            gs = scale * g;
-            I(p, n) <+ gs * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            parameter real scale = 2.0;
+            real g, gs;
+            analog begin
+                g = 1.0 / r;
+                gs = scale * g;
+                I(p, n) <+ gs * V(p, n);
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -102,10 +103,13 @@ fn read_opvars_returns_every_module_var() {
 fn device_without_module_vars_compiles_empty_opvar_path() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -121,18 +125,18 @@ fn device_without_module_vars_compiles_empty_opvar_path() {
 fn list_queries_returns_typed_opvar_catalog() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            var g : Real = 0.0;
-            var v_pn : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            v_pn = V(p, n);
-            I(p, n) <+ g * v_pn;
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            real g, v_pn;
+            analog begin
+                g = 1.0 / r;
+                v_pn = V(p, n);
+                I(p, n) <+ g * v_pn;
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -152,16 +156,17 @@ fn list_queries_returns_typed_opvar_catalog() {
 fn query_reads_opvar_by_name() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 500.0;
-            var g : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 500.0;
+            real g;
+            analog begin
+                g = 1.0 / r;
+                I(p, n) <+ g * V(p, n);
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -177,78 +182,13 @@ fn query_reads_opvar_by_name() {
 // The opvar-query catalog honors @name/@unit/@description on a `var`; absent
 // attributes keep today's bare `QueryDescriptor::opvar(name)` default.
 
-/// PIA-05: `@unit`/`@description` on a var annotate its `QueryDescriptor`.
-#[test]
-fn query_descriptor_carries_at_unit_and_description() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            @unit(value = \"S\") @description(value = \"transconductance\")
-            var g : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
-        ",
-        "TopR",
-    );
-    let dev = &circuit.all_devices()[0];
-    let q = dev
-        .list_queries()
-        .into_iter()
-        .find(|q| q.name == "g")
-        .expect("opvar `g` in query catalog");
-    assert_eq!(q.kind, QueryKind::OperatingVariable);
-    assert_eq!(q.unit.as_deref(), Some("S"), "@unit must reach QueryDescriptor.unit");
-    assert_eq!(q.description.as_deref(), Some("transconductance"), "@description must reach QueryDescriptor.description");
-}
-
-/// PIA-07: `@name(value)` on a var is the name surfaced in BOTH the opvar
-/// value read and the query catalog — one declaration, consistent catalogs.
-/// The kernel id is no longer the surfaced name once `@name` is present, and
-/// `query(label)` resolves through the remapped `read_opvars`.
-#[test]
-fn read_opvars_uses_at_name_label() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            @name(value = \"gm\") var g : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
-        ",
-        "TopR",
-    );
-    let dev = &circuit.all_devices()[0];
-    // read_opvars surfaces the @name label, not the kernel id `g`.
-    let opvars = dev.read_opvars();
-    assert!(opvars.iter().any(|(n, _)| n == "gm"), "read_opvars must use the @name label `gm`: {opvars:?}");
-    assert!(!opvars.iter().any(|(n, _)| n == "g"), "kernel id `g` must NOT surface once @name is set: {opvars:?}");
-    // The value is still 1/r (renaming the label never breaks the value fetch).
-    let gm = opvars
-        .iter()
-        .find(|(n, _)| n == "gm")
-        .map(|(_, v)| *v)
-        .expect("`gm` value present");
-    assert!((gm - 1.0e-3).abs() < 1.0e-12, "gm = 1e-3, got {gm}");
-    // query resolves through the remapped read_opvars by the @name label.
-    let by_label = dev.query("gm").expect("query(`gm`) resolves by @name label");
-    assert!((by_label.as_real().unwrap() - 1.0e-3).abs() < 1.0e-12);
-    assert!(dev.query("g").is_none(), "the kernel id `g` is no longer a queryable name once @name is set");
-    // The query catalog also uses the @name label (same source — PIA-07).
-    let names: Vec<_> = dev.list_queries().into_iter().map(|q| q.name).collect();
-    assert!(names.contains(&"gm".to_string()) && !names.contains(&"g".to_string()),
-        "query catalog names must match read_opvars: {names:?}");
-}
+// `query_descriptor_carries_at_unit_and_description` /
+// `read_opvars_uses_at_name_label` were
+// dropped with the PHDL frontend: Verilog-AMS attribute instances `(* … *)`
+// reach no introspection schema (only `device`/`port` are seeded, and
+// `lower_port_attrs` materialises only `port`), so nothing in VAMS source can
+// produce this metadata — the frontend-dark call ed575c85 already made for
+// `introspection_meta`/`introspection_attrs`.
 
 /// PIA-08: a var with no introspection attributes keeps today's default —
 /// kernel-id name, no unit, no description (no regression).
@@ -256,16 +196,17 @@ fn read_opvars_uses_at_name_label() {
 fn query_descriptor_absent_attrs_keeps_default() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            var g : Real = 0.0;
-        }
-        analog R {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            real g;
+            analog begin
+                g = 1.0 / r;
+                I(p, n) <+ g * V(p, n);
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );

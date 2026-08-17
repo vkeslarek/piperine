@@ -12,21 +12,40 @@ use piperine_lang::parse_and_elaborate;
 use piperine_solver::prelude::{CircuitInstance, Context, LogicValue, TransientAnalysisOptions};
 
 const PRELUDE: &str = "
-    discipline Electrical { potential v : Real; flow i : Real; }
-    discipline Bit { storage Boolean; }
-    mod BitDriver ( output q : Bit ) { param level : Real = 0.0; var b : Bit = 0; }
-    digital BitDriver { b = level > 0.5; q <- b; }
-    mod Inv ( input a : Bit, output y : Bit ) { var t : Bit = 0; }
-    digital Inv { t = !a; y <- t; }
-    mod ClockSrc ( inout clk_a : Electrical, inout gnd : Electrical ) { param period : Real = 1.0e-6; }
-    analog ClockSrc {
-        var ph : Real = $abstime - period * floor($abstime / period);
-        V(clk_a, gnd) <- if (ph > period * 0.5) { 1.0 } else { 0.0 };
-    }
-    mod Comparator ( input a : Electrical, input n : Electrical, output y : Bit ) { }
-    digital Comparator { y <- V(a, n) > 0.5; }
-    mod Dff ( input clk : Bit, input d : Bit, output q : Bit ) { var st : Bit = 0; }
-    digital Dff { q <- st; @ (posedge(clk)) { st = d; } }
+    discipline Bit;
+        domain discrete;
+    enddiscipline
+    module BitDriver ( output Bit q );
+        parameter real level = 0.0;
+        integer b;
+        always @(*) begin
+            b = level > 0.5;
+            q = b;
+        end
+    endmodule
+    module Inv ( input Bit a, output Bit y );
+        integer t;
+        always @(*) begin
+            t = !a;
+            y = t;
+        end
+    endmodule
+    module ClockSrc ( inout electrical clk_a, inout electrical gnd );
+        parameter real period = 1.0e-6;
+        analog begin: body
+            real ph;
+            ph = $abstime - period * floor($abstime / period);
+            V(clk_a, gnd) <+ (ph > period * 0.5) ? 1.0 : 0.0;
+        end
+    endmodule
+    module Comparator ( input electrical a, input electrical n, output Bit y );
+        always @(*) y = V(a, n) > 0.5;
+    endmodule
+    module Dff ( input Bit clk, input Bit d, output Bit q );
+        integer st;
+        always @(*) q = st;
+        always @(posedge clk) st = d;
+    endmodule
 ";
 
 /// Build `top` with fusion on/off, run a transient, and return the full
@@ -77,34 +96,34 @@ fn assert_bit_identical(src: &str, top: &str, stop: f64) -> CircuitBuildInfo {
 #[test]
 fn fusion_active_on_ripple_adder_cone() {
     let src = format!("{PRELUDE}
-        mod FullAdder ( input a : Bit, input b : Bit, input cin : Bit, output sum : Bit, output cout : Bit ) {{
-            var s : Bit = 0; var c : Bit = 0;
-        }}
-        digital FullAdder {{
-            s = (a != b) != cin;
-            c = (a && b) || (cin && (a != b));
-            sum <- s; cout <- c;
-        }}
-        mod Adder4 () {{
-            wire a0 : Bit; wire a1 : Bit; wire a2 : Bit; wire a3 : Bit;
-            wire b0 : Bit; wire b1 : Bit; wire b2 : Bit; wire b3 : Bit;
-            wire zero : Bit;
-            wire s0 : Bit; wire s1 : Bit; wire s2 : Bit; wire s3 : Bit; wire s4 : Bit;
-            wire c1 : Bit; wire c2 : Bit; wire c3 : Bit;
-            dz : BitDriver ( .q = zero ) {{ .level = 0.0 }};
-            da0 : BitDriver ( .q = a0 ) {{ .level = 1.0 }};
-            da1 : BitDriver ( .q = a1 ) {{ .level = 0.0 }};
-            da2 : BitDriver ( .q = a2 ) {{ .level = 1.0 }};
-            da3 : BitDriver ( .q = a3 ) {{ .level = 0.0 }};
-            db0 : BitDriver ( .q = b0 ) {{ .level = 1.0 }};
-            db1 : BitDriver ( .q = b1 ) {{ .level = 1.0 }};
-            db2 : BitDriver ( .q = b2 ) {{ .level = 0.0 }};
-            db3 : BitDriver ( .q = b3 ) {{ .level = 0.0 }};
-            fa0 : FullAdder ( .a = a0, .b = b0, .cin = zero, .sum = s0, .cout = c1 );
-            fa1 : FullAdder ( .a = a1, .b = b1, .cin = c1, .sum = s1, .cout = c2 );
-            fa2 : FullAdder ( .a = a2, .b = b2, .cin = c2, .sum = s2, .cout = c3 );
-            fa3 : FullAdder ( .a = a3, .b = b3, .cin = c3, .sum = s3, .cout = s4 );
-        }}
+        module FullAdder ( input Bit a, input Bit b, input Bit cin, output Bit sum, output Bit cout );
+            integer s, c;
+            always @(*) begin
+                s = (a != b) != cin;
+                c = (a && b) || (cin && (a != b));
+                sum = s; cout = c;
+            end
+        endmodule
+        module Adder4 ();
+            Bit a0, a1, a2, a3;
+            Bit b0, b1, b2, b3;
+            Bit zero;
+            Bit s0, s1, s2, s3, s4;
+            Bit c1, c2, c3;
+            BitDriver #(.level(0.0)) dz (.q(zero));
+            BitDriver #(.level(1.0)) da0 (.q(a0));
+            BitDriver #(.level(0.0)) da1 (.q(a1));
+            BitDriver #(.level(1.0)) da2 (.q(a2));
+            BitDriver #(.level(0.0)) da3 (.q(a3));
+            BitDriver #(.level(1.0)) db0 (.q(b0));
+            BitDriver #(.level(1.0)) db1 (.q(b1));
+            BitDriver #(.level(0.0)) db2 (.q(b2));
+            BitDriver #(.level(0.0)) db3 (.q(b3));
+            FullAdder fa0 (.a(a0), .b(b0), .cin(zero), .sum(s0), .cout(c1));
+            FullAdder fa1 (.a(a1), .b(b1), .cin(c1), .sum(s1), .cout(c2));
+            FullAdder fa2 (.a(a2), .b(b2), .cin(c2), .sum(s2), .cout(c3));
+            FullAdder fa3 (.a(a3), .b(b3), .cin(c3), .sum(s3), .cout(s4));
+        endmodule
     ");
     let (circuit, info, _) = run(&src, "Adder4", true, 1e-6);
     assert_eq!(info.fused_networks, 1, "the whole cone fuses into one network");
@@ -127,34 +146,34 @@ fn fusion_active_on_ripple_adder_cone() {
 #[test]
 fn fusion_bit_identical_static_adder() {
     let src = format!("{PRELUDE}
-        mod FullAdder ( input a : Bit, input b : Bit, input cin : Bit, output sum : Bit, output cout : Bit ) {{
-            var s : Bit = 0; var c : Bit = 0;
-        }}
-        digital FullAdder {{
-            s = (a != b) != cin;
-            c = (a && b) || (cin && (a != b));
-            sum <- s; cout <- c;
-        }}
-        mod Adder4 () {{
-            wire a0 : Bit; wire a1 : Bit; wire a2 : Bit; wire a3 : Bit;
-            wire b0 : Bit; wire b1 : Bit; wire b2 : Bit; wire b3 : Bit;
-            wire zero : Bit;
-            wire s0 : Bit; wire s1 : Bit; wire s2 : Bit; wire s3 : Bit; wire s4 : Bit;
-            wire c1 : Bit; wire c2 : Bit; wire c3 : Bit;
-            dz : BitDriver ( .q = zero ) {{ .level = 0.0 }};
-            da0 : BitDriver ( .q = a0 ) {{ .level = 1.0 }};
-            da1 : BitDriver ( .q = a1 ) {{ .level = 1.0 }};
-            da2 : BitDriver ( .q = a2 ) {{ .level = 0.0 }};
-            da3 : BitDriver ( .q = a3 ) {{ .level = 1.0 }};
-            db0 : BitDriver ( .q = b0 ) {{ .level = 1.0 }};
-            db1 : BitDriver ( .q = b1 ) {{ .level = 1.0 }};
-            db2 : BitDriver ( .q = b2 ) {{ .level = 0.0 }};
-            db3 : BitDriver ( .q = b3 ) {{ .level = 0.0 }};
-            fa0 : FullAdder ( .a = a0, .b = b0, .cin = zero, .sum = s0, .cout = c1 );
-            fa1 : FullAdder ( .a = a1, .b = b1, .cin = c1, .sum = s1, .cout = c2 );
-            fa2 : FullAdder ( .a = a2, .b = b2, .cin = c2, .sum = s2, .cout = c3 );
-            fa3 : FullAdder ( .a = a3, .b = b3, .cin = c3, .sum = s3, .cout = s4 );
-        }}
+        module FullAdder ( input Bit a, input Bit b, input Bit cin, output Bit sum, output Bit cout );
+            integer s, c;
+            always @(*) begin
+                s = (a != b) != cin;
+                c = (a && b) || (cin && (a != b));
+                sum = s; cout = c;
+            end
+        endmodule
+        module Adder4 ();
+            Bit a0, a1, a2, a3;
+            Bit b0, b1, b2, b3;
+            Bit zero;
+            Bit s0, s1, s2, s3, s4;
+            Bit c1, c2, c3;
+            BitDriver #(.level(0.0)) dz (.q(zero));
+            BitDriver #(.level(1.0)) da0 (.q(a0));
+            BitDriver #(.level(1.0)) da1 (.q(a1));
+            BitDriver #(.level(0.0)) da2 (.q(a2));
+            BitDriver #(.level(1.0)) da3 (.q(a3));
+            BitDriver #(.level(1.0)) db0 (.q(b0));
+            BitDriver #(.level(1.0)) db1 (.q(b1));
+            BitDriver #(.level(0.0)) db2 (.q(b2));
+            BitDriver #(.level(0.0)) db3 (.q(b3));
+            FullAdder fa0 (.a(a0), .b(b0), .cin(zero), .sum(s0), .cout(c1));
+            FullAdder fa1 (.a(a1), .b(b1), .cin(c1), .sum(s1), .cout(c2));
+            FullAdder fa2 (.a(a2), .b(b2), .cin(c2), .sum(s2), .cout(c3));
+            FullAdder fa3 (.a(a3), .b(b3), .cin(c3), .sum(s3), .cout(s4));
+        endmodule
     ");
     let info = assert_bit_identical(&src, "Adder4", 2e-6);
     assert_eq!(info.fused_networks, 1);
@@ -166,16 +185,14 @@ fn fusion_bit_identical_static_adder() {
 #[test]
 fn fusion_bit_identical_clocked_cone() {
     let src = format!("{PRELUDE}
-        mod Top () {{
-            wire gnd : Electrical;
-            wire clk_a : Electrical;
-            wire clk : Bit;
-            wire y1 : Bit; wire y2 : Bit;
-            clkgen : ClockSrc ( .clk_a = clk_a, .gnd = gnd ) {{ .period = 1.0e-6 }};
-            ccmp : Comparator ( .a = clk_a, .n = gnd, .y = clk );
-            i1 : Inv ( .a = clk, .y = y1 );
-            i2 : Inv ( .a = y1, .y = y2 );
-        }}
+        module Top ();
+            electrical gnd, clk_a;
+            Bit clk, y1, y2;
+            ClockSrc #(.period(1.0e-6)) clkgen (.clk_a(clk_a), .gnd(gnd));
+            Comparator ccmp (.a(clk_a), .n(gnd), .y(clk));
+            Inv i1 (.a(clk), .y(y1));
+            Inv i2 (.a(y1), .y(y2));
+        endmodule
     ");
     let info = assert_bit_identical(&src, "Top", 4e-6);
     assert_eq!(info.fused_networks, 1, "the inverter pair fuses; the comparator stays per-device");
@@ -188,21 +205,19 @@ fn fusion_bit_identical_clocked_cone() {
 #[test]
 fn fusion_bit_identical_nba_pipeline() {
     let src = format!("{PRELUDE}
-        mod Top () {{
-            wire gnd : Electrical;
-            wire clk_a : Electrical;
-            wire high_a : Electrical;
-            wire clk : Bit; wire din : Bit;
-            wire q0 : Bit; wire q0n : Bit; wire q0nn : Bit; wire q1 : Bit;
-            clkgen : ClockSrc ( .clk_a = clk_a, .gnd = gnd ) {{ .period = 1.0e-6 }};
-            dgen : ClockSrc ( .clk_a = high_a, .gnd = gnd ) {{ .period = 2.7e-6 }};
-            ccmp : Comparator ( .a = clk_a, .n = gnd, .y = clk );
-            dcmp : Comparator ( .a = high_a, .n = gnd, .y = din );
-            f0 : Dff ( .clk = clk, .d = din, .q = q0 );
-            i1 : Inv ( .a = q0, .y = q0n );
-            i2 : Inv ( .a = q0n, .y = q0nn );
-            f1 : Dff ( .clk = clk, .d = q0nn, .q = q1 );
-        }}
+        module Top ();
+            electrical gnd, clk_a, high_a;
+            Bit clk, din;
+            Bit q0, q0n, q0nn, q1;
+            ClockSrc #(.period(1.0e-6)) clkgen (.clk_a(clk_a), .gnd(gnd));
+            ClockSrc #(.period(2.7e-6)) dgen (.clk_a(high_a), .gnd(gnd));
+            Comparator ccmp (.a(clk_a), .n(gnd), .y(clk));
+            Comparator dcmp (.a(high_a), .n(gnd), .y(din));
+            Dff f0 (.clk(clk), .d(din), .q(q0));
+            Inv i1 (.a(q0), .y(q0n));
+            Inv i2 (.a(q0n), .y(q0nn));
+            Dff f1 (.clk(clk), .d(q0nn), .q(q1));
+        endmodule
     ");
     let info = assert_bit_identical(&src, "Top", 6e-6);
     assert_eq!(info.fused_networks, 1, "the inter-stage inverter pair fuses; flops stay per-device");

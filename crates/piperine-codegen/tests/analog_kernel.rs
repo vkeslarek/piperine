@@ -14,15 +14,14 @@ use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::SimCtx;
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
-
 /// Compile the two-terminal module `Dut` whose body is `body`, with `params`
 /// declared verbatim in the module header.
 fn kernel(params: &str, body: &str) -> Result<AnalogKernel, piperine_codegen::CodegenError> {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ {params} }}
-analog Dut {{ {body} }}
+        "module Dut(inout electrical p, inout electrical n);
+    {params}
+    analog begin {body} end
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
@@ -43,7 +42,7 @@ fn residual(kernel: &AnalogKernel, volts: [f64; 2], params: &[f64], sim: &SimCtx
 
 #[test]
 fn a_capacitor_emits_charge_and_charge_jacobian_but_no_resistive_current() {
-    let kernel = kernel("param c: Real = 1e-6;", "I(p, n) <+ ddt(c * V(p, n));")
+    let kernel = kernel("parameter real c = 1e-6;", "I(p, n) <+ ddt(c * V(p, n));")
         .expect("compile capacitor");
     assert!(kernel.has_reactive(), "a ddt contribution is reactive");
 
@@ -72,7 +71,7 @@ fn a_capacitor_emits_charge_and_charge_jacobian_but_no_resistive_current() {
 
 #[test]
 fn a_diode_reads_its_thermal_voltage_from_the_sim_context() {
-    let kernel = kernel("param is: Real = 1e-14;", "I(p, n) <+ is * (exp(V(p, n) / $vt) - 1.0);")
+    let kernel = kernel("parameter real is = 1e-14;", "I(p, n) <+ is * (exp(V(p, n) / $vt) - 1.0);")
         .expect("compile diode");
 
     let params = [1e-14];
@@ -114,8 +113,8 @@ fn simparam_reads_the_sim_context_temperature() {
 #[test]
 fn a_guarded_contribution_conducts_only_above_its_threshold() {
     let kernel = kernel(
-        "param r: Real = 100.0;",
-        "if (V(p, n) > 1.0) { I(p, n) <+ V(p, n) / r; }",
+        "parameter real r = 100.0;",
+        "if (V(p, n) > 1.0) I(p, n) <+ V(p, n) / r;",
     )
     .expect("compile clipper");
 
@@ -126,22 +125,10 @@ fn a_guarded_contribution_conducts_only_above_its_threshold() {
     assert_eq!(residual(&kernel, [0.5, 0.0], &params, &sim), [0.0; 2], "below threshold is off");
 }
 
-#[test]
-fn a_user_function_is_inlined_into_the_contribution() {
-    let src = format!(
-        "{DISCIPLINE}
-fn double(x: Real) -> Real {{ return x * 2.0; }}
-mod Dut(inout p: Electrical, inout n: Electrical) {{}}
-analog Dut {{ I(p, n) <+ double(V(p, n)); }}
-"
-    );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
-    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
-    let kernel = AnalogKernel::compile(&bodies["Dut"]).expect("compile doubler");
-
-    let res = residual(&kernel, [1.5, 0.0], &[], &SimCtx::default());
-    assert!((res[0] - 3.0).abs() < 1e-15, "double(1.5) = 3.0, got {}", res[0]);
-}
+// `a_user_function_is_inlined_into_the_contribution` is gone with the PHDL
+// frontend: VAMS `function`/`analog function` declarations are not lowered
+// into the POM at all (`resolve/pom/body.rs` Pass 1.5, MD-45), so no source
+// can produce a callee for the inliner to inline.
 
 // ─── Runtime operators ────────────────────────────────────────────────────────
 

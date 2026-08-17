@@ -4,14 +4,61 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use piperine_lang::parse::ast::{
-    BindOp, Block, EventSpec, Expr, Literal, Pattern, Stmt, StmtMatchArm, UnaryOp,
-};
+use piperine_lang::ast::{CaseArm, CaseKind, EventExpr, Expr, Stmt, UnOp};
+use piperine_lang::error::PreprocessedSpan;
+use piperine_lang::lexer::{BasedNumber, NumberBase, NumberLit};
 
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::resolve::*;
 use piperine_codegen::DigitalKernel;
 use piperine_solver::abi::DigitalEvent; use piperine_solver::prelude::{DigitalNet, LogicValue};
+
+// ── VAMS-AST constructors ────────────────────────────────────────────────────
+//
+// These bodies are hand-built rather than parsed on purpose: the point is to
+// exercise `DigitalKernel::compile` and `DigitalInstance` in isolation from
+// elaboration (the same style the emission-layer tests use).
+
+const SP: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
+
+fn ident(name: &str) -> Expr {
+    Expr::Ident { span: SP, name: name.to_string() }
+}
+
+/// A one-bit based literal — `1'b0`, `1'b1`, `1'bx`.
+fn bit(digit: &str) -> Expr {
+    Expr::Number {
+        span: SP,
+        value: NumberLit::Based(BasedNumber {
+            size: Some(1),
+            signed: false,
+            base: NumberBase::Binary,
+            digits: digit.to_string(),
+        }),
+    }
+}
+
+fn assign(dest: &str, value: Expr) -> Stmt {
+    Stmt::Assign { span: SP, target: ident(dest), value }
+}
+
+fn block(stmts: Vec<Stmt>) -> Stmt {
+    Stmt::Block { span: SP, name: None, decls: vec![], stmts }
+}
+
+/// `always @(posedge sig) body` — the clocked form `compile` splits out.
+fn posedge(sig: &str, body: Stmt) -> Stmt {
+    Stmt::EventControl {
+        span: SP,
+        events: vec![EventExpr::Posedge(ident(sig))],
+        body: Box::new(body),
+    }
+}
+
+/// Register power-on value 0 (`reg_inits` takes a constant POM expression).
+fn zero_init(var: VarId) -> (VarId, Expr) {
+    (var, Expr::Number { span: SP, value: NumberLit::Integer(0) })
+}
 
 /// `inverter`: `y = ~a` (combinational).
 fn inverter() -> LoweredBody {
@@ -24,11 +71,11 @@ fn inverter() -> LoweredBody {
         inputs: vec![a],
         outputs: vec![y],
         regs: vec![],
-        stmts: vec![Stmt::Bind {
-            dest: Expr::Ident("y".into()),
-            op: BindOp::Assign,
-            src: Expr::Unary(UnaryOp::Not, Box::new(Expr::Ident("a".into()))),
-        }],
+        reg_inits: vec![],
+        stmts: vec![assign(
+            "y",
+            Expr::Unary { span: SP, op: UnOp::BitNot, operand: Box::new(ident("a")) },
+        )],
     });
     m
 }
@@ -47,29 +94,10 @@ fn dff() -> LoweredBody {
         inputs: vec![clk, d],
         outputs: vec![q],
         regs: vec![r],
+        reg_inits: vec![zero_init(r)],
         stmts: vec![
-            Stmt::VarDecl {
-                name: "r".into(),
-                ty: None,
-                default: Some(Expr::Literal(Literal::Quad("0".into()))),
-            },
-            Stmt::Event {
-                spec: EventSpec::Named { name: "posedge".into(), args: vec![Expr::Ident("clk".into())], window: None },
-                guard: None,
-                body: Block {
-                    stmts: vec![Stmt::Bind {
-                        dest: Expr::Ident("r".into()),
-                        op: BindOp::Assign,
-                        src: Expr::Ident("d".into()),
-                    }],
-                    expr: None,
-                },
-            },
-            Stmt::Bind {
-                dest: Expr::Ident("q".into()),
-                op: BindOp::Assign,
-                src: Expr::Ident("r".into()),
-            },
+            posedge("clk", block(vec![assign("r", ident("d"))])),
+            assign("q", ident("r")),
         ],
     });
     m
@@ -186,41 +214,13 @@ fn pipeline_reads_pre_edge_values() {
         inputs: vec![clk, d],
         outputs: vec![q],
         regs: vec![r1, r2],
+        reg_inits: vec![zero_init(r1), zero_init(r2)],
         stmts: vec![
-            Stmt::VarDecl {
-                name: "r1".into(),
-                ty: None,
-                default: Some(Expr::Literal(Literal::Quad("0".into()))),
-            },
-            Stmt::VarDecl {
-                name: "r2".into(),
-                ty: None,
-                default: Some(Expr::Literal(Literal::Quad("0".into()))),
-            },
-            Stmt::Event {
-                spec: EventSpec::Named { name: "posedge".into(), args: vec![Expr::Ident("clk".into())], window: None },
-                guard: None,
-                body: Block {
-                    stmts: vec![
-                        Stmt::Bind {
-                            dest: Expr::Ident("r2".into()),
-                            op: BindOp::Assign,
-                            src: Expr::Ident("r1".into()),
-                        },
-                        Stmt::Bind {
-                            dest: Expr::Ident("r1".into()),
-                            op: BindOp::Assign,
-                            src: Expr::Ident("d".into()),
-                        },
-                    ],
-                    expr: None,
-                },
-            },
-            Stmt::Bind {
-                dest: Expr::Ident("q".into()),
-                op: BindOp::Assign,
-                src: Expr::Ident("r2".into()),
-            },
+            posedge(
+                "clk",
+                block(vec![assign("r2", ident("r1")), assign("r1", ident("d"))]),
+            ),
+            assign("q", ident("r2")),
         ],
     });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile pipe2"));
@@ -249,8 +249,9 @@ fn pipeline_reads_pre_edge_values() {
 
 #[test]
 fn match_selects_arm_and_default() {
-    // sel ? (match) — y = match a { 0 => 1, 1 => 0, _ => X } as an
-    // explicit Match statement over quad values.
+    // `case (a) 1'b0: y = 1'b1; 1'b1: y = 1'b0; default: y = 1'bx; endcase`
+    // — VAMS's spelling of the arm-plus-default selection PHDL wrote as a
+    // `match` statement over quad values.
     let mut m = LoweredBody::new("mux_match");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
@@ -260,42 +261,23 @@ fn match_selects_arm_and_default() {
         inputs: vec![a],
         outputs: vec![y],
         regs: vec![],
-        stmts: vec![Stmt::Match {
-            expr: Expr::Ident("a".into()),
+        reg_inits: vec![],
+        stmts: vec![Stmt::Case {
+            span: SP,
+            kind: CaseKind::Case,
+            selector: ident("a"),
             arms: vec![
-                StmtMatchArm {
-                    pat: Pattern::BitPattern("0".into()),
-                    body: Block {
-                        stmts: vec![Stmt::Bind {
-                            dest: Expr::Ident("y".into()),
-                            op: BindOp::Assign,
-                            src: Expr::Literal(Literal::Quad("1".into())),
-                        }],
-                        expr: None,
-                    },
+                CaseArm {
+                    span: SP,
+                    labels: Some(vec![bit("0")]),
+                    body: Box::new(assign("y", bit("1"))),
                 },
-                StmtMatchArm {
-                    pat: Pattern::BitPattern("1".into()),
-                    body: Block {
-                        stmts: vec![Stmt::Bind {
-                            dest: Expr::Ident("y".into()),
-                            op: BindOp::Assign,
-                            src: Expr::Literal(Literal::Quad("0".into())),
-                        }],
-                        expr: None,
-                    },
+                CaseArm {
+                    span: SP,
+                    labels: Some(vec![bit("1")]),
+                    body: Box::new(assign("y", bit("0"))),
                 },
-                StmtMatchArm {
-                    pat: Pattern::Wildcard,
-                    body: Block {
-                        stmts: vec![Stmt::Bind {
-                            dest: Expr::Ident("y".into()),
-                            op: BindOp::Assign,
-                            src: Expr::Literal(Literal::Quad("x".into())),
-                        }],
-                        expr: None,
-                    },
-                },
+                CaseArm { span: SP, labels: None, body: Box::new(assign("y", bit("x"))) },
             ],
         }],
     });

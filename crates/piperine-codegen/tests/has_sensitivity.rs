@@ -9,11 +9,8 @@ use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::{Element, ElementCapabilities};
 use piperine_solver::prelude::Context;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
-
 fn capabilities_of(top: &str, label: &str) -> ElementCapabilities {
-    let src = format!("{DISCIPLINE}\n{top}");
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(top, &piperine_lang::SourceMap::dummy()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let mut circuit = compiler.build_circuit("Top").expect("circuit builds");
@@ -34,9 +31,14 @@ fn capabilities_of(top: &str, label: &str) -> ElementCapabilities {
 fn a_phdl_device_with_a_kernel_declares_has_sensitivity() {
     // `g` is a Real restamp-class parameter the kernel differentiates.
     let top = "\
-mod G(inout p: Electrical, inout n: Electrical) { param g: Real = 1e-3; }
-analog G { I(p, n) <+ g * V(p, n); }
-mod Top() { wire gnd : Electrical; wire a : Electrical; r : G(.p = a, .n = gnd) {}; }
+module G(inout electrical p, inout electrical n);
+    parameter real g = 1e-3;
+    analog I(p, n) <+ g * V(p, n);
+endmodule
+module Top();
+    electrical gnd, a;
+    G r (.p(a), .n(gnd));
+endmodule
 ";
     let caps = capabilities_of(top, "r");
     assert!(
@@ -53,9 +55,13 @@ fn a_phdl_device_without_a_kernel_does_not_declare_has_sensitivity() {
     // PHDL-JIT is necessary but not sufficient — the bit tracks the kernel,
     // not the lineage.
     let top = "\
-mod R(inout p: Electrical, inout n: Electrical) { }
-analog R { I(p, n) <+ V(p, n) / 1e3; }
-mod Top() { wire gnd : Electrical; wire a : Electrical; x : R(.p = a, .n = gnd) {}; }
+module R(inout electrical p, inout electrical n);
+    analog I(p, n) <+ V(p, n) / 1e3;
+endmodule
+module Top();
+    electrical gnd, a;
+    R x (.p(a), .n(gnd));
+endmodule
 ";
     let caps = capabilities_of(top, "x");
     assert!(
@@ -65,9 +71,14 @@ mod Top() { wire gnd : Electrical; wire a : Electrical; x : R(.p = a, .n = gnd) 
 
     // Only a discrete parameter → excluded → no kernel → clear.
     let top_int = "\
-mod N(inout p: Electrical, inout n: Electrical) { param k: Integer = 3; }
-analog N { I(p, n) <+ k * V(p, n); }
-mod Top() { wire gnd : Electrical; wire a : Electrical; y : N(.p = a, .n = gnd) {}; }
+module N(inout electrical p, inout electrical n);
+    parameter integer k = 3;
+    analog I(p, n) <+ k * V(p, n);
+endmodule
+module Top();
+    electrical gnd, a;
+    N y (.p(a), .n(gnd));
+endmodule
 ";
     let caps_int = capabilities_of(top_int, "y");
     assert!(

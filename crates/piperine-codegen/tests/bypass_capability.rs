@@ -9,21 +9,19 @@
 use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::{Element, ElementCapabilities};
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
-
 /// Compile a one-device `Top` and report whether the device declares
 /// `BYPASS_OK`.
 fn declares_bypass_ok(module_body: &str, analog_body: &str) -> bool {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ {module_body} }}
-analog Dut {{ {analog_body} }}
+        "module Dut(inout electrical p, inout electrical n);
+    {module_body}
+    analog begin {analog_body} end
+endmodule
 
-mod Top() {{
-    wire gnd : Electrical;
-    wire a   : Electrical;
-    d1 : Dut (.p = a, .n = gnd);
-}}
+module Top();
+    electrical gnd, a;
+    Dut d1 (.p(a), .n(gnd));
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
@@ -42,7 +40,7 @@ mod Top() {{
 #[test]
 fn a_plain_resistor_opts_in() {
     assert!(
-        declares_bypass_ok("param r: Real = 1e3;", "I(p, n) <+ V(p, n) / r;"),
+        declares_bypass_ok("parameter real r = 1e3;", "I(p, n) <+ V(p, n) / r;"),
         "a linear resistor's stamps are a pure function of its terminal voltages"
     );
 }
@@ -50,7 +48,7 @@ fn a_plain_resistor_opts_in() {
 #[test]
 fn a_capacitor_opts_in_because_charge_is_not_a_dc_stamp() {
     assert!(
-        declares_bypass_ok("param c: Real = 1e-6;", "I(p, n) <+ ddt(c * V(p, n));"),
+        declares_bypass_ok("parameter real c = 1e-6;", "I(p, n) <+ ddt(c * V(p, n));"),
         "a `ddt` contribution is charge, which never enters the DC stamp"
     );
 }
@@ -72,7 +70,7 @@ fn a_runtime_event_withholds_the_flag() {
     assert!(
         !declares_bypass_ok(
             "",
-            "@ cross(V(p, n)) { I(p, n) <+ 1.0; } I(p, n) <+ V(p, n) / 1e3;"
+            "@(cross(V(p, n), 0)) I(p, n) <+ 1.0; I(p, n) <+ V(p, n) / 1e3;"
         ),
         "an event action mutates state, so a skipped evaluation would skip it"
     );
@@ -82,7 +80,7 @@ fn a_runtime_event_withholds_the_flag() {
 fn a_limiter_withholds_the_flag() {
     assert!(
         !declares_bypass_ok(
-            "param vto: Real = 1.0;",
+            "parameter real vto = 1.0;",
             "I(p, n) <+ $limit(\"fetlim\", V(p, n), 0.0, vto, 0.0);"
         ),
         "a `$limit` limiter advances its `vold` slot every evaluation"

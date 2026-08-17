@@ -14,18 +14,10 @@ use piperine_codegen::CircuitCompiler;
 // ── Resistor ──────────────────────────────────────────────────────────────────
 
 const RESISTOR_SRC: &str = "
-discipline Electrical {
-    potential v : Real;
-    flow      i : Real;
-}
-
-mod Resistor ( inout p : Electrical, inout n : Electrical ) {
-    param R : Real = 1000.0;
-}
-
-analog Resistor {
-    I(p, n) <+ V(p, n) / R;
-}
+module Resistor ( inout electrical p, inout electrical n );
+    parameter real R = 1000.0;
+    analog I(p, n) <+ V(p, n) / R;
+endmodule
 ";
 
 #[test]
@@ -80,19 +72,11 @@ fn test_resistor_jacobian_conductance() {
 // ── Voltage-controlled current source ─────────────────────────────────────────
 
 const VCCS_SRC: &str = "
-discipline Electrical {
-    potential v : Real;
-    flow      i : Real;
-}
-
-mod Vccs ( inout inp : Electrical, inout inn : Electrical,
-           inout outp : Electrical, inout outn : Electrical ) {
-    param gm : Real = 0.01;
-}
-
-analog Vccs {
-    I(outp, outn) <+ gm * V(inp, inn);
-}
+module Vccs ( inout electrical inp, inout electrical inn,
+              inout electrical outp, inout electrical outn );
+    parameter real gm = 0.01;
+    analog I(outp, outn) <+ gm * V(inp, inn);
+endmodule
 ";
 
 #[test]
@@ -139,19 +123,11 @@ fn test_vccs_jacobian_transconductance() {
 // ── Diode (nonlinear) ─────────────────────────────────────────────────────────
 
 const DIODE_SRC: &str = "
-discipline Electrical {
-    potential v : Real;
-    flow      i : Real;
-}
-
-mod Diode ( inout p : Electrical, inout n : Electrical ) {
-    param Is  : Real = 1.0e-14;
-    param vt  : Real = 0.02585;
-}
-
-analog Diode {
-    I(p, n) <+ Is * (exp(V(p, n) / vt) - 1.0);
-}
+module Diode ( inout electrical p, inout electrical n );
+    parameter real Is = 1.0e-14;
+    parameter real vt = 0.02585;
+    analog I(p, n) <+ Is * (exp(V(p, n) / vt) - 1.0);
+endmodule
 ";
 
 #[test]
@@ -198,19 +174,13 @@ fn test_diode_jacobian_forward_bias() {
 // ── Circuit round-trip tests ──────────────────────────────────────────────────
 
 const RESISTOR_IN_TOP_SRC: &str = "
-discipline Electrical {
-    potential v : Real;
-    flow      i : Real;
-}
-mod Resistor ( inout a : Electrical, inout b : Electrical ) {
-    param R : Real = 1000.0;
-}
-analog Resistor {
-    I(a, b) <+ V(a, b) / R;
-}
-mod Top ( inout vdd : Electrical, inout gnd : Electrical ) {
-    Resistor ( vdd, gnd );
-}
+module Resistor ( inout electrical a, inout electrical b );
+    parameter real R = 1000.0;
+    analog I(a, b) <+ V(a, b) / R;
+endmodule
+module Top ( inout electrical vdd, inout electrical gnd );
+    Resistor r1 ( vdd, gnd );
+endmodule
 ";
 
 #[test]
@@ -223,19 +193,19 @@ fn test_jit_compiles() {
 #[test]
 fn test_jit_two_resistors() {
     let src = "
-discipline Electrical {
-    potential v : Real;
-    flow      i : Real;
-}
-mod R1k ( inout a : Electrical, inout b : Electrical ) { param R : Real = 1000.0; }
-analog R1k { I(a, b) <+ V(a, b) / R; }
-mod R2k ( inout a : Electrical, inout b : Electrical ) { param R : Real = 2000.0; }
-analog R2k { I(a, b) <+ V(a, b) / R; }
-mod Top ( inout vdd : Electrical, inout mid : Electrical, inout gnd : Electrical ) {
-    wire m : Electrical;
-    R1k ( vdd, m );
-    R2k ( m, gnd );
-}
+module R1k ( inout electrical a, inout electrical b );
+    parameter real R = 1000.0;
+    analog I(a, b) <+ V(a, b) / R;
+endmodule
+module R2k ( inout electrical a, inout electrical b );
+    parameter real R = 2000.0;
+    analog I(a, b) <+ V(a, b) / R;
+endmodule
+module Top ( inout electrical vdd, inout electrical mid, inout electrical gnd );
+    electrical m;
+    R1k r1 ( vdd, m );
+    R2k r2 ( m, gnd );
+endmodule
 ";
     let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = piperine_codegen::resolve::lower_bodies(&prog).expect("lowering failed");

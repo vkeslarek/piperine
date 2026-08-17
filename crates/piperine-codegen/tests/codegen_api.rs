@@ -14,9 +14,10 @@ fn parse_ppr(body: &str) -> HashMap<String, LoweredBody> {
 #[test]
 fn ppr_ir_produces_module_index() {
     let body = r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod R (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
     "#;
     let bodies = parse_ppr(body);
     assert!(bodies.contains_key("R"), "missing R module");
@@ -25,9 +26,10 @@ fn ppr_ir_produces_module_index() {
 #[test]
 fn ir_analog_compile_resistor() {
     let bodies = parse_ppr(r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod R (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
     "#);
     let _dev = ir_analog_to_device(&bodies, "R").expect("resistor");
 }
@@ -35,9 +37,10 @@ fn ir_analog_compile_resistor() {
 #[test]
 fn ir_analog_compile_capacitor() {
     let bodies = parse_ppr(r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod Cap (inout p : Electrical, inout n : Electrical) { param c : Real = 1.0e-9; }
-        analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
+        module Cap (inout electrical p, inout electrical n);
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ c * ddt(V(p, n));
+        endmodule
     "#);
     let _dev = ir_analog_to_device(&bodies, "Cap").expect("capacitor");
 }
@@ -47,9 +50,10 @@ fn ir_analog_compile_tanh_builtin() {
     // GAPS I.13 — sinh/cosh/tanh are builtin math (not user fns), so they
     // must compile through the JIT like any other builtin call.
     let bodies = parse_ppr(r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod T (inout p : Electrical, inout n : Electrical) { param g : Real = 1.0; }
-        analog T { I(p, n) <+ g * tanh(V(p, n)); }
+        module T (inout electrical p, inout electrical n);
+            parameter real g = 1.0;
+            analog I(p, n) <+ g * tanh(V(p, n));
+        endmodule
     "#);
     let _dev = ir_analog_to_device(&bodies, "T").expect("tanh compiles");
 }
@@ -57,9 +61,12 @@ fn ir_analog_compile_tanh_builtin() {
 #[test]
 fn ir_digital_compile_dff() {
     let src = "
-        discipline Bit { storage Boolean; }
-        mod DFF (input clk: Bit, input D: Bit, output Q: Bit) {}
-        digital DFF { @ posedge(clk) { Q <- D; } }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module DFF (input Bit clk, input Bit D, output Bit Q);
+            always @(posedge clk) Q = D;
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse_and_elaborate DFF");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
@@ -79,9 +86,10 @@ fn ir_analog_to_device(
 fn test_purely_resistive_device_capabilities() {
     use piperine_solver::abi::{Element, ElementCapabilities};
     let bodies = parse_ppr(r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod R (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
     "#);
     let kernel = ir_analog_to_device(&bodies, "R").unwrap();
     let mut netlist = piperine_solver::abi::Netlist::new();
@@ -101,9 +109,10 @@ fn test_purely_resistive_device_capabilities() {
 fn test_reactive_device_capabilities() {
     use piperine_solver::abi::{Element, ElementCapabilities};
     let bodies = parse_ppr(r#"
-        discipline Electrical { potential v : Real; flow i : Real; }
-        mod Cap (inout p : Electrical, inout n : Electrical) { param c : Real = 1.0e-9; }
-        analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
+        module Cap (inout electrical p, inout electrical n);
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ c * ddt(V(p, n));
+        endmodule
     "#);
     let kernel = ir_analog_to_device(&bodies, "Cap").unwrap();
     let mut netlist = piperine_solver::abi::Netlist::new();

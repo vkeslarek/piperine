@@ -43,17 +43,18 @@ fn terminals_of(circuit: &CircuitInstance, device_idx: usize) -> Vec<(String, Te
 fn analog_kernel_terminals_bridge_names_and_kinds() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod RC (inout p: Electrical, inout n: Electrical) {
-            param r1: Real = 1.0e3;
-            param r2: Real = 1.0e3;
-            wire mid : Electrical;
-        }
-        analog RC {
-            I(p, mid) <+ V(p, mid) / r1;
-            I(mid, n) <+ V(mid, n) / r2;
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
+        module RC (inout electrical p, inout electrical n);
+            parameter real r1 = 1.0e3;
+            parameter real r2 = 1.0e3;
+            electrical mid;
+            analog begin
+                I(p, mid) <+ V(p, mid) / r1;
+                I(mid, n) <+ V(mid, n) / r2;
+            end
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            RC x1 (a, b);
+        endmodule
         ",
         "Top",
     );
@@ -93,25 +94,22 @@ fn analog_kernel_terminals_bridge_names_and_kinds() {
 fn bjt_lists_external_ports_and_internal_parasitic_wires() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Bjt (inout c: Electrical, inout b: Electrical, inout e: Electrical) {
-            param rc: Real = 1.0;
-            param rb: Real = 1.0;
-            param re: Real = 1.0;
-            param gm: Real = 1.0e-3;
-            wire cp : Electrical;
-            wire bp : Electrical;
-            wire ep : Electrical;
-        }
-        analog Bjt {
-            I(c, cp) <+ V(c, cp) / rc;
-            I(b, bp) <+ V(b, bp) / rb;
-            I(e, ep) <+ V(e, ep) / re;
-            I(cp, ep) <+ gm * V(bp, ep);
-        }
-        mod TopBjt (inout c: Electrical, inout b: Electrical, inout e: Electrical) {
-            Bjt(c, b, e);
-        }
+        module Bjt (inout electrical c, inout electrical b, inout electrical e);
+            parameter real rc = 1.0;
+            parameter real rb = 1.0;
+            parameter real re = 1.0;
+            parameter real gm = 1.0e-3;
+            electrical cp, bp, ep;
+            analog begin
+                I(c, cp) <+ V(c, cp) / rc;
+                I(b, bp) <+ V(b, bp) / rb;
+                I(e, ep) <+ V(e, ep) / re;
+                I(cp, ep) <+ gm * V(bp, ep);
+            end
+        endmodule
+        module TopBjt (inout electrical c, inout electrical b, inout electrical e);
+            Bjt x1 (c, b, e);
+        endmodule
         ",
         "TopBjt",
     );
@@ -145,10 +143,13 @@ fn bjt_lists_external_ports_and_internal_parasitic_wires() {
 fn two_port_resistor_lists_only_external_terminals() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -165,12 +166,19 @@ fn two_port_resistor_lists_only_external_terminals() {
 fn digital_kernel_terminals_bridge_inputs_and_outputs() {
     let circuit = build(
         "
-        discipline Bit { storage Boolean; }
-        mod Nand ( input a : Bit, input b : Bit, output y : Bit ) {
-            var t : Bit = 0;
-        }
-        digital Nand { t = !(a && b); y <- t; }
-        mod TopNand ( input a : Bit, input b : Bit, output y : Bit ) { Nand(a, b, y); }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module Nand ( input Bit a, input Bit b, output Bit y );
+            integer t;
+            always @(*) begin
+                t = !(a && b);
+                y = t;
+            end
+        endmodule
+        module TopNand ( input Bit a, input Bit b, output Bit y );
+            Nand x1 (a, b, y);
+        endmodule
         ",
         "TopNand",
     );
@@ -205,12 +213,17 @@ fn digital_kernel_directions_are_in_for_inputs_out_for_outputs() {
     use piperine_solver::abi::Direction;
     let circuit = build(
         "
-        discipline Bit { storage Boolean; }
-        mod Dff ( input clk : Bit, input d : Bit, output q : Bit ) {
-            var st : Bit = 0;
-        }
-        digital Dff { q <- st; @ (posedge(clk)) { st = d; } }
-        mod TopDff ( input clk : Bit, input d : Bit, output q : Bit ) { Dff(clk, d, q); }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module Dff ( input Bit clk, input Bit d, output Bit q );
+            integer st;
+            always @(*) q = st;
+            always @(posedge clk) st = d;
+        endmodule
+        module TopDff ( input Bit clk, input Bit d, output Bit q );
+            Dff x1 (clk, d, q);
+        endmodule
         ",
         "TopDff",
     );
@@ -234,16 +247,17 @@ fn digital_kernel_directions_are_in_for_inputs_out_for_outputs() {
 fn mixed_signal_device_lists_analog_and_digital_terminals() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        discipline Bit { storage Boolean; }
-        mod MixedDac ( input d : Bit, inout out : Electrical, inout gnd : Electrical ) {
-            var reg : Bit = 0;
-        }
-        digital MixedDac { @ (change(d)) { reg = d; } }
-        analog MixedDac { I(out, gnd) <+ if (reg) { 1.0e-3 } else { 0.0 }; }
-        mod TopMix ( input d : Bit, inout out : Electrical, inout gnd : Electrical ) {
-            MixedDac(d, out, gnd);
-        }
+        discipline Bit;
+            domain discrete;
+        enddiscipline
+        module MixedDac ( input Bit d, inout electrical out, inout electrical gnd );
+            integer rg;
+            always @(d) rg = d;
+            analog I(out, gnd) <+ rg ? 1.0e-3 : 0.0;
+        endmodule
+        module TopMix ( input Bit d, inout electrical out, inout electrical gnd );
+            MixedDac x1 (d, out, gnd);
+        endmodule
         ",
         "TopMix",
     );
@@ -276,98 +290,12 @@ fn mixed_signal_device_lists_analog_and_digital_terminals() {
 // @name/@kind on a port or internal wire override the position-inferred
 // terminal name/kind; the author declaration wins over inference.
 
-/// PIA-10: a port carrying `@kind("auxiliary")` classifies its terminal as
-/// `TerminalKind::Auxiliary` (not the position-inferred External).
-#[test]
-fn port_at_kind_auxiliary_classifies_terminal() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Dev ( @kind(value = \"auxiliary\") inout t : Electrical, inout s : Electrical ) {
-            param r: Real = 1.0e3;
-        }
-        analog Dev {
-            I(t, s) <+ V(t, s) / r;
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { Dev(a, b); }
-        ",
-        "Top",
-    );
-    let terms = terminals_of(&circuit, 0);
-    let by_name: HashMap<&str, (TerminalKind, Domain)> = terms
-        .iter()
-        .map(|(n, k, d)| (n.as_str(), (*k, *d)))
-        .collect();
-    assert_eq!(
-        by_name.get("t"),
-        Some(&(TerminalKind::Auxiliary, Domain::Analog)),
-        "port `t` with @kind(auxiliary) must be Auxiliary, got {by_name:?}"
-    );
-    // The un-annotated port keeps the position-inferred External (PIA-12).
-    assert_eq!(
-        by_name.get("s"),
-        Some(&(TerminalKind::External, Domain::Analog)),
-        "un-annotated port `s` stays External, got {by_name:?}"
-    );
-}
+// `port_at_kind_auxiliary_classifies_terminal`,
+// `internal_wire_at_kind_internal_named_cp` and
+// `at_kind_external_on_wire_wins_over_inferred` were
+// dropped with the PHDL frontend: Verilog-AMS attribute instances `(* … *)`
+// reach no introspection schema (only `device`/`port` are seeded, and
+// `lower_port_attrs` materialises only `port`), so nothing in VAMS source can
+// produce this metadata — the frontend-dark call ed575c85 already made for
+// `introspection_meta`/`introspection_attrs`.
 
-/// PIA-11: an internal `wire` with `@kind("internal") @name("cp")` classifies
-/// the terminal Internal and names it `cp` (author-declared, overridable).
-#[test]
-fn internal_wire_at_kind_internal_named_cp() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod RC (inout p: Electrical, inout n: Electrical) {
-            param r1: Real = 1.0e3;
-            param r2: Real = 1.0e3;
-            @name(value = \"cp\") @kind(value = \"internal\") wire mid : Electrical;
-        }
-        analog RC {
-            I(p, mid) <+ V(p, mid) / r1;
-            I(mid, n) <+ V(mid, n) / r2;
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
-        ",
-        "Top",
-    );
-    let terms = terminals_of(&circuit, 0);
-    // The wire is renamed `cp` (the @name) and stays Internal.
-    assert!(
-        terms.iter().any(|(n, k, _)| n == "cp" && *k == TerminalKind::Internal),
-        "internal wire with @name(cp) @kind(internal) must surface as `cp`/Internal, got {terms:?}"
-    );
-    // The source wire name `mid` no longer appears once @name renames it.
-    assert!(
-        !terms.iter().any(|(n, _, _)| n == "mid"),
-        "the wire id `mid` must not surface once @name(cp) is set, got {terms:?}"
-    );
-}
-
-/// PIA (explicit over inferred): `@kind("external")` on an internal wire is
-/// legal — the author declaration wins over the position-inferred Internal.
-#[test]
-fn at_kind_external_on_wire_wins_over_inferred() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod RC (inout p: Electrical, inout n: Electrical) {
-            param r1: Real = 1.0e3;
-            param r2: Real = 1.0e3;
-            @kind(value = \"external\") wire mid : Electrical;
-        }
-        analog RC {
-            I(p, mid) <+ V(p, mid) / r1;
-            I(mid, n) <+ V(mid, n) / r2;
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
-        ",
-        "Top",
-    );
-    let terms = terminals_of(&circuit, 0);
-    let mid = terms
-        .iter()
-        .find(|(n, _, _)| n == "mid")
-        .expect("internal wire `mid` present");
-    assert_eq!(mid.1, TerminalKind::External, "explicit @kind(external) on a wire wins over inferred Internal");
-}

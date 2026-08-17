@@ -22,10 +22,13 @@ fn from_ir(design: &piperine_lang::pom::Design, bodies: &HashMap<String, Lowered
 /// `L(d, s)` with a single `$limit` — exercises the limiter checkpoint path.
 fn limiter_circuit() -> CircuitInstance {
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
-        analog L { I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0); }
-        mod Top (inout a: Electrical, inout b: Electrical) { L(a, b); }
+        module L (inout electrical d, inout electrical s);
+            parameter real vto = 1.0;
+            analog I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            L l1 (a, b);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
@@ -35,10 +38,13 @@ fn limiter_circuit() -> CircuitInstance {
 /// A plain resistor — no `$limit`, so the limiter checkpoint is `None`.
 fn resistor_circuit() -> CircuitInstance {
     let src = "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R r1 (a, b);
+        endmodule
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");

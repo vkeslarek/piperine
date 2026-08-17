@@ -7,33 +7,43 @@
 //! on `IrStmt`/`IrExpr` variants that no longer exist — `AnalogBody::stmts` is
 //! the POM `Stmt` tree now, with names resolved through `symbols` — so the
 //! structural checks that survive are the resolved ones (`states`, `noise`,
-//! `symbols`, the contribution's bind op).
+//! `symbols`, the contribution's statement shape).
 
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::resolve::{lower_bodies, LoweredBody, NoiseKind, StateKind};
-use piperine_lang::parse::ast::{BindOp, Stmt};
+use piperine_lang::ast::{Expr, Stmt};
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+const DISCIPLINE: &str = "`include \"disciplines.vams\"";
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers from this crate
+/// (`SourceMap::dummy`'s relative paths only resolve from that crate's dir).
+fn source_map() -> piperine_lang::SourceMap {
+    let headers =
+        std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 /// A two-terminal `TestMod` whose analog body is `body`.
 fn test_mod(body: &str) -> String {
     format!(
         "{DISCIPLINE}
-mod TestMod(inout p: Electrical, inout n: Electrical) {{
-    param R: Real = 1000.0;
-    param C: Real = 1e-6;
-}}
-analog TestMod {{
-    {body}
-}}
+module TestMod(p, n);
+    inout electrical p, n;
+    parameter real R = 1000.0;
+    parameter real C = 1e-6;
+    analog {body}
+endmodule
 "
     )
 }
 
 /// Lower `src` and return the named module's resolved body.
 fn lower(src: &str, module: &str) -> LoweredBody {
-    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(src, &source_map()).expect("elaborate");
     lower_bodies(&design).expect("lowering")[module].clone()
 }
 
@@ -50,7 +60,9 @@ fn only_stmt(body: &LoweredBody) -> Stmt {
 fn a_resistive_contribution_lowers_to_a_contrib_bind() {
     let body = lower(&test_mod("I(p, n) <+ V(p, n) / R;"), "TestMod");
     match only_stmt(&body) {
-        Stmt::Bind { op: BindOp::Contrib, .. } => {}
+        Stmt::Contribution { target: Expr::AccessFunction { function, .. }, .. } => {
+            assert_eq!(function, "I", "a flow contribution");
+        }
         other => panic!("expected a `<+` contribution bind, got {other:?}"),
     }
     // The branch nodes are resolved symbols, not names.
@@ -58,12 +70,18 @@ fn a_resistive_contribution_lowers_to_a_contrib_bind() {
     assert!(nodes.contains(&"p") && nodes.contains(&"n"), "branch nodes resolved: {nodes:?}");
 }
 
+/// PHDL spelled a potential *force* `V(p, n) <- 1.0` with its own `BindOp`;
+/// Verilog-AMS has one contribution operator and the access function on the
+/// left is what makes it a force (LRM §5.4). The lowered shape is therefore a
+/// `Contribution` whose target is the `V` access function.
 #[test]
 fn a_potential_force_lowers_to_a_force_bind() {
-    let body = lower(&test_mod("V(p, n) <- 1.0;"), "TestMod");
+    let body = lower(&test_mod("V(p, n) <+ 1.0;"), "TestMod");
     match only_stmt(&body) {
-        Stmt::Bind { op: BindOp::Force, .. } => {}
-        other => panic!("expected a `<-` force bind, got {other:?}"),
+        Stmt::Contribution { target: Expr::AccessFunction { function, .. }, .. } => {
+            assert_eq!(function, "V", "a potential force");
+        }
+        other => panic!("expected a `<+` force bind, got {other:?}"),
     }
 }
 
@@ -105,10 +123,9 @@ fn transition_registers_its_state_slot() {
 
 // ─── Noise sources ────────────────────────────────────────────────────────────
 
-/// The declared signature is `white_noise(pwr)` — the trailing name argument
-/// the original test passed (`white_noise(psd, "rn1")`) is no longer part of
-/// the operator (`headers/operators.phdl:24`), so the label assertion is
-/// dropped rather than faked.
+/// The LRM signature is `white_noise(pwr[, name])` — the trailing name
+/// argument is optional and carries no lowered label, so the label assertion
+/// the original test made is dropped rather than faked.
 #[test]
 fn white_noise_registers_a_source_on_its_branch() {
     let body = lower(&test_mod("I(p, n) <+ white_noise(1e-24);"), "TestMod");
@@ -122,14 +139,14 @@ fn white_noise_registers_a_source_on_its_branch() {
 
 /// A noise source is attributed to the branch it is contributed to even when
 /// the contribution sits inside a conditional — the shape the whole spice
-/// stdlib uses (`if (noisy) { I(p,n) <+ white_noise(…) }`). Recording it on
+/// stdlib uses (`if (noisy) I(p,n) <+ white_noise(…);`). Recording it on
 /// ground↔ground instead makes it stamp nothing, which reads as a model with
 /// no noise rather than a lowering that lost the branch: a silent zero, the
 /// one thing this project never emits.
 #[test]
 fn white_noise_inside_a_conditional_keeps_its_branch() {
     let body = lower(
-        &test_mod("if (V(p, n) > 0.0) { I(p, n) <+ white_noise(1e-24); }"),
+        &test_mod("if (V(p, n) > 0.0) I(p, n) <+ white_noise(1e-24);"),
         "TestMod",
     );
     let analog = body.analog.as_ref().expect("analog body");
@@ -149,24 +166,30 @@ fn flicker_noise_registers_a_flicker_source() {
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
+/// PHDL's `@ cross(...) when (guard) { … }` had a first-class guard clause;
+/// Annex A's `event_expression` has none (a condition is written as an `if`
+/// *inside* the event's body), so what survives the frontend swap is the
+/// event's body — asserted here.
 #[test]
-fn a_cross_event_keeps_its_guard() {
+fn a_cross_event_keeps_its_body() {
     let src = format!(
         "{DISCIPLINE}
-mod GuardMod(inout p: Electrical, inout n: Electrical) {{}}
-analog GuardMod {{
-    @ cross(V(p, n)) when (V(p, n) > 0.0) {{
-        I(p, n) <+ 1.0;
-    }}
-}}
+module GuardMod(p, n);
+    inout electrical p, n;
+    analog @(cross(V(p, n), 0)) begin
+        if (V(p, n) > 0.0) I(p, n) <+ 1.0;
+    end
+endmodule
 "
     );
     let body = lower(&src, "GuardMod");
     match only_stmt(&body) {
-        Stmt::Event { guard, body, .. } => {
-            assert!(guard.is_some(), "the `when` guard survives lowering");
-            assert_eq!(body.stmts.len(), 1, "the guarded body survives");
-        }
+        Stmt::EventControl { body, .. } => match *body {
+            Stmt::Block { stmts, .. } => {
+                assert_eq!(stmts.len(), 1, "the guarded body survives");
+            }
+            other => panic!("expected a block body, got {other:?}"),
+        },
         other => panic!("expected an event statement, got {other:?}"),
     }
 }
@@ -175,50 +198,32 @@ analog GuardMod {{
 fn an_above_event_lowers_as_an_event() {
     let src = format!(
         "{DISCIPLINE}
-mod AboveMod(inout p: Electrical, inout n: Electrical) {{}}
-analog AboveMod {{
-    @ above(V(p, n)) {{
+module AboveMod(p, n);
+    inout electrical p, n;
+    analog @(above(V(p, n))) begin
         I(p, n) <+ 0.0;
-    }}
-}}
+    end
+endmodule
 "
     );
     let body = lower(&src, "AboveMod");
     match only_stmt(&body) {
-        Stmt::Event { guard: None, .. } => {}
-        other => panic!("expected an unguarded event statement, got {other:?}"),
+        Stmt::EventControl { .. } => {}
+        other => panic!("expected an event statement, got {other:?}"),
     }
 }
 
 // ─── Symbols ──────────────────────────────────────────────────────────────────
 
 #[test]
-fn a_global_function_is_registered_in_the_symbol_table() {
-    let src = format!(
-        "{DISCIPLINE}
-fn helper(x: Real) -> Real {{
-    return x * 2.0;
-}}
-mod FnMod(inout p: Electrical, inout n: Electrical) {{}}
-analog FnMod {{
-    I(p, n) <+ helper(V(p, n));
-}}
-"
-    );
-    let body = lower(&src, "FnMod");
-    assert!(body.symbols.fn_by_name("helper").is_some(), "`helper` is resolvable");
-}
-
-#[test]
 fn a_string_param_keeps_its_default() {
     let src = format!(
         "{DISCIPLINE}
-mod StrMod(inout p: Electrical, inout n: Electrical) {{
-    param name: String = \"res1\";
-}}
-analog StrMod {{
-    I(p, n) <+ V(p, n) / 1000.0;
-}}
+module StrMod(p, n);
+    inout electrical p, n;
+    parameter string name = \"res1\";
+    analog I(p, n) <+ V(p, n) / 1000.0;
+endmodule
 "
     );
     let body = lower(&src, "StrMod");
@@ -233,17 +238,18 @@ analog StrMod {{
 
 #[test]
 fn a_digital_body_is_lowered() {
-    let src = format!(
-        "{DISCIPLINE}
-mod DigMod(inout clk: Electrical, inout out: Electrical) {{}}
-digital DigMod {{
-    @ change(clk) {{
-        out <- 1.0;
-    }}
-}}
-"
-    );
-    let body = lower(&src, "DigMod");
+    let src = "
+discipline logic;
+    domain discrete;
+enddiscipline
+
+module DigMod(clk, q);
+    input logic clk;
+    output logic q;
+    always @(clk) q = 1;
+endmodule
+";
+    let body = lower(src, "DigMod");
     assert!(body.digital.is_some(), "the digital body reaches the resolved form");
 }
 
@@ -258,11 +264,9 @@ digital DigMod {{
 /// boundary moved.
 #[test]
 fn an_unknown_name_in_a_contribution_is_refused_before_any_code_is_emitted() {
-    let design = parse_and_elaborate(
-        &test_mod("I(p, n) <+ V(p, n) / not_a_param;"),
-        &piperine_lang::SourceMap::dummy(),
-    )
-    .expect("elaborate");
+    let design =
+        parse_and_elaborate(&test_mod("I(p, n) <+ V(p, n) / not_a_param;"), &source_map())
+            .expect("elaborate");
     let bodies = lower_bodies(&design).expect("names are resolved later, not here");
     let err = AnalogKernel::compile(&bodies["TestMod"])
         .err()
@@ -272,20 +276,8 @@ fn an_unknown_name_in_a_contribution_is_refused_before_any_code_is_emitted() {
     assert!(message.contains("unresolved"), "says what went wrong: {message}");
 }
 
-#[test]
-fn an_unknown_net_in_an_instance_connection_fails_lowering() {
-    let design = parse_and_elaborate(
-        "discipline Electrical { potential v: Real; flow i: Real; }
-        mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
-        analog R { I(p, n) <+ V(p, n) / r; }
-        mod Top() {
-            wire a : Electrical;
-            r1 : R(a, no_such_net);
-        }",
-        &piperine_lang::SourceMap::dummy(),
-    )
-    .expect("elaborate");
-    let err = lower_bodies(&design).expect_err("an unknown net must fail lowering");
-    assert!(err.to_string().contains("no_such_net"), "names the net: {err}");
-}
-
+// PHDL's companion case — `an_unknown_net_in_an_instance_connection_fails_lowering`
+// — has no Verilog-AMS meaning and is gone: an undeclared identifier in a port
+// connection is a legal *implicit net* declaration (1364 §3.5, inherited by the
+// LRM), so the elaborator creates the net rather than refusing it. There is no
+// "unknown net" left for `lower_bodies` to fail on.

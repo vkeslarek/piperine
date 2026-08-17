@@ -32,15 +32,14 @@ fn build(src: &str, top: &str) -> CircuitInstance {
 fn model_descriptor_carries_kernel_module_name() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod RCap (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            param c: Real = 1.0e-9;
-        }
-        analog RCap {
-            I(p, n) <+ V(p, n) / r + c * ddt(V(p, n));
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { RCap(a, b); }
+        module RCap (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ V(p, n) / r + c * ddt(V(p, n));
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            RCap x1 (a, b);
+        endmodule
         ",
         "Top",
     );
@@ -50,61 +49,9 @@ fn model_descriptor_carries_kernel_module_name() {
     assert_eq!(descriptor.version, "", "no version declaration → empty string");
 }
 
-/// PIA-01: an author-declared `@model(type, version)` on a module populates
-/// `ModelDescriptor` from the attribute (not the module-name echo). The full
-/// parse→POM→codegen→ABI path: the sidecar resolved by `CircuitCompiler`
-/// reaches `model_descriptor()`.
-#[test]
-fn model_descriptor_reads_at_model_attribute() {
-    let circuit = build(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        @model(type = \"mos\", version = \"3\")
-        mod Mos (inout d: Electrical, inout s: Electrical) {
-            param r: Real = 1.0e3;
-        }
-        analog Mos {
-            I(d, s) <+ V(d, s) / r;
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { Mos(a, b); }
-        ",
-        "Top",
-    );
-    let dev = &circuit.all_devices()[0];
-    let descriptor = dev.model_descriptor();
-    assert_eq!(descriptor.type_id, "mos", "@model type populates type_id, not the module name");
-    assert_eq!(descriptor.version, "3", "@model version populates the version field");
-    // The module name ("Mos") must NOT leak into type_id when @model is present.
-    assert_ne!(descriptor.type_id, "Mos", "module-name echo must be overridden by @model");
-}
-
-/// PIA-01 negative placement: `@model` on a param fails loud at circuit build
-/// (the sidecar resolver rejects the misplacement, surfacing as a
-/// `CodegenError::Invalid`).
-#[test]
-fn at_model_on_param_fails_loud_at_build() {
-    let elab = parse_and_elaborate(
-        "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            @model(type = \"r\", version = \"1\") param r: Real = 1.0e3;
-        }
-        analog R {
-            I(p, n) <+ V(p, n) / r;
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { R(a, b); }
-        ",
-        &piperine_lang::SourceMap::dummy(),
-    )
-    .expect("elaborates");
-    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
-    let err = CircuitCompiler::new(&elab, &bodies)
-        .build_circuit("Top")
-        .err()
-        .expect("@model on a param must fail loud at build");
-    let msg = err.to_string();
-    assert!(msg.contains("model"), "error should name the misplaced schema: {msg}");
-}
+// `model_descriptor_reads_at_model_attribute` / `at_model_on_param_fails_loud_at_build` — dropped with the PHDL frontend: Verilog-AMS attribute instances `(* … *)` reach no introspection schema (only `device`/`port` are seeded, and `lower_port_attrs`
+// materialises only `port`), so nothing in VAMS source can produce this metadata — the same frontend-dark call ed575c85 made for
+// `introspection_meta`/`introspection_attrs`.
 
 /// ABI-46 default: a host-built Element with no kernel (the composed
 /// surface's Resistor test device) returns the empty descriptor — a host
@@ -137,10 +84,13 @@ fn model_descriptor_default_is_empty() {
 fn state_slot_names_catalog_is_non_empty_for_reactive_device() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod C (inout p: Electrical, inout n: Electrical) { param c: Real = 1.0e-9; }
-        analog C { I(p, n) <+ c * ddt(V(p, n)); }
-        mod TopC (inout a: Electrical, inout b: Electrical) { C(a, b); }
+        module C (inout electrical p, inout electrical n);
+            parameter real c = 1.0e-9;
+            analog I(p, n) <+ c * ddt(V(p, n));
+        endmodule
+        module TopC (inout electrical a, inout electrical b);
+            C x1 (a, b);
+        endmodule
         ",
         "TopC",
     );
@@ -161,17 +111,18 @@ fn state_slot_names_catalog_is_non_empty_for_reactive_device() {
 fn state_slot_names_includes_vold_for_limiter() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Diode (inout p: Electrical, inout n: Electrical) {
-            param is: Real = 1.0e-15;
-            param vt: Real = 0.026;
-        }
-        analog Diode {
-            var vd : Real = 0.0;
-            vd = $limit(\"pnjlim\", V(p, n), 0.0, 0.7, 0.7);
-            I(p, n) <+ is * (exp(vd / vt) - 1.0);
-        }
-        mod TopD (inout a: Electrical, inout b: Electrical) { Diode(a, b); }
+        module Diode (inout electrical p, inout electrical n);
+            parameter real is = 1.0e-15;
+            parameter real vt = 0.026;
+            analog begin: body
+                real vd;
+                vd = $limit(\"pnjlim\", V(p, n), 0.0, 0.7, 0.7);
+                I(p, n) <+ is * (exp(vd / vt) - 1.0);
+            end
+        endmodule
+        module TopD (inout electrical a, inout electrical b);
+            Diode x1 (a, b);
+        endmodule
         ",
         "TopD",
     );
@@ -190,10 +141,13 @@ fn state_slot_names_includes_vold_for_limiter() {
 fn force_terminal_pairs_catalog_surfaces_branch_names() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod Vsrc (inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-        analog Vsrc { V(p, n) <- dc; }
-        mod TopV (inout a: Electrical, inout b: Electrical) { Vsrc(a, b); }
+        module Vsrc (inout electrical p, inout electrical n);
+            parameter real dc = 1.0;
+            analog V(p, n) <+ dc;
+        endmodule
+        module TopV (inout electrical a, inout electrical b);
+            Vsrc x1 (a, b);
+        endmodule
         ",
         "TopV",
     );
@@ -210,15 +164,16 @@ fn force_terminal_pairs_catalog_surfaces_branch_names() {
 fn noise_terminal_pairs_catalog_surfaces_branch_names() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod R (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-        }
-        analog R {
-            I(p, n) <+ V(p, n) / r;
-            I(p, n) <+ white_noise(1.0e-24);
-        }
-        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        module R (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            analog begin
+                I(p, n) <+ V(p, n) / r;
+                I(p, n) <+ white_noise(1.0e-24);
+            end
+        endmodule
+        module TopR (inout electrical a, inout electrical b);
+            R x1 (a, b);
+        endmodule
         ",
         "TopR",
     );
@@ -236,17 +191,18 @@ fn noise_terminal_pairs_catalog_surfaces_branch_names() {
 fn unified_report_surface_is_non_empty_for_real_device() {
     let circuit = build(
         "
-        discipline Electrical { potential v: Real; flow i: Real; }
-        mod RC (inout p: Electrical, inout n: Electrical) {
-            param r: Real = 1.0e3;
-            param c: Real = 1.0e-9;
-            var g : Real = 0.0;
-        }
-        analog RC {
-            g = 1.0 / r;
-            I(p, n) <+ g * V(p, n) + c * ddt(V(p, n));
-        }
-        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
+        module RC (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3;
+            parameter real c = 1.0e-9;
+            real g;
+            analog begin
+                g = 1.0 / r;
+                I(p, n) <+ g * V(p, n) + c * ddt(V(p, n));
+            end
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            RC x1 (a, b);
+        endmodule
         ",
         "Top",
     );

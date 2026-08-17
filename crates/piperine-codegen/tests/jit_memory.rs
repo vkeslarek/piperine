@@ -16,8 +16,6 @@
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
-
 /// Compiles per measured round. Enough that a per-compile leak dwarfs the
 /// allocator noise the threshold tolerates.
 const ROUND: usize = 500;
@@ -41,18 +39,19 @@ fn rss_kb() -> i64 {
 /// A body with enough shape to allocate real code pages: a nonlinear resistive
 /// contribution (its symbolic Jacobian is emitted too) plus a charge one.
 fn body() -> std::collections::HashMap<String, piperine_codegen::resolve::pom::LoweredBody> {
-    let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ param r : Real = 1.0e3; }}
-analog Dut {{
-    var g : Real = 1.0 / r;
-    var vd : Real = V(p, n);
-    I(p, n) <+ g * vd + 1.0e-14 * (exp(vd / 0.026) - 1.0);
-    I(p, n) <+ ddt(1.0e-12 * vd);
-}}
-"
-    );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let src = "
+module Dut(inout electrical p, inout electrical n);
+    parameter real r = 1.0e3;
+    real g, vd;
+    analog begin
+        g = 1.0 / r;
+        vd = V(p, n);
+        I(p, n) <+ g * vd + 1.0e-14 * (exp(vd / 0.026) - 1.0);
+        I(p, n) <+ ddt(1.0e-12 * vd);
+    end
+endmodule
+";
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
     piperine_codegen::resolve::lower_bodies(&design).expect("lowering")
 }
 
