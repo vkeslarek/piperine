@@ -6,18 +6,20 @@ use piperine_lang::parse_and_elaborate;
 use piperine_lang::Value;
 
 const CIRCUIT: &str = r#"
-discipline Electrical { potential v: Real; flow i: Real; }
+`include "disciplines.vams"
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1.0;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor(p, n);
+    inout electrical p, n;
+    parameter real r = 1.0;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider(inout a: Electrical, inout out: Electrical) {
-    wire gnd : Electrical;
-    r_top : Resistor(.p = a, .n = out) { .r = 1e3 };
-    r_bot : Resistor(.p = out, .n = gnd) { .r = 2e3 };
-}
+module Divider(a, out);
+    inout electrical a, out;
+    electrical gnd;
+    Resistor #(.r(1e3)) r_top (.p(a), .n(out));
+    Resistor #(.r(2e3)) r_bot (.p(out), .n(gnd));
+endmodule
 "#;
 
 #[test]
@@ -54,9 +56,8 @@ fn design_round_trips_through_json() {
 
 #[test]
 fn module_doc_defaults_to_none_and_round_trips_as_none() {
-    // T2 only adds the field; elaboration does not fill it yet (T3), so an
-    // undocumented module's `doc` is `None` before and after a JSON round
-    // trip — no regression, authored structure untouched.
+    // An *undocumented* module carries `doc: None` before and after a JSON
+    // round trip — the field is additive, never a fabricated empty string.
     let design =
         parse_and_elaborate(CIRCUIT, &piperine_lang::SourceMap::dummy()).expect("elaborate");
     let resistor = design.module("Resistor").expect("Resistor exists");
@@ -69,11 +70,36 @@ fn module_doc_defaults_to_none_and_round_trips_as_none() {
 }
 
 #[test]
+fn an_elaborated_doc_comment_survives_the_round_trip() {
+    // The companion to the hand-built case below: a `///` run that came
+    // from real source (Part I §1.1) is on the wire contract too, so a
+    // host that deserializes a `Design` sees the same documentation the
+    // editor does.
+    let src = "`include \"disciplines.vams\"\n\
+               /// A documented resistor.\n\
+               module Documented(p, n);\n\
+               \x20   inout electrical p, n;\n\
+               \x20   /// Resistance, in ohms.\n\
+               \x20   parameter real r = 1.0;\n\
+               endmodule\n";
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let json = serde_json::to_string(&design).expect("serialize design");
+    let back: piperine_lang::Design = serde_json::from_str(&json).expect("deserialize design");
+
+    let m = back.module("Documented").expect("module survives");
+    assert_eq!(m.doc.as_deref(), Some("A documented resistor."));
+    assert_eq!(
+        m.params.iter().find(|p| p.name == "r").and_then(|p| p.doc.as_deref()),
+        Some("Resistance, in ohms."),
+    );
+}
+
+#[test]
 fn module_and_port_doc_round_trip_through_json_when_present() {
     // Additive field: when `doc` is populated (as elaboration will do from
     // T3 onward), it survives a full serde round trip on both `Module` and
     // `Port`.
-    use piperine_lang::parse::ast::Direction;
+    use piperine_lang::pom::Direction;
     use piperine_lang::pom::module::{Module, Port};
     use piperine_lang::pom::net_type::NetType;
 
@@ -128,7 +154,10 @@ fn runtime_handles_fail_loud() {
     // must be an error, never a silent placeholder.
     let closure = Value::Closure(std::rc::Rc::new(piperine_lang::value::Closure {
         params: vec!["x".into()],
-        body: piperine_lang::parse::ast::Expr::Ident("x".into()),
+        body: piperine_lang::ast::Expr::Ident {
+            span: piperine_lang::PreprocessedSpan::new(0, 1),
+            name: "x".into(),
+        },
         captured: Vec::new(),
     }));
     serde_json::to_string(&closure).expect_err("closure serialization must fail loud");

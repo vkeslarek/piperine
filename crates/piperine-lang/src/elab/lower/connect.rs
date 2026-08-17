@@ -354,7 +354,7 @@ mod tests {
     }
 
     fn empty_module_decl(name: &str, kind: ModuleKind) -> ModuleDecl {
-        ModuleDecl { span: span(), attrs: vec![], kind, name: name.to_string(), param_ports: vec![], ports: None, items: vec![] }
+        ModuleDecl { span: span(), doc: None, attrs: vec![], kind, name: name.to_string(), param_ports: vec![], ports: None, items: vec![] }
     }
 
     fn plain_module(name: &str, ports: Vec<Port>) -> Module {

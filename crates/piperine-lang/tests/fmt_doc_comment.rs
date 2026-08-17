@@ -1,128 +1,119 @@
-//! `piperine fmt` must never insert a blank line between a `///` doc-comment
-//! run and the declaration it documents — the lexer's doc-attach rule drops
-//! a pending run on a blank line (LSP-06), so a blank-line-inserting
-//! formatter silently strips every doc comment it "cleans up".
+//! `piperine fmt` must never separate a `///` doc-comment run from the
+//! declaration it documents. A blank line **ends** a doc run (Part I §1.1),
+//! so a formatter that inserted one between a `///` block and its
+//! declaration would silently strip every doc comment it "cleaned up" —
+//! the source would still read as documented while the model object,
+//! hover, and any host reading `Module::doc()` all saw `None`.
+//!
+//! **Retargeted from PHDL**: the original fixtures were `mod`/`pub mod`/`fn`
+//! declarations, and three of its cases covered `pub mod` staying on one
+//! line — `pub` is not Verilog-AMS, so those are dropped rather than forced
+//! onto syntax that does not exist. The doc-attachment concern itself is
+//! live, and is now stronger than when this file was written: the VAMS
+//! doc-run rule treats a blank line as a hard break.
 
-use piperine_lang::parse::format::{FormatOptions, TokenFormatter};
-use piperine_lang::parse::lexer::Lexer;
+use piperine_lang::fmt::Formatter;
+use piperine_lang::SourceMap;
 
 fn format(src: &str) -> String {
-    let mut lexer = Lexer::new(src);
-    let tokens = lexer.tokenize_all().expect("lexer must succeed");
-    TokenFormatter::format_source(src, &tokens, FormatOptions::default())
+    Formatter::format(src).expect("formatter must succeed on valid source")
 }
 
-/// A `///` doc comment directly above `mod` must stay directly above it —
-/// no blank line inserted between them.
+/// The property that actually matters, asserted the way it is actually
+/// consumed: format the source, elaborate the *formatted* text, and confirm
+/// the documentation still reaches the model object. A pure string check
+/// could pass while the doc silently detached.
+fn doc_after_formatting(src: &str, module: &str) -> Option<String> {
+    let formatted = format(src);
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers);
+    piperine_lang::parse_and_elaborate(&formatted, &map)
+        .expect("formatted source must still elaborate")
+        .module(module)
+        .expect("module must survive formatting")
+        .doc()
+        .map(str::to_string)
+}
+
+const DOCUMENTED: &str = "`include \"disciplines.vams\"\n\
+                          /// A resistor.\n\
+                          module Resistor(p, n);\n\
+                          \x20 inout electrical p, n;\n\
+                          endmodule\n";
+
+/// A `///` directly above `module` must stay directly above it — the
+/// documentation survives formatting.
 #[test]
-fn doc_comment_stays_attached_to_mod_after_formatting() {
-    let src = "/// A resistor.\nmod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("/// A resistor.\nmod Resistor"),
-        "doc comment must stay directly adjacent to `mod`, got:\n{out}"
+fn doc_comment_survives_formatting_attached_to_its_module() {
+    assert_eq!(doc_after_formatting(DOCUMENTED, "Resistor").as_deref(), Some("A resistor."));
+}
+
+/// A multi-line `///` block must also stay attached — the block's LAST line
+/// is the one adjacent to the declaration, so a blank line inserted there
+/// would strip the whole run.
+#[test]
+fn multiline_doc_comment_survives_formatting() {
+    let src = "`include \"disciplines.vams\"\n\
+               /// Line one.\n\
+               ///\n\
+               /// Line two.\n\
+               module M(p, n);\n\
+               \x20 inout electrical p, n;\n\
+               endmodule\n";
+    assert_eq!(
+        doc_after_formatting(src, "M").as_deref(),
+        Some("Line one.\n\nLine two."),
     );
 }
 
-/// Same, for `fn`.
+/// A doc comment above an attribute-instanced declaration survives too —
+/// the run attaches across the `(* ... *)`, so the formatter must not
+/// separate it from the attribute either.
 #[test]
-fn doc_comment_stays_attached_to_fn_after_formatting() {
-    let src = "/// Doubles x.\nfn double(x: Real) -> Real { return 2.0 * x; }\n";
-    let out = format(src);
-    assert!(
-        out.contains("/// Doubles x.\nfn double"),
-        "doc comment must stay directly adjacent to `fn`, got:\n{out}"
+fn doc_comment_above_an_attribute_instance_survives_formatting() {
+    let src = "`include \"disciplines.vams\"\n\
+               /// A plugin-bound device.\n\
+               (* device = \"demo\", type = \"demo_r\" *)\n\
+               module Attributed(p, n);\n\
+               \x20 inout electrical p, n;\n\
+               endmodule\n";
+    let formatted = format(src);
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers);
+    let design = piperine_lang::parse_and_elaborate_seeded(
+        &formatted,
+        &map,
+        piperine_lang::seed_device_port_schemas,
+    )
+    .expect("formatted source must still elaborate");
+    assert_eq!(
+        design.module("Attributed").expect("module survives").doc(),
+        Some("A plugin-bound device."),
     );
 }
 
-/// A multi-line `///` block must also stay attached — the LAST doc line is
-/// the one immediately preceding the declaration.
+/// Formatting is idempotent over documented source — a second pass must not
+/// drift the doc run away from its declaration (the failure mode where the
+/// first format is safe but repeated formatting slowly detaches it).
 #[test]
-fn multiline_doc_comment_stays_attached() {
-    let src = "/// Line one.\n/// Line two.\nmod M() { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("/// Line two.\nmod M"),
-        "the doc block's last line must stay directly adjacent to `mod`, got:\n{out}"
-    );
+fn formatting_documented_source_is_idempotent() {
+    let once = format(DOCUMENTED);
+    let twice = format(&once);
+    assert_eq!(once, twice, "format(format(x)) must equal format(x)");
+    assert_eq!(doc_after_formatting(&once, "Resistor").as_deref(), Some("A resistor."));
 }
 
-/// A plain `//` (non-doc) comment is NOT doc-attaching — the formatter's
-/// normal blank-line-before-declaration behavior must be unaffected for it
-/// (this proves the fix is scoped to `///` specifically, not comments in
-/// general).
+/// A plain `//` comment is not documentation, and formatting must not turn
+/// it into one — proof the doc-preservation behavior is scoped to `///`
+/// rather than to comments in general.
 #[test]
-fn plain_comment_still_gets_blank_line_before_mod() {
-    let src = "// just a note\nmod M() { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("// just a note\n\nmod M"),
-        "a plain `//` comment should still get the usual blank-line separation, got:\n{out}"
-    );
-}
-
-/// `pub mod` must stay on one line — `pub` is not a fresh item boundary
-/// when `mod` immediately follows it on the same line, so `mod` must not
-/// force a blank line between them (a pre-existing bug, independent of
-/// doc comments: the original blank-line rule didn't know `pub` already
-/// started this same declaration).
-#[test]
-fn pub_mod_stays_on_one_line() {
-    let src = "pub mod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("pub mod Resistor"),
-        "`pub` and `mod` must stay on the same line, got:\n{out}"
-    );
-}
-
-/// A `///` doc comment above a `pub mod` must stay attached, and `pub mod`
-/// must stay on one line — both fixes composed together (the exact
-/// real-world case that surfaced the `pub` gap).
-#[test]
-fn doc_comment_above_pub_mod_stays_attached_and_pub_mod_stays_together() {
-    let src = "/// A resistor.\npub mod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("/// A resistor.\npub mod Resistor"),
-        "doc must stay attached AND `pub mod` must stay together, got:\n{out}"
-    );
-}
-
-/// Healing case: a file already has a blank line between a `///` doc block
-/// and its declaration (source-authored, or left over from a previous
-/// buggy formatter run) — fmt must COLLAPSE it, not just avoid adding a
-/// new one. Mirrors the real `examples/10_pwm_dimmer.phdl` repro.
-#[test]
-fn existing_blank_line_between_doc_and_decl_gets_collapsed() {
-    let src = "/// Doc do moc\n\nmod PwmSwitch(inout sw: Electrical, inout gnd: Electrical) { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("/// Doc do moc\nmod PwmSwitch"),
-        "a pre-existing blank line between /// and its decl must be collapsed, got:\n{out}"
-    );
-}
-
-/// Same healing case for a file-level doc block above `discipline`.
-#[test]
-fn existing_blank_line_between_doc_and_discipline_gets_collapsed() {
-    let src = "/// A file header.\n\ndiscipline Electrical { potential v: Real; flow i: Real; }\n";
-    let out = format(src);
-    assert!(
-        out.contains("/// A file header.\ndiscipline Electrical"),
-        "a pre-existing blank line between /// and discipline must be collapsed, got:\n{out}"
-    );
-}
-
-/// Two consecutive top-level declarations, the second `pub`, still get
-/// their normal blank-line separation — the `pub`-continuation exemption
-/// must not suppress the ordinary between-declarations blank line.
-#[test]
-fn blank_line_between_declarations_unaffected_by_pub_fix() {
-    let src = "mod A() { }\npub mod B() { }\n";
-    let out = format(src);
-    assert!(
-        out.contains("mod A() { }\n\npub mod B"),
-        "normal blank-line separation between declarations must be unaffected, got:\n{out}"
-    );
+fn a_plain_comment_is_not_promoted_to_documentation_by_formatting() {
+    let src = "`include \"disciplines.vams\"\n\
+               // just a note to self\n\
+               module Plain(p, n);\n\
+               \x20 inout electrical p, n;\n\
+               endmodule\n";
+    assert_eq!(doc_after_formatting(src, "Plain"), None);
 }

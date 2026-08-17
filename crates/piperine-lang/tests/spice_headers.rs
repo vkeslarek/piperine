@@ -1,152 +1,88 @@
-//! spice-stdlib SPICE-01/SPICE-02: the builtin `spice` namespace resolves
-//! through `headers/spice/`, and every migrated model file parses and
-//! elaborates cleanly.
+//! The builtin `spice` stdlib: `` `include "spice/<file>.va" `` resolves in
+//! any project with no dependency declaration, and every shipped model file
+//! parses and elaborates cleanly.
+//!
+//! **Retargeted from PHDL (this file's original form tested `use
+//! spice::passives;` path imports, `::`-qualified full-path instance types,
+//! and `Design::enum_()`).** VAMS has no module-path import mechanism at
+//! all — `` `include`` is a textual directive, so there is no per-segment
+//! path to resolve and no full-path instance type to write; and PHDL's
+//! `enum` value layer went with the parser (MD-45). Those sub-scenarios are
+//! genuinely deleted language, not gaps to route around. What survives —
+//! and is what actually matters about this stdlib — is that the builtin
+//! namespace resolves with zero project setup and that the shipped models
+//! are all valid Verilog-AMS.
 
 use piperine_lang::SourceMap;
 
-/// SPICE-01: `use spice::diode;` resolves through the builtin header path
-/// (no `Piperine.toml`, no package registration — just the source map).
+const SPICE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/headers/spice");
+
+/// The `spice` namespace is seeded by `SourceMap` itself — no
+/// `Piperine.toml`, no dependency, no package registration.
 #[test]
-fn use_spice_diode_resolves_via_builtin_namespace() {
-    let src = "
-        use piperine::disciplines;
-        use spice::sources;
-        use spice::passives;
-        use spice::diode;
-        mod Top() {
-            wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
-            v1: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
-            r1: res  (.p=vin,.n=out) { .r = 1.0e3 };
-            d1: dio  (.p=out,.n=gnd) { };
-        }
-    ";
+fn include_spice_header_resolves_via_the_builtin_namespace() {
+    let src = "`include \"disciplines.vams\"\n\
+               `include \"spice/passives.va\"\n\
+               module Top();\n\
+               \x20 electrical vin, gnd;\n\
+               \x20 res #(.r(1.0e3)) r1 (.p(vin), .n(gnd));\n\
+               endmodule\n";
     let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
-        .expect("use spice::diode; must elaborate through the builtin namespace");
-    assert!(design.module("Top").is_some(), "Top module elaborated");
+        .expect("`include \"spice/…\" must resolve through the builtin namespace");
+
+    let top = design.module("Top").expect("Top elaborated");
+    assert_eq!(
+        top.instances.iter().find(|i| i.label.as_deref() == Some("r1")).map(|i| i.module.as_str()),
+        Some("res"),
+        "the instance must resolve to the stdlib `res` module the include brought in"
+    );
 }
 
-/// SPICE-02: every file in `headers/spice/` parses and elaborates cleanly.
+/// Every shipped model file is valid Verilog-AMS. Each is elaborated on its
+/// own (they `` `include`` whatever they need), so a syntax or semantic
+/// regression in any one of them fails here naming that file — the guard
+/// that keeps the stdlib from rotting silently.
 #[test]
 fn every_spice_header_elaborates() {
-    let dir = std::path::Path::new("headers/spice");
+    let dir = std::path::Path::new(SPICE_DIR);
     let mut files: Vec<_> = std::fs::read_dir(dir)
         .expect("headers/spice/ must exist")
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("phdl"))
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("va"))
         .collect();
     files.sort();
-    assert_eq!(files.len(), 12, "expected the 12 migrated model files, got {files:?}");
+    assert!(!files.is_empty(), "headers/spice/ must ship model files, found none");
 
-    let mut failures = Vec::new();
-    for path in &files {
-        let src = std::fs::read_to_string(path).unwrap();
-        if let Err(e) = piperine_lang::parse_and_elaborate(&src, &SourceMap::dummy()) {
-            failures.push(format!("{}: {e:?}", path.display()));
-        }
-    }
-    assert!(failures.is_empty(), "spice header(s) failed to elaborate:\n{}", failures.join("\n"));
-}
+    let failures: Vec<String> = files
+        .iter()
+        .filter_map(|path| {
+            let src = std::fs::read_to_string(path).ok()?;
+            piperine_lang::parse_and_elaborate(&src, &SourceMap::dummy())
+                .err()
+                .map(|e| format!("{}: {e:?}", path.display()))
+        })
+        .collect();
 
-// ── Qualified full-path instance types (no `use` required) ──────────────────
-
-/// A labeled instance may name its module by its full `::`-qualified path
-/// (`spice::passives::res`) with NO `use spice::passives;` statement — the
-/// resolver auto-loads the prefix file as an implicit `use`.
-#[test]
-fn full_path_labeled_instance_elaborates_without_use() {
-    let src = "
-        use piperine::disciplines;
-        mod Board() {
-            wire a: Electrical; wire gnd: Electrical;
-            r1: spice::passives::res(.p = a, .n = gnd) { .r = 1e3 };
-        }
-    ";
-    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
-        .expect("qualified full-path instance must elaborate without a `use`");
-    let board = design.module("Board").expect("Board elaborated");
-    let inst = board.instances.iter().find(|i| i.label.as_deref() == Some("r1")).expect("r1 present");
-    assert_eq!(inst.module, "res", "the instance's module resolves to the final path segment `res`");
-}
-
-/// An unlabeled instance may also use a full path.
-#[test]
-fn full_path_unlabeled_instance_elaborates_without_use() {
-    let src = "
-        use piperine::disciplines;
-        mod Board() {
-            wire a: Electrical; wire gnd: Electrical;
-            spice::passives::res(.p = a, .n = gnd) { .r = 1e3 };
-        }
-    ";
-    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
-        .expect("unlabeled qualified full-path instance must elaborate without a `use`");
-    assert!(design.module("Board").is_some());
-}
-
-/// The full-path form and an explicit `use` of the same file coexist (the
-/// resolver dedups the file load) — mixing the two styles is not an error.
-#[test]
-fn full_path_and_explicit_use_coexist() {
-    let src = "
-        use piperine::disciplines;
-        use spice::passives;
-        mod Board() {
-            wire a: Electrical; wire b: Electrical; wire gnd: Electrical;
-            r1: res(.p = a, .n = gnd) { .r = 1e3 };
-            r2: spice::passives::res(.p = b, .n = gnd) { .r = 2e3 };
-        }
-    ";
-    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
-        .expect("full-path + explicit use of the same file must coexist");
-    assert!(design.module("Board").is_some());
-}
-
-/// A full path whose prefix file does not exist fails loud (no silent
-/// fallthrough to a bare-name lookup that would mis-resolve).
-#[test]
-fn full_path_to_missing_file_fails_loud() {
-    let src = "
-        use piperine::disciplines;
-        mod Board() {
-            wire a: Electrical; wire gnd: Electrical;
-            r1: spice::nonexistent::foo(.p = a, .n = gnd) { };
-        }
-    ";
-    let err = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
-        .expect_err("a full path to a missing file must fail loud");
-    let msg = format!("{err:?}");
-    assert!(msg.contains("nonexistent"), "error must name the missing file, got: {msg}");
-}
-
-// ── DVC-17: the MOS operating region is a declared enum opvar ───────────────
-
-/// The `Region` enum is declared in `spice::constants` and every MOS model
-/// (mos1/mos2/mos3) carries a `region` opvar typed by it — not integer codes.
-/// This test elaborates mos1 and confirms the enum + the opvar are present;
-/// the numeric parity (ngspice region classification on a swept fixture) is
-/// proven by `tests/ngspice_validation.rs` remaining green.
-#[test]
-fn mos_region_enum_and_opvar_are_declared() {
-    let src = "
-        use piperine::disciplines;
-        use spice::constants;
-        use spice::mos;
-        mod Top() {
-            wire d: Electrical; wire g: Electrical; wire s: Electrical; wire b: Electrical;
-            m1: mos1(.d = d, .g = g, .s = s, .b = b) {};
-        }
-    ";
-    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
-        .expect("mos1 with the region opvar must elaborate");
-
-    // The enum is declared on the design.
     assert!(
-        design.enum_("Region").is_some(),
-        "enum Region must be declared in the POM after elaboration"
+        failures.is_empty(),
+        "{} of {} spice header(s) failed to elaborate:\n{}",
+        failures.len(),
+        files.len(),
+        failures.join("\n")
     );
+}
 
-    // The mos1 module is present (the opvar lives inside its analog body;
-    // the host-read proof is T27's end-to-end SOA fixture).
-    assert!(design.module("mos1").is_some(), "mos1 module present");
+/// An `` `include`` naming a file the `spice` namespace does not hold fails
+/// loud, naming the path — never a silent skip that would leave every
+/// instance of a missing model mysteriously unresolved later.
+#[test]
+fn include_of_a_missing_spice_header_fails_loud() {
+    let src = "`include \"spice/nonexistent.va\"\n\
+               module Board();\n\
+               endmodule\n";
+    let err = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
+        .expect_err("a missing spice header must fail loud");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("nonexistent"), "the error must name the missing file, got: {msg}");
 }
