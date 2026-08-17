@@ -39,19 +39,18 @@
 //! evaluation path. This file's assertion on `finding.time` falling inside
 //! `[0, stop]` is the same style of proof.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause, plus a generic
-//! module (`mod Watch[N]`) — VAMS has no parameterized-module-name form.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **BLOCKED on PHDL Bit-typed module vars — no VAMS producer.** Both
+//! fixtures observe an internal *module var* (`var bad : Bit = 1;`): a
+//! module-scope variable initializer has no Verilog-AMS producer in this
+//! tree (a known gap), and `Bit` is PHDL's value layer — no VAMS
+//! discipline spells it. The `constraint begin … end` producer that
+//! landed (constraints-on-vams) carries `require` only; it does not
+//! create the module var the predicate reads, so `require bad_is_low :
+//! bad <= -1.0` cannot be retargeted. The parameterized fixture is
+//! additionally blocked on `mod Watch[N]` — VAMS has no
+//! parameterized-module-name form. Both fixtures stay in PHDL and the
+//! tests are left failing rather than weakened, deleted, or `#[ignore]`d
+//! (repo-banned by `tests/suite_hygiene.rs`).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
@@ -109,6 +108,9 @@ mod Top() {
 /// two ordinary instances of the same monitor module, independently), and
 /// catches a violation `Top`'s own only externally visible signals (`q0`/
 /// `q1`, both constant `0`) never reveal.
+///
+/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer (`var bad :
+/// Bit = 1;`; see this file's `//!` note).
 #[test]
 fn a_monitor_detects_a_violation_the_top_level_cannot_see_with_instance_provenance() {
     let mut session = compile_digital(HIERARCHICAL_MONITOR_PHDL);
@@ -163,6 +165,9 @@ mod Top() {
 }
 ";
 
+/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer — and on
+/// `mod Watch[N]`: VAMS has no parameterized-module-name form (see this
+/// file's `//!` note).
 #[test]
 fn a_monitor_composes_under_parameterization() {
     let mut session = compile_digital(PARAMETERIZED_MONITOR_PHDL);

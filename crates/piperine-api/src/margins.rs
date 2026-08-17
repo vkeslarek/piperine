@@ -139,20 +139,44 @@ impl ConstraintCatalog {
     /// constraint label that produces no entry in a pointwise margins
     /// channel. An instance absent from `info.instances` has no analog
     /// kernel (digital-only — the builder registers analog instances only),
-    /// so its statements are digital; an analog instance's reduced
-    /// `var`/`target` is host-computed on AC results only. Pointwise
-    /// `var`s travel inside the margins that read them and are never
-    /// readable by name — they stay "unknown", catalogued nowhere.
+    /// so its requires are digital; an analog instance's reduced
+    /// `var`/`target` is host-computed on AC results only (deferred with
+    /// dv-core's other statements — nothing lands in `not_defined` until
+    /// they exist, but the classification site stays). Pointwise `var`s
+    /// travel inside the margins that read them and are never readable by
+    /// name — they stay "unknown", catalogued nowhere.
     ///
-    /// **MD-45 regression**: this always returns an empty catalog. The
-    /// dv-core `constraint` block surface (`Module::constraints()`,
-    /// `ConstraintStmt`, `QuantityClass`) was gutted with the PHDL AST at
-    /// T21 — no VAMS Annex A production carries it, and the POM has no
-    /// constraint-block node to walk anymore. `dv-gradients`/`dv-tester`'s
-    /// constraint-catalog surface is dark until a future task rebuilds it
-    /// on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45).
-    pub fn compute(_design: &Design, _info: &CircuitBuildInfo, _top: &str) -> Self {
-        Self::default()
+    /// Core scope (`require` only, constraints-on-vams): every require on
+    /// an analog instance reaches the kernel's margin catalog, so the
+    /// digital list is the one that can fire — `MarginsResult::get` on a
+    /// digital-instance require then fails loud naming it rather than
+    /// claiming the constraint is unknown.
+    pub fn compute(design: &Design, info: &CircuitBuildInfo, top: &str) -> Self {
+        let mut catalog = Self::default();
+        let Some(flat) = design.flat_module(top) else { return catalog };
+        for instance in flat.instances() {
+            let Some(module) = design.module(instance.module_name()) else { continue };
+            if module.constraints().is_empty() {
+                continue;
+            }
+            let analog = info.instances.iter().find(|i| i.label == instance.name());
+            for req in module.constraints() {
+                let qualified = format!("{}.{}", instance.name(), req.name);
+                let Some(built) = analog else {
+                    catalog.digital.push(qualified);
+                    continue;
+                };
+                let in_kernel = built.kernel.margin_catalog().iter().any(|m| m.label == req.name);
+                if !in_kernel {
+                    // A require that lowered but missed the kernel would be
+                    // a silent gap — record it as digital (no analog margin
+                    // exists to read) rather than letting it fall to
+                    // "unknown constraint" downstream.
+                    catalog.digital.push(qualified);
+                }
+            }
+        }
+        catalog
     }
 
     /// `true` when `name` — qualified (`"x1.ugbw"`) or bare (`"ugbw"`) —

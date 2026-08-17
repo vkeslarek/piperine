@@ -4,18 +4,8 @@
 //! posture, regardless of the `checks` field on the `SolverConfig` it is
 //! called with (T16 AC2/AC4).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `require` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraints-on-vams): the fixtures run against the
+//! `constraint begin … end` producer.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Driver, HighSigmaSpec, OptimizeSpec, Policy, Session, SolverConfig};
@@ -29,31 +19,48 @@ use piperine_lang::SourceMap;
 /// with a `Strict` config would fail immediately on its very first
 /// (infeasible) read. Succeeding proves the driver ignored the caller's
 /// posture and forced `collect` internally (T16 AC2/AC4).
-const INFEASIBLE_DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const INFEASIBLE_DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers (copied
+/// verbatim from `margins_channel.rs`).
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-";
 
-fn design(phdl: &str) -> piperine_lang::Design {
-    piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates")
+fn design(src: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates")
 }
 
 /// `Driver::posture()` always reports `Collect` — a static property of
@@ -76,8 +83,8 @@ fn driver_posture_is_always_collect() {
 /// rather than erroring on its first (infeasible) internal read.
 #[test]
 fn the_driver_forces_collect_posture_even_under_a_strict_config() {
-    let phdl_design = design(INFEASIBLE_DIVIDER_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let d = design(INFEASIBLE_DIVIDER);
+    let mut session = Session::compile(&d, "Top").expect("session compiles");
 
     // Sanity: the nominal point really is infeasible AND really does
     // fail loud under Strict — proving the fixture actually exercises the
@@ -126,8 +133,8 @@ fn the_three_policies_are_variants_of_one_type() {
 /// rather than reporting a meaningless yield.
 #[test]
 fn high_sigma_policy_fails_loud_with_no_tol_declarations() {
-    let phdl_design = design(INFEASIBLE_DIVIDER_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let d = design(INFEASIBLE_DIVIDER);
+    let mut session = Session::compile(&d, "Top").expect("session compiles");
     let driver = Driver::new(Policy::HighSigma(HighSigmaSpec::default()));
     let err = driver
         .run(&mut session, &SolverConfig::default())

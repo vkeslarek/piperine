@@ -16,19 +16,18 @@
 //! distinction is a structural question that lives on the authored
 //! declarations.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause, and the `tol
-//! gauss(…)`/`tol uniform(…)` parameter-distribution clauses.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **BLOCKED on the deferred per-parameter `tol gauss(…)`/`tol uniform(…)`
+//! distribution clauses** (constraints-on-vams Out-of-Scope). Every
+//! fixture in this target is load-bearing on a `tol` clause
+//! (`param r_g : Real = 1e3 tol gauss(sigma = 10.0) global;` and
+//! friends): the `SamplePlan` walk classifies params by their authored
+//! distribution, and the distribution is only ever lowered as `None`
+//! until the deferred statement lands — so no fixture here can be
+//! retargeted (DIVIDER_TOL_PHDL's `require` alone would migrate, but
+//! without its `tol gauss(sigma_rel = 0.3)` the plan collects zero
+//! entries and every assertion collapses). The fixtures stay in PHDL
+//! and the tests are left failing rather than weakened, deleted, or
+//! `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
 
 use piperine_api::{SamplePlan, SampleScope, Session, SolverConfig};
 use piperine_api::prelude::CheckPosture;

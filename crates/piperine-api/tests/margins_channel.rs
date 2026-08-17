@@ -6,18 +6,8 @@
 //! argmin, and the channel states which kind it is. `requires_ok` and
 //! `first_violation` are the common assertion shape on every result.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `require` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraints-on-vams): the fixture runs against the
+//! `constraint begin … end` producer.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{MarginEntry, MarginShape, MarginValue, MarginsResult, Session, SolverConfig};
@@ -27,31 +17,47 @@ use piperine_solver::prelude::MarginKind;
 /// The divider: `dc` volts across r1 + dut1 puts `dc/2` across `dut1`
 /// (dc = 1.0 → 0.5 V); `require head : V(p, n) <= hi` (hi = 0.4) has
 /// margin −0.1 at the operating point.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-";
+
+const DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 fn compile(phdl: &str) -> Session {
-    let design = piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates");
+    let design = piperine_lang::parse_and_elaborate(phdl, &source_map()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -64,7 +70,7 @@ fn collect_config() -> SolverConfig {
 /// path — with `requires_ok` / `first_violation` as the assertion shape.
 #[test]
 fn op_result_margins_carry_worst_argmin_and_instance_path() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let op = session.op(&collect_config(), None).expect("collect completes");
     let margins = op.margins();
     let head = margins.get("head").expect("the require is in the channel");
@@ -87,7 +93,7 @@ fn op_result_margins_carry_worst_argmin_and_instance_path() {
 /// `first_violation` empty.
 #[test]
 fn tran_trace_margins_read_with_time_argmins() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     // dc = 0.6 → 0.3 V across dut1, margin +0.1 — satisfied everywhere.
     session.set("v1", "dc", 0.6).expect("restamp");
     let trace = session
@@ -109,7 +115,7 @@ fn tran_trace_margins_read_with_time_argmins() {
 /// not a net, and asking the trace for it as a waveform fails loud.
 #[test]
 fn margins_are_not_waveform_rows() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     session.set("v1", "dc", 0.6).expect("restamp");
     let trace = session
         .tran(1e-6, Some(1e-7), 0.0, &collect_config(), None, false, &[])
@@ -128,29 +134,36 @@ fn margins_are_not_waveform_rows() {
 /// DVC-18: the AC trace's channel carries frequency argmins.
 #[test]
 fn ac_trace_margins_read_with_frequency_argmins() {
-    const FILTER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vac(inout p: Electrical, inout n: Electrical) { param acmag: Real = 1.0; }
-analog Vac { V(p, n) <+ ac_stim(acmag, 0.0); }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-constraint C { require amp : V(p, n) <= 0.5; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    r1 : R(.p = in, .n = out);
-    c1 : C(.p = out, .n = gnd);
-}
-";
-    let mut session = compile(FILTER_PHDL);
+    const FILTER: &str = r#"`include "disciplines.vams"
+module Vac (inout electrical p, inout electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+    constraint begin
+        require amp : V(p, n) <= 0.5;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    C c1 (.p(out), .n(gnd));
+endmodule
+"#;
+    let mut session = compile(FILTER);
     let trace = session
         .ac(1.0, 1e6, 6, true, &collect_config())
         .expect("collect completes");
@@ -192,4 +205,38 @@ fn a_reduced_margin_has_one_value_and_no_argmin() {
 
     assert!(channel.requires_ok(), "both margins satisfied");
     assert!(channel.first_violation().is_none());
+}
+
+/// CONVAMS-13 (constraints-on-vams): the catalog classifies a `require`
+/// on a digital-only instance as `digital` — margins are an analog
+/// notion — so reading it fails loud naming the constraint and saying
+/// why, never "unknown constraint".
+#[test]
+fn a_require_on_a_digital_instance_reads_loud_as_digital() {
+    const DIGITAL: &str = r#"`include "disciplines.vams"
+discipline logic;
+    domain discrete;
+enddiscipline
+module Dut (input logic a, output logic y);
+    always begin
+        y <= a;
+    end
+    constraint begin
+        require stable : y <= 1;
+    end
+endmodule
+module Top (input logic a, output logic y);
+    Dut d1 (.a(a), .y(y));
+endmodule
+"#;
+    let design = piperine_lang::parse_and_elaborate(DIGITAL, &source_map()).expect("elaborates");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let op = session.op(&collect_config(), None).expect("collect completes");
+    let err = op.margins().get("stable").expect_err("no analog margin exists");
+    let msg = err.to_string();
+    assert!(msg.contains("stable"), "names the constraint: {msg}");
+    assert!(
+        msg.contains("no analog half"),
+        "says why — margins are an analog notion and this instance is digital: {msg}"
+    );
 }

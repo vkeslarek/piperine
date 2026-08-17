@@ -4,21 +4,20 @@
 //! using `Session::gradient` (T11) and the `Driver`/`Policy::Optimize`
 //! skeleton (T16).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `require` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraints-on-vams): the fixtures run against the
+//! `constraint begin … end` producer.
 
 use piperine_api::{Driver, DriverOutcome, OptimizeSpec, Policy, Session, SolverConfig};
 use piperine_lang::SourceMap;
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 /// A resistive divider whose output voltage `V(out) = dc·G1/(G1+G2+Gd)`
 /// (G1 = 1/r1, G2 = 1/r2, Gd = 1e-3 fixed) is DECREASING in `r2` and
@@ -28,32 +27,39 @@ use piperine_lang::SourceMap;
 /// optimum: `V(out) = 0.2` exactly, at the active boundary. Nominal
 /// (r1=r2=1e3) is already feasible (`V(out) = 1/3 ≈ 0.333 >= 0.2`), so
 /// the objective phase does the work.
-const DIVIDER_BOUND_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param lo: Real = 0.2; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require lb : V(p, n) >= lo; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    r2   : R(.p = out,    .n = gnd);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+const DIVIDER_BOUND: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real lo = 0.2;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require lb : V(p, n) >= lo;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    R r2 (.p(out), .n(gnd));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 fn design(phdl: &str) -> piperine_lang::Design {
-    piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates")
+    piperine_lang::parse_and_elaborate(phdl, &source_map()).expect("elaborates")
 }
 
 fn optimize_spec() -> OptimizeSpec {
@@ -72,7 +78,7 @@ fn optimize_spec() -> OptimizeSpec {
 /// throughout (the objective phase projects onto the feasible set).
 #[test]
 fn a_two_parameter_fixture_converges_to_its_known_optimum_and_stays_feasible() {
-    let phdl_design = design(DIVIDER_BOUND_PHDL);
+    let phdl_design = design(DIVIDER_BOUND);
     let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
 
     let driver = Driver::new(Policy::Optimize(optimize_spec()));
@@ -100,7 +106,7 @@ fn a_two_parameter_fixture_converges_to_its_known_optimum_and_stays_feasible() {
 /// host boundary — before any restamp happens.
 #[test]
 fn an_objective_naming_an_unknown_var_fails_loud() {
-    let phdl_design = design(DIVIDER_BOUND_PHDL);
+    let phdl_design = design(DIVIDER_BOUND);
     let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
 
     let spec = OptimizeSpec {
@@ -125,29 +131,36 @@ fn an_objective_naming_an_unknown_var_fails_loud() {
 /// test uses, and confirmed feasible by the end of the run.
 #[test]
 fn the_feasibility_phase_climbs_an_infeasible_nominal_to_a_feasible_point() {
-    const INFEASIBLE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-    let phdl_design = design(INFEASIBLE_PHDL);
+    const INFEASIBLE: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
+    let phdl_design = design(INFEASIBLE);
     let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
 
     // Sanity: nominal really is infeasible.

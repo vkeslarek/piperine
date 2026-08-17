@@ -91,7 +91,7 @@ fn the_coroutine_does_not_run_at_the_dc_operating_point() {
     assert!(result.is_ok(), "a DC solve with a sequencer present must not panic or fail: {result:?}");
 }
 
-const HOST_SEQUENCER_PHDL: &str = r#"
+const HOST_SEQUENCER: &str = r#"
 nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
 nature Current; units = "A"; access = I; abstol = 1e-12; endnature
 discipline electrical;
@@ -129,7 +129,7 @@ fn ac_with_a_sequencer_present_fails_loud_naming_the_gap() {
     }
 
     let design = piperine_lang::parse_and_elaborate_seeded(
-        HOST_SEQUENCER_PHDL,
+        HOST_SEQUENCER,
         &SourceMap::dummy(),
         piperine_lang::seed_device_port_schemas,
     )

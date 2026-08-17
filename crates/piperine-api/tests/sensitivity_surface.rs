@@ -5,19 +5,19 @@
 //! naming the gap. The adjoint path is the engine; the per-element
 //! fallback list travels on the result.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause and reduced `var`
-//! declarations.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Partially migrated** (constraints-on-vams): the `require`-only
+//! divider fixture runs against the `constraint begin … end` producer,
+//! and the net-name tests below pass through it. Still red, each naming
+//! its blocker at the test: the AC-var fixture (BLOCKED on the deferred
+//! constraint `var`/reduced-metric statement — constraints-on-vams
+//! Out-of-Scope), the margin-name resolution test (BLOCKED on
+//! `classify_margin_gradient`, still the MD-45 always-refuse stub in
+//! `piperine-api`'s `gradient.rs`), and the candidate-listing test
+//! (BLOCKED on `Session::gradient`'s unknown-metric path, which still
+//! hardcodes `declared margins: []` post-MD-45 instead of walking the
+//! margins catalog). Blocked tests stay failing rather than being
+//! weakened, deleted, or `#[ignore]`d (repo-banned by
+//! `tests/suite_hygiene.rs`).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{
@@ -25,29 +25,54 @@ use piperine_api::{
 };
 use piperine_lang::SourceMap;
 
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 10.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-";
 
+/// The divider (margin_gradients.rs's fixture family, dc = 10.0 as
+/// authored): `require head : V(p, n) <= hi` rides the constraints-on-vams
+/// producer; the sensitivity tests below address the `out` net and the
+/// `head` margin by name.
+const DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 10.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
+
+/// BLOCKED on the deferred constraint `var`/reduced-metric statement
+/// (constraints-on-vams Out-of-Scope): `var ugbw : Real =
+/// ac_unity_gain_freq(…)` has no `constraint begin … end` spelling yet,
+/// so this fixture stays in PHDL and fails at parse.
+///
 /// A single-pole stage with reduced AC vars — refuses loud on the host
 /// surface, naming the AC-adjoint gap.
 const STAGE_PHDL: &str = "\
@@ -85,8 +110,8 @@ mod Top() {
 }
 ";
 
-fn compile(phdl: &str) -> Session {
-    let design = piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates");
+fn compile(src: &str) -> Session {
+    let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -101,7 +126,7 @@ fn collect_config() -> SolverConfig {
 // within the FD's own tolerance; the method is `Adjoint`.
 #[test]
 fn sensitivity_returns_a_typed_value_with_engine_attribution() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
 
     let s: Sensitivity = session
         .sensitivity("out", &("r1".into(), "r".into()), &collect_config())
@@ -131,7 +156,7 @@ fn sensitivity_returns_a_typed_value_with_engine_attribution() {
 // Both values must match `.sens`.
 #[test]
 fn gradient_serves_many_params_with_one_engine_attribution() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let params = vec![
         ("r1".to_string(), "r".to_string()),
         ("v1".to_string(), "dc".to_string()),
@@ -173,9 +198,16 @@ fn gradient_serves_many_params_with_one_engine_attribution() {
 // same value as the bare-net path on this fixture (since `n` is ground).
 // Proves the metric-resolution layer dispatches margins and nets through
 // one host surface.
+//
+// BLOCKED on the margin-gradient classifier: `classify_margin_gradient`
+// (`piperine-api`'s `gradient.rs`) is still the MD-45 always-refuse
+// stub, so `Session::gradient` falls through the margin branch and
+// refuses `"head"` as an unknown metric. Re-anchoring the classifier on
+// the constraints-on-vams `require` producer is deferred; the fixture is
+// migrated and the failure is that loud refusal.
 #[test]
 fn a_metric_name_resolves_to_either_a_margin_or_a_net() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
 
     let by_margin: Sensitivity = session
         .sensitivity("head", &("r1".into(), "r".into()), &collect_config())
@@ -200,9 +232,16 @@ fn a_metric_name_resolves_to_either_a_margin_or_a_net() {
 //
 // A typo surfaces both the addressable nets and the declared margins —
 // the caller sees what to write instead of a bare "not found".
+//
+// BLOCKED on `Session::gradient`'s unknown-metric candidate list
+// (`piperine-api`'s `session/entry.rs`): post-MD-45 it still hardcodes
+// `declared margins: []` instead of walking the margins catalog, so the
+// message names the nets but never `head`. Wiring the catalog into that
+// list is deferred; the fixture is migrated and the failure is the
+// missing `head` candidate.
 #[test]
 fn unknown_metric_fails_loud_listing_candidates() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let err = session
         .sensitivity("typo", &("r1".into(), "r".into()), &collect_config())
         .expect_err("unknown metric must refuse");
@@ -217,6 +256,9 @@ fn unknown_metric_fails_loud_listing_candidates() {
 // The same refusal T10 enforces on `margin_gradient` is enforced on
 // `sensitivity`/`gradient` — the unified host surface never silently
 // finite-differences an AC-defined metric behind the caller's back.
+//
+// BLOCKED on the deferred constraint `var`/reduced-metric statement
+// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
 #[test]
 fn ac_defined_metric_fails_loud_on_the_unified_surface() {
     let mut session = compile(STAGE_PHDL);

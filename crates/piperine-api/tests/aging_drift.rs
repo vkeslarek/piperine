@@ -6,18 +6,8 @@
 //! cross a rebuild-class (`Invalidation::Rebuild`) boundary fails loud
 //! rather than silently re-elaborating.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `require` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraints-on-vams): the fixtures run against the
+//! `constraint begin … end` producer.
 
 use piperine_api::{age, AgingSpec, DriftRate, Session, SolverConfig, StressSource};
 use piperine_lang::SourceMap;
@@ -27,63 +17,88 @@ use piperine_lang::SourceMap;
 /// `require head_lo : V(p, n) >= lo` margin goes negative — a real
 /// margin-erosion path driven purely by this module's linear placeholder
 /// model (no calibrated device physics involved).
-const AGING_DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param lo: Real = 0.45; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head_lo : V(p, n) >= lo; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
+///
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers (copied
+/// verbatim from `margins_channel.rs`).
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-";
+
+const AGING_DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real lo = 0.45;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head_lo : V(p, n) >= lo;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// A fixture whose `R` module carries a PRESENCE-QUERIED optional param
-/// (`ns : Real? = none`, never given) alongside the ordinary `r` —
-/// exactly the shape `live_params.rs`'s
+/// (`parameter real ns = 0.0` guarded by `$param_given("ns")`, never
+/// given) alongside the ordinary `r` — exactly the shape
+/// `live_params.rs`'s
 /// `presence_flipping_set_returns_typed_rebuild_without_applying` test
 /// uses to prove `Session::set` on such a param returns
 /// `Invalidation::Rebuild`. Aging `r1.ns` must hit that SAME refusal.
-const AGING_REBUILD_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const AGING_REBUILD: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    // given => extra ns*1e-6 S in parallel
+    parameter real ns = 0.0;
+    analog begin
+        I(p, n) <+ V(p, n) / r + ($param_given("ns") ? ns : 0.0) * 1.0e-6 * V(p, n);
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real lo = 0.45;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head_lo : V(p, n) >= lo;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    param ns: Real? = none;  // given => extra ns*1e-6 S in parallel
-}
-analog R { I(p, n) <+ V(p, n) / r + ns.get_or(0.0) * 1.0e-6 * V(p, n); }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param lo: Real = 0.45; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head_lo : V(p, n) >= lo; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-
-fn design(phdl: &str) -> piperine_lang::Design {
-    piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates")
+fn design(src: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates")
 }
 
 /// T21 AC1/AC2: aging computes a stress proxy from an OP, restamps the
@@ -92,8 +107,8 @@ fn design(phdl: &str) -> piperine_lang::Design {
 /// always-passes run.
 #[test]
 fn aging_reports_the_first_violated_constraint_and_when() {
-    let phdl_design = design(AGING_DIVIDER_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let d = design(AGING_DIVIDER);
+    let mut session = Session::compile(&d, "Top").expect("session compiles");
 
     let spec = AgingSpec {
         stress: StressSource::Op { metric: "in".to_string() },
@@ -134,8 +149,8 @@ fn aging_reports_the_first_violated_constraint_and_when() {
 /// scanned lifetime → `first_violation` is `None`, not a fabricated time.
 #[test]
 fn no_violation_within_the_scanned_lifetime_reports_none() {
-    let phdl_design = design(AGING_DIVIDER_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let d = design(AGING_DIVIDER);
+    let mut session = Session::compile(&d, "Top").expect("session compiles");
 
     let spec = AgingSpec {
         stress: StressSource::Op { metric: "in".to_string() },
@@ -159,14 +174,15 @@ fn no_violation_within_the_scanned_lifetime_reports_none() {
 /// T21 edge case (spec + DVG-21): a drift that would cross a
 /// rebuild-class boundary fails loud rather than silently re-elaborating.
 /// `r1.ns` is a presence-queried optional param never given
-/// (`Real? = none`) — the SAME shape `live_params.rs` proves classifies as
+/// (`$param_given("ns")`-guarded `parameter real ns = 0.0`) — the SAME
+/// shape `live_params.rs` proves classifies as
 /// `Invalidation::Rebuild` on its very first `Session::set`. `age` must
 /// propagate that refusal rather than swallowing it or re-elaborating
 /// around it.
 #[test]
 fn a_drift_crossing_a_rebuild_class_boundary_fails_loud() {
-    let phdl_design = design(AGING_REBUILD_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let d = design(AGING_REBUILD);
+    let mut session = Session::compile(&d, "Top").expect("session compiles");
 
     // Sanity: `Session::set` on `r1.ns` really is a structural (presence-
     // flipping) write and really does fail loud on its own — proving the
@@ -179,7 +195,7 @@ fn a_drift_crossing_a_rebuild_class_boundary_fails_loud() {
     // A fresh session — the sanity probe above errored (no partial
     // apply), but compile fresh anyway so the aging call below starts
     // from an unambiguous, never-touched circuit.
-    let mut session = Session::compile(&phdl_design, "Top").expect("fresh session compiles");
+    let mut session = Session::compile(&d, "Top").expect("fresh session compiles");
 
     let spec = AgingSpec {
         stress: StressSource::Op { metric: "in".to_string() },

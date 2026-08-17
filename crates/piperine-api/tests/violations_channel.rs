@@ -7,51 +7,69 @@
 //! digital-only instance has no margin because margins are an analog
 //! notion.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause and reduced `var`
-//! declarations.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraints-on-vams): the `require`-only divider fixture
+//! runs against the `constraint begin … end` producer. The two remaining
+//! red fixtures each name their blocker where they are declared:
+//! `STAGE_PHDL` needs the deferred constraint `var`/reduced-metric
+//! statement (`var ugbw : Real = ac_unity_gain_freq(…)`;
+//! constraints-on-vams Out-of-Scope), and `DIGITAL_PHDL` needs PHDL
+//! `Bit`-typed module vars (`var st : Bit = 0`) — module var initializers
+//! have no VAMS producer and `Bit` is PHDL's value layer. Those stay in
+//! PHDL and fail rather than being weakened, deleted, or `#[ignore]`d
+//! (repo-banned by `tests/suite_hygiene.rs`).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_solver::prelude::ValidationSeverity;
 
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 /// The divider (margins_channel.rs's fixture): `dc` volts across r1 +
 /// dut1 puts `dc/2` across `dut1`; `require head : V(p, n) <= hi`
 /// (hi = 0.4) has margin `0.4 − dc/2` — violated at dc = 1.0 (−0.1).
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-
+/// BLOCKED on the deferred constraint `var`/reduced-metric statement
+/// (constraints-on-vams Out-of-Scope): `var ugbw : Real =
+/// ac_unity_gain_freq(…)` has no `constraint begin … end` spelling yet,
+/// so this fixture stays in PHDL and fails at parse.
+///
 /// A gain stage with a reduced `var` (reduced_metrics.rs's fixture
 /// family): `ugbw` is evaluated host-side once per completed AC sweep —
 /// no other analysis defines it.
@@ -90,8 +108,13 @@ mod Top() {
 }
 ";
 
-/// A digital-only inverter carrying a `require` over a digital quantity:
-/// the module has no analog half, so the require produces no margin.
+/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer: `var st :
+/// Bit = 0;` is a module var initializer (a known gap) over PHDL's `Bit`
+/// value layer. This fixture stays in PHDL and fails at parse.
+///
+/// A digital-only inverter carrying a `require` over a digital quantity
+/// (the stdlib prelude supplies `Bit`/`posedge`): the module has no
+/// analog half, so the require produces no margin.
 const DIGITAL_PHDL: &str = "\
 use piperine::disciplines;
 mod Inv(input a: Bit, output y: Bit) { var st : Bit = 0; }
@@ -105,19 +128,8 @@ mod Top() {
 }
 ";
 
-fn compile(phdl: &str) -> Session {
-    let design = piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates");
-    Session::compile(&design, "Top").expect("session compiles")
-}
-
-/// The digital fixture needs the stdlib prelude (`Bit`, `posedge`).
-fn compile_digital() -> Session {
-    let headers =
-        std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone());
-    map.add_namespace("piperine", headers.clone());
-    map.add_namespace("spice", headers.join("spice"));
-    let design = piperine_lang::parse_and_elaborate(DIGITAL_PHDL, &map).expect("elaborates");
+fn compile(src: &str) -> Session {
+    let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -130,7 +142,7 @@ fn collect_config() -> SolverConfig {
 /// margin value, and the evaluation coordinate.
 #[test]
 fn op_violations_carry_severity_and_provenance() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let op = session.op(&collect_config(), None).expect("collect completes");
     let violations = op.violations();
     assert_eq!(violations.len(), 1, "the violated require emits exactly one finding at the DC point");
@@ -147,7 +159,7 @@ fn op_violations_carry_severity_and_provenance() {
 /// finding with the accepted-step time as its coordinate.
 #[test]
 fn tran_violations_carry_time_provenance() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let trace = session
         .tran(1e-6, Some(1e-7), 0.0, &collect_config(), None, false, &[])
         .expect("collect completes");
@@ -166,7 +178,7 @@ fn tran_violations_carry_time_provenance() {
 /// candidates — the `Error::Measurement` family's contract.
 #[test]
 fn unknown_constraint_name_lists_candidates() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let op = session.op(&collect_config(), None).expect("collect completes");
     let err = op.margins().get("hed").expect_err("an unknown name fails loud");
     let msg = err.to_string();
@@ -178,6 +190,9 @@ fn unknown_constraint_name_lists_candidates() {
 /// analysis where it is not defined fails loud with "not defined in this
 /// analysis" — never an "unknown constraint" for a name the design
 /// declares, and never an invented `t = 0` value.
+///
+/// BLOCKED on the deferred constraint `var`/reduced-metric statement
+/// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
 #[test]
 fn a_reduced_var_read_outside_ac_is_not_defined_in_this_analysis() {
     let mut session = compile(STAGE_PHDL);
@@ -198,9 +213,12 @@ fn a_reduced_var_read_outside_ac_is_not_defined_in_this_analysis() {
 /// Spec P1 "validation_reports()" story / design §C4: a `require` over a
 /// digital quantity has no margin — asking for one fails loud with
 /// "margins are an analog notion", not "unknown constraint".
+///
+/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer — see
+/// `DIGITAL_PHDL`.
 #[test]
 fn a_digital_require_has_no_margin_and_asking_for_one_is_loud() {
-    let mut session = compile_digital();
+    let mut session = compile(DIGITAL_PHDL);
     let trace = session
         .tran(1e-9, Some(1e-10), 0.0, &collect_config(), None, false, &[])
         .expect("collect completes");

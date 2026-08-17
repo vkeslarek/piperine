@@ -11,48 +11,71 @@
 //! differentiable case proves the adjoint dispatches through the
 //! margin-naming layer and reports `argmin` (the DC point).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `require` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Partially migrated** (constraints-on-vams): the `require`-only
+//! divider fixture runs against the `constraint begin … end` producer.
+//! What stays red, each naming its blocker at the fixture or the test:
+//! the reduced AC `var` fixtures (BLOCKED on the deferred constraint
+//! `var`/reduced-metric statement — constraints-on-vams Out-of-Scope),
+//! the `@ tran` fixture (BLOCKED on the deferred analysis-scoping
+//! block), and the two pointwise-DC gradient tests — fixture migrated,
+//! but `classify_margin_gradient` (`piperine-api`'s `gradient.rs`) is
+//! still the MD-45 always-refuse stub, so the margin-naming layer has
+//! nothing to dispatch through yet. Blocked tests stay failing rather
+//! than being weakened, deleted, or `#[ignore]`d (repo-banned by
+//! `tests/suite_hygiene.rs`).
 
 use piperine_api::{Session, SolverConfig};
 use piperine_api::prelude::CheckPosture;
 use piperine_lang::SourceMap;
 
-/// A divider with a DC `require head : V(p, n) <= hi` on the dut — the
-/// canonical differentiable pointwise DC margin.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-";
 
+/// The divider (margins_channel.rs's fixture): `dc` volts across r1 +
+/// dut1 puts `dc/2` across `dut1` (dc = 1.0 → 0.5 V); `require head :
+/// V(p, n) <= hi` (hi = 0.4) has margin −0.1 at the operating point —
+/// the canonical differentiable pointwise DC margin.
+const DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
+
+/// BLOCKED on the deferred constraint `var`/reduced-metric statement
+/// (constraints-on-vams Out-of-Scope): `var ugbw/pm/ag : Real =
+/// ac_*(…)` has no `constraint begin … end` spelling yet, so this
+/// fixture stays in PHDL and fails at parse.
+///
 /// A single-pole stage with three reduced AC `var`s (`ugbw`, `pm`, `gm`)
 /// and a pointwise AC `var ag` — all AC-defined, all refuse loud.
 const STAGE_PHDL: &str = "\
@@ -92,6 +115,11 @@ mod Top() {
 }
 ";
 
+/// BLOCKED on the deferred `@ tran` analysis-scoping block
+/// (constraints-on-vams Out-of-Scope): `@ tran { require … }` has no
+/// `constraint begin … end` spelling yet, so this fixture stays in PHDL
+/// and fails at parse.
+///
 /// A transient-scoped require — event-detected, refused loud.
 const TRAN_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
@@ -118,8 +146,8 @@ mod Top() {
 }
 ";
 
-fn compile(phdl: &str) -> Session {
-    let design = piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates");
+fn compile(src: &str) -> Session {
+    let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -136,9 +164,15 @@ fn collect_config() -> SolverConfig {
 // oracle T9 used. The result reports `argmin = 0.0` so a reader knows
 // the gradient was evaluated at the single DC point, not implied over a
 // sweep.
+//
+// BLOCKED on the margin-gradient classifier: `classify_margin_gradient`
+// (`piperine-api`'s `gradient.rs`) still refuses every name post-MD-45;
+// re-anchoring it on the constraints-on-vams `require` producer is
+// deferred. The fixture is migrated, so the failure below is the
+// classifier's loud refusal naming `head` and `Top` — not a parse error.
 #[test]
 fn a_pointwise_dc_margin_gradient_is_taken_at_the_located_argmin() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let params = vec![("r1".to_string(), "r".to_string())];
 
     let grad = session
@@ -178,9 +212,14 @@ fn a_pointwise_dc_margin_gradient_is_taken_at_the_located_argmin() {
 // second fixture (`V(gnd, out)` — flipping the differential sign) and
 // check the gradient sign flips with it, proving both ends were
 // resolved.
+//
+// BLOCKED on the margin-gradient classifier (`classify_margin_gradient`
+// is still the MD-45 always-refuse stub) — same blocker as the argmin
+// test above; the fixture is migrated and the failure is the stub's
+// loud refusal.
 #[test]
 fn a_differential_probe_resolves_both_ends() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let params = vec![("r1".to_string(), "r".to_string())];
 
     // V(p, n) = V(out, gnd): the underlying quantity is +V(out).
@@ -211,6 +250,9 @@ fn a_differential_probe_resolves_both_ends() {
 // documented gap (D6); the driver refuses loud rather than silently
 // finite-differencing behind the caller's back. The error message names
 // "AC adjoint" and "D6" so the gap is a decision, not a bug report.
+//
+// BLOCKED on the deferred constraint `var`/reduced-metric statement
+// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
 #[test]
 fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
     let mut session = compile(STAGE_PHDL);
@@ -228,6 +270,9 @@ fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
 // `ac_gain` is pointwise + AC-scoped. Same gap, different class — the
 // classifier must not let a pointwise AC metric sneak through just
 // because it is pointwise.
+//
+// BLOCKED on the deferred constraint `var`/reduced-metric statement
+// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
 #[test]
 fn an_ac_defined_pointwise_metric_fails_loud() {
     let mut session = compile(STAGE_PHDL);
@@ -246,6 +291,9 @@ fn an_ac_defined_pointwise_metric_fails_loud() {
 // `@ tran { require settle : … }` is transient-scoped. Settling time / a
 // time-windowed require is event-detected territory — differentiable
 // only through the event, which has no adjoint today.
+//
+// BLOCKED on the deferred `@ tran` analysis-scoping block
+// (constraints-on-vams Out-of-Scope) — see `TRAN_PHDL`.
 #[test]
 fn a_transient_scoped_metric_fails_loud_as_event_detected() {
     let mut session = compile(TRAN_PHDL);
@@ -265,7 +313,7 @@ fn a_transient_scoped_metric_fails_loud_as_event_detected() {
 // a typo surfaces the real names instead of a bare "not found".
 #[test]
 fn an_unknown_margin_name_fails_loud() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let err = session
         .margin_gradient("typo", &[("r1".into(), "r".into())], &collect_config())
         .expect_err("unknown margin must refuse");
