@@ -16,26 +16,22 @@ use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
-
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src   (.p(vin), .n(gnd));
+    Resistor      #(.r(3e3))       r_top (.p(vin), .n(mid));
+    Resistor      #(.r(2e3))       r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 /// A diode with `$limit("pnjlim", …)` — a nonlinear circuit whose junction
@@ -43,37 +39,38 @@ mod Divider() {
 /// the limiter typically releases (the junction voltage has stabilised), so
 /// `limiting` may be empty — but the surface must still be accessible.
 const DIODE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VSource(inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod VSource(inout p: Electrical, inout n: Electrical) { param dc: Real = 0.0; }
-analog VSource { V(p, n) <- dc; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Diode(inout electrical a, inout electrical c);
+    parameter real is_sat = 1e-14;
+    parameter real vte    = 0.02585;
+    parameter real vcrit  = 0.7;
+    analog begin: body
+        real vd;
+        vd = $limit(\"pnjlim\", V(a, c), 0.0, vte, vcrit);
+        I(a, c) <+ is_sat * (limexp(vd / vte) - 1.0);
+    end
+endmodule
 
-mod Diode(inout a: Electrical, inout c: Electrical) {
-    param is_sat : Real = 1e-14;
-    param vte    : Real = 0.02585;
-    param vcrit  : Real = 0.7;
-}
-analog Diode {
-    var vd : Real = $limit(\"pnjlim\", V(a, c), 0.0, vte, vcrit);
-    I(a, c) <+ is_sat * (limexp(vd / vte) - 1.0);
-}
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire vd   : Electrical;
-    v1 : VSource   (vin, gnd) { .dc = 5.0 };
-    r1 : Resistor  (vin, vd)  { .r = 1e3 };
-    d1 : Diode     (vd, gnd);
-}
+module Top();
+    electrical gnd, vin, vd;
+    VSource  #(.dc(5.0)) v1 (vin, gnd);
+    Resistor #(.r(1e3))  r1 (vin, vd);
+    Diode    d1 (vd, gnd);
+endmodule
 ";
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

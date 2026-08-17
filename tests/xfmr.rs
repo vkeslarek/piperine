@@ -8,7 +8,7 @@ use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -21,16 +21,16 @@ fn headers_source_map() -> SourceMap {
 fn xfmr_open_secondary_voltage_ratio() {
     // Drive the primary through a small series resistor (an ideal source
     // directly across the winding is two parallel voltage branches → singular).
-    let phdl = "use piperine::disciplines;
-use spice::sources;
-use spice::passives;
-mod Top() {
-    wire gnd: Electrical; wire src: Electrical; wire pri: Electrical; wire sec: Electrical;
-    vin: vsrc (.p=src,.n=gnd) { .ac_mag = 1.0 };
-    rs: res (.p=src,.n=pri) { .r = 0.01 };
-    t1: xfmr (.p1=pri,.n1=gnd,.p2=sec,.n2=gnd) { .l1 = 1.0e-6, .l2 = 4.0e-6, .k = 0.999 };
-    rl: res (.p=sec,.n=gnd) { .r = 1.0e9 };
-}";
+    let phdl = r#"`include "disciplines.vams"
+`include "spice/sources.va"
+`include "spice/passives.va"
+module Top();
+    electrical gnd, src, pri, sec;
+    vsrc #(.ac_mag(1.0)) vin (.p(src), .n(gnd));
+    res  #(.r(0.01)) rs (.p(src), .n(pri));
+    xfmr #(.l1(1.0e-6), .l2(4.0e-6), .k(0.999)) t1 (.p1(pri), .n1(gnd), .p2(sec), .n2(gnd));
+    res  #(.r(1.0e9)) rl (.p(sec), .n(gnd));
+endmodule"#;
     let design = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect("xfmr design elaborates");
     let trace = Session::compile(&design, "Top").expect("session compiles")
@@ -50,27 +50,38 @@ mod Top() {
 }
 
 /// A coupling coefficient with |k| > 1 is unphysical and fails loud.
+///
+/// BLOCKED (left failing, not weakened): PHDL's `$assert` in `xfmr` became
+/// an LRM §3.4.2 `from` range constraint on the parameter declaration
+/// (T41), and `elab::lower::vams` validates those ranges against the
+/// *declared default* only — `check_param_ranges` is never re-run for an
+/// instance's `#(.k(1.5))` override. Needs override-site range validation,
+/// a production change.
 #[test]
 fn xfmr_bad_k_is_loud() {
-    let phdl = "use piperine::disciplines;
-use spice::passives;
-mod Top() {
-    wire gnd: Electrical; wire a: Electrical; wire b: Electrical;
-    t1: xfmr (.p1=a,.n1=gnd,.p2=b,.n2=gnd) { .l1 = 1.0e-6, .l2 = 1.0e-6, .k = 1.5 };
-}";
+    let phdl = r#"`include "disciplines.vams"
+`include "spice/passives.va"
+module Top();
+    electrical gnd, a, b;
+    xfmr #(.l1(1.0e-6), .l2(1.0e-6), .k(1.5)) t1 (.p1(a), .n1(gnd), .p2(b), .n2(gnd));
+endmodule"#;
     let err = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect_err("|k| > 1 must fail loud");
     assert!(format!("{err}").contains("k"), "loud error names k: {err:?}");
 }
 
 /// A non-positive winding inductance fails loud.
+///
+/// BLOCKED for the same reason as `xfmr_bad_k_is_loud`: `from` on `l1` is
+/// checked against the declared default, never against an instance's
+/// `#(.l1(0.0))` override.
 #[test]
-fn xfmr_bad_inductance_is_loud() {    let phdl = "use piperine::disciplines;
-use spice::passives;
-mod Top() {
-    wire gnd: Electrical; wire a: Electrical; wire b: Electrical;
-    t1: xfmr (.p1=a,.n1=gnd,.p2=b,.n2=gnd) { .l1 = 0.0, .l2 = 1.0e-6, .k = 0.9 };
-}";
+fn xfmr_bad_inductance_is_loud() {    let phdl = r#"`include "disciplines.vams"
+`include "spice/passives.va"
+module Top();
+    electrical gnd, a, b;
+    xfmr #(.l1(0.0), .l2(1.0e-6), .k(0.9)) t1 (.p1(a), .n1(gnd), .p2(b), .n2(gnd));
+endmodule"#;
     let err = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect_err("l1 = 0 must fail loud");
     assert!(format!("{err}").contains("l1"), "loud error names l1: {err:?}");
@@ -85,14 +96,14 @@ mod Top() {
 /// the transfer timing/envelope) correct.
 #[test]
 fn xfmr_coupled_lc_energy_transfer() {
-    let phdl = "use piperine::disciplines;
-use spice::passives;
-mod Top() {
-    wire gnd: Electrical; wire v1: Electrical; wire v2: Electrical;
-    c1: cap   (.p=v1,.n=gnd) { .c = 1.0e-8 };
-    c2: cap   (.p=v2,.n=gnd) { .c = 1.0e-8 };
-    t1: xfmr  (.p1=v1,.n1=gnd,.p2=v2,.n2=gnd) { .l1 = 1.0e-5, .l2 = 1.0e-5, .k = 0.5 };
-}";
+    let phdl = r#"`include "disciplines.vams"
+`include "spice/passives.va"
+module Top();
+    electrical gnd, v1, v2;
+    cap  #(.c(1.0e-8)) c1 (.p(v1), .n(gnd));
+    cap  #(.c(1.0e-8)) c2 (.p(v2), .n(gnd));
+    xfmr #(.l1(1.0e-5), .l2(1.0e-5), .k(0.5)) t1 (.p1(v1), .n1(gnd), .p2(v2), .n2(gnd));
+endmodule"#;
     let design = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect("coupled tanks elaborate");
     let ic = std::collections::HashMap::from([("v1".to_string(), 1.0)]);

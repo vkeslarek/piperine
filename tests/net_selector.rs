@@ -6,22 +6,22 @@ use piperine::{CrossDirection, NetRef, Scale, Session, SolverConfig, Waveform};
 use piperine_lang::SourceMap;
 
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real voltage = 10.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param voltage: Real = 10.0; }
-analog V { V(p, n) <- voltage; }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : V(.p = vin, .n = gnd) {};
-    r_top : R(.p = vin, .n = mid) { .r = 1e3 };
-    r_bot : R(.p = mid, .n = gnd) { .r = 1e3 };
-}
+module Top();
+    electrical gnd, vin, mid;
+    V src (.p(vin), .n(gnd));
+    R #(.r(1e3)) r_top (.p(vin), .n(mid));
+    R #(.r(1e3)) r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 fn elaborate(src: &str) -> piperine_lang::Design {

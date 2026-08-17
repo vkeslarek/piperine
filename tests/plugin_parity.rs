@@ -30,7 +30,7 @@ const PHASES: &[&str] =
 const CTX_METHODS: &[&str] = &["design", "project_root", "log", "fs_read", "fs_write"];
 const STAGING_METHODS: &[&str] = &["design", "set_param", "add_instance", "add_connection"];
 
-const SRC: &str = "mod Top() {}";
+const SRC: &str = "module Top(); endmodule";
 
 // ─── Rust decorator surface (compile-time proof) ────────────────────────────
 //

@@ -12,15 +12,15 @@ use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
 }
 
 fn diode_design() -> piperine_lang::Design {
-    let phdl = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/ngspice/diode_iv.phdl"));
-    let src = std::fs::read_to_string(&phdl).expect("diode_iv.phdl fixture");
+    let fixture = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/ngspice/diode_iv.vams"));
+    let src = std::fs::read_to_string(&fixture).expect("diode_iv.vams fixture");
     piperine_lang::parse_and_elaborate(&src, &headers_source_map()).expect("elaboration")
 }
 

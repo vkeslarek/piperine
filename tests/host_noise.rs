@@ -13,36 +13,36 @@ use piperine_lang::SourceMap;
 /// whose resistor emits thermal noise via `white_noise` (the stdlib
 /// convention). The capacitor shapes the output noise but contributes none.
 const NOISE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VSource(inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod VSource(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog VSource { V(p, n) <- dc; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    parameter real t = 300.15;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+        I(p, n) <+ white_noise(4.0 * 1.380649e-23 * t / r);
+    end
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r : Real = 1e3;
-    param t : Real = 300.15;
-}
-analog Resistor {
-    I(p, n) <+ V(p, n) / r;
-    I(p, n) <+ white_noise(4.0 * 1.380649e-23 * t / r);
-}
+module Capacitor(inout electrical p, inout electrical n);
+    parameter real c = 1e-9;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Capacitor(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-9; }
-analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : VSource   (vin, gnd) {};
-    r1 : Resistor  (vin, out) { .r = 1e3 };
-    c1 : Capacitor (out, gnd) { .c = 1e-9 };
-}
+module Top();
+    electrical gnd, vin, out;
+    VSource   v1 (vin, gnd);
+    Resistor  #(.r(1e3)) r1 (vin, out);
+    Capacitor #(.c(1e-9)) c1 (out, gnd);
+endmodule
 ";
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

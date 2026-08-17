@@ -13,35 +13,34 @@ use piperine::model::{Design, InstanceReadout, InstanceResolver, InstanceView};
 /// `@name`); `r_top` is a plain resistor. `mid = 5·2k/(3k+2k) = 2.0 V` by
 /// default; staging `r_top.r = 2e3` balances the divider to 2.5 V.
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module OpvarResistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    // Named by declaration — PHDL's `@name(value = \"cond\")` has no
+    // reachable Verilog-AMS spelling (only `device`/`port` attribute
+    // schemas are seeded).
+    real cond;
+    analog begin
+        cond = 1.0 / r;
+        I(p, n) <+ cond * V(p, n);
+    end
+endmodule
 
-mod OpvarResistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    @name(value = \"cond\") var g : Real = 0.0;
-}
-analog OpvarResistor {
-    g = 1.0 / r;
-    I(p, n) <+ g * V(p, n);
-}
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : OpvarResistor (.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Top();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src   (.p(vin), .n(gnd));
+    Resistor      #(.r(3e3))       r_top (.p(vin), .n(mid));
+    OpvarResistor #(.r(2e3))       r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 #[test]

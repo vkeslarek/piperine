@@ -3,107 +3,93 @@
 //! compilation `Session::compile` produced. `cargo test -p piperine`
 //! (Phase 1 / T4 quick gate).
 
-use piperine::{DistoResult, NetRef, PzResult, SParamResult, Session, SolverConfig};
+use piperine::{DistoResult, NetRef, PzResult, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const RC_AC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real dc = 5.0;
+    parameter real acmag = 1.0;
+    analog V(p, n) <+ dc + ac_stim(acmag, 0.0);
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 5.0; param acmag: Real = 1.0; }
-analog V { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module C(inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = out) { .r = 1e3 };
-    c1 : C(.p = out, .n = gnd) { .c = 1e-6 };
-}
+module Top();
+    electrical gnd, vin, out;
+    V v1 (.p(vin), .n(gnd));
+    R #(.r(1e3)) r1 (.p(vin), .n(out));
+    C #(.c(1e-6)) c1 (.p(out), .n(gnd));
+endmodule
 ";
 
 const RLC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog V { V(p, n) <- dc; }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module L(inout electrical p, inout electrical n);
+    parameter real l = 1e-3;
+    analog V(p, n) <+ l * ddt(I(p, n));
+endmodule
 
-mod L(inout p: Electrical, inout n: Electrical) { param l: Real = 1e-3; }
-analog L { V(p, n) <- l * ddt(I(p, n)); }
+module C(inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire a   : Electrical;
-    wire b   : Electrical;
-    v1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = a) { .r = 10.0 };
-    l1 : L(.p = a, .n = b) { .l = 1e-3 };
-    c1 : C(.p = b, .n = gnd) { .c = 1e-6 };
-}
+module Top();
+    electrical gnd, vin, a, b;
+    V v1 (.p(vin), .n(gnd));
+    R #(.r(10.0)) r1 (.p(vin), .n(a));
+    L #(.l(1e-3)) l1 (.p(a), .n(b));
+    C #(.c(1e-6)) c1 (.p(b), .n(gnd));
+endmodule
 ";
 
-const SHUNT_C_LOWPASS: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-9; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Top() {
-    wire gnd : Electrical;
-    @rfport(num = 1, z0 = 50) wire p1 : Electrical;
-    @rfport(num = 2, z0 = 50) wire p2 : Electrical;
-    rs  : R(.p = p1, .n = p2) { .r = 1.0 };
-    c1  : C(.p = p2, .n = gnd) { .c = 1e-9 };
-    rb1 : R(.p = p1, .n = gnd) { .r = 1e9 };
-    rb2 : R(.p = p2, .n = gnd) { .r = 1e9 };
-}
-";
 
 const POLY_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    parameter real acmag = 0.0;
+    analog V(p, n) <+ dc + ac_stim(acmag, 0.0);
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 0.0; param acmag: Real = 0.0; }
-analog V { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 50.0;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 50.0; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module PolyVccs(inout electrical inp, inout electrical inn,
+                inout electrical outp, inout electrical outn);
+    parameter real g1 = 0.1;
+    parameter real g2 = 0.02;
+    parameter real g3 = 0.003;
+    analog I(outp, outn) <+ g1 * V(inp, inn)
+                          + g2 * V(inp, inn) * V(inp, inn)
+                          + g3 * V(inp, inn) * V(inp, inn) * V(inp, inn);
+endmodule
 
-mod PolyVccs(inout inp: Electrical, inout inn: Electrical,
-             inout outp: Electrical, inout outn: Electrical) {
-    param g1: Real = 0.1;
-    param g2: Real = 0.02;
-    param g3: Real = 0.003;
-}
-analog PolyVccs {
-    I(outp, outn) <+ g1 * V(inp, inn)
-                   + g2 * V(inp, inn) * V(inp, inn)
-                   + g3 * V(inp, inn) * V(inp, inn) * V(inp, inn);
-}
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire vout : Electrical;
-    v1 : V(.p = vin, .n = gnd) { .dc = 0.0, .acmag = 1.0 };
-    n1 : PolyVccs(.inp = vin, .inn = gnd, .outp = vout, .outn = gnd) {};
-    r1 : R(.p = vout, .n = gnd) { .r = 50.0 };
-}
+module Top();
+    electrical gnd, vin, vout;
+    V #(.dc(0.0), .acmag(1.0)) v1 (.p(vin), .n(gnd));
+    PolyVccs n1 (.inp(vin), .inn(gnd), .outp(vout), .outn(gnd));
+    R #(.r(50.0)) r1 (.p(vout), .n(gnd));
+endmodule
 ";
 
 fn elaborate(src: &str) -> piperine_lang::Design {
@@ -131,10 +117,16 @@ fn session_tran_ac_noise_return_typed_traces() {
     assert!(nz.total() >= 0.0);
 }
 
-/// `sens`/`pss`/`pz`/`disto`/`sp` on `Session` return the same typed results
-/// `Session` does (HOST-04's uniform shape), on the same fixtures.
+/// `sens`/`pss`/`pz`/`disto` on `Session` return the same typed results
+/// `Session` does (HOST-04's uniform shape), on the same fixtures. `.sp`
+/// left this list with the PHDL frontend: `@rfport(num, z0)` has no
+/// reachable Verilog-AMS spelling (attribute instances resolve against
+/// `ElabContext::schemas`, which seeds only `device`/`port`), so no source
+/// can declare the RF ports `.sp` needs — the frontend-dark call ed575c85
+/// made for `piperine-lang`'s own `rfport` target. `.sp`'s fail-loud path
+/// stays covered by root `sp.rs`.
 #[test]
-fn session_sens_pss_pz_disto_sp_return_typed_results() {
+fn session_sens_pss_pz_disto_return_typed_results() {
     let rc_design = elaborate(RC_AC_PHDL);
     let mut rc_session = Session::compile(&rc_design, "Top").expect("session compiles");
     let sens = rc_session
@@ -156,11 +148,6 @@ fn session_sens_pss_pz_disto_sp_return_typed_results() {
     let disto: DistoResult =
         poly_session.disto(1e6, None, 0.1, "vout", None, &SolverConfig::default()).expect("disto solves");
     assert!(disto.hd2.is_some());
-
-    let sp_design = elaborate(SHUNT_C_LOWPASS);
-    let mut sp_session = Session::compile(&sp_design, "Top").expect("session compiles");
-    let sp: SParamResult = sp_session.sp(1e3, 1e9, 5, true, &SolverConfig::default()).expect("sp solves");
-    assert_eq!(sp.n_ports, 2);
 }
 
 /// `Session::set` on an unknown parameter fails loud with the solver's own

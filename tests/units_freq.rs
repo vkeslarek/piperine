@@ -6,25 +6,28 @@ use piperine::{Freq, NetRef, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const RC_AC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real dc = 5.0;
+    parameter real acmag = 1.0;
+    analog V(p, n) <+ dc + ac_stim(acmag, 0.0);
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 5.0; param acmag: Real = 1.0; }
-analog V { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module C(inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = out) { .r = 1e3 };
-    c1 : C(.p = out, .n = gnd) { .c = 1e-6 };
-}
+module Top();
+    electrical gnd, vin, out;
+    V v1 (.p(vin), .n(gnd));
+    R #(.r(1e3)) r1 (.p(vin), .n(out));
+    C #(.c(1e-6)) c1 (.p(out), .n(gnd));
+endmodule
 ";
 
 fn elaborate(src: &str) -> piperine_lang::Design {

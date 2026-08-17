@@ -11,7 +11,7 @@ use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -22,22 +22,23 @@ fn headers_source_map() -> SourceMap {
 /// (td = 1 ns). `rl` sets the far-end termination.
 fn tline_phdl(rl_ohms: &str) -> String {
     format!(
-        "use piperine::disciplines;
-use spice::passives;
-use spice::tline;
+        "`include \"disciplines.vams\"
+`include \"spice/passives.va\"
+`include \"spice/tline.va\"
 
-mod step_src(inout p: Electrical, inout n: Electrical) {{
-    param v: Real = 1.0; param tr: Real = 1.0e-11;
-}}
-analog step_src {{ V(p, n) <+ v * min(1.0, $abstime / tr); }}
+module step_src(inout electrical p, inout electrical n);
+    parameter real v = 1.0;
+    parameter real tr = 1.0e-11;
+    analog V(p, n) <+ v * min(1.0, $abstime / tr);
+endmodule
 
-mod Top() {{
-    wire gnd: Electrical; wire src: Electrical; wire a: Electrical; wire b: Electrical;
-    vin: step_src (.p=src,.n=gnd) {{ .v = 1.0, .tr = 1.0e-11 }};
-    rs: res (.p=src,.n=a) {{ .r = 50.0 }};
-    t1: tline (.p1=a,.n1=gnd,.p2=b,.n2=gnd) {{ .z0 = 50.0, .td = 1.0e-9 }};
-    rl: res (.p=b,.n=gnd) {{ .r = {rl_ohms} }};
-}}"
+module Top();
+    electrical gnd, src, a, b;
+    step_src #(.v(1.0), .tr(1.0e-11)) vin (.p(src), .n(gnd));
+    res   #(.r(50.0)) rs (.p(src), .n(a));
+    tline #(.z0(50.0), .td(1.0e-9)) t1 (.p1(a), .n1(gnd), .p2(b), .n2(gnd));
+    res   #(.r({rl_ohms})) rl (.p(b), .n(gnd));
+endmodule"
     )
 }
 
@@ -87,18 +88,25 @@ fn tline_open_termination_doubles() {
 }
 
 /// A non-positive characteristic impedance is a loud elaboration error.
+///
+/// BLOCKED (left failing, not weakened): PHDL's `$assert(z0 > 0.0, …)` in
+/// `tline` became an LRM §3.4.2 `from (0:1e15)` range constraint on the
+/// parameter declaration (T43), and `elab::lower::vams` validates those
+/// ranges against the *declared default* only — `check_param_ranges` is
+/// never re-run for an instance's `#(.z0(-1.0))` override. Needs
+/// override-site range validation, a production change.
 #[test]
 fn tline_bad_z0_is_loud() {
-    let phdl = "use piperine::disciplines;
-use spice::sources;
-use spice::passives;
-use spice::tline;
-mod Top() {
-    wire gnd: Electrical; wire a: Electrical; wire b: Electrical;
-    vin: vsrc (.p=a,.n=gnd) { .dc = 1.0 };
-    t1: tline (.p1=a,.n1=gnd,.p2=b,.n2=gnd) { .z0 = -1.0, .td = 1.0e-9 };
-    rl: res (.p=b,.n=gnd) { .r = 50.0 };
-}";
+    let phdl = r#"`include "disciplines.vams"
+`include "spice/sources.va"
+`include "spice/passives.va"
+`include "spice/tline.va"
+module Top();
+    electrical gnd, a, b;
+    vsrc  #(.dc(1.0)) vin (.p(a), .n(gnd));
+    tline #(.z0(-1.0), .td(1.0e-9)) t1 (.p1(a), .n1(gnd), .p2(b), .n2(gnd));
+    res   #(.r(50.0)) rl (.p(b), .n(gnd));
+endmodule"#;
     let err = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect_err("negative z0 must fail loud");
     let msg = format!("{err}");
@@ -106,18 +114,22 @@ mod Top() {
 }
 
 /// A non-positive transit delay is a loud elaboration error.
+///
+/// BLOCKED for the same reason as `tline_bad_z0_is_loud`: `from (0:1e15)`
+/// on `td` is checked against the declared default, never against an
+/// instance's `#(.td(0.0))` override.
 #[test]
 fn tline_bad_td_is_loud() {
-    let phdl = "use piperine::disciplines;
-use spice::sources;
-use spice::passives;
-use spice::tline;
-mod Top() {
-    wire gnd: Electrical; wire a: Electrical; wire b: Electrical;
-    vin: vsrc (.p=a,.n=gnd) { .dc = 1.0 };
-    t1: tline (.p1=a,.n1=gnd,.p2=b,.n2=gnd) { .z0 = 50.0, .td = 0.0 };
-    rl: res (.p=b,.n=gnd) { .r = 50.0 };
-}";
+    let phdl = r#"`include "disciplines.vams"
+`include "spice/sources.va"
+`include "spice/passives.va"
+`include "spice/tline.va"
+module Top();
+    electrical gnd, a, b;
+    vsrc  #(.dc(1.0)) vin (.p(a), .n(gnd));
+    tline #(.z0(50.0), .td(0.0)) t1 (.p1(a), .n1(gnd), .p2(b), .n2(gnd));
+    res   #(.r(50.0)) rl (.p(b), .n(gnd));
+endmodule"#;
     let err = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect_err("zero td must fail loud");
     let msg = format!("{err}");

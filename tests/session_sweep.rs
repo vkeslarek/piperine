@@ -17,27 +17,26 @@ use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const DIVIDER_TEMPLATE: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module G(inout electrical p, inout electrical n);
+    parameter real g = 1.0e-3;
+    // PHDL's `param ns: Real? = none` + `ns.get_or(0.0)` is LRM ch. 9's
+    // `$param_given` presence query — the same rebuild-class parameter the
+    // codegen classifies `Invalidation::Rebuild`.
+    parameter real ns = 0.0;
+    analog I(p, n) <+ (g + ($param_given(ns) ? ns : 0.0) * 1.0e-3) * V(p, n);
+endmodule
 
-mod G(inout p: Electrical, inout n: Electrical) {
-    param g: Real = 1.0e-3;
-    param ns: Real? = none;
-}
-analog G { I(p, n) <+ (g + ns.get_or(0.0) * 1.0e-3) * V(p, n); }
+module Vsrc(inout electrical p, inout electrical n);
+    parameter real dc = 10.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) {
-    param dc: Real = 10.0;
-}
-analog Vsrc { V(p, n) <- dc; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire top : Electrical;
-    wire mid : Electrical;
-    v1 : Vsrc(.p = top, .n = gnd) {};
-    r1 : G(.p = top, .n = mid) {};
-    r2 : G(.p = mid, .n = gnd) { {r2_override} };
-}
+module Top();
+    electrical gnd, top, mid;
+    Vsrc v1 (.p(top), .n(gnd));
+    G r1 (.p(top), .n(mid));
+    G {r2_override} r2 (.p(mid), .n(gnd));
+endmodule
 ";
 
 fn elaborate(r2_override: &str) -> piperine_lang::Design {
@@ -53,7 +52,7 @@ fn mid_voltage(session: &mut Session) -> f64 {
 /// the source — the ground-truth path the sweep's restamped/rebuilt values
 /// are checked against.
 fn fresh_build_mid(ns: f64) -> f64 {
-    let design = elaborate(&format!(".ns = {ns}"));
+    let design = elaborate(&format!("#(.ns({ns}))"));
     let mut session = Session::compile(&design, "Top").expect("fresh session compiles");
     mid_voltage(&mut session)
 }
@@ -103,7 +102,7 @@ fn structural_sweep_rebuilds_once_and_matches_fresh_builds() {
 /// independent fresh build.
 #[test]
 fn non_structural_sweep_never_rebuilds_and_matches_fresh_builds() {
-    let design = elaborate(".ns = 0.0"); // ns given at build -> plain Restamp on write
+    let design = elaborate("#(.ns(0.0))"); // ns given at build -> plain Restamp on write
     let mut session = Session::compile(&design, "Top").expect("session compiles");
 
     let values = [0.5_f64, 1.5, 4.0];

@@ -35,8 +35,6 @@ use piperine_solver::abi::{
 };
 use piperine_solver::prelude::{CircuitBuilder, TransientAnalysisOptions};
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
-
 fn run_phdl_transient(src: &str, top: &str, probe_net: &str, stop: f64, dt: f64) -> Vec<(f64, f64)> {
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
@@ -133,15 +131,16 @@ fn transition_driven_source_matches_between_phdl_and_a_host_device() {
     let (stop, dt) = (3e-3, 1e-4);
 
     let phdl = format!(
-        "{DISCIPLINE}
-mod Xition(inout p: Electrical, inout n: Electrical) {{
-    param td: Real = {td}; param tr: Real = {tr}; param tf: Real = {tf};
-}}
-analog Xition {{ V(p, n) <- transition($abstime, td, tr, tf); }}
-mod Top() {{
-    wire gnd: Electrical; wire out: Electrical;
-    x1: Xition(.p = out, .n = gnd);
-}}
+        "module Xition(inout electrical p, inout electrical n);
+    parameter real td = {td};
+    parameter real tr = {tr};
+    parameter real tf = {tf};
+    analog V(p, n) <+ transition($abstime, td, tr, tf);
+endmodule
+module Top();
+    electrical gnd, out;
+    Xition x1 (.p(out), .n(gnd));
+endmodule
 "
     );
     let phdl_run = run_phdl_transient(&phdl, "Top", "out", stop, dt);
@@ -227,13 +226,13 @@ const YS: [f64; 4] = [0.0, 5.0, 1.0, 5.0];
 fn table_nonlinearity_matches_between_phdl_and_a_host_device() {
     let (stop, dt) = (4e-3, 2e-4);
     let phdl = format!(
-        "{DISCIPLINE}
-mod TableLookup(inout p: Electrical, inout n: Electrical) {{}}
-analog TableLookup {{ V(p, n) <- table($abstime, [{}], [{}]); }}
-mod Top() {{
-    wire gnd: Electrical; wire out: Electrical;
-    t1: TableLookup(.p = out, .n = gnd);
-}}
+        "module TableLookup(inout electrical p, inout electrical n);
+    analog V(p, n) <+ table($abstime, {{{}}}, {{{}}});
+endmodule
+module Top();
+    electrical gnd, out;
+    TableLookup t1 (.p(out), .n(gnd));
+endmodule
 ",
         XS.map(|x| x.to_string()).join(", "),
         YS.map(|y| y.to_string()).join(", "),
@@ -275,19 +274,22 @@ fn cross_triggered_counter_matches_between_phdl_and_a_host_device() {
     let freq = 1e3;
     let (stop, dt) = (3e-3, 1e-5);
     let phdl = format!(
-        "{DISCIPLINE}
-mod Sine(inout p: Electrical, inout n: Electrical) {{ param freq: Real = {freq}; }}
-analog Sine {{ V(p, n) <- sin(6.283185307179586 * freq * $abstime); }}
-mod Detector(input vin: Electrical, inout cnt: Electrical, inout gnd: Electrical) {{ var n: Real = 0.0; }}
-analog Detector {{
-    V(cnt, gnd) <- n;
-    @cross(V(vin, gnd)) {{ n = n + 1.0; }}
-}}
-mod Top() {{
-    wire gnd: Electrical; wire sig: Electrical; wire cnt: Electrical;
-    src: Sine(.p = sig, .n = gnd);
-    det: Detector(.vin = sig, .cnt = cnt, .gnd = gnd);
-}}
+        "module Sine(inout electrical p, inout electrical n);
+    parameter real freq = {freq};
+    analog V(p, n) <+ sin(6.283185307179586 * freq * $abstime);
+endmodule
+module Detector(input electrical vin, inout electrical cnt, inout electrical gnd);
+    real n;
+    analog begin
+        V(cnt, gnd) <+ n;
+        @(cross(V(vin, gnd), 0)) n = n + 1.0;
+    end
+endmodule
+module Top();
+    electrical gnd, sig, cnt;
+    Sine src (.p(sig), .n(gnd));
+    Detector det (.vin(sig), .cnt(cnt), .gnd(gnd));
+endmodule
 "
     );
     let phdl_run = run_phdl_transient(&phdl, "Top", "cnt", stop, dt);
@@ -401,23 +403,26 @@ fn pnjlim_junction_matches_between_phdl_and_a_host_device() {
     let vsupply = 0.6_f64;
 
     let phdl = format!(
-        "{DISCIPLINE}
-mod J(inout d: Electrical, inout s: Electrical) {{
-    param is: Real = {is}; param n: Real = {n}; param vte: Real = {vte};
-}}
-analog J {{
-    I(d, s) <+ is * (exp($limit(\"pnjlim\", V(d, s), 0.0, n * vte, {vcrit}) / (n * vte)) - 1.0);
-}}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 0.0; }}
-analog Vsrc {{ V(p, n) <+ dc; }}
-mod R(inout p: Electrical, inout n: Electrical) {{ param r: Real = 1e3; }}
-analog R {{ I(p, n) <+ V(p, n) / r; }}
-mod Top() {{
-    wire gnd: Electrical; wire vin: Electrical; wire d: Electrical;
-    src: Vsrc(.p = vin, .n = gnd) {{ .dc = {vsupply} }};
-    r1: R(.p = vin, .n = d) {{ .r = {r} }};
-    j1: J(.d = d, .s = gnd);
-}}
+        "module J(inout electrical d, inout electrical s);
+    parameter real is = {is};
+    parameter real n = {n};
+    parameter real vte = {vte};
+    analog I(d, s) <+ is * (exp($limit(\"pnjlim\", V(d, s), 0.0, n * vte, {vcrit}) / (n * vte)) - 1.0);
+endmodule
+module Vsrc(inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    analog V(p, n) <+ dc;
+endmodule
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
+module Top();
+    electrical gnd, vin, d;
+    Vsrc #(.dc({vsupply})) src (.p(vin), .n(gnd));
+    R #(.r({r})) r1 (.p(vin), .n(d));
+    J j1 (.d(d), .s(gnd));
+endmodule
 "
     );
     let design = parse_and_elaborate(&phdl, &piperine_lang::SourceMap::dummy()).expect("elaborate");

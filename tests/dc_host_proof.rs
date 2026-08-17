@@ -14,32 +14,28 @@ use piperine_lang::{SourceMap, Value};
 use piperine_solver::prelude::Context;
 
 const DIVIDER: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module Vsrc (inout electrical p, inout electrical n);
+        parameter real dc = 10.0;
+        analog V(p, n) <+ dc;
+    endmodule
 
-    mod Vsrc (inout p : Electrical, inout n : Electrical) {
-        param dc : Real = 10.0;
-    }
-    analog Vsrc { V(p, n) <- dc; }
-
-    mod Top () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire mid : Electrical;
-        v1 : Vsrc(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = mid) {};
-        r2 : R(.p = mid, .n = gnd) {};
-    }
+    module Top ();
+        electrical gnd, top, mid;
+        Vsrc v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(mid));
+        R r2 (.p(mid), .n(gnd));
+    endmodule
 "#;
 
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

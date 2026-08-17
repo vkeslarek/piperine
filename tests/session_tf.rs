@@ -7,22 +7,22 @@ use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real dc = 5.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 5.0; }
-analog V { V(p, n) <- dc; }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire mid : Electrical;
-    V1    : V(.p = vin, .n = gnd) {};
-    r_top : R(.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : R(.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Top();
+    electrical gnd, vin, mid;
+    V V1 (.p(vin), .n(gnd));
+    R #(.r(3e3)) r_top (.p(vin), .n(mid));
+    R #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 /// `gain = r_bot/(r_top+r_bot) = 0.4`, `z_in = r_top+r_bot = 5 kΩ`,

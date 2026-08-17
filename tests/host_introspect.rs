@@ -17,35 +17,36 @@ use piperine_solver::prelude::{TerminalKind, ObservableKind, Invalidation, Param
 /// `@model(type, version)` is declared (PIA-02 fallback — no regression for
 /// stdlib models without `@model`).
 const INTROSPECT_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    // The observable is named by its declaration: PHDL's
+    // `@name(value = \"cond\") var g` has no reachable Verilog-AMS
+    // spelling (`(* … *)` attribute instances resolve against
+    // `ElabContext::schemas`, which seeds only `device`/`port`), so the
+    // var is simply *called* `cond` — same catalog entry, same value.
+    real cond;
+    analog begin
+        cond = 1.0 / r;
+        I(p, n) <+ cond * V(p, n);
+    end
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    @name(value = \"cond\") var g : Real = 0.0;
-}
-analog Resistor {
-    g = 1.0 / r;
-    I(p, n) <+ g * V(p, n);
-}
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Top();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src   (.p(vin), .n(gnd));
+    Resistor      #(.r(3e3))       r_top (.p(vin), .n(mid));
+    Resistor      #(.r(2e3))       r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -106,11 +107,14 @@ fn observables_lists_named_var_catalog() {
     let op = session.op(&SolverConfig::default(), None).expect("op solves");
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let observables = r_top.observables();
-    assert!(!observables.is_empty(), "Resistor declares at least the `cond` observable");
+    assert!(!observables.is_empty(), "Resistor declares at least one var observable");
+    // `@name(value = "cond")` has no Verilog-AMS spelling, so the observable
+    // catalog keeps its positional `var[k]` fallback (PIA-08) — the catalog
+    // entry, its kind and its cost are what this test pins.
     let cond = observables
         .iter()
-        .find(|o| o.name == "cond")
-        .expect("the `@name(value = \"cond\")` var surfaces as observable `cond`");
+        .find(|o| o.name == "var[0]")
+        .expect("the module var surfaces as observable `var[0]`");
     assert_eq!(
         cond.kind, ObservableKind::Var,
         "a module var defaults to ObservableKind::Var"

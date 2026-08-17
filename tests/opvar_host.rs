@@ -12,35 +12,31 @@ use piperine_lang::SourceMap;
 /// `g = 1.0 / r;` in `analog`) — mirrors
 /// `piperine-codegen/tests/opvar_bridge.rs`'s fixture.
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    real g;
+    analog begin
+        g = 1.0 / r;
+        I(p, n) <+ g * V(p, n);
+    end
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    var g : Real = 0.0;
-}
-analog Resistor {
-    g = 1.0 / r;
-    I(p, n) <+ g * V(p, n);
-}
-
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src   (.p(vin), .n(gnd));
+    Resistor      #(.r(3e3))       r_top (.p(vin), .n(mid));
+    Resistor      #(.r(2e3))       r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

@@ -8,60 +8,53 @@ use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const FIXTURE: &str = r#"
-    discipline Electrical { potential v : Real; flow i : Real; }
+    module R (inout electrical p, inout electrical n);
+        parameter real r = 1.0e3;
+        analog I(p, n) <+ V(p, n) / r;
+    endmodule
 
-    mod R (inout p : Electrical, inout n : Electrical) {
-        param r : Real = 1.0e3;
-    }
-    analog R { I(p, n) <+ V(p, n) / r; }
+    module C (inout electrical p, inout electrical n);
+        parameter real c = 1.0e-6;
+        analog I(p, n) <+ c * ddt(V(p, n));
+    endmodule
 
-    mod C (inout p : Electrical, inout n : Electrical) {
-        param c : Real = 1.0e-6;
-    }
-    analog C { I(p, n) <+ c * ddt(V(p, n)); }
+    module Dio (inout electrical p, inout electrical n);
+        parameter real is_sat = 1.0e-9;
+        analog I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0);
+    endmodule
 
-    mod Dio (inout p : Electrical, inout n : Electrical) {
-        param is_sat : Real = 1.0e-9;
-    }
-    analog Dio { I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0); }
-
-    mod Vsine (inout p : Electrical, inout n : Electrical) {
-        param amp : Real = 5.0;
-        param freq : Real = 1.0e3;
-    }
-    analog Vsine { V(p, n) <- amp * sin(2.0 * 3.14159265358979 * freq * $abstime); }
+    module Vsine (inout electrical p, inout electrical n);
+        parameter real amp = 5.0;
+        parameter real freq = 1.0e3;
+        analog V(p, n) <+ amp * sin(2.0 * 3.14159265358979 * freq * $abstime);
+    endmodule
 
     // Full-wave bridge: floating sine into d1..d4, RC load out→gnd.
-    mod Rectifier () {
-        wire gnd  : Electrical;
-        wire acp  : Electrical;
-        wire acn  : Electrical;
-        wire out  : Electrical;
-        vs : Vsine(.p = acp, .n = acn) {};
-        d1 : Dio(.p = acp, .n = out) {};
-        d2 : Dio(.p = acn, .n = out) {};
-        d3 : Dio(.p = gnd, .n = acp) {};
-        d4 : Dio(.p = gnd, .n = acn) {};
-        rl : R(.p = out, .n = gnd) {};
-        b1 : R(.p = acp, .n = gnd) { .r = 1.0e6 };
-        b2 : R(.p = acn, .n = gnd) { .r = 1.0e6 };
-        cl : C(.p = out, .n = gnd) { .c = 2.0e-6 };
-    }
+    module Rectifier ();
+        electrical gnd, acp, acn, out;
+        Vsine vs (.p(acp), .n(acn));
+        Dio d1 (.p(acp), .n(out));
+        Dio d2 (.p(acn), .n(out));
+        Dio d3 (.p(gnd), .n(acp));
+        Dio d4 (.p(gnd), .n(acn));
+        R rl (.p(out), .n(gnd));
+        R #(.r(1.0e6)) b1 (.p(acp), .n(gnd));
+        R #(.r(1.0e6)) b2 (.p(acn), .n(gnd));
+        C #(.c(2.0e-6)) cl (.p(out), .n(gnd));
+    endmodule
 
-    mod SineRc () {
-        wire gnd : Electrical;
-        wire top : Electrical;
-        wire out : Electrical;
-        v1 : Vsine(.p = top, .n = gnd) {};
-        r1 : R(.p = top, .n = out) {};
-        c1 : C(.p = out, .n = gnd) {};
-    }
+    module SineRc ();
+        electrical gnd, top, out;
+        Vsine v1 (.p(top), .n(gnd));
+        R r1 (.p(top), .n(out));
+        C c1 (.p(out), .n(gnd));
+    endmodule
 "#;
 
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

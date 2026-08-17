@@ -11,31 +11,27 @@ use piperine_lang::{SourceMap, Value};
 /// dependency): `mid = 5·2k/(3k+2k) = 2.0 V` by default; staging
 /// `r_top.r = 2e3` gives `5·2k/(2k+2k) = 2.5 V`.
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
-
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src   (.p(vin), .n(gnd));
+    Resistor      #(.r(3e3))       r_top (.p(vin), .n(mid));
+    Resistor      #(.r(2e3))       r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -92,31 +88,27 @@ fn unaddressable_net_is_a_loud_error() {
 /// RC charge circuit: `out` charges through 1 kΩ / 1 µF (τ = 1 ms) toward
 /// 5 V. Self-contained like the divider.
 const RC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real resistance = 1e3;
+    analog I(p, n) <+ V(p, n) / resistance;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param resistance: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / resistance; }
+module Capacitor(inout electrical p, inout electrical n);
+    parameter real c = 1e-9;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Capacitor(inout p: Electrical, inout n: Electrical) {
-    param c: Real = 1e-9;
-}
-analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod RcCharge() {
-    wire gnd : Electrical;
-    wire vsrc : Electrical;
-    wire out : Electrical;
-    source : VoltageSource (.p = vsrc, .n = gnd) { .voltage = 5.0 };
-    r1     : Resistor      (.p = vsrc, .n = out) { .resistance = 1e3 };
-    c1     : Capacitor     (.p = out, .n = gnd) { .c = 1e-6 };
-}
+module RcCharge();
+    electrical gnd, vsrc, out;
+    VoltageSource #(.voltage(5.0))  source (.p(vsrc), .n(gnd));
+    Resistor      #(.resistance(1e3)) r1   (.p(vsrc), .n(out));
+    Capacitor     #(.c(1e-6))       c1     (.p(out), .n(gnd));
+endmodule
 ";
 
 fn rc_session() -> Session {
@@ -202,31 +194,27 @@ fn trace_i_over_time_exercises_the_reactive_path() {
 /// bank, so `Trace.i` on it needs the opt-in per-step recording. Driven RL:
 /// `i_L(t) = (V/R)·(1 − e^(−t/τ))`, τ = L/R = 10 µs.
 const RL_IDT_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module IndIdt(inout electrical p, inout electrical n);
+    parameter real l = 1e-2;
+    analog I(p, n) <+ idt(V(p, n)) / l;
+endmodule
 
-mod IndIdt(inout p: Electrical, inout n: Electrical) {
-    param l: Real = 1e-2;
-}
-analog IndIdt { I(p, n) <+ idt(V(p, n)) / l; }
-
-mod RlIdt() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r1  : Resistor      (.p = vin, .n = mid) { .r = 1e3 };
-    l1  : IndIdt        (.p = mid, .n = gnd) {};
-}
+module RlIdt();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor      #(.r(1e3))       r1  (.p(vin), .n(mid));
+    IndIdt        l1 (.p(mid), .n(gnd));
+endmodule
 ";
 
 fn rl_idt_session() -> Session {
@@ -294,22 +282,32 @@ fn trace_i_on_stateful_device_fails_loud_when_recording_disabled() {
 /// A pure-digital design reads its logic values (0/1) straight off the DC
 /// mixed-signal solve — no analog readback stage.
 const DIGITAL_PHDL: &str = "\
-discipline Bit { storage Boolean; }
+discipline Bit;
+    domain discrete;
+enddiscipline
 
-mod BitDriver(output q : Bit) {
-    param level : Real = 0.0;
-    var b : Bit = 0;
-}
-digital BitDriver { b = level > 0.5; q <- b; }
+module BitDriver(output Bit q);
+    parameter real level = 0.0;
+    integer b;
+    always @(*) begin
+        b = level > 0.5;
+        q = b;
+    end
+endmodule
 
-mod Not1(input a : Bit, output y : Bit) { var r : Bit = 0; }
-digital Not1 { r = !a; y <- r; }
+module Not1(input Bit a, output Bit y);
+    integer r;
+    always @(*) begin
+        r = !a;
+        y = r;
+    end
+endmodule
 
-mod Board() {
-    wire na : Bit; wire ny : Bit;
-    d : BitDriver(.q = na);
-    g : Not1(.a = na, .y = ny);
-}
+module Board();
+    Bit na, ny;
+    BitDriver d (.q(na));
+    Not1      g (.a(na), .y(ny));
+endmodule
 ";
 
 /// `OpResult::v(bit_net)` returns the logic value: driver low → inverter

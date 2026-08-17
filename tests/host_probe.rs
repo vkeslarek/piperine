@@ -16,41 +16,46 @@ use std::path::PathBuf;
 use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
-/// A resistor that exports its conductance under the display name `cond`
-/// (`@name(value = "cond")` — one declaration, both the opvar catalog and the
-/// observable catalog surface it under that name; PIA-07). Driven by a
+/// A resistor that exports its conductance as the module var `cond`. PHDL
+/// spelled the display name `@name(value = "cond")`, which made one
+/// declaration name both the opvar and the observable catalogs (PIA-07);
+/// that attribute has no reachable Verilog-AMS spelling, so the opvar
+/// catalog uses the declaration name and the observable catalog keeps its
+/// positional `var[k]` fallback. Driven by a
 /// constant 5 V source: at DC, `cond = 1/r = 1e-3 S` and the value is
 /// time-invariant, so a transient's `cond`-over-time is flat — its `.mean()`
 /// must match the DC opvar (the design.md risk-row validation: "validate
 /// against a DC opvar at a static point").
 const PROBE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module VoltageSource(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module Resistor(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    // The observable is named by its declaration: PHDL's
+    // `@name(value = \"cond\") var g` has no reachable Verilog-AMS
+    // spelling (`(* … *)` attribute instances resolve against
+    // `ElabContext::schemas`, which seeds only `device`/`port`), so the
+    // var is simply *called* `cond` — same catalog entry, same value.
+    real cond;
+    analog begin
+        cond = 1.0 / r;
+        I(p, n) <+ cond * V(p, n);
+    end
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    @name(value = \"cond\") var g : Real = 0.0;
-}
-analog Resistor {
-    g = 1.0 / r;
-    I(p, n) <+ g * V(p, n);
-}
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r1  : Resistor      (.p = vin, .n = gnd) { .r = 1e3 };
-}
+module Top();
+    electrical gnd, vin;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor      #(.r(1e3))       r1  (.p(vin), .n(gnd));
+endmodule
 ";
 
 fn headers_source_map() -> SourceMap {
     let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.vams"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map
@@ -83,8 +88,13 @@ fn recorded_opvar_over_time_matches_dc_opvar_at_a_held_point() {
     );
 
     let trace = session
-        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.cond"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.var[0]"])
         .expect("tran with probe solves");
+    // PIA-07's "one declaration names both catalogs" half is dark after the
+    // frontend swap: `@name` has no Verilog-AMS spelling, so the *probe*
+    // selector addresses the observable catalog's positional `var[0]` while
+    // the read-back addresses the opvar catalog's declaration name `cond`.
+    // Same slot, same value — two names instead of one.
     let wf = trace.opvar("r1.cond").expect("recorded opvar reads back as a Waveform");
 
     let n = wf.points().len();
@@ -172,7 +182,7 @@ fn opvar_read_fails_loud_when_not_recorded() {
 fn opvar_read_fails_loud_on_unknown_name() {
     let mut session = probe_session();
     let trace = session
-        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.cond"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.var[0]"])
         .expect("tran with probe solves");
     let err = trace.opvar("r1.bogus").expect_err("unknown opvar name must fail loud");
     let msg = format!("{err}");

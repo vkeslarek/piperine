@@ -16,54 +16,53 @@ use piperine::{NetRef, Session, SimHooks, SolverConfig};
 use piperine_lang::{Design, SourceMap, Value};
 
 const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param voltage: Real = 0.0; }
-analog V { V(p, n) <- voltage; }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Divider() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire mid : Electrical;
-    src   : V(.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : R(.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : R(.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider();
+    electrical gnd, vin, mid;
+    V #(.voltage(5.0)) src   (.p(vin), .n(gnd));
+    R #(.r(3e3))       r_top (.p(vin), .n(mid));
+    R #(.r(2e3))       r_bot (.p(mid), .n(gnd));
+endmodule
 ";
 
 /// A cubic VCCS — the fixture `.disto` needs a nonlinear branch for.
 const POLY_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+module V(inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    parameter real acmag = 0.0;
+    analog V(p, n) <+ dc + ac_stim(acmag, 0.0);
+endmodule
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 0.0; param acmag: Real = 0.0; }
-analog V { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module R(inout electrical p, inout electrical n);
+    parameter real r = 50.0;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 50.0; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module PolyVccs(inout electrical inp, inout electrical inn,
+                inout electrical outp, inout electrical outn);
+    parameter real g1 = 0.1;
+    parameter real g2 = 0.02;
+    parameter real g3 = 0.003;
+    analog I(outp, outn) <+ g1 * V(inp, inn)
+                          + g2 * V(inp, inn) * V(inp, inn)
+                          + g3 * V(inp, inn) * V(inp, inn) * V(inp, inn);
+endmodule
 
-mod PolyVccs(inout inp: Electrical, inout inn: Electrical,
-             inout outp: Electrical, inout outn: Electrical) {
-    param g1: Real = 0.1;
-    param g2: Real = 0.02;
-    param g3: Real = 0.003;
-}
-analog PolyVccs {
-    I(outp, outn) <+ g1 * V(inp, inn)
-                   + g2 * V(inp, inn) * V(inp, inn)
-                   + g3 * V(inp, inn) * V(inp, inn) * V(inp, inn);
-}
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire vout : Electrical;
-    v1 : V(.p = vin, .n = gnd) { .dc = 0.0, .acmag = 1.0 };
-    n1 : PolyVccs(.inp = vin, .inn = gnd, .outp = vout, .outn = gnd) {};
-    r1 : R(.p = vout, .n = gnd) { .r = 50.0 };
-}
+module Top();
+    electrical gnd, vin, vout;
+    V #(.dc(0.0), .acmag(1.0)) v1 (.p(vin), .n(gnd));
+    PolyVccs n1 (.inp(vin), .inn(gnd), .outp(vout), .outn(gnd));
+    R #(.r(50.0)) r1 (.p(vout), .n(gnd));
+endmodule
 ";
 
 fn elaborate(src: &str) -> Design {
