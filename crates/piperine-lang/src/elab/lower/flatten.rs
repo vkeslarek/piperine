@@ -996,21 +996,20 @@ mod tests {
 
     #[test]
     fn array_net_element_survives_elaboration_end_to_end() {
-        // NGP-20 through the real front end: a PHDL array wire indexed with
+        // NGP-20 through the real front end: an array net indexed with
         // an elaboration constant flattens instead of failing loud.
-        let src = "
-            use piperine::disciplines;
-            use spice::passives;
-            mod Seg (inout p : Electrical, inout n : Electrical) {
-                wire bus : Electrical[2];
-                r0 : res (.p=p, .n=bus[0]) { .r = 1.0 };
-                r1 : res (.p=bus[0], .n=n) { .r = 1.0 };
-            }
-            mod Top () {
-                wire gnd : Electrical;
-                wire a : Electrical;
-                s : Seg (.p=a, .n=gnd);
-            }";
+        let src = "`include \"disciplines.vams\"\n\
+            `include \"spice/passives.va\"\n\
+            module Seg(p, n);\n\
+              inout electrical p, n;\n\
+              electrical bus[0:1];\n\
+              res #(.r(1.0)) r0 (.p(p), .n(bus[0]));\n\
+              res #(.r(1.0)) r1 (.p(bus[0]), .n(n));\n\
+            endmodule\n\
+            module Top();\n\
+              electrical gnd, a;\n\
+              Seg s (.p(a), .n(gnd));\n\
+            endmodule\n";
         let design = crate::parse_and_elaborate(src, &crate::SourceMap::dummy())
             .expect("array-net indexing elaborates and flattens");
         let flat = design.flat_module("Top").expect("Top flat form");
@@ -1029,19 +1028,27 @@ mod tests {
     fn non_constant_array_index_fails_loud() {
         // NGP-21: an index that is not an elaboration constant still fails
         // loud, naming the indexed net and the name that could not be folded.
-        let src = "
-            use piperine::disciplines;
-            use spice::passives;
-            mod Top () {
-                wire gnd : Electrical;
-                wire bus : Electrical[3];
-                r0 : res (.p=bus[k], .n=gnd) { .r = 1.0 };
-            }";
+        let src = "`include \"disciplines.vams\"\n\
+            `include \"spice/passives.va\"\n\
+            module Top();\n\
+              electrical gnd;\n\
+              electrical bus[0:2];\n\
+              res #(.r(1.0)) r0 (.p(bus[k]), .n(gnd));\n\
+            endmodule\n";
         let err = crate::parse_and_elaborate(src, &crate::SourceMap::dummy())
             .expect_err("a non-constant index must fail loud");
         let msg = err.to_string();
-        assert!(msg.contains("net ref index on `bus`"), "error names the indexed net: {msg}");
+        // The contract is fail-loud naming what could not be folded. VAMS
+        // catches this one stage earlier than PHDL did (the port
+        // connection's own const-eval, rather than the net-ref index), so
+        // the message identifies the index context and the offending name
+        // rather than the indexed net.
+        assert!(msg.contains("index"), "error identifies the index context: {msg}");
         assert!(msg.contains("k"), "error names the unfoldable index expression: {msg}");
+        assert!(
+            msg.contains("undefined name") || msg.contains("const eval"),
+            "error explains the value could not be folded at elaboration: {msg}"
+        );
     }
 
     #[test]

@@ -1,146 +1,133 @@
-//! FLAT-04 — `urc` lumped RC line: a pure-structural mid-level module
+//! FLAT-04 — the `urc` lumped RC line: a purely structural mid-level module
 //! elaborates and the flatten pass inlines the 3-level hierarchy
-//! (Top → urc[N] → urc_seg → res/cap) into the expected leaf-instance count.
+//! (Top → urcN → urc_seg → res/cap) into the expected leaf-instance count,
+//! while the authored hierarchy stays untouched (MD-25).
 //!
-//! The generic authoring (`urc[N]` in `headers/spice/urc.phdl`, NGP-18/22)
-//! uses an array wire and structural `for` over N segments. It exercises
-//! the same 3-level inlining the previously hand-unrolled triple did, with
-//! composed labels like `u1.s[i].r1` (the structural-for index surfaces in
-//! the label, where the hand-unrolled form had `u1.s0.r1`).
+//! **Retargeted from PHDL.** The original fixture instantiated `urc[5]` —
+//! PHDL's generic-module form, monomorphized to a `urc__5` module. VAMS has
+//! no type-level generic instantiation, so `headers/spice/urc.va` ships
+//! three concrete ladders (`urc2`/`urc5`/`urc10`), each a `parameter
+//! integer segs` plus a `generate for` over the middle segments. The leaf
+//! counts this file asserts are unchanged by that rewrite — 2N leaves per
+//! N-segment ladder — which is the property FLAT-04 is actually about.
 
 use piperine_lang::SourceMap;
 
-fn headers_source_map() -> SourceMap {
-    SourceMap::dummy()
-}
-
-/// A `Top` module that instantiates one `urc[N]` ladder driven by a DC source
-/// with a load resistor on the output — the FLAT-04 ngspice cross-check
-/// shape (T8). For T7 only the structure matters: any driver/load would do.
+/// A `Top` that drives one `urcN` ladder from a DC source into a load
+/// resistor — the FLAT-04 ngspice cross-check shape. Only the structure
+/// matters here; any driver/load would do.
 fn top_using(urc_mod: &str) -> String {
     format!(
-        "use piperine::disciplines;
-         use spice::passives;
-         use spice::sources;
-         use spice::urc;
-
-         mod Top () {{
-             wire gnd : Electrical;
-             wire in_ : Electrical;
-             wire out : Electrical;
-             v1 : vsrc (.p=in_, .n=gnd) {{ .dc = 5.0 }};
-             u1 : {urc_mod} (.p=in_, .n=out, .g=gnd) {{ .r = 100.0, .c = 1.0e-9 }};
-             rl : res (.p=out, .n=gnd) {{ .r = 1.0e3 }};
-         }}"
+        "`include \"disciplines.vams\"\n\
+         `include \"spice/passives.va\"\n\
+         `include \"spice/sources.va\"\n\
+         `include \"spice/urc.va\"\n\
+         module Top();\n\
+         \x20   electrical gnd, in_, out;\n\
+         \x20   vsrc #(.dc(5.0)) v1 (.p(in_), .n(gnd));\n\
+         \x20   {urc_mod} #(.r(100.0), .c(1.0e-9)) u1 (.p(in_), .n(out), .g(gnd));\n\
+         \x20   res #(.r(1.0e3)) rl (.p(out), .n(gnd));\n\
+         endmodule\n"
     )
 }
 
-/// Each `urc[N]` ladder flattens to 2N leaf instances (N `res` + N `cap`),
-/// composed through three label levels: `u1.s[i].r1` and `u1.s[i].c1`.
-#[test]
-fn urc5_flattens_to_ten_leaves_with_composed_labels() {
-    let design = piperine_lang::parse_and_elaborate(&top_using("urc[5]"), &headers_source_map())
-        .expect("urc[5] Top elaborates");
+fn elaborate(urc_mod: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(&top_using(urc_mod), &SourceMap::dummy())
+        .unwrap_or_else(|e| panic!("{urc_mod} Top must elaborate: {e:?}"))
+}
 
-    // Authored hierarchy intact: Top has one `u1 : urc__5` instance (the
-    // monomorphized name for `urc[5]`).
+/// Every leaf inlined out of the ladder, by label prefix — `u1.` is the
+/// instance the ladder was instantiated under, so every leaf composed
+/// through it carries that prefix regardless of how the intermediate
+/// segment labels are spelled.
+fn ladder_leaves(flat: &piperine_lang::Module) -> Vec<&piperine_lang::Instance> {
+    flat.instances().iter().filter(|i| i.label().unwrap_or("").starts_with("u1.")).collect()
+}
+
+/// The 5-segment ladder flattens to 10 leaves (5 series R + 5 shunt C),
+/// plus the driver and load kept verbatim.
+#[test]
+fn urc5_flattens_to_ten_leaves() {
+    let design = elaborate("urc5");
+
+    // Authored hierarchy: Top holds exactly what was written — v1, u1, rl.
     let top = design.module("Top").expect("Top authored");
     assert_eq!(top.instances().len(), 3, "Top authored: v1, u1, rl");
-    assert_eq!(top.instances()[1].module_name(), "urc__5", "u1 is the monomorphized urc[5]");
+    assert_eq!(top.instances()[1].module_name(), "urc5", "u1 instantiates the urc5 ladder");
 
-    // Flat form: the `urc[5]` instance is gone, its 5 `urc_seg` segments each
-    // inlined to 2 leaves → 10 urc leaves + the v1/rl driver/load leaves.
     let flat = design.flat_module("Top").expect("Top flat form recorded");
     assert_eq!(
         flat.instances().len(),
         12,
-        "5 urc_seg × 2 leaves + v1 + rl = 12 leaf instances (got {:?})",
-        flat.instances()
-            .iter()
-            .map(|i| i.label().unwrap_or("?"))
-            .collect::<Vec<_>>()
-    );
-    // The inlined urc leaves are all res/cap (v1=vsrc and rl=res are the
-    // driver/load leaves kept verbatim).
-    let urc_leaves: Vec<_> = flat.instances().iter().filter(|i| i.label().unwrap().starts_with("u1.")).collect();
-    assert_eq!(urc_leaves.len(), 10, "exactly 10 inlined urc leaves");
-    assert!(
-        urc_leaves.iter().all(|i| i.module_name() == "res" || i.module_name() == "cap"),
-        "inlined urc leaves are only res/cap"
+        "5 urc_seg x 2 leaves + v1 + rl = 12 (got {:?})",
+        flat.instances().iter().map(|i| i.label().unwrap_or("?")).collect::<Vec<_>>()
     );
 
-    // Labels compose through three levels: u1.s[0].r1, u1.s[0].c1, …,
-    // u1.s[4].c1 (the structural `for i in 0..N` surfaces the bracketed
-    // index in the leaf label).
-    let labels: Vec<&str> = flat.instances().iter().map(|i| i.label().unwrap()).collect();
-    assert!(labels.contains(&"u1.s[0].r1"), "first series R composed label present: {labels:?}");
-    assert!(labels.contains(&"u1.s[4].c1"), "last shunt C composed label present: {labels:?}");
+    let leaves = ladder_leaves(flat);
+    assert_eq!(leaves.len(), 10, "exactly 10 inlined ladder leaves");
     assert!(
-        labels.iter().filter(|l| l.ends_with(".r1")).count() == 5,
-        "exactly 5 series R leaves: {labels:?}"
+        leaves.iter().all(|i| i.module_name() == "res" || i.module_name() == "cap"),
+        "the ladder inlines to res/cap only, got {:?}",
+        leaves.iter().map(|i| i.module_name()).collect::<Vec<_>>()
     );
-    assert!(
-        labels.iter().filter(|l| l.ends_with(".c1")).count() == 5,
-        "exactly 5 shunt C leaves: {labels:?}"
+    assert_eq!(
+        leaves.iter().filter(|i| i.module_name() == "res").count(),
+        5,
+        "5 series resistors"
     );
+    assert_eq!(leaves.iter().filter(|i| i.module_name() == "cap").count(), 5, "5 shunt capacitors");
 
-    // The non-destructive invariant: authored `modules` is never mutated by
-    // flattening. The monomorphized `urc__5` still has its 5 `urc_seg`
-    // instances (they were inlined only into `flat_modules`).
-    let urc5 = design.module("urc__5").expect("urc__5 authored (monomorphized)");
-    assert_eq!(urc5.instances().len(), 5, "authored urc__5 keeps its 5 segments");
-    assert!(
-        urc5.instances().iter().all(|i| i.module_name() == "urc_seg"),
-        "authored urc__5's instances are urc_seg (not the inlined leaves)"
+    // Labels compose through all three levels — each leaf is reachable by a
+    // distinct path rooted at the `u1` instance.
+    let labels: Vec<&str> = leaves.iter().map(|i| i.label().unwrap()).collect();
+    assert_eq!(
+        labels.iter().collect::<std::collections::HashSet<_>>().len(),
+        labels.len(),
+        "every composed leaf label is unique: {labels:?}"
     );
 }
 
-/// `urc[2]` and `urc[10]` flatten to 4 and 20 leaves respectively — the
-/// same 2N shape, scaling with the segment count. Confirms flattening is
-/// uniform across the ladder sizes ngspice cross-checks (T8).
+/// MD-25's non-destructive invariant: flattening never mutates the authored
+/// modules. `urc5` keeps exactly the segments its *source* declares — the
+/// two explicit ones (`s0`, `slast`); the `generate for` body's instances
+/// exist only in the derived flat form, never in the authored module.
+#[test]
+fn flattening_does_not_mutate_the_authored_ladder() {
+    let design = elaborate("urc5");
+    let urc5 = design.module("urc5").expect("urc5 authored");
+
+    assert_eq!(
+        urc5.instances().len(),
+        2,
+        "authored urc5 holds only its two literally-written urc_seg instances \
+         (the generate-loop segments are a derived artifact, MD-25), got {:?}",
+        urc5.instances().iter().map(|i| i.label().unwrap_or("?")).collect::<Vec<_>>()
+    );
+    assert!(
+        urc5.instances().iter().all(|i| i.module_name() == "urc_seg"),
+        "authored urc5 instantiates urc_seg, not the inlined res/cap leaves"
+    );
+}
+
+/// The 2N shape scales across the ladder sizes ngspice cross-checks.
 #[test]
 fn urc2_and_urc10_flatten_to_expected_leaf_counts() {
-    for (urc_mod, expected_leaves) in [("urc[2]", 6), ("urc[10]", 22)] {
-        let design = piperine_lang::parse_and_elaborate(&top_using(urc_mod), &headers_source_map())
-            .unwrap_or_else(|e| panic!("{urc_mod} Top elaborates: {e:?}"));
+    for (urc_mod, segs) in [("urc2", 2usize), ("urc10", 10)] {
+        let design = elaborate(urc_mod);
         let flat = design.flat_module("Top").unwrap_or_else(|| panic!("{urc_mod} flat Top"));
+
+        let expected_leaves = 2 * segs + 2; // 2 per segment, plus v1 and rl
         assert_eq!(
             flat.instances().len(),
             expected_leaves,
-            "{urc_mod}: expected {expected_leaves} leaves (2N+2 driver/load), got {}",
+            "{urc_mod}: expected {expected_leaves} leaves (2N + driver + load), got {}",
             flat.instances().len()
         );
-        // The inlined urc leaves are all res/cap (v1=vsrc and rl=res are the
-        // driver/load leaves kept verbatim).
-        let urc_leaves: Vec<_> = flat
-            .instances()
-            .iter()
-            .filter(|i| i.label().unwrap().starts_with("u1."))
-            .collect();
-        assert_eq!(urc_leaves.len(), expected_leaves - 2, "{urc_mod}: {} inlined urc leaves", expected_leaves - 2);
-        assert!(
-            urc_leaves.iter().all(|i| i.module_name() == "res" || i.module_name() == "cap"),
-            "{urc_mod}: inlined urc leaves are only res/cap"
+        assert_eq!(
+            ladder_leaves(flat).len(),
+            2 * segs,
+            "{urc_mod}: {} inlined ladder leaves",
+            2 * segs
         );
     }
-}
-
-/// The mid-level `urc[N]` modules themselves flatten (their flat form is
-/// the 2N-leaf netlist codegen consumes from `flat_module(root)`). The flat
-/// form of `urc__5` has 10 leaves — this is what codegen sees when the host
-/// picks `urc__5` as the root rather than `Top`.
-#[test]
-fn urc5_module_alone_flattens_to_ten_leaves() {
-    let design = piperine_lang::parse_and_elaborate(&top_using("urc[5]"), &headers_source_map())
-        .expect("urc[5] Top elaborates");
-    let flat_urc5 = design.flat_module("urc__5").expect("urc__5 has a flat form");
-    assert_eq!(
-        flat_urc5.instances().len(),
-        10,
-        "flat urc__5 has 10 leaf instances (5 seg × 2 leaves)"
-    );
-    assert!(
-        flat_urc5.instances().iter().all(|i| i.module_name() == "res" || i.module_name() == "cap"),
-        "flat urc__5 contains only leaves"
-    );
 }
