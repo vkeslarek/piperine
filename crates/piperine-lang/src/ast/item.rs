@@ -314,6 +314,40 @@ pub struct BehaviorConstruct {
     pub body: Box<Stmt>,
 }
 
+/// `constraint begin … end` — a **sanctioned Piperine extension** (Annex A
+/// has no constraint production; MD-49 records the deviation and its
+/// precedents). A module body item mirroring `analog begin … end`: one
+/// more module body, so ports, parameters, and branches are simply in
+/// scope for every [`RequireDecl`] predicate inside it. `constraint`,
+/// `require`, and `tol` are contextual keywords — matched by identifier
+/// text at their production sites only, never added to Annex B's reserved
+/// set (§2.8.2's escaped-identifier escape hatch keeps ordinary uses of
+/// the words working).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstraintBlockDecl {
+    pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above the block, if any.
+    pub doc: Option<String>,
+    pub attrs: Vec<Attr>,
+    pub requires: Vec<RequireDecl>,
+}
+
+/// `require <name> : <predicate> [tol <scale>] ;` — one named per-point
+/// constraint inside a [`ConstraintBlockDecl`]. The margin convention
+/// (`m ≥ 0` ⟺ satisfied) is imposed by the codegen lowering, not the
+/// grammar; `tol` names the normalization scale (default 1, no implicit
+/// normalization).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequireDecl {
+    pub span: PreprocessedSpan,
+    /// Attached `///` doc comment run immediately above this statement,
+    /// if any.
+    pub doc: Option<String>,
+    pub name: String,
+    pub pred: Expr,
+    pub tol: Option<Expr>,
+}
+
 /// `assign lvalue = expr;` — a continuous assignment, §Annex A.6.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContinuousAssign {
@@ -623,6 +657,7 @@ pub enum ModuleItem {
     Function(FunctionDecl),
     Task(TaskDecl),
     Behavior(BehaviorConstruct),
+    Constraint(ConstraintBlockDecl),
     ContinuousAssign(ContinuousAssign),
     Instantiation(ModuleInstantiation),
     LoopGenerate(LoopGenerate),

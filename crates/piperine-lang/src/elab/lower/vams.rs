@@ -238,6 +238,11 @@ impl Elaborator {
                 | ModuleItem::CaseGenerate(_)
                 | ModuleItem::GenerateRegion(_)
                 | ModuleItem::Specify(_) => {}
+                // `constraint begin … end` parses (sanctioned extension,
+                // MD-49) but its elaboration lands with the
+                // constraints-on-vams feature — a placeholder no-op until
+                // that task, never a permanent silent drop.
+                ModuleItem::Constraint(_) => {}
                 // Gate primitives, Annex A.4.2 (LRMC-C7-13, T39). The 12
                 // digital gate keywords (and/nand/or/nor/xor/xnor/buf/not/
                 // bufif0/bufif1/notif0/notif1) reach the POM; the 12
