@@ -89,12 +89,8 @@ fn tline_open_termination_doubles() {
 
 /// A non-positive characteristic impedance is a loud elaboration error.
 ///
-/// BLOCKED (left failing, not weakened): PHDL's `$assert(z0 > 0.0, …)` in
-/// `tline` became an LRM §3.4.2 `from (0:1e15)` range constraint on the
-/// parameter declaration (T43), and `elab::lower::vams` validates those
-/// ranges against the *declared default* only — `check_param_ranges` is
-/// never re-run for an instance's `#(.z0(-1.0))` override. Needs
-/// override-site range validation, a production change.
+/// `from (0:1e15)` on `z0` applies at the override site too (LRM §3.4.2,
+/// validated in `lower_instance`).
 #[test]
 fn tline_bad_z0_is_loud() {
     let phdl = r#"`include "disciplines.vams"
@@ -114,10 +110,6 @@ endmodule"#;
 }
 
 /// A non-positive transit delay is a loud elaboration error.
-///
-/// BLOCKED for the same reason as `tline_bad_z0_is_loud`: `from (0:1e15)`
-/// on `td` is checked against the declared default, never against an
-/// instance's `#(.td(0.0))` override.
 #[test]
 fn tline_bad_td_is_loud() {
     let phdl = r#"`include "disciplines.vams"

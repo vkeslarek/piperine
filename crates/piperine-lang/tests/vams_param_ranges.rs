@@ -155,3 +155,99 @@ fn aliasparam_of_an_undeclared_target_fails_loud() {
     let msg = elab_err(src);
     assert!(msg.contains("nonexistent"), "names the undeclared target: {msg}");
 }
+
+// ── override-site validation (§3.4.2: a range constrains every value
+//    the parameter takes, not just the declared default) ────────────────
+
+#[test]
+fn override_outside_the_declared_from_range_fails_loud() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3 from [1.0:1.0e6];
+        endmodule
+        module top ();
+            electrical a, b;
+            res #(.r(0.5)) r1 (.p(a), .n(b));
+        endmodule
+    "#;
+    let msg = elab_err(src);
+    assert!(msg.contains('r'), "names the parameter: {msg}");
+    assert!(msg.contains("0.5"), "names the offending value: {msg}");
+    assert!(msg.contains("3.4.2"), "cites the LRM clause: {msg}");
+}
+
+#[test]
+fn override_within_the_declared_from_range_elaborates_with_the_value() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3 from [1.0:1.0e6];
+        endmodule
+        module top ();
+            electrical a, b;
+            res #(.r(2.0e3)) r1 (.p(a), .n(b));
+        endmodule
+    "#;
+    let d = elab(src);
+    let top = d.module("top").expect("top elaborated");
+    let r1 = top.instances.iter().find(|i| i.label.as_deref() == Some("r1")).expect("instance r1");
+    assert!(
+        r1.params.iter().any(|(n, v)| n == "r" && *v == piperine_lang::pom::Value::Real(2.0e3)),
+        "the override value travels: {:?}",
+        r1.params
+    );
+}
+
+#[test]
+fn override_matching_an_excluded_value_fails_loud() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3 exclude 0.0;
+        endmodule
+        module top ();
+            electrical a, b;
+            res #(.r(0.0)) r1 (.p(a), .n(b));
+        endmodule
+    "#;
+    let msg = elab_err(src);
+    assert!(msg.contains("exclude"), "names the exclude reason: {msg}");
+}
+
+#[test]
+fn paramset_statement_outside_the_module_range_fails_loud() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3 from [1.0:1.0e6];
+        endmodule
+        paramset rcard (res);
+            parameter real rnom = 1.0e3;
+            .r = 0.5;
+        endparamset
+        module top ();
+            electrical a, b;
+            rcard r1 (.p(a), .n(b));
+        endmodule
+    "#;
+    let msg = elab_err(src);
+    assert!(msg.contains('r'), "names the module parameter: {msg}");
+    assert!(msg.contains("0.5"), "names the offending value: {msg}");
+}
+
+#[test]
+fn paramset_override_outside_the_paramsets_own_range_fails_loud() {
+    let src = r#"
+        module res (inout electrical p, inout electrical n);
+            parameter real r = 1.0e3 from [1.0:1.0e6];
+        endmodule
+        paramset rcard (res);
+            parameter real r = 1.0e3 from [1.0:1.0e6];
+            .r = r;
+        endparamset
+        module top ();
+            electrical a, b;
+            rcard #(.r(0.5)) r1 (.p(a), .n(b));
+        endmodule
+    "#;
+    let msg = elab_err(src);
+    assert!(msg.contains('r'), "names the paramset parameter: {msg}");
+    assert!(msg.contains("0.5"), "names the offending value: {msg}");
+}

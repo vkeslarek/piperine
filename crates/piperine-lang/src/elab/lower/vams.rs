@@ -514,6 +514,22 @@ impl Elaborator {
         let target_port_names = target_port_order(target);
         let ports = resolve_instance_ports(ast_inst, module_name, &target_port_names, env)?;
 
+        // §3.4.2: a declared `from`/`exclude` range constrains every value
+        // the parameter takes — the declared default *and* an
+        // instantiation override. `xfmr #(.k(1.5))` against
+        // `from (0:1)` must fail here, not slip through silent (fail
+        // loud, CLAUDE.md). Range bounds evaluate against the target
+        // module's own param defaults — the same environment the
+        // declared default was checked against — built lazily because
+        // only a ranged param needs it.
+        let ranges_by_param = declared_param_ranges(target.items.iter().filter_map(|item| {
+            match item { ModuleItem::Param(p) => Some(p), _ => None }
+        }));
+        let bounds_env_needed = param_overrides
+            .iter()
+            .any(|ov| ov.name.as_deref().is_some_and(|n| ranges_by_param.contains_key(n)));
+        let bounds_env = if bounds_env_needed { Some(module_param_env(target)?) } else { None };
+
         let mut params = Vec::new();
         for ov in param_overrides {
             let name = ov.name.clone().ok_or_else(|| {
@@ -528,7 +544,13 @@ impl Elaborator {
                     ast_inst.name
                 )))
             })?;
-            params.push((name, eval_param_default(expr, env)?));
+            let value = eval_param_default(expr, env)?;
+            if let (Some(ranges), Some(bounds)) =
+                (ranges_by_param.get(name.as_str()).copied(), &bounds_env)
+            {
+                check_param_ranges(&name, &value, ranges, bounds)?;
+            }
+            params.push((name, value));
         }
 
         Ok(Instance {
@@ -580,15 +602,18 @@ impl Elaborator {
                 _ => None,
             }).flatten().collect();
 
-        // The paramset's own parameters, defaults first, then this
+        // The paramset's own parameters, defaults first (range-checked by
+        // `eval_and_define_param`, same as a module's own), then this
         // instance's overrides applied on top (in declaration order, so a
         // later default may reference an earlier override — same rule
         // `module_param_env` already follows for ordinary module params).
+        // An override naming a ranged paramset parameter is checked
+        // against the paramset's declared ranges (§3.4.2, fail loud).
+        let ps_ranges = declared_param_ranges(ps.params.iter());
         let mut ps_env = ConstEnv::new();
         for p in &ps.params {
             for pa in &p.names {
-                let value = eval_param_default(&pa.value, &ps_env)?;
-                ps_env.define(pa.name.clone(), value);
+                eval_and_define_param(&pa.name, &pa.value, &p.ranges, &mut ps_env)?;
             }
         }
         for ov in param_overrides {
@@ -611,9 +636,25 @@ impl Elaborator {
                     ast_inst.name
                 )))
             })?;
-            ps_env.define(name, eval_param_default(expr, env)?);
+            let value = eval_param_default(expr, env)?;
+            if let Some(ranges) = ps_ranges.get(name.as_str()).copied() {
+                check_param_ranges(&name, &value, ranges, &ps_env)?;
+            }
+            ps_env.define(name, value);
         }
 
+        // A `.field = expr;` statement binds the associated module's
+        // parameter — the final value that parameter takes, so the
+        // module's own declared ranges apply to it too (§3.4.2/§6.4,
+        // fail loud). Bounds evaluate against the module's own defaults.
+        let target_ranges = declared_param_ranges(target.items.iter().filter_map(|item| {
+            match item { ModuleItem::Param(p) => Some(p), _ => None }
+        }));
+        let target_bounds = if ps.statements.iter().any(|s| target_ranges.contains_key(s.target.as_str())) {
+            Some(module_param_env(target)?)
+        } else {
+            None
+        };
         let mut params = Vec::new();
         for stmt in &ps.statements {
             if !target_param_names.contains(stmt.target.as_str()) {
@@ -628,6 +669,11 @@ impl Elaborator {
                     source: e,
                 })
             })?;
+            if let (Some(ranges), Some(bounds)) =
+                (target_ranges.get(stmt.target.as_str()).copied(), &target_bounds)
+            {
+                check_param_ranges(&stmt.target, &value, ranges, bounds)?;
+            }
             params.push((stmt.target.clone(), value));
         }
 
@@ -1525,6 +1571,28 @@ fn resolve_or_create_branch<'a>(
 /// range with `hi: None` is read as unbounded-above (the LRM's own
 /// asymmetry: the bare-value shorthand is only meaningful for `exclude`,
 /// §3.4.2).
+/// The declared `from`/`exclude` ranges of a set of parameter
+/// declarations, keyed by name (`p.ranges` applies to every name the
+/// declaration lists). The lookup half of §3.4.2's second sentence: the
+/// declared default is checked by [`eval_and_define_param`], and an
+/// instantiation override naming a ranged parameter is checked against
+/// these — one lookup shared by `lower_instance` and
+/// `lower_paramset_instance`.
+fn declared_param_ranges<'a>(
+    decls: impl Iterator<Item = &'a crate::ast::ParamDecl>,
+) -> HashMap<&'a str, &'a [crate::ast::ParamRange]> {
+    let mut map = HashMap::new();
+    for p in decls {
+        if p.ranges.is_empty() {
+            continue;
+        }
+        for pa in &p.names {
+            map.insert(pa.name.as_str(), p.ranges.as_slice());
+        }
+    }
+    map
+}
+
 fn check_param_ranges(
     name: &str,
     value: &Value,

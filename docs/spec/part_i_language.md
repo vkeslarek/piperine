@@ -141,8 +141,11 @@ PHDL-style value/net type lattice sits between the discipline name and the POM
 Net arrays (`NetType::Array`) are supported; width is the product of array dimensions.
 
 **Parameter** declarations (§3.4) support the LRM's `from`/`exclude` range-constraint
-clauses — violated at their declared value (including the parameter's own default)
-fails loud as `ParamRangeViolation` (E4006, Part II §6). `paramset` (§6.4, a named
+clauses — a range violated at the declared value (including the parameter's own
+default), at an instance's `#(.name(value))` override, or at a `paramset` statement
+binding the parameter fails loud as `ParamRangeViolation` (E4006, Part II §6); override
+sites validate in `lower_instance`/`lower_paramset_instance` against the declaring
+module's/paramset's ranges. `paramset` (§6.4, a named
 reusable parameter set bound to a module) is registered at the top level
 (`Design::paramsets()`); `specparam`/`defparam` (§3.4/§6.4.2) parse
 (`SpecparamDecl`/`Defparam` in the AST) but are **not lowered at all** — confirmed

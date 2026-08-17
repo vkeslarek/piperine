@@ -51,12 +51,9 @@ endmodule"#;
 
 /// A coupling coefficient with |k| > 1 is unphysical and fails loud.
 ///
-/// BLOCKED (left failing, not weakened): PHDL's `$assert` in `xfmr` became
-/// an LRM §3.4.2 `from` range constraint on the parameter declaration
-/// (T41), and `elab::lower::vams` validates those ranges against the
-/// *declared default* only — `check_param_ranges` is never re-run for an
-/// instance's `#(.k(1.5))` override. Needs override-site range validation,
-/// a production change.
+/// `from` on `k` applies at every value the parameter takes — the
+/// declared default *and* an instance's `#(.k(1.5))` override (LRM
+/// §3.4.2, validated at the override site in `lower_instance`).
 #[test]
 fn xfmr_bad_k_is_loud() {
     let phdl = r#"`include "disciplines.vams"
@@ -71,10 +68,6 @@ endmodule"#;
 }
 
 /// A non-positive winding inductance fails loud.
-///
-/// BLOCKED for the same reason as `xfmr_bad_k_is_loud`: `from` on `l1` is
-/// checked against the declared default, never against an instance's
-/// `#(.l1(0.0))` override.
 #[test]
 fn xfmr_bad_inductance_is_loud() {    let phdl = r#"`include "disciplines.vams"
 `include "spice/passives.va"

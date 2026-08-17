@@ -211,7 +211,9 @@ exception), `AnnexCViolation` (E4002, LRM Annex C — a construct outside the en
 analog subset), `DisciplineResolutionFailed` (E4003, LRM Annex F), `NatureBindingInvalid`
 (E4004, LRM §3.6.2.1), `ConnectModuleAmbiguous` (E4005, LRM ch. 7), and
 `ParamRangeViolation` (E4006, LRM §3.4.2 — a declared `from`/`exclude` range violated,
-including by the parameter's own default).
+including by the parameter's own default; an instantiation `#(...)` override or a
+`paramset` statement binding a ranged parameter is validated against the same ranges,
+not just the declared default).
 
 **E2999** — a catch-all `Other(String)`.
 
