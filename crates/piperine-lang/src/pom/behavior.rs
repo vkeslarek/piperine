@@ -106,6 +106,21 @@ impl Function {
 
 impl Named for Function { fn name(&self) -> &str { self.name() } }
 
+// ─────────────────────────────── PomRequire ──────────────────────────────────
+
+/// One authored `require name : pred [tol scale];` of a module's
+/// `constraint begin … end` block (sanctioned extension, MD-49) — the
+/// authored surface on the POM (design F1), in authored order across all
+/// of the module's blocks. Name resolution and margin lowering are the
+/// codegen `resolve` stage's job, exactly as for the analog body.
+#[derive(Debug, Clone)]
+pub struct PomRequire {
+    pub span: Option<miette::SourceSpan>,
+    pub name: String,
+    pub pred: crate::ast::Expr,
+    pub tol: Option<crate::ast::Expr>,
+}
+
 // ─────────────────────────────── ImplBlock ───────────────────────────────────
 
 /// An `impl` block — associates methods with a type, optionally gated by a capability.

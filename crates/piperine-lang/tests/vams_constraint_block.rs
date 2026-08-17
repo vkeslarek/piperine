@@ -146,3 +146,98 @@ fn an_empty_block_parses_with_no_requires() {
     let block = constraint_block("constraint begin end");
     assert!(block.requires.is_empty(), "no statements, no requires");
 }
+
+// ── elaboration onto the POM ───────────────────────────────────────────────
+
+use piperine_lang::{parse_and_elaborate, SourceMap};
+
+fn elab(src: &str) -> piperine_lang::Design {
+    parse_and_elaborate(src, &SourceMap::dummy())
+        .unwrap_or_else(|e| panic!("elaboration failed: {e:?}"))
+}
+
+fn elab_err(src: &str) -> String {
+    parse_and_elaborate(src, &SourceMap::dummy())
+        .expect_err("expected elaboration error")
+        .to_string()
+}
+
+const CONSTRAINED: &str = r#"
+    module dut (inout electrical p, inout electrical n);
+        parameter real hi = 3.3;
+        analog begin
+            I(p, n) <+ 0.0;
+        end
+        constraint begin
+            require head : V(p, n) <= hi;
+            require lowlim : V(p, n) >= -hi tol 0.1;
+        end
+    endmodule
+"#;
+
+#[test]
+fn requires_are_visible_on_the_pom_in_authored_order() {
+    let d = elab(CONSTRAINED);
+    let m = d.module("dut").expect("dut elaborated");
+    let cs = m.constraints();
+    assert_eq!(cs.len(), 2, "both requires land on the POM");
+    assert_eq!(cs[0].name, "head");
+    assert_eq!(cs[1].name, "lowlim");
+    assert!(cs[1].tol.is_some(), "the tol clause travels");
+    assert!(cs[0].span.is_some(), "provenance spans preserved");
+}
+
+#[test]
+fn multiple_constraint_blocks_compose_none_dropped() {
+    let d = elab(r#"
+        module dut (inout electrical p, inout electrical n);
+            constraint begin require a1 : V(p, n) <= 1.0; end
+            constraint begin require a2 : V(p, n) >= -1.0; end
+        endmodule
+    "#);
+    let names: Vec<&str> = d.module("dut").unwrap().constraints().iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, vec!["a1", "a2"], "both blocks' requires apply in authored order");
+}
+
+#[test]
+fn a_duplicate_require_label_fails_loud_naming_both() {
+    let msg = elab_err(r#"
+        module dut (inout electrical p, inout electrical n);
+            constraint begin
+                require head : V(p, n) <= 1.0;
+                require head : V(p, n) <= 2.0;
+            end
+        endmodule
+    "#);
+    assert!(msg.contains("head"), "names the duplicated label: {msg}");
+    assert!(msg.contains("duplicate"), "says what happened: {msg}");
+}
+
+#[test]
+fn a_duplicate_label_across_blocks_fails_loud_too() {
+    let msg = elab_err(r#"
+        module dut (inout electrical p, inout electrical n);
+            constraint begin require head : V(p, n) <= 1.0; end
+            constraint begin require head : V(p, n) <= 2.0; end
+        endmodule
+    "#);
+    assert!(msg.contains("head"), "composition does not open a shadowing hole: {msg}");
+}
+
+#[test]
+fn a_module_without_a_block_has_no_constraints() {
+    let d = elab(r#"
+        module dut (inout electrical p, inout electrical n);
+            analog begin I(p, n) <+ 0.0; end
+        endmodule
+    "#);
+    assert!(d.module("dut").unwrap().constraints().is_empty());
+}
+
+#[test]
+fn an_uninstantiated_constrained_module_elaborates_silently() {
+    // Edge case: nothing is evaluated and no diagnostic is produced for
+    // a constrained module that is never instantiated.
+    let d = elab(CONSTRAINED);
+    assert_eq!(d.module("dut").unwrap().constraints().len(), 2);
+}

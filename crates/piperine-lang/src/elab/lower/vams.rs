@@ -84,6 +84,7 @@ impl Elaborator {
         let mut branches = Vec::new();
         let mut vars = Vec::new();
         let mut events: Vec<String> = Vec::new();
+        let mut constraints: Vec<crate::pom::PomRequire> = Vec::new();
         let mut gates: Vec<crate::pom::GateInstance> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
@@ -238,11 +239,34 @@ impl Elaborator {
                 | ModuleItem::CaseGenerate(_)
                 | ModuleItem::GenerateRegion(_)
                 | ModuleItem::Specify(_) => {}
-                // `constraint begin … end` parses (sanctioned extension,
-                // MD-49) but its elaboration lands with the
-                // constraints-on-vams feature — a placeholder no-op until
-                // that task, never a permanent silent drop.
-                ModuleItem::Constraint(_) => {}
+                // `constraint begin … end` (sanctioned extension, MD-49):
+                // the authored `require`s land on the POM in authored
+                // order — multiple blocks compose (all requires apply),
+                // a duplicate label fails loud (E4008), and nothing is
+                // resolved here: name resolution and margin lowering are
+                // the codegen `resolve` stage's job, exactly as for the
+                // analog body.
+                ModuleItem::Constraint(c) => {
+                    for req in &c.requires {
+                        if constraints.iter().any(|r| r.name == req.name) {
+                            return Err(ElabError::from(ElabErrorKind::ConstraintLabelDuplicate {
+                                name: req.name.clone(),
+                                module: decl.name.clone(),
+                                first: constraints
+                                    .iter()
+                                    .find(|r| r.name == req.name)
+                                    .and_then(|r| r.span),
+                                second: Some(to_miette_span(req.span)),
+                            }));
+                        }
+                        constraints.push(crate::pom::PomRequire {
+                            span: Some(to_miette_span(req.span)),
+                            name: req.name.clone(),
+                            pred: req.pred.clone(),
+                            tol: req.tol.clone(),
+                        });
+                    }
+                }
                 // Gate primitives, Annex A.4.2 (LRMC-C7-13, T39). The 12
                 // digital gate keywords (and/nand/or/nor/xor/xnor/buf/not/
                 // bufif0/bufif1/notif0/notif1) reach the POM; the 12
@@ -324,6 +348,7 @@ impl Elaborator {
         module.branches = branches;
         module.vars = vars;
         module.events = events;
+        module.constraints = constraints;
         module.gates = gates;
         module.attributes = lower_module_attrs(&decl.attrs, &self.ctx.schemas)?;
 

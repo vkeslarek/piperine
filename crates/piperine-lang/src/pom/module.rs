@@ -318,6 +318,13 @@ pub struct Module {
     /// as `genvars` above — LRMC-C5-04.
     #[serde(default)]
     pub events: Vec<String>,
+    /// Authored `require` statements of this module's `constraint
+    /// begin … end` block(s) (sanctioned extension, MD-49), in authored
+    /// order across all blocks — multiple blocks compose, none dropped.
+    /// Authored surface (design F1); skipped on serialize, same rule as
+    /// behaviors: predicates are compiled expressions.
+    #[serde(skip, default)]
+    pub constraints: Vec<crate::pom::PomRequire>,
     /// Gate-primitive instances (`and g1(y, a, b);`, Annex A.4.2,
     /// LRMC-C7-13, T39) — a gate is not a module instance (no port
     /// declarations to resolve against), so it gets its own list rather
@@ -366,7 +373,8 @@ impl Module {
             span: None, attributes: Vec::new(), doc: None, name,
             ports, params, wires, vars: Vec::new(), instances, connections,
             behaviors,
-            branches: Vec::new(), genvars: Vec::new(), events: Vec::new(), gates: Vec::new(), origin: None,
+            branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
+            constraints: Vec::new(), gates: Vec::new(), origin: None,
         }
     }
 
@@ -399,6 +407,9 @@ impl Module {
     pub fn genvars(&self) -> &[String] { &self.genvars }
     /// All `event` names declared in this module (LRM §5.10.4).
     pub fn events(&self) -> &[String] { &self.events }
+    /// All authored `require` statements of this module's `constraint`
+    /// block(s), in authored order (multiple blocks compose).
+    pub fn constraints(&self) -> &[crate::pom::PomRequire] { &self.constraints }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

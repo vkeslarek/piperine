@@ -18,7 +18,7 @@ pub mod wire;
 pub mod traits;
 pub use crate::value;
 
-pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock};
+pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, PomRequire};
 pub use branch::{Branch, BranchKind};
 pub use design::{Design, Project, RfPort};
 pub use introspection::{IntrospectionMeta, ModelId, TermMeta, VarMeta, VAR_KINDS, TERMINAL_KINDS};

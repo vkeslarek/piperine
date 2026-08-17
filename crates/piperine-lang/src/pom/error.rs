@@ -333,6 +333,24 @@ pub enum ElabErrorKind {
         help("Declare the net explicitly (e.g. `electrical {name};`) before using it, or remove the `default_nettype none` directive if implicit nets are wanted here.")
     )]
     UndeclaredNetDefaultNettypeNone { name: String },
+    /// VAMS E4008 — two `require` statements in the same module carry the
+    /// same label (`constraint begin … end`, sanctioned extension MD-49).
+    /// The label is the name findings and the margins channel report by,
+    /// so a duplicate would make one constraint silently shadow the
+    /// other (constraints-on-vams).
+    #[error("duplicate `require` label `{name}` — already used by another require in module `{module}`")]
+    #[diagnostic(
+        code(E4008),
+        help("`require` labels name their findings and margins; they must be unique within the module. Rename one of the two statements.")
+    )]
+    ConstraintLabelDuplicate {
+        name: String,
+        module: String,
+        #[label("first `require {name}` here")]
+        first: Option<miette::SourceSpan>,
+        #[label("duplicate `require {name}` here")]
+        second: Option<miette::SourceSpan>,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]
