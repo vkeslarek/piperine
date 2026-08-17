@@ -7,6 +7,20 @@
 //! unity crossing is fc·√(100²−1) ≈ 15.9 kHz, the phase margin is
 //! 180° − atan(f_u/fc) ≈ 90.57°, and the gain margin is infinite (a
 //! single pole never reaches −180°).
+//!
+//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
+//! PHDL's `constraint` block with its reduced `var` declarations and
+//! `target … tol …` clauses.
+//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
+//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
+//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
+//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
+//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
+//! empty catalog unconditionally. A future phase re-anchors the dv-core
+//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
+//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
+//! cannot be retargeted and the tests are left failing rather than weakened,
+//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{MarginShape, Session, SolverConfig};

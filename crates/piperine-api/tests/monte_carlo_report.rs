@@ -3,6 +3,20 @@
 //! worst sample per constraint (named and replayable), the compile-once
 //! proof for the whole sampling loop (MD-18), and non-convergent samples
 //! reported as outcomes rather than aborting the run.
+//!
+//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
+//! PHDL's `constraint` block with its `require` clause, and the `tol
+//! gauss(…)` parameter-distribution clause.
+//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
+//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
+//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
+//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
+//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
+//! empty catalog unconditionally. A future phase re-anchors the dv-core
+//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
+//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
+//! cannot be retargeted and the tests are left failing rather than weakened,
+//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{MonteCarloResult, SampleOutcome, SamplePlan, Session, SolverConfig};

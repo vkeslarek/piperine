@@ -89,18 +89,24 @@ fn several_sequencers_resume_independently_and_in_authored_instantiation_order()
 
 // ── rebuild-class set_param from a host device ──────────────────────────────
 
-const HOST_DEVICE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const HOST_DEVICE_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-@device(plugin = \"none\", type = \"host_r\")
-mod HostR(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
+(* device = "none", type = "host_r" *)
+module HostR (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vout : Electrical;
-    r : HostR(.p = vout, .n = gnd);
-}
-";
+module Top ();
+    electrical gnd, vout;
+    HostR r (.p(vout), .n(gnd));
+endmodule
+"#;
 
 struct HostR {
     label: String,

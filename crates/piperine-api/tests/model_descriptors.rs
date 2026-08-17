@@ -14,25 +14,29 @@ use piperine_lang::{parse_and_elaborate, Design, SourceMap, Value, ValueType};
 use piperine_lang::ast::BehaviorKind;
 
 /// A two-level fixture: `Top` instantiates `Amp`, which declares one port of
-/// every direction, a wire, a defaulted param, an undefaulted param, and an
-/// analog block.
-const FIXTURE: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// every direction, a wire, two params, and an analog block. (PHDL's
+/// undefaulted `param label: String;` has no VAMS spelling — Annex A's
+/// `param_assignment` makes the default mandatory — so `label` carries `""`.)
+const FIXTURE: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod Amp(input a: Electrical, output z: Electrical, inout bias: Electrical) {
-    param gain: Real = 2.5;
-    param label: String;
-    wire mid : Electrical;
-}
-analog Amp { I(a, z) <+ V(a, z) * gain; }
+module Amp (input electrical a, output electrical z, inout electrical bias);
+    parameter real gain = 2.5;
+    parameter string label = "";
+    electrical mid;
+    analog I(a, z) <+ V(a, z) * gain;
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire vout : Electrical;
-    x1 : Amp(.a = vin, .z = vout, .bias = gnd) { .gain = 4.0 };
-}
-";
+module Top ();
+    electrical gnd, vin, vout;
+    Amp #(.gain(4.0)) x1 (.a(vin), .z(vout), .bias(gnd));
+endmodule
+"#;
 
 fn fixture() -> Design {
     parse_and_elaborate(FIXTURE, &SourceMap::dummy()).expect("fixture elaborates")
@@ -54,7 +58,7 @@ fn port_reflects_name_direction_and_discipline() {
         "each port's authored direction, typed (not stringified)"
     );
 
-    assert_eq!(ports[0].ty(), "Electrical", "the port's discipline name");
+    assert_eq!(ports[0].ty(), "electrical", "the port's discipline name");
 }
 
 #[test]
@@ -64,7 +68,7 @@ fn net_reflects_name_and_discipline() {
     let nets: Vec<Net> = amp.wires().iter().map(Net::of).collect();
 
     assert_eq!(nets.iter().map(Net::name).collect::<Vec<_>>(), vec!["mid"]);
-    assert_eq!(nets[0].ty(), "Electrical");
+    assert_eq!(nets[0].ty(), "electrical");
 }
 
 #[test]
@@ -78,6 +82,10 @@ fn instance_reflects_label_and_instantiated_module() {
     assert_eq!(instances[0].module(), "Amp", "the module it instantiates");
 }
 
+/// BLOCKED (missing mechanism: PHDL's undefaulted `param label: String;`).
+/// Verilog-AMS Annex A's `param_assignment` requires a constant expression,
+/// so no parameter can report `default() == None`; the last assertion below
+/// is left failing rather than weakened.
 #[test]
 fn param_reflects_name_type_and_default() {
     let design = fixture();

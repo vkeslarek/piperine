@@ -10,44 +10,54 @@ use std::rc::Rc;
 use piperine_api::model::{Design, InstanceReadout, InstanceResolver, InstanceView};
 use piperine_api::{Error, OpResult, Trace};
 
-/// The introspect divider: `r_bot` computes opvar `cond = 1/r` (named via
-/// `@name`), so both the opvar snapshot and the observable catalog are
-/// non-empty; `r_top` is a plain resistor, because `OpResult::i` recomputes
-/// the branch from the kernel with an empty var bank and cannot yet read a
-/// var-bearing device (pre-existing gap — the v/i assertions stay on the
-/// plain device). `mid = 5·2k/(3k+2k) = 2.0 V`; the drop over `r_top` is
-/// 3.0 V and its branch carries 1 mA.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// The introspect divider: `r_bot` computes opvar `cond = 1/r`, so both the
+/// opvar snapshot and the observable catalog are non-empty; `r_top` is a
+/// plain resistor, because `OpResult::i` recomputes the branch from the
+/// kernel with an empty var bank and cannot yet read a var-bearing device
+/// (pre-existing gap — the v/i assertions stay on the plain device).
+/// `mid = 5·2k/(3k+2k) = 2.0 V`; the drop over `r_top` is 3.0 V and its
+/// branch carries 1 mA.
+///
+/// PHDL named the observable with `@name(value = "cond") var g`; VAMS has no
+/// var-level attribute lowering (`elab/lower/vams.rs` builds every `Var` with
+/// `attributes: Vec::new()`), so the variable is simply *named* `cond` here.
+/// That is enough for `opvar("cond")`, which reads the kernel's var names,
+/// but not for the observable catalog, which still needs an `@name` sidecar —
+/// see `opvar_and_the_static_catalogs_reflect_the_device`.
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod OpvarResistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    @name(value = \"cond\") var g : Real = 0.0;
-}
-analog OpvarResistor {
-    g = 1.0 / r;
-    I(p, n) <+ g * V(p, n);
-}
+module OpvarResistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    real cond;
+    analog begin
+        cond = 1.0 / r;
+        I(p, n) <+ cond * V(p, n);
+    end
+endmodule
 
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : OpvarResistor (.p = mid, .n = gnd) { .r = 2e3 };
-}
-";
+module Top ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    OpvarResistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 fn fixture() -> Design {
     Design::load_str(DIVIDER_PHDL).expect("divider elaborates")
@@ -94,6 +104,12 @@ fn v_and_i_read_scalars_over_an_op_result() {
     assert!((ipn - 1e-3).abs() < 1e-12, "3.0 V over 3 kΩ carries 1 mA, got {ipn}");
 }
 
+/// BLOCKED (missing mechanism: var-level attribute lowering for Verilog-AMS,
+/// PHDL's `@name(value = "cond") var g`). `device/element.rs`'s observable
+/// catalog matches an `@name` sidecar entry against the var's source name, and
+/// `elab/lower/vams.rs` builds every `Var` with `attributes: Vec::new()`, so
+/// the catalog falls back to the positional `var[0]` (PIA-08). The last
+/// assertion is left failing rather than weakened.
 #[test]
 fn opvar_and_the_static_catalogs_reflect_the_device() {
     let design = fixture();

@@ -11,35 +11,47 @@ use piperine_lang::Value;
 /// Three levels — `Top` → `Mid` → `Leaf` — so the authored hierarchy and the
 /// flattened side artifact genuinely differ: flattening splices `Mid`'s two
 /// leaf instances into `Top`, which authored exactly one instance.
-const HIER: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const HIER: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-const VDD: Real = 3.3;
+module Leaf (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Leaf(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog Leaf { I(p, n) <+ V(p, n) / r; }
+module Mid (inout electrical a, inout electrical b);
+    electrical tap;
+    Leaf #(.r(100.0)) la (.p(a), .n(tap));
+    Leaf #(.r(200.0)) lb (.p(tap), .n(b));
+endmodule
 
-mod Mid(inout a: Electrical, inout b: Electrical) {
-    wire tap : Electrical;
-    la : Leaf(.p = a, .n = tap) { .r = 100.0 };
-    lb : Leaf(.p = tap, .n = b) { .r = 200.0 };
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    m1 : Mid(.a = vin, .b = gnd) {};
-}
-";
+module Top ();
+    electrical gnd, vin;
+    Mid m1 (.a(vin), .b(gnd));
+endmodule
+"#;
 
 /// A design with two uninstantiated modules — no unambiguous root, so `top`
 /// stays unset (the inference rule's negative case).
-const AMBIGUOUS_TOP: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const AMBIGUOUS_TOP: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod A(inout p: Electrical) {}
-mod B(inout p: Electrical) {}
-";
+module A (inout electrical p);
+endmodule
+
+module B (inout electrical p);
+endmodule
+"#;
 
 #[test]
 fn load_str_elaborates_and_infers_the_unique_top() {
@@ -92,6 +104,10 @@ fn modules_enumerates_every_authored_module() {
     assert_eq!(names, vec!["Leaf", "Mid", "Top"], "all three authored modules, no more and no fewer");
 }
 
+/// BLOCKED (missing mechanism: PHDL's file-scope `const NAME: Real = v;`
+/// declaration). Verilog-AMS has no such production and nothing populates
+/// `pom::Design::consts` any more, so `VDD` cannot be authored into the
+/// fixture and `const_("VDD")` reads `None`.
 #[test]
 fn const_reads_a_global_and_reports_none_for_an_unknown_name() {
     let design = Design::load_str(HIER).expect("HIER elaborates");

@@ -38,6 +38,20 @@
 //! this for the analog case); a monitor's `require` rides that exact same
 //! evaluation path. This file's assertion on `finding.time` falling inside
 //! `[0, stop]` is the same style of proof.
+//!
+//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
+//! PHDL's `constraint` block with its `require` clause, plus a generic
+//! module (`mod Watch[N]`) — VAMS has no parameterized-module-name form.
+//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
+//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
+//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
+//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
+//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
+//! empty catalog unconditionally. A future phase re-anchors the dv-core
+//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
+//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
+//! cannot be retargeted and the tests are left failing rather than weakened,
+//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
@@ -46,7 +60,7 @@ use piperine_solver::prelude::ValidationSeverity;
 
 fn digital_source_map() -> SourceMap {
     let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

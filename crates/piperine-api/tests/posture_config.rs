@@ -10,33 +10,36 @@ use piperine_lang::SourceMap;
 
 /// Self-contained divider (own discipline + devices, no prelude):
 /// `mid = 10·1k/(1k+1k) = 5.0 V`.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 10.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 1e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 1e3 };
-}
-";
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(10.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(1e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(1e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 fn divider_session() -> Session {
     let headers =
         std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let map = SourceMap::new(headers.clone());
     let design =
         piperine_lang::parse_and_elaborate(DIVIDER_PHDL, &map).expect("divider elaborates");
     Session::compile(&design, "Divider").expect("session compiles")

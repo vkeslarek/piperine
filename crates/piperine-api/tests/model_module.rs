@@ -12,28 +12,31 @@ use piperine_lang::ast::BehaviorKind;
 /// Self-contained divider (own discipline + devices, no prelude):
 /// `mid = 5·2k/(3k+2k) = 2.0 V` by default; staging `r_top.r = 2e3`
 /// balances the divider to `2.5 V`.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
-";
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 fn divider() -> Design {
     Design::load_str(DIVIDER_PHDL).expect("divider elaborates")
@@ -49,8 +52,8 @@ fn navigation_reads_the_authored_declarations() {
     port_names.sort();
     assert_eq!(port_names, vec!["n", "p"], "Resistor's two authored ports");
     assert!(
-        ports.iter().all(|p| matches!(p.direction(), Direction::Inout) && p.ty() == "Electrical"),
-        "both ports are `inout` on the Electrical discipline"
+        ports.iter().all(|p| matches!(p.direction(), Direction::Inout) && p.ty() == "electrical"),
+        "both ports are `inout` on the electrical discipline"
     );
 
     let params = resistor.params().expect("params resolve");

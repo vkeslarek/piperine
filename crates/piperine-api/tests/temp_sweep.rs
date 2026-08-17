@@ -15,17 +15,17 @@ use piperine_lang::SourceMap;
 /// cold start, unlike a bare current source into a zero-conductance
 /// junction).
 const DIODE_BIAS: &str = r#"
-    use piperine::disciplines;
-    use spice::sources;
-    use spice::passives;
-    use spice::diode;
+`include "disciplines.vams"
+`include "spice/sources.va"
+`include "spice/passives.va"
+`include "spice/diode.va"
 
-    mod TempBias() {
-        wire gnd: Electrical; wire vin: Electrical; wire vd: Electrical;
-        vs: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
-        rb: res  (.p=vin,.n=vd)  { .r = 1.0e3 };
-        d1: dio  (.p=vd,.n=gnd)  {};
-    }
+module TempBias ();
+    electrical gnd, vin, vd;
+    vsrc #(.dc(5.0)) vs (.p(vin), .n(gnd));
+    res #(.r(1.0e3)) rb (.p(vin), .n(vd));
+    dio d1 (.p(vd), .n(gnd));
+endmodule
 "#;
 
 /// A source map rooted at the real stdlib headers (same shape as the root
@@ -33,7 +33,7 @@ const DIODE_BIAS: &str = r#"
 fn headers_source_map() -> SourceMap {
     let headers =
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    let mut map = SourceMap::new(headers.clone());
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
     map

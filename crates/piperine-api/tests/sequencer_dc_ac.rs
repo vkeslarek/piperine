@@ -91,18 +91,23 @@ fn the_coroutine_does_not_run_at_the_dc_operating_point() {
     assert!(result.is_ok(), "a DC solve with a sequencer present must not panic or fail: {result:?}");
 }
 
-const HOST_SEQUENCER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const HOST_SEQUENCER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-@device(plugin = \"none\", type = \"seq\")
-mod Seq(inout node: Electrical);
+(* device = "none", type = "seq" *)
+module Seq (inout electrical node);
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vout : Electrical;
-    s : Seq(.node = vout);
-}
-";
+module Top ();
+    electrical gnd, vout;
+    Seq s (.node(vout));
+endmodule
+"#;
 
 /// D13 (T25): an AC sweep on a circuit whose device provider declared a
 /// sequencer type refuses loud, naming the gap — never a silent freeze.

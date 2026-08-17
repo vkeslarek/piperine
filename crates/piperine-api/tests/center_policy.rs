@@ -4,6 +4,19 @@
 //! `driver/center.rs` logic itself landed structurally in T16's commit
 //! (see its SPEC_DEVIATION note); this file validates it against T19's
 //! acceptance criteria.
+//!
+//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
+//! PHDL's `constraint` block and its `require` clause.
+//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
+//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
+//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
+//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
+//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
+//! empty catalog unconditionally. A future phase re-anchors the dv-core
+//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
+//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
+//! cannot be retargeted and the tests are left failing rather than weakened,
+//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
 
 use std::collections::HashMap;
 
