@@ -4,36 +4,48 @@
 //! its own binary). Margins CSE against the residual's temp tape (a
 //! module `var` the residual also computes is read through the tape, not
 //! re-inlined). No constraint block → the capability is `None`, nothing
-//! compiled. Only pointwise margins reach the kernel; reduced ones do
-//! not (D7).
+//! allocated. A reduced-class margin never reaches the kernel (D7) — the
+//! `target` statements that carried them are deferred with dv-core's
+//! other statements and are exercised in their own files.
+//!
+//! **Require-core migrated** (constraints-on-vams): these tests run
+//! against the live producer. Deferred statements (`var` inside the
+//! constraint block/`target`/`cover`) are exercised in their own files,
+//! still red.
 
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
-
+use piperine_codegen::SimCtx;
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::resolve::MarginKind;
-use piperine_codegen::SimCtx;
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+const DISCIPLINES: &str = "`include \"disciplines.vams\"";
 
-/// Compile `Dut` (two terminals, params + body + optional constraint block
-/// verbatim).
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers from this
+/// crate (`SourceMap::dummy`'s relative paths only resolve from that
+/// crate's dir).
+fn source_map() -> piperine_lang::SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
+/// Compile `Dut` (two terminals, params + body + optional constraint
+/// block verbatim).
 fn kernel(params: &str, body: &str, constraint: &str) -> AnalogKernel {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ {params} }}
-analog Dut {{ {body} }}
+        "{DISCIPLINES}
+module Dut (inout electrical p, inout electrical n);
+    {params}
+    analog begin
+        {body}
+    end
 {constraint}
+endmodule
 "
     );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(&src, &source_map()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     AnalogKernel::compile(&bodies["Dut"]).expect("compile")
 }
@@ -44,24 +56,22 @@ fn eval_margin(kernel: &AnalogKernel, index: usize, volts: &[f64], params: &[f64
     kernel.eval_margin(index, volts, params, &state, &vars, &SimCtx::default())
 }
 
-/// DVC-10: one function per declared **pointwise** margin — the reduced
-/// target never reaches the kernel — each evaluated independently, with
-/// the margin value parameterized by the instance's params (the same
-/// kernel serves every instance).
+/// DVC-10: one function per declared **pointwise** margin — each evaluated
+/// independently, with the margin value parameterized by the instance's
+/// params (the same kernel serves every instance).
 #[test]
 fn one_function_per_declared_pointwise_margin_parameterized_by_instance() {
     let kernel = kernel(
-        "param hi: Real = 3.0; param lo: Real = 1.0;",
+        "parameter real hi = 3.0;\n    parameter real lo = 1.0;",
         "I(p, n) <+ V(p, n) / 1e3;",
-        "constraint Dut {\n\
+        "constraint begin\n\
              require head : V(p, n) <= hi;\n\
              require foot : V(p, n) >= lo;\n\
-             target ac_unity_gain_freq(V(p, n)) >= 10e6 tol 1e6;\n\
-         }",
+         end",
     );
 
     assert!(kernel.has_margins());
-    assert_eq!(kernel.num_margins(), 2, "the reduced target stays out of the kernel (D7)");
+    assert_eq!(kernel.num_margins(), 2, "one function per declared require");
     let catalog = kernel.margin_catalog();
     assert_eq!(catalog[0].label, "head");
     assert_eq!(catalog[0].kind, MarginKind::Require);
@@ -85,22 +95,22 @@ fn one_function_per_declared_pointwise_margin_parameterized_by_instance() {
 #[test]
 fn margins_read_module_vars_through_the_shared_temp_tape() {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{
-    param gain: Real = 2.0;
-    param hi: Real = 3.0;
-    var vd : Real = 0.0;
-}}
-analog Dut {{
-    vd = gain * V(p, n);
-    I(p, n) <+ vd / 1e3;
-}}
-constraint Dut {{
-    require head : vd <= hi;
-}}
+        "{DISCIPLINES}
+module Dut (inout electrical p, inout electrical n);
+    parameter real gain = 2.0;
+    parameter real hi = 3.0;
+    real vd;
+    analog begin
+        vd = gain * V(p, n);
+        I(p, n) <+ vd / 1e3;
+    end
+    constraint begin
+        require head : vd <= hi;
+    end
+endmodule
 "
     );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(&src, &source_map()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     let kernel = AnalogKernel::compile(&bodies["Dut"]).expect("compile");
 
@@ -108,15 +118,15 @@ constraint Dut {{
     // vd = 2·V: at V = 1.0 the margin is 3 − 2·1 = 1; at V = 2.0 it is
     // 3 − 2·2 = −1 (violated). The var's *computed* value — its temp —
     // is what the margin reads; the bank's initial 0.0 would give 3.0.
-    assert_eq!(eval_margin(&kernel, 0, &[1.0, 0.0], &[2.0, 3.0, 0.0]), 1.0, "margin reads the tape value");
-    assert_eq!(eval_margin(&kernel, 0, &[2.0, 0.0], &[2.0, 3.0, 0.0]), -1.0, "tape value tracks the input");
+    assert_eq!(eval_margin(&kernel, 0, &[1.0, 0.0], &[2.0, 3.0]), 1.0, "margin reads the tape value");
+    assert_eq!(eval_margin(&kernel, 0, &[2.0, 0.0], &[2.0, 3.0]), -1.0, "tape value tracks the input");
 }
 
 /// DVC-10: a module with no constraint block compiles no margin
 /// capability — `None`, no function, no catalog.
 #[test]
 fn no_constraint_block_compiles_nothing() {
-    let kernel = kernel("param r: Real = 1e3;", "I(p, n) <+ V(p, n) / r;", "");
+    let kernel = kernel("parameter real r = 1e3;", "I(p, n) <+ V(p, n) / r;", "");
     assert!(!kernel.has_margins(), "no constraint block → no capability");
     assert_eq!(kernel.num_margins(), 0);
     assert!(kernel.margin_catalog().is_empty());

@@ -6,49 +6,41 @@
 //! values**, not by inspection: every form's lowered expression is
 //! evaluated at satisfied, violated, and boundary points.
 //!
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints = None` from the VAMS frontend,
-//! so every test here fails at elaboration until the
-//! `constraints-on-vams` feature (`.specs/features/constraints-on-vams/`)
-//! rebuilds the producer with `constraint begin … end`. These tests are
-//! the executable specification of the margin machinery — restore them
-//! to green when that feature lands; do not delete them.
+//! **Require-core migrated** (constraints-on-vams): the `require`-only
+//! tests run against the live producer. The two `var`/`target` tests
+//! further down stay present-and-red — those statements are deferred with
+//! dv-core's other statements (`.specs/features/constraints-on-vams/`
+//! Out-of-Scope table) and their tests are the executable specification
+//! for whoever rebuilds them; do not delete them.
 
-use piperine_codegen::resolve::{LoweredBody, MarginKind, QuantityClass, lower_bodies};
+use piperine_codegen::resolve::{MarginKind, lower_bodies};
 use piperine_lang::ast::{BinOp, Expr, UnOp};
 use piperine_lang::lexer::NumberLit;
 use piperine_lang::{SourceMap, parse_and_elaborate};
 
-/// Lower `src` and return the named module's resolved body.
-fn lower(src: &str, module: &str) -> LoweredBody {
-    let design = parse_and_elaborate(
-        &format!("{DISCIPLINE}\n{src}"),
-        &SourceMap::dummy(),
-    )
-    .expect("elaborate");
-    lower_bodies(&design).expect("lowering")[module].clone()
-}
-
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+const DISCIPLINES: &str = "`include \"disciplines.vams\"";
 
 /// The fixture: params only, so every lowered margin is arithmetic over
 /// named values and can be evaluated directly.
 const PAR: &str = "\
-mod Par() {
-    param a: Real = 2.0;
-    param b: Real = 3.0;
-}
-constraint Par {
-    var ap1 : Real = a + 1.0;
-    require le_r : a <= b;
-    require ge_r : b >= a;
-    require band : 1.0 <= a && a <= b;
-    require via_var : ap1 <= b;
-    target a <= b tol 2.0;
-    target b >= a;
-}
+module Par ();
+    parameter real a = 2.0;
+    parameter real b = 3.0;
+    constraint begin
+        require le_r : a <= b;
+        require ge_r : b >= a;
+        require band : 1.0 <= a && a <= b;
+        require scaled : a <= b tol 2.0;
+        require plain : b >= a;
+    end
+endmodule
 ";
+
+/// Lower `src` and return the named module's resolved body.
+fn lower(src: &str, module: &str) -> piperine_codegen::resolve::LoweredBody {
+    let design = parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborate");
+    lower_bodies(&design).expect("lowering")[module].clone()
+}
 
 /// A tiny evaluator over the lowered margin expressions (literals, named
 /// values from `env`, arithmetic, `min`) — the value-level assertion
@@ -161,7 +153,7 @@ fn the_interval_form_lowers_to_min_of_parts() {
     }
 }
 
-/// DVC-08 AC1: a `tol`-normalized target divides by the scale; absent a
+/// DVC-08 AC1: a `tol`-normalized require divides by the scale; absent a
 /// `tol` the scale is 1 — **no** division is emitted (no implicit
 /// normalization). Asserted structurally and on values.
 #[test]
@@ -169,15 +161,15 @@ fn tol_normalizes_and_its_absence_means_scale_one() {
     let body = lower(PAR, "Par");
     let margins = body.constraints.as_ref().expect("constraint margins lowered");
 
-    let scaled = margins.iter().find(|m| m.label == "target#5").expect("target#5 margin");
-    assert_eq!(scaled.kind, MarginKind::Target, "targets are named by position");
+    let scaled = margins.iter().find(|m| m.label == "scaled").expect("scaled margin");
+    assert_eq!(scaled.kind, MarginKind::Require);
     let Expr::Binary { op: BinOp::Div, lhs: diff, rhs: scale, .. } = &scaled.expr else {
-        panic!("a tol target divides by the scale: {:?}", scaled.expr)
+        panic!("a tol require divides by the scale: {:?}", scaled.expr)
     };
     assert!(matches!(scale.as_ref(), Expr::Number { value: NumberLit::Real(v), .. } if *v == 2.0));
     assert!(matches!(diff.as_ref(), Expr::Binary { op: BinOp::Sub, .. }));
 
-    let plain = margins.iter().find(|m| m.label == "target#6").expect("target#6 margin");
+    let plain = margins.iter().find(|m| m.label == "plain").expect("plain margin");
     assert!(
         !matches!(&plain.expr, Expr::Binary { op: BinOp::Div, .. }),
         "absent a tol no division is emitted: {:?}",
@@ -190,12 +182,76 @@ fn tol_normalizes_and_its_absence_means_scale_one() {
     assert_eq!(eval(&plain.expr, &env), 1.0, "scale 1 — the raw difference");
 }
 
+/// DVC-08: a module with no constraint block lowers `constraints` to
+/// `None` — nothing lowered, nothing allocated.
+#[test]
+fn no_constraint_block_lowers_to_none() {
+    let body = lower(
+        "\
+module Bare (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+",
+        "Bare",
+    );
+    assert!(body.constraints.is_none(), "no constraint block → None, not an empty vec");
+}
+
+/// Fail loud (AGENTS.md): a `require` predicate form with no margin
+/// (anything but `<=`, `>=`, `&&`) is a lowering error naming the
+/// constraint — never a silent `0.0` margin.
+#[test]
+fn an_unsupported_require_form_fails_loud() {
+    let design = parse_and_elaborate(
+        "\
+module Par ();
+    parameter real a = 1.0;
+    parameter real b = 2.0;
+    constraint begin
+        require strict_lt : a < b;
+    end
+endmodule
+",
+        &SourceMap::dummy(),
+    )
+    .expect("elaborate");
+    let err = lower_bodies(&design).expect_err("lowering must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("strict_lt"), "the error names the constraint: {msg}");
+    assert!(msg.contains("require predicate"), "the error names the form: {msg}");
+}
+
+// ── Present-and-red: the deferred `var`/`target` statements ────────────────
+//
+// `constraint var` (substitution into margins) and `target` (unlabeled,
+// reduced-class, `target#<index>` naming) are deferred with dv-core's
+// other statements. These two tests are their executable specification —
+// they still use the PHDL grammar and fail at elaboration until the
+// follow-up feature rebuilds them; present-and-red, never deleted.
+
 /// DVC-08: a constraint `var` substitutes into the margins that read it
 /// (authored order), so `via_var : ap1 <= b` lowers to `b − (a + 1)` —
-/// asserted on values.
+/// asserted on values. **Blocked on the deferred `var` statement** — the
+/// fixture fails at elaboration (the block accepts only `require`)
+/// until that follow-up lands; present-and-red, never deleted.
 #[test]
 fn constraint_vars_substitute_into_margins() {
-    let body = lower(PAR, "Par");
+    let body = lower(
+        "\
+module Par ();
+    parameter real a = 2.0;
+    parameter real b = 3.0;
+    constraint begin
+        var ap1 = a + 1.0;
+        require via_var : ap1 <= b;
+    end
+endmodule
+",
+        "Par",
+    );
     let margins = body.constraints.as_ref().expect("constraint margins lowered");
     let via_var = margins.iter().find(|m| m.label == "via_var").expect("via_var margin");
 
@@ -209,54 +265,28 @@ fn constraint_vars_substitute_into_margins() {
 
 /// DVC-08 / D7: a reduced-class target lowers like the rest — the class
 /// travels with the margin (the kernel stage keeps only pointwise ones).
+/// **Blocked on the deferred `target` statement** — the fixture fails at
+/// elaboration until that follow-up lands; present-and-red, never
+/// deleted.
 #[test]
 fn reduced_margins_lower_and_carry_their_class() {
     let body = lower(
-        "mod Amp ( inout out : Electrical, inout gnd : Electrical ) { }\n\
-         constraint Amp {\n\
-             target ac_unity_gain_freq(V(out, gnd)) >= 10e6 tol 1e6;\n\
-             require no_clip : V(out, gnd) <= 3.3;\n\
-         }",
+        "\
+module Amp (inout electrical out, inout electrical gnd);
+    constraint begin
+        target ac_unity_gain_freq(V(out, gnd)) >= 10e6 tol 1e6;
+        require no_clip : V(out, gnd) <= 3.3;
+    end
+endmodule
+",
         "Amp",
     );
     let margins = body.constraints.as_ref().expect("constraint margins lowered");
     assert_eq!(margins.len(), 2, "both statements lower");
 
-    assert_eq!(margins[0].class, QuantityClass::Reduced, "the ugf target is reduced");
+    assert_eq!(margins[0].class, piperine_codegen::resolve::QuantityClass::Reduced, "the ugf target is reduced");
     assert_eq!(margins[0].analyses, vec!["ac".to_string()], "its analysis travels");
-    assert_eq!(margins[0].kind, MarginKind::Target);
-    assert_eq!(margins[1].class, QuantityClass::Pointwise, "the require is pointwise");
+    assert_eq!(margins[0].kind, piperine_codegen::resolve::MarginKind::Target);
+    assert_eq!(margins[1].class, piperine_codegen::resolve::QuantityClass::Pointwise, "the require is pointwise");
     assert_eq!(margins[1].label, "no_clip");
-}
-
-/// DVC-08: a module with no constraint block lowers `constraints` to
-/// `None` — nothing lowered, nothing allocated.
-#[test]
-fn no_constraint_block_lowers_to_none() {
-    let body = lower(
-        "mod Bare ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1e3; }\n\
-         analog Bare { I(p, n) <+ V(p, n) / r; }",
-        "Bare",
-    );
-    assert!(body.constraints.is_none(), "no constraint block → None, not an empty vec");
-}
-
-/// Fail loud (AGENTS.md): a `require` predicate form with no margin
-/// (anything but `<=`, `>=`, `&&`) is a lowering error naming the
-/// constraint — never a silent `0.0` margin.
-#[test]
-fn an_unsupported_require_form_fails_loud() {
-    let design = parse_and_elaborate(
-        &format!(
-            "{DISCIPLINE}\n\
-             mod Par() {{ param a : Real = 1.0; param b : Real = 2.0; }}\n\
-             constraint Par {{ require strict_lt : a < b; }}"
-        ),
-        &SourceMap::dummy(),
-    )
-    .expect("elaborate");
-    let err = lower_bodies(&design).expect_err("lowering must fail");
-    let msg = err.to_string();
-    assert!(msg.contains("strict_lt"), "the error names the constraint: {msg}");
-    assert!(msg.contains("require predicate"), "the error names the form: {msg}");
 }

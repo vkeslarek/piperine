@@ -7,21 +7,27 @@
 //! `strict` aborts the sweep at the first violated frequency; `collect`
 //! records each violating point's finding with its frequency.
 
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
+//! **Require-core migrated** (constraints-on-vams): these tests run
+//! against the live producer. Deferred statements (`var`/`target`/
+//! `cover`) are exercised in their own files, still red.
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::CheckPosture;
 use piperine_solver::prelude::{AcSweepAnalysisOptions, CircuitInstance, Context};
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+const DISCIPLINES: &str = "`include \"disciplines.vams\"";
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers from this
+/// crate (`SourceMap::dummy`'s relative paths only resolve from that
+/// crate's dir).
+fn source_map() -> piperine_lang::SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 /// The filter fixture: an AC-magnitude source (1 V, no DC) through 1 kΩ
 /// into 1 µF — a single-pole lowpass with fc ≈ 159 Hz. The capacitor
@@ -30,28 +36,38 @@ const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : R
 /// low frequencies where |V| ≈ 1, satisfied past the rolloff).
 fn filter_circuit() -> (CircuitInstance, piperine_codegen::device::CircuitBuildInfo) {
     let src = format!(
-        "{DISCIPLINE}
-mod Vac(inout p: Electrical, inout n: Electrical) {{ param acmag: Real = 1.0; }}
-analog Vac {{ V(p, n) <+ ac_stim(acmag, 0.0); }}
-mod R(inout p: Electrical, inout n: Electrical) {{ param r: Real = 1e3; }}
-analog R {{ I(p, n) <+ V(p, n) / r; }}
-mod C(inout p: Electrical, inout n: Electrical) {{ param c: Real = 1e-6; }}
-analog C {{ I(p, n) <+ c * ddt(V(p, n)); }}
-constraint C {{
-    require pos : V(p, n) >= 0.0;
-    require amp : V(p, n) <= 0.5;
-}}
-mod Top() {{
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    r1 : R(.p = in, .n = out);
-    c1 : C(.p = out, .n = gnd);
-}}
-"
+        "{DISCIPLINES}
+module Vac (inout electrical p, inout electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1.0e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+    constraint begin
+        require pos : V(p, n) >= 0.0;
+        require amp : V(p, n) <= 0.5;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    C c1 (.p(out), .n(gnd));
+endmodule
+        "
     );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(&src, &source_map()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     compiler.build_circuit_mapped("Top").expect("circuit builds")

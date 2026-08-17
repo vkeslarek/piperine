@@ -427,10 +427,22 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             }
         }
 
-        // Constraint margins (DVC-08) — permanently `None` post-MD-45; see
-        // `LoweredBody`'s type doc. `Module::constraints()` no longer
-        // exists (deleted with `pom::ConstraintBlock` at T21) — there is
-        // nothing to walk here anymore.
+        // Constraint margins (constraints-on-vams): a module's authored
+        // `require`s lower to signed margins through the same
+        // name-resolution path its analog body takes. `Some` exactly when
+        // at least one require lowered; a module without the block pays
+        // exactly what it always paid (`None`, nothing allocated). A
+        // predicate form with no margin lands in `errors` — the run fails
+        // loud, never a silent `0.0`.
+        if !m.constraints().is_empty() {
+            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false);
+            ctx.instance_ports = instance_ports.clone();
+            ctx.consts = LowerCtx::const_irs(prog);
+            ctx.default_transition = prog.directives().default_transition;
+            let margins = crate::resolve::pom::ConstraintLowering::lower(m.constraints(), &mut ctx);
+            errors.append(&mut ctx.errors);
+            bodies[i].constraints = Some(margins);
+        }
 
         if !digital_shadows.is_empty() {
             let assigns: Vec<PomStmt> = digital_shadows

@@ -5,14 +5,13 @@
 //! `Invalidation` class a live param write returns is unchanged by the
 //! presence of a `tol`.
 
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
+//! **Present-and-red — blocked on the deferred parameter-distribution
+//! surface** (constraints-on-vams Out-of-Scope: PHDL's per-parameter
+//! `tol gauss/uniform` clauses; the recorded follow-up direction re-anchors
+//! sampling onto the LRM §9.13.2 `$rdist_*`/`$random` functions piperine
+//! already implements, over a first-class random-variable catalogue). The
+//! fixtures below still use the retired PHDL grammar and fail at
+//! elaboration until that follow-up lands; do not delete them.
 
 use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::{SourceMap, Value};

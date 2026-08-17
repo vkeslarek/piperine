@@ -7,42 +7,52 @@
 //! Lives in its own test binary so [`AnalogKernel::compile_count`] deltas
 //! are not polluted by concurrent tests in the same process (the
 //! `compile_once_sweep.rs` pattern).
-
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
+//!
+//! **Require-core migrated** (constraints-on-vams): these tests run
+//! against the live producer. Deferred statements (`var`/`target`/
+//! `cover`) are exercised in their own files, still red.
 
 use piperine_codegen::CircuitCompiler;
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_lang::parse_and_elaborate;
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+const DISCIPLINES: &str = "`include \"disciplines.vams\"";
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers from this
+/// crate (`SourceMap::dummy`'s relative paths only resolve from that
+/// crate's dir).
+fn source_map() -> piperine_lang::SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 #[test]
 fn a_hundred_instances_compile_no_more_functions_than_one() {
     let module = "\
-mod Cell(inout p: Electrical, inout n: Electrical) { param hi: Real = 3.0; }
-analog Cell { I(p, n) <+ V(p, n) / 1e3; }
-constraint Cell { require head : V(p, n) <= hi; }
+module Cell (inout electrical p, inout electrical n);
+    parameter real hi = 3.0;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
 ";
     let top = |n: usize| {
-        let mut src = format!("{DISCIPLINE}{module}\nmod Top() {{\n    wire gnd : Electrical;\n");
+        let mut src = format!("{DISCIPLINES}\n{module}\nmodule Top ();\n    electrical gnd;\n");
         for i in 0..n {
-            src.push_str(&format!(
-                "    wire n{i} : Electrical;\n    c{i} : Cell(.p = n{i}, .n = gnd) {{}};\n"
-            ));
+            src.push_str(&format!("    electrical n{i};\n    Cell c{i} (.p(n{i}), .n(gnd));\n"));
         }
-        src.push_str("}\n");
+        src.push_str("endmodule\n");
         src
     };
 
     let compile_count_for = |n: usize| {
-        let design = parse_and_elaborate(&top(n), &piperine_lang::SourceMap::dummy()).expect("elaborate");
+        let design = parse_and_elaborate(&top(n), &source_map()).expect("elaborate");
         let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
         let before = AnalogKernel::compile_count();
         let mut compiler = CircuitCompiler::new(&design, &bodies);

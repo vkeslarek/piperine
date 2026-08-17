@@ -14,6 +14,13 @@ use super::LowerCtx;
 
 const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 
+/// The shared no-provenance span for synthesized expressions (margin
+/// lowering's `min`/division/subtraction wrappers) — the authored spans
+/// live on the predicate's own nodes.
+pub(crate) fn nospan() -> PreprocessedSpan {
+    NOSPAN
+}
+
 fn real(v: f64) -> Expr {
     Expr::Number { span: NOSPAN, value: NumberLit::Real(v) }
 }

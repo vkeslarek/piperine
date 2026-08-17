@@ -9,14 +9,13 @@
 //! alone would not distinguish "the kernel ran and missed" from "the
 //! kernel never ran").
 
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
+//! **Present-and-red — blocked on the deferred `cover` statement**
+//! (constraints-on-vams Out-of-Scope: `cover`/`cover cross` carry their
+//! own bin-mapping and posture machinery and are deferred with dv-tester's
+//! surface). The fixtures below still use the retired PHDL
+//! `constraint Mod { … }` grammar and fail at elaboration until that
+//! follow-up lands; they are the executable specification of the coverage
+//! machinery — restore them to green then; do not delete them.
 
 use std::sync::Arc;
 

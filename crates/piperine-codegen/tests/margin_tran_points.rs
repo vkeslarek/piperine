@@ -6,24 +6,38 @@
 //! a computed operating point at t = 0 *is* evaluated. The same fixture
 //! run with and without UIC differs only in that first point.
 
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
+//! **Require-core migrated** (constraints-on-vams) — except the two UIC
+//! tests below, which stay present-and-red: their fixtures seed UIC
+//! through PHDL's `@initial { V(p, n) <- …; }` force, and a
+//! source-authored UIC seed has no VAMS producer yet (the T44 gap
+//! `tests/ngspice/uic_rc.vams`'s header documents — `ic` params stopped
+//! wiring into seeds at the frontend swap). Blocked on that gap, not on
+//! the constraint surface; do not delete them.
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::CheckPosture;
 use piperine_solver::prelude::{CircuitInstance, Context, TransientAnalysisOptions};
 
+const DISCIPLINES: &str = "`include \"disciplines.vams\"";
+/// The still-red UIC fixtures below keep PHDL source (they are blocked on
+/// the T44 UIC-producer gap, not on constraint syntax), so they keep the
+/// PHDL discipline declaration too.
 const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
 
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers from this
+/// crate (`SourceMap::dummy`'s relative paths only resolve from that
+/// crate's dir).
+fn source_map() -> piperine_lang::SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 fn build(src: &str) -> CircuitInstance {
-    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(src, &source_map()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     compiler.build_circuit("Top").expect("circuit builds")
@@ -47,28 +61,36 @@ fn collect_tran(circuit: &mut CircuitInstance, stop: f64, dt: f64) -> piperine_s
 /// carry a time no accepted step has.
 fn kink_circuit() -> CircuitInstance {
     build(&format!(
-        "{DISCIPLINE}
-mod Resistor(inout p: Electrical, inout n: Electrical) {{ param r: Real = 1e3; }}
-analog Resistor {{ I(p, n) <+ V(p, n) / r; }}
-mod Capacitor(inout p: Electrical, inout n: Electrical) {{ param c: Real = 1e-8; }}
-analog Capacitor {{ I(p, n) <+ c * ddt(V(p, n)); }}
-constraint Capacitor {{ require lo : V(p, n) >= 2.0; }}
-mod Step(inout p: Electrical, inout n: Electrical) {{
-    param tr: Real = 5e-4;
-    var st: Real = 0.0;
-}}
-analog Step {{
-    @timer(1e-3) {{ st = 1.0; }}
-    V(p, n) <- transition(st, 0.0, tr, tr);
-}}
-mod Top() {{
-    wire gnd : Electrical;
-    wire step : Electrical;
-    wire out  : Electrical;
-    s1 : Step(.p = step, .n = gnd);
-    r1 : Resistor(.p = step, .n = out);
-    c1 : Capacitor(.p = out, .n = gnd);
-}}
+        "{DISCIPLINES}
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Capacitor (inout electrical p, inout electrical n);
+    parameter real c = 1e-8;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+    constraint begin
+        require lo : V(p, n) >= 2.0;
+    end
+endmodule
+module Step (inout electrical p, inout electrical n);
+    parameter real tr = 5e-4;
+    real st;
+    analog begin
+        @(timer(1e-3)) st = 1.0;
+        V(p, n) <+ transition(st, 0.0, tr, tr);
+    end
+endmodule
+module Top ();
+    electrical gnd, step, out;
+    Step s1 (.p(step), .n(gnd));
+    Resistor r1 (.p(step), .n(out));
+    Capacitor c1 (.p(out), .n(gnd));
+endmodule
 "
     ))
 }

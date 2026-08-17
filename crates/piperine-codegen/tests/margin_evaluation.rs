@@ -8,14 +8,9 @@
 //! kernel: the extremum bank stays at its never-evaluated state across a
 //! violating point.
 
-//! **MD-45 regression — present-and-red by design.** The fixtures below
-//! still use the retired PHDL `constraint Mod { … }` grammar and
-//! `lower_bodies` produces `constraints`/`cover` = `None` from the VAMS
-//! frontend, so these tests fail until the `constraints-on-vams` feature
-//! (`.specs/features/constraints-on-vams/`) rebuilds the producer with
-//! `constraint begin … end`. They are the executable specification of the
-//! margin/coverage machinery — restore them to green when that feature
-//! lands; do not delete them.
+//! **Require-core migrated** (constraints-on-vams): these tests run
+//! against the live producer. Deferred statements (`var`/`target`/
+//! `cover`) are exercised in their own files, still red.
 
 use std::sync::Arc;
 
@@ -29,19 +24,35 @@ use piperine_solver::abi::{
 };
 use piperine_solver::prelude::{CircuitInstance, Context, TransientAnalysisOptions};
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+const DISCIPLINES: &str = "`include \"disciplines.vams\"";
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers from this
+/// crate (`SourceMap::dummy`'s relative paths only resolve from that
+/// crate's dir).
+fn source_map() -> piperine_lang::SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 /// Compile `Dut` (two terminals, `hi`/`lo` params, 1 mS body) with the
 /// given constraint block verbatim.
 fn dut_kernel(constraint: &str) -> Arc<AnalogKernel> {
     let src = format!(
-        "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ param hi: Real = 3.0; param lo: Real = 1.0; }}
-analog Dut {{ I(p, n) <+ V(p, n) / 1e3; }}
+        "{DISCIPLINES}
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 3.0;
+    parameter real lo = 1.0;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
 {constraint}
+endmodule
 "
     );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(&src, &source_map()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     Arc::new(AnalogKernel::compile(&bodies["Dut"]).expect("compile"))
 }
@@ -80,10 +91,10 @@ fn extremum(inst: &AnalogInstance, index: usize) -> (f64, Option<f64>) {
 #[test]
 fn worst_margin_and_argmin_tracked_per_constraint() {
     let kernel = dut_kernel(
-        "constraint Dut {\n\
+        "constraint begin\n\
              require head : V(p, n) <= hi;\n\
              require foot : V(p, n) >= lo;\n\
-         }",
+         end",
     );
     let mut inst = instance("d1", kernel, vec![3.0, 1.0]);
     assert_eq!(inst.margin_extrema().len(), 2);
@@ -115,7 +126,7 @@ fn worst_margin_and_argmin_tracked_per_constraint() {
 /// independently from their own params and points.
 #[test]
 fn extrema_are_tracked_per_instance_on_a_shared_kernel() {
-    let kernel = dut_kernel("constraint Dut { require head : V(p, n) <= hi; }");
+    let kernel = dut_kernel("constraint begin require head : V(p, n) <= hi; end");
     let mut first = instance("d1", kernel.clone(), vec![3.0, 1.0]);
     let mut second = instance("d2", kernel, vec![5.0, 1.0]);
 
@@ -135,7 +146,7 @@ fn extrema_are_tracked_per_instance_on_a_shared_kernel() {
 /// an extremum (the worst stays at its never-evaluated `+inf`).
 #[test]
 fn non_finite_margin_is_a_loud_violation_never_clamped() {
-    let kernel = dut_kernel("constraint Dut { require nz : 1.0 / V(p, n) >= 0.0; }");
+    let kernel = dut_kernel("constraint begin require nz : 1.0 / V(p, n) >= 0.0; end");
     let mut inst = instance("d1", kernel, vec![3.0, 1.0]);
 
     // V = 0 → margin = 1/0 = +inf: non-finite at an evaluated point.
@@ -166,7 +177,7 @@ fn non_finite_margin_is_a_loud_violation_never_clamped() {
 /// point normally.
 #[test]
 fn checks_off_never_calls_the_margin_kernels() {
-    let kernel = dut_kernel("constraint Dut { require head : V(p, n) <= hi; }");
+    let kernel = dut_kernel("constraint begin require head : V(p, n) <= hi; end");
     let mut inst = instance("d1", kernel, vec![3.0, 1.0]);
 
     inst.set_check_posture(CheckPosture::Off);
@@ -189,22 +200,33 @@ fn checks_off_never_calls_the_margin_kernels() {
 /// 0.5 V source — the require is violated (margin −0.1) at every point.
 fn nested_violated_circuit() -> CircuitInstance {
     let src = format!(
-        "{DISCIPLINE}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 0.5; }}
-analog Vsrc {{ V(p, n) <- dc; }}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ param hi: Real = 0.4; }}
-analog Dut {{ I(p, n) <+ V(p, n) / 1e3; }}
-constraint Dut {{ require head : V(p, n) <= hi; }}
-mod Seg(inout p: Electrical, inout n: Electrical) {{ d : Dut(.p = p, .n = n); }}
-mod Top() {{
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    v1 : Vsrc(.p = in, .n = gnd);
-    x  : Seg(.p = in, .n = gnd);
-}}
+        "{DISCIPLINES}
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 0.5;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Seg (inout electrical p, inout electrical n);
+    Dut d (.p(p), .n(n));
+endmodule
+module Top ();
+    electrical gnd, in;
+    Vsrc v1 (.p(in), .n(gnd));
+    Seg x (.p(in), .n(gnd));
+endmodule
 "
     );
-    let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let design = parse_and_elaborate(&src, &source_map()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     compiler.build_circuit("Top").expect("circuit builds")

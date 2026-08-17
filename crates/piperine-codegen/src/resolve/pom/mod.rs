@@ -16,4 +16,5 @@ pub use constraints::{
     LoweredCoverCross, LoweredCoverPoint, LoweredMargin, MarginKind, QuantityClass,
     ResolvedCoverBins, ResolvedWindow,
 };
+pub(crate) use constraints::ConstraintLowering;
 pub(crate) use body::LowerCtx;
