@@ -4,6 +4,10 @@
 
 use piperine_python::embed::run_script;
 
+// BLOCKED — left in PHDL syntax: `@rfport(num, z0)` is a net-level attribute
+// schema, and `elab/lower/vams.rs` lowers attribute instances only on module
+// and port declarations (net declarations get `attributes: Vec::new()`), so
+// there is no Verilog-AMS spelling for this fixture yet.
 const SHUNT_C_LOWPASS_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 

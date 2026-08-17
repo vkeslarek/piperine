@@ -16,33 +16,36 @@ fn write_temp(name: &str, body: &str) -> String {
 
 /// RC step-response fixture (the LIVE-06 independent-test circuit):
 /// v1 (dc source) → r1 (2 kΩ) → out, c1 (1 nF) to gnd.
-const RC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const RC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 2e3;
-}
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 2e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) {
-    param c: Real = 1e-9;
-}
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-9;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) {
-    param dc: Real = 0.0;
-}
-analog Vsrc { V(p, n) <- dc; }
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : Vsrc(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = out) {};
-    c1 : C(.p = out, .n = gnd) {};
-}
-";
+module Top ();
+    electrical gnd, vin, out;
+    Vsrc v1 (.p(vin), .n(gnd));
+    R r1 (.p(vin), .n(out));
+    C c1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// The exact solver-path error message for a live set on the same compiled
 /// circuit — the parity oracle the Python assertions compare against

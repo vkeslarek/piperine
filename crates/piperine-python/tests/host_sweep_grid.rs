@@ -12,24 +12,31 @@ fn write_temp(name: &str, body: &str) -> String {
     path.to_str().expect("non-utf8 temp path").to_string()
 }
 
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 10.0; }
-analog Vsrc { V(p, n) <- dc; }
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 10.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire top : Electrical;
-    wire mid : Electrical;
-    v1 : Vsrc(.p = top, .n = gnd) {};
-    r1 : R(.p = top, .n = mid) {};
-    r2 : R(.p = mid, .n = gnd) {};
-}
-";
+module Top ();
+    electrical gnd, top, mid;
+    Vsrc v1 (.p(top), .n(gnd));
+    R r1 (.p(top), .n(mid));
+    R r2 (.p(mid), .n(gnd));
+endmodule
+"#;
 
 /// HOST-19 AC2/AC3: `session.sweep_grid({"r1.r": [...], "r2.r": [...]})`
 /// iterates every combination as a `SweepPoint` with a `.index` tuple

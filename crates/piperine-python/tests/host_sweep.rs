@@ -18,31 +18,39 @@ fn write_temp(name: &str, body: &str) -> String {
     path.to_str().expect("non-utf8 temp path").to_string()
 }
 
+/// `r2_override` is the instance's parameter-override clause — `""` for the
+/// never-given build, `" #(.ns(2.0))"` for a fresh ground-truth build.
 fn divider_phdl(r2_override: &str) -> String {
     format!(
-        "\
-discipline Electrical {{ potential v: Real; flow i: Real; }}
+        r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod G(inout p: Electrical, inout n: Electrical) {{
-    param g: Real = 1.0e-3;
-    param ns: Real? = none;
-}}
-analog G {{ I(p, n) <+ (g + ns.get_or(0.0) * 1.0e-3) * V(p, n); }}
+module G (inout electrical p, inout electrical n);
+    parameter real g = 1.0e-3;
+    // PHDL's `param ns: Real? = none` has no VAMS spelling; the project's
+    // established negative-sentinel workaround (`headers/spice/passives.va`)
+    // stands in for the presence query.
+    parameter real ns = -1.0;
+    analog I(p, n) <+ (g + (ns > 0.0 ? ns : 0.0) * 1.0e-3) * V(p, n);
+endmodule
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{
-    param dc: Real = 10.0;
-}}
-analog Vsrc {{ V(p, n) <- dc; }}
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 10.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod Top() {{
-    wire gnd : Electrical;
-    wire top : Electrical;
-    wire mid : Electrical;
-    v1 : Vsrc(.p = top, .n = gnd) {{}};
-    r1 : G(.p = top, .n = mid) {{}};
-    r2 : G(.p = mid, .n = gnd) {{ {r2_override} }};
-}}
-"
+module Top ();
+    electrical gnd, top, mid;
+    Vsrc v1 (.p(top), .n(gnd));
+    G r1 (.p(top), .n(mid));
+    G{r2_override} r2 (.p(mid), .n(gnd));
+endmodule
+"#
     )
 }
 
@@ -51,14 +59,22 @@ mod Top() {{
 /// goes 0 -> 1 (the presence flip on the first point, then plain restamps),
 /// and every point's `.op().v("mid")` matches an independent fresh
 /// `design.compile()` with `ns` given directly in the source.
+///
+/// **Blocked** (missing mechanism: PHDL optional parameters, `Real?`/
+/// `.get_or()`, whose none→given transition is what made a write to `r2.ns`
+/// structural). VAMS has no optional-parameter type and `$param_given`
+/// (LRM §9.19) is not wired in codegen yet, so the sentinel-default fixture
+/// below restamps instead of rebuilding and `s.rebuilds` stays 0 — the same
+/// gap `piperine-python/src/live.rs`'s two blocked tests document. Left
+/// failing rather than weakened (`#[ignore]` is repo-banned).
 #[test]
 fn python_sweep_rebuilds_once_and_matches_fresh_builds() {
-    let never_given = write_temp("piperine_host_sweep_never_given.phdl", &divider_phdl(""));
-    let given = |ns: f64| divider_phdl(&format!(".ns = {ns}"));
+    let never_given = write_temp("piperine_host_sweep_never_given.vams", &divider_phdl(""));
+    let given = |ns: f64| divider_phdl(&format!(" #(.ns({ns}))"));
     let fresh_paths: Vec<String> = [1.0_f64, 2.0, 3.0]
         .iter()
         .enumerate()
-        .map(|(i, &ns)| write_temp(&format!("piperine_host_sweep_fresh_{i}.phdl"), &given(ns)))
+        .map(|(i, &ns)| write_temp(&format!("piperine_host_sweep_fresh_{i}.vams"), &given(ns)))
         .collect();
     let fresh_paths_py = fresh_paths.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>().join(", ");
 
@@ -98,6 +114,6 @@ for i, (idx, value, mid) in enumerate(seen):
     let _ = std::fs::remove_file(&never_given);
     let _ = std::fs::remove_file(&script_path);
     for i in 0..3 {
-        let _ = std::fs::remove_file(std::env::temp_dir().join(format!("piperine_host_sweep_fresh_{i}.phdl")));
+        let _ = std::fs::remove_file(std::env::temp_dir().join(format!("piperine_host_sweep_fresh_{i}.vams")));
     }
 }

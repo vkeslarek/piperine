@@ -30,7 +30,7 @@ m = piperine.load({phdl:?}).module("Fitter")
 v = m.op().v("out")
 assert 0.6 < v < 0.75, v
 "#,
-        phdl = examples.join("live_optimize.phdl").to_str().expect("utf8 path"),
+        phdl = examples.join("live_optimize.vams").to_str().expect("utf8 path"),
     );
     let probe_path = std::env::temp_dir().join("piperine_live_optimize_probe.py");
     std::fs::write(&probe_path, probe).expect("write probe");

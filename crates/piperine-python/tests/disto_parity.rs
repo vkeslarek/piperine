@@ -4,36 +4,39 @@
 
 use piperine_python::embed::run_script;
 
-const POLY_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const POLY_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 0.0; param acmag: Real = 0.0; }
-analog V { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module V (inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    parameter real acmag = 0.0;
+    analog V(p, n) <+ dc + ac_stim(acmag, 0.0);
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 50.0; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 50.0;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod PolyVccs(inout inp: Electrical, inout inn: Electrical,
-             inout outp: Electrical, inout outn: Electrical) {
-    param g1: Real = 0.1;
-    param g2: Real = 0.02;
-    param g3: Real = 0.003;
-}
-analog PolyVccs {
-    I(outp, outn) <+ g1 * V(inp, inn)
-                   + g2 * V(inp, inn) * V(inp, inn)
-                   + g3 * V(inp, inn) * V(inp, inn) * V(inp, inn);
-}
+module PolyVccs (inout electrical inp, inout electrical inn, inout electrical outp, inout electrical outn);
+    parameter real g1 = 0.1;
+    parameter real g2 = 0.02;
+    parameter real g3 = 0.003;
+    analog I(outp, outn) <+ g1 * V(inp, inn) + g2 * V(inp, inn) * V(inp, inn) + g3 * V(inp, inn) * V(inp, inn) * V(inp, inn);
+endmodule
 
-mod Top() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire vout : Electrical;
-    v1 : V(.p = vin, .n = gnd) { .dc = 0.0, .acmag = 1.0 };
-    n1 : PolyVccs(.inp = vin, .inn = gnd, .outp = vout, .outn = gnd) {};
-    r1 : R(.p = vout, .n = gnd) { .r = 50.0 };
-}
-";
+module Top ();
+    electrical gnd, vin, vout;
+    V #(.dc(0.0), .acmag(1.0)) v1 (.p(vin), .n(gnd));
+    PolyVccs n1 (.inp(vin), .inn(gnd), .outp(vout), .outn(gnd));
+    R #(.r(50.0)) r1 (.p(vout), .n(gnd));
+endmodule
+"#;
 
 #[test]
 fn python_disto_matches_rust_disto() {

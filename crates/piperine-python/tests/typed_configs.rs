@@ -12,23 +12,30 @@ fn write_temp(name: &str, body: &str) -> String {
     path.to_str().expect("non-utf8 temp path").to_string()
 }
 
-const RC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const RC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog V { V(p, n) <- dc; }
+module V (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire a   : Electrical;
-    V1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = a) { .r = 1e3 };
-}
-";
+module Top ();
+    electrical gnd, vin, a;
+    V V1 (.p(vin), .n(gnd));
+    R #(.r(1e3)) r1 (.p(vin), .n(a));
+endmodule
+"#;
 
 /// `inspect.signature(TranConfig)` shows the dataclass fields (a plain
 /// dataclass `__init__`, no opaque native constructor) — the spec's typed-

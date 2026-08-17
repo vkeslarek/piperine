@@ -4,28 +4,31 @@
 
 use piperine_python::embed::run_script;
 
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param dc: Real = 10.0;
-}
-analog VoltageSource { V(p, n) <- dc; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real dc = 10.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire mid : Electrical;
-    v1 : VoltageSource (.p = vin, .n = gnd) {};
-    r1 : Resistor      (.p = vin, .n = mid) {};
-    r2 : Resistor      (.p = mid, .n = gnd) {};
-}
-";
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource v1 (.p(vin), .n(gnd));
+    Resistor r1 (.p(vin), .n(mid));
+    Resistor r2 (.p(mid), .n(gnd));
+endmodule
+"#;
 
 #[test]
 fn python_sens_matches_rust_sens() {
@@ -87,23 +90,36 @@ with open({out:?}, "w") as f:
 #[test]
 fn python_pss_matches_rust_pss() {
     let dir = std::env::temp_dir();
-    const SINE_RC: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-mod Vsine(inout p: Electrical, inout n: Electrical) { param amp: Real = 5.0; }
-analog Vsine { V(p, n) <- amp * sin(6283.185307179586 * $abstime); }
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-mod Top() {
-    wire gnd : Electrical;
-    wire top : Electrical;
-    wire out : Electrical;
-    v1 : Vsine(.p = top, .n = gnd) {};
-    r1 : R(.p = top, .n = out) {};
-    c1 : C(.p = out, .n = gnd) {};
-}
-";
+    const SINE_RC: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
+
+module Vsine (inout electrical p, inout electrical n);
+    parameter real amp = 5.0;
+    analog V(p, n) <+ amp * sin(6283.185307179586 * $abstime);
+endmodule
+
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
+
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
+
+module Top ();
+    electrical gnd, top, out;
+    Vsine v1 (.p(top), .n(gnd));
+    R r1 (.p(top), .n(out));
+    C c1 (.p(out), .n(gnd));
+endmodule
+"#;
     let phdl = dir.join("piperine_pss_parity.phdl");
     std::fs::write(&phdl, SINE_RC).expect("write phdl");
     let out_txt = dir.join("piperine_pss_parity.txt");

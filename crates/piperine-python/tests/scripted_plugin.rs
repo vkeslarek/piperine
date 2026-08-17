@@ -57,8 +57,18 @@ fn read_marker(root: &Path, name: &str) -> String {
 /// A trivial design to hand the elaboration hooks.
 fn design() -> piperine_lang::Design {
     piperine_lang::parse_and_elaborate(
-        "discipline Electrical { potential v: Real; flow i: Real; }\n\
-         mod Top() { wire gnd : Electrical; }\n",
+        r#"
+            nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+            nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+            discipline electrical;
+                potential Voltage;
+                flow Current;
+            enddiscipline
+
+            module Top ();
+                electrical gnd;
+            endmodule
+        "#,
         &SourceMap::dummy(),
     )
     .expect("elaborate")

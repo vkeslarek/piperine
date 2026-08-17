@@ -14,27 +14,37 @@ fn write_temp(name: &str, body: &str) -> String {
 
 /// RC low-pass fixture: a DC step through `r1` into `c1`, with an AC
 /// stimulus so `s.ac(...)` produces a `ComplexWaveform` for the Bode case.
-const RC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const RC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; param acmag: Real = 1.0; }
-analog V { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module V (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    parameter real acmag = 1.0;
+    analog V(p, n) <+ dc + ac_stim(acmag, 0.0);
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = out) { .r = 1e3 };
-    c1 : C(.p = out, .n = gnd) { .c = 1e-6 };
-}
-";
+module Top ();
+    electrical gnd, vin, out;
+    V v1 (.p(vin), .n(gnd));
+    R #(.r(1e3)) r1 (.p(vin), .n(out));
+    C #(.c(1e-6)) c1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// HOST-17 AC4: with matplotlib present, `wf.plot()`/`pip.plot(waveform)`/
 /// `pip.plot({label: waveform})`/`cw.plot()`/`pip.bode(cw)` all render (each

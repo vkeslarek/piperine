@@ -103,10 +103,10 @@ fn module_reflects_structure() -> PyResult<()> {
         // Each net carries its discipline type.
         for item in board.getattr("nets")?.call0()?.try_iter()? {
             let net: Bound<'_, PyAny> = item?;
-            assert_eq!(net.getattr("ty")?.extract::<String>()?, "Electrical");
+            assert_eq!(net.getattr("ty")?.extract::<String>()?, "electrical");
         }
 
-        // Resistor: ports (n, p) both `inout : Electrical`, one param `r`
+        // Resistor: ports (n, p) both `inout : electrical`, one param `r`
         // (Real, default 1e3), one `analog` behavior.
         let resistor = design.getattr("module")?.call1(("Resistor",))?;
         assert_eq!(
@@ -116,7 +116,7 @@ fn module_reflects_structure() -> PyResult<()> {
         for item in resistor.getattr("ports")?.call0()?.try_iter()? {
             let port: Bound<'_, PyAny> = item?;
             assert_eq!(port.getattr("direction")?.extract::<String>()?, "inout");
-            assert_eq!(port.getattr("ty")?.extract::<String>()?, "Electrical");
+            assert_eq!(port.getattr("ty")?.extract::<String>()?, "electrical");
         }
         let params: Vec<Bound<'_, PyAny>> = resistor
             .getattr("params")?

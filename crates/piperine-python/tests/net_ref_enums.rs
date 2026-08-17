@@ -14,27 +14,36 @@ fn write_temp(name: &str, body: &str) -> String {
     path.to_str().expect("non-utf8 temp path").to_string()
 }
 
-const RC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const RC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 0.0; }
-analog V { V(p, n) <- dc; }
+module V (inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = out) { .r = 1e3 };
-    c1 : C(.p = out, .n = gnd) { .c = 1e-6 };
-}
-";
+module Top ();
+    electrical gnd, vin, out;
+    V v1 (.p(vin), .n(gnd));
+    R #(.r(1e3)) r1 (.p(vin), .n(out));
+    C #(.c(1e-6)) c1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// `wf.cross(level, CrossDirection.Rising)` behaves the same as the legacy
 /// string spelling; `Direction(descriptor.direction)` wraps a

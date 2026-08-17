@@ -123,25 +123,34 @@ fn pip_device_registers_python_host_devices_end_to_end() {
 import piperine as pip
 
 PHDL = """
-discipline Electrical { potential v: Real; flow i: Real; }
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param voltage: Real = 0.0; }
-analog V { V(p, n) <+ voltage; }
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-@device(plugin = "none", type = "py_resistor")
-mod PyR(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
+(* device = "none", type = "py_resistor" *)
+module PyR (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+endmodule
 
-@device(plugin = "none", type = "py_wave_resistor")
-mod PyWaveR(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
+(* device = "none", type = "py_wave_resistor" *)
+module PyWaveR (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+endmodule
 
-mod Divider() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire mid : Electrical;
-    src : V(.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : PyR(.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : PyWaveR(.p = mid, .n = gnd) { .r = 2e3 };
-}
+module Divider ();
+    electrical gnd, vin, mid;
+    Vsrc #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    PyR #(.r(3e3)) r_top (.p(vin), .n(mid));
+    PyWaveR #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
 """
 
 # Example A, translated: a level-0 device, load_dc stamps directly.

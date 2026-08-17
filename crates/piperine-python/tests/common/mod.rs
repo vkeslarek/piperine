@@ -16,91 +16,103 @@ use piperine_python::_piperine;
 /// A tiny self-contained PHDL (declares its own discipline + two modules,
 /// no `use`/prelude dependency) — the P3/P4 reflection fixture. Resistor
 /// carries an `analog` body so behavior reflection is observable.
-pub const PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+pub const PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-analog Resistor {
-    I(p, n) <+ V(p, n) / r;
-}
-
-mod DividerBoard() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire mid : Electrical;
-    r_top : Resistor(.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor(.p = mid, .n = gnd) { .r = 2e3 };
-}
-";
+module DividerBoard ();
+    electrical gnd, vin, mid;
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 /// A runnable fixture for the analysis tests: a 5 V source driving a
 /// 3 kΩ/2 kΩ resistor divider, so the `mid` node sits at
 /// 5·2/(3+2) = 2.0 V (spec-defined outcome the stage test asserts).
 /// Staging `r_top.r = 2e3` moves `mid` to 5·2/(2+2) = 2.5 V (spec AC12).
 /// Mirrors the root host-API divider circuit shape — the uniform-host proof.
-pub const ANALYSIS_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+pub const ANALYSIS_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
-";
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 /// Dedicated AC fixture: an `ac_stim` current source driving a 1 kΩ
 /// resistor to ground. `ac_stim(mag)` is the small-signal injection —
 /// `-ac_stim(1.0)` means 1 A flows out of `p` into
 /// the source (the force-branch convention).
-pub const AC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+pub const AC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod AcSource(inout p: Electrical, inout n: Electrical) { }
-analog AcSource { I(p, n) <+ -ac_stim(1.0); }
+module AcSource (inout electrical p, inout electrical n);
+    analog I(p, n) <+ -ac_stim(1.0);
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod AcTest() {
-    wire gnd : Electrical;
-    wire out : Electrical;
-    stim : AcSource (.p = out, .n = gnd);
-    r1   : Resistor (.p = out, .n = gnd) { .r = 1e3 };
-}
-";
+module AcTest ();
+    electrical gnd, out;
+    AcSource stim (.p(out), .n(gnd));
+    Resistor #(.r(1e3)) r1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-pub const NOISE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+pub const NOISE_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod NoisyResistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog NoisyResistor { I(p, n) <+ V(p, n) / r + white_noise(4 * 8.617e-5 * 300.15 / r); }
+module NoisyResistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r + white_noise(4 * 8.617e-5 * 300.15 / r);
+endmodule
 
-mod NoiseTest() {
-    wire gnd : Electrical;
-    wire out : Electrical;
-    nr : NoisyResistor (.p = out, .n = gnd) { .r = 1e3 };
-}
-";
+module NoiseTest ();
+    electrical gnd, out;
+    NoisyResistor #(.r(1e3)) nr (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// Build the in-process `_piperine` module under the active interpreter,
 /// load the reflection PHDL, and return the loaded `_Design`.

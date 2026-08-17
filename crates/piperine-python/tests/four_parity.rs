@@ -4,30 +4,31 @@
 
 use piperine_python::embed::run_script;
 
-const RC_TRANSIENT: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const RC_TRANSIENT: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod Vsine(inout p: Electrical, inout n: Electrical) {
-    param amp: Real = 1.0;
-    param f0: Real = 1000.0;
-}
-analog Vsine {
-    V(p, n) <- amp * sin(6.283185307179586 * f0 * $abstime)
-             + 0.1 * amp * sin(6.283185307179586 * 3.0 * f0 * $abstime);
-}
+module Vsine (inout electrical p, inout electrical n);
+    parameter real amp = 1.0;
+    parameter real f0 = 1000.0;
+    analog V(p, n) <+ amp * sin(6.283185307179586 * f0 * $abstime) + 0.1 * amp * sin(6.283185307179586 * 3.0 * f0 * $abstime);
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire out : Electrical;
-    v1 : Vsine(.p = out, .n = gnd) {};
-    r1 : R(.p = out, .n = gnd) {};
-}
-";
+module Top ();
+    electrical gnd, out;
+    Vsine v1 (.p(out), .n(gnd));
+    R r1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 #[test]
 fn python_fourier_matches_rust_fourier() {

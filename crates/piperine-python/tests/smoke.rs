@@ -27,67 +27,79 @@ fn write_temp(name: &str, body: &str) -> String {
 /// `5·2/(3+2) = 2.0 V`; staging is not exercised here (`analyses.rs`'s
 /// `stage_overrides_next_analysis` covers it). Mirrors `tests/common`'s
 /// `ANALYSIS_PHDL`.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
-";
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 /// AC + noise fixture: an `ac_stim(1.0)` current source driving a 1 kΩ
 /// resistor to ground → `|V_out| = 1 A × 1 kΩ = 1000 V` at every frequency
 /// (resistive, flat). Mirrors the root AC smoke + the P9 unit test.
-const AC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const AC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod AcSource(inout p: Electrical, inout n: Electrical) { }
-analog AcSource { I(p, n) <+ -ac_stim(1.0); }
+module AcSource (inout electrical p, inout electrical n);
+    analog I(p, n) <+ -ac_stim(1.0);
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog Resistor { I(p, n) <+ V(p, n) / r; }
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod AcTest() {
-    wire gnd : Electrical;
-    wire out : Electrical;
-    stim : AcSource (.p = out, .n = gnd);
-    r1   : Resistor (.p = out, .n = gnd) { .r = 1e3 };
-}
-";
+module AcTest ();
+    electrical gnd, out;
+    AcSource stim (.p(out), .n(gnd));
+    Resistor #(.r(1e3)) r1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// Noise fixture: a noisy resistor with explicit `white_noise` so the PSD is
 /// non-zero and the integrated total is observable. Mirrors the P9 unit test.
-const NOISE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const NOISE_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod NoisyResistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-}
-analog NoisyResistor { I(p, n) <+ V(p, n) / r + white_noise(4 * 8.617e-5 * 300.15 / r); }
+module NoisyResistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r + white_noise(4 * 8.617e-5 * 300.15 / r);
+endmodule
 
-mod NoiseTest() {
-    wire gnd : Electrical;
-    wire out : Electrical;
-    nr : NoisyResistor (.p = out, .n = gnd) { .r = 1e3 };
-}
-";
+module NoiseTest ();
+    electrical gnd, out;
+    NoisyResistor #(.r(1e3)) nr (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// PY-17 / spec success criteria: a Python script going through the typed
 /// facade produces numpy arrays that match the Rust host's tran + result

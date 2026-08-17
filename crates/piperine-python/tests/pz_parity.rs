@@ -4,32 +4,42 @@
 
 use piperine_python::embed::run_script;
 
-const RLC_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const RLC_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod V(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog V { V(p, n) <- dc; }
+module V (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog V(p, n) <+ dc;
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog I(p, n) <+ V(p, n) / r;
+endmodule
 
-mod L(inout p: Electrical, inout n: Electrical) { param l: Real = 1e-3; }
-analog L { V(p, n) <- l * ddt(I(p, n)); }
+module L (inout electrical p, inout electrical n);
+    parameter real l = 1e-3;
+    analog V(p, n) <+ l * ddt(I(p, n));
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog I(p, n) <+ c * ddt(V(p, n));
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire a   : Electrical;
-    wire b   : Electrical;
-    v1 : V(.p = vin, .n = gnd) {};
-    r1 : R(.p = vin, .n = a) { .r = 10.0 };
-    l1 : L(.p = a, .n = b) { .l = 1e-3 };
-    c1 : C(.p = b, .n = gnd) { .c = 1e-6 };
-}
-";
+module Top ();
+    electrical gnd, vin, a, b;
+    V v1 (.p(vin), .n(gnd));
+    R #(.r(10.0)) r1 (.p(vin), .n(a));
+    L #(.l(1e-3)) l1 (.p(a), .n(b));
+    C #(.c(1e-6)) c1 (.p(b), .n(gnd));
+endmodule
+"#;
 
 #[test]
 fn python_pz_matches_rust_pz() {

@@ -23,6 +23,10 @@ fn run(name: &str, script: &str) {
 
 /// The divider: one violated `require` (margin −0.1) plus one reduced
 /// `var` defined only on AC.
+// BLOCKED — left in PHDL syntax: `constraint`/`require`/`var` blocks have no
+// Verilog-AMS Annex A production; MD-45 deleted `pom::ConstraintBlock` and
+// the lowering that produced it (see `piperine-codegen/src/resolve/pom/
+// constraints.rs`'s module doc), so this fixture cannot be retargeted yet.
 const DIVIDER_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
@@ -136,6 +140,10 @@ except KeyError as e:
 }
 
 /// A gain stage with a reduced `var` — defined on AC results only.
+// BLOCKED — left in PHDL syntax: `constraint`/`require`/`var` blocks have no
+// Verilog-AMS Annex A production; MD-45 deleted `pom::ConstraintBlock` and
+// the lowering that produced it (see `piperine-codegen/src/resolve/pom/
+// constraints.rs`'s module doc), so this fixture cannot be retargeted yet.
 const STAGE_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 

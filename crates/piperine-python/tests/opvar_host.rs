@@ -8,32 +8,35 @@ use piperine_python::embed::run_script;
 /// Divider whose resistors compute an opvar `g = 1/r` in their analog body
 /// (mirrors the root `tests/opvar_host.rs` fixture and
 /// `piperine-codegen/tests/opvar_bridge.rs`).
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const DIVIDER_PHDL: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {
-    param voltage: Real = 0.0;
-}
-analog VoltageSource { V(p, n) <- voltage; }
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0;
+    analog V(p, n) <+ voltage;
+endmodule
 
-mod Resistor(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3;
-    var g : Real = 0.0;
-}
-analog Resistor {
-    g = 1.0 / r;
-    I(p, n) <+ g * V(p, n);
-}
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    real g;
+    analog begin
+        g = 1.0 / r;
+        I(p, n) <+ g * V(p, n);
+    end
+endmodule
 
-mod Divider() {
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
-    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
-    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
-}
-";
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#;
 
 fn write_temp(name: &str, body: &str) -> String {
     let path = std::env::temp_dir().join(name);
