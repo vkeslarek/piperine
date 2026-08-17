@@ -40,6 +40,7 @@ branch.
 - §9 Preprocessor (LRM Annex E)
 - §10 What is explicitly not supported
 - §11 Diagnostics and the fail-loud contract
+- §12 The `constraint begin` verification block — a Piperine extension
 
 ---
 
@@ -328,7 +329,10 @@ compile error, never silently inert. Plugins contribute no attribute schemas of 
 own; the two schemas above are seeded once by the plugin system itself
 (`PluginHost::seed_schemas`), so two device plugins can never collide on them.
 
-This is the entirety of Piperine's syntactic extension over the LRM. There is no other
+This was the entirety of Piperine's extension surface over the LRM until §12 added the
+one deliberate new *production* (`constraint begin … end`, a Piperine extension recorded
+as MD-49 — unlike §8, which rides standard Annex A.9.1 syntax and adds no production).
+There is no other
 extension surface, no second `(* ... *)` vocabulary, and no PHDL-era "layer-2 registry"
 mechanism (MD-24's `extern` declarations, capability impls, etc.) carried forward —
 Part V §0 covers exactly what replaced MD-24 for builtin resolution.
@@ -367,12 +371,11 @@ special-cased header-loading path distinct from an ordinary project `` `include`
   source. `.disto` on MOS2/MOS3 (a Cranelift function-count explosion on the
   second/third-derivative kernel, opt-in via `SessionBuilder::disto(true)`, default
   off) is the one operator-family gap that genuinely remains open per `ROADMAP.md`.
-- **The VAMS-14 constraint-block surface.** PHDL's `constraint Name { ... }` block and
-  its attribute-instance-carried VAMS equivalent were never rebuilt after MD-45 deleted
-  `pom::ConstraintBlock` — see Part IV §4's callout and
-  `.specs/features/verilog-ams-support/validation.md` Gap 3 for the full history
-  (including that the migration's own plan explicitly flagged this as a "must add a
-  task before Phase 7 closes" item that was never acted on).
+- **Constraint statements beyond `require`.** A `constraint begin` block (§12) accepts
+  exactly the `require` statement. Constraint-local variables, targets, coverage
+  points, analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`), temporal windows, and
+  parameter distributions (`tol gauss/uniform`) are **not part of the language today** —
+  each is a typed parse/elaboration error, never a silent no-op.
 - **Gate primitives, UDPs, and `$`-system-task calls as live device behavior** — §6/§7
   above; parsed and semantically implemented, not wired into a simulated device.
 
@@ -387,3 +390,73 @@ outside Annex C's analog subset, or a parameter value outside its declared range
 fail-loud, source-anchored compile errors, never a warning, a default substitution, or a
 `0.0` placeholder (CLAUDE.md's "fail loud" rule, restated here for the language layer
 specifically).
+
+## §12 The `constraint begin` verification block — a Piperine extension
+
+A designer states **safe-operating-area limits on a module** and the simulator checks
+them at every accepted solution point of every analysis. The LRM has no production for
+it — so, unlike §8 (which rides standard attribute syntax and adds no production), this
+is a deliberate **new grammar production**: a Piperine extension over the LRM, recorded
+as decision **MD-49** in `.specs/STATE.md` with the same sanction as §1.1's doc
+comments.
+
+```verilog-ams
+module mos1 (inout electrical d, inout electrical g, inout electrical s, inout electrical b);
+    parameter real vgs_max = 1e99;
+    analog begin
+        /* … device behavior … */
+    end
+
+    constraint begin
+        require vgs_ox : abs(V(g, s)) <= vgs_max;
+        require vds_ox : abs(V(d, s)) <= vds_max;
+    end
+endmodule
+```
+
+**Syntax.** A `constraint begin … end` block is a module body item, mirroring
+`analog begin … end`'s shape: one more module body, so ports, parameters, and branches
+are simply in scope for every predicate — no name-matching indirection. Inside the
+block exactly one statement form is legal:
+
+```text
+require <name> : <predicate> [tol <scale>] ;
+```
+
+`constraint`, `require`, and `tol` are **contextual keywords** — identifier text
+matched only at their production sites, never added to Annex B's reserved set (the
+`annex_b_keywords` gate pins the reserved list to Table B.1, and §2.8.2's escaped
+identifier keeps any conflicting user name working). Anything inside the block that is
+not a `require` is a typed parse error naming what is legal — never a silent skip.
+
+**Semantics.** A predicate must be `<=`, `>=`, or `&&` of two comparisons — the forms
+with a signed distance. It lowers to a **margin**, `m ≥ 0` ⟺ satisfied:
+`a <= b → b − a`, `a >= b → a − b`, and `l <= a && a <= u → min(a − l, u − a)` (the
+interval rule — the grammar has no `in` operator, so the `&&` min-of-parts rule *is*
+the interval rule). `tol <scale>` normalizes the margin by division; absent it the
+scale is 1 and **no** division is emitted (no implicit normalization). Margins are
+evaluated at exactly the accepted solution points of the running analysis (DC: the
+final converged solution only, never homotopy intermediates; transient: accepted steps
+only; AC: each frequency point) — a violation seen inside a Newton iteration that the
+solver subsequently rejects is never reported, inheriting LRM §9.7.3's
+rejected-iteration rule for severity tasks rather than re-deriving it.
+
+**The three postures** (`SolverConfig.checks`, default `strict`) map onto LRM §9.7.3's
+assertion severities: `strict` behaves as `$error` (a violation fails the analysis
+loud, naming the constraint, the instance path, and the signed margin), `collect` as
+`$warning` (recorded in the findings channel, run continues), `off` evaluates nothing
+at zero cost. Margins travel as their own result channel (`MarginsResult` — worst
+value + argmin + instance path per constraint), never as waveform rows; reading a
+constraint the running analysis cannot provide (a require on a digital-only instance)
+fails loud naming the constraint and why.
+
+**Elaboration rules.** A `require` label must be unique within its module — a
+duplicate fails loud as `ConstraintLabelDuplicate` (E4008) naming both sites. Multiple
+`constraint begin` blocks in one module compose: every require from every block
+applies, in authored order (the same concatenation rule the multiple-`always` fix
+`f75beb4d` established for digital bodies — a silent drop of any block is forbidden).
+A module that is never instantiated evaluates nothing and produces no diagnostic.
+
+**Statement surface.** `require` is the block's entire statement surface. Anything
+else inside the block is a typed parse error naming what is legal — loud, like every
+other rule this Part documents.

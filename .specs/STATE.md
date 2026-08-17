@@ -752,7 +752,9 @@ open item tracking the debt.
 
 **Status:** Locked (user, 2026-08-12 — resolves the T21 batch-worker
 blocker; supersedes the "mechanical retarget" framing in `design.md` F1/F2
-for the value-layer subset of `piperine-lang/src/parse/ast.rs`).
+for the value-layer subset of `piperine-lang/src/parse/ast.rs`). The
+constraint-block open item is **closed for the require core** by MD-49
+(2026-08-17); `var`/`target`/`cover`/distributions remain open follow-ups.
 
 ---
 
@@ -922,6 +924,53 @@ commits on `feature/device-verification`, `3847fc18`..`cef91386` — see
 `.specs/features/preprocessor-span-mapping/validation.md`). `piperine
 expand`/`--trace` (SPANMAP-09/10/11) shipped as part of the same
 feature, added mid-flight per user request.
+
+---
+
+### MD-49: `constraint begin … end` is a sanctioned Piperine extension — contextual keywords, module-body block
+
+`constraints-on-vams` design decision (2026-08-17). Piperine's
+design-verification surface (declared constraints → signed margins →
+postures → findings channel) needed a grammar home after MD-45 deleted
+the PHDL value layer. The user's call, superseding MD-45's tentative
+"rebuild on `(* attribute *)`" path for this surface: constraints return
+as a **`constraint begin … end` block inside the module** — one more
+module body mirroring `analog begin … end`, so ports/params/branches are
+simply in scope, no name-matching indirection.
+
+Key terms locked with the user (do not relitigate; spec
+`.specs/features/constraints-on-vams/`):
+
+- **Grammar:** Annex A has no constraint production, so this is a
+  deliberate Piperine extension — the second sanctioned *new production*
+  after the `///` doc comments (§1.1). `constraint`/`require`/`tol` are
+  **contextual keywords**: identifier text matched only at their
+  production sites, never added to Annex B's reserved set (the
+  `annex_b_keywords` gate pins `KEYWORDS` to Table B.1 — extending it
+  would be silent conformance drift).
+- **Severity:** postures map onto LRM §9.7.3's assertion severities
+  (`strict`→`$error`, `collect`→`$warning`, `off`→silent), inheriting the
+  standard's rejected-iteration rule (violations inside a rejected Newton
+  iteration are never reported) instead of re-deriving it.
+- **Core scope:** `require <name> : <pred> [tol <scale>];` only.
+  `var`/`target`/`cover`/event-block scoping/temporal windows/parameter
+  distributions are named deferred follow-ups (the random-variable
+  catalogue direction lives in the feature's `context.md`).
+- **`tol` placement:** a trailing clause on `require` (its PHDL host
+  `target` is deferred, and normalization is what makes margins
+  comparable — it moved rather than waited).
+
+Producer: `grammar/item.rs::parse_constraint_block` →
+`pom::PomRequire`/`Module::constraints()` → codegen
+`ConstraintLowering` → `LoweredBody::constraints` → the preserved
+kernel/device/solver/api consumers. Reconnect-not-rewrite: nothing below
+the codegen `resolve` stage changed.
+
+**Status:** Locked (user, 2026-08-17; producer landed same day — see
+`.specs/features/constraints-on-vams/`). MD-45's open item "rebuild the
+constraint-block surface" is hereby **closed** for the require core; its
+remaining deferred statements each need their own feature before
+dv-tester/dv-gradients are fully lit again.
 
 ---
 

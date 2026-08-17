@@ -40,15 +40,15 @@ verification, sweeps, optimization, dashboards — lives in the Python host.
 | P5 — Plugin interface | ✅ closed (2026-07-25) |
 | P6 — Cleanup | hygiene subset delivered (2026-07-26); residue below |
 | P7 — Optimizer | **design phase** — see below |
-| DV — Design verification | **dv-core delivered** (2026-07-28); dv-gradients + dv-tester next |
+| DV — Design verification | **constraint core re-anchored on VAMS** (2026-08-17, `constraints-on-vams`); gradients/tester partially dark — see below |
 
 **Delivered in V1 so far (~1360 tests, ngspice cross-validated):** every
 analysis a SPICE user expects (DC/AC/tran/noise/PSS/sens/tf/pz/disto/sp/four),
 TR-BDF2 transient with gmin/source stepping, Element ABI with rollback +
 limiting + lifecycle, `import piperine` host with typed configs/results/sweeps,
 LSP with scope-aware resolution + doc comments, native+Python plugin surface,
-and the full design-verification core (`tol`, `constraint`, margins, findings,
-postures, SOA).
+and the constraint core (`constraint begin` blocks, margins, findings,
+postures).
 
 ---
 
@@ -161,66 +161,82 @@ postures, SOA).
 
 ### Design verification — the DV triad
 
-**dv-core ✅ delivered** (2026-07-28, feature `dv-core`, 32 tasks, Verifier
-PASS). What landed:
+**Constraint core ✅ re-anchored on Verilog-AMS** (2026-08-17, feature
+`constraints-on-vams`, MD-49). The PHDL-era dv-core surface went dark at the
+frontend swap (MD-44/45); the constraint core is back, as a sanctioned
+language extension rather than the old PHDL grammar:
 
-- `tol gauss(…)` on `param` — declared, inert, POM-visible
-- `constraint Mod { require/var/target }` — grammar, elaboration,
-  pointwise/reduced classification, monomorphization
+- `constraint begin … end` — a module-body block; `require <name> :
+  <pred> [tol <scale>];` statements with contextual keywords (Annex B's
+  reserved set is untouched)
 - Signed margins (`m ≥ 0` ⟺ satisfied), `tol`-normalized, worst + argmin
-  (time/freq/sweep + instance path)
-- `validation_reports()` + `EMITS_VALIDATION` — cross-cutting findings channel
-- Three postures: `strict` (default, aborts), `collect` (records), `off`
-  (zero cost)
-- SOA constraints on spice models (mos1/mos2/mos3/diode/bjt) — limits
-  absent-by-default, vacuously satisfied
-- `enum Region` opvar on MOSFETs
+  (time/freq/sweep + instance path) through the `MarginsResult` channel
+- Evaluation at accepted solution points only (LRM §9.7.3's
+  rejected-iteration rule inherited: a violation inside a rejected Newton
+  iteration is never reported)
+- Three postures: `strict` (default, `$error` — aborts), `collect`
+  (`$warning` — records), `off` (zero cost)
+- `validation_reports()` + `EMITS_VALIDATION` findings channel — preserved
+  end to end, now fed by a real producer
+- `ConstraintCatalog` classifies a constraint the running analysis cannot
+  provide (digital instance) — reads fail loud naming it
+
+**Still dark from the PHDL era** (each a named follow-up with its blocked
+tests carrying the mechanism in place):
+
+- `var`/`target`/`cover` statements inside constraint blocks (reduced
+  metrics, coverage) — `dv-tester`'s surface
 - Analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`) + temporal windows
-  (`after`/`dur`) + window algebra (`&`/`not`)
-- `MarginsResult` channel + `r.violations` on both hosts, parity-guarded
-
-**Next in the triad:**
-
-- **dv-gradients** — analytic sensitivity (`∂F/∂p`) kernel, param-stamp
-  Jacobian, host policies for Monte Carlo / corner runs / centering. The
-  margin channel from dv-core is its objective function. AC/transient
-  adjoint of a margin is a known gap (DC only in V1).
-- **dv-tester** — programmatic tester, monitors, `cover` directive, batch
-  verification at scale. Rides the findings channel for digital verification
-  (margins are analog-only).
+- `tol gauss/uniform` parameter distributions — the recorded direction
+  re-anchors sampling on the LRM §9.13.2 `$rdist_*`/`$random` functions
+  (already implemented) over a **first-class random-variable catalogue**
+  on the POM (correlation, global-vs-mismatch scoping, replay-by-index,
+  compile-once MC) — settle its shape before optimizer work hardens
+  around a per-parameter view
+- The margin-gradient classifier (`classify_margin_gradient` still
+  refuses) — `dv-gradients`' surface
+- SOA constraint blocks on the spice stdlib models (mos1/mos2/mos3/
+  diode/bjt) with absent-by-default sentinel limits — the natural first
+  follow-up now the core lands
 
 ---
 
 ## P7 — Optimizer (design centering)
 
 **Target:** maximize yield over process/tolerance spread. A user declares
-`tol` distributions on params, writes `constraint` blocks for specs, and the
-optimizer centers the design so every margin stays positive across the
+random variables on params, writes `constraint begin` blocks for specs, and
+the optimizer centers the design so every margin stays positive across the
 declared variation.
 
-**Foundations in place (dv-core + host-library):**
+**Foundations in place (constraint core + host-library):**
 
 | Foundation | Status |
 |---|---|
 | Compile-once restamp sweeps (MD-18) | ✅ `Session::sweep`/`sweep_grid` |
 | Live `Session::set` (restamp, no re-JIT) | ✅ Rust host |
 | `.sens` (DC sensitivity, finite-difference) | ✅ both hosts |
-| `tol` distributions declared on params | ✅ dv-core |
-| Signed margins with argmin (the objective) | ✅ dv-core `MarginsResult` |
-| `collect` posture (records worst margin) | ✅ dv-core |
+| Signed margins with argmin (the objective) | ✅ `constraints-on-vams` `MarginsResult` |
+| `collect` posture (records worst margin) | ✅ both hosts |
 | `Param.bounds` (auto knob-limits) | ✅ host-library |
 
-**What's left to build (shape under design):**
+**Missing before this phase hardens (ordering matters):**
 
+- [ ] **The random-variable catalogue** — first-class on the POM, not a
+      per-param vestige: correlation, global-vs-mismatch scoping, stable
+      replay index, and compile-once N-sample runs are all cross-parameter
+      facts. Its shape must be settled **before** optimizer work hardens
+      around a per-parameter view (`constraints-on-vams/context.md`
+      records the direction: re-anchor on the LRM §9.13.2 `$rdist_*`/
+      `$random` functions piperine already implements).
 - [ ] **Algorithm family** — worst-case distance vs Monte-Carlo yield vs
       ellipsoidal. No decision forced yet.
-- [ ] **`∂F/∂p` analytic kernel** (dv-gradients) — the gradient feed the
-      optimizer reads. Today only finite-difference `.sens` exists; the
-      analytic path is faster and feeds centering directly.
-- [ ] **Monte Carlo / corner sampling** — sample `tol` distributions, sweep
-      each sample through `Session::sweep`, collect margins. The host
-      reduction is straightforward once dv-gradients delivers the param-stamp
-      infrastructure.
+- [ ] **`∂F/∂p` analytic kernel** — the gradient feed the optimizer reads.
+      Today only finite-difference `.sens` exists; the analytic path is
+      faster and feeds centering directly. With random variables
+      catalogued, `∂margin/∂(random var)` becomes available too — "yield
+      is 92%, dominated by M1's Vth mismatch".
+- [ ] **Monte Carlo / corner sampling** — sample the catalogue, sweep each
+      sample through `Session::sweep`, collect margins.
 - [ ] **`pip.optimize` API** — one Python entry point: params in, spec
       functions out, centered design back. Shape TBD (library vs decorator).
 - [ ] **Example + docs** — a real circuit centered end-to-end.

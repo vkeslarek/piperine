@@ -163,6 +163,40 @@ Johnson–Nyquist noise of a resistor, integrated over a bandwidth:
 
 <div align="center"><img src="examples/08_johnson_noise_plot.png" alt="Johnson noise" width="70%"/></div>
 
+### Design validation — constraints, margins, postures
+
+Declare safe-operating-area limits **inside the model** and every analysis
+checks them at each accepted solution point. A `require` lowers to a signed
+**margin** (`m ≥ 0` ⟺ satisfied, optionally `tol`-normalized), reported with
+its worst value, the coordinate it occurred at, and the instance path:
+
+```verilog-ams
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+```
+
+```python
+solver = piperine.Solver(checks="collect")        # strict (default) | collect | off
+op = session.op(solver)
+op.margins.get("dut1.head")     # worst −0.1, argmin 0.0, instance path
+op.first_violation()            # names the constraint, the instance, the margin
+```
+
+Three postures choose what a violation does: **`strict`** (the default) aborts
+the run loud, naming the constraint, the instance path, and the margin;
+**`collect`** records every violation and completes (the optimizer's inner
+loop); **`off`** evaluates nothing, at zero cost. A violation seen inside a
+Newton iteration the solver rejects is never reported — margins are read at
+accepted points only. On the Rust host, the same channel is
+`op.margins().get("head")` / `requires_ok()` / `first_violation()`.
+
 ### Compile-once live sessions — for optimization loops
 
 `design.compile()` gives a `Session` that owns the compiled circuit. Every
