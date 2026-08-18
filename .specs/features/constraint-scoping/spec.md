@@ -27,12 +27,12 @@ scan); `&&`/`not` window algebra (dv-core had it; deferred — no test).
 ## Requirements
 | ID | Requirement | Status |
 |---|---|---|
-| CSC-01 | Grammar: @ dc/@ tran/@ ac [(after, dur)] { stmts } parses; contextual | Pending |
-| CSC-02 | POM carries scope; contained statements inherit analysis (+window) | Pending |
-| CSC-03 | Lowering propagates analyses/window into LoweredMargin | Pending |
-| CSC-04 | Kernel keeps pointwise scoped margins; tracker honors (existing) | Pending |
-| CSC-05 | Fixture migration green: event_window ×2, scoped ×3, gradient ×2 | Pending |
-| CSC-06 | Docs: Part I §12 scoping paragraph; ROADMAP still-dark shrink | Pending |
+| CSC-01 | Grammar: @ dc/@ tran/@ ac [(after, dur)] { stmts } parses; contextual | Verified |
+| CSC-02 | POM carries scope; contained statements inherit analysis (+window) | Verified |
+| CSC-03 | Lowering propagates analyses/window into LoweredMargin | Verified |
+| CSC-04 | Kernel keeps pointwise scoped margins; tracker honors (existing) | Verified |
+| CSC-05 | Fixture migration green: event_window ×2, scoped ×3, gradient ×2 | Verified |
+| CSC-06 | Docs: Part I §12 scoping paragraph; ROADMAP still-dark shrink | Verified |
 
 ## Edge cases
 - dur without after → loud; non-const after/dur → loud; unknown analysis
