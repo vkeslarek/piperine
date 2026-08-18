@@ -37,6 +37,7 @@
 use std::collections::{HashMap, HashSet};
 
 use piperine_codegen::device::CircuitBuildInfo;
+use piperine_lang::ast::Expr;
 use piperine_lang::pom::Design;
 use piperine_solver::prelude::NodeIdentifier;
 
@@ -77,33 +78,207 @@ pub enum MarginDifferentiability {
 
 /// Classify one declared margin's gradient differentiability from the
 /// authored design + build info. Walks the flat top module's instances
-/// and constraint blocks for a leaf whose label (or `target#<index>`)
-/// matches `margin_name`, then reads its `StmtClass` to decide.
+/// and constraint statements for one whose label (or `target#<index>`)
+/// matches `margin_name`, then classifies: reduced statements are AC-
+/// defined (the reduced helpers exist once per completed AC sweep);
+/// everything else is pointwise DC when its expression reduces to a
+/// `V(a, b)` probe resolvable against the instance's terminals.
 ///
 /// The lookup mirrors [`MarginsResult::get`](crate::margins::MarginsResult::get)'s
 /// shape: a bare name resolves when it is unique across instances;
 /// otherwise the caller passes the qualified `"instance.label"` form.
-///
-/// **MD-45 regression**: this always fails loud. The dv-core `constraint`
-/// block surface (`Module::constraints()`, `ConstraintStmt`,
-/// `QuantityClass`/`StmtClass`) was gutted with the PHDL AST at T21 — no
-/// VAMS Annex A production carries it, so there is no declared-margin
-/// tree left to walk or classify. `dv-gradients`' margin-gradient surface
-/// is dark until a future task rebuilds constraint declarations on VAMS
-/// `(* attribute *)` syntax (`.specs/STATE.md` MD-45). Callers (e.g.
-/// [`crate::session::entry::Session::gradient`]) already fall through to
-/// the plain net-name path on `Err`, so this stub composes correctly with
-/// existing call sites rather than requiring a call-site rewrite.
 pub fn classify_margin_gradient(
-    _design: &Design,
-    _info: &CircuitBuildInfo,
+    design: &Design,
+    info: &CircuitBuildInfo,
     top: &str,
     margin_name: &str,
 ) -> Result<MarginDifferentiability, Error> {
-    Err(Error::Measurement(format!(
-        "margin gradient: no declared constraint named `{margin_name}` on top module `{top}` — \
-         constraint-block declarations are unavailable post-MD-45 (dv-gradients regressed until \
-         a future task rebuilds them on VAMS attribute syntax)"
+    let Some(flat) = design.flat_module(top) else {
+        return Err(Error::Measurement(format!(
+            "margin gradient: top module `{top}` not found"
+        )));
+    };
+
+    // Collect every leaf matching `margin_name` (bare or qualified), then
+    // resolve ambiguities exactly the way `MarginsResult::get` does — a
+    // unique bare match wins; otherwise the qualified `"instance.label"`
+    // form is required.
+    let mut matches: Vec<(String, &piperine_lang::pom::PomConstraintStmt)> = Vec::new();
+    for instance in flat.instances() {
+        let Some(module) = design.module(instance.module_name()) else { continue };
+        let analog_instance = info.instances.iter().find(|i| i.label == instance.name());
+        for (stmt_index, stmt) in module.constraints().iter().enumerate() {
+            let Some(label) = stmt.label().map(str::to_string).or_else(|| {
+                // A target is unlabeled — `target#<stmt-index>`, matching
+                // the lowering's naming.
+                matches!(stmt, piperine_lang::pom::PomConstraintStmt::Target { .. })
+                    .then(|| format!("target#{stmt_index}"))
+            }) else {
+                continue;
+            };
+            if label != margin_name
+                && format!("{}.{}", instance.name(), label) != margin_name
+            {
+                continue;
+            }
+            // A constraint on a digital-only instance has no DC
+            // gradient — the catalog (DVC-15) calls this out as
+            // "margins are an analog notion". Surface it as
+            // NonDifferentiableReduction so the refusal is loud rather
+            // than a silent zero.
+            if analog_instance.is_none() {
+                return Ok(MarginDifferentiability::NonDifferentiableReduction);
+            }
+            matches.push((instance.name().to_string(), stmt));
+        }
+    }
+
+    let (instance_name, stmt) = match matches.as_slice() {
+        [] => return Err(Error::Measurement(format!(
+            "margin gradient: no declared constraint named `{margin_name}` on top module `{top}`"
+        ))),
+        [one] => (one.0.clone(), one.1),
+        _ => return Err(Error::Measurement(format!(
+            "margin gradient: constraint name `{margin_name}` is ambiguous across instances — \
+             qualify it as `instance.{margin_name}`"
+        ))),
+    };
+
+    // Reduced statements (a reduced helper anywhere in the expression)
+    // exist once per completed AC sweep — the AC adjoint is the
+    // documented gap (D6), refused loud rather than finite-differenced
+    // silently.
+    if crate::reduced::is_reduced_stmt(stmt) {
+        return Ok(MarginDifferentiability::AcDefined);
+    }
+
+    // Pointwise DC. Extract a V() probe from the margin's expression and
+    // resolve it against the instance's terminals. Anything more complex
+    // than `V(...)` is refused loud as a non-differentiable expression —
+    // the surface grows as more shapes are wired, never silently.
+    let expr = margin_value_expr(stmt).ok_or_else(|| Error::Measurement(format!(
+        "margin gradient: `{margin_name}` has no extractable expression to differentiate"
+    )))?;
+    let probe = extract_voltage_probe(expr)?;
+    let analog = info
+        .instances
+        .iter()
+        .find(|i| i.label == instance_name)
+        .ok_or_else(|| Error::Measurement(format!(
+            "margin gradient: instance `{instance_name}` has no analog half"
+        )))?;
+    let output = resolve_probe_end(&probe.0, design, analog)?;
+    let output_ref = probe
+        .1
+        .as_ref()
+        .map(|n| resolve_probe_end(n, design, analog))
+        .transpose()?;
+
+    Ok(MarginDifferentiability::PointwiseDc {
+        label: instance_name,
+        output,
+        output_ref,
+        argmin: 0.0,
+    })
+}
+
+/// The margin's own value expression — the probe half of a require's
+/// comparison, a var's expression, or a target's operand.
+fn margin_value_expr(stmt: &piperine_lang::pom::PomConstraintStmt) -> Option<&Expr> {
+    use piperine_lang::pom::PomConstraintStmt as S;
+    match stmt {
+        S::Require(r) => {
+            // `pred` is `expr cmp level` or `level cmp expr` — pick the
+            // side that is not a literal/ident (the probe half).
+            if let Expr::Binary { lhs, rhs, .. } = &r.pred
+                && matches!(probe_half(lhs, rhs), ProbeHalf::Left | ProbeHalf::Right)
+            {
+                return Some(match probe_half(lhs, rhs) {
+                    ProbeHalf::Left => lhs,
+                    _ => rhs,
+                });
+            }
+            Some(&r.pred)
+        }
+        S::Var { expr, .. } => Some(expr),
+        S::Target { expr, .. } => Some(expr),
+        S::Cover { .. } | S::CoverCross { .. } => None,
+    }
+}
+
+enum ProbeHalf { Left, Right, None }
+
+fn probe_half(lhs: &Expr, rhs: &Expr) -> ProbeHalf {
+    let literal_or_ident =
+        |e: &Expr| matches!(e, Expr::Number { .. } | Expr::Ident { .. });
+    if !literal_or_ident(lhs) {
+        ProbeHalf::Left
+    } else if !literal_or_ident(rhs) {
+        ProbeHalf::Right
+    } else {
+        ProbeHalf::None
+    }
+}
+
+/// Extract a `V(a, b)` or `V(a)` probe from `expr`. Returns the two probe
+/// ends (the second is `None` for a single-ended probe). Anything else
+/// (a parameter reference, a complex expression, a different probe
+/// function) is refused loud — the surface grows as more shapes land.
+fn extract_voltage_probe(expr: &Expr) -> Result<(Expr, Option<Expr>), Error> {
+    let inner = match expr {
+        Expr::Binary { lhs, rhs, .. } => {
+            // The comparison's probe half — recurse into whichever side
+            // carries the V() call.
+            if let Ok(p) = extract_voltage_probe(lhs) {
+                return Ok(p);
+            }
+            return extract_voltage_probe(rhs);
+        }
+        other => other,
+    };
+    let Expr::AccessFunction { function, pos, neg, .. } = inner else {
+        return Err(Error::Measurement(format!(
+            "margin gradient: expression `{expr:?}` is not a V() probe — only V(a) or V(a, b) is differentiable today"
+        )));
+    };
+    if function != "V" {
+        return Err(Error::Measurement(format!(
+            "margin gradient: probe `{function}()` is not V() — only V(a) or V(a, b) is differentiable today"
+        )));
+    }
+    Ok(((**pos).clone(), neg.as_deref().cloned()))
+}
+
+/// One probe end: a ground name maps to the reference node; a port name
+/// maps through the instance's terminals (declaration order, matching
+/// the kernel's terminal order); anything else fails loud.
+fn resolve_probe_end(
+    expr: &Expr,
+    design: &Design,
+    instance: &piperine_codegen::device::BuiltInstanceInfo,
+) -> Result<NodeIdentifier, Error> {
+    let Expr::Ident { name, .. } = expr else {
+        return Err(Error::Measurement(format!(
+            "margin gradient: probe end `{expr:?}` must be a port name"
+        )));
+    };
+    if piperine_lang::pom::is_ground(name) {
+        return Ok(NodeIdentifier::Gnd);
+    }
+    let module = design.module(&instance.module).ok_or_else(|| {
+        Error::Measurement(format!(
+            "margin gradient: module `{}` not found for instance `{}`",
+            instance.module, instance.label
+        ))
+    })?;
+    let position = module.ports().iter().position(|p| p.name == *name).ok_or_else(|| Error::Measurement(format!(
+        "margin gradient: probe end `{name}` is not a port of `{}` — an internal net crosses \
+         encapsulation and cannot be probed from the host",
+        instance.module
+    )))?;
+    instance.terminals.get(position).cloned().ok_or_else(|| Error::Measurement(format!(
+        "margin gradient: instance `{}` has no terminal at port position {position}",
+        instance.label
     )))
 }
 

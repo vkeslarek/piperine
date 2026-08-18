@@ -77,40 +77,32 @@ endmodule
 ///
 /// A single-pole stage with reduced AC vars — refuses loud on the host
 /// surface, naming the AC-adjoint gap.
-const STAGE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vac(inout p: Electrical, inout n: Electrical) { param acmag: Real = 1.0; }
-analog Vac { V(p, n) <+ ac_stim(acmag, 0.0); }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Stage(inout inp: Electrical, inout out: Electrical, inout gnd: Electrical) {
-    param gm: Real = 0.1;
-    param r: Real = 1e3;
-    param c: Real = 1e-6;
-}
-analog Stage {
-    I(gnd, out) <+ gm * V(inp, gnd);
-    I(out, gnd) <+ V(out, gnd) / r;
-    I(out, gnd) <+ c * ddt(V(out, gnd));
-}
-constraint Stage {
-    var ugbw : Real = ac_unity_gain_freq(V(out, gnd));
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    x1 : Stage(.inp = in, .out = out, .gnd = gnd);
-}
-";
+const STAGE: &str = r#"`include "disciplines.vams"
+module Vac (inout electrical p, inout electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
+module Stage (inout electrical inp, inout electrical out, inout electrical gnd);
+    parameter real gm = 0.1;
+    parameter real r = 1e3;
+    parameter real c = 1e-6;
+    analog begin
+        I(gnd, out) <+ gm * V(inp, gnd);
+        I(out, gnd) <+ V(out, gnd) / r;
+        I(out, gnd) <+ c * ddt(V(out, gnd));
+    end
+    constraint begin
+        var ugbw = ac_unity_gain_freq(V(out, gnd));
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    Stage x1 (.inp(in), .out(out), .gnd(gnd));
+endmodule
+"#;
 
 fn compile(src: &str) -> Session {
     let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
@@ -259,11 +251,10 @@ fn unknown_metric_fails_loud_listing_candidates() {
 // `sensitivity`/`gradient` — the unified host surface never silently
 // finite-differences an AC-defined metric behind the caller's back.
 //
-// BLOCKED on the deferred constraint `var`/reduced-metric statement
-// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
+// The var is live; the classifier refuses the AC-defined metric loud.
 #[test]
 fn ac_defined_metric_fails_loud_on_the_unified_surface() {
-    let mut session = compile(STAGE_PHDL);
+    let mut session = compile(STAGE);
     let err = session
         .gradient("ugbw", &[("x1".into(), "gm".into())], &collect_config())
         .expect_err("AC-defined metric must refuse on the unified surface");

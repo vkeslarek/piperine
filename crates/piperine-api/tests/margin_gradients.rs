@@ -77,53 +77,37 @@ endmodule
 "#;
 
 /// BLOCKED on reduced metrics in gradients (dv-gradients deferred):
-/// the `var` statement itself is live (`var ugbw/pm/ag =
-/// ac_*(…);` elaborates since constraint-statements), but
-/// `classify_margin_gradient` still refuses every name post-MD-45 —
-/// migrating this fixture would only move the failure from parse to the
-/// stub's refusal, which names neither "AC adjoint" nor "D6". It stays
-/// in PHDL until dv-gradients is re-anchored on the live producer; not
-/// migrating a still-red fixture keeps the syntax blocker visible
-/// instead of half-migrating it.
+/// kept for the still-red pointwise-AC test below (see its note).
 ///
-/// A single-pole stage with three reduced AC `var`s (`ugbw`, `pm`, `gm`)
-/// and a pointwise AC `var ag` — all AC-defined, all refuse loud.
-const STAGE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vac(inout p: Electrical, inout n: Electrical) { param acmag: Real = 1.0; }
-analog Vac { V(p, n) <+ ac_stim(acmag, 0.0); }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Stage(inout inp: Electrical, inout out: Electrical, inout gnd: Electrical) {
-    param gm: Real = 0.1;
-    param r: Real = 1e3;
-    param c: Real = 1e-6;
-}
-analog Stage {
-    I(gnd, out) <+ gm * V(inp, gnd);
-    I(out, gnd) <+ V(out, gnd) / r;
-    I(out, gnd) <+ c * ddt(V(out, gnd));
-}
-constraint Stage {
-    var ugbw : Real = ac_unity_gain_freq(V(out, gnd));
-    var pm   : Real = ac_phase_margin(V(out, gnd));
-    var ag   : Real = ac_gain(V(out, gnd));
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    x1 : Stage(.inp = in, .out = out, .gnd = gnd);
-}
-";
+/// A single-pole stage with reduced AC `var`s (`ugbw`, `pm`) —
+/// AC-defined, refuse loud naming the adjoint gap.
+const STAGE: &str = r#"`include "disciplines.vams"
+module Vac (inout electrical p, inout electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
+module Stage (inout electrical inp, inout electrical out, inout electrical gnd);
+    parameter real gm = 0.1;
+    parameter real r = 1e3;
+    parameter real c = 1e-6;
+    analog begin
+        I(gnd, out) <+ gm * V(inp, gnd);
+        I(out, gnd) <+ V(out, gnd) / r;
+        I(out, gnd) <+ c * ddt(V(out, gnd));
+    end
+    constraint begin
+        var ugbw = ac_unity_gain_freq(V(out, gnd));
+        var pm = ac_phase_margin(V(out, gnd));
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    Stage x1 (.inp(in), .out(out), .gnd(gnd));
+endmodule
+"#;
 
 /// BLOCKED on the deferred `@ tran` analysis-scoping block: `@ tran {
 /// require … }` still has no `constraint begin … end` spelling, so this
@@ -174,11 +158,8 @@ fn collect_config() -> SolverConfig {
 // the gradient was evaluated at the single DC point, not implied over a
 // sweep.
 //
-// BLOCKED on the margin-gradient classifier: `classify_margin_gradient`
-// (`piperine-api`'s `gradient.rs`) still refuses every name post-MD-45;
-// re-anchoring it on the constraints-on-vams `require` producer is
-// deferred. The fixture is migrated, so the failure below is the
-// classifier's loud refusal naming `head` and `Top` — not a parse error.
+// The classifier is re-anchored on the live producer: the require's
+// V(p, n) probe resolves and the gradient flows through the adjoint.
 #[test]
 fn a_pointwise_dc_margin_gradient_is_taken_at_the_located_argmin() {
     let mut session = compile(DIVIDER);
@@ -260,12 +241,9 @@ fn a_differential_probe_resolves_both_ends() {
 // finite-differencing behind the caller's back. The error message names
 // "AC adjoint" and "D6" so the gap is a decision, not a bug report.
 //
-// BLOCKED on reduced metrics in gradients (dv-gradients deferred) —
-// see `STAGE_PHDL`: the classifier stub refuses without naming the
-// AC-adjoint gap (D6).
 #[test]
 fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
-    let mut session = compile(STAGE_PHDL);
+    let mut session = compile(STAGE);
     let err = session
         .margin_gradient("ugbw", &[("x1".into(), "gm".into())], &collect_config())
         .expect_err("AC-defined metric must refuse");
@@ -281,9 +259,13 @@ fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
 // classifier must not let a pointwise AC metric sneak through just
 // because it is pointwise.
 //
-// BLOCKED on reduced metrics in gradients (dv-gradients deferred) —
-// see `STAGE_PHDL`: the classifier stub refuses every name, so the
-// pointwise-AC refusal shape never arrives either.
+// BLOCKED on the deferred `@ ac` analysis-scoping block: a *pointwise*
+// AC metric (the old `ac_gain` var) has no `constraint begin … end`
+// spelling today — the restored helpers are all reduced class. The
+// fixture stays PHDL and fails at parse until scoping lands.
+const STAGE_PHDL: &str = "\
+constraint Stage { var ag : Real = ac_gain(V(out, gnd)); }
+";
 #[test]
 fn an_ac_defined_pointwise_metric_fails_loud() {
     let mut session = compile(STAGE_PHDL);
