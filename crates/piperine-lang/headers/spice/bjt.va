@@ -138,8 +138,8 @@ module bjt (
     parameter real kf   = 0.0;         // flicker noise coefficient
     parameter real af   = 1.0;         // flicker noise exponent
 
-    // SOA (DVC-16, T27) — see file header: dv-core constraint runtime is
-    // dark since MD-45; kept declared (unused) for API fidelity.
+    // SOA (DVC-16, T27) — read by the model's constraint block; sentinel
+    // defaults keep the checks vacuous until overridden.
     parameter real vce_max = 1.0e99;
     parameter real vbe_max = 1.0e99;
     parameter real vcb_max = 1.0e99;
@@ -615,5 +615,14 @@ module bjt (
 
         // ── Initial condition (bjtload.c:252-258, NGP-10) ─────────────────────
         // NOT WIRED — see file header.
+    end
+
+    // ── SOA limits (dv-core T27 restored): absent by default — the
+    // sentinels keep every check vacuously satisfied until an instance
+    // override names real limits. ────────────────────────────────────────
+    constraint begin
+        require vce_soa : V(c, e) <= vce_max;
+        require vbe_soa : abs(V(b, e)) <= vbe_max;
+        require vcb_soa : abs(V(c, b)) <= vcb_max;
     end
 endmodule

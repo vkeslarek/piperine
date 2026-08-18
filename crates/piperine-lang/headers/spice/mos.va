@@ -47,10 +47,10 @@
 // `tests/ngspice_validation.rs` remaining green is the parity proof, same
 // as `pom_vams_shape`-style tests already rely on for other dark surface.
 //
-// The SOA `constraint mos1 { ... }` block (dv-core T26, DVC-16) is likewise
-// dropped for the same MD-45 reason `diode.va`'s SOA block is — the
-// constraint runtime that read it is dark. `vgs_max`/`vds_max`/`vgb_max`/
-// `vbs_max`/`vbd_max` stay declared parameters (unused) for API fidelity.
+// The SOA constraint block (dv-core T26, DVC-16) is restored as a
+// `constraint begin … end` block at each model's foot (constraints-on-vams,
+// MD-49): `vgs_max`/`vds_max`/`vgb_max`/`vbs_max`/`vbd_max` are live again,
+// absent-by-default sentinels.
 // ════════════════════════════════════════════════════════════════════════════
 
 `include "disciplines.vams"
@@ -106,8 +106,8 @@ module mos1 (
     parameter real kf     = 0.0;
     parameter real af     = 1.0;
 
-    // SOA (DVC-16, T26) — see file header: dv-core constraint runtime is
-    // dark since MD-45; kept declared (unused) for API fidelity.
+    // SOA (DVC-16, T26) — read by the model's constraint block; sentinel
+    // defaults keep the checks vacuous until overridden.
     parameter real vgs_max = 1.0e99;
     parameter real vds_max = 1.0e99;
     parameter real vgb_max = 1.0e99;
@@ -518,6 +518,17 @@ module mos1 (
 
         // ── Initial condition (mos1load.c:399-402, NGP-10) ────────────────────
         // NOT WIRED — see file header.
+    end
+
+    // ── SOA limits (dv-core T26 restored): absent by default — the
+    // sentinels keep every check vacuously satisfied until an instance
+    // override names real limits. ────────────────────────────────────────
+    constraint begin
+        require vgs_soa : abs(V(g, s)) <= vgs_max;
+        require vds_soa : abs(V(d, s)) <= vds_max;
+        require vgb_soa : abs(V(g, b)) <= vgb_max;
+        require vbs_soa : abs(V(b, s)) <= vbs_max;
+        require vbd_soa : abs(V(b, d)) <= vbd_max;
     end
 endmodule
 
@@ -1344,6 +1355,17 @@ module mos2 (
         // ── Initial condition (mos2load.c, NGP-10) ────────────────────────────
         // NOT WIRED — see file header.
     end
+
+    // ── SOA limits (dv-core T26 restored): absent by default — the
+    // sentinels keep every check vacuously satisfied until an instance
+    // override names real limits. ────────────────────────────────────────
+    constraint begin
+        require vgs_soa : abs(V(g, s)) <= vgs_max;
+        require vds_soa : abs(V(d, s)) <= vds_max;
+        require vgb_soa : abs(V(g, b)) <= vgb_max;
+        require vbs_soa : abs(V(b, s)) <= vbs_max;
+        require vbd_soa : abs(V(b, d)) <= vbd_max;
+    end
 endmodule
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2005,5 +2027,16 @@ module mos3 (
 
         // ── Initial condition (mos3load.c, NGP-10) ────────────────────────────
         // NOT WIRED — see file header.
+    end
+
+    // ── SOA limits (dv-core T26 restored): absent by default — the
+    // sentinels keep every check vacuously satisfied until an instance
+    // override names real limits. ────────────────────────────────────────
+    constraint begin
+        require vgs_soa : abs(V(g, s)) <= vgs_max;
+        require vds_soa : abs(V(d, s)) <= vds_max;
+        require vgb_soa : abs(V(g, b)) <= vgb_max;
+        require vbs_soa : abs(V(b, s)) <= vbs_max;
+        require vbd_soa : abs(V(b, d)) <= vbd_max;
     end
 endmodule

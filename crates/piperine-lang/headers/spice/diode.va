@@ -46,13 +46,11 @@
 // unconditional on branch conflict. `ic` stays a declared, unused
 // parameter; see the disposition at its former call site below.
 //
-// The SOA `constraint dio { ... }` block (dv-core T27, DVC-16) has no VAMS
-// migration target: the capability/constraint-block machinery that read it
-// was PHDL-AST-coupled and went dark at T21 (MD-45) pending a rebuild on
-// VAMS `(* attribute *)` surface that has not landed yet. `fv_max`/
-// `bv_max`/`if_max` stay declared parameters (unused) for API fidelity,
-// same disposition `passives.va` already carries for `res`/`cap`'s
-// `bv_max`.
+// The SOA constraint block (dv-core T27, DVC-16) is restored as a
+// `constraint begin … end` block at the model's foot (constraints-on-vams,
+// MD-49): `fv_max`/`bv_max` are live again, absent-by-default sentinels
+// (`if_max` stays declared for API fidelity — a current probe needs the
+// branch form the block grammar reads through V() only today).
 // ════════════════════════════════════════════════════════════════════════════
 
 `include "disciplines.vams"
@@ -108,8 +106,8 @@ module dio (inout electrical p, inout electrical n);
     parameter real kf     = 0.0;       // flicker noise coefficient
     parameter real af     = 1.0;       // flicker noise exponent
 
-    // SOA (DVC-16, T27) — see file header: dv-core constraint runtime is
-    // dark since MD-45; kept declared (unused) for API fidelity.
+    // SOA (DVC-16, T27) — read by the model's constraint block; sentinel
+    // defaults keep the checks vacuous until overridden.
     parameter real fv_max = 1.0e99;    // forward voltage SOA cap (V)
     parameter real bv_max = 1.0e99;    // reverse breakdown SOA cap (V)
     parameter real if_max = 1.0e99;    // forward current SOA cap (A)
@@ -532,5 +530,12 @@ module dio (inout electrical p, inout electrical n);
         // underlying reason (no lowering path for the construct at all, not
         // a branch-type conflict), so `ic` stays a declared, unused
         // parameter rather than shipped broken.
+    end
+    // ── SOA limits (dv-core T27 restored): directional junction checks,
+    // absent by default — the sentinels keep them vacuously satisfied
+    // until an instance override names real limits. ─────────────────────
+    constraint begin
+        require fwd_soa : V(p, n) <= fv_max;
+        require rev_soa : V(p, n) >= -bv_max;
     end
 endmodule
