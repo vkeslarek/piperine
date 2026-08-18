@@ -157,15 +157,39 @@ impl ConstraintCatalog {
             }
             let analog = info.instances.iter().find(|i| i.label == instance.name());
             for stmt in module.constraints() {
-                let Some(label) = stmt.label() else { continue };
-                let qualified = format!("{}.{}", instance.name(), label);
+                Self::classify_into(stmt, &instance.name(), analog, &mut catalog, info);
+            }
+        }
+        catalog
+    }
+
+    /// Classify one statement (recursing into scope groups) into the
+    /// catalog: labels absent from the kernel's margin catalog split by
+    /// why — reduced quantities are `not_defined` outside AC, digital
+    /// instances have no analog margin, pointwise vars are unknown-by-
+    /// name (catalogued nowhere), covers live on the coverage channel.
+    fn classify_into(
+        stmt: &PomConstraintStmt,
+        instance: &str,
+        analog: Option<&piperine_codegen::device::BuiltInstanceInfo>,
+        catalog: &mut Self,
+        info: &CircuitBuildInfo,
+    ) {
+        match stmt {
+            PomConstraintStmt::Scope { stmts, .. } => {
+                for s in stmts {
+                    Self::classify_into(s, instance, analog, catalog, info);
+                }
+            }
+            _ => {
+                let Some(label) = stmt.label() else { return };
+                let qualified = format!("{instance}.{label}");
                 let Some(built) = analog else {
                     catalog.digital.push(qualified);
-                    continue;
+                    return;
                 };
-                let in_kernel = built.kernel.margin_catalog().iter().any(|m| m.label == label);
-                if in_kernel {
-                    continue;
+                if built.kernel.margin_catalog().iter().any(|m| m.label == label) {
+                    return;
                 }
                 match stmt {
                     PomConstraintStmt::Var { .. } => {
@@ -199,10 +223,11 @@ impl ConstraintCatalog {
                         // constraint" downstream.
                         catalog.digital.push(qualified);
                     }
+                    PomConstraintStmt::Scope { .. } => unreachable!("handled above"),
                 }
             }
         }
-        catalog
+        let _ = info;
     }
 
     /// `true` when `name` — qualified (`"x1.ugbw"`) or bare (`"ugbw"`) —

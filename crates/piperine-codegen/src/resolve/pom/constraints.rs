@@ -150,6 +150,15 @@ fn is_reduced(expr: &Expr) -> bool {
 /// scale-normalized [`LoweredMargin`], `var`s bind substitution entries,
 /// and `cover`s land in the separate coverage catalog — names resolved
 /// against `ctx` exactly as the module's analog body resolves them.
+/// The accumulated scope an enclosing `@ …` group imposes on its
+/// contained statements (DVC-19/20): the analysis set and the
+/// temporal window.
+#[derive(Default)]
+struct ScopeCtx {
+analyses: Vec<String>,
+window: Option<ResolvedWindow>,
+}
+
 pub(crate) struct ConstraintLowering;
 
 impl ConstraintLowering {
@@ -163,10 +172,21 @@ impl ConstraintLowering {
         stmts: &[PomConstraintStmt],
         ctx: &mut LowerCtx,
     ) -> Vec<LoweredMargin> {
+        Self::lower_scoped(stmts, &ScopeCtx::default(), ctx)
+    }
+
+    fn lower_scoped(
+        stmts: &[PomConstraintStmt],
+        scope: &ScopeCtx,
+        ctx: &mut LowerCtx,
+    ) -> Vec<LoweredMargin> {
         let mut bindings: std::collections::HashMap<String, PomExpr> =
             std::collections::HashMap::new();
         let mut margins = Vec::new();
-        for (index, stmt) in stmts.iter().enumerate() {
+        let mut index = 0usize;
+        for stmt in stmts {
+            let stmt_index = index;
+            index += 1;
             match stmt {
                 PomConstraintStmt::Var { name, expr, .. } => {
                     // Authored order: a var may read earlier vars (the
@@ -184,8 +204,8 @@ impl ConstraintLowering {
                         label: req.name.clone(),
                         kind: MarginKind::Require,
                         class: QuantityClass::Pointwise,
-                        analyses: Vec::new(),
-                        window: None,
+                        analyses: scope.analyses.clone(),
+                        window: scope.window,
                         expr,
                     });
                 }
@@ -194,8 +214,8 @@ impl ConstraintLowering {
                     // same var-expanded operands — `target ugbw >= 1e4`
                     // where `var ugbw = ac_unity_gain_freq(…)` is Reduced
                     // (the helper appears once the binding expands, DVC-09
-                    // through the var — spec P3's fixture shape), so it
-                    // never reaches the kernel (D7).
+                    // through the var), so it never reaches the kernel
+                    // (D7). An enclosing scope's analyses ride along.
                     let expr = subst_expr(expr, &bindings);
                     let level = subst_expr(level, &bindings);
                     let tol = tol.as_ref().map(|scale| subst_expr(scale, &bindings));
@@ -208,21 +228,83 @@ impl ConstraintLowering {
                         QuantityClass::Pointwise
                     };
                     let expr = Self::margin_of_target(*cmp, &expr, &level, tol.as_ref(), ctx);
+                    let mut analyses = scope.analyses.clone();
+                    if class == QuantityClass::Reduced && !analyses.iter().any(|a| a == "ac") {
+                        analyses.push("ac".to_string());
+                    }
                     margins.push(LoweredMargin {
-                        label: format!("target#{index}"),
+                        label: format!("target#{stmt_index}"),
                         kind: MarginKind::Target,
                         class,
-                        analyses: (class == QuantityClass::Reduced)
-                            .then(|| vec!["ac".to_string()])
-                            .unwrap_or_default(),
-                        window: None,
+                        analyses,
+                        window: scope.window,
                         expr,
                     });
+                }
+                PomConstraintStmt::Scope { analysis, after, dur, stmts, .. } => {
+                    // The window's bounds are elaboration constants — a
+                    // non-const bound fails loud naming the group. `dur`
+                    // absent is open-ended (`dur = ∞`).
+                    let window = match after {
+                        None => scope.window,
+                        Some(after_expr) => {
+                            let a = crate::resolve::pom_eval_const(after_expr, &|_| None)
+                                .unwrap_or_else(|_| {
+                                    ctx.errors.push(super::LowerError {
+                                        module: ctx.module_name.clone(),
+                                        what: "scope window `after` (an elaboration constant)",
+                                        name: format!("@ {analysis}"),
+                                    });
+                                    0.0
+                                });
+                            let d = match dur {
+                                None => f64::INFINITY,
+                                Some(d_expr) => {
+                                    crate::resolve::pom_eval_const(d_expr, &|_| None).unwrap_or_else(|_| {
+                                        ctx.errors.push(super::LowerError {
+                                            module: ctx.module_name.clone(),
+                                            what: "scope window `dur` (an elaboration constant)",
+                                            name: format!("@ {analysis}"),
+                                        });
+                                        0.0
+                                    })
+                                }
+                            };
+                            Some(ResolvedWindow { after: a, dur: d })
+                        }
+                    };
+                    let inner = ScopeCtx {
+                        analyses: {
+                            let mut a = scope.analyses.clone();
+                            if !a.iter().any(|x| x == analysis) {
+                                a.push(analysis.clone());
+                            }
+                            a
+                        },
+                        window,
+                    };
+                    margins.extend(Self::lower_scoped(stmts, &inner, ctx));
+                    // Every contained statement consumes a `target#<n>`
+                    // index slot (numbering crosses scopes).
+                    index += Self::count_statements(stmts);
                 }
                 PomConstraintStmt::Cover { .. } | PomConstraintStmt::CoverCross { .. } => {}
             }
         }
         margins
+    }
+
+    /// The number of statements in a scope group's tree (for
+    /// `target#<n>` numbering: every statement, at any depth, consumes
+    /// one index).
+    fn count_statements(stmts: &[PomConstraintStmt]) -> usize {
+        stmts
+            .iter()
+            .map(|s| match s {
+                PomConstraintStmt::Scope { stmts, .. } => 1 + Self::count_statements(stmts),
+                _ => 1,
+            })
+            .sum()
     }
 
     /// Lower every `cover`/`cover cross` of `stmts` (T33's shape): a
@@ -237,6 +319,12 @@ impl ConstraintLowering {
         let mut points = Vec::new();
         let mut crosses = Vec::new();
         for stmt in stmts {
+            if let PomConstraintStmt::Scope { stmts: inner, .. } = stmt {
+                let (p, c) = Self::lower_cover(inner, ctx);
+                points.extend(p);
+                crosses.extend(c);
+                continue;
+            }
             match stmt {
                 PomConstraintStmt::Cover { name, expr, bins, .. } => {
                     points.push(LoweredCoverPoint {

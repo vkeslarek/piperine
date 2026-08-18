@@ -86,6 +86,10 @@ impl Elaborator {
         let mut vars = Vec::new();
         let mut events: Vec<String> = Vec::new();
         let mut constraints: Vec<crate::pom::PomConstraintStmt> = Vec::new();
+        // Labels seen so far (all kinds, all blocks, any scope depth) —
+        // the E4008 duplicate check's accumulator; one namespace for the
+        // whole module.
+        let mut constraint_labels: Vec<(String, Option<miette::SourceSpan>)> = Vec::new();
         let mut gates: Vec<crate::pom::GateInstance> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
@@ -298,78 +302,11 @@ impl Elaborator {
                 // codegen `resolve` stage's job, exactly as for the
                 // analog body.
                 ModuleItem::Constraint(c) => {
-                    use crate::ast::ConstraintStmt as Cs;
                     for stmt in &c.stmts {
-                        let lowered = match stmt {
-                            Cs::Require(req) => crate::pom::PomConstraintStmt::Require(
-                                crate::pom::PomRequire {
-                                    span: Some(to_miette_span(req.span)),
-                                    name: req.name.clone(),
-                                    pred: req.pred.clone(),
-                                    tol: req.tol.clone(),
-                                },
-                            ),
-                            Cs::Var { span, name, expr, .. } => {
-                                crate::pom::PomConstraintStmt::Var {
-                                    span: Some(to_miette_span(*span)),
-                                    name: name.clone(),
-                                    expr: expr.clone(),
-                                }
-                            }
-                            Cs::Target { span, expr, cmp, level, tol, .. } => {
-                                crate::pom::PomConstraintStmt::Target {
-                                    span: Some(to_miette_span(*span)),
-                                    expr: expr.clone(),
-                                    cmp: *cmp,
-                                    level: level.clone(),
-                                    tol: tol.clone(),
-                                }
-                            }
-                            Cs::Cover { span, name, expr, bins, .. } => {
-                                crate::pom::PomConstraintStmt::Cover {
-                                    span: Some(to_miette_span(*span)),
-                                    name: name.clone(),
-                                    expr: expr.clone(),
-                                    bins: bins.clone(),
-                                }
-                            }
-                            Cs::CoverCross { span, name, points, .. } => {
-                                crate::pom::PomConstraintStmt::CoverCross {
-                                    span: Some(to_miette_span(*span)),
-                                    name: name.clone(),
-                                    points: points.clone(),
-                                }
-                            }
-                        };
-                        if let Some(name) = lowered.label() {
-                            if let Some(first) = constraints
-                                .iter()
-                                .find(|s| s.label() == Some(name))
-                                .and_then(|s| s.label_span())
-                            {
-                                return Err(ElabError::from(
-                                    ElabErrorKind::ConstraintLabelDuplicate {
-                                        name: name.to_string(),
-                                        module: decl.name.clone(),
-                                        first: Some(first),
-                                        second: lowered.label_span(),
-                                    },
-                                ));
-                            }
-                        }
-                        constraints.push(lowered);
+                        lower_constraint_stmt(stmt, &decl.name, &mut constraints, &mut constraint_labels)?;
                     }
                 }
-                // Gate primitives, Annex A.4.2 (LRMC-C7-13, T39). The 12
-                // digital gate keywords (and/nand/or/nor/xor/xnor/buf/not/
-                // bufif0/bufif1/notif0/notif1) reach the POM; the 12
-                // switch-level keywords (nmos/pmos/cmos/r{n,p,c}mos/
-                // pullup/pulldown/tran/rtran/tranif{0,1}/rtranif{0,1})
-                // have no `piperine-codegen::kernel::digital::gates::
-                // GatePrimitive` counterpart (switch-level device physics,
-                // not a truth table) and fail loud naming the gap rather
-                // than silently dropping — same "fail loud, never a
-                // no-op" rule the flattener's own event dispatch follows.
+
                 ModuleItem::Gate(g) => {
                     if is_switch_level_gate(g.kind) {
                         return Err(ElabError::from(ElabErrorKind::Other(format!(
@@ -1195,6 +1132,91 @@ fn var_kind_value_type(kind: VarKind) -> ValueType {
 ///
 /// A `[msb:lsb]` range widens the scalar type into `ValueType::Array`,
 /// same width computation as `declarator_net_type` uses for nets/ports.
+
+/// Lower one authored constraint statement onto the POM (recursive at
+/// scope groups), appending to `out` in authored order. Duplicate labels
+/// fail loud E4008 across kinds and across scope nesting.
+fn lower_constraint_stmt(
+    stmt: &crate::ast::ConstraintStmt,
+    module: &str,
+    out: &mut Vec<crate::pom::PomConstraintStmt>,
+    seen: &mut Vec<(String, Option<miette::SourceSpan>)>,
+) -> Result<(), ElabError> {
+    use crate::ast::ConstraintStmt as Cs;
+    use crate::pom::PomConstraintStmt as Ps;
+    let lowered: Ps = match stmt {
+        Cs::Require(req) => Ps::Require(crate::pom::PomRequire {
+            span: Some(to_miette_span(req.span)),
+            name: req.name.clone(),
+            pred: req.pred.clone(),
+            tol: req.tol.clone(),
+        }),
+        Cs::Var { span, name, expr, .. } => Ps::Var {
+            span: Some(to_miette_span(*span)),
+            name: name.clone(),
+            expr: expr.clone(),
+        },
+        Cs::Target { span, expr, cmp, level, tol, .. } => Ps::Target {
+            span: Some(to_miette_span(*span)),
+            expr: expr.clone(),
+            cmp: *cmp,
+            level: level.clone(),
+            tol: tol.clone(),
+        },
+        Cs::Cover { span, name, expr, bins, .. } => Ps::Cover {
+            span: Some(to_miette_span(*span)),
+            name: name.clone(),
+            expr: expr.clone(),
+            bins: bins.clone(),
+        },
+        Cs::CoverCross { span, name, points, .. } => Ps::CoverCross {
+            span: Some(to_miette_span(*span)),
+            name: name.clone(),
+            points: points.clone(),
+        },
+        Cs::Scope { span, analysis, window, stmts, .. } => {
+            // A scope group carries no label of its own; its contained
+            // statements run the same duplicate check against every
+            // statement seen so far, inside or outside a scope.
+            let mut inner = Vec::new();
+            for s in stmts {
+                lower_constraint_stmt(s, module, &mut inner, seen)?;
+            }
+            Ps::Scope {
+                span: Some(to_miette_span(*span)),
+                analysis: match analysis {
+                    crate::ast::ScopeAnalysis::Dc => "dc",
+                    crate::ast::ScopeAnalysis::Tran => "tran",
+                    crate::ast::ScopeAnalysis::Ac => "ac",
+                }
+                .to_string(),
+                after: window.as_ref().map(|w| w.after.clone()),
+                dur: window.as_ref().and_then(|w| w.dur.clone()),
+                stmts: inner,
+            }
+        }
+    };
+    if let Some(name) = lowered.label() {
+        if let Some((_, first)) = seen.iter().find(|(n, _)| n == name) {
+            return Err(ElabError::from(ElabErrorKind::ConstraintLabelDuplicate {
+                name: name.to_string(),
+                module: module.to_string(),
+                first: *first,
+                second: lowered.label_span(),
+            }));
+        }
+    }
+    // Register this statement's labels (scope groups register their
+    // contained labels too, so later duplicates see into the group).
+    lowered.for_each_label(&mut |s| {
+        if let Some(name) = s.label() {
+            seen.push((name.to_string(), s.label_span()));
+        }
+    });
+    out.push(lowered);
+    Ok(())
+}
+
 fn var_declarator_to_var(
     d: &Declarator,
     ty: ValueType,

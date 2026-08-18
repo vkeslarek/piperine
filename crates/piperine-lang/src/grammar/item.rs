@@ -772,113 +772,7 @@ impl Grammar {
         self.expect_kw("begin")?;
         let mut stmts = Vec::new();
         while !self.at_kw("end") {
-            let stmt_doc = self.doc_at(self.peek_span());
-            let stmt_start = self.peek_span();
-            if self.at_kw("require") {
-                stmts.push(ConstraintStmt::Require(self.parse_require_stmt()?));
-            } else if self.at_kw("var") {
-                self.bump();
-                let (name, name_span) = self.expect_ident()?;
-                Keywords::expect_identifier(&name, name_span)?;
-                self.expect_punct("=")?;
-                let expr = self.parse_expr()?;
-                let end = self.expect_punct(";")?;
-                stmts.push(ConstraintStmt::Var {
-                    span: PreprocessedSpan::new(stmt_start.start, end.end),
-                    doc: stmt_doc,
-                    name,
-                    expr,
-                });
-            } else if self.at_kw("target") {
-                // `target <comparison> [tol <scale>];` — the comparison is
-                // a single `a <= b` / `a >= b` expression (the expression
-                // parser owns the operator, so splitting it into pieces
-                // here would fight precedence); the lowering decomposes
-                // the comparison into operand/level/cmp.
-                self.bump();
-                let cmp_expr = self.parse_expr()?;
-                let (expr, cmp, level) = match cmp_expr {
-                    Expr::Binary { op: crate::ast::BinOp::Le, lhs, rhs, .. } => (*lhs, TargetCmp::Le, *rhs),
-                    Expr::Binary { op: crate::ast::BinOp::Ge, lhs, rhs, .. } => (*lhs, TargetCmp::Ge, *rhs),
-                    _ => {
-                        return Err(self.unexpected(
-                            "a `<=`/`>=` comparison (`target a <= level [tol scale];`)".to_string(),
-                        ));
-                    }
-                };
-                let tol = if self.at_kw("tol") {
-                    self.bump();
-                    Some(self.parse_expr()?)
-                } else {
-                    None
-                };
-                let end = self.expect_punct(";")?;
-                stmts.push(ConstraintStmt::Target {
-                    span: PreprocessedSpan::new(stmt_start.start, end.end),
-                    doc: stmt_doc,
-                    expr,
-                    cmp,
-                    level,
-                    tol,
-                });
-            } else if self.at_kw("cover") {
-                self.bump();
-                if self.at_kw("cross") {
-                    self.bump();
-                    let (name, name_span) = self.expect_ident()?;
-                    Keywords::expect_identifier(&name, name_span)?;
-                    self.expect_punct(":")?;
-                    let mut points = vec![self.expect_ident()?.0];
-                    while self.eat_punct(",") {
-                        points.push(self.expect_ident()?.0);
-                    }
-                    let end = self.expect_punct(";")?;
-                    stmts.push(ConstraintStmt::CoverCross {
-                        span: PreprocessedSpan::new(stmt_start.start, end.end),
-                        doc: stmt_doc,
-                        name,
-                        points,
-                    });
-                } else {
-                    let (name, name_span) = self.expect_ident()?;
-                    Keywords::expect_identifier(&name, name_span)?;
-                    self.expect_punct(":")?;
-                    let expr = self.parse_expr()?;
-                    self.expect_kw("bins")?;
-                    let bins = if self.eat_punct("[") {
-                        let lo = self.parse_expr()?;
-                        self.expect_punct(":")?;
-                        let step = self.parse_expr()?;
-                        self.expect_punct(":")?;
-                        let hi = self.parse_expr()?;
-                        self.expect_punct("]")?;
-                        CoverBins::Range { lo, step, hi }
-                    } else {
-                        self.expect_kw("in")?;
-                        self.expect_punct("{")?;
-                        let mut elems = vec![self.parse_expr()?];
-                        while self.eat_punct(",") {
-                            elems.push(self.parse_expr()?);
-                        }
-                        self.expect_punct("}")?;
-                        CoverBins::Set(elems)
-                    };
-                    let end = self.expect_punct(";")?;
-                    stmts.push(ConstraintStmt::Cover {
-                        span: PreprocessedSpan::new(stmt_start.start, end.end),
-                        doc: stmt_doc,
-                        name,
-                        expr,
-                        bins,
-                    });
-                }
-            } else {
-                return Err(self.unexpected(
-                    "a constraint statement (`require name : predicate;`, `var name = expr;`, \
-                     `target expr <=|>= level [tol scale];`, `cover name : expr bins …;`, \
-                     `cover cross name : p1, p2;`)".to_string(),
-                ));
-            }
+            stmts.push(self.parse_constraint_stmt(false)?);
         }
         let end = self.expect_kw("end")?;
         Ok(ConstraintBlockDecl {
@@ -889,10 +783,172 @@ impl Grammar {
         })
     }
 
-    /// `require <name> : <predicate> [tol <scale>] ;` — one named
-    /// per-point constraint. The label must be a plain identifier (an
-    /// Annex B keyword is rejected with a typed error, §2.8.2); `tol` is
-    /// a contextual keyword naming the normalization scale.
+    /// One statement of a constraint block. `in_scope` is `true` inside
+    /// an `@ … { … }` group — nesting another scope there is a loud
+    /// error (no semantics for combined scopes yet).
+    fn parse_constraint_stmt(&mut self, in_scope: bool) -> Result<ConstraintStmt, ParseError> {
+        let stmt_doc = self.doc_at(self.peek_span());
+        let stmt_start = self.peek_span();
+        if self.at_kw("require") {
+            Ok(ConstraintStmt::Require(self.parse_require_stmt()?))
+        } else if self.at_kw("var") {
+            self.bump();
+            let (name, name_span) = self.expect_ident()?;
+            Keywords::expect_identifier(&name, name_span)?;
+            self.expect_punct("=")?;
+            let expr = self.parse_expr()?;
+            let end = self.expect_punct(";")?;
+            Ok(ConstraintStmt::Var {
+                span: PreprocessedSpan::new(stmt_start.start, end.end),
+                doc: stmt_doc,
+                name,
+                expr,
+            })
+        } else if self.at_kw("target") {
+            // `target <comparison> [tol <scale>];` — the comparison is
+            // a single `a <= b` / `a >= b` expression (the expression
+            // parser owns the operator); the lowering decomposes it.
+            self.bump();
+            let cmp_expr = self.parse_expr()?;
+            let (expr, cmp, level) = match cmp_expr {
+                Expr::Binary { op: crate::ast::BinOp::Le, lhs, rhs, .. } => (*lhs, TargetCmp::Le, *rhs),
+                Expr::Binary { op: crate::ast::BinOp::Ge, lhs, rhs, .. } => (*lhs, TargetCmp::Ge, *rhs),
+                _ => {
+                    return Err(self.unexpected(
+                        "a `<=`/`>=` comparison (`target a <= level [tol scale];`)".to_string(),
+                    ));
+                }
+            };
+            let tol = if self.at_kw("tol") {
+                self.bump();
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            let end = self.expect_punct(";")?;
+            Ok(ConstraintStmt::Target {
+                span: PreprocessedSpan::new(stmt_start.start, end.end),
+                doc: stmt_doc,
+                expr,
+                cmp,
+                level,
+                tol,
+            })
+        } else if self.at_kw("cover") {
+            self.bump();
+            if self.at_kw("cross") {
+                self.bump();
+                let (name, name_span) = self.expect_ident()?;
+                Keywords::expect_identifier(&name, name_span)?;
+                self.expect_punct(":")?;
+                let mut points = vec![self.expect_ident()?.0];
+                while self.eat_punct(",") {
+                    points.push(self.expect_ident()?.0);
+                }
+                let end = self.expect_punct(";")?;
+                Ok(ConstraintStmt::CoverCross {
+                    span: PreprocessedSpan::new(stmt_start.start, end.end),
+                    doc: stmt_doc,
+                    name,
+                    points,
+                })
+            } else {
+                let (name, name_span) = self.expect_ident()?;
+                Keywords::expect_identifier(&name, name_span)?;
+                self.expect_punct(":")?;
+                let expr = self.parse_expr()?;
+                self.expect_kw("bins")?;
+                let bins = if self.eat_punct("[") {
+                    let lo = self.parse_expr()?;
+                    self.expect_punct(":")?;
+                    let step = self.parse_expr()?;
+                    self.expect_punct(":")?;
+                    let hi = self.parse_expr()?;
+                    self.expect_punct("]")?;
+                    CoverBins::Range { lo, step, hi }
+                } else {
+                    self.expect_kw("in")?;
+                    self.expect_punct("{")?;
+                    let mut elems = vec![self.parse_expr()?];
+                    while self.eat_punct(",") {
+                        elems.push(self.parse_expr()?);
+                    }
+                    self.expect_punct("}")?;
+                    CoverBins::Set(elems)
+                };
+                let end = self.expect_punct(";")?;
+                Ok(ConstraintStmt::Cover {
+                    span: PreprocessedSpan::new(stmt_start.start, end.end),
+                    doc: stmt_doc,
+                    name,
+                    expr,
+                    bins,
+                })
+            }
+        } else if self.at_punct("@") {
+            if in_scope {
+                return Err(self.unexpected(
+                    "a non-scope statement (nesting `@ … { … }` groups has no semantics)".to_string(),
+                ));
+            }
+            self.bump(); // `@`
+            let (word, _) = self.expect_ident()?;
+            let analysis = match word.as_str() {
+                "dc" => ScopeAnalysis::Dc,
+                "tran" => ScopeAnalysis::Tran,
+                "ac" => ScopeAnalysis::Ac,
+                other => {
+                    return Err(self.unexpected(format!(
+                        "an analysis name after `@` (dc, tran, ac) — `{other}` is not one"
+                    )));
+                }
+            };
+            let window = if self.eat_punct("(") {
+                let (name, _) = self.expect_ident()?;
+                if name != "after" {
+                    return Err(self.unexpected(
+                        "the window form `after = expr[, dur = expr]` (after comes first)".to_string(),
+                    ));
+                }
+                self.expect_punct("=")?;
+                let after = self.parse_expr()?;
+                let dur = if self.eat_punct(",") {
+                    let (name, _) = self.expect_ident()?;
+                    if name != "dur" {
+                        return Err(self.unexpected("the window's second field is `dur`".to_string()));
+                    }
+                    self.expect_punct("=")?;
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                self.expect_punct(")")?;
+                Some(ScopeWindow { after, dur })
+            } else {
+                None
+            };
+            self.expect_punct("{")?;
+            let mut stmts = Vec::new();
+            while !self.at_punct("}") {
+                stmts.push(self.parse_constraint_stmt(true)?);
+            }
+            let end = self.expect_punct("}")?;
+            Ok(ConstraintStmt::Scope {
+                span: PreprocessedSpan::new(stmt_start.start, end.end),
+                doc: stmt_doc,
+                analysis,
+                window,
+                stmts,
+            })
+        } else {
+            Err(self.unexpected(
+                "a constraint statement (`require name : predicate;`, `var name = expr;`, \
+                 `target expr <=|>= level [tol scale];`, `cover name : expr bins …;`, \
+                 `cover cross name : p1, p2;`, `@ dc|tran|ac [(after…, dur…)] { … }`)".to_string(),
+            ))
+        }
+    }
+
     fn parse_require_stmt(&mut self) -> Result<RequireDecl, ParseError> {
         let doc = self.doc_at(self.peek_span());
         let start = self.expect_kw("require")?;

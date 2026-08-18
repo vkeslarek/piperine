@@ -108,6 +108,29 @@ pub fn classify_margin_gradient(
         let Some(module) = design.module(instance.module_name()) else { continue };
         let analog_instance = info.instances.iter().find(|i| i.label == instance.name());
         for (stmt_index, stmt) in module.constraints().iter().enumerate() {
+            if let piperine_lang::pom::PomConstraintStmt::Scope { stmts: inner, analysis, .. } = stmt {
+                // A scoped margin's gradient is analysis-bound: `@ ac`
+                // scopes are AcDefined, `@ tran` EventDetected, `@ dc`
+                // pointwise like an unscoped require. Descend and let the
+                // contained statements classify (windows are tran-only
+                // refinements of EventDetected).
+                let _ = analysis;
+                for s in inner {
+                    if let piperine_lang::pom::PomConstraintStmt::Require(r) = s
+                        && (r.name == margin_name
+                            || format!("{}.{}", instance.name(), r.name) == margin_name)
+                    {
+                        if analysis == "ac" {
+                            return Ok(MarginDifferentiability::AcDefined);
+                        }
+                        if analysis == "tran" {
+                            return Ok(MarginDifferentiability::EventDetected);
+                        }
+                        matches.push((instance.name().to_string(), s));
+                    }
+                }
+                continue;
+            }
             let Some(label) = stmt.label().map(str::to_string).or_else(|| {
                 // A target is unlabeled — `target#<stmt-index>`, matching
                 // the lowering's naming.
@@ -202,7 +225,7 @@ fn margin_value_expr(stmt: &piperine_lang::pom::PomConstraintStmt) -> Option<&Ex
         }
         S::Var { expr, .. } => Some(expr),
         S::Target { expr, .. } => Some(expr),
-        S::Cover { .. } | S::CoverCross { .. } => None,
+        S::Cover { .. } | S::CoverCross { .. } | S::Scope { .. } => None,
     }
 }
 

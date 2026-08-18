@@ -157,20 +157,46 @@ pub enum PomConstraintStmt {
         name: String,
         points: Vec<String>,
     },
+    /// `@ <analysis> [(after, dur)] { statements }` — an analysis-scoped
+    /// group (DVC-19/20): contained statements evaluate only under the
+    /// named analysis, and (for `@ tran`) only inside the window — the
+    /// codegen lowering propagates `analyses`/`window` into the contained
+    /// margins. `dur: None` is open-ended.
+    Scope {
+        span: Option<miette::SourceSpan>,
+        analysis: String,
+        after: Option<crate::ast::Expr>,
+        dur: Option<crate::ast::Expr>,
+        stmts: Vec<PomConstraintStmt>,
+    },
 }
 
 impl PomConstraintStmt {
     /// The statement's authored label, if it has one — requires, vars,
     /// and covers are named; a target is unlabeled (`target#<n>` is
-    /// assigned by the lowering). The duplicate-label check (E4008)
-    /// consults this across kinds.
+    /// assigned by the lowering); a scope group has none of its own (its
+    /// contained statements keep theirs). The duplicate-label check
+    /// (E4008) consults this across kinds.
     pub fn label(&self) -> Option<&str> {
         match self {
             PomConstraintStmt::Require(r) => Some(&r.name),
             PomConstraintStmt::Var { name, .. } => Some(name),
             PomConstraintStmt::Cover { name, .. } => Some(name),
             PomConstraintStmt::CoverCross { name, .. } => Some(name),
-            PomConstraintStmt::Target { .. } => None,
+            PomConstraintStmt::Target { .. } | PomConstraintStmt::Scope { .. } => None,
+        }
+    }
+
+    /// Recursively visit this statement's labels (scope groups descend
+    /// into their contained statements) — the duplicate check's walker.
+    pub fn for_each_label<'a>(&'a self, f: &mut impl FnMut(&'a PomConstraintStmt)) {
+        match self {
+            PomConstraintStmt::Scope { stmts, .. } => {
+                for s in stmts {
+                    s.for_each_label(f);
+                }
+            }
+            _ => f(self),
         }
     }
 
@@ -182,7 +208,8 @@ impl PomConstraintStmt {
             PomConstraintStmt::Var { span, .. }
             | PomConstraintStmt::Target { span, .. }
             | PomConstraintStmt::Cover { span, .. }
-            | PomConstraintStmt::CoverCross { span, .. } => *span,
+            | PomConstraintStmt::CoverCross { span, .. }
+            | PomConstraintStmt::Scope { span, .. } => *span,
         }
     }
 }

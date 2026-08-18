@@ -403,6 +403,36 @@ pub enum ConstraintStmt {
         name: String,
         points: Vec<String>,
     },
+    /// `@ <analysis> [(after = e[, dur = e])] { statements }` — an
+    /// analysis-scoped group (DVC-19/20): the contained statements are
+    /// evaluated only when the running analysis matches, and (for
+    /// `@ tran`) only at accepted points inside `[after, after + dur)`
+    /// — `dur` absent is open-ended. Nesting is a loud parse error (no
+    /// semantics); `@`/`after`/`dur` are contextual keywords here.
+    Scope {
+        span: PreprocessedSpan,
+        doc: Option<String>,
+        analysis: ScopeAnalysis,
+        window: Option<ScopeWindow>,
+        stmts: Vec<ConstraintStmt>,
+    },
+}
+
+/// The analysis a [`ConstraintStmt::Scope`] group belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeAnalysis {
+    Dc,
+    Tran,
+    Ac,
+}
+
+/// A scope group's temporal window — `[after, after + dur)`, `dur`
+/// absent = open-ended (`[after, ∞)`). Const expressions; evaluated at
+/// lowering.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScopeWindow {
+    pub after: Expr,
+    pub dur: Option<Expr>,
 }
 
 /// A `target`'s comparison direction (the two forms with a signed margin).

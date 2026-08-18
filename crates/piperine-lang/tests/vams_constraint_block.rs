@@ -390,3 +390,74 @@ fn a_var_referencing_an_unknown_name_fails_loud_at_compile() {
     };
     assert!(err.contains("nope") || err.contains("unresolved"), "names it: {err}");
 }
+
+// ── @ dc/@ tran/@ ac scoping groups (`constraint-scoping`) ────────────────
+
+#[test]
+fn a_scope_group_parses_and_carries_analysis_and_window() {
+    let block = constraint_block(
+        "constraint begin
+             @ tran(after = 5e-3, dur = 2e-3) { require vds : V(p, n) <= 0.4; }
+             @ dc { require head : V(p, n) <= 1.0; }
+         end",
+    );
+    let ConstraintStmt::Scope { analysis: ScopeAnalysis::Tran, window: Some(w), stmts, .. } =
+        &block.stmts[0]
+    else {
+        panic!("a tran scope group, got {:?}", block.stmts[0])
+    };
+    assert!(matches!(w.after, Expr::Number { .. }));
+    assert!(w.dur.is_some());
+    assert_eq!(stmts.len(), 1);
+    assert!(matches!(&block.stmts[1], ConstraintStmt::Scope { analysis: ScopeAnalysis::Dc, window: None, .. }));
+}
+
+#[test]
+fn open_ended_window_and_loud_errors() {
+    // after without dur is open-ended.
+    let block = constraint_block("constraint begin @ tran(after = 1.0) { require a : V(p, n) <= 1.0; } end");
+    assert!(matches!(&block.stmts[0], ConstraintStmt::Scope { window: Some(w), .. } if w.dur.is_none()));
+
+    // Unknown analysis, nesting, dur without after: all loud.
+    for src in [
+        "constraint begin @ noise { require a : V(p, n) <= 1.0; } end",
+        "constraint begin @ dc { @ tran { require a : V(p, n) <= 1.0; } } end",
+        "constraint begin @ tran(dur = 1.0) { require a : V(p, n) <= 1.0; } end",
+    ] {
+        let full = format!("module m(); {src} endmodule");
+        assert!(
+            grammar(&full).parse_module_decl().is_err(),
+            "must fail loud: {src}"
+        );
+    }
+}
+
+#[test]
+fn scoped_statements_reach_the_pom_and_duplicate_labels_cross_scopes() {
+    let d = elab(r#"
+        module dut (inout electrical p, inout electrical n);
+            analog begin
+                I(p, n) <+ V(p, n) / 1e3;
+            end
+            constraint begin
+                @ dc { require head : V(p, n) <= 1.0; }
+            end
+        endmodule
+    "#);
+    let cs = d.module("dut").expect("dut").constraints();
+    assert!(matches!(&cs[0], piperine_lang::pom::PomConstraintStmt::Scope { analysis, .. } if analysis == "dc"));
+
+    let err = parse_and_elaborate(
+        r#"
+        module dut (inout electrical p, inout electrical n);
+            constraint begin
+                require head : V(p, n) <= 1.0;
+                @ dc { require head : V(p, n) <= 2.0; }
+            end
+        endmodule
+        "#,
+        &SourceMap::dummy(),
+    )
+    .expect_err("duplicate across scopes fails loud");
+    assert!(err.to_string().contains("head"));
+}
