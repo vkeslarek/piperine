@@ -68,10 +68,12 @@ module Top ();
 endmodule
 "#;
 
-/// BLOCKED on the deferred constraint `var`/reduced-metric statement
-/// (constraints-on-vams Out-of-Scope): `var ugbw : Real =
-/// ac_unity_gain_freq(…)` has no `constraint begin … end` spelling yet,
-/// so this fixture stays in PHDL and fails at parse.
+/// BLOCKED on the dv-gradients classifier (`classify_margin_gradient` is
+/// still the always-refuse stub) and the AC adjoint: a reduced metric
+/// (`var ugbw = ac_unity_gain_freq(…)`) now parses under `constraint
+/// begin`, but differentiating a host-side reduction needs the deferred
+/// gradient surface — the fixture stays PHDL and fails at parse until
+/// then, its executable specification intact.
 ///
 /// A single-pole stage with reduced AC vars — refuses loud on the host
 /// surface, naming the AC-adjoint gap.

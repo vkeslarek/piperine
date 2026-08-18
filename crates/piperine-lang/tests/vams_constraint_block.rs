@@ -34,8 +34,10 @@ fn block_with_a_require_parses_as_a_module_item() {
     let block = constraint_block(
         "constraint begin require vgs_ox : abs(V(g, s)) <= vgs_max; end",
     );
-    assert_eq!(block.requires.len(), 1);
-    let req = &block.requires[0];
+    assert_eq!(block.stmts.len(), 1);
+    let piperine_lang::ast::ConstraintStmt::Require(req) = &block.stmts[0] else {
+        panic!("a require statement")
+    };
     assert_eq!(req.name, "vgs_ox");
     assert!(req.tol.is_none(), "no tol clause authored");
     assert!(
@@ -53,8 +55,15 @@ fn several_requires_parse_in_authored_order() {
             require vds_ox : abs(V(d, s)) <= vds_max;
          end",
     );
-    let names: Vec<&str> = block.requires.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names, vec!["vgs_ox", "vds_ox"], "authored order preserved");
+    let requires: Vec<&str> = block
+        .stmts
+        .iter()
+        .filter_map(|s| match s {
+            ConstraintStmt::Require(r) => Some(r.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(requires, vec!["vgs_ox", "vds_ox"], "authored order preserved");
 }
 
 #[test]
@@ -62,7 +71,9 @@ fn optional_tol_clause_parses_with_its_expression() {
     let block = constraint_block(
         "constraint begin require head : V(p, n) <= hi tol 0.1; end",
     );
-    let req = &block.requires[0];
+    let ConstraintStmt::Require(req) = &block.stmts[0] else {
+        panic!("a require statement")
+    };
     let tol = req.tol.as_ref().expect("tol clause authored");
     assert!(
         matches!(tol, Expr::Number { .. }),
@@ -79,15 +90,14 @@ fn attributes_on_the_block_are_carried() {
 }
 
 #[test]
-fn a_non_require_statement_is_a_typed_error_naming_the_token() {
-    let src = "constraint begin target ac_unity_gain_freq(V(out)) >= 10e6; end";
+fn an_unknown_statement_is_a_typed_error_naming_what_is_legal() {
+    let src = "constraint begin expect_this : V(p, n) <= 1.0; end";
     let full = format!("module m(); {src} endmodule");
     let err = grammar(&full)
         .parse_module_decl()
-        .expect_err("non-require statement must fail loud");
+        .expect_err("an unknown statement must fail loud");
     let msg = err.to_string();
-    assert!(msg.contains("require"), "the error names what is legal: {msg}");
-    assert!(!msg.is_empty(), "typed error, not a silent skip");
+    assert!(msg.contains("constraint statement"), "the error names the statement forms: {msg}");
 }
 
 #[test]
@@ -144,7 +154,7 @@ fn a_require_with_no_colon_is_an_error() {
 #[test]
 fn an_empty_block_parses_with_no_requires() {
     let block = constraint_block("constraint begin end");
-    assert!(block.requires.is_empty(), "no statements, no requires");
+    assert!(block.stmts.is_empty(), "no statements");
 }
 
 // ── elaboration onto the POM ───────────────────────────────────────────────
@@ -181,10 +191,13 @@ fn requires_are_visible_on_the_pom_in_authored_order() {
     let m = d.module("dut").expect("dut elaborated");
     let cs = m.constraints();
     assert_eq!(cs.len(), 2, "both requires land on the POM");
-    assert_eq!(cs[0].name, "head");
-    assert_eq!(cs[1].name, "lowlim");
-    assert!(cs[1].tol.is_some(), "the tol clause travels");
-    assert!(cs[0].span.is_some(), "provenance spans preserved");
+    assert_eq!(cs[0].label(), Some("head"));
+    assert_eq!(cs[1].label(), Some("lowlim"));
+    assert!(
+        matches!(&cs[1], piperine_lang::pom::PomConstraintStmt::Require(r) if r.tol.is_some()),
+        "the tol clause travels"
+    );
+    assert!(cs[0].label_span().is_some(), "provenance spans preserved");
 }
 
 #[test]
@@ -195,7 +208,7 @@ fn multiple_constraint_blocks_compose_none_dropped() {
             constraint begin require a2 : V(p, n) >= -1.0; end
         endmodule
     "#);
-    let names: Vec<&str> = d.module("dut").unwrap().constraints().iter().map(|r| r.name.as_str()).collect();
+    let names: Vec<&str> = d.module("dut").unwrap().constraints().iter().filter_map(|s| s.label()).collect();
     assert_eq!(names, vec!["a1", "a2"], "both blocks' requires apply in authored order");
 }
 
@@ -240,4 +253,92 @@ fn an_uninstantiated_constrained_module_elaborates_silently() {
     // a constrained module that is never instantiated.
     let d = elab(CONSTRAINED);
     assert_eq!(d.module("dut").unwrap().constraints().len(), 2);
+}
+
+// ── var / target / cover statements (`constraint-statements`) ──────────────
+
+#[test]
+fn a_var_statement_parses_without_a_type_annotation() {
+    let block = constraint_block(
+        "constraint begin var ugbw = ac_unity_gain_freq(V(out, gnd)); end",
+    );
+    let ConstraintStmt::Var { name, .. } = &block.stmts[0] else {
+        panic!("a var statement, got {:?}", block.stmts[0])
+    };
+    assert_eq!(name, "ugbw");
+}
+
+#[test]
+fn a_target_parses_as_a_single_comparison_with_optional_tol() {
+    let block = constraint_block(
+        "constraint begin target ugbw >= 1e4 tol 1e3; end",
+    );
+    let ConstraintStmt::Target { expr, cmp, level, tol, .. } = &block.stmts[0] else {
+        panic!("a target statement, got {:?}", block.stmts[0])
+    };
+    assert!(matches!(expr, Expr::Ident { .. }), "the operand is the var read");
+    assert_eq!(*cmp, TargetCmp::Ge);
+    assert!(matches!(level, Expr::Number { .. }), "the level is a literal");
+    assert!(tol.is_some(), "the tol clause travels");
+}
+
+#[test]
+fn a_target_without_a_comparison_is_a_typed_error() {
+    let src = "constraint begin target ugbw; end";
+    let full = format!("module m(); {src} endmodule");
+    let err = grammar(&full).parse_module_decl().expect_err("a target needs <= or >=");
+    assert!(err.to_string().contains("comparison"), "names what is legal: {err}");
+}
+
+#[test]
+fn cover_range_and_set_bins_parse() {
+    let block = constraint_block(
+        "constraint begin
+             cover c1 : V(p, n) bins [0.0:1.0:3.0];
+             cover c2 : V(p, n) bins in {0.25, 0.75};
+             cover cross joint : c1, c2;
+         end",
+    );
+    assert_eq!(block.stmts.len(), 3, "three statements in authored order");
+    assert!(matches!(&block.stmts[0], ConstraintStmt::Cover { name, bins: CoverBins::Range { .. }, .. } if name == "c1"));
+    assert!(matches!(&block.stmts[1], ConstraintStmt::Cover { name, bins: CoverBins::Set(_), .. } if name == "c2"));
+    assert!(matches!(&block.stmts[2], ConstraintStmt::CoverCross { name, points, .. } if name == "joint" && points.len() == 2));
+}
+
+#[test]
+fn statements_land_on_the_pom_in_authored_order_across_kinds() {
+    let d = elab(r#"
+        module dut (inout electrical p, inout electrical n);
+            parameter real hi = 0.4;
+            analog begin
+                I(p, n) <+ V(p, n) / 1e3;
+            end
+            constraint begin
+                var x = hi;
+                require head : V(p, n) <= hi;
+                target x <= hi;
+                cover c1 : V(p, n) bins [0.0:1.0:3.0];
+            end
+        endmodule
+    "#);
+    let cs = d.module("dut").expect("dut elaborated").constraints();
+    assert_eq!(cs.len(), 4, "all four kinds, one ordered list");
+    assert!(matches!(cs[0], piperine_lang::pom::PomConstraintStmt::Var { .. }));
+    assert!(matches!(cs[1], piperine_lang::pom::PomConstraintStmt::Require { .. }));
+    assert!(matches!(cs[2], piperine_lang::pom::PomConstraintStmt::Target { .. }));
+    assert!(matches!(cs[3], piperine_lang::pom::PomConstraintStmt::Cover { .. }));
+}
+
+#[test]
+fn a_duplicate_label_across_kinds_fails_loud() {
+    let msg = elab_err(r#"
+        module dut (inout electrical p, inout electrical n);
+            constraint begin
+                var head = 1.0;
+                require head : V(p, n) <= 1.0;
+            end
+        endmodule
+    "#);
+    assert!(msg.contains("head"), "names the duplicated label: {msg}");
+    assert!(msg.contains("duplicate"), "says what happened: {msg}");
 }

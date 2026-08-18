@@ -7,16 +7,12 @@
 //! digital-only instance has no margin because margins are an analog
 //! notion.
 //!
-//! **Migrated** (constraints-on-vams): the `require`-only divider fixture
-//! runs against the `constraint begin … end` producer. The two remaining
-//! red fixtures each name their blocker where they are declared:
-//! `STAGE_PHDL` needs the deferred constraint `var`/reduced-metric
-//! statement (`var ugbw : Real = ac_unity_gain_freq(…)`;
-//! constraints-on-vams Out-of-Scope), and `DIGITAL_PHDL` needs PHDL
-//! `Bit`-typed module vars (`var st : Bit = 0`) — module var initializers
-//! have no VAMS producer and `Bit` is PHDL's value layer. Those stay in
-//! PHDL and fail rather than being weakened, deleted, or `#[ignore]`d
-//! (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraint-statements): every fixture runs against the
+//! `constraint begin … end` producer — the reduced-`var` stage
+//! (`var ugbw = ac_unity_gain_freq(…);`) and the digital inverter (a
+//! plain `integer` register initialized at declaration — `integer st =
+//! 0;`, no PHDL `Bit` value layer needed since the assertions never
+//! exercise 1-bit width semantics).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
@@ -65,68 +61,74 @@ module Top ();
 endmodule
 "#;
 
-/// BLOCKED on the deferred constraint `var`/reduced-metric statement
-/// (constraints-on-vams Out-of-Scope): `var ugbw : Real =
-/// ac_unity_gain_freq(…)` has no `constraint begin … end` spelling yet,
-/// so this fixture stays in PHDL and fails at parse.
-///
 /// A gain stage with a reduced `var` (reduced_metrics.rs's fixture
 /// family): `ugbw` is evaluated host-side once per completed AC sweep —
 /// no other analysis defines it.
-const STAGE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const STAGE: &str = r#"`include "disciplines.vams"
+module Vac (inout electrical p, inout electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+module Stage (inout electrical inp, inout electrical out, inout electrical gnd);
+    parameter real gm = 0.1;
+    parameter real r = 1e3;
+    parameter real c = 1e-6;
+    analog begin
+        I(gnd, out) <+ gm * V(inp, gnd);
+        I(out, gnd) <+ V(out, gnd) / r;
+        I(out, gnd) <+ c * ddt(V(out, gnd));
+    end
+    constraint begin
+        var ugbw = ac_unity_gain_freq(V(out, gnd));
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    Stage x1 (.inp(in), .out(out), .gnd(gnd));
+endmodule
+"#;
 
-mod Vac(inout p: Electrical, inout n: Electrical) { param acmag: Real = 1.0; }
-analog Vac { V(p, n) <+ ac_stim(acmag, 0.0); }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Stage(inout inp: Electrical, inout out: Electrical, inout gnd: Electrical) {
-    param gm: Real = 0.1;
-    param r: Real = 1e3;
-    param c: Real = 1e-6;
-}
-analog Stage {
-    I(gnd, out) <+ gm * V(inp, gnd);
-    I(out, gnd) <+ V(out, gnd) / r;
-    I(out, gnd) <+ c * ddt(V(out, gnd));
-}
-constraint Stage {
-    var ugbw : Real = ac_unity_gain_freq(V(out, gnd));
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    x1 : Stage(.inp = in, .out = out, .gnd = gnd);
-}
-";
-
-/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer: `var st :
-/// Bit = 0;` is a module var initializer (a known gap) over PHDL's `Bit`
-/// value layer. This fixture stays in PHDL and fails at parse.
-///
-/// A digital-only inverter carrying a `require` over a digital quantity
-/// (the stdlib prelude supplies `Bit`/`posedge`): the module has no
-/// analog half, so the require produces no margin.
-const DIGITAL_PHDL: &str = "\
-use piperine::disciplines;
-mod Inv(input a: Bit, output y: Bit) { var st : Bit = 0; }
-digital Inv { y <- st; @ posedge(a) { st = a; } }
-constraint Inv { require ok : a <= 1; }
-
-mod Top() {
-    wire a : Bit;
-    wire y : Bit;
-    u1 : Inv(.a = a, .y = y);
-}
-";
+/// A digital-only inverter carrying a `require` over a digital quantity:
+/// the module has no analog half, so the require produces no margin. The
+/// register is a plain initialized `integer` — the assertions never
+/// exercise 1-bit width semantics, so PHDL's `Bit` value layer has no
+/// equivalent to miss here.
+const DIGITAL: &str = r#"`include "disciplines.vams"
+discipline logic;
+    domain discrete;
+enddiscipline
+module Inv (input logic a, output logic y);
+    integer st = 0;
+    always @(*) begin
+        y <= st;
+    end
+    always @(posedge a) begin
+        st <= a;
+    end
+    constraint begin
+        require ok : a <= 1;
+    end
+endmodule
+module Top ();
+    logic a, y;
+    Inv u1 (.a(a), .y(y));
+endmodule
+"#;
 
 fn compile(src: &str) -> Session {
     let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
@@ -190,12 +192,9 @@ fn unknown_constraint_name_lists_candidates() {
 /// analysis where it is not defined fails loud with "not defined in this
 /// analysis" — never an "unknown constraint" for a name the design
 /// declares, and never an invented `t = 0` value.
-///
-/// BLOCKED on the deferred constraint `var`/reduced-metric statement
-/// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
 #[test]
 fn a_reduced_var_read_outside_ac_is_not_defined_in_this_analysis() {
-    let mut session = compile(STAGE_PHDL);
+    let mut session = compile(STAGE);
     let op = session.op(&collect_config(), None).expect("op completes");
     for name in ["ugbw", "x1.ugbw"] {
         let err = op.margins().get(name).expect_err("a reduced var has no entry on an op result");
@@ -213,12 +212,9 @@ fn a_reduced_var_read_outside_ac_is_not_defined_in_this_analysis() {
 /// Spec P1 "validation_reports()" story / design §C4: a `require` over a
 /// digital quantity has no margin — asking for one fails loud with
 /// "margins are an analog notion", not "unknown constraint".
-///
-/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer — see
-/// `DIGITAL_PHDL`.
 #[test]
 fn a_digital_require_has_no_margin_and_asking_for_one_is_loud() {
-    let mut session = compile(DIGITAL_PHDL);
+    let mut session = compile(DIGITAL);
     let trace = session
         .tran(1e-9, Some(1e-10), 0.0, &collect_config(), None, false, &[])
         .expect("collect completes");

@@ -6,24 +6,16 @@
 //! a sweep filling a known subset names the empty bins with a second run
 //! merging correctly.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `cover ... bins [...]` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraint-statements): the fixture runs against the
+//! `constraint begin … end` producer's `cover … bins […]` statement.
 
 use piperine_api::CoverageDatabase;
 use piperine_codegen::CircuitCompiler;
 use piperine_solver::prelude::{CircuitInstance, Context};
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+/// Self-contained inline natures/discipline (elaborates under
+/// `SourceMap::dummy()` regardless of the runner's CWD).
+const DISCIPLINE: &str = "nature Voltage; units = \"V\"; access = V; abstol = 1e-6; endnature\nnature Current; units = \"A\"; access = I; abstol = 1e-12; endnature\ndiscipline Electrical; potential Voltage; flow Current; enddiscipline";
 
 /// A source-driven resistor with a `cover` point over its own voltage,
 /// baked to a literal DC level: `V(p,n) bins [0.0:1.0:3.0]` is 4 bins
@@ -31,17 +23,25 @@ const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : R
 fn circuit_at(v: f64) -> CircuitInstance {
     let src = format!(
         "{DISCIPLINE}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = {v}; }}
-analog Vsrc {{ V(p, n) <- dc; }}
-mod Dut(inout p: Electrical, inout n: Electrical) {{}}
-analog Dut {{ I(p, n) <+ V(p, n) / 1e3; }}
-constraint Dut {{ cover c1 : V(p, n) bins [0.0:1.0:3.0]; }}
-mod Top() {{
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    v1 : Vsrc(.p = in, .n = gnd);
-    d1 : Dut(.p = in, .n = gnd);
-}}
+module Vsrc (inout Electrical p, inout Electrical n);
+    parameter real dc = {v};
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Dut (inout Electrical p, inout Electrical n);
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        cover c1 : V(p, n) bins [0.0:1.0:3.0];
+    end
+endmodule
+module Top ();
+    Electrical gnd, in;
+    Vsrc v1 (.p(in), .n(gnd));
+    Dut d1 (.p(in), .n(gnd));
+endmodule
 "
     );
     let design = piperine_lang::parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");

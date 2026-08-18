@@ -26,15 +26,21 @@ use piperine_lang::parse_and_elaborate;
 use piperine_solver::abi::{CircularArrayBuffer2, CoverPosture, Netlist, NodeIdentifier};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 
-const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }";
+/// Self-contained inline natures/discipline (elaborates under
+/// `SourceMap::dummy()` regardless of the runner's CWD).
+const DISCIPLINE: &str = "nature Voltage; units = \"V\"; access = V; abstol = 1e-6; endnature\nnature Current; units = \"A\"; access = I; abstol = 1e-12; endnature\ndiscipline Electrical; potential Voltage; flow Current; enddiscipline";
 
 fn dut_kernel(constraint: &str) -> Arc<AnalogKernel> {
     let src = format!(
         "{DISCIPLINE}
-mod Dut(inout p: Electrical, inout n: Electrical) {{ param hi: Real = 3.0; }}
-analog Dut {{ I(p, n) <+ V(p, n) / 1e3; }}
+module Dut (inout Electrical p, inout Electrical n);
+    parameter real hi = 3.0;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
 {constraint}
-"
+endmodule
+        "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
@@ -61,7 +67,7 @@ fn accept(inst: &mut AnalogInstance, v: f64, t: f64) {
 /// twice respectively, everything else at 0.
 #[test]
 fn a_cover_hit_is_a_counter_increment_via_the_pointwise_path() {
-    let kernel = dut_kernel("constraint Dut { cover c1 : V(p, n) bins [0.0:1.0:3.0]; }");
+    let kernel = dut_kernel("constraint begin cover c1 : V(p, n) bins [0.0:1.0:3.0]; end");
     let mut inst = instance("d1", kernel, vec![3.0]);
     assert_eq!(inst.cover_counts(), &[vec![0, 0, 0, 0]], "no accepted point yet");
 
@@ -78,7 +84,7 @@ fn a_cover_hit_is_a_counter_increment_via_the_pointwise_path() {
 /// error.
 #[test]
 fn a_value_outside_every_bin_is_not_counted() {
-    let kernel = dut_kernel("constraint Dut { cover c1 : V(p, n) bins [0.0:1.0:3.0]; }");
+    let kernel = dut_kernel("constraint begin cover c1 : V(p, n) bins [0.0:1.0:3.0]; end");
     let mut inst = instance("d1", kernel, vec![3.0]);
     accept(&mut inst, 99.0, 1e-9);
     assert_eq!(inst.cover_counts(), &[vec![0, 0, 0, 0]], "out-of-range values never hit a bin");
@@ -91,7 +97,7 @@ fn a_value_outside_every_bin_is_not_counted() {
 /// every bin at 0).
 #[test]
 fn cover_off_never_calls_the_coverage_kernel() {
-    let kernel = dut_kernel("constraint Dut { cover c1 : V(p, n) bins [0.0:1.0:3.0]; }");
+    let kernel = dut_kernel("constraint begin cover c1 : V(p, n) bins [0.0:1.0:3.0]; end");
     let mut inst = instance("d1", kernel, vec![3.0]);
 
     inst.set_cover_posture(CoverPosture::Off);
@@ -111,11 +117,11 @@ fn cover_off_never_calls_the_coverage_kernel() {
 #[test]
 fn cover_cross_combines_the_same_instants_per_point_bins() {
     let kernel = dut_kernel(
-        "constraint Dut {\n\
+        "constraint begin\n\
              cover c1 : V(p, n) bins [0.0:2.0:2.0];\n\
              cover c2 : V(p, n) bins [0.0:2.0:2.0];\n\
              cover cross joint : c1, c2;\n\
-         }",
+         end",
     );
     let mut inst = instance("d1", kernel, vec![3.0]);
     assert_eq!(inst.cover_cross_counts(), &[vec![0, 0, 0, 0]]);
@@ -132,7 +138,7 @@ fn cover_cross_combines_the_same_instants_per_point_bins() {
 /// inspecting the (necessarily all-zero either way) counts.
 #[test]
 fn an_optimizer_loop_with_cover_off_leaves_the_database_untouched() {
-    let kernel = dut_kernel("constraint Dut { cover c1 : V(p, n) bins [0.0:1.0:3.0]; }");
+    let kernel = dut_kernel("constraint begin cover c1 : V(p, n) bins [0.0:1.0:3.0]; end");
     let mut inst = instance("d1", kernel, vec![3.0]);
     inst.set_cover_posture(CoverPosture::Off);
 
@@ -166,17 +172,25 @@ fn no_cover_allocates_nothing() {
 fn cover_off_end_to_end_through_a_real_transient() {
     let src = format!(
         "{DISCIPLINE}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 1.5; }}
-analog Vsrc {{ V(p, n) <- dc; }}
-mod Dut(inout p: Electrical, inout n: Electrical) {{}}
-analog Dut {{ I(p, n) <+ V(p, n) / 1e3; }}
-constraint Dut {{ cover c1 : V(p, n) bins [0.0:1.0:3.0]; }}
-mod Top() {{
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    v1 : Vsrc(.p = in, .n = gnd);
-    d1 : Dut(.p = in, .n = gnd);
-}}
+module Vsrc (inout Electrical p, inout Electrical n);
+    parameter real dc = 1.5;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Dut (inout Electrical p, inout Electrical n);
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        cover c1 : V(p, n) bins [0.0:1.0:3.0];
+    end
+endmodule
+module Top ();
+    Electrical gnd, in;
+    Vsrc v1 (.p(in), .n(gnd));
+    Dut d1 (.p(in), .n(gnd));
+endmodule
 "
     );
     let design = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elaborate");

@@ -13,7 +13,7 @@
 //! read.
 
 use piperine_codegen::device::CircuitBuildInfo;
-use piperine_lang::pom::Design;
+use piperine_lang::pom::{Design, PomConstraintStmt};
 use piperine_solver::prelude::{MarginKind, ReportedMargin};
 
 use crate::error::Error;
@@ -139,18 +139,14 @@ impl ConstraintCatalog {
     /// constraint label that produces no entry in a pointwise margins
     /// channel. An instance absent from `info.instances` has no analog
     /// kernel (digital-only — the builder registers analog instances only),
-    /// so its requires are digital; an analog instance's reduced
-    /// `var`/`target` is host-computed on AC results only (deferred with
-    /// dv-core's other statements — nothing lands in `not_defined` until
-    /// they exist, but the classification site stays). Pointwise `var`s
-    /// travel inside the margins that read them and are never readable by
-    /// name — they stay "unknown", catalogued nowhere.
-    ///
-    /// Core scope (`require` only, constraints-on-vams): every require on
-    /// an analog instance reaches the kernel's margin catalog, so the
-    /// digital list is the one that can fire — `MarginsResult::get` on a
-    /// digital-instance require then fails loud naming it rather than
-    /// claiming the constraint is unknown.
+    /// so its statements are digital; an analog instance's reduced
+    /// `var`/`target` is host-computed on AC results only (the reduced
+    /// statements live in `LoweredBody.constraints` but never reach the
+    /// kernel, D7 — they land in `not_defined` so a cross-analysis read
+    /// says "not defined in this analysis" rather than "unknown").
+    /// `cover`/`cover cross` labels have no margin at all and are skipped
+    /// (they live on the coverage channel). Targets are unlabeled
+    /// (`target#<n>`) and always kernel-or-reduced — catalogued nowhere.
     pub fn compute(design: &Design, info: &CircuitBuildInfo, top: &str) -> Self {
         let mut catalog = Self::default();
         let Some(flat) = design.flat_module(top) else { return catalog };
@@ -160,19 +156,49 @@ impl ConstraintCatalog {
                 continue;
             }
             let analog = info.instances.iter().find(|i| i.label == instance.name());
-            for req in module.constraints() {
-                let qualified = format!("{}.{}", instance.name(), req.name);
+            for stmt in module.constraints() {
+                let Some(label) = stmt.label() else { continue };
+                let qualified = format!("{}.{}", instance.name(), label);
                 let Some(built) = analog else {
                     catalog.digital.push(qualified);
                     continue;
                 };
-                let in_kernel = built.kernel.margin_catalog().iter().any(|m| m.label == req.name);
-                if !in_kernel {
-                    // A require that lowered but missed the kernel would be
-                    // a silent gap — record it as digital (no analog margin
-                    // exists to read) rather than letting it fall to
-                    // "unknown constraint" downstream.
-                    catalog.digital.push(qualified);
+                let in_kernel = built.kernel.margin_catalog().iter().any(|m| m.label == label);
+                if in_kernel {
+                    continue;
+                }
+                match stmt {
+                    PomConstraintStmt::Var { .. } => {
+                        // A pointwise var travels inside the margins that
+                        // read it and is never readable by name (D2) — it
+                        // stays "unknown", catalogued nowhere. A *reduced*
+                        // var is host-computed on AC results only.
+                        if crate::reduced::is_reduced_stmt(stmt) {
+                            catalog.not_defined.push(qualified);
+                        }
+                    }
+                    PomConstraintStmt::Cover { .. } | PomConstraintStmt::CoverCross { .. } => {
+                        // Coverage points have no margin at all — they
+                        // live on the coverage channel, never this one.
+                    }
+                    PomConstraintStmt::Target { .. } => {
+                        // A reduced target is host-computed on AC results
+                        // only; a pointwise target reached the kernel
+                        // above or is a silent-gap loud below.
+                        if crate::reduced::is_reduced_stmt(stmt) {
+                            catalog.not_defined.push(qualified);
+                        } else {
+                            catalog.digital.push(qualified);
+                        }
+                    }
+                    PomConstraintStmt::Require { .. } => {
+                        // A pointwise require that lowered but missed the
+                        // kernel would be a silent gap — record it as
+                        // digital (no analog margin exists to read)
+                        // rather than letting it fall to "unknown
+                        // constraint" downstream.
+                        catalog.digital.push(qualified);
+                    }
                 }
             }
         }

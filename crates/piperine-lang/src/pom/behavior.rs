@@ -121,6 +121,72 @@ pub struct PomRequire {
     pub tol: Option<crate::ast::Expr>,
 }
 
+/// One authored constraint statement (sanctioned extension, MD-49 +
+/// `constraint-statements`), in authored order — one list across kinds
+/// because `target#<n>` naming is statement-index-based and `var`
+/// substitution is authored-order. Authored surface (design F1); the
+/// codegen `resolve` stage classifies and lowers.
+#[derive(Debug, Clone)]
+pub enum PomConstraintStmt {
+    Require(PomRequire),
+    /// `var name = expr;` — a constraint-local computed quantity.
+    Var {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        expr: crate::ast::Expr,
+    },
+    /// `target expr cmp level [tol scale];` — an unlabeled soft goal,
+    /// named `target#<stmt-index>` by the lowering.
+    Target {
+        span: Option<miette::SourceSpan>,
+        expr: crate::ast::Expr,
+        cmp: crate::ast::TargetCmp,
+        level: crate::ast::Expr,
+        tol: Option<crate::ast::Expr>,
+    },
+    /// `cover name : expr bins …;` — a coverage point (counter, no margin).
+    Cover {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        expr: crate::ast::Expr,
+        bins: crate::ast::CoverBins,
+    },
+    /// `cover cross name : p1, p2, …;` — joint coverage over named points.
+    CoverCross {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        points: Vec<String>,
+    },
+}
+
+impl PomConstraintStmt {
+    /// The statement's authored label, if it has one — requires, vars,
+    /// and covers are named; a target is unlabeled (`target#<n>` is
+    /// assigned by the lowering). The duplicate-label check (E4008)
+    /// consults this across kinds.
+    pub fn label(&self) -> Option<&str> {
+        match self {
+            PomConstraintStmt::Require(r) => Some(&r.name),
+            PomConstraintStmt::Var { name, .. } => Some(name),
+            PomConstraintStmt::Cover { name, .. } => Some(name),
+            PomConstraintStmt::CoverCross { name, .. } => Some(name),
+            PomConstraintStmt::Target { .. } => None,
+        }
+    }
+
+    /// The statement label's span (the duplicate-label diagnostic's
+    /// `first`/`second` anchors).
+    pub fn label_span(&self) -> Option<miette::SourceSpan> {
+        match self {
+            PomConstraintStmt::Require(r) => r.span,
+            PomConstraintStmt::Var { span, .. }
+            | PomConstraintStmt::Target { span, .. }
+            | PomConstraintStmt::Cover { span, .. }
+            | PomConstraintStmt::CoverCross { span, .. } => *span,
+        }
+    }
+}
+
 // ─────────────────────────────── ImplBlock ───────────────────────────────────
 
 /// An `impl` block — associates methods with a type, optionally gated by a capability.

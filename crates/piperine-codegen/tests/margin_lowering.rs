@@ -6,19 +6,13 @@
 //! values**, not by inspection: every form's lowered expression is
 //! evaluated at satisfied, violated, and boundary points.
 //!
-//! **Require-core migrated** (constraints-on-vams): the `require`-only
-//! tests run against the live producer. The two `var`/`target` tests
-//! further down stay present-and-red — those statements are deferred with
-//! dv-core's other statements (`.specs/features/constraints-on-vams/`
-//! Out-of-Scope table) and their tests are the executable specification
-//! for whoever rebuilds them; do not delete them.
+//! **All statements live** (`constraint-statements`): require, var, and
+//! target all run against the live producer.
 
 use piperine_codegen::resolve::{MarginKind, lower_bodies};
 use piperine_lang::ast::{BinOp, Expr, UnOp};
 use piperine_lang::lexer::NumberLit;
 use piperine_lang::{SourceMap, parse_and_elaborate};
-
-const DISCIPLINES: &str = "`include \"disciplines.vams\"";
 
 /// The fixture: params only, so every lowered margin is arithmetic over
 /// named values and can be evaluated directly.
@@ -27,11 +21,15 @@ module Par ();
     parameter real a = 2.0;
     parameter real b = 3.0;
     constraint begin
+        var ap1 = a + 1.0;
         require le_r : a <= b;
         require ge_r : b >= a;
         require band : 1.0 <= a && a <= b;
+        require via_var : ap1 <= b;
         require scaled : a <= b tol 2.0;
         require plain : b >= a;
+        target a <= b tol 2.0;
+        target b >= a;
     end
 endmodule
 ";
@@ -161,15 +159,15 @@ fn tol_normalizes_and_its_absence_means_scale_one() {
     let body = lower(PAR, "Par");
     let margins = body.constraints.as_ref().expect("constraint margins lowered");
 
-    let scaled = margins.iter().find(|m| m.label == "scaled").expect("scaled margin");
-    assert_eq!(scaled.kind, MarginKind::Require);
+    let scaled = margins.iter().find(|m| m.label == "target#7").expect("target#7 margin (tol target)");
+    assert_eq!(scaled.kind, MarginKind::Target);
     let Expr::Binary { op: BinOp::Div, lhs: diff, rhs: scale, .. } = &scaled.expr else {
         panic!("a tol require divides by the scale: {:?}", scaled.expr)
     };
     assert!(matches!(scale.as_ref(), Expr::Number { value: NumberLit::Real(v), .. } if *v == 2.0));
     assert!(matches!(diff.as_ref(), Expr::Binary { op: BinOp::Sub, .. }));
 
-    let plain = margins.iter().find(|m| m.label == "plain").expect("plain margin");
+    let plain = margins.iter().find(|m| m.label == "target#8").expect("target#8 margin (plain target)");
     assert!(
         !matches!(&plain.expr, Expr::Binary { op: BinOp::Div, .. }),
         "absent a tol no division is emitted: {:?}",
@@ -263,9 +261,7 @@ endmodule
 
 /// DVC-08: a constraint `var` substitutes into the margins that read it
 /// (authored order), so `via_var : ap1 <= b` lowers to `b − (a + 1)` —
-/// asserted on values. **Blocked on the deferred `var` statement** — the
-/// fixture fails at elaboration (the block accepts only `require`)
-/// until that follow-up lands; present-and-red, never deleted.
+/// asserted on values.
 #[test]
 fn constraint_vars_substitute_into_margins() {
     let body = lower(
@@ -313,6 +309,7 @@ endmodule
     let margins = body.constraints.as_ref().expect("constraint margins lowered");
     assert_eq!(margins.len(), 2, "both statements lower");
 
+    assert_eq!(margins[0].label, "target#0", "targets are named by position across all statements");
     assert_eq!(margins[0].class, piperine_codegen::resolve::QuantityClass::Reduced, "the ugf target is reduced");
     assert_eq!(margins[0].analyses, vec!["ac".to_string()], "its analysis travels");
     assert_eq!(margins[0].kind, piperine_codegen::resolve::MarginKind::Target);

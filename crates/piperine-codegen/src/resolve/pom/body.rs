@@ -461,8 +461,15 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.default_transition = prog.directives().default_transition;
             let margins = crate::resolve::pom::ConstraintLowering::lower(m.constraints(), &mut ctx);
+            let (points, crosses) =
+                crate::resolve::pom::ConstraintLowering::lower_cover(m.constraints(), &mut ctx);
             errors.append(&mut ctx.errors);
-            bodies[i].constraints = Some(margins);
+            if !margins.is_empty() {
+                bodies[i].constraints = Some(margins);
+            }
+            if !points.is_empty() || !crosses.is_empty() {
+                bodies[i].cover = Some((points, crosses));
+            }
         }
 
         if !digital_shadows.is_empty() {

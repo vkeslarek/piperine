@@ -85,7 +85,7 @@ impl Elaborator {
         let mut branches = Vec::new();
         let mut vars = Vec::new();
         let mut events: Vec<String> = Vec::new();
-        let mut constraints: Vec<crate::pom::PomRequire> = Vec::new();
+        let mut constraints: Vec<crate::pom::PomConstraintStmt> = Vec::new();
         let mut gates: Vec<crate::pom::GateInstance> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
@@ -240,32 +240,75 @@ impl Elaborator {
                 | ModuleItem::CaseGenerate(_)
                 | ModuleItem::GenerateRegion(_)
                 | ModuleItem::Specify(_) => {}
-                // `constraint begin … end` (sanctioned extension, MD-49):
-                // the authored `require`s land on the POM in authored
-                // order — multiple blocks compose (all requires apply),
-                // a duplicate label fails loud (E4008), and nothing is
-                // resolved here: name resolution and margin lowering are
-                // the codegen `resolve` stage's job, exactly as for the
+                // `constraint begin … end` (sanctioned extension, MD-49 +
+                // `constraint-statements`): the authored statements land
+                // on the POM in authored order — multiple blocks compose
+                // (all statements apply), a duplicate label fails loud
+                // across kinds (E4008), and nothing is resolved here:
+                // name resolution, classification, and lowering are the
+                // codegen `resolve` stage's job, exactly as for the
                 // analog body.
                 ModuleItem::Constraint(c) => {
-                    for req in &c.requires {
-                        if constraints.iter().any(|r| r.name == req.name) {
-                            return Err(ElabError::from(ElabErrorKind::ConstraintLabelDuplicate {
-                                name: req.name.clone(),
-                                module: decl.name.clone(),
-                                first: constraints
-                                    .iter()
-                                    .find(|r| r.name == req.name)
-                                    .and_then(|r| r.span),
-                                second: Some(to_miette_span(req.span)),
-                            }));
+                    use crate::ast::ConstraintStmt as Cs;
+                    for stmt in &c.stmts {
+                        let lowered = match stmt {
+                            Cs::Require(req) => crate::pom::PomConstraintStmt::Require(
+                                crate::pom::PomRequire {
+                                    span: Some(to_miette_span(req.span)),
+                                    name: req.name.clone(),
+                                    pred: req.pred.clone(),
+                                    tol: req.tol.clone(),
+                                },
+                            ),
+                            Cs::Var { span, name, expr, .. } => {
+                                crate::pom::PomConstraintStmt::Var {
+                                    span: Some(to_miette_span(*span)),
+                                    name: name.clone(),
+                                    expr: expr.clone(),
+                                }
+                            }
+                            Cs::Target { span, expr, cmp, level, tol, .. } => {
+                                crate::pom::PomConstraintStmt::Target {
+                                    span: Some(to_miette_span(*span)),
+                                    expr: expr.clone(),
+                                    cmp: *cmp,
+                                    level: level.clone(),
+                                    tol: tol.clone(),
+                                }
+                            }
+                            Cs::Cover { span, name, expr, bins, .. } => {
+                                crate::pom::PomConstraintStmt::Cover {
+                                    span: Some(to_miette_span(*span)),
+                                    name: name.clone(),
+                                    expr: expr.clone(),
+                                    bins: bins.clone(),
+                                }
+                            }
+                            Cs::CoverCross { span, name, points, .. } => {
+                                crate::pom::PomConstraintStmt::CoverCross {
+                                    span: Some(to_miette_span(*span)),
+                                    name: name.clone(),
+                                    points: points.clone(),
+                                }
+                            }
+                        };
+                        if let Some(name) = lowered.label() {
+                            if let Some(first) = constraints
+                                .iter()
+                                .find(|s| s.label() == Some(name))
+                                .and_then(|s| s.label_span())
+                            {
+                                return Err(ElabError::from(
+                                    ElabErrorKind::ConstraintLabelDuplicate {
+                                        name: name.to_string(),
+                                        module: decl.name.clone(),
+                                        first: Some(first),
+                                        second: lowered.label_span(),
+                                    },
+                                ));
+                            }
                         }
-                        constraints.push(crate::pom::PomRequire {
-                            span: Some(to_miette_span(req.span)),
-                            name: req.name.clone(),
-                            pred: req.pred.clone(),
-                            tol: req.tol.clone(),
-                        });
+                        constraints.push(lowered);
                     }
                 }
                 // Gate primitives, Annex A.4.2 (LRMC-C7-13, T39). The 12

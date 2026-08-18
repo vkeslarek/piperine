@@ -318,13 +318,16 @@ pub struct Module {
     /// as `genvars` above — LRMC-C5-04.
     #[serde(default)]
     pub events: Vec<String>,
-    /// Authored `require` statements of this module's `constraint
-    /// begin … end` block(s) (sanctioned extension, MD-49), in authored
-    /// order across all blocks — multiple blocks compose, none dropped.
+    /// Authored constraint statements (`require`/`var`/`target`/`cover`/
+    /// `cover cross`) of this module's `constraint begin … end` block(s)
+    /// (sanctioned extension, MD-49 + `constraint-statements`), in
+    /// authored order across all blocks — multiple blocks compose, none
+    /// dropped, and the order crosses kinds (`target#<n>` is
+    /// statement-index-based, `var` substitution is authored-order).
     /// Authored surface (design F1); skipped on serialize, same rule as
-    /// behaviors: predicates are compiled expressions.
+    /// behaviors: expressions are compiled.
     #[serde(skip, default)]
-    pub constraints: Vec<crate::pom::PomRequire>,
+    pub constraints: Vec<crate::pom::PomConstraintStmt>,
     /// The `` `timescale `` in force for this module (1364-2005): the
     /// last directive at or before the module's start. `None` when no
     /// directive precedes it — delays then carry raw simulation-time
@@ -414,9 +417,9 @@ impl Module {
     pub fn genvars(&self) -> &[String] { &self.genvars }
     /// All `event` names declared in this module (LRM §5.10.4).
     pub fn events(&self) -> &[String] { &self.events }
-    /// All authored `require` statements of this module's `constraint`
-    /// block(s), in authored order (multiple blocks compose).
-    pub fn constraints(&self) -> &[crate::pom::PomRequire] { &self.constraints }
+    /// All authored constraint statements of this module's `constraint`
+    /// block(s), in authored order across kinds (multiple blocks compose).
+    pub fn constraints(&self) -> &[crate::pom::PomConstraintStmt] { &self.constraints }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

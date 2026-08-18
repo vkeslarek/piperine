@@ -14,14 +14,19 @@
 //! **Partially migrated** (constraints-on-vams): the `require`-only
 //! divider fixture runs against the `constraint begin … end` producer.
 //! What stays red, each naming its blocker at the fixture or the test:
-//! the reduced AC `var` fixtures (BLOCKED on the deferred constraint
-//! `var`/reduced-metric statement — constraints-on-vams Out-of-Scope),
-//! the `@ tran` fixture (BLOCKED on the deferred analysis-scoping
-//! block), and the two pointwise-DC gradient tests — fixture migrated,
-//! but `classify_margin_gradient` (`piperine-api`'s `gradient.rs`) is
-//! still the MD-45 always-refuse stub, so the margin-naming layer has
-//! nothing to dispatch through yet. Blocked tests stay failing rather
-//! than being weakened, deleted, or `#[ignore]`d (repo-banned by
+//! the reduced AC `var` fixtures (BLOCKED on reduced metrics in
+//! gradients — `classify_margin_gradient` (`piperine-api`'s
+//! `gradient.rs`) is still the MD-45 always-refuse stub, so even with
+//! the now-live `var ugbw = ac_unity_gain_freq(…);` spelling the
+//! expected "AC adjoint"/"D6" refusal message never arrives;
+//! re-anchoring dv-gradients on the constraint-statements producer is
+//! the deferred follow-up), the `@ tran` fixture (BLOCKED on the
+//! deferred analysis-scoping block — still no `constraint begin … end`
+//! spelling for `@ tran { require … }`), and the two pointwise-DC
+//! gradient tests — fixture migrated, but the same classifier stub
+//! refuses every name, so the margin-naming layer has nothing to
+//! dispatch through yet. Blocked tests stay failing rather than being
+//! weakened, deleted, or `#[ignore]`d (repo-banned by
 //! `tests/suite_hygiene.rs`).
 
 use piperine_api::{Session, SolverConfig};
@@ -71,10 +76,15 @@ module Top ();
 endmodule
 "#;
 
-/// BLOCKED on the deferred constraint `var`/reduced-metric statement
-/// (constraints-on-vams Out-of-Scope): `var ugbw/pm/ag : Real =
-/// ac_*(…)` has no `constraint begin … end` spelling yet, so this
-/// fixture stays in PHDL and fails at parse.
+/// BLOCKED on reduced metrics in gradients (dv-gradients deferred):
+/// the `var` statement itself is live (`var ugbw/pm/ag =
+/// ac_*(…);` elaborates since constraint-statements), but
+/// `classify_margin_gradient` still refuses every name post-MD-45 —
+/// migrating this fixture would only move the failure from parse to the
+/// stub's refusal, which names neither "AC adjoint" nor "D6". It stays
+/// in PHDL until dv-gradients is re-anchored on the live producer; not
+/// migrating a still-red fixture keeps the syntax blocker visible
+/// instead of half-migrating it.
 ///
 /// A single-pole stage with three reduced AC `var`s (`ugbw`, `pm`, `gm`)
 /// and a pointwise AC `var ag` — all AC-defined, all refuse loud.
@@ -115,10 +125,9 @@ mod Top() {
 }
 ";
 
-/// BLOCKED on the deferred `@ tran` analysis-scoping block
-/// (constraints-on-vams Out-of-Scope): `@ tran { require … }` has no
-/// `constraint begin … end` spelling yet, so this fixture stays in PHDL
-/// and fails at parse.
+/// BLOCKED on the deferred `@ tran` analysis-scoping block: `@ tran {
+/// require … }` still has no `constraint begin … end` spelling, so this
+/// fixture stays in PHDL and fails at parse.
 ///
 /// A transient-scoped require — event-detected, refused loud.
 const TRAN_PHDL: &str = "\
@@ -251,8 +260,9 @@ fn a_differential_probe_resolves_both_ends() {
 // finite-differencing behind the caller's back. The error message names
 // "AC adjoint" and "D6" so the gap is a decision, not a bug report.
 //
-// BLOCKED on the deferred constraint `var`/reduced-metric statement
-// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
+// BLOCKED on reduced metrics in gradients (dv-gradients deferred) —
+// see `STAGE_PHDL`: the classifier stub refuses without naming the
+// AC-adjoint gap (D6).
 #[test]
 fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
     let mut session = compile(STAGE_PHDL);
@@ -271,8 +281,9 @@ fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
 // classifier must not let a pointwise AC metric sneak through just
 // because it is pointwise.
 //
-// BLOCKED on the deferred constraint `var`/reduced-metric statement
-// (constraints-on-vams Out-of-Scope) — see `STAGE_PHDL`.
+// BLOCKED on reduced metrics in gradients (dv-gradients deferred) —
+// see `STAGE_PHDL`: the classifier stub refuses every name, so the
+// pointwise-AC refusal shape never arrives either.
 #[test]
 fn an_ac_defined_pointwise_metric_fails_loud() {
     let mut session = compile(STAGE_PHDL);
@@ -292,8 +303,8 @@ fn an_ac_defined_pointwise_metric_fails_loud() {
 // time-windowed require is event-detected territory — differentiable
 // only through the event, which has no adjoint today.
 //
-// BLOCKED on the deferred `@ tran` analysis-scoping block
-// (constraints-on-vams Out-of-Scope) — see `TRAN_PHDL`.
+// BLOCKED on the deferred `@ tran` analysis-scoping block (still no
+// `constraint begin … end` spelling) — see `TRAN_PHDL`.
 #[test]
 fn a_transient_scoped_metric_fails_loud_as_event_detected() {
     let mut session = compile(TRAN_PHDL);

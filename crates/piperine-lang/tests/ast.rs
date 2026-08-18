@@ -68,7 +68,7 @@ fn port_decl_is_attribute_bearing() {
         attrs: vec![],
         dir: Direction::Inout,
         discipline: Some("Electrical".into()),
-        names: vec![Declarator { name: "p".into(), range: None }],
+        names: vec![Declarator { name: "p".into(), range: None, init: None }],
     };
     assert_eq!(p.dir, Direction::Inout);
 }

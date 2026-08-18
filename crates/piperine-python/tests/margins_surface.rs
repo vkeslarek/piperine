@@ -154,38 +154,43 @@ except KeyError as e:
 }
 
 /// A gain stage with a reduced `var` — defined on AC results only.
-// BLOCKED on the deferred `var`/reduced-metric statement (constraints-on-vams
-// Out-of-Scope): constraint blocks accept only `require` today, so this
-// fixture stays PHDL and red — the executable specification for whoever
-// rebuilds reduced metrics; never deleted.
-const STAGE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// Self-contained (inline natures/discipline) so it elaborates under
+/// `SourceMap::dummy()` regardless of the runner's CWD.
+const STAGE: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod Vac(inout p: Electrical, inout n: Electrical) { param acmag: Real = 1.0; }
-analog Vac { V(p, n) <+ ac_stim(acmag, 0.0); }
+module Vac (inout electrical p, inout electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
 
-mod Stage(inout inp: Electrical, inout out: Electrical, inout gnd: Electrical) {
-    param gm: Real = 0.1;
-    param r: Real = 1e3;
-    param c: Real = 1e-6;
-}
-analog Stage {
-    I(gnd, out) <+ gm * V(inp, gnd);
-    I(out, gnd) <+ V(out, gnd) / r;
-    I(out, gnd) <+ c * ddt(V(out, gnd));
-}
-constraint Stage {
-    var ugbw : Real = ac_unity_gain_freq(V(out, gnd));
-}
+module Stage (inout electrical inp, inout electrical out, inout electrical gnd);
+    parameter real gm = 0.1;
+    parameter real r = 1e3;
+    parameter real c = 1e-6;
+    analog begin
+        I(gnd, out) <+ gm * V(inp, gnd);
+        I(out, gnd) <+ V(out, gnd) / r;
+        I(out, gnd) <+ c * ddt(V(out, gnd));
+    end
+    constraint begin
+        var ugbw = ac_unity_gain_freq(V(out, gnd));
+    end
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    x1 : Stage(.inp = in, .out = out, .gnd = gnd);
-}
-";
+module Top ();
+    electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    Stage x1 (.inp(in), .out(out), .gnd(gnd));
+endmodule
+"#;
 
 /// DVC-08 AC6 / D7: the live Python session computes the reduced
 /// reductions on AC (identical host pass the Rust session runs) and a
@@ -193,7 +198,7 @@ mod Top() {
 /// "not defined in this analysis".
 #[test]
 fn reduced_vars_are_defined_on_ac_only_through_python() {
-    let phdl = write_temp("piperine_dv_stage.phdl", STAGE_PHDL);
+    let phdl = write_temp("piperine_dv_stage.vams", STAGE);
     let script = format!(
         r#"
 import piperine

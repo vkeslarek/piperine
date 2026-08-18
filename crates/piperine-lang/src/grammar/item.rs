@@ -716,25 +716,125 @@ impl Grammar {
 
     // ─────────────────────────── behavior constructs ──────────────────────
 
-    /// `constraint begin { require … } end` — a sanctioned Piperine
+    /// `constraint begin { statements } end` — a sanctioned Piperine
     /// extension (MD-49): one more module body, mirroring
-    /// `analog begin … end`'s shape. `constraint`/`require`/`tol` are
-    /// contextual keywords — identifier text matched here only, never
-    /// added to Annex B's reserved set. Anything inside the block that is
-    /// not a `require` statement is a typed error naming the token —
-    /// never a silent skip.
+    /// `analog begin … end`'s shape. `constraint`/`require`/`tol`/`var`/
+    /// `target`/`cover`/`bins` are contextual keywords — identifier text
+    /// matched here only, never added to Annex B's reserved set. Anything
+    /// inside the block that is not a known statement is a typed error
+    /// naming the token — never a silent skip.
     fn parse_constraint_block(&mut self) -> Result<ConstraintBlockDecl, ParseError> {
         let doc = self.doc_at(self.peek_span());
         let attrs = self.parse_attr_instances()?;
         let start = self.expect_kw("constraint")?;
         self.expect_kw("begin")?;
-        let mut requires = Vec::new();
+        let mut stmts = Vec::new();
         while !self.at_kw("end") {
+            let stmt_doc = self.doc_at(self.peek_span());
+            let stmt_start = self.peek_span();
             if self.at_kw("require") {
-                requires.push(self.parse_require_stmt()?);
+                stmts.push(ConstraintStmt::Require(self.parse_require_stmt()?));
+            } else if self.at_kw("var") {
+                self.bump();
+                let (name, name_span) = self.expect_ident()?;
+                Keywords::expect_identifier(&name, name_span)?;
+                self.expect_punct("=")?;
+                let expr = self.parse_expr()?;
+                let end = self.expect_punct(";")?;
+                stmts.push(ConstraintStmt::Var {
+                    span: PreprocessedSpan::new(stmt_start.start, end.end),
+                    doc: stmt_doc,
+                    name,
+                    expr,
+                });
+            } else if self.at_kw("target") {
+                // `target <comparison> [tol <scale>];` — the comparison is
+                // a single `a <= b` / `a >= b` expression (the expression
+                // parser owns the operator, so splitting it into pieces
+                // here would fight precedence); the lowering decomposes
+                // the comparison into operand/level/cmp.
+                self.bump();
+                let cmp_expr = self.parse_expr()?;
+                let (expr, cmp, level) = match cmp_expr {
+                    Expr::Binary { op: crate::ast::BinOp::Le, lhs, rhs, .. } => (*lhs, TargetCmp::Le, *rhs),
+                    Expr::Binary { op: crate::ast::BinOp::Ge, lhs, rhs, .. } => (*lhs, TargetCmp::Ge, *rhs),
+                    _ => {
+                        return Err(self.unexpected(
+                            "a `<=`/`>=` comparison (`target a <= level [tol scale];`)".to_string(),
+                        ));
+                    }
+                };
+                let tol = if self.at_kw("tol") {
+                    self.bump();
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                let end = self.expect_punct(";")?;
+                stmts.push(ConstraintStmt::Target {
+                    span: PreprocessedSpan::new(stmt_start.start, end.end),
+                    doc: stmt_doc,
+                    expr,
+                    cmp,
+                    level,
+                    tol,
+                });
+            } else if self.at_kw("cover") {
+                self.bump();
+                if self.at_kw("cross") {
+                    self.bump();
+                    let (name, name_span) = self.expect_ident()?;
+                    Keywords::expect_identifier(&name, name_span)?;
+                    self.expect_punct(":")?;
+                    let mut points = vec![self.expect_ident()?.0];
+                    while self.eat_punct(",") {
+                        points.push(self.expect_ident()?.0);
+                    }
+                    let end = self.expect_punct(";")?;
+                    stmts.push(ConstraintStmt::CoverCross {
+                        span: PreprocessedSpan::new(stmt_start.start, end.end),
+                        doc: stmt_doc,
+                        name,
+                        points,
+                    });
+                } else {
+                    let (name, name_span) = self.expect_ident()?;
+                    Keywords::expect_identifier(&name, name_span)?;
+                    self.expect_punct(":")?;
+                    let expr = self.parse_expr()?;
+                    self.expect_kw("bins")?;
+                    let bins = if self.eat_punct("[") {
+                        let lo = self.parse_expr()?;
+                        self.expect_punct(":")?;
+                        let step = self.parse_expr()?;
+                        self.expect_punct(":")?;
+                        let hi = self.parse_expr()?;
+                        self.expect_punct("]")?;
+                        CoverBins::Range { lo, step, hi }
+                    } else {
+                        self.expect_kw("in")?;
+                        self.expect_punct("{")?;
+                        let mut elems = vec![self.parse_expr()?];
+                        while self.eat_punct(",") {
+                            elems.push(self.parse_expr()?);
+                        }
+                        self.expect_punct("}")?;
+                        CoverBins::Set(elems)
+                    };
+                    let end = self.expect_punct(";")?;
+                    stmts.push(ConstraintStmt::Cover {
+                        span: PreprocessedSpan::new(stmt_start.start, end.end),
+                        doc: stmt_doc,
+                        name,
+                        expr,
+                        bins,
+                    });
+                }
             } else {
                 return Err(self.unexpected(
-                    "a `require` statement (`require name : predicate;`) — `var`/`target`/`cover` are not part of the core extension".to_string(),
+                    "a constraint statement (`require name : predicate;`, `var name = expr;`, \
+                     `target expr <=|>= level [tol scale];`, `cover name : expr bins …;`, \
+                     `cover cross name : p1, p2;`)".to_string(),
                 ));
             }
         }
@@ -743,7 +843,7 @@ impl Grammar {
             span: PreprocessedSpan::new(start.start, end.end),
             doc,
             attrs,
-            requires,
+            stmts,
         })
     }
 

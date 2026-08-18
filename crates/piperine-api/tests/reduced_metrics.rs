@@ -8,70 +8,80 @@
 //! 180° − atan(f_u/fc) ≈ 90.57°, and the gain margin is infinite (a
 //! single pole never reaches −180°).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its reduced `var` declarations and
-//! `target … tol …` clauses.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraint-statements): the fixture runs against the
+//! `constraint begin … end` producer — `var ugbw = …;` (no type
+//! annotation) and the unlabeled `target ugbw >= 1e4 tol 1e3;`, named
+//! `target#3` by its statement index across ALL of the module's
+//! constraint statements (three vars precede it, 0-based).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{MarginShape, Session, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_solver::prelude::MarginKind;
 
-const STAGE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// Self-contained inline natures/discipline (elaborates under
+/// `SourceMap::dummy()` regardless of the runner's CWD).
+const STAGE: &str = r#"nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline Electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod Vac(inout p: Electrical, inout n: Electrical) { param acmag: Real = 1.0; }
-analog Vac { V(p, n) <+ ac_stim(acmag, 0.0); }
+module Vac (inout Electrical p, inout Electrical n);
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ ac_stim(acmag, 0.0);
+    end
+endmodule
 
-mod Vcvs(inout p: Electrical, inout n: Electrical, inout cp: Electrical, inout cn: Electrical) {
-    param gain: Real = 100.0;
-}
-analog Vcvs { V(p, n) <- gain * V(cp, cn); }
+module Vcvs (inout Electrical p, inout Electrical n, inout Electrical cp, inout Electrical cn);
+    parameter real gain = 100.0;
+    analog begin
+        V(p, n) <+ gain * V(cp, cn);
+    end
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout Electrical p, inout Electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
 
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
+module C (inout Electrical p, inout Electrical n);
+    parameter real c = 1e-6;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
 
-mod Stage(inout inp: Electrical, inout out: Electrical, inout gnd: Electrical) {
-    param gm: Real = 0.1;
-    param r: Real = 1e3;
-    param c: Real = 1e-6;
-}
-analog Stage {
-    I(gnd, out) <+ gm * V(inp, gnd);
-    I(out, gnd) <+ V(out, gnd) / r;
-    I(out, gnd) <+ c * ddt(V(out, gnd));
-}
-constraint Stage {
-    var ugbw : Real = ac_unity_gain_freq(V(out, gnd));
-    var pm   : Real = ac_phase_margin(V(out, gnd));
-    var gm   : Real = ac_gain_margin(V(out, gnd));
-    target ugbw >= 1e4 tol 1e3;
-}
+module Stage (inout Electrical inp, inout Electrical out, inout Electrical gnd);
+    parameter real gm = 0.1;
+    parameter real r = 1e3;
+    parameter real c = 1e-6;
+    analog begin
+        I(gnd, out) <+ gm * V(inp, gnd);
+        I(out, gnd) <+ V(out, gnd) / r;
+        I(out, gnd) <+ c * ddt(V(out, gnd));
+    end
+    constraint begin
+        var ugbw = ac_unity_gain_freq(V(out, gnd));
+        var pm = ac_phase_margin(V(out, gnd));
+        var gm = ac_gain_margin(V(out, gnd));
+        target ugbw >= 1e4 tol 1e3;
+    end
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1 : Vac(.p = in, .n = gnd);
-    x1 : Stage(.inp = in, .out = out, .gnd = gnd);
-}
-";
+module Top ();
+    Electrical gnd, in, out;
+    Vac v1 (.p(in), .n(gnd));
+    Stage x1 (.inp(in), .out(out), .gnd(gnd));
+endmodule
+"#;
 
 fn compile() -> Session {
-    let design = piperine_lang::parse_and_elaborate(STAGE_PHDL, &SourceMap::dummy()).expect("elaborates");
+    let design = piperine_lang::parse_and_elaborate(STAGE, &SourceMap::dummy()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -91,7 +101,8 @@ fn analytic_phase_margin() -> f64 {
     180.0 - (analytic_ugbw() / FC).atan().to_degrees()
 }
 
-/// DVC-09/D7: each reduced helper declared in `headers/constraints.phdl`
+/// DVC-09/D7: each reduced helper (`ac_unity_gain_freq` /
+/// `ac_phase_margin` / `ac_gain_margin`, recognized by name at lowering)
 /// has a host implementation, and the reduction over the AC sweep matches
 /// the single-pole analytic values (log-log interpolation between sweep
 /// points, so the match is within interpolation error).

@@ -323,18 +323,83 @@ pub struct BehaviorConstruct {
 /// has no constraint production; MD-49 records the deviation and its
 /// precedents). A module body item mirroring `analog begin … end`: one
 /// more module body, so ports, parameters, and branches are simply in
-/// scope for every [`RequireDecl`] predicate inside it. `constraint`,
-/// `require`, and `tol` are contextual keywords — matched by identifier
-/// text at their production sites only, never added to Annex B's reserved
-/// set (§2.8.2's escaped-identifier escape hatch keeps ordinary uses of
-/// the words working).
+/// scope for every statement inside it. `constraint`, `require`, `tol`,
+/// `var`, `target`, `cover`, and `bins` are contextual keywords — matched
+/// by identifier text at their production sites only, never added to
+/// Annex B's reserved set (§2.8.2's escaped-identifier escape hatch keeps
+/// ordinary uses of the words working).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstraintBlockDecl {
     pub span: PreprocessedSpan,
     /// Attached `///` doc comment run immediately above the block, if any.
     pub doc: Option<String>,
     pub attrs: Vec<Attr>,
-    pub requires: Vec<RequireDecl>,
+    /// The block's statements in authored order — one list across kinds,
+    /// because `target#<n>` naming is statement-index-based and `var`
+    /// substitution is authored-order (both cross kinds).
+    pub stmts: Vec<ConstraintStmt>,
+}
+
+/// One statement of a [`ConstraintBlockDecl`], in authored order.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConstraintStmt {
+    /// `require <name> : <predicate> [tol <scale>] ;`
+    Require(RequireDecl),
+    /// `var <name> = <expr>;` — a constraint-local computed quantity
+    /// (always real; substitutes into every later statement that reads
+    /// it). A var is never itself a declared margin — pointwise vars ride
+    /// inside the margins that read them, reduced vars are host-computed
+    /// reductions (design D7).
+    Var {
+        span: PreprocessedSpan,
+        doc: Option<String>,
+        name: String,
+        expr: Expr,
+    },
+    /// `target <expr> <cmp> <level> [tol <scale>];` — an unlabeled soft
+    /// goal: lowered to a signed margin named by statement position
+    /// (`target#<index>`), tracked (worst + argmin) but never a finding.
+    Target {
+        span: PreprocessedSpan,
+        doc: Option<String>,
+        expr: Expr,
+        cmp: TargetCmp,
+        level: Expr,
+        tol: Option<Expr>,
+    },
+    /// `cover <name> : <expr> bins …;` — a coverage point: a bin-mapper
+    /// (counter increment per bin hit), never a signed distance.
+    Cover {
+        span: PreprocessedSpan,
+        doc: Option<String>,
+        name: String,
+        expr: Expr,
+        bins: CoverBins,
+    },
+    /// `cover cross <name> : <p1>, <p2>, …;` — a joint-coverage point
+    /// over named cover points, counted at the same evaluation instant.
+    CoverCross {
+        span: PreprocessedSpan,
+        doc: Option<String>,
+        name: String,
+        points: Vec<String>,
+    },
+}
+
+/// A `target`'s comparison direction (the two forms with a signed margin).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetCmp {
+    /// `expr <= level` → margin `level − expr` (scaled).
+    Le,
+    /// `expr >= level` → margin `expr − level` (scaled).
+    Ge,
+}
+
+/// A cover point's bin partition — `[lo:step:hi]` or `in {e1, e2, …}`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CoverBins {
+    Range { lo: Expr, step: Expr, hi: Expr },
+    Set(Vec<Expr>),
 }
 
 /// `require <name> : <predicate> [tol <scale>] ;` — one named per-point
