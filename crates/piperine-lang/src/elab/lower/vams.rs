@@ -117,6 +117,33 @@ impl Elaborator {
                 }
                 ModuleItem::Param(p) => {
                     let base_ty = param_value_type(p.ty);
+                    // The `tol` clause (one per declaration) applies to
+                    // every name it lists — the same sharing rule as
+                    // `ranges`. Keyed args const-eval in module scope
+                    // (`sigma = 0.005 / sqrt(w*l)` is a legal module
+                    // constant); an unknown kind fails loud naming it.
+                    let distribution = p.tol.as_ref().map(|t| {
+                        let kind = match t.kind.as_str() {
+                            "gauss" | "uniform" => t.kind.clone(),
+                            other => {
+                                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                                    "parameter declaration's `tol` clause: unknown distribution \
+                                     `{other}` (gauss and uniform are implemented)"
+                                ))));
+                            }
+                        };
+                        let mut args = Vec::new();
+                        for (name, expr) in &t.args {
+                            let value = env.eval(expr).map_err(|e| {
+                                ElabError::from(ElabErrorKind::ConstEval {
+                                    context: format!("`tol {kind}` argument `{name}`"),
+                                    source: e,
+                                })
+                            })?;
+                            args.push((name.clone(), value));
+                        }
+                        Ok(crate::pom::Distribution { kind, args, global: t.global })
+                    }).transpose()?;
                     for pa in &p.names {
                         let (ty, value) = eval_and_define_param_assignment(pa, &base_ty, &p.ranges, &mut env)?;
                         params.push(Param {
@@ -127,7 +154,7 @@ impl Elaborator {
                             ty,
                             default: Some(value),
                             bundle_origin: None,
-                            distribution: None,
+                            distribution: distribution.clone(),
                             is_local: p.is_local,
                         });
                     }

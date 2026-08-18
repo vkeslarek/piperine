@@ -221,6 +221,25 @@ pub struct ParamDecl {
     pub ty: Option<ParamType>,
     pub names: Vec<ParamAssignment>,
     pub ranges: Vec<ParamRange>,
+    /// The optional `tol <kind>(<keyed-args>) [global]` statistical
+    /// clause (dv-core's distribution surface, restored by
+    /// `random-variable-catalogue`) — one per declaration, applying to
+    /// every name it lists (same sharing rule as `ranges`). `tol` and
+    /// `global` are contextual keywords.
+    pub tol: Option<TolClause>,
+}
+
+/// `tol <kind>(<keyed-args>) [global]` — a statistical distribution
+/// declared on a parameter: `tol gauss(sigma = 10.0) global`. The keyed
+/// arguments (`sigma`, `sigma_rel`, `rel`, …) are elaboration constants;
+/// `global` marks process variation (one draw shared across every
+/// instance of the module — mismatch, the default, draws per instance).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TolClause {
+    pub span: PreprocessedSpan,
+    pub kind: String,
+    pub args: Vec<(String, Expr)>,
+    pub global: bool,
 }
 
 /// `aliasparam name = target;` — §3.4.7.

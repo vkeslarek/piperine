@@ -548,10 +548,52 @@ impl Grammar {
             names.push(self.parse_param_assignment()?);
             ranges.extend(self.parse_param_ranges()?);
         }
+        // The `tol` clause is declaration-level (after every name/range —
+        // it applies to all of them); at most one, loud on a duplicate.
+        let tol = if self.at_kw("tol") {
+            let clause = self.parse_tol_clause()?;
+            if self.at_kw("tol") {
+                return Err(self.unexpected(
+                    "at most one `tol` clause per parameter declaration".to_string(),
+                ));
+            }
+            Some(clause)
+        } else {
+            None
+        };
         if !in_port_list {
             self.expect_punct(";")?;
         }
-        Ok(ParamDecl { span: start, doc, attrs, is_local, ty, names, ranges })
+        Ok(ParamDecl { span: start, doc, attrs, is_local, ty, names, ranges, tol })
+    }
+
+    /// `tol <kind>( <keyed-args> ) [global]` — the statistical clause on a
+    /// parameter declaration (`tol`/`global` contextual keywords; the kind
+    /// is a plain identifier the elaborator validates — `gauss`/`uniform`).
+    fn parse_tol_clause(&mut self) -> Result<TolClause, ParseError> {
+        let start = self.expect_kw("tol")?;
+        let (kind, _) = self.expect_ident()?;
+        self.expect_punct("(")?;
+        let mut args = Vec::new();
+        if !self.at_punct(")") {
+            loop {
+                let (name, _) = self.expect_ident()?;
+                self.expect_punct("=")?;
+                let value = self.parse_expr()?;
+                args.push((name, value));
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+        }
+        let close = self.expect_punct(")")?;
+        let global = self.eat_kw("global");
+        Ok(TolClause {
+            span: PreprocessedSpan::new(start.start, close.end),
+            kind,
+            args,
+            global,
+        })
     }
 
     fn parse_optional_param_type(&mut self) -> Option<ParamType> {
