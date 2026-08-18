@@ -117,6 +117,26 @@ impl Elaborator {
                 }
                 ModuleItem::Param(p) => {
                     let base_ty = param_value_type(p.ty);
+                    // Numeric `from` intervals become the draw-time legal
+                    // domain (`Param::from_ranges`); `exclude` and the
+                    // enumerated `{…}` forms constrain authored values
+                    // only (draws are reported, not constrained, by the
+                    // latter — sampling explores).
+                    let from_ranges: Vec<crate::pom::FromRange> = p
+                        .ranges
+                        .iter()
+                        .filter(|r| !r.excluded && r.hi.is_some())
+                        .filter_map(|r| {
+                            let lo = r.lo.as_ref().and_then(|e| env.eval_f64(e).ok())?;
+                            let hi = r.hi.as_ref().and_then(|e| env.eval_f64(e).ok())?;
+                            Some(crate::pom::FromRange {
+                                lo,
+                                lo_exclusive: r.lo_exclusive,
+                                hi,
+                                hi_exclusive: r.hi_exclusive,
+                            })
+                        })
+                        .collect();
                     // The `tol` clause (one per declaration) applies to
                     // every name it lists — the same sharing rule as
                     // `ranges`. Keyed args const-eval in module scope
@@ -155,6 +175,7 @@ impl Elaborator {
                             default: Some(value),
                             bundle_origin: None,
                             distribution: distribution.clone(),
+                            from_ranges: from_ranges.clone(),
                             is_local: p.is_local,
                         });
                     }
@@ -193,6 +214,7 @@ impl Elaborator {
                         default: None,
                         bundle_origin: Some(("aliasparam".to_string(), a.target.clone())),
                         distribution: None,
+                        from_ranges: Vec::new(),
                         is_local: false,
                     });
                 }

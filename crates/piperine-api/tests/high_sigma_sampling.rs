@@ -133,11 +133,11 @@ fn a_tail_sample_is_replayable_from_seed_and_index() {
     // Replay: an independent plan/session, driven by ONLY (seed, index,
     // shift_sigmas) — the campaign parameters, not internal driver state.
     let plan_a = SamplePlan::collect(&bitcell_design, "Top").expect("plan collects");
-    let draw_a = plan_a.draws_importance(spec.seed, tail_index, spec.shift_sigmas);
+    let draw_a = plan_a.draws_importance(spec.seed, tail_index, spec.shift_sigmas).expect("draws compute");
 
     let bitcell_design_b = design(BITCELL);
     let plan_b = SamplePlan::collect(&bitcell_design_b, "Top").expect("replay plan collects");
-    let draw_b = plan_b.draws_importance(spec.seed, tail_index, spec.shift_sigmas);
+    let draw_b = plan_b.draws_importance(spec.seed, tail_index, spec.shift_sigmas).expect("draws compute");
 
     assert_eq!(draw_a.draws, draw_b.draws, "(seed, index, shift_sigmas) reproduces byte-identical draws");
     assert_eq!(draw_a.weight.to_bits(), draw_b.weight.to_bits(), "the importance weight replays identically");

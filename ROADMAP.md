@@ -189,12 +189,11 @@ rather than the old PHDL grammar:
 tests carrying the mechanism in place):
 
 - Analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`) + temporal windows
-- SOA constraint blocks on the spice stdlib models — see below
-- The margin-gradient classifier (`classify_margin_gradient` still
-  refuses) — `dv-gradients`' surface
 - SOA constraint blocks on the spice stdlib models (mos1/mos2/mos3/
   diode/bjt) with absent-by-default sentinel limits — the natural first
   follow-up now the statement surface lands
+- The margin-gradient classifier (`classify_margin_gradient` still
+  refuses) — `dv-gradients`' surface
 
 ---
 

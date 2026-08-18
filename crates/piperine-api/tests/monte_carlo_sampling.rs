@@ -113,7 +113,7 @@ fn a_global_parameter_gets_one_draw_shared_across_instances() {
         "every `r_g` entry is process scope"
     );
 
-    let draws = plan.draws(7, 0);
+    let draws = plan.draws(7, 0).expect("draws compute");
     let r1_rg = draws
         .iter()
         .find(|d| d.label == "r1" && d.param == "r_g")
@@ -148,7 +148,7 @@ fn a_mismatch_parameter_gets_independent_draws_per_instance() {
         "every `r_m` entry is mismatch scope"
     );
 
-    let draws = plan.draws(7, 0);
+    let draws = plan.draws(7, 0).expect("draws compute");
     let r1_rm = draws
         .iter()
         .find(|d| d.label == "r1" && d.param == "r_m")
@@ -173,7 +173,7 @@ fn a_mismatch_parameter_gets_independent_draws_per_instance() {
 #[test]
 fn both_behaviors_in_one_run() {
     let plan = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan collects");
-    let draws = plan.draws(11, 3);
+    let draws = plan.draws(11, 3).expect("draws compute");
 
     // Four draws total: 2 global (r_g on r1, r2) + 2 mismatch (r_m on r1, r2).
     assert_eq!(draws.len(), 4, "one draw per (label, param) entry");
@@ -276,7 +276,7 @@ fn the_walk_descends_the_authored_instance_tree() {
     // All four leaves are the same module (`Leaf`) and param (`r`); since
     // `r` is `global`, every leaf shares ONE draw — even across mids.
     // Proves the global group is keyed by (module, param), not by parent.
-    let draws = plan.draws(7, 0);
+    let draws = plan.draws(7, 0).expect("draws compute");
     let values: Vec<f64> = draws.iter().map(|d| d.value).collect();
     let (first, rest) = values.split_first().expect("non-empty");
     assert!(
@@ -331,8 +331,8 @@ fn seed_index_produce_byte_identical_draws_across_independent_constructions() {
     let plan_a = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan a collects");
     let plan_b = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan b collects");
 
-    let draws_a = plan_a.draws(123, 7);
-    let draws_b = plan_b.draws(123, 7);
+    let draws_a = plan_a.draws(123, 7).expect("draws compute");
+    let draws_b = plan_b.draws(123, 7).expect("draws compute");
     assert_eq!(draws_a.len(), draws_b.len(), "same entry count");
     for (a, b) in draws_a.iter().zip(&draws_b) {
         assert_eq!(a.label, b.label);
@@ -433,4 +433,80 @@ fn a_nominal_analysis_after_sampling_returns_to_declared_values() {
         nominal_before.to_bits(),
         "reset returns to the declared nominal — sampling leaves no residue"
     );
+}
+
+// ── Verifier follow-ups (random-variable-catalogue round 1) ────────────
+
+/// RVCAT-07: a draw escaping the parameter's declared `from` range is
+/// reported loud at the apply boundary — the entry, the value, and the
+/// domain — never clamped, never silently written. (The range guards
+/// authored values at elaboration; a draw crossing it is a runtime fact.)
+#[test]
+fn a_draw_outside_the_declared_range_is_reported_loud() {
+    // sigma huge relative to the `from` range: samples WILL leave (0, 1e6).
+    let design = piperine_lang::parse_and_elaborate(
+        r#"`include "disciplines.vams"
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 from (0:1e6) tol gauss(sigma_rel = 2.0);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Top ();
+    electrical gnd, out;
+    Vsrc v1 (.p(out), .n(gnd));
+    R r1 (.p(out), .n(gnd));
+endmodule
+"#,
+        &source_map(),
+    )
+    .expect("elaborates");
+    let plan = SamplePlan::collect(&design, "Top").expect("plan collects");
+    let mut session = Session::compile(&design, "Top").expect("session compiles");
+    let err = (0..50)
+        .find_map(|i| plan.apply(&mut session, 7, i).err())
+        .expect("at least one of 50 wide draws escapes the range");
+    let msg = format!("{err}");
+    assert!(msg.contains("r1"), "names the entry: {msg}");
+    assert!(msg.contains("from"), "names the declared domain: {msg}");
+}
+
+/// An unrecognized keyed argument fails loud naming it — a typo'd arg
+/// name is never a silent nominal draw.
+#[test]
+fn an_unrecognized_draw_argument_fails_loud() {
+    let design = piperine_lang::parse_and_elaborate(
+        r#"`include "disciplines.vams"
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol gauss(sigmaa = 10.0);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Top ();
+    electrical gnd, out;
+    Vsrc v1 (.p(out), .n(gnd));
+    R r1 (.p(out), .n(gnd));
+endmodule
+"#,
+        &source_map(),
+    )
+    .expect("elaborates");
+    let plan = SamplePlan::collect(&design, "Top").expect("plan collects");
+    let err = plan.draws(7, 0).expect_err("unknown arg name fails loud");
+    let msg = format!("{err}");
+    assert!(msg.contains("sigmaa"), "names the typo: {msg}");
+    assert!(msg.contains("sigma"), "names what is legal: {msg}");
 }

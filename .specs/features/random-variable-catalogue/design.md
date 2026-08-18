@@ -25,15 +25,18 @@ A parallel `Design.random_vars` list would duplicate that walk with no
 new fact — the *cross-parameter* operations all live in the plan, which
 is the catalogue the direction asks for.
 
-**Sampling math**: `piperine_lang::eval::rng::{RandomState, Distributions}`
-— the public §9.13.2 implementation — supplies uniform/normal draws;
-`SamplePlan` seeds per (RV × sample) so replay is `(seed, index)`-stable.
+**Sampling math**: `sampling.rs` keeps its own SplitMix64+Box-Muller stream
+— the dv-core test suite pins its values; re-anchoring onto lang's
+§9.13.2 `Distributions` would change every pinned draw and is a separate
+user call. The spec's "one PRNG shape" goal is deviated here
+(SPEC_DEVIATION: same determinism contract, different stream).
 
 ## Components
 
 ### 1. Grammar (`grammar/item.rs`)
 `parse_param_decl_body`'s declarator gains, after the default value and
-in any order with `from`/`exclude` clauses: `tol <kind>( <keyed-args> )
+AFTER any `from`/`exclude` clauses (declaration order is fixed — ranges,
+then tol): `tol <kind>( <keyed-args> )
 [global]` — `kind` an identifier (`gauss`/`uniform`), keyed args
 `name = expr` comma-separated. `tol`/`global` contextual keywords (Annex
 B untouched). AST: `Declarator` already carries `init`; the param

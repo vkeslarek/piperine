@@ -98,6 +98,11 @@ pub struct SampleEntry {
     /// The declared distribution (`gauss`/`uniform`, its evaluated args,
     /// the `global` marker).
     pub distribution: Distribution,
+    /// The declared `from` ranges (LRM §3.4.2) — the legal domain. A draw
+    /// outside every range is reported loud at apply time (sampling
+    /// explores — the value is never clamped silently, and never silently
+    /// accepted either: the host boundary names it).
+    pub from_ranges: Vec<piperine_lang::pom::FromRange>,
 }
 
 impl SampleEntry {
@@ -187,7 +192,7 @@ impl SamplePlan {
     /// same `(module, param)` group; a plain (mismatch) parameter gets an
     /// INDEPENDENT draw per instance. Deterministic in
     /// `(seed, index, plan)` — replays produce byte-identical draws (T14).
-    pub fn draws(&self, seed: u64, index: usize) -> Vec<SampleDraw> {
+    pub fn draws(&self, seed: u64, index: usize) -> Result<Vec<SampleDraw>, Error> {
         self.draws_around(seed, index, |entry| entry.default)
     }
 
@@ -199,13 +204,14 @@ impl SamplePlan {
     /// called once per entry; [`Self::draws`] is the special case
     /// `|entry| entry.default`. Otherwise identical to [`Self::draws`]:
     /// same global/mismatch grouping, same `(seed, index)`
-    /// reproducibility.
+    /// reproducibility. An unrecognized keyed argument on any entry fails
+    /// loud naming it — never a silently-no-op draw.
     pub fn draws_around(
         &self,
         seed: u64,
         index: usize,
         base_of: impl Fn(&SampleEntry) -> f64,
-    ) -> Vec<SampleDraw> {
+    ) -> Result<Vec<SampleDraw>, Error> {
         // First pass: compute ONE draw per `global` group — every entry
         // in the group will read this same value. The PRNG stream is
         // keyed by `(seed, sample_index, "module.param")`, so two
@@ -217,7 +223,7 @@ impl SamplePlan {
                 let key = group_key(entry);
                 if !global_draws.contains_key(&key) {
                     let group_seed = mix(seed, index, &key);
-                    global_draws.insert(key.clone(), entry.draw_from(group_seed, base_of(entry)));
+                    global_draws.insert(key.clone(), entry.draw_from(group_seed, base_of(entry))?);
                 }
             }
         }
@@ -236,14 +242,14 @@ impl SamplePlan {
                         // "label.param") — every instance gets its own.
                         let inst_key = instance_key(entry);
                         let inst_seed = mix(seed, index, &inst_key);
-                        entry.draw_from(inst_seed, base_of(entry))
+                        entry.draw_from(inst_seed, base_of(entry))?
                     }
                 };
-                SampleDraw {
+                Ok(SampleDraw {
                     label: entry.label.clone(),
                     param: entry.param.clone(),
                     value,
-                }
+                })
             })
             .collect()
     }
@@ -253,8 +259,43 @@ impl SamplePlan {
     /// Each draw is one `set(label, param, value)` call; the circuit is
     /// not re-elaborated (MD-18 — compile count stays at 1).
     pub fn apply(&self, session: &mut Session, seed: u64, index: usize) -> Result<(), Error> {
-        for draw in self.draws(seed, index) {
+        let draws = self.draws(seed, index)?;
+        self.check_draw_ranges(&draws)?;
+        for draw in draws {
             session.set(&draw.label, &draw.param, draw.value)?;
+        }
+        Ok(())
+    }
+
+    /// A draw escaping its parameter's declared `from` range is reported
+    /// loud at the apply boundary — named entry, drawn value, declared
+    /// domain — never clamped, never silently written. (The range guards
+    /// authored values at elaboration; a draw crossing it is a runtime
+    /// fact the run must surface.)
+    fn check_draw_ranges(&self, draws: &[SampleDraw]) -> Result<(), Error> {
+        for draw in draws {
+            let Some(entry) = self
+                .entries
+                .iter()
+                .find(|e| e.label == draw.label && e.param == draw.param)
+            else {
+                continue;
+            };
+            if entry.from_ranges.is_empty() {
+                continue;
+            }
+            if !entry.from_ranges.iter().any(|r| r.contains(draw.value)) {
+                let domain = entry
+                    .from_ranges
+                    .iter()
+                    .map(|r| format!("[{}, {}]", r.lo, r.hi))
+                    .collect::<Vec<_>>()
+                    .join(" ∪ ");
+                return Err(Error::Measurement(format!(
+                    "sampled draw for `{}.{}` = {} escapes the declared `from` domain {} —                      the distribution conflicts with the parameter's legal range",
+                    draw.label, draw.param, draw.value, domain
+                )));
+            }
         }
         Ok(())
     }
@@ -269,7 +310,9 @@ impl SamplePlan {
         index: usize,
         base_of: impl Fn(&SampleEntry) -> f64,
     ) -> Result<(), Error> {
-        for draw in self.draws_around(seed, index, base_of) {
+        let draws = self.draws_around(seed, index, base_of)?;
+        self.check_draw_ranges(&draws)?;
+        for draw in draws {
             session.set(&draw.label, &draw.param, draw.value)?;
         }
         Ok(())
@@ -297,7 +340,7 @@ impl SamplePlan {
     /// (T14's replay contract, carried forward: `shift_sigmas` is part of
     /// the sampling CAMPAIGN, same as the plan itself, not part of the
     /// `(seed, index)` coordinate).
-    pub fn draws_importance(&self, seed: u64, index: usize, shift_sigmas: f64) -> ImportanceDraw {
+    pub fn draws_importance(&self, seed: u64, index: usize, shift_sigmas: f64) -> Result<ImportanceDraw, Error> {
         // First pass: one shifted draw per `global` group (mirrors
         // `draws_around`'s two-pass structure), accumulating its log
         // likelihood ratio once per group regardless of how many
@@ -306,32 +349,29 @@ impl SamplePlan {
         for entry in &self.entries {
             if entry.scope() == SampleScope::Global {
                 let key = group_key(entry);
-                global_draws.entry(key.clone()).or_insert_with(|| {
+                if !global_draws.contains_key(&key) {
                     let group_seed = mix(seed, index, &key);
-                    entry.draw_shifted(group_seed, shift_sigmas)
-                });
+                    global_draws.insert(key.clone(), entry.draw_shifted(group_seed, shift_sigmas)?);
+                }
             }
         }
         let mut log_weight: f64 = global_draws.values().map(|(_, lw)| lw).sum();
 
-        let draws = self
-            .entries
-            .iter()
-            .map(|entry| {
-                let value = match entry.scope() {
-                    SampleScope::Global => global_draws[&group_key(entry)].0,
-                    SampleScope::Mismatch => {
-                        let inst_key = instance_key(entry);
-                        let inst_seed = mix(seed, index, &inst_key);
-                        let (v, lw) = entry.draw_shifted(inst_seed, shift_sigmas);
-                        log_weight += lw;
-                        v
-                    }
-                };
-                SampleDraw { label: entry.label.clone(), param: entry.param.clone(), value }
-            })
-            .collect();
-        ImportanceDraw { draws, weight: log_weight.exp() }
+        let mut draws = Vec::new();
+        for entry in &self.entries {
+            let value = match entry.scope() {
+                SampleScope::Global => global_draws[&group_key(entry)].0,
+                SampleScope::Mismatch => {
+                    let inst_key = instance_key(entry);
+                    let inst_seed = mix(seed, index, &inst_key);
+                    let (v, lw) = entry.draw_shifted(inst_seed, shift_sigmas)?;
+                    log_weight += lw;
+                    v
+                }
+            };
+            draws.push(SampleDraw { label: entry.label.clone(), param: entry.param.clone(), value });
+        }
+        Ok(ImportanceDraw { draws, weight: log_weight.exp() })
     }
 
     /// Apply sample `index`'s importance-shifted draws
@@ -345,7 +385,8 @@ impl SamplePlan {
         index: usize,
         shift_sigmas: f64,
     ) -> Result<f64, Error> {
-        let sample = self.draws_importance(seed, index, shift_sigmas);
+        let sample = self.draws_importance(seed, index, shift_sigmas)?;
+        self.check_draw_ranges(&sample.draws)?;
         for draw in &sample.draws {
             session.set(&draw.label, &draw.param, draw.value)?;
         }
@@ -386,8 +427,9 @@ impl SampleEntry {
     /// current search point — a relative tolerance like `sigma_rel`
     /// scales with `base`, which physically makes more sense for a
     /// centered design than always scaling with the ORIGINAL declared
-    /// value).
-    fn draw_from(&self, seed: u64, base: f64) -> f64 {
+    /// value). An unrecognized keyed argument fails loud naming it —
+    /// never a silently-no-op draw returning the nominal.
+    fn draw_from(&self, seed: u64, base: f64) -> Result<f64, Error> {
         let mut rng = SplitMix64::new(seed);
         let args = &self.distribution.args;
         let arg = |name: &str| -> Option<f64> {
@@ -395,14 +437,35 @@ impl SampleEntry {
                 .find(|(n, _)| n == name)
                 .and_then(|(_, v)| v.as_real())
         };
+        let known: &[&str] = match self.distribution.kind.as_str() {
+            "gauss" => &["sigma", "sigma_rel"],
+            "uniform" => &["half", "rel", "lo_offset", "hi_offset"],
+            _ => &[],
+        };
+        for (name, _) in args {
+            if !known.contains(&name.as_str()) {
+                return Err(Error::Measurement(format!(
+                    "`{}`'s tol {} argument `{name}` is not a recognized key \
+                     ({} accepts: {})",
+                    self.param,
+                    self.distribution.kind,
+                    self.distribution.kind,
+                    known.join(", ")
+                )));
+            }
+        }
         let delta = match self.distribution.kind.as_str() {
             "gauss" => {
                 if let Some(sigma) = arg("sigma") {
                     sigma * rng.next_std_normal()
-                } else if let Some(sigma_rel) = arg("sigma_rel") {
-                    base * sigma_rel * rng.next_std_normal()
                 } else {
-                    return base;
+                    let sigma_rel = arg("sigma_rel").ok_or_else(|| {
+                        Error::Measurement(format!(
+                            "`{}`'s tol gauss needs `sigma` or `sigma_rel`",
+                            self.param
+                        ))
+                    })?;
+                    base * sigma_rel * rng.next_std_normal()
                 }
             }
             "uniform" => {
@@ -411,12 +474,29 @@ impl SampleEntry {
                 } else if let Some(rel) = arg("rel") {
                     base * rel * (2.0 * rng.next_f64() - 1.0)
                 } else {
-                    return base;
+                    let lo = arg("lo_offset").ok_or_else(|| {
+                        Error::Measurement(format!(
+                            "`{}`'s tol uniform needs `half`, `rel`, or `lo_offset`/`hi_offset`",
+                            self.param
+                        ))
+                    })?;
+                    let hi = arg("hi_offset").ok_or_else(|| {
+                        Error::Measurement(format!(
+                            "`{}`'s tol uniform `lo_offset` needs `hi_offset` too",
+                            self.param
+                        ))
+                    })?;
+                    lo + (hi - lo) * rng.next_f64()
                 }
             }
-            _ => return base,
+            other => {
+                return Err(Error::Measurement(format!(
+                    "`{}`'s tol kind `{other}` has no draw rule (gauss and uniform are implemented)",
+                    self.param
+                )));
+            }
         };
-        base + delta
+        Ok(base + delta)
     }
 
     /// This entry's effective Gaussian `σ` at `base` — `sigma` if
@@ -442,7 +522,7 @@ impl SampleEntry {
     /// missing both `sigma`/`sigma_rel`) draws UNSHIFTED via
     /// [`Self::draw_from`], with `log_weight = 0.0` (weight `1`, no
     /// correction needed because nothing was shifted).
-    fn draw_shifted(&self, seed: u64, shift_sigmas: f64) -> (f64, f64) {
+    fn draw_shifted(&self, seed: u64, shift_sigmas: f64) -> Result<(f64, f64), Error> {
         if self.distribution.kind == "gauss"
             && let Some(sigma) = self.gauss_sigma(self.default)
             && sigma > 0.0
@@ -454,9 +534,9 @@ impl SampleEntry {
             // log(f(x)/g(x)) for f = N(mu0, sigma), g = N(mu1, sigma):
             // -[(x-mu0)^2 - (x-mu1)^2] / (2 sigma^2).
             let log_w = -((x - mu0).powi(2) - (x - mu1).powi(2)) / (2.0 * sigma * sigma);
-            return (x, log_w);
+            return Ok((x, log_w));
         }
-        (self.draw_from(seed, self.default), 0.0)
+        Ok((self.draw_from(seed, self.default)?, 0.0))
     }
 }
 
@@ -499,6 +579,7 @@ impl<'a> AuthoredTreeWalker<'a> {
                     param: param.name().to_string(),
                     default,
                     distribution: dist.clone(),
+                    from_ranges: param.from_ranges.clone(),
                 });
             }
             // Recurse into sub-instances — the authored walk descends the

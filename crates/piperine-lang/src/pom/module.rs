@@ -114,12 +114,37 @@ pub struct Param {
     /// DVC-01/02) — additive, inert at solve.
     #[serde(default)]
     pub distribution: Option<Distribution>,
+    /// The declared `from` ranges (LRM §3.4.2), const-evaluated at
+    /// elaboration — the legal domain. Sampling reads this to report a
+    /// draw that escapes it (random-variable-catalogue); `exclude`
+    /// clauses don't constrain draws (disclosed).
+    #[serde(default)]
+    pub from_ranges: Vec<FromRange>,
     /// `true` for `localparam` (§3.4.3) — a named constant local to the
     /// module, never overridable at instantiation, as opposed to
     /// `parameter` (`false`, the default). Additive: every pre-VAMS
     /// serialized `Param` deserializes as `parameter` (`false`).
     #[serde(default)]
     pub is_local: bool,
+}
+
+/// One declared `from` interval, const-evaluated at elaboration:
+/// `[lo, hi]` with per-bound exclusivity.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FromRange {
+    pub lo: f64,
+    pub lo_exclusive: bool,
+    pub hi: f64,
+    pub hi_exclusive: bool,
+}
+
+impl FromRange {
+    /// Whether `v` falls inside the interval.
+    pub fn contains(&self, v: f64) -> bool {
+        let lo_ok = if self.lo_exclusive { v > self.lo } else { v >= self.lo };
+        let hi_ok = if self.hi_exclusive { v < self.hi } else { v <= self.hi };
+        lo_ok && hi_ok
+    }
 }
 
 impl Param {
