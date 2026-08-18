@@ -131,17 +131,17 @@ are blocked on precisely this surface.
 
 | ID | Story | Phase | Status |
 |---|---|---|---|
-| CONSTMT-01 | P1: vars parse, substitute (transitively), fail loud | Design | Pending |
-| CONSTMT-02 | P2: targets lower to target#N margins, kind Target | Design | Pending |
-| CONSTMT-03 | P2: targets never emit findings; requires_ok ignores them | Design | Pending |
-| CONSTMT-04 | P3: reduced vars/targets on AC — ugbw/pm/gm values | Design | Pending |
-| CONSTMT-05 | P3: reduced read outside AC fails loud not-defined | Design | Pending |
-| CONSTMT-06 | P4: cover bins range+set, nearest-edge, out-of-bin | Design | Pending |
-| CONSTMT-07 | P4: cover cross joint counting | Design | Pending |
-| CONSTMT-08 | P4: CoverageDatabase merge sums across runs | Design | Pending |
-| CONSTMT-09 | Edge: duplicate labels across kinds E4008 | Design | Pending |
-| CONSTMT-10 | Present-and-red suite migrated green (margin_lowering ×2, cover_bin_mapping ×7, reduced_metrics, coverage_merge, margins_channel, violations_channel, python ×1) | Design | Pending |
-| CONSTMT-11 | Docs: Part I §12 statement surface updated; ROADMAP still-dark list shrunk | Design | Pending |
+| CONSTMT-01 | P1: vars parse, substitute (transitively), fail loud | Design | Verified |
+| CONSTMT-02 | P2: targets lower to target#N margins, kind Target | Design | Verified |
+| CONSTMT-03 | P2: targets never emit findings; requires_ok ignores them | Design | Verified |
+| CONSTMT-04 | P3: reduced vars/targets on AC — ugbw/pm/gm values | Design | Verified |
+| CONSTMT-05 | P3: reduced read outside AC fails loud not-defined | Design | Verified |
+| CONSTMT-06 | P4: cover bins range+set, nearest-edge, out-of-bin | Design | Verified |
+| CONSTMT-07 | P4: cover cross joint counting | Design | Verified |
+| CONSTMT-08 | P4: CoverageDatabase merge sums across runs | Design | Verified |
+| CONSTMT-09 | Edge: duplicate labels across kinds E4008 | Design | Verified |
+| CONSTMT-10 | Present-and-red suite migrated green (margin_lowering ×2, cover_bin_mapping ×7, reduced_metrics, coverage_merge, margins_channel, violations_channel, python ×1) | Design | Verified |
+| CONSTMT-11 | Docs: Part I §12 statement surface updated; ROADMAP still-dark list shrunk | Design | Verified |
 
 ## Success Criteria
 

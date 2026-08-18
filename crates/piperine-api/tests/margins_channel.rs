@@ -240,3 +240,99 @@ endmodule
         "says why — margins are an analog notion and this instance is digital: {msg}"
     );
 }
+
+/// CONSTMT-03 (`constraint-statements`): a violated `target` is a soft
+/// goal — the channel tracks its worst margin (readable, negative) but no
+/// violation is recorded and `requires_ok` ignores targets entirely.
+#[test]
+fn a_violated_target_is_tracked_but_never_a_violation() {
+    const SOFT: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+        target V(p, n) >= 1.5;
+    end
+endmodule
+module Top ();
+    electrical gnd, out;
+    Vsrc v1 (.p(out), .n(gnd));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
+    // V(dut) = 1.0 V: head (V ≤ 0.4) violated at −0.6; the target
+    // (V ≥ 1.5) also violated at 1.0 − 1.5 = −0.5 — both negative, only
+    // the require reports.
+    let design = piperine_lang::parse_and_elaborate(SOFT, &source_map()).expect("elaborates");
+    let mut session = Session::compile(&design, "Top").expect("compiles");
+    let op = session.op(&collect_config(), None).expect("collect completes");
+    let margins = op.margins();
+    let target = margins.get("target#1").expect("the target is in the channel");
+    assert!(
+        target.scalar() < 0.0,
+        "an unsatisfiable target carries its (negative) worst margin, got {}",
+        target.scalar()
+    );
+    assert!(target.is_satisfied() == (target.scalar() >= 0.0), "satisfaction follows the sign");
+    // The violated require reports; the violated target does not, and
+    // requires_ok reflects requires only (here false because `head` is
+    // violated — the target adds nothing).
+    assert!(!op.requires_ok(), "gated by the violated require");
+    assert_eq!(op.first_violation().expect("a violation").label, "head", "the require, never the target");
+    let findings: Vec<&str> = op.violations().iter().map(|f| f.label.as_str()).collect();
+    assert!(!findings.contains(&"target#1"), "targets never produce findings: {findings:?}");
+}
+
+/// CONSTMT-06 value-level: set-bins membership counts each accepted point
+/// into its matching value's bin — and nothing for a non-member value.
+#[test]
+fn set_bins_count_by_membership_value_level() {
+    use piperine_codegen::CircuitCompiler;
+    let src = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        cover c1 : V(p, n) bins in {0.25, 0.5, 1.0};
+    end
+endmodule
+module Top ();
+    electrical gnd, out;
+    Vsrc v1 (.p(out), .n(gnd));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = piperine_lang::SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    let design = piperine_lang::parse_and_elaborate(src, &map).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowers");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let mut circuit = compiler.build_circuit("Top").expect("builds");
+    circuit
+        .dc(piperine_solver::prelude::Context::default())
+        .expect("dc setup")
+        .solve()
+        .expect("dc solves");
+    // V(dut) = 1.0 V — exactly one of the set's members.
+    let (points, _) = circuit.coverage_reports();
+    let c1 = points.iter().find(|p| p.label.ends_with("c1")).expect("cover point c1");
+    assert_eq!(c1.counts, vec![0, 0, 1], "only the 1.0 bin counts the operating point");
+}

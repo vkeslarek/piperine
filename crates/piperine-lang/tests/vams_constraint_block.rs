@@ -342,3 +342,51 @@ fn a_duplicate_label_across_kinds_fails_loud() {
     assert!(msg.contains("head"), "names the duplicated label: {msg}");
     assert!(msg.contains("duplicate"), "says what happened: {msg}");
 }
+
+/// CONSTMT-01: a var reading an earlier var substitutes transitively —
+/// and an unknown name in a var fails loud at compile (the placeholder
+/// that reaches the kernel is a loud unresolved-identifier error, never
+/// a silent 0.0).
+#[test]
+fn vars_substitute_transitively_at_the_lowering() {
+    // The value-level proof lives in codegen (margin_lowering's PAR);
+    // here we prove the authored order survives onto the POM — the
+    // second var legitimately references the first.
+    let d = elab(r#"
+        module dut (inout electrical p, inout electrical n);
+            constraint begin
+                var base = 1.0;
+                var twice = base * 2.0;
+                require head : twice <= 4.0;
+            end
+        endmodule
+    "#);
+    let cs = d.module("dut").expect("dut elaborated").constraints();
+    assert_eq!(cs.len(), 3, "authored order preserved: var, var, require");
+    // Compiles: the transitive substitution resolves every name.
+    let bodies = piperine_codegen::resolve::lower_bodies(&d).expect("lowers");
+    let margins = bodies["dut"].constraints.as_ref().expect("margins lowered");
+    assert_eq!(margins[0].label, "head", "the vars ride inside the require, not as margins");
+    assert_eq!(margins.len(), 1);
+}
+
+#[test]
+fn a_var_referencing_an_unknown_name_fails_loud_at_compile() {
+    let d = elab(r#"
+        module dut (inout electrical p, inout electrical n);
+            analog begin
+                I(p, n) <+ V(p, n) / 1e3;
+            end
+            constraint begin
+                var bad = nope + 1.0;
+                require head : bad <= 4.0;
+            end
+        endmodule
+    "#);
+    let bodies = piperine_codegen::resolve::lower_bodies(&d).expect("lowering keeps authored idents");
+    let err = match piperine_codegen::kernel::analog::AnalogKernel::compile(&bodies["dut"]) {
+        Ok(_) => panic!("an unresolved var name must fail loud, not compile"),
+        Err(e) => format!("{e:?}"),
+    };
+    assert!(err.contains("nope") || err.contains("unresolved"), "names it: {err}");
+}

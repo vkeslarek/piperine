@@ -22,14 +22,10 @@ use super::stmt::resolve_stmts;
 /// consumes; the POM `Module`/`Instance` themselves are read directly by
 /// `device::circuit` for structure (connections, param overrides).
 ///
-/// `constraints`/`cover` are permanently `None` post-MD-45: PHDL's dv-core
-/// `require`/`var`/`target`/`cover` constraint blocks (`pom::ConstraintBlock`)
-/// were deleted at T21 along with the rest of the PHDL-only value layer —
-/// Verilog-AMS's Annex A grammar has no constraint-block production, and a
-/// future phase re-anchors this on VAMS `(* attribute *)` syntax rather
-/// than this retarget inventing one. `kernel`'s constraint/coverage
-/// capabilities stay in place (already `Option`-gated) and simply never
-/// activate until that phase lands.
+/// `constraints`/`cover` carry the module's lowered constraint statements
+/// (`constraint begin … end`, the sanctioned MD-49 extension): margins
+/// (`require`/`target`/reduced vars) in `constraints`, the coverage
+/// catalog in `cover`, each `Some` iff the module declares at least one.
 #[derive(Debug, Clone, Default)]
 pub struct LoweredBody {
     /// The owning module's name — diagnostics only (`lower_bodies`'s
@@ -39,11 +35,13 @@ pub struct LoweredBody {
     pub ports: Vec<Port>,
     pub analog: Option<AnalogBody>,
     pub digital: Option<DigitalBody>,
-    /// See the type doc above (MD-45) — always `None` until a future phase
-    /// rebuilds the producer.
+    /// The lowered constraint margins (`require`/`target`/reduced vars),
+    /// `Some` iff the module declares at least one — filled by
+    /// [`ConstraintLowering::lower`](crate::resolve::pom::ConstraintLowering).
     pub constraints: Option<Vec<crate::resolve::pom::LoweredMargin>>,
-    /// See the type doc above (MD-45) — always `None` until a future phase
-    /// rebuilds the producer.
+    /// The lowered coverage catalog (`cover` points + `cover cross`es),
+    /// `Some` iff the module declares at least one — filled by
+    /// [`ConstraintLowering::lower_cover`](crate::resolve::pom::ConstraintLowering).
     pub cover: Option<(Vec<crate::resolve::pom::LoweredCoverPoint>, Vec<crate::resolve::pom::LoweredCoverCross>)>,
     /// Variable initializers (Annex A.2.2.1): `(VarId, init expr)` for
     /// every module-level `var` declared with `= constant_expression`.

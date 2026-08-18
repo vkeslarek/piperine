@@ -390,11 +390,10 @@ own, not a timescale concern).
   source. `.disto` on MOS2/MOS3 (a Cranelift function-count explosion on the
   second/third-derivative kernel, opt-in via `SessionBuilder::disto(true)`, default
   off) is the one operator-family gap that genuinely remains open per `ROADMAP.md`.
-- **Constraint statements beyond `require`.** A `constraint begin` block (§12) accepts
-  exactly the `require` statement. Constraint-local variables, targets, coverage
-  points, analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`), temporal windows, and
-  parameter distributions (`tol gauss/uniform`) are **not part of the language today** —
-  each is a typed parse/elaboration error, never a silent no-op.
+- **Analysis-scoped constraint event blocks and temporal windows.** `@ dc`/`@ tran`/
+  `@ ac` scoping blocks and `after`/`dur` windows (§12's deferred statements) have no
+  spelling today — a typed parse error, never a silent no-op. Parameter distributions
+  (`tol gauss/uniform`) likewise await the random-variable catalogue feature.
 - **Gate primitives, UDPs, and `$`-system-task calls as live device behavior** — §6/§7
   above; parsed and semantically implemented, not wired into a simulated device.
 
