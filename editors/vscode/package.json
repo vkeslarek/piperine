@@ -32,6 +32,12 @@
                 "path": "./syntaxes/vams.tmLanguage.json"
             }
         ],
+        "snippets": [
+            {
+                "language": "vams",
+                "path": "./snippets/vams.json"
+            }
+        ],
         "configuration": {
             "title": "Piperine Language Server",
             "properties": {
