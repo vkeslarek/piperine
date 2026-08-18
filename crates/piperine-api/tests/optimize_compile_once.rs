@@ -6,51 +6,58 @@
 //! [`AnalogKernel::compile_count`] delta is not polluted by concurrent
 //! tests in the same process (the `compile_once_sweep.rs` pattern).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block and its `require` clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraints-on-vams): the fixture runs against the
+//! `constraint begin … end` producer.
 
 use piperine_api::{Driver, DriverOutcome, OptimizeSpec, Policy, Session, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::SourceMap;
 
-const DIVIDER_BOUND_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param lo: Real = 0.2; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require lb : V(p, n) >= lo; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    r2   : R(.p = out,    .n = gnd);
-    dut1 : Dut(.p = out,  .n = gnd);
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers (same
+/// shape as `margins_channel.rs`'s).
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-";
+
+const DIVIDER_BOUND: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real lo = 0.2;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require lb : V(p, n) >= lo;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    R r2 (.p(out), .n(gnd));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 #[test]
 fn the_whole_optimization_run_costs_zero_additional_compiles() {
     let design =
-        piperine_lang::parse_and_elaborate(DIVIDER_BOUND_PHDL, &SourceMap::dummy()).expect("elaborates");
+        piperine_lang::parse_and_elaborate(DIVIDER_BOUND, &source_map()).expect("elaborates");
     let mut session = Session::compile(&design, "Top").expect("session compiles");
 
     let spec = OptimizeSpec {

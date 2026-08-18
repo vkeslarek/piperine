@@ -1,10 +1,9 @@
 //! The Python margin + findings surface (dv-core T24, DVC-18): the
-//! bindings added in Phase 6 delegate to `piperine_api` — `margins()`,
-//! `violations()`, `requires_ok()`, `first_violation()` on every analysis
-//! result, the `_MarginsResult` channel reads, and the loud failure modes
-//! (unknown name → `KeyError` listing candidates; a reduced `var` read
-//! outside AC → "not defined in this analysis"). Values come from the
-//! same solver the Rust host drives — nothing is recomputed in Python.
+//! bindings delegate to `piperine_api` — `margins()`, `violations()`,
+//! `requires_ok()`, `first_violation()` on every analysis result, the
+//! `_MarginsResult` channel reads, and the loud failure modes (unknown
+//! name → `KeyError` listing candidates). Values come from the same
+//! solver the Rust host drives — nothing is recomputed in Python.
 
 use piperine_python::embed::run_script;
 
@@ -21,41 +20,56 @@ fn run(name: &str, script: &str) {
     assert!(result.is_ok(), "python script must pass: {:?}", result.err());
 }
 
-/// The divider: one violated `require` (margin −0.1) plus one reduced
-/// `var` defined only on AC.
-// BLOCKED — left in PHDL syntax: `constraint`/`require`/`var` blocks have no
-// Verilog-AMS Annex A production; MD-45 deleted `pom::ConstraintBlock` and
-// the lowering that produced it (see `piperine-codegen/src/resolve/pom/
-// constraints.rs`'s module doc), so this fixture cannot be retargeted yet.
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// The divider: one violated `require` (margin −0.1).
+/// Self-contained (inline natures/discipline) so it elaborates under
+/// `SourceMap::dummy()` regardless of the runner's CWD.
+const DIVIDER: &str = r#"
+nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; param acmag: Real = 1.0; }
-analog Vsrc { V(p, n) <+ dc + ac_stim(acmag, 0.0); }
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    parameter real acmag = 1.0;
+    analog begin
+        V(p, n) <+ dc + ac_stim(acmag, 0.0);
+    end
+endmodule
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
 
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
 
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// DVC-18: the Python result objects read the margins channel and the
 /// findings with the same values the solver recorded — the wrapper is a
 /// thin forward over `piperine_api`, not a reimplementation.
 #[test]
 fn margins_and_violations_read_through_python() {
-    let phdl = write_temp("piperine_dv_divider.phdl", DIVIDER_PHDL);
+    let phdl = write_temp("piperine_dv_divider.vams", DIVIDER);
     let script = format!(
         r#"
 import piperine
@@ -116,7 +130,7 @@ assert len(ac.violations()) > 0
 /// reads fine on the AC result itself.
 #[test]
 fn loud_margin_reads_fail_identically_through_python() {
-    let phdl = write_temp("piperine_dv_divider2.phdl", DIVIDER_PHDL);
+    let phdl = write_temp("piperine_dv_divider2.vams", DIVIDER);
     let script = format!(
         r#"
 import piperine
@@ -140,10 +154,10 @@ except KeyError as e:
 }
 
 /// A gain stage with a reduced `var` — defined on AC results only.
-// BLOCKED — left in PHDL syntax: `constraint`/`require`/`var` blocks have no
-// Verilog-AMS Annex A production; MD-45 deleted `pom::ConstraintBlock` and
-// the lowering that produced it (see `piperine-codegen/src/resolve/pom/
-// constraints.rs`'s module doc), so this fixture cannot be retargeted yet.
+// BLOCKED on the deferred `var`/reduced-metric statement (constraints-on-vams
+// Out-of-Scope): constraint blocks accept only `require` today, so this
+// fixture stays PHDL and red — the executable specification for whoever
+// rebuilds reduced metrics; never deleted.
 const STAGE_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
