@@ -11,82 +11,92 @@
 //! step of 1e-3 over `[0, 1e-2]`, the in-window points are t = 5e-3,
 //! 6e-3, 7e-3 — the argmin is the first (5e-3), the worst is −0.1.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block, its `require` clause, and the analysis-scoped
-//! event window `@ tran(after = …, dur = …) { … }`.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraint-scoping): the fixtures run against the
+//! `constraint begin … end` producer with the analysis-scoped event
+//! window spelled `@ tran(after = …, dur = …) { … }` inside the module —
+//! `dur` absent is open-ended `[after, ∞)`.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 /// A divider whose `out` sits at 0.5 V for the whole tran (DC source on a
 /// resistor divider — no dynamics). The `@ tran(after = 5e-3, dur = 2e-3)`
 /// window scopes `vds_tran` to `[5e-3, 7e-3]`.
-const WINDOW_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut {
-    @ tran(after = 5e-3, dur = 2e-3) { require vds_tran : V(p, n) <= hi; }
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+const WINDOW: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        @ tran(after = 5e-3, dur = 2e-3) { require vds_tran : V(p, n) <= hi; }
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// Same circuit, but the window sits outside the tran's time range
-/// (`after = 100.0`). The `require` is never exercised — the host sees
-/// "not exercised" rather than a silent vacuous pass.
-const OUT_OF_RANGE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// (`after = 100.0`, open-ended). The `require` is never exercised — the
+/// host sees "not exercised" rather than a silent vacuous pass.
+const OUT_OF_RANGE: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        @ tran(after = 100.0) { require vds_tran : V(p, n) <= hi; }
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut {
-    @ tran(after = 100.0, dur = 1.0) { require vds_tran : V(p, n) <= hi; }
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-
-fn compile(phdl: &str) -> Session {
-    let design = piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates");
+fn compile(src: &str) -> Session {
+    let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -101,7 +111,7 @@ fn collect_config() -> SolverConfig {
 /// tracker — never a silent pass.
 #[test]
 fn windowed_require_evaluates_only_inside_the_window() {
-    let mut session = compile(WINDOW_PHDL);
+    let mut session = compile(WINDOW);
     let tran = session
         .tran(1e-2, Some(1e-3), 0.0, &collect_config(), None, false, &[])
         .expect("collect tran completes");
@@ -145,7 +155,7 @@ fn windowed_require_evaluates_only_inside_the_window() {
 /// vacuous pass).
 #[test]
 fn window_outside_the_tran_range_is_not_exercised() {
-    let mut session = compile(OUT_OF_RANGE_PHDL);
+    let mut session = compile(OUT_OF_RANGE);
     let tran = session
         .tran(1e-2, Some(1e-3), 0.0, &collect_config(), None, false, &[])
         .expect("collect tran completes");

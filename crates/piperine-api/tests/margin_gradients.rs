@@ -11,23 +11,12 @@
 //! differentiable case proves the adjoint dispatches through the
 //! margin-naming layer and reports `argmin` (the DC point).
 //!
-//! **Partially migrated** (constraints-on-vams): the `require`-only
-//! divider fixture runs against the `constraint begin … end` producer.
-//! What stays red, each naming its blocker at the fixture or the test:
-//! the reduced AC `var` fixtures (BLOCKED on reduced metrics in
-//! gradients — `classify_margin_gradient` (`piperine-api`'s
-//! `gradient.rs`) is still the MD-45 always-refuse stub, so even with
-//! the now-live `var ugbw = ac_unity_gain_freq(…);` spelling the
-//! expected "AC adjoint"/"D6" refusal message never arrives;
-//! re-anchoring dv-gradients on the constraint-statements producer is
-//! the deferred follow-up), the `@ tran` fixture (BLOCKED on the
-//! deferred analysis-scoping block — still no `constraint begin … end`
-//! spelling for `@ tran { require … }`), and the two pointwise-DC
-//! gradient tests — fixture migrated, but the same classifier stub
-//! refuses every name, so the margin-naming layer has nothing to
-//! dispatch through yet. Blocked tests stay failing rather than being
-//! weakened, deleted, or `#[ignore]`d (repo-banned by
-//! `tests/suite_hygiene.rs`).
+//! **Migrated** (constraint-scoping): every fixture runs against the
+//! `constraint begin … end` producer. The AC-defined pointwise metric is
+//! spelled `@ ac { require ag : … }` and the transient-scoped metric
+//! `@ tran { require settle : … }` — the classifier descends the scope
+//! (@ ac → AcDefined, @ tran → EventDetected) and the refusal still names
+//! the gap ("AC adjoint" / event-detected).
 
 use piperine_api::{Session, SolverConfig};
 use piperine_api::prelude::CheckPosture;
@@ -76,11 +65,9 @@ module Top ();
 endmodule
 "#;
 
-/// BLOCKED on reduced metrics in gradients (dv-gradients deferred):
-/// kept for the still-red pointwise-AC test below (see its note).
-///
-/// A single-pole stage with reduced AC `var`s (`ugbw`, `pm`) —
-/// AC-defined, refuse loud naming the adjoint gap.
+/// A single-pole stage with reduced AC `var`s (`ugbw`, `pm`) plus a
+/// pointwise `@ ac`-scoped require (`ag`) — all AC-defined, refused loud
+/// naming the adjoint gap.
 const STAGE: &str = r#"`include "disciplines.vams"
 module Vac (inout electrical p, inout electrical n);
     parameter real acmag = 1.0;
@@ -100,6 +87,7 @@ module Stage (inout electrical inp, inout electrical out, inout electrical gnd);
     constraint begin
         var ugbw = ac_unity_gain_freq(V(out, gnd));
         var pm = ac_phase_margin(V(out, gnd));
+        @ ac { require ag : V(out, gnd) >= 1.0; }
     end
 endmodule
 module Top ();
@@ -109,35 +97,36 @@ module Top ();
 endmodule
 "#;
 
-/// BLOCKED on the deferred `@ tran` analysis-scoping block: `@ tran {
-/// require … }` still has no `constraint begin … end` spelling, so this
-/// fixture stays in PHDL and fails at parse.
-///
-/// A transient-scoped require — event-detected, refused loud.
-const TRAN_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut {
-    @ tran { require settle : V(p, n) <= 0.4; }
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+/// A transient-scoped require (`@ tran { require settle : … }`) —
+/// event-detected, refused loud.
+const TRAN: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        @ tran { require settle : V(p, n) <= 0.4; }
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 fn compile(src: &str) -> Session {
     let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
@@ -202,11 +191,6 @@ fn a_pointwise_dc_margin_gradient_is_taken_at_the_located_argmin() {
 // second fixture (`V(gnd, out)` — flipping the differential sign) and
 // check the gradient sign flips with it, proving both ends were
 // resolved.
-//
-// BLOCKED on the margin-gradient classifier (`classify_margin_gradient`
-// is still the MD-45 always-refuse stub) — same blocker as the argmin
-// test above; the fixture is migrated and the failure is the stub's
-// loud refusal.
 #[test]
 fn a_differential_probe_resolves_both_ends() {
     let mut session = compile(DIVIDER);
@@ -255,20 +239,13 @@ fn an_ac_defined_reduced_metric_fails_loud_naming_the_ac_gap() {
 
 // ── DVG-12: an AC pointwise metric fails loud too ──────────────────────────
 //
-// `ac_gain` is pointwise + AC-scoped. Same gap, different class — the
-// classifier must not let a pointwise AC metric sneak through just
-// because it is pointwise.
-//
-// BLOCKED on the deferred `@ ac` analysis-scoping block: a *pointwise*
-// AC metric (the old `ac_gain` var) has no `constraint begin … end`
-// spelling today — the restored helpers are all reduced class. The
-// fixture stays PHDL and fails at parse until scoping lands.
-const STAGE_PHDL: &str = "\
-constraint Stage { var ag : Real = ac_gain(V(out, gnd)); }
-";
+// `@ ac { require ag : … }` is pointwise + AC-scoped. Same gap, different
+// class — the classifier descends the scope (`@ ac` → AcDefined) and must
+// not let a pointwise AC metric sneak through just because it is
+// pointwise.
 #[test]
 fn an_ac_defined_pointwise_metric_fails_loud() {
-    let mut session = compile(STAGE_PHDL);
+    let mut session = compile(STAGE);
     let err = session
         .margin_gradient("ag", &[("x1".into(), "gm".into())], &collect_config())
         .expect_err("AC pointwise metric must refuse");
@@ -283,13 +260,11 @@ fn an_ac_defined_pointwise_metric_fails_loud() {
 //
 // `@ tran { require settle : … }` is transient-scoped. Settling time / a
 // time-windowed require is event-detected territory — differentiable
-// only through the event, which has no adjoint today.
-//
-// BLOCKED on the deferred `@ tran` analysis-scoping block (still no
-// `constraint begin … end` spelling) — see `TRAN_PHDL`.
+// only through the event, which has no adjoint today. The classifier
+// descends the scope (`@ tran` → EventDetected).
 #[test]
 fn a_transient_scoped_metric_fails_loud_as_event_detected() {
-    let mut session = compile(TRAN_PHDL);
+    let mut session = compile(TRAN);
     let err = session
         .margin_gradient("settle", &[("r1".into(), "r".into())], &collect_config())
         .expect_err("event-detected metric must refuse");

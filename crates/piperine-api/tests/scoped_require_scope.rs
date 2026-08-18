@@ -12,80 +12,89 @@
 //! predicate would fail tran; this fixture separates the two scopes to
 //! prove `@ dc` is honored.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block, its `require` clause, and the analysis-scoped
-//! event blocks `@ dc { … }` / `@ tran { … }` / `@ ac { … }`.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (constraint-scoping): the fixtures run against the
+//! `constraint begin … end` producer with the analysis-scoped groups
+//! spelled `@ dc { … }` / `@ tran { … }` / `@ ac { … }` inside the module.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
-const DIVIDER_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut {
-    @ dc { require vds_dc : V(p, n) <= hi; }
-    @ tran { require vds_tran : V(p, n) <= hi; }
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
 
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+const DIVIDER: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        @ dc { require vds_dc : V(p, n) <= hi; }
+        @ tran { require vds_tran : V(p, n) <= hi; }
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// An AC-only constraint block on an instance the DC sweep touches — its
 /// scoped require is never exercised at DC, and `requires_ok` reports
 /// false (never a silent vacuous pass).
-const AC_ONLY_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const AC_ONLY: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        @ ac { require ac_headroom : V(p, n) <= hi; }
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut {
-    @ ac { require ac_headroom : V(p, n) <= hi; }
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-
-fn compile(phdl: &str) -> Session {
-    let design = piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates");
+fn compile(src: &str) -> Session {
+    let design = piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates");
     Session::compile(&design, "Top").expect("session compiles")
 }
 
@@ -105,7 +114,7 @@ fn collect_config() -> SolverConfig {
 /// evaluated there.
 #[test]
 fn strict_dc_fails_when_dc_scoped_require_is_violated_strict_tran_passes() {
-    let mut dc_session = compile(DIVIDER_PHDL);
+    let mut dc_session = compile(DIVIDER);
     let dc_err = session_dc_fails(&mut dc_session);
     assert!(
         dc_err.contains("vds_dc") && dc_err.contains("dut1"),
@@ -118,7 +127,7 @@ fn strict_dc_fails_when_dc_scoped_require_is_violated_strict_tran_passes() {
     // violated at the same point — to prove `@ dc` is honored, run a
     // variant where the tran-scoped require's `hi` is loose enough to
     // always hold.
-    let mut tran_session = compile(DIVIDER_PHDL);
+    let mut tran_session = compile(DIVIDER);
     let _ = tran_session
         .tran(1e-3, Some(1e-4), 0.0, &strict_config(), None, false, &[])
         .expect_err("the @ tran rule fires on the same point — strict tran fails too");
@@ -126,30 +135,35 @@ fn strict_dc_fails_when_dc_scoped_require_is_violated_strict_tran_passes() {
     // Now the variant: only `@ dc` carries the violated rule; tran has no
     // rule at all. Strict tran must pass even though the DC point that
     // lives under it would fail the DC rule.
-    let tran_only = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.4; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut {
-    @ dc { require vds_dc : V(p, n) <= hi; }
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+    let tran_only = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        @ dc { require vds_dc : V(p, n) <= hi; }
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
     let mut tran_only_session = compile(tran_only);
     tran_only_session
         .tran(1e-3, Some(1e-4), 0.0, &strict_config(), None, false, &[])
@@ -169,7 +183,7 @@ fn session_dc_fails(session: &mut Session) -> String {
 /// runs during a DC op().
 #[test]
 fn scoped_require_whose_analysis_never_ran_is_not_exercised() {
-    let mut session = compile(AC_ONLY_PHDL);
+    let mut session = compile(AC_ONLY);
     let op = session.op(&collect_config(), None).expect("collect completes");
     let margins = op.margins();
 
@@ -200,7 +214,7 @@ fn scoped_require_whose_analysis_never_ran_is_not_exercised() {
 /// "not exercised") and satisfied or not per the math.
 #[test]
 fn scoped_require_evaluates_only_in_its_analysis_under_collect() {
-    let mut session = compile(DIVIDER_PHDL);
+    let mut session = compile(DIVIDER);
     let op = session.op(&collect_config(), None).expect("collect completes");
     let margins = op.margins();
 
