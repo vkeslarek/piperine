@@ -6,49 +6,53 @@
 //! tests in the same process (the `compile_once_sweep.rs` / `urc_compile_count.rs`
 //! pattern).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause, and the `tol
-//! gauss(…)` parameter-distribution clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (random-variable-catalogue): the fixture runs against the
+//! live VAMS `tol gauss(…)` parameter-distribution surface and the
+//! in-module `constraint begin … end` producer.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{SamplePlan, Session, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::SourceMap;
 
-const DIVIDER_TOL_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3 tol gauss(sigma_rel = 0.3);
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
 }
-analog R { I(p, n) <+ V(p, n) / r; }
 
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.55; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+const DIVIDER_TOL: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol gauss(sigma_rel = 0.3);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.55;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// DVG-18 / MD-18: a 1000-sample Monte Carlo run costs exactly the
 /// compiles the session already paid for building — the loop restamps,
@@ -56,7 +60,7 @@ mod Top() {
 #[test]
 fn a_thousand_samples_cost_zero_additional_compiles() {
     let design =
-        piperine_lang::parse_and_elaborate(DIVIDER_TOL_PHDL, &SourceMap::dummy()).expect("elaborates");
+        piperine_lang::parse_and_elaborate(DIVIDER_TOL, &source_map()).expect("elaborates");
     let mut session = Session::compile(&design, "Top").expect("session compiles");
     let plan = SamplePlan::collect(&design, "Top").expect("plan collects");
     let config = SolverConfig { checks: CheckPosture::Collect, ..Default::default() };

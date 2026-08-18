@@ -4,88 +4,98 @@
 //! nominal value while the distribution stays attached on the POM; and the
 //! `Invalidation` class a live param write returns is unchanged by the
 //! presence of a `tol`.
-
-//! **Present-and-red — blocked on the deferred parameter-distribution
-//! surface** (constraints-on-vams Out-of-Scope: PHDL's per-parameter
-//! `tol gauss/uniform` clauses; the recorded follow-up direction re-anchors
-//! sampling onto the LRM §9.13.2 `$rdist_*`/`$random` functions piperine
-//! already implements, over a first-class random-variable catalogue). The
-//! fixtures below still use the retired PHDL grammar and fail at
-//! elaboration until that follow-up lands; do not delete them.
+//!
+//! **Migrated** (random-variable-catalogue): the fixtures run against the
+//! live VAMS `tol gauss(…)`/`tol uniform(…)` parameter-distribution
+//! surface — `tol`/`global` are contextual keywords, the keyed args are
+//! const-evaluated in module scope, and the distribution lands on the POM
+//! `Param::distribution` without ever reaching the solver.
 
 use piperine::{NetRef, Session, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 /// The divider twin, with or without `tol` clauses on its params:
 /// `mid = 5·2k/(3k+2k) = 2.0 V` nominal; staging `r_top.r = 2e3` gives 2.5 V.
-fn divider_phdl(with_tol: bool) -> String {
+fn divider(with_tol: bool) -> String {
     let tol_v = if with_tol { " tol gauss(sigma = 0.001) global" } else { "" };
     let tol_r = if with_tol { " tol uniform(rel = 0.01)" } else { "" };
     format!(
-        "\
-mod VoltageSource(inout p: Electrical, inout n: Electrical) {{
-    param voltage: Real = 0.0{tol_v};
-}}
-analog VoltageSource {{ V(p, n) <- voltage; }}
-
-mod Resistor(inout p: Electrical, inout n: Electrical) {{
-    param r: Real = 1e3{tol_r};
-}}
-analog Resistor {{ I(p, n) <+ V(p, n) / r; }}
-
-mod Divider() {{
-    wire gnd  : Electrical;
-    wire vin  : Electrical;
-    wire mid  : Electrical;
-    src   : VoltageSource (.p = vin, .n = gnd) {{ .voltage = 5.0 }};
-    r_top : Resistor      (.p = vin, .n = mid) {{ .r = 3e3 }};
-    r_bot : Resistor      (.p = mid, .n = gnd) {{ .r = 2e3 }};
-}}
-"
+        r#"`include "disciplines.vams"
+module VoltageSource (inout electrical p, inout electrical n);
+    parameter real voltage = 0.0{tol_v};
+    analog begin
+        V(p, n) <+ voltage;
+    end
+endmodule
+module Resistor (inout electrical p, inout electrical n);
+    parameter real r = 1e3{tol_r};
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Divider ();
+    electrical gnd, vin, mid;
+    VoltageSource #(.voltage(5.0)) src (.p(vin), .n(gnd));
+    Resistor #(.r(3e3)) r_top (.p(vin), .n(mid));
+    Resistor #(.r(2e3)) r_bot (.p(mid), .n(gnd));
+endmodule
+"#
     )
 }
 
 /// The RC twin, with or without a `tol` clause — the `tran`/`ac` vehicle.
-fn rc_phdl(with_tol: bool) -> String {
+fn rc(with_tol: bool) -> String {
     let tol_r = if with_tol { " tol uniform(rel = 0.01)" } else { "" };
     format!(
-        "\
-mod V(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 0.0; param acmag: Real = 0.0; }}
-analog V {{ V(p, n) <+ dc + ac_stim(acmag, 0.0); }}
-
-mod R(inout p: Electrical, inout n: Electrical) {{ param r: Real = 1e3{tol_r}; }}
-analog R {{ I(p, n) <+ V(p, n) / r; }}
-
-mod C(inout p: Electrical, inout n: Electrical) {{ param c: Real = 1e-6; }}
-analog C {{ I(p, n) <+ c * ddt(V(p, n)); }}
-
-mod Top() {{
-    wire gnd : Electrical;
-    wire vin : Electrical;
-    wire out : Electrical;
-    v1 : V(.p = vin, .n = gnd) {{ .dc = 5.0, .acmag = 1.0 }};
-    r1 : R(.p = vin, .n = out) {{}};
-    c1 : C(.p = out, .n = gnd) {{}};
-}}
-"
+        r#"`include "disciplines.vams"
+module V (inout electrical p, inout electrical n);
+    parameter real dc = 0.0;
+    parameter real acmag = 0.0;
+    analog begin
+        V(p, n) <+ dc + ac_stim(acmag, 0.0);
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3{tol_r};
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-6;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+module Top ();
+    electrical gnd, vin, out;
+    V #(.dc(5.0), .acmag(1.0)) v1 (.p(vin), .n(gnd));
+    R r1 (.p(vin), .n(out));
+    C c1 (.p(out), .n(gnd));
+endmodule
+"#
     )
 }
 
 fn elaborate(src: &str) -> piperine_lang::Design {
-    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
-    map.add_namespace("piperine", headers.clone());
-    map.add_namespace("spice", headers.join("spice"));
-    piperine_lang::parse_and_elaborate(&format!("use piperine::disciplines;\n{src}"), &map)
-        .expect("elaborates")
+    piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates")
 }
 
 /// DVC-03 AC4: `op()` on the toleranced design is bit-identical to the
 /// untoleranced twin.
 #[test]
 fn op_is_bit_identical_with_and_without_tol() {
-    let plain = elaborate(&divider_phdl(false));
-    let tol = elaborate(&divider_phdl(true));
+    let plain = elaborate(&divider(false));
+    let tol = elaborate(&divider(true));
     let mut plain_session = Session::compile(&plain, "Divider").expect("compiles");
     let mut tol_session = Session::compile(&tol, "Divider").expect("compiles");
     let plain_op = plain_session.op(&SolverConfig::default(), None).expect("op solves");
@@ -114,8 +124,8 @@ fn op_is_bit_identical_with_and_without_tol() {
 /// for sample, to the untoleranced twin.
 #[test]
 fn tran_is_bit_identical_with_and_without_tol() {
-    let plain = elaborate(&rc_phdl(false));
-    let tol = elaborate(&rc_phdl(true));
+    let plain = elaborate(&rc(false));
+    let tol = elaborate(&rc(true));
     let mut plain_session = Session::compile(&plain, "Top").expect("compiles");
     let mut tol_session = Session::compile(&tol, "Top").expect("compiles");
     let out = NetRef { name: "out".into() };
@@ -139,8 +149,8 @@ fn tran_is_bit_identical_with_and_without_tol() {
 /// point, to the untoleranced twin.
 #[test]
 fn ac_is_bit_identical_with_and_without_tol() {
-    let plain = elaborate(&rc_phdl(false));
-    let tol = elaborate(&rc_phdl(true));
+    let plain = elaborate(&rc(false));
+    let tol = elaborate(&rc(true));
     let mut plain_session = Session::compile(&plain, "Top").expect("compiles");
     let mut tol_session = Session::compile(&tol, "Top").expect("compiles");
     let out = NetRef { name: "out".into() };
@@ -161,7 +171,7 @@ fn ac_is_bit_identical_with_and_without_tol() {
 /// distribution stays attached on the POM param.
 #[test]
 fn staged_override_wins_and_the_distribution_stays_attached() {
-    let design = elaborate(&divider_phdl(true));
+    let design = elaborate(&divider(true));
     let mut session = Session::builder(&design, "Divider")
         .stage("r_top", "r", Value::Real(2e3))
         .compile()
@@ -190,7 +200,7 @@ fn invalidation_class_is_unchanged_by_tol() {
     use piperine_solver::prelude::{Invalidation, Value as SolverValue};
 
     let build = |with_tol: bool| {
-        let design = elaborate(&divider_phdl(with_tol));
+        let design = elaborate(&divider(with_tol));
         let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering");
         CircuitCompiler::new(&design, &bodies).build_circuit("Divider").expect("circuit builds")
     };

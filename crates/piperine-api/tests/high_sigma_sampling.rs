@@ -6,23 +6,25 @@
 //! tight margin — the estimate agrees with a long plain Monte Carlo
 //! within the reported interval (AC4, the independent test criterion).
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause, and the `tol
-//! gauss(…)` parameter-distribution clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (random-variable-catalogue): the fixture runs against the
+//! live VAMS `tol gauss(sigma_rel = …)` parameter-distribution surface
+//! and the in-module `constraint begin … end` producer; the
+//! importance-sampling estimator machinery (`SamplePlan::draws_importance`
+//! / `apply_importance`, `Policy::HighSigma`) is live in
+//! `crates/piperine-api/src/sampling.rs` and `driver/high_sigma.rs`.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Driver, DriverOutcome, HighSigmaEstimator, HighSigmaSpec, Policy, SamplePlan, Session, SolverConfig};
 use piperine_lang::SourceMap;
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 /// A bitcell-shaped fixture (design §T20's own allowance: "two
 /// back-to-back inverters OR a simple ... fixture with a tight margin" —
@@ -36,33 +38,38 @@ use piperine_lang::SourceMap;
 /// under plain sampling) — small enough that importance sampling with a
 /// mean shift toward low `r1` (which raises `V(out)`) meaningfully
 /// concentrates draws in the failure region.
-const BITCELL_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const BITCELL: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol gauss(sigma_rel = 0.1);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.55;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3 tol gauss(sigma_rel = 0.1);
-}
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.55; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-
-fn design(phdl: &str) -> piperine_lang::Design {
-    piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates")
+fn design(src: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates")
 }
 
 fn collect_config() -> SolverConfig {
@@ -76,8 +83,8 @@ fn collect_config() -> SolverConfig {
 /// probability), and the estimator is always the named mean-shift method.
 #[test]
 fn high_sigma_yield_always_carries_its_estimator_and_a_confidence_interval() {
-    let phdl_design = design(BITCELL_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let bitcell_design = design(BITCELL);
+    let mut session = Session::compile(&bitcell_design, "Top").expect("session compiles");
 
     let spec = HighSigmaSpec { n: 300, seed: 11, shift_sigmas: -2.5, confidence: 0.95 };
     let driver = Driver::new(Policy::HighSigma(spec));
@@ -108,8 +115,8 @@ fn high_sigma_yield_always_carries_its_estimator_and_a_confidence_interval() {
 /// the same margin violation.
 #[test]
 fn a_tail_sample_is_replayable_from_seed_and_index() {
-    let phdl_design = design(BITCELL_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let bitcell_design = design(BITCELL);
+    let mut session = Session::compile(&bitcell_design, "Top").expect("session compiles");
 
     let spec = HighSigmaSpec { n: 200, seed: 42, shift_sigmas: -3.0, confidence: 0.95 };
     let driver = Driver::new(Policy::HighSigma(spec.clone()));
@@ -125,11 +132,11 @@ fn a_tail_sample_is_replayable_from_seed_and_index() {
 
     // Replay: an independent plan/session, driven by ONLY (seed, index,
     // shift_sigmas) — the campaign parameters, not internal driver state.
-    let plan_a = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let plan_a = SamplePlan::collect(&bitcell_design, "Top").expect("plan collects");
     let draw_a = plan_a.draws_importance(spec.seed, tail_index, spec.shift_sigmas);
 
-    let phdl_design_b = design(BITCELL_PHDL);
-    let plan_b = SamplePlan::collect(&phdl_design_b, "Top").expect("replay plan collects");
+    let bitcell_design_b = design(BITCELL);
+    let plan_b = SamplePlan::collect(&bitcell_design_b, "Top").expect("replay plan collects");
     let draw_b = plan_b.draws_importance(spec.seed, tail_index, spec.shift_sigmas);
 
     assert_eq!(draw_a.draws, draw_b.draws, "(seed, index, shift_sigmas) reproduces byte-identical draws");
@@ -137,7 +144,7 @@ fn a_tail_sample_is_replayable_from_seed_and_index() {
 
     // Applying the replayed draw to a fresh session reproduces the same
     // margin violation the original run counted as a failure.
-    let mut replay_session = Session::compile(&phdl_design_b, "Top").expect("replay session compiles");
+    let mut replay_session = Session::compile(&bitcell_design_b, "Top").expect("replay session compiles");
     plan_b
         .apply_importance(&mut replay_session, spec.seed, tail_index, spec.shift_sigmas)
         .expect("replay applies");
@@ -153,12 +160,12 @@ fn a_tail_sample_is_replayable_from_seed_and_index() {
 /// within the reported confidence interval.
 #[test]
 fn importance_sampling_agrees_with_a_long_plain_monte_carlo_within_the_reported_interval() {
-    let phdl_design = design(BITCELL_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let bitcell_design = design(BITCELL);
+    let mut session = Session::compile(&bitcell_design, "Top").expect("session compiles");
     let config = collect_config();
 
     // The long plain oracle.
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&bitcell_design, "Top").expect("plan collects");
     let plain_mc = plan.monte_carlo(&mut session, 20_000, 999, &config).expect("plain monte carlo runs");
     let plain_yield = plain_mc.yield_fraction();
     assert!(

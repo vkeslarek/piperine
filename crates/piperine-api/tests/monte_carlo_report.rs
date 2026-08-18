@@ -4,86 +4,97 @@
 //! proof for the whole sampling loop (MD-18), and non-convergent samples
 //! reported as outcomes rather than aborting the run.
 //!
-//! **BLOCKED — fixtures left in PHDL syntax.** This target's fixture needs
-//! PHDL's `constraint` block with its `require` clause, and the `tol
-//! gauss(…)` parameter-distribution clause.
-//! Verilog-AMS Annex A has no production for any of them: MD-45 deleted
-//! `pom::ConstraintBlock`/`QuantityClass`/`Module::constraints()` with the
-//! PHDL AST (T21), `lower_bodies` now always sets `LoweredBody::constraints`
-//! and `::cover` to `None`, `elab/lower/vams.rs` always writes
-//! `Param::distribution = None`, and `MarginsCatalog::compute` returns an
-//! empty catalog unconditionally. A future phase re-anchors the dv-core
-//! surface on VAMS `(* attribute *)` syntax (`.specs/STATE.md` MD-45,
-//! `resolve/pom/constraints.rs`'s module doc). Until then the fixtures below
-//! cannot be retargeted and the tests are left failing rather than weakened,
-//! deleted, or `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (random-variable-catalogue): the fixtures run against the
+//! live VAMS `tol gauss(…)`/`tol uniform(…)` parameter-distribution
+//! surface and the in-module `constraint begin … end` producer — `tol`/
+//! `global` are contextual keywords and the keyed args (`sigma_rel`,
+//! `rel`) are const-evaluated in module scope.
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{MonteCarloResult, SampleOutcome, SamplePlan, Session, SolverConfig};
 use piperine_lang::SourceMap;
+
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
 
 /// A resistive divider with a `require` and a mismatch `tol` on `r1`:
 /// nominal `V(out) = dc·1e3/(r1+1e3) = 0.5 V` (dc=1, r1=1e3), and
 /// `require head : V(out) <= hi` (hi=0.55) has margin `hi - V(out)`,
 /// nominally satisfied (0.05) but reachable-negative for a low-enough
 /// `r1` draw — a fixture with both passing and failing samples.
-const DIVIDER_TOL_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3 tol gauss(sigma_rel = 0.3);
-}
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.55; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+const DIVIDER_TOL: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol gauss(sigma_rel = 0.3);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.55;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// A fixture that reaches non-convergence for roughly a quarter of its
 /// draws: `r` is uniform over `[-1e3, 3e3]` (default 1e3, `rel = 2.0`),
 /// so a negative draw feeds `sqrt(r)` a negative argument, producing
 /// `NaN` and a solve that fails to converge — a real per-sample failure,
 /// not a contrived error path.
-const NONCONVERGENT_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const NONCONVERGENT: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol uniform(rel = 2.0);
+    analog begin
+        I(p, n) <+ V(p, n) / sqrt(r);
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.99;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3 tol uniform(rel = 2.0);
-}
-analog R { I(p, n) <+ V(p, n) / sqrt(r); }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.99; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
-
-fn design(phdl: &str) -> piperine_lang::Design {
-    piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates")
+fn design(src: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates")
 }
 
 fn collect_config() -> SolverConfig {
@@ -98,9 +109,9 @@ fn collect_config() -> SolverConfig {
 /// hand-count of `head`'s sign over the same outcomes.
 #[test]
 fn yield_fraction_is_the_share_of_samples_with_every_margin_nonnegative() {
-    let phdl_design = design(DIVIDER_TOL_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let divider_design = design(DIVIDER_TOL);
+    let mut session = Session::compile(&divider_design, "Top").expect("session compiles");
+    let plan = SamplePlan::collect(&divider_design, "Top").expect("plan collects");
     let config = collect_config();
 
     let result = plan.monte_carlo(&mut session, 200, 7, &config).expect("monte carlo runs");
@@ -131,9 +142,9 @@ fn yield_fraction_is_the_share_of_samples_with_every_margin_nonnegative() {
 /// hand-computed population standard deviation of the same values.
 #[test]
 fn sigma_reports_the_spread_of_a_constraints_margin_value() {
-    let phdl_design = design(DIVIDER_TOL_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let divider_design = design(DIVIDER_TOL);
+    let mut session = Session::compile(&divider_design, "Top").expect("session compiles");
+    let plan = SamplePlan::collect(&divider_design, "Top").expect("plan collects");
     let config = collect_config();
 
     let result = plan.monte_carlo(&mut session, 100, 11, &config).expect("monte carlo runs");
@@ -166,9 +177,9 @@ fn sigma_reports_the_spread_of_a_constraints_margin_value() {
 /// during the run.
 #[test]
 fn the_worst_sample_is_named_and_replayable() {
-    let phdl_design = design(DIVIDER_TOL_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let divider_design = design(DIVIDER_TOL);
+    let mut session = Session::compile(&divider_design, "Top").expect("session compiles");
+    let plan = SamplePlan::collect(&divider_design, "Top").expect("plan collects");
     let config = collect_config();
     let seed = 23u64;
 
@@ -186,8 +197,8 @@ fn the_worst_sample_is_named_and_replayable() {
     }
 
     // Replay: an independent session/plan, driven by ONLY (seed, worst_index).
-    let mut replay = Session::compile(&phdl_design, "Top").expect("replay compiles");
-    let replay_plan = SamplePlan::collect(&design(DIVIDER_TOL_PHDL), "Top").expect("replay plan collects");
+    let mut replay = Session::compile(&divider_design, "Top").expect("replay compiles");
+    let replay_plan = SamplePlan::collect(&design(DIVIDER_TOL), "Top").expect("replay plan collects");
     replay_plan.apply(&mut replay, seed, worst_index).expect("replay applies");
     let replay_op = replay.op(&config, None).expect("replay op solves");
     let replay_value = replay_op.margins().get("head").expect("head margin").scalar();
@@ -204,9 +215,9 @@ fn the_worst_sample_is_named_and_replayable() {
 /// the run continues past it and every other sample is still reported.
 #[test]
 fn a_non_convergent_sample_is_reported_as_an_outcome_and_the_run_continues() {
-    let phdl_design = design(NONCONVERGENT_PHDL);
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let nonconvergent_design = design(NONCONVERGENT);
+    let mut session = Session::compile(&nonconvergent_design, "Top").expect("session compiles");
+    let plan = SamplePlan::collect(&nonconvergent_design, "Top").expect("plan collects");
     let config = collect_config();
 
     let result: MonteCarloResult =

@@ -16,78 +16,75 @@
 //! distinction is a structural question that lives on the authored
 //! declarations.
 //!
-//! **BLOCKED on the deferred per-parameter `tol gauss(…)`/`tol uniform(…)`
-//! distribution clauses** (constraints-on-vams Out-of-Scope). Every
-//! fixture in this target is load-bearing on a `tol` clause
-//! (`param r_g : Real = 1e3 tol gauss(sigma = 10.0) global;` and
-//! friends): the `SamplePlan` walk classifies params by their authored
-//! distribution, and the distribution is only ever lowered as `None`
-//! until the deferred statement lands — so no fixture here can be
-//! retargeted (DIVIDER_TOL_PHDL's `require` alone would migrate, but
-//! without its `tol gauss(sigma_rel = 0.3)` the plan collects zero
-//! entries and every assertion collapses). The fixtures stay in PHDL
-//! and the tests are left failing rather than weakened, deleted, or
-//! `#[ignore]`d (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (random-variable-catalogue): the fixtures run against the
+//! live VAMS `tol gauss(…)`/`tol uniform(…)` parameter-distribution
+//! surface — `tol`/`global` are contextual keywords and the keyed args
+//! (`sigma`, `sigma_rel`, `rel`) are const-evaluated in module scope.
 
 use piperine_api::{SamplePlan, SampleScope, Session, SolverConfig};
 use piperine_api::prelude::CheckPosture;
 use piperine_lang::SourceMap;
 
+/// The `SourceMap` reaching `piperine-lang`'s bundled headers.
+fn source_map() -> SourceMap {
+    let headers = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let mut map = SourceMap::new(headers.clone());
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 /// A two-instance fixture with BOTH a `global` (process) and a mismatch
 /// `tol` on the same module — the structural test for the global vs
 /// mismatch distinction in one run. Two `R` instances share their `r_g`
 /// draw (process) and take independent `r_m` draws (mismatch).
-const TWO_INSTANCE_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r_g : Real = 1e3 tol gauss(sigma = 10.0) global;
-    param r_m : Real = 1e3 tol gauss(sigma = 10.0);
-}
-analog R { I(p, n) <+ V(p, n) / (r_g + r_m); }
-
-mod Top() {
-    wire gnd  : Electrical;
-    wire in   : Electrical;
-    wire out  : Electrical;
-    v1  : Vsrc(.p = in,  .n = gnd);
-    r1  : R   (.p = in,  .n = out);
-    r2  : R   (.p = out, .n = gnd);
-}
-";
+const TWO_INSTANCE: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r_g = 1e3 tol gauss(sigma = 10.0) global;
+    parameter real r_m = 1e3 tol gauss(sigma = 10.0);
+    analog begin
+        I(p, n) <+ V(p, n) / (r_g + r_m);
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    R r2 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// A hierarchical fixture: `Top → Mid → Leaf`, two leaves per mid, two
 /// mids — proves the authored-tree walk descends through sub-instances
 /// and produces path-prefixed labels (`m1.l1`, `m1.l2`, …). A flat-walk
 /// would miss the path prefix; the assertions catch that.
-const HIERARCHICAL_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+const HIERARCHICAL: &str = r#"`include "disciplines.vams"
+module Leaf (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol gauss(sigma = 5.0) global;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Mid (inout electrical p, inout electrical n);
+    electrical mid;
+    Leaf l1 (.p(p), .n(mid));
+    Leaf l2 (.p(mid), .n(n));
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Mid m1 (.p(in), .n(out));
+    Mid m2 (.p(out), .n(gnd));
+endmodule
+"#;
 
-mod Leaf(inout p: Electrical, inout n: Electrical) {
-    param r : Real = 1e3 tol gauss(sigma = 5.0) global;
-}
-analog Leaf { I(p, n) <+ V(p, n) / r; }
-
-mod Mid(inout p: Electrical, inout n: Electrical) {
-    wire mid : Electrical;
-    l1 : Leaf(.p = p,   .n = mid);
-    l2 : Leaf(.p = mid, .n = n);
-}
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    m1 : Mid(.p = in,  .n = out);
-    m2 : Mid(.p = out, .n = gnd);
-}
-";
-
-fn design(phdl: &str) -> piperine_lang::Design {
-    piperine_lang::parse_and_elaborate(phdl, &SourceMap::dummy()).expect("elaborates")
+fn design(src: &str) -> piperine_lang::Design {
+    piperine_lang::parse_and_elaborate(src, &source_map()).expect("elaborates")
 }
 
 fn collect_config() -> SolverConfig {
@@ -103,7 +100,7 @@ fn collect_config() -> SolverConfig {
 // discrimination — a per-instance draw would (almost surely) differ.
 #[test]
 fn a_global_parameter_gets_one_draw_shared_across_instances() {
-    let plan = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan collects");
 
     let global_entries: Vec<_> = plan
         .entries()
@@ -138,7 +135,7 @@ fn a_global_parameter_gets_one_draw_shared_across_instances() {
 // `draws` returns ONE draw per instance, and they (almost surely) differ.
 #[test]
 fn a_mismatch_parameter_gets_independent_draws_per_instance() {
-    let plan = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan collects");
 
     let mismatch_entries: Vec<_> = plan
         .entries()
@@ -175,7 +172,7 @@ fn a_mismatch_parameter_gets_independent_draws_per_instance() {
 // the criterion test — both shapes in one run.
 #[test]
 fn both_behaviors_in_one_run() {
-    let plan = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan collects");
     let draws = plan.draws(11, 3);
 
     // Four draws total: 2 global (r_g on r1, r2) + 2 mismatch (r_m on r1, r2).
@@ -212,7 +209,7 @@ fn both_behaviors_in_one_run() {
 // the new ratio.
 #[test]
 fn draws_apply_through_the_ordinary_restamp_path() {
-    let design = design(TWO_INSTANCE_PHDL);
+    let design = design(TWO_INSTANCE);
     let mut session = Session::compile(&design, "Top").expect("session compiles");
 
     // Nominal operating point: V(out) = 0.5 V.
@@ -267,7 +264,7 @@ fn draws_apply_through_the_ordinary_restamp_path() {
 // labels would collide (`l1` appears twice) and the assertion fails.
 #[test]
 fn the_walk_descends_the_authored_instance_tree() {
-    let plan = SamplePlan::collect(&design(HIERARCHICAL_PHDL), "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&design(HIERARCHICAL), "Top").expect("plan collects");
 
     let labels: Vec<&str> = plan.entries().iter().map(|e| e.label.as_str()).collect();
     assert_eq!(
@@ -295,30 +292,35 @@ fn the_walk_descends_the_authored_instance_tree() {
 /// `require head : V(out) <= hi` (hi=0.55) is violated whenever `r1`
 /// draws low enough to push `V(out)` above 0.55 — giving a fixture with
 /// both a passing nominal and reachable failing samples.
-const DIVIDER_TOL_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
-
-mod Vsrc(inout p: Electrical, inout n: Electrical) { param dc: Real = 1.0; }
-analog Vsrc { V(p, n) <- dc; }
-
-mod R(inout p: Electrical, inout n: Electrical) {
-    param r: Real = 1e3 tol gauss(sigma_rel = 0.3);
-}
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod Dut(inout p: Electrical, inout n: Electrical) { param hi: Real = 0.55; }
-analog Dut { I(p, n) <+ V(p, n) / 1e3; }
-constraint Dut { require head : V(p, n) <= hi; }
-
-mod Top() {
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire out : Electrical;
-    v1   : Vsrc(.p = in,  .n = gnd);
-    r1   : R(.p = in,     .n = out);
-    dut1 : Dut(.p = out,  .n = gnd);
-}
-";
+const DIVIDER_TOL: &str = r#"`include "disciplines.vams"
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol gauss(sigma_rel = 0.3);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.55;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require head : V(p, n) <= hi;
+    end
+endmodule
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
+"#;
 
 /// `(seed, index)` fully determines a draw: two `SamplePlan`s collected
 /// from two INDEPENDENT parses of the same design (simulating "a
@@ -326,8 +328,8 @@ mod Top() {
 /// produce byte-identical draws for the same `(seed, index)`.
 #[test]
 fn seed_index_produce_byte_identical_draws_across_independent_constructions() {
-    let plan_a = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan a collects");
-    let plan_b = SamplePlan::collect(&design(TWO_INSTANCE_PHDL), "Top").expect("plan b collects");
+    let plan_a = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan a collects");
+    let plan_b = SamplePlan::collect(&design(TWO_INSTANCE), "Top").expect("plan b collects");
 
     let draws_a = plan_a.draws(123, 7);
     let draws_b = plan_b.draws(123, 7);
@@ -353,20 +355,20 @@ fn seed_index_produce_byte_identical_draws_across_independent_constructions() {
 /// margin value, bit for bit.
 #[test]
 fn a_named_failing_sample_replays_as_an_ordinary_session_and_reproduces_the_failure() {
-    let phdl_design = design(DIVIDER_TOL_PHDL);
+    let divider_design = design(DIVIDER_TOL);
     let config = collect_config();
     let seed = 99u64;
 
     // Nominal sanity: the require is satisfied at the declared values.
-    let mut nominal_session = Session::compile(&phdl_design, "Top").expect("nominal compiles");
+    let mut nominal_session = Session::compile(&divider_design, "Top").expect("nominal compiles");
     let nominal_op = nominal_session.op(&config, None).expect("nominal op solves");
     assert!(nominal_op.requires_ok(), "nominal design satisfies `head`");
 
     // Scan for a failing (seed, index) — deterministic for this seed.
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&divider_design, "Top").expect("plan collects");
     let mut found: Option<(usize, f64, f64)> = None;
     for index in 0..200usize {
-        let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+        let mut session = Session::compile(&divider_design, "Top").expect("session compiles");
         plan.apply(&mut session, seed, index).expect("draws apply");
         let op = session.op(&config, None).expect("op solves");
         if !op.requires_ok() {
@@ -381,9 +383,9 @@ fn a_named_failing_sample_replays_as_an_ordinary_session_and_reproduces_the_fail
 
     // Replay: an independent session and an independently collected plan,
     // driven by ONLY (seed, index) — no other shared state.
-    let mut replay = Session::compile(&phdl_design, "Top").expect("replay compiles");
+    let mut replay = Session::compile(&divider_design, "Top").expect("replay compiles");
     let replay_plan =
-        SamplePlan::collect(&design(DIVIDER_TOL_PHDL), "Top").expect("replay plan collects");
+        SamplePlan::collect(&design(DIVIDER_TOL), "Top").expect("replay plan collects");
     replay_plan.apply(&mut replay, seed, index).expect("replay applies");
     let replay_op = replay.op(&config, None).expect("replay op solves");
 
@@ -409,13 +411,13 @@ fn a_named_failing_sample_replays_as_an_ordinary_session_and_reproduces_the_fail
 /// residue").
 #[test]
 fn a_nominal_analysis_after_sampling_returns_to_declared_values() {
-    let phdl_design = design(TWO_INSTANCE_PHDL);
+    let two_instance_design = design(TWO_INSTANCE);
     let config = collect_config();
 
-    let mut session = Session::compile(&phdl_design, "Top").expect("session compiles");
+    let mut session = Session::compile(&two_instance_design, "Top").expect("session compiles");
     let nominal_before = session.op(&config, None).expect("nominal op solves").v("out").expect("v(out)");
 
-    let plan = SamplePlan::collect(&phdl_design, "Top").expect("plan collects");
+    let plan = SamplePlan::collect(&two_instance_design, "Top").expect("plan collects");
     plan.apply(&mut session, 55, 2).expect("sample applies");
     let sampled = session.op(&config, None).expect("sampled op solves").v("out").expect("v(out)");
     assert_ne!(
