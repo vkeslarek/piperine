@@ -224,6 +224,35 @@ endmodule
     assert!(msg.contains("require predicate"), "the error names the form: {msg}");
 }
 
+/// CONVAMS-15: a `require` predicate referencing a name that does not
+/// resolve fails loud naming it — never a silent `false` or a vacuous
+/// pass. The failure surfaces at kernel compilation (the same
+/// name-resolution path the analog body takes — see the design's Tech
+/// Decisions), still pre-simulation and still naming the name.
+#[test]
+fn an_unresolved_name_in_a_require_fails_loud_naming_it() {
+    let design = parse_and_elaborate(
+        "\
+module Dut (inout electrical p, inout electrical n);
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require bad : V(p, n) <= nope;
+    end
+endmodule
+",
+        &SourceMap::dummy(),
+    )
+    .expect("elaborate");
+    let bodies = lower_bodies(&design).expect("lowering");
+    let err = match piperine_codegen::kernel::analog::AnalogKernel::compile(&bodies["Dut"]) {
+        Ok(_) => panic!("an unresolved name must fail loud, not compile"),
+        Err(e) => format!("{e:?}"),
+    };
+    assert!(err.contains("nope"), "the error names the unresolved name: {err}");
+}
+
 // ── Present-and-red: the deferred `var`/`target` statements ────────────────
 //
 // `constraint var` (substitution into margins) and `target` (unlabeled,

@@ -519,17 +519,24 @@ impl Session {
 
         // 2. Fall through to the net-name path — `V(metric)` at the DC
         //    operating point. Loud with both candidate lists when the
-        //    name matches neither a margin nor a net.
-        //
-        // MD-45 regression: the declared-margins candidate list is always
-        // empty — `Module::constraints()`/`ConstraintStmt` were gutted
-        // with the PHDL AST at T21 (no VAMS Annex A production carries
-        // dv-core constraint blocks), so there is nothing left to walk
-        // for candidates. `crate::gradient::classify_margin_gradient`
-        // already documents the same regression.
+        //    name matches neither a margin nor a net. The margin
+        //    candidates are the built instances' kernel catalogs
+        //    (constraints-on-vams); the sensitivity half of the margin
+        //    surface (`classify_margin_gradient`) is the dv-gradients
+        //    follow-up — the list is honest either way.
         let node = crate::session::build::resolve_net(&self.info, metric).map_err(|_| {
             let nets: Vec<String> = self.info.nets.keys().cloned().collect();
-            let margins: Vec<String> = Vec::new();
+            let margins: Vec<String> = self
+                .info
+                .instances
+                .iter()
+                .flat_map(|i| {
+                    i.kernel
+                        .margin_catalog()
+                        .iter()
+                        .map(|m| format!("{}.{}", i.label, m.label))
+                })
+                .collect();
             Error::Measurement(format!(
                 "unknown metric `{metric}` — addressable nets: [{}]; declared margins: [{}]",
                 nets.join(", "),

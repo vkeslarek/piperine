@@ -104,7 +104,7 @@ rejected because its surface carries `var`/`target`/`cover`/event blocks
 ### 4. Elaboration (`crates/piperine-lang/src/elab/lower/vams.rs`)
 
 - **Purpose**: `ModuleItem::Constraint` arm in `elab_module`'s item loop.
-- **Interfaces**: appends `PomRequire`s; **duplicate label across the module fails loud** — new typed `ElabErrorKind::ConstraintLabelDuplicate` (E4007, following the E4xxx LRM-clause-anchored family; help text cites the extension doc).
+- **Interfaces**: appends `PomRequire`s; **duplicate label across the module fails loud** — new typed `ElabErrorKind::ConstraintLabelDuplicate` (E4008, following the E4xxx LRM-clause-anchored family; help text cites the extension doc).
 - **Name resolution**: deliberately *not* re-implemented here — the analog body itself resolves names at codegen `resolve`, and constraints follow the same path (consistency beats duplicating the resolver). CONVAMS-15's "elaboration fails loud" is honored as "the compile pipeline fails loud pre-simulation" through `LowerErrors`'s typed `UnresolvedName` — flagged to the Verifier as a spec-precision reading, not silently.
 
 ### 5. Codegen lowering (`crates/piperine-codegen/src/resolve/pom/constraints.rs` + `body.rs`)
@@ -168,7 +168,7 @@ absent `tol` emits no division.
 | Error Scenario | Handling | User Impact |
 |---|---|---|
 | Non-`require` statement inside `constraint begin` | typed parse error naming the token | edit-time, LSP-visible |
-| duplicate `require` label in a module | E4007 `ConstraintLabelDuplicate`, names both sites | elaboration error |
+| duplicate `require` label in a module | E4008 `ConstraintLabelDuplicate`, names both sites | elaboration error |
 | predicate form outside `<=`/`>=`/`&&`-of-comparisons | loud `LowerError` naming the require + the form | compile error, pre-simulation |
 | unresolved name in a predicate | typed `UnresolvedName` via `resolve_expr` (analog body's own path) | compile error naming name + require |
 | violation at an accepted point, `strict` | existing `ValidationSeverity::Error` → analysis aborts naming constraint/instance/time/margin (live machinery) | run fails loud |
@@ -198,7 +198,7 @@ absent `tol` emits no division.
 |---|---|---|
 | Keyword status | contextual (soft) keywords, not Table B.1 | Annex B gate pins `KEYWORDS` to the LRM; the extension must not silently mutate the reserved set; `eat_kw`/`at_kw` already string-match `Ident`s |
 | POM shape | flat `Vec<PomRequire>` on `Module`, no `ConstraintBlock` node | only `require` exists; block structure has no consumer; spans keep provenance; composition edge case becomes concatenation |
-| Where duplicate-label check lives | elab (E4007); name resolution stays in codegen `resolve` | duplicate detection needs the module-wide view the elaborator already has; name resolution belongs where the analog body resolves it — one resolver, not two |
+| Where duplicate-label check lives | elab (E4008); name resolution stays in codegen `resolve` | duplicate detection needs the module-wide view the elaborator already has; name resolution belongs where the analog body resolves it — one resolver, not two |
 | CONVAMS-15 "elaboration fails loud" reading | compile pipeline (`lang` elab + codegen `lower_bodies`), pre-simulation | consistency with the analog body's own resolution stage; flagged for Verifier as spec-precision note |
 | `tol` grammar | trailing clause on `require` only | spec's logged assumption; `target` (its old PHDL host) is deferred |
 | `abs(V(g,s))` in predicates | nothing special — `resolve_expr` + kernel already compile `abs`/`V`/`I` | margins ride the same compilation as residuals |
