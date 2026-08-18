@@ -189,12 +189,7 @@ rather than the old PHDL grammar:
 tests carrying the mechanism in place):
 
 - Analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`) + temporal windows
-- `tol gauss/uniform` parameter distributions — the recorded direction
-  re-anchors sampling on the LRM §9.13.2 `$rdist_*`/`$random` functions
-  (already implemented) over a **first-class random-variable catalogue**
-  on the POM (correlation, global-vs-mismatch scoping, replay-by-index,
-  compile-once MC) — settle its shape before optimizer work hardens
-  around a per-parameter view
+- SOA constraint blocks on the spice stdlib models — see below
 - The margin-gradient classifier (`classify_margin_gradient` still
   refuses) — `dv-gradients`' surface
 - SOA constraint blocks on the spice stdlib models (mos1/mos2/mos3/

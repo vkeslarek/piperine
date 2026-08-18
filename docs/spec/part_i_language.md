@@ -155,7 +155,13 @@ clauses — a range violated at the declared value (including the parameter's ow
 default), at an instance's `#(.name(value))` override, or at a `paramset` statement
 binding the parameter fails loud as `ParamRangeViolation` (E4006, Part II §6); override
 sites validate in `lower_instance`/`lower_paramset_instance` against the declaring
-module's/paramset's ranges. `paramset` (§6.4, a named
+module's/paramset's ranges. A parameter also carries the optional `tol` distribution
+clause — `tol gauss(sigma = 10.0) global`, `tol gauss(sigma_rel = 0.05)`, `tol
+uniform(rel = 0.01)` (contextual keywords; keyed arguments const-evaluate in module
+scope; `global` marks process variation shared across instances, absent is per-instance
+mismatch) — the declared spread the `SamplePlan`/`monte_carlo` host machinery samples
+(Part VIII); the clause is inert at solve (nominal results are bit-identical with or
+without it). `paramset` (§6.4, a named
 reusable parameter set bound to a module) is registered at the top level
 (`Design::paramsets()`); `specparam`/`defparam` (§3.4/§6.4.2) parse
 (`SpecparamDecl`/`Defparam` in the AST) but are **not lowered at all** — confirmed

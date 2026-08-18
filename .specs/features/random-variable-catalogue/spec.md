@@ -85,15 +85,15 @@ piperine already implements — no new math.
 
 | ID | Story | Status |
 |---|---|---|
-| RVCAT-01 | P1: clauses parse → catalogue (stable order) | Pending |
-| RVCAT-02 | P1: driver draws + applies via restamp, zero rebuilds | Pending |
-| RVCAT-03 | P1: inert at nominal solve | Pending |
-| RVCAT-04 | P2: global scope shared; mismatch independent | Pending |
-| RVCAT-05 | P2: (seed, index) replay byte-identical | Pending |
-| RVCAT-06 | P3: worst sample named + replayable; yield fraction; margin spread | Pending |
-| RVCAT-07 | Edge: duplicate RV loud; out-of-range draw reported | Pending |
-| RVCAT-08 | `tol_inert` ×5 + `monte_carlo_{sampling,report,compile_once}` + `center_policy` unblocked; `high_sigma_sampling` stays red with named blocker | Pending |
-| RVCAT-09 | Docs: Part I parameters section + ROADMAP distributions bullet resolved | Pending |
+| RVCAT-01 | P1: clauses parse → catalogue (stable order) | Verified |
+| RVCAT-02 | P1: driver draws + applies via restamp, zero rebuilds | Verified |
+| RVCAT-03 | P1: inert at nominal solve | Verified |
+| RVCAT-04 | P2: global scope shared; mismatch independent | Verified |
+| RVCAT-05 | P2: (seed, index) replay byte-identical | Verified |
+| RVCAT-06 | P3: worst sample named + replayable; yield fraction; margin spread | Verified |
+| RVCAT-07 | Edge: duplicate RV loud; out-of-range draw reported | Verified |
+| RVCAT-08 | `tol_inert` ×5 + `monte_carlo_{sampling,report,compile_once}` + `center_policy` unblocked; `high_sigma_sampling` stays red with named blocker | Verified |
+| RVCAT-09 | Docs: Part I parameters section + ROADMAP distributions bullet resolved | Verified |
 
 ## Success Criteria
 
