@@ -520,6 +520,13 @@ module mos1 (
         // NOT WIRED — see file header.
     end
 
+    // SOA (DVC-16, T26) — read by the model's constraint block; sentinel
+    // defaults keep the checks vacuous until overridden.
+    parameter real vgs_max = 1.0e99;
+    parameter real vds_max = 1.0e99;
+    parameter real vgb_max = 1.0e99;
+    parameter real vbs_max = 1.0e99;
+    parameter real vbd_max = 1.0e99;
     // ── SOA limits (dv-core T26 restored): absent by default — the
     // sentinels keep every check vacuously satisfied until an instance
     // override names real limits. ────────────────────────────────────────
@@ -1356,6 +1363,13 @@ module mos2 (
         // NOT WIRED — see file header.
     end
 
+    // SOA (DVC-16, T26) — read by the model's constraint block; sentinel
+    // defaults keep the checks vacuous until overridden.
+    parameter real vgs_max = 1.0e99;
+    parameter real vds_max = 1.0e99;
+    parameter real vgb_max = 1.0e99;
+    parameter real vbs_max = 1.0e99;
+    parameter real vbd_max = 1.0e99;
     // ── SOA limits (dv-core T26 restored): absent by default — the
     // sentinels keep every check vacuously satisfied until an instance
     // override names real limits. ────────────────────────────────────────
@@ -2029,6 +2043,13 @@ module mos3 (
         // NOT WIRED — see file header.
     end
 
+    // SOA (DVC-16, T26) — read by the model's constraint block; sentinel
+    // defaults keep the checks vacuous until overridden.
+    parameter real vgs_max = 1.0e99;
+    parameter real vds_max = 1.0e99;
+    parameter real vgb_max = 1.0e99;
+    parameter real vbs_max = 1.0e99;
+    parameter real vbd_max = 1.0e99;
     // ── SOA limits (dv-core T26 restored): absent by default — the
     // sentinels keep every check vacuously satisfied until an instance
     // override names real limits. ────────────────────────────────────────
