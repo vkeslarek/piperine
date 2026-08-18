@@ -191,8 +191,8 @@ stdlib models (mos1/2/3, dio, bjt) are back, absent-by-default
 sentinels:
 
 - Analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`) + temporal windows
-- The margin-gradient classifier (`classify_margin_gradient` still
-  refuses) — `dv-gradients`' surface
+  (the gradient classifier refuses `@ ac`/`@ tran`-scoped metrics loud —
+  the scoping grammar is the missing half)
 
 ---
 
