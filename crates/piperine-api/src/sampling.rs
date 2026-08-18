@@ -292,7 +292,7 @@ impl SamplePlan {
                     .collect::<Vec<_>>()
                     .join(" ∪ ");
                 return Err(Error::Measurement(format!(
-                    "sampled draw for `{}.{}` = {} escapes the declared `from` domain {} —                      the distribution conflicts with the parameter's legal range",
+                    "sampled draw for `{}.{}` = {} escapes the declared `from` domain {} — the distribution conflicts with the parameter's legal range",
                     draw.label, draw.param, draw.value, domain
                 )));
             }

@@ -510,3 +510,40 @@ endmodule
     assert!(msg.contains("sigmaa"), "names the typo: {msg}");
     assert!(msg.contains("sigma"), "names what is legal: {msg}");
 }
+
+/// `uniform(lo_offset, hi_offset)` draws nominal + U(lo, hi) — the spec's
+/// listed absolute-offset form (verifier round-2 residual: probe-verified
+/// then; committed here).
+#[test]
+fn uniform_lo_offset_hi_offset_draws_the_offset_window() {
+    let design = piperine_lang::parse_and_elaborate(
+        r#"`include "disciplines.vams"
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1e3 tol uniform(lo_offset = -10.0, hi_offset = 10.0);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Top ();
+    electrical gnd, out;
+    Vsrc v1 (.p(out), .n(gnd));
+    R r1 (.p(out), .n(gnd));
+endmodule
+"#,
+        &source_map(),
+    )
+    .expect("elaborates");
+    let plan = SamplePlan::collect(&design, "Top").expect("plan collects");
+    let draws = plan.draws(7, 0).expect("draws compute");
+    let v = draws[0].value;
+    assert!(
+        (990.0..=1010.0).contains(&v) && (v - 1000.0).abs() > 1e-9,
+        "nominal + U(−10, 10): 990 ≤ {v} ≤ 1010, perturbed"
+    );
+}
