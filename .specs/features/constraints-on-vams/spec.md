@@ -204,23 +204,23 @@ postures; assert abort / recorded-and-continue / silent respectively.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| CONVAMS-01 | P1: `constraint begin … end` parses and elaborates onto the POM | Design | Implementing |
-| CONVAMS-02 | P1: predicate names resolve in the enclosing module's scope | Design | Implementing |
-| CONVAMS-03 | P1: violation in `strict` fails loud, naming constraint/instance/margin | Design | Implementing |
-| CONVAMS-04 | P1: all-satisfied run completes and reports worst margins | Design | Implementing |
-| CONVAMS-05 | P1: rejected-iteration violations are not reported (LRM §9.7.3) | Design | Implementing |
-| CONVAMS-06 | P2: signed margin, `m >= 0` ⟺ satisfied | Design | Implementing |
-| CONVAMS-07 | P2: `tol <scale>` normalization, default scale 1 | Design | Implementing |
-| CONVAMS-08 | P2: worst margin + argmin + instance path over a sweep | Design | Implementing |
-| CONVAMS-09 | P2: read through the existing `piperine-api` margins surface | Design | Implementing |
-| CONVAMS-10 | P3: `strict` behaves as `$error` | Design | Implementing |
-| CONVAMS-11 | P3: `collect` behaves as `$warning`, findings readable | Design | Implementing |
-| CONVAMS-12 | P3: `off` evaluates nothing at no measurable cost | Design | Implementing |
-| CONVAMS-13 | P3: unavailable-quantity reference fails loud, naming it | Design | Implementing |
-| CONVAMS-14 | Edge: multiple `constraint` blocks compose, none dropped | Design | Implementing |
-| CONVAMS-15 | Edge: duplicate/unresolved `require` names fail loud | Design | Implementing |
-| CONVAMS-16 | Docs: `constraint begin` recorded as a sanctioned extension (Part I) + new `MD-` decision | Design | Implementing |
-| CONVAMS-17 | Docs: `ROADMAP.md` corrected to stop claiming dv-core's PHDL grammar as delivered | Design | Implementing |
+| CONVAMS-01 | P1: `constraint begin … end` parses and elaborates onto the POM | Design | Verified |
+| CONVAMS-02 | P1: predicate names resolve in the enclosing module's scope | Design | Verified |
+| CONVAMS-03 | P1: violation in `strict` fails loud, naming constraint/instance/margin | Design | Verified |
+| CONVAMS-04 | P1: all-satisfied run completes and reports worst margins | Design | Verified |
+| CONVAMS-05 | P1: rejected-iteration violations are not reported (LRM §9.7.3) | Design | Verified |
+| CONVAMS-06 | P2: signed margin, `m >= 0` ⟺ satisfied | Design | Verified |
+| CONVAMS-07 | P2: `tol <scale>` normalization, default scale 1 | Design | Verified |
+| CONVAMS-08 | P2: worst margin + argmin + instance path over a sweep | Design | Verified |
+| CONVAMS-09 | P2: read through the existing `piperine-api` margins surface | Design | Verified |
+| CONVAMS-10 | P3: `strict` behaves as `$error` | Design | Verified |
+| CONVAMS-11 | P3: `collect` behaves as `$warning`, findings readable | Design | Verified |
+| CONVAMS-12 | P3: `off` evaluates nothing at no measurable cost | Design | Verified |
+| CONVAMS-13 | P3: unavailable-quantity reference fails loud, naming it | Design | Verified |
+| CONVAMS-14 | Edge: multiple `constraint` blocks compose, none dropped | Design | Verified |
+| CONVAMS-15 | Edge: duplicate/unresolved `require` names fail loud | Design | Verified |
+| CONVAMS-16 | Docs: `constraint begin` recorded as a sanctioned extension (Part I) + new `MD-` decision | Design | Verified |
+| CONVAMS-17 | Docs: `ROADMAP.md` corrected to stop claiming dv-core's PHDL grammar as delivered | Design | Verified |
 
 **ID format:** `CONVAMS-NN`
 
