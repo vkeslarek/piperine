@@ -436,17 +436,22 @@ endmodule
 **Syntax.** A `constraint begin … end` block is a module body item, mirroring
 `analog begin … end`'s shape: one more module body, so ports, parameters, and branches
 are simply in scope for every predicate — no name-matching indirection. Inside the
-block exactly one statement form is legal:
+block five statement forms are legal:
 
 ```text
 require <name> : <predicate> [tol <scale>] ;
+var <name> = <expr> ;
+target <comparison> [tol <scale>] ;          // a single `a <= b` / `a >= b`
+cover <name> : <expr> bins [lo:step:hi] ;    // or `bins in {e1, e2, …}`
+cover cross <name> : <p1>, <p2>, … ;
 ```
 
-`constraint`, `require`, and `tol` are **contextual keywords** — identifier text
-matched only at their production sites, never added to Annex B's reserved set (the
-`annex_b_keywords` gate pins the reserved list to Table B.1, and §2.8.2's escaped
-identifier keeps any conflicting user name working). Anything inside the block that is
-not a `require` is a typed parse error naming what is legal — never a silent skip.
+`constraint`, `require`, `tol`, `var`, `target`, `cover`, and `bins` are **contextual
+keywords** — identifier text matched only at their production sites, never added to
+Annex B's reserved set (the `annex_b_keywords` gate pins the reserved list to
+Table B.1, and §2.8.2's escaped identifier keeps any conflicting user name working).
+Anything inside the block outside these forms is a typed parse error naming what is
+legal — never a silent skip.
 
 **Semantics.** A predicate must be `<=`, `>=`, or `&&` of two comparisons — the forms
 with a signed distance. It lowers to a **margin**, `m ≥ 0` ⟺ satisfied:
@@ -469,13 +474,24 @@ value + argmin + instance path per constraint), never as waveform rows; reading 
 constraint the running analysis cannot provide (a require on a digital-only instance)
 fails loud naming the constraint and why.
 
-**Elaboration rules.** A `require` label must be unique within its module — a
-duplicate fails loud as `ConstraintLabelDuplicate` (E4008) naming both sites. Multiple
-`constraint begin` blocks in one module compose: every require from every block
+**Elaboration rules.** A statement label (`require`/`var`/`cover`/`cover cross` —
+targets are unnamed) must be unique within its module across kinds: a duplicate fails
+loud as `ConstraintLabelDuplicate` (E4008) naming both sites. Multiple
+`constraint begin` blocks in one module compose: every statement from every block
 applies, in authored order (the same concatenation rule the multiple-`always` fix
 `f75beb4d` established for digital bodies — a silent drop of any block is forbidden).
 A module that is never instantiated evaluates nothing and produces no diagnostic.
 
-**Statement surface.** `require` is the block's entire statement surface. Anything
-else inside the block is a typed parse error naming what is legal — loud, like every
-other rule this Part documents.
+**The other statements.** `var` binds a constraint-local computed quantity that
+substitutes into every later statement reading it (authored order, transitively) — a
+pointwise var rides inside the margins that read it (never readable by name itself),
+while a var over a **reduced helper** (`ac_unity_gain_freq`/`ac_phase_margin`/
+`ac_gain_margin`) exists once per completed AC sweep and is host-computed (design D7).
+`target` lowers to a signed margin named `target#<statement-index>` (the index counts
+all of the module's constraint statements) — a **soft goal**: worst + argmin tracked,
+but a violated target never produces a finding and never gates `requires_ok`. `cover`
+points bin their expression's value per accepted point (`bins [lo:step:hi]` by
+nearest-edge, `bins in {…}` by membership — a counter increment, never a signed
+distance) and accumulate into the host coverage database across runs;
+`cover cross` counts the joint bin of its named points at the same instant, the joint
+count being the product of their bin counts.

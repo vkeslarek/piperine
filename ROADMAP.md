@@ -161,14 +161,18 @@ postures).
 
 ### Design verification — the DV triad
 
-**Constraint core ✅ re-anchored on Verilog-AMS** (2026-08-17, feature
-`constraints-on-vams`, MD-49). The PHDL-era dv-core surface went dark at the
-frontend swap (MD-44/45); the constraint core is back, as a sanctioned
-language extension rather than the old PHDL grammar:
+**Constraint surface ✅ re-anchored on Verilog-AMS** (2026-08-17,
+`constraints-on-vams` MD-49 + `constraint-statements`). The PHDL-era
+dv-core surface went dark at the frontend swap (MD-44/45); the full
+constraint statement surface is back, as a sanctioned language extension
+rather than the old PHDL grammar:
 
-- `constraint begin … end` — a module-body block; `require <name> :
-  <pred> [tol <scale>];` statements with contextual keywords (Annex B's
-  reserved set is untouched)
+- `constraint begin … end` — a module-body block with contextual
+  keywords (Annex B's reserved set is untouched): `require`, `var`,
+  `target` (soft goals, `target#<n>`), `cover`/`cover cross` (bin
+  coverage merged across runs), and reduced AC metrics
+  (`ac_unity_gain_freq`/`ac_phase_margin`/`ac_gain_margin` as
+  host-computed margins)
 - Signed margins (`m ≥ 0` ⟺ satisfied), `tol`-normalized, worst + argmin
   (time/freq/sweep + instance path) through the `MarginsResult` channel
 - Evaluation at accepted solution points only (LRM §9.7.3's
@@ -184,8 +188,6 @@ language extension rather than the old PHDL grammar:
 **Still dark from the PHDL era** (each a named follow-up with its blocked
 tests carrying the mechanism in place):
 
-- `var`/`target`/`cover` statements inside constraint blocks (reduced
-  metrics, coverage) — `dv-tester`'s surface
 - Analysis-scoped event blocks (`@ dc`/`@ tran`/`@ ac`) + temporal windows
 - `tol gauss/uniform` parameter distributions — the recorded direction
   re-anchors sampling on the LRM §9.13.2 `$rdist_*`/`$random` functions
@@ -197,7 +199,7 @@ tests carrying the mechanism in place):
   refuses) — `dv-gradients`' surface
 - SOA constraint blocks on the spice stdlib models (mos1/mos2/mos3/
   diode/bjt) with absent-by-default sentinel limits — the natural first
-  follow-up now the core lands
+  follow-up now the statement surface lands
 
 ---
 
