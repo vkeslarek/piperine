@@ -84,6 +84,11 @@ pub struct Range {
 pub struct Declarator {
     pub name: String,
     pub range: Option<Range>,
+    /// A variable initializer — Annex A.2.2.1's `variable_type ::=
+    /// variable_identifier = constant_expression`. Always `None` for nets
+    /// and ports (their productions carry no initializer; the grammar
+    /// leaves this empty outside `parse_var_decl`).
+    pub init: Option<crate::ast::Expr>,
 }
 
 /// A port declaration, either in the module's own port-declaration list

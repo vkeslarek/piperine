@@ -141,6 +141,15 @@ PHDL-style value/net type lattice sits between the discipline name and the POM
 `NetType::Discipline(String)` it lowers into (Part IV §4's callout on this point).
 Net arrays (`NetType::Array`) are supported; width is the product of array dimensions.
 
+**Variable** declarations (§3.2.3/Annex A.2.2.1) carry the optional initializer —
+`integer count = 4;` / `real offset = hi;` — const-evaluated at elaboration against the
+same environment parameter defaults use (it may reference earlier-declared params, and
+instance `#(...)` overrides make the seeded *value* per-instance). A digital register
+powers on at its initializer (`DigitalBody::reg_inits` → the kernel's per-instance
+power-on); an analog module var seeds the persistent-var bank at construction. An
+initializer on an array form (`st[3:0] = …`) is a loud elaboration error today (array
+initializers out of scope), never a silently dropped init.
+
 **Parameter** declarations (§3.4) support the LRM's `from`/`exclude` range-constraint
 clauses — a range violated at the declared value (including the parameter's own
 default), at an instance's `#(.name(value))` override, or at a `paramset` statement

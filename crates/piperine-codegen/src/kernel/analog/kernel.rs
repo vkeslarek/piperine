@@ -173,6 +173,12 @@ pub(super) struct AnalogCore {
     pub(super) num_state_slots: usize,
     /// Number of module-level persistent variable slots (the vars bank).
     pub(super) num_vars: usize,
+    /// Variable initializers (Annex A.2.2.1): `(bank slot, init expr)`
+    /// for every module var declared with `= constant_expression`. The
+    /// instance seeds its vars bank from these at construction, after
+    /// evaluating each expression against the instance's own params (the
+    /// kernel is `Arc`-shared; init *values* are per-instance).
+    pub(super) var_inits: Vec<(usize, piperine_lang::ast::Expr)>,
     pub(super) residual: AnalogFn,
     pub(super) jacobian: AnalogFn,
     /// Runtime-state input values (one per state slot); `None` without
@@ -681,6 +687,13 @@ impl AnalogKernel {
     /// Instances must provide a slice of at least this many `f64` values.
     pub fn num_vars(&self) -> usize {
         self.core.num_vars
+    }
+
+    /// The persistent-var initializers (Annex A.2.2.1): `(bank slot, init
+    /// expr)` pairs the instance seeds its vars bank from at construction
+    /// (values are per-instance — evaluated against the instance's params).
+    pub fn var_inits(&self) -> &[(usize, piperine_lang::ast::Expr)] {
+        &self.core.var_inits
     }
 
     /// The max `State`/`Var` id the compiled code actually loads, as

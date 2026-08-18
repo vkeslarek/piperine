@@ -95,3 +95,75 @@ fn digital_register_updated_in_clocked_block_lowers_end_to_end() {
     assert_eq!(m.vars()[0].name(), "count");
     assert_eq!(m.behaviors().len(), 1);
 }
+
+// ── Annex A.2.2.1 initializers ─────────────────────────────────────────────
+
+#[test]
+fn a_scalar_initializer_lands_on_the_var() {
+    let d = elab(&format!(
+        "{LOGIC}
+        module dut (input logic clk);
+            integer count = 4;
+            real offset = 1.5;
+        endmodule
+        "
+    ));
+    let m = d.module("dut").expect("dut elaborated");
+    let count = m.vars().iter().find(|v| v.name() == "count").expect("count");
+    assert_eq!(count.init(), Some(&piperine_lang::value::Value::Int(4)));
+    let offset = m.vars().iter().find(|v| v.name() == "offset").expect("offset");
+    assert_eq!(offset.init(), Some(&piperine_lang::value::Value::Real(1.5)));
+}
+
+#[test]
+fn an_initializer_may_reference_an_earlier_parameter() {
+    let d = elab(&format!(
+        "{LOGIC}
+        module dut (input logic clk);
+            parameter integer width = 8;
+            integer count = width * 2;
+        endmodule
+        "
+    ));
+    let m = d.module("dut").expect("dut elaborated");
+    let count = m.vars().iter().find(|v| v.name() == "count").expect("count");
+    assert_eq!(count.init(), Some(&piperine_lang::value::Value::Int(16)));
+}
+
+#[test]
+fn an_array_initializer_fails_loud_not_silently_dropped() {
+    let err = parse_and_elaborate(
+        &format!(
+            "{LOGIC}
+        module dut (input logic clk);
+            integer mem [3:0] = 1;
+        endmodule
+        "
+        ),
+        &SourceMap::dummy(),
+    )
+    .expect_err("array initializers are out of scope — loud, never dropped");
+    assert!(
+        err.to_string().contains("array initializers"),
+        "names the unsupported form: {err}"
+    );
+}
+
+#[test]
+fn an_unresolvable_initializer_fails_loud() {
+    let err = parse_and_elaborate(
+        &format!(
+            "{LOGIC}
+        module dut (input logic clk);
+            integer count = nope;
+        endmodule
+        "
+        ),
+        &SourceMap::dummy(),
+    )
+    .expect_err("an initializer referencing an unknown name fails loud");
+    assert!(
+        err.to_string().contains("nope"),
+        "names the unresolved name: {err}"
+    );
+}

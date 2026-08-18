@@ -458,9 +458,30 @@ impl Grammar {
             self.expect_kw("time")?;
             VarKind::Time
         };
-        let names = self.parse_declarator_list()?;
+        let names = self.parse_var_declarator_list()?;
         let end = self.expect_punct(";")?;
         Ok(VarDecl { span: PreprocessedSpan::new(start.start, end.end), doc, attrs, kind, names })
+    }
+
+    /// `variable_type { ',' variable_type }` — Annex A.2.1.3's
+    /// `list_of_variable_identifiers`/`list_of_real_identifiers`: a
+    /// declarator that additionally accepts the optional `=
+    /// constant_expression` initializer of A.2.2.1's `variable_type`/
+    /// `real_type` (the port/net `Declarator` productions carry none).
+    fn parse_var_declarator_list(&mut self) -> Result<Vec<Declarator>, ParseError> {
+        let mut names = vec![self.parse_var_declarator()?];
+        while self.eat_punct(",") {
+            names.push(self.parse_var_declarator()?);
+        }
+        Ok(names)
+    }
+
+    fn parse_var_declarator(&mut self) -> Result<Declarator, ParseError> {
+        let mut d = self.parse_declarator()?;
+        if self.eat_punct("=") {
+            d.init = Some(self.parse_expr()?);
+        }
+        Ok(d)
     }
 
     /// A discipline name where present, distinguished from "no discipline,
@@ -497,7 +518,7 @@ impl Grammar {
         } else {
             None
         };
-        Ok(Declarator { name, range })
+        Ok(Declarator { name, range, init: None })
     }
 
     // ───────────────────────────────── parameters ───────────────────────

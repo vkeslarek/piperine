@@ -1014,6 +1014,12 @@ impl<'m> AnalogCompiler<'m> {
             num_params: self.module.symbols.num_params(),
             num_state_slots: self.module.symbols.num_states() + self.limits.len(),
             num_vars,
+            var_inits: self
+                .module
+                .var_inits
+                .iter()
+                .map(|(id, expr)| (id.0 as usize, expr.clone()))
+                .collect(),
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),

@@ -189,9 +189,9 @@ impl Elaborator {
                 // `integer`/`real`/`time`/`realtime` module-level
                 // declarations (LRM Annex A.2.1.3 `module_or_generate_item_
                 // declaration`) — module-level persistent state (GAPS
-                // §I.15's `pom::Var`, reused as-is: VAMS's own `VarDecl`
-                // carries no initializer, so `init` is always `None` here —
-                // see `var_declarator_to_var`'s doc comment).
+                // §I.15's `pom::Var`, reused as-is). An optional `=
+                // constant_expression` initializer (A.2.2.1) is evaluated
+                // by `var_declarator_to_var` into `Var::init`.
                 ModuleItem::Var(v) => {
                     let ty = var_kind_value_type(v.kind);
                     for d in &v.names {
@@ -1075,16 +1075,10 @@ fn var_kind_value_type(kind: VarKind) -> ValueType {
 /// A module-level `var` (GAPS §I.15) — persistent digital register state
 /// consumed directly by `piperine-codegen`'s digital kernel
 /// (`resolve/pom/body.rs` reads `Module::vars()` to populate
-/// `DigitalBody::regs`/`reg_inits`). `init` is always `None`: unlike a
-/// `parameter` (`ParamDecl::names: Vec<ParamAssignment>`, a mandatory
-/// default), VAMS's `VarDecl`/`Declarator` carries no initializer
-/// expression at all (LRM's own `variable_type ::= variable_identifier
-/// { dimension } [ '=' constant_arrayinit ] | variable_identifier '='
-/// constant_expression` is not represented in `ast::Declarator` today) —
-/// there is nothing to invent an initializer from, so this stays `None`
-/// rather than smuggling a value in from elsewhere (T30's `reg_inits`
-/// SPEC_DEVIATION note: PHDL had a `VarDecl`-with-default statement to
-/// smuggle this through; VAMS genuinely doesn't).
+/// `DigitalBody::regs`/`reg_inits`). An optional `= constant_expression`
+/// initializer (Annex A.2.2.1's `variable_type`/`real_type` form) is
+/// const-evaluated into `init` — evaluated against the same `ConstEnv`
+/// parameter defaults use, so it may reference earlier-declared params.
 ///
 /// A `[msb:lsb]` range widens the scalar type into `ValueType::Array`,
 /// same width computation as `declarator_net_type` uses for nets/ports.
@@ -1108,7 +1102,25 @@ fn var_declarator_to_var(
             ValueType::Array(Box::new(ty), width)
         }
     };
-    Ok(Var { span: Some(to_miette_span(span)), attributes: Vec::new(), doc, name: d.name.clone(), ty, init: None })
+    // Annex A.2.2.1: `variable_type ::= variable_identifier =
+    // constant_expression` — the initializer is an elaboration constant
+    // evaluated here, exactly like a parameter default. An initializer on
+    // an array form (`st[3:0] = …`) is out of this lowering's scope —
+    // loud, never a silently dropped init.
+    let init = match (&d.init, &ty) {
+        (None, _) => None,
+        (Some(_), ValueType::Array(..)) => {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "variable `{}`: array initializers (`'{{...}}`) are not supported — \
+                 initialize the elements in a behavior block instead",
+                d.name
+            ))));
+        }
+        (Some(expr), _) => Some(env.eval(expr).map_err(|e| {
+            ElabError::from(ElabErrorKind::ConstEval { context: format!("var `{}` initializer", d.name), source: e })
+        })?),
+    };
+    Ok(Var { span: Some(to_miette_span(span)), attributes: Vec::new(), doc, name: d.name.clone(), ty, init })
 }
 
 fn param_value_type(ty: Option<ParamType>) -> ValueType {

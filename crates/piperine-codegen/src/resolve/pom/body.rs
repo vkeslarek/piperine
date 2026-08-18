@@ -45,6 +45,13 @@ pub struct LoweredBody {
     /// See the type doc above (MD-45) — always `None` until a future phase
     /// rebuilds the producer.
     pub cover: Option<(Vec<crate::resolve::pom::LoweredCoverPoint>, Vec<crate::resolve::pom::LoweredCoverCross>)>,
+    /// Variable initializers (Annex A.2.2.1): `(VarId, init expr)` for
+    /// every module-level `var` declared with `= constant_expression`.
+    /// The digital path's [`DigitalBody::reg_inits`] carries the same
+    /// entries for its register power-on; the analog kernel keeps the
+    /// shared copy here to seed its persistent-var bank (one source, two
+    /// consumers — never two lowering rules).
+    pub var_inits: Vec<(VarId, PomExpr)>,
 }
 
 impl LoweredBody {
@@ -251,6 +258,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             digital: None,
             constraints: None,
             cover: None,
+            var_inits: Vec::new(),
         });
     }
 
@@ -314,6 +322,24 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             }
         }
 
+        // Variable initializers (Annex A.2.2.1): every module-level `var`
+        // declared with `= constant_expression`, as `(VarId, init expr)`
+        // pairs resolved against the module's symbols — the shared
+        // collection the digital `reg_inits` and the analog var-bank seed
+        // both draw from (one lowering rule, two consumers).
+        bodies[i].var_inits = m
+            .vars()
+            .iter()
+            .filter_map(|v| v.init().map(|init| (v.name().to_string(), init)))
+            .filter_map(|(vname, init)| {
+                bodies[i]
+                    .symbols
+                    .vars()
+                    .find(|(_, info)| info.name == vname)
+                    .map(|(id, _)| (id, value_to_pom_expr(init)))
+            })
+            .collect();
+
         // Digital-domain nodes read from an analog body (§ shadow-var
         // bridge, `LowerCtx::shadow_var_for`), collected across every
         // analog behavior and merged into the module's digital body below
@@ -358,27 +384,22 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
 
                 // Module-level vars are persistent digital state — they are
                 // registers (SPEC §9: a `var` updated in a clocked `@` block
-                // is an edge-triggered register). Collect their VarIds and
-                // initial values (see `DigitalBody::reg_inits`'s doc — VAMS
-                // has no `VarDecl`-with-default statement to smuggle these
-                // through, so they're a first-class parallel list here).
-                let var_inits: Vec<(String, Option<&piperine_lang::value::Value>)> = m
-                    .vars()
-                    .iter()
-                    .map(|v| (v.name().to_string(), v.init()))
-                    .collect();
+                // is an edge-triggered register). Their VarIds and initial
+                // values come from the shared `var_inits` collection above
+                // (A.2.2.1 initializers); vars without an initializer start
+                // at the kernel's power-on default.
                 let mut regs = Vec::new();
-                let mut reg_inits: Vec<(VarId, PomExpr)> = Vec::new();
-                for (vname, vinit) in var_inits {
-                    let vid = match bodies[i].symbols.vars().find(|(_, info)| info.name == vname).map(|(id, _)| id) {
-                        Some(id) => id,
-                        None => continue,
-                    };
-                    regs.push(vid);
-                    if let Some(init) = vinit {
-                        reg_inits.push((vid, value_to_pom_expr(init)));
+                for (vname, _) in m.vars().iter().map(|v| (v.name().to_string(), v.init())) {
+                    if let Some((id, _)) = bodies[i].symbols.vars().find(|(_, info)| info.name == vname) {
+                        regs.push(id);
                     }
                 }
+                let reg_inits: Vec<(VarId, PomExpr)> = bodies[i]
+                    .var_inits
+                    .iter()
+                    .filter(|(id, _)| regs.contains(id))
+                    .cloned()
+                    .collect();
 
                 let stmts: Vec<PomStmt> = behavior.body().to_vec();
 

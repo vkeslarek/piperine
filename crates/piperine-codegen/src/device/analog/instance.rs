@@ -303,6 +303,29 @@ impl AnalogInstance {
             param_scratch: vec![0.0; num_param_contribs],
         };
         instance.fire_initial_events();
+        // Annex A.2.2.1: a `var` declared with `= constant_expression`
+        // starts the simulation at that value, evaluated against this
+        // instance's own params (the kernel is Arc-shared; init *values*
+        // are per-instance). An init referencing a name with no value is
+        // a loud build error, never a silently-zeroed bank slot.
+        if !instance.kernel.var_inits().is_empty() {
+            let param_names: Vec<String> = instance.kernel.param_names().to_vec();
+            let params = instance.params.clone();
+            for (slot, expr) in instance.kernel.var_inits() {
+                let value = crate::resolve::pom_eval_const(expr, &|name| {
+                    param_names
+                        .iter()
+                        .position(|p| p == name)
+                        .and_then(|idx| params.get(idx).copied())
+                })
+                .map_err(|e| {
+                    CodegenError::Invalid(format!(
+                        "instance `{label}`: var initializer at bank slot {slot} is not const-evaluable: {e}"
+                    ))
+                })?;
+                instance.vars[*slot] = value;
+            }
+        }
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
         Ok(instance)
     }
