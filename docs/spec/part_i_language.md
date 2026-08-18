@@ -356,6 +356,16 @@ logic shared with the rest of the compiler's file resolution. The stdlib headers
 exactly this mechanism (`` `ifdef DISCIPLINES_VAMS``-style include guards) — there is no
 special-cased header-loading path distinct from an ordinary project `` `include``.
 
+**`` `timescale `` is functional** (1364-2005-inherited): the preprocessor parses
+`time_unit / time_precision` into `DirectiveState`, recording the expanded-buffer offset
+each directive takes effect at, and elaboration resolves **per module** — the last
+directive at or before a module's start governs it (`Module::timescale`). Gate
+`#delay` values (`and #2 g1(...)`) are in the module's time unit and round to the
+precision grid; absent a directive, a delay number carries raw simulation-time units
+(seconds). `` `resetall `` clears the §10.2 state it owns. Procedural `#delay` controls
+inside `always` bodies remain a loud `unsupported` error (a scheduler feature of its
+own, not a timescale concern).
+
 ## §10 What is explicitly not supported
 
 - **VPI (Verilog Procedural Interface) C-ABI hosting.** ch. 11's VPI mechanism is

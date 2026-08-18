@@ -146,3 +146,86 @@ fn udp_instance_rejects_parameter_overrides() {
     let err = parse_and_elaborate(&src, &SourceMap::dummy()).expect_err("a UDP takes no #(...) overrides");
     assert!(format!("{err}").contains("does not accept"), "{err}");
 }
+
+// ── `timescale scales gate `#delay` (1364-2005, functional) ─────────────
+
+#[test]
+fn a_gate_delay_scales_by_the_modules_timescale_unit() {
+    let src = "
+        `timescale 1ns/1ps
+        discipline logic;
+            domain discrete;
+        enddiscipline
+
+        module dut (input logic a, input logic b, output logic y);
+            and #2 g1 (y, a, b);
+        endmodule
+    ";
+    let d = parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborates");
+    let m = d.module("dut").expect("dut");
+    assert_eq!(m.timescale.expect("timescale recorded").unit_exponent, -9);
+    let gate = &m.gates[0];
+    let delay = gate.delay.expect("delay");
+    assert!((delay - 2e-9).abs() < 1e-15, "`#2` under `timescale 1ns` is 2 ns, got {delay}");
+}
+
+#[test]
+fn a_gate_delay_rounds_to_the_precision_grid() {
+    // #2.5 ns under 1ns/1ns rounds to the 1ns grid: 3 ns (1364-2005
+    // rounds delay values to the precision).
+    let src = "
+        `timescale 1ns/1ns
+        discipline logic;
+            domain discrete;
+        enddiscipline
+
+        module dut (input logic a, input logic b, output logic y);
+            and #2.5 g1 (y, a, b);
+        endmodule
+    ";
+    let d = parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborates");
+    let m = d.module("dut").expect("dut");
+    let delay = m.gates[0].delay.expect("delay");
+    assert!((delay - 3e-9).abs() < 1e-15, "2.5 ns on a 1 ns grid rounds up, got {delay}");
+}
+
+#[test]
+fn each_module_takes_the_last_timescale_before_it() {
+    let src = "
+        `timescale 1ns/1ps
+        discipline logic;
+            domain discrete;
+        enddiscipline
+
+        module fast (input logic a, input logic b, output logic y);
+            and #2 g1 (y, a, b);
+        endmodule
+
+        `timescale 1us/1ns
+        module slow (input logic a, input logic b, output logic y);
+            and #2 g1 (y, a, b);
+        endmodule
+    ";
+    let d = parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborates");
+    let fast = d.module("fast").expect("fast").gates[0].delay.expect("delay");
+    assert!((fast - 2e-9).abs() < 1e-15, "fast: 1ns unit, got {fast}");
+    let slow = d.module("slow").expect("slow").gates[0].delay.expect("delay");
+    assert!((slow - 2e-6).abs() < 1e-18, "slow: the 1us directive governs it, got {slow}");
+}
+
+#[test]
+fn without_a_timescale_a_gate_delay_stays_in_raw_seconds() {
+    let src = "
+        discipline logic;
+            domain discrete;
+        enddiscipline
+
+        module dut (input logic a, input logic b, output logic y);
+            and #2 g1 (y, a, b);
+        endmodule
+    ";
+    let d = parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborates");
+    let m = d.module("dut").expect("dut");
+    assert_eq!(m.timescale, None, "no directive precedes the module");
+    assert_eq!(m.gates[0].delay, Some(2.0), "raw simulation-time units — the pre-existing behavior");
+}

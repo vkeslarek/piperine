@@ -100,9 +100,43 @@ pub struct DirectiveState {
     /// The most recent `` `timescale ``'s `(unit, precision)` exponents —
     /// `None` before any such directive is seen.
     pub timescale: Option<Timescale>,
+    /// Every `` `timescale `` seen, with the byte offset (into the fully
+    /// preprocessed text) where it took effect — what makes the directive
+    /// *per-module* resolvable (1364-2005: a module is governed by the
+    /// last `` `timescale `` that precedes it). The preprocessor records
+    /// `out.len()` at consumption, the same anchor `` `line `` uses.
+    #[serde(skip)]
+    pub timescale_spans: Vec<(usize, Timescale)>,
 }
 
 impl DirectiveState {
+    /// The `` `timescale `` in force at byte `offset` into the fully
+    /// preprocessed text — the last directive recorded at or before
+    /// `offset` (1364-2005: a module is governed by the last
+    /// `` `timescale `` that precedes it). `None` when no directive
+    /// precedes `offset` — delays then carry raw simulation-time units.
+    pub fn timescale_at(&self, offset: usize) -> Option<Timescale> {
+        self.timescale_spans
+            .iter()
+            .filter(|(at, _)| *at <= offset)
+            .next_back()
+            .map(|(_, ts)| *ts)
+            .or(self.timescale_if_single_before(offset))
+    }
+
+    /// The single-directive fallback for a deserialized `DirectiveState`
+    /// (`` `timescale_spans `` is not serialized; a last-wins `timescale`
+    /// survives): when only positions are missing, a recorded `timescale`
+    /// governs every offset — the honest approximation a serialized
+    /// design can carry.
+    fn timescale_if_single_before(&self, _offset: usize) -> Option<Timescale> {
+        if self.timescale_spans.is_empty() {
+            self.timescale
+        } else {
+            None
+        }
+    }
+
     /// The LRM §10's user-facing line number for a byte `offset` into the
     /// *fully preprocessed* text — 1-based physical line count, unless a
     /// `` `line number "file" level `` directive is in force at or before

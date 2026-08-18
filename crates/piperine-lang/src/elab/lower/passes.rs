@@ -115,7 +115,12 @@ impl ElabPass for ElabModules {
         let names: Vec<String> = elab.syms.module_decls.keys().cloned().collect();
         for name in &names {
             let decl = elab.syms.module_decls[name].clone();
-            let module = elab.elab_module(&decl, &access_kinds, default_nettype)?;
+            // 1364-2005: the `timescale in force for this module is the
+            // last directive at or before its start — resolved here (the
+            // pass owns the design's `DirectiveState`) and handed to
+            // `elab_module`, which scales its gate `#delay` values by it.
+            let timescale = design.directives().timescale_at(decl.span.start);
+            let module = elab.elab_module(&decl, &access_kinds, default_nettype, timescale)?;
             design.modules_map_mut().insert(name.clone(), module);
         }
         Ok(())

@@ -180,12 +180,46 @@ fn default_resolver_rejects_every_include() {
     assert!(matches!(err.kind, ParseErrorKind::IncludeNotFound { .. }));
 }
 
-// ── `timescale / `resetall pass through untouched ───────────────────────
+// ── `timescale / `resetall are consumed, not passed through ─────────────
+
+/// 1364-2005-inherited directives: `` `timescale `` is parsed into
+/// `DirectiveState` (with the expanded-buffer offset it took effect at, so
+/// elaboration resolves it per module) and emits **no text**; `` `resetall``
+/// likewise never reaches the output. The old pass-through expectation was
+/// the pre-existing debt this replaces — the directive is functional now
+/// (gate `#delay` scales by the module's time unit and rounds to the
+/// precision grid).
+#[test]
+fn timescale_is_consumed_and_recorded_with_its_offset() {
+    let mut pp = Preprocessor::new();
+    let (out, _) = pp.run("`timescale 1ns/1ps\ncode").unwrap();
+    let directives = pp.directives();
+    assert_eq!(out, "\ncode", "the directive emits no text");
+    let ts = directives.timescale.expect("recorded");
+    assert_eq!((ts.unit_exponent, ts.precision_exponent), (-9, -12), "1ns/1ps");
+    assert_eq!(directives.timescale_spans.len(), 1, "its position is recorded");
+    assert!(directives.timescale_spans[0].0 <= out.find("code").expect("code present"));
+}
 
 #[test]
-fn timescale_and_resetall_pass_through_as_directive_text() {
-    assert_eq!(run("`timescale 1ns/1ps\ncode"), "`timescale 1ns/1ps\ncode");
-    assert_eq!(run("`resetall\ncode"), "`resetall\ncode");
+fn resetall_is_consumed_not_passed_through() {
+    assert_eq!(run("`resetall\ncode"), "\ncode");
+}
+
+/// The last `` `timescale `` before a module's start governs it —
+/// `DirectiveState::timescale_at` resolves per offset (1364-2005).
+#[test]
+fn the_last_timescale_before_an_offset_is_in_force() {
+    let mut pp = Preprocessor::new();
+    let (out, _) = pp
+        .run("// leading comment\n`timescale 1ns/1ps\nmodule a();\nendmodule\n`timescale 1us/1ns\nmodule b();\nendmodule\n")
+        .unwrap();
+    let directives = pp.directives();
+    let a_at = out.find("module a").expect("module a present");
+    let b_at = out.find("module b").expect("module b present");
+    assert_eq!(directives.timescale_at(0), None, "before any directive: none in force");
+    assert_eq!(directives.timescale_at(a_at).expect("a has one").unit_exponent, -9);
+    assert_eq!(directives.timescale_at(b_at).expect("b has one").unit_exponent, -6, "the later 1us governs module b");
 }
 
 // ── Comments/strings are not scanned for directives ─────────────────────

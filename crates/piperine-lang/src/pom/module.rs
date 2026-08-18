@@ -325,6 +325,13 @@ pub struct Module {
     /// behaviors: predicates are compiled expressions.
     #[serde(skip, default)]
     pub constraints: Vec<crate::pom::PomRequire>,
+    /// The `` `timescale `` in force for this module (1364-2005): the
+    /// last directive at or before the module's start. `None` when no
+    /// directive precedes it — delays then carry raw simulation-time
+    /// units (seconds). Recorded per module so gate `#delay` values
+    /// scale by the unit and round to the precision grid.
+    #[serde(default)]
+    pub timescale: Option<crate::directives::Timescale>,
     /// Gate-primitive instances (`and g1(y, a, b);`, Annex A.4.2,
     /// LRMC-C7-13, T39) — a gate is not a module instance (no port
     /// declarations to resolve against), so it gets its own list rather
@@ -374,7 +381,7 @@ impl Module {
             ports, params, wires, vars: Vec::new(), instances, connections,
             behaviors,
             branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
-            constraints: Vec::new(), gates: Vec::new(), origin: None,
+            constraints: Vec::new(), timescale: None, gates: Vec::new(), origin: None,
         }
     }
 

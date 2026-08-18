@@ -66,6 +66,7 @@ impl Elaborator {
         decl: &ModuleDecl,
         access_kinds: &HashMap<String, BranchKind>,
         default_nettype: crate::directives::NetTypeDefault,
+        timescale: Option<crate::directives::Timescale>,
     ) -> Result<Module, ElabError> {
         // Mutable so each parameter becomes visible to elaboration-constant
         // evaluation for everything declared after it in this same module
@@ -295,7 +296,23 @@ impl Elaborator {
                             })
                         })
                         .transpose()?
-                        .map(|v| v.coerce_real().unwrap_or(0.0));
+                        .map(|v| v.coerce_real().unwrap_or(0.0))
+                        .map(|raw| {
+                            // 1364-2005: a gate `#delay` number is in the
+                            // module's `` `timescale `` time unit, and the
+                            // resulting time is rounded to the precision
+                            // grid. Absent a directive the number carries
+                            // raw simulation-time units (seconds) — the
+                            // pre-existing behavior.
+                            match timescale {
+                                Some(ts) => {
+                                    let scaled = raw * 10f64.powi(ts.unit_exponent);
+                                    let grid = 10f64.powi(ts.precision_exponent);
+                                    (scaled / grid).round() * grid
+                                }
+                                None => raw,
+                            }
+                        });
                     for gi in &g.instances {
                         let mut terminals = Vec::new();
                         for t in &gi.terminals {
@@ -349,6 +366,10 @@ impl Elaborator {
         module.vars = vars;
         module.events = events;
         module.constraints = constraints;
+        // 1364-2005 `timescale: the last directive at or before the
+        // module's start governs it (resolved by the `ElabModules` pass,
+        // which owns the design's `DirectiveState`).
+        module.timescale = timescale;
         module.gates = gates;
         module.attributes = lower_module_attrs(&decl.attrs, &self.ctx.schemas)?;
 

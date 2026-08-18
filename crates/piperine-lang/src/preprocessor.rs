@@ -450,6 +450,12 @@ impl Preprocessor {
             "timescale" if active_now => {
                 let (ts, after) = self.parse_timescale(source, name_end);
                 if let Some(ts) = ts {
+                    // Record where the directive took effect (the offset
+                    // the following text will start at — a directive emits
+                    // nothing) so elaboration can resolve the timescale
+                    // per module: the last directive at or before a
+                    // module's start governs it (1364-2005).
+                    self.directives.timescale_spans.push((out.len(), ts));
                     self.directives.timescale = Some(ts);
                 }
                 Ok(after)
