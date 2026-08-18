@@ -449,7 +449,16 @@ var <name> = <expr> ;
 target <comparison> [tol <scale>] ;          // a single `a <= b` / `a >= b`
 cover <name> : <expr> bins [lo:step:hi] ;    // or `bins in {e1, e2, …}`
 cover cross <name> : <p1>, <p2>, … ;
+@ <analysis> [(after = e[, dur = e])] { statements }   // dc / tran / ac
 ```
+
+The `@ … { … }` group scopes its contained statements: they evaluate only when the
+running analysis matches, and — for `@ tran` — only at accepted points inside the
+temporal window `[after, after + dur)` (`dur` absent is open-ended; bounds are
+elaboration constants, loud otherwise). Nesting a scope inside a scope is a parse
+error (no combined semantics yet). A scoped margin whose analysis never ran, or whose
+window selects no point, is **not exercised** — worst +∞, no argmin, never a silent
+vacuous pass. `@`/`after`/`dur` are contextual keywords here.
 
 `constraint`, `require`, `tol`, `var`, `target`, `cover`, and `bins` are **contextual
 keywords** — identifier text matched only at their production sites, never added to
