@@ -108,13 +108,12 @@ fn observables_lists_named_var_catalog() {
     let r_top = op.instance("r_top").expect("r_top is a labeled instance");
     let observables = r_top.observables();
     assert!(!observables.is_empty(), "Resistor declares at least one var observable");
-    // `@name(value = "cond")` has no Verilog-AMS spelling, so the observable
-    // catalog keeps its positional `var[k]` fallback (PIA-08) — the catalog
-    // entry, its kind and its cost are what this test pins.
+    // One name, both catalogs: the opvar is observable by its authored
+    // name (PIA-07), never a positional fallback.
     let cond = observables
         .iter()
-        .find(|o| o.name == "var[0]")
-        .expect("the module var surfaces as observable `var[0]`");
+        .find(|o| o.name == "cond")
+        .expect("the module var surfaces as observable `cond`");
     assert_eq!(
         cond.kind, ObservableKind::Var,
         "a module var defaults to ObservableKind::Var"

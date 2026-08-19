@@ -88,13 +88,10 @@ fn recorded_opvar_over_time_matches_dc_opvar_at_a_held_point() {
     );
 
     let trace = session
-        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.var[0]"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.cond"])
         .expect("tran with probe solves");
-    // PIA-07's "one declaration names both catalogs" half is dark after the
-    // frontend swap: `@name` has no Verilog-AMS spelling, so the *probe*
-    // selector addresses the observable catalog's positional `var[0]` while
-    // the read-back addresses the opvar catalog's declaration name `cond`.
-    // Same slot, same value — two names instead of one.
+    // One name, both catalogs: the opvar is addressable by its authored
+    // name everywhere (PIA-07's "one declaration names both catalogs").
     let wf = trace.opvar("r1.cond").expect("recorded opvar reads back as a Waveform");
 
     let n = wf.points().len();
@@ -182,7 +179,7 @@ fn opvar_read_fails_loud_when_not_recorded() {
 fn opvar_read_fails_loud_on_unknown_name() {
     let mut session = probe_session();
     let trace = session
-        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.var[0]"])
+        .tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &["r1.cond"])
         .expect("tran with probe solves");
     let err = trace.opvar("r1.bogus").expect_err("unknown opvar name must fail loud");
     let msg = format!("{err}");
