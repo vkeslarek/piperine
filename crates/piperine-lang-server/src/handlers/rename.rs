@@ -34,7 +34,7 @@ pub fn handle_rename(state: &mut ServerState, req: Request, connection: &Connect
         // byte offsets from a *foreign* file's coordinate space (see
         // T13's goto fix), so blindly emitting a `TextEdit` against the
         // current document would corrupt it.
-        if let Some(edit) = cross_file_rename_edit(state, doc, &uri, &resolution, decl_span, &new_name) {
+        if let Some(edit) = cross_file_rename_edit(doc, &uri, &resolution, decl_span, &new_name) {
             return Some(edit);
         }
 
@@ -75,7 +75,6 @@ pub fn handle_rename(state: &mut ServerState, req: Request, connection: &Connect
 /// documents are unaffected).
 #[allow(clippy::mutable_key_type)]
 fn cross_file_rename_edit(
-    state: &ServerState,
     doc: &DocumentState,
     current_uri: &lsp_types::Uri,
     resolution: &Resolution,
@@ -89,80 +88,118 @@ fn cross_file_rename_edit(
         SymbolKind::Instance => crate::symbol_index::instance_module_type_at(design, decl_span)?,
         _ => return None,
     };
-    // A project-local declaration has no origin entry — the existing
-    // single-file rename path already handles it correctly.
-    design.project().origin_of(&target_name)?;
+    // Cross-file is only for a module declared somewhere other than the
+    // current document's top level (an `` `include ``d file) — a local
+    // declaration takes the single-file path.
+    let target = design.module(&target_name)?;
+    let module_span = target.span?;
+    let ctx = crate::project::ProjectContext::discover(current_uri);
+    let source_map = ctx.source_map();
 
-    let root = doc.project_root.as_ref()?;
-    let unit = state.projects.get(root)?;
-    let current_path = url::Url::parse(current_uri.as_str()).ok()?.to_file_path().ok()?;
-
-    let mut document_edits = Vec::new();
-    for (path, other_design) in &unit.designs {
-        let text = if path == &current_path {
-            doc.source.clone()
+    // One edit site = a flat-buffer span (module header or instance
+    // statement), resolved through `source_provenance` to its real file
+    // and local range: source 0 is the current document, anything else
+    // is an `` `include ``d file whose captured text the provenance
+    // already holds.
+    fn push_site(
+        design: &piperine_lang::Design,
+        source_map: &piperine_lang::SourceMap,
+        current_uri: &lsp_types::Uri,
+        span: miette::SourceSpan,
+        token: &dyn Fn(&str, miette::SourceSpan) -> Option<(usize, usize)>,
+        out: &mut Vec<(lsp_types::Uri, bool, TextEdit)>,
+    ) -> Option<()> {
+        let flat =
+            piperine_lang::error::PreprocessedSpan::new(span.offset(), span.offset() + span.len());
+        let resolved = design.source_provenance.resolve(flat);
+        // The resolved local range is authoritative for BOTH files — the
+        // flat buffer's offsets are never the document's own when an
+        // `` `include `` expanded ahead of the site.
+        let local = miette::SourceSpan::new(resolved.start.into(), resolved.end - resolved.start);
+        let text = design.source_provenance.text(resolved.source_id);
+        let (start, end) = token(text, local)?;
+        let uri = if resolved.source_id == piperine_lang::source_provenance::SourceId(0) {
+            current_uri.clone()
         } else {
-            match std::fs::read_to_string(path) {
-                Ok(t) => t,
-                Err(_) => continue,
-            }
+            let raw = design.source_provenance.name(resolved.source_id);
+            let path = crate::symbol_index::resolve_include_source_path(source_map, raw)?;
+            format!("file://{}", path.display()).parse().ok()?
         };
+        out.push((
+            uri,
+            false,
+            TextEdit {
+                range: crate::text_pos::byte_range(text, start, end),
+                new_text: String::new(),
+            },
+        ));
+        Some(())
+    }
 
-        let mut edits = Vec::new();
+    let mut sites: Vec<(lsp_types::Uri, bool, TextEdit)> = Vec::new();
+    let name = target_name.clone();
+    let header = move |text: &str, span: miette::SourceSpan| header_token_range(text, span, &name);
+    push_site(design, &source_map, current_uri, module_span, &header, &mut sites);
 
-        // This file's own declaration of the target module (skipped for
-        // files that only re-import it — same origin-absence check as
-        // cross-file goto, T13).
-        if other_design.project().origin_of(&target_name).is_none()
-            && let Some(m) = other_design.module(&target_name)
-            && let Some(span) = m.span
-            && let Some((start, end)) = header_token_range(&text, span, &target_name)
-        {
-            edits.push(TextEdit {
-                range: crate::text_pos::byte_range(&text, start, end),
-                new_text: new_name.to_string(),
-            });
-        }
-
-        // Every instance of the target module declared directly in this
-        // file (only modules this file itself owns — an inlined `use`
-        // copy's instance spans belong to a foreign coordinate space too).
-        for m in other_design.modules() {
-            if other_design.project().origin_of(&m.name).is_some() {
+    for m in design.modules() {
+        for inst in &m.instances {
+            if inst.module != target_name {
                 continue;
             }
-            for inst in &m.instances {
-                if inst.module != target_name {
-                    continue;
-                }
-                let Some(span) = inst.span else { continue };
-                let Some((start, end)) = instance_type_token_range(&text, span, inst.label.as_deref(), &target_name)
-                else {
-                    continue;
-                };
-                edits.push(TextEdit {
-                    range: crate::text_pos::byte_range(&text, start, end),
-                    new_text: new_name.to_string(),
-                });
-            }
-        }
-
-        if edits.is_empty() {
-            continue;
-        }
-        let uri: lsp_types::Uri = format!("file://{}", path.display()).parse().ok()?;
-        document_edits.push(TextDocumentEdit {
-            text_document: OptionalVersionedTextDocumentIdentifier {
+            // The instance TYPE token — VAMS spells it before the label
+            // (`A inst(…)`), so the instance's own `type_span` (flat
+            // buffer) names it directly; a missing type_span means a
+            // pre-retype design — skip rather than guessing.
+            let Some(span) = inst.type_span else { continue };
+            let (start, end) = (span.offset(), span.offset() + span.len());
+            let flat = piperine_lang::error::PreprocessedSpan::new(start, end);
+            let resolved = design.source_provenance.resolve(flat);
+            let text = design.source_provenance.text(resolved.source_id);
+            let uri = if resolved.source_id == piperine_lang::source_provenance::SourceId(0) {
+                current_uri.clone()
+            } else {
+                let raw = design.source_provenance.name(resolved.source_id);
+                let path = crate::symbol_index::resolve_include_source_path(&source_map, raw)?;
+                format!("file://{}", path.display()).parse().ok()?
+            };
+            sites.push((
                 uri,
-                version: if path == &current_path { Some(doc.version) } else { None },
-            },
-            edits: edits.into_iter().map(OneOf::Left).collect(),
-        });
+                false,
+                TextEdit {
+                    range: crate::text_pos::byte_range(text, resolved.start, resolved.end),
+                    new_text: String::new(),
+                },
+            ));
+        }
     }
 
-    if document_edits.is_empty() {
+    if sites.is_empty() {
         return None;
     }
+    // Fill the new_text now that the closures are done.
+    for (_, _, edit) in sites.iter_mut() {
+        edit.new_text = new_name.to_string();
+    }
+
+    // Group by URI into TextDocumentEdits.
+    let mut by_uri: std::collections::HashMap<lsp_types::Uri, Vec<TextEdit>> =
+        std::collections::HashMap::new();
+    for (uri, _, edit) in sites {
+        by_uri.entry(uri).or_default().push(edit);
+    }
+    let document_edits: Vec<TextDocumentEdit> = by_uri
+        .into_iter()
+        .map(|(uri, edits)| {
+            let version = if uri == *current_uri { Some(doc.version) } else { None };
+            TextDocumentEdit {
+            text_document: OptionalVersionedTextDocumentIdentifier {
+                uri,
+                version,
+            },
+            edits: edits.into_iter().map(OneOf::Left).collect(),
+        }
+        })
+        .collect();
 
     Some(WorkspaceEdit {
         changes: None,
@@ -200,21 +237,7 @@ fn header_token_range(text: &str, span: miette::SourceSpan, target_name: &str) -
     Some((span.offset() + rel_start, span.offset() + rel_end))
 }
 
-/// The instantiated module type's absolute byte range within an instance
-/// statement's own `span`. When the instance has a label
-/// (`label: Type(...)`), the search starts after the `:` so a label that
-/// happens to equal the module's name is never mistaken for the type.
-fn instance_type_token_range(
-    text: &str,
-    span: miette::SourceSpan,
-    label: Option<&str>,
-    target_name: &str,
-) -> Option<(usize, usize)> {
-    let inst_text = text.get(span.offset()..span.offset() + span.len())?;
-    let search_from = if label.is_some() { inst_text.find(':').map(|p| p + 1).unwrap_or(0) } else { 0 };
-    let (rel_start, rel_end) = find_whole_word(&inst_text[search_from..], target_name)?;
-    Some((span.offset() + search_from + rel_start, span.offset() + search_from + rel_end))
-}
+
 
 pub fn handle_prepare_rename(state: &mut ServerState, req: Request, connection: &Connection) {
     let Some((id, params)) = req.parse::<TextDocumentPositionParams>(connection) else { return };

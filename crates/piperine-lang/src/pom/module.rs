@@ -104,6 +104,10 @@ pub struct Param {
     #[serde(default)]
     pub doc: Option<String>,
     pub name: String,
+    /// The name token's own span (LSP token-tightness — hover/rename
+    /// targets the name, not the whole declaration line).
+    #[serde(skip)]
+    pub name_span: Option<miette::SourceSpan>,
     pub ty: ValueType,
     pub default: Option<Value>,
     /// For a scalar flattened out of a bundle-typed param (GAPS §I.14):

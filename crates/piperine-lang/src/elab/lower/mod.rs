@@ -120,6 +120,21 @@ impl Elaborator {
         for pass in passes::PASSES {
             pass.run(self, &mut design)?;
         }
+        // Cross-file provenance (LSP-12/LSP-13's half): a top-level item
+        // declared inside an `` `include ``d file records that file as its
+        // origin — the raw include argument in `origins`, the same string
+        // as a relative `PathBuf` in `item_files` (a host re-resolves it
+        // through its own SourceMap, the same way the preprocessor found
+        // it). Items in the top-level document (source 0) record nothing
+        // — the single-document default.
+        for (name, decl) in &self.syms.module_decls {
+            let resolved = design.source_provenance.resolve(decl.span);
+            if resolved.source_id != crate::source_provenance::SourceId(0) {
+                let raw = design.source_provenance.name(resolved.source_id).to_string();
+                design.project.origins.insert(name.clone(), raw.clone());
+                design.project.item_files.insert(name.clone(), std::path::PathBuf::from(raw));
+            }
+        }
         Ok(design)
     }
 }

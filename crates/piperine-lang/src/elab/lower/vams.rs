@@ -172,6 +172,7 @@ impl Elaborator {
                         let (ty, value) = eval_and_define_param_assignment(pa, &base_ty, &p.ranges, &mut env)?;
                         params.push(Param {
                             span: Some(to_miette_span(p.span)),
+                            name_span: Some(to_miette_span(pa.name_span)),
                             attributes: Vec::new(),
                             doc: p.doc.clone(),
                             name: pa.name.clone(),
@@ -211,6 +212,7 @@ impl Elaborator {
                         })?;
                     params.push(Param {
                         span: Some(to_miette_span(a.span)),
+                        name_span: None,
                         attributes: Vec::new(),
                         doc: None,
                         name: a.name.clone(),
@@ -226,6 +228,7 @@ impl Elaborator {
                     for ast_inst in &inst_decl.instances {
                         instances.push(self.lower_instance(
                             &inst_decl.module_name,
+                            inst_decl.module_name_span,
                             ast_inst,
                             &inst_decl.param_overrides,
                             &env,
@@ -546,6 +549,7 @@ impl Elaborator {
     pub(super) fn lower_instance(
         &self,
         module_name: &str,
+        module_name_span: crate::error::PreprocessedSpan,
         ast_inst: &crate::ast::Instance,
         param_overrides: &[PortConnection],
         env: &ConstEnv,
@@ -554,7 +558,7 @@ impl Elaborator {
         // module — resolves to `(paramset.module_name, bound params)`,
         // §6.4's own indirection.
         if let Some(ps) = self.syms.paramsets.get(module_name) {
-            return self.lower_paramset_instance(module_name, ps, ast_inst, param_overrides, env);
+            return self.lower_paramset_instance(module_name, ps, ast_inst, param_overrides, env, module_name_span);
         }
 
         // LRMC-C7-13 (T39): a UDP instantiation is syntactically
@@ -576,8 +580,8 @@ impl Elaborator {
             let ports = resolve_instance_ports(ast_inst, module_name, &target_port_names, env)?;
             return Ok(Instance {
                 span: Some(to_miette_span(ast_inst.span)),
-                label_span: None,
-                type_span: None,
+                label_span: Some(to_miette_span(ast_inst.name_span)),
+                type_span: Some(to_miette_span(module_name_span)),
                 attributes: Vec::new(),
                 doc: None,
                 label: Some(ast_inst.name.clone()),
@@ -635,8 +639,8 @@ impl Elaborator {
 
         Ok(Instance {
             span: Some(to_miette_span(ast_inst.span)),
-            label_span: None,
-            type_span: None,
+            label_span: Some(to_miette_span(ast_inst.name_span)),
+            type_span: Some(to_miette_span(module_name_span)),
             attributes: Vec::new(),
             doc: None,
             label: Some(ast_inst.name.clone()),
@@ -667,6 +671,7 @@ impl Elaborator {
         ast_inst: &crate::ast::Instance,
         param_overrides: &[PortConnection],
         env: &ConstEnv,
+        module_name_span: crate::error::PreprocessedSpan,
     ) -> Result<Instance, ElabError> {
         let target = self.syms.module_decls.get(&ps.module_name).ok_or_else(|| {
             ElabError::from(ElabErrorKind::Other(format!(
@@ -759,8 +764,8 @@ impl Elaborator {
 
         Ok(Instance {
             span: Some(to_miette_span(ast_inst.span)),
-            label_span: None,
-            type_span: None,
+            label_span: Some(to_miette_span(ast_inst.name_span)),
+            type_span: Some(to_miette_span(module_name_span)),
             attributes: Vec::new(),
             doc: None,
             label: Some(ast_inst.name.clone()),

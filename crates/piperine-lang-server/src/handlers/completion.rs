@@ -53,7 +53,47 @@ pub fn completions_at(doc: &DocumentState, offset: usize) -> Vec<CompletionItem>
     if let Some(prefix) = attr_schema_prefix(&doc.source, offset) {
         return schema_completions(doc.ctx.as_ref(), prefix);
     }
+    if outside_any_module(&doc.source, offset) {
+        // T37's note stands (no predictive parser); the one bit of
+        // context the static list can honor cheaply is the module-body
+        // boundary — a cursor outside every module body (after the last
+        // `endmodule`, or before the first `module`) must not be offered
+        // statement keywords.
+        return top_level_completions(doc.design.as_ref());
+    }
     static_completions(doc.design.as_ref())
+}
+
+/// Whether `offset` sits outside every module body — before the first
+/// `module` keyword or after the last `endmodule` (a cursor between two
+/// modules is outside both). A lexical scan, not a parse: comments could
+/// confuse it, and that is the disclosed price of T37's static-list
+/// architecture (the honest alternative is a tolerant parser, a named
+/// follow-up).
+fn outside_any_module(source: &str, offset: usize) -> bool {
+    let before = &source[..offset.min(source.len())];
+    let opens = before.matches("module ").count() + before.matches("module(").count();
+    let closes = before.matches("endmodule").count();
+    opens <= closes
+}
+
+/// The top-level-only half of [`static_completions`]: declaration
+/// keywords, snippets, declared discipline/module names — no statement
+/// keywords, no value types.
+fn top_level_completions(design: Option<&piperine_lang::Design>) -> Vec<CompletionItem> {
+    let mut items = Vec::new();
+    add_top_level_completions(&mut items);
+    if let Some(design) = design {
+        for (name, _) in design.disciplines() {
+            items.push(kw_item(name, "Discipline", CompletionItemKind::INTERFACE));
+        }
+        for m in design.modules() {
+            items.push(kw_item(m.name(), "Module", CompletionItemKind::CLASS));
+        }
+    }
+    items.sort_by(|a, b| a.label.cmp(&b.label));
+    items.dedup_by(|a, b| a.label == b.label);
+    items
 }
 
 /// Whether `offset` sits right after an `@` (possibly with a partial
@@ -176,12 +216,10 @@ fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
 
 fn add_behavior_completions(items: &mut Vec<CompletionItem>) {
     let keywords = [
-        ("var", "Variable declaration", CompletionItemKind::KEYWORD),
         ("if", "Conditional statement", CompletionItemKind::KEYWORD),
-        ("for", "For loop", CompletionItemKind::KEYWORD),
-        ("match", "Match expression", CompletionItemKind::KEYWORD),
-        ("return", "Return statement", CompletionItemKind::KEYWORD),
-        ("when", "Event guard", CompletionItemKind::KEYWORD),
+        ("for", "For loop (generate / procedural)", CompletionItemKind::KEYWORD),
+        ("case", "Case statement", CompletionItemKind::KEYWORD),
+        ("assign", "Continuous assignment", CompletionItemKind::KEYWORD),
     ];
     for (kw, desc, kind) in &keywords {
         items.push(kw_item(kw, desc, *kind));
@@ -209,14 +247,14 @@ fn add_behavior_completions(items: &mut Vec<CompletionItem>) {
 }
 
 fn add_value_types(items: &mut Vec<CompletionItem>) {
+    // LRM §3.2's own type keywords (lowercase — the PascalCase set was
+    // the PHDL value layer, none of which VAMS has).
     let types = [
-        ("Real", "Real number (f64)"),
-        ("Natural", "Natural number (u64)"),
-        ("Integer", "Integer (i64)"),
-        ("Complex", "Complex number"),
-        ("Boolean", "Boolean"),
-        ("Quad", "4-valued logic"),
-        ("String", "String"),
+        ("real", "Real variable/parameter type"),
+        ("integer", "Integer variable/parameter type"),
+        ("string", "String parameter type"),
+        ("time", "Time variable type"),
+        ("realtime", "Realtime variable type"),
     ];
     for (ty, desc) in &types {
         items.push(CompletionItem {

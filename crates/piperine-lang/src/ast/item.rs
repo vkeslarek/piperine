@@ -205,6 +205,9 @@ pub struct ParamRange {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamAssignment {
     pub name: String,
+    /// The name token's own span (LSP token-tightness — hover/rename
+    /// targets the name, not the whole declaration).
+    pub name_span: PreprocessedSpan,
     pub dims: Vec<Range>,
     pub value: Expr,
 }
@@ -492,6 +495,8 @@ pub struct PortConnection {
 pub struct Instance {
     pub span: PreprocessedSpan,
     pub name: String,
+    /// The label token's own span (LSP highlight/rename target-tightness).
+    pub name_span: PreprocessedSpan,
     /// `name_of_module_instance ::= module_instance_identifier [ range ]`
     /// — Annex A.4.1/§6.2.2: an array-of-instances range (`buf8 [7:0]
     /// (...)`, LRMC-C5-08). `None` for an ordinary single instance.
@@ -506,6 +511,8 @@ pub struct ModuleInstantiation {
     pub span: PreprocessedSpan,
     pub attrs: Vec<Attr>,
     pub module_name: String,
+    /// The module-name token's own span (LSP type-site targeting).
+    pub module_name_span: PreprocessedSpan,
     pub param_overrides: Vec<PortConnection>,
     pub instances: Vec<Instance>,
 }

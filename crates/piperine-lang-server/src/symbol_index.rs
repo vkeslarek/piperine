@@ -235,7 +235,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str, byte_offset: us
         return Some(Resolution {
             kind: SymbolKind::Param,
             name: p.name.clone(),
-            decl_span: p.span,
+            decl_span: p.name_span.or(p.span),
             type_info: Some(format!("{:?}", p.ty)),
             doc: p.doc.clone(),
             file: None,

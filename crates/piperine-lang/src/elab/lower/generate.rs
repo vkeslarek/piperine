@@ -97,7 +97,7 @@ fn unroll_items(
         match item {
             ModuleItem::Instantiation(inst_decl) => {
                 for ast_inst in &inst_decl.instances {
-                    let mut inst = elab.lower_instance(&inst_decl.module_name, ast_inst, &inst_decl.param_overrides, env)?;
+                    let mut inst = elab.lower_instance(&inst_decl.module_name, inst_decl.module_name_span, ast_inst, &inst_decl.param_overrides, env)?;
                     inst.label = Some(mangle_label(ast_inst.name.as_str(), env));
                     out.push(inst);
                 }

@@ -618,14 +618,14 @@ impl Grammar {
     /// `param_assignment`. `range` reuses [`Self::parse_range`], the same
     /// `[msb:lsb]` production nets/ports declare with.
     fn parse_param_assignment(&mut self) -> Result<ParamAssignment, ParseError> {
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         let mut dims = vec![];
         while self.at_punct("[") {
             dims.push(self.parse_range()?);
         }
         self.expect_punct("=")?;
         let value = self.parse_expr()?;
-        Ok(ParamAssignment { name, dims, value })
+        Ok(ParamAssignment { name, name_span, dims, value })
     }
 
     /// `'[' expr ':' expr ']'` — a single `[msb:lsb]` range, shared by
@@ -1240,7 +1240,7 @@ impl Grammar {
 
     fn parse_instance(&mut self) -> Result<Instance, ParseError> {
         let start = self.peek_span();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         // `name_of_module_instance ::= module_instance_identifier [ range
         // ]` — an array-of-instances range, LRMC-C5-08.
         let range = if self.at_punct("[") { Some(self.parse_range()?) } else { None };
@@ -1253,14 +1253,20 @@ impl Grammar {
             }
         }
         let end = self.expect_punct(")")?;
-        Ok(Instance { span: PreprocessedSpan::new(start.start, end.end), name, range, connections })
+        Ok(Instance {
+            span: PreprocessedSpan::new(start.start, end.end),
+            name,
+            name_span,
+            range,
+            connections,
+        })
     }
 
     /// `module_instantiation`, Annex A.4.1. Attribute-bearing.
     fn parse_module_instantiation(&mut self) -> Result<ModuleInstantiation, ParseError> {
         let attrs = self.parse_attr_instances()?;
         let start = self.peek_span();
-        let (module_name, _) = self.expect_ident()?;
+        let (module_name, module_name_span) = self.expect_ident()?;
         let param_overrides = if self.eat_punct("#") {
             self.expect_punct("(")?;
             let mut po = vec![];
@@ -1284,6 +1290,7 @@ impl Grammar {
             span: PreprocessedSpan::new(start.start, end.end),
             attrs,
             module_name,
+            module_name_span,
             param_overrides,
             instances,
         })
