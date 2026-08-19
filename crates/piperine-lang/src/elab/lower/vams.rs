@@ -1447,6 +1447,22 @@ fn resolve_contribution_branches(
     access_kinds: &HashMap<String, BranchKind>,
 ) -> Result<(), ElabError> {
     match stmt {
+        // A contribution guarded by `@(initial_step)` is a UIC seed, not
+        // a live potential/flow source — the branch it names keeps the
+        // kind its unconditional contributions give it, and the seed
+        // never stamps (the flattener routes it to
+        // `FlatAnalog::initial_conditions`). §5.4.2's potential+flow
+        // conflict therefore does not see it — the SPICE `.ic` idiom
+        // (`@(initial_step) V(p,n) <+ ic;` beside `I(p,n) <+ c*ddt(…)`)
+        // must elaborate. (`initial_step` parses as a level event's
+        // identifier — LRM §5.6's own spelling.)
+        Stmt::EventControl { events, body, .. }
+            if events.iter().any(|e| {
+                matches!(e, crate::ast::EventExpr::Level(crate::ast::Expr::Ident { name, .. }) if name == "initial_step")
+            }) && matches!(body.as_ref(), Stmt::Contribution { .. }) =>
+        {
+            return Ok(());
+        }
         Stmt::Contribution { target, span, .. } => {
             match target {
                 Expr::AccessFunction { function, pos, neg, .. } => {

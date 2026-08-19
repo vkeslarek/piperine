@@ -591,6 +591,36 @@ impl<'m> AnalogFlattener<'m> {
                 PomStmt::Contribution { target, value, .. } => {
                     self.add_contrib(target, value, guard)?;
                 }
+                // `@(initial_step) V(p, n) <+ ic;` — a UIC seed (SPICE
+                // `.ic`): never a live contribution (its branch keeps the
+                // kind the unconditional contributions give it), routed
+                // to `FlatAnalog::initial_conditions` for the t=0 solve
+                // and the UIC clamps. Only the potential form seeds — a
+                // flow seed is a different row kind (deferred).
+                PomStmt::EventControl { events, body, .. }
+                    if events.iter().any(|e| {
+                        matches!(e, piperine_lang::ast::EventExpr::Level(piperine_lang::ast::Expr::Ident { name, .. }) if name == "initial_step")
+                    }) =>
+                {
+                    if let PomStmt::Contribution { target, value, .. } = body.as_ref() {
+                        let (nature_kind, plus, minus) = self.parse_dest(target)?;
+                        match nature_kind {
+                            NatureKind::Potential => {
+                                let resolved = self.subst(value)?;
+                                self.out.initial_conditions.push((plus, minus, resolved));
+                                continue;
+                            }
+                            NatureKind::Flow => {
+                                return Err(CodegenError::unsupported(
+                                    "`@(initial_step)` seed: only the potential form `V(a, b) <+ value;` seeds today",
+                                ));
+                            }
+                        }
+                    }
+                    // A non-contribution body under `@(initial_step)`
+                    // falls through to the ordinary event machinery.
+                    self.walk(std::slice::from_ref(body.as_ref()), guard)?;
+                }
                 PomStmt::Assign { target: PomExpr::Ident { name, .. }, value, .. }
                 | PomStmt::NonBlockingAssign { target: PomExpr::Ident { name, .. }, value, .. } => {
                     // A guarded reassignment reads the previous temp as its

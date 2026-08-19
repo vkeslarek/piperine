@@ -6,13 +6,10 @@
 //! a computed operating point at t = 0 *is* evaluated. The same fixture
 //! run with and without UIC differs only in that first point.
 
-//! **Require-core migrated** (constraints-on-vams) — except the two UIC
-//! tests below, which stay present-and-red: their fixtures seed UIC
-//! through PHDL's `@initial { V(p, n) <- …; }` force, and a
-//! source-authored UIC seed has no VAMS producer yet (the T44 gap
-//! `tests/ngspice/uic_rc.vams`'s header documents — `ic` params stopped
-//! wiring into seeds at the frontend swap). Blocked on that gap, not on
-//! the constraint surface; do not delete them.
+//! **Fully migrated** (constraints-on-vams + the UIC-seed idiom): the
+//! fixtures seed via `@(initial_step) V(p, n) <+ value;` — the guarded
+//! potential contribution the flattener routes to the t=0 solve + UIC
+//! clamps (T44 closed).
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;
@@ -134,23 +131,33 @@ fn rejected_steps_evaluate_no_margin_and_emit_no_finding() {
 /// the t = 0 OP is evaluated, the first accepted step when it is skipped.
 fn uic_circuit(initial: bool) -> CircuitInstance {
     let seed = if initial {
-        "@initial { V(p, n) <- 1.0; }\n"
+        "@(initial_step) V(p, n) <+ 1.0;\n        "
     } else {
         ""
     };
     build(&format!(
-        "{DISCIPLINE}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 1.0; }}
-analog Vsrc {{ V(p, n) <- dc; }}
-mod Cap(inout p: Electrical, inout n: Electrical) {{ param c: Real = 1e-9; }}
-analog Cap {{ I(p, n) <+ c * ddt(V(p, n)); {seed} }}
-constraint Cap {{ require hi : V(p, n) <= 2.0; }}
-mod Top() {{
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    v1 : Vsrc(.p = in, .n = gnd);
-    c1 : Cap(.p = in, .n = gnd);
-}}
+        "{DISCIPLINES}
+module Vsrc (inout Electrical p, inout Electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module Cap (inout Electrical p, inout Electrical n);
+    parameter real c = 1e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+        {seed}
+    end
+    constraint begin
+        require hi : V(p, n) <= 2.0;
+    end
+endmodule
+module Top ();
+    Electrical gnd, in;
+    Vsrc v1 (.p(in), .n(gnd));
+    Cap c1 (.p(in), .n(gnd));
+endmodule
 "
     ))
 }
@@ -199,22 +206,35 @@ fn uic_skips_t0_while_a_computed_op_is_evaluated() {
 #[test]
 fn a_violated_uic_state_is_skipped_at_t0() {
     let mut circuit = build(&format!(
-        "{DISCIPLINE}
-mod Vsrc(inout p: Electrical, inout n: Electrical) {{ param dc: Real = 1.0; }}
-analog Vsrc {{ V(p, n) <- dc; }}
-mod R(inout p: Electrical, inout n: Electrical) {{ param r: Real = 1e3; }}
-analog R {{ I(p, n) <+ V(p, n) / r; }}
-mod Cap(inout p: Electrical, inout n: Electrical) {{ param c: Real = 1e-9; }}
-analog Cap {{ I(p, n) <+ c * ddt(V(p, n)); @initial {{ V(p, n) <- 5.0; }} }}
-constraint Cap {{ require hi : V(p, n) <= 2.0; }}
-mod Top() {{
-    wire gnd : Electrical;
-    wire in  : Electrical;
-    wire x   : Electrical;
-    v1 : Vsrc(.p = in, .n = gnd);
-    r1 : R(.p = in, .n = x);
-    c1 : Cap(.p = x, .n = gnd);
-}}
+        "{DISCIPLINES}
+module Vsrc (inout Electrical p, inout Electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+module R (inout Electrical p, inout Electrical n);
+    parameter real r = 1e3;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module Cap (inout Electrical p, inout Electrical n);
+    parameter real c = 1e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+        @(initial_step) V(p, n) <+ 5.0;
+    end
+    constraint begin
+        require hi : V(p, n) <= 2.0;
+    end
+endmodule
+module Top ();
+    Electrical gnd, in, x;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(x));
+    Cap c1 (.p(x), .n(gnd));
+endmodule
 "
     ));
     let result = collect_tran(&mut circuit, 1e-6, 1e-7);

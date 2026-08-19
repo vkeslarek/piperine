@@ -34,21 +34,11 @@
 // documented SPEC_DEVIATION, `.specs/features/verilog-ams-support/tasks.md`)
 // — real Verilog-A has only `<+`. Every unconditional `<-` below becomes
 // `<+` (semantically identical per T32's note: Force was never
-// conditional-contribution-specific). `cap`'s UIC seed
-// (`@ initial { V(p,n) <- ic; }`) is the one exception: converting it to the
-// real Verilog-A idiom (`@(initial_step) V(p,n) <+ ic;`) does not merely
-// change syntax — it puts a Potential contribution on a branch that already
-// carries an unconditional Flow contribution (`I(p,n) <+ m*ddt(...)`), which
-// the elaborator rejects as LRM §5.4.2's potential+flow conflict regardless
-// of the `@(initial_step)` guard (confirmed by direct test — the current
-// pipeline has no lowering path for a Contribution inside an event body at
-// all, per T32's note). Emitting it would make every circuit using `cap`
-// fail to elaborate, not just IC-specific cases, so the IC contribution is
-// left un-migrated (dropped) rather than shipped broken; see the comment at
-// its former call site. This is the same gap NGP-10 already documents for
-// `ind`'s current-seed IC (`ROADMAP.md`, `ngspice-parity` spec) — a codegen
-// limitation, not something this dialect-translation task can or should
-// paper over.
+// conditional-contribution-specific). `cap`'s UIC seed is
+// `@(initial_step) V(p,n) <+ ic;` — the guarded potential contribution the
+// flattener routes to `FlatAnalog::initial_conditions` (a seed, never a
+// stamped source; §5.4.2's conflict check does not see it). `ind`'s
+// current-seed IC remains unwired — a Flow seed is a different row kind.
 
 `include "disciplines.vams"
 `include "constants.va"
@@ -150,7 +140,7 @@ module cap (inout electrical p, inout electrical n);
     parameter real c      = -1.0;    // capacitance (F) override; < 0 = derive from geometry
     parameter real w      = -1.0;    // width (m); < 0 = defWidth
     parameter real l      = -1.0;    // length (m); < 0 = defLength
-    parameter real ic     = 0.0;     // initial voltage (V) — see file header, NOT wired (codegen gap)
+    parameter real ic     = 0.0;     // initial voltage (V) — UIC seed (`@(initial_step) V(p,n) <+ ic`)
     parameter real temp   = -1.0;    // absolute temp (K); < 0 = ambient+dtemp
     parameter real dtemp  = 0.0;     // delta temp from ambient (K)
     parameter real scale  = 1.0;
@@ -196,13 +186,12 @@ module cap (inout electrical p, inout electrical n);
 
         // ── Initial condition (capgetic.c, NGP-10) ────────────────────────────
         // ngspice: `ic` seeds the UIC start voltage across the capacitor.
-        // NOT WIRED: see file header — a Potential UIC seed on a branch that
-        // already carries this module's unconditional Flow contribution is
-        // rejected by the elaborator (LRM Sec 5.4.2) regardless of
-        // `@(initial_step)` guarding, and Contribution-inside-event-body has
-        // no lowering path yet either way (T32). `ic` stays a declared,
-        // unused parameter until a Flow/Potential-coexistence or dedicated
-        // UIC-seed mechanism lands in codegen.
+        // The `@(initial_step)`-guarded potential contribution is the UIC
+        // seed idiom: it never stamps (the branch's kind stays Flow), the
+        // flattener routes it to the t=0 solve + UIC clamps, and the
+        // compile-side param-default suppression fires the seed only when
+        // `ic` was actually given at the instance site.
+        @(initial_step) V(p, n) <+ ic;
     end
 endmodule
 
