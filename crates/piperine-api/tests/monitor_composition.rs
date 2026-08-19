@@ -39,18 +39,11 @@
 //! evaluation path. This file's assertion on `finding.time` falling inside
 //! `[0, stop]` is the same style of proof.
 //!
-//! **BLOCKED on PHDL Bit-typed module vars — no VAMS producer.** Both
-//! fixtures observe an internal *module var* (`var bad : Bit = 1;`): a
-//! module-scope variable initializer has no Verilog-AMS producer in this
-//! tree (a known gap), and `Bit` is PHDL's value layer — no VAMS
-//! discipline spells it. The `constraint begin … end` producer that
-//! landed (constraints-on-vams) carries `require` only; it does not
-//! create the module var the predicate reads, so `require bad_is_low :
-//! bad <= -1.0` cannot be retargeted. The parameterized fixture is
-//! additionally blocked on `mod Watch[N]` — VAMS has no
-//! parameterized-module-name form. Both fixtures stay in PHDL and the
-//! tests are left failing rather than weakened, deleted, or `#[ignore]`d
-//! (repo-banned by `tests/suite_hygiene.rs`).
+//! **Migrated** (VAMS idioms): `Bit` ports are `logic` discipline ports,
+//! the internal fault is `integer bad = 1;` (initializers are LRM
+//! A.2.2.1), the publish is `always @(*) q = bad;`, and module
+//! parameterization is a real `parameter` overridden at the instance
+//! site (the `[N]` module-generic form is PHDL-only and retired with it).
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{Session, SolverConfig};
@@ -81,24 +74,27 @@ fn collect_config() -> SolverConfig {
 /// initialized to `1` and never reassigned — a persistent internal fault,
 /// deliberately requiring no clock/event machinery to keep this fixture
 /// minimal (the point under test is *visibility*, not sequencing).
-const HIERARCHICAL_MONITOR_PHDL: &str = "\
-use piperine::disciplines;
-mod Sub(input clk: Bit, output q: Bit, inout p: Electrical, inout n: Electrical) { var bad: Bit = 1; }
-analog Sub { I(p, n) <+ V(p, n) * 1e-9; }
-digital Sub { q <- bad; }
-constraint Sub { require bad_is_low : bad <= -1.0; }
-
-mod Top() {
-    wire clk : Bit;
-    wire q0  : Bit;
-    wire q1  : Bit;
-    wire gnd : Electrical;
-    wire p0  : Electrical;
-    wire p1  : Electrical;
-    sub0 : Sub(.clk = clk, .q = q0, .p = p0, .n = gnd);
-    sub1 : Sub(.clk = clk, .q = q1, .p = p1, .n = gnd);
-}
-";
+const HIERARCHICAL_MONITOR: &str = r#"`include "disciplines.vams"
+discipline logic;
+    domain discrete;
+enddiscipline
+module Sub (input logic clk, output logic q, inout electrical p, inout electrical n);
+    integer bad = 1;
+    analog begin
+        I(p, n) <+ V(p, n) * 1e-9;
+    end
+    always @(*) q = bad;
+    constraint begin
+        require bad_is_low : bad <= -1.0;
+    end
+endmodule
+module Top ();
+    logic clk, q0, q1;
+    electrical gnd, p0, p1;
+    Sub sub0 (.clk(clk), .q(q0), .p(p0), .n(gnd));
+    Sub sub1 (.clk(clk), .q(q1), .p(p1), .n(gnd));
+endmodule
+"#;
 
 /// T31: a monitor is an ordinary `digital` module — `Sub` above adds no
 /// PHDL construct beyond `digital`/`constraint`, both already declared
@@ -113,7 +109,7 @@ mod Top() {
 /// Bit = 1;`; see this file's `//!` note).
 #[test]
 fn a_monitor_detects_a_violation_the_top_level_cannot_see_with_instance_provenance() {
-    let mut session = compile_digital(HIERARCHICAL_MONITOR_PHDL);
+    let mut session = compile_digital(HIERARCHICAL_MONITOR);
     let trace = session
         .tran(1e-9, Some(1e-10), 0.0, &collect_config(), None, false, &[])
         .expect("collect completes");
@@ -144,38 +140,43 @@ fn a_monitor_detects_a_violation_the_top_level_cannot_see_with_instance_provenan
 }
 
 /// T31: a monitor composes under **parameterization** exactly as any
-/// module does — `mod Watch[N]`, a generic module, carries its
-/// `constraint` block through monomorphization
-/// (`constraint_pom.rs::monomorphized_variant_carries_the_authored_block`
-/// already proves the POM side of this; this proves it end to end through
-/// a real solve).
-const PARAMETERIZED_MONITOR_PHDL: &str = "\
-use piperine::disciplines;
-mod Watch[N](input clk: Bit, output q: Bit, inout p: Electrical, inout n: Electrical) { var bad: Bit = 1; }
-analog Watch { I(p, n) <+ V(p, n) * 1e-9; }
-digital Watch { q <- bad; }
-constraint Watch { require bad_is_low : bad <= -1.0; }
+/// module does — `Watch` carries a real `parameter` (the leakage
+/// conductance, overridden at the instance site) alongside its
+/// `constraint` block, and both survive an ordinary instance override
+/// (VAMS's own parameterization — the `[N]` module-generic form is
+/// PHDL-only).
+const PARAMETERIZED_MONITOR: &str = r#"`include "disciplines.vams"
+discipline logic;
+    domain discrete;
+enddiscipline
+module Watch (input logic clk, output logic q, inout electrical p, inout electrical n);
+    parameter real leak = 1e-9;
+    integer bad = 1;
+    analog begin
+        I(p, n) <+ V(p, n) * leak;
+    end
+    always @(*) q = bad;
+    constraint begin
+        require bad_is_low : bad <= -1.0;
+    end
+endmodule
+module Top ();
+    logic clk, q0;
+    electrical gnd, p0;
+    Watch #(.leak(1e-9)) w0 (.clk(clk), .q(q0), .p(p0), .n(gnd));
+endmodule
+"#;
 
-mod Top() {
-    wire clk : Bit;
-    wire q0  : Bit;
-    wire gnd : Electrical;
-    wire p0  : Electrical;
-    w0 : Watch[4](.clk = clk, .q = q0, .p = p0, .n = gnd);
-}
-";
-
-/// BLOCKED on PHDL Bit-typed module vars — no VAMS producer — and on
-/// `mod Watch[N]`: VAMS has no parameterized-module-name form (see this
-/// file's `//!` note).
+/// The parameterized monitor reports under its authored label through a
+/// real solve.
 #[test]
 fn a_monitor_composes_under_parameterization() {
-    let mut session = compile_digital(PARAMETERIZED_MONITOR_PHDL);
+    let mut session = compile_digital(PARAMETERIZED_MONITOR);
     let trace = session
         .tran(1e-9, Some(1e-10), 0.0, &collect_config(), None, false, &[])
         .expect("collect completes");
     let violations = trace.violations();
-    assert!(!violations.is_empty(), "the monomorphized Watch[4] instance still carries its constraint block");
+    assert!(!violations.is_empty(), "the overridden Watch instance still carries its constraint block");
     assert!(
         violations.iter().all(|f| f.label == "bad_is_low"),
         "the parameterized module's constraint reports under its authored label"
