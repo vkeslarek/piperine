@@ -19,6 +19,8 @@ discipline electrical;
     flow Current;
 enddiscipline
 
+const VDD = 3.3;
+
 module Leaf (inout electrical p, inout electrical n);
     parameter real r = 1e3;
     analog I(p, n) <+ V(p, n) / r;
@@ -104,10 +106,9 @@ fn modules_enumerates_every_authored_module() {
     assert_eq!(names, vec!["Leaf", "Mid", "Top"], "all three authored modules, no more and no fewer");
 }
 
-/// BLOCKED (missing mechanism: PHDL's file-scope `const NAME: Real = v;`
-/// declaration). Verilog-AMS has no such production and nothing populates
-/// `pom::Design::consts` any more, so `VDD` cannot be authored into the
-/// fixture and `const_("VDD")` reads `None`.
+/// The sanctioned `const <name> = <expr>;` top-level extension (MD-50)
+/// carries the constant into `Design::consts` — `const_("VDD")` reads the
+/// folded value; an unknown name reads None, not an error.
 #[test]
 fn const_reads_a_global_and_reports_none_for_an_unknown_name() {
     let design = Design::load_str(HIER).expect("HIER elaborates");

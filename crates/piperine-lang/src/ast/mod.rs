@@ -59,4 +59,11 @@ pub enum Item {
     Connectrules(ConnectrulesDecl),
     Config(ConfigDecl),
     Primitive(PrimitiveDecl),
+    /// `const <name> = <constant_expression>;` — a file-scope global
+    /// constant (a sanctioned Piperine extension: Annex A.1.1's
+    /// `description` has no such production; MD-50 records it alongside
+    /// §1.1's doc comments and §12's constraint block). Elaboration
+    /// const-evals it into `Design::consts`, the surface `LowerCtx::
+    /// const_irs` already reads into every module's analog scope.
+    Const(crate::ast::ConstDecl),
 }

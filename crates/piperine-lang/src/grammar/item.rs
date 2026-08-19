@@ -1004,6 +1004,20 @@ impl Grammar {
 
     // ───────────────────────────── functions / tasks ───────────────────────
 
+    /// `const <name> = <expr>;` — a sanctioned Piperine extension
+    /// (MD-50): `const` is a contextual keyword here only, never added to
+    /// Annex B.
+    fn parse_const_decl(&mut self) -> Result<ConstDecl, ParseError> {
+        let doc = self.doc_at(self.peek_span());
+        let start = self.expect_kw("const")?;
+        let (name, name_span) = self.expect_ident()?;
+        Keywords::expect_identifier(&name, name_span)?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(ConstDecl { span: PreprocessedSpan::new(start.start, end.end), doc, name, value })
+    }
+
     /// `port_declaration`-shaped `tf_port_declaration`, Annex A.2.6 — a
     /// function/task's formal port, declared as a body item (not a
     /// parenthesized list — 1364/Verilog-AMS functions and tasks declare
@@ -1706,9 +1720,10 @@ impl Grammar {
             Some("connectrules") => Ok(Item::Connectrules(self.parse_connectrules_decl()?)),
             Some("config") => Ok(Item::Config(self.parse_config_decl()?)),
             Some("primitive") => Ok(Item::Primitive(self.parse_primitive_decl()?)),
+            Some("const") => Ok(Item::Const(self.parse_const_decl()?)),
             _ => Err(self.unexpected(
                 "a top-level declaration (discipline, nature, module, macromodule, \
-                 connectmodule, paramset, connectrules, config, or primitive)"
+                 connectmodule, paramset, connectrules, config, primitive, or const)"
                     .to_string(),
             )),
         }

@@ -607,6 +607,23 @@ impl Introspect for PiperineDevice {
                 cost: 0.2,
             });
         }
+        // A var the analog body computes every evaluation lives in the
+        // opvar tape AND in the persistent bank (the D2A sync path reads
+        // the bank); the observable catalog lists it ONCE — the opvar
+        // path, by its authored name — and the bank slot is not a second
+        // entry (dedupe by source name).
+        let opvar_names: std::collections::HashSet<&str> =
+            kernel.opvar_names().iter().map(|s| s.as_str()).collect();
+        for name in kernel.opvar_names() {
+            if name.is_empty() {
+                continue;
+            }
+            out.push(ObservableDescriptor {
+                name: name.clone(),
+                kind: ObservableKind::Var,
+                cost: 0.1,
+            });
+        }
         for k in 0..kernel.num_vars() {
             // PIA-06/07: a var carrying `@name`/`@kind` surfaces in the
             // observable catalog by that name and kind (NOT positional
@@ -614,6 +631,9 @@ impl Introspect for PiperineDevice {
             // `read_opvars` is read here — one declaration, both catalogs.
             // Absent `@name` keeps today's positional `var[k]` (PIA-08).
             let src_name = kernel.var_names().get(k).map(|s| s.as_str()).unwrap_or("");
+            if opvar_names.contains(src_name) {
+                continue; // already listed once via the opvar tape
+            }
             let (name, kind) = self
                 .meta
                 .vars

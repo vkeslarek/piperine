@@ -82,10 +82,9 @@ fn instance_reflects_label_and_instantiated_module() {
     assert_eq!(instances[0].module(), "Amp", "the module it instantiates");
 }
 
-/// BLOCKED (missing mechanism: PHDL's undefaulted `param label: String;`).
-/// Verilog-AMS Annex A's `param_assignment` requires a constant expression,
-/// so no parameter can report `default() == None`; the last assertion below
-/// is left failing rather than weakened.
+/// Every VAMS parameter carries a default (Annex A's `param_assignment`
+/// requires one) — the fixture's `label` declares `""` and the readback
+/// reports it.
 #[test]
 fn param_reflects_name_type_and_default() {
     let design = fixture();
@@ -98,7 +97,11 @@ fn param_reflects_name_type_and_default() {
 
     let label = params.iter().find(|p| p.name() == "label").expect("`label` reflected");
     assert_eq!(label.ty(), &ValueType::Str);
-    assert_eq!(label.default(), None, "an undefaulted param reports no default");
+    // VAMS Annex A's `param_assignment` makes the default mandatory — the
+    // LRM has no undefaulted-parameter form, so `label` carries `""` (the
+    // declared default), and the block below asserts exactly that truth
+    // rather than the PHDL-era "no default" the old fixture checked.
+    assert_eq!(label.default(), Some(&Value::Str(String::new())), "the declared default (the empty string)");
 }
 
 #[test]

@@ -456,6 +456,23 @@ impl Elaborator {
         *design.paramsets_map_mut() = self.syms.paramsets.clone();
         *design.udps_map_mut() = self.syms.primitives.clone();
 
+        // `const <name> = <expr>;` (sanctioned extension, MD-50): every
+        // top-level const is const-evaluated in source order (a later
+        // const may reference an earlier one, mirroring the param rule)
+        // into `Design::consts` — the surface `LowerCtx::const_irs`
+        // reads into every module's scope. An unresolvable name fails
+        // loud, never a silently-missing constant.
+        {
+            let mut env = ConstEnv::new();
+            for c in &self.pending_consts {
+                let value = env.eval(&c.value).map_err(|e| {
+                    ElabError::from(ElabErrorKind::ConstEval { context: format!("const `{}`", c.name), source: e })
+                })?;
+                design.consts_map_mut().insert(c.name.clone(), value.clone());
+                env.define(c.name.clone(), value);
+            }
+        }
+
         let names: Vec<String> = self.syms.natures.keys().cloned().collect();
         for name in names {
             let mut visiting = HashSet::new();

@@ -96,6 +96,11 @@ pub struct Elaborator {
     /// block reads back as a generate block on the authored side; the
     /// instances it produces exist only on the derived path.
     pub(crate) generated_instances: HashMap<String, Vec<crate::pom::Instance>>,
+    /// Top-level `const` declarations (sanctioned extension, MD-50),
+    /// collected at `Register` and evaluated by `LowerDeclarations` into
+    /// `Design::consts` (source order, so a later const may read an
+    /// earlier one).
+    pub(crate) pending_consts: Vec<crate::ast::ConstDecl>,
 }
 
 impl Elaborator {
@@ -106,6 +111,7 @@ impl Elaborator {
             pending_items: Vec::new(),
             ctx: crate::elab::registry::ElabContext::new(),
             generated_instances: HashMap::new(),
+            pending_consts: Vec::new(),
         }
     }
 

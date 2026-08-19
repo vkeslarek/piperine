@@ -48,9 +48,8 @@ fn reactive_device_declares_state_observable() {
 }
 
 /// ABI-32: a device with module vars declares `Var` observables, one per
-/// var slot. The kernel does not surface source-level var names today, so
-/// the bridge synthesizes `var[k]` names — a host requesting `var[0]`
-/// against a device with one var sees its value recorded.
+/// var — vars computed in the analog body are opvars and surface by their
+/// authored name (`g`, `gs`), never duplicated as a `var[k]` bank slot.
 #[test]
 fn device_with_vars_declares_var_observables() {
     let circuit = build(
@@ -75,12 +74,12 @@ fn device_with_vars_declares_var_observables() {
     let var_obs: Vec<_> = observables.iter().filter(|o| o.kind == ObservableKind::Var).collect();
     assert_eq!(var_obs.len(), 2, "two module vars, got {var_obs:?}");
     assert!(
-        var_obs.iter().any(|o| o.name == "var[0]"),
-        "first var synthesized as `var[0]`, got {var_obs:?}"
+        var_obs.iter().any(|o| o.name == "g"),
+        "first var by its authored name, got {var_obs:?}"
     );
     assert!(
-        var_obs.iter().any(|o| o.name == "var[1]"),
-        "second var synthesized as `var[1]`, got {var_obs:?}"
+        var_obs.iter().any(|o| o.name == "gs"),
+        "second var by its authored name, got {var_obs:?}"
     );
 }
 

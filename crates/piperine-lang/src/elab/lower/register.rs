@@ -47,6 +47,10 @@ impl Elaborator {
                 // `config` (1364 configuration-selection) lands in a
                 // later phase (spec Out of Scope).
                 Item::Config(_) => {}
+                // `const` (sanctioned extension, MD-50) is evaluated and
+                // landed on `Design::consts` by the `LowerDeclarations`
+                // pass — the eval needs the ConstEnv, not registration.
+                Item::Const(c) => self.pending_consts.push(c.clone()),
             }
         }
         Ok(())

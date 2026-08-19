@@ -202,6 +202,18 @@ pub struct ParamRange {
 /// or more `[msb:lsb]` dimensions, alongside the plain scalar alternative
 /// (`dims` empty). §3.4.4 (one dimension) and §3.4.8 (multidimensional,
 /// e.g. `parameter real c[0:2][0:2] = ...;`) — outermost dimension first.
+/// `const <name> = <constant_expression>;` — a file-scope global
+/// constant (sanctioned extension, MD-50).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDecl {
+    pub span: PreprocessedSpan,
+    pub doc: Option<String>,
+    pub name: String,
+    pub value: Expr,
+}
+
+/// `parameter`'s `name = value [dims]` assignment (§3.4, Annex A.2.1.1's
+/// `param_assignment`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamAssignment {
     pub name: String,
