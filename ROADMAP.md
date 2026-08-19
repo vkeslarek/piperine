@@ -185,12 +185,14 @@ rather than the old PHDL grammar:
 - `ConstraintCatalog` classifies a constraint the running analysis cannot
   provide (digital instance) — reads fail loud naming it
 
-**Still dark from the PHDL era** (each a named follow-up with its blocked
-tests carrying the mechanism in place) — the SOA blocks on the spice
-stdlib models (mos1/2/3, dio, bjt) are back, absent-by-default
-sentinels:
-
-- (nothing left on the constraint surface — scoping landed)
+**Nothing left dark from the PHDL era** — the full dv-core surface is
+back on the VAMS producer: constraint statements (`require`/`var`/
+`target`/`cover`/`cover cross`), analysis scoping (`@ dc`/`@ tran`/
+`@ ac`) with temporal windows, reduced AC metrics, SOA blocks on the
+spice stdlib models (absent-by-default sentinels), the `tol gauss/
+uniform` catalogue with global/mismatch scoping and (seed, index)
+replay, UIC seeds (`@(initial_step) V(a,b) <+ value`), the margin-
+gradient classifier, and the `rfport` schema behind `.sp`.
 
 ---
 
