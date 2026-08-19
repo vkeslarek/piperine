@@ -344,7 +344,11 @@ receives the behavior body — it is not a working diagnostic print today.
 
 Piperine's plugin system needs two pieces of metadata the LRM has no dedicated grammar
 for: which plugin implements a module as a native device, and how a port maps to that
-device's terminal model. Both ride entirely on **standard** Annex A.9.1
+device's terminal model. The host adds one more, core-owned: `(* rfport, num = 1,
+z0 = 50 *)` on a net declaration marks the net an S-parameter port (`.sp`) —
+`schema = "rfport"`, fields `num` (1-based port number) and `z0` (reference
+impedance, positive), both loud on violations. The schema is registered on every
+elaboration path (it is host machinery, not plugin machinery). Both ride entirely on **standard** Annex A.9.1
 `attribute_instance` syntax — no new production, no Piperine-specific grammar. This is
 covered precisely, including the recognized attribute names, the elaboration site
 (`elab/lower/vams.rs::lower_module_attrs`/`lower_port_attrs`), and the one recorded

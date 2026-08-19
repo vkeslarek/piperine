@@ -4,39 +4,47 @@
 
 use piperine_python::embed::run_script;
 
-// BLOCKED — left in PHDL syntax: `@rfport(num, z0)` is a net-level attribute
-// schema, and `elab/lower/vams.rs` lowers attribute instances only on module
-// and port declarations (net declarations get `attributes: Vec::new()`), so
-// there is no Verilog-AMS spelling for this fixture yet.
-const SHUNT_C_LOWPASS_PHDL: &str = "\
-discipline Electrical { potential v: Real; flow i: Real; }
+/// `(* rfport(num, z0) *)` on a net declaration — the VAMS spelling of the
+/// S-parameter port (SP-01, the core-owned schema).
+const SHUNT_C_LOWPASS: &str = r#"nature Voltage; units = "V"; access = V; abstol = 1e-6; endnature
+nature Current; units = "A"; access = I; abstol = 1e-12; endnature
+discipline electrical;
+    potential Voltage;
+    flow Current;
+enddiscipline
 
-mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
-analog R { I(p, n) <+ V(p, n) / r; }
-
-mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-9; }
-analog C { I(p, n) <+ c * ddt(V(p, n)); }
-
-mod Top() {
-    wire gnd : Electrical;
-    @rfport(num = 1, z0 = 50) wire p1 : Electrical;
-    @rfport(num = 2, z0 = 50) wire p2 : Electrical;
-    rs  : R(.p = p1, .n = p2) { .r = 1.0 };
-    c1  : C(.p = p2, .n = gnd) { .c = 1e-9 };
-    rb1 : R(.p = p1, .n = gnd) { .r = 1e9 };
-    rb2 : R(.p = p2, .n = gnd) { .r = 1e9 };
-}
-";
+module R (inout electrical p, inout electrical n);
+    parameter real r = 1.0;
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+module C (inout electrical p, inout electrical n);
+    parameter real c = 1e-9;
+    analog begin
+        I(p, n) <+ c * ddt(V(p, n));
+    end
+endmodule
+module Top ();
+    electrical gnd;
+    (* rfport, num = 1, z0 = 50 *) electrical p1;
+    (* rfport, num = 2, z0 = 50 *) electrical p2;
+    R #(.r(1.0)) rs (.p(p1), .n(p2));
+    C #(.c(1e-9)) c1 (.p(p2), .n(gnd));
+    R #(.r(1e9)) rb1 (.p(p1), .n(gnd));
+    R #(.r(1e9)) rb2 (.p(p2), .n(gnd));
+endmodule
+"#;
 
 #[test]
 fn python_sp_matches_rust_sp() {
     let dir = std::env::temp_dir();
-    let phdl = dir.join("piperine_sp_parity.phdl");
-    std::fs::write(&phdl, SHUNT_C_LOWPASS_PHDL).expect("write phdl");
+    let phdl = dir.join("piperine_sp_parity.vams");
+    std::fs::write(&phdl, SHUNT_C_LOWPASS).expect("write phdl");
     let out_txt = dir.join("piperine_sp_parity.txt");
 
     // Rust side.
-    let design = piperine_lang::parse_and_elaborate(SHUNT_C_LOWPASS_PHDL, &piperine_lang::SourceMap::dummy())
+    let design = piperine_lang::parse_and_elaborate(SHUNT_C_LOWPASS, &piperine_lang::SourceMap::dummy())
         .expect("shunt-C low-pass elaborates");
     let mut session = piperine_api::Session::compile(&design, "Top").expect("session compiles");
     let rust = session

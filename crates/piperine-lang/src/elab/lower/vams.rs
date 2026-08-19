@@ -103,6 +103,7 @@ impl Elaborator {
                 ModuleItem::Port(p) => lower_port_decl(p, &self.ctx.schemas, &mut ports)?,
                 ModuleItem::Net(n) => {
                     let discipline = n.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
+                    let net_attrs = lower_net_attrs(&n.attrs, &self.ctx.schemas)?;
                     for d in &n.names {
                         // Two-step port declaration (LRM §3.6/Annex F worked
                         // examples, e.g. `input p; electrical p;`): a
@@ -116,7 +117,7 @@ impl Elaborator {
                             port.ty = declarator_net_type(d, discipline, &env)?;
                             continue;
                         }
-                        wires.push(declarator_to_wire(d, discipline, n.span, n.doc.clone(), &env)?);
+                        wires.push(declarator_to_wire(d, discipline, n.span, n.doc.clone(), &env, net_attrs.clone())?);
                     }
                 }
                 ModuleItem::Param(p) => {
@@ -1103,14 +1104,88 @@ fn declarator_to_wire(
     span: crate::PreprocessedSpan,
     doc: Option<String>,
     env: &ConstEnv,
+    attributes: Vec<Attribute>,
 ) -> Result<Wire, ElabError> {
     Ok(Wire {
         span: Some(to_miette_span(span)),
-        attributes: Vec::new(),
+        attributes,
         doc,
         name: d.name.clone(),
         ty: declarator_net_type(d, discipline, env)?,
     })
+}
+
+/// Net-declaration attribute instances — the `rfport` schema (SP-01):
+/// `(* rfport(num = 1, z0 = 50) *) electrical p1;` marks `p1` an S-
+/// parameter port. `rfport` is the marker (no value of its own), `num`/
+/// `z0` its sibling fields, const-evaluated here. Any other schema name
+/// fails loud — nets are not a free attribute site.
+fn lower_net_attrs(
+    attrs: &[crate::ast::Attr],
+    known_schemas: &HashSet<String>,
+) -> Result<Vec<Attribute>, ElabError> {
+    let Some(marker) = attrs.iter().find(|a| a.name == "rfport") else {
+        // A net decl with attributes but no rfport marker: any name is
+        // loud, same as the port path.
+        for a in attrs {
+            if !known_schemas.contains(&a.name) {
+                return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
+                    .with_span(Some(to_miette_span(a.span))));
+            }
+        }
+        return Ok(Vec::new());
+    };
+    if !known_schemas.contains("rfport") {
+        return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema("rfport".to_string()))
+            .with_span(Some(to_miette_span(marker.span))));
+    }
+    let env = ConstEnv::new();
+    let mut data = HashMap::new();
+    let mut num = None;
+    let mut z0 = None;
+    for a in attrs {
+        match a.name.as_str() {
+            "rfport" => continue,
+            "num" | "z0" => {
+                let value = env.eval(a.value.as_ref().ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::AttrSchemaField {
+                        schema: "rfport".into(),
+                        field: a.name.clone(),
+                        reason: "attribute has no value".to_string(),
+                    })
+                    .with_span(Some(to_miette_span(a.span)))
+                })?).map_err(|e| {
+                    ElabError::from(ElabErrorKind::ConstEval { context: format!("rfport field `{}`", a.name), source: e })
+                })?;
+                if a.name == "num" {
+                    num = Some(value);
+                } else {
+                    z0 = Some(value);
+                }
+            }
+            other => {
+                return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(other.to_string()))
+                    .with_span(Some(to_miette_span(a.span))));
+            }
+        }
+    }
+    let num = num.ok_or_else(|| {
+        ElabError::from(ElabErrorKind::AttrSchemaField {
+            schema: "rfport".into(),
+            field: "num".into(),
+            reason: "missing — every rfport carries its 1-based port number".to_string(),
+        })
+    })?;
+    let z0 = z0.ok_or_else(|| {
+        ElabError::from(ElabErrorKind::AttrSchemaField {
+            schema: "rfport".into(),
+            field: "z0".into(),
+            reason: "missing — every rfport carries its reference impedance".to_string(),
+        })
+    })?;
+    data.insert("num".to_string(), num);
+    data.insert("z0".to_string(), z0);
+    Ok(vec![Attribute { schema: "rfport".to_string(), data }])
 }
 
 /// A `[msb:lsb]` range widens a scalar discipline into `NetType::Array`

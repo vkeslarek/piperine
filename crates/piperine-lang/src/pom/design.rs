@@ -396,6 +396,7 @@ impl Design {
                 let z0 = match attr.field("z0") {
                     Some(Value::Real(v)) => *v,
                     Some(Value::Nat(n)) => *n as f64,
+                    Some(Value::Int(n)) => *n as f64,
                     other => return Err(field_err("z0", format!("expected a real z0, got {other:?}"))),
                 };
                 if z0 <= 0.0 {

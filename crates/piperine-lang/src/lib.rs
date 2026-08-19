@@ -95,7 +95,11 @@ pub use vams_include::SourceMapIncludeResolver;
 
 /// Parse a Verilog-AMS source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {
-    parse_and_elaborate_seeded(input, source_map, |_| {})
+    // The `rfport` schema (SP-01, the `.sp` port declaration) is core-
+    // owned — unlike `device`/`port`, which a plugin host seeds. It is
+    // registered on every elaboration path so a plain `Session` honors
+    // `(* rfport(num, z0) *)` without plugin machinery.
+    parse_and_elaborate_seeded(input, source_map, |ctx| ctx.register_schema("rfport"))
 }
 
 /// Like [`parse_and_elaborate`], but seeds the elaboration registries first —
