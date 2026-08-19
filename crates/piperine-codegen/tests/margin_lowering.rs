@@ -316,3 +316,87 @@ endmodule
     assert_eq!(margins[1].class, piperine_codegen::resolve::QuantityClass::Pointwise, "the require is pointwise");
     assert_eq!(margins[1].label, "no_clip");
 }
+
+// ── Scoping provenance (constraint-scoping, verifier round-1) ─────────────
+
+/// A scoped require carries the group's analysis set and window into the
+/// lowered margin; a `target` inside a scope counts statement indexes
+/// across the whole block (numbering crosses scopes); a non-const window
+/// bound is a loud lowering error.
+#[test]
+fn scoped_margins_carry_analysis_and_window_provenance() {
+    let body = lower(
+        "\
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    constraint begin
+        require top : V(p, n) <= hi;
+        @ tran(after = 5e-3, dur = 2e-3) {
+            require win : V(p, n) <= hi;
+            target V(p, n) <= hi;
+        }
+        @ dc { require dc_only : V(p, n) <= hi; }
+    end
+endmodule
+",
+        "Dut",
+    );
+    let margins = body.constraints.as_ref().expect("margins lowered");
+    let top = margins.iter().find(|m| m.label == "top").expect("top");
+    assert!(top.analyses.is_empty(), "unscoped: every analysis");
+    assert!(top.window.is_none());
+
+    let win = margins.iter().find(|m| m.label == "win").expect("win");
+    assert_eq!(win.analyses, vec!["tran".to_string()], "the scope's analysis travels");
+    let w = win.window.expect("the window travels");
+    assert!((w.after - 5e-3).abs() < 1e-12, "after = 5e-3, got {}", w.after);
+    assert!((w.dur - 2e-3).abs() < 1e-12, "dur = 2e-3, got {}", w.dur);
+
+    let target = margins.iter().find(|m| m.label == "target#3").expect("target#3 — the scope group itself consumes index 1, the contained require index 2");
+    assert_eq!(target.analyses, vec!["tran".to_string()]);
+
+    let dc = margins.iter().find(|m| m.label == "dc_only").expect("dc_only");
+    assert_eq!(dc.analyses, vec!["dc".to_string()]);
+}
+
+/// `after` without `dur` is open-ended — the lowered window's dur is ∞.
+#[test]
+fn an_open_ended_window_lowers_to_infinite_dur() {
+    let body = lower(
+        "\
+module Dut (inout electrical p, inout electrical n);
+    constraint begin
+        @ tran(after = 1e-6) { require late : V(p, n) <= 1.0; }
+    end
+endmodule
+",
+        "Dut",
+    );
+    let late = body.constraints.as_ref().expect("margins")[0].window.expect("window");
+    assert!(late.dur.is_infinite(), "open-ended: dur = ∞");
+    assert!((late.after - 1e-6).abs() < 1e-15);
+}
+
+/// A non-const window bound is a loud lowering error naming the group.
+#[test]
+fn a_non_const_window_bound_fails_loud() {
+    let design = parse_and_elaborate(
+        "\
+module Dut (inout electrical p, inout electrical n);
+    parameter real t0 = 1e-6;
+    constraint begin
+        @ tran(after = t0 * V(p, n)) { require bad : V(p, n) <= 1.0; }
+    end
+endmodule
+",
+        &SourceMap::dummy(),
+    )
+    .expect("elaborate");
+    let err = lower_bodies(&design).expect_err("lowering must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("after"), "names the bound: {msg}");
+    assert!(msg.contains("constant"), "says it must be const: {msg}");
+}

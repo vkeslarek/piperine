@@ -42,13 +42,9 @@ pub enum QuantityClass {
     Reduced,
 }
 
-/// A temporal window (DVC-20) an enclosing event block scopes a margin/cover
-/// point to — `[after, after + dur)` in simulation time. Local copy of the
-/// type `piperine_lang::pom::ResolvedWindow` used to be (deleted with
-/// `pom/constraint.rs`, MD-45); kept because `kernel`/`device`'s constraint
-/// and coverage capabilities still read it through `LoweredMargin`/
-/// `LoweredCoverPoint`, even though nothing constructs a non-`None` value
-/// until a future phase rebuilds the producer.
+/// A temporal window (DVC-20) an `@ tran(after = …, dur = …)` scope group
+/// scopes a margin/cover point to — `[after, after + dur)` in simulation
+/// time, `dur = ∞` for an open-ended window.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ResolvedWindow {
     pub after: f64,
@@ -172,21 +168,22 @@ impl ConstraintLowering {
         stmts: &[PomConstraintStmt],
         ctx: &mut LowerCtx,
     ) -> Vec<LoweredMargin> {
-        Self::lower_scoped(stmts, &ScopeCtx::default(), ctx)
+        let mut index = 0usize;
+        Self::lower_scoped(stmts, &ScopeCtx::default(), &mut index, ctx)
     }
 
     fn lower_scoped(
         stmts: &[PomConstraintStmt],
         scope: &ScopeCtx,
+        index: &mut usize,
         ctx: &mut LowerCtx,
     ) -> Vec<LoweredMargin> {
         let mut bindings: std::collections::HashMap<String, PomExpr> =
             std::collections::HashMap::new();
         let mut margins = Vec::new();
-        let mut index = 0usize;
         for stmt in stmts {
-            let stmt_index = index;
-            index += 1;
+            let stmt_index = *index;
+            *index += 1;
             match stmt {
                 PomConstraintStmt::Var { name, expr, .. } => {
                     // Authored order: a var may read earlier vars (the
@@ -283,10 +280,7 @@ impl ConstraintLowering {
                         },
                         window,
                     };
-                    margins.extend(Self::lower_scoped(stmts, &inner, ctx));
-                    // Every contained statement consumes a `target#<n>`
-                    // index slot (numbering crosses scopes).
-                    index += Self::count_statements(stmts);
+                    margins.extend(Self::lower_scoped(stmts, &inner, index, ctx));
                 }
                 PomConstraintStmt::Cover { .. } | PomConstraintStmt::CoverCross { .. } => {}
             }
@@ -294,18 +288,6 @@ impl ConstraintLowering {
         margins
     }
 
-    /// The number of statements in a scope group's tree (for
-    /// `target#<n>` numbering: every statement, at any depth, consumes
-    /// one index).
-    fn count_statements(stmts: &[PomConstraintStmt]) -> usize {
-        stmts
-            .iter()
-            .map(|s| match s {
-                PomConstraintStmt::Scope { stmts, .. } => 1 + Self::count_statements(stmts),
-                _ => 1,
-            })
-            .sum()
-    }
 
     /// Lower every `cover`/`cover cross` of `stmts` (T33's shape): a
     /// point's bins const-evaluate to literal `f64` edges here (the

@@ -396,10 +396,9 @@ own, not a timescale concern).
   source. `.disto` on MOS2/MOS3 (a Cranelift function-count explosion on the
   second/third-derivative kernel, opt-in via `SessionBuilder::disto(true)`, default
   off) is the one operator-family gap that genuinely remains open per `ROADMAP.md`.
-- **Analysis-scoped constraint event blocks and temporal windows.** `@ dc`/`@ tran`/
-  `@ ac` scoping blocks and `after`/`dur` windows (§12's deferred statements) have no
-  spelling today — a typed parse error, never a silent no-op. Parameter distributions
-  (`tol gauss/uniform`) likewise await the random-variable catalogue feature.
+- **Window algebra on constraint scopes.** `@ <analysis>(after = …, dur = …)` groups
+  parse (§12); composing windows (`&`/`not`) is not part of the language today — a
+  typed parse error, never a silent no-op.
 - **Gate primitives, UDPs, and `$`-system-task calls as live device behavior** — §6/§7
   above; parsed and semantically implemented, not wired into a simulated device.
 
@@ -441,7 +440,7 @@ endmodule
 **Syntax.** A `constraint begin … end` block is a module body item, mirroring
 `analog begin … end`'s shape: one more module body, so ports, parameters, and branches
 are simply in scope for every predicate — no name-matching indirection. Inside the
-block five statement forms are legal:
+block six statement forms are legal:
 
 ```text
 require <name> : <predicate> [tol <scale>] ;

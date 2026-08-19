@@ -9,7 +9,8 @@
 //! Math: margin = hi − V(p, n) = 0.4 − 0.5 = −0.1 (violated) at every
 //! evaluated point. With `@ tran(after = 5e-3, dur = 2e-3)` and a tran
 //! step of 1e-3 over `[0, 1e-2]`, the in-window points are t = 5e-3,
-//! 6e-3, 7e-3 — the argmin is the first (5e-3), the worst is −0.1.
+//! 6e-3 — the argmin is the first (5e-3), the worst is −0.1 (7e-3 itself is
+//! excluded: the window is half-open).
 //!
 //! **Migrated** (constraint-scoping): the fixtures run against the
 //! `constraint begin … end` producer with the analysis-scoped event
@@ -31,7 +32,8 @@ fn source_map() -> SourceMap {
 
 /// A divider whose `out` sits at 0.5 V for the whole tran (DC source on a
 /// resistor divider — no dynamics). The `@ tran(after = 5e-3, dur = 2e-3)`
-/// window scopes `vds_tran` to `[5e-3, 7e-3]`.
+/// window scopes `vds_tran` to `[5e-3, 7e-3)` (half-open — a point at
+/// exactly 7e-3 is excluded).
 const WINDOW: &str = r#"`include "disciplines.vams"
 module Vsrc (inout electrical p, inout electrical n);
     parameter real dc = 1.0;
@@ -122,7 +124,7 @@ fn windowed_require_evaluates_only_inside_the_window() {
         .expect("the windowed require is in the channel");
     assert!(
         !vds_tran.is_not_exercised(),
-        "the windowed require was evaluated — the tran passes through [5e-3, 7e-3]"
+        "the windowed require was evaluated — the tran passes through [5e-3, 7e-3)"
     );
     // Worst margin = 0.4 − 0.5 = −0.1 everywhere in the window.
     let worst = vds_tran.scalar();

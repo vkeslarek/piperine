@@ -904,6 +904,12 @@ impl Grammar {
                 }
             };
             let window = if self.eat_punct("(") {
+                if analysis != ScopeAnalysis::Tran {
+                    return Err(self.unexpected(
+                        "a temporal window is a `@ tran` notion — `@ dc`/`@ ac` scope by analysis alone"
+                            .to_string(),
+                    ));
+                }
                 let (name, _) = self.expect_ident()?;
                 if name != "after" {
                     return Err(self.unexpected(
