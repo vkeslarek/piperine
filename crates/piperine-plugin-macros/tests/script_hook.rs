@@ -14,7 +14,7 @@ use piperine_plugin::{
     Ctx, DesignStaging, HookCall, HookPhase, HostCtx, Permissions, Registry, SolveResultView,
 };
 
-const SRC: &str = "mod Top() {}";
+const SRC: &str = "module Top(); endmodule";
 
 fn host_ctx() -> HostCtx {
     HostCtx::new("probe", Path::new("."), Permissions::default())
@@ -50,7 +50,7 @@ static SOLVED: AtomicUsize = AtomicUsize::new(0);
 
 #[piperine_plugin_macros::hook(after_parse)]
 fn on_parse(_ctx: &Ctx, source: &str) -> Result<(), String> {
-    if !source.contains("mod Top") {
+    if !source.contains("module Top") {
         return Err("after_parse must see the raw source".into());
     }
     PARSED.fetch_add(1, Ordering::SeqCst);
