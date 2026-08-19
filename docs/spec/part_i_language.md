@@ -232,6 +232,19 @@ assignment (`<=`), `@(posedge ...)`-style edge event control, and `casex` are al
 illegal inside `analog` and fail loud citing "Annex C" — `crates/piperine-lang/tests/
 vams_annex_c.rs` is the live regression suite for exactly these three rejections.
 
+### The UIC seed idiom (`@(initial_step) V(a, b) <+ value;`)
+
+A potential contribution guarded by `@(initial_step)` is not a live source: it is a
+**UIC seed** (SPICE `.ic`) — the branch voltage the device wants at `t = 0`. The
+elaborator's §5.4.2 potential+flow conflict check does not see it (the branch keeps the
+kind its unconditional contributions give it), the flattener routes it to the
+transient's `t = 0` overlay solve and UIC hold clamps, and it never stamps a residual.
+This is how `cap #(.ic(2.0))` seeds: the stdlib model declares the parameter and
+contributes it under the guard — a seed whose backing parameters sit at their declared
+defaults is suppressed (it fires only when actually given at the instance site). Only
+the potential form seeds today; a flow seed (`I(a, b) <+ value` under the guard — an
+inductor's current IC) is a loud `unsupported` error.
+
 ## §5 Hierarchical structures and module instantiation (LRM ch. 6)
 
 `module`/`macromodule`/`connectmodule` declarations (Annex A.1.2) lower into POM
