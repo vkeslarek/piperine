@@ -1,3 +1,4 @@
+//! LRM-COVERS: 5.10.4
 //! LRMC-C5-04 runtime half (`.specs/features/lrm-conformance-closure/`,
 //! T26): `-> event_name;` actually wakes `@(event_name)` sensitivity
 //! elsewhere, in the right order, and works across the analog/digital

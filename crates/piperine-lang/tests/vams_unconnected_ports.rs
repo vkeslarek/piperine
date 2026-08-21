@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.19
 //! §9.19 (LRMC-C7-09, T50): a module instantiated with a port left
 //! unconnected (`.p()` or a blank/missing positional slot) elaborates —
 //! previously a hard elaboration error ("not yet supported"). The

@@ -1,3 +1,4 @@
+//! LRM-COVERS: C.15
 //! VAMS T27 (VAMS-25) — Annex C analog-subset enforcement: a digital-only
 //! construct used inside an `analog` behavior body fails loud citing the
 //! clause. Ongoing gate (VAMS-25): later phases add more constructs to

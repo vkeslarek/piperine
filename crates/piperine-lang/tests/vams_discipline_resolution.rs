@@ -1,3 +1,4 @@
+//! LRM-COVERS: 7.4.1, 7.4.4.1, 7.4.4.3
 //! VAMS T26 (VAMS-17) — `ResolveDisciplines`: Annex F discipline
 //! resolution for a port/net declared with no explicit discipline. This
 //! pass implements **Basic discipline resolution (§7.4.4.1)**, the LRM's

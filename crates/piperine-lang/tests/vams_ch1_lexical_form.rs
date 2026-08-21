@@ -1,3 +1,4 @@
+//! LRM-COVERS: 2.6.1, 2.6.2, 2.9, 2.9.1
 //! LRM Conformance Closure — Phase 1a (`.specs/features/lrm-conformance-closure/`,
 //! T10-T15): ch.1-4 lexical/grammar FORM findings LRMC-C1-01, C1-03, C1-04,
 //! C1-05, C1-06. Each test is derived from the LRM's own §2.6.1/§2.9 worked

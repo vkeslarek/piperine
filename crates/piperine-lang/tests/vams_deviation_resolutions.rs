@@ -1,3 +1,4 @@
+//! LRM-COVERS: 6.4
 //! VAMS pre-T21 deviations commit — closes the two SPEC_DEVIATIONs left by
 //! T19 (From<piperine_lang::ParseError>) and T20 (Design::paramsets).
 //!

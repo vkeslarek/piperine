@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.18
 //! §9.18 (LRMC-C7-09, T49): `$mfactor` reads a module's own declared
 //! `mfactor` parameter into `SimCtx.mfactor`, real per-instance effect
 //! (not just name resolution) — an instance overriding `#(.mfactor(N))`

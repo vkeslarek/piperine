@@ -1,3 +1,4 @@
+//! LRM-COVERS: A.2.1.3
 //! T22 addendum (module structure lowering, VAMS-04): module-level `var`
 //! declarations (LRM Annex A.2.1.3 `module_or_generate_item_declaration`'s
 //! `integer_declaration`/`real_declaration`/`time_declaration`/

@@ -1,3 +1,4 @@
+//! LRM-COVERS: 7.4.4.1
 //! Annex F §7.4.4.1's continuous-over-discrete resolution rule and the
 //! `` `default_discipline `` fallback (LRMC-C10-18/19) — `ResolveDisciplines`
 //! reads each conflicting discipline's declared domain instead of

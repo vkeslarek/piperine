@@ -1,3 +1,4 @@
+//! LRM-COVERS: 8.5.1
 //! T51 (VAMS-20) — LRM chapter 8 stratified event-region ordering,
 //! exercised through `piperine_solver`'s public surface
 //! (`piperine_solver::abi::{Region, RegionAction, RegionQueue}`). Mirrors

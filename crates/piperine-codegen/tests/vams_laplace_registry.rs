@@ -1,3 +1,4 @@
+//! LRM-COVERS: 4.5.11, 4.5.11.1, 4.5.11.2, 4.5.11.3, 4.5.11.4, 4.5.11.5, 5.6
 //! LRMC-C1-12/C5-01 (`.specs/features/lrm-conformance-closure/`, T21):
 //! `laplace_zd`/`laplace_nd`/`laplace_zp`/`laplace_np` (the four real LRM
 //! §4.5.11 spellings) resolve through `AnalogKernel::compile`; the

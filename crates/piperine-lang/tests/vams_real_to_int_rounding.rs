@@ -1,3 +1,4 @@
+//! LRM-COVERS: 4.2.1.1
 //! LRMC-C1-11 (§4.2.1.1): implicit real->integer conversion rounds to the
 //! nearest integer, ties away from zero, instead of erroring on a
 //! fractional value. Exercised through `var`'s own `[msb:lsb]` array-bound

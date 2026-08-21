@@ -1,3 +1,4 @@
+//! LRM-COVERS: 6.3.1
 //! LRMC-C5-06 (`.specs/features/lrm-conformance-closure/`, T28): `defparam`
 //! (§6.3.1) actually changes the named instance's effective parameter
 //! value, addressed by hierarchical name from anywhere in the design (not

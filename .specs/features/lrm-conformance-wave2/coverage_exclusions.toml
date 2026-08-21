@@ -66,3 +66,40 @@ reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-mat
 # tasks. The out_of_scope guard below is proven able to fail via a
 # temporary injected entry (see the T5 commit body), not via a permanent
 # fixture row here.
+
+# ── Pending inventory (T7) — not verdicts ──────────────────────────────────
+#
+# T7 backfilled `//! LRM-COVERS:` onto 45 of the 52 existing `vams_*`
+# targets (derived from each target's own header text plus, where a
+# wave-1 LRMC-ID's clause column named the file, that clause — the
+# "Reuses" source `tasks.md` names for this task). That shrank
+# `covered_and_excluded_partition_the_lrm`'s red list from 606/612
+# (T5's capture) to 532/612 uncovered at T7 time. This block is an
+# inventory snapshot for a reader scanning the file, not a scoring
+# claim — the test itself is the live source of truth (re-run
+# `cargo test --test lrm_section_coverage covered_and_excluded_partition_the_lrm`
+# for the current count and the exact remaining ids, grouped the same
+# way). None of these ids are Informative or OutOfScope; they are
+# genuinely uncovered pending later wave-2 phases (T8 onward backfills
+# coverage as each fix lands; T69 is the zero-gap closure gate).
+#
+# Per-chapter/annex uncovered counts at T7 (2026-08-20):
+#   1: 15   2: 14   3: 38   4: 58   5: 49   6: 36   7: 35   8: 26   9: 59
+#   10: 3   11: 40   12: 48   A: 69   C: 19   D: 2   E: 17   F: 4
+#
+# Seven `vams_*` targets deliberately received no LRM-COVERS claim in T7
+# (dropped rather than kept, per "a claim with no matching assertion is
+# dropped, not kept"):
+#   - vams_constraint_block.rs, vams_param_distributions.rs,
+#     vams_doc_comments.rs: prove Piperine's own sanctioned superset
+#     extensions (`constraint`/`tol`/`///` — spec.md's Out of Scope
+#     table, MD-49/MD-50), not an LRM-2-4 clause.
+#   - vams_device_port_attrs.rs: proves Piperine's own `@device`/`@port`
+#     attribute-schema mechanism (CLAUDE.md's "Declared language
+#     surface"), not LRM semantics — it reuses the LRM's generic
+#     attribute-instance grammar (§2.9, already covered via
+#     vams_ch1_lexical_form.rs) but does not itself prove that grammar.
+#   - vams_const_eval_calls.rs, vams_lower_structure.rs,
+#     vams_vertical_slice.rs: genuinely broad/cross-cutting proofs with
+#     no single LRM-2-4 clause a `//! LRM-COVERS:` claim could point at
+#     without over-claiming; left for a later, more targeted pass.

@@ -1,3 +1,4 @@
+//! LRM-COVERS: 5.10.3.4
 //! LRMC-C5-03 (T24): an unrecognized call-shaped analog event function
 //! (`@(bogus_event(x))`) fails loud at lowering instead of being silently
 //! swallowed by the flattener's event dispatch — the exact `_ => vec![]`

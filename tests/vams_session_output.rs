@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.2
 //! LRMC-C7-07 (T43): `SessionBuilder::output(...)` — a host-configured
 //! `$display`-family sink reaches every analysis run through the
 //! resulting `Session`, end-to-end through the real host surface

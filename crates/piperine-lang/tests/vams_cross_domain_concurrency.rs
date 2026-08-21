@@ -1,3 +1,4 @@
+//! LRM-COVERS: 5.10.5, 7.3.6, 7.3.6.1, 7.3.6.2, 7.3.6.3, 7.3.6.4, 7.3.6.5, 7.3.7
 //! LRM §7.3.6 "Concurrency" (LRMC-C7-06, T36) — the five named
 //! synchronization forms between the continuous and discrete domains.
 //! Every one of the five is a *permission/semantics* clause, not a

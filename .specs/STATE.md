@@ -974,6 +974,38 @@ dv-tester/dv-gradients are fully lit again.
 
 ---
 
+### MD-51: conformance is declared at the test; the gate derives the matrix
+
+`lrm-conformance-wave2` design decision (2026-08-20, Phase 0 "Falsifiability
+spine"). Wave 1's `lrm_conformance_matrix.rs` tracked *wave-1 finding IDs*
+against a hand-maintained registry — accurate for the 54 findings it closed,
+but no mechanical answer to "does Piperine implement the LRM?" existed: the
+LRM's 612 headings (486 numbered + 126 annex, `VAMS-LRM-2-4.md`'s own
+`^#{2,6} **<id>` structure) had no per-section coverage record at all.
+
+The chosen shape (design Approach C, T4-T7): a test target declares what it
+proves with a `//! LRM-COVERS: <ids>` doc-comment header (comma-separated
+bare section ids, no `§`, no ranges — `suite_hygiene.rs`'s
+`lrm_covers_declarations_are_well_formed` enforces the syntax) — on either
+an integration target's file header or an inline `#[cfg(test)]` module
+header for the "pure helpers" test layer. `tests/lrm_section_coverage.rs`
+is the **derivation**, not a second source of truth: `lrm_sections()`
+parses the LRM's own headings into the 612-id ground truth,
+`declared_coverage()` scrapes every `LRM-COVERS:` line in the tree, and
+`covered_and_excluded_partition_the_lrm` asserts every id is either
+declared-covered or excluded (`coverage_exclusions.toml`'s
+`Informative`/`OutOfScope` rows, gated to only the LRM's own front-matter
+markings or a real spec.md Out of Scope row — never a free pass). No
+registry to keep in sync by hand; a fix that adds a real test and declares
+its clause closes its own matrix cell in the same commit, and a stale
+claim (wrong id, or a file with no live test backing it) fails loud instead
+of silently drifting, the same falsifiability bar MD-31 set for
+wave-1's registry-style gates.
+
+**Status:** Locked (user, 2026-08-20).
+
+---
+
 ## Handoff Snapshot
 
 **Last updated:** 2026-08-06 — `ngspice-parity` DELIVERED (T1–T24 + Fix A/B,

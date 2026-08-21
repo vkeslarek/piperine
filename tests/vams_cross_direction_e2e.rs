@@ -1,3 +1,4 @@
+//! LRM-COVERS: 5.10.3.1
 //! LRMC-C5-02 (`.specs/features/lrm-conformance-closure/`, T22):
 //! `@(cross(expr, dir))`'s direction argument (§5.10.3.1) actually
 //! restricts which edges fire, instead of every crossing always firing

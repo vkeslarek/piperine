@@ -1,3 +1,4 @@
+//! LRM-COVERS: 10.2, 10.3, 10.5, 10.6
 //! Ch.10 compiler-directive state (design.md P0.3) — LRMC-C10-01/02's
 //! parse half: `` `default_discipline ``/`` `default_transition `` write
 //! `DirectiveState` instead of raising `UndefinedMacro`, with §10.2/§10.3's

@@ -1,3 +1,4 @@
+//! LRM-COVERS: 2.6.1
 //! Four-state (`x`/`z`/`?`) based-literal evaluation through
 //! `elab::const_eval` — LRMC-C1-02. A based literal with four-state digits
 //! must evaluate to a `Value::Logic`, never silently coerce to `0`; a

@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.16
 //! §9.16 (LRMC-C7-09, T49): `Session::simprobe` — the host surface half
 //! of `$simprobe(inst_name, param_name[, expr])` (JIT dispatch inside a
 //! `.vams` body is a documented, disclosed gap — see `Session::

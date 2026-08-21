@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.12
 //! §9.12 command-line input (LRMC-C7-09, T48): `SessionBuilder::
 //! plusargs(...)` through a real `piperine::Session` — the host surface
 //! half of `$test$plusargs`/`$value$plusargs` (JIT dispatch inside a

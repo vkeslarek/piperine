@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.2
 //! LRMC-C7-07 (T43): digital `$display`/`$write` reach the host output
 //! path — a real Cranelift-emitted call to the `pip_task_display`/
 //! `pip_task_write` trampolines (`emit::stmt.rs`'s `S::TaskCall` arm),

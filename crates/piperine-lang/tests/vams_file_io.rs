@@ -1,3 +1,4 @@
+//! LRM-COVERS: 9.5
 //! §9.5 file I/O (LRMC-C7-09, T46): `FileTable` (piperine-solver) +
 //! `parse_scanf`/`format_display` (piperine-lang) round-trip real files,
 //! and every descriptor error is typed and loud (never a silent zero

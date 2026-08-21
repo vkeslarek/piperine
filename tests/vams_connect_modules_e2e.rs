@@ -1,3 +1,4 @@
+//! LRM-COVERS: 7.4.4.1, 7.4.4.3
 //! T52 (VAMS-20) — "mixed analog/digital fixture simulates end-to-end"
 //! done-when: a single `.vams` design containing an analog subcircuit
 //! (an ideal source, a resistor, and an explicitly-instantiated

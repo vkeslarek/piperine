@@ -1,3 +1,4 @@
+//! LRM-COVERS: E.3, E.3.4
 //! T55 (VAMS-22) — LRM Annex E (SPICE compatibility), proved against
 //! Piperine's actual SPICE-facing tooling: `headers/spice/*.va` (T41–T43)
 //! plus the `$limit()` pnjlim/fetlim/limvds functions

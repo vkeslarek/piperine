@@ -1,3 +1,4 @@
+//! LRM-COVERS: 7.4.4.1, 7.4.4.3, 7.7.3, 7.7.4
 //! T52 (VAMS-20) — `InsertConnectModules` (LRM ch. 7) elaborates cleanly
 //! alongside real `.vams` source. The pass's own selection-algorithm and
 //! MD-25 (derived-artifact) unit tests live with the pass itself

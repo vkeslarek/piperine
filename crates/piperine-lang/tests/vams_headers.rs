@@ -1,3 +1,4 @@
+//! LRM-COVERS: D.3
 //! T40 (VAMS-09) — the stdlib headers migrated to Verilog-AMS. Proves the
 //! two Annex-D-derived headers (`headers/disciplines.vams`,
 //! `headers/constants.vams`) each elaborate standalone (via `` `include``,

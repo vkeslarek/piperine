@@ -1,3 +1,4 @@
+//! LRM-COVERS: 3.4.2, 3.4.4, 3.4.6, 3.4.8, 4.2.14
 //! LRMC-C1-06 (FUNCTIONALITY half, T14) — elaborating assignment-pattern
 //! `'{...}` initializers (parsed as `Expr::AssignmentPattern` by T13) for
 //! parameter arrays (§3.4.4), string valid-value lists (§3.4.6), and

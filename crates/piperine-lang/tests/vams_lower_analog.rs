@@ -1,3 +1,4 @@
+//! LRM-COVERS: 3.6.1, 3.6.2, 4.4, 5.4, 5.4.2, 5.4.3
 //! VAMS T23 (VAMS-01, VAMS-02) — lowering the continuous-domain
 //! declarations: `nature` (incl. derived chains, §3.6.1), `discipline`
 //! (§3.6.2), and named/implicit `branch`es resolved from access-function

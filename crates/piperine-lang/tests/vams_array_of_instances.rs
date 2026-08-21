@@ -1,3 +1,4 @@
+//! LRM-COVERS: 6.2.2
 //! LRMC-C5-08 (`.specs/features/lrm-conformance-closure/`, T30):
 //! `name_of_instance [msb:lsb] (port_connections)` (§6.2.2, Annex A.4.1)
 //! parses and elaborates into the specified range of instances, each with

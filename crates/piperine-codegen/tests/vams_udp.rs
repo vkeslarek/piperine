@@ -1,3 +1,4 @@
+//! LRM-COVERS: A.5, A.5.3
 //! T49 (VAMS-19) — user-defined primitive (UDP) state-table evaluation,
 //! exercised through `piperine_codegen`'s public surface
 //! (`piperine_codegen::kernel::digital::UdpTable`). Mirrors T49's "Done

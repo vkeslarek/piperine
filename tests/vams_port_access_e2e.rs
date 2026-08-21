@@ -1,3 +1,4 @@
+//! LRM-COVERS: 4.4, 5.4.3
 //! LRMC-C1-10 (`.specs/features/lrm-conformance-closure/`, T18): the port
 //! access function `I(<port>)` (§4.4/§5.4.3) simulates end-to-end on the
 //! native solver, and the value it reads genuinely differs from any single

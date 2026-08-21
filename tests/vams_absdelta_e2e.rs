@@ -1,3 +1,4 @@
+//! LRM-COVERS: 5.10.3.4
 //! LRMC-C5-03 wiring half (`.specs/features/lrm-conformance-closure/`,
 //! T24): an analog block sensitive to `@(absdelta(expr, delta))` actually
 //! re-evaluates at the points §5.10.3.4 specifies (initialization, plus

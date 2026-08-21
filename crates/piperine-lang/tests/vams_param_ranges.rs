@@ -1,3 +1,4 @@
+//! LRM-COVERS: 3.4.2, 3.4.3, 3.4.7
 //! VAMS T24 (VAMS-07, R6) — the elaboration-constant evaluator retarget
 //! (`elab::const_eval::ConstEnv`, self-contained since T21) applied to
 //! `parameter` value ranges (§3.4.2) and `localparam`/`aliasparam`

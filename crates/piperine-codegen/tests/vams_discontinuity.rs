@@ -1,3 +1,4 @@
+//! LRM-COVERS: 8.4.4, 9.5.3, 9.17.1
 //! LRMC-C7-11 (T42): `$discontinuity` has a real numerical effect —
 //! §8.4.4/§9.5.3: "the simulator shall not use information prior to the
 //! current time step in any prediction for time steps after this one."

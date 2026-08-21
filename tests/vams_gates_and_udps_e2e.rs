@@ -1,3 +1,4 @@
+//! LRM-COVERS: 8.5.3.5
 //! LRMC-C7-13 (T40, dispatch half) — a gate-level testbench with UDPs
 //! simulates and produces the LRM-specified values: `and`/`nand`/`buf`
 //! gate primitives (Annex A.4.2 Table 7-4/7-9) and a combinational UDP

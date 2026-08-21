@@ -1,3 +1,4 @@
+//! LRM-COVERS: A.3.2, A.3.4
 //! T48 (VAMS-18) — IEEE 1364 gate-primitive truth tables and drive-strength
 //! resolution, exercised through `piperine_codegen`'s public surface
 //! (`piperine_codegen::kernel::digital::{GatePrimitive, Strength}`).

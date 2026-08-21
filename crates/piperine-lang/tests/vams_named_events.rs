@@ -1,3 +1,4 @@
+//! LRM-COVERS: 5.10.4
 //! LRMC-C5-04 (`.specs/features/lrm-conformance-closure/`, T25): FORM half
 //! — named event declarations (`event e;`, §5.10.4/Annex A.2.1.3) reach
 //! `Module::events()` as an authored declaration list (MD-25: navigable

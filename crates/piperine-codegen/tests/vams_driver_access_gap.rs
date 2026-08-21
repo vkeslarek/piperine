@@ -1,3 +1,4 @@
+//! LRM-COVERS: 7.6, 7.9
 //! LRMC-C7-05 (T35, scope note documented in `piperine-lang`'s
 //! `eval::tasks` module): the seven `$driver_*` functions parse and
 //! elaborate (proven in `piperine-lang`'s own `vams_system_tasks.rs`),
