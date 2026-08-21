@@ -11,3 +11,8 @@
 // view. The exemption sits on the item it excuses (MD-33), not on the file.
 #[allow(dead_code)]
 pub mod ngspice;
+
+// repo-walking helpers shared by suite_hygiene.rs and lrm_section_coverage.rs
+// (T3/T4, lrm-conformance-wave2) — see the same MD-33 rationale above.
+#[allow(dead_code)]
+pub mod sources;
