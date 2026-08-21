@@ -57,6 +57,12 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
     let mut symbols = SymbolTable::new();
     let mut ports = Vec::new();
 
+    // 0. `ground`-declared names (LRM §3.6.4, LRMW2-07) — registered
+    // before ports/wires so every later name lookup already sees them.
+    for name in m.ground_names() {
+        symbols.add_ground_name(name.clone());
+    }
+
     // 1. Ports
     for p in m.ports() {
         let domain = domain_of(prog, p.net_type());

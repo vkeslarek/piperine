@@ -191,7 +191,7 @@ impl<'a> LowerCtx<'a> {
     /// port accesses (`load.p` → the parent NodeId the port connects to,
     /// SPEC §7.3).
     pub fn lookup_node(&self, name: &str) -> Option<NodeId> {
-        if piperine_lang::pom::is_ground(name) {
+        if self.symbols.is_ground(name) {
             return Some(NodeId::GROUND);
         }
         // Check instance port map first (e.g. "load.p" or "rseg[0].n").
@@ -302,7 +302,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                         let bare = net_ref.net();
                         let full = net_ref.to_string();
                         let lookup = if net_ref.index().is_some() { &full } else { bare };
-                        let parent_node = if piperine_lang::pom::is_ground(bare) {
+                        let parent_node = if bodies[i].symbols.is_ground(bare) {
                             NodeId::GROUND
                         } else if let Some(&id) = node_by_name.get(lookup) {
                             id

@@ -120,10 +120,17 @@ pub struct NetDecl {
     pub nodeset: Option<Expr>,
 }
 
-/// `ground name;` — §3.6.4.
+/// `ground [discipline_identifier] [range] name;` — §3.6.4, Syntax 3-7.
+/// `discipline`/`range` are both optional: the common form
+/// (`electrical gnd; ground gnd;`) designates an already-declared net as
+/// ground; the combined form (`ground electrical gnd;` / `ground [3:0]
+/// bus;`) declares and grounds it in one statement, same shape as an
+/// ordinary `net_declaration`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroundDecl {
     pub span: PreprocessedSpan,
+    pub discipline: Option<String>,
+    pub range: Option<Range>,
     pub name: String,
 }
 

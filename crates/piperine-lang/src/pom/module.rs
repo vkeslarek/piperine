@@ -373,6 +373,13 @@ pub struct Module {
     /// downstream by `Design::udp(&inst.module).is_some()`.
     #[serde(default)]
     pub gates: Vec<GateInstance>,
+    /// Net names declared as the global reference node via `ground name;`
+    /// (LRM §3.6.4, LRMW2-07) — a registry consulted by codegen's
+    /// `resolve_node` sites alongside the crate-global `is_ground` name
+    /// list (`net_type.rs`'s `GROUND_NAMES` fallback, unchanged). Authored
+    /// form (MD-25): a `ground` declaration reads back exactly as written.
+    #[serde(default)]
+    pub ground_names: Vec<String>,
     pub origin: Option<String>,
 }
 
@@ -413,7 +420,8 @@ impl Module {
             ports, params, wires, vars: Vec::new(), instances, connections,
             behaviors,
             branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
-            constraints: Vec::new(), timescale: None, gates: Vec::new(), origin: None,
+            constraints: Vec::new(), timescale: None, gates: Vec::new(),
+            ground_names: Vec::new(), origin: None,
         }
     }
 
@@ -438,6 +446,14 @@ impl Module {
     pub fn connections(&self) -> &[Connection] { &self.connections }
     /// All behavior blocks of the module.
     pub fn behaviors(&self) -> &[Behavior] { &self.behaviors }
+    /// Net names declared `ground` in this module (LRM §3.6.4).
+    pub fn ground_names(&self) -> &[String] { &self.ground_names }
+    /// Whether `name` is the global reference node for this module — the
+    /// crate-global `is_ground` name list, OR a name this module's own
+    /// `ground` declarations registered (LRMW2-07).
+    pub fn is_ground(&self, name: &str) -> bool {
+        crate::pom::net_type::is_ground(name) || self.ground_names.iter().any(|g| g == name)
+    }
     /// All Verilog-AMS branches declared or implied in this module
     /// (LRM §3.12). Authored form; `flat_modules` carries the
     /// post-monormophization shape (MD-25 VAMS clause).

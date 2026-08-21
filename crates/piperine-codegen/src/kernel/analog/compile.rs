@@ -269,7 +269,7 @@ impl<'m> AnalogCompiler<'m> {
         };
         let mut pairs = Vec::new();
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         for expr in flat.exprs() {
@@ -1098,7 +1098,7 @@ impl<'m> AnalogCompiler<'m> {
         let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         // Global branch set: every V/I branch read anywhere in the body
@@ -1309,7 +1309,7 @@ impl<'m> AnalogCompiler<'m> {
     fn contrib_branches(&self, contribs: &[&FlatContrib], temps: &[PomExpr]) -> Vec<(NodeId, NodeId)> {
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         let mut seen = std::collections::HashSet::new();
@@ -1358,7 +1358,7 @@ impl<'m> AnalogCompiler<'m> {
         let branches = self.contrib_branches(&contribs, temps);
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
 
@@ -1508,7 +1508,7 @@ impl<'m> AnalogCompiler<'m> {
         let branches = self.contrib_branches(&contribs, temps);
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
 
@@ -1611,7 +1611,7 @@ impl<'m> AnalogCompiler<'m> {
         let exprs: Vec<&PomExpr> = forces.iter().map(|f| &f.expr).collect();
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         let temps = self.flat.temps.clone();
@@ -1709,7 +1709,7 @@ impl<'m> AnalogCompiler<'m> {
         // Branch voltages for every pair read by any expression.
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         // Branches now live inside the temp tape (contributions hold only
@@ -1833,7 +1833,7 @@ impl<'m> AnalogCompiler<'m> {
 
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            if module.symbols.is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         let temps = self.flat.temps.clone();

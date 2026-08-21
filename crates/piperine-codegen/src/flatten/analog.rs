@@ -896,7 +896,7 @@ impl<'m> AnalogFlattener<'m> {
     }
 
     fn resolve_node(&self, name: &str) -> NodeId {
-        if piperine_lang::pom::is_ground(name) {
+        if self.module.symbols.is_ground(name) {
             return NodeId::GROUND;
         }
         self.module.symbols.nodes()

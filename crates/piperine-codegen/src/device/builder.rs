@@ -599,7 +599,7 @@ fn build_node_aliases(
 /// the same `resolve_node` path instance connections use, so an indexed
 /// ref (`tap[0]`) finds the per-element node Fix A registered.
 fn resolve_alias_target(top_body: &LoweredBody, nr: &piperine_lang::pom::NetRef) -> Option<NodeId> {
-    if piperine_lang::pom::is_ground(nr.net()) {
+    if top_body.symbols.is_ground(nr.net()) {
         return Some(NodeId::GROUND);
     }
     let full = nr.to_string();

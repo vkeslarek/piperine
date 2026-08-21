@@ -309,7 +309,7 @@ impl FlattenHierarchy {
     /// [`Self::expand_array_element`]. An unknown net fails loud naming the
     /// net and the owning child module (dangling/typo guard).
     fn remap(nr: &NetRef, rho: &HashMap<String, NetRef>, child: &Module) -> Result<NetRef, ElabError> {
-        if is_ground(&nr.net) {
+        if is_ground(&nr.net) || child.is_ground(&nr.net) {
             return Ok(nr.clone());
         }
         let target = rho.get(&nr.net).ok_or_else(|| {

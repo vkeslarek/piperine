@@ -408,12 +408,30 @@ impl Grammar {
         })
     }
 
-    /// `ground_declaration`, §3.6.4.
+    /// `ground_declaration ::= ground [discipline_identifier] [range]
+    /// list_of_net_identifiers ;` — §3.6.4, Syntax 3-7. This crate's
+    /// `GroundDecl` carries one name (T25's `genvar`/array-of-instances
+    /// precedent: a single-name scope, extended if a real fixture ever
+    /// needs the list form). `discipline_identifier` is genuinely
+    /// ambiguous with the name itself on token shape alone (both are bare
+    /// identifiers) — resolved the same way `parse_net_decl`'s own
+    /// two-token dispatch does: an identifier is the discipline only when
+    /// something else (another identifier, or a `[range]`) still follows
+    /// it before `;`.
     fn parse_ground_decl(&mut self) -> Result<GroundDecl, ParseError> {
         let start = self.expect_kw("ground")?;
+        let discipline = if matches!(self.peek(), Tok::Ident(_))
+            && (matches!(self.peek_at(1), Tok::Ident(_)) || matches!(self.peek_at(1), Tok::Punct("[")))
+        {
+            let (d, _) = self.expect_ident()?;
+            Some(d)
+        } else {
+            None
+        };
+        let range = if self.at_punct("[") { Some(self.parse_range()?) } else { None };
         let (name, _) = self.expect_ident()?;
-        self.expect_punct(";")?;
-        Ok(GroundDecl { span: start, name })
+        let end = self.expect_punct(";")?;
+        Ok(GroundDecl { span: PreprocessedSpan::new(start.start, end.end), discipline, range, name })
     }
 
     /// `event_declaration ::= event list_of_event_identifiers ;` — §5.10.4,

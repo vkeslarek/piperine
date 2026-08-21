@@ -276,7 +276,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// Resolve a name and load the corresponding value.
     /// Dispatches: var? param? net? enum value?
     pub fn load_ident(&mut self, name: &str) -> Result<Typed, CodegenError> {
-        if piperine_lang::pom::is_ground(name) {
+        if self.module.symbols.is_ground(name) {
             return Ok(Typed::real(self.builder_f64(0.0)));
         }
         if let Some(&id) = self.resolver.vars.get(name) {
@@ -311,7 +311,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     }
 
     pub(crate) fn resolve_node(&self, name: &str) -> Result<NodeId, CodegenError> {
-        if piperine_lang::pom::is_ground(name) {
+        if self.module.symbols.is_ground(name) {
             return Ok(NodeId::GROUND);
         }
         self.resolver.nodes.get(name).copied().ok_or_else(|| {

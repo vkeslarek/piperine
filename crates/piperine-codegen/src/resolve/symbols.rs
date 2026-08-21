@@ -220,6 +220,14 @@ pub struct SymbolTable {
     states: Vec<StateVar>,
     natures: Vec<NatureInfo>,
     fns: Vec<Function>,
+    /// This module's `ground`-declared net names (LRM §3.6.4, LRMW2-07),
+    /// copied from the POM `Module::ground_names()` at
+    /// `resolve/pom/structure.rs::build_symbols_and_ports` time. Every
+    /// `resolve_node` site consults this (via [`Self::is_ground`]) beside
+    /// the crate-global `piperine_lang::pom::is_ground` name list, so a
+    /// `ground foo;` net resolves to [`NodeId::GROUND`] the same way
+    /// `gnd`/`GND`/etc. already do.
+    ground_names: std::collections::HashSet<String>,
 }
 
 impl SymbolTable {
@@ -232,7 +240,20 @@ impl SymbolTable {
             states: Vec::new(),
             natures: Vec::new(),
             fns: Vec::new(),
+            ground_names: std::collections::HashSet::new(),
         }
+    }
+
+    /// Register a module-declared `ground` net name.
+    pub fn add_ground_name(&mut self, name: impl Into<String>) {
+        self.ground_names.insert(name.into());
+    }
+
+    /// Whether `name` resolves to [`NodeId::GROUND`] — the crate-global
+    /// `is_ground` name list, or a name this module's own `ground`
+    /// declarations registered.
+    pub fn is_ground(&self, name: &str) -> bool {
+        piperine_lang::pom::is_ground(name) || self.ground_names.contains(name)
     }
 
     // ── Interning ──

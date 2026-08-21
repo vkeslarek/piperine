@@ -99,6 +99,10 @@ impl Elaborator {
         // below) can only be known once its declaration is on hand, and
         // `assign` may textually precede its target's declaration.
         let mut pending_assigns: Vec<&ContinuousAssign> = Vec::new();
+        // `ground [discipline] [range] name;` (§3.6.4, LRMW2-07): collected
+        // here, resolved in a second pass below once `ports`/`wires` are
+        // final.
+        let mut pending_grounds: Vec<&crate::ast::GroundDecl> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
@@ -290,14 +294,18 @@ impl Elaborator {
                 // `assign` is buffered; lowered below once `ports`/`wires`
                 // are final (see `pending_assigns`'s own doc comment).
                 ModuleItem::ContinuousAssign(ca) => pending_assigns.push(ca),
+                // `ground` is buffered too — same reason (`ground gnd;`
+                // most commonly follows the net's own declaration, per the
+                // LRM's own §3.6.4 example, but the combined-declare form
+                // `ground electrical gnd;` doesn't require it, so ordering
+                // must not matter either way).
+                ModuleItem::Ground(g) => pending_grounds.push(g),
                 // `defparam` is applied by its own later pass
                 // (`elab::lower::defparam::ApplyDefparams`, LRMC-C5-06) —
                 // a no-op here by design, not "not yet lowered".
-                // genvar/generate (T25), ground declarations,
-                // specify/gates: not yet lowered — later tasks extend this
-                // match.
-                ModuleItem::Ground(_)
-                | ModuleItem::Genvar(_)
+                // genvar/generate (T25), specify/gates: not yet lowered —
+                // later tasks extend this match.
+                ModuleItem::Genvar(_)
                 | ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
                 | ModuleItem::Function(_)
@@ -401,6 +409,40 @@ impl Elaborator {
             }
         }
 
+        // `ground [discipline] [range] name;` (§3.6.4, LRMW2-07): the
+        // common form (LRM's own example, `electrical gnd; ground gnd;`)
+        // designates an already-declared net as the global reference node
+        // — just register the name. The combined form (`ground electrical
+        // gnd;` / `ground [3:0] bus;`) declares the net in the same step,
+        // reusing `declarator_net_type` (the same range→`NetType::Array`
+        // logic an ordinary `electrical bus[3:0];` net decl uses) so a
+        // ranged ground is a real bus, not a scalar with a discarded range.
+        // A `ground` naming an ALREADY-declared port/wire never creates a
+        // second entry (would silently double the net) — it only adds the
+        // name to `ground_names`; `resolve_node` (codegen) checks that
+        // registry before ever consulting the symbol table by name, so the
+        // ordinary port/wire entry simply becomes unreachable-by-name,
+        // exactly how the crate-global `gnd`/`GND`/etc. names already
+        // coexist with a real declared net of the same name.
+        let mut ground_names: Vec<String> = Vec::new();
+        for g in &pending_grounds {
+            let already_declared =
+                ports.iter().any(|p| p.name == g.name) || wires.iter().any(|w| w.name == g.name);
+            if !already_declared {
+                let discipline = g.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
+                let synthetic = Declarator { name: g.name.clone(), range: g.range.clone(), init: None };
+                let ty = declarator_net_type(&synthetic, discipline, &env)?;
+                wires.push(Wire {
+                    span: Some(to_miette_span(g.span)),
+                    attributes: Vec::new(),
+                    doc: None,
+                    name: g.name.clone(),
+                    ty,
+                });
+            }
+            ground_names.push(g.name.clone());
+        }
+
         // `assign target = expr;` (LRMW2-06, §8.5.3.1/§8.5.3.2): a
         // digital-domain target lowers to the `always @(*)` combinational
         // shape (same Active-region participation as a blocking assign,
@@ -478,6 +520,7 @@ impl Elaborator {
         // which owns the design's `DirectiveState`).
         module.timescale = timescale;
         module.gates = gates;
+        module.ground_names = ground_names;
         module.attributes = lower_module_attrs(&decl.attrs, &self.ctx.schemas)?;
 
         // LRMC-C5-04: `-> event_name;` must name a declared `event` —

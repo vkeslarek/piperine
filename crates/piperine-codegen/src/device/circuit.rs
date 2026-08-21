@@ -266,7 +266,7 @@ impl<'p> CircuitCompiler<'p> {
     /// access (`load.p`) both funnel through this at circuit-build time: this
     /// is the single place instance-level net resolution happens.
     pub(super) fn resolve_node(body: &LoweredBody, name: &str) -> Option<NodeId> {
-        if piperine_lang::pom::is_ground(name) {
+        if body.symbols.is_ground(name) {
             return Some(NodeId::GROUND);
         }
         body.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
