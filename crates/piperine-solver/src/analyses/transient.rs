@@ -524,6 +524,14 @@ pub struct TransientSolver<'a> {
     /// Full-state re-entry point (PSS shooting enabler): when set, the run
     /// starts from this captured step instead of a DC operating point.
     reentry_state: Option<TransientStep>,
+    /// Whether this run is a genuine top-level analysis (LRMW2-08):
+    /// `true` by default (a plain `circuit.transient(...)`), `false` for
+    /// an internal segment PSS's shooting method drives underneath itself
+    /// (`analyses::pss.rs`'s own `TransientSolver::new` calls, via
+    /// [`Self::mark_nested`]) — those are not a real analysis end from
+    /// the LRM's perspective, so `final_step` must not fire for them.
+    /// Gates [`Self::solve`]'s `Element::finish_analysis` call.
+    top_level: bool,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -578,7 +586,16 @@ impl<'a> TransientSolver<'a> {
             policy: crate::analyses::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
+            top_level: true,
         })
+    }
+
+    /// Mark this run as an internal segment (PSS's shooting method drives
+    /// `TransientSolver` underneath itself, not through
+    /// `CircuitInstance::transient`) rather than a genuine top-level
+    /// analysis — suppresses `final_step` for it (LRMW2-08).
+    pub(crate) fn mark_nested(&mut self) {
+        self.top_level = false;
     }
 
     /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
@@ -1410,6 +1427,14 @@ impl<'a> TransientSolver<'a> {
                     return Err(e);
                 }
             }
+        }
+
+        // LRM §5.10.2 `@(final_step)` (LRMW2-08): once, after the last
+        // accepted point of a genuine top-level analysis — never for an
+        // internal PSS shooting segment (`mark_nested`, not a real
+        // analysis end).
+        if self.top_level {
+            self.system.circuit.finish_analysis(&self.system.context, crate::analyses::AnalysisKind::Tran);
         }
 
         Ok(self.finish_run(&st, steps))

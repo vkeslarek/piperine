@@ -68,8 +68,13 @@ pub enum CrossDir {
 /// The trigger of an analog event (SPEC §6.1).
 #[derive(Debug, Clone)]
 pub enum EventSource {
-    InitialStep,
-    FinalStep,
+    /// `initial_step` / `initial_step("dc", "tran", ...)` — LRM §5.10.2.
+    /// The analysis-name list (empty = every analysis, the bare-form
+    /// default) filters which analyses fire it (LRMW2-08).
+    InitialStep { analyses: Vec<String> },
+    /// `final_step` / `final_step("dc", "tran", ...)` — LRM §5.10.2. Same
+    /// analysis-name-list filtering as `InitialStep`.
+    FinalStep { analyses: Vec<String> },
     Cross { expr: PomExpr, dir: CrossDir },
     Above { expr: PomExpr },
     Timer { period: PomExpr, phase: PomExpr },

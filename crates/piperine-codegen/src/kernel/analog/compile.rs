@@ -756,7 +756,7 @@ impl<'m> AnalogCompiler<'m> {
                     | FlatEventTrigger::Above { expr }
                     | FlatEventTrigger::AbsDelta { expr, .. }
                     | FlatEventTrigger::Named { expr } => expr.clone(),
-                    FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => real(0.0),
+                    FlatEventTrigger::Initial(_) | FlatEventTrigger::Final(_) | FlatEventTrigger::Timer { .. } => real(0.0),
                 })
                 .collect();
             let action_rows: Vec<PomExpr> = events
@@ -775,7 +775,8 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|e| CompiledEvent {
                 trigger: match &e.trigger {
-                    FlatEventTrigger::Initial => CompiledTrigger::Initial,
+                    FlatEventTrigger::Initial(analyses) => CompiledTrigger::Initial(analyses.clone()),
+                    FlatEventTrigger::Final(analyses) => CompiledTrigger::Final(analyses.clone()),
                     FlatEventTrigger::Cross { dir, .. } => CompiledTrigger::Cross(*dir),
                     FlatEventTrigger::Above { .. } => CompiledTrigger::Above,
                     FlatEventTrigger::Timer { period, phase } => {

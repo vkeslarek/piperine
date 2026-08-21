@@ -453,6 +453,18 @@ impl<'a> DcSolver<'a> {
             .iter()
             .filter_map(|d| d.limiting_report())
             .collect();
+
+        // LRM §5.10.2 `@(final_step)` (LRMW2-08): once, after this
+        // converged solution — but only for a genuine top-level `.dc()`
+        // call. `analysis_kind` stays at its `Dc` default there; an outer
+        // analysis driving a DC solve underneath itself (a transient's
+        // t = 0 OP, an AC sweep's bias point) retags it via
+        // `set_analysis_kind` first, which is this task's signal that the
+        // DC solve is an internal step, not the real analysis end.
+        if self.analysis_kind == crate::analyses::AnalysisKind::Dc {
+            self.system.circuit.finish_analysis(&self.system.context, self.analysis_kind);
+        }
+
         Ok(result)
     }
 }

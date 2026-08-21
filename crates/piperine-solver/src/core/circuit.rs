@@ -119,11 +119,13 @@ impl CircuitInstance {
 
     pub fn dc(&mut self, context: Context) -> crate::core::result::Result<DcSolver<'_>> {
         self.reset_margin_tracking();
+        self.start_analysis(&context, crate::analyses::AnalysisKind::Dc);
         DcSolver::new(self, context)
     }
 
     pub fn ac(&mut self, context: Context) -> crate::core::result::Result<AcSolver<'_>> {
         self.reset_margin_tracking();
+        self.start_analysis(&context, crate::analyses::AnalysisKind::Ac);
         AcSolver::new(self, context)
     }
 
@@ -133,6 +135,7 @@ impl CircuitInstance {
         context: Context,
     ) -> crate::core::result::Result<TransientSolver<'_>> {
         self.reset_margin_tracking();
+        self.start_analysis(&context, crate::analyses::AnalysisKind::Tran);
         TransientSolver::new(self, transient_options, context)
     }
 
@@ -626,6 +629,26 @@ impl CircuitInstance {
             if device.capabilities().contains(ElementCapabilities::EMITS_VALIDATION) {
                 device.reset_margin_tracking();
             }
+        }
+    }
+
+    /// [`Element::start_analysis`] on every device — LRM §5.10.2's
+    /// QUALIFIED `@(initial_step("dc", ...))` form (LRMW2-08). Called from
+    /// [`Self::dc`]/[`Self::ac`]/[`Self::transient`] before the analysis
+    /// driver runs its first stamp.
+    pub fn start_analysis(&mut self, ctx: &Context, analysis: crate::analyses::AnalysisKind) {
+        for device in self.devices.iter_mut() {
+            device.start_analysis(ctx, analysis);
+        }
+    }
+
+    /// [`Element::finish_analysis`] on every device — LRM §5.10.2's
+    /// `@(final_step)` (LRMW2-08). Called by each analysis driver
+    /// (`analyses::dc::DcSolver::solve`, `analyses::transient::
+    /// TransientSolver::solve`) right after its last accepted point.
+    pub fn finish_analysis(&mut self, ctx: &Context, analysis: crate::analyses::AnalysisKind) {
+        for device in self.devices.iter_mut() {
+            device.finish_analysis(ctx, analysis);
         }
     }
 

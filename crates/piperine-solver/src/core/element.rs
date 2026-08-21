@@ -523,6 +523,29 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     fn setup(&mut self, _ctx: &Context) -> crate::core::result::Result<()> { Ok(()) }
     fn destroy(&mut self) {}
 
+    /// Called once, after the LAST accepted solution point of one
+    /// analysis run (LRM §5.10.2's `@(final_step)`, LRMW2-08) — right
+    /// before the analysis driver (`analyses::dc::DcSolver::solve`,
+    /// `analyses::transient::TransientSolver::solve`, …) returns its
+    /// result. `analysis` is the running kind (same shape
+    /// [`Element::evaluate_constraints`] already takes — `Dc`/`Tran`/`Ac`
+    /// only, no `Noise` variant exists on `AnalysisKind` yet, a
+    /// pre-existing limitation this task does not extend). Distinct from
+    /// [`Self::destroy`] (fires once per `CircuitInstance`, on `Drop` —
+    /// many analyses may run on one circuit, MD-18) and from
+    /// [`Self::accept_timestep`] (fires after EVERY accepted point, not
+    /// just the last). Default no-op — additive, so no existing `Element`
+    /// implementor needs a change to keep compiling.
+    fn finish_analysis(&mut self, _ctx: &Context, _analysis: crate::analyses::AnalysisKind) {}
+
+    /// Called once, at the START of one analysis run (LRM §5.10.2's
+    /// QUALIFIED `@(initial_step("dc", ...))` form, LRMW2-08), before any
+    /// stamp — the counterpart to [`Self::finish_analysis`]. The bare
+    /// `@(initial_step)` form is unaffected by this hook (it keeps firing
+    /// once at element construction, as it always has — see the codegen
+    /// device's own doc comment for why). Default no-op — additive.
+    fn start_analysis(&mut self, _ctx: &Context, _analysis: crate::analyses::AnalysisKind) {}
+
     /// Called after each accepted solution point at time `t`. Elements that
     /// couple into the digital world (A2D bridges, analog event detectors)
     /// emit their net value-changes through `sink` — the same write-only

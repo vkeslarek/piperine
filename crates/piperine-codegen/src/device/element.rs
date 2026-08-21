@@ -736,6 +736,31 @@ impl Element for PiperineDevice {
         caps
     }
 
+    /// LRM §5.10.2 `initial_step("dc", ...)` — the QUALIFIED (analysis-
+    /// name-list) form only (LRMW2-08); the bare `@(initial_step)` form
+    /// keeps firing once at construction (`AnalogInstance::new`,
+    /// unchanged from before this task — see `fire_initial_events`'s own
+    /// doc comment for why the two forms are handled at different times).
+    /// Called once at the start of each analysis (`DcSolver::solve`,
+    /// `TransientSolver::solve`, …), before any stamp — `analysis` is the
+    /// analysis actually about to run.
+    fn start_analysis(&mut self, _ctx: &Context, analysis: piperine_solver::abi::AnalysisKind) {
+        if let Some(analog) = &mut self.analog {
+            analog.fire_initial_events_for_analysis(analysis.as_str());
+        }
+    }
+
+    /// LRM §5.10.2 `final_step`/`final_step("dc", ...)` (LRMW2-08) — both
+    /// forms, since `final_step` had no working form at all before this
+    /// task (a pure no-op, SPEC_DEVIATION.md finding 1.5). Called once
+    /// per analysis, after the last accepted point, right before the
+    /// analysis driver returns its result.
+    fn finish_analysis(&mut self, _ctx: &Context, analysis: piperine_solver::abi::AnalysisKind) {
+        if let Some(analog) = &mut self.analog {
+            analog.fire_final_events(analysis.as_str());
+        }
+    }
+
     fn accept_timestep(
         &mut self,
         state: &CircularArrayBuffer2<f64>,

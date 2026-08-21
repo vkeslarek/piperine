@@ -160,6 +160,7 @@ impl<'a> PssSolver<'a> {
         let dt = self.options.dt.unwrap_or(self.options.period / 100.0);
         let opts = TransientAnalysisOptions::new(t0 + span, dt).with_start(t0);
         let mut solver = TransientSolver::new(self.circuit, opts, self.context.clone())?;
+        solver.mark_nested();
         solver.policy = self.policy.clone();
         solver.with_initial_state(state);
         solver.solve()
@@ -178,6 +179,7 @@ impl<'a> PssSolver<'a> {
                 let opts = TransientAnalysisOptions::new(t0, dt);
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
+                solver.mark_nested();
                 solver.policy = self.policy.clone();
                 solver.solve()?.last().expect("pre-roll has steps").clone()
             } else {
@@ -187,6 +189,7 @@ impl<'a> PssSolver<'a> {
                 let opts = TransientAnalysisOptions::new(dt, dt);
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
+                solver.mark_nested();
                 solver.policy = self.policy.clone();
                 let r = solver.solve()?;
                 r.iter().next().expect("transient records t=0").clone()

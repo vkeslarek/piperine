@@ -100,7 +100,14 @@ pub struct RuntimeStateSpec {
 /// against the previous accepted value.
 #[derive(Debug, Clone)]
 pub enum CompiledTrigger {
-    Initial,
+    /// `initial_step`/`initial_step("dc", ...)` — the analysis-name list
+    /// (empty = every analysis), LRM §5.10.2. Fired once by
+    /// `AnalogInstance::fire_initial_events`.
+    Initial(Vec<String>),
+    /// `final_step`/`final_step("dc", ...)` — LRM §5.10.2, LRMW2-08. Fired
+    /// once by `AnalogInstance::fire_final_events`, at
+    /// `Element::finish_analysis` time (after the last accepted point).
+    Final(Vec<String>),
     Cross(CrossDir),
     Above,
     /// Fires every `period` seconds, first fire at `phase` (both

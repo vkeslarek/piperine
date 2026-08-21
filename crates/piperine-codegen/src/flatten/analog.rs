@@ -94,8 +94,8 @@ fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenE
         _ => return Ok(vec![]),
     };
     let sources = match name {
-        "initial_step" => vec![EventSource::InitialStep],
-        "final_step" => vec![EventSource::FinalStep],
+        "initial_step" => vec![EventSource::InitialStep { analyses: analysis_name_args(args)? }],
+        "final_step" => vec![EventSource::FinalStep { analyses: analysis_name_args(args)? }],
         // First arg is the watched expression; a missing arg defaults to a
         // zero literal (the elaborator rejects genuinely arg-less events).
         // Second arg is the direction (§5.10.3.1): a LRM-mandated
@@ -145,6 +145,25 @@ fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenE
         _ => vec![EventSource::Named { expr: PomExpr::Ident { span: NOSPAN, name: name.to_string() } }],
     };
     Ok(sources)
+}
+
+/// `initial_step`/`final_step`'s optional analysis-name-list argument
+/// (LRM §5.10.2, Syntax 5-15: `"` analysis_identifier `"` {`,` `"`
+/// analysis_identifier `"`}) — a list of string literals. An empty list
+/// (no args) means "every analysis" (the bare-form default, LRM Table
+/// 5-1's unqualified `initial_step`/`final_step` row). Every arg must be
+/// a string literal; anything else fails loud citing §5.10.2 rather than
+/// being silently dropped.
+fn analysis_name_args(args: &[PomExpr]) -> Result<Vec<String>, CodegenError> {
+    args.iter()
+        .map(|a| match a {
+            PomExpr::Str { value, .. } => Ok(value.clone()),
+            other => Err(CodegenError::unsupported(format!(
+                "initial_step/final_step's analysis-name argument must be a string literal \
+                 (LRM §5.10.2, Syntax 5-15) — got {other:?}"
+            ))),
+        })
+        .collect()
 }
 
 /// `cross(expr, dir, ...)`'s `dir` argument (§5.10.3.1, a required
@@ -213,7 +232,13 @@ pub struct FlatDiagnostic {
 
 #[derive(Debug, Clone)]
 pub enum FlatEventTrigger {
-    Initial,
+    /// `initial_step`/`initial_step("dc", ...)` — the analysis-name list
+    /// (empty = every analysis), LRM §5.10.2.
+    Initial(Vec<String>),
+    /// `final_step`/`final_step("dc", ...)` — LRM §5.10.2, LRMW2-08. Fires
+    /// once, after the last accepted point of an analysis this list
+    /// matches (empty = every analysis).
+    Final(Vec<String>),
     Cross { expr: PomExpr, dir: CrossDir },
     Above { expr: PomExpr },
     Timer { period: PomExpr, phase: PomExpr },
@@ -242,7 +267,7 @@ pub struct FlatEvent {
 impl FlatEvent {
     pub fn trigger_expr(&self) -> Option<&PomExpr> {
         match &self.trigger {
-            FlatEventTrigger::Initial => None,
+            FlatEventTrigger::Initial(_) | FlatEventTrigger::Final(_) => None,
             FlatEventTrigger::Cross { expr, .. }
             | FlatEventTrigger::Above { expr }
             | FlatEventTrigger::AbsDelta { expr, .. }
@@ -1038,14 +1063,8 @@ impl<'m> AnalogFlattener<'m> {
 
     fn add_event(&mut self, event: &AnalogEvent, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
         let trigger = match &event.source {
-            EventSource::InitialStep => FlatEventTrigger::Initial,
-            EventSource::FinalStep => {
-                self.out.diagnostics.push(FlatDiagnostic {
-                    severity: crate::resolve::Severity::Info,
-                    format: String::new(),
-                });
-                return Ok(());
-            }
+            EventSource::InitialStep { analyses } => FlatEventTrigger::Initial(analyses.clone()),
+            EventSource::FinalStep { analyses } => FlatEventTrigger::Final(analyses.clone()),
             EventSource::Cross { expr, dir } => {
                 let e = self.inline_temps(&self.subst(expr)?);
                 FlatEventTrigger::Cross { expr: self.finish_expr(e)?, dir: *dir }
