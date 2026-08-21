@@ -148,7 +148,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     Ok(())
                 }
                 "finish" | "stop" => Ok(()),
-                other => Err(CodegenError::unsupported(format!("task call `{other}`"))),
+                // T13/LRMW2-09: shared with the analog arm
+                // (`flatten/analog.rs`) through `CodegenError::unknown_task`
+                // so the two lowering paths cannot silently drift apart.
+                other => Err(CodegenError::unknown_task(other)),
             },
             S::For { .. } | S::While { .. } | S::Repeat { .. } | S::Forever { .. } => {
                 Err(CodegenError::unsupported(

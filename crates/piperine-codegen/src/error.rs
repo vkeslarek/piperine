@@ -24,4 +24,13 @@ impl CodegenError {
     pub fn unsupported(what: impl Into<String>) -> Self {
         Self::Unsupported(what.into())
     }
+
+    /// A system task name (already stripped of its leading `$`) that the
+    /// parser/elaborator accepted but this lowering arm does not implement
+    /// — LRM §9.2 ("System Tasks and Functions"). Shared by the analog
+    /// (`flatten::analog`) and digital (`emit::stmt`) `TaskCall` arms so the
+    /// two paths cannot silently drift back apart (T13, LRMW2-09).
+    pub fn unknown_task(name: &str) -> Self {
+        Self::Unsupported(format!("unrecognized system task `${name}` (LRM §9.2)"))
+    }
 }

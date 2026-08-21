@@ -708,7 +708,13 @@ impl<'m> AnalogFlattener<'m> {
                             };
                             self.out.diagnostics.push(FlatDiagnostic { severity, format: fmt });
                         }
-                        _ => {}
+                        // T13/LRMW2-09: any task name codegen doesn't
+                        // recognize is a loud error naming the task and
+                        // §9.2 — parity with the digital arm
+                        // (`emit/stmt.rs`), through the shared
+                        // `CodegenError::unknown_task` helper so the two
+                        // cannot silently drift apart again.
+                        other => return Err(CodegenError::unknown_task(other)),
                     }
                 }
                 PomStmt::EventControl { events, body, .. } => {
