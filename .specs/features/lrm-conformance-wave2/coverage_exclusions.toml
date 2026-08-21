@@ -1,0 +1,68 @@
+# LRM-2-4 section coverage exclusions (T5, lrm-conformance-wave2).
+#
+# Every entry maps one LRM-2-4 section id (as parsed by
+# tests/lrm_section_coverage.rs's `lrm_sections()`) to why the G4 matrix
+# does not require it to be `Covered`. Two kinds only, per the wave-2
+# spec's own G4 rule (spec.md, Assumptions & Open Questions): "a section
+# may only be Informative if the LRM itself marks it informative, or
+# OutOfScope if it maps to a row in this spec's Out of Scope table —
+# anything else must be Covered."
+#
+#   [[informative]]  — the LRM's own front matter marks the section
+#                       informative (not normative).
+#   [[out_of_scope]] — the section maps to a row in spec.md's Out of Scope
+#                       table; `spec_row` must match that table's Item
+#                       column text exactly (checked against spec.md via
+#                       include_str!, so a spec.md edit that renames or
+#                       drops the row is caught, not silently stale).
+#
+# SPEC_DEVIATION from tasks.md's T5 "Done when" wording ("Chapter 1 and
+# Annex G/H seeded as Informative"): re-verified against
+# VAMS-LRM-2-4.md's own front-matter ToC (around line 739-748) — only
+# Annex G and Annex H carry an explicit "(informative)" tag there (Annex F
+# is tagged "(normative)"); Chapter 1 carries no such tag anywhere in the
+# document, and spec.md's own Out of Scope table names only "Annex G …
+# Annex H", never Chapter 1. So Chapter 1's 15 parsed ids (`1`, `1.1` ..
+# `1.5`) are seeded as neither here — under the G4 rule above they stay in
+# the "must be Covered" bucket and surface as uncovered gaps until a real
+# LRM-COVERS claim lands (several close via existing `vams_ch1_*` targets
+# once T7 backfills; the rest close in later wave-2 phases).
+#
+# Annex H needs zero entries: its glossary is a flat run of single-letter/
+# single-word headings (`**T**`, `**V**`, …), never `H.<n>` subsection
+# headings, so it never parses into `lrm_sections()`'s 612-id set in the
+# first place — there is nothing to exclude.
+
+[[informative]]
+id = "G.1"
+reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
+
+[[informative]]
+id = "G.2"
+reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
+
+[[informative]]
+id = "G.2.1"
+reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
+
+[[informative]]
+id = "G.2.2"
+reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
+
+[[informative]]
+id = "G.2.3"
+reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
+
+[[informative]]
+id = "G.2.4"
+reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
+
+# No out_of_scope rows yet. None of spec.md's current Out of Scope table
+# entries map cleanly to one LRM-2-4 section id without further per-section
+# research: the VPI-PLI-hosting and SPICE-netlist-reader rows describe
+# mechanisms outside the LRM's own heading structure, and the four-state/
+# analog-MNA row explicitly says the LRM clause it discusses (§2.10) stays
+# in scope. Real entries land as that research happens in later wave-2
+# tasks. The out_of_scope guard below is proven able to fail via a
+# temporary injected entry (see the T5 commit body), not via a permanent
+# fixture row here.

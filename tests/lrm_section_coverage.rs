@@ -12,7 +12,7 @@
 //! This file is itself infrastructure, not a clause proof, so it carries no
 //! `LRM-COVERS` claim of its own (T6's "declaring is optional" rule).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 // This target only needs repo_root/rust_sources — integration_targets and
 // root_targets stay unused here (MD-33: the exemption sits on the item it
@@ -210,6 +210,155 @@ fn declaring_files_have_a_live_test() {
         "these files declare LRM-COVERS with no live (non-#[ignore]d) #[test] to back the \
          claim — a coverage claim with no test proves nothing:\n  {}",
         unfalsifiable.join("\n  ")
+    );
+}
+
+// ─── T5: exclusions file + partition assert ────────────────────────────────
+
+/// The wave-2 spec — embedded at compile time (not read at runtime like
+/// `VAMS-LRM-2-4.md`/`coverage_exclusions.toml`) so a `spec.md` edit that
+/// renames or drops an Out of Scope row is caught immediately, the same
+/// anti-drift shape `lrm_conformance_matrix.rs` already uses for wave-1's
+/// spec.md.
+const WAVE2_SPEC: &str = include_str!("../.specs/features/lrm-conformance-wave2/spec.md");
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExclusionKind {
+    Informative,
+    OutOfScope,
+}
+
+struct Exclusion {
+    kind: ExclusionKind,
+    id: String,
+    spec_row: Option<String>,
+}
+
+/// A minimal, format-specific reader for `coverage_exclusions.toml` — not a
+/// general TOML parser (this workspace has no `toml` dev-dependency on the
+/// root package and this file's shape is small and fixed: `[[informative]]`
+/// / `[[out_of_scope]]` array-of-tables with `id`/`reason`/`spec_row`
+/// string keys), but the file itself is written in real TOML syntax.
+fn parse_exclusions(text: &str) -> Vec<Exclusion> {
+    let mut out = Vec::new();
+    let mut kind: Option<ExclusionKind> = None;
+    let mut id = String::new();
+    let mut spec_row: Option<String> = None;
+
+    fn flush(out: &mut Vec<Exclusion>, kind: Option<ExclusionKind>, id: &str, spec_row: &Option<String>) {
+        if let Some(kind) = kind {
+            if !id.is_empty() {
+                out.push(Exclusion { kind, id: id.to_string(), spec_row: spec_row.clone() });
+            }
+        }
+    }
+
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == "[[informative]]" || line == "[[out_of_scope]]" {
+            flush(&mut out, kind, &id, &spec_row);
+            kind = Some(if line == "[[informative]]" { ExclusionKind::Informative } else { ExclusionKind::OutOfScope });
+            id.clear();
+            spec_row = None;
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue };
+        let key = key.trim();
+        let value = parse_toml_string(value.trim());
+        match key {
+            "id" => id = value,
+            "spec_row" => spec_row = Some(value),
+            _ => {}
+        }
+    }
+    flush(&mut out, kind, &id, &spec_row);
+    out
+}
+
+/// Unquote a TOML basic string (`"…"`, with `\"` escapes) — the only string
+/// shape `coverage_exclusions.toml` uses.
+fn parse_toml_string(raw: &str) -> String {
+    let inner = raw.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(raw);
+    inner.replace("\\\"", "\"")
+}
+
+fn coverage_exclusions() -> Vec<Exclusion> {
+    let path = repo_root().join(".specs/features/lrm-conformance-wave2/coverage_exclusions.toml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    parse_exclusions(&text)
+}
+
+#[test]
+fn out_of_scope_rows_match_spec_out_of_scope_table() {
+    let mut bad = Vec::new();
+    for excl in coverage_exclusions() {
+        if excl.kind != ExclusionKind::OutOfScope {
+            continue;
+        }
+        match &excl.spec_row {
+            None => bad.push(format!("{}: out_of_scope entry has no spec_row", excl.id)),
+            Some(row) if !WAVE2_SPEC.contains(row.as_str()) => bad.push(format!(
+                "{}: spec_row {row:?} does not appear in spec.md's Out of Scope table",
+                excl.id
+            )),
+            Some(_) => {}
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "out_of_scope entries in coverage_exclusions.toml reference a spec_row spec.md's \
+         Out of Scope table does not contain (stale or typo'd):\n  {}",
+        bad.join("\n  ")
+    );
+}
+
+#[test]
+fn covered_and_excluded_partition_the_lrm() {
+    let sections = lrm_sections();
+    let excluded: BTreeSet<String> = coverage_exclusions().into_iter().map(|e| e.id).collect();
+    let covered: BTreeSet<String> = declared_coverage().into_iter().flat_map(|d| d.ids).collect();
+
+    let overlap: Vec<&String> = covered.intersection(&excluded).collect();
+    assert!(
+        overlap.is_empty(),
+        "these ids are claimed as both Covered (LRM-COVERS) and excluded \
+         (Informative/OutOfScope) in coverage_exclusions.toml — pick one:\n  {}",
+        overlap.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n  ")
+    );
+
+    let mut missing: Vec<&String> =
+        sections.iter().filter(|id| !covered.contains(*id) && !excluded.contains(*id)).collect();
+    missing.sort();
+    if missing.is_empty() {
+        return;
+    }
+    // Grouped by top-level chapter/annex letter and capped per group so a
+    // red run (currently most of the 612 ids — T7 onward backfills real
+    // coverage, T69 is the zero-gap gate) stays legible instead of dumping
+    // hundreds of raw ids.
+    let mut by_group: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for id in &missing {
+        let group = id.split('.').next().unwrap_or(id);
+        by_group.entry(group).or_default().push(id.as_str());
+    }
+    let mut lines = Vec::new();
+    for (group, ids) in &by_group {
+        let shown: Vec<&str> = ids.iter().take(3).copied().collect();
+        let more = if ids.len() > 3 { ", …" } else { "" };
+        lines.push(format!("  {group}: {} uncovered ({}{more})", ids.len(), shown.join(", ")));
+    }
+    panic!(
+        "{} of {} LRM-2-4 sections are neither Covered (LRM-COVERS) nor excluded \
+         (Informative/OutOfScope in coverage_exclusions.toml) — expected until wave-2's \
+         closure work lands (T7 onward backfills coverage; T69 closes the matrix to zero \
+         gaps), not a regression introduced by this task:\n{}",
+        missing.len(),
+        sections.len(),
+        lines.join("\n")
     );
 }
 
