@@ -96,8 +96,18 @@ fn unroll_items(
     for item in items {
         match item {
             ModuleItem::Instantiation(inst_decl) => {
+                // LRMW2-11/T15: same schema-checked path the non-generate
+                // instantiation arm (`elab/lower/vams.rs`) uses.
+                let inst_attrs = super::vams::lower_generic_attrs(&inst_decl.attrs, &elab.ctx.schemas)?;
                 for ast_inst in &inst_decl.instances {
-                    let mut inst = elab.lower_instance(&inst_decl.module_name, inst_decl.module_name_span, ast_inst, &inst_decl.param_overrides, env)?;
+                    let mut inst = elab.lower_instance(
+                        &inst_decl.module_name,
+                        inst_decl.module_name_span,
+                        ast_inst,
+                        &inst_decl.param_overrides,
+                        env,
+                        inst_attrs.clone(),
+                    )?;
                     inst.label = Some(mangle_label(ast_inst.name.as_str(), env));
                     out.push(inst);
                 }

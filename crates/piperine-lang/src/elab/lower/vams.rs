@@ -189,12 +189,17 @@ impl Elaborator {
                         }
                         Ok(crate::pom::Distribution { kind, args, global: t.global })
                     }).transpose()?;
+                    // §3.4.3 (LRMW2-11, T15): same schema-checked path
+                    // ports/nets already use — a `parameter` declaration's
+                    // attrs shared list-wide, same sharing rule as `ranges`
+                    // and `tol`.
+                    let param_attrs = lower_generic_attrs(&p.attrs, &self.ctx.schemas)?;
                     for pa in &p.names {
                         let (ty, value) = eval_and_define_param_assignment(pa, &base_ty, &p.ranges, &mut env)?;
                         params.push(Param {
                             span: Some(to_miette_span(p.span)),
                             name_span: Some(to_miette_span(pa.name_span)),
-                            attributes: Vec::new(),
+                            attributes: param_attrs.clone(),
                             doc: p.doc.clone(),
                             name: pa.name.clone(),
                             ty,
@@ -246,6 +251,10 @@ impl Elaborator {
                     });
                 }
                 ModuleItem::Instantiation(inst_decl) => {
+                    // LRMW2-11/T15: same schema-checked path ports/nets
+                    // already use — an instantiation's attrs shared
+                    // list-wide, same sharing rule `param_overrides` has.
+                    let inst_attrs = lower_generic_attrs(&inst_decl.attrs, &self.ctx.schemas)?;
                     for ast_inst in &inst_decl.instances {
                         instances.push(self.lower_instance(
                             &inst_decl.module_name,
@@ -253,6 +262,7 @@ impl Elaborator {
                             ast_inst,
                             &inst_decl.param_overrides,
                             &env,
+                            inst_attrs.clone(),
                         )?);
                     }
                 }
@@ -272,8 +282,20 @@ impl Elaborator {
                 // by `var_declarator_to_var` into `Var::init`.
                 ModuleItem::Var(v) => {
                     let ty = var_kind_value_type(v.kind);
+                    // §3.2.1 (LRMW2-11, T15): same schema-checked path
+                    // ports/nets already use — a var declaration's attrs
+                    // shared list-wide, same sharing rule its discipline
+                    // already has.
+                    let var_attrs = lower_generic_attrs(&v.attrs, &self.ctx.schemas)?;
                     for d in &v.names {
-                        vars.push(var_declarator_to_var(d, ty.clone(), v.span, v.doc.clone(), &env)?);
+                        vars.push(var_declarator_to_var(
+                            d,
+                            ty.clone(),
+                            v.span,
+                            v.doc.clone(),
+                            &env,
+                            var_attrs.clone(),
+                        )?);
                     }
                 }
                 // `event name1, name2, ...;` (§5.10.4, LRMC-C5-04) — an
@@ -698,12 +720,15 @@ impl Elaborator {
         ast_inst: &crate::ast::Instance,
         param_overrides: &[PortConnection],
         env: &ConstEnv,
+        attributes: Vec<Attribute>,
     ) -> Result<Instance, ElabError> {
         // LRMC-C5-07: an instance may name a `paramset` instead of a
         // module — resolves to `(paramset.module_name, bound params)`,
         // §6.4's own indirection.
         if let Some(ps) = self.syms.paramsets.get(module_name) {
-            return self.lower_paramset_instance(module_name, ps, ast_inst, param_overrides, env, module_name_span);
+            return self.lower_paramset_instance(
+                module_name, ps, ast_inst, param_overrides, env, module_name_span, attributes,
+            );
         }
 
         // LRMC-C7-13 (T39): a UDP instantiation is syntactically
@@ -727,7 +752,7 @@ impl Elaborator {
                 span: Some(to_miette_span(ast_inst.span)),
                 label_span: Some(to_miette_span(ast_inst.name_span)),
                 type_span: Some(to_miette_span(module_name_span)),
-                attributes: Vec::new(),
+                attributes,
                 doc: None,
                 label: Some(ast_inst.name.clone()),
                 module: module_name.to_string(),
@@ -786,7 +811,7 @@ impl Elaborator {
             span: Some(to_miette_span(ast_inst.span)),
             label_span: Some(to_miette_span(ast_inst.name_span)),
             type_span: Some(to_miette_span(module_name_span)),
-            attributes: Vec::new(),
+            attributes,
             doc: None,
             label: Some(ast_inst.name.clone()),
             module: module_name.to_string(),
@@ -817,6 +842,7 @@ impl Elaborator {
         param_overrides: &[PortConnection],
         env: &ConstEnv,
         module_name_span: crate::error::PreprocessedSpan,
+        attributes: Vec<Attribute>,
     ) -> Result<Instance, ElabError> {
         let target = self.syms.module_decls.get(&ps.module_name).ok_or_else(|| {
             ElabError::from(ElabErrorKind::Other(format!(
@@ -911,7 +937,7 @@ impl Elaborator {
             span: Some(to_miette_span(ast_inst.span)),
             label_span: Some(to_miette_span(ast_inst.name_span)),
             type_span: Some(to_miette_span(module_name_span)),
-            attributes: Vec::new(),
+            attributes,
             doc: None,
             label: Some(ast_inst.name.clone()),
             module: ps.module_name.clone(),
@@ -1101,6 +1127,45 @@ fn lower_port_decl(
 /// type = "type_id" *)` instance instead: `device`'s own value is the
 /// `plugin` field, a required sibling `type` attribute is the `type`
 /// field — the exact spelling `design.md`'s P2 story quotes.
+/// Generic attribute-instance lowering for declaration sites with no
+/// schema-specific field structure of their own — parameters (§3.4.3),
+/// variables (§3.2.1), and instances (LRMW2-11, T15): every attr name
+/// must be a registered schema, the same loud `UnknownAttrSchema` check
+/// `lower_port_attrs`/`lower_net_attrs`/`lower_module_attrs` already run
+/// (MD-24's "no silent fallback" rule). Unlike those three, this site has
+/// no sibling-field schema of its own (no `device`/`port`/`rfport`
+/// special-casing) — each attr becomes its own single-field `Attribute`:
+/// `schema` is the attr name, and a valued attr's one data field (also
+/// keyed by the attr name) holds its const-evaluated value; a bare marker
+/// attr (`(* foo *)`, no `= value`) gets an empty data map.
+pub(super) fn lower_generic_attrs(
+    attrs: &[crate::ast::Attr],
+    known_schemas: &HashSet<String>,
+) -> Result<Vec<Attribute>, ElabError> {
+    let env = ConstEnv::new();
+    attrs
+        .iter()
+        .map(|a| {
+            if !known_schemas.contains(&a.name) {
+                return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
+                    .with_span(Some(to_miette_span(a.span))));
+            }
+            let mut data = HashMap::new();
+            if let Some(expr) = &a.value {
+                let value = env.eval(expr).map_err(|e| {
+                    ElabError::from(ElabErrorKind::ConstEval {
+                        context: format!("attribute `{}`", a.name),
+                        source: e,
+                    })
+                    .with_span(Some(to_miette_span(a.span)))
+                })?;
+                data.insert(a.name.clone(), value);
+            }
+            Ok(Attribute { schema: a.name.clone(), data })
+        })
+        .collect()
+}
+
 fn lower_module_attrs(
     attrs: &[crate::ast::Attr],
     known_schemas: &HashSet<String>,
@@ -1463,6 +1528,7 @@ fn var_declarator_to_var(
     span: crate::PreprocessedSpan,
     doc: Option<String>,
     env: &ConstEnv,
+    attributes: Vec<Attribute>,
 ) -> Result<Var, ElabError> {
     let ty = match &d.range {
         None => ty,
@@ -1495,7 +1561,7 @@ fn var_declarator_to_var(
             ElabError::from(ElabErrorKind::ConstEval { context: format!("var `{}` initializer", d.name), source: e })
         })?),
     };
-    Ok(Var { span: Some(to_miette_span(span)), attributes: Vec::new(), doc, name: d.name.clone(), ty, init })
+    Ok(Var { span: Some(to_miette_span(span)), attributes, doc, name: d.name.clone(), ty, init })
 }
 
 fn param_value_type(ty: Option<ParamType>) -> ValueType {
