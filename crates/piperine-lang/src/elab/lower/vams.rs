@@ -129,7 +129,15 @@ impl Elaborator {
                             port.ty = declarator_net_type(d, discipline, &env)?;
                             continue;
                         }
-                        wires.push(declarator_to_wire(d, discipline, n.span, n.doc.clone(), &env, net_attrs.clone())?);
+                        wires.push(declarator_to_wire(
+                            d,
+                            discipline,
+                            n.span,
+                            n.doc.clone(),
+                            &env,
+                            net_attrs.clone(),
+                            n.nodeset.as_ref(),
+                        )?);
                     }
                 }
                 ModuleItem::Param(p) => {
@@ -404,6 +412,7 @@ impl Elaborator {
                         doc: None,
                         name: n.to_string(),
                         ty: NetType::Discipline(super::disciplines::UNRESOLVED.to_string()),
+                        nodeset: None,
                     });
                 }
             }
@@ -438,6 +447,7 @@ impl Elaborator {
                     doc: None,
                     name: g.name.clone(),
                     ty,
+                    nodeset: None,
                 });
             }
             ground_names.push(g.name.clone());
@@ -1222,13 +1232,29 @@ fn declarator_to_wire(
     doc: Option<String>,
     env: &ConstEnv,
     attributes: Vec<Attribute>,
+    nodeset_expr: Option<&Expr>,
 ) -> Result<Wire, ElabError> {
+    // §3.6.3.2 (LRMW2-10, T14): the nodeset value is an elaboration
+    // constant — const-evaluated here, in module scope, the same way
+    // `declarator_net_type`'s bus width is, so a value that depends on a
+    // module parameter still resolves correctly per monomorphized variant.
+    let nodeset = nodeset_expr
+        .map(|e| {
+            env.eval_f64(e).map_err(|err| {
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("net `{}` nodeset value", d.name),
+                    source: err,
+                })
+            })
+        })
+        .transpose()?;
     Ok(Wire {
         span: Some(to_miette_span(span)),
         attributes,
         doc,
         name: d.name.clone(),
         ty: declarator_net_type(d, discipline, env)?,
+        nodeset,
     })
 }
 

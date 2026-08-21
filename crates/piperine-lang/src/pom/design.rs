@@ -833,6 +833,7 @@ mod flat_module_tests {
                 doc: None,
                 name: wire.to_string(),
                 ty: NetType::Discipline("Electrical".to_string()),
+                nodeset: None,
             }],
             Vec::new(),
             Vec::new(),

@@ -39,6 +39,10 @@ pub struct CircuitBuildInfo {
     /// `CircuitInstance::digital_state.nets` — how a host reads a `Bit`
     /// net's logic value off a result.
     pub digital_nets: HashMap<String, usize>,
+    /// Top-module net name → declared nodeset value (§3.6.3.2, LRMW2-10,
+    /// T14) — a host-supplied `OpConfig.nodeset` entry for the same name
+    /// still wins over this (see `piperine-api`'s `build_ivs`).
+    pub nodesets: HashMap<String, f64>,
     /// One entry per top-level instance, in declaration order.
     pub instances: Vec<BuiltInstanceInfo>,
     /// How many fused combinational cones were compiled into single

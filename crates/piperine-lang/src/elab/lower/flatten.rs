@@ -264,6 +264,7 @@ impl FlattenHierarchy {
                 doc: w.doc.clone(),
                 name: fresh,
                 ty: w.ty.clone(),
+                nodeset: w.nodeset,
             });
         }
 
@@ -408,6 +409,7 @@ mod tests {
             doc: None,
             name: name.to_string(),
             ty: elec(),
+            nodeset: None,
         }
     }
 
@@ -418,6 +420,7 @@ mod tests {
             doc: None,
             name: name.to_string(),
             ty: NetType::Array(Box::new(elec()), width),
+            nodeset: None,
         }
     }
 

@@ -100,6 +100,15 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             build_info: CircuitBuildInfo {
                 nets,
                 digital_nets: HashMap::new(),
+                // §3.6.3.2 (LRMW2-10, T14): every top-level wire's declared
+                // nodeset, name-keyed for `build_ivs`'s host-precedence
+                // merge — the analog case only (a digital net has no
+                // nodeset).
+                nodesets: top
+                    .wires()
+                    .iter()
+                    .filter_map(|w| w.nodeset().map(|v| (w.name().to_string(), v)))
+                    .collect(),
                 instances: Vec::new(),
                 fused_networks: 0,
             },

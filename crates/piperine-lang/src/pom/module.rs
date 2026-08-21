@@ -189,6 +189,10 @@ pub struct Wire {
     pub doc: Option<String>,
     pub name: String,
     pub ty: NetType,
+    /// A discipline initial ("nodeset") value, §3.6.3.2 — the elaboration-
+    /// constant-evaluated form of `NetDecl::nodeset` (LRMW2-10, T14).
+    #[serde(default)]
+    pub nodeset: Option<f64>,
 }
 
 impl Wire {
@@ -199,6 +203,8 @@ impl Wire {
     pub fn net_type(&self) -> &NetType { &self.ty }
     /// The wire's attached `///` doc comment, if any.
     pub fn doc(&self) -> Option<&str> { self.doc.as_deref() }
+    /// The wire's declared nodeset value (§3.6.3.2), if any.
+    pub fn nodeset(&self) -> Option<f64> { self.nodeset }
 }
 
 impl Named for Wire { fn name(&self) -> &str { self.name() } }

@@ -14,7 +14,7 @@ use crate::error::Error;
 use crate::results::{IntrospectSnapshot, OpResult};
 use crate::waveform::{AcTrace, NoiseTrace, Trace, Waveform};
 
-use super::build::{BuildOptions, build_circuit, build_ivs, build_probe_selection, mirror_param, node_voltages, resolve_net};
+use super::build::{BuildOptions, build_circuit, build_ivs, build_probe_selection, merged_nodeset, mirror_param, node_voltages, resolve_net};
 use super::config::SolverConfig;
 
 // ─── Session: the one host entry point (HOST-01, CLA-14) ───────────────────
@@ -261,7 +261,8 @@ impl Session {
         config: &SolverConfig,
         nodeset: Option<&HashMap<String, f64>>,
     ) -> Result<OpResult, Error> {
-        let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
+        let merged = merged_nodeset(&self.info, nodeset);
+        let ivs = build_ivs(&self.info, Some(&merged), self.circuit.netlist())?;
         let mut dc = self.circuit.dc(self.context_for(config))?;
         dc.policy = config.to_policy();
         dc.apply_initial_conditions(ivs);
@@ -855,7 +856,8 @@ impl Session {
         for &v in values {
             self.circuit.set_element_param(label, param, Value::Real(v))?;
             mirror_param(&mut self.info, label, param, v);
-            let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
+            let merged = merged_nodeset(&self.info, nodeset);
+            let ivs = build_ivs(&self.info, Some(&merged), self.circuit.netlist())?;
             let mut dc = self.circuit.dc(self.context_for(config))?;
             dc.policy = config.to_policy();
             dc.apply_initial_conditions(ivs);

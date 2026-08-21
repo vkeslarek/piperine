@@ -158,3 +158,22 @@ pub(super) fn build_ivs(
     Ok(ivs)
 }
 
+/// §3.6.3.2 (LRMW2-10, T14): merge a circuit's declared net nodesets
+/// (`electrical a = 5.0;`, `CircuitBuildInfo::nodesets`) with a
+/// host-supplied `OpConfig.nodeset` map, the host entry winning over the
+/// declared one for the same net name — this is the DC solve's own initial
+/// guess (§5.1), not the transient UIC hint `build_ivs` also serves, so
+/// only DC-analysis call sites (`Session::op`/`Session::dc`) apply it.
+pub(super) fn merged_nodeset<'a>(
+    info: &'a CircuitBuildInfo,
+    host: Option<&'a HashMap<String, f64>>,
+) -> HashMap<String, f64> {
+    let mut merged: HashMap<String, f64> = info.nodesets.clone();
+    if let Some(host) = host {
+        for (name, &value) in host {
+            merged.insert(name.clone(), value);
+        }
+    }
+    merged
+}
+

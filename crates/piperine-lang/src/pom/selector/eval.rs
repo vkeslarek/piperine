@@ -358,15 +358,15 @@ mod tests {
         };
 
         let w1 = crate::pom::module::Wire { span: None, doc: None, name: "clk".into(), attributes: vec![attr1],
-            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
+            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()), nodeset: None,
         };
 
         let w2 = crate::pom::module::Wire { span: None, doc: None, name: "rst".into(), attributes: vec![attr2],
-            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
+            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()), nodeset: None,
         };
 
         let w3 = crate::pom::module::Wire { span: None, doc: None, name: "data".into(), attributes: vec![],
-            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
+            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()), nodeset: None,
         };
 
         top_mod.wires.push(w1);
