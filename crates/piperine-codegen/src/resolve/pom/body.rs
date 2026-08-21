@@ -438,11 +438,43 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 let stmts = resolve_stmts(behavior.body(), &mut ctx);
                 digital_shadows.append(&mut ctx.digital_shadows);
                 errors.append(&mut ctx.errors);
-                bodies[i].analog = Some(AnalogBody {
-                    states: ctx.states,
-                    noise: ctx.noise_sources,
-                    stmts,
-                });
+
+                // A module may declare more than one `analog` block — LRM
+                // §6.9.1 "Concatenation of analog blocks": the simulator
+                // combines them into one, in source order. Mirrors the
+                // digital arm above (`f75beb4d`): assigning unconditionally
+                // here kept only the *last* block and silently dropped every
+                // earlier one — the same "silent no-op" failure the crate's
+                // fail-loud contract forbids, except here it produced a
+                // wrong numeric answer instead of a missing log line.
+                //
+                // `ctx.states`/`ctx.noise_sources` are just *this* behavior's
+                // allocations — `LowerCtx::alloc_state` (`:186` above) always
+                // calls `self.symbols.add_state`, and `symbols` is the one
+                // `SymbolTable` shared by every behavior of this module
+                // (`bodies[i].symbols`, re-borrowed fresh per behavior at
+                // `LowerCtx::new`, never reset). So `StateId`s are already
+                // globally unique across the whole module regardless of
+                // which block's `ctx` allocated them — extending the vectors
+                // needs no id offset; only `stmts` order matters (preserved
+                // by `extend`, so a var declared in block 1 is visible when
+                // block 2 reads it).
+                let new_states = ctx.states;
+                let new_noise = ctx.noise_sources;
+                match &mut bodies[i].analog {
+                    Some(body) => {
+                        body.states.extend(new_states);
+                        body.noise.extend(new_noise);
+                        body.stmts.extend(stmts);
+                    }
+                    None => {
+                        bodies[i].analog = Some(AnalogBody {
+                            states: new_states,
+                            noise: new_noise,
+                            stmts,
+                        });
+                    }
+                }
             }
         }
 
