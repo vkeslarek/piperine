@@ -31,7 +31,9 @@ use crate::emit::OwnedJit;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use piperine_lang::ast::{EventExpr, Expr, Stmt};
+use piperine_lang::ast::{BinOp, EventExpr, Expr, Stmt, UnOp};
+use piperine_lang::error::PreprocessedSpan;
+use piperine_lang::lexer::NumberLit;
 
 use crate::emit::{Builder, Codegen, DigTy, Resolver};
 use crate::resolve::{
@@ -120,20 +122,36 @@ impl<'m> DigitalCompiler<'m> {
         // directly (T30, `resolve/pom/body.rs`) — VAMS has no
         // `VarDecl`-with-default statement to scan for anymore.
         let mut comb_stmts: Vec<&Stmt> = Vec::new();
-        let mut clocked: Vec<(&[EventExpr], &Stmt)> = Vec::new();
+        // `Vec<EventExpr>` (owned), not `&[EventExpr]`: an analog-event
+        // control (`@(cross(..))`/`@(above(..))`) is rewritten into its
+        // Posedge/Negedge/Level equivalent below (`rewrite_analog_watch_events`)
+        // before classification, so the events list a clocked entry carries
+        // is not always a borrow of the original `Stmt`. The second field
+        // is the *wrapper* `Stmt::EventControl` itself (not just its body)
+        // — `compile_body_fn`'s "seq" call needs the wrapper to gate
+        // execution on the matching `fired` flag; see the `stmts` build
+        // below, which now reads straight off this vec instead of
+        // re-deriving clocked-ness from the original (pre-rewrite) events.
+        let mut clocked: Vec<(Vec<EventExpr>, &Stmt)> = Vec::new();
         for stmt in &self.body.stmts {
             match stmt {
-                Stmt::EventControl { events, body, .. } if is_clocked(events) => {
-                    clocked.push((events, body));
+                Stmt::EventControl { events, body, .. } => {
+                    let rewritten = rewrite_analog_watch_events(events);
+                    if is_clocked(&rewritten) {
+                        clocked.push((rewritten, stmt));
+                    } else {
+                        // A non-edge event control (`@*`/`@(sig)` —
+                        // level-sensitive) is combinational in this
+                        // step-based (not event-scheduled) execution
+                        // model: `comb` already re-evaluates every pass,
+                        // which already gives "re-run on any input
+                        // change" semantics, so its body folds directly
+                        // into the plain combinational statement list
+                        // rather than through the clocked/`fired`-flag
+                        // path.
+                        comb_stmts.push(body.as_ref());
+                    }
                 }
-                // A non-edge event control (`@*`/`@(sig)` — level-sensitive)
-                // is combinational in this step-based (not event-scheduled)
-                // execution model: `comb` already re-evaluates every pass,
-                // which already gives "re-run on any input change"
-                // semantics, so its body folds directly into the plain
-                // combinational statement list rather than through the
-                // clocked/`fired`-flag path.
-                Stmt::EventControl { body, .. } => comb_stmts.push(body.as_ref()),
                 other => comb_stmts.push(other),
             }
         }
@@ -177,12 +195,15 @@ impl<'m> DigitalCompiler<'m> {
         let seq_id = if clocked.is_empty() {
             None
         } else {
-            let stmts: Vec<&Stmt> = self
-                .body
-                .stmts
-                .iter()
-                .filter(|s| matches!(s, Stmt::EventControl { events, .. } if is_clocked(events)))
-                .collect();
+            // Read straight off `clocked` (already the exact set + order
+            // `clocked_specs` was built from above) rather than
+            // re-filtering `self.body.stmts` by `is_clocked` on the
+            // ORIGINAL events — an analog-event control's original events
+            // (`Level(Call("cross", ..))`) never satisfy `is_clocked`, only
+            // its rewritten form does, so re-deriving here would silently
+            // drop those entries and desync `clocked_specs`'s indices from
+            // `compile_body_fn`'s per-entry `clocked_index` counter.
+            let stmts: Vec<&Stmt> = clocked.iter().map(|(_, s)| *s).collect();
             Some(self.compile_body_fn("seq", &stmts, VarReads::PreEdge)?)
         };
         let watch_id = if watch_terms.is_empty() {
@@ -248,11 +269,22 @@ impl<'m> DigitalCompiler<'m> {
         reads: VarReads,
     ) -> Result<FuncId, CodegenError> {
         self.build_fn(name, false, |b| {
+            // `is_clocked` is intentionally NOT re-checked here (it used
+            // to be): the caller passes either `comb_stmts` (never an
+            // `EventControl` wrapper — `compile`'s classification loop
+            // above already unwrapped every non-clocked control's body)
+            // or `seq`'s `stmts` (every entry an `EventControl` wrapper
+            // that classification already decided is clocked, including
+            // an analog-event control rewritten to Posedge/Negedge/Level
+            // form — `is_clocked` on the ORIGINAL un-rewritten events
+            // would wrongly say "no" for those). So every `EventControl`
+            // reaching this loop is clocked by construction; the
+            // `clocked_index` counter's order matches `clocked_specs`'s
+            // because both are built from the same `clocked` vec in
+            // `compile`.
             let mut clocked_index = 0usize;
             for stmt in stmts {
-                if let Stmt::EventControl { events, body, .. } = stmt
-                    && is_clocked(events)
-                {
+                if let Stmt::EventControl { body, .. } = stmt {
                     b.emit_guarded_block(clocked_index, body)?;
                     clocked_index += 1;
                 } else {
@@ -371,9 +403,93 @@ impl<'m> DigitalCompiler<'m> {
 /// A control with only `Level`/`ImplicitAll` entries is level-sensitive
 /// (`@(sig)`/`@*`), which this step-based execution model already covers by
 /// re-evaluating combinational statements every pass — see `compile`'s own
-/// classification.
+/// classification. Callers pass this the ALREADY-rewritten events list
+/// (`rewrite_analog_watch_events`), so an analog-event control
+/// (`@(cross(..))`/`@(above(..))`, LRM §7.3.5) reads as clocked too once its
+/// `Level(Call(..))` form has been turned into `Posedge`/`Negedge`/`Level`
+/// on the crossing predicate.
 fn is_clocked(events: &[EventExpr]) -> bool {
     events.iter().any(|e| matches!(e, EventExpr::Posedge(_) | EventExpr::Negedge(_)))
+}
+
+/// LRM §7.3.5 "Detecting continuous events in a discrete context": a
+/// digital block's event control may be sensitive to an analog event
+/// function (`cross`/`above`) instead of a digital signal — these parse as
+/// an ordinary `Level(Call { name: "cross"/"above", .. })` event (the
+/// grammar has no dedicated production for them), which `is_clocked` would
+/// otherwise never recognize, sending the block down the *combinational*
+/// path: re-evaluated (and its body re-run) every digital pass instead of
+/// once per crossing. Rewritten here, before classification, into the
+/// equivalent digital watch form: `cross(expr, dir)` -> a boolean predicate
+/// `expr > 0.0`, watched as `Posedge`/`Negedge`/`Level` per `dir`'s
+/// Rising/Falling/Either (the same mapping `flatten/analog.rs`'s
+/// `cross_dir_from_arg` uses for the analog-domain form); `above(expr)` ->
+/// `Posedge` on `expr > 0.0` (fires once, on the negative-or-zero -> positive
+/// transition). `timer`/`absdelta` are time-scheduled / delta-threshold
+/// conditions, not level-watchable through this mechanism, so they are left
+/// unrewritten — SPEC_DEVIATION.md 1.2's disclosed remainder for this task,
+/// not a regression (their pre-fix behavior — folding into `comb`, re-run
+/// every pass — is unchanged).
+///
+/// A control with events already Posedge/Negedge (a genuine digital
+/// clocked block), a bare digital signal (`Level(Ident(..))`), or
+/// `ImplicitAll` passes through unchanged.
+fn rewrite_analog_watch_events(events: &[EventExpr]) -> Vec<EventExpr> {
+    events
+        .iter()
+        .map(|e| match e {
+            EventExpr::Level(expr) => match analog_event_as_edge(expr) {
+                Some((EdgeKind::Rising, watched)) => EventExpr::Posedge(watched),
+                Some((EdgeKind::Falling, watched)) => EventExpr::Negedge(watched),
+                Some((EdgeKind::Any, watched)) => EventExpr::Level(watched),
+                None => e.clone(),
+            },
+            other => other.clone(),
+        })
+        .collect()
+}
+
+const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
+
+/// Recognize `cross(expr[, dir])` / `above(expr)` (LRM §5.10.3.1/§5.10.3.2)
+/// and return the boolean watch expression (`expr > 0.0`) plus the edge
+/// kind implied by the crossing direction.
+fn analog_event_as_edge(expr: &Expr) -> Option<(EdgeKind, Expr)> {
+    let Expr::Call { name, args, .. } = expr else { return None };
+    let watched = args.first()?.clone();
+    let predicate = Expr::Binary {
+        span: NOSPAN,
+        op: BinOp::Gt,
+        lhs: Box::new(watched),
+        rhs: Box::new(Expr::Number { span: NOSPAN, value: NumberLit::Real(0.0) }),
+    };
+    match name.as_str() {
+        "cross" => Some((cross_dir_edge(args.get(1)), predicate)),
+        "above" => Some((EdgeKind::Rising, predicate)),
+        _ => None,
+    }
+}
+
+/// `cross`'s optional 2nd arg (LRM §5.10.3.1): `+1`/`-1`/omitted ->
+/// Rising/Falling/Either, an LRM-mandated compile-time constant. Mirrors
+/// `flatten/analog.rs::cross_dir_from_arg`'s literal handling (a negative
+/// literal lexes as `Unary{Neg, Number(1)}`, not a single negative token).
+fn cross_dir_edge(arg: Option<&Expr>) -> EdgeKind {
+    let Some(expr) = arg else { return EdgeKind::Any };
+    let (expr, negate) = match expr {
+        Expr::Unary { op: UnOp::Neg, operand, .. } => (operand.as_ref(), true),
+        other => (other, false),
+    };
+    let n = match expr {
+        Expr::Number { value: NumberLit::Integer(n), .. } => *n,
+        Expr::Number { value: NumberLit::Real(r), .. } => *r as i64,
+        _ => return EdgeKind::Any,
+    };
+    match if negate { -n } else { n } {
+        1 => EdgeKind::Rising,
+        -1 => EdgeKind::Falling,
+        _ => EdgeKind::Any,
+    }
 }
 
 /// Walk a clocked event-control's `events` list and collect
