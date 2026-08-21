@@ -17,8 +17,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    BranchDecl, CaseArm, Declarator, Direction as AstDirection, EventExpr, Expr, ModuleDecl,
-    ModuleItem, ParamType, PortConnection, PortDecl, Stmt, UnOp, VarKind,
+    BehaviorKind, BranchDecl, CaseArm, ContinuousAssign, Declarator, Direction as AstDirection,
+    Domain as VamsDomain, EventExpr, Expr, ModuleDecl, ModuleItem, ParamType, PortConnection,
+    PortDecl, Stmt, UnOp, VarKind,
 };
 
 use crate::elab::const_eval::ConstEnv;
@@ -91,6 +92,13 @@ impl Elaborator {
         // whole module.
         let mut constraint_labels: Vec<(String, Option<miette::SourceSpan>)> = Vec::new();
         let mut gates: Vec<crate::pom::GateInstance> = Vec::new();
+        // `assign target = expr;` (§8.5.3.1/§8.5.3.2, LRMW2-06): collected
+        // here, lowered into a synthesized behavior in a second pass below
+        // once `ports`/`wires` are final — a target's domain (digital vs.
+        // the analog default, `domain_of`'s twin `is_digital_discipline`
+        // below) can only be known once its declaration is on hand, and
+        // `assign` may textually precede its target's declaration.
+        let mut pending_assigns: Vec<&ContinuousAssign> = Vec::new();
 
         // Declaration-list style port list (`module m(input electrical a, ...)`).
         for p in decl.ports.iter().flatten() {
@@ -279,19 +287,21 @@ impl Elaborator {
                         });
                     }
                 }
+                // `assign` is buffered; lowered below once `ports`/`wires`
+                // are final (see `pending_assigns`'s own doc comment).
+                ModuleItem::ContinuousAssign(ca) => pending_assigns.push(ca),
                 // `defparam` is applied by its own later pass
                 // (`elab::lower::defparam::ApplyDefparams`, LRMC-C5-06) —
                 // a no-op here by design, not "not yet lowered".
-                // genvar/generate (T25), ground declarations, continuous
-                // assign, specify/gates: not yet lowered — later tasks
-                // extend this match.
+                // genvar/generate (T25), ground declarations,
+                // specify/gates: not yet lowered — later tasks extend this
+                // match.
                 ModuleItem::Ground(_)
                 | ModuleItem::Genvar(_)
                 | ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
                 | ModuleItem::Function(_)
                 | ModuleItem::Task(_)
-                | ModuleItem::ContinuousAssign(_)
                 | ModuleItem::LoopGenerate(_)
                 | ModuleItem::IfGenerate(_)
                 | ModuleItem::CaseGenerate(_)
@@ -389,6 +399,70 @@ impl Elaborator {
                     });
                 }
             }
+        }
+
+        // `assign target = expr;` (LRMW2-06, §8.5.3.1/§8.5.3.2): a
+        // digital-domain target lowers to the `always @(*)` combinational
+        // shape (same Active-region participation as a blocking assign,
+        // §8.5.3.1); an analog-domain target (`wreal`'s own discipline is
+        // never declared, so it hits the same "unknown discipline
+        // defaults to analog" rule `resolve/pom/structure.rs::domain_of`
+        // already applies at codegen time, §6.5.3) lowers to the
+        // ideal-source contribution idiom this codebase already uses
+        // pervasively (`V(net) <+ expr;`, implicit-ground branch). Only a
+        // bare net-name target is handled — anything else (an indexed/
+        // hierarchical LHS) fails loud rather than silently doing
+        // nothing, same as the pre-existing no-op did NOT do.
+        for ca in &pending_assigns {
+            let Expr::Ident { name: target_name, .. } = &ca.target else {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "assign target must be a plain net name (§8.5.3.1) — \
+                     indexed/hierarchical continuous-assign targets are not \
+                     yet supported: {:?}",
+                    ca.target
+                ))));
+            };
+            let ty = ports
+                .iter()
+                .find(|p| &p.name == target_name)
+                .map(|p| &p.ty)
+                .or_else(|| wires.iter().find(|w| &w.name == target_name).map(|w| &w.ty))
+                .ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::Other(format!(
+                        "assign target `{target_name}` is not a declared net or port (§8.5.3.1)"
+                    )))
+                })?;
+            let discipline = ty.discipline_name();
+            let is_digital = self
+                .syms
+                .disciplines
+                .get(discipline)
+                .and_then(|d| d.domain)
+                == Some(VamsDomain::Discrete);
+            let stmt = if is_digital {
+                Stmt::EventControl {
+                    span: ca.span,
+                    events: vec![EventExpr::ImplicitAll],
+                    body: Box::new(Stmt::Assign {
+                        span: ca.span,
+                        target: ca.target.clone(),
+                        value: ca.value.clone(),
+                    }),
+                }
+            } else {
+                Stmt::Contribution {
+                    span: ca.span,
+                    target: Expr::AccessFunction {
+                        span: ca.span,
+                        function: "V".to_string(),
+                        pos: Box::new(ca.target.clone()),
+                        neg: None,
+                    },
+                    value: ca.value.clone(),
+                }
+            };
+            let kind = if is_digital { BehaviorKind::Always } else { BehaviorKind::Analog };
+            behaviors.push(Behavior::new(decl.name.clone(), kind, vec![stmt]));
         }
 
         let mut module =
