@@ -86,6 +86,29 @@ impl Elaborator {
         let mut branches = Vec::new();
         let mut vars = Vec::new();
         let mut events: Vec<String> = Vec::new();
+        // §3.5 (LRMW2-13, T17): a declared `genvar` registers in the POM
+        // (`Module::genvars`) — collected in a prepass (not the main item
+        // loop below) so the full set is known before any parameter
+        // default is evaluated, regardless of declaration order.
+        let genvars: Vec<String> = decl
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ModuleItem::Genvar(g) => Some(g.names.iter().cloned()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        // A genvar has no runtime storage outside a loop-generate
+        // construct's own static unrolling (`elab/lower/generate.rs`'s
+        // per-iteration scope) — referencing its name in an ordinary
+        // (non-generate) parameter default is a use outside a valid
+        // generate context, §3.5's own restriction ("genvar variable can
+        // only be assigned within the for-loop control"). Checked here,
+        // before any param default is evaluated, so the error names the
+        // clause instead of falling through to a generic "undefined
+        // name".
+        check_genvar_used_outside_generate(&decl.items, &genvars)?;
         let mut constraints: Vec<crate::pom::PomConstraintStmt> = Vec::new();
         // Labels seen so far (all kinds, all blocks, any scope depth) —
         // the E4008 duplicate check's accumulator; one namespace for the
@@ -330,13 +353,15 @@ impl Elaborator {
                 // `ground electrical gnd;` doesn't require it, so ordering
                 // must not matter either way).
                 ModuleItem::Ground(g) => pending_grounds.push(g),
+                // §3.5 (LRMW2-13, T17): already collected into `genvars`
+                // by the prepass above, ahead of this loop.
+                ModuleItem::Genvar(_) => {}
                 // `defparam` is applied by its own later pass
                 // (`elab::lower::defparam::ApplyDefparams`, LRMC-C5-06) —
                 // a no-op here by design, not "not yet lowered".
-                // genvar/generate (T25), specify/gates: not yet lowered —
+                // generate (T25), specify/gates: not yet lowered —
                 // later tasks extend this match.
-                ModuleItem::Genvar(_)
-                | ModuleItem::Specparam(_)
+                ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
                 | ModuleItem::Function(_)
                 | ModuleItem::Task(_)
@@ -546,6 +571,7 @@ impl Elaborator {
         module.branches = branches;
         module.vars = vars;
         module.events = events;
+        module.genvars = genvars;
         module.constraints = constraints;
         // 1364-2005 `timescale: the last directive at or before the
         // module's start governs it (resolved by the `ElabModules` pass,
@@ -1287,6 +1313,114 @@ fn attr_string_value(
             reason: format!("expected a String, got {other:?}"),
         })
         .with_span(Some(to_miette_span(attr.span)))),
+    }
+}
+
+/// §3.5 (LRMW2-13, T17): a declared `genvar` name referenced in an
+/// ordinary (non-generate) parameter default is a use outside a valid
+/// generate context — a genvar has no runtime storage or value outside a
+/// loop-generate construct's own static unrolling. Checked over every
+/// `ModuleItem::Param`'s default expressions and `from`/`exclude` range
+/// bounds; generate constructs (`for`/`if`/`case` generate, where a
+/// genvar's use *is* valid) are not module-level params and so are never
+/// visited here — this walk only ever looks at param declarations, which
+/// can't nest a generate construct inside them.
+fn check_genvar_used_outside_generate(
+    items: &[ModuleItem],
+    genvars: &[String],
+) -> Result<(), ElabError> {
+    if genvars.is_empty() {
+        return Ok(());
+    }
+    for item in items {
+        let ModuleItem::Param(p) = item else { continue };
+        for pa in &p.names {
+            expr_check_no_genvar_ref(&pa.value, genvars)?;
+        }
+        for r in &p.ranges {
+            if let Some(lo) = &r.lo {
+                expr_check_no_genvar_ref(lo, genvars)?;
+            }
+            if let Some(hi) = &r.hi {
+                expr_check_no_genvar_ref(hi, genvars)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Recursively checks `expr` for a reference to any name in `genvars`,
+/// failing loud citing §3.5 on the first one found.
+fn expr_check_no_genvar_ref(expr: &Expr, genvars: &[String]) -> Result<(), ElabError> {
+    match expr {
+        Expr::Ident { name, .. } => {
+            if genvars.iter().any(|g| g == name) {
+                // Deliberately unspanned (unlike most `ElabErrorKind::Other`
+                // sites in this file): `resolve_elab_error` wraps a spanned
+                // error behind an opaque `dyn Diagnostic` that
+                // `downcast_ref::<ElabError>()` can't see through (the same
+                // `UnknownAttrSchema` limitation T15's tests hit) — this
+                // error stays plainly downcastable so a test can assert
+                // its typed kind directly.
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "genvar `{name}` used outside a valid generate context — a genvar has \
+                     no value outside a loop-generate construct's own static unrolling \
+                     (LRM §3.5)"
+                ))));
+            }
+            Ok(())
+        }
+        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } => Ok(()),
+        Expr::Unary { operand, .. } => expr_check_no_genvar_ref(operand, genvars),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_check_no_genvar_ref(lhs, genvars)?;
+            expr_check_no_genvar_ref(rhs, genvars)
+        }
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            expr_check_no_genvar_ref(cond, genvars)?;
+            expr_check_no_genvar_ref(then_branch, genvars)?;
+            expr_check_no_genvar_ref(else_branch, genvars)
+        }
+        Expr::Concat { parts, .. } | Expr::Replication { parts, .. } => {
+            if let Expr::Replication { count, .. } = expr {
+                expr_check_no_genvar_ref(count, genvars)?;
+            }
+            for p in parts {
+                expr_check_no_genvar_ref(p, genvars)?;
+            }
+            Ok(())
+        }
+        Expr::Index { base, index, .. } => {
+            expr_check_no_genvar_ref(base, genvars)?;
+            expr_check_no_genvar_ref(index, genvars)
+        }
+        Expr::PartSelect { base, msb, lsb, .. } => {
+            expr_check_no_genvar_ref(base, genvars)?;
+            expr_check_no_genvar_ref(msb, genvars)?;
+            expr_check_no_genvar_ref(lsb, genvars)
+        }
+        Expr::Call { args, .. } | Expr::SystemFunctionCall { args, .. } => {
+            for a in args {
+                expr_check_no_genvar_ref(a, genvars)?;
+            }
+            Ok(())
+        }
+        Expr::AccessFunction { pos, neg, .. } => {
+            expr_check_no_genvar_ref(pos, genvars)?;
+            if let Some(neg) = neg {
+                expr_check_no_genvar_ref(neg, genvars)?;
+            }
+            Ok(())
+        }
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            if let Some(r) = replicate {
+                expr_check_no_genvar_ref(r, genvars)?;
+            }
+            for p in parts {
+                expr_check_no_genvar_ref(p, genvars)?;
+            }
+            Ok(())
+        }
     }
 }
 
