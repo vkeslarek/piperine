@@ -106,6 +106,28 @@ fn the_detectors_recognise_what_they_forbid() {
     }
 
     for offender in [
+        "//! LRM-COVERS: §4.5.3",
+        "//! LRM-COVERS: 4.5.3-4.5.5",
+        "//! LRM-COVERS:",
+        "//! LRM-COVERS: ",
+        "//! LRM-COVERS: 4.5.3,",
+        "//! LRM-COVERS: 4.5.x",
+        "//! LRM-COVERS: Z.1",
+    ] {
+        assert!(is_malformed_lrm_covers(offender), "must be flagged as malformed: {offender:?}");
+    }
+    for innocent in [
+        "//! LRM-COVERS: 4.5.3",
+        "//! LRM-COVERS: 4.5.3, 7.3.5",
+        "//! LRM-COVERS: A.1.2",
+        "//! LRM-COVERS: 1",
+        "// LRM-COVERS: §4.5.3 in a regular comment",
+        "",
+    ] {
+        assert!(!is_malformed_lrm_covers(innocent), "must not be flagged: {innocent:?}");
+    }
+
+    for offender in [
         "#![allow(dead_code)]",
         "  #![allow(unused_imports)]",
         "#![allow(clippy::all)]",
@@ -296,6 +318,69 @@ fn every_integration_target_declares_its_scope() {
         headerless.is_empty(),
         "integration targets with no `//!` scope header (say what the file covers):\n  {}",
         headerless.join("\n  ")
+    );
+}
+
+// ─── 4a. LRM-COVERS declarations are well-formed (T6, lrm-conformance-wave2) ──
+
+/// Whether one `//! LRM-COVERS:` line is malformed: not the canonical
+/// comma-separated list of bare LRM-2-4 section ids
+/// (`tests/lrm_section_coverage.rs::lrm_sections`'s own id shape — digit
+/// groups, or a single `A`..`H` letter followed by digit groups, joined by
+/// `.`). Declaring at all is optional; a line that does declare must be
+/// parseable by the coverage gate, so `§4.5.3` (a section symbol, not the
+/// gate's own id spelling), `4.5.3-4.5.5` (a range — the gate has no
+/// concept of one, every covered id must be named), and an empty list all
+/// fail here rather than silently scraping as zero declared ids.
+fn is_malformed_lrm_covers(line: &str) -> bool {
+    let Some(rest) = line.trim_start().strip_prefix("//! LRM-COVERS:") else {
+        return false;
+    };
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return true;
+    }
+    let ids: Vec<&str> = rest.split(',').map(str::trim).collect();
+    if ids.iter().any(|id| id.is_empty()) {
+        return true;
+    }
+    for id in &ids {
+        if id.contains('§') || id.contains('-') || id.contains(char::is_whitespace) {
+            return true;
+        }
+        let segments: Vec<&str> = id.split('.').collect();
+        let Some(first) = segments.first() else { return true };
+        let digit_group = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+        let numbered_head = digit_group(first);
+        let annex_head = first.len() == 1 && matches!(first.chars().next(), Some('A'..='H'));
+        if !(numbered_head || annex_head) {
+            return true;
+        }
+        if segments[1..].iter().any(|seg| !digit_group(seg)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Declaring `LRM-COVERS` is optional (T6's own rule); a declaration that
+/// exists must be well-formed, because `lrm_section_coverage.rs`'s gate
+/// derives the whole matrix from parsing exactly this shape.
+#[test]
+fn lrm_covers_declarations_are_well_formed() {
+    let mut offences = Vec::new();
+    for (path, text) in rust_sources() {
+        for (index, line) in text.lines().enumerate() {
+            if is_malformed_lrm_covers(line) {
+                offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "malformed LRM-COVERS declaration (must be a bare comma-separated id list — \
+         no `§`, no ranges, not empty):\n  {}",
+        offences.join("\n  ")
     );
 }
 
@@ -524,7 +609,7 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// Two entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// Three entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/ngspice/` and the golden targets — so it links no workspace crate,
@@ -533,15 +618,24 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// registry (MD-31, T9): a data table plus `include_str!`-parsing of
 /// `.specs/features/lrm-conformance-closure/spec.md` and a filesystem read
 /// of each closing test's file — same repo-policy-proof standing, no
-/// workspace crate linked. An entry added here must move the expected set
-/// in [`root_targets_match_the_naming_rule`] with it, so the exemption
-/// cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 2] = [
+/// workspace crate linked. `lrm_section_coverage.rs` (T4/T5,
+/// lrm-conformance-wave2) is the same shape one wave over: a `VAMS-LRM-2-4.md`
+/// heading parse + `coverage_exclusions.toml` read + `//! LRM-COVERS:`
+/// source scrape, no workspace crate linked either. An entry added here
+/// must move the expected set in [`root_targets_match_the_naming_rule`]
+/// with it, so the exemption cannot be granted quietly.
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 3] = [
     (
         "lrm_conformance_matrix.rs",
         "lrm-conformance-closure LRMC-ID registry (MD-31, T9) — a repo-policy proof \
          (data table + spec.md parse + filesystem read of each closing test), not a \
          host-surface or cross-crate one",
+    ),
+    (
+        "lrm_section_coverage.rs",
+        "lrm-conformance-wave2 LRM-2-4 section coverage gate (T4/T5) — a repo-policy proof \
+         (VAMS-LRM-2-4.md heading parse + coverage_exclusions.toml read + LRM-COVERS \
+         source scrape), not a host-surface or cross-crate one",
     ),
     (
         "ngspice_parity_matrix.rs",
