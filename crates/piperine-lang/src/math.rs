@@ -72,9 +72,10 @@ pub const MATH_FNS: &[MathFn] = &[
     MathFn { name: "ceil", arity: 1, symbol: wrappers::ceil as *const u8 },
 ];
 
-/// Look up a built-in by IR name. `log`/`ln` are aliases.
+/// Look up a built-in by IR name. Per LRM Table 4-14, `log` is the decimal
+/// (base-10) logarithm — it aliases `log10`, not `ln`.
 pub fn math_fn(name: &str) -> Option<&'static MathFn> {
-    let name = if name == "log" { "ln" } else { name };
+    let name = if name == "log" { "log10" } else { name };
     MATH_FNS.iter().find(|f| f.name == name)
 }
 
@@ -96,4 +97,22 @@ pub fn eval_const_math(name: &str, args: &[f64]) -> Option<f64> {
         }
     };
     Some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    //! LRM-COVERS: 4.3
+
+    use super::*;
+
+    #[test]
+    fn log_is_base_10() {
+        assert_eq!(eval_const_math("log", &[100.0]), Some(2.0));
+    }
+
+    #[test]
+    fn ln_is_natural() {
+        let v = eval_const_math("ln", &[std::f64::consts::E.powf(1.0)]).unwrap();
+        assert!((v - 1.0).abs() < 1e-12, "ln(exp(1.0)) = {v}");
+    }
 }

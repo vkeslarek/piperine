@@ -410,8 +410,10 @@ fn d_math(
     let du = args.first().map(|a| differentiate(a, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
     match name {
         "exp" | "limexp" => mul(math1(name, u), du),
-        "ln" | "log" => div(du, u),
-        "log10" => div(du, mul(u, lit(std::f64::consts::LN_10))),
+        "ln" => div(du, u),
+        // LRM Table 4-14: `log` is decimal (base-10), an alias of `log10` —
+        // d/dx log10(x) = 1 / (x·ln 10).
+        "log10" | "log" => div(du, mul(u, lit(std::f64::consts::LN_10))),
         "sqrt" => div(du, mul(lit(2.0), math1("sqrt", u))),
         "sin" => mul(math1("cos", u), du),
         "cos" => mul(neg(math1("sin", u)), du),
