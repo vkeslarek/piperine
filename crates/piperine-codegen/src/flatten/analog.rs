@@ -88,10 +88,19 @@ fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenE
     // function call, which must fail loud below, from a bare signal-name
     // event (`@(clk)`, no parens — a legitimate LRM form this codegen
     // doesn't implement yet, defensively empty, not this task's scope).
+    // T16/LRMW2-12 (§5.10.3): any other expression shape (a comparison
+    // `V(a) > 2.5`, a general arithmetic/access expression, ...) is a
+    // level-sensitivity event on an arbitrary expression — sampled and
+    // fired on change, exactly the same mechanism a bare-identifier
+    // event (`Named`, below) already uses; only the watched expression
+    // differs. A shape emission genuinely cannot compile (e.g. an
+    // assignment-pattern literal) still fails loud downstream, in
+    // `add_event`'s `finish_expr` call — this arm no longer silently
+    // drops the event.
     let (name, args, is_call): (&str, &[PomExpr], bool) = match e {
         PomExpr::Call { name, args, .. } => (name.as_str(), args.as_slice(), true),
         PomExpr::Ident { name, .. } => (name.as_str(), &[], false),
-        _ => return Ok(vec![]),
+        _ => return Ok(vec![EventSource::Named { expr: e.clone() }]),
     };
     let sources = match name {
         "initial_step" => vec![EventSource::InitialStep { analyses: analysis_name_args(args)? }],
