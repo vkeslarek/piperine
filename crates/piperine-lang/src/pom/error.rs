@@ -351,6 +351,23 @@ pub enum ElabErrorKind {
         #[label("duplicate `require {name}` here")]
         second: Option<miette::SourceSpan>,
     },
+    /// VAMS E4009 — a `defparam` (§6.3.1) targets a `localparam` (§3.4.5).
+    /// A `localparam` is never overridable — not by instance override, and
+    /// not by `defparam` either — the LRM makes no exception for the
+    /// hierarchical-name path.
+    #[error("defparam `{target}` (§6.3.1) targets `{param}`, which is a `localparam` (§3.4.5) — localparam is never overridable")]
+    #[diagnostic(
+        code(E4009),
+        help("Remove the `defparam`, or change the target parameter's declaration from `localparam` to `parameter` if it is meant to be externally overridable.")
+    )]
+    DefparamOnLocalparam {
+        target: String,
+        param: String,
+        #[label("`{param}` declared `localparam` here")]
+        decl_span: Option<miette::SourceSpan>,
+        #[label("defparam override here")]
+        override_span: Option<miette::SourceSpan>,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

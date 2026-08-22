@@ -101,6 +101,38 @@ fn apply_one(design: &mut Design, declaring_module: &str, dp: &Defparam) -> Resu
     }
 
     let final_label = segments[segments.len() - 1];
+
+    // §3.4.5: a `localparam` is never overridable -- not by instance
+    // override, and not by `defparam` either. Check against the
+    // *instantiated* module's own param declarations (the instance's
+    // `module` field), before touching `inst.params`.
+    let instantiated_module_name = {
+        let target_module = design.module(&current_module_name).ok_or_else(|| {
+            defparam_error(&dp.target, &format!("module `{current_module_name}` does not exist"))
+        })?;
+        let inst = target_module.instances.iter().find(|i| i.label.as_deref() == Some(final_label)).ok_or_else(
+            || {
+                defparam_error(
+                    &dp.target,
+                    &format!("no instance labeled `{final_label}` in module `{current_module_name}`"),
+                )
+            },
+        )?;
+        inst.module.clone()
+    };
+    if let Some(instantiated_module) = design.module(&instantiated_module_name) {
+        if let Some(p) = instantiated_module.params.iter().find(|p| p.name == param_name) {
+            if p.is_local {
+                return Err(ElabError::from(ElabErrorKind::DefparamOnLocalparam {
+                    target: dp.target.clone(),
+                    param: param_name.to_string(),
+                    decl_span: p.name_span.or(p.span),
+                    override_span: Some(to_miette_span(dp.span)),
+                }));
+            }
+        }
+    }
+
     let target_module = design.modules_map_mut().get_mut(&current_module_name).ok_or_else(|| {
         defparam_error(&dp.target, &format!("module `{current_module_name}` does not exist"))
     })?;
@@ -117,6 +149,12 @@ fn apply_one(design: &mut Design, declaring_module: &str, dp: &Defparam) -> Resu
         None => inst.params.push((param_name.to_string(), value)),
     }
     Ok(())
+}
+
+/// `byte range` → `miette::SourceSpan`, mirroring
+/// `From<crate::ParseError>`'s conversion (`pom/error.rs`).
+fn to_miette_span(span: crate::PreprocessedSpan) -> miette::SourceSpan {
+    miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
 }
 
 fn defparam_error(target: &str, reason: &str) -> ElabError {
