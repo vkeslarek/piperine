@@ -40,17 +40,20 @@ pub enum BinOp {
     BitXnor,
     Shl,
     Shr,
+    /// `===`/`!==` (LRM §4.2.6, T24/LRMW2-18): exact 4-state case
+    /// (in)equality — X/Z never poison the result (unlike `Eq`/`Ne`, whose
+    /// digital emission treats X/Z as "unknown", yielding X), so
+    /// `1'bx === 1'bx` is `1` while `1'bx == 1'bx` is X (falsy). Digital
+    /// codegen (`emit/builder.rs::quad_case_eq`) compares the literal
+    /// quad encoding directly; analog codegen has no 4-state operand to
+    /// compare and fails loud (LRM §4.2.6 restricts case equality to
+    /// `reg`/4-state operands).
+    CaseEq,
+    CaseNe,
 }
 
 impl BinOp {
     /// Map a VAMS AST `BinOp` (LRM §4.1.3/Table 4-1) to this enum.
-    ///
-    /// `CaseEq`/`CaseNe` (`===`/`!==`, 4-state case (in)equality) have no
-    /// distinct slot here — this resolved form carries `Real`/`Int`/`Bool`
-    /// values, not 4-state (0/1/X/Z) ones, so a genuine X/Z-aware case
-    /// comparison cannot be expressed; they fall back to ordinary
-    /// (in)equality, a documented, non-silent approximation (not a `0.0`
-    /// no-op) until the resolved form gains a 4-state value representation.
     pub fn from_pom(op: piperine_lang::ast::BinOp) -> Self {
         use piperine_lang::ast::BinOp as P;
         match op {
@@ -60,8 +63,10 @@ impl BinOp {
             P::Div => BinOp::Div,
             P::Mod => BinOp::Rem,
             P::Pow => BinOp::Pow,
-            P::Eq | P::CaseEq => BinOp::Eq,
-            P::Ne | P::CaseNe => BinOp::Ne,
+            P::Eq => BinOp::Eq,
+            P::Ne => BinOp::Ne,
+            P::CaseEq => BinOp::CaseEq,
+            P::CaseNe => BinOp::CaseNe,
             P::Lt => BinOp::Lt,
             P::Le => BinOp::Le,
             P::Gt => BinOp::Gt,
@@ -90,6 +95,8 @@ impl BinOp {
             BinOp::Pow => P::Pow,
             BinOp::Eq => P::Eq,
             BinOp::Ne => P::Ne,
+            BinOp::CaseEq => P::CaseEq,
+            BinOp::CaseNe => P::CaseNe,
             BinOp::Lt => P::Lt,
             BinOp::Le => P::Le,
             BinOp::Gt => P::Gt,

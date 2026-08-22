@@ -568,6 +568,15 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             | crate::resolve::BinOp::Shl | crate::resolve::BinOp::Shr => {
                 return Err(CodegenError::unsupported(format!("bitwise/shift {ir_op:?} in an analog expression")));
             }
+            // T24/LRMW2-18: case (in)equality (`===`/`!==`) is a 4-state
+            // comparison (LRM §4.2.6) — an analog expression has no
+            // digital X/Z operand to compare, so this is loud rather than
+            // silently degrading to ordinary `==`/`!=`.
+            crate::resolve::BinOp::CaseEq | crate::resolve::BinOp::CaseNe => {
+                return Err(CodegenError::unsupported(format!(
+                    "case equality {ir_op:?} (`===`/`!==`, LRM §4.2.6, digital 4-state operands only) in an analog expression"
+                )));
+            }
             crate::resolve::BinOp::Pow => unreachable!("handled above"),
         };
         self.cse.as_mut().expect("analog context").insert(key, val);

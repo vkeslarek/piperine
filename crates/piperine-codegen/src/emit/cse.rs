@@ -85,6 +85,8 @@ pub(crate) fn bin_tag(op: crate::resolve::BinOp) -> u8 {
             crate::resolve::BinOp::Shl => 17,
             crate::resolve::BinOp::Shr => 18,
             crate::resolve::BinOp::BitXnor => 19,
+            crate::resolve::BinOp::CaseEq => 20,
+            crate::resolve::BinOp::CaseNe => 21,
         }
 }
 

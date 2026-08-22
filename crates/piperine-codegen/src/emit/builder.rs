@@ -612,6 +612,17 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 let value = self.quad_eq(av, bv, op == Ne);
                 return Ok(Typed::quad(value));
             }
+            // T24/LRMW2-18 (LRM §4.2.6): case (in)equality compares the
+            // literal quad encoding with no X/Z normalization — `1'bx ===
+            // 1'bx` is `1'b1`, unlike `Eq`'s X-poisons-to-X weak equality.
+            // Always yields a definite 0/1 (never X), so the result is
+            // `Int`, not `Quad`.
+            CaseEq | CaseNe if quadish => {
+                let a = self.coerce(a, DigTy::Quad)?;
+                let b = self.coerce(b, DigTy::Quad)?;
+                let flag = self.quad_case_eq(a.value, b.value, op == CaseNe);
+                return Ok(Typed::int(self.builder_flag_i64(flag)));
+            }
             _ => {}
         }
 
@@ -669,6 +680,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             Shr => Ok(Typed::int(self.builder.ins().ushr(a.value, b.value))),
             Eq => Ok(icmp(self, IntCC::Equal)),
             Ne => Ok(icmp(self, IntCC::NotEqual)),
+            // Two-state values have no X/Z to poison with, so case
+            // (in)equality coincides with ordinary (in)equality here.
+            CaseEq => Ok(icmp(self, IntCC::Equal)),
+            CaseNe => Ok(icmp(self, IntCC::NotEqual)),
             Lt => Ok(icmp(self, IntCC::SignedLessThan)),
             Le => Ok(icmp(self, IntCC::SignedLessThanOrEqual)),
             Gt => Ok(icmp(self, IntCC::SignedGreaterThan)),
@@ -857,6 +872,17 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         let any_x = self.builder.ins().bor(a_x, b_x);
         let xor = self.builder.ins().bxor(a, b);
         self.builder.ins().select(any_x, two, xor)
+    }
+
+    /// `===`/`!==` (T24/LRMW2-18, LRM §4.2.6): exact 4-state case
+    /// (in)equality. Unlike [`Self::quad_eq`], operands are **not**
+    /// normalized first — `Z` and `X` must compare as distinct bit
+    /// patterns for an exact match (`1'bz === 1'bz` is true, `1'bz ===
+    /// 1'bx` is false) — so this compares the raw quad encoding directly
+    /// and never poisons to X: the result is always a definite `0`/`1`.
+    fn quad_case_eq(&mut self, a: Value, b: Value, negate: bool) -> Value {
+        let cc = if negate { IntCC::NotEqual } else { IntCC::Equal };
+        self.builder.ins().icmp(cc, a, b)
     }
 
     fn quad_eq(&mut self, a: Value, b: Value, negate: bool) -> Value {
