@@ -311,7 +311,7 @@ fn a_rejected_step_leaves_level_1_operator_state_untouched() {
 
     let p = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0))), 0);
     let n = AnalogReference::ground();
-    let device = WithOperator { p, n, g: 1e-3, transition: Operator::transition(0.0, 1e-6, 1e-6) };
+    let device = WithOperator { p, n, g: 1e-3, transition: Operator::transition(0.0, 1e-6, 1e-6, 0.0) };
 
     // Probe: an unseeded/settled transition has no pending edges (T2's own
     // rule). Read via the `&self` `pending_edges` — a state probe that

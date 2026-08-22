@@ -939,10 +939,11 @@ impl<'m> AnalogCompiler<'m> {
                     StateKind::Slew { rise, fall } => {
                         RuntimeState::Slew { rise: rise.clone(), fall: fall.clone() }
                     }
-                    StateKind::Transition { delay, rise, fall, .. } => RuntimeState::Transition {
+                    StateKind::Transition { delay, rise, fall, tol } => RuntimeState::Transition {
                         delay: delay.clone(),
                         rise: rise.clone(),
                         fall: fall.clone(),
+                        tol: tol.clone(),
                     },
                     StateKind::Idt { ic, .. } => {
                         RuntimeState::Integrator { ic: ic.clone(), modulus: None, offset: real(0.0) }

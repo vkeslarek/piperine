@@ -205,6 +205,11 @@ impl AnalogOp for Transition {
     /// is recorded (`ctx.default_transition`, T56) — an *explicit*
     /// argument still wins, since `arg` only falls back when the caller's
     /// `args` list doesn't reach that position at all.
+    ///
+    /// `tol` (§4.5.8's `time_tol`, LRMW2-36) was already captured here into
+    /// `StateKind::Transition` — the gap this task closes is downstream,
+    /// in `kernel/analog/compile.rs`/`kernel.rs` dropping it when building
+    /// `RuntimeState::Transition` ("intentionally not carried" until now).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);

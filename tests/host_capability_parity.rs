@@ -201,7 +201,7 @@ endmodule
         p: out.clone(),
         n: gnd.clone(),
         branch: None,
-        op: Operator::transition(td, tr, tf),
+        op: Operator::transition(td, tr, tf, 0.0),
         committed: 0.0,
     })));
     let host_run = run_host_transient(builder, out, stop, dt);

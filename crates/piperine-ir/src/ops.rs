@@ -27,6 +27,16 @@ pub enum Operator {
         delay: f64,
         rise: f64,
         fall: f64,
+        /// §4.5.8's `time_tol`: "If time_tol is not specified, the
+        /// transition function causes the simulator to assure each
+        /// transition is adequately resolved." The corner breakpoints
+        /// (`pending_edges`'s `t0`/`t1`) are placed unconditionally either
+        /// way; `time_tol > 0.0` additionally places intermediate
+        /// breakpoints spaced by `time_tol` through the ramp's interior,
+        /// bounding how far the stepper can coast between ramp samples.
+        /// `0.0` (the default when omitted) adds none — pre-existing,
+        /// corners-only behavior.
+        time_tol: f64,
         start: f64,
         target: f64,
         t_change: f64,
@@ -49,9 +59,18 @@ impl Operator {
         Operator::Slew { rise, fall, output: 0.0, time: 0.0 }
     }
 
-    /// A fresh `transition(x, td, rise, fall)` operator, unseeded.
-    pub fn transition(delay: f64, rise: f64, fall: f64) -> Self {
-        Operator::Transition { delay, rise, fall, start: 0.0, target: 0.0, t_change: 0.0, seeded: false }
+    /// A fresh `transition(x, td, rise, fall, time_tol)` operator, unseeded.
+    pub fn transition(delay: f64, rise: f64, fall: f64, time_tol: f64) -> Self {
+        Operator::Transition {
+            delay,
+            rise,
+            fall,
+            time_tol,
+            start: 0.0,
+            target: 0.0,
+            t_change: 0.0,
+            seeded: false,
+        }
     }
 
     /// A fresh `idt`/`idtmod` accumulator, `value` starting at `ic`.
@@ -94,7 +113,7 @@ impl Operator {
                 *last_time = time;
                 *output
             }
-            Operator::Transition { delay, rise, fall, start, target, t_change, seeded } => {
+            Operator::Transition { delay, rise, fall, start, target, t_change, seeded, .. } => {
                 if !*seeded {
                     // First observation (the DC op seed): settle at the input.
                     *seeded = true;
@@ -143,7 +162,9 @@ impl Operator {
     /// Only a transition with a pending ramp contributes; a settled one
     /// (start == target, or never seeded) has no future edges.
     pub fn pending_edges(&self, from: f64, end: f64, out: &mut Vec<f64>) {
-        let Operator::Transition { delay, rise, fall, start, target, t_change, seeded: true } = self else {
+        let Operator::Transition { delay, rise, fall, time_tol, start, target, t_change, seeded: true } =
+            self
+        else {
             return;
         };
         if start == target {
@@ -155,6 +176,20 @@ impl Operator {
         }
         let ramp = if target >= start { rise.max(0.0) } else { fall.max(0.0) };
         let t1 = t0 + ramp;
+        // §4.5.8's `time_tol`: intermediate breakpoints through the ramp's
+        // interior, spaced no farther apart than `time_tol` — bounds how
+        // far the stepper can coast between samples of an otherwise
+        // perfectly linear (zero-curvature) ramp, which the LTE estimator
+        // alone would happily stride over in one step.
+        if *time_tol > 0.0 && ramp > 0.0 {
+            let mut t = t0 + *time_tol;
+            while t < t1 {
+                if t > from && t <= end {
+                    out.push(t);
+                }
+                t += *time_tol;
+            }
+        }
         if ramp > 0.0 && t1 > from && t1 <= end {
             out.push(t1);
         }
@@ -166,7 +201,7 @@ mod tests {
     use super::*;
 
     fn transition(delay: f64, rise: f64, fall: f64) -> Operator {
-        Operator::transition(delay, rise, fall)
+        Operator::transition(delay, rise, fall, 0.0)
     }
 
     #[test]
@@ -237,6 +272,34 @@ mod tests {
         let mut out = Vec::new();
         op.pending_edges(3.0, 10.0, &mut out);
         assert!(out.is_empty(), "settled: no edges");
+    }
+
+    /// §4.5.8/LRMW2-36: `time_tol` places intermediate breakpoints through
+    /// the ramp's interior, spaced no farther apart than `time_tol` — two
+    /// different `time_tol` values must declare two different breakpoint
+    /// counts/patterns for the same ramp (AC14 discrimination). `0.0`
+    /// (omitted) reproduces the pre-existing corners-only behavior exactly.
+    #[test]
+    fn time_tol_places_intermediate_breakpoints_through_the_ramp() {
+        let ramp = |time_tol: f64| {
+            let mut op = Operator::transition(0.0, 2.0, 2.0, time_tol);
+            op.accept(0.0, 0.0);
+            op.accept(1.0, 1.0); // change at t=1, ramp over [1, 3]
+            let mut out = Vec::new();
+            op.pending_edges(0.0, 10.0, &mut out);
+            out
+        };
+        assert_eq!(ramp(0.0), vec![1.0, 3.0], "time_tol=0.0 (omitted): corners only, unchanged");
+        assert_eq!(
+            ramp(0.5),
+            vec![1.0, 1.5, 2.0, 2.5, 3.0],
+            "time_tol=0.5 over a 2.0 ramp: 3 interior points plus both corners"
+        );
+        assert_eq!(
+            ramp(1.0),
+            vec![1.0, 2.0, 3.0],
+            "a different time_tol (1.0) must declare a different breakpoint pattern than 0.5"
+        );
     }
 
     #[test]

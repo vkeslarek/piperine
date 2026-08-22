@@ -78,10 +78,12 @@ pub(super) trait AnalogCapability {
 pub enum RuntimeState {
     Delay { delay: PomExpr },
     Slew { rise: PomExpr, fall: PomExpr },
-    /// `transition(x, td, rise, fall)` — piecewise-linear walk to the latest
-    /// input; `td` delays the ramp start. `ttol` (5th language argument) is
-    /// a breakpoint-placement hint and is intentionally not carried here.
-    Transition { delay: PomExpr, rise: PomExpr, fall: PomExpr },
+    /// `transition(x, td, rise, fall, ttol)` — piecewise-linear walk to the
+    /// latest input; `td` delays the ramp start. `ttol` (§4.5.8's
+    /// `time_tol`, LRMW2-36) places intermediate breakpoints through the
+    /// ramp's interior, spaced no farther apart than `ttol` — `0.0` when
+    /// omitted (the pre-existing corners-only breakpoint behavior).
+    Transition { delay: PomExpr, rise: PomExpr, fall: PomExpr, tol: PomExpr },
     /// `idt`/`idtmod` accumulator: `state[id]` holds the integral up to the
     /// last accepted step (starting at `ic`); the kernel reads it as
     /// `state + dt·x` (implicit Euler). `modulus` wraps the accumulator

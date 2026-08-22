@@ -238,12 +238,13 @@ impl AnalogInstance {
                         slot,
                         piperine_ir::ops::Operator::slew(value(rise)?.abs(), value(fall)?.abs()),
                     ),
-                    RuntimeState::Transition { delay, rise, fall } => SlottedOperator::new(
+                    RuntimeState::Transition { delay, rise, fall, tol } => SlottedOperator::new(
                         slot,
                         piperine_ir::ops::Operator::transition(
                             value(delay)?,
                             value(rise)?.abs(),
                             value(fall)?.abs(),
+                            value(tol)?.abs(),
                         ),
                     ),
                     RuntimeState::Integrator { ic, modulus, offset } => {

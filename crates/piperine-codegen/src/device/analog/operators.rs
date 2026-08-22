@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn slottedoperator_transition_carries_its_slot() {
-        let op = SlottedOperator::new(2, Operator::transition(0.0, 1.0, 1.0));
+        let op = SlottedOperator::new(2, Operator::transition(0.0, 1.0, 1.0, 0.0));
         assert_eq!(op.slot(), 2);
     }
 
@@ -169,7 +169,7 @@ mod tests {
         // ramp-end edges — the same breakpoints
         // `piperine_ir::ops::Operator::pending_edges` computes directly
         // (mirrors piperine-ir's `transition_pending_edges_while_ramping`).
-        let mut op = SlottedOperator::new(0, Operator::transition(0.0, 2.0, 2.0));
+        let mut op = SlottedOperator::new(0, Operator::transition(0.0, 2.0, 2.0, 0.0));
         op.accept(0.0, 0.0, 0.0);
         op.accept(1.0, 1.0, 0.0); // change at t=1, ramp over [1, 3]
         let mut out = Vec::new();
