@@ -246,27 +246,29 @@ impl AnalogInstance {
                             value(fall)?.abs(),
                         ),
                     ),
-                    RuntimeState::Integrator { ic, modulus } => {
+                    RuntimeState::Integrator { ic, modulus, offset } => {
                         let ic_value = value(ic)?;
-                        SlottedOperator::with_assert_ic(
+                        let offset_value = value(offset)?;
+                        SlottedOperator::integrator(
                             slot,
                             piperine_ir::ops::Operator::integrate(
                                 ic_value,
                                 modulus.as_ref().map(&value).transpose()?,
                             ),
                             ic_value,
+                            offset_value,
                         )
                     }
                 })
             })
             .collect::<Result<Vec<_>, CodegenError>>()?;
 
-        // Integrators start at their initial condition; every other state
-        // slot starts at 0.
+        // Integrators start at their initial condition (shifted by
+        // `idtmod`'s `offset`, §4.5.5); every other state slot starts at 0.
         let mut state = vec![0.0; kernel.num_state_slots()];
         for op in &operators {
-            if let SlottedOperator { slot, op: piperine_ir::ops::Operator::Integrate { value, .. }, .. } = op {
-                state[*slot] = *value;
+            if let Some(seed) = op.initial_output() {
+                state[op.slot()] = seed;
             }
         }
 

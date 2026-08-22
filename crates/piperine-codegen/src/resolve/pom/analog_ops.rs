@@ -113,16 +113,21 @@ impl AnalogOp for Idt {
 
 struct IdtMod;
 impl AnalogOp for IdtMod {
+    /// §4.5.5: `idtmod(expr[, ic[, modulus[, offset[, abstol|nature]]]])`
+    /// — this task (LRMW2-30) carries `offset`; the trailing `abstol`/
+    /// `nature` stays out of scope here (tracked separately, same as
+    /// `Idt`'s own).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
         let modulus = arg(args, 2, ctx, 1.0);
+        let offset = arg(args, 3, ctx, 0.0);
         let id = ctx.alloc_state(
-            StateKind::IdtMod { ic: ic.clone(), modulus: modulus.clone() },
+            StateKind::IdtMod { ic: ic.clone(), modulus: modulus.clone(), offset: offset.clone() },
             x.clone(),
         );
-        marker("__idtmod", id, vec![x, ic, modulus])
+        marker("__idtmod", id, vec![x, ic, modulus, offset])
     }
 }
 

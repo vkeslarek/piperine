@@ -21,24 +21,47 @@ pub(super) struct SlottedOperator {
     /// caller then never passes a nonzero `assert` to [`Self::accept`]
     /// anyway, so the field is simply never consulted).
     assert_ic: Option<f64>,
+    /// `idtmod`'s `offset` (§4.5.5, LRMW2-30): added to every value
+    /// [`Self::accept`] and [`Self::initial_output`] report, shifting the
+    /// wrap window from `[0, modulus)` to `[offset, offset+modulus)`.
+    /// `piperine_ir::ops::Operator::Integrate` itself always wraps into
+    /// `[0, modulus)` internally — the shift is applied only at the
+    /// reported output, never to the accumulator, so it does not change
+    /// the integration dynamics. `0.0` (a no-op shift) for every operator
+    /// kind but an `idtmod` with an `offset` argument.
+    offset: f64,
 }
 
 impl SlottedOperator {
     pub(super) fn new(slot: usize, op: Operator) -> Self {
-        SlottedOperator { slot, op, assert_ic: None }
+        SlottedOperator { slot, op, assert_ic: None, offset: 0.0 }
     }
 
-    /// An `Integrate` operator that additionally remembers its `ic` for
-    /// `assert`-driven resets (§4.5.4). Safe to use for every `idt`/
-    /// `idtmod` slot regardless of whether it actually named an `assert`
-    /// argument — a slot with none simply never sees a nonzero `assert`
-    /// value passed to [`Self::accept`].
-    pub(super) fn with_assert_ic(slot: usize, op: Operator, ic: f64) -> Self {
-        SlottedOperator { slot, op, assert_ic: Some(ic) }
+    /// An `Integrate` operator (`idt`/`idtmod`) that additionally
+    /// remembers its `ic` for `assert`-driven resets (§4.5.4) and its
+    /// `offset` for the output wrap shift (§4.5.5). Safe to use for every
+    /// `idt`/`idtmod` slot regardless of whether it actually named those
+    /// arguments — `assert`/`offset` are simply never nonzero/nonzero-effect
+    /// for a slot that didn't.
+    pub(super) fn integrator(slot: usize, op: Operator, ic: f64, offset: f64) -> Self {
+        SlottedOperator { slot, op, assert_ic: Some(ic), offset }
     }
 
     pub(super) fn slot(&self) -> usize {
         self.slot
+    }
+
+    /// The value this slot's state bank should be seeded with before any
+    /// `accept` call (the DC/IC operating point) — `ic + offset` for an
+    /// `Integrate` operator (§4.5.5's window shift applies from the very
+    /// first reported value, not only after the first `accept`), `None`
+    /// for every other operator kind (its slot starts at the bank's
+    /// ordinary `0.0` default).
+    pub(super) fn initial_output(&self) -> Option<f64> {
+        match &self.op {
+            Operator::Integrate { value, .. } => Some(value + self.offset),
+            _ => None,
+        }
     }
 
     /// Advance to `time` with the operator input `input`; returns the new
@@ -46,18 +69,18 @@ impl SlottedOperator {
     ///
     /// `assert` is `idt(x, ic, assert)`'s own runtime input (§4.5.4): while
     /// nonzero, an `Integrate` slot with a known `ic` (see
-    /// [`Self::with_assert_ic`]) is forced back to `ic` instead of
-    /// integrating `input` — every other operator kind, and an `Integrate`
-    /// slot with no `assert_ic`, ignores `assert` entirely.
+    /// [`Self::integrator`]) is forced back to `ic` instead of integrating
+    /// `input` — every other operator kind ignores `assert` entirely.
+    /// `offset` (§4.5.5) is added to whatever value is reported either way.
     pub(super) fn accept(&mut self, time: f64, input: f64, assert: f64) -> f64 {
         if assert != 0.0
             && let (Operator::Integrate { value, time: t, .. }, Some(ic)) = (&mut self.op, self.assert_ic)
         {
             *value = ic;
             *t = time;
-            return ic;
+            return ic + self.offset;
         }
-        self.op.accept(time, input)
+        self.op.accept(time, input) + self.offset
     }
 
     /// Ramp edges strictly inside `(from, end]` for breakpoint declaration —
@@ -112,11 +135,30 @@ mod tests {
     }
 
     #[test]
+    fn offset_shifts_the_wrap_window_without_changing_the_dynamics() {
+        // §4.5.5/LRMW2-30: idtmod(x, ic=0, modulus=10, offset) wraps into
+        // [offset, offset+modulus). Two offsets discriminate: the same
+        // accumulated integral (7.0, no wrap yet) reports differently.
+        let mut a = SlottedOperator::integrator(0, Operator::integrate(0.0, Some(10.0)), 0.0, 0.0);
+        let mut b = SlottedOperator::integrator(0, Operator::integrate(0.0, Some(10.0)), 0.0, 5.0);
+        assert_eq!(a.accept(1.0, 7.0, 0.0), 7.0, "offset=0: unshifted");
+        assert_eq!(b.accept(1.0, 7.0, 0.0), 12.0, "offset=5: shifted by +5");
+    }
+
+    #[test]
+    fn offset_seeds_the_initial_output_too() {
+        // §4.5.5: the shift applies from the very first reported value
+        // (the DC/IC seed), not only after the first accept.
+        let op = SlottedOperator::integrator(0, Operator::integrate(3.0, None), 3.0, 2.0);
+        assert_eq!(op.initial_output(), Some(5.0), "ic=3.0 + offset=2.0");
+    }
+
+    #[test]
     fn assert_forces_an_integrator_back_to_its_ic() {
         // §4.5.4/LRMW2-29: while `assert` is nonzero, the slot holds at its
         // `ic` (2.0) instead of integrating `input` (which alone would
         // drive it to 2.0 + 1.0*3.0 = 5.0).
-        let mut op = SlottedOperator::with_assert_ic(0, Operator::integrate(2.0, None), 2.0);
+        let mut op = SlottedOperator::integrator(0, Operator::integrate(2.0, None), 2.0, 0.0);
         assert_eq!(op.accept(1.0, 3.0, 1.0), 2.0, "asserted: holds at ic, ignores input");
         assert_eq!(op.accept(2.0, 3.0, 0.0), 5.0, "de-asserted: integrates 3.0 over dt=1 from ic=2.0");
     }

@@ -135,8 +135,10 @@ pub enum StateKind {
     /// to zero, integration resumes from that instant with `ic` as the new
     /// starting constant.
     Idt { ic: PomExpr, assert: Option<PomExpr> },
-    /// `idtmod(x, ic, modulus)` — modular integral (reactive).
-    IdtMod { ic: PomExpr, modulus: PomExpr },
+    /// `idtmod(x, ic, modulus, offset)` — modular integral (reactive).
+    /// §4.5.5: the output stays in `[offset, offset+modulus)`; an omitted
+    /// `offset` is `0` (the pre-existing `[0, modulus)` window).
+    IdtMod { ic: PomExpr, modulus: PomExpr, offset: PomExpr },
     /// `ddx(x, node)` — compile-time derivative w.r.t. `V(node)`.
     Ddx { node: NodeId },
     /// `delay(x, t)` / `absdelay(x, t)` — delayed signal (ring buffer).

@@ -85,8 +85,10 @@ pub enum RuntimeState {
     /// `idt`/`idtmod` accumulator: `state[id]` holds the integral up to the
     /// last accepted step (starting at `ic`); the kernel reads it as
     /// `state + dt·x` (implicit Euler). `modulus` wraps the accumulator
-    /// (`idtmod`).
-    Integrator { ic: PomExpr, modulus: Option<PomExpr> },
+    /// (`idtmod`); `offset` shifts the wrap window to `[offset,
+    /// offset+modulus)` (§4.5.5, LRMW2-30) — `0` (a no-op shift) for a
+    /// plain `idt` or an `idtmod` with no `offset` argument.
+    Integrator { ic: PomExpr, modulus: Option<PomExpr>, offset: PomExpr },
 }
 
 /// One runtime state slot: which `StateId` it services and how.

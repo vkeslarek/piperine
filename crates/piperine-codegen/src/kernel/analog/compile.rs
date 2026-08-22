@@ -945,11 +945,12 @@ impl<'m> AnalogCompiler<'m> {
                         fall: fall.clone(),
                     },
                     StateKind::Idt { ic, .. } => {
-                        RuntimeState::Integrator { ic: ic.clone(), modulus: None }
+                        RuntimeState::Integrator { ic: ic.clone(), modulus: None, offset: real(0.0) }
                     }
-                    StateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
+                    StateKind::IdtMod { ic, modulus, offset } => RuntimeState::Integrator {
                         ic: ic.clone(),
                         modulus: Some(modulus.clone()),
+                        offset: offset.clone(),
                     },
                     other => {
                         return Err(CodegenError::Invalid(format!(
