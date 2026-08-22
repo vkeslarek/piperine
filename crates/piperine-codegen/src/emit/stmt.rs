@@ -168,11 +168,22 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 // so the two lowering paths cannot silently drift apart.
                 other => Err(CodegenError::unknown_task(other)),
             },
-            S::For { .. } | S::While { .. } | S::Repeat { .. } | S::Forever { .. } => {
-                Err(CodegenError::unsupported(
-                    "runtime loop statement (for/while/repeat/forever) in digital codegen",
-                ))
+            // §5.9/§5.9.3 (LRMW2-20, T32): "digital loops follow the same
+            // rule" as analog — elaboration-constant bounds unroll
+            // (`crate::flatten::analog::unroll_loop`, shared with the
+            // analog path so the two can't drift apart, same precedent as
+            // `CodegenError::unknown_task` above); `forever` still has no
+            // bound to unroll and stays a loud, named error.
+            stmt @ (S::For { .. } | S::While { .. } | S::Repeat { .. }) => {
+                let unrolled = crate::flatten::analog::unroll_loop(stmt)?;
+                for s in &unrolled {
+                    self.emit_stmt(s)?;
+                }
+                Ok(())
             }
+            S::Forever { .. } => Err(CodegenError::unsupported(
+                "digital `forever` statement has no elaboration-constant bound to unroll (LRM §5.9.3)",
+            )),
             S::DelayControl { .. } => {
                 Err(CodegenError::unsupported("`#delay` control in digital codegen"))
             }

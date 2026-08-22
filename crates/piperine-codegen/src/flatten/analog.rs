@@ -28,17 +28,28 @@
 use std::collections::HashMap;
 
 use piperine_lang::ast::{BinOp, Expr as PomExpr, EventExpr, Stmt as PomStmt, UnOp};
+use piperine_lang::elab::const_eval::ConstEnv;
 use piperine_lang::lexer::NumberLit;
 use piperine_lang::error::PreprocessedSpan;
+use piperine_lang::value::Value as ConstValue;
 
 use crate::resolve::{
     CrossDir, EventSource, AnalogEvent, LoweredBody,
     NatureKind, NodeId, StateId, VarId,
 };
+use crate::resolve::pom::expr::subst_expr;
 
 use crate::error::CodegenError;
 
 const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
+
+/// §5.9.3's own unroll cap (LRMW2-20, T32): each unrolled iteration emits
+/// real JIT code, unlike `UnrollGenerate`'s 100,000-instance cap
+/// (`elab/lower/generate.rs`) which only ever grows a POM instance list —
+/// this is deliberately much smaller so a runaway/absurd bound fails loud
+/// long before it could overrun Cranelift, mirroring the `.disto` gap's
+/// own "fails loud, not a JIT crash" contract (CLAUDE.md "Known gaps").
+pub(crate) const MAX_UNROLL_ITERATIONS: usize = 4096;
 
 fn call(name: &str, args: Vec<PomExpr>) -> PomExpr {
     PomExpr::Call { span: NOSPAN, name: name.to_string(), args }
@@ -518,6 +529,236 @@ fn and_guards(guard: Option<&PomExpr>, cond: &PomExpr) -> PomExpr {
     }
 }
 
+/// The statement-level counterpart of `subst_expr`
+/// (`resolve/pom/expr.rs`, the fn-inliner's own substitution machinery,
+/// reused here unchanged for every `Expr` position) — `subst_expr` only
+/// walks `Expr`; unrolling a `for` loop (§5.9.3, T32/LRMW2-20) must
+/// substitute the loop index into every expression *and* recurse into
+/// every nested statement of the loop body. Shared by the analog
+/// (`flatten::analog`) and digital (`emit::stmt`) unroll call sites so
+/// the two lowering paths use one substitution walk, not two.
+pub(crate) fn subst_stmt(stmt: &PomStmt, subst: &HashMap<String, PomExpr>) -> PomStmt {
+    match stmt {
+        PomStmt::Null { span } => PomStmt::Null { span: *span },
+        PomStmt::Assign { span, target, value } => {
+            PomStmt::Assign { span: *span, target: subst_expr(target, subst), value: subst_expr(value, subst) }
+        }
+        PomStmt::NonBlockingAssign { span, target, value } => PomStmt::NonBlockingAssign {
+            span: *span,
+            target: subst_expr(target, subst),
+            value: subst_expr(value, subst),
+        },
+        PomStmt::Contribution { span, target, value } => {
+            PomStmt::Contribution { span: *span, target: subst_expr(target, subst), value: subst_expr(value, subst) }
+        }
+        PomStmt::Block { span, name, decls, stmts } => PomStmt::Block {
+            span: *span,
+            name: name.clone(),
+            decls: decls.clone(),
+            stmts: stmts.iter().map(|s| subst_stmt(s, subst)).collect(),
+        },
+        PomStmt::If { span, cond, then_branch, else_branch } => PomStmt::If {
+            span: *span,
+            cond: subst_expr(cond, subst),
+            then_branch: Box::new(subst_stmt(then_branch, subst)),
+            else_branch: else_branch.as_ref().map(|b| Box::new(subst_stmt(b, subst))),
+        },
+        PomStmt::Case { span, kind, selector, arms } => PomStmt::Case {
+            span: *span,
+            kind: *kind,
+            selector: subst_expr(selector, subst),
+            arms: arms
+                .iter()
+                .map(|arm| piperine_lang::ast::CaseArm {
+                    span: arm.span,
+                    labels: arm.labels.as_ref().map(|ls| ls.iter().map(|l| subst_expr(l, subst)).collect()),
+                    body: Box::new(subst_stmt(&arm.body, subst)),
+                })
+                .collect(),
+        },
+        PomStmt::For { span, init, cond, step, body } => PomStmt::For {
+            span: *span,
+            init: Box::new(subst_stmt(init, subst)),
+            cond: subst_expr(cond, subst),
+            step: Box::new(subst_stmt(step, subst)),
+            body: Box::new(subst_stmt(body, subst)),
+        },
+        PomStmt::While { span, cond, body } => {
+            PomStmt::While { span: *span, cond: subst_expr(cond, subst), body: Box::new(subst_stmt(body, subst)) }
+        }
+        PomStmt::Repeat { span, count, body } => {
+            PomStmt::Repeat { span: *span, count: subst_expr(count, subst), body: Box::new(subst_stmt(body, subst)) }
+        }
+        PomStmt::Forever { span, body } => PomStmt::Forever { span: *span, body: Box::new(subst_stmt(body, subst)) },
+        PomStmt::EventControl { span, events, body } => {
+            PomStmt::EventControl { span: *span, events: events.clone(), body: Box::new(subst_stmt(body, subst)) }
+        }
+        PomStmt::DelayControl { span, delay, body } => PomStmt::DelayControl {
+            span: *span,
+            delay: subst_expr(delay, subst),
+            body: Box::new(subst_stmt(body, subst)),
+        },
+        PomStmt::Disable { span, name } => PomStmt::Disable { span: *span, name: name.clone() },
+        PomStmt::TaskCall { span, name, args } => {
+            PomStmt::TaskCall { span: *span, name: name.clone(), args: args.iter().map(|a| subst_expr(a, subst)).collect() }
+        }
+        PomStmt::EventTrigger { span, name } => PomStmt::EventTrigger { span: *span, name: name.clone() },
+    }
+}
+
+/// §5.9/§5.9.3 (LRMW2-20, T32): unrolls one `for`/`while`/`repeat`
+/// statement into a flat list of repeated statements — the loop index
+/// substituted per iteration for `for` (§5.9.3's own analog_for form,
+/// which the LRM restricts to "statically evaluatable" — i.e.
+/// elaboration-constant — bounds precisely so this unroll is always
+/// possible). Reuses the elaborator's own constant evaluator
+/// (`piperine_lang::elab::const_eval::ConstEnv`) rather than
+/// reinventing one: a bound expression is fed to a fresh (or
+/// loop-var-extended) `ConstEnv` with **no** enclosing scope, so any
+/// reference to a module parameter or a runtime-only variable fails
+/// exactly like a genuine "not an elaboration constant" error — the
+/// same failure `ConstEnv` already raises for that case elsewhere.
+/// Shared by the analog (`flatten::analog`) and digital (`emit::stmt`)
+/// call sites, per this task's own "digital loops follow the same
+/// rule."
+pub(crate) fn unroll_loop(stmt: &PomStmt) -> Result<Vec<PomStmt>, CodegenError> {
+    match stmt {
+        PomStmt::For { init, cond, step, body, .. } => unroll_for(init, cond, step, body),
+        PomStmt::Repeat { count, body, .. } => unroll_repeat(count, body),
+        PomStmt::While { cond, body, .. } => unroll_while(cond, body),
+        other => Err(CodegenError::unsupported(format!(
+            "unroll_loop called on a non-loop statement: {other:?}"
+        ))),
+    }
+}
+
+/// A loop condition's evaluated `ConstValue` as a boolean — relational/
+/// logical operators (`<`, `&&`, ...) evaluate to `Value::Bool` in
+/// `ConstEnv`, not `Value::Int` (`eval_int` alone would reject them as a
+/// type mismatch), so this widens every numeric-or-boolean `Value` the
+/// same way Verilog-AMS treats "any nonzero value is true" (LRM §5.9.2
+/// step 2's own "if the result is zero, the for-loop exits").
+fn const_truthy(v: &ConstValue) -> Result<bool, CodegenError> {
+    match v {
+        ConstValue::Bool(b) => Ok(*b),
+        ConstValue::Int(n) => Ok(*n != 0),
+        ConstValue::Nat(n) => Ok(*n != 0),
+        ConstValue::Real(r) => Ok(*r != 0.0),
+        other => Err(CodegenError::unsupported(format!(
+            "analog loop condition `{other:?}` is not a boolean/numeric elaboration constant (LRM §5.9.3)"
+        ))),
+    }
+}
+
+fn unroll_for(init: &PomStmt, cond: &PomExpr, step: &PomStmt, body: &PomStmt) -> Result<Vec<PomStmt>, CodegenError> {
+    let PomStmt::Assign { target: PomExpr::Ident { name, .. }, value: init_value, .. } = init else {
+        return Err(CodegenError::unsupported(
+            "analog `for` init must be `index = elaboration_constant` (LRM §5.9.3 genvar_initialization)",
+        ));
+    };
+    let PomStmt::Assign { target: PomExpr::Ident { name: step_name, .. }, value: step_value, .. } = step else {
+        return Err(CodegenError::unsupported(
+            "analog `for` step must be `index = elaboration_constant_expr` (LRM §5.9.3 genvar_iteration)",
+        ));
+    };
+    if step_name != name {
+        return Err(CodegenError::unsupported(
+            "analog `for` step must reassign the same index variable its init assigns (LRM §5.9.3)",
+        ));
+    }
+
+    let mut env = ConstEnv::new();
+    let mut i = env.eval_int(init_value).map_err(|e| {
+        CodegenError::unsupported(format!(
+            "analog `for` init `{name}` is not an elaboration constant (LRM §5.9.3): {e}"
+        ))
+    })?;
+
+    let mut out = Vec::new();
+    let mut iterations = 0usize;
+    loop {
+        env.define(name.clone(), ConstValue::Int(i));
+        let cont_val = env.eval(cond).map_err(|e| {
+            CodegenError::unsupported(format!(
+                "analog `for` condition is not an elaboration constant (LRM §5.9.3): {e}"
+            ))
+        })?;
+        if !const_truthy(&cont_val)? {
+            break;
+        }
+        iterations += 1;
+        if iterations > MAX_UNROLL_ITERATIONS {
+            return Err(CodegenError::unsupported(format!(
+                "analog `for` exceeded {MAX_UNROLL_ITERATIONS} unrolled iterations — bound the loop or \
+                 check for a non-terminating condition (LRM §5.9.3)"
+            )));
+        }
+        let subst = HashMap::from([(name.clone(), int(i))]);
+        out.push(subst_stmt(body, &subst));
+
+        i = env.eval_int(step_value).map_err(|e| {
+            CodegenError::unsupported(format!(
+                "analog `for` step is not an elaboration constant (LRM §5.9.3): {e}"
+            ))
+        })?;
+    }
+    Ok(out)
+}
+
+/// §5.9.1: `repeat(count) stmt` — `count` is "evaluated once before the
+/// execution of any statement" and has no loop-index binding to
+/// substitute (unlike `for`), so the body repeats unchanged.
+fn unroll_repeat(count: &PomExpr, body: &PomStmt) -> Result<Vec<PomStmt>, CodegenError> {
+    let n = ConstEnv::new().eval_int(count).map_err(|e| {
+        CodegenError::unsupported(format!("analog `repeat` count is not an elaboration constant (LRM §5.9.3): {e}"))
+    })?;
+    if n <= 0 {
+        // §5.9.1: "zero, one, or more times" -- a non-positive count
+        // executes the body zero times.
+        return Ok(Vec::new());
+    }
+    let n = n as usize;
+    if n > MAX_UNROLL_ITERATIONS {
+        return Err(CodegenError::unsupported(format!(
+            "analog `repeat` count {n} exceeds the {MAX_UNROLL_ITERATIONS}-iteration unroll bound (LRM §5.9.3)"
+        )));
+    }
+    Ok(std::iter::repeat_with(|| body.clone()).take(n).collect())
+}
+
+/// §5.9.1: `while (cond) stmt`. Scope note (documented, not silently
+/// narrowed): unlike `for`, `while` has no genvar-like index the LRM
+/// binds for substitution — an elaboration-constant `while` condition can
+/// only be one with no per-iteration state at all (the common
+/// runtime-counter idiom `while (i < N) begin ... i = i + 1; end` depends
+/// on a variable this unroll has no scope to track, and correctly fails
+/// as non-constant below, same as any other genuinely runtime bound).
+/// Re-evaluated as a fixed point every iteration (never becoming false is
+/// exactly the "absurd bound" case `MAX_UNROLL_ITERATIONS` catches).
+fn unroll_while(cond: &PomExpr, body: &PomStmt) -> Result<Vec<PomStmt>, CodegenError> {
+    let mut out = Vec::new();
+    let mut iterations = 0usize;
+    loop {
+        let cont_val = ConstEnv::new().eval(cond).map_err(|e| {
+            CodegenError::unsupported(format!(
+                "analog `while` condition is not an elaboration constant (LRM §5.9.3): {e}"
+            ))
+        })?;
+        if !const_truthy(&cont_val)? {
+            break;
+        }
+        iterations += 1;
+        if iterations > MAX_UNROLL_ITERATIONS {
+            return Err(CodegenError::unsupported(format!(
+                "analog `while` exceeded {MAX_UNROLL_ITERATIONS} unrolled iterations — an elaboration-constant \
+                 condition never became false (LRM §5.9.3)"
+            )));
+        }
+        out.push(body.clone());
+    }
+    Ok(out)
+}
+
 /// Flattens an analog body into [`FlatAnalog`].
 pub struct AnalogFlattener<'m> {
     module: &'m LoweredBody,
@@ -794,10 +1035,23 @@ impl<'m> AnalogFlattener<'m> {
                     }
                 }
                 PomStmt::Null { .. } | PomStmt::Disable { .. } => {}
-                PomStmt::For { .. } | PomStmt::While { .. } | PomStmt::Repeat { .. }
-                | PomStmt::Forever { .. } | PomStmt::DelayControl { .. } => {
+                // §5.9/§5.9.3 (LRMW2-20, T32): `for`/`while`/`repeat` with
+                // elaboration-constant bounds unroll into repeated
+                // statements (the index substituted for `for`, §5.9.3's
+                // own analog_for form) rather than failing loud
+                // unconditionally — `unroll_loop` fails loud itself,
+                // citing §5.9.3, when a bound isn't a genuine
+                // elaboration constant or would unroll unreasonably far.
+                stmt @ (PomStmt::For { .. } | PomStmt::While { .. } | PomStmt::Repeat { .. }) => {
+                    let unrolled = unroll_loop(stmt)?;
+                    self.walk(&unrolled, guard)?;
+                }
+                // `forever`/delay-control have no bound at all to unroll
+                // (LRM §5.9.3's "statically evaluatable" restriction has
+                // no form for either) — still a loud, named error.
+                PomStmt::Forever { .. } | PomStmt::DelayControl { .. } => {
                     return Err(CodegenError::unsupported(
-                        "runtime loop/delay-control statement in an analog body",
+                        "analog `forever`/delay-control statement has no elaboration-constant bound to unroll (LRM §5.9.3)",
                     ));
                 }
                 // `-> e;` (§5.10.4, LRMC-C5-04): `e` is the hidden integer
