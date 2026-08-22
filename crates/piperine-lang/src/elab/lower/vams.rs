@@ -17,9 +17,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    BehaviorKind, BranchDecl, CaseArm, ContinuousAssign, Declarator, Direction as AstDirection,
-    Domain as VamsDomain, EventExpr, Expr, ModuleDecl, ModuleItem, ParamType, PortConnection,
-    PortDecl, Stmt, UnOp, VarKind,
+    BehaviorKind, BlockItemDecl, BranchDecl, CaseArm, ContinuousAssign, Declarator,
+    Direction as AstDirection, Domain as VamsDomain, EventExpr, Expr, FunctionDecl, ModuleDecl,
+    ModuleItem, ParamType, PortConnection, PortDecl, Stmt, UnOp, VarKind,
 };
 
 use crate::elab::const_eval::ConstEnv;
@@ -85,6 +85,9 @@ impl Elaborator {
         let mut behaviors = Vec::new();
         let mut branches = Vec::new();
         let mut vars = Vec::new();
+        // §4.7 (LRMW2-44, T44): `analog function`/`function` declarations,
+        // in declaration order.
+        let mut functions: Vec<crate::pom::Function> = Vec::new();
         let mut events: Vec<String> = Vec::new();
         // §3.5 (LRMW2-13, T17): a declared `genvar` registers in the POM
         // (`Module::genvars`) — collected in a prepass (not the main item
@@ -359,11 +362,17 @@ impl Elaborator {
                 // `defparam` is applied by its own later pass
                 // (`elab::lower::defparam::ApplyDefparams`, LRMC-C5-06) —
                 // a no-op here by design, not "not yet lowered".
+                // §4.7 (LRMW2-44, T44): `analog function`/`function`
+                // declarations lower into the module's `functions` list —
+                // the codegen inliner (`resolve/pom/expr.rs::inline_user_fn`)
+                // reads it back through `SymbolTable::fn_by_name`.
+                ModuleItem::Function(f) => {
+                    functions.push(lower_function_decl(f)?);
+                }
                 // generate (T25), specify/gates: not yet lowered —
                 // later tasks extend this match.
                 ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
-                | ModuleItem::Function(_)
                 | ModuleItem::Task(_)
                 | ModuleItem::LoopGenerate(_)
                 | ModuleItem::IfGenerate(_)
@@ -570,6 +579,7 @@ impl Elaborator {
         module.doc = decl.doc.clone();
         module.branches = branches;
         module.vars = vars;
+        module.functions = functions;
         module.events = events;
         module.genvars = genvars;
         module.constraints = constraints;
@@ -1776,6 +1786,82 @@ fn var_declarator_to_var(
         })?),
     };
     Ok(Var { span: Some(to_miette_span(span)), attributes, doc, name: d.name.clone(), ty, init })
+}
+
+/// Lowers one `analog function`/`function` declaration (§4.7, Annex A.2.6)
+/// into a POM [`crate::pom::Function`].
+///
+/// §4.7's own restrictions, checked here (fail loud, citing the clause):
+/// "shall have at least one formal argument declared". Everything else
+/// §4.7 restricts (no access functions, no contribution statements, no
+/// named blocks, …) is a call-time/body-shape concern the codegen inliner
+/// enforces when it actually walks the body — this pass only builds the
+/// authored declaration.
+fn lower_function_decl(f: &FunctionDecl) -> Result<crate::pom::Function, ElabError> {
+    if f.ports.is_empty() {
+        return Err(ElabError::from(ElabErrorKind::Other(format!(
+            "analog function `{}`: at least one formal argument must be declared (LRM §4.7)",
+            f.name
+        ))));
+    }
+
+    // A `real`/`integer` redeclaration of a port name inside the body
+    // (`analog_block_item_declaration`, §4.7.1's own Example 1: `input n1,
+    // n2; real n1, n2;`) is where the formal's *value type* actually comes
+    // from — the port list only carries direction. Absent a redeclaration,
+    // `real` is the LRM default for an unspecified type.
+    let mut decl_types: HashMap<&str, ValueType> = HashMap::new();
+    for d in &f.decls {
+        let (names, ty) = match d {
+            BlockItemDecl::Integer { names, .. } => (names, ValueType::Integer),
+            BlockItemDecl::Real { names, .. } => (names, ValueType::Real),
+            BlockItemDecl::Time { names, .. } => (names, ValueType::Real),
+            BlockItemDecl::Realtime { names, .. } => (names, ValueType::Real),
+            BlockItemDecl::Reg { names, .. } => (names, ValueType::Real),
+        };
+        for n in names {
+            decl_types.insert(n.as_str(), ty.clone());
+        }
+    }
+
+    let mut params: Vec<(String, crate::pom::TypeRef)> = Vec::new();
+    let mut directions: Vec<Direction> = Vec::new();
+    for port in &f.ports {
+        // A `PortItemDecl` can carry its own type inline
+        // (`input real n1;`) — that takes priority over a separate
+        // redeclaration when both are absent it falls back to `real`.
+        let inline_ty = port.ty.map(|t| param_value_type(Some(t)));
+        for name in &port.names {
+            let ty = inline_ty
+                .clone()
+                .or_else(|| decl_types.get(name.as_str()).cloned())
+                .unwrap_or(ValueType::Real);
+            params.push((name.clone(), crate::pom::TypeRef::Value(ty)));
+            directions.push(Direction::from(port.dir));
+        }
+    }
+
+    let ret = crate::pom::TypeRef::Value(param_value_type(f.ret));
+    let body = match f.body.as_ref() {
+        Stmt::Block { stmts, .. } => stmts.clone(),
+        other => vec![other.clone()],
+    };
+
+    // VAMS Annex A has no default-argument grammar for a function formal
+    // (see the field's own doc comment) — every entry is `None`, one per
+    // param.
+    let defaults = vec![None; params.len()];
+
+    Ok(crate::pom::Function {
+        span: Some(to_miette_span(f.span)),
+        name: f.name.clone(),
+        params,
+        directions,
+        defaults,
+        ret,
+        body,
+        is_generic: false,
+    })
 }
 
 fn param_value_type(ty: Option<ParamType>) -> ValueType {

@@ -74,10 +74,23 @@ pub struct Function {
     pub name: String,
     /// Parameter names and types.
     pub params: Vec<(String, TypeRef)>,
+    /// Parameter directions, parallel to [`params`](Self::params) — VAMS
+    /// §4.7 requires every `analog function`/`function` formal to declare
+    /// `input`/`output`/`inout` explicitly (no default-input convention,
+    /// unlike ordinary 1364 tasks/functions).
+    pub directions: Vec<crate::pom::Direction>,
     /// Default value expressions, parallel to [`params`](Self::params) —
     /// `None` for a non-defaulted (leading) param, `Some(expr)` for a
     /// trailing defaulted one (the language spec Part I §9.1). Defaults are
     /// elaboration constants.
+    ///
+    /// VAMS Annex A's `analog_function_item_declaration`/
+    /// `function_item_declaration` grammar has no default-value syntax for
+    /// a formal argument (only `parameter` declarations default) — every
+    /// entry a VAMS-sourced `Function` carries is `None`. The field (and
+    /// the codegen inliner's default-filling path) is kept for the general
+    /// mechanism's own sake, same latitude as other emptied-but-kept
+    /// registries (T21).
     pub defaults: Vec<Option<crate::ast::Expr>>,
     /// Return type.
     pub ret: TypeRef,
@@ -94,6 +107,8 @@ impl Function {
     pub fn name(&self) -> &str { &self.name }
     /// The function parameters (name, type).
     pub fn params(&self) -> &[(String, TypeRef)] { &self.params }
+    /// Parameter directions, parallel to [`params`](Self::params).
+    pub fn directions(&self) -> &[crate::pom::Direction] { &self.directions }
     /// Default value expressions, parallel to [`params`](Self::params).
     pub fn defaults(&self) -> &[Option<crate::ast::Expr>] { &self.defaults }
     /// The function return type.

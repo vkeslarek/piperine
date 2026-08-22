@@ -163,6 +163,20 @@ pub(crate) struct LowerCtx<'a> {
     /// (nonexistent) parameter reference. Only natures that declared an
     /// `abstol` attribute are present.
     pub nature_abstols: HashMap<String, f64>,
+    /// User-function inlining recursion guard (§4.7): names currently
+    /// being inlined, pushed on entry to `inline_user_fn` and popped on
+    /// exit — a name already on the stack is a (possibly indirect)
+    /// recursive call, which §4.7's straight-line-substitution model
+    /// cannot terminate.
+    pub inlining_stack: Vec<String>,
+    /// `output`/`inout` function-argument write-backs (§4.7) discovered
+    /// while resolving the current statement's expression(s) — drained by
+    /// the enclosing `resolve_stmt` call and turned into extra `Assign`
+    /// statements run immediately after it. A call whose write-backs are
+    /// never drained (an `output`/`inout`-bearing call outside a
+    /// statement's direct value position) is the fail-loud case
+    /// `inline_user_fn` itself reports through `errors`.
+    pub write_backs: Vec<piperine_lang::ast::Stmt>,
 }
 
 impl<'a> LowerCtx<'a> {
@@ -186,6 +200,8 @@ impl<'a> LowerCtx<'a> {
             digital_shadows: Vec::new(),
             default_transition: None,
             nature_abstols: HashMap::new(),
+            inlining_stack: Vec::new(),
+            write_backs: Vec::new(),
         }
     }
 

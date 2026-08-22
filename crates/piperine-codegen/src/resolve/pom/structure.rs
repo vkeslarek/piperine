@@ -116,11 +116,36 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
         symbols.add_var(v.name(), ty);
     }
 
-    // 5. Functions: not yet lowered from `ModuleItem::Function`/`Task` into
-    // the POM at all (MD-45 — VAMS's own `analog function`/`function`/
-    // `task` declarations have no elaboration pass populating `Design` with
-    // them yet, a documented pre-existing gap from Phase 5/T22, not this
-    // retarget's scope). Nothing to register here until that lands.
+    // 5. Functions (§4.7, LRMW2-44, T44): each formal becomes a `VarId` in
+    // this same symbol table (a function's own scope is just the module
+    // scope, per §4.7's "shall only reference locally-defined variables,
+    // variables passed as arguments, locally-defined parameters and module
+    // level parameters") and the function itself registers by name so
+    // `resolve/pom/expr.rs`'s `inline_user_fn` (via `fn_by_name`) and the
+    // digital `Codegen` path (`emit/resolver.rs::Resolver::new`, which
+    // snapshots `symbols.fns()`) both find it.
+    for f in m.functions() {
+        let mut param_ids = Vec::with_capacity(f.params().len());
+        for (name, ty) in f.params() {
+            let ir_ty = match ty {
+                piperine_lang::pom::TypeRef::Value(v) => elab_value_type_to_ir(v),
+                piperine_lang::pom::TypeRef::Net(_) => Type::Real,
+            };
+            param_ids.push(symbols.add_var(name.clone(), ir_ty));
+        }
+        let returns = match f.ret() {
+            piperine_lang::pom::TypeRef::Value(v) => Some(elab_value_type_to_ir(v)),
+            piperine_lang::pom::TypeRef::Net(_) => Some(Type::Real),
+        };
+        symbols.add_fn(Function {
+            name: f.name().to_string(),
+            params: param_ids,
+            directions: f.directions().to_vec(),
+            defaults: f.defaults().to_vec(),
+            returns,
+            body: f.body().to_vec(),
+        });
+    }
 
     (symbols, ports)
 }

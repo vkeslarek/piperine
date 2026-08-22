@@ -388,6 +388,18 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 function.params.len()
             )));
         }
+        // §4.7's `output`/`inout` write-back (the caller's argument
+        // variable observing the function's post-call value) has no
+        // implementation on this digital-emit path — the analog resolve
+        // path (`resolve/pom/expr.rs::inline_user_fn`) has the real
+        // mechanism. Fail loud rather than silently treat the argument as
+        // read-only.
+        if function.directions.iter().any(|d| !matches!(d, piperine_lang::pom::Direction::Input)) {
+            return Err(CodegenError::unsupported(format!(
+                "function `{name}`: output/inout arguments are not supported in digital-context \
+                 calls (LRM §4.7)"
+            )));
+        }
         let mut subst: HashMap<String, Expr> = HashMap::new();
         for (i, &param_id) in function.params.iter().enumerate() {
             let pname = self.module.symbols.var(param_id).name.clone();

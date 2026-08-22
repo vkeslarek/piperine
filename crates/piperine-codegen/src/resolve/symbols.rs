@@ -227,6 +227,11 @@ pub enum NoiseKind {
 pub struct Function {
     pub name: String,
     pub params: Vec<VarId>,
+    /// Parameter directions, parallel to [`params`](Self::params) — LRM
+    /// §4.7 requires every formal to be `input`/`output`/`inout`. An
+    /// `output`/`inout` argument's call-site write-back is the inliner's
+    /// job (`resolve/pom/expr.rs::inline_user_fn`), not this table's.
+    pub directions: Vec<piperine_lang::pom::Direction>,
     /// Default value expressions, parallel to [`params`](Self::params) —
     /// `None` for a non-defaulted param, `Some(expr)` for a defaulted
     /// trailing one (the language spec Part I §9.1). Filled by the inliner at expansion.

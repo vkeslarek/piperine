@@ -80,7 +80,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     return self.emit_analog_math_call(name, args);
                 }
                 Err(CodegenError::unsupported(format!(
-                    "call `{name}` in an analog expression (should be inlined)"
+                    "call `{name}` in an analog expression: not a math builtin, analog operator, \
+                     or a declared `analog function`/`function` (LRM §4.7) — should have been \
+                     inlined at resolve time"
                 )))
             }
 

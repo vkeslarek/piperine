@@ -274,13 +274,15 @@ fn resolve_call(name: &str, args: &[Expr], ctx: &mut LowerCtx, span: Preprocesse
     Expr::Call { span, name: name.to_string(), args: resolved }
 }
 
-/// Inline a user function call by substituting parameters. The function
-/// body is POM `Stmt`; walk it and substitute `Ident(param_name)` with the
-/// corresponding argument expression. Reachable once a later phase lowers
-/// `analog function`/`function` declarations into `SymbolTable` (MD-45) —
-/// `ctx.symbols.fn_by_name` never matches today, so this path is currently
-/// dead-but-not-deleted: the mechanism is generic over any future producer,
-/// same latitude T21 used for `ElabContext`'s emptied-but-kept registries.
+/// Inline a user function call by substituting parameters (§4.7). The
+/// function body is POM `Stmt`; walk it, substitute `Ident(param_name)`
+/// with the corresponding argument expression, and read the return value
+/// off the body's assignment to the function's own name — VAMS has no
+/// `return` statement, §4.7's own convention (Example 1: `maxValue = (n1 >
+/// n2) ? n1 : n2;`). Mirrors the digital `Codegen` path's independent copy
+/// (`emit/builder.rs::inline_user_fn`/`inline_fn_stmts`, which already got
+/// this right) — kept as a separate copy because this one runs over the
+/// *resolved-POM* `Expr` a stage earlier, before `flatten`/`emit` exist.
 fn inline_user_fn(fn_id: FnId, name: &str, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
     let function = match ctx.symbols.try_fn(fn_id) {
         Some(f) => f.clone(),
@@ -294,53 +296,177 @@ fn inline_user_fn(fn_id: FnId, name: &str, args: &[Expr], ctx: &mut LowerCtx) ->
         }
     };
 
-    let mut full_args: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
-    while full_args.len() < function.params.len() {
-        let i = full_args.len();
-        match function.defaults.get(i).and_then(|d| d.as_ref()) {
-            Some(default) => full_args.push(default.clone()),
-            None => {
+    // Recursive (direct or indirect) calls cannot terminate under this
+    // compile-time substitution-based inliner — an implementation limit,
+    // not an §4.7 prohibition (the LRM is silent on recursion), so failed
+    // loud with the calling clause cited rather than hanging.
+    if ctx.inlining_stack.iter().any(|n| n == name) {
+        ctx.errors.push(super::LowerError {
+            module: ctx.module_name.clone(),
+            what: "function (recursive call — not supported by this inliner, LRM §4.7.3)",
+            name: name.to_string(),
+        });
+        return real(0.0);
+    }
+
+    // VAMS Annex A's function-formal grammar has no default-value syntax
+    // (only `parameter` declarations default, §4.7.1) — arity must match
+    // exactly.
+    if args.len() != function.params.len() {
+        ctx.errors.push(super::LowerError {
+            module: ctx.module_name.clone(),
+            what: "function call arity (no default arguments exist — LRM §4.7)",
+            name: format!("{} expects {} arg(s), got {}", function.name, function.params.len(), args.len()),
+        });
+        return real(0.0);
+    }
+
+    let resolved_args: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+    let mut subst: std::collections::HashMap<String, Expr> = std::collections::HashMap::new();
+    for (i, &param_id) in function.params.iter().enumerate() {
+        let pname = ctx.symbols.var(param_id).name.clone();
+        let initial = match function.directions.get(i) {
+            // §4.7.2.2: "All output arguments … are initialised to zero
+            // (0)" — the caller's argument is a write-back destination
+            // only, never a read.
+            Some(piperine_lang::pom::Direction::Output) => real(0.0),
+            // §4.7.2.3: `inout` — "do not get initialised to zero", the
+            // caller's current value flows in.
+            _ => resolved_args[i].clone(),
+        };
+        subst.insert(pname, initial);
+    }
+
+    ctx.inlining_stack.push(name.to_string());
+    let mut result: Option<Expr> = None;
+    inline_fn_body(&function.body, name, &mut subst, &mut result, ctx);
+    ctx.inlining_stack.pop();
+
+    // §4.7.2.1: "If this internal variable is not assigned … the function
+    // will return the initialised value of zero (0)" — not an error.
+    let result = result.unwrap_or_else(|| real(0.0));
+
+    // `output`/`inout` args (§4.7.2.2/§4.7.2.3): the call-site argument
+    // must be an analog variable reference — the final substituted value
+    // of the matching formal writes back to it as a companion `Assign`,
+    // drained by the enclosing `resolve_stmt`.
+    for (i, dir) in function.directions.iter().enumerate() {
+        if matches!(dir, piperine_lang::pom::Direction::Input) {
+            continue;
+        }
+        let pname = ctx.symbols.var(function.params[i]).name.clone();
+        let final_value = subst.get(&pname).cloned().unwrap_or_else(|| resolved_args[i].clone());
+        match &args[i] {
+            Expr::Ident { name: arg_name, span } => {
+                ctx.write_backs.push(piperine_lang::ast::Stmt::Assign {
+                    span: *span,
+                    target: Expr::Ident { span: *span, name: arg_name.clone() },
+                    value: final_value,
+                });
+            }
+            _ => {
                 ctx.errors.push(super::LowerError {
                     module: ctx.module_name.clone(),
-                    what: "function arg (missing, no default)",
+                    what: "function output/inout argument must be an analog variable reference \
+                           (LRM §4.7.2.2/§4.7.2.3)",
                     name: format!("{} arg #{}", function.name, i + 1),
                 });
-                return real(0.0);
             }
         }
     }
 
-    let mut subst: std::collections::HashMap<String, Expr> = std::collections::HashMap::new();
-    for (&param_id, arg) in function.params.iter().zip(full_args) {
-        let pname = ctx.symbols.var(param_id).name.clone();
-        subst.insert(pname, arg);
-    }
-
-    let body = function.body.clone();
-    inline_fn_body(&body, &mut subst)
+    result
 }
 
+/// Walk a function body's statements, substituting reads and tracking
+/// assignments; `*out` becomes `Some(value)` the moment an assignment
+/// targets `fn_name` itself (§4.7's return convention) — later assignments
+/// (there should be none in a well-formed straight-line body, but the walk
+/// doesn't assume that) still update `subst` so a later expression can read
+/// them. Control-flow statements (`if`/`case`/loops) inside the body are
+/// not supported by this substitution-based inliner — §4.7/§5.2 permit
+/// them, but choosing between branch values without actually emitting a
+/// conditional is not faithful, so this fails loud (citing §4.7) instead of
+/// guessing, rather than a silent no-op (CLAUDE.md's fail-loud rule).
 fn inline_fn_body(
     stmts: &[piperine_lang::ast::Stmt],
+    fn_name: &str,
     subst: &mut std::collections::HashMap<String, Expr>,
-) -> Expr {
+    out: &mut Option<Expr>,
+    ctx: &mut LowerCtx,
+) {
     use piperine_lang::ast::Stmt as S;
     for s in stmts {
         match s {
-            S::Assign { target: Expr::Ident { name, .. }, value, .. } => {
-                let val = subst_expr(value, subst);
+            S::Null { .. } => {}
+            S::Assign { target: Expr::Ident { name, .. }, value, .. }
+            | S::NonBlockingAssign { target: Expr::Ident { name, .. }, value, .. } => {
+                // §4.7.3/Annex G item 12: a call inside this body to
+                // *another* (or, self-referentially, this very) user
+                // function is a real call, not a bare name to leave
+                // unresolved — `subst_expr` alone only substitutes free
+                // idents, it never inlines a nested `Call`, so this walks
+                // the substituted expression and inlines every nested
+                // user-function call through the same `inline_user_fn` —
+                // which is exactly what makes the recursion guard above
+                // reachable for a self-referential body.
+                let val = expand_nested_calls(&subst_expr(value, subst), ctx);
+                if name == fn_name {
+                    *out = Some(val.clone());
+                }
                 subst.insert(name.clone(), val);
             }
-            S::Block { stmts, .. } => {
-                let result = inline_fn_body(stmts, subst);
-                if !matches!(result, Expr::Number { value: NumberLit::Real(v), .. } if v == 0.0) {
-                    return result;
-                }
+            S::Block { stmts, .. } => inline_fn_body(stmts, fn_name, subst, out, ctx),
+            other => {
+                ctx.errors.push(super::LowerError {
+                    module: ctx.module_name.clone(),
+                    what: "function body statement kind (only straight-line assignment \
+                           is inlined — control flow not supported, LRM §4.7/§5.2)",
+                    name: format!("{fn_name}: {other:?}"),
+                });
             }
-            _ => {}
         }
     }
-    real(0.0)
+}
+
+/// Walks an already-substituted function-body expression and inlines every
+/// nested user-function `Call` through [`inline_user_fn`] (§4.7.3/Annex G
+/// item 12 — a user function may call another, or itself). Math builtins
+/// and any other `Call` are left as-is (unchanged from `subst_expr`'s own
+/// behavior) — only a name that resolves via `ctx.symbols.fn_by_name` is
+/// touched.
+fn expand_nested_calls(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
+    match expr {
+        Expr::Call { name, args, span } => {
+            let args: Vec<Expr> = args.iter().map(|a| expand_nested_calls(a, ctx)).collect();
+            if let Some(fn_id) = ctx.symbols.fn_by_name(name) {
+                inline_user_fn(fn_id, name, &args, ctx)
+            } else {
+                Expr::Call { span: *span, name: name.clone(), args }
+            }
+        }
+        Expr::Unary { span, op, operand } => {
+            Expr::Unary { span: *span, op: *op, operand: Box::new(expand_nested_calls(operand, ctx)) }
+        }
+        Expr::Binary { span, op, lhs, rhs } => Expr::Binary {
+            span: *span,
+            op: *op,
+            lhs: Box::new(expand_nested_calls(lhs, ctx)),
+            rhs: Box::new(expand_nested_calls(rhs, ctx)),
+        },
+        Expr::Ternary { span, cond, then_branch, else_branch } => Expr::Ternary {
+            span: *span,
+            cond: Box::new(expand_nested_calls(cond, ctx)),
+            then_branch: Box::new(expand_nested_calls(then_branch, ctx)),
+            else_branch: Box::new(expand_nested_calls(else_branch, ctx)),
+        },
+        // Every other shape either cannot contain a call operand in a
+        // well-formed function body (Number/Str/Ident) or is outside the
+        // "any statements available for conditional execution" subset
+        // §4.7.1 permits (index/part-select/concat/replication/pattern) —
+        // left as-is, same latitude `subst_expr` already takes.
+        _ => expr.clone(),
+    }
 }
 
 pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, Expr>) -> Expr {
@@ -406,6 +532,25 @@ pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, 
     }
 }
 
+/// Drains any pending `output`/`inout` function-argument write-backs
+/// (§4.7, populated by `inline_user_fn` while resolving `stmt`'s
+/// expression(s)) and, if any exist, wraps `stmt` together with them in a
+/// synthetic `Block` — run in sequence, exactly as the original call site
+/// plus its side-effects. Leaves `stmt` untouched when there are none (the
+/// overwhelmingly common case: functions with no `output`/`inout` args).
+fn with_write_backs(
+    ctx: &mut LowerCtx,
+    span: PreprocessedSpan,
+    stmt: piperine_lang::ast::Stmt,
+) -> piperine_lang::ast::Stmt {
+    if ctx.write_backs.is_empty() {
+        return stmt;
+    }
+    let mut stmts = vec![stmt];
+    stmts.append(&mut ctx.write_backs);
+    piperine_lang::ast::Stmt::Block { span, name: None, decls: Vec::new(), stmts }
+}
+
 /// Resolve a single VAMS `Stmt`'s expressions (analog path — keeps POM
 /// `Stmt` structure; the flattener/Builder dispatch on it directly).
 pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) -> piperine_lang::ast::Stmt {
@@ -413,13 +558,18 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
     match stmt {
         S::Null { span } => S::Null { span: *span },
         S::Assign { span, target, value } => {
-            S::Assign { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) }
+            let resolved =
+                S::Assign { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) };
+            with_write_backs(ctx, *span, resolved)
         }
-        S::NonBlockingAssign { span, target, value } => S::NonBlockingAssign {
-            span: *span,
-            target: resolve_expr(target, ctx),
-            value: resolve_expr(value, ctx),
-        },
+        S::NonBlockingAssign { span, target, value } => {
+            let resolved = S::NonBlockingAssign {
+                span: *span,
+                target: resolve_expr(target, ctx),
+                value: resolve_expr(value, ctx),
+            };
+            with_write_backs(ctx, *span, resolved)
+        }
         S::Contribution { span, target, value } => {
             // Noise is scanned from the *unresolved* source, on the
             // contribution's own branch — a nested contribution belongs to
@@ -427,7 +577,9 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
             // would rewrite a `white_noise(…)` call away before it's seen.
             let (_nature, plus, minus) = parse_contrib_dest(target, ctx);
             scan_noise(value, plus, minus, ctx);
-            S::Contribution { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) }
+            let resolved =
+                S::Contribution { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) };
+            with_write_backs(ctx, *span, resolved)
         }
         S::Block { span, name, decls, stmts } => S::Block {
             span: *span,

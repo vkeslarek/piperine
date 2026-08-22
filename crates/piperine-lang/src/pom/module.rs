@@ -334,6 +334,12 @@ pub struct Module {
     /// do not cross a serialization boundary (SPEC Part IV §7).
     #[serde(skip)]
     pub behaviors: Vec<Behavior>,
+    /// `analog function`/`function` declarations of this module (LRM §4.7,
+    /// LRMW2-44) — authored form (MD-25), in declaration order. Skipped on
+    /// serialize, same rule as `behaviors`: a function body is a compiled
+    /// AST, not reflection data.
+    #[serde(skip, default)]
+    pub functions: Vec<crate::pom::Function>,
     /// Verilog-AMS `branch (p,n) name;` declarations (LRM §3.12), plus
     /// implicit branches created by access-function call sites. Authored
     /// form — the elaborator records each branch's kind from the first
@@ -424,7 +430,7 @@ impl Module {
         Self {
             span: None, attributes: Vec::new(), doc: None, name,
             ports, params, wires, vars: Vec::new(), instances, connections,
-            behaviors,
+            behaviors, functions: Vec::new(),
             branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
             constraints: Vec::new(), timescale: None, gates: Vec::new(),
             ground_names: Vec::new(), origin: None,
@@ -452,6 +458,9 @@ impl Module {
     pub fn connections(&self) -> &[Connection] { &self.connections }
     /// All behavior blocks of the module.
     pub fn behaviors(&self) -> &[Behavior] { &self.behaviors }
+    /// All `analog function`/`function` declarations of the module (LRM
+    /// §4.7).
+    pub fn functions(&self) -> &[crate::pom::Function] { &self.functions }
     /// Net names declared `ground` in this module (LRM §3.6.4).
     pub fn ground_names(&self) -> &[String] { &self.ground_names }
     /// Whether `name` is the global reference node for this module — the
