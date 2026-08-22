@@ -5,13 +5,19 @@
 //! examples (spec.md's Edge Cases + Fixture rule), not from this crate's
 //! implementation.
 
-use piperine_lang::ast::Expr;
+use piperine_lang::ast::{Expr, Stmt};
 use piperine_lang::{BasedNumber, Grammar, Lexer, NumberBase, NumberLit, ParseErrorKind, Tok, UnderscorePosition};
 
 fn parse_expr(src: &str) -> Expr {
     let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
     let mut g = Grammar::new(toks);
     g.parse_expr().unwrap_or_else(|e| panic!("parse error for {src:?}: {e}"))
+}
+
+fn parse_stmt(src: &str) -> Stmt {
+    let toks = Lexer::new(src).tokenize().unwrap_or_else(|e| panic!("lex error for {src:?}: {e}"));
+    let mut g = Grammar::new(toks);
+    g.parse_stmt().unwrap_or_else(|e| panic!("parse error for {src:?}: {e}"))
 }
 
 fn toks(src: &str) -> Vec<Tok> {
@@ -361,6 +367,95 @@ fn attribute_instance_is_otherwise_inert_shape_matches_unattributed_form() {
         }
         _ => panic!("both must parse to Expr::Binary"),
     }
+}
+
+// ── LRMW2-39 (T43): statement-level attribute instances (§2.9/§2.9.1) ──
+
+#[test]
+fn attribute_instance_before_case_parses_from_lrm_example_1() {
+    // §2.9 Example 1: `(* full_case, parallel_case *) case (foo)
+    // <rest_of_case_statement>` — the LRM's own worked example of a
+    // statement-level attribute_instance.
+    let s = parse_stmt("(* full_case, parallel_case *) case (foo) 1: x = 1; endcase");
+    match s {
+        Stmt::Case { attrs, selector, .. } => {
+            assert_eq!(attrs.len(), 2, "both full_case and parallel_case must be carried");
+            assert_eq!(attrs[0].name, "full_case");
+            assert!(attrs[0].value.is_none(), "no value assigned must leave it None (§2.9: 'shall be 1')");
+            assert_eq!(attrs[1].name, "parallel_case");
+            assert_eq!(selector, Expr::Ident { span: selector.span(), name: "foo".to_string() });
+        }
+        other => panic!("expected Stmt::Case, got {other:?}"),
+    }
+}
+
+#[test]
+fn attribute_instance_before_case_with_explicit_values_parses_from_lrm_example_1_variant() {
+    // §2.9 Example 1's second spelling: `(* full_case=1 *) (* parallel_case=1
+    // *) case (foo) ...` — multiple attribute_instance groups, each with an
+    // explicit `=1`.
+    let s = parse_stmt("(* full_case=1 *) (* parallel_case=1 *) case (foo) 1: x = 1; endcase");
+    let Stmt::Case { attrs, .. } = s else { panic!("expected Stmt::Case") };
+    assert_eq!(attrs.len(), 2);
+    assert_eq!(attrs[0].name, "full_case");
+    assert!(matches!(attrs[0].value, Some(Expr::Number { value: NumberLit::Integer(1), .. })));
+    assert_eq!(attrs[1].name, "parallel_case");
+    assert!(matches!(attrs[1].value, Some(Expr::Number { value: NumberLit::Integer(1), .. })));
+}
+
+#[test]
+fn attribute_instance_before_case_attaches_only_full_case_from_lrm_example_2() {
+    // §2.9 Example 2: `(* full_case *) // parallel_case not specified
+    // case (foo) <rest_of_case_statement>` — only one attribute, not two.
+    let s = parse_stmt("(* full_case *) case (foo) 1: x = 1; endcase");
+    let Stmt::Case { attrs, .. } = s else { panic!("expected Stmt::Case") };
+    assert_eq!(attrs.len(), 1);
+    assert_eq!(attrs[0].name, "full_case");
+}
+
+#[test]
+fn attribute_instance_before_case_with_zero_value_parses_from_lrm_example_2_variant() {
+    // §2.9 Example 2's second spelling: `(* full_case=1, parallel_case = 0
+    // *) case (foo) ...` — an explicit `=0` must still parse (it does not
+    // omit the attribute, per §2.9's own "If a value is not specifically
+    // assigned" carve-out only applying when there is truly no `=value`).
+    let s = parse_stmt("(* full_case=1, parallel_case = 0 *) case (foo) 1: x = 1; endcase");
+    let Stmt::Case { attrs, .. } = s else { panic!("expected Stmt::Case") };
+    assert_eq!(attrs.len(), 2);
+    assert!(matches!(attrs[1].value, Some(Expr::Number { value: NumberLit::Integer(0), .. })));
+}
+
+#[test]
+fn attribute_instance_before_case_is_otherwise_inert_shape_matches_unattributed_form() {
+    // Mirrors `attribute_instance_is_otherwise_inert_shape_matches_
+    // unattributed_form` above, at the statement position: the parsed
+    // case-statement shape (kind, selector, arm count) is identical with
+    // or without the attribute — only the new `attrs` field differs.
+    let attributed = parse_stmt("(* full_case *) case (foo) 1: x = 1; default: x = 0; endcase");
+    let plain = parse_stmt("case (foo) 1: x = 1; default: x = 0; endcase");
+    match (&attributed, &plain) {
+        (
+            Stmt::Case { kind: k_a, selector: sel_a, arms: arms_a, .. },
+            Stmt::Case { kind: k_b, selector: sel_b, arms: arms_b, .. },
+        ) => {
+            assert_eq!(k_a, k_b);
+            assert!(
+                matches!((sel_a, sel_b), (Expr::Ident { name: a, .. }, Expr::Ident { name: b, .. }) if a == b)
+            );
+            assert_eq!(arms_a.len(), arms_b.len());
+        }
+        _ => panic!("both must parse to Stmt::Case"),
+    }
+}
+
+#[test]
+fn statement_without_a_leading_attribute_instance_still_carries_no_attrs() {
+    // A plain, unattributed case statement must still parse with an empty
+    // `attrs` list — the field's presence must not force every case
+    // statement to declare attributes.
+    let s = parse_stmt("case (foo) 1: x = 1; endcase");
+    let Stmt::Case { attrs, .. } = s else { panic!("expected Stmt::Case") };
+    assert!(attrs.is_empty());
 }
 
 #[test]

@@ -286,6 +286,7 @@ fn match_selects_arm_and_default() {
                 },
                 CaseArm { span: SP, labels: None, body: Box::new(assign("y", bit("x"))) },
             ],
+            attrs: vec![],
         }],
     });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile mux_match"));

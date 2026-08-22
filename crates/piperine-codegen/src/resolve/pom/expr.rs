@@ -441,7 +441,7 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
             then_branch: Box::new(resolve_stmt(then_branch, ctx)),
             else_branch: else_branch.as_ref().map(|b| Box::new(resolve_stmt(b, ctx))),
         },
-        S::Case { span, kind, selector, arms } => S::Case {
+        S::Case { span, kind, selector, arms, attrs } => S::Case {
             span: *span,
             kind: *kind,
             selector: resolve_expr(selector, ctx),
@@ -453,6 +453,7 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
                     body: Box::new(resolve_stmt(&arm.body, ctx)),
                 })
                 .collect(),
+            attrs: attrs.clone(),
         },
         S::For { span, init, cond, step, body } => S::For {
             span: *span,

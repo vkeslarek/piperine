@@ -59,7 +59,7 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
         Stmt::NonBlockingAssign { span, .. } => {
             errors.push(annex_c_error("non-blocking assignment `<=`", *span));
         }
-        Stmt::Case { kind, arms, selector: _, span } => {
+        Stmt::Case { kind, arms, selector: _, span, attrs: _ } => {
             use crate::ast::CaseKind;
             if matches!(kind, CaseKind::Casex | CaseKind::Casez) {
                 let name = if matches!(kind, CaseKind::Casex) { "`casex`" } else { "`casez`" };

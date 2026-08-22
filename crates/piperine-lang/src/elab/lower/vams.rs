@@ -2206,7 +2206,7 @@ fn rewrite_port_access_stmt(stmt: Stmt, branches: &[Branch]) -> Stmt {
             then_branch: s(then_branch),
             else_branch: else_branch.map(s),
         },
-        Stmt::Case { span, kind, selector, arms } => Stmt::Case {
+        Stmt::Case { span, kind, selector, arms, attrs } => Stmt::Case {
             span,
             kind,
             selector: e(selector),
@@ -2218,6 +2218,7 @@ fn rewrite_port_access_stmt(stmt: Stmt, branches: &[Branch]) -> Stmt {
                     body: s(arm.body),
                 })
                 .collect(),
+            attrs,
         },
         Stmt::For { span, init, cond, step, body } => {
             Stmt::For { span, init: s(init), cond: e(cond), step: s(step), body: s(body) }

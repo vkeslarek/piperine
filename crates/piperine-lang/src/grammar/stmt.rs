@@ -9,8 +9,29 @@ use crate::lexer::Tok;
 
 impl Grammar {
     /// `statement`, Annex A.6.4 — the grammar's statement entry point.
+    ///
+    /// §2.9's own worked examples (Example 1/2) show `(* full_case,
+    /// parallel_case *)` prefixing a `case` statement — a statement-level
+    /// `attribute_instance` (LRMW2-39, T43). This is the one concrete
+    /// statement position §2.9's examples actually exercise (the other
+    /// examples are all declaration/item/expression positions, already
+    /// handled at their own sites); a leading `(* ... *)` here still
+    /// parses (never a syntax error) ahead of any statement kind, but is
+    /// only carried through into the AST for `case`/`casex`/`casez`/
+    /// `analog_case` (`Stmt::Case.attrs`) — the position the LRM's prose
+    /// actually attributes semantics to. Any other statement kind's
+    /// leading attributes are accepted and discarded, the same disclosed
+    /// scope limit `$discontinuity`'s degree (LRMW2-38) already has: a
+    /// pure simulator hint with no dedicated AST slot yet.
     pub fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.peek_span();
+        let attrs = self.parse_attr_instances()?;
+        if !attrs.is_empty() {
+            if self.at_kw("case") || self.at_kw("casex") || self.at_kw("casez") || self.at_kw("analog_case") {
+                return self.parse_case(span, attrs);
+            }
+            return self.parse_stmt();
+        }
         if self.eat_punct(";") {
             return Ok(Stmt::Null { span });
         }
@@ -21,7 +42,7 @@ impl Grammar {
             return self.parse_if();
         }
         if self.at_kw("case") || self.at_kw("casex") || self.at_kw("casez") || self.at_kw("analog_case") {
-            return self.parse_case();
+            return self.parse_case(span, Vec::new());
         }
         if self.at_kw("for") {
             return self.parse_for();
@@ -134,8 +155,14 @@ impl Grammar {
 
     /// `('case'|'casex'|'casez'|'analog_case') '(' expr ')' case_item*
     /// 'endcase'` — Annex A.6.7.
-    fn parse_case(&mut self) -> Result<Stmt, ParseError> {
-        let (kind, start) = if self.at_kw("case") {
+    /// `attr_span` is the span of this statement's leading token (before
+    /// any `(* ... *)` group was consumed) — the case keyword's own span
+    /// when there were no attributes — so `Stmt::Case`'s span still starts
+    /// at the attribute instance, matching every other attributed
+    /// declaration site's convention (`doc_at` is looked up against the
+    /// pre-attribute span too, `cursor.rs`'s own doc comment).
+    fn parse_case(&mut self, attr_span: PreprocessedSpan, attrs: Vec<crate::ast::Attr>) -> Result<Stmt, ParseError> {
+        let (kind, kw_span) = if self.at_kw("case") {
             (CaseKind::Case, self.bump().span)
         } else if self.at_kw("casex") {
             (CaseKind::Casex, self.bump().span)
@@ -144,6 +171,7 @@ impl Grammar {
         } else {
             (CaseKind::AnalogCase, self.bump().span)
         };
+        let start = if attrs.is_empty() { kw_span } else { attr_span };
         self.expect_punct("(")?;
         let selector = self.parse_expr()?;
         self.expect_punct(")")?;
@@ -155,7 +183,7 @@ impl Grammar {
             arms.push(self.parse_case_arm()?);
         }
         let end = self.expect_kw("endcase")?;
-        Ok(Stmt::Case { span: PreprocessedSpan::new(start.start, end.end), kind, selector, arms })
+        Ok(Stmt::Case { span: PreprocessedSpan::new(start.start, end.end), kind, selector, arms, attrs })
     }
 
     /// One `case_item`: `expr {',' expr} ':' stmt` or `'default' [':'] stmt`.

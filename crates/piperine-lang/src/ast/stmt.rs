@@ -65,7 +65,16 @@ pub enum Stmt {
     /// `begin [: name] block_item_decl* stmt* end` — §Annex A.6.3.
     Block { span: PreprocessedSpan, name: Option<String>, decls: Vec<BlockItemDecl>, stmts: Vec<Stmt> },
     If { span: PreprocessedSpan, cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
-    Case { span: PreprocessedSpan, kind: CaseKind, selector: Expr, arms: Vec<CaseArm> },
+    /// `attrs` carries any `(* ... *)` attribute-instance group(s) that
+    /// prefixed this `case`/`casex`/`casez`/`analog_case` statement (LRM
+    /// §2.9 Example 1/2 — `(* full_case, parallel_case *) case (foo) ...`
+    /// is the LRM's own worked example of a statement-level attribute;
+    /// empty when none were written). Parsed, not silently dropped
+    /// (LRMW2-39) — §2.9's own standard attributes (`full_case`/
+    /// `parallel_case`, §2.9.2) are simulator hints ("does not directly
+    /// specify the behavior of the module") this codegen does not yet act
+    /// on; carrying them at all is this task's scope.
+    Case { span: PreprocessedSpan, kind: CaseKind, selector: Expr, arms: Vec<CaseArm>, attrs: Vec<Attr> },
     For {
         span: PreprocessedSpan,
         init: Box<Stmt>,

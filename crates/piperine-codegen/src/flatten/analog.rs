@@ -597,7 +597,7 @@ pub(crate) fn subst_stmt(stmt: &PomStmt, subst: &HashMap<String, PomExpr>) -> Po
             then_branch: Box::new(subst_stmt(then_branch, subst)),
             else_branch: else_branch.as_ref().map(|b| Box::new(subst_stmt(b, subst))),
         },
-        PomStmt::Case { span, kind, selector, arms } => PomStmt::Case {
+        PomStmt::Case { span, kind, selector, arms, attrs } => PomStmt::Case {
             span: *span,
             kind: *kind,
             selector: subst_expr(selector, subst),
@@ -609,6 +609,7 @@ pub(crate) fn subst_stmt(stmt: &PomStmt, subst: &HashMap<String, PomExpr>) -> Po
                     body: Box::new(subst_stmt(&arm.body, subst)),
                 })
                 .collect(),
+            attrs: attrs.clone(),
         },
         PomStmt::For { span, init, cond, step, body } => PomStmt::For {
             span: *span,
