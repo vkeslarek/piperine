@@ -78,10 +78,22 @@ fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenE
     // separate digital-edge detector.
     let e = match event {
         EventExpr::Posedge(e) => {
-            return Ok(vec![EventSource::Cross { expr: e.clone(), dir: CrossDir::Rising }]);
+            return Ok(vec![EventSource::Cross {
+                expr: e.clone(),
+                dir: CrossDir::Rising,
+                time_tol: None,
+                expr_tol: None,
+                enable: lit(1.0),
+            }]);
         }
         EventExpr::Negedge(e) => {
-            return Ok(vec![EventSource::Cross { expr: e.clone(), dir: CrossDir::Falling }]);
+            return Ok(vec![EventSource::Cross {
+                expr: e.clone(),
+                dir: CrossDir::Falling,
+                time_tol: None,
+                expr_tol: None,
+                enable: lit(1.0),
+            }]);
         }
         // `@*`/`@(*)` (ImplicitAll) has no fixed watched-expression shape
         // (it means "every signal read in the body") — a distinct,
@@ -121,12 +133,24 @@ fn event_expr_to_sources(event: &EventExpr) -> Result<Vec<EventSource>, CodegenE
         // Second arg is the direction (§5.10.3.1): a LRM-mandated
         // compile-time constant, `+1`/`-1`/`0` -> rising/falling/either,
         // omitted -> either (LRMC-C5-02).
+        // §5.10.3.1: `cross(expr[, dir[, time_tol[, expr_tol[, enable]]]])`
+        // (LRMW2-33) — `time_tol`/`expr_tol` are `constant_expression`s,
+        // `None` when omitted (the LRM's own "the tool sets them" fallback,
+        // codegen's default: no additional step-control cap); `enable`
+        // defaults to `1.0` (always active) when omitted.
         "cross" => vec![EventSource::Cross {
             expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
             dir: args.get(1).map(cross_dir_from_arg).unwrap_or(CrossDir::Either),
+            time_tol: args.get(2).cloned(),
+            expr_tol: args.get(3).cloned(),
+            enable: args.get(4).cloned().unwrap_or_else(|| lit(1.0)),
         }],
+        // §5.10.3.2: `above(expr[, time_tol[, expr_tol[, enable]]])`.
         "above" => vec![EventSource::Above {
             expr: args.first().cloned().unwrap_or_else(|| lit(0.0)),
+            time_tol: args.get(1).cloned(),
+            expr_tol: args.get(2).cloned(),
+            enable: args.get(3).cloned().unwrap_or_else(|| lit(1.0)),
         }],
         // `@timer(period)` or `@timer(period, phase)`. `phase` (default 0)
         // offsets the fire times: fires at phase, phase+period, … instead
@@ -259,8 +283,12 @@ pub enum FlatEventTrigger {
     /// once, after the last accepted point of an analysis this list
     /// matches (empty = every analysis).
     Final(Vec<String>),
-    Cross { expr: PomExpr, dir: CrossDir },
-    Above { expr: PomExpr },
+    /// §5.10.3.1 (LRMW2-33) — `time_tol`/`expr_tol` (`None` when omitted)
+    /// and `enable` mirror `AbsDelta`'s own tolerance/enable treatment
+    /// below: evaluated once at elaboration.
+    Cross { expr: PomExpr, dir: CrossDir, time_tol: Option<PomExpr>, expr_tol: Option<PomExpr>, enable: PomExpr },
+    /// §5.10.3.2 (LRMW2-33) — same tolerance/enable treatment as `Cross`.
+    Above { expr: PomExpr, time_tol: Option<PomExpr>, expr_tol: Option<PomExpr>, enable: PomExpr },
     Timer { period: PomExpr, phase: PomExpr },
     /// §5.10.3.4 — `expr` is the per-step trigger row (same role as
     /// `Cross`/`Above`'s own `expr`); `delta`/`time_tol`/`expr_tol`/
@@ -289,7 +317,7 @@ impl FlatEvent {
         match &self.trigger {
             FlatEventTrigger::Initial(_) | FlatEventTrigger::Final(_) => None,
             FlatEventTrigger::Cross { expr, .. }
-            | FlatEventTrigger::Above { expr }
+            | FlatEventTrigger::Above { expr, .. }
             | FlatEventTrigger::AbsDelta { expr, .. }
             | FlatEventTrigger::Named { expr } => Some(expr),
             FlatEventTrigger::Timer { period, .. } => Some(period),
@@ -1418,13 +1446,54 @@ impl<'m> AnalogFlattener<'m> {
         let trigger = match &event.source {
             EventSource::InitialStep { analyses } => FlatEventTrigger::Initial(analyses.clone()),
             EventSource::FinalStep { analyses } => FlatEventTrigger::Final(analyses.clone()),
-            EventSource::Cross { expr, dir } => {
+            EventSource::Cross { expr, dir, time_tol, expr_tol, enable } => {
                 let e = self.inline_temps(&self.subst(expr)?);
-                FlatEventTrigger::Cross { expr: self.finish_expr(e)?, dir: *dir }
+                let tt = match time_tol {
+                    Some(t) => {
+                        let s = self.inline_temps(&self.subst(t)?);
+                        Some(self.finish_expr(s)?)
+                    }
+                    None => None,
+                };
+                let et = match expr_tol {
+                    Some(t) => {
+                        let s = self.inline_temps(&self.subst(t)?);
+                        Some(self.finish_expr(s)?)
+                    }
+                    None => None,
+                };
+                let en = self.inline_temps(&self.subst(enable)?);
+                FlatEventTrigger::Cross {
+                    expr: self.finish_expr(e)?,
+                    dir: *dir,
+                    time_tol: tt,
+                    expr_tol: et,
+                    enable: self.finish_expr(en)?,
+                }
             }
-            EventSource::Above { expr } => {
+            EventSource::Above { expr, time_tol, expr_tol, enable } => {
                 let e = self.inline_temps(&self.subst(expr)?);
-                FlatEventTrigger::Above { expr: self.finish_expr(e)? }
+                let tt = match time_tol {
+                    Some(t) => {
+                        let s = self.inline_temps(&self.subst(t)?);
+                        Some(self.finish_expr(s)?)
+                    }
+                    None => None,
+                };
+                let et = match expr_tol {
+                    Some(t) => {
+                        let s = self.inline_temps(&self.subst(t)?);
+                        Some(self.finish_expr(s)?)
+                    }
+                    None => None,
+                };
+                let en = self.inline_temps(&self.subst(enable)?);
+                FlatEventTrigger::Above {
+                    expr: self.finish_expr(e)?,
+                    time_tol: tt,
+                    expr_tol: et,
+                    enable: self.finish_expr(en)?,
+                }
             }
             EventSource::Timer { period, phase } => {
                 let ep = self.inline_temps(&self.subst(period)?);

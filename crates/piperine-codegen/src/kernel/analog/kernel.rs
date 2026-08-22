@@ -113,8 +113,18 @@ pub enum CompiledTrigger {
     /// once by `AnalogInstance::fire_final_events`, at
     /// `Element::finish_analysis` time (after the last accepted point).
     Final(Vec<String>),
-    Cross(CrossDir),
-    Above,
+    /// §5.10.3.1 (LRMW2-33) — `time_tol`/`expr_tol`/`enable` are
+    /// parameter-constant (evaluated once, same treatment as `Timer`'s
+    /// `period`/`phase`/`AbsDelta`'s own tolerances). `time_tol` (`None`
+    /// when omitted) folds into the instance's `bound_step_hint` cap
+    /// (`device/analog/events.rs`); `expr_tol` folds into the same
+    /// per-instance LTE tolerance mechanism `Ddt`/`Laplace`/`ZTransform`'s
+    /// own tolerance arguments already feed (T33/T39/T40) — both LRM
+    /// §5.10.3.1's own "absolute tolerance" framing, the same role `Ddt`'s
+    /// `abstol` plays. `enable` gates whether the detector fires at all.
+    Cross { dir: CrossDir, time_tol: Option<Box<PomExpr>>, expr_tol: Option<Box<PomExpr>>, enable: Box<PomExpr> },
+    /// §5.10.3.2 (LRMW2-33) — same tolerance/enable treatment as `Cross`.
+    Above { time_tol: Option<Box<PomExpr>>, expr_tol: Option<Box<PomExpr>>, enable: Box<PomExpr> },
     /// Fires every `period` seconds, first fire at `phase` (both
     /// parameter-constant). `phase = 0` reproduces `@timer(period)`.
     Timer { period: PomExpr, phase: Box<PomExpr> },
@@ -472,6 +482,11 @@ impl AnalogKernel {
     /// `ddt(x, abstol|nature)` tolerance expressions declared by this body
     /// (§4.5.3, LRMW2-37) — one per `ddt` call that named a second
     /// argument. Empty for a body with no tolerance-carrying `ddt` call.
+    /// `ddt`/`laplace_*`/`zi_*`'s own tolerance argument (§4.5.3/§4.5.11/
+    /// §4.5.12, LRMW2-37/35/32), plus `cross`/`above`'s `time_tol`/
+    /// `expr_tol` (§5.10.3.1/§5.10.3.2, LRMW2-33) — see `kernel/analog/
+    /// compile.rs`'s own doc comment on this field for why the latter two
+    /// reuse this lever rather than the (dead) `$bound_step` seam.
     pub fn ddt_abstols(&self) -> &[PomExpr] {
         &self.core.ddt_abstols
     }

@@ -75,8 +75,17 @@ pub enum EventSource {
     /// `final_step` / `final_step("dc", "tran", ...)` — LRM §5.10.2. Same
     /// analysis-name-list filtering as `InitialStep`.
     FinalStep { analyses: Vec<String> },
-    Cross { expr: PomExpr, dir: CrossDir },
-    Above { expr: PomExpr },
+    /// `cross(expr[, dir[, time_tol[, expr_tol[, enable]]]])` — §5.10.3.1.
+    /// `time_tol`/`expr_tol` (LRMW2-33) are `constant_expression`s
+    /// (elaboration-time constant, `None` when omitted, evaluated once per
+    /// instance the same way `Ddt`'s own `abstol` is); `enable` is an
+    /// `analog_expression` but, like `AbsDelta`'s own `enable` below,
+    /// treated as an elaboration-time constant here (documented scope
+    /// limit) — `1.0` (always active) when omitted, the LRM's own default.
+    Cross { expr: PomExpr, dir: CrossDir, time_tol: Option<PomExpr>, expr_tol: Option<PomExpr>, enable: PomExpr },
+    /// `above(expr[, time_tol[, expr_tol[, enable]]])` — §5.10.3.2. Same
+    /// tolerance/enable treatment as `Cross` above.
+    Above { expr: PomExpr, time_tol: Option<PomExpr>, expr_tol: Option<PomExpr>, enable: PomExpr },
     Timer { period: PomExpr, phase: PomExpr },
     /// `absdelta(expr, delta, [time_tol, [expr_tol, [enable]]])` —
     /// §5.10.3.4, LRMC-C5-03. `delta`/`time_tol`/`expr_tol`/`enable` are

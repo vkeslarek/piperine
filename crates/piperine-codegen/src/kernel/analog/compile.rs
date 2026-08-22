@@ -833,7 +833,7 @@ impl<'m> AnalogCompiler<'m> {
                 .iter()
                 .map(|e| match &e.trigger {
                     FlatEventTrigger::Cross { expr, .. }
-                    | FlatEventTrigger::Above { expr }
+                    | FlatEventTrigger::Above { expr, .. }
                     | FlatEventTrigger::AbsDelta { expr, .. }
                     | FlatEventTrigger::Named { expr } => expr.clone(),
                     FlatEventTrigger::Initial(_) | FlatEventTrigger::Final(_) | FlatEventTrigger::Timer { .. } => real(0.0),
@@ -857,8 +857,17 @@ impl<'m> AnalogCompiler<'m> {
                 trigger: match &e.trigger {
                     FlatEventTrigger::Initial(analyses) => CompiledTrigger::Initial(analyses.clone()),
                     FlatEventTrigger::Final(analyses) => CompiledTrigger::Final(analyses.clone()),
-                    FlatEventTrigger::Cross { dir, .. } => CompiledTrigger::Cross(*dir),
-                    FlatEventTrigger::Above { .. } => CompiledTrigger::Above,
+                    FlatEventTrigger::Cross { dir, time_tol, expr_tol, enable, .. } => CompiledTrigger::Cross {
+                        dir: *dir,
+                        time_tol: time_tol.clone().map(Box::new),
+                        expr_tol: expr_tol.clone().map(Box::new),
+                        enable: Box::new(enable.clone()),
+                    },
+                    FlatEventTrigger::Above { time_tol, expr_tol, enable, .. } => CompiledTrigger::Above {
+                        time_tol: time_tol.clone().map(Box::new),
+                        expr_tol: expr_tol.clone().map(Box::new),
+                        enable: Box::new(enable.clone()),
+                    },
                     FlatEventTrigger::Timer { period, phase } => {
                         CompiledTrigger::Timer { period: period.clone(), phase: Box::new(phase.clone()) }
                     }
@@ -1135,10 +1144,20 @@ impl<'m> AnalogCompiler<'m> {
                 .map(|(id, expr)| (id.0 as usize, expr.clone()))
                 .collect(),
             // §4.5.3/LRMW2-37 `ddt`'s own `abstol`, §4.5.11/LRMW2-35
-            // `laplace_*`'s trailing `ε`, and §4.5.12/LRMW2-32 `zi_*`'s
-            // `τ` — every one a `ddt`-shaped reactive state's own declared
-            // step-control lever, folded the same way (the instance takes
-            // the tightest across every declared state).
+            // `laplace_*`'s trailing `ε`, §4.5.12/LRMW2-32 `zi_*`'s `τ`,
+            // and §5.10.3.1/§5.10.3.2/LRMW2-33 `cross`/`above`'s
+            // `time_tol`/`expr_tol` — every one an "absolute tolerance
+            // ... largest signal level considered negligible"-shaped lever
+            // (the LRM's own §5.10.3.1 framing for `time_tol`/`expr_tol`
+            // matches `ddt`'s `abstol` almost verbatim), folded the same
+            // way (the instance takes the tightest across every declared
+            // state/event). `Element::bound_step_hint`/`$bound_step`
+            // itself is a dead lever today — no solver call site ever
+            // reads it (verified: `grep -rn "\.bound_step_hint()"` over
+            // `crates/` returns only the trait's own definition) — so
+            // `time_tol` reuses this proven-live LTE mechanism instead
+            // (T33/T39/T40's own precedent), not the inert `$bound_step`
+            // seam a first pass at this task wired it into.
             ddt_abstols: self
                 .module
                 .symbols
@@ -1149,6 +1168,13 @@ impl<'m> AnalogCompiler<'m> {
                     StateKind::ZTransform { tau: Some(e), .. } => Some(e.clone()),
                     _ => None,
                 })
+                .chain(events.iter().flat_map(|e| match &e.trigger {
+                    FlatEventTrigger::Cross { time_tol, expr_tol, .. }
+                    | FlatEventTrigger::Above { time_tol, expr_tol, .. } => {
+                        time_tol.iter().chain(expr_tol.iter()).cloned().collect::<Vec<_>>()
+                    }
+                    _ => Vec::new(),
+                }))
                 .collect(),
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),

@@ -44,6 +44,11 @@ pub(super) struct EventSystem {
     /// `Timer`'s own `period`/`phase` precedent); the common idiom
     /// (§5.10.3.4's own example) passes parameters for all four anyway.
     abs_delta_args: Vec<(f64, f64, f64, f64)>,
+    /// `cross`/`above`'s `enable` argument (§5.10.3.1/§5.10.3.2, LRMW2-33),
+    /// one per event — `1.0` (always active) for every non-`Cross`/`Above`
+    /// event, evaluated once at construction the same way `AbsDelta`'s own
+    /// `enable` already is.
+    cross_enable: Vec<f64>,
 }
 
 impl EventSystem {
@@ -83,6 +88,16 @@ impl EventSystem {
                 _ => Ok((0.0, 0.0, 0.0, 0.0)),
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let cross_enable = kernel
+            .events()
+            .iter()
+            .map(|e| match &e.trigger {
+                CompiledTrigger::Cross { enable, .. } | CompiledTrigger::Above { enable, .. } => {
+                    crate::resolve::pom_eval_const(enable, &resolve).map_err(CodegenError::ConstEval)
+                }
+                _ => Ok(1.0),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let detectors = kernel
             .events()
             .iter()
@@ -94,7 +109,7 @@ impl EventSystem {
             .iter()
             .map(|e| matches!(e.trigger, CompiledTrigger::AbsDelta { .. }).then(AbsDeltaDetector::new))
             .collect();
-        Ok(Self { detectors, periods, abs_delta, abs_delta_args })
+        Ok(Self { detectors, periods, abs_delta, abs_delta_args, cross_enable })
     }
 
     /// Absolute landing points this instance's `@timer` events fire at
@@ -145,15 +160,22 @@ impl EventSystem {
             // given a `signal::events::Trigger` counterpart.
             let Some(trigger) = (match &kernel.events()[i].trigger {
                 CompiledTrigger::Initial(_) | CompiledTrigger::Final(_) => None,
-                CompiledTrigger::Above => Some(Trigger::Above),
-                CompiledTrigger::Cross(dir) => Some(Trigger::Cross(to_signal_cross_dir(*dir))),
+                CompiledTrigger::Above { .. } => Some(Trigger::Above),
+                CompiledTrigger::Cross { dir, .. } => Some(Trigger::Cross(to_signal_cross_dir(*dir))),
                 CompiledTrigger::Timer { .. } => Some(Trigger::Timer),
                 CompiledTrigger::Named => Some(Trigger::AnyChange),
                 CompiledTrigger::AbsDelta { .. } => unreachable!("handled above"),
             }) else {
                 continue;
             };
-            fired[i] = detector.fired(trigger, triggers[i], time, self.periods[i].0);
+            let raw_fired = detector.fired(trigger, triggers[i], time, self.periods[i].0);
+            // §5.10.3.1/§5.10.3.2/LRMW2-33: while `enable` is zero,
+            // `cross`/`above` "does not generate an event" — the detector
+            // still tracks state (seed/prev) through the disabled span, the
+            // same "history tracks while disabled" rule `AbsDeltaDetector`
+            // already implements, so a later re-enable compares against
+            // real history rather than a stale pre-disable snapshot.
+            fired[i] = raw_fired && self.cross_enable[i] != 0.0;
         }
         fired
     }
