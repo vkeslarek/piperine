@@ -317,6 +317,15 @@ pub struct FlatAnalog {
     /// `kernel/analog/compile.rs` folds them via `max` into one
     /// fired-this-evaluation flag.
     pub discontinuities: Vec<PomExpr>,
+    /// T27/LRMW2-27 (§9.7.3): `$fatal(...)` call sites, same `guard ?
+    /// 1.0 : 0.0` shape as `discontinuities` — `kernel/analog/compile.rs`
+    /// folds them via `max` into one fired-this-evaluation flag the
+    /// device checks every Newton iteration, unlike `diagnostics` (which
+    /// only fires at `accept_timestep`). Same index/order as
+    /// `fatal_formats`.
+    pub fatal_flags: Vec<PomExpr>,
+    /// `fatal_flags[i]`'s format string.
+    pub fatal_formats: Vec<String>,
     pub noise: Vec<(NodeId, NodeId, PomExpr, Option<PomExpr>)>,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub runtime_states: Vec<(StateId, PomExpr)>,
@@ -702,13 +711,35 @@ impl<'m> AnalogFlattener<'m> {
                             };
                             self.out.discontinuities.push(flag);
                         }
-                        n @ ("display" | "write" | "strobe" | "monitor"
-                            | "warning" | "warn" | "error" | "fatal" | "info") =>
-                        {
+                        // T27/LRMW2-27 (§9.7.3): `$fatal` is deliberately
+                        // NOT folded into `self.out.diagnostics` with the
+                        // others below — that list only ever fires from
+                        // `accept_timestep` (design.md: at most once per
+                        // *accepted* step), so a `$fatal` guarded by a
+                        // condition true only during an intermediate,
+                        // later-rejected Newton iteration would never be
+                        // seen. Routes into `fatal_flags`/`fatal_formats`
+                        // instead (same `guard ? 1.0 : 0.0` shape
+                        // `discontinuity` already uses) so the device can
+                        // check it every iteration and terminate
+                        // immediately, per the LRM's own "as soon as
+                        // executed" semantics for `$fatal`.
+                        "fatal" => {
+                            let fmt = match args.first() {
+                                Some(PomExpr::Str { value, .. }) => value.clone(),
+                                _ => String::new(),
+                            };
+                            let flag = match guard {
+                                None => lit(1.0),
+                                Some(g) => select(g.clone(), lit(1.0), lit(0.0)),
+                            };
+                            self.out.fatal_flags.push(flag);
+                            self.out.fatal_formats.push(fmt);
+                        }
+                        n @ ("display" | "write" | "strobe" | "monitor" | "warning" | "warn" | "error" | "info") => {
                             let severity = match n {
                                 "warning" | "warn" => crate::resolve::Severity::Warn,
                                 "error" => crate::resolve::Severity::Error,
-                                "fatal" => crate::resolve::Severity::Fatal,
                                 _ => crate::resolve::Severity::Info,
                             };
                             let fmt = match args.first() {

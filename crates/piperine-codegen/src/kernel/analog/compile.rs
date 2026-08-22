@@ -886,6 +886,21 @@ impl<'m> AnalogCompiler<'m> {
             Some(self.compile_rows("discontinuity", &[any])?)
         };
 
+        // T27/LRMW2-27 (§9.7.3): `$fatal` fired-this-evaluation flag —
+        // same `max`-of-guards fold as `discontinuity` above, across
+        // every `$fatal(...)` call site.
+        let fatal_flags = std::mem::take(&mut self.flat.fatal_flags);
+        let fatal_formats = std::mem::take(&mut self.flat.fatal_formats);
+        let fatal_id = if fatal_flags.is_empty() {
+            None
+        } else {
+            let any = fatal_flags
+                .into_iter()
+                .reduce(|a, b| call("max", vec![a, b]))
+                .expect("non-empty");
+            Some(self.compile_rows("fatal", &[any])?)
+        };
+
         self.jit
             .finalize_definitions()
             .map_err(|e| CodegenError::Module(e.to_string()))?;
@@ -1004,6 +1019,7 @@ impl<'m> AnalogCompiler<'m> {
         let event_actions = event_actions_id.map(|id| get(&self.jit, id));
         let bound_step = bound_step_id.map(|id| get(&self.jit, id));
         let discontinuity = discontinuity_id.map(|id| get(&self.jit, id));
+        let fatal = fatal_id.map(|id| get(&self.jit, id));
         // Extracted before `self.jit` moves into `core` (same pattern as every
         // other finalized function pointer above).
         let param_jacobian = param_jac_id.map(|id| get_param(&self.jit, id));
@@ -1024,6 +1040,11 @@ impl<'m> AnalogCompiler<'m> {
         let diagnostic_fmt_ids: Vec<u32> = diagnostics
             .iter()
             .map(|d| crate::emit::runtime_io::FormatPool::intern(&d.format))
+            .collect();
+        // T27/LRMW2-27: same interning, for `$fatal`'s own format strings.
+        let fatal_fmt_ids: Vec<u32> = fatal_formats
+            .iter()
+            .map(|f| crate::emit::runtime_io::FormatPool::intern(f))
             .collect();
 
         let digital_terminals: Vec<bool> = self
@@ -1122,6 +1143,8 @@ impl<'m> AnalogCompiler<'m> {
             diagnostic_fmt_ids,
             bound_step,
             discontinuity,
+            fatal,
+            fatal_fmt_ids,
             disto2,
             disto2_pairs,
             disto3,

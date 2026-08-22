@@ -404,7 +404,33 @@ impl AnalogInstance {
             .eval_residual(volts, &self.params, &self.state, &self.vars, &self.sim, &mut res);
         self.kernel
             .eval_jacobian(volts, &self.params, &self.state, &self.vars, &self.sim, &mut jac);
+        self.check_fatal(volts);
         (res, jac)
+    }
+
+    /// T27/LRMW2-27 (§9.7.3): `$fatal` terminates as soon as it executes,
+    /// not waiting for `accept_timestep` like `$error`/`$warning`/`$info`
+    /// do (`AnalogKernel::emit_diagnostics`'s own doc comment) — a guard
+    /// true only during an intermediate, later-rejected Newton iteration
+    /// would otherwise never be observed. Called from every
+    /// [`Self::eval_rhs_jac`] site (DC, transient, AC Jacobian), so every
+    /// residual/Jacobian evaluation checks it, converged-and-accepted or
+    /// not.
+    fn check_fatal(&self, volts: &[f64]) {
+        if !self.kernel.has_fatal() {
+            return;
+        }
+        if self.kernel.eval_fatal(volts, &self.params, &self.state, &self.vars, &self.sim) {
+            // SAFETY: `pip_task_fatal` only reads `ctx.io` to dispatch the
+            // message through `SimOutput` — it does not mutate `SimCtx`
+            // itself. The `*mut` parameter only matches the shared
+            // `pip_task_*` trampoline signature (mirrors the `*const
+            // SimCtx` cast `eval_residual`/`eval_jacobian` already use
+            // just above).
+            let ctx_ptr = std::ptr::addr_of!(self.sim) as *mut SimCtx;
+            self.kernel.emit_fatal_diagnostics(unsafe { &mut *ctx_ptr });
+            panic!("$fatal (LRM §9.7.3) terminated the run");
+        }
     }
 
     /// Norton current source: `−res + J·V`.

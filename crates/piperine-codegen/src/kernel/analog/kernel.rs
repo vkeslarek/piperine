@@ -244,6 +244,21 @@ pub struct AnalogKernel {
     /// `$discontinuity` fired-this-evaluation flag (LRMC-C7-11, T42);
     /// `None` without any `$discontinuity` call.
     pub(super) discontinuity: Option<AnalogFn>,
+    /// T27/LRMW2-27 (§9.7.3): `$fatal(...)` fired-this-evaluation flag —
+    /// folded via the same `max`-of-guards pattern as `discontinuity`
+    /// across every `$fatal(...)` call site, so any one whose guard is
+    /// true this Newton iteration sets it. Unlike `diagnostics`
+    /// (deferred to `accept_timestep`), the device checks this every
+    /// iteration (`AnalogInstance::check_fatal`) — `$fatal` terminates
+    /// immediately, not waiting for the step to be accepted.
+    /// `None` without any `$fatal` call.
+    pub(super) fatal: Option<AnalogFn>,
+    /// Every `$fatal` call site's format string, interned the same way
+    /// `diagnostic_fmt_ids` is. When [`Self::fatal`] fires, every one of
+    /// these is emitted — the aggregate flag does not distinguish *which*
+    /// call site's guard was true (the same approximation `discontinuity`
+    /// already makes for `$discontinuity`'s `degree`).
+    pub(super) fatal_fmt_ids: Vec<u32>,
     /// `.disto` 2nd-derivative kernel (DISTO-03): one compiled function per
     /// ordered branch pair `(j, k)` in `disto2_pairs` (same index), each
     /// writing `∂²(contrib)/∂V(j)∂V(k)` per contribution (resistive first,
@@ -781,6 +796,14 @@ impl AnalogKernel {
                 continue;
             }
             let ctx_ptr = ctx as *mut SimCtx;
+            // T27/LRMW2-27: `$fatal` no longer lands in `self.diagnostics`
+            // at all — `flatten/analog.rs`'s `TaskCall` arm routes it into
+            // `fatal_flags`/`fatal_formats` instead, so this severity is
+            // never `Fatal` in practice; `emit_fatal_diagnostics` (checked
+            // every Newton iteration, not just accept_timestep) is `$fatal`'s
+            // only emission path now. `Severity` keeps the `Fatal` variant
+            // (still a valid POM value elsewhere), so this match stays
+            // exhaustive rather than assuming the invariant.
             match d.severity {
                 crate::resolve::Severity::Fatal => {
                     crate::emit::runtime_io::pip_task_fatal(ctx_ptr, fmt_id, 0, std::ptr::null());
@@ -1000,6 +1023,37 @@ impl AnalogKernel {
                 out[0] != 0.0
             }
             None => false,
+        }
+    }
+
+    /// Whether this kernel has any `$fatal` call site (T27/LRMW2-27).
+    pub fn has_fatal(&self) -> bool {
+        self.fatal.is_some()
+    }
+
+    /// Whether `$fatal` fired anywhere in this device's behavior for the
+    /// given inputs (T27/LRMW2-27) — same compiled-flag shape as
+    /// [`Self::eval_discontinuity`], but callable every Newton iteration:
+    /// `$fatal` must terminate immediately, not wait for the step to be
+    /// accepted (LRM §9.7.3).
+    pub fn eval_fatal(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx) -> bool {
+        match self.fatal {
+            Some(f) => {
+                self.check_input_lens(volts, params, state, vars);
+                let mut out = [0.0];
+                Self::call(f, volts, params, state, vars, sim, &mut out);
+                out[0] != 0.0
+            }
+            None => false,
+        }
+    }
+
+    /// Emits every `$fatal` call site's message through `ctx.io` (T27) —
+    /// called once, only when [`Self::eval_fatal`] just returned `true`.
+    pub fn emit_fatal_diagnostics(&self, ctx: &mut SimCtx) {
+        let ctx_ptr = ctx as *mut SimCtx;
+        for &fmt_id in &self.fatal_fmt_ids {
+            crate::emit::runtime_io::pip_task_fatal(ctx_ptr, fmt_id, 0, std::ptr::null());
         }
     }
 
