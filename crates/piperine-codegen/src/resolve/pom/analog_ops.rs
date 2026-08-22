@@ -223,11 +223,21 @@ impl AnalogOp for Transition {
 
 struct Slew;
 impl AnalogOp for Slew {
+    /// §4.5.9: `slew(expr[, max_pos_slew_rate[, max_neg_slew_rate]])`. "If
+    /// the max_neg_slew_rate is not specified, it defaults to the opposite
+    /// of the max_pos_slew_rate" — an omitted (but not merely absent
+    /// entirely: only when `rise` itself was given) `max_neg_slew_rate`
+    /// reuses `rise`'s expression, not a bare `0.0` (which limited the
+    /// falling edge to a dead stop instead of mirroring the rising limit —
+    /// `device/analog/operators.rs`/`piperine_ir::ops::Operator::slew`
+    /// both store the fall rate as a magnitude via `.abs()`, so reusing
+    /// `rise` verbatim already yields the LRM's `-max_pos_slew_rate`
+    /// magnitude without needing an explicit negation here).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let rise = arg(args, 1, ctx, 0.0);
-        let fall = arg(args, 2, ctx, 0.0);
+        let fall = args.get(2).map(|a| resolve_expr(a, ctx)).unwrap_or_else(|| rise.clone());
         let id = ctx.alloc_state(StateKind::Slew { rise: rise.clone(), fall: fall.clone() }, x.clone());
         marker("__slew", id, vec![x, rise, fall])
     }
