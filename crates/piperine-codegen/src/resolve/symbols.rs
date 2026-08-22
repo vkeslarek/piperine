@@ -130,8 +130,11 @@ pub enum StateKind {
     /// nature, otherwise carried as a (possibly param-dependent) constant
     /// expression, evaluated once per instance the same way `Idt`'s `ic` is.
     Ddt { abstol: Option<PomExpr> },
-    /// `idt(x, ic)` — time integral (reactive).
-    Idt { ic: PomExpr },
+    /// `idt(x, ic[, assert])` — time integral (reactive). §4.5.4: while
+    /// `assert` is nonzero the operator holds at `ic`; once it drops back
+    /// to zero, integration resumes from that instant with `ic` as the new
+    /// starting constant.
+    Idt { ic: PomExpr, assert: Option<PomExpr> },
     /// `idtmod(x, ic, modulus)` — modular integral (reactive).
     IdtMod { ic: PomExpr, modulus: PomExpr },
     /// `ddx(x, node)` — compile-time derivative w.r.t. `V(node)`.

@@ -340,6 +340,11 @@ pub struct FlatAnalog {
     pub noise: Vec<(NodeId, NodeId, PomExpr, Option<PomExpr>)>,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub runtime_states: Vec<(StateId, PomExpr)>,
+    /// `idt(x, ic, assert)`'s `assert` input (§4.5.4, LRMW2-29), one entry
+    /// per `idt` state that named one — a state absent here has no assert
+    /// row compiled (`kernel/analog/compile.rs`'s `assert_inputs` function
+    /// defaults every other slot to `0.0`, i.e. never-asserted).
+    pub runtime_state_asserts: Vec<(StateId, PomExpr)>,
     pub events: Vec<FlatEvent>,
     /// UIC seeds: `(plus, minus, value)`. Always empty post-MD-45 — the
     /// sole PHDL producer (`BindOp::Force` inside `@initial`) has no VAMS
@@ -371,6 +376,7 @@ impl FlatAnalog {
             .chain(self.bound_steps.iter())
             .chain(self.noise.iter().map(|(_, _, psd, _)| psd))
             .chain(self.runtime_states.iter().map(|(_, input)| input))
+            .chain(self.runtime_state_asserts.iter().map(|(_, input)| input))
             .chain(self.events.iter().flat_map(FlatEvent::exprs))
     }
 
@@ -1315,7 +1321,12 @@ impl<'m> AnalogFlattener<'m> {
                         return lit(0.0);
                     }
                     "__idt" | "__idtmod" => {
-                        // __idt(id, x, ic[, modulus]) → __state_load(id) + step * x
+                        // __idt(id, x, ic[, assert]) / __idtmod(id, x, ic, modulus)
+                        // → __state_load(id) + step * x. `ic`/`modulus`/`assert`
+                        // do not appear in this formula at all — they only seed
+                        // or reset the runtime `Operator::Integrate` accumulator
+                        // that `__state_load` reads (`AnalogInstance::new`/
+                        // `accept_timestep`), never the mid-Newton companion.
                         if args.len() >= 2 {
                             let id = match &args[0] {
                                 PomExpr::Number { value: NumberLit::Integer(n), .. } => StateId(*n as u32),
@@ -1324,6 +1335,15 @@ impl<'m> AnalogFlattener<'m> {
                             let x = &args[1];
                             if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
                                 self.out.runtime_states.push((id, x.clone()));
+                            }
+                            // §4.5.4/LRMW2-29: `idt`'s 3rd argument, `assert` —
+                            // its own runtime input row, read at
+                            // `accept_timestep` to force a reset to `ic`.
+                            if name == "__idt"
+                                && let Some(assert) = args.get(3)
+                                && !self.out.runtime_state_asserts.iter().any(|(s, _)| *s == id)
+                            {
+                                self.out.runtime_state_asserts.push((id, assert.clone()));
                             }
                             let state_load = call("__state_load", vec![int(id.0 as i64)]);
                             let step = PomExpr::SystemFunctionCall {

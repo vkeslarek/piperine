@@ -94,12 +94,20 @@ impl AnalogOp for Ddt {
 
 struct Idt;
 impl AnalogOp for Idt {
+    /// §4.5.4: `idt(expr[, ic[, assert[, abstol|nature]]])` — this task
+    /// (LRMW2-29) carries `assert`; the trailing `abstol`/`nature` stays
+    /// out of scope here (tracked separately).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
-        let id = ctx.alloc_state(StateKind::Idt { ic: ic.clone() }, x.clone());
-        marker("__idt", id, vec![x, ic])
+        let assert = args.get(2).map(|a| resolve_expr(a, ctx));
+        let id = ctx.alloc_state(StateKind::Idt { ic: ic.clone(), assert: assert.clone() }, x.clone());
+        let mut margs = vec![x, ic];
+        if let Some(a) = assert {
+            margs.push(a);
+        }
+        marker("__idt", id, margs)
     }
 }
 

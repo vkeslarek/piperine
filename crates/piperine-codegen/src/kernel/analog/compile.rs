@@ -720,6 +720,21 @@ impl<'m> AnalogCompiler<'m> {
             Some(self.compile_rows("state_inputs", &rows)?)
         };
 
+        // §4.5.4/LRMW2-29: `idt(x, ic, assert)`'s `assert` row, one per
+        // state slot (default `0.0` — never asserted) the same shape as
+        // `state_inputs` above; `AnalogInstance::accept_timestep` reads it
+        // to force an Integrator slot back to its `ic` while nonzero.
+        let runtime_asserts = std::mem::take(&mut self.flat.runtime_state_asserts);
+        let assert_inputs_id = if runtime_asserts.is_empty() {
+            None
+        } else {
+            let mut rows = vec![real(0.0); self.module.symbols.num_states()];
+            for (id, input) in &runtime_asserts {
+                rows[id.0 as usize] = input.clone();
+            }
+            Some(self.compile_rows("assert_inputs", &rows)?)
+        };
+
         // Opvar compilation path (ABI-30): one row per non-shadow module
         // var, reading its final temp (`__temp(id)`). When the module has
         // no analog vars, the path is `None` (zero overhead — no function
@@ -929,7 +944,7 @@ impl<'m> AnalogCompiler<'m> {
                         rise: rise.clone(),
                         fall: fall.clone(),
                     },
-                    StateKind::Idt { ic } => {
+                    StateKind::Idt { ic, .. } => {
                         RuntimeState::Integrator { ic: ic.clone(), modulus: None }
                     }
                     StateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
@@ -1129,6 +1144,7 @@ impl<'m> AnalogCompiler<'m> {
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
+            assert_inputs: assert_inputs_id.map(|id| get(&self.jit, id)),
             _jit: self.jit.into(),
         };
 

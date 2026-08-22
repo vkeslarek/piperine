@@ -199,6 +199,10 @@ pub(super) struct AnalogCore {
     /// Runtime-state input values (one per state slot); `None` without
     /// runtime states.
     pub(super) state_inputs: Option<AnalogFn>,
+    /// `idt(x, ic, assert)`'s `assert` value (one per state slot,
+    /// §4.5.4/LRMW2-29); `None` when no `idt` call in this body named an
+    /// `assert` argument.
+    pub(super) assert_inputs: Option<AnalogFn>,
     pub(super) _jit: OwnedJit,
 }
 
@@ -990,6 +994,17 @@ impl AnalogKernel {
     /// Write each runtime state's input value to `out[0..num_state_slots]`.
     pub fn eval_state_inputs(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.core.state_inputs {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Write each `idt` state's `assert` value to `out[0..num_state_slots]`
+    /// (§4.5.4/LRMW2-29) — a slot with no `assert` argument writes `0.0`
+    /// (never asserted). No-op (leaves `out` untouched) when no `idt` call
+    /// in this body named an `assert` argument.
+    pub fn eval_assert_inputs(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.core.assert_inputs {
             self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }

@@ -246,13 +246,17 @@ impl AnalogInstance {
                             value(fall)?.abs(),
                         ),
                     ),
-                    RuntimeState::Integrator { ic, modulus } => SlottedOperator::new(
-                        slot,
-                        piperine_ir::ops::Operator::integrate(
-                            value(ic)?,
-                            modulus.as_ref().map(&value).transpose()?,
-                        ),
-                    ),
+                    RuntimeState::Integrator { ic, modulus } => {
+                        let ic_value = value(ic)?;
+                        SlottedOperator::with_assert_ic(
+                            slot,
+                            piperine_ir::ops::Operator::integrate(
+                                ic_value,
+                                modulus.as_ref().map(&value).transpose()?,
+                            ),
+                            ic_value,
+                        )
+                    }
                 })
             })
             .collect::<Result<Vec<_>, CodegenError>>()?;
@@ -261,7 +265,7 @@ impl AnalogInstance {
         // slot starts at 0.
         let mut state = vec![0.0; kernel.num_state_slots()];
         for op in &operators {
-            if let SlottedOperator { slot, op: piperine_ir::ops::Operator::Integrate { value, .. } } = op {
+            if let SlottedOperator { slot, op: piperine_ir::ops::Operator::Integrate { value, .. }, .. } = op {
                 state[*slot] = *value;
             }
         }
@@ -1466,9 +1470,14 @@ impl AnalogInstance {
             let mut inputs = vec![0.0; self.state.len()];
             self.kernel
                 .eval_state_inputs(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut inputs);
+            // §4.5.4/LRMW2-29: `idt`'s `assert` row — `0.0` (never
+            // asserted) at every slot that named no `assert` argument.
+            let mut asserts = vec![0.0; self.state.len()];
+            self.kernel
+                .eval_assert_inputs(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut asserts);
             for op in &mut self.operators {
                 let slot = op.slot();
-                self.state[slot] = op.accept(t, inputs[slot]);
+                self.state[slot] = op.accept(t, inputs[slot], asserts[slot]);
             }
         }
         self.detect_events(&volts, t);
