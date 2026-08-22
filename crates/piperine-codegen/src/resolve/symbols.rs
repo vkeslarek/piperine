@@ -149,8 +149,15 @@ pub enum StateKind {
     Slew { rise: PomExpr, fall: PomExpr },
     /// Measured-data lookup.
     Table { data: TableRef, mode: InterpMode },
-    /// `laplace_*(x, num, den)` — Laplace filter (reactive).
-    Laplace { variant: LaplaceKind, num: Vec<PomExpr>, den: Vec<PomExpr> },
+    /// `laplace_*(x, num, den[, abstol])` — Laplace filter (reactive).
+    /// §4.5.15's trailing `ε`/`abstol_expression` (LRMW2-35): folded, same
+    /// as `Ddt`'s own `abstol`, into the instance's LTE tolerance rather
+    /// than driving the (unimplemented) s-domain transfer function itself
+    /// — `laplace_*` still lowers its `x` argument through the same
+    /// `ddt`-shaped charge/resistive split as `Ddt` (`num`/`den` compiled
+    /// but not yet realized as a filter, a pre-existing, separately
+    /// tracked gap, `SPEC_DEVIATION.md` §3/§4).
+    Laplace { variant: LaplaceKind, num: Vec<PomExpr>, den: Vec<PomExpr>, abstol: Option<PomExpr> },
     /// `zi_*(x, num, den, dt)` — Z-transform filter (reactive).
     ZTransform { variant: ZKind, num: Vec<PomExpr>, den: Vec<PomExpr>, sample_dt: PomExpr },
 }

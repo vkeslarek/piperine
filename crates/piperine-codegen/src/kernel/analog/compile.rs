@@ -1134,12 +1134,17 @@ impl<'m> AnalogCompiler<'m> {
                 .iter()
                 .map(|(id, expr)| (id.0 as usize, expr.clone()))
                 .collect(),
+            // §4.5.3/LRMW2-37 `ddt`'s own `abstol`, and §4.5.15/LRMW2-35
+            // `laplace_*`'s trailing `ε` — both a `ddt`-shaped reactive
+            // state's own declared tolerance, folded the same way (the
+            // instance takes the tightest across every declared state).
             ddt_abstols: self
                 .module
                 .symbols
                 .states()
                 .filter_map(|(_, s)| match &s.kind {
                     StateKind::Ddt { abstol: Some(e) } => Some(e.clone()),
+                    StateKind::Laplace { abstol: Some(e), .. } => Some(e.clone()),
                     _ => None,
                 })
                 .collect(),

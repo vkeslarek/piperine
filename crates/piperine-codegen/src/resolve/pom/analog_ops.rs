@@ -367,6 +367,11 @@ struct Laplace {
     variant: &'static str,
 }
 impl AnalogOp for Laplace {
+    /// §4.5.15/4.5.11: `laplace_*(expr, num_or_zeros, den_or_poles[, ε])`
+    /// — the trailing `abstol_expression` (LRMW2-35) is a `constant_
+    /// expression`, resolved once per instance the same way `Ddt`'s own
+    /// `abstol` is (`ctx` carries no nature-lookup case here — §4.5.15's
+    /// table spells it `abstol`, never `nature_identifier`, unlike `ddt`).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 3 {
             return real(0.0);
@@ -374,6 +379,7 @@ impl AnalogOp for Laplace {
         let x = resolve_expr(&args[0], ctx);
         let num = to_coeff_vec(&args[1], ctx);
         let den = to_coeff_vec(&args[2], ctx);
+        let abstol = args.get(3).map(|a| resolve_expr(a, ctx));
         let variant = match self.variant {
             "zp" => LaplaceKind::ZerosPoles,
             "np" => LaplaceKind::NumPoles,
@@ -381,7 +387,7 @@ impl AnalogOp for Laplace {
             _ => LaplaceKind::NumDen,
         };
         let id = ctx.alloc_state(
-            StateKind::Laplace { variant, num: num.clone(), den: den.clone() },
+            StateKind::Laplace { variant, num: num.clone(), den: den.clone(), abstol: abstol.clone() },
             x.clone(),
         );
         let marker_args = vec![
