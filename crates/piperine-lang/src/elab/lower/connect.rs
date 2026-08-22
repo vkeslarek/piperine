@@ -64,6 +64,17 @@ impl ElabPass for InsertConnectModules {
                     if local_disc == callee_disc || local_disc.is_empty() || callee_disc.is_empty() {
                         continue;
                     }
+                    // §3.11.1 (LRMW2-24, T30): two disciplines whose
+                    // bound natures are compatible by derivation family
+                    // or units (not just by name) connect directly, no
+                    // bridging connect module needed — mirrors
+                    // `ResolveDisciplines`'s own use of the same check
+                    // right below (`disciplines.rs`) so a nature-
+                    // compatible pair never reaches connect-module
+                    // selection at all.
+                    if super::disciplines::disciplines_nature_compatible(design, &local_disc, callee_disc) {
+                        continue;
+                    }
                     // §7.7.2 (T33): `connect ... resolveto` unifies two
                     // discipline *names* (typically two compatible
                     // discrete variants, LRM Figure 7-5's cmos1-4) without

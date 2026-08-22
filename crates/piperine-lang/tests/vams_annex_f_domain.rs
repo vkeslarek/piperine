@@ -1,4 +1,4 @@
-//! LRM-COVERS: 7.4.4.1
+//! LRM-COVERS: 7.4.4.1, 3.11.1
 //! Annex F §7.4.4.1's continuous-over-discrete resolution rule and the
 //! `` `default_discipline `` fallback (LRMC-C10-18/19) — `ResolveDisciplines`
 //! reads each conflicting discipline's declared domain instead of
@@ -6,6 +6,10 @@
 //! LRM's own Figure 7-3 `NetC`/`NetD` worked example ("`NetC` resolves to
 //! electrical based on continuous (electrical) winning over discrete
 //! (`cmos2`)").
+//!
+//! LRMW2-24 (`lrm-conformance-wave2`, T30): `same_domain_incompatible_
+//! disciplines_still_hard_fail` doubles as the required §3.11.1 negative
+//! case — a genuinely nature-incompatible same-domain pair still errors.
 
 use piperine_lang::{parse_and_elaborate, SourceMap};
 
@@ -109,13 +113,28 @@ fn continuous_wins_regardless_of_connection_order() {
 /// hard-fail exactly as today — the fix narrows the false-positive case
 /// (cross-domain), it does not loosen genuine same-domain incompatibility
 /// detection.
+///
+/// LRMW2-24 (T30) re-verification note: this fixture originally bound
+/// `other_continuous` to the *same* `Voltage`/`Current` natures as
+/// `electrical`, differing only in discipline *name* — under name-equality
+/// compatibility that correctly hard-failed, but per §3.11.1's actual
+/// rules (Self Rule for Nature: identical bound natures ARE compatible
+/// regardless of the disciplines' own names) that pair is not genuinely
+/// incompatible at all. `other_continuous` now binds an unrelated
+/// `Position` nature (no shared base, no shared `units` with `Voltage`)
+/// so this stays a real §3.11.1 negative case after T30's fix.
 #[test]
 fn same_domain_incompatible_disciplines_still_hard_fail() {
     let src = format!(
         "{NATURES_AND_DISCIPLINES}
+        nature Position;
+            units = \"m\";
+            abstol = 1e-6;
+            access = X;
+        endnature
         discipline other_continuous;
             domain continuous;
-            potential Voltage;
+            potential Position;
             flow Current;
         enddiscipline
         module drv_e (inout electrical p);

@@ -224,6 +224,19 @@ fn resolve_one_round(elab: &Elaborator, name: &str, design: &mut Design) -> Resu
                             // next, which is exactly what connect-module
                             // selection needs to act on.
                         }
+                        _ if disciplines_nature_compatible(design, d, callee_disc) => {
+                            // §3.11.1 (LRMW2-24, T30): two same-domain
+                            // disciplines with different *names* are still
+                            // compatible when their bound natures are —
+                            // the Base/Derived Nature and Units Value
+                            // rules, not name equality. The LRM's own
+                            // example: `electrical` (potential `Voltage`)
+                            // connects to `highvolt` (potential
+                            // `highvoltage`, `nature highvoltage :
+                            // Voltage;`) via the Base Nature Rule. Neither
+                            // side is rewritten — both keep their own,
+                            // genuinely-compatible discipline.
+                        }
                         _ => {
                             // Same domain (different names) with no
                             // eligible connectrules pair, or domain
@@ -279,4 +292,92 @@ fn local_net_discipline(module: &Module, net: &str) -> Option<String> {
         .find(|p| p.name == net)
         .map(|p| p.ty.discipline_name().to_string())
         .or_else(|| module.wires.iter().find(|w| w.name == net).map(|w| w.ty.discipline_name().to_string()))
+}
+
+/// §3.11.1 discipline compatibility, by nature derivation family — not
+/// name equality (LRMW2-24, T30). Both `d1`/`d2` are already known to
+/// share a domain (or have one/both unknown) by the time this is called
+/// — the caller's domain-mismatch arms run first. Unknown discipline
+/// names (no declaration in this design) can't be reasoned about and are
+/// treated as incompatible, same as before this task (spec Edge Case: the
+/// fix narrows the false-positive case, it never loosens genuine
+/// incompatibility).
+pub(super) fn disciplines_nature_compatible(design: &Design, d1: &str, d2: &str) -> bool {
+    if d1 == d2 {
+        return true; // Self Rule (Discipline).
+    }
+    let (Some(disc1), Some(disc2)) = (design.discipline(d1), design.discipline(d2)) else {
+        return false;
+    };
+    // Domainless Discipline Rule: a discipline with no domain attribute
+    // is compatible with all disciplines (no nature or domain conflict).
+    if disc1.domain.is_none() || disc2.domain.is_none() {
+        return true;
+    }
+    // Domain Incompatibility Rule: disciplines with different domain
+    // attributes are incompatible — checked explicitly here because this
+    // function is also called from `InsertConnectModules` (T30), whose
+    // caller does *not* pre-establish same-domain the way
+    // `ResolveDisciplines`'s own hard-fail fallback does.
+    if disc1.domain != disc2.domain {
+        return false;
+    }
+    // Natureless Discipline Rule: a discipline binding neither a
+    // potential nor a flow nature is compatible with all other
+    // disciplines of the same domain (domain equality just established
+    // above).
+    if (disc1.potential.is_none() && disc1.flow.is_none()) || (disc2.potential.is_none() && disc2.flow.is_none()) {
+        return true;
+    }
+    // Potential Incompatibility Rule + Flow Incompatibility Rule: both
+    // the bound potential natures and the bound flow natures must be
+    // nature-compatible.
+    natures_compatible(design, disc1.potential.as_deref(), disc2.potential.as_deref())
+        && natures_compatible(design, disc1.flow.as_deref(), disc2.flow.as_deref())
+}
+
+/// §3.11.1 nature compatibility: Self Rule, Non-Existent Binding Rule,
+/// Base Nature Rule (a derived nature is compatible with its base), the
+/// Derived Nature Rule (two natures derived from the same base are
+/// compatible with each other), and the Units Value Rule (two natures
+/// with the same declared `units` are compatible regardless of lineage).
+fn natures_compatible(design: &Design, a: Option<&str>, b: Option<&str>) -> bool {
+    let (Some(a), Some(b)) = (a, b) else {
+        return true; // Non-Existent Binding Rule.
+    };
+    if a == b {
+        return true; // Self Rule (Nature).
+    }
+    let (Some(na), Some(nb)) = (design.nature(a), design.nature(b)) else {
+        return false;
+    };
+    // Base Nature Rule + Derived Nature Rule: compatible if either one's
+    // ancestor chain (inclusive of itself) contains the other's name —
+    // covers both "derived compatible with its own base" and "two
+    // natures derived from the same base" (the shared-base name appears
+    // in both chains).
+    let chain_a = nature_ancestor_chain(design, a);
+    let chain_b = nature_ancestor_chain(design, b);
+    if chain_a.iter().any(|n| chain_b.contains(n)) {
+        return true;
+    }
+    // Units Value Rule: same declared `units`, regardless of lineage.
+    matches!((&na.units, &nb.units), (Some(ua), Some(ub)) if ua == ub)
+}
+
+/// `name` and every ancestor reached by following `Nature::parent`,
+/// nearest-first. Cycle-safe (a self-referential or looping `parent`
+/// chain in the design would otherwise spin forever) via a visited set.
+fn nature_ancestor_chain(design: &Design, name: &str) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut current = Some(name.to_string());
+    while let Some(n) = current {
+        if !seen.insert(n.clone()) {
+            break;
+        }
+        chain.push(n.clone());
+        current = design.nature(&n).and_then(|nat| nat.parent.clone());
+    }
+    chain
 }
