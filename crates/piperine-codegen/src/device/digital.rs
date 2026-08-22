@@ -567,6 +567,9 @@ impl DigitalInstance {
         net: DigitalNet,
         value: i64,
     ) {
+        // T26/LRMW2-26 (§8.4.3.3): quantize to the module's `` `timescale ``
+        // precision grid — a no-op without a `` `timescale `` directive.
+        let time = self.kernel.quantize_time(time);
         queue.push(Reverse(DigitalEvent {
             time,
             net,

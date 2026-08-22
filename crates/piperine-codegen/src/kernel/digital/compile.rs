@@ -246,6 +246,10 @@ impl<'m> DigitalCompiler<'m> {
             .map(|&id| self.module.symbols.node(id).name.clone())
             .collect();
 
+        // T26/LRMW2-26: LRM's own `` `timescale `` -> precision-grid rule
+        // (§8.4.3.3): the grid step is `10^precision_exponent` seconds.
+        let timescale_grid = self.module.timescale.map(|ts| 10f64.powi(ts.precision_exponent));
+
         Ok(DigitalKernel {
             name: self.module.name.clone(),
             inputs: self.body.inputs.clone(),
@@ -260,6 +264,7 @@ impl<'m> DigitalCompiler<'m> {
             comb,
             seq,
             watch,
+            timescale_grid,
             _jit: self.jit.into(),
         })
     }

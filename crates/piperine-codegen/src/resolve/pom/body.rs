@@ -62,6 +62,14 @@ pub struct LoweredBody {
     /// rule for POM branch-kind bookkeeping; this is `flatten/analog.rs`'s
     /// copy for contribution-destination classification.
     pub access_kinds: HashMap<String, NatureKind>,
+    /// T26/LRMW2-26 (LRM §8.4.3.3): the `` `timescale `` in force for this
+    /// module (1364-2005), `None` when the module declares none — codegen's
+    /// only consumer today is the digital event scheduler
+    /// (`kernel/digital/abi.rs`'s `DigitalKernel::timescale`), which rounds
+    /// every event time to the `precision_exponent` grid before scheduling
+    /// it. `None` means no quantization (unchanged pre-T26 behavior) —
+    /// most fixtures declare no `` `timescale `` at all.
+    pub timescale: Option<piperine_lang::directives::Timescale>,
 }
 
 impl LoweredBody {
@@ -298,6 +306,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             cover: None,
             var_inits: Vec::new(),
             access_kinds: access_kinds.clone(),
+            timescale: m.timescale,
         });
     }
 

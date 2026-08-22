@@ -138,6 +138,12 @@ pub struct DigitalKernel {
     pub(crate) comb: DigitalFn,
     pub(crate) seq: Option<DigitalFn>,
     pub(crate) watch: Option<WatchFn>,
+    /// T26/LRMW2-26 (LRM §8.4.3.3): the module's `` `timescale `` precision
+    /// grid, in seconds — `None` when the module declares no
+    /// `` `timescale `` (no quantization). Every digital/A2D event time is
+    /// rounded to the nearest multiple of this before scheduling
+    /// (`DigitalKernel::quantize_time`).
+    pub(crate) timescale_grid: Option<f64>,
     pub(crate) _jit: OwnedJit,
 }
 
@@ -189,6 +195,20 @@ impl DigitalKernel {
 
     pub fn reg_inits(&self) -> &[RegInit] {
         &self.reg_inits
+    }
+
+    /// T26/LRMW2-26 (LRM §8.4.3.3): rounds `time` to the nearest multiple
+    /// of the module's `` `timescale `` precision grid — the digital event
+    /// scheduler's own time resolution, distinct from the (typically much
+    /// finer) real-valued time the analog solver's adaptive step control
+    /// works in. A module with no `` `timescale `` directive quantizes
+    /// nothing (`time` unchanged) — most fixtures declare none, so this is
+    /// a no-op for them.
+    pub fn quantize_time(&self, time: f64) -> f64 {
+        match self.timescale_grid {
+            Some(grid) if grid > 0.0 => (time / grid).round() * grid,
+            _ => time,
+        }
     }
 
     /// Run the combinational function.
