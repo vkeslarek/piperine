@@ -352,7 +352,15 @@ impl DigitalDevice for PiperineDevice {
         }
 
         if let Some(analog) = &mut self.analog {
-            let vars = digital.export_vars();
+            // T25/LRMW2-23 (§7.3.2): `comb_phase` (the `DigitalDevice`
+            // trait) has no `Result` return — this ABI predates a runtime
+            // digital→analog error channel and extending it is out of this
+            // fix's scope (see `DigitalLayout::export_vars`'s doc comment).
+            // A `Quad` var genuinely carrying X/Z into the analog side is a
+            // real-model bug (LRM §7.3.2 requires `===`/`case` handling
+            // first), so this fails loud via a panic naming the net rather
+            // than silently smuggling 2.0/3.0 into the analog solve.
+            let vars = digital.export_vars().unwrap_or_else(|e| panic!("{e}"));
             analog.sync_vars(&vars);
         }
     }

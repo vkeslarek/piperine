@@ -17,8 +17,9 @@
 //!   reads inputs and the live variable banks, writes outputs and the banks.
 //!   Unassigned-before-read variables hold their previous value (a latch).
 //! - `seq(*abi)` — for each clocked block whose `fired` flag is set, runs the
-//!   register updates: reads see the *pre-edge* bank copies, writes go to the
-//!   live banks (SPEC §9).
+//!   register updates: reads see the live banks; `=` writes land live
+//!   immediately, `<=` writes stage and are committed by the device after
+//!   the call returns (LRM §8.5.3.3/4, T23).
 //! - `watch(*abi, *out)` — evaluates each atomic event term (the signal under
 //!   a `posedge`/`negedge`/`change`); the device compares against the
 //!   previous values to derive the per-block `fired` flags.
@@ -30,6 +31,7 @@ use crate::resolve::{
     Domain, DigitalBody, LoweredBody, Type,
     NodeId, VarId,
 };
+use crate::error::CodegenError;
 
 
 
@@ -58,6 +60,15 @@ pub struct DigitalLayout {
     /// exporting slot-owned-but-unwritten vars pushed the digital bank's
     /// zeros over analog-owned state on every `comb_phase`.
     pub(crate) written: std::collections::HashSet<VarId>,
+    /// Names of the int-bank vars that are genuinely 4-state (`Type::Quad`,
+    /// LRM's `reg`) — as opposed to a 2-state `Type::Integer`/`Bool` var
+    /// that merely shares the same bank. T25/LRMW2-23 (§7.3.2): only a
+    /// `Quad` var's raw encoding can legitimately mean X(2)/Z(3); an
+    /// `Integer` var holding the literal value `2` or `3` is an ordinary
+    /// number, never a 4-state bit. [`Self::export_vars`] consults this to
+    /// tell "digital X/Z crossing into a continuous (analog) context" apart
+    /// from "an integer that happens to be 2 or 3".
+    pub(crate) quad_var_names: HashMap<VarId, String>,
 }
 
 impl DigitalLayout {
@@ -78,6 +89,9 @@ impl DigitalLayout {
                 Type::Integer | Type::Bool | Type::Quad => {
                     layout.int_slot.insert(id, layout.num_int);
                     layout.num_int += 1;
+                    if info.ty == Type::Quad {
+                        layout.quad_var_names.insert(id, info.name.clone());
+                    }
                 }
             }
         }
@@ -153,11 +167,30 @@ impl DigitalLayout {
     /// an `@timer` that maintained state (`@timer(tsw) { t0 = $abstime(); }`)
     /// fired correctly and had its write erased microseconds later, and the
     /// module's analog timebase quietly stopped existing.
-    pub fn export_vars(&self, vars_int: &[i64], vars_real: &[f64]) -> Vec<(VarId, f64)> {
+    /// T25/LRMW2-23 (LRM §7.3.2): a `Quad` (4-state) var's raw encoding is
+    /// only ever a real *value* when it is defined (`0`/`1`) — `2`/`3`
+    /// (X/Z) crossing into the analog side's continuous var bank would
+    /// silently read back as the real numbers `2.0`/`3.0`, values §7.3.2
+    /// says an implicit conversion must never invent. Fails loud instead,
+    /// naming the net, unless the caller uses one of the LRM's own
+    /// escape hatches (`===`/`!==`, `case`/`casex`/`casez`) to handle X/Z
+    /// explicitly before the value ever reaches a continuous context — a
+    /// 2-state `Integer`/`Bool` var sharing the same bank is unaffected
+    /// (`2`/`3` there is an ordinary number, not an unknown bit).
+    pub fn export_vars(&self, vars_int: &[i64], vars_real: &[f64]) -> Result<Vec<(VarId, f64)>, CodegenError> {
         let mut out = Vec::with_capacity(self.written.len());
         for (&var_id, &slot) in &self.int_slot {
             if self.written.contains(&var_id) && slot < vars_int.len() {
-                out.push((var_id, vars_int[slot] as f64));
+                let raw = vars_int[slot];
+                if matches!(raw, 2 | 3) {
+                    if let Some(name) = self.quad_var_names.get(&var_id) {
+                        let state = if raw == 2 { "X (unknown)" } else { "Z (high impedance)" };
+                        return Err(CodegenError::unsupported(format!(
+                            "digital net `{name}` is {state} while read in a continuous (analog) context — LRM §7.3.2 requires an explicit `===`/`!==` or `case`/`casex`/`casez` before converting a 4-state value to real"
+                        )));
+                    }
+                }
+                out.push((var_id, raw as f64));
             }
         }
         for (&var_id, &slot) in &self.real_slot {
@@ -165,7 +198,7 @@ impl DigitalLayout {
                 out.push((var_id, vars_real[slot]));
             }
         }
-        out
+        Ok(out)
     }
 }
 
@@ -236,5 +269,67 @@ fn collect_written_one(
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quad_layout(var_name: &str) -> (DigitalLayout, VarId) {
+        let mut m = LoweredBody::new("t25_unit");
+        let dreg = m.symbols.add_var(var_name, Type::Quad);
+        let body = DigitalBody { inputs: vec![], outputs: vec![], regs: vec![dreg], reg_inits: vec![], stmts: vec![] };
+        let mut layout = DigitalLayout::build(&m, &body);
+        // Statements are empty here (this test drives the raw bank
+        // directly, bypassing the JIT and the based-literal decoder — see
+        // the integration test's own note on why `Z`(3) can't currently
+        // be reached through a literal) — `written` must be seeded
+        // manually to make the var eligible for export.
+        layout.written.insert(dreg);
+        (layout, dreg)
+    }
+
+    /// T25/LRMW2-23 (LRM §7.3.2): a `Quad` var whose raw encoding is `3`
+    /// (Z, high impedance) fails loud and names the net — exercised
+    /// directly against the raw bank (not reachable through a based
+    /// literal today, per the integration test's own note) to prove the
+    /// Z-worded branch of the error message.
+    #[test]
+    fn export_vars_fails_loud_on_a_quad_var_holding_raw_z() {
+        let (layout, _dreg) = quad_layout("dreg");
+        let err = layout.export_vars(&[3], &[]).expect_err("raw Z(3) must error");
+        match err {
+            CodegenError::Unsupported(msg) => {
+                assert!(msg.contains("dreg"), "error must name the net: {msg}");
+                assert!(msg.contains("Z (high impedance)"), "error must say Z: {msg}");
+                assert!(msg.contains("7.3.2"), "error must cite LRM §7.3.2: {msg}");
+            }
+            other => panic!("expected CodegenError::Unsupported, got {other:?}"),
+        }
+    }
+
+    /// T25/LRMW2-23: a `Quad` var whose raw encoding is `2` (X) fails loud
+    /// too, worded distinctly from the `Z` case.
+    #[test]
+    fn export_vars_fails_loud_on_a_quad_var_holding_raw_x() {
+        let (layout, _dreg) = quad_layout("dreg");
+        let err = layout.export_vars(&[2], &[]).expect_err("raw X(2) must error");
+        match err {
+            CodegenError::Unsupported(msg) => {
+                assert!(msg.contains("dreg"), "error must name the net: {msg}");
+                assert!(msg.contains("X (unknown)"), "error must say X: {msg}");
+            }
+            other => panic!("expected CodegenError::Unsupported, got {other:?}"),
+        }
+    }
+
+    /// Regression: a defined (`0`/`1`) raw value still exports normally.
+    #[test]
+    fn export_vars_still_works_for_defined_zero_and_one() {
+        let (layout, dreg) = quad_layout("dreg");
+        assert_eq!(layout.export_vars(&[0], &[]).expect("0 must not error"), vec![(dreg, 0.0)]);
+        let (layout, dreg) = quad_layout("dreg");
+        assert_eq!(layout.export_vars(&[1], &[]).expect("1 must not error"), vec![(dreg, 1.0)]);
     }
 }

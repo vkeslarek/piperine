@@ -220,8 +220,10 @@ impl DigitalInstance {
 
     /// Export all register/variable values as `f64`, indexed by `VarId`.
     /// Used by the D2A bridge to sync digital state into the analog vars
-    /// bank after each evaluation.
-    pub fn export_vars(&self) -> Vec<(crate::resolve::VarId, f64)> {
+    /// bank after each evaluation. T25/LRMW2-23: fails loud (naming the
+    /// net) if a 4-state var carries X/Z — see
+    /// `DigitalLayout::export_vars`'s own doc comment.
+    pub fn export_vars(&self) -> Result<Vec<(crate::resolve::VarId, f64)>, CodegenError> {
         self.kernel.layout().export_vars(&self.vars_int, &self.vars_real)
     }
 

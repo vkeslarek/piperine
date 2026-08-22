@@ -512,6 +512,7 @@ fn nonblocking_self_increment_still_increments_once_per_edge() {
     let cnt_value = |instance: &DigitalInstance| -> f64 {
         instance
             .export_vars()
+            .expect("cnt is 0/1, not X/Z")
             .into_iter()
             .find(|(v, _)| *v == cnt)
             .map(|(_, value)| value)
