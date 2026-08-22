@@ -35,9 +35,13 @@ impl Elaborator {
                     self.syms.connectrules.insert(cr.name.clone(), cr.clone());
                 }
                 // `paramset` registered starting T29 (LRMC-C5-07) —
-                // `lower_instance` reads `elab.syms.paramsets`.
+                // `lower_instance` reads `elab.syms.paramsets`. Pushed,
+                // never inserted-overwriting: §6.4.2 paramset overloading
+                // (LRMW2-22, wave-2 T29) lets several paramsets share a
+                // name, so every declaration under that name is kept and
+                // `select_paramset` chooses among them per instance.
                 Item::Paramset(p) => {
-                    self.syms.paramsets.insert(p.name.clone(), p.clone());
+                    self.syms.paramsets.entry(p.name.clone()).or_default().push(p.clone());
                 }
                 // `primitive` (UDP) registered starting T39 (LRMC-C7-13)
                 // — `lower_instance` reads `elab.syms.primitives`.

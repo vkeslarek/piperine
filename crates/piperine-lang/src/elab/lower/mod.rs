@@ -53,8 +53,12 @@ pub struct SymbolTable {
     /// `paramset name (module); ... endparamset` blocks (LRM §6.4),
     /// keyed by name — read by `lower_instance` (LRMC-C5-07, T29) so an
     /// instance naming a paramset resolves to `(paramset.module_name,
-    /// bound params)` instead of failing `UndefinedModule`.
-    pub paramsets: HashMap<String, crate::ast::ParamsetDecl>,
+    /// bound params)` instead of failing `UndefinedModule`. A `Vec` per
+    /// name, not a single decl: §6.4.2 paramset overloading lets several
+    /// paramsets share a name, distinguished by their declared parameter
+    /// ranges — `select_paramset` (LRMW2-22, T29) picks the one that fits
+    /// a given instance's overrides.
+    pub paramsets: HashMap<String, Vec<crate::ast::ParamsetDecl>>,
     /// `primitive name (...); ... endprimitive` UDP declarations (Annex
     /// A.5), keyed by name — read by `lower_instance` (LRMC-C7-13, T39)
     /// so an instance naming a UDP (syntactically identical to a module

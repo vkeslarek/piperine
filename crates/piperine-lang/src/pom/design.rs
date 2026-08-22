@@ -147,9 +147,13 @@ pub struct Design {
     pub(crate) natures: HashMap<String, crate::pom::Nature>,
     /// Verilog-AMS top-level `paramset` declarations (LRM §6.4), named
     /// reusable parameter sets bound to a module. Top-level only — same
-    /// rule as disciplines/natures. Skipped on serialize.
+    /// rule as disciplines/natures. Skipped on serialize. A `Vec` per
+    /// name: §6.4.2 paramset overloading lets several declarations share
+    /// a name (LRMW2-22, T29) — the per-instance selection already
+    /// happened at `lower_instance` time, so this field just carries every
+    /// declaration through for reflection.
     #[serde(skip)]
-    pub(crate) paramsets: HashMap<String, crate::ast::ParamsetDecl>,
+    pub(crate) paramsets: HashMap<String, Vec<crate::ast::ParamsetDecl>>,
     /// `primitive` (UDP) declarations, Annex A.5.1 — top-level only, same
     /// rule as disciplines/natures/paramsets. Unlike `paramsets` (fully
     /// consumed within `piperine-lang`'s own elaboration), a UDP's port
@@ -333,14 +337,20 @@ impl Design {
     }
 
     /// Every Verilog-AMS paramset declaration (LRM §6.4). Top-level
-    /// only — paramsets do not nest inside modules.
+    /// only — paramsets do not nest inside modules. §6.4.2 overloading
+    /// means a name may carry more than one declaration; this flattens
+    /// every `(name, decl)` pair across the whole overload set.
     pub fn paramsets(&self) -> impl Iterator<Item = (&String, &crate::ast::ParamsetDecl)> {
-        self.paramsets.iter()
+        self.paramsets.iter().flat_map(|(name, decls)| decls.iter().map(move |d| (name, d)))
     }
 
-    /// Look up a paramset declaration by name (LRM §6.4).
+    /// Look up a paramset declaration by name (LRM §6.4). With §6.4.2
+    /// overloading, several declarations may share `name`; this returns
+    /// the first one registered — for the full overload set (needed to
+    /// reproduce a §6.4.2 selection), use [`Design::paramsets`] filtered
+    /// by name, or `paramsets_map_mut()` during elaboration.
     pub fn paramset(&self, name: &str) -> Option<&crate::ast::ParamsetDecl> {
-        self.paramsets.get(name)
+        self.paramsets.get(name).and_then(|decls| decls.first())
     }
 
     /// Look up a global constant by name.
@@ -777,7 +787,7 @@ impl Design {
     /// Mutable access to the paramsets map. For internal elaboration use
     /// (T22+ lowers `crate::ast::ParamsetDecl` through here).
     #[allow(dead_code, reason = "wired by T22+ — VAMS→POM paramset lowering")]
-    pub(crate) fn paramsets_map_mut(&mut self) -> &mut HashMap<String, crate::ast::ParamsetDecl> {
+    pub(crate) fn paramsets_map_mut(&mut self) -> &mut HashMap<String, Vec<crate::ast::ParamsetDecl>> {
         &mut self.paramsets
     }
     /// Mutable access to the consts map. For internal elaboration use
@@ -894,13 +904,13 @@ mod flat_module_tests {
         assert!(design.paramset("nmos_fast").is_none());
         design.paramsets_map_mut().insert(
             "nmos_fast".into(),
-            crate::ast::ParamsetDecl {
+            vec![crate::ast::ParamsetDecl {
                 span: crate::PreprocessedSpan::new(0, 0),
                 name: "nmos_fast".into(),
                 module_name: "nmos".into(),
                 params: Vec::new(),
                 statements: Vec::new(),
-            },
+            }],
         );
         let by_lookup = design.paramset("nmos_fast").expect("paramset reachable by name");
         assert_eq!(by_lookup.name, "nmos_fast");

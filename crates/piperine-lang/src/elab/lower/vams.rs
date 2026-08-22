@@ -751,7 +751,8 @@ impl Elaborator {
         // LRMC-C5-07: an instance may name a `paramset` instead of a
         // module — resolves to `(paramset.module_name, bound params)`,
         // §6.4's own indirection.
-        if let Some(ps) = self.syms.paramsets.get(module_name) {
+        if let Some(candidates) = self.syms.paramsets.get(module_name) {
+            let ps = select_paramset(module_name, candidates, param_overrides, env)?;
             return self.lower_paramset_instance(
                 module_name, ps, ast_inst, param_overrides, env, module_name_span, attributes,
             );
@@ -891,39 +892,22 @@ impl Elaborator {
         // `module_param_env` already follows for ordinary module params).
         // An override naming a ranged paramset parameter is checked
         // against the paramset's declared ranges (§3.4.2, fail loud).
-        let ps_ranges = declared_param_ranges(ps.params.iter());
-        let mut ps_env = ConstEnv::new();
-        for p in &ps.params {
-            for pa in &p.names {
-                eval_and_define_param(&pa.name, &pa.value, &p.ranges, &mut ps_env)?;
-            }
-        }
-        for ov in param_overrides {
-            let name = ov.name.clone().ok_or_else(|| {
-                ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: `#(...)` parameter overrides must be named",
-                    ast_inst.name
-                )))
-            })?;
-            if !ps.params.iter().any(|p| p.names.iter().any(|pa| pa.name == name)) {
-                return Err(ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: `{name}` is not a parameter of paramset `{paramset_name}` \
-                     (only the paramset's own declared parameters may be overridden, §6.4)",
-                    ast_inst.name
-                ))));
-            }
-            let expr = ov.value.as_ref().ok_or_else(|| {
-                ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: parameter override `{name}` has no value",
-                    ast_inst.name
-                )))
-            })?;
-            let value = eval_param_default(expr, env)?;
-            if let Some(ranges) = ps_ranges.get(name.as_str()).copied() {
-                check_param_ranges(&name, &value, ranges, &ps_env)?;
-            }
-            ps_env.define(name, value);
-        }
+        let ps_env = build_paramset_env(ps, param_overrides, env).map_err(|e| match e {
+            ParamsetEnvError::UnknownOverride(name) => ElabError::from(ElabErrorKind::Other(format!(
+                "instance `{}`: `{name}` is not a parameter of paramset `{paramset_name}` \
+                 (only the paramset's own declared parameters may be overridden, §6.4)",
+                ast_inst.name
+            ))),
+            ParamsetEnvError::UnnamedOverride => ElabError::from(ElabErrorKind::Other(format!(
+                "instance `{}`: `#(...)` parameter overrides must be named",
+                ast_inst.name
+            ))),
+            ParamsetEnvError::MissingOverrideValue(name) => ElabError::from(ElabErrorKind::Other(format!(
+                "instance `{}`: parameter override `{name}` has no value",
+                ast_inst.name
+            ))),
+            ParamsetEnvError::Elab(e) => e,
+        })?;
 
         // A `.field = expr;` statement binds the associated module's
         // parameter — the final value that parameter takes, so the
@@ -975,6 +959,102 @@ impl Elaborator {
             // dropped: `ast_inst.range` is simply not read on this branch.
             range: None,
         })
+    }
+}
+
+/// A failure building a paramset's own parameter environment — kept
+/// distinct from [`ElabError`] so [`select_paramset`] (LRMW2-22, T29,
+/// §6.4.2 overloading) can treat "this candidate doesn't fit" (unknown
+/// override, out-of-range value) as *exclusion from the candidate set*
+/// rather than an immediate hard failure, while
+/// [`lower_paramset_instance`]'s single-candidate call site still turns
+/// every variant into the same loud, named `ElabError` it always raised.
+enum ParamsetEnvError {
+    UnnamedOverride,
+    UnknownOverride(String),
+    MissingOverrideValue(String),
+    Elab(ElabError),
+}
+
+impl From<ElabError> for ParamsetEnvError {
+    fn from(e: ElabError) -> Self {
+        ParamsetEnvError::Elab(e)
+    }
+}
+
+/// Builds one paramset's own parameter environment: declared defaults
+/// first (range-checked, §3.4.2), then `param_overrides` applied on top
+/// (checked against the paramset's own declared ranges, §6.4.2's first two
+/// selection rules — "all parameters overridden on the instance shall be
+/// parameters of the paramset" and "within the allowed ranges"). Shared by
+/// [`Elaborator::lower_paramset_instance`] (the single-paramset path) and
+/// [`select_paramset`] (the overloaded path, which tries this per
+/// candidate and excludes any that error).
+fn build_paramset_env(
+    ps: &crate::ast::ParamsetDecl,
+    param_overrides: &[PortConnection],
+    env: &ConstEnv,
+) -> Result<ConstEnv, ParamsetEnvError> {
+    let ps_ranges = declared_param_ranges(ps.params.iter());
+    let mut ps_env = ConstEnv::new();
+    for p in &ps.params {
+        for pa in &p.names {
+            eval_and_define_param(&pa.name, &pa.value, &p.ranges, &mut ps_env)?;
+        }
+    }
+    for ov in param_overrides {
+        let name = ov.name.clone().ok_or(ParamsetEnvError::UnnamedOverride)?;
+        if !ps.params.iter().any(|p| p.names.iter().any(|pa| pa.name == name)) {
+            return Err(ParamsetEnvError::UnknownOverride(name));
+        }
+        let expr = ov.value.as_ref().ok_or_else(|| ParamsetEnvError::MissingOverrideValue(name.clone()))?;
+        let value = eval_param_default(expr, env)?;
+        if let Some(ranges) = ps_ranges.get(name.as_str()).copied() {
+            check_param_ranges(&name, &value, ranges, &ps_env)?;
+        }
+        ps_env.define(name, value);
+    }
+    Ok(ps_env)
+}
+
+/// §6.4.2 paramset overloading: several `paramset` declarations may share
+/// `paramset_name`. Picks the one candidate whose declared parameters
+/// cover every override on this instance, and whose overridden-and-default
+/// parameter values all fall within its own declared ranges — the two
+/// selection rules this task implements (the LRM's further tie-break
+/// cascade — fewest un-overridden parameters, most-ranged local
+/// parameters, fewest unconnected ports — is not implemented; a genuine
+/// tie after the first two rules is reported as an ambiguity error rather
+/// than silently resolved by an unimplemented rule).
+fn select_paramset<'a>(
+    paramset_name: &str,
+    candidates: &'a [crate::ast::ParamsetDecl],
+    param_overrides: &[PortConnection],
+    env: &ConstEnv,
+) -> Result<&'a crate::ast::ParamsetDecl, ElabError> {
+    if candidates.len() == 1 {
+        // The common (non-overloaded) case: no candidate filtering needed
+        // — a bad override still gets `lower_paramset_instance`'s own
+        // named error, not a generic "no candidate matched".
+        return Ok(&candidates[0]);
+    }
+    let matches: Vec<&crate::ast::ParamsetDecl> = candidates
+        .iter()
+        .filter(|ps| build_paramset_env(ps, param_overrides, env).is_ok())
+        .collect();
+    match matches.len() {
+        1 => Ok(matches[0]),
+        0 => Err(ElabError::from(ElabErrorKind::Other(format!(
+            "no `{paramset_name}` paramset among its {} overloaded declarations accepts this instance's \
+             parameter overrides within its declared ranges (LRM §6.4.2)",
+            candidates.len()
+        )))),
+        n => Err(ElabError::from(ElabErrorKind::Other(format!(
+            "ambiguous paramset selection for `{paramset_name}`: {n} overloaded declarations (targeting {}) \
+             all accept this instance's parameter overrides — LRM §6.4.2 requires a unique match \
+             (its further tie-break rules are not implemented; disambiguate the ranges or overrides)",
+            matches.iter().map(|m| m.module_name.as_str()).collect::<Vec<_>>().join(", ")
+        )))),
     }
 }
 
