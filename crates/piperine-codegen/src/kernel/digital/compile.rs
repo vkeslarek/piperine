@@ -185,12 +185,15 @@ impl<'m> DigitalCompiler<'m> {
             clocked_specs.push(ClockedSpec { terms, is_initial: false });
         }
 
-        // `comb` reads live variable values: after `seq` writes register
-        // updates to the live bank, `comb` sees the new values and drives
-        // outputs from them. Within a clocked block (`seq`), reads see
-        // pre-edge values — register updates are non-blocking within the
-        // block (SPEC §10.3: "within the block reads see the pre-edge
-        // value, a chain of register writes is a pipeline").
+        // `comb` and `seq` both read the live variable banks (LRM
+        // §8.5.3.3): a blocking (`=`) write lands live immediately, so a
+        // later statement in the same block sees it, and `comb` sees
+        // `seq`'s committed writes once the device has run both. A
+        // non-blocking (`<=`) write's right-hand side is evaluated against
+        // the same live banks but the write itself is staged (T23,
+        // LRMW2-14) — see `DigitalAbi`'s own doc comment — so it is
+        // invisible to a same-block read until the device commits it after
+        // the call returns (LRM §8.5.3.4).
         let comb_id = self.compile_body_fn("comb", &comb_stmts, VarReads::Live)?;
         let seq_id = if clocked.is_empty() {
             None
@@ -204,7 +207,7 @@ impl<'m> DigitalCompiler<'m> {
             // drop those entries and desync `clocked_specs`'s indices from
             // `compile_body_fn`'s per-entry `clocked_index` counter.
             let stmts: Vec<&Stmt> = clocked.iter().map(|(_, s)| *s).collect();
-            Some(self.compile_body_fn("seq", &stmts, VarReads::PreEdge)?)
+            Some(self.compile_body_fn("seq", &stmts, VarReads::Live)?)
         };
         let watch_id = if watch_terms.is_empty() {
             None
@@ -371,6 +374,7 @@ impl<'m> DigitalCompiler<'m> {
             fired: load_field(&mut builder, AbiField::Fired),
             sim: load_field(&mut builder, AbiField::Sim),
             analog_voltages: load_field(&mut builder, AbiField::AnalogVoltages),
+            outputs_nba: load_field(&mut builder, AbiField::OutputsNba),
         };
 
         let mut b = Builder::new_digital(
@@ -511,8 +515,14 @@ fn extract_event_terms(events: &[EventExpr], terms: &mut Vec<(EdgeKind, Expr)>) 
 
 // ─── ABI helpers (shared with the Builder) ────────────────────────────────────
 
-/// Whether variable reads see the live banks (comb) or the pre-edge copies
-/// (seq register semantics).
+/// Whether variable reads see the live banks. `comb` and `seq` both compile
+/// with `Live` today (T23, LRMW2-14) — a blocking write's effect on a later
+/// same-block read, and a non-blocking write's staged (not-yet-committed)
+/// value being invisible to a same-block read, are both handled on the
+/// *write* side (`emit_assign`'s blocking/non-blocking split), not by
+/// switching the read bank. `PreEdge` is kept as a distinct, documented mode
+/// (rather than deleted outright) in case a future body legitimately needs a
+/// blanket pre-call snapshot read; nothing constructs it today.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum VarReads {
     Live,
@@ -532,6 +542,9 @@ pub struct Pointers {
     pub fired: Value,
     pub sim: Value,
     pub analog_voltages: Value,
+    /// Non-blocking (`<=`) write staging bank for `outputs` — see
+    /// `DigitalAbi::outputs_nba`.
+    pub outputs_nba: Value,
 }
 
 // ─── Fused combinational network (Verilator-style whole-cone JIT) ───────────────
@@ -710,6 +723,16 @@ impl NetworkComb {
                 inputs: nets_ptr,
                 outputs: nets_ptr,
                 // Combinational members read live vars (no pre-edge/fired use).
+                // A fused cone has no per-member staging buffer to alias a
+                // non-blocking write into, so `vars_int_old`/`vars_real_old`/
+                // `outputs_nba` alias straight back onto the live pointers —
+                // `<=` inside a fused comb-only member degrades to blocking
+                // (`=`) semantics, same as before T23. Disclosed scope limit:
+                // network fusion already rejects clocked bodies outright
+                // (`compile`'s own check above), so this only affects the
+                // rare non-blocking assign inside a plain `always @*`/`@(sig)`
+                // member — no clocked-block idiom (the case T23 fixes) can
+                // reach this path.
                 vars_int_old: vint,
                 vars_real_old: vreal,
                 vars_int: vint,
@@ -718,6 +741,7 @@ impl NetworkComb {
                 fired: nets_ptr, // unused: no clocked blocks in a fused member
                 sim: sim_ptr,
                 analog_voltages: analog_ptr,
+                outputs_nba: nets_ptr,
             };
             let resolver = Resolver::from_symbols(&m.module.symbols);
             let mut b = Builder::new_digital(

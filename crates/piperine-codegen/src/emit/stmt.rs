@@ -16,6 +16,17 @@ use super::builder::Builder;
 use super::resolver::{DigTy, Typed};
 use super::digital_expr::Codegen;
 
+/// T23/LRMW2-14 (LRM §8.5.3.3/4): which region an assignment's write lands
+/// in — `Blocking` (`=`) writes the live bank immediately (Active region);
+/// `NonBlocking` (`<=`) stages the write for the device to commit after the
+/// call returns (Nba region). Both read the live banks for their
+/// right-hand side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssignKind {
+    Blocking,
+    NonBlocking,
+}
+
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// Emit an if/else with Cranelift blocks.
     pub fn emit_if_branch(
@@ -54,18 +65,22 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         use Stmt as S;
         match stmt {
             S::Null { .. } => Ok(()),
-            // Blocking vs non-blocking assignment: full IEEE-1364 scheduling
-            // semantics (a non-blocking RHS read happening-before every
-            // blocking write in the same timestep, deferred until the
-            // active-region's NBA update) is P3/VAMS-20 scope — today's
-            // digital kernel already only covers the subset PHDL's own
-            // `BindOp::Assign` did (immediate write), so both forms emit
-            // identically here, same as before the frontend swap. Tracked
-            // as a known simplification, not a silent behavior change from
-            // what this crate already did.
-            S::Assign { target, value, .. } | S::NonBlockingAssign { target, value, .. } => {
+            // T23/LRMW2-14 (LRM §8.5.3.3/4): `=` writes land in the Active
+            // region — live immediately, visible to a later statement in
+            // the same block. `<=` evaluates its right-hand side against
+            // the same live banks (so it still sees any earlier *blocking*
+            // write this block) but the write itself lands in the Nba
+            // region — staged, and only committed to the live banks after
+            // the whole `comb`/`seq` call returns (`DigitalInstance::run`/
+            // `eval_seq_phase`/`eval_comb_phase`), so `a <= b; b <= a;`
+            // swaps regardless of statement order.
+            S::Assign { target, value, .. } => {
                 let v = value.emit(self)?;
-                self.emit_assign(target, v)
+                self.emit_assign(target, v, AssignKind::Blocking)
+            }
+            S::NonBlockingAssign { target, value, .. } => {
+                let v = value.emit(self)?;
+                self.emit_assign(target, v, AssignKind::NonBlocking)
             }
             S::Contribution { .. } => Err(CodegenError::unsupported(
                 "analog contribution `<+` in a digital body",
@@ -190,15 +205,15 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     }
 
     /// Assign to a destination (var or net).
-    fn emit_assign(&mut self, dest: &Expr, value: Typed) -> Result<(), CodegenError> {
+    fn emit_assign(&mut self, dest: &Expr, value: Typed, kind: AssignKind) -> Result<(), CodegenError> {
         match dest {
             Expr::Ident { name, .. } => {
                 if let Some(&id) = self.resolver.vars.get(name) {
-                    self.store_var(id, value)?;
+                    self.store_var(id, value, kind)?;
                     return Ok(());
                 }
                 if let Some(&id) = self.resolver.nodes.get(name) {
-                    self.store_net(id, value)?;
+                    self.store_net(id, value, kind)?;
                     return Ok(());
                 }
                 Err(CodegenError::Invalid(format!(
@@ -209,24 +224,31 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
     }
 
-    /// Store a value to a variable slot.
-    fn store_var(&mut self, id: VarId, value: Typed) -> Result<(), CodegenError> {
+    /// Store a value to a variable slot. A blocking (`=`) write lands live
+    /// immediately; a non-blocking (`<=`) write stages into
+    /// `vars_int_old`/`vars_real_old` (T23/LRMW2-14 — see `DigitalAbi`'s doc
+    /// comment) for the device to commit after the call returns.
+    fn store_var(&mut self, id: VarId, value: Typed, kind: AssignKind) -> Result<(), CodegenError> {
         let info = self.module.symbols.var(id);
         let layout = self.layout.expect("digital context");
         let ptrs = self.pointers.expect("digital context");
-        let (slot, bank, target_ty) = match info.ty {
+        let (slot, live_bank, nba_bank, target_ty) = match info.ty {
             Type::Real => {
                 let slot = layout.real_slot(id).expect("layout covers all vars");
-                (slot, ptrs.vars_real, DigTy::Real)
+                (slot, ptrs.vars_real, ptrs.vars_real_old, DigTy::Real)
             }
             Type::Quad => {
                 let slot = layout.int_slot(id).expect("layout covers all vars");
-                (slot, ptrs.vars_int, DigTy::Quad)
+                (slot, ptrs.vars_int, ptrs.vars_int_old, DigTy::Quad)
             }
             Type::Integer | Type::Bool => {
                 let slot = layout.int_slot(id).expect("layout covers all vars");
-                (slot, ptrs.vars_int, DigTy::Int)
+                (slot, ptrs.vars_int, ptrs.vars_int_old, DigTy::Int)
             }
+        };
+        let bank = match kind {
+            AssignKind::Blocking => live_bank,
+            AssignKind::NonBlocking => nba_bank,
         };
         let value = self.coerce(value, target_ty)?;
         self.builder.ins().store(
@@ -238,21 +260,27 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         Ok(())
     }
 
-    /// Store a value to an output net.
-    fn store_net(&mut self, id: NodeId, value: Typed) -> Result<(), CodegenError> {
+    /// Store a value to an output net. A blocking (`=`) write lands live
+    /// immediately; a non-blocking (`<=`) write stages into `outputs_nba`
+    /// (T23/LRMW2-14) for the device to commit after the call returns.
+    fn store_net(&mut self, id: NodeId, value: Typed, kind: AssignKind) -> Result<(), CodegenError> {
         let layout = self.layout.expect("digital context");
-        let outputs = self.pointers.expect("digital context").outputs;
+        let ptrs = self.pointers.expect("digital context");
         let index = layout.output_index.get(&id).copied().ok_or_else(|| {
             CodegenError::Invalid(format!(
                 "assignment to net `{}` which is not a digital output",
                 self.module.symbols.node(id).name
             ))
         })?;
+        let bank = match kind {
+            AssignKind::Blocking => ptrs.outputs,
+            AssignKind::NonBlocking => ptrs.outputs_nba,
+        };
         let value = self.coerce(value, DigTy::Quad)?;
         self.builder.ins().store(
             MemFlags::trusted(),
             value.value,
-            outputs,
+            bank,
             (index * 8) as i32,
         );
         Ok(())

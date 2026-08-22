@@ -17,8 +17,14 @@
 //!   reads inputs and the live variable banks, writes outputs and the banks.
 //!   Unassigned-before-read variables hold their previous value (a latch).
 //! - `seq(*abi)` — for each clocked block whose `fired` flag is set, runs the
-//!   register updates: reads see the *pre-edge* bank copies, writes go to the
-//!   live banks (SPEC §9).
+//!   register updates. `comb`/`seq` both read the *live* banks (blocking
+//!   `=` writes take effect immediately, so a later statement in the same
+//!   block sees them — LRM §8.5.3.3). A non-blocking `<=` write computes its
+//!   right-hand side against the live banks too, but stages the write into
+//!   `vars_int_old`/`vars_real_old`/`outputs_nba` instead of writing live —
+//!   the device commits the staged values into the live banks only after the
+//!   whole `seq`/`comb` call returns (LRM §8.5.3.4, the NBA region: the swap
+//!   idiom `a <= b; b <= a;` reads both old values before either write lands).
 //! - `watch(*abi, *out)` — evaluates each atomic event term (the signal under
 //!   a `posedge`/`negedge`/`change`); the device compares against the
 //!   previous values to derive the per-block `fired` flags.
@@ -46,9 +52,14 @@ pub struct DigitalAbi {
     pub inputs: *const i64,
     /// Quad-coded values of `outputs`, in kernel output order.
     pub outputs: *mut i64,
-    /// Pre-edge copies of the variable banks (read by `seq` and `comb`).
-    pub vars_int_old: *const i64,
-    pub vars_real_old: *const f64,
+    /// Non-blocking (`<=`) write staging banks for `vars_int`/`vars_real`
+    /// (LRM §8.5.3.4, the NBA region) — seeded with the live values before
+    /// `seq`/`comb` runs, written by `<=` targets, committed back into the
+    /// live banks by the device after the call returns. Named `_old` for
+    /// historical reasons (they used to back a blanket pre-edge *read*
+    /// mode); reads never consult these now — only `<=` writes do.
+    pub vars_int_old: *mut i64,
+    pub vars_real_old: *mut f64,
     /// Live variable banks.
     pub vars_int: *mut i64,
     pub vars_real: *mut f64,
@@ -62,6 +73,9 @@ pub struct DigitalAbi {
     /// analog potentials through this array). Indexed by the analog
     /// terminal order established in `DigitalLayout`.
     pub analog_voltages: *const f64,
+    /// Non-blocking (`<=`) write staging bank for `outputs`, mirroring
+    /// `vars_int_old`/`vars_real_old` for output-net targets.
+    pub outputs_nba: *mut i64,
 }
 
 /// Byte offset of a [`DigitalAbi`] field.
@@ -77,6 +91,7 @@ pub(crate) enum AbiField {
     Fired = 56,
     Sim = 64,
     AnalogVoltages = 72,
+    OutputsNba = 80,
 }
 
 pub(crate) type DigitalFn = unsafe extern "C" fn(*const DigitalAbi);

@@ -78,10 +78,24 @@ struct Scratch {
     prev_outputs: Vec<i64>,
     watch: Vec<i64>,
     fired: Vec<i64>,
-    /// Pre-edge bank copies, filled only when a clocked block fired
-    /// (only `seq` reads them).
+    /// T23/LRMW2-14: non-blocking (`<=`) write staging banks (LRM
+    /// §8.5.3.4's Nba region) — seeded from the live `vars_int`/`vars_real`/
+    /// `outputs` before each `seq`/`comb` call, written by `<=` targets,
+    /// committed back into the live banks after the call returns (see
+    /// `DigitalInstance::seed_nba`/`commit_nba`). Named `_old` for
+    /// historical reasons (see `DigitalAbi::vars_int_old`'s doc comment).
     vars_int_old: Vec<i64>,
     vars_real_old: Vec<f64>,
+    outputs_nba: Vec<i64>,
+    /// Baselines the above three staging banks were seeded from — the
+    /// commit step only copies a staging slot into the live bank when it
+    /// differs from its baseline (i.e. a `<=` target actually wrote it).
+    /// Without this, unconditionally copying the whole staging bank back
+    /// would clobber a `=` (blocking) write the *same* call made straight
+    /// to the live bank, since the staging snapshot predates it.
+    vars_int_base: Vec<i64>,
+    vars_real_base: Vec<f64>,
+    outputs_base: Vec<i64>,
 }
 
 /// The digital half of a device instance.
@@ -341,23 +355,22 @@ impl DigitalInstance {
 
         let any_fired = s.fired.iter().any(|&f| f != 0);
         if any_fired {
-            s.vars_int_old.clear();
-            s.vars_int_old.extend_from_slice(&self.vars_int);
-            s.vars_real_old.clear();
-            s.vars_real_old.extend_from_slice(&self.vars_real);
+            self.seed_nba(&mut s);
             let abi = DigitalAbi {
                 inputs: s.inputs.as_ptr(),
                 outputs: s.outputs.as_mut_ptr(),
-                vars_int_old: s.vars_int_old.as_ptr(),
-                vars_real_old: s.vars_real_old.as_ptr(),
+                vars_int_old: s.vars_int_old.as_mut_ptr(),
+                vars_real_old: s.vars_real_old.as_mut_ptr(),
                 vars_int: self.vars_int.as_mut_ptr(),
                 vars_real: self.vars_real.as_mut_ptr(),
                 params: self.params.as_ptr(),
                 fired: s.fired.as_ptr(),
                 sim: &self.sim as *const SimCtx,
                 analog_voltages: analog_voltages.as_ptr(),
+                outputs_nba: s.outputs_nba.as_mut_ptr(),
             };
             self.kernel.eval_seq(&abi);
+            self.commit_nba(&mut s);
         }
         self.scratch = s;
         any_fired
@@ -398,19 +411,22 @@ impl DigitalInstance {
             s.outputs.extend_from_slice(&s.prev_outputs);
         }
 
+        self.seed_nba(&mut s);
         let abi = DigitalAbi {
             inputs: s.inputs.as_ptr(),
             outputs: s.outputs.as_mut_ptr(),
-            vars_int_old: self.vars_int.as_ptr(),
-            vars_real_old: self.vars_real.as_ptr(),
+            vars_int_old: s.vars_int_old.as_mut_ptr(),
+            vars_real_old: s.vars_real_old.as_mut_ptr(),
             vars_int: self.vars_int.as_mut_ptr(),
             vars_real: self.vars_real.as_mut_ptr(),
             params: self.params.as_ptr(),
             fired: s.fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
             analog_voltages: analog_voltages.as_ptr(),
+            outputs_nba: s.outputs_nba.as_mut_ptr(),
         };
         self.kernel.eval_comb(&abi);
+        self.commit_nba(&mut s);
 
         for i in 0..self.out_nets.len() {
             let (net, new) = (self.out_nets[i], s.outputs[i]);
@@ -421,33 +437,82 @@ impl DigitalInstance {
         self.scratch = s;
     }
 
-    /// Run `seq` (with pre-edge bank copies) then `comb`. The pre-edge
-    /// copies are made only when a clocked block fired — only `seq` reads
-    /// them.
+    /// T23/LRMW2-14: seeds the non-blocking write staging banks
+    /// (`vars_int_old`/`vars_real_old`/`outputs_nba` — see `DigitalAbi`'s
+    /// doc comment) from the current live values, ready for a `seq`/`comb`
+    /// call whose `<=` targets write into them instead of live. Resizing to
+    /// the same length every call never reallocates after the first, so a
+    /// pointer captured from these buffers stays valid across a
+    /// seed → run → commit → seed → run → commit sequence.
+    fn seed_nba(&mut self, s: &mut Scratch) {
+        s.vars_int_base.resize(self.vars_int.len(), 0);
+        s.vars_int_base.copy_from_slice(&self.vars_int);
+        s.vars_int_old.resize(self.vars_int.len(), 0);
+        s.vars_int_old.copy_from_slice(&self.vars_int);
+
+        s.vars_real_base.resize(self.vars_real.len(), 0.0);
+        s.vars_real_base.copy_from_slice(&self.vars_real);
+        s.vars_real_old.resize(self.vars_real.len(), 0.0);
+        s.vars_real_old.copy_from_slice(&self.vars_real);
+
+        s.outputs_base.resize(s.outputs.len(), 0);
+        s.outputs_base.copy_from_slice(&s.outputs);
+        s.outputs_nba.resize(s.outputs.len(), 0);
+        s.outputs_nba.copy_from_slice(&s.outputs);
+    }
+
+    /// T23/LRMW2-14: commits the staged non-blocking writes (LRM §8.5.3.4's
+    /// Nba region) into the live banks — called after a `seq`/`comb` call
+    /// returns. Only a slot that actually differs from its seeded baseline
+    /// (i.e. a `<=` target this call) is copied into the live bank; every
+    /// other slot is left as the call itself left it, so a `=` (blocking)
+    /// write made straight to the live bank during the same call is never
+    /// clobbered by the pre-call staging snapshot.
+    fn commit_nba(&mut self, s: &mut Scratch) {
+        for i in 0..self.vars_int.len() {
+            if s.vars_int_old[i] != s.vars_int_base[i] {
+                self.vars_int[i] = s.vars_int_old[i];
+            }
+        }
+        for i in 0..self.vars_real.len() {
+            if s.vars_real_old[i] != s.vars_real_base[i] {
+                self.vars_real[i] = s.vars_real_old[i];
+            }
+        }
+        for i in 0..s.outputs.len() {
+            if s.outputs_nba[i] != s.outputs_base[i] {
+                s.outputs[i] = s.outputs_nba[i];
+            }
+        }
+    }
+
+    /// Run `seq` (for fired blocks) then `comb`, committing non-blocking
+    /// (`<=`) writes after each (T23/LRMW2-14) so `comb` sees `seq`'s
+    /// committed register state and a later statement never observes a
+    /// same-block `<=` write before the block finishes.
     fn run(&mut self, s: &mut Scratch, analog_voltages: &[f64]) {
         let any_fired = s.fired.iter().any(|&f| f != 0);
-        if any_fired {
-            s.vars_int_old.clear();
-            s.vars_int_old.extend_from_slice(&self.vars_int);
-            s.vars_real_old.clear();
-            s.vars_real_old.extend_from_slice(&self.vars_real);
-        }
+        self.seed_nba(s);
         let abi = DigitalAbi {
             inputs: s.inputs.as_ptr(),
             outputs: s.outputs.as_mut_ptr(),
-            vars_int_old: if any_fired { s.vars_int_old.as_ptr() } else { self.vars_int.as_ptr() },
-            vars_real_old: if any_fired { s.vars_real_old.as_ptr() } else { self.vars_real.as_ptr() },
+            vars_int_old: s.vars_int_old.as_mut_ptr(),
+            vars_real_old: s.vars_real_old.as_mut_ptr(),
             vars_int: self.vars_int.as_mut_ptr(),
             vars_real: self.vars_real.as_mut_ptr(),
             params: self.params.as_ptr(),
             fired: s.fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
             analog_voltages: analog_voltages.as_ptr(),
+            outputs_nba: s.outputs_nba.as_mut_ptr(),
         };
         if any_fired {
             self.kernel.eval_seq(&abi);
+            self.commit_nba(s);
+            self.seed_nba(s);
         }
         self.kernel.eval_comb(&abi);
+        self.commit_nba(s);
     }
 
     /// Evaluate the watch terms into `s.watch` with the current signal
@@ -462,17 +527,21 @@ impl DigitalInstance {
         }
         s.fired.clear();
         s.fired.resize(self.kernel.clocked_blocks().len(), 0);
+        // `watch` only ever reads — `vars_int_old`/`vars_real_old`/
+        // `outputs_nba` alias the live pointers rather than a real staging
+        // buffer, since nothing here writes through them.
         let abi = DigitalAbi {
             inputs: s.inputs.as_ptr(),
             outputs: s.outputs.as_mut_ptr(),
-            vars_int_old: self.vars_int.as_ptr(),
-            vars_real_old: self.vars_real.as_ptr(),
+            vars_int_old: self.vars_int.as_mut_ptr(),
+            vars_real_old: self.vars_real.as_mut_ptr(),
             vars_int: self.vars_int.as_mut_ptr(),
             vars_real: self.vars_real.as_mut_ptr(),
             params: self.params.as_ptr(),
             fired: s.fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
             analog_voltages: analog_voltages.as_ptr(),
+            outputs_nba: s.outputs.as_mut_ptr(),
         };
         self.kernel.eval_watch(&abi, &mut s.watch);
     }
