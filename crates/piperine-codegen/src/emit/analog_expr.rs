@@ -230,7 +230,20 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     "tfinal" => self.sim_field_or_default(SimField::TFINAL, default),
                     // ngspice CKTsrcFact: the DC source-stepping ramp scale.
                     "sourceScaleFactor" => Ok(self.load_sim_f64(SimField::SRCFACT)),
-                    _ => default.map(|d| self.emit_analog(d)).unwrap_or(Ok(self.cse_const(0.0))),
+                    // §9.15: an unknown key with an explicit default
+                    // (`$simparam("key", default)`) returns that default —
+                    // the LRM's own escape hatch for a simulator-specific
+                    // key. Without a default, an unknown key is a loud
+                    // error naming the key and the valid set, never a
+                    // silent `0.0`.
+                    _ => match default {
+                        Some(d) => self.emit_analog(d),
+                        None => Err(CodegenError::unsupported(format!(
+                            "$simparam(\"{sim_key}\") names an unknown key with no default — \
+                             valid keys are \"gmin\", \"temperature\", \"step\", \"tfinal\", \
+                             \"sourceScaleFactor\" (§9.15)"
+                        ))),
+                    },
                 }
             }
             "param_given" => {
