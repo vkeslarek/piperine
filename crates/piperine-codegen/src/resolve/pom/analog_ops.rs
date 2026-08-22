@@ -163,10 +163,36 @@ impl AnalogOp for Ddx {
 
 struct Delay;
 impl AnalogOp for Delay {
+    /// §4.5.7: `absdelay(input, td[, maxdelay])`. "If maxdelay is
+    /// specified... If td becomes greater than maxdelay, maxdelay will be
+    /// used as a substitute for td" — a clamp, not an error (the LRM text
+    /// is explicit; a `td > maxdelay` build-time failure would contradict
+    /// it, so this deviates from that literal reading of the task and
+    /// implements the LRM's own words instead, per C7 provenance).
+    /// Lowered as `td > maxdelay ? maxdelay : td` — const-evaluable the
+    /// same way `Idt`'s `ic` is, so a param-dependent `td`/`maxdelay` still
+    /// resolves once per instance.
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
-        let delay = arg(args, 1, ctx, 0.0);
+        let td = arg(args, 1, ctx, 0.0);
+        let delay = match args.get(2) {
+            Some(md) => {
+                let maxdelay = resolve_expr(md, ctx);
+                Expr::Ternary {
+                    span: NOSPAN,
+                    cond: Box::new(Expr::Binary {
+                        span: NOSPAN,
+                        op: VBinOp::Gt,
+                        lhs: Box::new(td.clone()),
+                        rhs: Box::new(maxdelay.clone()),
+                    }),
+                    then_branch: Box::new(maxdelay),
+                    else_branch: Box::new(td),
+                }
+            }
+            None => td,
+        };
         let id = ctx.alloc_state(StateKind::Delay { delay: delay.clone() }, x.clone());
         marker("__delay", id, vec![x, delay])
     }
