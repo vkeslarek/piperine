@@ -150,7 +150,7 @@ pub enum StateKind {
     /// Measured-data lookup.
     Table { data: TableRef, mode: InterpMode },
     /// `laplace_*(x, num, den[, abstol])` — Laplace filter (reactive).
-    /// §4.5.15's trailing `ε`/`abstol_expression` (LRMW2-35): folded, same
+    /// §4.5.11's trailing `ε`/`abstol_expression` (LRMW2-35): folded, same
     /// as `Ddt`'s own `abstol`, into the instance's LTE tolerance rather
     /// than driving the (unimplemented) s-domain transfer function itself
     /// — `laplace_*` still lowers its `x` argument through the same
@@ -158,8 +158,18 @@ pub enum StateKind {
     /// but not yet realized as a filter, a pre-existing, separately
     /// tracked gap, `SPEC_DEVIATION.md` §3/§4).
     Laplace { variant: LaplaceKind, num: Vec<PomExpr>, den: Vec<PomExpr>, abstol: Option<PomExpr> },
-    /// `zi_*(x, num, den, dt)` — Z-transform filter (reactive).
-    ZTransform { variant: ZKind, num: Vec<PomExpr>, den: Vec<PomExpr>, sample_dt: PomExpr },
+    /// `zi_*(x, num, den, T[, τ[, t0]])` — Z-transform filter (reactive).
+    /// §4.5.12's `τ` (LRMW2-32): "the timestep is controlled to accurately
+    /// resolve both the leading and trailing corner of the transition" —
+    /// a step-control lever, folded into the same instance-level LTE
+    /// tolerance `Ddt`'s/`Laplace`'s own `abstol` already feeds (T33/T39);
+    /// `t0` has no such fallback (§4.5.12's own words: it "specifies the
+    /// time of the first transition" of a sample-and-hold this codegen
+    /// does not implement at all — `zi_*` still lowers `x` through the
+    /// same `ddt`-shaped charge/resistive split `Laplace` does, so there
+    /// is no sampling instant to shift) and is rejected loud at lowering
+    /// instead (`ZTransform::lower`), never silently carried-and-ignored.
+    ZTransform { variant: ZKind, num: Vec<PomExpr>, den: Vec<PomExpr>, sample_dt: PomExpr, tau: Option<PomExpr> },
 }
 
 impl StateKind {

@@ -367,10 +367,10 @@ struct Laplace {
     variant: &'static str,
 }
 impl AnalogOp for Laplace {
-    /// §4.5.15/4.5.11: `laplace_*(expr, num_or_zeros, den_or_poles[, ε])`
+    /// §4.5.11/4.5.14: `laplace_*(expr, num_or_zeros, den_or_poles[, ε])`
     /// — the trailing `abstol_expression` (LRMW2-35) is a `constant_
     /// expression`, resolved once per instance the same way `Ddt`'s own
-    /// `abstol` is (`ctx` carries no nature-lookup case here — §4.5.15's
+    /// `abstol` is (`ctx` carries no nature-lookup case here — §4.5.14's
     /// table spells it `abstol`, never `nature_identifier`, unlike `ddt`).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 3 {
@@ -402,15 +402,42 @@ impl AnalogOp for Laplace {
 struct ZTransform {
     variant: &'static str,
 }
+impl ZTransform {
+    fn err_t0(ctx: &mut LowerCtx) -> Expr {
+        ctx.errors.push(super::LowerError {
+            module: ctx.module_name.clone(),
+            what: "zi_* t0 (§4.5.12 — a first-transition start time; this codegen has no \
+                   zi_* sample-and-hold state to shift, only the ddt-shaped charge/resistive \
+                   split laplace_*/zi_* both currently lower through) is not implemented",
+            name: "zi_t0".to_string(),
+        });
+        real(0.0)
+    }
+}
 impl AnalogOp for ZTransform {
+    /// §4.5.12 (LRMW2-32): `zi_*(expr, num_or_zeros, den_or_poles, T[, τ[,
+    /// t0]])`. `τ` — "the timestep is controlled to accurately resolve
+    /// both the leading and trailing corner of the transition" — is a
+    /// step-control lever, folded into `StateKind::ZTransform.tau` and
+    /// (`kernel/analog/compile.rs`) the same per-instance LTE tolerance
+    /// mechanism `Ddt`'s/`Laplace`'s own tolerance already feeds. `t0`
+    /// ("the time of the first transition") has no honest equivalent —
+    /// there is no sample-and-hold state to shift — so an explicit `t0`
+    /// argument fails loud instead of being silently carried-and-ignored
+    /// (`Self::err_t0`); an omitted `t0` (the LRM's own `t = 0` default)
+    /// is unaffected.
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 4 {
             return real(0.0);
+        }
+        if args.len() > 5 {
+            return Self::err_t0(ctx);
         }
         let x = resolve_expr(&args[0], ctx);
         let num = to_coeff_vec(&args[1], ctx);
         let den = to_coeff_vec(&args[2], ctx);
         let sample_dt = resolve_expr(&args[3], ctx);
+        let tau = args.get(4).map(|a| resolve_expr(a, ctx));
         let variant = match self.variant {
             "zp" => ZKind::ZerosPoles,
             "np" => ZKind::NumPoles,
@@ -418,15 +445,24 @@ impl AnalogOp for ZTransform {
             _ => ZKind::NumDen,
         };
         let id = ctx.alloc_state(
-            StateKind::ZTransform { variant, num: num.clone(), den: den.clone(), sample_dt: sample_dt.clone() },
+            StateKind::ZTransform {
+                variant,
+                num: num.clone(),
+                den: den.clone(),
+                sample_dt: sample_dt.clone(),
+                tau: tau.clone(),
+            },
             x.clone(),
         );
-        let marker_args = vec![
+        let mut marker_args = vec![
             x,
             Expr::Concat { span: NOSPAN, parts: num },
             Expr::Concat { span: NOSPAN, parts: den },
             sample_dt,
         ];
+        if let Some(t) = tau {
+            marker_args.push(t);
+        }
         marker("__ztransform", id, marker_args)
     }
 }

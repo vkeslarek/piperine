@@ -1,10 +1,11 @@
-//! LRM-COVERS: 4.5.15
+//! LRM-COVERS: 4.5.11, 4.5.14
 //! LRMW2-35 (`lrm-conformance-wave2`, T39): `laplace_*(expr, num, den, ε)`'s
 //! trailing `ε`/`abstol_expression` was silently discarded — the compiled
 //! state carried no tolerance at all, and the LTE-driven adaptive timestep
 //! (`AnalogInstance::suggest_transient_step`) always used the run's global
-//! `Tolerances::abstol` regardless of what the model declared. §4.5.15's
-//! table lists `abstol` as `laplace_*`'s own trailing argument, the same
+//! `Tolerances::abstol` regardless of what the model declared. §4.5.11.1-
+//! 4.5.11.4 define it directly, summarized as `abstol` in §4.5.14's Table
+//! 4-20 — `laplace_*`'s own trailing argument, the same
 //! role `ddt`'s own second argument plays (§4.5.3) — folded through the
 //! identical instance-level LTE tolerance mechanism T33 built for `ddt`
 //! (`kernel/analog/compile.rs`'s `ddt_abstols`).

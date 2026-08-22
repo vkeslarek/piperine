@@ -1,7 +1,8 @@
-//! LRM-COVERS: 4.5.15
+//! LRM-COVERS: 4.5.11, 4.5.14
 //! LRMW2-35 (`lrm-conformance-wave2`, T39): `laplace_*(expr, num, den[, ε])`'s
-//! trailing `abstol_expression` (§4.5.15's table: `abstol` for every one of
-//! `laplace_zp`/`laplace_zd`/`laplace_np`/`laplace_nd`) used to be silently
+//! trailing `abstol_expression` (§4.5.11.1-4.5.11.4's own bracketed `[, ε]`
+//! form for every one of `laplace_zp`/`laplace_zd`/`laplace_np`/
+//! `laplace_nd`, summarized as `abstol` in §4.5.14's Table 4-20) used to be silently
 //! discarded — `Laplace::lower` (`resolve/pom/analog_ops.rs`) only ever read
 //! `args[0..=2]`, and `StateKind::Laplace` carried no tolerance field at
 //! all. This target checks the lowering step in isolation (the resolved
@@ -24,7 +25,7 @@ fn laplace_state(src: &str) -> StateVar {
         .expect("a laplace state")
 }
 
-/// §4.5.15: an omitted trailing `ε` carries no tolerance.
+/// §4.5.11: an omitted trailing `ε` carries no tolerance.
 #[test]
 fn laplace_without_an_abstol_argument_has_none() {
     let src = "module dut (inout electrical p, inout electrical n);
@@ -36,7 +37,7 @@ fn laplace_without_an_abstol_argument_has_none() {
     assert!(abstol.is_none(), "no trailing argument must leave abstol unset");
 }
 
-/// §4.5.15: an explicit `ε` (`abstol_expression`) is carried, not discarded.
+/// §4.5.11: an explicit `ε` (`abstol_expression`) is carried, not discarded.
 #[test]
 fn laplace_with_an_explicit_abstol_carries_it() {
     let src = "module dut (inout electrical p, inout electrical n);
