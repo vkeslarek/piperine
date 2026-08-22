@@ -903,18 +903,51 @@ impl<'m> AnalogFlattener<'m> {
         Ok((rest, terms))
     }
 
-    fn parse_dest(&self, dest: &PomExpr) -> Result<(NatureKind, NodeId, NodeId), CodegenError> {
-        if let PomExpr::AccessFunction { function, pos, neg, .. } = dest {
-            let nature_kind = match function.as_str() {
-                "V" => NatureKind::Potential,
-                _ => NatureKind::Flow,
-            };
-            let plus_name = ident_str(Some(pos)).unwrap_or_else(|| "?".into());
-            let minus_name = neg.as_deref().and_then(|n| ident_str(Some(n))).unwrap_or_else(|| "0".into());
-            let plus = self.resolve_node(&plus_name);
-            let minus = self.resolve_node(&minus_name);
-            return Ok((nature_kind, plus, minus));
+    /// The [`NatureKind`] a contribution-destination access-function name
+    /// maps to (LRM §4.4/§5.5.1): `"V"`/`"potential"` and `"I"`/`"flow"`
+    /// are the LRM's own always-legal generic names, checked first
+    /// regardless of what any discipline declares; any other name is a
+    /// custom discipline's own `access` name, resolved through
+    /// [`LoweredBody::access_kinds`] (built once, design-wide, in
+    /// `resolve::pom::body::lower_bodies`).
+    fn nature_kind_for_access(&self, function: &str) -> Option<NatureKind> {
+        match function {
+            "V" | "potential" => Some(NatureKind::Potential),
+            "I" | "flow" => Some(NatureKind::Flow),
+            other => self.module.access_kinds.get(other).copied(),
         }
+    }
+
+    fn parse_dest(&self, dest: &PomExpr) -> Result<(NatureKind, NodeId, NodeId), CodegenError> {
+        if let PomExpr::AccessFunction { function, pos, neg, .. } = dest
+            && let Some(nature_kind) = self.nature_kind_for_access(function) {
+                let plus_name = ident_str(Some(pos)).unwrap_or_else(|| "?".into());
+                let minus_name = neg.as_deref().and_then(|n| ident_str(Some(n))).unwrap_or_else(|| "0".into());
+                let plus = self.resolve_node(&plus_name);
+                let minus = self.resolve_node(&minus_name);
+                return Ok((nature_kind, plus, minus));
+            }
+        // A custom discipline access name (§3.6.1.2) has no dedicated AST
+        // shape — it parses as a plain `Call`, same as
+        // `elab/lower/vams.rs`'s `resolve_contribution_branches` promotes
+        // it to branch-kind resolution via the identical `access_kinds`
+        // lookup (LRMC-C1-09).
+        if let PomExpr::Call { name, args, .. } = dest
+            && let Some(nature_kind) = self.nature_kind_for_access(name) {
+                let (pos, neg) = match args.as_slice() {
+                    [pos] => (pos, None),
+                    [pos, neg] => (pos, Some(neg)),
+                    _ => return Err(CodegenError::unsupported(format!(
+                        "access function `{name}` (§4.4) takes a branch identifier or \
+                         one/two net expressions, got {} argument(s)", args.len()
+                    ))),
+                };
+                let plus_name = ident_str(Some(pos)).unwrap_or_else(|| "?".into());
+                let minus_name = neg.and_then(|n| ident_str(Some(n))).unwrap_or_else(|| "0".into());
+                let plus = self.resolve_node(&plus_name);
+                let minus = self.resolve_node(&minus_name);
+                return Ok((nature_kind, plus, minus));
+            }
         // Anything that is not an access-function call. A bare-identifier
         // target is the natural spelling for driving a digital net from an
         // analog body — but analog contributions only ever target branches

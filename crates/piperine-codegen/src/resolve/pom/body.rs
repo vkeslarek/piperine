@@ -50,6 +50,18 @@ pub struct LoweredBody {
     /// shared copy here to seed its persistent-var bank (one source, two
     /// consumers — never two lowering rules).
     pub var_inits: Vec<(VarId, PomExpr)>,
+    /// Access-function name → nature kind (LRM §4.4/§5.5.1), design-wide
+    /// (disciplines are a design-level registry, not per-module) — the
+    /// LRM's own always-legal `"V"`/`"potential"`/`"I"`/`"flow"` names are
+    /// NOT in this map (handled directly wherever it's consulted,
+    /// regardless of what any discipline declares); every OTHER entry is a
+    /// custom discipline's own `access` name (§3.6.1.2), resolved once here
+    /// from every `discipline { potential …; flow …; }` in the design —
+    /// mirrors `piperine-lang`'s own `build_access_kind_map`
+    /// (`elab/lower/vams.rs`, LRMC-C1-09), which resolves the identical
+    /// rule for POM branch-kind bookkeeping; this is `flatten/analog.rs`'s
+    /// copy for contribution-destination classification.
+    pub access_kinds: HashMap<String, NatureKind>,
 }
 
 impl LoweredBody {
@@ -230,6 +242,32 @@ impl<'a> LowerCtx<'a> {
 /// typo'd net in an instance connection, an unknown parameter in a
 /// contribution — is an error naming the module and symbol, never a
 /// silently grounded node or `ParamId(0)`.
+/// Design-wide access-function name → nature kind (LRM §4.4/§5.5.1),
+/// resolved from every `discipline { potential …; flow …; }` in the
+/// design: for each discipline's `potential`/`flow` nature, the nature's
+/// declared `access` name maps to [`NatureKind::Potential`]/`Flow`
+/// respectively. The LRM's own always-legal `"V"`/`"potential"`/`"I"`/
+/// `"flow"` names are NOT entered here — callers (`flatten/analog.rs`'s
+/// `parse_dest`) check those literals first, regardless of what any
+/// discipline declares, exactly as `piperine-lang`'s own
+/// `build_access_kind_map` (`elab/lower/vams.rs`) does for POM branch-kind
+/// bookkeeping — this is the identical rule, resolved again here because
+/// `LoweredBody` carries no reference back to the source `Design`.
+fn build_access_kinds(design: &Design) -> HashMap<String, NatureKind> {
+    let mut map = HashMap::new();
+    for (_, disc) in design.disciplines() {
+        if let Some(nat_name) = &disc.potential
+            && let Some(access) = design.nature(nat_name).and_then(piperine_lang::pom::Nature::access) {
+                map.entry(access.to_string()).or_insert(NatureKind::Potential);
+            }
+        if let Some(nat_name) = &disc.flow
+            && let Some(access) = design.nature(nat_name).and_then(piperine_lang::pom::Nature::access) {
+                map.entry(access.to_string()).or_insert(NatureKind::Flow);
+            }
+    }
+    map
+}
+
 pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, LowerErrors> {
     let mut bodies: Vec<LoweredBody> = Vec::new();
     let mut errors: Vec<LowerError> = Vec::new();
@@ -241,6 +279,8 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     // body carries nodes for the lifted wires and spliced instance ports
     // that codegen reads via `CircuitCompiler::flat_module` (FLAT-01).
     let names: Vec<String> = prog.modules().map(|m| m.name().to_string()).collect();
+    // Disciplines are a design-wide registry, not per-module — resolved once.
+    let access_kinds = build_access_kinds(prog);
 
     // Pass 1: build the symbol table + resolved ports for every module.
     for name in &names {
@@ -257,6 +297,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             constraints: None,
             cover: None,
             var_inits: Vec::new(),
+            access_kinds: access_kinds.clone(),
         });
     }
 
