@@ -123,8 +123,13 @@ pub struct StateVar {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum StateKind {
-    /// `ddt(x)` — time derivative (reactive).
-    Ddt,
+    /// `ddt(x[, abstol|nature])` — time derivative (reactive). §4.5.3:
+    /// the optional second argument is an explicit `abstol` or a
+    /// `nature_identifier` whose declared `abstol` attribute is used
+    /// instead — resolved to a literal at lowering time when it names a
+    /// nature, otherwise carried as a (possibly param-dependent) constant
+    /// expression, evaluated once per instance the same way `Idt`'s `ic` is.
+    Ddt { abstol: Option<PomExpr> },
     /// `idt(x, ic)` — time integral (reactive).
     Idt { ic: PomExpr },
     /// `idtmod(x, ic, modulus)` — modular integral (reactive).
@@ -151,7 +156,7 @@ impl StateKind {
     pub fn is_reactive(&self) -> bool {
         matches!(
             self,
-            Self::Ddt
+            Self::Ddt { .. }
                 | Self::Idt { .. }
                 | Self::IdtMod { .. }
                 | Self::Laplace { .. }
@@ -162,7 +167,7 @@ impl StateKind {
     /// Display name for diagnostics.
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Ddt => "ddt",
+            Self::Ddt { .. } => "ddt",
             Self::Idt { .. } => "idt",
             Self::IdtMod { .. } => "idtmod",
             Self::Ddx { .. } => "ddx",

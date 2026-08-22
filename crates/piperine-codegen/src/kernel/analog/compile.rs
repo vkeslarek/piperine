@@ -1117,6 +1117,15 @@ impl<'m> AnalogCompiler<'m> {
                 .iter()
                 .map(|(id, expr)| (id.0 as usize, expr.clone()))
                 .collect(),
+            ddt_abstols: self
+                .module
+                .symbols
+                .states()
+                .filter_map(|(_, s)| match &s.kind {
+                    StateKind::Ddt { abstol: Some(e) } => Some(e.clone()),
+                    _ => None,
+                })
+                .collect(),
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),

@@ -72,10 +72,22 @@ fn const_coeff_vec(e: &Expr, ctx: &mut LowerCtx) -> Option<Vec<f64>> {
 
 struct Ddt;
 impl AnalogOp for Ddt {
+    /// §4.5.3: an omitted second argument carries no tolerance; otherwise
+    /// it is either a bare `nature_identifier` (resolved through
+    /// `ctx.nature_abstols` to that nature's declared `abstol`, a literal
+    /// at lowering time) or a `constant_expression` (kept symbolic — may
+    /// reference a module parameter, evaluated once per instance the same
+    /// way `Idt`'s `ic` is).
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let Some(a0) = args.first() else { return real(0.0) };
         let x = resolve_expr(a0, ctx);
-        let id = ctx.alloc_state(StateKind::Ddt, x.clone());
+        let abstol = args.get(1).map(|a| match a {
+            Expr::Ident { name, .. } if ctx.nature_abstols.contains_key(name) => {
+                real(ctx.nature_abstols[name])
+            }
+            other => resolve_expr(other, ctx),
+        });
+        let id = ctx.alloc_state(StateKind::Ddt { abstol }, x.clone());
         marker("__ddt", id, vec![x])
     }
 }

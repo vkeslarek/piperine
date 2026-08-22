@@ -122,6 +122,12 @@ pub struct AnalogInstance {
     /// the adjoint's inner loop allocates nothing. Empty for a kernel that
     /// compiled no `∂F/∂p` function.
     param_scratch: Vec<f64>,
+    /// The minimum of every `ddt(x, abstol|nature)` tolerance this instance
+    /// declared (§4.5.3, LRMW2-37), evaluated once at construction against
+    /// this instance's own params. `None` when the body declared no
+    /// tolerance-carrying `ddt` call — `suggest_transient_step` then falls
+    /// back to the run's global `context.tolerances.abstol`.
+    ddt_abstol: Option<f64>,
 }
 
 impl AnalogInstance {
@@ -321,8 +327,32 @@ impl AnalogInstance {
             coverage: super::coverage::CoverTracker::new(&cover_bin_counts, &cover_cross_joint_counts),
             cover_posture: piperine_solver::abi::CoverPosture::default(),
             param_scratch: vec![0.0; num_param_contribs],
+            ddt_abstol: None,
         };
         instance.fire_initial_events();
+        // §4.5.3/LRMW2-37: fold every `ddt` tolerance declared by this body
+        // (evaluated against this instance's own params, same const-eval
+        // path as `Idt`'s `ic`) into the instance's single effective
+        // value — the minimum, since a tighter tolerance anywhere in the
+        // body must not be masked by a looser one elsewhere.
+        if !instance.kernel.ddt_abstols().is_empty() {
+            let param_names: Vec<String> = instance.kernel.param_names().to_vec();
+            let params = instance.params.clone();
+            for expr in instance.kernel.ddt_abstols() {
+                let value = crate::resolve::pom_eval_const(expr, &|name| {
+                    param_names
+                        .iter()
+                        .position(|p| p == name)
+                        .and_then(|idx| params.get(idx).copied())
+                })
+                .map_err(|e| {
+                    CodegenError::Invalid(format!(
+                        "instance `{label}`: ddt abstol is not const-evaluable: {e}"
+                    ))
+                })?;
+                instance.ddt_abstol = Some(instance.ddt_abstol.map_or(value, |m: f64| m.min(value)));
+            }
+        }
         // Annex A.2.2.1: a `var` declared with `= constant_expression`
         // starts the simulation at that value, evaluated against this
         // instance's own params (the kernel is Arc-shared; init *values*
@@ -1019,7 +1049,10 @@ impl AnalogInstance {
             .zip(&q_prev)
             .map(|(&n, &p)| n.abs().max(p.abs()))
             .fold(0.0_f64, f64::max);
-        let tol = context.tolerances.trtol * context.tolerances.chgtol + context.tolerances.reltol * q_mag + context.tolerances.abstol;
+        // §4.5.3/LRMW2-37: a `ddt(x, abstol|nature)` argument overrides the
+        // run's global `abstol` for this instance's own LTE tolerance.
+        let abstol = self.ddt_abstol.unwrap_or(context.tolerances.abstol);
+        let tol = context.tolerances.trtol * context.tolerances.chgtol + context.tolerances.reltol * q_mag + abstol;
 
         if lte <= 0.0 || tol <= 0.0 {
             return None;

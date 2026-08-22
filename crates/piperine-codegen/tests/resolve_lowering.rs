@@ -93,7 +93,7 @@ fn ddt_registers_one_ddt_state_slot() {
     let analog = body.analog.as_ref().expect("analog body");
     assert_eq!(analog.states.len(), 1, "one state slot");
     assert!(
-        matches!(body.symbols.state(analog.states[0]).kind, StateKind::Ddt),
+        matches!(body.symbols.state(analog.states[0]).kind, StateKind::Ddt { .. }),
         "the slot is a ddt slot"
     );
 }

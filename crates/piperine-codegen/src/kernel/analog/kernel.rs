@@ -187,6 +187,13 @@ pub(super) struct AnalogCore {
     /// evaluating each expression against the instance's own params (the
     /// kernel is `Arc`-shared; init *values* are per-instance).
     pub(super) var_inits: Vec<(usize, piperine_lang::ast::Expr)>,
+    /// Every `ddt(x, abstol|nature)` call's tolerance expression that
+    /// carried one (§4.5.3, LRMW2-37) — evaluated once per instance
+    /// (`AnalogInstance::new`, param-const-eval like `Idt`'s `ic`) and
+    /// folded (minimum) into the LTE timestep tolerance
+    /// (`AnalogInstance::suggest_transient_step`). Empty for a body with no
+    /// `ddt` call that named a tolerance.
+    pub(super) ddt_abstols: Vec<PomExpr>,
     pub(super) residual: AnalogFn,
     pub(super) jacobian: AnalogFn,
     /// Runtime-state input values (one per state slot); `None` without
@@ -452,6 +459,13 @@ impl AnalogKernel {
     /// Parameter names in `ParamId` order.
     pub fn param_names(&self) -> &[String] {
         &self.core.param_names
+    }
+
+    /// `ddt(x, abstol|nature)` tolerance expressions declared by this body
+    /// (§4.5.3, LRMW2-37) — one per `ddt` call that named a second
+    /// argument. Empty for a body with no tolerance-carrying `ddt` call.
+    pub fn ddt_abstols(&self) -> &[PomExpr] {
+        &self.core.ddt_abstols
     }
 
     /// Whether the body queries param `idx`'s presence (`$param_given`).

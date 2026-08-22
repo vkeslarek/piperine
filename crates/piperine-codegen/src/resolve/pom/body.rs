@@ -156,6 +156,13 @@ pub(crate) struct LowerCtx<'a> {
     /// falls back to this instead of `0.0` for an omitted `rise`/`fall`
     /// argument. `None` when no such directive was seen.
     pub default_transition: Option<(f64, f64)>,
+    /// Design-wide nature name → declared `abstol` (LRM §4.5.3's
+    /// `abstol_expression ::= constant_expression | nature_identifier`):
+    /// `ddt`/`idt`/`idtmod`'s optional tolerance argument resolves a bare
+    /// nature identifier through this map instead of treating it as a
+    /// (nonexistent) parameter reference. Only natures that declared an
+    /// `abstol` attribute are present.
+    pub nature_abstols: HashMap<String, f64>,
 }
 
 impl<'a> LowerCtx<'a> {
@@ -178,6 +185,7 @@ impl<'a> LowerCtx<'a> {
             consts: HashMap::new(),
             digital_shadows: Vec::new(),
             default_transition: None,
+            nature_abstols: HashMap::new(),
         }
     }
 
@@ -261,6 +269,19 @@ impl<'a> LowerCtx<'a> {
 /// `build_access_kind_map` (`elab/lower/vams.rs`) does for POM branch-kind
 /// bookkeeping — this is the identical rule, resolved again here because
 /// `LoweredBody` carries no reference back to the source `Design`.
+/// Design-wide nature name → declared `abstol`, for `ddt`/`idt`/`idtmod`'s
+/// optional tolerance argument (§4.5.3's `abstol_expression`) resolving a
+/// bare nature identifier. Only natures with an `abstol` attribute set are
+/// entered — a nature with none is not a valid `abstol_expression` value
+/// (its identifier is left to the ordinary parameter/const resolution path,
+/// which fails loud with "unresolved name" the same way a typo would).
+fn build_nature_abstols(design: &Design) -> HashMap<String, f64> {
+    design
+        .natures()
+        .filter_map(|(name, nat)| nat.abstol().map(|tol| (name.clone(), tol)))
+        .collect()
+}
+
 fn build_access_kinds(design: &Design) -> HashMap<String, NatureKind> {
     let mut map = HashMap::new();
     for (_, disc) in design.disciplines() {
@@ -289,6 +310,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     let names: Vec<String> = prog.modules().map(|m| m.name().to_string()).collect();
     // Disciplines are a design-wide registry, not per-module — resolved once.
     let access_kinds = build_access_kinds(prog);
+    let nature_abstols = build_nature_abstols(prog);
 
     // Pass 1: build the symbol table + resolved ports for every module.
     for name in &names {
@@ -401,6 +423,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.default_transition = prog.directives().default_transition;
+            ctx.nature_abstols = nature_abstols.clone();
 
             if is_digital {
                 // Digital path: keep the POM `Stmt` tree directly — the
