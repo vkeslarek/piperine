@@ -67,6 +67,12 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     // output-limited exponential — a stateful op, dispatched
                     // before the generic math-builtin path below.
                     "limexp" => return self.emit_analog_limexp(args),
+                    // `analysis(...)` (LRM §4.6, Annex A grammar
+                    // `analysis_function_call`) is spelled WITHOUT a `$`
+                    // prefix, so it parses as a plain `Call`, never a
+                    // `SystemFunctionCall` — dispatched here, not through
+                    // `emit_analog_syscall`.
+                    "analysis" => return self.emit_analog_analysis(args),
                     _ => {}
                 }
                 // Math builtins (exp, ln, sqrt, sin, …)
@@ -247,28 +253,14 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 let is_set = self.builder.ins().icmp(IntCC::NotEqual, bit, zero);
                 Ok(self.bool_to_f64(is_set))
             }
-            "analysis" => {
-                let kind = match args.first() {
-                    Some(Expr::Str { value, .. }) => match value.as_str() {
-                        "ac" => 1u64,
-                        "dc" => 0,
-                        "tran" => 2,
-                        "noise" => 3,
-                        _ => 0,
-                    },
-                    _ => 0,
-                };
-                let sim_ptr = self.sim_ptr();
-                let current = self.builder.ins().load(
-                    types::I64,
-                    MemFlags::trusted(),
-                    sim_ptr,
-                    SimField::CURRENT_ANALYSIS,
-                );
-                let target = self.builder.ins().iconst(types::I64, kind as i64);
-                let matches = self.builder.ins().icmp(IntCC::Equal, current, target);
-                Ok(self.bool_to_f64(matches))
-            }
+            // `analysis(...)` (LRM §4.6): this parser produces a
+            // `SystemFunctionCall` node for it (unlike a generic
+            // user-shaped call), so it is dispatched here — `emit_analog`'s
+            // `Expr::Call` arm ALSO dispatches `"analysis"` to the same
+            // helper (`emit_analog_analysis`) defensively, since a
+            // synthetic fixture built by hand (rather than parsed through
+            // the real grammar) can carry a `Call` node instead.
+            "analysis" => self.emit_analog_analysis(args),
             // §9.19 (LRMC-C7-09, T50): `$port_connected(port_identifier)`
             // — a bare port identifier (Syntax 9-14), not a string
             // literal (unlike `$param_given`'s own, differently-shaped
@@ -416,6 +408,57 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// rule), so this method's `yold`-dependent result never becomes a
     /// Jacobian entry. See `piperine_ir::limit::limexp_full`'s doc comment
     /// for why that distinction is load-bearing, not stylistic.
+    /// `analysis("name")` (LRM §4.6): true iff `SimCtx.current_analysis`
+    /// matches the named analysis. An unrecognized name is a loud error —
+    /// never a silent match against `"dc"` (kind 0), the SPEC_DEVIATION.md
+    /// 2.6-documented bug (the code implementing it, however, turned out
+    /// to be dead: `analysis` has no `$` prefix, so it never reached
+    /// `emit_analog_syscall`'s `SystemFunctionCall` dispatch at all —
+    /// every use of `analysis()` was an unconditional "call in an analog
+    /// expression (should be inlined)" error, not a silent `dc` match;
+    /// this method is the actual fix, dispatched from the `Call` arm).
+    fn emit_analog_analysis(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
+        let name = match args.first() {
+            Some(Expr::Str { value, .. }) => value.as_str(),
+            _ => return Err(CodegenError::unsupported(
+                "analysis() requires a string-literal analysis-name argument (§4.6)"
+            )),
+        };
+        // §4.6 Table 4-17's full analysis_identifier set. "static" shares
+        // "dc"'s CURRENT_ANALYSIS encoding (both true for a DC/DC-sweep
+        // point) — the LRM also wants "static" true during the DC-like
+        // pass preceding an AC/noise/tran run, which SimCtx's single
+        // analysis-kind field can't yet distinguish from that pass's own
+        // analysis kind (a disclosed gap, ROADMAP.md). "ic"/"nodeset" name
+        // even finer phases (the transient initial-condition pass, and the
+        // nodeset-enforcement phase within an operating-point calculation
+        // respectively) this solver does not track at all yet — mapped to
+        // a sentinel `CURRENT_ANALYSIS` can never equal, so they parse and
+        // never match, rather than silently aliasing to the wrong phase.
+        const NEVER: u64 = 4;
+        let kind = match name {
+            "dc" | "static" => 0u64,
+            "ac" => 1,
+            "tran" => 2,
+            "noise" => 3,
+            "ic" | "nodeset" => NEVER,
+            other => return Err(CodegenError::unsupported(format!(
+                "analysis(\"{other}\") names an unknown analysis — valid names are \
+                 \"dc\", \"ac\", \"tran\", \"noise\", \"static\", \"ic\", \"nodeset\" (§4.6)"
+            ))),
+        };
+        let sim_ptr = self.sim_ptr();
+        let current = self.builder.ins().load(
+            types::I64,
+            MemFlags::trusted(),
+            sim_ptr,
+            SimField::CURRENT_ANALYSIS,
+        );
+        let target = self.builder.ins().iconst(types::I64, kind as i64);
+        let matches = self.builder.ins().icmp(IntCC::Equal, current, target);
+        Ok(self.bool_to_f64(matches))
+    }
+
     fn emit_analog_limexp(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
         if args.len() != 1 {
             return Err(CodegenError::unsupported("limexp expects exactly one argument (LRM §4.5.13)"));

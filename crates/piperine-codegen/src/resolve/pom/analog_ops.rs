@@ -362,8 +362,15 @@ impl AnalogOp for ZTransform {
 struct AcStim;
 impl AnalogOp for AcStim {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
-        let mag = arg(args, 0, ctx, 1.0);
-        let phase = arg(args, 1, ctx, 0.0);
+        // `ac_stim([ "analysis_identifier" [, mag [, phase]]])` — LRM
+        // §4.5.9/Annex A.8.7: the optional leading argument is a string
+        // literal naming the analysis, never a magnitude value. Skipping
+        // it here (rather than blindly treating `args[0]` as `mag`) is the
+        // whole fix — codegen doesn't otherwise gate `ac_stim` by the
+        // named analysis (it is already AC-only by construction).
+        let rest: &[Expr] = if matches!(args.first(), Some(Expr::Str { .. })) { &args[1..] } else { args };
+        let mag = arg(rest, 0, ctx, 1.0);
+        let phase = arg(rest, 1, ctx, 0.0);
         Expr::SystemFunctionCall { span: NOSPAN, name: "$ac_stim".to_string(), args: vec![mag, phase] }
     }
 }
