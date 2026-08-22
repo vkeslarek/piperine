@@ -70,6 +70,14 @@ pub struct LoweredBody {
     /// it. `None` means no quantization (unchanged pre-T26 behavior) —
     /// most fixtures declare no `` `timescale `` at all.
     pub timescale: Option<piperine_lang::directives::Timescale>,
+    /// Node pairs of every branch the elaborator marked
+    /// [`piperine_lang::pom::BranchKind::Switch`] (§5.6.5, LRMW2-40, T45) —
+    /// resolved from `Module::branches()` once here since the flattener
+    /// (`flatten/analog.rs::AnalogFlattener`) only ever sees this resolved
+    /// form, never the POM `Design`/`Module` directly. A guarded potential
+    /// contribution (`if (cond) V(p,n) <+ expr;`) is only legal — §5.6.5's
+    /// switch exception — when `(p,n)` (in either order) appears here.
+    pub switch_branches: Vec<(NodeId, NodeId)>,
 }
 
 impl LoweredBody {
@@ -345,18 +353,17 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
             var_inits: Vec::new(),
             access_kinds: access_kinds.clone(),
             timescale: m.timescale,
+            switch_branches: Vec::new(),
         });
     }
 
-    // Pass 1.5 (functions): PHDL used to register every non-generic
-    // `Design::functions()`/`impls()` entry into each module's symbol
-    // table here. Both collections were deleted at T21 (MD-45) along with
-    // the rest of the value layer, and VAMS's own `analog function`/
-    // `function`/`task` module items aren't lowered into the POM at all
-    // yet (a documented pre-existing gap from T22, not this retarget's
-    // scope — see `elab/lower/vams.rs`'s no-op match arms). Nothing to do
-    // here until that lands; `resolve/pom/expr.rs`'s `fn_by_name` lookup
-    // stays in place as the (currently always-empty) landing spot.
+    // Pass 1.5 (functions): `analog function`/`function` declarations
+    // (§4.7, LRMW2-44, T44) register into each module's `SymbolTable`
+    // inside `build_symbols_and_ports` itself (Pass 1, above) — a formal
+    // becomes a `VarId` in the module's own scope, and the function
+    // registers by name so `resolve/pom/expr.rs`'s `fn_by_name` lookup
+    // (and the digital `Codegen` path's `Resolver::new`, which snapshots
+    // `symbols.fns()`) both find it. No separate pass needed.
 
     // Pass 2: Lower behaviors using the built SymbolTables — flat module
     // form (lifted wires + spliced instance ports are already in the symbol
@@ -407,6 +414,28 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 }
             }
         }
+
+        // Switch branches (§5.6.5, LRMW2-40, T45): resolve every branch
+        // the elaborator marked `BranchKind::Switch` to its `(NodeId,
+        // NodeId)` pair, using the same `node_by_name` map instance-port
+        // resolution just built above.
+        bodies[i].switch_branches = m
+            .branches()
+            .iter()
+            .filter(|b| b.kind() == piperine_lang::pom::BranchKind::Switch)
+            .filter_map(|b| {
+                let resolve_net = |net_ref: Option<&piperine_lang::pom::NetRef>| -> Option<NodeId> {
+                    match net_ref {
+                        None => Some(NodeId::GROUND),
+                        Some(nr) if bodies[i].symbols.is_ground(nr.net()) => Some(NodeId::GROUND),
+                        Some(nr) => node_by_name.get(nr.net()).copied(),
+                    }
+                };
+                let plus = resolve_net(Some(b.pos()))?;
+                let minus = resolve_net(b.neg())?;
+                Some((plus, minus))
+            })
+            .collect();
 
         // Variable initializers (Annex A.2.2.1): every module-level `var`
         // declared with `= constant_expression`, as `(VarId, init expr)`

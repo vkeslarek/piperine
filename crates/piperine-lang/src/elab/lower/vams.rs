@@ -608,7 +608,7 @@ impl Elaborator {
                 continue;
             }
             for stmt in behavior.body() {
-                resolve_contribution_branches(stmt, &decl.name, &mut module.branches, access_kinds)?;
+                resolve_contribution_branches(stmt, &decl.name, &mut module.branches, access_kinds, false)?;
             }
         }
 
@@ -2046,11 +2046,27 @@ fn lower_branch_decl(b: &BranchDecl, out: &mut Vec<Branch>) {
 /// shape (the grammar has no symbol table, T16) — it parses as a plain
 /// `Expr::Call`, promoted here to the same branch resolution via
 /// `access_kinds` (LRMC-C1-09, [`build_access_kind_map`]).
+/// §5.6.5's switch-branch exception, applied *before*
+/// [`Branch::record_contribution`]'s ordinary §5.4.2 conflict check runs:
+/// a contribution reached from inside a conditional statement
+/// (`conditional`) whose kind differs from the branch's already-recorded
+/// source kind promotes the branch to [`BranchKind::Switch`] instead of
+/// leaving it to fail the conflict check. A no-op for a probe (nothing
+/// recorded yet — no conflict possible), a same-kind contribution
+/// (ordinary multiple `V()`/`I()` writes), or an unconditional context
+/// (§5.4.2 stays a hard error there, unchanged).
+fn promote_to_switch_if_conditional(branch: &mut Branch, incoming: BranchKind, conditional: bool) {
+    if conditional && branch.kind().is_source() && branch.kind() != incoming && branch.kind() != BranchKind::Switch {
+        branch.mark_switch();
+    }
+}
+
 fn resolve_contribution_branches(
     stmt: &Stmt,
     module: &str,
     branches: &mut Vec<Branch>,
     access_kinds: &HashMap<String, BranchKind>,
+    conditional: bool,
 ) -> Result<(), ElabError> {
     match stmt {
         // A contribution guarded by `@(initial_step)` is a UIC seed, not
@@ -2081,6 +2097,7 @@ fn resolve_contribution_branches(
                         },
                     };
                     let branch = resolve_or_create_branch(pos, neg.as_deref(), branches)?;
+                    promote_to_switch_if_conditional(branch, kind, conditional);
                     branch.record_contribution(kind, Some(to_miette_span(*span)), module)?;
                 }
                 Expr::Call { name, args, .. } => {
@@ -2096,28 +2113,43 @@ fn resolve_contribution_branches(
                         }
                     };
                     let branch = resolve_or_create_branch(pos, neg, branches)?;
+                    promote_to_switch_if_conditional(branch, *kind, conditional);
                     branch.record_contribution(*kind, Some(to_miette_span(*span)), module)?;
                 }
                 _ => {}
             }
             Ok(())
         }
-        Stmt::Block { stmts, .. } => {
-            stmts.iter().try_for_each(|s| resolve_contribution_branches(s, module, branches, access_kinds))
-        }
+        Stmt::Block { stmts, .. } => stmts
+            .iter()
+            .try_for_each(|s| resolve_contribution_branches(s, module, branches, access_kinds, conditional)),
+        // §5.6.5: "contribution statements are allowed within conditional
+        // statements" — the switch-branch mechanism itself. `then`/`else`
+        // both run with `conditional = true` so a kind conflict between
+        // them (`V(out) <+ 0;` vs. `I(out) <+ 0;`, the LRM's own relay
+        // example) promotes the branch to `BranchKind::Switch` instead of
+        // failing `§5.4.2`'s ordinary conflict check.
         Stmt::If { then_branch, else_branch, .. } => {
-            resolve_contribution_branches(then_branch, module, branches, access_kinds)?;
+            resolve_contribution_branches(then_branch, module, branches, access_kinds, true)?;
             if let Some(e) = else_branch {
-                resolve_contribution_branches(e, module, branches, access_kinds)?;
+                resolve_contribution_branches(e, module, branches, access_kinds, true)?;
             }
             Ok(())
         }
         Stmt::Case { arms, .. } => arms
             .iter()
-            .try_for_each(|arm| resolve_contribution_branches(&arm.body, module, branches, access_kinds)),
-        Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Forever { body, .. }
-        | Stmt::EventControl { body, .. } | Stmt::DelayControl { body, .. } => {
-            resolve_contribution_branches(body, module, branches, access_kinds)
+            .try_for_each(|arm| resolve_contribution_branches(&arm.body, module, branches, access_kinds, true)),
+        Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Repeat { body, .. } | Stmt::Forever { body, .. } => {
+            resolve_contribution_branches(body, module, branches, access_kinds, conditional)
+        }
+        // §5.6.5's own restriction: "Usage of contribution statements
+        // inside event control statements is disallowed" for the switch
+        // mechanism specifically — a kind conflict first arising inside an
+        // `@(...)` body (even one lexically nested inside an `if`) does
+        // not get the switch exception; it still fails §5.4.2's ordinary
+        // conflict check.
+        Stmt::EventControl { body, .. } | Stmt::DelayControl { body, .. } => {
+            resolve_contribution_branches(body, module, branches, access_kinds, false)
         }
         Stmt::Null { .. }
         | Stmt::Assign { .. }

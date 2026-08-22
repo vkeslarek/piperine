@@ -544,6 +544,19 @@ fn lit(v: f64) -> PomExpr {
     PomExpr::Number { span: NOSPAN, value: NumberLit::Real(v) }
 }
 
+/// An `Ident` naming node `id` — the shape a `V()`/`I()` access-function
+/// terminal expects (`Expr::AccessFunction`'s `pos`/`neg`, resolved back
+/// to a node id at JIT-emit time via `Builder::resolve_node`, same as any
+/// authored `V(a,b)`). Used to synthesize a branch-voltage *read*
+/// (§5.6.5's switch-branch companion conductance) from a `NodeId` this
+/// pass already has, rather than a name parsed from source.
+fn node_ident(module: &LoweredBody, id: NodeId) -> PomExpr {
+    // `NodeId::GROUND` (index 0) is pre-interned as `"gnd"` by
+    // `SymbolTable::new` — `.node(id)` already resolves it, no special
+    // case needed.
+    PomExpr::Ident { span: NOSPAN, name: module.symbols.node(id).name.clone() }
+}
+
 fn int(v: i64) -> PomExpr {
     PomExpr::Number { span: NOSPAN, value: NumberLit::Integer(v) }
 }
@@ -1121,14 +1134,30 @@ impl<'m> AnalogFlattener<'m> {
         let (nature_kind, plus, minus) = self.parse_dest(dest)?;
         let resolved = self.subst(expr)?;
         let guarded = match guard {
-            None => resolved,
-            Some(g) => select(g.clone(), resolved, lit(0.0)),
+            None => resolved.clone(),
+            Some(g) => select(g.clone(), resolved.clone(), lit(0.0)),
         };
         match nature_kind {
             NatureKind::Flow => self.add_flow(guarded, plus, minus),
             NatureKind::Potential => {
-                if guard.is_some() {
-                    return Err(CodegenError::unsupported("conditional potential contribution"));
+                if let Some(g) = guard {
+                    // §5.6.5 (LRMW2-40, T45): a conditional potential
+                    // contribution is legal on exactly one branch shape —
+                    // one already marked `BranchKind::Switch` by the
+                    // elaborator (`elab::lower::vams::
+                    // promote_to_switch_if_conditional`), which only
+                    // happens when the *same* branch also carries a flow
+                    // contribution from the conditional's other arm (the
+                    // LRM's own relay: `if (…) V(out) <+ 0; else I(out) <+
+                    // 0;`). Anything else stays the §5.4.2 hard error.
+                    if !self.is_switch_branch(plus, minus) {
+                        return Err(CodegenError::unsupported(
+                            "conditional potential contribution on a non-switch branch (LRM §5.4.2/§5.6.5): \
+                             a guarded `V()<+` is only legal on a branch that also carries a flow \
+                             contribution from the conditional's other arm",
+                        ));
+                    }
+                    return self.add_switch_potential(g.clone(), resolved, plus, minus);
                 }
                 match self.potential_acc.iter_mut().find(|(p, m, _)| *p == plus && *m == minus) {
                     Some((_, _, acc)) => {
@@ -1139,6 +1168,49 @@ impl<'m> AnalogFlattener<'m> {
                 Ok(())
             }
         }
+    }
+
+    /// Whether `(plus, minus)` (in either terminal order) is one of this
+    /// module's §5.6.5 switch branches (`LoweredBody::switch_branches`,
+    /// resolved by `resolve/pom/body.rs::lower_bodies` from the POM
+    /// `Module::branches()` the elaborator marked `BranchKind::Switch`).
+    fn is_switch_branch(&self, plus: NodeId, minus: NodeId) -> bool {
+        self.module
+            .switch_branches
+            .iter()
+            .any(|&(p, m)| (p, m) == (plus, minus) || (p, m) == (minus, plus))
+    }
+
+    /// §5.6.5's switch-branch "closed" state, modelled as a very large
+    /// Norton conductance clamping `V(plus,minus)` toward `target` — an
+    /// exact ideal voltage source is a structural-branch-type change this
+    /// fixed-shape MNA kernel does not support; a sufficiently large
+    /// conductance is the standard, widely-used behavioral approximation
+    /// (the same technique real switch-level Verilog-A models use), tight
+    /// enough that `V(plus,minus)` differs from `target` by less than
+    /// `1/SWITCH_CLOSED_CONDUCTANCE` volts for any physically reasonable
+    /// current. Disclosed approximation (SPEC_DEVIATION), not a silent
+    /// no-op: the LRM's `I(out) <+ 0;` "open" arm stays *exact* — it is an
+    /// ordinary guarded flow contribution (`add_flow`, unchanged), and
+    /// summed at the same branch via the ordinary multi-contribution
+    /// accumulation KCL already does for every other flow.
+    fn add_switch_potential(
+        &mut self,
+        guard: PomExpr,
+        target: PomExpr,
+        plus: NodeId,
+        minus: NodeId,
+    ) -> Result<(), CodegenError> {
+        const SWITCH_CLOSED_CONDUCTANCE: f64 = 1e9;
+        let read_v = PomExpr::AccessFunction {
+            span: NOSPAN,
+            function: "V".to_string(),
+            pos: Box::new(node_ident(self.module, plus)),
+            neg: Some(Box::new(node_ident(self.module, minus))),
+        };
+        let closed_flow = binary(BinOp::Mul, lit(SWITCH_CLOSED_CONDUCTANCE), binary(BinOp::Sub, read_v, target));
+        let switched = select(guard, closed_flow, lit(0.0));
+        self.add_flow(switched, plus, minus)
     }
 
     /// Split a potential contribution's value into `(resistive, flux_terms,
