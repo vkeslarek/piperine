@@ -312,8 +312,16 @@ fn differentiate(
             if name.starts_with("__") {
                 return lit(0.0);
             }
-            // Math builtins: chain rule.
-            if super::math::math_fn(name).is_some() {
+            // Math builtins: chain rule. `limexp` is deliberately NOT in
+            // `math::MATH_FNS` (LRM §4.5.13 gives it Newton-iteration state,
+            // so it can't be a stateless wrapper there — see math.rs's own
+            // comment) but still needs a `d_math` arm: without this
+            // explicit name check, `math_fn("limexp").is_some()` is false
+            // and the branch below silently falls through to a `0.0`
+            // derivative — a zeroed Jacobian row exactly when it matters,
+            // which reproduced as a real non-convergence during development
+            // (see `d_math`'s `"limexp"` arm doc comment).
+            if name == "limexp" || super::math::math_fn(name).is_some() {
                 return d_math(name, args, seed, ident_seed, resolve_node, tapes);
             }
             lit(0.0)
@@ -409,7 +417,28 @@ fn d_math(
     let u = args.first().cloned().unwrap_or_else(|| lit(0.0));
     let du = args.first().map(|a| differentiate(a, seed, ident_seed, resolve_node, tapes)).unwrap_or_else(|| lit(0.0));
     match name {
-        "exp" | "limexp" => mul(math1(name, u), du),
+        "exp" => mul(math1(name, u), du),
+        // `limexp` is transparent-to-state for differentiation, the same
+        // rule `$limit` uses just below: the Jacobian coefficient is the
+        // RAW (state-independent) exponential `exp(u)`, never `limexp(u)`
+        // itself. Recursing into `limexp` here would reconstruct a
+        // `Call{"limexp", [u]}` node whose emission (`emit_analog_limexp`)
+        // reads the `yold` state slot — an architecturally always-`0.0`-or-
+        // wrong-in-general coefficient exactly in the iterations where
+        // limiting is active (the same failure mode the `min`/`max` ternary
+        // rule below has against a state-derived bound), which zeroes or
+        // corrupts the Jacobian row right when it matters and produces a
+        // singular/near-singular Newton step. `exp` has no state of its
+        // own, so `math1("exp", u)` is always safe to recurse into. The
+        // argument is additionally clamped at 80 (`min`, constant-bound —
+        // not state-derived, so the generic `min`/`max` ternary rule above
+        // differentiates it correctly on its own): `emit_analog_limexp`'s
+        // residual applies this same clamp before `exp`, and an unclamped
+        // Jacobian coefficient can itself overflow to infinity on a bad
+        // initial guess, producing a NaN/Inf linear solve (a real failure
+        // found during development on several ngspice-oracle homotopy/BJT
+        // fixtures).
+        "limexp" => mul(math1("exp", math2("min", u, lit(80.0))), du),
         "ln" => div(du, u),
         // LRM Table 4-14: `log` is decimal (base-10), an alias of `log10` —
         // d/dx log10(x) = 1 / (x·ln 10).
@@ -600,6 +629,11 @@ fn ternary(cond: Expr, then_branch: Expr, else_branch: Expr) -> Expr {
 fn math1(name: &str, a: Expr) -> Expr {
     let span = a.span();
     Expr::Call { span, name: name.to_string(), args: vec![a] }
+}
+
+fn math2(name: &str, a: Expr, b: Expr) -> Expr {
+    let span = a.span();
+    Expr::Call { span, name: name.to_string(), args: vec![a, b] }
 }
 
 // Extension trait for Pow differentiation.

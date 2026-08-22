@@ -28,6 +28,7 @@ mod constraints;
 mod coverage;
 mod forces;
 mod kernel;
+mod limexp;
 mod limits;
 mod noise;
 mod reactive;

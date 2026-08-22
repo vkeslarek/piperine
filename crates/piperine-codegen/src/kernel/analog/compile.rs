@@ -22,6 +22,7 @@ use super::{
 };
 use super::ac_stim::AcStim;
 use super::forces::Forces;
+use super::limexp::{Limexp, LIMEXP_FNS};
 use super::limits::{Limits, LIMIT_FNS};
 use super::noise::Noise;
 use super::reactive::Reactive;
@@ -55,6 +56,26 @@ fn collect_limits(flat: &FlatAnalog) -> Vec<PomExpr> {
     // scan the temp tape too.
     for t in &flat.temps { scan(t); }
     limits
+}
+
+/// Collect the unique `limexp(x)` call expressions across every flattened
+/// expression, in a stable order (LRM §4.5.13). Each becomes a `yold`
+/// (previous limited output) slot appended to the state bank.
+fn collect_limexp(flat: &FlatAnalog) -> Vec<PomExpr> {
+    let mut calls: Vec<PomExpr> = Vec::new();
+    let mut scan = |e: &PomExpr| {
+        visit_all(e, &mut |node| {
+            if let PomExpr::Call { name, .. } = node
+                && name == "limexp" && !calls.iter().any(|l| expr_eq(l, node)) {
+                    calls.push(node.clone());
+                }
+        });
+    };
+    for c in &flat.resistive { scan(&c.expr); }
+    for c in &flat.charge { scan(&c.expr); }
+    for f in &flat.forces { scan(&f.expr); }
+    for t in &flat.temps { scan(t); }
+    calls
 }
 
 
@@ -177,8 +198,17 @@ pub(super) struct AnalogCompiler<'m> {
     fb_ctx: FunctionBuilderContext,
     /// Unique `$limit` expressions, in slot order.
     limits: Vec<PomExpr>,
-    /// State-bank slot where `$limit` vold slots begin (= module state count).
+    /// State-bank slot where `$limit` vold slots begin (= module state count
+    /// + `limexp` slot count — `limexp` sits between the module's own
+    /// states and `$limit`'s, `$limit` stays the tail).
     limit_base: usize,
+    /// `limexp`'s combined argument-clamp/exp/limit symbol (LRM §4.5.13),
+    /// analog JIT only.
+    limexp_ids: HashMap<&'static str, FuncId>,
+    /// Unique `limexp(x)` call expressions, in slot order.
+    limexp: Vec<PomExpr>,
+    /// State-bank slot where `limexp` `yold` slots begin (= module state count).
+    limexp_base: usize,
 }
 
 /// The compiled `∂F/∂p` kernel and its stamp targets (DVG-02): the one
@@ -199,6 +229,9 @@ impl<'m> AnalogCompiler<'m> {
             jit_builder.symbol(f.name, f.symbol);
         }
         for f in LIMIT_FNS {
+            jit_builder.symbol(f.name, f.symbol);
+        }
+        for f in LIMEXP_FNS {
             jit_builder.symbol(f.name, f.symbol);
         }
         for f in crate::emit::runtime_io::TASK_FNS {
@@ -232,6 +265,19 @@ impl<'m> AnalogCompiler<'m> {
             limit_ids.insert(f.name, id);
         }
 
+        let mut limexp_ids = HashMap::new();
+        for f in LIMEXP_FNS {
+            let mut sig = jit.make_signature();
+            for _ in 0..f.arity {
+                sig.params.push(AbiParam::new(types::F64));
+            }
+            sig.returns.push(AbiParam::new(types::F64));
+            let id = jit
+                .declare_function(f.name, Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            limexp_ids.insert(f.name, id);
+        }
+
         let (terminals, num_ports) = Self::terminal_order(module, &flat);
         let slot = terminals
             .iter()
@@ -239,8 +285,14 @@ impl<'m> AnalogCompiler<'m> {
             .map(|(i, &n)| (n, i))
             .collect();
 
+        // Layout: [module states][limexp yold slots][$limit vold slots] —
+        // `AnalogKernel::limit_base()` derives its offset from the *end* of
+        // the state bank, so `$limit` stays the tail; `limexp` sits between
+        // the module's own states and the `$limit` slots.
         let limits = collect_limits(&flat);
-        let limit_base = module.symbols.num_states();
+        let limexp = collect_limexp(&flat);
+        let limexp_base = module.symbols.num_states();
+        let limit_base = limexp_base + limexp.len();
 
         Ok(Self {
             module,
@@ -254,6 +306,9 @@ impl<'m> AnalogCompiler<'m> {
             fb_ctx: FunctionBuilderContext::new(),
             limits,
             limit_base,
+            limexp_ids,
+            limexp,
+            limexp_base,
         })
     }
 
@@ -551,6 +606,16 @@ impl<'m> AnalogCompiler<'m> {
         } else {
             let rows = self.limits.clone();
             Some(self.compile_rows("limit_update", &rows)?)
+        };
+        // `limexp` update (LRM §4.5.13): one row per call site yielding the
+        // limited output `ylim` — evaluating the original `limexp(x)` call
+        // with the current `yold` in state already produces the new limited
+        // value (the same self-referential trick `$limit`'s update uses).
+        let limexp_update_id = if self.limexp.is_empty() {
+            None
+        } else {
+            let rows = self.limexp.clone();
+            Some(self.compile_rows("limexp_update", &rows)?)
         };
         // `$limit` seed: the critical voltage `vcrit` (arg 3) per slot. Junctions
         // start limiting from vcrit — ngspice's MODEINITJCT — so a diode begins
@@ -896,6 +961,10 @@ impl<'m> AnalogCompiler<'m> {
                 branches: limit_branches,
                 catalog: limit_catalog,
             });
+        let limexp_cap = limexp_update_id.map(|update| Limexp {
+            update: get(&self.jit, update),
+            count: self.limexp.len(),
+        });
         let noise_cap = noise_id.map(|id| Noise {
             source: get(&self.jit, id),
             terminals: noise.iter().map(|&(p, m, _, _)| (p, m)).collect(),
@@ -970,9 +1039,10 @@ impl<'m> AnalogCompiler<'m> {
             .map(|&id| self.module.symbols.node(id).name.clone())
             .collect();
         // Per-state-slot introspection names (ABI-47): each runtime-serviced
-        // state kind gets `"<kind>[<id>]"`; the trailing `$limit` vold slots
-        // are `"vold[k]"`. Slots without a runtime state stay empty.
-        let num_state_slots = self.module.symbols.num_states() + self.limits.len();
+        // state kind gets `"<kind>[<id>]"`; the `limexp` `yold` slots are
+        // `"ylim[k]"`; the trailing `$limit` vold slots are `"vold[k]"`.
+        // Slots without a runtime state stay empty.
+        let num_state_slots = self.module.symbols.num_states() + self.limexp.len() + self.limits.len();
         let mut state_slot_names: Vec<String> = vec![String::new(); num_state_slots];
         for (id, sv) in self.module.symbols.states() {
             let idx = id.0 as usize;
@@ -980,9 +1050,14 @@ impl<'m> AnalogCompiler<'m> {
                 state_slot_names[idx] = format!("{}[{}]", sv.kind.name(), id.0);
             }
         }
-        let limit_base = self.module.symbols.num_states();
+        for k in 0..self.limexp.len() {
+            let idx = self.limexp_base + k;
+            if idx < state_slot_names.len() {
+                state_slot_names[idx] = format!("ylim[{k}]");
+            }
+        }
         for k in 0..self.limits.len() {
-            let idx = limit_base + k;
+            let idx = self.limit_base + k;
             if idx < state_slot_names.len() {
                 state_slot_names[idx] = format!("vold[{k}]");
             }
@@ -1013,7 +1088,7 @@ impl<'m> AnalogCompiler<'m> {
             presence_mask,
             num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
-            num_state_slots: self.module.symbols.num_states() + self.limits.len(),
+            num_state_slots: self.module.symbols.num_states() + self.limexp.len() + self.limits.len(),
             num_vars,
             var_inits: self
                 .module
@@ -1032,6 +1107,7 @@ impl<'m> AnalogCompiler<'m> {
             reactive,
             forces: forces_cap,
             limits: limits_cap,
+            limexp: limexp_cap,
             noise: noise_cap,
             ac_stim: ac_stim_cap,
             constraints: constraints_cap,
@@ -1685,6 +1761,11 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
             .collect();
+        let limexp_fns: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
+            .limexp_ids
+            .iter()
+            .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
+            .collect();
 
         let entry = builder.create_block();
         builder.append_block_params_for_function_params(entry);
@@ -1753,6 +1834,9 @@ impl<'m> AnalogCompiler<'m> {
             self.limits.clone(),
             self.limit_base,
             &limit_fns,
+            self.limexp.clone(),
+            self.limexp_base,
+            &limexp_fns,
         );
         b.set_value_tape(temps);
         body(&mut b, &self.slot, out_ptr)?;
@@ -1805,6 +1889,11 @@ impl<'m> AnalogCompiler<'m> {
             .collect();
         let limit_fns: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
             .limit_ids
+            .iter()
+            .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
+            .collect();
+        let limexp_fns: HashMap<&'static str, cranelift_codegen::ir::FuncRef> = self
+            .limexp_ids
             .iter()
             .map(|(&name, &id)| (name, self.jit.declare_func_in_func(id, builder.func)))
             .collect();
@@ -1875,6 +1964,9 @@ impl<'m> AnalogCompiler<'m> {
             self.limits.clone(),
             self.limit_base,
             &limit_fns,
+            self.limexp.clone(),
+            self.limexp_base,
+            &limexp_fns,
         );
         b.set_value_tape(temps);
         body(&mut b, &self.slot, param_idx, out_ptr)?;

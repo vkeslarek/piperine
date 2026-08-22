@@ -17,6 +17,7 @@ use super::ac_stim::AcStim;
 use super::constraints::Constraints;
 use super::coverage::Coverage;
 use super::forces::Forces;
+use super::limexp::Limexp;
 use super::limits::Limits;
 use super::noise::Noise;
 use super::reactive::Reactive;
@@ -204,6 +205,8 @@ pub struct AnalogKernel {
     pub(super) forces: Option<Forces>,
     /// `$limit` (pnjlim/fetlim) vold-slot bookkeeping.
     pub(super) limits: Option<Limits>,
+    /// `limexp()` output-history state (LRM §4.5.13).
+    pub(super) limexp: Option<Limexp>,
     /// Noise sources.
     pub(super) noise: Option<Noise>,
     /// `ac_stim` contributions.
@@ -455,9 +458,33 @@ impl AnalogKernel {
         self.limits.as_ref().map_or(0, AnalogCapability::count)
     }
 
-    /// State-bank slot index of the first `$limit` vold slot.
+    /// State-bank slot index of the first `$limit` vold slot. `$limit`
+    /// slots are the state bank's last `num_limits` slots — `limexp` slots
+    /// sit just before them (`limexp_base()`).
     pub fn limit_base(&self) -> usize {
         self.core.num_state_slots - self.num_limits()
+    }
+
+    /// Number of `limexp()` `yold` slots (LRM §4.5.13). They occupy
+    /// state-bank slots `[limexp_base(), limexp_base() + num_limexp())`,
+    /// just before the `$limit` vold slots.
+    pub fn num_limexp(&self) -> usize {
+        self.limexp.as_ref().map_or(0, AnalogCapability::count)
+    }
+
+    /// State-bank slot index of the first `limexp()` `yold` slot.
+    pub fn limexp_base(&self) -> usize {
+        self.core.num_state_slots - self.num_limits() - self.num_limexp()
+    }
+
+    /// Compute each `limexp()` call site's updated (limited) output `ylim`
+    /// at the current `yold` (in `state`). The device writes these back
+    /// into the state bank to seed the next Newton iteration.
+    pub fn eval_limexp_update(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(l) = &self.limexp {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(l.update, volts, params, state, vars, sim, out);
+        }
     }
 
     /// Compute each `$limit`'s updated value `vlim` at `volts` (using the

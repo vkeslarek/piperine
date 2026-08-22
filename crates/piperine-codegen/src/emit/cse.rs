@@ -25,6 +25,8 @@ pub enum CseKey {
     Call(&'static str, Vec<u32>),
     /// Voltage-limited value for `$limit` slot `i`.
     Limit(u32),
+    /// Output-limited value for `limexp` slot `i`.
+    Limexp(u32),
 }
 
 /// Byte offsets of [`SimCtx`](crate::emit::SimCtx) fields, as read by JIT code.

@@ -67,6 +67,61 @@ pub fn pnjlim(vnew: f64, vold: f64, vte: f64, vcrit: f64) -> f64 {
     if vold > 0.0 { posval } else { negval }
 }
 
+/// LRM §4.5.13 `limexp()`: exponential with its **output** growth limited
+/// iteration-to-iteration. The LRM's own derivation note (Annex worked
+/// example commentary) is explicit that this is `pnjlim` applied to the
+/// exponential's argument: "`pnjlim` is intended for limiting arguments to
+/// exponentials, and the `limexp()` function ... may be implemented through
+/// a function derived from `pnjlim`."
+///
+/// Unlike `pnjlim`, `limexp` has no convergence-veto hook here (`$limit`'s
+/// `active()` is consulted directly by the solver's Newton loop; this
+/// crate has no equivalent for `limexp`) — a window that keeps clamping
+/// past the first iteration can therefore let Newton declare "converged"
+/// against a value the window is still actively limiting, silently
+/// returning the clamped operating point instead of the true one (found
+/// during development: several ngspice-oracle diode/BJT DC goldens moved
+/// off their reference value with a persistent e²-per-iteration window).
+/// The window below therefore applies **only to the seed iteration** —
+/// `yold < 0.0`, the "no prior iteration yet" sentinel `AnalogInstance::new`
+/// (`piperine-codegen`) seeds every `limexp` state slot with (`-1.0`,
+/// deliberately not the state bank's default zero-init: `exp` legitimately
+/// underflows to exactly `0.0` in reverse bias, and a real converged `0.0`
+/// must not be misread as "still unseeded"). Once truly seeded (`yold >=
+/// 0.0`), every later call passes `ynew` straight through — matching the
+/// pre-fix `exp(min(x, 80))` for the entire rest of the walk — because only
+/// the very first Newton iteration can carry an arbitrarily bad initial
+/// guess with no iteration history yet to judge it against.
+pub fn limexp_limit(ynew: f64, yold: f64) -> f64 {
+    const SEED_CEILING: f64 = 1.0e12;
+    if yold < 0.0 {
+        return ynew.clamp(0.0, SEED_CEILING);
+    }
+    ynew.max(0.0)
+}
+
+/// `limexp(x)`, whole: argument clamp at 80 (matches the pre-fix bare
+/// `exp(min(x, 80))` — keeps `exp` itself finite before any iteration
+/// history exists to limit against) + `exp` + [`limexp_limit`]'s
+/// iteration-history bound, in one call.
+///
+/// **Residual only.** The Jacobian must never call this: `limexp`'s
+/// derivative is hard-coded transparent-to-state in
+/// `piperine-codegen`'s `resolve/diff.rs` (`d_math`'s `"limexp"` arm,
+/// mirroring the `$limit` case just above it) — the coefficient is always
+/// the raw, state-independent `exp(x)`, never routed through this
+/// function's `yold`-dependent clamp. Composing the Jacobian coefficient
+/// from a `limexp`-recursing (state-reading) expression was the actual
+/// root cause of a real, reproducible non-convergence found during
+/// development: it corrupted the Jacobian row exactly in the iterations
+/// where limiting was active, producing a singular/near-singular Newton
+/// step (not a wrong DC value — genuine non-convergence). `$limit`'s own
+/// `pnjlim`/`fetlim` clamp has the identical rule for the identical
+/// reason (`diff.rs`'s `"limit"` `SystemFunctionCall` arm).
+pub fn limexp_full(x: f64, yold: f64) -> f64 {
+    limexp_limit(x.min(80.0).exp(), yold)
+}
+
 /// ngspice `DEVfetlim(vnew, vold, vto)` (devsup.c) — the MOSFET
 /// gate-voltage limiter.
 pub fn fetlim(vnew: f64, vold: f64, vto: f64) -> f64 {
@@ -276,7 +331,56 @@ pub fn limited_volts(volts: &[f64], plus: Option<usize>, minus: Option<usize>, v
 
 #[cfg(test)]
 mod tests {
+    //! LRM-COVERS: 4.5.13
+
     use super::*;
+
+    #[test]
+    fn limexp_limit_seeds_the_first_iteration_instead_of_passing_through() {
+        // yold < 0.0 (the -1.0 sentinel) means no prior iteration exists
+        // yet — an overflow-scale first guess is still clamped.
+        let limited = limexp_limit(1.0e30, -1.0);
+        assert!(limited < 1.0e30 && limited.is_finite(), "first iteration must be limited: {limited}");
+    }
+
+    #[test]
+    fn limexp_limit_treats_a_legitimate_zero_as_seeded_not_unseeded() {
+        // yold == 0.0 is a REAL converged value (exp() underflow in
+        // reverse bias), not the seed sentinel — it must not re-trigger
+        // seed-scale clamping the way `yold <= 0.0` would.
+        assert_eq!(limexp_limit(2.0, 0.0), 2.0);
+    }
+
+    #[test]
+    fn limexp_limit_passes_through_every_call_once_seeded() {
+        // Once `yold` is a real prior value (not the seed sentinel),
+        // `limexp` passes `ynew` straight through unconditionally — even a
+        // change spanning many orders of magnitude (legitimate: a diode
+        // swinging from reverse bias toward forward turn-on). A window
+        // that kept clamping past the first iteration let Newton declare
+        // "converged" against the clamped value instead of the true one —
+        // a real bug found during development (several ngspice-oracle
+        // diode/BJT DC goldens moved off their reference value).
+        assert_eq!(limexp_limit(2.0, 1.0), 2.0);
+        assert_eq!(limexp_limit(1.0e20, 1.0), 1.0e20);
+    }
+
+    #[test]
+    fn limexp_full_matches_pre_fix_behavior_when_unclamped() {
+        // Within the window, limexp_full(x, yold) == exp(min(x, 80)),
+        // exactly the pre-fix bare wrapper's numeric behavior.
+        let x = 1.0;
+        assert_eq!(limexp_full(x, 1.0), x.exp());
+    }
+
+    #[test]
+    fn limexp_full_stays_finite_for_an_extreme_argument() {
+        // The property that motivates the function: an argument so large
+        // exp() would overflow to infinity stays finite through the
+        // argument clamp, on the very first (seed) call.
+        let limited = limexp_full(1000.0, -1.0);
+        assert!(limited.is_finite(), "limexp_full(1000, seed) = {limited}");
+    }
 
     #[test]
     fn pnjlim_passes_through_within_tolerance() {

@@ -60,6 +60,14 @@ pub struct Builder<'a, 'f, 'm> {
     /// `pnjlim`/`fetlim`/`limvds` symbols (`piperine_ir::limit`), imported
     /// into the current function — analog context only.
     pub limit_fns: Option<&'a HashMap<&'static str, FuncRef>>,
+    /// Unique `limexp(x)` call expressions (POM `Expr`), in slot order
+    /// (LRM §4.5.13).
+    pub limexp: Option<Vec<Expr>>,
+    /// State-bank offset where `limexp` `yold` slots begin.
+    pub limexp_base: usize,
+    /// `limexp`'s combined argument-clamp/exp/limit symbol, imported into
+    /// the current function — analog context only.
+    pub limexp_fns: Option<&'a HashMap<&'static str, FuncRef>>,
     /// Common-subexpression cache for analog emission.
     pub cse: Option<HashMap<CseKey, Value>>,
     /// Marker tapes: a `__marker(id)` leaf evaluates `tapes[marker].exprs[id]`
@@ -110,6 +118,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             limits: None,
             limit_base: 0,
             limit_fns: None,
+            limexp: None,
+            limexp_base: 0,
+            limexp_fns: None,
             cse: None,
             tapes: HashMap::new(),
         }
@@ -132,6 +143,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         limits: Vec<Expr>,
         limit_base: usize,
         limit_fns: &'a HashMap<&'static str, FuncRef>,
+        limexp: Vec<Expr>,
+        limexp_base: usize,
+        limexp_fns: &'a HashMap<&'static str, FuncRef>,
     ) -> Self {
         Self {
             builder,
@@ -151,6 +165,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             limits: Some(limits),
             limit_base,
             limit_fns: Some(limit_fns),
+            limexp: Some(limexp),
+            limexp_base,
+            limexp_fns: Some(limexp_fns),
             cse: Some(HashMap::new()),
             tapes: HashMap::new(),
         }

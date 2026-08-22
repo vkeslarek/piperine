@@ -129,6 +129,26 @@ impl AnalogInstance {
         &self.kernel
     }
 
+    /// Advance every `limexp()` call site's `yold` state (LRM §4.5.13):
+    /// evaluate each site's `limexp_update` row at the current node
+    /// voltages (which reads the *current* `yold` still in `state`) and
+    /// write the result back so the next Newton iteration limits against
+    /// it. Mirrors `Limiter::update`'s per-iteration cadence — called from
+    /// both `load_dc` and `load_transient`, never only at an accepted step,
+    /// since `limexp`'s whole purpose is stabilizing the Newton iteration
+    /// itself, not a post-convergence companion model. No-op when the body
+    /// has no `limexp` calls.
+    fn update_limexp(&mut self, volts: &[f64]) {
+        let n = self.kernel.num_limexp();
+        if n == 0 {
+            return;
+        }
+        let base = self.kernel.limexp_base();
+        let mut ylim = vec![0.0; n];
+        self.kernel.eval_limexp_update(volts, &self.params, &self.state, &self.vars, &self.sim, &mut ylim);
+        self.state[base..base + n].copy_from_slice(&ylim);
+    }
+
     /// Wire an instance into the netlist. `terminals` must cover every
     /// kernel terminal (ports first, then internal nodes).
     pub fn new(
@@ -327,6 +347,17 @@ impl AnalogInstance {
             }
         }
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
+        // Seed every `limexp` `yold` slot to -1.0 — a sentinel
+        // `limexp_full` reads as "no prior iteration yet" (LRM §4.5.13's
+        // own state). The state bank's default zero-init is NOT a safe
+        // sentinel here: `exp` legitimately underflows to exactly `0.0` in
+        // reverse bias, and treating that as "unseeded" would misidentify
+        // a real converged value every reverse→forward transition.
+        let lx_base = instance.kernel.limexp_base();
+        let lx_n = instance.kernel.num_limexp();
+        for slot in &mut instance.state[lx_base..lx_base + lx_n] {
+            *slot = -1.0;
+        }
         Ok(instance)
     }
 
@@ -456,6 +487,12 @@ impl AnalogInstance {
         let rhs = self.norton_rhs(&veff, &res, &jac);
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         stamps.extend(self.forces.stamp(&self.ctx(), &volts, state.src_scale));
+        // `update_limexp` runs BEFORE `limiter.update`: a `limexp(...)`
+        // argument commonly reads `$limit`'s own output (the LRM idiom
+        // `vd = $limit(...); I <+ is*(limexp(vd/vte)-1);`), so it must see
+        // the SAME (pre-update) `$limit` vold the residual/Jacobian just
+        // used — not the value `limiter.update` is about to advance to.
+        self.update_limexp(&volts);
         self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
         self.rebuild_limit_report(&volts, &veff);
         stamps
@@ -588,22 +625,34 @@ impl AnalogInstance {
         self.cached_temperature
     }
 
-    /// Checkpoint the limiter's non-accept-gated state (ABI-04): the `active`
-    /// flag, the vcrit `seeds`, and the vold slots in `state`. Returns `None`
-    /// when the device has no `$limit`. Layout of `real_state`:
-    /// `[active, seed_0..seed_n, vold_0..vold_n]`.
+    /// Checkpoint the analog instance's non-accept-gated Newton-iteration
+    /// state (ABI-04): the `$limit` limiter's `active` flag, its vcrit
+    /// `seeds`, its vold slots, AND `limexp`'s `yold` slots (LRM §4.5.13) —
+    /// `limexp` advances every iteration exactly like `$limit`'s vold, so a
+    /// rejected step must roll it back the same way or the retried step
+    /// starts limiting against a `yold` that never actually happened.
+    /// Returns `None` when the device has neither. Layout of `real_state`:
+    /// `[active, seed_0..seed_n, vold_0..vold_n, ylim_0..ylim_m]`.
     pub fn checkpoint_limiter(
         &self,
     ) -> Option<piperine_solver::abi::ElementCheckpoint> {
         let nl = self.kernel.num_limits();
-        if nl == 0 {
+        let nlx = self.kernel.num_limexp();
+        if nl == 0 && nlx == 0 {
             return None;
         }
-        let base = self.kernel.limit_base();
         let mut real = self.limiter.pack();
+        let base = self.kernel.limit_base();
         let end = (base + nl).min(self.state.len());
         if end > base {
             real.extend_from_slice(&self.state[base..end]);
+        }
+        let lx_base = self.kernel.limexp_base();
+        let lx_end = (lx_base + nlx).min(self.state.len());
+        if lx_end > lx_base {
+            real.extend_from_slice(&self.state[lx_base..lx_end]);
+        } else {
+            real.resize(real.len() + nlx, 0.0);
         }
         Some(piperine_solver::abi::ElementCheckpoint {
             int_state: Vec::new(),
@@ -611,17 +660,19 @@ impl AnalogInstance {
         })
     }
 
-    /// Restore the limiter state from a checkpoint produced by
+    /// Restore the limiter + `limexp` state from a checkpoint produced by
     /// [`checkpoint_limiter`](Self::checkpoint_limiter) (ABI-04): rewinds
-    /// `active`, `seeds`, and the vold slots. Reads exactly its own slice
-    /// (`real_state[..1 + 2·num_limits]`) so a combined limiter+digital
-    /// checkpoint can carry digital real state after it.
+    /// `active`, `seeds`, the vold slots, and the `limexp` `ylim` slots.
+    /// Reads exactly its own slice (`real_state[..limiter_checkpoint_len()]`)
+    /// so a combined limiter+digital checkpoint can carry digital real state
+    /// after it.
     pub fn restore_limiter(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
         let nl = self.kernel.num_limits();
-        if nl == 0 {
+        let nlx = self.kernel.num_limexp();
+        if nl == 0 && nlx == 0 {
             return;
         }
-        let total = 1 + 2 * nl;
+        let total = 1 + 2 * nl + nlx;
         if checkpoint.real_state.len() < total {
             return;
         }
@@ -631,14 +682,21 @@ impl AnalogInstance {
         if base + nl <= self.state.len() {
             self.state[base..base + nl].clone_from_slice(vold);
         }
+        let ylim = &checkpoint.real_state[1 + 2 * nl..1 + 2 * nl + nlx];
+        let lx_base = self.kernel.limexp_base();
+        if lx_base + nlx <= self.state.len() {
+            self.state[lx_base..lx_base + nlx].clone_from_slice(ylim);
+        }
     }
 
     /// Length of this limiter's slice within a combined checkpoint's
-    /// `real_state` (`1 + 2·num_limits`: active flag + seeds + vold). `0`
-    /// when the device has no `$limit`.
+    /// `real_state` (`1 + 2·num_limits + num_limexp`: active flag + seeds +
+    /// vold + `limexp` ylim). `0` when the device has neither `$limit` nor
+    /// `limexp`.
     pub fn limiter_checkpoint_len(&self) -> usize {
         let nl = self.kernel.num_limits();
-        if nl == 0 { 0 } else { 1 + 2 * nl }
+        let nlx = self.kernel.num_limexp();
+        if nl == 0 && nlx == 0 { 0 } else { 1 + 2 * nl + nlx }
     }
 
     /// Runtime banks read by the kernel — `(state, vars)` — exposed for
@@ -859,6 +917,12 @@ impl AnalogInstance {
             // 0, mirroring the capacitor's `i_{C,n} = 0` restart convention.
             stamps.extend(self.force_flux_stamps(&volts, states, tran_ctx));
         }
+        // `update_limexp` runs BEFORE `limiter.update`: a `limexp(...)`
+        // argument commonly reads `$limit`'s own output (the LRM idiom
+        // `vd = $limit(...); I <+ is*(limexp(vd/vte)-1);`), so it must see
+        // the SAME (pre-update) `$limit` vold the residual/Jacobian just
+        // used — not the value `limiter.update` is about to advance to.
+        self.update_limexp(&volts);
         self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
         self.rebuild_limit_report(&volts, &veff);
         stamps

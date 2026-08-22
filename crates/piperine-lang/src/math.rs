@@ -39,8 +39,6 @@ mod wrappers {
     pub extern "C" fn max(a: f64, b: f64) -> f64 { a.max(b) }
     pub extern "C" fn floor(x: f64) -> f64 { x.floor() }
     pub extern "C" fn ceil(x: f64) -> f64 { x.ceil() }
-    /// `limexp`: exp with the exponent clamped to 80 for Newton robustness.
-    pub extern "C" fn limexp(x: f64) -> f64 { x.min(80.0).exp() }
 }
 
 /// All built-in math functions, keyed by their IR (`MathCall`) name.
@@ -59,7 +57,12 @@ pub const MATH_FNS: &[MathFn] = &[
     MathFn { name: "acosh", arity: 1, symbol: wrappers::acosh as *const u8 },
     MathFn { name: "atanh", arity: 1, symbol: wrappers::atanh as *const u8 },
     MathFn { name: "exp", arity: 1, symbol: wrappers::exp as *const u8 },
-    MathFn { name: "limexp", arity: 1, symbol: wrappers::limexp as *const u8 },
+    // `limexp` is NOT in this table: LRM §4.5.13 gives it Newton-iteration
+    // state (a `yold` slot), so it can't be a stateless wrapper here — it is
+    // dispatched specially in `piperine-codegen`'s `emit_analog_limexp`
+    // (`kernel/analog/limexp.rs`), which also means it can never be
+    // elaboration-constant-folded (deliberate: folding would silently drop
+    // the iteration-history behavior that motivates the function).
     MathFn { name: "ln", arity: 1, symbol: wrappers::ln as *const u8 },
     MathFn { name: "log10", arity: 1, symbol: wrappers::log10 as *const u8 },
     MathFn { name: "sqrt", arity: 1, symbol: wrappers::sqrt as *const u8 },

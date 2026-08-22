@@ -63,6 +63,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                         };
                         return self.emit_tape(n, id);
                     }
+                    // `limexp` (LRM §4.5.13): iteration-to-iteration
+                    // output-limited exponential — a stateful op, dispatched
+                    // before the generic math-builtin path below.
+                    "limexp" => return self.emit_analog_limexp(args),
                     _ => {}
                 }
                 // Math builtins (exp, ln, sqrt, sin, …)
@@ -390,6 +394,49 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             .ok_or_else(|| CodegenError::unsupported(format!("$limit kind `{name}`")))?;
         let call = self.builder.ins().call(func, args);
         Ok(self.builder.inst_results(call)[0])
+    }
+
+    /// `limexp(x)` (LRM §4.5.13): `exp(x)` with its **output** growth
+    /// limited iteration-to-iteration. Finds this call's state slot by
+    /// structural equality against the compiler's `limexp` table (the same
+    /// trick `emit_analog_limit` uses for `$limit`), reads the previous
+    /// limited output `yold` from the state bank, and calls
+    /// `__limexp_full(x, yold)` (`piperine_ir::limit::limexp_full`) — the
+    /// argument-clamp + `exp` + iteration-history limit, combined in one
+    /// native call. The same expression, compiled separately as the
+    /// kernel's `limexp_update` row (`compile.rs`), writes this result back
+    /// into the state bank after each Newton iteration to become the next
+    /// `yold` — no explicit write happens here, matching `$limit`'s
+    /// read-only-during-residual convention.
+    ///
+    /// **Jacobian note:** this method is also what runs when `resolve/
+    /// diff.rs`'s `d_math` differentiates `limexp` — but that arm never
+    /// recurses back into `"limexp"` (it uses `"exp"` for the coefficient
+    /// instead, mirroring `$limit`'s own transparent-to-differentiation
+    /// rule), so this method's `yold`-dependent result never becomes a
+    /// Jacobian entry. See `piperine_ir::limit::limexp_full`'s doc comment
+    /// for why that distinction is load-bearing, not stylistic.
+    fn emit_analog_limexp(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
+        if args.len() != 1 {
+            return Err(CodegenError::unsupported("limexp expects exactly one argument (LRM §4.5.13)"));
+        }
+        let limexp = self.limexp.as_ref().expect("analog context");
+        let nospan = piperine_lang::error::PreprocessedSpan::new(0, 0);
+        let probe = Expr::Call { span: nospan, name: "limexp".to_string(), args: args.to_vec() };
+        let slot = limexp.iter().position(|l| expr_structural_eq(l, &probe))
+            .ok_or_else(|| CodegenError::Invalid("limexp expression missing from slot table".into()))?;
+        let key = CseKey::Limexp(slot as u32);
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return Ok(hit);
+        }
+        let x = self.emit_analog(&args[0])?;
+        let yold = self.cse_load(BANK_STATE, self.state_ptr(), ((self.limexp_base + slot) * 8) as i32);
+        let func = *self.limexp_fns.expect("analog context").get("__limexp_full")
+            .ok_or_else(|| CodegenError::unsupported("limexp limiter symbol missing"))?;
+        let call = self.builder.ins().call(func, &[x, yold]);
+        let ylim = self.builder.inst_results(call)[0];
+        self.cse.as_mut().expect("analog context").insert(key, ylim);
+        Ok(ylim)
     }
 
     // ── Unary / binary / math ──
