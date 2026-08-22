@@ -89,14 +89,31 @@ impl ElabPass for InsertConnectModules {
                     if resolve_via_resolveto(elab, &local_disc, callee_disc).is_some() {
                         continue;
                     }
-                    let (target, mode, params) = resolve_connect_rule(elab, design, &local_disc, callee_disc)?;
+                    let (target, mode, params) =
+                        resolve_connect_rule(elab, design, &local_disc, callee_disc, callee_port.direction)?;
+                    // §7.8.5 (LRMW2-25, T31): the LRM's own predictable
+                    // naming scheme for auto-inserted instances, so
+                    // `defparam` can address them —
+                    // `SigName__ModuleName__BottomDiscipline` when
+                    // `merged` (one shared instance per (target, net)
+                    // pair, `BottomDiscipline` being the discipline at
+                    // the *bottom* / formal connection, i.e. the callee
+                    // port's own discipline); `SigName__InstName__
+                    // PortName` when `split` (one instance per port,
+                    // named after the specific instance and port it
+                    // bridges).
+                    let sig_name = port_ref.net();
+                    let label = match mode {
+                        ConnectMode::Merged => format!("{sig_name}__{target}__{callee_disc}"),
+                        ConnectMode::Split => format!("{sig_name}__{}__{}", inst.name(), callee_port.name),
+                    };
                     let new_inst = Instance {
                         span: None,
                         label_span: None,
                         type_span: None,
                         attributes: vec![],
                         doc: None,
-                        label: Some(format!("__connect_{}_{}", inst.name(), port_ref.net())),
+                        label: Some(label),
                         module: target.clone(),
                         ports: vec![port_ref.clone(), port_ref.clone()],
                         params: params.clone(),
@@ -180,17 +197,99 @@ pub(super) fn eligible_bridge(elab: &Elaborator, a: &str, b: &str) -> Option<()>
     eligible.then_some(())
 }
 
-/// LRM ch. 7 connect-module selection for the discipline pair
-/// `(from_discipline, to_discipline)`. Eligibility requires a registered
-/// `connectrules` block naming both disciplines in one `connect` rule;
-/// given eligibility, the unique declared `connectmodule` whose two ports'
-/// disciplines match the pair (either order) is returned. Fails loud
-/// (E4005) on zero or multiple candidates, naming every candidate found.
+/// Table 7-2's own three combinations are complementary pairs (continuous
+/// input pairs with discrete output, and vice versa) or self-paired
+/// (`inout`/`inout`) — this is exactly `complement`. §7.8.4 item 3's own
+/// worked examples (Example 1/Example 2 in `7.5`) confirm the relationship:
+/// a connect module bridges a mixed port of direction `D` and discipline
+/// `to_discipline` only when the module's own port bound to
+/// `to_discipline` has direction `complement(D)` — a receiving (`input`)
+/// callee port needs something driving it (`output`), and vice versa;
+/// `inout` only pairs with `inout`.
+fn complement(d: crate::pom::Direction) -> crate::pom::Direction {
+    use crate::pom::Direction::*;
+    match d {
+        Input => Output,
+        Output => Input,
+        Inout => Inout,
+    }
+}
+
+/// One way a `connectmodule` can bridge a discipline pair: either its own
+/// declared two ports (the default, always present for any 2-port
+/// `connectmodule`), or a `connect_port_overrides`-remapped pair from a
+/// `connectrules` rule naming it (LRMW2-25, T31 — `connect_port_overrides`
+/// actually consulted, not just parsed). `Both(a,b)` overrides only the
+/// disciplines, keeping the module's own declared port *directions* in
+/// their original (first port, second port) order; the three directional
+/// override forms replace the directions too.
+struct ConnectView {
+    module_name: String,
+    a_disc: String,
+    a_dir: crate::pom::Direction,
+    b_disc: String,
+    b_dir: crate::pom::Direction,
+}
+
+/// Every bridging view available in this design: one default view per
+/// declared 2-port `connectmodule`, plus one additional view per
+/// `connect_port_overrides` rule naming that module (a module can be
+/// reused for more than one discipline pair this way, §7.7.1).
+fn connect_module_views(elab: &Elaborator, design: &Design) -> Vec<ConnectView> {
+    let mut views = Vec::new();
+    for (mod_name, decl) in &elab.syms.module_decls {
+        if decl.kind != ModuleKind::Connectmodule {
+            continue;
+        }
+        let Some(target) = design.modules.get(mod_name) else { continue };
+        if target.ports.len() != 2 {
+            continue;
+        }
+        let (p0, p1) = (&target.ports[0], &target.ports[1]);
+        views.push(ConnectView {
+            module_name: mod_name.clone(),
+            a_disc: p0.ty.discipline_name().to_string(),
+            a_dir: p0.direction,
+            b_disc: p1.ty.discipline_name().to_string(),
+            b_dir: p1.direction,
+        });
+        for cr in elab.syms.connectrules.values() {
+            for rule in &cr.rules {
+                if rule.connectmodule.as_deref() != Some(mod_name.as_str()) {
+                    continue;
+                }
+                let Some(overrides) = &rule.overrides else { continue };
+                use crate::ast::ConnectPortOverrides::*;
+                use crate::pom::Direction;
+                let (a_disc, a_dir, b_disc, b_dir) = match overrides {
+                    Both(a, b) => (a.clone(), p0.direction, b.clone(), p1.direction),
+                    InputOutput(a, b) => (a.clone(), Direction::Input, b.clone(), Direction::Output),
+                    OutputInput(a, b) => (a.clone(), Direction::Output, b.clone(), Direction::Input),
+                    InOut(a, b) => (a.clone(), Direction::Inout, b.clone(), Direction::Inout),
+                };
+                views.push(ConnectView { module_name: mod_name.clone(), a_disc, a_dir, b_disc, b_dir });
+            }
+        }
+    }
+    views
+}
+
+/// LRM ch. 7 / Table 7-2 connect-module selection for the discipline pair
+/// `(from_discipline, to_discipline)`, direction-aware (LRMW2-25, T31): the
+/// callee port actually being bridged has discipline `to_discipline` and
+/// direction `to_direction`; a candidate view only matches if its own
+/// port bound to `to_discipline` has the complementary direction (Table
+/// 7-2 — `complement`). Eligibility still requires a registered
+/// `connectrules` block naming both disciplines in one `connect` rule
+/// (`eligible_bridge`, disciplines-only, unchanged); given eligibility,
+/// the unique direction-matching view is returned. Fails loud (E4005) on
+/// zero or multiple candidates, naming every candidate found.
 pub(super) fn select_connect_module(
     elab: &Elaborator,
     design: &Design,
     from_discipline: &str,
     to_discipline: &str,
+    to_direction: crate::pom::Direction,
 ) -> Result<String, ElabError> {
     if eligible_bridge(elab, from_discipline, to_discipline).is_none() {
         return Err(ambiguous_err(
@@ -200,30 +299,30 @@ pub(super) fn select_connect_module(
         ));
     }
 
+    let wanted_to_dir = complement(to_direction);
     let mut candidates: Vec<String> = Vec::new();
-    for (mod_name, decl) in &elab.syms.module_decls {
-        if decl.kind != ModuleKind::Connectmodule {
-            continue;
-        }
-        let Some(target) = design.modules.get(mod_name) else { continue };
-        if target.ports.len() != 2 {
-            continue;
-        }
-        let a = target.ports[0].ty.discipline_name();
-        let b = target.ports[1].ty.discipline_name();
-        let matches_pair = (a == from_discipline && b == to_discipline) || (a == to_discipline && b == from_discipline);
-        if matches_pair {
-            candidates.push(mod_name.clone());
+    for view in connect_module_views(elab, design) {
+        // Either orientation of the view's own two ports may be the one
+        // bound to `to_discipline` — check both, matching the view's
+        // *other* side against `from_discipline` (any direction: only the
+        // to-discipline side is direction-constrained, since that's the
+        // one whose actual callee-port direction is known here).
+        let matches = (view.a_disc == to_discipline && view.a_dir == wanted_to_dir && view.b_disc == from_discipline)
+            || (view.b_disc == to_discipline && view.b_dir == wanted_to_dir && view.a_disc == from_discipline);
+        if matches {
+            candidates.push(view.module_name);
         }
     }
     candidates.sort();
+    candidates.dedup();
 
     match candidates.len() {
         1 => Ok(candidates.into_iter().next().unwrap()),
         0 => Err(ambiguous_err(
             from_discipline,
             to_discipline,
-            "matched no declared `connectmodule` with two ports of these disciplines".to_string(),
+            "matched no declared `connectmodule` with two ports of these disciplines and directions (LRM Table 7-2)"
+                .to_string(),
         )),
         n => Err(ambiguous_err(
             from_discipline,
@@ -266,8 +365,9 @@ pub(super) fn resolve_connect_rule(
     design: &Design,
     from_discipline: &str,
     to_discipline: &str,
+    to_direction: crate::pom::Direction,
 ) -> Result<(String, ConnectMode, Vec<(String, crate::pom::Value)>), ElabError> {
-    let target = select_connect_module(elab, design, from_discipline, to_discipline)?;
+    let target = select_connect_module(elab, design, from_discipline, to_discipline, to_direction)?;
 
     let naming_target: Vec<&crate::ast::ConnectRule> = elab
         .syms
@@ -414,10 +514,10 @@ mod tests {
             "bridge".to_string(),
             plain_module("bridge", vec![port("a", "logic"), port("b", "electrical")]),
         );
-        let selected = select_connect_module(&elab, &design, "logic", "electrical").unwrap();
+        let selected = select_connect_module(&elab, &design, "logic", "electrical", Direction::Inout).unwrap();
         assert_eq!(selected, "bridge");
         // Order-independence: the reverse pair must select the same module.
-        let selected_rev = select_connect_module(&elab, &design, "electrical", "logic").unwrap();
+        let selected_rev = select_connect_module(&elab, &design, "electrical", "logic", Direction::Inout).unwrap();
         assert_eq!(selected_rev, "bridge");
     }
 
@@ -436,7 +536,7 @@ mod tests {
             "bridge_b".to_string(),
             plain_module("bridge_b", vec![port("a", "electrical"), port("b", "logic")]),
         );
-        let err = select_connect_module(&elab, &design, "logic", "electrical").unwrap_err();
+        let err = select_connect_module(&elab, &design, "logic", "electrical", Direction::Inout).unwrap_err();
         let ElabErrorKind::ConnectModuleAmbiguous { issue, .. } = err.kind else {
             panic!("expected ConnectModuleAmbiguous, got {err:?}");
         };
@@ -449,7 +549,7 @@ mod tests {
     fn no_matching_connectmodule_fails_loud() {
         let elab = elab_with(vec![], connectrules_naming(&["logic", "electrical"]));
         let design = Design::new();
-        let err = select_connect_module(&elab, &design, "logic", "electrical").unwrap_err();
+        let err = select_connect_module(&elab, &design, "logic", "electrical", Direction::Inout).unwrap_err();
         assert!(matches!(err.kind, ElabErrorKind::ConnectModuleAmbiguous { .. }));
     }
 
@@ -461,7 +561,7 @@ mod tests {
             "bridge".to_string(),
             plain_module("bridge", vec![port("a", "logic"), port("b", "electrical")]),
         );
-        let err = select_connect_module(&elab, &design, "logic", "electrical").unwrap_err();
+        let err = select_connect_module(&elab, &design, "logic", "electrical", Direction::Inout).unwrap_err();
         let ElabErrorKind::ConnectModuleAmbiguous { issue, .. } = err.kind else {
             panic!("expected ConnectModuleAmbiguous, got {err:?}");
         };
@@ -479,7 +579,7 @@ mod tests {
             "not_a_bridge".to_string(),
             plain_module("not_a_bridge", vec![port("a", "logic"), port("b", "electrical")]),
         );
-        let err = select_connect_module(&elab, &design, "logic", "electrical").unwrap_err();
+        let err = select_connect_module(&elab, &design, "logic", "electrical", Direction::Inout).unwrap_err();
         assert!(matches!(err.kind, ElabErrorKind::ConnectModuleAmbiguous { .. }));
     }
 
