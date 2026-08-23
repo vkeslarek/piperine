@@ -135,6 +135,26 @@ pub enum SystemTaskKind {
     Fflush,
     /// `$fgetc(fd)` — §9.5.
     Fgetc,
+    /// `$fgets(str, fd)` — §9.5.4.1: reads one line (through the next
+    /// `\n` or EOF) into `str`.
+    Fgets,
+    /// `$fread(mem, fd)` — §9.5.4.2: reads raw binary data into `mem`.
+    Fread,
+    /// `$ungetc(c, fd)` — §9.5: pushes one character back so the next
+    /// read sees it again.
+    Ungetc,
+    /// `$sformat(str, fmt, ...)` — §9.5.3: like `$swrite` but the format
+    /// string is an explicit argument rather than inferred.
+    Sformat,
+    /// `$swrite(str, ...)` — §9.5.3: formats into a string variable
+    /// instead of a channel.
+    Swrite,
+    /// `$readmemb(file, mem[, start[, finish]])` — loads `mem` from a
+    /// binary-radix text file (T55/LRMW2-48).
+    Readmemb,
+    /// `$readmemh(file, mem[, start[, finish]])` — loads `mem` from a
+    /// hex-radix text file.
+    Readmemh,
     /// `$random`/`$arandom` (§9.13.1) — a new 32-bit signed random number,
     /// updating the `inout` seed.
     Random,
@@ -272,6 +292,13 @@ impl SystemTasks {
         ("$feof", SystemTaskKind::Feof),
         ("$fflush", SystemTaskKind::Fflush),
         ("$fgetc", SystemTaskKind::Fgetc),
+        ("$fgets", SystemTaskKind::Fgets),
+        ("$fread", SystemTaskKind::Fread),
+        ("$ungetc", SystemTaskKind::Ungetc),
+        ("$sformat", SystemTaskKind::Sformat),
+        ("$swrite", SystemTaskKind::Swrite),
+        ("$readmemb", SystemTaskKind::Readmemb),
+        ("$readmemh", SystemTaskKind::Readmemh),
         ("$random", SystemTaskKind::Random),
         ("$arandom", SystemTaskKind::Arandom),
         ("$rdist_uniform", SystemTaskKind::RdistUniform),

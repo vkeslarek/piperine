@@ -51,6 +51,15 @@ pub struct SimCtx {
     /// field's own doc comment explains why append-only ordering
     /// matters for this struct.
     pub port_connected_mask: u64,
+    /// The `$fopen`/`$fclose`/`$fdisplay`/`$fwrite`/... descriptor table
+    /// (§9.5, T55/LRMW2-48) the `pip_task_f*` trampolines
+    /// (`emit::runtime_io`) read/write through — a *borrowed* mutable
+    /// pointer (same convention as `io` above: `SimCtx` stays `Copy`),
+    /// valid for the duration of the call that provided this `SimCtx`.
+    /// Null by default (`SimCtx::default()`) — a null `files` is a safe
+    /// no-op for every `pip_task_f*` trampoline, same contract as `io`.
+    /// Appended last, per this struct's established convention.
+    pub files: *mut piperine_solver::prelude::FileTable,
 }
 
 // SAFETY: `SimCtx` is `Copy`/`Send`/`Sync` in the same sense every other
@@ -94,6 +103,7 @@ impl Default for SimCtx {
             // instance's own mask (computed from its actual connections,
             // `device/builder.rs`) overrides this.
             port_connected_mask: u64::MAX,
+            files: std::ptr::null_mut(),
         }
     }
 }
