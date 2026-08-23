@@ -581,6 +581,20 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
                 S::Contribution { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) };
             with_write_backs(ctx, *span, resolved)
         }
+        // §5.6.7 (LRMW2-41, T46): `lhs : probe == rhs;` — resolved
+        // structurally like `Contribution` (each sub-expression through
+        // the same `resolve_expr`); `flatten/analog.rs`'s own walk does
+        // the actual desugar into the equivalent direct contribution
+        // (§5.6.7's own algebraic identity, `lhs <+ lhs + (probe - rhs)`).
+        S::IndirectContribution { span, lhs, probe, rhs } => {
+            let resolved = S::IndirectContribution {
+                span: *span,
+                lhs: resolve_expr(lhs, ctx),
+                probe: resolve_expr(probe, ctx),
+                rhs: resolve_expr(rhs, ctx),
+            };
+            with_write_backs(ctx, *span, resolved)
+        }
         S::Block { span, name, decls, stmts } => S::Block {
             span: *span,
             name: name.clone(),

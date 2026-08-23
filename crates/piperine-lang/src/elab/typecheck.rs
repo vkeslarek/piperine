@@ -92,6 +92,10 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
         Stmt::Null { .. }
         | Stmt::Assign { .. }
         | Stmt::Contribution { .. }
+        // §5.6.7: an indirect contribution is an analog-only construct
+        // (LRM Annex C/§5.2 lists it among the legal analog statements),
+        // not an Annex C violation.
+        | Stmt::IndirectContribution { .. }
         | Stmt::Disable { .. }
         | Stmt::TaskCall { .. }
         // §5.10.4: "Named events can be triggered ... from an analog

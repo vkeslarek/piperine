@@ -2120,6 +2120,31 @@ fn resolve_contribution_branches(
             }
             Ok(())
         }
+        // §5.6.7 (LRMW2-41, T46): `lhs : probe == rhs;` drives `lhs` the
+        // same way a direct `lhs <+ …;` would — branch-kind bookkeeping
+        // (and the §5.6.5 switch-exception check) applies identically.
+        // §5.6.7.2's stricter rule ("once indirectly assigned, a branch
+        // cannot ALSO be driven by `<+`") is a separate, not-yet-enforced
+        // axis from ordinary potential/flow kind-conflict — a disclosed
+        // scope cut (T46), not silently wrong: mixing the two forms on
+        // the same branch degrades to whatever the ordinary kind-conflict
+        // check does today rather than its own dedicated diagnostic.
+        Stmt::IndirectContribution { lhs, span, .. } => {
+            if let Expr::AccessFunction { function, pos, neg, .. } = lhs {
+                let kind = match function.as_str() {
+                    "V" | "potential" => BranchKind::Potential,
+                    "I" | "flow" => BranchKind::Flow,
+                    other => match access_kinds.get(other) {
+                        Some(kind) => *kind,
+                        None => return Ok(()),
+                    },
+                };
+                let branch = resolve_or_create_branch(pos, neg.as_deref(), branches)?;
+                promote_to_switch_if_conditional(branch, kind, conditional);
+                branch.record_contribution(kind, Some(to_miette_span(*span)), module)?;
+            }
+            Ok(())
+        }
         Stmt::Block { stmts, .. } => stmts
             .iter()
             .try_for_each(|s| resolve_contribution_branches(s, module, branches, access_kinds, conditional)),
@@ -2195,6 +2220,7 @@ fn check_event_triggers(stmt: &Stmt, declared: &[String], module: &str) -> Resul
         | Stmt::Assign { .. }
         | Stmt::NonBlockingAssign { .. }
         | Stmt::Contribution { .. }
+        | Stmt::IndirectContribution { .. }
         | Stmt::Disable { .. }
         | Stmt::TaskCall { .. } => Ok(()),
     }
@@ -2312,6 +2338,9 @@ fn rewrite_port_access_stmt(stmt: Stmt, branches: &[Branch]) -> Stmt {
             Stmt::NonBlockingAssign { span, target: e(target), value: e(value) }
         }
         Stmt::Contribution { span, target, value } => Stmt::Contribution { span, target: e(target), value: e(value) },
+        Stmt::IndirectContribution { span, lhs, probe, rhs } => {
+            Stmt::IndirectContribution { span, lhs: e(lhs), probe: e(probe), rhs: e(rhs) }
+        }
         Stmt::Block { span, name, decls, stmts } => Stmt::Block {
             span,
             name,

@@ -62,6 +62,17 @@ pub enum Stmt {
     /// §5.4. Piperine's PHDL predecessor called this the behavioral-source
     /// primitive (MD-39); this is its Verilog-AMS spelling.
     Contribution { span: PreprocessedSpan, target: Expr, value: Expr },
+    /// `branch_lvalue : indirect_expression == analog_expression ;` — an
+    /// indirect branch contribution, §5.6.7/Annex A.6.10 (the "drive
+    /// `lhs` so that `probe == rhs`" form; LRM's own ideal-opamp example:
+    /// `V(out):V(pin,nin) == 0;`). `lhs` is the driven branch (a
+    /// `V`/`I`-style access-function call); `probe` is the LRM's
+    /// `indirect_expression` (an access-function call, or `ddt`/`idt`/
+    /// `idtmod` applied to one) that supplies the equation's tolerance
+    /// (§5.6.7's own reason to prefer this form over the mathematically
+    /// equivalent direct-contribution rewrite, `V(out) <+ V(out) +
+    /// V(in);`, which takes its tolerance from the wrong side).
+    IndirectContribution { span: PreprocessedSpan, lhs: Expr, probe: Expr, rhs: Expr },
     /// `begin [: name] block_item_decl* stmt* end` — §Annex A.6.3.
     Block { span: PreprocessedSpan, name: Option<String>, decls: Vec<BlockItemDecl>, stmts: Vec<Stmt> },
     If { span: PreprocessedSpan, cond: Expr, then_branch: Box<Stmt>, else_branch: Option<Box<Stmt>> },
@@ -105,6 +116,7 @@ impl Stmt {
             | Stmt::Assign { span, .. }
             | Stmt::NonBlockingAssign { span, .. }
             | Stmt::Contribution { span, .. }
+            | Stmt::IndirectContribution { span, .. }
             | Stmt::Block { span, .. }
             | Stmt::If { span, .. }
             | Stmt::Case { span, .. }

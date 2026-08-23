@@ -598,6 +598,12 @@ pub(crate) fn subst_stmt(stmt: &PomStmt, subst: &HashMap<String, PomExpr>) -> Po
         PomStmt::Contribution { span, target, value } => {
             PomStmt::Contribution { span: *span, target: subst_expr(target, subst), value: subst_expr(value, subst) }
         }
+        PomStmt::IndirectContribution { span, lhs, probe, rhs } => PomStmt::IndirectContribution {
+            span: *span,
+            lhs: subst_expr(lhs, subst),
+            probe: subst_expr(probe, subst),
+            rhs: subst_expr(rhs, subst),
+        },
         PomStmt::Block { span, name, decls, stmts } => PomStmt::Block {
             span: *span,
             name: name.clone(),
@@ -923,6 +929,9 @@ impl<'m> AnalogFlattener<'m> {
                 PomStmt::Contribution { target, value, .. } => {
                     self.add_contrib(target, value, guard)?;
                 }
+                PomStmt::IndirectContribution { lhs, probe, rhs, .. } => {
+                    self.add_indirect_contrib(lhs, probe, rhs, guard)?;
+                }
                 PomStmt::Assign { target: PomExpr::Ident { name, .. }, value, .. }
                 | PomStmt::NonBlockingAssign { target: PomExpr::Ident { name, .. }, value, .. } => {
                     // A guarded reassignment reads the previous temp as its
@@ -1211,6 +1220,56 @@ impl<'m> AnalogFlattener<'m> {
         let closed_flow = binary(BinOp::Mul, lit(SWITCH_CLOSED_CONDUCTANCE), binary(BinOp::Sub, read_v, target));
         let switched = select(guard, closed_flow, lit(0.0));
         self.add_flow(switched, plus, minus)
+    }
+
+    /// §5.6.7 (LRMW2-41, T46): `lhs : probe == rhs;` — "drive `lhs` so
+    /// that `probe == rhs`". Desugars to the LRM's own algebraic identity
+    /// (§5.6.7's opening example derives it for the `V(out):V(in)==0;`
+    /// case, subtracting `V(out)` from both sides of `V(out) <+ V(out) +
+    /// V(in);`; it generalizes to any `probe`/`rhs`): `lhs <+ lhs +
+    /// (probe - rhs);` — an ordinary (already-supported) self-referencing
+    /// potential contribution, exact (no approximation, unlike the switch
+    /// branch's companion conductance above: reading `lhs`'s own node
+    /// voltage inside its own force expression needs no new mechanism,
+    /// every node voltage is always a live MNA unknown).
+    ///
+    /// Scope cuts (disclosed, not silent): only a potential-nature (`V`)
+    /// `lhs` is lowered — a flow-nature (`I`) indirect contribution would
+    /// need the force-branch's own-current read (`current_terms`), which
+    /// this task does not extend to indirect contributions specifically.
+    /// A conditional indirect contribution (§5.6.7: legal only when the
+    /// condition is a compile-time constant) is rejected outright rather
+    /// than distinguishing constant from runtime conditions — no fixture
+    /// needs the constant-conditional form yet.
+    fn add_indirect_contrib(
+        &mut self,
+        lhs: &PomExpr,
+        probe: &PomExpr,
+        rhs: &PomExpr,
+        guard: Option<&PomExpr>,
+    ) -> Result<(), CodegenError> {
+        if guard.is_some() {
+            return Err(CodegenError::unsupported(
+                "conditional indirect contribution (LRM §5.6.7: indirect branch contributions \
+                 shall not be used in conditional or looping statements, unless the conditional \
+                 expression is a constant expression — not yet distinguished from a runtime one)",
+            ));
+        }
+        let (nature_kind, plus, minus) = self.parse_dest(lhs)?;
+        if nature_kind != NatureKind::Potential {
+            return Err(CodegenError::unsupported(
+                "indirect contribution with a flow-nature (I()) target (LRM §5.6.7) — only the \
+                 potential (V()) form is lowered today",
+            ));
+        }
+        let self_read = PomExpr::AccessFunction {
+            span: NOSPAN,
+            function: "V".to_string(),
+            pos: Box::new(node_ident(self.module, plus)),
+            neg: Some(Box::new(node_ident(self.module, minus))),
+        };
+        let desugared = binary(BinOp::Add, self_read, binary(BinOp::Sub, probe.clone(), rhs.clone()));
+        self.add_contrib(lhs, &desugared, None)
     }
 
     /// Split a potential contribution's value into `(resistive, flux_terms,

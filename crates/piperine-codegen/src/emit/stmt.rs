@@ -85,6 +85,9 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             S::Contribution { .. } => Err(CodegenError::unsupported(
                 "analog contribution `<+` in a digital body",
             )),
+            S::IndirectContribution { .. } => Err(CodegenError::unsupported(
+                "analog indirect contribution `:` (LRM §5.6.7) in a digital body",
+            )),
             S::Block { stmts, .. } => {
                 for s in stmts {
                     self.emit_stmt(s)?;

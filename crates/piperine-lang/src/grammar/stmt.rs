@@ -2,7 +2,7 @@
 //! statements Verilog-AMS inherits for digital `always`/`initial` bodies,
 //! Annex A.6.4/A.6.6/A.6.7/A.6.8.
 
-use crate::ast::{BlockItemDecl, CaseArm, CaseKind, EventExpr, Stmt};
+use crate::ast::{BlockItemDecl, CaseArm, CaseKind, EventExpr, Expr, Stmt};
 use crate::error::{ParseError, PreprocessedSpan};
 use crate::grammar::cursor::Grammar;
 use crate::lexer::Tok;
@@ -343,6 +343,34 @@ impl Grammar {
         // the assignment-operator check below.
         let target = self.parse_lvalue()?;
         let span_start = target.span().start;
+        // `branch_lvalue : indirect_expression == analog_expression ;`
+        // (§5.6.7, Annex A.6.10, LRMW2-41, T46) — `target` just parsed is
+        // exactly `branch_lvalue` (an access-function call, `parse_lvalue`
+        // above). The colon here is unambiguous: at this point in the
+        // grammar `target` is a complete lvalue with no dangling ternary
+        // `? ... :` to close (that closes inside `parse_expr`, never here).
+        if self.eat_punct(":") {
+            // `parse_lvalue` (⇒ `parse_postfix`, no binary-operator Pratt
+            // loop) so a following `==` is left for the `expect_punct`
+            // below instead of being swallowed into
+            // `Binary{Eq, probe, rhs}` by a general `parse_expr` call.
+            let probe = self.parse_lvalue()?;
+            if !is_indirect_probe_shape(&probe) {
+                return Err(self.unexpected(
+                    "an access-function call, or ddt()/idt()/idtmod() applied to one, as the \
+                     indirect contribution's probe expression (LRM §5.6.7)"
+                        .to_string(),
+                ));
+            }
+            self.expect_punct("==")?;
+            let rhs = self.parse_expr()?;
+            return Ok(Stmt::IndirectContribution {
+                span: PreprocessedSpan::new(span_start, rhs.span().end),
+                lhs: target,
+                probe,
+                rhs,
+            });
+        }
         if self.eat_punct("<+") {
             let value = self.parse_expr()?;
             return Ok(Stmt::Contribution {
@@ -368,5 +396,30 @@ impl Grammar {
             return Ok(Stmt::TaskCall { span, name, args });
         }
         Err(self.unexpected("'=', '<=', or '<+'".to_string()))
+    }
+}
+
+/// Whether `probe` is a syntactically legal §5.6.7 `indirect_expression`:
+/// an access-function call (`V(in)`, a custom discipline access name, …),
+/// or `ddt`/`idt`/`idtmod` applied to one. The grammar has no symbol
+/// table (same limitation `parse_primary`'s own doc comment notes for
+/// access-function/custom-access-name disambiguation), so a `Call` whose
+/// name is not one of the three time-domain operators is accepted here
+/// (it may be a legitimate custom discipline access, or a genuine user
+/// function call the elaborator will reject when it *does* have the
+/// discipline registry) — this check only rejects shapes that can never
+/// be a probe: literals, binary/ternary expressions, bare identifiers,
+/// concatenations, and so on.
+fn is_indirect_probe_shape(probe: &Expr) -> bool {
+    match probe {
+        Expr::AccessFunction { .. } | Expr::PortAccess { .. } => true,
+        Expr::Call { name, args, .. } => {
+            if matches!(name.as_str(), "ddt" | "idt" | "idtmod") {
+                matches!(args.first(), Some(Expr::AccessFunction { .. } | Expr::PortAccess { .. }))
+            } else {
+                true
+            }
+        }
+        _ => false,
     }
 }
