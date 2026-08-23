@@ -13,9 +13,11 @@
 //! **MD-25 (POM navigability):** writes only `Instance::params` entries —
 //! never touches `Design::modules`' authored instance/submodule structure.
 
+use std::collections::HashMap;
+
 use crate::ast::{Defparam, ModuleItem};
 use crate::elab::const_eval::ConstEnv;
-use crate::pom::{Design, ElabError, ElabErrorKind};
+use crate::pom::{Design, ElabError, ElabErrorKind, Instance};
 
 use super::Elaborator;
 
@@ -39,13 +41,37 @@ impl super::passes::ElabPass for ApplyDefparams {
         // defparam statements to preserve, only reproducibility).
         items.sort_by(|a, b| (&a.0, &a.1.target).cmp(&(&b.0, &b.1.target)));
         for (declaring_module, dp) in &items {
-            apply_one(design, declaring_module, dp)?;
+            apply_one(design, &mut elab.generated_instances, declaring_module, dp)?;
         }
         Ok(())
     }
 }
 
-fn apply_one(design: &mut Design, declaring_module: &str, dp: &Defparam) -> Result<(), ElabError> {
+/// Look up a labeled instance in `module_name` — checked among the
+/// module's *authored* instances first, then (T51, §6.9.4) among its
+/// generate-produced ones (`generated`, keyed by owning-module name) —
+/// so a `defparam` naming a generated instance resolves exactly like an
+/// authored one, without `Design::modules` ever reflecting anything but
+/// what was written (MD-25: the generated side stays in `generated`,
+/// never merged into `design.modules`).
+fn find_instance<'a>(
+    design: &'a Design,
+    generated: &'a HashMap<String, Vec<Instance>>,
+    module_name: &str,
+    label: &str,
+) -> Option<&'a Instance> {
+    design
+        .module(module_name)
+        .and_then(|m| m.instances.iter().find(|i| i.label.as_deref() == Some(label)))
+        .or_else(|| generated.get(module_name).and_then(|gs| gs.iter().find(|i| i.label.as_deref() == Some(label))))
+}
+
+fn apply_one(
+    design: &mut Design,
+    generated: &mut HashMap<String, Vec<Instance>>,
+    declaring_module: &str,
+    dp: &Defparam,
+) -> Result<(), ElabError> {
     let mut segments: Vec<&str> = dp.target.split('.').collect();
     let Some(param_name) = segments.pop() else {
         return Err(defparam_error(&dp.target, "empty target"));
@@ -88,10 +114,7 @@ fn apply_one(design: &mut Design, declaring_module: &str, dp: &Defparam) -> Resu
     }
     let mut current_module_name = root_module_name.to_string();
     for &label in &segments[1..segments.len() - 1] {
-        let m = design.module(&current_module_name).ok_or_else(|| {
-            defparam_error(&dp.target, &format!("module `{current_module_name}` does not exist"))
-        })?;
-        let inst = m.instances.iter().find(|i| i.label.as_deref() == Some(label)).ok_or_else(|| {
+        let inst = find_instance(design, generated, &current_module_name, label).ok_or_else(|| {
             defparam_error(
                 &dp.target,
                 &format!("no instance labeled `{label}` in module `{current_module_name}`"),
@@ -106,20 +129,15 @@ fn apply_one(design: &mut Design, declaring_module: &str, dp: &Defparam) -> Resu
     // override, and not by `defparam` either. Check against the
     // *instantiated* module's own param declarations (the instance's
     // `module` field), before touching `inst.params`.
-    let instantiated_module_name = {
-        let target_module = design.module(&current_module_name).ok_or_else(|| {
-            defparam_error(&dp.target, &format!("module `{current_module_name}` does not exist"))
-        })?;
-        let inst = target_module.instances.iter().find(|i| i.label.as_deref() == Some(final_label)).ok_or_else(
-            || {
-                defparam_error(
-                    &dp.target,
-                    &format!("no instance labeled `{final_label}` in module `{current_module_name}`"),
-                )
-            },
-        )?;
-        inst.module.clone()
-    };
+    let instantiated_module_name = find_instance(design, generated, &current_module_name, final_label)
+        .ok_or_else(|| {
+            defparam_error(
+                &dp.target,
+                &format!("no instance labeled `{final_label}` in module `{current_module_name}`"),
+            )
+        })?
+        .module
+        .clone();
     if let Some(instantiated_module) = design.module(&instantiated_module_name) {
         if let Some(p) = instantiated_module.params.iter().find(|p| p.name == param_name) {
             if p.is_local {
@@ -133,17 +151,32 @@ fn apply_one(design: &mut Design, declaring_module: &str, dp: &Defparam) -> Resu
         }
     }
 
-    let target_module = design.modules_map_mut().get_mut(&current_module_name).ok_or_else(|| {
-        defparam_error(&dp.target, &format!("module `{current_module_name}` does not exist"))
-    })?;
-    let inst = target_module.instances.iter_mut().find(|i| i.label.as_deref() == Some(final_label)).ok_or_else(
-        || {
+    // Prefer the *authored* instance when a label exists in both (never
+    // possible today — `generate.rs`'s own collision check already rejects
+    // a generated label colliding with an authored one — but written this
+    // way so an authored hit always wins if that ever changes).
+    if let Some(target_module) = design.modules_map_mut().get_mut(&current_module_name) {
+        if let Some(inst) = target_module.instances.iter_mut().find(|i| i.label.as_deref() == Some(final_label)) {
+            match inst.params.iter_mut().find(|(n, _)| n == param_name) {
+                Some(entry) => entry.1 = value,
+                None => inst.params.push((param_name.to_string(), value)),
+            }
+            return Ok(());
+        }
+    }
+    // T51 (§6.9.4): not an authored instance — must be a generate-produced
+    // one (`find_instance` above already proved one exists under this
+    // label). MD-25-safe: only `Elaborator::generated_instances` is
+    // mutated, never `Design::modules`.
+    let inst = generated
+        .get_mut(&current_module_name)
+        .and_then(|gs| gs.iter_mut().find(|i| i.label.as_deref() == Some(final_label)))
+        .ok_or_else(|| {
             defparam_error(
                 &dp.target,
                 &format!("no instance labeled `{final_label}` in module `{current_module_name}`"),
             )
-        },
-    )?;
+        })?;
     match inst.params.iter_mut().find(|(n, _)| n == param_name) {
         Some(entry) => entry.1 = value,
         None => inst.params.push((param_name.to_string(), value)),

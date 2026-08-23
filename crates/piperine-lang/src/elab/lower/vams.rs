@@ -1586,7 +1586,7 @@ fn expr_check_no_genvar_ref(expr: &Expr, genvars: &[String]) -> Result<(), ElabE
     }
 }
 
-fn declarator_to_wire(
+pub(super) fn declarator_to_wire(
     d: &Declarator,
     discipline: &str,
     span: crate::PreprocessedSpan,
@@ -2157,7 +2157,7 @@ fn promote_to_switch_if_conditional(branch: &mut Branch, incoming: BranchKind, c
     }
 }
 
-fn resolve_contribution_branches(
+pub(super) fn resolve_contribution_branches(
     stmt: &Stmt,
     module: &str,
     branches: &mut Vec<Branch>,

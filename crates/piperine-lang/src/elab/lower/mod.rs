@@ -100,6 +100,26 @@ pub struct Elaborator {
     /// block reads back as a generate block on the authored side; the
     /// instances it produces exist only on the derived path.
     pub(crate) generated_instances: HashMap<String, Vec<crate::pom::Instance>>,
+    /// Generate-produced net (wire) declarations (T51, LRMW2-52's "any
+    /// module item" half), keyed by the owning module's name — same
+    /// derived-only rule as `generated_instances`: read by
+    /// `FlattenHierarchy`, never merged into `Design::modules`. A
+    /// generated wire's name is dotted-prefixed by its enclosing generate
+    /// scope (`genblk<n>`/an explicit `begin : name`, `__<genvar>` per
+    /// loop iteration) — the same hierarchical-naming convention T50
+    /// already established for nested instances.
+    pub(crate) generated_wires: HashMap<String, Vec<crate::pom::Wire>>,
+    /// Generate-produced `analog`/digital behavior blocks (T51), keyed by
+    /// the owning module's name — same derived-only rule. Each behavior's
+    /// statements have already had their governing `for`-loop's genvar
+    /// substituted to that iteration's literal value (a generate `for` is
+    /// elaboration-time unrolling, not a runtime loop — the genvar has no
+    /// value outside it, LRM §3.5).
+    pub(crate) generated_behaviors: HashMap<String, Vec<crate::pom::Behavior>>,
+    /// Implicit branches a generated behavior's contributions created
+    /// (§5.4.1, the same mechanism `elab_module` runs for authored
+    /// behaviors) — keyed by the owning module's name, derived-only.
+    pub(crate) generated_branches: HashMap<String, Vec<crate::pom::Branch>>,
     /// Top-level `const` declarations (sanctioned extension, MD-50),
     /// collected at `Register` and evaluated by `LowerDeclarations` into
     /// `Design::consts` (source order, so a later const may read an
@@ -115,6 +135,9 @@ impl Elaborator {
             pending_items: Vec::new(),
             ctx: crate::elab::registry::ElabContext::new(),
             generated_instances: HashMap::new(),
+            generated_wires: HashMap::new(),
+            generated_behaviors: HashMap::new(),
+            generated_branches: HashMap::new(),
             pending_consts: Vec::new(),
         }
     }

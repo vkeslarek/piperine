@@ -13,8 +13,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pom::{
-    is_ground, Design, ElabError, ElabErrorKind, Connection, Instance, Module, NetRef, NetType,
-    Wire,
+    is_ground, Behavior, Branch, Design, ElabError, ElabErrorKind, Connection, Instance, Module,
+    NetRef, NetType, Wire,
 };
 
 use super::passes::ElabPass;
@@ -24,6 +24,21 @@ use super::Elaborator;
 /// lifted wires, and rewritten connections.
 type InlineResult = (Vec<Instance>, Vec<Wire>, Vec<Connection>);
 
+/// The four generate-produced derived-content maps (T25's instances, T51's
+/// wires/behaviors/branches) — bundled so `flatten_design`/`flatten_module`
+/// take one argument instead of four, all keyed by owning-module name, all
+/// MD-25-derived-only (never merged into `Design::modules`). Owned (not
+/// borrowed) so `Default` (all-empty) is what every flatten test not
+/// exercising generate passes — cloned once from `Elaborator::generated_*`
+/// by `FlattenHierarchy::run`, cheap relative to elaboration as a whole.
+#[derive(Default)]
+pub(super) struct GeneratedContent {
+    pub instances: HashMap<String, Vec<Instance>>,
+    pub wires: HashMap<String, Vec<Wire>>,
+    pub behaviors: HashMap<String, Vec<Behavior>>,
+    pub branches: HashMap<String, Vec<Branch>>,
+}
+
 /// Flatten hierarchy into a leaf-only netlist, memoized in
 /// `Design::flat_modules`. Runs as the last elaboration pass (after
 /// `Typecheck`) so it sees the fully resolved, monomorphized, for-unrolled
@@ -32,20 +47,27 @@ pub(super) struct FlattenHierarchy;
 
 impl ElabPass for FlattenHierarchy {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        Self::flatten_design(design, &elab.generated_instances)
+        let generated = GeneratedContent {
+            instances: elab.generated_instances.clone(),
+            wires: elab.generated_wires.clone(),
+            behaviors: elab.generated_behaviors.clone(),
+            branches: elab.generated_branches.clone(),
+        };
+        Self::flatten_design(design, &generated)
     }
 }
 
 impl FlattenHierarchy {
     /// Flatten every module in `design.modules` into `design.flat_modules`.
     /// The authored `modules` map is never mutated — only `flat_modules` is
-    /// written. `generated` is T25's per-module generate-produced instance
-    /// list (MD-25: merged into the derived form only, never into
+    /// written. `generated` is T25/T51's per-module generate-produced
+    /// content (MD-25: merged into the derived form only, never into
     /// `design.modules`). Entry point for the pass driver and for unit
-    /// tests (which pass an empty map when generate isn't under test).
+    /// tests (which pass `&Default::default()` when generate isn't under
+    /// test).
     pub(super) fn flatten_design(
         design: &mut Design,
-        generated: &std::collections::HashMap<String, Vec<Instance>>,
+        generated: &GeneratedContent,
     ) -> Result<(), ElabError> {
         let names: Vec<String> = design.modules.keys().cloned().collect();
         let mut in_progress = HashSet::new();
@@ -71,7 +93,7 @@ impl FlattenHierarchy {
     fn flatten_module(
         name: &str,
         design: &mut Design,
-        generated: &std::collections::HashMap<String, Vec<Instance>>,
+        generated: &GeneratedContent,
         in_progress: &mut HashSet<String>,
     ) -> Result<Module, ElabError> {
         if let Some(flat) = design.flat_modules.get(name) {
@@ -101,7 +123,24 @@ impl FlattenHierarchy {
         // colliding with an authored one fails loud (spec Edge Cases: no
         // silent rename); `generate.rs`'s own `check_no_collisions` already
         // ruled out generated-vs-generated collisions.
-        if let Some(gen_insts) = generated.get(name) {
+        // T51 (LRMW2-52): splice generate-produced wires/behaviors/branches
+        // in the same derived-only way — before `expand_array` reads
+        // `m.wires` below, so a broadcast connection to a generated wire
+        // sees its width. Collisions with an authored wire/behavior name
+        // are not checked here (unlike instances): a generated wire's name
+        // is always dotted-scoped (`genblk<n>.name`/`explicit_name.name`),
+        // which cannot collide with a bare authored net name.
+        if let Some(gen_wires) = generated.wires.get(name) {
+            m.wires.extend(gen_wires.iter().cloned());
+        }
+        if let Some(gen_behaviors) = generated.behaviors.get(name) {
+            m.behaviors.extend(gen_behaviors.iter().cloned());
+        }
+        if let Some(gen_branches) = generated.branches.get(name) {
+            m.branches.extend(gen_branches.iter().cloned());
+        }
+
+        if let Some(gen_insts) = generated.instances.get(name) {
             for g in gen_insts {
                 if authored_instances.iter().any(|a| a.name() == g.name()) {
                     return Err(ElabError::from(ElabErrorKind::Other(format!(

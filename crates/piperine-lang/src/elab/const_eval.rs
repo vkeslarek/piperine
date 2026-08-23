@@ -118,6 +118,21 @@ impl ConstEnv {
                 }
             }
             Expr::Call { name, args, .. } => self.eval_call(name, args),
+            // §6.3.5/§9.19 `$param_given(name)` (T51, LRMW2-52): "the
+            // return value shall be one (1) if the parameter was
+            // overridden ... and zero (0) otherwise." A generate `if`
+            // condition (§6.3's own `nlres` worked example) is evaluated
+            // once per module *declaration* (`UnrollGenerate` runs before
+            // any instantiation-specific override is known — a module's
+            // generate constructs are not currently re-run per
+            // instantiation), so there is no per-instance override set to
+            // consult here: always `false` (the module's own declared
+            // default, exactly what an un-overridden instantiation would
+            // see). Recognizing the call at all — instead of failing loud
+            // as an unsupported system function — is this task's actual
+            // scope; per-instantiation-sensitive generate re-evaluation is
+            // a disclosed follow-up (T51 SPEC_DEVIATION).
+            Expr::SystemFunctionCall { name, .. } if name == "param_given" => Ok(Value::Bool(false)),
             Expr::Concat { .. }
             | Expr::Replication { .. }
             | Expr::Index { .. }

@@ -48,6 +48,16 @@ pub(crate) trait ElabPass: std::any::Any {
 /// which reads `Elaborator::generated_instances` when building the derived
 /// flat form (design §6 ordering).
 ///
+/// **`ApplyDefparams` runs after `UnrollGenerate` (T51, LRMW2-52, §6.9.4:
+/// "defparam statements shall be evaluated after generate statement
+/// instantiation").** It used to run right after `ElabModules`, before
+/// generate — a `defparam` naming a generate-produced instance
+/// (`defparam top.gen_loop__1.r = 5k;`) had no target to find yet.
+/// `ApplyDefparams::apply_one` now also searches/mutates
+/// `Elaborator::generated_instances` (MD-25-safe: still never touches
+/// `Design::modules`), so moving the pass is sufficient — no change to
+/// *what* it resolves against, only *when*.
+///
 /// `InsertConnectModules` (T52) runs immediately after `ResolveDisciplines`
 /// and before `UnrollGenerate`/`FlattenHierarchy`, per this task's own
 /// stated position ("after `ResolveDisciplines`, before
@@ -70,10 +80,10 @@ pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &Register,
     &LowerDeclarations,
     &ElabModules,
-    &super::defparam::ApplyDefparams,
     &ResolveDisciplines,
     &InsertConnectModules,
     &UnrollGenerate,
+    &super::defparam::ApplyDefparams,
     &Typecheck,
     &CheckPortSizes,
     &FlattenHierarchy,
