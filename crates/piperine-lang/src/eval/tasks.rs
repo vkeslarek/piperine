@@ -196,33 +196,30 @@ pub enum SystemTaskKind {
     TableModel,
 }
 
-/// **T35/LRMC-C7-05 scope note (SPEC_DEVIATION):** the seven `$driver_*`
-/// functions and `driver_update` above are registered here — the same
-/// "pure semantics, name-level recognition" tier every other entry in
-/// [`SystemTasks::TABLE`] lives at — but *not* wired further: reaching
-/// "returns live data inside a connectmodule body" needs a live
-/// `piperine_solver::digital::DriverTable` pointer threaded through
-/// `piperine-codegen`'s analog JIT ABI (`emit::abi::SimCtx`, the same way
-/// `io`/`SimOutput` already is), which this task's stated `Where`
-/// (`eval/tasks.rs` only) doesn't reach. More load-bearing: that
-/// `DriverTable` is *never populated* by anything today — no gate,
-/// module, or connect-module instance calls `DriverTable::set_driver`
-/// yet, because §7.9's actual driver-receiver segregation routing (which
-/// module output feeds which table entry) is T36-T40's job, not T34/T35's.
-/// Wiring live JIT reads against a table nothing ever writes to would be
-/// architecturally present but semantically untestable — every call
-/// would read `driver_count() == 0` forever, which is not "simulates
-/// correctly" (T35's own Done-when), it's a silently-empty result dressed
-/// up as live data. `piperine-codegen`'s existing generic
-/// `CodegenError::unsupported(format!("syscall \`{name}\` in an analog
-/// expression"))` fail-loud path (already exercised by every other
-/// currently-unimplemented syscall name) is the CLAUDE.md-correct
-/// behavior for these eight names until T36-T40 land the population side
-/// — deliberately left alone rather than special-cased with a misleading
-/// "coming soon" message that would drift out of sync. `DriverTable`
-/// itself already exposes every per-index accessor these seven functions
-/// need (`drivers`, `driver_count`, `resolved` — T34); this task adds
-/// nothing further there.
+/// **T35/LRMC-C7-05 scope note, updated by T54/LRMW2-46:** the seven
+/// `$driver_*` functions and `driver_update` above are registered here —
+/// the same "pure semantics, name-level recognition" tier every other
+/// entry in [`SystemTasks::TABLE`] lives at. As of T54,
+/// `piperine_solver::digital::DriverTable` is genuinely live —
+/// `digital::scheduler`'s event-apply loop calls `DriverTable::
+/// set_driver` for every digital device that drives a net (keyed by the
+/// device's own stable index), and `driver_count`/`resolved`/
+/// `resolved_by_kind` return real per-net data for an ordinary digital
+/// circuit (proven in `piperine-solver`'s own scheduler tests and root
+/// `tests/`). What T54 did **not** reach (SPEC_DEVIATION, disclosed):
+/// dispatching a `$driver_count`-style call from *inside a JIT-compiled
+/// analog `connectmodule` body* still needs a live `DriverTable` pointer
+/// threaded through `piperine-codegen`'s analog JIT ABI
+/// (`emit::abi::SimCtx`, the same way `io`/`SimOutput` already is) — a
+/// codegen-side ABI extension this task's stated `Where` (`eval/tasks.rs`
+/// only, plus `drivers.rs`/`gates.rs`) doesn't reach. `piperine-codegen`'s
+/// existing generic `CodegenError::unsupported(format!("syscall
+/// \`{name}\` in an analog expression"))` fail-loud path remains the
+/// CLAUDE.md-correct behavior for a `connectmodule` analog body calling
+/// any of these eight names until that ABI extension lands —
+/// `piperine-codegen`'s `tests/vams_driver_access_gap.rs` (rewritten by
+/// T54, never deleted) still proves it fails loud rather than silently
+/// compiling to always-zero.
 ///
 /// The empty type this module hangs its table lookups and helpers off of
 /// (MD-13: no loose functions).

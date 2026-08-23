@@ -17,6 +17,39 @@ use crate::digital::interface::{EvalCtx, QueueSink};
 use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::state::DigitalState;
 use crate::digital::topology::DigitalTopology;
+use crate::digital::drivers::{default_strength_for, DriverId, DriverKind};
+
+/// Applies one drained `event` to `nets`/`driver_table` (T54/LRMW2-46):
+/// registers the event's source as `net`'s driver per §7.9 (every event's
+/// `source` is already the emitting device's stable index — the
+/// "elaborated instance graph" this table keys off), then resolves the
+/// net through [`crate::digital::drivers::DriverTable::resolved`] instead
+/// of overwriting with the raw event value. For the common case (a net
+/// with exactly one live driver) this folds back to the same value as a
+/// direct overwrite — `Strength::resolve` of a single entry against the
+/// undriven default returns that entry unchanged — so single-driver
+/// nets are bit-for-bit unaffected; a multiply-driven net (e.g. a
+/// tristate bus) now resolves per Table 7-3 instead of "whichever event
+/// applied last wins" (register-write-order noise, not LRM semantics).
+/// Returns the resolved value so callers can compare/mark `changed` the
+/// same way they compared the raw event value before.
+fn apply_driven_event(state: &mut DigitalState, event: &DigitalEvent) -> LogicValue {
+    state.driver_table.set_driver(
+        event.net,
+        DriverId(event.source),
+        // SPEC_DEVIATION (T54, disclosed in drivers.rs's module doc):
+        // ordinary-vs-connect-module classification is not threaded
+        // through to this layer yet, so every scheduler-level driver is
+        // recorded `Ordinary`. `DriverTable::resolved_by_kind` (the
+        // segregation primitive) is exercised directly against
+        // hand-built mixed-kind tables until that plumbing lands.
+        DriverKind::Ordinary,
+        event.value,
+        default_strength_for(event.value),
+        0.0,
+    );
+    state.driver_table.resolved(event.net).0
+}
 
 impl DigitalState {
     /// Simple fixed-point evaluation (fallback, no topology required).
@@ -55,8 +88,9 @@ impl DigitalState {
 
             let mut changed = HashSet::new();
             for event in &events_now {
-                if self.nets[event.net.0] != event.value {
-                    self.nets[event.net.0] = event.value;
+                let resolved = apply_driven_event(self, event);
+                if self.nets[event.net.0] != resolved {
+                    self.nets[event.net.0] = resolved;
                     changed.insert(event.net);
                 }
             }
@@ -124,8 +158,9 @@ impl DigitalState {
             match self.event_queue.peek() {
                 Some(Reverse(e)) if e.time <= t + epsilon => {
                     let ev = self.event_queue.pop().unwrap().0;
-                    if self.nets[ev.net.0] != ev.value {
-                        self.nets[ev.net.0] = ev.value;
+                    let resolved = apply_driven_event(self, &ev);
+                    if self.nets[ev.net.0] != resolved {
+                        self.nets[ev.net.0] = resolved;
                         all_changed.insert(ev.net);
                     }
                 }
@@ -190,8 +225,9 @@ impl DigitalState {
 
                 while let Some(Reverse(ev)) = local_q.pop() {
                     if ev.time <= t + epsilon {
-                        if self.nets[ev.net.0] != ev.value {
-                            self.nets[ev.net.0] = ev.value;
+                        let resolved = apply_driven_event(self, &ev);
+                        if self.nets[ev.net.0] != resolved {
+                            self.nets[ev.net.0] = resolved;
                             all_changed.insert(ev.net);
                         }
                     } else {

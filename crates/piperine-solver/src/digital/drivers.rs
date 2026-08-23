@@ -16,12 +16,23 @@
 //! propagate through the analog domain instead of directly to ordinary
 //! module receivers; connect module drivers group with ordinary module
 //! receivers and vice versa") is a *routing* concern over the digital
-//! network topology — this module only stores, per net, which drivers
-//! exist, their kind (ordinary vs connect module — the piece segregation
+//! network topology — this module stores, per net, which drivers exist,
+//! their kind (ordinary vs connect module — the piece segregation
 //! routing needs to tell the two driver populations apart), value,
-//! strength, and pending next-state, and resolves them per Table 7-3.
-//! Building the actual segregated propagation graph is out of this
-//! task's scope (T36/T37).
+//! strength, and pending next-state, and resolves them per Table 7-3
+//! ([`DriverTable::resolved`]) or per-population ([`DriverTable::
+//! resolved_by_kind`], T54/LRMW2-46 — the segregation primitive routing
+//! builds on). Building the full segregated propagation graph across an
+//! elaborated connect-module topology (which analog crossing a given net
+//! routes through) remains out of scope — SPEC_DEVIATION, disclosed in
+//! T54's commit: `piperine-lang`'s POM does not thread `connectmodule`
+//! vs ordinary `module` kind through to the digital circuit builder
+//! today (`Module` has no kind field, T36/T37 territory), so
+//! `digital::scheduler` populates every live driver as [`DriverKind::
+//! Ordinary`] — real, live per-instance data (T54 closes the "nothing
+//! ever calls `set_driver`" gap: `scheduler.rs`'s event-apply loop now
+//! does, keyed by each event's own device index), but not yet
+//! kind-classified end to end.
 
 use std::collections::HashMap;
 
@@ -163,6 +174,43 @@ impl DriverTable {
             .map(|r| (r.value, r.strength))
             .fold((LogicValue::X, Strength::HighZ), Strength::resolve)
     }
+
+    /// §7.9 driver-receiver segregation: resolves only the `kind`
+    /// population on `net`, independent of the other population. An
+    /// ordinary-module driver and a connect-module driver on the same net
+    /// never contend against each other directly — each side of an
+    /// analog crossing resolves its own drivers first, and the two
+    /// resolved values cross the analog domain as separate contributions
+    /// (§7.9's "ordinary module drivers/receivers propagate through the
+    /// analog domain instead of directly to ordinary module receivers").
+    /// Building the segregated *propagation graph* itself (which net on
+    /// one side of an analog crossing receives which resolved value) is
+    /// solver/codegen circuit-topology work, not this table's job — this
+    /// method is the segregation *primitive* that routing builds on.
+    pub fn resolved_by_kind(&self, net: DigitalNet, kind: DriverKind) -> (LogicValue, Strength) {
+        self.drivers(net)
+            .iter()
+            .filter(|r| r.kind == kind)
+            .map(|r| (r.value, r.strength))
+            .fold((LogicValue::X, Strength::HighZ), Strength::resolve)
+    }
+}
+
+/// The drive strength a scheduler-level driver record gets when a
+/// digital device (gate, UDP, register, JIT digital cone) emits a value
+/// with no explicit strength specification (LRM §7.9's "no strength
+/// specification" default — Table 7-9's gate outputs are unconditionally
+/// `strong0`/`strong1`; `Z` is inherently the non-driving `highz` level,
+/// never a driven strength). Devices that DO carry an authored strength
+/// specification (`buf (strong0, pull1) g1(...)`) are a separate,
+/// unimplemented LRM surface — this is the fallback every driver without
+/// one gets.
+pub fn default_strength_for(value: LogicValue) -> Strength {
+    if value == LogicValue::Z {
+        Strength::HighZ
+    } else {
+        Strength::Strong
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +305,40 @@ mod tests {
         assert_eq!(rec.value, Zero, "current value unchanged by scheduling a next-state");
         assert_eq!(rec.next_state, Some(One));
         assert_eq!(rec.next_strength, Some(Strength::Strong));
+    }
+
+    /// §7.9 segregation primitive: two populations on the same net
+    /// resolve independently — a strong ordinary driver does not contend
+    /// with (or get overridden by) a connect-module driver of any
+    /// strength, and vice versa.
+    #[test]
+    fn resolved_by_kind_segregates_ordinary_from_connect_module_populations() {
+        let mut t = DriverTable::new();
+        t.set_driver(net(0), DriverId(1), DriverKind::Ordinary, Zero, Strength::Strong, 0.0);
+        t.set_driver(net(0), DriverId(2), DriverKind::ConnectModule, One, Strength::Supply, 0.0);
+        // Naive (non-segregated) resolution would let the Supply-strength
+        // connect-module driver win outright — that is NOT what §7.9
+        // wants: the two populations never contend against each other.
+        assert_eq!(t.resolved_by_kind(net(0), DriverKind::Ordinary), (Zero, Strength::Strong));
+        assert_eq!(t.resolved_by_kind(net(0), DriverKind::ConnectModule), (One, Strength::Supply));
+        // The single non-segregated `resolved` still folds both — proving
+        // the two views are genuinely different, not aliases.
+        assert_eq!(t.resolved(net(0)), (One, Strength::Supply));
+    }
+
+    #[test]
+    fn resolved_by_kind_ignores_the_other_population_entirely_when_absent() {
+        let mut t = DriverTable::new();
+        t.set_driver(net(0), DriverId(1), DriverKind::Ordinary, One, Strength::Weak, 0.0);
+        assert_eq!(t.resolved_by_kind(net(0), DriverKind::ConnectModule), (X, Strength::HighZ));
+    }
+
+    #[test]
+    fn default_strength_for_z_is_highz_others_are_strong() {
+        assert_eq!(default_strength_for(Z), Strength::HighZ);
+        assert_eq!(default_strength_for(One), Strength::Strong);
+        assert_eq!(default_strength_for(Zero), Strength::Strong);
+        assert_eq!(default_strength_for(X), Strength::Strong);
     }
 
     #[test]

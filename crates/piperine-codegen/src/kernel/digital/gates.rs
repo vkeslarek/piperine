@@ -24,6 +24,18 @@
 
 use piperine_solver::abi::LogicValue;
 
+/// LRM §7.9 Table 7-2/7-3 drive-strength levels and their resolution
+/// rule — re-exported directly from `piperine-solver`'s own copy (T54/
+/// LRMW2-46 consolidation) rather than duplicated here. Prior to T54
+/// this module carried a second, independently-written `Strength` enum
+/// with the identical variant set and `resolve` behavior (only
+/// reachable in this direction — `piperine-codegen` already depends on
+/// `piperine-solver`, never the reverse, CLAUDE.md — so the duplication
+/// was never structurally necessary, just historical). This alias keeps
+/// every existing `kernel::digital::gates::Strength`/`Strength::resolve`
+/// call site in this crate compiling unchanged.
+pub use piperine_solver::abi::Strength;
+
 /// One IEEE 1364 unidirectional logic-gate primitive (§7.2 `n`-input
 /// gates, §7.3 `buf`/`not`, §7.4 tristate `bufif`/`notif`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,52 +157,6 @@ fn xor2(a: LogicValue, b: LogicValue) -> LogicValue {
         (Zero, Zero) | (One, One) => Zero,
         (Zero, One) | (One, Zero) => One,
         _ => X,
-    }
-}
-
-/// LRM §7.9 Table 7-2 drive-strength levels, ordered strongest-first
-/// within each of the two "classes" the resolution table distinguishes:
-/// driving strengths (`Supply`..`Weak`) and the non-driving `HighZ`.
-/// `#[repr(u8)]` order is significant — [`Strength::resolve`] compares by
-/// discriminant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
-pub enum Strength {
-    Supply = 0,
-    Strong = 1,
-    Pull = 2,
-    Weak = 3,
-    HighZ = 4,
-}
-
-impl Strength {
-    /// Resolves two drivers' `(value, strength)` pairs onto one shared net
-    /// per LRM Table 7-3: the stronger driver wins; equal-strength
-    /// opposing values contend to `X` (at that strength); a `HighZ`
-    /// (non-driving) side yields to the other unconditionally.
-    pub fn resolve(
-        a: (LogicValue, Strength),
-        b: (LogicValue, Strength),
-    ) -> (LogicValue, Strength) {
-        let (av, asr) = a;
-        let (bv, bsr) = b;
-        if asr == Strength::HighZ {
-            return b;
-        }
-        if bsr == Strength::HighZ {
-            return a;
-        }
-        match asr.cmp(&bsr) {
-            std::cmp::Ordering::Less => a,
-            std::cmp::Ordering::Greater => b,
-            std::cmp::Ordering::Equal => {
-                if av == bv {
-                    (av, asr)
-                } else {
-                    (LogicValue::X, asr)
-                }
-            }
-        }
     }
 }
 
