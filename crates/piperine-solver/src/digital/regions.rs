@@ -31,17 +31,21 @@
 //! reference oracle its own tests already exercise; nothing here forces a
 //! caller to *also* route through it.
 //!
-//! **The four regions, in per-time-step processing order (LRM §8.3):**
+//! **The six modeled regions, in per-time-step processing order (LRM
+//! §8.5.1; T58/LRMW2-51 added the two mixed-signal ones, marked below):**
 //! 1. `Active` — blocking assignments, continuous assigns, `$display`.
+//! 1b. `D2a` — explicit D2A events (an analog-to-digital-domain bridge
+//!    write), processed after every `Active` event at this instant.
 //! 2. `Inactive` — `#0`-delay statements (deferred to the *same* time,
-//!    after the active region drains).
+//!    after the active and D2A regions drain).
 //! 3. `Nba` (non-blocking assign) — `<=` right-hand-side values, computed
 //!    during `Active` but not written to their target net until here —
 //!    this is *the* mechanism that makes an NBA-written value invisible to
 //!    same-timestep `Active`-region readers.
+//! 3b. `AnalogMacroProcess` — the analog kernel's own settled-step
+//!    notification, processed after active, D2A, inactive, and NBA.
 //! 4. `Monitor` — `$monitor`/`$strobe`, which read the fully-settled
-//!    value only after every `Active`/`Inactive`/`Nba` event at this time
-//!    has drained.
+//!    value only after every earlier region at this time has drained.
 //!
 //! A real LRM cycle re-enters `Active` if processing a later region
 //! produces a new `Active` event (e.g. an `Nba` write triggers another
@@ -55,17 +59,41 @@ use std::collections::BinaryHeap;
 
 use crate::digital::{DigitalNet, LogicValue};
 
-/// One LRM §8.3 simulation-cycle region, in strict processing-priority
+/// One LRM §8.5.1 simulation-cycle region, in strict processing-priority
 /// order for one time slot. `#[repr(u8)]`/derived `Ord` make the
 /// discriminant order the priority order — `Active` always sorts before
-/// `Monitor`.
+/// `Monitor`. §8.5.1's own text: "The Verilog event queue is logically
+/// segmented into *seven* different regions... Regions 1b and 3b have
+/// been added for mixed-signal simulation" — [`D2a`](Region::D2a) (1b)
+/// and [`AnalogMacroProcess`](Region::AnalogMacroProcess) (3b) are those
+/// two mixed-signal additions (T58/LRMW2-51); this crate does not model
+/// every one of the LRM's seven (future/non-blocking-future split, PLI
+/// callback regions) since nothing in this codebase schedules into
+/// them yet — the same "model what has a real caller" posture the
+/// original four-region set already followed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Region {
     Active = 0,
-    Inactive = 1,
-    Nba = 2,
-    Monitor = 3,
+    /// §8.5.1 region 1b: "Explicit D2A events that occur at the current
+    /// simulation time shall be processed after all the active events
+    /// are processed" — an analog-to-digital-domain boundary write
+    /// (an A2D/D2A bridge device driving a digital net from a settled
+    /// analog sample) lands here, strictly after every ordinary
+    /// `Active`-region digital write at the same instant but still
+    /// before `Inactive`.
+    D2a = 1,
+    Inactive = 2,
+    Nba = 3,
+    /// §8.5.1 region 3b: "Analog macro-process events shall be
+    /// processed after all active, explicit D2A events, inactive
+    /// events and non blocking assign update events are processed" —
+    /// the analog kernel's own settled-step notification (the D2A
+    /// direction's counterpart to region 1b, run once digital events at
+    /// this instant have otherwise fully resolved) lands here, strictly
+    /// before `Monitor`.
+    AnalogMacroProcess = 4,
+    Monitor = 5,
 }
 
 /// What a scheduled region event does when it's processed.
@@ -266,6 +294,72 @@ mod tests {
 
     #[test]
     fn region_ordering_is_total_and_matches_lrm_priority() {
+        assert!(Region::Active < Region::Inactive);
+        assert!(Region::Inactive < Region::Nba);
+        assert!(Region::Nba < Region::Monitor);
+    }
+
+    /// §8.5.1's own stated order across all six modeled regions (the
+    /// four pre-T58 regions plus 1b/3b): "Active... 1b... Inactive...
+    /// NBA... 3b... Monitor".
+    #[test]
+    fn all_six_regions_order_per_section_8_5_1() {
+        assert!(Region::Active < Region::D2a);
+        assert!(Region::D2a < Region::Inactive);
+        assert!(Region::Inactive < Region::Nba);
+        assert!(Region::Nba < Region::AnalogMacroProcess);
+        assert!(Region::AnalogMacroProcess < Region::Monitor);
+    }
+
+    /// Done-when: "a D2A event and an analog macro-process event resolve
+    /// in the LRM's stated order against a §8.5.1 worked scenario" — a
+    /// scenario mixing every region (submitted out of priority order,
+    /// per this file's own established discrimination style) must drain
+    /// in exactly `Active, D2a, Inactive, Nba, AnalogMacroProcess,
+    /// Monitor` order.
+    #[test]
+    fn d2a_and_analog_macro_process_resolve_in_the_lrm_stated_order() {
+        let mut q = RegionQueue::new();
+        // Submitted deliberately out of priority order.
+        q.schedule(Region::Monitor, 5, RegionAction::Observe { net: net(0) });
+        q.schedule(Region::AnalogMacroProcess, 4, RegionAction::Update { net: net(0), value: One });
+        q.schedule(Region::Nba, 3, RegionAction::Update { net: net(0), value: Zero });
+        q.schedule(Region::Inactive, 2, RegionAction::Observe { net: net(0) });
+        q.schedule(Region::D2a, 1, RegionAction::Update { net: net(0), value: One });
+        q.schedule(Region::Active, 0, RegionAction::Update { net: net(0), value: Zero });
+
+        let mut nets = vec![X; 1];
+        let trace = q.run(&mut nets);
+
+        let order: Vec<Region> = trace.iter().map(|o| o.event.region).collect();
+        assert_eq!(
+            order,
+            vec![Region::Active, Region::D2a, Region::Inactive, Region::Nba, Region::AnalogMacroProcess, Region::Monitor]
+        );
+
+        // The Inactive-region reader observes the D2A write (region 1b
+        // has already drained by the time Inactive runs), not the
+        // Active-region write it overwrote, nor either later write —
+        // "processed after all the active events" (1b's own text).
+        let inactive_observe = trace.iter().find(|o| o.event.region == Region::Inactive).unwrap();
+        assert_eq!(inactive_observe.observed, Some(One), "Inactive reader must see the D2A write, not the Active one");
+
+        // Final value is the AnalogMacroProcess write — the last region
+        // to touch the net in this scenario.
+        assert_eq!(nets[0], One, "AnalogMacroProcess (region 3b) is the last write in this scenario");
+    }
+
+    /// Existing four-region ordering tests must still pass unchanged
+    /// (Done-when) — proven by the fact that
+    /// `regions_process_in_lrm_priority_order_regardless_of_submission_order`/
+    /// `blocking_and_nonblocking_write_race_resolves_deterministically`/
+    /// `events_within_a_region_are_fifo_by_submission_order`/
+    /// `empty_queue_runs_to_empty_trace` above are untouched by this
+    /// task's diff — this test only re-asserts the four original
+    /// regions' relative order still holds now that two more sit
+    /// between them.
+    #[test]
+    fn original_four_regions_keep_their_relative_order_with_the_new_ones_inserted() {
         assert!(Region::Active < Region::Inactive);
         assert!(Region::Inactive < Region::Nba);
         assert!(Region::Nba < Region::Monitor);
