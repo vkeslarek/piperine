@@ -236,6 +236,86 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
             neg: neg.as_ref().map(|n| Box::new(resolve_expr(n, ctx))),
         },
 
+        // §9.20 (T56/LRMW2-49): `$analog_node_alias(local, hier_string)`/
+        // `$analog_port_alias(local, hier_string)` with a *constant*
+        // `hier_string` (a string literal — a `parameter string`
+        // reference already arrives here folded to `Expr::Str`, since
+        // elaboration pre-folds parameter defaults, CLAUDE.md's Naming &
+        // conventions) folds right here, at elaboration/resolve time,
+        // instead of a runtime JIT call: a constant string can never
+        // differ sweep point to sweep point, so resolving it once now
+        // satisfies §9.20's "re-evaluated each sweep point" text without
+        // ever violating MD-18 (the resolved alias is simply always the
+        // same). A *non*-constant `hier_string` (anything that doesn't
+        // resolve to `Expr::Str` after its own recursive resolution)
+        // falls through to the plain pass-through below, unchanged —
+        // `emit_analog_expr` (`emit/analog_expr.rs`)'s existing MD-18
+        // fail-loud arm is the correct behavior for that case, and needs
+        // no change: only a non-constant call ever reaches JIT emission
+        // now.
+        //
+        // **Resolution mechanism (SPEC_DEVIATION from a literal "net
+        // merge", disclosed):** §9.20 wants `local` to become the exact
+        // same MNA unknown as its target. A literal NodeId merge needs
+        // to happen *before* `local`'s own node is allocated
+        // (`build_symbols_and_ports`, `structure.rs`) — by the time this
+        // expression is resolved, `local` already has its own
+        // independently-allocated `NodeId` that other consumers
+        // (`CircuitCompiler`'s own net-name resolution, `info.nets` for
+        // host probing) already depend on existing, so eliding it here
+        // would either orphan a still-referenced name or require
+        // restructuring node allocation around a scan of every analog
+        // behavior first — out of this task's reach in the time
+        // available. Instead this resolves to the same *electrical*
+        // node via the identical ideal-short idiom this codebase already
+        // uses everywhere else a driven node needs to present another
+        // node's exact potential (`V(out,gnd) <+ V(in,gnd);`, this
+        // file's own `tests/node_alias_e2e.rs` and
+        // `tests/hierarchical_ref_e2e.rs` twin): a synthetic `V(local,
+        // target) <+ 0;` contribution, pushed onto `ctx.write_backs`
+        // (the same drain-after-statement mechanism `inline_user_fn`
+        // already uses for output/inout argument write-backs) so it runs
+        // immediately alongside the original assignment
+        // (`with_write_backs` wraps both in one `Block`). This ties
+        // `local` to `target`'s exact potential (zero volts between
+        // them) rather than literally collapsing two NodeIds into one —
+        // observably identical at every probe point, but two distinct
+        // MNA rows under the hood, not one.
+        Expr::SystemFunctionCall { span, name, args }
+            if matches!(name.trim_start_matches('$').to_lowercase().as_str(), "analog_node_alias" | "analog_port_alias")
+                && args.len() == 2
+                && matches!(&args[0], Expr::Ident { .. }) =>
+        {
+            let local = ident_from_expr(Some(&args[0])).expect("matched Expr::Ident above");
+            let resolved_second = resolve_expr(&args[1], ctx);
+            if let Expr::Str { value: hier, .. } = &resolved_second {
+                // Only a plain, undotted, non-`$`-prefixed name resolves
+                // (a local net in *this* module) — a dotted/`$root`
+                // hierarchical string is out of this task's scope
+                // (SPEC_DEVIATION, disclosed above the local case) and
+                // folds to `0`, the LRM's own "reference did not
+                // resolve" outcome.
+                let resolves = !hier.contains('.') && !hier.starts_with('$') && ctx.lookup_node(hier).is_some();
+                if resolves {
+                    ctx.write_backs.push(piperine_lang::ast::Stmt::Contribution {
+                        span: *span,
+                        target: Expr::AccessFunction {
+                            span: *span,
+                            function: "V".to_string(),
+                            pos: Box::new(Expr::Ident { span: *span, name: local.clone() }),
+                            neg: Some(Box::new(Expr::Ident { span: *span, name: hier.clone() })),
+                        },
+                        value: real(0.0),
+                    });
+                    real(1.0)
+                } else {
+                    real(0.0)
+                }
+            } else {
+                Expr::SystemFunctionCall { span: *span, name: name.clone(), args: vec![args[0].clone(), resolved_second] }
+            }
+        }
+
         Expr::SystemFunctionCall { span, name, args } => Expr::SystemFunctionCall {
             span: *span,
             name: name.clone(),
