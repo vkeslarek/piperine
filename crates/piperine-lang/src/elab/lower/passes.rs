@@ -20,7 +20,7 @@
 //! remaining VAMS-shaped stages (natures/disciplines/branches, generate,
 //! Annex F, Annex C) task by task.
 
-use crate::pom::{Design, ElabError};
+use crate::pom::{Design, ElabError, ElabErrorKind};
 
 use super::connect::InsertConnectModules;
 use super::disciplines::ResolveDisciplines;
@@ -75,6 +75,7 @@ pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &InsertConnectModules,
     &UnrollGenerate,
     &Typecheck,
+    &CheckPortSizes,
     &FlattenHierarchy,
 ];
 
@@ -142,6 +143,67 @@ impl ElabPass for Typecheck {
     }
 }
 
+/// §6.5.7.1 (LRMW2-53, T48): "A scalar port can be connected to a scalar
+/// net and a vector port can be connected to a vector net or concatenated
+/// net expression of the matching width. In other words, the sizes of the
+/// ports and net need to match." Runs after `Typecheck` — every module is
+/// registered in `design.modules_map` by then, so a callee's declared
+/// port widths are on hand for every instance in every module, not just
+/// the one currently being lowered (`ElabModules`'s own per-module pass
+/// can't see this — a module can be instantiated before its own
+/// declaration is reached in an earlier pass).
+///
+/// Array-of-instances broadcast connections (`Instance::range`, e.g.
+/// `res r[7:0] (bus, gnd);`) have their own, already-implemented width
+/// rule (`elab/lower/flatten.rs`'s `inline_sub_instances`, which
+/// legitimately allows a 1-wide net to broadcast across every array
+/// element) — out of scope here, skipped by checking only `range.is_none()`
+/// instances so the two rules never overlap or double-report.
+///
+/// A net whose width cannot be determined from the *calling* module's own
+/// declarations (an implicit/undeclared interconnect signal, §6.5.7.2's
+/// own explicit allowance, or a concatenated net expression — this task's
+/// scope is the common bare-net-name case) is not checked — silence here
+/// is deliberate, not silent-wrong: nothing is asserted about a width
+/// this pass cannot see.
+struct CheckPortSizes;
+impl ElabPass for CheckPortSizes {
+    fn run(&self, _elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        let names: Vec<String> = design.modules().map(|m| m.name().to_string()).collect();
+        for name in &names {
+            let caller = design.module(name).expect("just listed from design.modules()");
+            for inst in caller.instances() {
+                if inst.range.is_some() {
+                    continue;
+                }
+                if design.udp(inst.module_name()).is_some() {
+                    continue;
+                }
+                let Some(target) = design.module(inst.module_name()) else { continue };
+                for (i, port_ref) in inst.ports().iter().enumerate() {
+                    if port_ref.is_unconnected() {
+                        continue;
+                    }
+                    let Some(target_port) = target.ports().get(i) else { continue };
+                    let target_width = target_port.net_type().width();
+                    let Some(net_width) = super::vams::net_ref_width(caller, port_ref) else { continue };
+                    if net_width != target_width {
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
+                            "instance `{}` (module `{}`), port `{}`: connected net `{port_ref}` has \
+                             width {net_width}, but the port is declared width {target_width} (LRM \
+                             §6.5.7.1: \"the sizes of the ports and net need to match\")",
+                            inst.name(),
+                            inst.module_name(),
+                            target_port.name(),
+                        ))));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,10 +237,10 @@ mod tests {
     }
 
     /// `PASSES`' exact length and shape — a coarse guard against a pass
-    /// silently disappearing or a duplicate being added. Nine stages as
-    /// of T28 (LRMC-C5-06): `ApplyDefparams` inserted after `ElabModules`.
+    /// silently disappearing or a duplicate being added. Ten stages as of
+    /// T48 (LRMW2-53): `CheckPortSizes` inserted after `Typecheck`.
     #[test]
-    fn passes_has_the_documented_nine_stages() {
-        assert_eq!(PASSES.len(), 9);
+    fn passes_has_the_documented_ten_stages() {
+        assert_eq!(PASSES.len(), 10);
     }
 }

@@ -368,7 +368,7 @@ impl<'a> DcSolver<'a> {
                     self.system.invalidate_bypass();
                     let strategy = crate::analyses::convergence::DampedNewton;
                     let policy = self.policy.clone();
-                    let tolerances = self.system.context.tolerances;
+                    let tolerances = self.system.context.tolerances.clone();
                     sol = self.solver.solve_with_strategy(
                         &mut self.system,
                         &strategy,
@@ -474,7 +474,7 @@ impl HomotopyDriver for DcSolver<'_> {
         self.newton_calls += 1;
         let strategy = crate::analyses::convergence::DampedNewton;
         let policy = self.policy.clone();
-        let tolerances = self.system.context.tolerances;
+        let tolerances = self.system.context.tolerances.clone();
         self.solver.solve_with_strategy(
             &mut self.system,
             &strategy,

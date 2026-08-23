@@ -16,11 +16,21 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
-// ── Tolerances (immutable, Copy) ───────────────────────────────────────────
+// ── Tolerances (immutable, Clone) ───────────────────────────────────────────
 
-/// Immutable per-run numerical tolerances. `Copy`. Shared across every analysis
+/// Immutable per-run numerical tolerances. Shared across every analysis
 /// through `Context`. Extracted from the old flat `Context` fields (MD-04).
-#[derive(Debug, Clone, Copy)]
+///
+/// `Clone`, not `Copy` (as of T48/LRMW2-53): `node_vntol_overrides` is an
+/// `Rc<HashMap<..>>`, needed for §6.5.8's per-node nature-`abstol`
+/// inheritance ("The node shall be treated as having a potential abstol
+/// with a value equal to the smallest abstol of all the potential natures
+/// of all the disciplines with which it is associated") — a genuinely
+/// per-net override the single flat `vntol` scalar cannot express. `Rc`
+/// keeps a clone of `Tolerances` (still handed around by value at every
+/// call site that used to rely on `Copy`) cheap — one pointer bump, not a
+/// map copy.
+#[derive(Debug, Clone)]
 pub struct Tolerances {
     pub gmin: f64,
     pub reltol: f64,
@@ -36,6 +46,23 @@ pub struct Tolerances {
     /// Circuit-wide diagonal conductance to ground on every node (default 0).
     /// Helps convergence on floating/poorly-damped topologies (ngspice gshunt).
     pub gshunt: f64,
+    /// Per-node potential-`abstol` override (§6.5.8, LRMW2-53, T48) — a
+    /// node present here uses this value instead of `vntol` in both
+    /// `has_converged`'s update test and `residual_test`'s residual
+    /// check, which is what makes a tighter nature `abstol` *observably*
+    /// tighten convergence rather than merely being carried and ignored.
+    /// Empty by default (every node uses the flat `vntol`, unchanged
+    /// behavior). A node absent here is unaffected — `None` means "no
+    /// declared-nature information reached this node," not "abstol is
+    /// zero."
+    ///
+    /// Flow-nature `abstol` inheritance (§6.5.8's other half, "a flow
+    /// abstol... of all the flow natures") is not covered by this field
+    /// — a disclosed scope cut, not silently dropped: LRMW2-53's
+    /// Done-when asks for "a tighter nature abstol observably tightens
+    /// convergence on the connected net," which the potential/node case
+    /// alone already demonstrates.
+    pub node_vntol_overrides: std::rc::Rc<std::collections::HashMap<crate::analog::NodeIdentifier, f64>>,
 }
 
 impl Default for Tolerances {
@@ -51,11 +78,25 @@ impl Default for Tolerances {
             temperature: 300.15,
             tnom: 300.15,
             gshunt: 0.0,
+            node_vntol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
         }
     }
 }
 
 impl Tolerances {
+    /// §6.5.8's per-node potential-`abstol` (a tighter value than the flat
+    /// `vntol`, if the node has one declared) — `self.vntol` for any node
+    /// absent from `node_vntol_overrides`, unchanged from before this
+    /// field existed.
+    fn vntol_for(&self, variable: &crate::analog::AnalogVariable) -> f64 {
+        match variable {
+            crate::analog::AnalogVariable::Node(id) => {
+                self.node_vntol_overrides.get(id).copied().unwrap_or(self.vntol)
+            }
+            _ => self.vntol,
+        }
+    }
+
     /// The convergence test that used to be `Context::has_converged` — moved
     /// here because it only reads tolerance fields. Same logic, same output.
     pub fn has_converged(
@@ -83,7 +124,7 @@ impl Tolerances {
                 let abs_limit = if reference.is_branch() {
                     self.abstol
                 } else {
-                    self.vntol
+                    self.vntol_for(reference.variable())
                 };
 
                 let magnitude = old_v.abs().max(new_v.abs());
@@ -108,7 +149,7 @@ impl Tolerances {
             if i >= residual.len() {
                 continue;
             }
-            let abs_limit = if r.variable().is_branch() { self.abstol } else { self.vntol };
+            let abs_limit = if r.variable().is_branch() { self.abstol } else { self.vntol_for(r.variable()) };
             let tol = abs_limit + self.reltol * scale[i];
             if residual[i].abs() > tol {
                 return false;

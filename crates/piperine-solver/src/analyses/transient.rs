@@ -820,7 +820,7 @@ impl<'a> TransientSolver<'a> {
     ) -> crate::core::result::Result<Option<TransientStep>> {
         let strategy = crate::analyses::convergence::DampedNewton;
         let policy = self.policy.clone();
-        let tolerances = self.system.context.tolerances;
+        let tolerances = self.system.context.tolerances.clone();
         let t_next = t_n + dt;
 
         // Phase 1 — Trapezoidal over γ·dt → intermediate point x_{n+γ}.
@@ -984,7 +984,7 @@ impl<'a> TransientSolver<'a> {
         post_set_step: bool,
         node_indices: &[usize],
     ) -> StepAssessment {
-        let tolerances = self.system.context.tolerances;
+        let tolerances = self.system.context.tolerances.clone();
         let milne = match (self.solver.state().view(0), self.solver.state().view(1), self.solver.state().view(2)) {
             (Some(a), Some(b), Some(c)) => TrBdf2::milne_lte_indexed(
                 c.as_slice().unwrap(),

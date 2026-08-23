@@ -1864,6 +1864,30 @@ fn lower_function_decl(f: &FunctionDecl) -> Result<crate::pom::Function, ElabErr
     })
 }
 
+/// §6.5.7.1 (LRMW2-53, T48): the declared width of `net_ref` as seen from
+/// `caller`'s own port/wire declarations — `None` when it cannot be
+/// determined here (an implicit/undeclared interconnect signal, §6.5.7.2's
+/// own explicit allowance for exactly this case). An indexed reference
+/// (`bus[3]`) is always a single-bit slice, width 1, regardless of the
+/// underlying bus's own width. `caller`'s `ground`-declared names and the
+/// crate-global ground name list are treated as width 1 (electrical
+/// ground is always scalar in every fixture this task's scope covers).
+pub(super) fn net_ref_width(caller: &Module, net_ref: &crate::pom::NetRef) -> Option<u64> {
+    if net_ref.index().is_some() {
+        return Some(1);
+    }
+    let name = net_ref.net();
+    if caller.is_ground(name) {
+        return Some(1);
+    }
+    caller
+        .ports()
+        .iter()
+        .find(|p| p.name() == name)
+        .map(|p| p.net_type().width())
+        .or_else(|| caller.wires().iter().find(|w| w.name() == name).map(|w| w.net_type().width()))
+}
+
 fn param_value_type(ty: Option<ParamType>) -> ValueType {
     match ty {
         Some(ParamType::Integer) => ValueType::Integer,
