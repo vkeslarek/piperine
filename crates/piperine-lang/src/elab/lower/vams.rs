@@ -821,27 +821,76 @@ impl Elaborator {
             .any(|ov| ov.name.as_deref().is_some_and(|n| ranges_by_param.contains_key(n)));
         let bounds_env = if bounds_env_needed { Some(module_param_env(target)?) } else { None };
 
+        // §6.3.2/§6.3.3: an instance's `#(...)` overrides are either all
+        // positional (bound in declaration order) or all named — the LRM
+        // gives no rule for mixing the two forms within one instance, so a
+        // `#(...)` list with both kinds fails loud rather than guessing an
+        // interpretation.
+        let all_positional = !param_overrides.is_empty() && param_overrides.iter().all(|ov| ov.name.is_none());
+        let all_named = param_overrides.iter().all(|ov| ov.name.is_some());
+        if !param_overrides.is_empty() && !all_positional && !all_named {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "instance `{}`: `#(...)` parameter overrides mix positional and named forms \
+                 (§6.3.2/§6.3.3 define no combined form — use one style per instance)",
+                ast_inst.name
+            ))));
+        }
+
         let mut params = Vec::new();
-        for ov in param_overrides {
-            let name = ov.name.clone().ok_or_else(|| {
-                ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: `#(...)` parameter overrides must be named",
-                    ast_inst.name
-                )))
-            })?;
-            let expr = ov.value.as_ref().ok_or_else(|| {
-                ElabError::from(ElabErrorKind::Other(format!(
-                    "instance `{}`: parameter override `{name}` has no value",
-                    ast_inst.name
-                )))
-            })?;
-            let value = eval_param_default(expr, env)?;
-            if let (Some(ranges), Some(bounds)) =
-                (ranges_by_param.get(name.as_str()).copied(), &bounds_env)
-            {
-                check_param_ranges(&name, &value, ranges, bounds)?;
+        if all_positional {
+            // §6.3.2: bound in the order the module declares its
+            // (non-local, non-alias) parameters. "the left-most parameter
+            // assignment(s) can not be skipped" is naturally satisfied by
+            // positional binding; supplying more overrides than declared
+            // parameters fails loud rather than silently dropping the
+            // extras.
+            let ordered_names = target_param_order(target);
+            if param_overrides.len() > ordered_names.len() {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: {} positional parameter override(s) given but module `{module_name}` \
+                     declares only {} parameter(s) (§6.3.2)",
+                    ast_inst.name,
+                    param_overrides.len(),
+                    ordered_names.len(),
+                ))));
             }
-            params.push((name, value));
+            for (ov, name) in param_overrides.iter().zip(ordered_names.iter()) {
+                let expr = ov.value.as_ref().ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::Other(format!(
+                        "instance `{}`: positional parameter override for `{name}` has no value",
+                        ast_inst.name
+                    )))
+                })?;
+                let value = eval_param_default(expr, env)?;
+                if let (Some(ranges), Some(bounds)) =
+                    (ranges_by_param.get(name.as_str()).copied(), &bounds_env)
+                {
+                    check_param_ranges(name, &value, ranges, bounds)?;
+                }
+                params.push((name.clone(), value));
+            }
+        } else {
+            for ov in param_overrides {
+                let name = ov.name.clone().ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::Other(format!(
+                        "instance `{}`: `#(...)` parameter overrides must be named",
+                        ast_inst.name
+                    )))
+                })?;
+                let expr = ov.value.as_ref().ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::Other(format!(
+                        "instance `{}`: parameter override `{name}` has no value",
+                        ast_inst.name
+                    )))
+                })?;
+                let value = eval_param_default(expr, env)?;
+                if let (Some(ranges), Some(bounds)) =
+                    (ranges_by_param.get(name.as_str()).copied(), &bounds_env)
+                {
+                    check_param_ranges(&name, &value, ranges, bounds)?;
+                }
+                params.push((name, value));
+            }
         }
 
         Ok(Instance {
@@ -1180,6 +1229,26 @@ fn udp_port_order(decl: &crate::ast::PrimitiveDecl) -> Vec<String> {
                 crate::ast::UdpPortDecl::Reg { .. } => vec![],
             }
         })
+        .collect()
+}
+
+/// The module's declared, non-local parameters in source order — §6.3.2's
+/// binding order for `#(pos0, pos1, ...)` positional overrides.
+/// `localparam` declarations are excluded per §6.3.2 ("Local parameter
+/// declarations are not considered when assigning by order"); `aliasparam`
+/// is a distinct `ModuleItem` variant and is never yielded by the
+/// `ModuleItem::Param` filter, satisfying the same sentence's "parameter
+/// alias declarations are also skipped".
+fn target_param_order(decl: &ModuleDecl) -> Vec<String> {
+    decl.items
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::Param(p) if !p.is_local => {
+                Some(p.names.iter().map(|pa| pa.name.clone()))
+            }
+            _ => None,
+        })
+        .flatten()
         .collect()
 }
 
