@@ -228,7 +228,13 @@ impl<'a> LowerCtx<'a> {
 
     /// The shadow `var` bridging digital-domain node `id` (named `name`,
     /// for a readable IR symbol) into this analog body. Reuses the same
-    /// shadow if `id` was already read earlier in this behavior.
+    /// shadow if `id` was already read earlier in this behavior. `wreal`
+    /// (T52, LRMW2-45, §3.7) never reaches this path at all — it classifies
+    /// `Domain::Analog` (`resolve/pom/structure.rs::domain_of`'s own doc
+    /// comment), so every other digital node this bridges is one of §7.3.1
+    /// Table 7-1's "bit" types (`wire`/`reg`/a discrete-discipline port),
+    /// which `Type::Bool` already represents correctly (the LRM's own
+    /// `onebit_dac` example only ever compares one against `0`).
     pub fn shadow_var_for(&mut self, id: NodeId, name: &str) -> VarId {
         if let Some((_, var)) = self.digital_shadows.iter().find(|(node, _)| *node == id) {
             return *var;
@@ -581,6 +587,25 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                             inputs.push(port.node);
                             outputs.push(port.node);
                         }
+                    }
+                }
+                // T52 (LRMW2-45, §3.7): an internal (non-port) net
+                // declared with one of the four 1364 net-type keywords is
+                // a legitimate digital write target — `reg` by procedural
+                // assignment (`initial`/`always`), `wire`/`tri`/`wreal` by
+                // continuous assign (`assign w = expr;`, which
+                // `elab/lower/vams.rs` lowers to a synthesized `always
+                // @(*)` — the *same* procedural-assignment shape a `reg`
+                // write takes by the time this pass sees it). Registered
+                // as a digital output here so that assignment passes IR
+                // validation instead of failing "not a digital output" (a
+                // check that, before this task, only ever considered
+                // ports).
+                for w in m.wires() {
+                    if matches!(w.net_type(), piperine_lang::pom::NetType::Digital1364(_))
+                        && let Some((id, _)) = bodies[i].symbols.nodes().find(|(_, n)| n.name == w.name())
+                    {
+                        outputs.push(id);
                     }
                 }
 

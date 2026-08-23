@@ -72,21 +72,74 @@ impl std::fmt::Display for NetRef {
 
 // ─────────────────────────────── Net types ───────────────────────────────────
 
-/// A port/wire type — a discipline, or a fixed-size array of one.
+/// One of the four IEEE 1364-2005 net-type keywords VAMS carries forward
+/// verbatim (§3.7) — distinct from a *discipline* name even though both
+/// are spelled as a bare leading identifier in a `net_declaration`
+/// (`grammar/item.rs::parse_net_decl` captures either shape the same way;
+/// the elaborator is what tells them apart, `elab/lower/vams.rs::
+/// declarator_net_type`). `Wire`/`Tri`/`Reg` are ordinary 4-state digital
+/// nets (Table 7-1's "bit" row); `Wreal` is real-valued (§3.7: "shall not
+/// store its value... initial value of zero", never 4-state) — the two
+/// kinds get different [`crate::pom::ValueType`]-adjacent treatment where
+/// a continuous context reads one (T52, LRMW2-45).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DigitalNetKind {
+    Wire,
+    Tri,
+    Reg,
+    Wreal,
+}
+
+impl DigitalNetKind {
+    /// Recognizes one of the four keywords by exact spelling — never a
+    /// prefix/case-insensitive match, so a user's own identically-spelled
+    /// discipline name (unusual but legal) is never silently reinterpreted
+    /// as one of these built-ins by accident... except these four spellings
+    /// *are* reserved (Annex B): a `discipline wire { ... }` declaration is
+    /// itself illegal, so this exact-match is unambiguous in practice.
+    pub fn from_keyword(s: &str) -> Option<Self> {
+        match s {
+            "wire" => Some(Self::Wire),
+            "tri" => Some(Self::Tri),
+            "reg" => Some(Self::Reg),
+            "wreal" => Some(Self::Wreal),
+            _ => None,
+        }
+    }
+}
+
+/// A port/wire type — a discipline, one of the four §3.7 1364 net-type
+/// keywords, or a fixed-size array of either.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NetType {
     Discipline(String),
+    /// §3.7 — see [`DigitalNetKind`]'s own doc comment.
+    Digital1364(DigitalNetKind),
     Array(Box<NetType>, u64),
 }
 
 impl NetType {
-    /// Returns the innermost discipline name, unwinding any arrays.
+    /// Returns the innermost discipline name, unwinding any arrays. A
+    /// [`Self::Digital1364`] net has no discipline at all (§3.7's own
+    /// point — these are not disciplines) — returns its own keyword
+    /// spelling instead, so a caller that only wants *some* diagnostic
+    /// label still gets a meaningful one rather than a panic.
     pub fn discipline_name(&self) -> &str {
-        match self { Self::Discipline(s) => s, Self::Array(inner, _) => inner.discipline_name() }
+        match self {
+            Self::Discipline(s) => s,
+            Self::Digital1364(DigitalNetKind::Wire) => "wire",
+            Self::Digital1364(DigitalNetKind::Tri) => "tri",
+            Self::Digital1364(DigitalNetKind::Reg) => "reg",
+            Self::Digital1364(DigitalNetKind::Wreal) => "wreal",
+            Self::Array(inner, _) => inner.discipline_name(),
+        }
     }
     /// Total flattened width (product of all array dimensions, 1 for a scalar).
     pub fn width(&self) -> u64 {
-        match self { Self::Discipline(_) => 1, Self::Array(inner, n) => inner.width() * n }
+        match self {
+            Self::Discipline(_) | Self::Digital1364(_) => 1,
+            Self::Array(inner, n) => inner.width() * n,
+        }
     }
 }
 

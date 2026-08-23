@@ -20,6 +20,26 @@ const NOSPAN: PreprocessedSpan = PreprocessedSpan { start: 0, end: 0 };
 /// terminal flows through here.
 fn domain_of(prog: &Design, net_type: &NetType) -> Domain {
     let discipline_name = match net_type {
+        // §3.7 (T52, LRMW2-45): `wire`/`tri`/`reg` are 1364 net keywords,
+        // not disciplines — always digital-domain, no discipline lookup
+        // involved (there is none to look up). `wreal` is the one
+        // exception in this family: §3.7 itself describes it as "a
+        // real-valued physical connection" ("shall not store its value",
+        // no 4-state semantics at all) — the *analog* domain's own native
+        // representation already gives it exactly that (a value carried
+        // as a plain `f64`, kept as an ordinary `Ident` through
+        // `resolve_expr`, no digital-to-analog shadow-variable bridge
+        // needed). Pre-T52, an undeclared discipline name (which `wreal`
+        // used to become) fell back to `Domain::Analog` here by the
+        // conservative default below — this arm makes that choice
+        // explicit and permanent for `wreal` specifically, rather than a
+        // side effect of `NetType::Discipline("wreal")` never resolving
+        // (root `tests/vams_continuous_assign_e2e.rs`'s own `assign out =
+        // V(in);` pre-existing test depends on `out` staying analog-domain
+        // for its digital/analog target-lowering split in `elab/lower/
+        // vams.rs` to choose the ideal-source contribution idiom).
+        NetType::Digital1364(piperine_lang::pom::DigitalNetKind::Wreal) => return Domain::Analog,
+        NetType::Digital1364(_) => return Domain::Digital,
         NetType::Discipline(name) => name.as_str(),
         NetType::Array(inner, _) => return domain_of(prog, inner),
     };
@@ -101,7 +121,7 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
                     symbols.add_node(format!("{}[{}]", w.name(), i), domain);
                 }
             }
-            NetType::Discipline(_) => {
+            NetType::Discipline(_) | NetType::Digital1364(_) => {
                 symbols.add_node(w.name(), domain);
             }
         }

@@ -1695,7 +1695,15 @@ fn lower_net_attrs(
 /// A `[msb:lsb]` range widens a scalar discipline into `NetType::Array`
 /// (LRM §3.7/3.6.3 `range`) — width is `|msb - lsb| + 1`.
 fn declarator_net_type(d: &Declarator, discipline: &str, env: &ConstEnv) -> Result<NetType, ElabError> {
-    let base = NetType::Discipline(discipline.to_string());
+    // §3.7 (T52, LRMW2-45): `wire`/`tri`/`reg`/`wreal` are 1364 net-type
+    // keywords, not discipline names — before this fix, `wreal in;`
+    // silently became `NetType::Discipline("wreal")`, which then failed
+    // later in `ResolveDisciplines` with a misleading "unknown discipline
+    // `wreal`" error instead of behaving as the LRM's own real-valued net.
+    let base = match crate::pom::DigitalNetKind::from_keyword(discipline) {
+        Some(kind) => NetType::Digital1364(kind),
+        None => NetType::Discipline(discipline.to_string()),
+    };
     match &d.range {
         None => Ok(base),
         Some(r) => {

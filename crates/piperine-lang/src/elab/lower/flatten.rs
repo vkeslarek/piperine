@@ -413,7 +413,7 @@ impl FlattenHierarchy {
             .or_else(|| child.wires.iter().find(|w| w.name == net).map(|w| &w.ty))?;
         match ty {
             NetType::Array(_, n) => Some(*n),
-            NetType::Discipline(_) => None,
+            NetType::Discipline(_) | NetType::Digital1364(_) => None,
         }
     }
 }
