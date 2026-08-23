@@ -118,4 +118,56 @@ mod tests {
         let v = eval_const_math("ln", &[std::f64::consts::E.powf(1.0)]).unwrap();
         assert!((v - 1.0).abs() < 1e-12, "ln(exp(1.0)) = {v}");
     }
+
+    // LRMW2-54 (T47): the audit's "missing from the catalogue" finding for
+    // these six does not reproduce — they were already in `MATH_FNS`.
+    // Table 4-14/4-15 round trip through the same `eval_const_math` path
+    // `piperine-codegen`'s constant folder calls; the JITted-device round
+    // trip lives in `crates/piperine-codegen/tests/math_intrinsics_lrm.rs`
+    // (Done-when's own "not just the Rust wrapper" bar).
+
+    #[test]
+    fn ceil_rounds_toward_positive_infinity() {
+        assert_eq!(eval_const_math("ceil", &[2.3]), Some(3.0));
+        assert_eq!(eval_const_math("ceil", &[-2.3]), Some(-2.0));
+    }
+
+    #[test]
+    fn atan2_is_arc_tangent_of_y_over_x() {
+        let v = eval_const_math("atan2", &[1.0, 1.0]).unwrap();
+        assert!((v - std::f64::consts::FRAC_PI_4).abs() < 1e-12, "atan2(1,1) = {v}");
+    }
+
+    #[test]
+    fn hypot_is_the_euclidean_norm() {
+        assert_eq!(eval_const_math("hypot", &[3.0, 4.0]), Some(5.0));
+    }
+
+    #[test]
+    fn asinh_inverts_sinh() {
+        let v = eval_const_math("asinh", &[1.0_f64.sinh()]).unwrap();
+        assert!((v - 1.0).abs() < 1e-12, "asinh(sinh(1.0)) = {v}");
+    }
+
+    #[test]
+    fn acosh_inverts_cosh() {
+        let v = eval_const_math("acosh", &[2.0_f64.cosh()]).unwrap();
+        assert!((v - 2.0).abs() < 1e-12, "acosh(cosh(2.0)) = {v}");
+    }
+
+    #[test]
+    fn atanh_inverts_tanh() {
+        let v = eval_const_math("atanh", &[0.5_f64.tanh()]).unwrap();
+        assert!((v - 0.5).abs() < 1e-12, "atanh(tanh(0.5)) = {v}");
+    }
+
+    /// Arity errors are loud (Done-when) — `eval_const_math` returns
+    /// `None` (the const-evaluator's own not-a-constant signal, which its
+    /// caller turns into a fail-loud diagnostic) rather than silently
+    /// truncating/padding the argument list.
+    #[test]
+    fn wrong_arity_is_not_silently_truncated() {
+        assert_eq!(eval_const_math("hypot", &[3.0, 4.0, 5.0]), None);
+        assert_eq!(eval_const_math("ceil", &[]), None);
+    }
 }
