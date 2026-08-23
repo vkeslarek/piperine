@@ -15,6 +15,8 @@
 
 use std::fmt;
 
+use crate::core::element::Element;
+
 /// A runtime parameter, query, or operating-variable value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -282,6 +284,66 @@ impl Default for ModelDescriptor {
     }
 }
 
+// ---------------------------------------------------------------------------
+// $simprobe (§9.16, T57/LRMW2-50)
+// ---------------------------------------------------------------------------
+
+/// `$simprobe(inst_name, param_name[, default])`'s resolution rule (§9.16):
+/// finds `inst_name` among `devices` by [`Element::name`](crate::core::element::Element::name)
+/// and, if found, `param_name` among its own [`Element::read_opvars`]
+/// (`Introspect`'s default-empty query surface). Either miss is a typed
+/// [`SimprobeError`] — never a silent `0.0`/`NaN` — matching the host
+/// probe API's own fail-loud contract (`piperine-api`'s `InstanceView::
+/// opvar`, which this function is built to agree with byte-for-byte: both
+/// read the identical `Element::read_opvars()` data, so a value this
+/// function returns is provably the same value a host probe of the same
+/// instance/opvar pair would report — `tests/simprobe_matches_host_probe.rs`
+/// asserts the two agree on a live circuit).
+///
+/// **Scope note (SPEC_DEVIATION, disclosed):** this is the *mechanism*
+/// §9.16 needs — proven correct and equivalent to host probing — not yet
+/// reachable from a `$simprobe(...)` call written inside a `.vams`
+/// model's own analog body. Wiring that needs a live per-timestep
+/// snapshot of every *other* instance's `read_opvars()` threaded through
+/// the analog JIT ABI (`emit::abi::SimCtx`, in `piperine-codegen`, which
+/// this crate does not depend on — CLAUDE.md: "`piperine-solver` ...
+/// does not depend on codegen") before a JIT-compiled residual can call
+/// it; building that snapshot-refresh plumbing is future work, the same
+/// tier `idtmod`/`absdelay`/`table`/`ac_stim` already sit at per
+/// CLAUDE.md's own "Known gaps" section.
+pub fn simprobe<E: Element + ?Sized>(
+    devices: &[Box<E>],
+    inst_name: &str,
+    param_name: &str,
+) -> Result<f64, SimprobeError> {
+    let device = devices
+        .iter()
+        .find(|d| d.name() == inst_name)
+        .ok_or_else(|| SimprobeError::UnknownInstance(inst_name.to_string()))?;
+    device
+        .read_opvars()
+        .into_iter()
+        .find(|(n, _)| n == param_name)
+        .map(|(_, v)| v)
+        .ok_or_else(|| SimprobeError::UnknownOpvar {
+            instance: inst_name.to_string(),
+            opvar: param_name.to_string(),
+        })
+}
+
+/// `$simprobe`'s two fail-loud conditions (§9.16: "If either the
+/// inst_name or param_name cannot be resolved... an error shall be
+/// generated" — unless the call site supplied the optional fallback
+/// expression, a caller-side concern this type doesn't need to know
+/// about).
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum SimprobeError {
+    #[error("$simprobe: no sibling instance named `{0}`")]
+    UnknownInstance(String),
+    #[error("$simprobe: instance `{instance}` has no opvar `{opvar}`")]
+    UnknownOpvar { instance: String, opvar: String },
+}
+
 /// Metadata for one declared terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerminalDescriptor {
@@ -521,5 +583,35 @@ mod tests {
         assert!(!sel.contains("r1", "ddt[0]"));
         assert!(!sel.contains("c1", "i(p,n)"));
         assert!(!sel.contains("missing", "i(p,n)"));
+    }
+
+    /// §9.16/T57: a resolvable `(inst_name, param_name)` pair returns the
+    /// device's real opvar value.
+    #[test]
+    fn simprobe_resolves_a_sibling_opvar() {
+        let devices: Vec<Box<dyn Element>> = vec![Box::new(Resistor { r: 500.0 })];
+        let v = simprobe(&devices, "r1", "g").expect("resolves");
+        assert!((v - 1.0 / 500.0).abs() < 1e-15);
+    }
+
+    /// Done-when: "an invalid probe target is loud" — an unknown
+    /// instance name is a typed error, never a silent `0.0`.
+    #[test]
+    fn simprobe_unknown_instance_is_loud() {
+        let devices: Vec<Box<dyn Element>> = vec![Box::new(Resistor { r: 500.0 })];
+        let err = simprobe(&devices, "no_such_instance", "g").unwrap_err();
+        assert_eq!(err, SimprobeError::UnknownInstance("no_such_instance".to_string()));
+    }
+
+    /// Done-when: "an invalid probe target is loud" — a known instance
+    /// with an unknown opvar name is also a typed error.
+    #[test]
+    fn simprobe_unknown_opvar_is_loud() {
+        let devices: Vec<Box<dyn Element>> = vec![Box::new(Resistor { r: 500.0 })];
+        let err = simprobe(&devices, "r1", "no_such_opvar").unwrap_err();
+        assert_eq!(
+            err,
+            SimprobeError::UnknownOpvar { instance: "r1".to_string(), opvar: "no_such_opvar".to_string() }
+        );
     }
 }

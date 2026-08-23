@@ -12,7 +12,7 @@ pub use crate::core::coverage::{CoverageReport, ReportedCoverCross, ReportedCove
 pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
-    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
+    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind, simprobe, SimprobeError,
     TerminalDescriptor, TerminalKind,
     Value, ValueKind, SignConvention,
 };
