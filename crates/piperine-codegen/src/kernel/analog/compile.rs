@@ -164,8 +164,10 @@ fn limit_branches_into(
         }
         // PortAccess never reaches codegen: elab::lower::vams rewrites it
         // into a sum of AccessFunction reads before a Module leaves the
-        // elaborator (LRMC-C1-10).
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } => {}
+        // elaborator (LRMC-C1-10). Hier (§6.7) never reaches codegen
+        // either: `resolve/pom/expr.rs::resolve_expr` (T50) rewrites it
+        // into a plain Ident first.
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } | PomExpr::Hier { .. } => {}
     }
 }
 

@@ -194,6 +194,26 @@ impl Grammar {
             }
             Tok::Punct("{") => self.parse_concat_or_replication(),
             Tok::Punct("'{") => self.parse_assignment_pattern(),
+            // §6.2.1/§6.7 Syntax 6-9: `$root` is the hierarchical-path
+            // root marker, not a system function — distinguished from
+            // every other `$name` (which is always a call, possibly with
+            // an empty `()` argument list) by what follows: `$root` is
+            // legal only immediately before `.`, so `$root(...)`/a bare
+            // `$root` with no trailing `.` falls through to the ordinary
+            // system-function-call arm below and fails there like any
+            // other unrecognized `$name` would.
+            Tok::SystemIdent(name) if name == "root" && matches!(self.peek_at(1), Tok::Punct(".")) => {
+                self.bump();
+                self.expect_punct(".")?;
+                let (first, mut end) = self.expect_ident()?;
+                let mut path = vec![first];
+                while self.eat_punct(".") {
+                    let (seg, seg_span) = self.expect_ident()?;
+                    path.push(seg);
+                    end = seg_span;
+                }
+                Ok(Expr::Hier { span: crate::error::PreprocessedSpan::new(span.start, end.end), root: true, path })
+            }
             Tok::SystemIdent(name) => {
                 self.bump();
                 let args = self.parse_optional_arg_list()?;
@@ -244,6 +264,25 @@ impl Grammar {
                     return Err(self.unexpected(
                         "'(' after an attribute instance on a function name (LRM §2.9 Example 7)".to_string(),
                     ));
+                }
+                // §6.7 Syntax 6-9: an un-rooted `hierarchical_identifier`
+                // is just `identifier {'.' identifier}` — a bare `Ident`
+                // followed by `.` continues into a `Hier` path (§6.2.1:
+                // resolved against the local scope first, since no
+                // `$root.` prefix was given).
+                if self.at_punct(".") {
+                    let mut path = vec![name];
+                    let mut end = span;
+                    while self.eat_punct(".") {
+                        let (seg, seg_span) = self.expect_ident()?;
+                        path.push(seg);
+                        end = seg_span;
+                    }
+                    return Ok(Expr::Hier {
+                        span: crate::error::PreprocessedSpan::new(span.start, end.end),
+                        root: false,
+                        path,
+                    });
                 }
                 Ok(Expr::Ident { span, name })
             }

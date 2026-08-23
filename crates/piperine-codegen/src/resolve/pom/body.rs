@@ -185,13 +185,20 @@ pub(crate) struct LowerCtx<'a> {
     /// statement's direct value position) is the fail-loud case
     /// `inline_user_fn` itself reports through `errors`.
     pub write_backs: Vec<piperine_lang::ast::Stmt>,
+    /// The design's inferred top-level module name (`Design::top`'s own
+    /// name), if any — the anchor a `$root`-rooted [`PomExpr::Hier`] path
+    /// resolves its first segment against (§6.2.1). Cloned once at
+    /// construction rather than borrowing all of `Design`, matching this
+    /// context's existing "own copy of what it needs" shape (`nodes`/
+    /// `vars` are the same kind of snapshot).
+    pub top_module: Option<String>,
 }
 
 impl<'a> LowerCtx<'a> {
     /// Create a fresh lowering context. Snapshots the symbol table's
     /// name → id maps once — every later lookup is a hash probe, not a
     /// table scan.
-    pub fn new(symbols: &'a mut SymbolTable, module_name: String, is_digital: bool) -> Self {
+    pub fn new(symbols: &'a mut SymbolTable, module_name: String, is_digital: bool, top_module: Option<String>) -> Self {
         let nodes = symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
         let vars = symbols.vars().map(|(id, v)| (v.name.clone(), id)).collect();
         Self {
@@ -210,6 +217,7 @@ impl<'a> LowerCtx<'a> {
             nature_abstols: HashMap::new(),
             inlining_stack: Vec::new(),
             write_backs: Vec::new(),
+            top_module,
         }
     }
 
@@ -270,6 +278,78 @@ impl<'a> LowerCtx<'a> {
             });
             NodeId::GROUND
         })
+    }
+
+    /// Resolve a [`PomExpr::Hier`] path (LRM §6.7 `hierarchical_identifier`,
+    /// §6.2.1 `$root`) to a plain node-name `Ident`, or record a fail-loud
+    /// error and return a harmless `0` placeholder (SIMPLIFICATION.md P5 —
+    /// never a silently mis-wired node).
+    ///
+    /// A local (`root == false`) path resolves against *this* module's own
+    /// flattened instance tree: `FlattenHierarchy` already names every
+    /// nested net by its dotted instance path (`elab/lower/flatten.rs`'s
+    /// `"{inst}.{net}"` rename), and `build_symbols_and_ports` builds this
+    /// module's node table from exactly that flattened form — so a local
+    /// path is already a registered node name, for *any* module, not only
+    /// the design's top (LRM's own words: a local path "starts at the
+    /// level where the path is being used").
+    ///
+    /// A `$root`-rooted path's first segment must name the design's
+    /// inferred top-level module (§6.2.1); once that segment is stripped,
+    /// resolution is identical to the local form — but only when *this*
+    /// module IS that top module. `$root` used from a non-top module would
+    /// need to reach into a different module's separately-JIT'd analog
+    /// kernel (each module compiles once and is instantiated many times,
+    /// CLAUDE.md's "no re-JIT" pipeline — there is no cross-kernel channel
+    /// for that today), so it fails loud rather than wiring something
+    /// wrong. (T50/LRMW2-42 SPEC_DEVIATION: `$root` reads are scoped to the
+    /// design's own top-level module; deeper cross-module probing is a
+    /// follow-up.)
+    pub fn resolve_hier(&mut self, root: bool, path: &[String]) -> PomExpr {
+        let placeholder = || PomExpr::Number { span: super::expr::nospan(), value: piperine_lang::lexer::NumberLit::Integer(0) };
+        let joined = path.join(".");
+        let local = if root {
+            let Some(top) = self.top_module.clone() else {
+                self.errors.push(LowerError {
+                    module: self.module_name.clone(),
+                    what: "hierarchical reference (§6.2.1): design has no inferred top-level module",
+                    name: joined,
+                });
+                return placeholder();
+            };
+            // Grammar guarantees at least one segment after `$root.`.
+            let first = &path[0];
+            if *first != top {
+                self.errors.push(LowerError {
+                    module: self.module_name.clone(),
+                    what: "hierarchical reference (§6.2.1): `$root`'s first segment must name the design's top-level module",
+                    name: format!("{joined} (failing segment: `{first}`, top module is `{top}`)"),
+                });
+                return placeholder();
+            }
+            if self.module_name != top {
+                self.errors.push(LowerError {
+                    module: self.module_name.clone(),
+                    what: "hierarchical reference (§6.2.1): `$root` read from a non-top-level module is not yet supported",
+                    name: joined,
+                });
+                return placeholder();
+            }
+            path[1..].join(".")
+        } else {
+            joined.clone()
+        };
+        if self.lookup_node(&local).is_some() {
+            PomExpr::Ident { span: super::expr::nospan(), name: local }
+        } else {
+            let failing = local.rsplit('.').next().unwrap_or(&local).to_string();
+            self.errors.push(LowerError {
+                module: self.module_name.clone(),
+                what: "hierarchical net (§6.7)",
+                name: format!("{local} (failing segment: `{failing}`)"),
+            });
+            placeholder()
+        }
     }
 }
 
@@ -335,6 +415,12 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     // Disciplines are a design-wide registry, not per-module — resolved once.
     let access_kinds = build_access_kinds(prog);
     let nature_abstols = build_nature_abstols(prog);
+    // The design's inferred top-level module name (LRM §6.2.1's `$root`
+    // anchor, T50) — `None` when the host never called `Design::set_top`
+    // (e.g. a bare `parse_and_elaborate` with no host-level top inference),
+    // in which case a `$root`-rooted hierarchical reference fails loud
+    // rather than guessing a module.
+    let top_module_name: Option<String> = prog.top().map(|m| m.name().to_string());
 
     // Pass 1: build the symbol table + resolved ports for every module.
     for name in &names {
@@ -464,7 +550,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
 
         for behavior in m.behaviors() {
             let is_digital = behavior.is_digital();
-            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital);
+            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, top_module_name.clone());
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.default_transition = prog.directives().default_transition;
@@ -604,7 +690,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
         // predicate form with no margin lands in `errors` — the run fails
         // loud, never a silent `0.0`.
         if !m.constraints().is_empty() {
-            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false);
+            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false, top_module_name.clone());
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.default_transition = prog.directives().default_transition;

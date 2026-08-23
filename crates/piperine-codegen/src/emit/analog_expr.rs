@@ -123,6 +123,15 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             Expr::PortAccess { .. } => {
                 Err(CodegenError::unsupported("unresolved port access in a scalar analog expression"))
             }
+
+            // A `Hier` reference (§6.7/§6.2.1) never reaches codegen:
+            // `resolve/pom/expr.rs::resolve_expr` rewrites every occurrence
+            // into a plain `Ident` naming its resolved flat net (or fails
+            // the whole lowering) before a body leaves that pass (T50).
+            // Reaching this arm means that invariant broke.
+            Expr::Hier { .. } => {
+                Err(CodegenError::unsupported("unresolved hierarchical reference in a scalar analog expression"))
+            }
         }
     }
 

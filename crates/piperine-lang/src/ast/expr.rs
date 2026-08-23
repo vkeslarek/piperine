@@ -72,6 +72,19 @@ pub enum Expr {
     /// A `$`-prefixed system function call used as a value, e.g.
     /// `$abstime`, `$temperature` — LRM chapter 9.
     SystemFunctionCall { span: PreprocessedSpan, name: String, args: Vec<Expr> },
+    /// A hierarchical name reference — `u1.u2.net` or `$root.top.net` —
+    /// LRM §6.7 Syntax 6-9 (`hierarchical_identifier ::= [ $root . ]
+    /// { identifier '.' } identifier`), used as a `primary` (§7.3.7 Syntax
+    /// 7-1) wherever a plain identifier is legal, e.g. inside `V(...)`/
+    /// `I(...)`. `root == true` marks an explicit `$root.` prefix (§6.2.1:
+    /// disambiguates from a same-spelled local path, which otherwise takes
+    /// precedence); `path` is the remaining dot-separated identifier
+    /// segments, always length >= 1 (a lone unqualified identifier is
+    /// `Expr::Ident`, never a one-segment `Hier`). Array-indexed
+    /// mid-path segments (`adder1[5].sum`) are outside this task's scope
+    /// (LRMW2-42) and are rejected by the parser rather than silently
+    /// dropping the index.
+    Hier { span: PreprocessedSpan, root: bool, path: Vec<String> },
     /// `'{expr, expr, ...}` (plain list) or `'{count{expr, expr, ...}}`
     /// (replicated list) — an assignment pattern, LRM §4.2.14/Annex A.8.1
     /// `assignment_pattern`. A distinct node from [`Expr::Concat`]/
@@ -101,6 +114,7 @@ impl Expr {
             | Expr::AccessFunction { span, .. }
             | Expr::PortAccess { span, .. }
             | Expr::SystemFunctionCall { span, .. }
+            | Expr::Hier { span, .. }
             | Expr::AssignmentPattern { span, .. } => *span,
         }
     }

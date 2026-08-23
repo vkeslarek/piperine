@@ -1529,7 +1529,10 @@ fn expr_check_no_genvar_ref(expr: &Expr, genvars: &[String]) -> Result<(), ElabE
             }
             Ok(())
         }
-        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } => Ok(()),
+        // A `Hier` path's segments are literal strings, never sub-`Expr`s
+        // (unlike `Index`'s subscript), so there is nothing to recurse
+        // into that could reference a genvar.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => Ok(()),
         Expr::Unary { operand, .. } => expr_check_no_genvar_ref(operand, genvars),
         Expr::Binary { lhs, rhs, .. } => {
             expr_check_no_genvar_ref(lhs, genvars)?;
@@ -2412,7 +2415,7 @@ fn rewrite_port_access_expr(expr: Expr, branches: &[Branch]) -> Expr {
             replicate: replicate.map(|c| Box::new(rewrite_port_access_expr(*c, branches))),
             parts: parts.into_iter().map(|p| rewrite_port_access_expr(p, branches)).collect(),
         },
-        other @ (Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. }) => other,
+        other @ (Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::Hier { .. }) => other,
     }
 }
 

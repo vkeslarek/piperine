@@ -124,6 +124,7 @@ impl ConstEnv {
             | Expr::PartSelect { .. }
             | Expr::AccessFunction { .. }
             | Expr::PortAccess { .. }
+            | Expr::Hier { .. }
             | Expr::SystemFunctionCall { .. } => Err(ConstEvalError::NotConst(
                 "not yet supported by the elaboration-constant evaluator".into(),
             )),

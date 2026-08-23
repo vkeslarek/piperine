@@ -90,6 +90,15 @@ impl Codegen for Expr {
             Expr::PortAccess { .. } => Err(CodegenError::unsupported(format!(
                 "unresolved port access in digital codegen: {self:?}"
             ))),
+            // §6.7/§6.2.1 hierarchical references (T50, LRMW2-42) are
+            // resolved for the analog path only (`resolve/pom/expr.rs`);
+            // the digital path keeps the POM `Stmt` tree unresolved (this
+            // file's own doc comment), so a `Hier` here is a genuine,
+            // disclosed scope gap rather than a broken invariant — fails
+            // loud rather than silently misreading the wrong net.
+            Expr::Hier { .. } => Err(CodegenError::unsupported(format!(
+                "hierarchical reference (LRM §6.7) in a digital expression is not yet supported: {self:?}"
+            ))),
         }
     }
 }

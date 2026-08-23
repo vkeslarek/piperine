@@ -453,9 +453,9 @@ fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::resolve::Var
 pub(crate) fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
     f(expr);
     match expr {
-        // Never reaches codegen — see this file's other PortAccess arm
-        // (rewrite_expr) for why.
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } => {}
+        // Never reaches codegen — see this file's other PortAccess/Hier
+        // arm (rewrite_expr) for why.
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } | PomExpr::Hier { .. } => {}
         PomExpr::Unary { operand, .. } => visit_all(operand, f),
         PomExpr::Binary { lhs, rhs, .. } => {
             visit_all(lhs, f);
@@ -1792,8 +1792,8 @@ fn subst_scope(expr: &PomExpr, scope: &Scope) -> PomExpr {
             replicate: replicate.as_ref().map(|r| Box::new(subst_scope(r, scope))),
             parts: parts.iter().map(|p| subst_scope(p, scope)).collect(),
         },
-        // Never reaches codegen — see this file's other PortAccess arms.
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::PortAccess { .. } => expr.clone(),
+        // Never reaches codegen — see this file's other PortAccess/Hier arms.
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::PortAccess { .. } | PomExpr::Hier { .. } => expr.clone(),
     }
 }
 
@@ -1896,8 +1896,10 @@ pub(crate) fn rewrite_expr(expr: &PomExpr, f: &mut impl FnMut(&PomExpr) -> PomEx
     let rewritten = match expr {
         // PortAccess never reaches codegen: elab::lower::vams rewrites it
         // into a sum of AccessFunction reads before a Module leaves the
-        // elaborator (LRMC-C1-10).
-        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } => {
+        // elaborator (LRMC-C1-10). Hier (§6.7) never reaches codegen
+        // either: `resolve/pom/expr.rs::resolve_expr` (T50) rewrites it
+        // into a plain Ident first.
+        PomExpr::Number { .. } | PomExpr::Str { .. } | PomExpr::Ident { .. } | PomExpr::PortAccess { .. } | PomExpr::Hier { .. } => {
             expr.clone()
         }
         PomExpr::SystemFunctionCall { span, name, args } => PomExpr::SystemFunctionCall {

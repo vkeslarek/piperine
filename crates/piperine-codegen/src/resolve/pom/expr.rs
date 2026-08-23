@@ -98,7 +98,12 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
         // every occurrence into a KCL-equivalent sum of AccessFunction
         // reads before a Module leaves the elaborator (LRMC-C1-10). A leaf
         // arm here only satisfies exhaustiveness for the shared Expr type.
-        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } => {}
+        // `Hier`'s path is a `Vec<String>` of literal segments, not
+        // sub-`Expr`s (unlike `Index`'s subscript) — nothing to recurse
+        // into, same as `Ident`. It also never reaches this walk in
+        // practice: `resolve_expr` resolves every `Hier` to an `Ident`
+        // before `scan_noise`'s post-resolve callers run.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => {}
         Expr::Unary { operand, .. } => walk(operand, f),
         Expr::Binary { lhs, rhs, .. } => {
             walk(lhs, f);
@@ -236,6 +241,12 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
             name: name.clone(),
             args: args.iter().map(|a| resolve_expr(a, ctx)).collect(),
         },
+
+        // §6.7/§6.2.1 (T50, LRMW2-42): resolved to a plain node-name
+        // `Ident` against this module's own flattened instance tree (or a
+        // fail-loud placeholder) — see `LowerCtx::resolve_hier`'s own doc
+        // comment for the full resolution rule.
+        Expr::Hier { root, path, .. } => ctx.resolve_hier(*root, path),
     }
 }
 
@@ -528,7 +539,10 @@ pub(crate) fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, 
             parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
         },
         // Never reaches codegen — see `walk`'s own PortAccess arm above.
-        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } => expr.clone(),
+        // `Hier`'s path segments are literal strings (no `Ident` to
+        // substitute into), so it passes through unchanged like `Ident`
+        // would if `subst` had no entry for it.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => expr.clone(),
     }
 }
 

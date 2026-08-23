@@ -1048,9 +1048,9 @@ fn subst_expr(expr: &Expr, subst: &HashMap<String, Expr>) -> Expr {
             replicate: replicate.as_ref().map(|r| Box::new(subst_expr(r, subst))),
             parts: parts.iter().map(|p| subst_expr(p, subst)).collect(),
         },
-        // Never reaches codegen — see emit/analog_expr.rs's own PortAccess
-        // arm.
-        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } => expr.clone(),
+        // Never reaches codegen — see emit/analog_expr.rs's own PortAccess/
+        // Hier arms.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => expr.clone(),
     }
 }
 

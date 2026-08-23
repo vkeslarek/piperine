@@ -262,7 +262,13 @@ fn differentiate(
     tapes: &[(&str, &str)],
 ) -> Expr {
     match expr {
-        Expr::Number { .. } | Expr::Str { .. } => lit(0.0),
+        // `Hier` never reaches differentiation in practice — `resolve/
+        // pom/expr.rs::resolve_expr` (T50) rewrites every occurrence into
+        // a plain `Ident` before a body's contributions are flattened —
+        // but if it ever did, it names a net read as a coefficient, not
+        // the branch being differentiated, so it differentiates to 0 like
+        // any other constant leaf.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Hier { .. } => lit(0.0),
 
         // `$limit` is transparent to differentiation: d(vnew)/dV.
         Expr::SystemFunctionCall { name, args, .. } if name.trim_start_matches('$') == "limit" => {
@@ -514,9 +520,9 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
         return;
     }
     match expr {
-        // PortAccess never reaches codegen — see this file's other `walk`
-        // arm above.
-        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } => {}
+        // PortAccess/Hier never reach codegen — see this file's other
+        // `walk`/`differentiate` arms above.
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => {}
         Expr::Unary { operand, .. } => walk(operand, f),
         Expr::Binary { lhs, rhs, .. } => {
             walk(lhs, f);
