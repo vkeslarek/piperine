@@ -595,6 +595,18 @@ pub(crate) fn subst_stmt(stmt: &PomStmt, subst: &HashMap<String, PomExpr>) -> Po
             target: subst_expr(target, subst),
             value: subst_expr(value, subst),
         },
+        PomStmt::ProceduralAssign { span, target, value } => PomStmt::ProceduralAssign {
+            span: *span,
+            target: subst_expr(target, subst),
+            value: subst_expr(value, subst),
+        },
+        PomStmt::ProceduralDeassign { span, target } => {
+            PomStmt::ProceduralDeassign { span: *span, target: subst_expr(target, subst) }
+        }
+        PomStmt::Force { span, target, value } => {
+            PomStmt::Force { span: *span, target: subst_expr(target, subst), value: subst_expr(value, subst) }
+        }
+        PomStmt::Release { span, target } => PomStmt::Release { span: *span, target: subst_expr(target, subst) },
         PomStmt::Contribution { span, target, value } => {
             PomStmt::Contribution { span: *span, target: subst_expr(target, subst), value: subst_expr(value, subst) }
         }
@@ -1133,6 +1145,20 @@ impl<'m> AnalogFlattener<'m> {
                         rhs: Box::new(target.clone()),
                     };
                     self.walk(&[PomStmt::Assign { span: *span, target, value }], guard)?;
+                }
+                // §8.5.3.2 (T53, LRMW2-47): procedural continuous
+                // assignment / force-release are digital-only 1364
+                // constructs — `elab::typecheck::check_analog_subset`
+                // (Annex C.7) already rejects them inside an analog
+                // behavior before elaboration ever hands a `Design` to
+                // codegen. Reaching this arm means that invariant broke.
+                PomStmt::ProceduralAssign { .. }
+                | PomStmt::ProceduralDeassign { .. }
+                | PomStmt::Force { .. }
+                | PomStmt::Release { .. } => {
+                    return Err(CodegenError::unsupported(
+                        "procedural continuous assignment/force/release in an analog body (LRM §8.5.3.2, Annex C.7)",
+                    ));
                 }
             }
         }

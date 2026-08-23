@@ -2285,7 +2285,15 @@ pub(super) fn resolve_contribution_branches(
         | Stmt::NonBlockingAssign { .. }
         | Stmt::Disable { .. }
         | Stmt::TaskCall { .. }
-        | Stmt::EventTrigger { .. } => Ok(()),
+        | Stmt::EventTrigger { .. }
+        // §8.5.3.2 (T53): none of these four target an access-function
+        // call (`ProceduralAssign`/`Force` are only legal on a `reg`/net
+        // *name*, never a branch — §9.3 of IEEE 1364-2005 has no
+        // `V(...)`/`I(...)` lvalue form) — no implicit branch to resolve.
+        | Stmt::ProceduralAssign { .. }
+        | Stmt::ProceduralDeassign { .. }
+        | Stmt::Force { .. }
+        | Stmt::Release { .. } => Ok(()),
     }
 }
 
@@ -2326,7 +2334,11 @@ fn check_event_triggers(stmt: &Stmt, declared: &[String], module: &str) -> Resul
         | Stmt::Contribution { .. }
         | Stmt::IndirectContribution { .. }
         | Stmt::Disable { .. }
-        | Stmt::TaskCall { .. } => Ok(()),
+        | Stmt::TaskCall { .. }
+        | Stmt::ProceduralAssign { .. }
+        | Stmt::ProceduralDeassign { .. }
+        | Stmt::Force { .. }
+        | Stmt::Release { .. } => Ok(()),
     }
 }
 
@@ -2494,6 +2506,12 @@ fn rewrite_port_access_stmt(stmt: Stmt, branches: &[Branch]) -> Stmt {
         Stmt::TaskCall { span, name, args } => {
             Stmt::TaskCall { span, name, args: args.into_iter().map(&e).collect() }
         }
+        Stmt::ProceduralAssign { span, target, value } => {
+            Stmt::ProceduralAssign { span, target: e(target), value: e(value) }
+        }
+        Stmt::ProceduralDeassign { span, target } => Stmt::ProceduralDeassign { span, target: e(target) },
+        Stmt::Force { span, target, value } => Stmt::Force { span, target: e(target), value: e(value) },
+        Stmt::Release { span, target } => Stmt::Release { span, target: e(target) },
         Stmt::EventTrigger { .. } => stmt,
     }
 }

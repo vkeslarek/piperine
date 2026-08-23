@@ -513,6 +513,12 @@ fn subst_genvar_stmt(stmt: &Stmt, genvar: &str, value: i64) -> Stmt {
         Stmt::NonBlockingAssign { span, target, value: v } => {
             Stmt::NonBlockingAssign { span: *span, target: e(target), value: e(v) }
         }
+        Stmt::ProceduralAssign { span, target, value: v } => {
+            Stmt::ProceduralAssign { span: *span, target: e(target), value: e(v) }
+        }
+        Stmt::ProceduralDeassign { span, target } => Stmt::ProceduralDeassign { span: *span, target: e(target) },
+        Stmt::Force { span, target, value: v } => Stmt::Force { span: *span, target: e(target), value: e(v) },
+        Stmt::Release { span, target } => Stmt::Release { span: *span, target: e(target) },
         Stmt::Contribution { span, target, value: v } => {
             Stmt::Contribution { span: *span, target: e(target), value: e(v) }
         }
@@ -694,6 +700,12 @@ fn rename_idents_stmt(stmt: &Stmt, renames: &HashMap<String, String>) -> Stmt {
         Stmt::NonBlockingAssign { span, target, value } => {
             Stmt::NonBlockingAssign { span: *span, target: e(target), value: e(value) }
         }
+        Stmt::ProceduralAssign { span, target, value } => {
+            Stmt::ProceduralAssign { span: *span, target: e(target), value: e(value) }
+        }
+        Stmt::ProceduralDeassign { span, target } => Stmt::ProceduralDeassign { span: *span, target: e(target) },
+        Stmt::Force { span, target, value } => Stmt::Force { span: *span, target: e(target), value: e(value) },
+        Stmt::Release { span, target } => Stmt::Release { span: *span, target: e(target) },
         Stmt::Contribution { span, target, value } => {
             Stmt::Contribution { span: *span, target: e(target), value: e(value) }
         }

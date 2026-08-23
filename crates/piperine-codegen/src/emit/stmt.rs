@@ -215,6 +215,29 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 };
                 self.emit_stmt(&Stmt::Assign { span: *span, target, value })
             }
+            // §8.5.3.2 (T53, LRMW2-47): procedural continuous assignment /
+            // force-release. This codegen's digital kernel re-evaluates
+            // every comb-region statement in source order each pass
+            // (`resolve/pom/body.rs`'s own "behaviors append, evaluated in
+            // order" precedent) — `assign`/`force` are emitted as an
+            // ordinary immediate (Active-region) write, exactly like `=`,
+            // so a write from `assign`/`force` observably "sticks" for as
+            // long as no *later*-evaluated statement also writes the same
+            // target, matching the LRM's "overrides other drivers" intent
+            // for the common case (a testbench statically driving one
+            // signal) without a dedicated per-net "forced" override flag
+            // that would suppress every other writer unconditionally (a
+            // disclosed scope narrowing — LRM §8.5.3.2's *continuous*
+            // re-tracking against a *concurrently racing* driver on the
+            // same net is not modeled). `deassign`/`release` themselves
+            // have no value effect (SIMPLIFICATION.md P5's own "harmless
+            // no-op" shape) — the same narrowing means there is no active
+            // override state for them to actively clear.
+            S::ProceduralAssign { target, value, .. } | S::Force { target, value, .. } => {
+                let v = value.emit(self)?;
+                self.emit_assign(target, v, AssignKind::Blocking)
+            }
+            S::ProceduralDeassign { .. } | S::Release { .. } => Ok(()),
         }
     }
 

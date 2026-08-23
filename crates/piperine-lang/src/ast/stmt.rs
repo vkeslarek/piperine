@@ -107,6 +107,22 @@ pub enum Stmt {
     /// `-> event_name;` — event trigger, §5.10.4/Annex A.6.5. Fires a
     /// named event, waking any `@(event_name)` sensitivity elsewhere.
     EventTrigger { span: PreprocessedSpan, name: String },
+    /// `assign lvalue = expr;` — procedural continuous assignment
+    /// (§8.5.3.2, T53, LRMW2-47), legal only on a `reg`. Distinct from
+    /// [`Stmt::Assign`] (an ordinary one-shot blocking assignment) and
+    /// from the *module-level* `assign` item (`ast::item::ContinuousAssign`,
+    /// T10) — this is the *statement* form, found inside `initial`/`always`.
+    ProceduralAssign { span: PreprocessedSpan, target: Expr, value: Expr },
+    /// `deassign lvalue;` — deactivates a prior [`Stmt::ProceduralAssign`]
+    /// on `target` (§8.5.3.2).
+    ProceduralDeassign { span: PreprocessedSpan, target: Expr },
+    /// `force lvalue = expr;` — procedural continuous assignment that
+    /// overrides *any* driver of `target` (net or reg), §8.5.3.2/§9.3 of
+    /// IEEE 1364-2005.
+    Force { span: PreprocessedSpan, target: Expr, value: Expr },
+    /// `release lvalue;` — deactivates a prior [`Stmt::Force`] on `target`,
+    /// restoring its normal driven value (§8.5.3.2).
+    Release { span: PreprocessedSpan, target: Expr },
 }
 
 impl Stmt {
@@ -128,7 +144,11 @@ impl Stmt {
             | Stmt::DelayControl { span, .. }
             | Stmt::Disable { span, .. }
             | Stmt::TaskCall { span, .. }
-            | Stmt::EventTrigger { span, .. } => *span,
+            | Stmt::EventTrigger { span, .. }
+            | Stmt::ProceduralAssign { span, .. }
+            | Stmt::ProceduralDeassign { span, .. }
+            | Stmt::Force { span, .. }
+            | Stmt::Release { span, .. } => *span,
         }
     }
 }

@@ -68,7 +68,60 @@ impl Grammar {
         if let Tok::SystemIdent(_) = self.peek() {
             return self.parse_task_call();
         }
+        // Procedural continuous assignment / force-release (§8.5.3.2,
+        // Annex A.6.4, T53, LRMW2-47) — `assign`/`deassign`/`force`/
+        // `release` as a *statement* (inside `initial`/`always`), distinct
+        // from the module-level `assign` item (§8.5.3.1, T10,
+        // `parse_continuous_assign` in `grammar/item.rs`).
+        if self.at_kw("assign") {
+            return self.parse_procedural_assign();
+        }
+        if self.at_kw("deassign") {
+            return self.parse_procedural_deassign();
+        }
+        if self.at_kw("force") {
+            return self.parse_force();
+        }
+        if self.at_kw("release") {
+            return self.parse_release();
+        }
         self.parse_assign_or_contribution()
+    }
+
+    /// `'assign' variable_lvalue '=' expression ';'` — §8.5.3.2/Annex A.6.4.
+    fn parse_procedural_assign(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_kw("assign")?;
+        let target = self.parse_lvalue()?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(Stmt::ProceduralAssign { span: PreprocessedSpan::new(start.start, end.end), target, value })
+    }
+
+    /// `'deassign' variable_lvalue ';'` — §8.5.3.2/Annex A.6.4.
+    fn parse_procedural_deassign(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_kw("deassign")?;
+        let target = self.parse_lvalue()?;
+        let end = self.expect_punct(";")?;
+        Ok(Stmt::ProceduralDeassign { span: PreprocessedSpan::new(start.start, end.end), target })
+    }
+
+    /// `'force' variable_lvalue '=' expression ';'` — §8.5.3.2/Annex A.6.4.
+    fn parse_force(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_kw("force")?;
+        let target = self.parse_lvalue()?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(Stmt::Force { span: PreprocessedSpan::new(start.start, end.end), target, value })
+    }
+
+    /// `'release' variable_lvalue ';'` — §8.5.3.2/Annex A.6.4.
+    fn parse_release(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_kw("release")?;
+        let target = self.parse_lvalue()?;
+        let end = self.expect_punct(";")?;
+        Ok(Stmt::Release { span: PreprocessedSpan::new(start.start, end.end), target })
     }
 
     /// `'begin' [ ':' identifier ] block_item_declaration* statement* 'end'`

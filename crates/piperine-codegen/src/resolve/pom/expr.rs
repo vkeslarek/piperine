@@ -668,6 +668,26 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
         // No expression to resolve — `name` is an event identifier, not a
         // value.
         S::EventTrigger { span, name } => S::EventTrigger { span: *span, name: name.clone() },
+        // §8.5.3.2 (T53, LRMW2-47): digital-only 1364 constructs —
+        // `elab::typecheck::check_analog_subset` (Annex C.7) rejects them
+        // inside an analog behavior before this (analog-only) resolve
+        // path ever runs, so this arm is never actually reached; resolved
+        // structurally the same way `Assign`/`NonBlockingAssign` are
+        // (nothing else in this codebase reads a `Force`/`ProceduralAssign`
+        // sitting inside a *resolved* analog body, so this is exhaustiveness
+        // completion, not a live path).
+        S::ProceduralAssign { span, target, value } => S::ProceduralAssign {
+            span: *span,
+            target: resolve_expr(target, ctx),
+            value: resolve_expr(value, ctx),
+        },
+        S::ProceduralDeassign { span, target } => {
+            S::ProceduralDeassign { span: *span, target: resolve_expr(target, ctx) }
+        }
+        S::Force { span, target, value } => {
+            S::Force { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) }
+        }
+        S::Release { span, target } => S::Release { span: *span, target: resolve_expr(target, ctx) },
     }
 }
 

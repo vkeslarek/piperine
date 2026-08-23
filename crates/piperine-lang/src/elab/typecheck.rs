@@ -89,6 +89,22 @@ fn check_analog_subset(stmt: &Stmt, errors: &mut Vec<ElabError>) {
         | Stmt::Repeat { body, .. }
         | Stmt::Forever { body, .. }
         | Stmt::DelayControl { body, .. } => check_analog_subset(body, errors),
+        // §8.5.3.2/§9.3 of IEEE 1364-2005 (T53): procedural continuous
+        // assignment and force/release are digital-only 1364 procedural
+        // constructs with no VAMS analog counterpart — same Annex C.7
+        // family as `<=`/`casex`/`casez`.
+        Stmt::ProceduralAssign { span, .. } => {
+            errors.push(annex_c_error("procedural continuous assignment (`assign`)", *span));
+        }
+        Stmt::ProceduralDeassign { span, .. } => {
+            errors.push(annex_c_error("`deassign`", *span));
+        }
+        Stmt::Force { span, .. } => {
+            errors.push(annex_c_error("`force`", *span));
+        }
+        Stmt::Release { span, .. } => {
+            errors.push(annex_c_error("`release`", *span));
+        }
         Stmt::Null { .. }
         | Stmt::Assign { .. }
         | Stmt::Contribution { .. }
