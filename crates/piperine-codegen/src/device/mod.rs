@@ -10,6 +10,7 @@
 //!   its [`piperine_lang::pom::Instance`]s, and builds a ready-to-simulate
 //!   `CircuitInstance`.
 
+mod a2d_comparator;
 mod analog;
 mod builder;
 mod circuit;
@@ -20,6 +21,7 @@ mod fusion;
 mod plugin;
 mod prim;
 
+pub use a2d_comparator::A2dComparator;
 pub use analog::{AnalogInstance, MarginExtremum};
 pub use circuit::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler};
 pub use compiled::CompiledModule;

@@ -105,18 +105,20 @@ impl EventSink for QueueSink<'_> {
 /// A2D boundary gets the identical published error bound rather than a
 /// second, independent approximation.
 ///
-/// **Scope note (SPEC_DEVIATION, disclosed):** this is the reusable
-/// interpolation *mechanism* the task's stated `Where`
-/// (`digital/interface.rs` only) covers. No A2D-sampling `Element` in
-/// this codebase calls it yet — `EvalCtx::analog` is plumbed through the
-/// scheduler ABI (`scheduler.rs`) but grep confirms zero consumers in
-/// `piperine-codegen::device::digital`/`kernel::digital` today; there is
-/// no comparator-style digital device whose `comb_phase` reads
-/// `ctx.analog` to snap against in the first place, so there is no
-/// existing "snap to sample" call site to replace. Wiring a real
-/// comparator device to call this (JIT emission in `kernel/digital/
-/// compile.rs`, tracking each element's own previous analog
-/// sample/time) is future work once such a device exists.
+/// **Real consumer (T63, LRMW2-60):**
+/// [`piperine_codegen::device::A2dComparator`](../../../piperine_codegen/device/struct.A2dComparator.html)
+/// — a hand-written `Element` (no JIT involved, the same non-JIT-
+/// participant pattern this module's own `ExternalInverter` test proves
+/// needs nothing else) samples one analog terminal via `EvalCtx::analog`,
+/// tracks the previous sample, and on a threshold crossing schedules the
+/// digital transition at this function's interpolated instant instead
+/// of snapping to the later sample's own solver time. See that device's
+/// own module doc for the disclosed remaining gap (the wider mixed-
+/// signal transient loop does not yet *retry* a step to land exactly on
+/// a *predicted future* crossing the way `cross`/`above` do for
+/// pure-analog blocks) — this function itself has a real caller now,
+/// with real sample data, no longer only unit-tested against literal
+/// numbers.
 ///
 /// Returns `None` when the bracket doesn't actually cross zero (same
 /// contract as `predict_crossing`) — the caller keeps its snap-to-sample
