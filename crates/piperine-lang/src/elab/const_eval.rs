@@ -133,9 +133,37 @@ impl ConstEnv {
             // scope; per-instantiation-sensitive generate re-evaluation is
             // a disclosed follow-up (T51 SPEC_DEVIATION).
             Expr::SystemFunctionCall { name, .. } if name == "param_given" => Ok(Value::Bool(false)),
-            Expr::Concat { .. }
-            | Expr::Replication { .. }
-            | Expr::Index { .. }
+            // §3.3/§4.2.13 (T66/LRMW2-63): string concatenation/
+            // replication is elaboration-constant when every operand
+            // is — the LRM's own worked examples (§3.3: `a = {"Hi", b}`,
+            // `b = {5{"Hi"}}`) are plain string-content joins, not the
+            // bit-level packing `{"H",""}` uses when assigned to an
+            // *integral* target (`r = {"H",""}` yields `"H\0"`, a
+            // different, wider coercion this scalar `Value::Str` path
+            // does not attempt) — only the all-`string` operand case is
+            // handled; anything else (numeric/integral concatenation,
+            // §4.2.13's bit-vector form) stays `NotConst`, a disclosed
+            // narrowing, not a silent wrong answer.
+            Expr::Concat { parts, .. } => {
+                let mut out = String::new();
+                for p in parts {
+                    out.push_str(self.eval(p)?.as_string().ok_or(ConstEvalError::TypeMismatch)?);
+                }
+                Ok(Value::Str(out))
+            }
+            Expr::Replication { count, parts, .. } => {
+                let n = match self.eval(count)? {
+                    Value::Nat(n) => n,
+                    Value::Int(n) if n >= 0 => n as u64,
+                    _ => return Err(ConstEvalError::TypeMismatch),
+                };
+                let mut piece = String::new();
+                for p in parts {
+                    piece.push_str(self.eval(p)?.as_string().ok_or(ConstEvalError::TypeMismatch)?);
+                }
+                Ok(Value::Str(piece.repeat(n as usize)))
+            }
+            Expr::Index { .. }
             | Expr::PartSelect { .. }
             | Expr::AccessFunction { .. }
             | Expr::PortAccess { .. }

@@ -145,8 +145,27 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             S::TaskCall { name, args, .. } => match name.trim_start_matches('$') {
                 n @ ("display" | "write" | "strobe" | "monitor" | "warning" | "warn" | "error" | "fatal"
                 | "info") => {
+                    // §3.3/§4.2.13 (T66/LRMW2-63): the format-string
+                    // argument may be a `{..}` concatenation/replication
+                    // of string literals (`$display({"a", b})`) rather
+                    // than a bare literal — elaboration-constant-folded
+                    // here (`ConstEnv`, shared with parameter defaults)
+                    // before the existing plain-`Expr::Str` fast path.
+                    // Anything else (a dynamic `string` variable, or
+                    // non-string concatenation) still no-ops, matching
+                    // T43's original disclosed scope — this task only
+                    // adds the *constant*-string-concatenation case.
                     let fmt = match args.first() {
                         Some(Expr::Str { value, .. }) => value.clone(),
+                        Some(e @ (Expr::Concat { .. } | Expr::Replication { .. })) => {
+                            match piperine_lang::elab::const_eval::ConstEnv::new().eval(e) {
+                                Ok(v) => match v.as_string() {
+                                    Some(s) => s.to_string(),
+                                    None => return Ok(()),
+                                },
+                                Err(_) => return Ok(()),
+                            }
+                        }
                         _ => return Ok(()),
                     };
                     if fmt.is_empty() {
