@@ -296,7 +296,34 @@ impl AnalogInstance {
             .position(|n| n == "mfactor")
             .and_then(|i| params.get(i).copied())
             .unwrap_or(1.0);
-        let sim = SimCtx { param_given_mask, mfactor, port_connected_mask, ..Default::default() };
+        // T65/LRMW2-62 (§9.18/Table 9-29): the same declared-parameter
+        // vehicle `mfactor` uses above, for the five placement system
+        // parameters — none of which has any automatic simulation effect
+        // (LRM's own words), so each stays its own declared parameter's
+        // default (Table 9-29's top-level value) when the module never
+        // declares one. `FlattenHierarchy::inline` already folds every
+        // ancestor's own override into this leaf's `params[…]` entry per
+        // Table 9-29's composition rule (sum for x/y-position, sum-mod-360
+        // for angle, product for h/vflip) before this code ever runs.
+        let named = |name: &str, default: f64| -> f64 {
+            kernel.param_names().iter().position(|n| n == name).and_then(|i| params.get(i).copied()).unwrap_or(default)
+        };
+        let xposition = named("xposition", 0.0);
+        let yposition = named("yposition", 0.0);
+        let angle = named("angle", 0.0);
+        let hflip = named("hflip", 1.0);
+        let vflip = named("vflip", 1.0);
+        let sim = SimCtx {
+            param_given_mask,
+            mfactor,
+            port_connected_mask,
+            xposition,
+            yposition,
+            angle,
+            hflip,
+            vflip,
+            ..Default::default()
+        };
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
         let num_limits = kernel.num_limits();

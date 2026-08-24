@@ -75,6 +75,18 @@ pub struct SimCtx {
     /// for `pip_task_defer_monitor`. Appended last, per this struct's
     /// established convention.
     pub monitor_queue: *mut Vec<u32>,
+    /// §9.18/Table 9-29 (T65/LRMW2-62): the instance's resolved placement —
+    /// `$xposition`/`$yposition` in meters, `$angle` in degrees
+    /// (`0 <= angle < 360`), `$hflip`/`$vflip` as `+1`/`-1`. None of the
+    /// five has any automatic effect on the simulation (unlike `$mfactor`)
+    /// — a model reads them purely to compute its own layout-dependent
+    /// effect (the LRM's own `polyres` example: a resistivity gradient in
+    /// `x`/`y`). Appended last, per this struct's established convention.
+    pub xposition: f64,
+    pub yposition: f64,
+    pub angle: f64,
+    pub hflip: f64,
+    pub vflip: f64,
 }
 
 // SAFETY: `SimCtx` is `Copy`/`Send`/`Sync` in the same sense every other
@@ -120,6 +132,12 @@ impl Default for SimCtx {
             port_connected_mask: u64::MAX,
             files: std::ptr::null_mut(),
             monitor_queue: std::ptr::null_mut(),
+            // Table 9-29's own top-level values.
+            xposition: 0.0,
+            yposition: 0.0,
+            angle: 0.0,
+            hflip: 1.0,
+            vflip: 1.0,
         }
     }
 }

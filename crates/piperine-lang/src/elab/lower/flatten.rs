@@ -288,15 +288,17 @@ impl FlattenHierarchy {
     ) -> Result<InlineResult, ElabError> {
         let mut rho: HashMap<String, NetRef> = HashMap::new();
         let mut lifted_wires: Vec<Wire> = Vec::new();
-        // §6.3.6/§9.18 (LRMW2-61): `inst`'s own `mfactor` override (Table
-        // 9-29's "specified" term at this level; 1.0 when `inst` carries
-        // none) is the "hier" factor every sub-instance spliced out of
-        // `inst`'s body inherits. Combined by straight multiplication with
-        // each spliced instance's own override (its own "specified" term),
-        // recursively — `inline` runs once per hierarchy level on the way
-        // up, so a leaf several levels deep accumulates the full product
-        // along its path by the time it reaches the top.
-        let inst_mfactor = Self::mfactor_of(inst.params());
+        // §6.3.6/§9.18 (LRMW2-61/62, Table 9-29): `inst`'s own override of
+        // each of the six hierarchical system parameters (the "specified"
+        // term at this level; the identity value when `inst` carries none)
+        // is the "hier" term every sub-instance spliced out of `inst`'s
+        // body inherits. Combined per each parameter's own Table 9-29 rule
+        // with each spliced instance's own override (its own "specified"
+        // term), recursively — `inline` runs once per hierarchy level on
+        // the way up, so a leaf several levels deep accumulates the full
+        // composition along its path by the time it reaches the top.
+        let inst_hier: Vec<(f64, bool)> =
+            HIER_PARAMS.iter().map(|p| (p.value_of(inst.params()), p.present_in(inst.params()))).collect();
 
         // Child port i → parent NetRef (positional binding).
         for (i, port) in child.ports.iter().enumerate() {
@@ -327,27 +329,37 @@ impl FlattenHierarchy {
                 .iter()
                 .map(|nr| Self::remap(nr, &rho, child))
                 .collect::<Result<Vec<_>, _>>()?;
-            // Table 9-29: `$mfactor_specified * $mfactor_hier`. Only
-            // written back onto `s` when `s`'s own module actually declares
-            // an `mfactor` parameter (Piperine's disclosed vehicle for
-            // `$mfactor`, `crates/piperine-codegen/src/device/analog/
-            // instance.rs`) — a leaf module that never declared one has no
-            // slot to carry the product into, and the ordinary
-            // unknown-parameter-override check downstream would otherwise
-            // fail loud on every unrelated instance under a scaled
-            // ancestor. Skipped (not injected) rather than defaulted to
-            // 1.0, so a module untouched by `$mfactor` never gains a
-            // synthetic override.
-            let combined_mfactor = inst_mfactor * Self::mfactor_of(s.params());
-            let declares_mfactor = design
+            // Table 9-29: each hierarchical parameter's own composition
+            // rule (`compose(specified, hier)`). Only written back onto `s`
+            // when `s`'s own module actually declares that parameter
+            // (Piperine's disclosed vehicle for the six system parameters,
+            // `crates/piperine-codegen/src/device/analog/instance.rs`) — a
+            // leaf module that never declared one has no slot to carry the
+            // composed value into, and the ordinary unknown-parameter-
+            // override check downstream would otherwise fail loud on every
+            // unrelated instance under a scaled/rotated/... ancestor. Only
+            // written when *some* override was actually present at this
+            // level or an ancestor's — never gated on "composed !=
+            // identity": `$hflip`/`$vflip`'s whole domain is `{+1, -1}`
+            // (LRM: "`$hflip` = +1 or -1"), so an even number of overrides
+            // routinely composes right back to the identity value, and a
+            // presence check (not a value check) is the only way to still
+            // write that genuinely-composed identity back rather than
+            // silently keeping `s`'s own stale pre-composition value.
+            let declared: std::collections::HashSet<&str> = design
                 .modules
                 .get(&s.module)
-                .is_some_and(|m| m.params.iter().any(|p| p.name == "mfactor"));
-            let params = if combined_mfactor != 1.0 && declares_mfactor {
-                Self::with_mfactor(s.params.clone(), combined_mfactor)
-            } else {
-                s.params.clone()
-            };
+                .map(|m| m.params.iter().map(|p| p.name.as_str()).collect())
+                .unwrap_or_default();
+            let mut params = s.params.clone();
+            for (p, &(hier, hier_present)) in HIER_PARAMS.iter().zip(&inst_hier) {
+                let s_present = p.present_in(s.params());
+                if !(hier_present || s_present) || !declared.contains(p.name) {
+                    continue;
+                }
+                let composed = (p.compose)(hier, p.value_of(s.params()));
+                params = p.with_value(params, composed);
+            }
             spliced_instances.push(Instance {
                 span: s.span,
                 label_span: None,
@@ -449,31 +461,71 @@ impl FlattenHierarchy {
         }
     }
 
-    /// The `mfactor` override's value among an instance's param overrides
-    /// (Table 9-29's "specified" term); `1.0` (the top-level default, Table
-    /// 9-29) when absent or non-numeric.
-    fn mfactor_of(params: &[(String, Value)]) -> f64 {
+}
+
+/// One of §9.18/Table 9-29's six hierarchical system parameters, as
+/// Piperine's disclosed vehicle sees it: an ordinary module-declared
+/// `parameter real` (or `parameter integer`, for `hflip`/`vflip`), combined
+/// across instantiation levels by [`FlattenHierarchy::inline`] via `compose`
+/// — `compose(hier, specified)`, matching Table 9-29's own
+/// `f(specified, hier)` shape.
+struct HierParam {
+    name: &'static str,
+    /// Table 9-29's top-level value — also the value below which a
+    /// composed result is treated as "no override" (skipped rather than
+    /// written back, so an untouched module never gains a synthetic
+    /// parameter override).
+    identity: f64,
+    compose: fn(f64, f64) -> f64,
+}
+
+impl HierParam {
+    /// This parameter's value among an instance's param overrides (Table
+    /// 9-29's "specified" term); `identity` when absent or non-numeric.
+    fn value_of(&self, params: &[(String, Value)]) -> f64 {
         params
             .iter()
-            .find(|(name, _)| name == "mfactor")
+            .find(|(name, _)| name == self.name)
             .and_then(|(_, v)| match v {
                 Value::Real(r) => Some(*r),
                 Value::Int(i) => Some(*i as f64),
                 Value::Nat(n) => Some(*n as f64),
                 _ => None,
             })
-            .unwrap_or(1.0)
+            .unwrap_or(self.identity)
     }
 
-    /// Upsert the `mfactor` override to `combined` in a param-override list.
-    fn with_mfactor(mut params: Vec<(String, Value)>, combined: f64) -> Vec<(String, Value)> {
-        match params.iter_mut().find(|(name, _)| name == "mfactor") {
-            Some((_, v)) => *v = Value::Real(combined),
-            None => params.push(("mfactor".to_string(), Value::Real(combined))),
+    /// Whether an override for this parameter is explicitly present among
+    /// an instance's param overrides — distinct from `value_of`'s
+    /// resolved-with-default reading, since a composed value can
+    /// legitimately coincide with `identity` (`$hflip`/`$vflip`'s whole
+    /// domain is `{+1, -1}`).
+    fn present_in(&self, params: &[(String, Value)]) -> bool {
+        params.iter().any(|(name, _)| name == self.name)
+    }
+
+    /// Upsert this parameter's override to `composed` in a param-override
+    /// list.
+    fn with_value(&self, mut params: Vec<(String, Value)>, composed: f64) -> Vec<(String, Value)> {
+        match params.iter_mut().find(|(name, _)| name == self.name) {
+            Some((_, v)) => *v = Value::Real(composed),
+            None => params.push((self.name.to_string(), Value::Real(composed))),
         }
         params
     }
 }
+
+/// Table 9-29, in full: `$mfactor`/`$hflip`/`$vflip` multiply
+/// (`specified * hier`), `$xposition`/`$yposition` add (`specified +
+/// hier`), `$angle` adds modulo 360 degrees.
+const HIER_PARAMS: &[HierParam] = &[
+    HierParam { name: "mfactor", identity: 1.0, compose: |hier, specified| hier * specified },
+    HierParam { name: "xposition", identity: 0.0, compose: |hier, specified| hier + specified },
+    HierParam { name: "yposition", identity: 0.0, compose: |hier, specified| hier + specified },
+    HierParam { name: "angle", identity: 0.0, compose: |hier, specified| (hier + specified).rem_euclid(360.0) },
+    HierParam { name: "hflip", identity: 1.0, compose: |hier, specified| hier * specified },
+    HierParam { name: "vflip", identity: 1.0, compose: |hier, specified| hier * specified },
+];
 
 #[cfg(test)]
 mod tests {

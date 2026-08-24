@@ -218,6 +218,13 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             "temperature" => Ok(self.load_sim_f64(SimField::TEMPERATURE)),
             "abstime" => Ok(self.load_sim_f64(SimField::ABSTIME)),
             "mfactor" => Ok(self.load_sim_f64(SimField::MFACTOR)),
+            // §9.18/Table 9-29 (T65/LRMW2-62): the resolved (hierarchically
+            // composed) placement — see `SimCtx`'s own field doc.
+            "xposition" => Ok(self.load_sim_f64(SimField::XPOSITION)),
+            "yposition" => Ok(self.load_sim_f64(SimField::YPOSITION)),
+            "angle" => Ok(self.load_sim_f64(SimField::ANGLE)),
+            "hflip" => Ok(self.load_sim_f64(SimField::HFLIP)),
+            "vflip" => Ok(self.load_sim_f64(SimField::VFLIP)),
             "vt" => {
                 let temperature = match args.first() {
                     Some(e) => self.emit_analog(e)?,

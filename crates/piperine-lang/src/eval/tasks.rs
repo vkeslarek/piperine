@@ -765,15 +765,25 @@ pub fn format_time(abstime_seconds: f64, fmt: &TimeFormat) -> String {
     }
 }
 
-/// §9.18's five hierarchical parameter functions Piperine has no
-/// instance-placement/geometry data for anywhere in the POM (`$mfactor`
-/// is the one with real simulation effect — wired separately in
-/// `piperine-codegen::device::analog::instance::AnalogInstance::new`,
-/// T49). LRM: "the remaining hierarchical system parameters do not have
-/// any automatic effect on the simulation" — so returning each one's
-/// documented Table 9-29 *top-level* value (never combined with an
-/// instance override this crate has nowhere to read from) is a
-/// disclosed, reasonable simplification, not a silently-wrong guess.
+/// §9.18's five hierarchical placement parameters' Table 9-29 *top-level*
+/// values — the values these functions return absent any instance
+/// context. LRM: "the remaining hierarchical system parameters do not
+/// have any automatic effect on the simulation."
+///
+/// As of T65/LRMW2-62 these five (and `$mfactor`, T49/T64) *are* combined
+/// with instance overrides and reach a model's reads, but the composition
+/// happens in `piperine-codegen`, not here: `mfactor`/`xposition`/
+/// `yposition`/`angle`/`hflip`/`vflip` are Piperine's disclosed vehicle
+/// for the six system parameters — an ordinary module-declared
+/// `parameter real`, combined per Table 9-29's own rule (sum for x/y
+/// position, sum-mod-360 for angle, product for mfactor/h/vflip) across
+/// nesting levels by `elab::lower::flatten::FlattenHierarchy::inline`,
+/// then read into `SimCtx` by
+/// `piperine_codegen::device::analog::instance::AnalogInstance::new`. This
+/// struct's own top-level constants stay the seed value `inline` starts
+/// composing from at the root of the hierarchy, and the fallback whenever
+/// there is no instance context at all (e.g. a module that never declares
+/// the corresponding parameter).
 pub struct HierarchicalParams;
 
 impl HierarchicalParams {

@@ -48,6 +48,13 @@ impl SimField {
     /// portably-hardcodable constant the way every field before it
     /// (plain `f64`/`u64`) was.
     pub(crate) const PORT_CONNECTED_MASK: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, port_connected_mask) as i32;
+    /// §9.18/Table 9-29 (T65/LRMW2-62) — computed via `offset_of!`, same
+    /// reason as `PORT_CONNECTED_MASK` above.
+    pub(crate) const XPOSITION: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, xposition) as i32;
+    pub(crate) const YPOSITION: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, yposition) as i32;
+    pub(crate) const ANGLE: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, angle) as i32;
+    pub(crate) const HFLIP: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, hflip) as i32;
+    pub(crate) const VFLIP: i32 = std::mem::offset_of!(crate::emit::abi::SimCtx, vflip) as i32;
 }
 
 // Load-bank tags.
