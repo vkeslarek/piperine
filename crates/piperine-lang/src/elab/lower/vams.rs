@@ -1202,16 +1202,18 @@ fn resolve_instance_ports(
     Ok(ports)
 }
 
-/// Switch-level gate keywords (Annex A.4.2) — device-physics MOS/pass-
-/// transistor primitives with no truth-table model, distinct from the 12
-/// digital gate keywords that reach the POM (LRMC-C7-13, T39).
+/// Switch-level gate keywords (Annex A.4.2) still rejected — the
+/// device-physics MOS primitives (`nmos`/`pmos`/`cmos`/`r{n,p,c}mos`) and
+/// the resistive pull primitives (`pullup`/`pulldown`) have no
+/// truth-table model, distinct from the 12 digital gate keywords that
+/// reach the POM (LRMC-C7-13, T39). T67/LRMW2-64 (§8.5.3.5) moved the
+/// bidirectional pass-switch family (`tran`/`rtran`/`tranif0/1`/
+/// `rtranif0/1`) out of this rejected set — see
+/// `piperine-codegen::kernel::digital::gates`'s own module doc for that
+/// family's (disclosed, unidirectional-only) model.
 fn is_switch_level_gate(kind: crate::ast::GateKind) -> bool {
     use crate::ast::GateKind::*;
-    matches!(
-        kind,
-        Nmos | Pmos | Cmos | Rnmos | Rpmos | Rcmos | Pullup | Pulldown | Tran | Rtran | Tranif0 | Tranif1
-            | Rtranif0 | Rtranif1
-    )
+    matches!(kind, Nmos | Pmos | Cmos | Rnmos | Rpmos | Rcmos | Pullup | Pulldown)
 }
 
 /// A UDP's canonical port order (Annex A.5.1: the first port is always

@@ -12,15 +12,35 @@
 //! `device/prim.rs`'s own module doc for the dispatch side; root
 //! `tests/vams_gates_and_udps_e2e.rs` is the end-to-end proof.
 //!
-//! **Out of scope, documented not silently dropped:** the switch-level
-//! primitives (`nmos`/`pmos`/`cmos`/`r{n,p,c}mos`, `tran`/`rtran`/
-//! `tranif0/1`/`rtranif0/1`, `pullup`/`pulldown`) are bidirectional
-//! resistive connections between nets, not value-producing functions of
-//! their inputs — they need a switch-level (charge-sharing/resistive)
-//! network model, which is a different mechanism from a truth table and a
-//! larger undertaking than this task's scope. `GatePrimitive` covers the
-//! unidirectional logic-gate family only; `piperine_lang::ast::item::
-//! GateKind`'s switch variants have no `GatePrimitive` counterpart yet.
+//! **`tran`/`rtran`/`tranif0/1`/`rtranif0/1` (§8.5.3.5, T67/LRMW2-64):**
+//! [`GatePrimitive::Buf`]/[`Bufif0`](GatePrimitive::Bufif0)/
+//! [`Bufif1`](GatePrimitive::Bufif1) double as this family's model —
+//! `device/prim.rs`'s `gate_primitive_for` maps `tran`/`rtran` to `Buf`
+//! (always conducting) and `tranif1`/`rtranif1`/`tranif0`/`rtranif0` to
+//! `Bufif1`/`Bufif0` (conducts while the gate/enable terminal says so,
+//! `Z` otherwise), reusing Table 7-10's own tristate truth table verbatim.
+//! SPEC_DEVIATION, disclosed: real switch-level `tran` is a genuinely
+//! *bidirectional* pass connection (§8.5.3.5: "Switches provide
+//! bi-directional signal flow and require coordinated processing of nodes
+//! connected by switches") — this models only the `source → drain`
+//! direction (the LRM's own port-naming convention for these primitives,
+//! §9.4.1's terminal list: `source`, `drain`, `gate`), not the reverse
+//! relaxation the LRM describes for a value driven from the `drain` side.
+//! A second disclosed gap: "strength reduction on the r-forms" (Table
+//! 7-3's resistive levels) has no vehicle to reach the scheduler through
+//! today — [`piperine_solver::abi::DigitalEvent`] carries no per-event
+//! strength field (every driven value gets `default_strength_for`'s
+//! fixed Table-7-2 default, `crates/piperine-solver/src/digital/
+//! drivers.rs`), and that struct's own contract note requires *additive*
+//! changes only, so adding one is a real ABI-extension task on its own,
+//! not a quick add here. The `r`-forms (`rtran`/`rtranif0`/`rtranif1`)
+//! still conduct/isolate correctly — only their strength is unmodeled
+//! (indistinguishable from the non-`r` forms downstream).
+//!
+//! **Still out of scope, documented not silently dropped:** `nmos`/
+//! `pmos`/`cmos`/`r{n,p,c}mos`/`pullup`/`pulldown` are device-physics-level
+//! primitives (resistive/charge-sharing networks, not a truth table) —
+//! `elab::lower::vams::is_switch_level_gate` still rejects them loud.
 
 use piperine_solver::abi::LogicValue;
 

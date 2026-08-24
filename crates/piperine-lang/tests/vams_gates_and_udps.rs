@@ -63,7 +63,12 @@ fn a_gate_statement_with_multiple_instances_shares_kind_and_delay() {
 
 #[test]
 fn switch_level_gate_primitives_fail_loud_naming_the_gap() {
-    for kw in ["nmos", "pmos", "cmos", "tran", "tranif1", "pullup"] {
+    // T67/LRMW2-64 (§8.5.3.5) moved `tran`/`tranif1` (and the rest of the
+    // bidirectional pass-switch family) out of this rejected set — see
+    // `vams_switch_primitives.rs` (piperine-codegen) for their own
+    // coverage. The remaining device-physics MOS/pull primitives stay
+    // rejected loud.
+    for kw in ["nmos", "pmos", "cmos", "pullup"] {
         let src = format!(
             "discipline logic;
                 domain discrete;

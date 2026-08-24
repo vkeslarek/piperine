@@ -425,7 +425,35 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             return Err(CodegenError::Invalid(format!("gate `{owner}`: no terminals")));
         }
         let mapped: Vec<DigitalNet> = nodes.iter().map(|&n| self.map_digital_net(n)).collect();
-        let element = super::prim::GateElement::new(gate, device_id, mapped[0], mapped[1..].to_vec())?;
+        // §8.5.3.5 (T67/LRMW2-64): the pass-switch family's own terminal
+        // order has no leading dedicated output the way `and(out, a, b)`
+        // does — `source, drain[, gate]` (the LRM's own naming) — so
+        // `mapped[0]` is `output`'s usual slot for every *other* gate kind
+        // but is `source` (an input) here, with `drain` (the modeled
+        // output, unidirectional-only — see `gates.rs`'s module doc) at
+        // `mapped[1]`.
+        use piperine_lang::ast::GateKind::*;
+        let element = match gate.kind {
+            Tran | Rtran => {
+                if mapped.len() != 2 {
+                    return Err(CodegenError::Invalid(format!(
+                        "gate `{owner}` (`{:?}`): expected 2 terminals (source, drain), got {}",
+                        gate.kind, mapped.len()
+                    )));
+                }
+                super::prim::GateElement::new(gate, device_id, mapped[1], vec![mapped[0]])?
+            }
+            Tranif0 | Tranif1 | Rtranif0 | Rtranif1 => {
+                if mapped.len() != 3 {
+                    return Err(CodegenError::Invalid(format!(
+                        "gate `{owner}` (`{:?}`): expected 3 terminals (source, drain, gate), got {}",
+                        gate.kind, mapped.len()
+                    )));
+                }
+                super::prim::GateElement::new(gate, device_id, mapped[1], vec![mapped[0], mapped[2]])?
+            }
+            _ => super::prim::GateElement::new(gate, device_id, mapped[0], mapped[1..].to_vec())?,
+        };
         self.devices.push(Box::new(element));
         Ok(())
     }

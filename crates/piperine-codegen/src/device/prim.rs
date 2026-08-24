@@ -46,9 +46,21 @@ fn gate_primitive_for(kind: GateKind) -> Result<GatePrimitive, CodegenError> {
         GateKind::Bufif1 => GatePrimitive::Bufif1,
         GateKind::Notif0 => GatePrimitive::Notif0,
         GateKind::Notif1 => GatePrimitive::Notif1,
-        // T39 already rejects every switch-level kind at lowering — this
-        // arm is defense in depth, never reached from a design that
-        // elaborated successfully.
+        // §8.5.3.5 (T67/LRMW2-64): the bidirectional pass-switch family,
+        // modeled unidirectionally by reusing the tristate-buffer
+        // primitives (`kernel::digital::gates`'s own module doc has the
+        // full disclosure) — `tran`/`rtran` always conduct, `tranif1`/
+        // `rtranif1`/`tranif0`/`rtranif0` conduct while their gate
+        // terminal says so. The `r`-forms map to the same primitive as
+        // their non-`r` counterpart (strength reduction is a disclosed,
+        // separate gap — see the module doc).
+        GateKind::Tran | GateKind::Rtran => GatePrimitive::Buf,
+        GateKind::Tranif1 | GateKind::Rtranif1 => GatePrimitive::Bufif1,
+        GateKind::Tranif0 | GateKind::Rtranif0 => GatePrimitive::Bufif0,
+        // T39 already rejects every remaining switch-level kind
+        // (device-physics MOS/pull primitives) at lowering — this arm is
+        // defense in depth, never reached from a design that elaborated
+        // successfully.
         other => {
             return Err(CodegenError::unsupported(format!("gate primitive `{other:?}` has no digital dispatch")));
         }
