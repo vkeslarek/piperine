@@ -14,22 +14,37 @@
 //! event_queue`, a `BinaryHeap<Reverse<DigitalEvent>>`) uses. Both
 //! `evaluate_until_stable` and `evaluate_dag_ordered` (`scheduler.rs`)
 //! drain that same heap via successive `pop()`, which already yields
-//! events in ascending `Ord` — so both production paths now apply a
-//! same-timestamp batch in strict region-priority order with **no
-//! further change to either method's own code**: extending `DigitalEvent`
-//! instead of literally invoking `RegionQueue::run()` in the hot delta-
-//! cycle loop avoids adding a second heap/allocation to the
-//! (heavily-relied-on) scheduler's inner loop, while reusing the same
-//! ordering rule `RegionQueue` proved correct. `core/element.rs`'s trait
+//! events in ascending `Ord` — reusing the same ordering rule
+//! `RegionQueue` proved correct, without a second heap/allocation in the
+//! (heavily-relied-on) scheduler's inner loop. `core/element.rs`'s trait
 //! surface is untouched (MD-46) — every existing event source (the JIT
-//! `QueueSink::emit` runtime path) stamps `Region::Active`, so this is a
-//! behavior-preserving superset for every pre-T38 caller (see
-//! `events.rs`'s own `stratified_regions_resolve_the_canonical_active_
-//! nba_race_through_evaluate_until_stable`/`inactive_region_lands_
-//! after_active_...`/`monitor_region_lands_last_...` — the production-
-//! path proofs). `RegionQueue` itself stays as the independently-verified
-//! reference oracle its own tests already exercise; nothing here forces a
-//! caller to *also* route through it.
+//! `QueueSink::emit` runtime path) stamps `Region::Active`.
+//!
+//! **T68/LRMW2-57 update — this holds only when a net has one live driver
+//! at the instant in question**, the overwhelmingly common real case.
+//! `apply_driven_event` (`scheduler.rs`) resolves every applied event
+//! through `DriverTable`/`Strength::resolve` (T54/LRMW2-46, LRM Table
+//! 7-3), not a plain overwrite — when a net has *multiple* live drivers
+//! (regardless of which region(s) they arrive in, and regardless of
+//! whether `DriverTable` even still considers an old, never-refired
+//! source "live"), the production scheduler arbitrates by strength; this
+//! file's own `RegionQueue::run` has no strength model at all and always
+//! overwrites. The two coincide for a single driver and diverge for
+//! multiple — `tests/scheduler_region_queue_parity.rs` (root of
+//! `piperine-solver`) is the differential proof for the coincide case
+//! *and* the pinned proof for the diverge case (not a claim of parity
+//! that isn't real). `events.rs`'s own `stratified_regions_resolve_the_
+//! canonical_active_nba_race_through_evaluate_until_stable`/`inactive_
+//! region_lands_after_active_at_the_same_timestamp` are exactly this
+//! multi-source-driver scenario, asserting the LRM-literal (region-
+//! overwrite) answer the production scheduler does not currently give —
+//! left failing rather than weakened, since Strength-arbitrating a
+//! same-net cross-region race is a genuine, disclosed gap (closing it
+//! needs a `wire`-vs-`reg` net-kind classification `DriverTable` doesn't
+//! have yet), not a value to quietly assert around. `RegionQueue` itself
+//! stays the independently-verified reference oracle its own tests
+//! already exercise; nothing here forces a caller to *also* route
+//! through it.
 //!
 //! **The six modeled regions, in per-time-step processing order (LRM
 //! §8.5.1; T58/LRMW2-51 added the two mixed-signal ones, marked below):**
