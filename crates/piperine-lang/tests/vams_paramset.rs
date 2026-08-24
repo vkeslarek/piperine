@@ -4,19 +4,18 @@
 //! associated module with its pre-computed parameter bindings actually
 //! applied — §6.4's own SPICE-model-card-conversion worked example.
 //!
-//! **Fixture adaptation (disclosed):** the LRM's own concrete syntax is
-//! `paramset name module_name;` (no parens around the module name, Annex
-//! A.1.9's `paramset_declaration`) — this crate's *existing*, pre-dating
-//! this task, already-committed-and-tested grammar
-//! (`crates/piperine-lang/tests/items_remaining.rs::
-//! paramset_declares_module_target_and_params`) instead requires
-//! `paramset name (module_name);`, a real, separate, undisclosed-until-now
-//! FORM divergence from Annex A. Fixing it is a grammar change with its
-//! own pre-existing test to update, outside LRMC-C5-07's own declared
-//! scope (`elab/lower/{register.rs,vams.rs}` only) — this file's fixtures
-//! use the existing (parenthesized) form so as not to touch
-//! `grammar/item.rs` under this task; the values, parameter names, and
-//! `.field = expr;` bindings are otherwise §6.4's own example verbatim.
+//! **Conformance (T61, LRMW2-58):** §6.4 Syntax 6-4's own concrete
+//! grammar is `` `paramset` paramset_identifier module_or_paramset_
+//! identifier `;` `` — no parentheses around the second identifier
+//! (confirmed by §6.4's own worked example: `paramset nch nmos3; //
+//! default paramset`). `grammar/item.rs::parse_paramset_decl` now accepts
+//! this LRM form directly; the parenthesized `paramset name (module);`
+//! form this file's other fixtures use (and
+//! `crates/piperine-lang/tests/items_remaining.rs::
+//! paramset_declares_module_target_and_params` exercises) stays accepted
+//! too, as a sanctioned extension — `both_paramset_forms_parse_to_the_
+//! same_pom` below proves the two are equivalent, not just
+//! independently accepted.
 
 use piperine_lang::pom::Value;
 use piperine_lang::{parse_and_elaborate, SourceMap};
@@ -147,4 +146,29 @@ fn a_paramset_statement_naming_an_unknown_module_parameter_fails_loud() {
     "#;
     let msg = elab_err(src);
     assert!(msg.contains("nonexistent_param"), "names the offending .field: {msg}");
+}
+
+/// T61 Done-when #1: §6.4's own bare LRM form (`paramset name module;`,
+/// no parentheses) and the parenthesized sanctioned-extension form
+/// (`paramset name (module);`) elaborate to the identical POM — same
+/// associated module, same resolved parameter bindings, not merely
+/// "both accepted."
+#[test]
+fn both_paramset_forms_parse_to_the_same_pom() {
+    let lrm_form = FIXTURE.replace("paramset nch (nmos3);", "paramset nch nmos3;");
+    let extension_form = FIXTURE;
+    assert!(!lrm_form.contains("paramset nch (nmos3);"), "the replacement must have taken effect");
+
+    let d_lrm = elab(&lrm_form);
+    let d_ext = elab(extension_form);
+
+    let m1_lrm = d_lrm.module("top").unwrap().instances.iter().find(|i| i.label.as_deref() == Some("m1")).unwrap();
+    let m1_ext = d_ext.module("top").unwrap().instances.iter().find(|i| i.label.as_deref() == Some("m1")).unwrap();
+
+    assert_eq!(m1_lrm.module, m1_ext.module, "both forms resolve the same associated module");
+    assert_eq!(m1_lrm.module, "nmos3");
+    assert_eq!(
+        m1_lrm.params, m1_ext.params,
+        "both forms produce identical resolved parameter bindings, not just independent successes"
+    );
 }

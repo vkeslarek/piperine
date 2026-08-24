@@ -1505,13 +1505,25 @@ impl Grammar {
     // ───────────────────────── paramset / connectrules / config ────────────
 
     /// `paramset_declaration`, Annex A.1.9 (not covered by §2.9's attribute
-    /// sites).
+    /// sites). §6.4 Syntax 6-4's own production is `` `paramset`
+    /// paramset_identifier module_or_paramset_identifier `;` `` — no
+    /// parentheses around the second identifier (confirmed by §6.4's own
+    /// worked example: `paramset nch nmos3; // default paramset`). This
+    /// parser also accepts `paramset name (module);` as a sanctioned
+    /// extension (T26) for callers already relying on it — the LRM form
+    /// (T61, LRMW2-58) is now accepted too, both producing the identical
+    /// `ParamsetDecl`.
     pub fn parse_paramset_decl(&mut self) -> Result<ParamsetDecl, ParseError> {
         let start = self.expect_kw("paramset")?;
         let (name, _) = self.expect_ident()?;
-        self.expect_punct("(")?;
+        let parenthesized = self.at_punct("(");
+        if parenthesized {
+            self.expect_punct("(")?;
+        }
         let (module_name, _) = self.expect_ident()?;
-        self.expect_punct(")")?;
+        if parenthesized {
+            self.expect_punct(")")?;
+        }
         self.expect_punct(";")?;
         let mut params = vec![];
         let mut statements = vec![];
