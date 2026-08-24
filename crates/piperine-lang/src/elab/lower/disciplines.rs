@@ -15,17 +15,21 @@
 //! fixed-point loop consults an in-force `` `default_discipline ``
 //! directive (Annex F step 4.b) before finally being declared unknown.
 //!
-//! **Annex F method chosen (T26 decision, per the task's own "decided
-//! in-task against the LRM's worked examples" instruction): Basic
-//! discipline resolution (§7.4.4.1).** The LRM names it as *the default*
-//! of the two documented algorithms ("basic (the default) and detail",
-//! §7.4.4); its own worked example (§7.4.4.1, Figure 7-2-adjacent text) is
-//! the simpler of the two — propagate a neighbour's known discipline
-//! across a direct connection — where "detail" additionally reasons about
-//! per-net compatible-discipline *sets* before collapsing them. Given a
-//! choice between the two correctly-specified methods, Basic is the one
-//! this pass implements; Detail is out of scope (documented here, not
-//! silently half-done).
+//! **Both Annex F methods implemented (T26 then T60): Basic (§7.4.4.1,
+//! the LRM's own stated default) and Detail (§7.4.4.2).** "The selection
+//! of these discipline resolution modes shall be vendor-specific" (§7.4.4)
+//! — Piperine exposes the choice as [`super::super::registry::
+//! ElabContext::discipline_resolution_mode`] (seeded before elaboration,
+//! `Basic` by default), not new grammar, since no VAMS Annex A production
+//! picks it (C7). The two modes share every rule in
+//! [`resolve_one_round`] below except one: **Detail skips the `connect
+//! ... resolveto` branch entirely** for ordinary conflict resolution —
+//! §7.4.4.2's own words, "the specified `resolveto` connect statements
+//! are ignored in this mode unless coercion ... is used" — falling
+//! straight through to the domain-based continuous-wins /
+//! nature-compatibility / connectrules-bridge chain. Basic mode is
+//! unaffected: its own worked example (§7.4.4.1) still resolves discrete
+//! conflicts via `resolveto` exactly as before.
 //!
 //! **Scope note (documented, not silently narrowed):** the full LRM
 //! algorithm resolves across the *entire* hierarchy. This pass resolves
@@ -103,12 +107,12 @@ impl ElabPass for ResolveDisciplines {
             let m = &design.modules[name];
             for p in &m.ports {
                 if p.ty.discipline_name() == UNRESOLVED {
-                    return Err(unresolved_err(&p.name, name));
+                    return Err(unresolved_err(elab, &p.name, name));
                 }
             }
             for w in &m.wires {
                 if w.ty.discipline_name() == UNRESOLVED {
-                    return Err(unresolved_err(&w.name, name));
+                    return Err(unresolved_err(elab, &w.name, name));
                 }
             }
         }
@@ -116,11 +120,21 @@ impl ElabPass for ResolveDisciplines {
     }
 }
 
-fn unresolved_err(net: &str, module: &str) -> ElabError {
+/// The Annex F method name for the error text — reflects whichever mode
+/// ([`crate::elab::registry::DisciplineResolutionMode`]) is actually in
+/// force for this elaboration run (T60), not hard-coded to Basic.
+fn method_name(elab: &Elaborator) -> &'static str {
+    match elab.ctx.discipline_resolution_mode {
+        crate::elab::registry::DisciplineResolutionMode::Basic => "basic discipline resolution (LRM §7.4.4.1)",
+        crate::elab::registry::DisciplineResolutionMode::Detail => "detail discipline resolution (LRM §7.4.4.2)",
+    }
+}
+
+fn unresolved_err(elab: &Elaborator, net: &str, module: &str) -> ElabError {
     ElabError::from(ElabErrorKind::DisciplineResolutionFailed {
         net: net.to_string(),
         module: module.to_string(),
-        method: "basic discipline resolution (LRM §7.4.4.1)".to_string(),
+        method: method_name(elab).to_string(),
         reason: "no neighbouring net carries a discipline".to_string(),
         span: None,
     })
@@ -159,7 +173,18 @@ fn resolve_one_round(elab: &Elaborator, name: &str, design: &mut Design) -> Resu
                     // discipline shall be used unless the `resolveto`
                     // connect statement overrides the discipline."
                     // `exclude` means the pair is forbidden outright.
-                    if let Some(target) = super::connect::resolve_via_resolveto(elab, d, callee_disc) {
+                    //
+                    // §7.4.4.2 (T60): Detail mode ignores `resolveto` for
+                    // this ordinary conflict-resolution path — "the
+                    // specified resolveto connect statements are ignored
+                    // in this mode unless coercion ... is used" — so this
+                    // branch is skipped outright in Detail, falling
+                    // through to the domain-based rules below.
+                    let resolveto_applies =
+                        elab.ctx.discipline_resolution_mode != crate::elab::registry::DisciplineResolutionMode::Detail;
+                    if let Some(target) =
+                        resolveto_applies.then(|| super::connect::resolve_via_resolveto(elab, d, callee_disc)).flatten()
+                    {
                         match target {
                             crate::ast::ConnectResolutionTarget::Discipline(forced) => {
                                 // No-op guard: once the net already carries
@@ -247,7 +272,7 @@ fn resolve_one_round(elab: &Elaborator, name: &str, design: &mut Design) -> Resu
                             return Err(ElabError::from(ElabErrorKind::DisciplineResolutionFailed {
                                 net: port_ref.net().to_string(),
                                 module: name.to_string(),
-                                method: "basic discipline resolution (LRM §7.4.4.1)".to_string(),
+                                method: method_name(elab).to_string(),
                                 reason: format!(
                                     "incompatible disciplines on drivers and receivers — `{d}` vs `{callee_disc}` (from instance `{}`)",
                                     inst.name()

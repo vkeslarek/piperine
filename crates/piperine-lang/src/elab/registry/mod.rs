@@ -23,12 +23,19 @@
 //! (`ElabErrorKind::UnknownAttrSchema`) on anything else — MD-24's "no
 //! silent fallback" rule ported verbatim, not reinvented.
 
+mod discipline_mode;
+pub use discipline_mode::DisciplineResolutionMode;
+
 #[derive(Default)]
 pub struct ElabContext {
     /// Attribute-instance schema names registered for this elaboration
     /// run (VAMS-12/13). Empty unless a caller seeds it (via
     /// `parse_and_elaborate_seeded`) before elaboration starts.
     pub schemas: std::collections::HashSet<String>,
+    /// §7.4.4's discipline-resolution mode for this elaboration run
+    /// (T60, LRMW2-56) — `Basic` unless a caller seeds `Detail` before
+    /// elaboration starts, the same seeding convention `schemas` uses.
+    pub discipline_resolution_mode: DisciplineResolutionMode,
 }
 
 impl ElabContext {

@@ -1,12 +1,15 @@
-//! LRM-COVERS: 7.4.1, 7.4.4.1, 7.4.4.3
+//! LRM-COVERS: 7.4.1, 7.4.4.1, 7.4.4.2, 7.4.4.3
 //! VAMS T26 (VAMS-17) — `ResolveDisciplines`: Annex F discipline
-//! resolution for a port/net declared with no explicit discipline. This
-//! pass implements **Basic discipline resolution (§7.4.4.1)**, the LRM's
-//! own stated default of the two documented methods — see the pass's
-//! `//!` module doc (`elab/lower/disciplines.rs`) for why Basic was
-//! chosen over Detail.
+//! resolution for a port/net declared with no explicit discipline.
+//! **Basic discipline resolution (§7.4.4.1)**, the LRM's own stated
+//! default of the two documented methods, is exercised by every test in
+//! this file that doesn't seed `DisciplineResolutionMode::Detail`
+//! explicitly. T60 (LRMW2-56) adds **Detail (§7.4.4.2)** — see the
+//! pass's `//!` module doc (`elab/lower/disciplines.rs`) for how the two
+//! modes differ and how a caller selects one.
 
-use piperine_lang::{parse_and_elaborate, SourceMap};
+use piperine_lang::elab::registry::DisciplineResolutionMode;
+use piperine_lang::{parse_and_elaborate, parse_and_elaborate_seeded, SourceMap};
 
 fn elab(src: &str) -> piperine_lang::Design {
     parse_and_elaborate(src, &SourceMap::dummy()).unwrap_or_else(|e| panic!("elaboration failed: {e:?}"))
@@ -189,4 +192,136 @@ fn narrowest_resolveto_rule_wins_over_a_broader_one() {
     let top = d.module("top").expect("narrowest x,y rule applies");
     let shared = top.wires().iter().find(|w| w.name == "shared").expect("shared wire");
     assert_eq!(shared.ty.discipline_name(), "x", "the narrower `x,y resolveto x` rule must win over the broader one");
+}
+
+// ── Detail discipline resolution (§7.4.4.2, LRMW2-56, T60) ─────────────
+
+/// Two same-domain, genuinely incompatible disciplines (unrelated bound
+/// potential natures, different `units`, no shared ancestor) whose
+/// undeclared shared net can *only* resolve via an explicit `connect ...
+/// resolveto` rule — there is no continuous/discrete mismatch, no shared
+/// nature lineage, and no plain (non-`resolveto`) `connectrules` bridge
+/// for `InsertConnectModules` to fall back on.
+const INCOMPATIBLE_DISCRETE_PAIR: &str = r#"
+    nature Volts;
+        access = V;
+        units = "V";
+        abstol = 1e-6;
+    endnature
+    nature Amps;
+        access = I;
+        units = "A";
+        abstol = 1e-12;
+    endnature
+    discipline disc_a;
+        domain discrete;
+        potential Volts;
+    enddiscipline
+    discipline disc_b;
+        domain discrete;
+        potential Amps;
+    enddiscipline
+
+    connectrules cr;
+        connect disc_a, disc_b resolveto disc_a;
+    endconnectrules
+
+    module leaf_a (inout disc_a p);
+    endmodule
+    module leaf_b (inout disc_b p);
+    endmodule
+    module top ();
+        leaf_a a1(shared);
+        leaf_b b1(shared);
+    endmodule
+"#;
+
+/// Basic mode (the default): §7.4.4.1's own resolveto path resolves the
+/// conflict, exactly as `resolveto_forces_the_named_discipline_instead_of_failing_loud`
+/// above — Detail's addition must not change Basic's own behavior where
+/// the two agree (T60 Done-when #2).
+#[test]
+fn basic_mode_resolves_the_discrete_pair_via_resolveto() {
+    let d = elab(INCOMPATIBLE_DISCRETE_PAIR);
+    let top = d.module("top").expect("basic mode resolves via resolveto");
+    let shared = top.wires().iter().find(|w| w.name == "shared").expect("shared wire");
+    assert_eq!(shared.ty.discipline_name(), "disc_a");
+}
+
+/// Detail mode, same source: §7.4.4.2's own text — "the specified
+/// resolveto connect statements are ignored in this mode" — so the exact
+/// same `resolveto disc_a` rule that resolves Basic mode above is not
+/// consulted; with no domain mismatch, no shared nature lineage, and no
+/// plain connectrules bridge, elaboration fails loud naming Detail's own
+/// method (T60 Done-when #1, discriminating: same source, same seed,
+/// opposite outcome depending only on the selected mode).
+#[test]
+fn detail_mode_ignores_resolveto_and_fails_loud_on_the_same_discrete_pair() {
+    let err = parse_and_elaborate_seeded(INCOMPATIBLE_DISCRETE_PAIR, &SourceMap::dummy(), |ctx| {
+        ctx.discipline_resolution_mode = DisciplineResolutionMode::Detail;
+    })
+    .expect_err("Detail mode must not resolve this pair via resolveto");
+    let msg = err.to_string();
+    assert!(msg.contains("shared"), "names the conflicting net: {msg}");
+    assert!(msg.contains("detail discipline resolution"), "names the Detail method: {msg}");
+    assert!(msg.contains("7.4.4.2"), "cites the Detail clause: {msg}");
+}
+
+/// Continuous still wins over discrete in Detail mode exactly as in
+/// Basic — the two modes only disagree on the `resolveto` path, not on
+/// the domain-based continuous-over-discrete rule (§7.4.4.2's own
+/// "continuous ... propagate up and then back down to meet discrete
+/// disciplines" headline, still domain-based). Mirrors
+/// `vams_annex_f_domain.rs`'s own Figure 7-3 reduction: `ResolveDisciplines`
+/// resolving `netc` to `electrical` is proven by the *next* failure being
+/// `InsertConnectModules`'s (no `connectrules` bridge for the resulting
+/// cross-domain connection) rather than `ResolveDisciplines`'s own
+/// `DisciplineResolutionFailed` — the same technique that file uses for
+/// Basic mode, run here under Detail to prove the domain rule is
+/// mode-independent.
+#[test]
+fn detail_mode_still_lets_continuous_win_over_discrete() {
+    let src = "
+        nature Voltage;
+            units = \"V\";
+            abstol = 1e-6;
+            access = V;
+        endnature
+        nature Current;
+            units = \"A\";
+            abstol = 1e-12;
+            access = I;
+        endnature
+        discipline electrical;
+            domain continuous;
+            potential Voltage;
+            flow Current;
+        enddiscipline
+        discipline cmos_logic;
+            domain discrete;
+        enddiscipline
+
+        module analog_drv (inout electrical p);
+        endmodule
+        module digital_recv (inout cmos_logic p);
+        endmodule
+        module top ();
+            analog_drv a1(netc);
+            digital_recv d1(netc);
+        endmodule
+    ";
+    let msg = parse_and_elaborate_seeded(src, &SourceMap::dummy(), |ctx| {
+        ctx.discipline_resolution_mode = DisciplineResolutionMode::Detail;
+    })
+    .expect_err("no connectrules bridge declared — InsertConnectModules must still fail")
+    .to_string();
+    assert!(
+        !msg.contains("incompatible disciplines"),
+        "ResolveDisciplines must resolve netc to electrical under Detail too — got: {msg}"
+    );
+    assert!(
+        msg.contains("E4005") || msg.contains("connect-module") || msg.contains("connectrules"),
+        "the failure must be InsertConnectModules's, proving discipline resolution itself \
+         succeeded under Detail mode: {msg}"
+    );
 }
