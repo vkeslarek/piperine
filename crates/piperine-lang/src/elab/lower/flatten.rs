@@ -16,6 +16,7 @@ use crate::pom::{
     is_ground, Behavior, Branch, Design, ElabError, ElabErrorKind, Connection, Instance, Module,
     NetRef, NetType, Wire,
 };
+use crate::value::Value;
 
 use super::passes::ElabPass;
 use super::Elaborator;
@@ -183,7 +184,7 @@ impl FlattenHierarchy {
             if Self::is_leaf(&child) {
                 kept.push(inst);
             } else {
-                let (insts, wires, conns) = Self::inline(&inst, &child)?;
+                let (insts, wires, conns) = Self::inline(&inst, &child, design)?;
                 kept.extend(insts);
                 m.wires.extend(wires);
                 m.connections.extend(conns);
@@ -283,9 +284,19 @@ impl FlattenHierarchy {
     fn inline(
         inst: &Instance,
         child: &Module,
+        design: &Design,
     ) -> Result<InlineResult, ElabError> {
         let mut rho: HashMap<String, NetRef> = HashMap::new();
         let mut lifted_wires: Vec<Wire> = Vec::new();
+        // §6.3.6/§9.18 (LRMW2-61): `inst`'s own `mfactor` override (Table
+        // 9-29's "specified" term at this level; 1.0 when `inst` carries
+        // none) is the "hier" factor every sub-instance spliced out of
+        // `inst`'s body inherits. Combined by straight multiplication with
+        // each spliced instance's own override (its own "specified" term),
+        // recursively — `inline` runs once per hierarchy level on the way
+        // up, so a leaf several levels deep accumulates the full product
+        // along its path by the time it reaches the top.
+        let inst_mfactor = Self::mfactor_of(inst.params());
 
         // Child port i → parent NetRef (positional binding).
         for (i, port) in child.ports.iter().enumerate() {
@@ -316,6 +327,27 @@ impl FlattenHierarchy {
                 .iter()
                 .map(|nr| Self::remap(nr, &rho, child))
                 .collect::<Result<Vec<_>, _>>()?;
+            // Table 9-29: `$mfactor_specified * $mfactor_hier`. Only
+            // written back onto `s` when `s`'s own module actually declares
+            // an `mfactor` parameter (Piperine's disclosed vehicle for
+            // `$mfactor`, `crates/piperine-codegen/src/device/analog/
+            // instance.rs`) — a leaf module that never declared one has no
+            // slot to carry the product into, and the ordinary
+            // unknown-parameter-override check downstream would otherwise
+            // fail loud on every unrelated instance under a scaled
+            // ancestor. Skipped (not injected) rather than defaulted to
+            // 1.0, so a module untouched by `$mfactor` never gains a
+            // synthetic override.
+            let combined_mfactor = inst_mfactor * Self::mfactor_of(s.params());
+            let declares_mfactor = design
+                .modules
+                .get(&s.module)
+                .is_some_and(|m| m.params.iter().any(|p| p.name == "mfactor"));
+            let params = if combined_mfactor != 1.0 && declares_mfactor {
+                Self::with_mfactor(s.params.clone(), combined_mfactor)
+            } else {
+                s.params.clone()
+            };
             spliced_instances.push(Instance {
                 span: s.span,
                 label_span: None,
@@ -325,7 +357,7 @@ impl FlattenHierarchy {
                 label: Some(new_label),
                 module: s.module.clone(),
                 ports: new_ports,
-                params: s.params.clone(),
+                params,
                 range: s.range,
             });
         }
@@ -415,6 +447,31 @@ impl FlattenHierarchy {
             NetType::Array(_, n) => Some(*n),
             NetType::Discipline(_) | NetType::Digital1364(_) => None,
         }
+    }
+
+    /// The `mfactor` override's value among an instance's param overrides
+    /// (Table 9-29's "specified" term); `1.0` (the top-level default, Table
+    /// 9-29) when absent or non-numeric.
+    fn mfactor_of(params: &[(String, Value)]) -> f64 {
+        params
+            .iter()
+            .find(|(name, _)| name == "mfactor")
+            .and_then(|(_, v)| match v {
+                Value::Real(r) => Some(*r),
+                Value::Int(i) => Some(*i as f64),
+                Value::Nat(n) => Some(*n as f64),
+                _ => None,
+            })
+            .unwrap_or(1.0)
+    }
+
+    /// Upsert the `mfactor` override to `combined` in a param-override list.
+    fn with_mfactor(mut params: Vec<(String, Value)>, combined: f64) -> Vec<(String, Value)> {
+        match params.iter_mut().find(|(name, _)| name == "mfactor") {
+            Some((_, v)) => *v = Value::Real(combined),
+            None => params.push(("mfactor".to_string(), Value::Real(combined))),
+        }
+        params
     }
 }
 

@@ -544,6 +544,19 @@ fn lit(v: f64) -> PomExpr {
     PomExpr::Number { span: NOSPAN, value: NumberLit::Real(v) }
 }
 
+/// §6.3.6 (LRMW2-61): "All contributions to a branch flow quantity in the
+/// analog block shall be multiplied by `$mfactor`" — applied here,
+/// automatically, to every `I(...) <+` contribution's resistive/charge
+/// piece, so a device model never multiplies by `$mfactor` itself (doing so
+/// would double-scale — the LRM's own `badres` counter-example). `$mfactor`
+/// differentiates to a constant (`resolve/diff.rs`'s `SystemFunctionCall`
+/// default), so this changes no Jacobian structure, only its magnitude.
+/// Reads `SimCtx::MFACTOR` (ABI default `1.0`), a no-op multiply for any
+/// module that never declares a non-unity `mfactor`.
+fn scale_by_mfactor(expr: PomExpr) -> PomExpr {
+    binary(BinOp::Mul, expr, PomExpr::SystemFunctionCall { span: NOSPAN, name: "$mfactor".to_string(), args: Vec::new() })
+}
+
 /// An `Ident` naming node `id` — the shape a `V()`/`I()` access-function
 /// terminal expects (`Expr::AccessFunction`'s `pos`/`neg`, resolved back
 /// to a node id at JIT-emit time via `Builder::resolve_node`, same as any
@@ -1464,12 +1477,12 @@ impl<'m> AnalogFlattener<'m> {
             let with_zero = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], false)?;
             let charge = binary(BinOp::Sub, with_arg, with_zero);
             let charge = self.finish_expr(charge)?;
-            self.out.charge.push(FlatContrib { plus, minus, expr: charge });
+            self.out.charge.push(FlatContrib { plus, minus, expr: scale_by_mfactor(charge) });
         }
 
         let resistive = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], false)?;
         let resistive = self.finish_expr(resistive)?;
-        self.out.resistive.push(FlatContrib { plus, minus, expr: resistive });
+        self.out.resistive.push(FlatContrib { plus, minus, expr: scale_by_mfactor(resistive) });
         Ok(())
     }
 
