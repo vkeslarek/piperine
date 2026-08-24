@@ -161,6 +161,33 @@ pub extern "C" fn pip_task_display(ctx: *mut SimCtx, fmt_id: u32, argc: u32, arg
     sink.write(Channel::Stdout, "\n");
 }
 
+/// `$strobe`/`$monitor` (§9.4, T62/LRMW2-59): defers to the Monitor
+/// region instead of printing immediately — pushes `fmt_id` onto
+/// `ctx`'s [`SimCtx::monitor_queue`] (a no-op when null, e.g. a bare
+/// unit test `SimCtx` that never wired one up). `device/digital.rs`
+/// drains the queue (calling [`pip_task_display`] directly, in FIFO
+/// order) only after the enclosing `seq`/`comb` call and its NBA commit
+/// have both finished, matching §8.5.1's stated ordering ("$strobe...
+/// display the final values of variables... after all the events that
+/// have been evaluated for the current time have been processed"). No
+/// dynamic arguments yet (T44's own scope, same static-format-string
+/// limit `pip_task_display` itself disclosed at its own call site).
+///
+/// # Safety
+/// `ctx` must be a valid, non-null pointer to a live [`SimCtx`] whose
+/// `monitor_queue` field is either null (a no-op) or points to a live
+/// `Vec<u32>` for the duration of the call.
+pub extern "C" fn pip_task_defer_monitor(ctx: *mut SimCtx, fmt_id: u32) {
+    if ctx.is_null() {
+        return;
+    }
+    let queue = unsafe { (*ctx).monitor_queue };
+    if queue.is_null() {
+        return;
+    }
+    unsafe { (*queue).push(fmt_id) };
+}
+
 /// `$write`-family output (§9.2): like [`pip_task_display`] but without the
 /// trailing newline `$display` adds.
 pub extern "C" fn pip_task_write(ctx: *mut SimCtx, fmt_id: u32, argc: u32, argv: *const TaskArg) {
@@ -297,6 +324,7 @@ unsafe impl Sync for TaskFn {}
 
 pub const TASK_FNS: &[TaskFn] = &[
     TaskFn { name: "pip_task_display", ptr: pip_task_display as *const u8 },
+    TaskFn { name: "pip_task_defer_monitor", ptr: pip_task_defer_monitor as *const u8 },
     TaskFn { name: "pip_task_write", ptr: pip_task_write as *const u8 },
     TaskFn { name: "pip_task_finish", ptr: pip_task_finish as *const u8 },
     TaskFn { name: "pip_task_fatal", ptr: pip_task_fatal as *const u8 },
@@ -525,6 +553,7 @@ mod tests {
             names,
             [
                 "pip_task_display",
+                "pip_task_defer_monitor",
                 "pip_task_write",
                 "pip_task_finish",
                 "pip_task_fatal",

@@ -103,6 +103,18 @@ impl<'m> DigitalCompiler<'m> {
                 .map_err(|e| CodegenError::Module(e.to_string()))?;
             task_ids.insert(name, id);
         }
+        // §8.5.1 (T62/LRMW2-59): `$strobe`/`$monitor` defer through this
+        // trampoline instead of `pip_task_display` — a distinct, smaller
+        // signature (no argc/argv yet, see its own doc comment).
+        {
+            let mut sig = jit.make_signature();
+            sig.params.push(AbiParam::new(types::I64)); // ctx: *mut SimCtx
+            sig.params.push(AbiParam::new(types::I32)); // fmt_id
+            let id = jit
+                .declare_function("pip_task_defer_monitor", Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            task_ids.insert("pip_task_defer_monitor", id);
+        }
 
         Ok(Self {
             layout: DigitalLayout::build(module, body),
@@ -645,6 +657,15 @@ impl NetworkComb {
                 .declare_function(name, Linkage::Import, &sig)
                 .map_err(|e| CodegenError::Module(e.to_string()))?;
             task_ids.insert(name, id);
+        }
+        {
+            let mut sig = jit.make_signature();
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I32));
+            let id = jit
+                .declare_function("pip_task_defer_monitor", Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            task_ids.insert("pip_task_defer_monitor", id);
         }
 
         let ptr_ty = jit.target_config().pointer_type();

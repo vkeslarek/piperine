@@ -60,6 +60,21 @@ pub struct SimCtx {
     /// no-op for every `pip_task_f*` trampoline, same contract as `io`.
     /// Appended last, per this struct's established convention.
     pub files: *mut piperine_solver::prelude::FileTable,
+    /// The `$strobe`/`$monitor` Monitor-region deferral queue (§8.5.1,
+    /// T62/LRMW2-59) — `pip_task_defer_monitor` (`emit::runtime_io`)
+    /// pushes a format-string id here instead of printing immediately;
+    /// the digital device (`device/digital.rs`) drains it (in FIFO order,
+    /// calling `pip_task_display` directly) only after the enclosing
+    /// `seq`/`comb` call *and* its NBA commit have both finished — the
+    /// Monitor region's "after every earlier region at this time has
+    /// drained" ordering, reusing `Region::Monitor` conceptually without
+    /// a literal solver-scheduler event (the compiled kernel is one
+    /// synchronous call; there is no mid-call yield point to schedule
+    /// into). A *borrowed* mutable pointer, same convention as `files`/
+    /// `io` above (`SimCtx` stays `Copy`) — null by default, a safe no-op
+    /// for `pip_task_defer_monitor`. Appended last, per this struct's
+    /// established convention.
+    pub monitor_queue: *mut Vec<u32>,
 }
 
 // SAFETY: `SimCtx` is `Copy`/`Send`/`Sync` in the same sense every other
@@ -104,6 +119,7 @@ impl Default for SimCtx {
             // `device/builder.rs`) overrides this.
             port_connected_mask: u64::MAX,
             files: std::ptr::null_mut(),
+            monitor_queue: std::ptr::null_mut(),
         }
     }
 }

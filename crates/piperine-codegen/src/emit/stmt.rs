@@ -128,18 +128,20 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             // format strings only (`argc=0, argv=null`): dynamic
             // `%d`/... argument marshaling is T44's own scope (the
             // `TaskArg` ABI already exists for it — `runtime_io.rs`'s own
-            // doc comment). `$strobe`/`$monitor` route through the same
-            // `pip_task_display` call as `$display` rather than deferring
-            // to the end-of-timestep Monitor region (T38) — a documented
-            // scope limit: comb_phase already only re-evaluates on a real
-            // input change (no Newton-iteration-style duplication concern
-            // digital shares with analog's own accept_timestep gating),
-            // but genuinely deferred "settled value" semantics needs the
-            // statement to *schedule* a Monitor-region event instead of
-            // calling out immediately, a bigger control-flow change than
-            // this task's stated `Where`. `$finish`/`$stop` stay a no-op
-            // here (`pip_task_finish` exists but ending the analysis is
-            // the solver's own concern, out of this task's scope).
+            // doc comment). `$finish`/`$stop` stay a no-op here
+            // (`pip_task_finish` exists but ending the analysis is the
+            // solver's own concern, out of this task's scope).
+            //
+            // §8.5.1 (T62/LRMW2-59): `$strobe`/`$monitor` defer to the
+            // Monitor region instead of calling out immediately —
+            // `pip_task_defer_monitor` pushes the format-string id onto
+            // `SimCtx::monitor_queue` instead of printing; the digital
+            // device (`device/digital.rs`) drains that queue, calling
+            // `pip_task_display` directly, only after the enclosing
+            // `seq`/`comb` call *and* its NBA commit have both finished —
+            // exactly the settled-value timing §8.5.1 states. `$display`
+            // stays on the immediate `pip_task_display` path (Active
+            // region, unchanged).
             S::TaskCall { name, args, .. } => match name.trim_start_matches('$') {
                 n @ ("display" | "write" | "strobe" | "monitor" | "warning" | "warn" | "error" | "fatal"
                 | "info") => {
@@ -150,7 +152,12 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     if fmt.is_empty() {
                         return Ok(());
                     }
-                    let trampoline = if n == "fatal" || n == "error" { "pip_task_fatal" } else if n == "write" {
+                    let deferred = n == "strobe" || n == "monitor";
+                    let trampoline = if deferred {
+                        "pip_task_defer_monitor"
+                    } else if n == "fatal" || n == "error" {
+                        "pip_task_fatal"
+                    } else if n == "write" {
                         "pip_task_write"
                     } else {
                         "pip_task_display"
@@ -160,9 +167,13 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     let fmt_id = crate::emit::runtime_io::FormatPool::intern(&fmt);
                     let ctx_ptr = self.pointers.expect("digital context").sim;
                     let fmt_id_val = self.builder.ins().iconst(types::I32, fmt_id as i64);
-                    let argc = self.builder.ins().iconst(types::I32, 0);
-                    let argv = self.builder.ins().iconst(types::I64, 0);
-                    self.builder.ins().call(func, &[ctx_ptr, fmt_id_val, argc, argv]);
+                    if deferred {
+                        self.builder.ins().call(func, &[ctx_ptr, fmt_id_val]);
+                    } else {
+                        let argc = self.builder.ins().iconst(types::I32, 0);
+                        let argv = self.builder.ins().iconst(types::I64, 0);
+                        self.builder.ins().call(func, &[ctx_ptr, fmt_id_val, argc, argv]);
+                    }
                     Ok(())
                 }
                 "finish" | "stop" => Ok(()),

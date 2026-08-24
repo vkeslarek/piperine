@@ -96,6 +96,12 @@ struct Scratch {
     vars_int_base: Vec<i64>,
     vars_real_base: Vec<f64>,
     outputs_base: Vec<i64>,
+    /// §8.5.1 (T62/LRMW2-59): `$strobe`/`$monitor` format-string ids
+    /// deferred by `pip_task_defer_monitor` during the `seq`/`comb` call
+    /// (via `SimCtx::monitor_queue`, pointed at this buffer for the
+    /// call's duration) — drained (FIFO) by `flush_monitor_queue` only
+    /// after that call *and* its NBA commit have both finished.
+    monitor_queue: Vec<u32>,
 }
 
 /// The digital half of a device instance.
@@ -358,6 +364,7 @@ impl DigitalInstance {
         let any_fired = s.fired.iter().any(|&f| f != 0);
         if any_fired {
             self.seed_nba(&mut s);
+            self.sim.monitor_queue = &mut s.monitor_queue as *mut Vec<u32>;
             let abi = DigitalAbi {
                 inputs: s.inputs.as_ptr(),
                 outputs: s.outputs.as_mut_ptr(),
@@ -373,6 +380,7 @@ impl DigitalInstance {
             };
             self.kernel.eval_seq(&abi);
             self.commit_nba(&mut s);
+            self.flush_monitor_queue(&mut s);
         }
         self.scratch = s;
         any_fired
@@ -414,6 +422,7 @@ impl DigitalInstance {
         }
 
         self.seed_nba(&mut s);
+        self.sim.monitor_queue = &mut s.monitor_queue as *mut Vec<u32>;
         let abi = DigitalAbi {
             inputs: s.inputs.as_ptr(),
             outputs: s.outputs.as_mut_ptr(),
@@ -429,6 +438,7 @@ impl DigitalInstance {
         };
         self.kernel.eval_comb(&abi);
         self.commit_nba(&mut s);
+        self.flush_monitor_queue(&mut s);
 
         for i in 0..self.out_nets.len() {
             let (net, new) = (self.out_nets[i], s.outputs[i]);
@@ -488,6 +498,19 @@ impl DigitalInstance {
         }
     }
 
+    /// §8.5.1 (T62/LRMW2-59): drains `s.monitor_queue` (FIFO), calling
+    /// `pip_task_display` directly for each deferred `$strobe`/`$monitor`
+    /// format-string id — must run only after the `seq`/`comb` call that
+    /// populated it *and* `commit_nba` have both finished, so a deferred
+    /// call's output always lands after every immediate (`$display`,
+    /// Active-region) call from the same evaluation, regardless of
+    /// source order (the discriminating behavior this task adds).
+    fn flush_monitor_queue(&mut self, s: &mut Scratch) {
+        for fmt_id in s.monitor_queue.drain(..) {
+            crate::emit::runtime_io::pip_task_display(&mut self.sim as *mut SimCtx, fmt_id, 0, std::ptr::null());
+        }
+    }
+
     /// Run `seq` (for fired blocks) then `comb`, committing non-blocking
     /// (`<=`) writes after each (T23/LRMW2-14) so `comb` sees `seq`'s
     /// committed register state and a later statement never observes a
@@ -495,6 +518,7 @@ impl DigitalInstance {
     fn run(&mut self, s: &mut Scratch, analog_voltages: &[f64]) {
         let any_fired = s.fired.iter().any(|&f| f != 0);
         self.seed_nba(s);
+        self.sim.monitor_queue = &mut s.monitor_queue as *mut Vec<u32>;
         let abi = DigitalAbi {
             inputs: s.inputs.as_ptr(),
             outputs: s.outputs.as_mut_ptr(),
@@ -515,6 +539,7 @@ impl DigitalInstance {
         }
         self.kernel.eval_comb(&abi);
         self.commit_nba(s);
+        self.flush_monitor_queue(s);
     }
 
     /// Evaluate the watch terms into `s.watch` with the current signal
