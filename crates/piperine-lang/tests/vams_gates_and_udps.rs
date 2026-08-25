@@ -1,4 +1,4 @@
-//! LRM-COVERS: 6.4, 8.5.3.5
+//! LRM-COVERS: 6.4, 8.5.3.5, A.2.2.3, A.3, A.3.1, A.3.3, A.5.4
 //! LRMC-C7-13 (T39, lowering half): gate primitives (Annex A.4.2) and UDP
 //! declarations/instances (Annex A.5) reach the POM — `Module::gates`
 //! (a gate is not a module instance, no port declarations to resolve

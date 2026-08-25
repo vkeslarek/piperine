@@ -1,5 +1,7 @@
 //! T62 (LRMC-C10-13): `PluginHost::put_value` — `vpi_put_value()`'s native
 //! equivalent, symmetric with the existing `SolveResultView` read path.
+//!
+//! LRM-COVERS: 12.30
 
 use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;

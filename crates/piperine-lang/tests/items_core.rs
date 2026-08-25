@@ -4,6 +4,15 @@
 //! port-list styles), ground, net declarations (discipline+range+nodeset),
 //! and parameter/localparam/aliasparam/specparam (incl. value ranges,
 //! string params, arrays).
+//!
+//! LRM-COVERS: 3.4, 3.4.1, A.2.4, A.2.5
+//! Wave-2 (T69) re-reading, no new tests: §3.4 "Parameters" and §3.4.1
+//! "Type specification" ("the parameter declaration can contain an
+//! optional type specification ... the parameter keyword acts more as a
+//! type qualifier than a type specifier") are `parameter_and_localparam_
+//! both_parse` (`parameter real r`/`localparam integer n`, each asserted
+//! against its declared `ParamType`) and `string_parameter_parses`
+//! (`parameter string label`) directly.
 
 use piperine_lang::ast::*;
 use piperine_lang::{Grammar, Lexer};

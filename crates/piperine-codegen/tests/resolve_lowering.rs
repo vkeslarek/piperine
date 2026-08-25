@@ -1,3 +1,12 @@
+//! LRM-COVERS: 4.6.4, 4.6.4.1, 4.6.4.2, 5.6.4
+//! Wave-2 (T69) re-reading, no new tests: §4.6.4 "Noise" is the containing
+//! heading for §4.6.4.1 "white_noise" (`white_noise_registers_a_source_
+//! on_its_branch`/`white_noise_inside_a_conditional_keeps_its_branch`) and
+//! §4.6.4.2 "flicker_noise" (`flicker_noise_registers_a_flicker_source`,
+//! asserting the registered source is `NoiseKind::Flicker`) — both real
+//! operators lowered to a genuine noise source, not the `Unsupported`
+//! fallback `noise_table`/`noise_table_log` fall through to.
+//!
 //! POM → resolved-form lowering: what `resolve::lower_bodies` records for a
 //! module — contribution shape, operator state slots, noise sources, symbols —
 //! and the two fail-loud unresolved-name cases.
@@ -119,6 +128,46 @@ fn transition_registers_its_state_slot() {
         "the slot carries the transition kind — the JIT's refusal to emit it is a \
          separate contract (see analog_kernel.rs)"
     );
+}
+
+/// §5.6.4's own series-RLC worked formula — `V(p, n) <+ R*I(p, n) +
+/// L*ddt(I(p, n)) + idt(I(p, n))/C;` — lowers to a single potential
+/// contribution carrying both a `ddt` state slot (the inductor term) and
+/// an `idt` state slot (the capacitor term) on the same branch, alongside
+/// the plain resistive term — proving the combined formula (not just its
+/// three terms individually) lowers as one contribution rather than
+/// silently dropping a term.
+#[test]
+fn series_rlc_formula_registers_both_ddt_and_idt_state_slots() {
+    let src = format!(
+        "{DISCIPLINE}
+module TestMod(p, n);
+    inout electrical p, n;
+    parameter real R = 1000.0;
+    parameter real L = 1e-3;
+    parameter real C = 1e-6;
+    analog V(p, n) <+ R*I(p, n) + L*ddt(I(p, n)) + idt(I(p, n))/C;
+endmodule
+"
+    );
+    let body = lower(&src, "TestMod");
+    match only_stmt(&body) {
+        Stmt::Contribution { target: Expr::AccessFunction { function, .. }, .. } => {
+            assert_eq!(function, "V", "the LRM's own series-RLC form contributes to V(p,n)");
+        }
+        other => panic!("expected a `<+` contribution bind, got {other:?}"),
+    }
+    let analog = body.analog.as_ref().expect("analog body");
+    assert_eq!(analog.states.len(), 2, "one ddt slot (L) + one idt slot (C), got {:?}", analog.states);
+    let kinds: Vec<bool> = analog
+        .states
+        .iter()
+        .map(|&id| matches!(body.symbols.state(id).kind, StateKind::Ddt { .. }))
+        .collect();
+    assert!(kinds.contains(&true), "a ddt state slot for the inductor term is present: {kinds:?}");
+    assert!(kinds.contains(&false), "an idt state slot for the capacitor term is present: {kinds:?}");
+    let idt_present = analog.states.iter().any(|&id| matches!(body.symbols.state(id).kind, StateKind::Idt { .. }));
+    assert!(idt_present, "the capacitor term's state slot is genuinely an Idt kind, not just non-Ddt");
 }
 
 // ─── Noise sources ────────────────────────────────────────────────────────────

@@ -1,7 +1,11 @@
 //! Digital JIT tests: hand-built POM-Stmt digital bodies compiled to native
 //! kernels and driven through the event-driven device wrapper.
 //!
-//! LRM-COVERS: 8.5.3.3, 8.5.3.4
+//! LRM-COVERS: 8.5.3, 8.5.3.3, 8.5.3.4
+//! 8.5.3 ("Scheduling implication of assignments") is a purely
+//! organizational heading over 8.5.3.1-8.5.3.7 with no independently
+//! testable content of its own; it's carried here alongside two of its
+//! genuinely-tested children (blocking/non-blocking assignment scheduling).
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;

@@ -6,6 +6,12 @@
 //! (the JIT trampolines reaching it land in T5; the ch.9 task catalogue
 //! wiring lands in P3) and closes no LRMC-ID by itself.
 //!
+//! LRM-COVERS: 9.5.4.1
+//! §9.5.4.1 ("Reading a line at a time"): `fgets_reads_one_line_including_
+//! the_newline` (in `mod tests` below) proves `FileTable::fgets` — the
+//! `$fgets` data source — reads through the next `\n` inclusive, and
+//! returns the remainder with no trailing newline at EOF.
+//!
 //! **Never a silent zero descriptor.** Every `FileTable` operation returns
 //! a typed [`FileError`] on failure instead of manufacturing a fake
 //! success — matching design.md's Error Handling Strategy table.

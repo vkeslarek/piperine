@@ -1,3 +1,14 @@
+//! LRM-COVERS: 3.6.1.1, 3.6.1.2, 3.6.1.3
+//! Wave-2 (T69) re-reading, no new tests: this file's own header already
+//! names each clause it proves — `base_nature_has_no_parent_and_is_not_
+//! derived`/`derived_nature_records_parent_name` are §3.6.1.1 "Derived
+//! natures" (base vs. derived, `parent` recording the parent-nature
+//! relationship); `five_standard_attributes_are_named_fields_not_map_
+//! entries`/`nature_with_only_required_base_attributes_is_representable`
+//! are §3.6.1.2 "Attributes" (the five predefined attributes); `user_
+//! defined_attributes_live_in_a_separate_map` is §3.6.1.3 "User-defined
+//! attributes" verbatim (the LRM's own `maxval` example).
+//!
 //! VAMS T17 (VAMS-01) — POM `Nature` node, LRM §3.6.1.
 //!
 //! Asserts the structural contract of the POM `Nature` type:

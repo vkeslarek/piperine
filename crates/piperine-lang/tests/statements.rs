@@ -1,7 +1,29 @@
+//! LRM-COVERS: 5.6.1, 5.7, 5.3, 5.3.1, 5.3.2, 5.8, 5.8.1, 5.8.2, 5.8.3, 5.9.1, 5.9.2, 5.10, 5.10.1
+//!
 //! Proves the statement grammar (tasks.md T8) against LRM chapter 5
 //! (analog) and the inherited 1364 procedural statements: contribution,
 //! blocking/non-blocking assignment, control flow, event control, and
 //! task calls.
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: `contribution_
+//! statement_parses` is §5.6.1's direct branch contribution form;
+//! `blocking_assignment_parses` is §5.7's scalar analog procedural
+//! assignment; `named_block_with_block_item_decls_parses`/`unnamed_block_
+//! with_no_decls_parses` are §5.3.1's sequential-block syntax, and the
+//! named form's local parameter/variable declarations are §5.3.2's own
+//! "naming a block allows local variables to be declared for that block";
+//! `if_else_parses_both_branches`/`if_without_else_leaves_it_none` are
+//! §5.8.1's if-else-if form, and the nested-if `else`-association rule
+//! §5.8.2 walks through in prose has no independent grammar of its own —
+//! the same production this file already exercises; `case_casex_casez_
+//! and_analog_case_all_parse_with_default_arm`/`case_arm_supports_
+//! multiple_comma_separated_labels` are §5.8.3's case statement (the
+//! `analog_case` arm specifically); `while_repeat_forever_all_parse` is
+//! §5.9.1's repeat/while forms; `for_loop_parses_init_cond_step_body` is
+//! §5.9.2's for-statement; `event_control_with_or_joined_expressions_
+//! parses_all` is §5.10.1's event OR operator (`or`-joined event
+//! expressions triggering on any one event).
+//! LRM-COVERS: A.6.9, A.8.5
 
 use piperine_lang::ast::{CaseKind, EventExpr, Expr, Stmt};
 use piperine_lang::{Grammar, Lexer};

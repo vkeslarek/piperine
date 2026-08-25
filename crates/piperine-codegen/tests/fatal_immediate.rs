@@ -11,7 +11,12 @@
 //! `AnalogInstance::check_fatal` consults on every residual/Jacobian
 //! evaluation (`eval_rhs_jac`), not just accepted ones.
 //!
-//! LRM-COVERS: 9.7.3
+//! LRM-COVERS: 9.7, 9.7.3
+//! §9.7's own body introduces exactly the three new severity tasks
+//! (`$fatal`/`$error`/`$warning`) whose behavior §9.7.3 spells out in
+//! full and this file proves — it adds no independent normative content
+//! of its own beyond that introduction (the $finish/$stop half of §9.7
+//! is its own subsections, 9.7.1/9.7.2).
 
 use std::collections::HashMap;
 

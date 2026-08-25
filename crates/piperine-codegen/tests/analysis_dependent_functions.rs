@@ -16,7 +16,23 @@
 //! that the specific SPEC_DEVIATION finding (silent 0.0) does not
 //! reproduce.
 //!
-//! LRM-COVERS: 4.6
+//! LRM-COVERS: 4.6, 4.6.1, 4.6.2, 4.6.3, 4.6.4.3, 4.6.4.4, 4.5.10
+//! T69: §4.6.4.3 "noise_table" and §4.6.4.4 "noise_table_log" are exactly
+//! `noise_table_call_fails_loud_not_silently_zero`/`noise_table_log_call_
+//! fails_loud_not_silently_zero` below — both keywords are reserved
+//! (`keywords.rs`) but never registered in `AnalogOpRegistry`, so both hit
+//! the same generic-call `CodegenError::Unsupported` fallback, not a
+//! silent value. §4.5.10 "last_crossing" is the same unregistered-keyword
+//! shape (confirmed absent from `AnalogOpRegistry::with_builtins()`) —
+//! `last_crossing_call_fails_loud_not_silently_zero` proves the identical
+//! loud-failure path.
+//! Wave-2 (T69) re-reading, no new tests: §4.6.1 "Analysis" is `analysis_
+//! unknown_name_fails_loud_by_typed_kind` (the `analysis("bogus")` name
+//! set); §4.6.2 "DC analysis" is `analysis_dc_is_true_only_for_the_dc_
+//! kind` (`analysis("dc")` true only for the DC analysis kind, across
+//! DC/AC/tran); §4.6.3 "AC stimulus" is `ac_stim_analysis_name_argument_
+//! is_not_consumed_as_magnitude` (both the named and bare `ac_stim(...)`
+//! forms).
 
 use std::sync::Arc;
 
@@ -164,6 +180,61 @@ fn noise_table_call_fails_loud_not_silently_zero() {
     match err {
         CodegenError::Unsupported(msg) => {
             assert!(msg.contains("noise_table"), "names the unrecognized call: {msg}");
+        }
+        other => panic!("expected CodegenError::Unsupported, got {other:?}"),
+    }
+}
+
+const NOISE_TABLE_LOG_SRC: &str = "
+module NoiseTableLogUser ( inout electrical p, inout electrical n );
+    parameter real tab[0:3] = '{0.0, 1.0, 1.0, 2.0};
+    analog begin
+        I(p, n) <+ V(p, n);
+        I(p, n) <+ white_noise(noise_table_log(tab));
+    end
+endmodule
+";
+
+/// Same shape as `noise_table_call_fails_loud_not_silently_zero`, for the
+/// `noise_table_log` variant (§4.6.4.4) — also unregistered, also a loud
+/// `CodegenError::Unsupported`, never silent.
+#[test]
+fn noise_table_log_call_fails_loud_not_silently_zero() {
+    let result = compile("NoiseTableLogUser", NOISE_TABLE_LOG_SRC);
+    let err = match result {
+        Err(e) => e,
+        Ok(_) => panic!("NoiseTableLogUser must fail to compile, not silently return 0.0"),
+    };
+    match err {
+        CodegenError::Unsupported(msg) => {
+            assert!(msg.contains("noise_table_log"), "names the unrecognized call: {msg}");
+        }
+        other => panic!("expected CodegenError::Unsupported, got {other:?}"),
+    }
+}
+
+const LAST_CROSSING_SRC: &str = "
+module LastCrossingUser ( inout electrical p, inout electrical n );
+    analog begin
+        I(p, n) <+ last_crossing(V(p, n), 1);
+    end
+endmodule
+";
+
+/// §4.5.10 "last_crossing": reserved (`keywords.rs`) but absent from
+/// `AnalogOpRegistry::with_builtins()`, so it hits the same generic-call
+/// `CodegenError::Unsupported` fallback as `noise_table` above — a real,
+/// disclosed feature gap, never a silent no-op.
+#[test]
+fn last_crossing_call_fails_loud_not_silently_zero() {
+    let result = compile("LastCrossingUser", LAST_CROSSING_SRC);
+    let err = match result {
+        Err(e) => e,
+        Ok(_) => panic!("LastCrossingUser must fail to compile, not silently return 0.0"),
+    };
+    match err {
+        CodegenError::Unsupported(msg) => {
+            assert!(msg.contains("last_crossing"), "names the unrecognized call: {msg}");
         }
         other => panic!("expected CodegenError::Unsupported, got {other:?}"),
     }

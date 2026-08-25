@@ -1,6 +1,14 @@
+//! LRM-COVERS: 5.6.2, 5.6.2.1
+//!
 //! Analog device numerics through the whole codegen path: a PHDL module is
 //! elaborated, lowered, JIT-compiled, and its residual and Jacobian checked
 //! against the closed form (resistor, VCCS, diode).
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: `Vccs`
+//! (`I(outp, outn) <+ gm * V(inp, inn);`) is §5.6.2.1's own "voltage
+//! controlled current source" — one of the four controlled-source models
+//! §5.6.2's worked examples walk through, with §5.6.2 itself the
+//! containing "Examples" heading with no independent rule of its own.
 //!
 //! Renamed from `codegen_ir.rs` (P6 T12) — there is no IR crate; the stage is
 //! `resolve` → `kernel` → `device`. Kernel-level numerics for one module live

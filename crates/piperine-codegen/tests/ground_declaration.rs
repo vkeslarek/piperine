@@ -1,4 +1,11 @@
-//! LRM-COVERS: 3.6.4
+//! LRM-COVERS: 1.3.1.1, 3.6.4
+//! Wave-2 (T69) re-reading, no new tests: §1.3.1.1 "Reference nodes"
+//! states "any net of continuous discipline can be declared to be ground
+//! [and] the node associated with the net shall be the global reference
+//! node in the circuit" — exactly what
+//! `ground_declared_net_becomes_the_solver_reference_node` proves at the
+//! solver (the DC solve only succeeds because `ground foo;` actually wired
+//! `foo` in as the MNA reference).
 //!
 //! LRM §3.6.4: `ground foo;` makes `foo` the MNA reference node. Before
 //! this fix the declaration was a pure no-op at elaboration (SPEC_DEVIATION.md

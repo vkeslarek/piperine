@@ -1,3 +1,5 @@
+//! LRM-COVERS: 6, 6.1, 6.2, 6.3, 6.3.3, 6.3.4, 6.5, 6.5.1, 6.5.2, 6.5.2.1, 6.5.2.2, 6.5.4, 6.5.5
+//!
 //! VAMS T22 (VAMS-04) — structural lowering: modules, ports (both
 //! declaration-list and name-list styles), nets/wires with disciplines,
 //! parameters, and hierarchical instantiation (named + ordered connections,
@@ -5,6 +7,24 @@
 //!
 //! MD-25 test: the elaborated instance→submodule→sub-instance tree is
 //! walkable exactly as authored — no flattening, no synthesised structure.
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: §6 "Hierarchical
+//! structures" and §6.1 "Overview" are the containing narrative headings
+//! for this whole file's subject, with no independent rule of their own.
+//! `declaration_list_ports_lower_with_direction_and_discipline`/`name_
+//! list_ports_lower_via_body_port_declarations` are §6.2's own module/port
+//! declaration syntax (Syntax 6-1), §6.5's own "Ports" overview, §6.5.1's
+//! port-definition syntax, §6.5.2's port declarations, and — via the
+//! direction (`inout`) and discipline (`electrical`) assertions each test
+//! makes — §6.5.2.2's port-direction and §6.5.2.1's port-type rules
+//! specifically. `ordered_instance_connections_resolve_by_target_port_
+//! position` is §6.5.4's ordered port-connection form;
+//! `named_instance_connections_resolve_by_port_name_not_source_order` is
+//! §6.5.5's named form. `instance_parameter_override_lowers_by_name`/`a_
+//! module_forwards_its_own_param_to_a_sub_instance_override` are §6.3.3's
+//! "module instance parameter value assignment by name" (§6.3 the
+//! containing overview); `a_later_param_default_may_reference_an_earlier_
+//! one_in_the_same_module` is §6.3.4's "Parameter dependence".
 
 use piperine_lang::pom::Direction;
 use piperine_lang::{parse_and_elaborate, SourceMap};

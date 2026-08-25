@@ -18,6 +18,19 @@
 //! Reason: within-task correction — a rule-level extraction was attempted
 //! first and produced unusable noise; section-level is what the source
 //! document actually supports mechanically.
+//!
+//! LRM-COVERS: A.1, A.1.1, A.1.2, A.1.3, A.1.4, A.1.6, A.1.7, A.1.8, A.1.9, A.2, A.2.1, A.2.1.1, A.2.1.2, A.2.3, A.2.6, A.2.7, A.2.8, A.4, A.4.1, A.4.2, A.5.1, A.5.2, A.6, A.6.1, A.6.3, A.6.4, A.6.5, A.6.6, A.6.7, A.6.8, A.6.10, A.7, A.7.1, A.8, A.8.1, A.8.3, A.9, A.9.1, A.9.3
+//!
+//! Every `Coverage::Implemented` row above whose id appears in this list
+//! is proved by `every_annex_a_section_is_implemented_or_carries_a_
+//! written_reason` below: the row's citation-needle (`"Annex A.X.Y"`)
+//! must actually appear in a live `grammar/*.rs` production, checked
+//! mechanically, not just claimed in a doc comment. The bare parent ids
+//! (`A.1`/`A.2`/`A.2.1`/`A.4`/`A.6`/`A.7`/`A.8`/`A.9`) are pure
+//! organizational headings in the LRM itself — each is a `##`-level
+//! heading with no text of its own before its first `###` child (verified
+//! against `VAMS-LRM-2-4.md` directly) — carried on the same declaration
+//! as a genuinely `Implemented` child per that child's own row above.
 
 use std::fs;
 use std::path::Path;

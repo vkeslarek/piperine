@@ -3,6 +3,8 @@
 //! `vpi_register_cb()`/`vpi_remove_cb()`'s native equivalent, orthogonal
 //! to the static, macro-declared `HookPhase` mechanism (which this file
 //! also proves is unaffected).
+//!
+//! LRM-COVERS: 11.2.1, 12.31, 12.34, 12.6
 
 use std::cell::RefCell;
 use std::rc::Rc;

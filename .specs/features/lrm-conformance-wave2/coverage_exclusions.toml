@@ -57,12 +57,90 @@ reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-mat
 id = "G.2.4"
 reason = "Annex G is tagged \"(informative)\" in VAMS-LRM-2-4.md's own front-matter ToC (\"Annex G / (informative) / Change history\")."
 
-# No out_of_scope rows yet. None of spec.md's current Out of Scope table
-# entries map cleanly to one LRM-2-4 section id without further per-section
-# research: the VPI-PLI-hosting and SPICE-netlist-reader rows describe
-# mechanisms outside the LRM's own heading structure, and the four-state/
-# analog-MNA row explicitly says the LRM clause it discusses (§2.10) stays
-# in scope. Real entries land as that research happens in later wave-2
+[[informative]]
+id = "C.19"
+reason = "C.19's entire body is one sentence: \"Annex G describes the changes from previous LRM versions for both Verilog-A and Verilog-AMS HDL\" — no content of its own, purely a pointer into Annex G, which is itself tagged (informative)."
+
+[[informative]]
+id = "C.20"
+reason = "C.20's entire body is one sentence: \"Annex G also describes the statements that are no longer supported...\" — no content of its own, purely a pointer into Annex G, which is itself tagged (informative)."
+
+# T69: out_of_scope rows for Annex E (SPICE compatibility). Annex E's
+# remaining uncovered sections (after E.3.4 $limit()/E.4.1 $mfactor, both
+# implemented and covered elsewhere) are all about the SPICE-*netlist*
+# profile — accessing bare `.model`/`.subckt` primitives without a
+# Verilog-AMS declaration, binning/library files, and primitive-vs-module
+# name-scoping precedence against SPICE primitives that only exist when a
+# netlist reader resolves them. Piperine's SPICE path is header-based (`.va`
+# models you `` `include``, never implicit bare primitives from a netlist),
+# so these sections map to spec.md's "A raw SPICE netlist (`.subckt`/
+# `.model`) reader" Out of Scope row.
+
+[[out_of_scope]]
+id = "E.1"
+reason = "Scope of SPICE compatibility: states an implementation supporting it must read SPICE netlists containing models/subcircuits (E.1.2) — the netlist-reader mechanism spec.md excludes."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.1.1"
+reason = "Scope of compatibility — same netlist-reading premise as E.1."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.1.2"
+reason = "Degree of incompatibility — explicitly requires reading SPICE netlists with models/subcircuits."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.2"
+reason = "Examples of accessing SPICE models/subcircuits/primitives from a netlist — the netlist-reader mechanism spec.md excludes."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.2.1"
+reason = "Case sensitivity of SPICE netlist names — applies only when reading a SPICE netlist."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.2.2.1"
+reason = "Accessing SPICE models by netlist name — netlist-reader mechanism."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.2.2.2"
+reason = "Accessing SPICE subcircuits by netlist name — netlist-reader mechanism."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.3.2"
+reason = "Discipline resolution for bare (undeclared) analog primitives instantiated straight from a SPICE netlist — Piperine has no such implicit-primitive path without a netlist reader."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.3.2.1"
+reason = "port_discipline attribute for bare SPICE analog primitives — same implicit-primitive premise as E.3.2."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.3.2.2"
+reason = "Discipline resolution algorithm for bare SPICE analog primitives — same implicit-primitive premise as E.3.2."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.3.3"
+reason = "Name-scoping precedence between a Verilog-AMS module/paramset and a same-named SPICE primitive/model/subcircuit — only meaningful once a netlist reader can produce that SPICE-primitive namespace."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+[[out_of_scope]]
+id = "E.4.2"
+reason = "Binning and libraries — SPICE model-file/library binning is a netlist-adjacent mechanism outside Piperine's header-based SPICE path."
+spec_row = "A raw SPICE netlist (`.subckt`/`.model`) reader"
+
+# Historical note (superseded by the above): the VPI-PLI-hosting row still
+# maps to no single LRM-2-4 section id (VPI's own language surface, Clause
+# 11/12 and Annex C.13/C.14, stays in scope per CLAUDE.md and is Covered
+# elsewhere); the four-state/analog-MNA row explicitly says its LRM clause
+# (§2.10) stays in scope too.
 # tasks. The out_of_scope guard below is proven able to fail via a
 # temporary injected entry (see the T5 commit body), not via a permanent
 # fixture row here.

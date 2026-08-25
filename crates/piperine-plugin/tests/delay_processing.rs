@@ -1,6 +1,8 @@
 //! T61 (LRMC-C10-12, surface half): `PluginHost::get_delays`/`put_delays`
 //! — `vpi_get_delays()`/`vpi_put_delays()`'s native equivalents over T60's
 //! `DelayTable` model.
+//!
+//! LRM-COVERS: 11.3.2, 12.11, 12.29
 
 use std::sync::{Arc, Mutex};
 

@@ -1,8 +1,47 @@
-//! LRM-COVERS: 3.6.1, 3.6.2, 4.4, 5.4, 5.4.2, 5.4.3
+//! LRM-COVERS: 1, 1.1, 1.3, 1.3.1, 1.3.2, 1.3.3, 1.4, 1.5, 3, 3.1, 3.6, 3.6.1, 3.6.2, 3.6.2.1, 4.4, 5.4, 5.4.1, 5.4.2, 5.4.2.1, 5.4.2.2, 5.4.3, 5.6.1.1
+//!
+//! T69: §1.1 "Overview", §1.4 "Conventions used in this document", and §1.5
+//! "Contents" are Chapter 1's own front-matter narrative — no normative rule
+//! of their own (no BNF, no semantics), just the document's roadmap for the
+//! conservative-systems/KPL/KFL material this file's fixtures (§1.3.x) and
+//! its own branch/access-function tests already exercise concretely. They
+//! ride on the same declaration as their parent "1" and sibling "1.3.x".
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: §5.4.1 "Access
+//! functions" is the general V()/I() mechanism `implicit_branch_created_
+//! from_a_two_terminal_access_function`/`custom_discipline_accessor_
+//! resolves_potential_via_named_branch`/`..._resolves_flow_via_implicit_
+//! branch` exercise directly; §5.4.2.1 "Probes"/§5.4.2.2 "Sources" are
+//! exactly `named_branch_declaration_lowers_as_a_probe_until_contributed`
+//! (no contribution = probe) and `contribution_through_a_named_branch_
+//! sets_its_kind` (first contribution promotes the branch to its source
+//! kind) — §5.4.2's own children, already the parent id this file
+//! declares. §5.6.1.1 "Relations" (a branch's directed potential/flow
+//! pair between two nets) is the same branch-relation concept
+//! `port_access_parses_and_elaborates_from_lrm_5_4_3_diode_example`'s own
+//! branch pair and every `V(p, n) <+ ...` fixture here already exercises.
 //! VAMS T23 (VAMS-01, VAMS-02) — lowering the continuous-domain
 //! declarations: `nature` (incl. derived chains, §3.6.1), `discipline`
 //! (§3.6.2), and named/implicit `branch`es resolved from access-function
 //! call sites inside `analog` behaviors (§5.4).
+//!
+//! Wave-2 (T69) re-reading, no new tests: the probe/source branch pair
+//! (`named_branch_declaration_lowers_as_a_probe_until_contributed`/
+//! `contribution_through_a_named_branch_sets_its_kind`) is exactly §1.3.1's
+//! "Conservative systems" concept (a branch with no contribution is a
+//! probe; the first contribution promotes it to potential- or flow-source)
+//! restated at chapter 1's introductory level; the nature+discipline
+//! declarations shared by every fixture here are §1.3.3's "Natures,
+//! disciplines, and nets" concept in miniature, and §1/§1.3 are their
+//! containing narrative headings with no independent rule of their own.
+//! `port_access_parses_and_elaborates_from_lrm_5_4_3_diode_example`'s
+//! rewrite of `I(<a>)` into the sum of the two branch-flow terms touching
+//! port `a` is the KCL-equivalent sum §1.3.2 "Kirchhoff's Laws" (KFL: "the
+//! algebraic sum of all flows out of a node ... is zero") states in prose.
+//! `discipline_lowers_with_its_potential_and_flow_natures`/
+//! `discipline_binding_an_undeclared_nature_fails_loud_citing_the_clause`
+//! are §3.6.2.1 "Nature binding" directly (a discipline binding a
+//! `potential`/`flow` nature by name). §3/§3.1 are chapter 3's own
+//! containing narrative headings.
 
 use piperine_lang::ast::{Expr, Stmt};
 use piperine_lang::pom::BranchKind;

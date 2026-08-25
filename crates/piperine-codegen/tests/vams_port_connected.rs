@@ -1,4 +1,4 @@
-//! LRM-COVERS: 9.19
+//! LRM-COVERS: 9.19, 6.5.6
 //! §9.19 (LRMC-C7-09, T50): `$port_connected` distinguishes connected
 //! from unconnected ports — a real per-instance compiled-kernel effect,
 //! not just name resolution. Two instances of the same module, one

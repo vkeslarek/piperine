@@ -1,4 +1,7 @@
-//! LRM-COVERS: 4.7, 4.7.1, 4.7.2.1, 4.7.2.2, 4.7.2.3, 4.7.3
+//! LRM-COVERS: 4.7, 4.7.1, 4.7.2, 4.7.2.1, 4.7.2.2, 4.7.2.3, 4.7.3
+//! Wave-2 (T69) re-reading, no new tests: §4.7.2 "Returning a value from
+//! an analog user defined function" is the containing heading for
+//! §4.7.2.1/§4.7.2.2/§4.7.2.3, all three already proven by this file.
 //!
 //! LRMW2-44 (`lrm-conformance-wave2`, T44): the resolved-form user-function
 //! inliner (`resolve/pom/expr.rs::inline_user_fn`), now reachable once

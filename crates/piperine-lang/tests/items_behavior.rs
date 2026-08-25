@@ -3,6 +3,20 @@
 //! analog function/function/task, genvar/generate (for/if/case), module
 //! instantiation (named+ordered connections, parameter overrides,
 //! defparam) and continuous assign.
+//!
+//! LRM-COVERS: A.6.2, 5, 5.1, 5.2, 5.2.1, 7.2.2
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests:
+//! `analog_construct_parses` is §5.2's analog procedural block;
+//! `analog_initial_construct_parses` is §5.2.1's analog initial block;
+//! §5 "Analog behavior" and §5.1 "Overview" are the containing narrative
+//! headings for both, with no independent rule of their own.
+//! `initial_and_always_constructs_parse`/`analog_construct_parses`
+//! together distinguish `BehaviorKind::Analog` (continuous/analog
+//! context) from `Initial`/`Always` (discrete/digital context) — exactly
+//! §7.2.2 "Contexts"' own definition ("statements which appear in the
+//! body of an analog block are said to be in the continuous context; all
+//! others are said to be in the discrete context").
 
 use piperine_lang::ast::*;
 use piperine_lang::{Grammar, Lexer};

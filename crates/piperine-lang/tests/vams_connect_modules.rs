@@ -1,4 +1,27 @@
-//! LRM-COVERS: 7.4.4.1, 7.4.4.3, 7.7.3, 7.7.4
+//! LRM-COVERS: 7.4.4.1, 7.4.4.3, 7.7.3, 7.7.4, 7, 7.1, 7.5, 7.8, 7.8.1, 7.8.2, 7.8.3, 7.8.3.1, 7.8.3.2, 7.8.4
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: §7 "Mixed
+//! signal" and §7.1 "Overview" are the containing narrative headings for
+//! this whole file's subject, with no independent rule of their own. The
+//! `connectmodule bridge (...)` declaration this file's fixtures share is
+//! §7.5's own "Connect modules" concept, and the pass under test (`connect
+//! <module> [merged|split] ...;` auto-inserting `bridge` across a
+//! logic/electrical mismatch) is §7.8's own "Automatic insertion of
+//! connect modules" and §7.8.1's "Connect module selection" (the choice
+//! of which connect module bridges a given discipline pair, resolved
+//! post-elaboration from the actual net disciplines). `merged_default_
+//! shares_one_connect_module_across_both_ports_on_the_net`/`split_
+//! segments_one_connect_module_instance_per_port` are §7.8.2's own
+//! "Signal segmentation" (one shared vs. one-per-port connect module) and
+//! §7.8.3/§7.8.3.1 ("merged")/§7.8.3.2 ("split")'s `connect_mode`
+//! parameter — the identical `merged`/`split` keyword this file's
+//! `MERGED_DEFAULT`/`MERGED_EXPLICIT`/`SPLIT_EXPLICIT` fixtures use.
+//! §7.8.4's own connect-module-insertion rules ("all ports ... sharing
+//! the same connect module[] and having `merged` parameter shall share a
+//! single instance"; "all other ports shall have an instance ... one
+//! connect module instance per port") are exactly what those same two
+//! tests prove.
+//!
 //! T52 (VAMS-20) — `InsertConnectModules` (LRM ch. 7) elaborates cleanly
 //! alongside real `.vams` source. The pass's own selection-algorithm and
 //! MD-25 (derived-artifact) unit tests live with the pass itself

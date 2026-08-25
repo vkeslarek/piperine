@@ -1,4 +1,43 @@
-//! LRM-COVERS: 7.4.1, 7.4.4.1, 7.4.4.2, 7.4.4.3
+//! LRM-COVERS: 3.6.2.2, 3.6.2.3, 3.6.2.4, 3.6.5, 7.4, 7.4.1, 7.4.4, 7.4.4.1, 7.4.4.2, 7.4.4.3, 7.7, 7.7.2, 7.7.2.1
+//! Wave-2 (T69) re-reading, no new tests (added by this pass): §7.4
+//! "Discipline resolution" and §7.4.4 "Resolution of mixed signals" are
+//! the containing narrative headings for §7.4.1/§7.4.4.1-.3, already this
+//! file's own subject, with no independent rule of their own. §7.7
+//! "Connect specification statements" is likewise the containing heading
+//! for §7.7.2's own grammar form (`connect discipline_identifier {,
+//! discipline_identifier} resolveto discipline_identifier_or_exclude;`),
+//! which `resolveto_forces_the_named_discipline_instead_of_failing_loud`/
+//! `resolveto_exclude_still_fails_loud_naming_the_mechanism` exercise
+//! directly (forcing a named discipline, and the `exclude` form);
+//! `narrowest_resolveto_rule_wins_over_a_broader_one` is §7.7.2.1's own
+//! "Connect Rule Resolution Mechanism" (the narrowest/most-specific
+//! matching rule wins over a broader one naming the same pair).
+//! Wave-2 (T69) re-reading, no new tests: every fixture's `domain
+//! discrete;`/`domain continuous;` disciplines exercise §3.6.2.2 "Domain
+//! binding" directly, and since none of them also bind a `potential`/
+//! `flow` nature, they are §3.6.2.3's own worked-example form ("It is
+//! possible to define a discipline with no nature bindings ... [with] a
+//! `domain` binding" — `discipline natureless; domain continuous;
+//! enddiscipline`). `undeclared_wire_resolves_from_a_connected_instance_
+//! port`/`undeclared_port_resolves_from_a_connected_instance_port` are
+//! §3.6.2.4 "Discipline of nets and undeclared nets" (an undeclared net
+//! resolved from instance connectivity) and §3.6.5 "Implicit nets" (a net
+//! used structurally without being declared, resolved via discipline
+//! resolution) — the same fixture proves both clauses' claim at once.
+//!
+//! LRM-COVERS: F.1, F.2, F.2.1, F.2.2
+//! Annex F ("Discipline resolution methods") is explicit that it "provides
+//! the semantics for two methods of resolving the discipline of undeclared
+//! interconnect" and that "it is also possible to develop and use other
+//! algorithms to match the semantics" (F.1) — i.e. Annex F is a semantics
+//! spec for §7.4.4.1/§7.4.4.2, not a separate mandated implementation.
+//! F.2.1 ("Default discipline resolution algorithm") is §7.4.4.1's Basic
+//! method and F.2.2 ("Alternate expanded analog discipline resolution
+//! algorithm") is §7.4.4.2's Detail method, by name and by which LRM
+//! clause each cites as its own semantics — this file's Basic/Detail
+//! tests (`DisciplineResolutionMode::{Basic,Detail}`) are exactly that
+//! semantics, proved observably rather than by re-deriving F.2's
+//! depth-first/top-down traversal internals verbatim.
 //! VAMS T26 (VAMS-17) — `ResolveDisciplines`: Annex F discipline
 //! resolution for a port/net declared with no explicit discipline.
 //! **Basic discipline resolution (§7.4.4.1)**, the LRM's own stated

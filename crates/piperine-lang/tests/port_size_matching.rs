@@ -1,4 +1,4 @@
-//! LRM-COVERS: 6.5.7.1
+//! LRM-COVERS: 6.5.7.1, 6.5.7, 6.5.7.2
 //!
 //! LRMW2-53 (`lrm-conformance-wave2`, T48): §6.5.7.1's "Matching size
 //! rule" — "the sizes of the ports and net need to match" — for an

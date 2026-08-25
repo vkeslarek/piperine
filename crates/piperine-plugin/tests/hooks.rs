@@ -1,5 +1,7 @@
 //! The read-only lifecycle hooks: `after_elaborate` sees the real design and
 //! `after_solve` sees the operating point, each firing exactly once per run.
+//!
+//! LRM-COVERS: 12.10, 12.16
 
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};

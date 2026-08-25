@@ -1,3 +1,13 @@
+//! LRM-COVERS: 2.8.2
+//! Wave-2 (T69) re-reading, no new tests: §2.8.2 "Keywords" is this
+//! file's own subject, already cited in the module doc below ("every
+//! keyword lexes as a plain `Tok::Ident` (§2.8.2: a keyword is lexically
+//! an identifier; only a grammar-level 'expect identifier' check
+//! distinguishes them)") — this adds the file-header declaration to
+//! match what the file already proves: the Annex B keyword set matches
+//! the LRM's own Table B.1 exactly, and every keyword lexes as an
+//! ordinary identifier token.
+//!
 //! Annex B conformance gate (tasks.md T4, requirement VAMS-24). Two
 //! independent checks, both re-run every phase (this gate is meant to stay
 //! meaningful as the crate grows, not just pass once):

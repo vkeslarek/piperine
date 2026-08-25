@@ -1,4 +1,11 @@
-//! LRM-COVERS: 3.7, 7.3.1
+//! LRM-COVERS: 3.7, 7.3.1, 7.2, 7.2.1
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: this file's
+//! own `Domain::Analog`/`Domain::Digital` classification is exactly
+//! §7.2.1's "Domains" ("a variable is calculated either in the continuous
+//! (analog) domain or the discrete (digital) domain"), with §7.2
+//! "Fundamentals" the containing narrative heading for that clause and
+//! no independent rule of its own.
 //!
 //! LRMW2-45 (`lrm-conformance-wave2`, T52): codegen-layer proof that a
 //! `Digital1364` net type (§3.7) reaches `resolve::symbols::SymbolTable`

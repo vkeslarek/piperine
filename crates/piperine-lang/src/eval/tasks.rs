@@ -1155,6 +1155,25 @@ impl SystemTaskError {
 
 #[cfg(test)]
 mod tests {
+    //! LRM-COVERS: 9.4.2, 9.4.3, 9.4.4, 9.4.5, 9.6, 9.10, 9.11
+    //! §9.4.2 (escape sequences \n/\t/\\/\"/\ddd/%%):
+    //! `string_literal_escape_sequences_decode_per_table_2_2` and
+    //! `display_format_percent_literal_and_hierarchical_name`'s `%%` case.
+    //! §9.4.3 (format specifiers %d/%h/%o/%b/%s and the real-number
+    //! specifiers %e/%f/%g): `display_format_decimal_and_string`,
+    //! `display_format_radices`, and `display_format_real_number_
+    //! specifiers` below. §9.4.4 (the `%m` hierarchical-name specifier):
+    //! `display_format_percent_literal_and_hierarchical_name`'s `%m` case.
+    //! §9.6 ("Timescale system tasks" — "Verilog AMS HDL does not extend
+    //! the timescale tasks... "): `timeformat_affects_percent_t_rendering`
+    //! proves the base (unextended) `$timeformat`-driven rendering works.
+    //! §9.10 ("Simulator time system functions" — the new `$abstime`):
+    //! `sim_environment_queries`'s `env.abstime()` assertion.
+    //! §9.11 ("Conversion system functions" — `$bitstoreal`/`$realtobits`
+    //! usable in the analog context): `conversions_round_trip`'s
+    //! `realtobits`/`bitstoreal` round trip.
+    //! §9.4.5 (the `%s` string specifier): `display_format_decimal_and_string`.
+
     use super::*;
 
     #[test]
@@ -1228,6 +1247,16 @@ mod tests {
         assert_eq!(format_display("%h", &[Value::Int(255)], "top").unwrap(), "ff");
         assert_eq!(format_display("%o", &[Value::Int(8)], "top").unwrap(), "10");
         assert_eq!(format_display("%b", &[Value::Int(5)], "top").unwrap(), "101");
+    }
+
+    /// §9.4.3 Table 9-23's real-number specifiers: `%e` (exponential),
+    /// `%f` (decimal) and `%g` (shorter of the two) each render a real
+    /// argument in their own distinct format.
+    #[test]
+    fn display_format_real_number_specifiers() {
+        assert_eq!(format_display("%e", &[Value::Real(1234.5)], "top").unwrap(), "1.2345e3");
+        assert_eq!(format_display("%f", &[Value::Real(1234.5)], "top").unwrap(), "1234.500000");
+        assert_eq!(format_display("%g", &[Value::Real(1234.5)], "top").unwrap(), "1234.5");
     }
 
     #[test]

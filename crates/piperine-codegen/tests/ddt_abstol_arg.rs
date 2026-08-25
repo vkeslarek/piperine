@@ -1,4 +1,11 @@
-//! LRM-COVERS: 4.5.3
+//! LRM-COVERS: 4.5.2, 4.5.3
+//! Wave-2 (T69) re-reading, no new tests: §4.5.2 "Analog operators and
+//! equations" states "each equation, at a minimum, shall have a tolerance
+//! defined and associated with it [and] these operators can be used to
+//! specify tolerances" — exactly the `abstol`/`nature` second-argument
+//! mechanism this file's three tests prove for `ddt()` (no argument ⇒ no
+//! tolerance carried, an explicit numeric `abstol` carried, a `nature`
+//! argument resolved to its own declared `abstol`).
 //! LRMW2-37 (`lrm-conformance-wave2`, T33): `ddt(expr, abstol|nature)`'s
 //! second argument used to be discarded entirely at lowering
 //! (`resolve/pom/analog_ops.rs::Ddt::lower` only ever read `args[0]`) —

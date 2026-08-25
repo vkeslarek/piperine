@@ -5,7 +5,11 @@
 //! Before this fix `flatten/analog.rs`'s `_ => {}` silently dropped the
 //! statement instead of erroring.
 //!
-//! LRM-COVERS: 9.2
+//! LRM-COVERS: 9, 9.1, 9.2
+//! `9` ("System tasks and functions") and `9.1` ("Overview") are the
+//! clause's own top-level/narrative headings — "the system task and
+//! functions supported by Verilog-AMS HDL are categorized in 9.2" (§9.1)
+//! — carried on the same evidence as their genuinely-tested child, 9.2.
 
 use piperine_codegen::resolve::lower_bodies;
 use piperine_codegen::{CodegenError, CompiledModule};

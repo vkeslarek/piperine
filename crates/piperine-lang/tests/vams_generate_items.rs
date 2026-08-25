@@ -1,4 +1,4 @@
-//! LRM-COVERS: 6.6, 6.6.1, 6.9.4, 6.3.5, 9.19
+//! LRM-COVERS: 6.6, 6.6.1, 6.6.3, 6.9.4, 6.3.5, 9.19
 //!
 //! LRMW2-52 (`lrm-conformance-wave2`, T51): `elab/lower/generate.rs`'s
 //! `unroll_items` used to recognize only `ModuleItem::Instantiation` and

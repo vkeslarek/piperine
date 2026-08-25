@@ -1,4 +1,11 @@
-//! LRM-COVERS: 5.10.5, 7.3.6, 7.3.6.1, 7.3.6.2, 7.3.6.3, 7.3.6.4, 7.3.6.5, 7.3.7
+//! LRM-COVERS: 1.2, 5.10.5, 7.3.6, 7.3.6.1, 7.3.6.2, 7.3.6.3, 7.3.6.4, 7.3.6.5, 7.3.7
+//! Wave-2 (T69) re-reading, no new tests: §1.2 "Mixed-signal language
+//! features" is chapter 1's narrative bullet-list summary of the very
+//! `analog`/`always` cross-domain interaction this file exercises in
+//! detail (`analog_event_sampled_variable_drives_a_digital_event_control`
+//! puts `analog`/`always` blocks in the same module and reads an
+//! analog-domain value from a digital `@()`) — the §7.3.6 family is the
+//! detailed clause set §1.2's bullets summarize.
 //! LRM §7.3.6 "Concurrency" (LRMC-C7-06, T36) — the five named
 //! synchronization forms between the continuous and discrete domains.
 //! Every one of the five is a *permission/semantics* clause, not a

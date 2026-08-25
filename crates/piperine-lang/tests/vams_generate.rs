@@ -1,4 +1,4 @@
-//! LRM-COVERS: 6.6, 6.6.1, 6.6.2
+//! LRM-COVERS: 6.6, 6.6.1, 6.6.2, 6.8
 //! VAMS T25 (VAMS-04) — `UnrollGenerate`: `for`/`if`/`case` generate
 //! constructs (LRM ch. 6) unroll into a **derived** instance set, never
 //! into `Design::modules` (MD-25 VAMS clause).

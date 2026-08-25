@@ -1,5 +1,14 @@
-//! LRM-COVERS: 6.9.1
+//! LRM-COVERS: 6.9.1, 6.9, 5.6.1.2, 5.6.1.3
 //!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: §6.9
+//! "Elaboration" is the containing narrative heading for §6.9.1 (already
+//! this file's own subject) with no independent rule of its own.
+//! `two_analog_blocks_sum_their_contributions` is also §5.6.1.3's own
+//! "Value retention" rule ("multiple contributions to the same ... branch
+//! will be additive") and §5.6.1.2's own three-step "Evaluation" (RHS
+//! evaluated, added to any previously-retained value, then assigned at
+//! cycle end) — the same additive-accumulation mechanism both clauses
+//! describe, exercised here across two concatenated analog blocks.
 //! LRM §6.9.1 "Concatenation of analog blocks": a module with more than one
 //! `analog` block has them combined into a single block, in source order —
 //! "the analog blocks shall execute in the order that they are specified in

@@ -10,7 +10,19 @@
 //! is true, without waiting for `accept_timestep` the way `$error` (and
 //! `$display` above) does — proven end to end on the same RC-step circuit.
 //!
-//! LRM-COVERS: 9.7.3
+//! LRM-COVERS: 9.3, 9.4.1, 9.4.6, 9.7.3
+//! §9.3 ("System tasks/functions executing in the context of the Analog
+//! Simulation Cycle"): "a call to such a system task... in an analog
+//! block during an iteration that is rejected should cause no
+//! side-effects on the next iteration" — exactly what "fires once per
+//! accepted step, never per Newton iteration" proves for `$display`.
+//! §9.4.1 ("Behavior of the display tasks in the analog context") and
+//! §9.4.6 ("Behavior of the display tasks in the analog block during
+//! iterative solving" — "shall not display output unless an iteration
+//! has been accepted"): `analog_display_fires_once_per_accepted_step_
+//! not_per_newton_iteration` proves exactly this — `$display` inside an
+//! analog block fires once per accepted transient step, never once per
+//! Newton iteration, through a real solver run.
 
 use std::rc::Rc;
 

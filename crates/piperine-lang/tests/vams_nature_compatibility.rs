@@ -1,4 +1,10 @@
-//! LRM-COVERS: 3.11.1
+//! LRM-COVERS: 3.11, 3.11.1
+//! Wave-2 (T69) re-reading, no new tests: §3.11 "Net compatibility" is
+//! this file's own containing clause (its Signal Connection Rule — "an
+//! error to connect two ports or nets of the same domain with
+//! incompatible disciplines" — is exactly §3.11.1's compatibility check
+//! this file proves in both directions, `genuinely_unrelated_natures_
+//! still_fail_loud` for the negative case).
 //! LRMW2-24 (`lrm-conformance-wave2`, T30): §3.11.1 discipline
 //! compatibility follows nature derivation family + units, not discipline
 //! *name* equality — `ResolveDisciplines`'s hard-fail fallback now checks

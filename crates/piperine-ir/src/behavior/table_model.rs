@@ -414,6 +414,24 @@ impl TableModel {
 
 #[cfg(test)]
 mod tests {
+    //! LRM-COVERS: 9.21, 9.21.1, 9.21.2, 9.21.3, 9.21.4, 9.21.5
+    //! §9.21.1 (table data source, file/array layout): `matches_lrm_9_21_5_
+    //! worked_example_from_text`/`_from_arrays`. §9.21.2 (control string
+    //! parsing — interpolation/extrapolation chars, dependent selector):
+    //! `control_string_dependent_selector_is_1_based`,
+    //! `discrete_lookup_snaps_to_the_nearest_isoline`,
+    //! `constant_extrapolation_clamps_to_the_endpoint`,
+    //! `error_extrapolation_fails_loud`. §9.21.3 (example control strings)
+    //! is Table 9-32's own worked illustrations of §9.21.2's grammar — no
+    //! independent rule of its own, carried on the same evidence.
+    //! §9.21.4 (interpolation algorithms): linear/discrete are
+    //! implemented and tested (`reproduces_the_underlying_linear_function_
+    //! exactly`); quadratic/cubic spline are disclosed unsupported, fail
+    //! loud rather than faked (`quadratic_and_cubic_spline_are_disclosed_
+    //! unsupported`) — matching CLAUDE.md's fail-loud rule. §9.21.5 (the
+    //! LRM's own worked example, f(x1=3.5,y1=0.25)=2.0): `matches_lrm_9_
+    //! 21_5_worked_example_from_text`/`_from_arrays` reproduce it exactly.
+    //! §9.21 is the syntax-introduction parent over all five.
     use super::*;
 
     const SAMPLE_DAT: &str = "

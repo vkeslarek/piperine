@@ -1,3 +1,11 @@
+//! LRM-COVERS: 5.10.3.3
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: the `Step`
+//! module's `@(timer(1e-3)) st = 1.0;` drives a real transient run
+//! (`kink_circuit`) through the compiled kernel — §5.10.3.3's own
+//! `timer()` event function genuinely triggering a state change, not
+//! merely parsing.
+//!
 //! Transient margin evaluation points (dv-core T19, DVC-11): margins are
 //! evaluated on **accepted steps only** — a rejected candidate (LTE or
 //! Newton) is never an evaluation point and emits no finding — and the

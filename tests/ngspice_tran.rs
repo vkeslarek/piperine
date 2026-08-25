@@ -1,5 +1,13 @@
 //! ngspice golden cross-validation of **transient** responses (NGP-03).
 //!
+//! LRM-COVERS: 8.3.2
+//! §8.3.2 ("Transient analysis"): "the simulator replaces the time
+//! derivative operator with a discrete-time finite difference
+//! approximation... At each time point, a system of nonlinear algebraic
+//! equations is solved iteratively" — piperine's `TrBdf2` transient
+//! integration is exactly that, cross-checked here against ngspice's own
+//! independent transient integrator over the same fixtures.
+//!
 //! The two sides integrate on different grids: ngspice records its print grid
 //! (the fixture's `.options interp` makes the `wrdata` export exactly that),
 //! piperine returns an adaptively sampled [`Waveform`]. Comparing raw samples

@@ -1,8 +1,18 @@
-//! LRM-COVERS: 9.5
+//! LRM-COVERS: 9.5, 9.5.1, 9.5.2, 9.5.4, 9.5.4.2, 9.5.5, 9.5.6, 9.5.7, 9.5.8
 //! §9.5 file I/O (LRMC-C7-09, T46): `FileTable` (piperine-solver) +
 //! `parse_scanf`/`format_display` (piperine-lang) round-trip real files,
 //! and every descriptor error is typed and loud (never a silent zero
 //! descriptor or a swallowed I/O failure).
+//!
+//! Subsections: `fdisplay_then_fscanf_round_trips_typed_values` opens/closes
+//! ($fopen/$fclose, §9.5.1), writes ($fdisplay/$fwrite, §9.5.2) and reads
+//! back formatted data ($fscanf via `parse_scanf`, §9.5.4/§9.5.4.2).
+//! `fseek_ftell_rewind_and_feof_track_position` covers file positioning
+//! ($fseek/$ftell/$rewind, §9.5.5), flushing ($fflush, §9.5.6) and EOF
+//! detection ($feof, §9.5.8). `a_closed_or_unknown_descriptor_fails_loud_
+//! on_every_operation` is §9.5.7's I/O error status made typed and loud
+//! (`FileError::UnknownDescriptor`) across every operation including
+//! `$fflush`.
 //!
 //! Placement/dev-dependency note: mirrors T45's own
 //! `system_task_migration_completeness.rs` — `piperine-lang`'s

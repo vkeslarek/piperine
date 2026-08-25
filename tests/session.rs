@@ -1,6 +1,18 @@
 //! Root-crate host-API smoke (BRM-04): a Rust host drives
 //! load → elaborate → compile → simulate through `piperine::session`
 //! directly — no bench crate, no interpreter.
+//!
+//! LRM-COVERS: 8.4.2
+//! §8.4.2 ("Mixed-signal DC analysis"): "the steady state of the digital
+//! circuit is defined as the final state at time 0 when all analog and
+//! digital events are executed... the processes of the analog DC analysis
+//! and the digital simulation at time 0 are executed iteratively... until
+//! all signals at the A/D boundaries reach steady state" —
+//! `op_result_reads_digital_nets_directly` runs a `Session::op` (DC
+//! analysis) over a design whose behavior is entirely a digital
+//! combinational chain (`always @(*)`), proving `.op()` settles the
+//! digital domain to its steady state as part of the DC solve, and that
+//! restaging an input parameter and re-running `.op()` re-settles it.
 
 use std::path::PathBuf;
 

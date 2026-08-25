@@ -1,8 +1,14 @@
+//! LRM-COVERS: 5.6.3
+//!
 //! `param_stamps` — the analog device ABI for `∂F/∂p` (dv-gradients T4,
 //! DVG-04): one method on [`AnalogDevice`], defaulted to write nothing,
 //! that hands parameter-derivative stamps to a caller-owned sink. The PHDL
 //! device evaluates the JIT kernel; plugin/OSDI elements inherit the no-op
 //! default. No allocation per call — the contract is the `&mut Vec` shape.
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: the fixture's
+//! `G` module (`I(p, n) <+ g * V(p, n);`) is §5.6.3's own linear
+//! conductor model (Figure 5-3, `I(cond) <+ G * V(cond);`) verbatim.
 
 use piperine_codegen::CircuitCompiler;
 use piperine_lang::parse_and_elaborate;

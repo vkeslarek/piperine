@@ -3,6 +3,15 @@
 //! the `` `ifdef ``/`` `ifndef ``/`` `else ``/`` `elsif ``/`` `endif ``
 //! family, `` `include `` via an injected [`IncludeResolver`] (no
 //! filesystem I/O in the crate), and the fail-loud error paths.
+//!
+//! LRM-COVERS: 10, 10.1, 10.4
+//! §10.4 (`` `define ``/`` `undef ``): the "── §10.4 `define / `undef ──"
+//! test group below (object-like/function-like expansion, argument
+//! substitution, rescan, `` `undef ``'s removal). `10` ("Compiler
+//! directives") and `10.1` ("Overview", Table 10-1's own directive
+//! listing — no independent testable rule of its own) are the clause's
+//! narrative parents, carried on the same evidence as their genuinely
+//! tested child.
 
 use piperine_lang::{IncludeResolver, ParseErrorKind, Preprocessor};
 use std::collections::HashMap;

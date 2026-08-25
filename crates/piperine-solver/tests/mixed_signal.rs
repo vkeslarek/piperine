@@ -1,6 +1,23 @@
 //! The analog/digital boundary: A2D sampling, D2A forcing, event ordering
 //! across the Newton and event-driven domains, and the settle loop that joins
 //! them.
+//!
+//! LRM-COVERS: 8.4, 8.4.3, 8.4.3.2, 8.4.5
+//! §8.4.5 ("Synchronization and communication algorithm", Figure 8-7):
+//! the abstract control-handoff pattern — an A2D event returns control
+//! to the digital engine, a D2A event returns control to the analog
+//! engine — generalizes exactly the `test_loop_comparator_*` round trip
+//! above; same evidence.
+//! §8.4.3 ("Mixed-signal transient analysis"): analog and digital processes
+//! communicating via events and shared memory, exercised by every
+//! A2D/D2A/loop test below. §8.4.3.2 ("Analog macro process scheduling
+//! semantics"): "[the analog engine] must communicate the results to other
+//! processes in the mixed signal simulation through events" — the
+//! `test_loop_comparator_closes_switch`/`test_loop_comparator_opens_switch`
+//! pair is exactly this: an analog solution drives a comparator's digital
+//! output event, which is fed back to reconfigure an analog switch's
+//! stamps, proving the communicate-through-events round trip both
+//! directions.
 
 // Mixed-signal integration tests.
 //

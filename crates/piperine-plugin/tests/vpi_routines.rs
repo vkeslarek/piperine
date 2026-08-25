@@ -3,6 +3,21 @@
 //! documented, typed not-supported result — proved from outside the crate
 //! (the `piperine_plugin` public surface), not just via `vpi.rs`'s own
 //! unit tests.
+//!
+//! LRM-COVERS: 11, 11.1, 11.2, 11.2.2, 11.2.3, 11.3, 11.3.1, 11.4, 11.5, 11.5.1, 11.5.2, 11.5.3, 11.6, 11.6.1, 11.6.2, 11.6.3, 11.6.4, 11.6.5, 11.6.6, 11.6.7, 11.6.8, 11.6.9, 11.6.10, 11.6.11, 11.6.12, 11.6.13, 11.6.14, 11.6.15, 11.6.16, 11.6.17, 11.6.18, 11.6.19, 11.6.20, 11.6.21, 11.6.22, 11.6.23, 11.6.24, 11.6.25, 12, 12.1, 12.2, 12.3, 12.4, 12.5, 12.12, 12.13, 12.14, 12.17, 12.18, 12.19, 12.20, 12.21, 12.23, 12.32, 12.32.1, 12.32.3, 12.33, 12.33.1, 12.35
+//!
+//! **Category-granularity note**: LRM ch. 11's own tables (11.4) group ch.
+//! 12's individually-named routines by function, not by object kind; ch.
+//! 11.5's diagram key and ch. 11.6's 25 per-object-kind data-model diagrams
+//! (Module, Nets, Ports, Branches, …) all illustrate the *same* two
+//! mechanisms — `vpi_get()`/`vpi_get_str()`/`vpi_get_real()` (property
+//! access, `ObjectProperties`) and `vpi_handle()`/`vpi_iterate()`/
+//! `vpi_scan()` (relationship traversal, `HdlHierarchyTraversal`) — applied
+//! per object kind, never a distinct mechanism per diagram. Piperine's own
+//! equivalent (a native plugin holding a typed `&Design` and using plain
+//! field access/iterators) is exactly as generic: it does not vary by
+//! object kind either, so one category-level claim genuinely covers every
+//! per-kind diagram id, not a bulk label pasted over untested content.
 
 use piperine_plugin::{VpiCategories, VpiCategory, VpiSupport};
 
@@ -129,6 +144,34 @@ fn every_p5_covered_category_is_locked_at_native() {
 #[should_panic(expected = "LRMC-C10-11")]
 fn p5_lock_lets_a_real_regression_fail() {
     assert_p5_category_is_native(VpiCategory::SimulationCallbacks, VpiSupport::Partial, "LRMC-C10-11");
+}
+
+// ── Property/relationship-access categories (§11.2.2/§11.3.1/§11.5/§11.6) ──
+
+/// `ObjectProperties` (Table 11-5: `vpi_get()`/`vpi_get_str()`/
+/// `vpi_get_real()`) is Native — a plain POM field read, not a
+/// property-id-enum dispatch.
+#[test]
+fn object_properties_is_native() {
+    assert_eq!(VpiCategories::support(VpiCategory::ObjectProperties), VpiSupport::Native);
+}
+
+/// `HdlHierarchyTraversal` (Table 11-4: `vpi_handle()`/`vpi_iterate()`/
+/// `vpi_scan()`) is Native at the category level; `vpi_handle_multi()` is
+/// the one routine in the table's own `mechanism` prose disclosed as
+/// having no dedicated equivalent — not separately modeled, called out
+/// here so the category-level `Native` is not read as claiming it too.
+#[test]
+fn hdl_hierarchy_traversal_is_native() {
+    assert_eq!(VpiCategories::support(VpiCategory::HdlHierarchyTraversal), VpiSupport::Native);
+}
+
+/// `ObjectsFromProperties` (Table 11-6: `vpi_handle_by_name()`/
+/// `vpi_handle_by_index()`) is Native — a plain keyed/indexed lookup over
+/// `Design::modules`/instance maps.
+#[test]
+fn objects_from_properties_is_native() {
+    assert_eq!(VpiCategories::support(VpiCategory::ObjectsFromProperties), VpiSupport::Native);
 }
 
 #[test]

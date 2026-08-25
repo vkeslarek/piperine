@@ -1,4 +1,4 @@
-//! LRM-COVERS: 7.6, 9.13
+//! LRM-COVERS: 7.6, 9.13, 12.15
 //! T47 (VAMS-15) — LRM chapter 9 general system tasks/functions, exercised
 //! through `piperine_lang`'s public surface (`piperine_lang::eval::tasks`).
 //! Mirrors T47's "Done when": the `$display`-family formats per LRM Table

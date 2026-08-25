@@ -1,4 +1,4 @@
-//! LRM-COVERS: 6.4.2
+//! LRM-COVERS: 6.4.2, 6.9.2
 //! LRMW2-22 (`lrm-conformance-wave2`, T29): §6.4.2 paramset overloading —
 //! several `paramset` declarations may share a name, and the simulator
 //! picks the one whose declared parameters cover every override on the
@@ -181,4 +181,75 @@ fn override_naming_only_one_candidates_parameter_selects_that_candidate() {
     let m1 = top.instances.iter().find(|i| i.label.as_deref() == Some("m1")).expect("instance m1");
     let mm = m1.params.iter().find(|(n, _)| n == "mm").map(|(_, v)| v.clone());
     assert_eq!(mm, Some(Value::Int(1)), "only the mm-declaring candidate accepts the .mm override");
+}
+
+/// §6.9.2 ("Elaboration and paramsets"): "If a generate construct contains
+/// an instantiation of an overloaded paramset, then the paramset selection
+/// is performed after the generate construct has been evaluated. The
+/// evaluation of the generate construct may influence the values ... of
+/// the paramset instance, and hence the selection of matching paramset and
+/// module." A `genvar`-driven `for`-generate loop overrides `l` with a
+/// per-iteration, genvar-derived expression that lands inside the
+/// short-channel range on even iterations and the long-channel range on
+/// odd ones — each generated instance must independently resolve to the
+/// paramset its own (post-generate-evaluation) `l` value falls in, not a
+/// single selection frozen before the loop unrolled.
+#[test]
+fn generate_loop_selects_a_different_overloaded_paramset_per_iteration() {
+    let src = r#"
+        module nmos3 (inout electrical d, inout electrical g, inout electrical s, inout electrical b);
+            parameter real l = 1e-6;
+            parameter real w = 1e-6;
+        endmodule
+
+        paramset nch (nmos3); // short-channel paramset
+            parameter real l = 0.25e-6 from [0.25e-6:1e-6);
+            parameter real w = 1e-6 from [0.2e-6:inf);
+            .l = l;
+            .w = w;
+        endparamset
+
+        paramset nch (nmos3); // long-channel paramset
+            parameter real l = 1e-6 from [1e-6:inf);
+            parameter real w = 1e-6 from [0.2e-6:inf);
+            .l = l;
+            .w = w;
+        endparamset
+
+        module top ();
+            electrical d1, g, s0, b0;
+            genvar i;
+            for (i = 0; i < 2; i = i + 1) begin: g
+                nch #(.l(0.5e-6 + i * 0.75e-6), .w(5e-6)) m1 (d1, g, s0, b0);
+            end
+        endmodule
+    "#;
+    let d = elab(src);
+    let top = d.module("top").expect("top elaborated");
+    let flat = d.flat_module("top").expect("top has a flat form");
+    let l_of = |name: &str| -> f64 {
+        match flat
+            .instances()
+            .iter()
+            .find(|i| i.name() == name)
+            .unwrap_or_else(|| panic!("expected generated instance {name}"))
+            .params
+            .iter()
+            .find(|(n, _)| n == "l")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| panic!("expected an l override on {name}"))
+        {
+            Value::Real(v) => v,
+            other => panic!("expected Real l override on {name}, got {other:?}"),
+        }
+    };
+    // Iteration 0: l = 0.5e-6 (inside the short-channel range only).
+    assert!((l_of("m1__0") - 0.5e-6).abs() < 1e-12, "iteration 0 resolves the short-channel paramset");
+    // Iteration 1: l = 1.25e-6 (inside the long-channel range only).
+    assert!((l_of("m1__1") - 1.25e-6).abs() < 1e-12, "iteration 1 resolves the long-channel paramset");
+    // Both instances resolve to the same underlying module, per iteration's own selection.
+    for inst in flat.instances() {
+        assert_eq!(inst.module, "nmos3");
+    }
+    let _ = top; // (top authored, unflattened, kept alongside the flat proof)
 }

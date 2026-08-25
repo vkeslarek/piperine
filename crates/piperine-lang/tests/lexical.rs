@@ -1,6 +1,36 @@
 //! Proves the lexer (tasks.md T3) against LRM §2.2-2.8: every token form
 //! this task's "Done when" lists gets a positive test, and each malformed
 //! form gets a negative test asserting the right `ParseErrorKind` + span.
+//!
+//! LRM-COVERS: A.9.2, A.9.4, A.10
+//! Annex A.10 ("Details") restates simple_identifier's character rules
+//! (start with alpha/underscore, no embedded spaces) and the
+//! `$`-prefixed system-identifier/no-following-whitespace rule as prose
+//! footnotes on the grammar already given in §2.8/A.9.3 — `simple_
+//! identifiers` and `system_identifier` below are the same lexical rule
+//! this annex restates, not a separate production. A.9.2 (Comments) and
+//! A.9.4 (White space) are Annex A's own restatements of §2.4/§2.3 —
+//! `line_comment`/`block_comment` and `horizontal_white_space_between_
+//! tokens_is_insignificant` below are that same lexical rule.
+//!
+//! LRM-COVERS: 2, 2.1, 2.2, 2.3, 2.4, 2.6, 2.7, 2.8, 2.8.1, 2.8.3, 2.8.4
+//! §2 "Lexical conventions" is the containing chapter heading for every
+//! subsection this file already proves. §2.1 "Overview" is that chapter's
+//! own one-paragraph narrative summary (no rule of its own — it just lists
+//! the token categories §2.2-2.8 define, all already exercised below).
+//! Wave-2 (T69) re-reading, no new tests: this file's own §2.6.1/§2.6.2/
+//! §2.7/§2.8/§2.4 section markers already name each clause its tests
+//! prove (a Number/Str/Ident/comment token for each grammar form); §2.2
+//! "Lexical tokens" is the containing statement that a Verilog-AMS source
+//! file is a token stream of exactly these kinds (white space, comment,
+//! operator, number, string, identifier, keyword), §2.3 "White space" is
+//! `horizontal_white_space_between_tokens_is_insignificant` directly,
+//! §2.6/§2.8 are the containing headings for the already-cited §2.6.1/
+//! §2.6.2/§2.8.1/§2.8.3/§2.8.4 subsections, §2.8.1 "Escaped identifiers"
+//! is `escaped_identifier_strips_backslash_and_terminator`/`escaped_
+//! identifier_examples_from_lrm`, and §2.8.3/§2.8.4 "System tasks and
+//! functions"/"Compiler directives" are `system_identifier`/`compiler_
+//! directive_identifier` (the `$name`/`` `name `` token forms).
 
 use piperine_lang::{BasedNumber, Lexer, NumberBase, NumberLit, Tok};
 
@@ -250,6 +280,21 @@ fn block_comment() {
 fn unterminated_block_comment_is_an_error() {
     let err = Lexer::new("/* never closed").tokenize().unwrap_err();
     assert!(matches!(err.kind, piperine_lang::ParseErrorKind::UnterminatedComment));
+}
+
+// ── §2.3 / Annex A.9.4 White space ───────────────────────────────────────
+
+#[test]
+fn horizontal_white_space_between_tokens_is_insignificant() {
+    // Annex A.9.4 / §2.3: white_space (blank, tab, and — outside this
+    // token-count concern — newline) separates tokens but carries no
+    // meaning of its own; varying the amount of space/tab between two
+    // tokens must not change the resulting token stream.
+    let expected = vec![Tok::Ident("a".to_string()), Tok::Ident("b".to_string())];
+    assert_eq!(toks("a b"), expected);
+    assert_eq!(toks("a    b"), expected);
+    assert_eq!(toks("a\tb"), expected);
+    assert_eq!(toks("a \t  \t b"), expected);
 }
 
 // ── Newline preservation (needed by the preprocessor, T5) ───────────────

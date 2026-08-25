@@ -1,4 +1,9 @@
-//! LRM-COVERS: 9.18
+//! LRM-COVERS: 9.18, E.4, E.4.1
+//! E.4.1 ("Multiplicity factor on subcircuits"): the LRM's own text says
+//! this SPICE `M`-factor capability "is supported for subcircuits
+//! defined as modules in Verilog-AMS using the hierarchical system
+//! parameter `$mfactor`, as described in 6.3.6" — this file's `$mfactor`
+//! coverage *is* E.4.1's coverage, same mechanism the annex cites.
 //! §9.18 (LRMC-C7-09, T49): `$mfactor` reads a module's own declared
 //! `mfactor` parameter into `SimCtx.mfactor`, real per-instance effect
 //! (not just name resolution) — an instance overriding `#(.mfactor(N))`

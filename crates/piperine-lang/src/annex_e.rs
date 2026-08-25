@@ -1,6 +1,14 @@
 //! LRM Annex E — SPICE compatibility, audited against Piperine's own
 //! SPICE-facing tooling (VAMS-22, T55).
 //!
+//! LRM-COVERS: E.3.1
+//! `every_table_e1_row_is_present` (proving `mesfet` is the sole
+//! `NotSupported` row) plus `E_3_1_NOTE` below together are E.3.1's own
+//! claim exercised: the three primitives E.3.1 names as unsupported by
+//! the LRM's narrow "instance name as parameter" reading (`ccvs`/`cccs`/
+//! mutual inductors) are all present in `headers/spice/` via the
+//! alternate mechanism the LRM itself says remains legal.
+//!
 //! **Scope, per spec's own P3 framing** (`spec.md`'s "SPICE compatibility
 //! (Annex E)" story): Annex E's normative content (E.2/E.3.2/E.3.3) is
 //! written for a tool that *reads raw SPICE netlists* (`.subckt`/`.model`

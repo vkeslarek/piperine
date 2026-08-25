@@ -554,6 +554,19 @@ pub(crate) fn analog_ops() -> &'static AnalogOpRegistry {
 /// `lrm_conformance_matrix.rs` guard used).
 #[cfg(test)]
 mod registry_keyword_guard {
+    //! LRM-COVERS: 4.5.12.1, 4.5.12.2, 4.5.12.3
+    //! Wave-2 (T69) re-reading, no new tests: `every_laplace_and_zi_
+    //! keyword_is_registered` below proves `zi_zp`/`zi_zd`/`zi_np` (§4.5.12.1
+    //! "zi_zp", §4.5.12.2 "zi_zd", §4.5.12.3 "zi_np") are each a reserved
+    //! keyword AND a real `AnalogOpRegistry` entry — genuinely registered,
+    //! not the `Unsupported`-fallback shape `noise_table`/`last_crossing`
+    //! fall through to. All four `zi_*` variants share the identical
+    //! `ZTransform { variant }` lowering path (`r.register(&[&format!("zi_
+    //! {variant}")], ZTransform { variant })` above); `zi_nd`'s own
+    //! numerical behavior (the fourth variant) is proven end to end by
+    //! `crates/piperine-codegen/tests/zi_tau_arg.rs` and root `tests/
+    //! zi_tau_lte.rs` — this guard is the registration-level proof for the
+    //! other three variants of that same shared codegen path.
     use super::*;
     use piperine_lang::Keywords;
 

@@ -1,4 +1,4 @@
-//! LRM-COVERS: 6.4
+//! LRM-COVERS: 6.4, 6.4.1
 //! LRMC-C5-07 (`.specs/features/lrm-conformance-closure/`, T29): an
 //! instance naming a `paramset` (§6.4) resolves to the paramset's
 //! associated module with its pre-computed parameter bindings actually

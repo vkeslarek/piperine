@@ -1,4 +1,4 @@
-//! LRM-COVERS: 5.10.5
+//! LRM-COVERS: 5.10.5, 7.3.4
 //! LRMC-C5-05 (`.specs/features/lrm-conformance-closure/`, T27): §5.10.5's
 //! own paradigm mixed-signal idiom — an `analog` block sensitive to a
 //! digital `posedge` event — elaborates and simulates on the native

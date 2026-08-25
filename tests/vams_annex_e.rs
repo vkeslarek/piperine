@@ -1,4 +1,17 @@
-//! LRM-COVERS: E.3, E.3.4
+//! LRM-COVERS: E.3, E.3.4, C.18, E.2.2, E.2.2.3
+//! E.2.2 ("Examples") is a pure "this subsection shows some examples"
+//! container; its E.2.2.3 ("Accessing SPICE primitives") child worked
+//! example — translating a `.SUBCKT`'s primitives to native Verilog-AMS
+//! (`vsine`/`isine`/`inductor`/`capacitor`/`resistor`/`bjt`/`vertNPN`) —
+//! is exactly the shape `headers/spice/*.va` + this file's Table E.1
+//! tests already prove (positional and named-port instantiation of the
+//! same primitive family). E.2/E.2.1/E.2.2.1/E.2.2.2 stay disclosed gaps
+//! (`annex_e.rs`'s own doc: they presuppose reading a raw SPICE netlist,
+//! a capability this crate does not have).
+//! C.18 ("SPICE compatibility": "Annex E defines the SPICE compatibility
+//! for both Verilog-A and Verilog-AMS HDL") carries no content of its
+//! own beyond that one-sentence pointer — its substance *is* Annex E,
+//! proved by this file.
 //! T55 (VAMS-22) — LRM Annex E (SPICE compatibility), proved against
 //! Piperine's actual SPICE-facing tooling: `headers/spice/*.va` (T41–T43)
 //! plus the `$limit()` pnjlim/fetlim/limvds functions

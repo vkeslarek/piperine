@@ -1,5 +1,13 @@
 //! ngspice golden cross-validation (spice-stdlib SPICE-05..08).
 //!
+//! LRM-COVERS: 8.3.1
+//! §8.3.1 ("Nodal analysis"): "simulators combine constitutive
+//! relationships with Kirchhoff's Laws in nodal analysis to form a
+//! system of differential-algebraic equations" — `ngspice_divider` (and
+//! the other DC operating-point cases below) prove piperine's own nodal
+//! (MNA/KFL) DC solve numerically against ngspice's independent nodal
+//! solver on the same circuit.
+//!
 //! Each circuit pair in `tests/ngspice/` describes the *same* circuit twice:
 //! `<name>.cir` for ngspice (the golden reference, run as a subprocess) and
 //! `<name>.phdl` for piperine (elaborated and solved in-process — node

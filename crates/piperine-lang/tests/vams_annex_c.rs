@@ -1,8 +1,14 @@
-//! LRM-COVERS: C.15
+//! LRM-COVERS: C.7, C.15
 //! VAMS T27 (VAMS-25) — Annex C analog-subset enforcement: a digital-only
 //! construct used inside an `analog` behavior body fails loud citing the
 //! clause. Ongoing gate (VAMS-25): later phases add more constructs to
 //! the same walk (`elab::typecheck::check_analog_subset`).
+//!
+//! C.7 ("Analog behavior... No digital behavior or events are supported
+//! in Verilog-A[;] `casex`/`casez` are not supported in Verilog-A") is
+//! this file's core subject matter: `non_blocking_assignment_inside_
+//! analog_block_fails_loud_citing_annex_c` and `casex_inside_analog_
+//! block_fails_loud` are exactly those two named exceptions.
 
 use piperine_lang::{parse_and_elaborate, SourceMap};
 

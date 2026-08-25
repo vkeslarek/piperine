@@ -1,8 +1,38 @@
+//! LRM-COVERS: 2.5, 4, 4.1, 4.2, 4.2.2, 4.2.4, 4.2.5, 4.2.7, 4.2.8, 4.2.9, 4.2.10, 4.2.11, 4.2.12, 4.3.1, 4.3.2, 4.5
 //! Proves the expression grammar (tasks.md T7) against LRM chapter 4: every
 //! operator parses with the right precedence/associativity (asserted on
 //! parse **shape**, not just success), ternary, concat/replication,
 //! part-select/index, math and time-domain functions, and both access
 //! function arities.
+//!
+//! Wave-2 (T69) re-reading, no new tests: §2.5 "Operators" ("Operators are
+//! single, double, or triple character sequences ... used in expressions")
+//! and §4.2 "Operators" are the containing statements `every_binary_
+//! operator_parses_to_its_binop`/`every_unary_reduction_operator_parses`
+//! prove directly (single `+`, double `**`/`==`/`&&`, triple `===`/`!==`
+//! forms, all recognized in expression position); §4.2.2 "Operator
+//! precedence" is the precedence/associativity block (`mul_binds_
+//! tighter_than_add` through `parens_override_precedence`); §4.2.4
+//! "Arithmetic operators" (`+ - * / % **`), §4.2.5 "Relational operators"
+//! (`< <= > >=`), §4.2.7 "Logical equality operators" (`== !=`), §4.2.8
+//! "Logical operators" (`&& || !`), §4.2.9 "Bitwise operators" (`& | ^
+//! ~^ ~`), §4.2.11 "Shift operators" (`<< >>`) are each a subset of the
+//! same table-driven `every_binary_operator_parses_to_its_binop`/`every_
+//! unary_reduction_operator_parses` cases; §4.2.10 "Reduction operators"
+//! (`& ~& | ~| ^`) is the reduction cases in `every_unary_reduction_
+//! operator_parses`; §4.2.12 "Conditional operator" is the `ternary_*`
+//! tests; §4.3.1/§4.3.2 "Standard mathematical functions"/"Transcendental
+//! functions" are `math_functions_parse_as_calls` (`sqrt`/`exp`/`ln`/
+//! `min`/`max`/`pow`/`sin`/`atan2`); §4.5 "Analog operators" is `time_
+//! domain_functions_parse_as_calls` (`ddt`/`idt`/`idtmod`/`absdelay`/
+//! `transition`/`slew`/`laplace_nd`/`zi_np`, each recognized as an analog
+//! operator call). §4 "Expressions" and §4.1 "Overview" are the
+//! containing chapter/overview headings for every subsection above — §4.1
+//! itself is purely narrative ("this section describes the operators and
+//! operands ... how to use them to form expressions"), with no
+//! independent rule of its own beyond what §4.2 onward states.
+//!
+//! LRM-COVERS: A.8.2, A.8.4, A.8.6, A.8.7, A.8.8, A.8.9
 
 use piperine_lang::ast::{BinOp, Expr, UnOp};
 use piperine_lang::{Grammar, Lexer};
@@ -363,6 +393,32 @@ fn system_function_call_parses() {
             assert!(args.is_empty());
         }
         other => panic!("expected SystemFunctionCall, got {other:?}"),
+    }
+}
+
+// ── primaries, Annex A.8.4/A.8.7/A.8.8 ───────────────────────────────────
+
+#[test]
+fn number_and_string_literals_parse_as_primaries() {
+    // A number literal (§2.6) and a string literal (§2.7) each parse as
+    // their own `Expr` primary — Annex A.8.4's `primary` includes both
+    // `number` (A.8.7) and `string` (A.8.8) alongside a plain identifier
+    // and a parenthesized `mintypmax_expression`.
+    match parse("42") {
+        Expr::Number { .. } => {}
+        other => panic!("expected Expr::Number, got {other:?}"),
+    }
+    match parse("3.5") {
+        Expr::Number { .. } => {}
+        other => panic!("expected Expr::Number, got {other:?}"),
+    }
+    match parse("\"hello\"") {
+        Expr::Str { value, .. } => assert_eq!(value, "hello"),
+        other => panic!("expected Expr::Str, got {other:?}"),
+    }
+    match parse("plain_ident") {
+        Expr::Ident { name, .. } => assert_eq!(name, "plain_ident"),
+        other => panic!("expected Expr::Ident, got {other:?}"),
     }
 }
 

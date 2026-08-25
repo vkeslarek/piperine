@@ -1,4 +1,11 @@
-//! LRM-COVERS: 4.5.12, 4.5.14
+//! LRM-COVERS: 4.5.1, 4.5.12, 4.5.12.4, 4.5.14
+//! Wave-2 (T69) re-reading, no new tests: §4.5.1 "Vector or array
+//! arguments to analog operators" names "Z-transform filters" as one of
+//! the operator families that take an array argument, either "an
+//! array_identifier ... or an array assignment pattern" — every fixture
+//! here calls `zi_nd(V(p,n), '{0,1}, '{-1,0,1}, ...)`, the assignment-
+//! pattern form, for its numerator/denominator arrays. §4.5.12.4 "zi_nd"
+//! is this file's own operator (all fixtures are `zi_nd(...)`).
 //! LRMW2-32 (`lrm-conformance-wave2`, T40): `zi_*(expr, num, den, T[, τ[,
 //! t0]])`'s trailing `τ`/`t0` arguments (§4.5.12: "All Z-transform filters
 //! share three common arguments: T, τ, and t0 ... τ specifies the

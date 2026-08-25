@@ -1,3 +1,5 @@
+//! LRM-COVERS: 7.3.3, 7.3
+//!
 //! SC-13 — fused combinational digital network integration.
 //!
 //! `CircuitCompiler` pulls connected pure-combinational digital cones into

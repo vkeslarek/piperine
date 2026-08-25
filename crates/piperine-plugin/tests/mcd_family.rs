@@ -3,6 +3,8 @@
 //! (`McdTable`, `piperine-solver/src/core/output.rs`) — and
 //! `PluginHost::vpi_printf` routing through the same `SimOutput` sink
 //! `mcd_printf`'s stdout bit uses.
+//!
+//! LRM-COVERS: 12.24, 12.25, 12.26, 12.27, 12.28
 
 use piperine_plugin::{BufferSink, FileTable, McdTable, PluginHost};
 

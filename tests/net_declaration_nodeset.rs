@@ -10,7 +10,12 @@
 //! (not the physics) picks which one Newton lands on. An ignored nodeset
 //! cannot pick a branch, so this circuit cannot pass by accident.
 //!
-//! LRM-COVERS: 3.6.3.2
+//! LRM-COVERS: 3.6.3, 3.6.3.2
+//! Wave-2 (T69) re-reading, no new tests: §3.6.3 "Net discipline
+//! declaration" (Syntax 3-6's `discipline_identifier ... list_of_net_decl_
+//! assignments` form) is this file's own `electrical n = 0.9;` fixture
+//! shape — an already-declared discipline (`electrical`) applied to a net
+//! with a `net_decl_assignment` initializer.
 
 use std::collections::HashMap;
 

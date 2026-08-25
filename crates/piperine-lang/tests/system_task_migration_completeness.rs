@@ -1,3 +1,9 @@
+//! LRM-COVERS: 9.17.2
+//! §9.17.2 ("$bound_step task"): `bound_step_bounds_the_compiled_kernel_
+//! hint` proves `analog $bound_step(2.5e-9)` produces a real, live effect
+//! on the compiled `AnalogKernel` (`has_bound_step()`/`eval_bound_step`),
+//! not merely that the name parses.
+//!
 //! §9 system-task coverage (LRMC-C7-10, T45) — rewritten against real
 //! `.vams` sources through the actual pipeline
 //! (`parse_and_elaborate` → `lower_bodies` → `CircuitCompiler`/

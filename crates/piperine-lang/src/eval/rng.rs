@@ -189,7 +189,16 @@ impl Distributions {
 
 #[cfg(test)]
 mod tests {
-    //! LRM-COVERS: 9.13
+    //! LRM-COVERS: 9.13, 9.13.1, 9.13.2, 9.13.3
+    //! §9.13.1 ($random/$arandom): the `random_*` test group below,
+    //! including the inout-seed-mutation requirement. §9.13.2
+    //! (distribution functions): the `rdist_*` test group (bounds,
+    //! positive-argument rejection, sample-mean convergence). §9.13.3
+    //! (Algorithm for probabilistic distribution, Table 9-26's C-function
+    //! cross-listing to IEEE 1364-2005 §17.9.3): `random_matches_the_
+    //! ieee_1364_2005_17_9_3_reference_stream_for_a_fixed_seed` proves
+    //! this module's `uniform()` transcription reproduces the standard's
+    //! own reference algorithm bit-for-bit, not just "some" PRNG.
 
     use super::*;
 

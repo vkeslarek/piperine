@@ -1,4 +1,21 @@
-//! LRM-COVERS: 7.4.4.1, 3.11.1
+//! LRM-COVERS: 3.8, 7.4.4.1, 3.11.1, 7.4.3, 7.4.5
+//! Wave-2 (T69) re-reading, no new tests (added by this pass): §7.4.3
+//! "Connection of continuous-time disciplines" ("It shall be an error to
+//! connect incompatible continuous disciplines together") and §7.4.5
+//! "Discipline resolution of continuous signals" (resolution among nets
+//! that are all continuous, "there are no discrete disciplines to
+//! propagate upwards") are exactly `same_domain_incompatible_
+//! disciplines_still_hard_fail`'s own fixture below — two same-domain
+//! (continuous) disciplines, `electrical` and `other_continuous`.
+//! §3.8 "Default discipline"
+//! states the `` `default_discipline `` directive "specifies a default
+//! discrete discipline to be applied to any discrete net which does not
+//! have an explicit discipline declaration as part of discipline
+//! resolution" — `unresolved_net_falls_back_to_default_discipline_
+//! directive` is exactly this (an otherwise-unresolvable net actually
+//! resolves through the in-force directive), paired with `unresolved_net_
+//! without_default_discipline_still_fails_loud` proving the fallback is
+//! consulted only when present.
 //! Annex F §7.4.4.1's continuous-over-discrete resolution rule and the
 //! `` `default_discipline `` fallback (LRMC-C10-18/19) — `ResolveDisciplines`
 //! reads each conflicting discipline's declared domain instead of

@@ -1,4 +1,10 @@
-//! LRM-COVERS: A.2.1.3
+//! LRM-COVERS: 3.2, A.2.1.3
+//! Wave-2 (T69) re-reading, no new tests: §3.2 "Integer and real data
+//! types" is this file's own subject — `integer_var_lowers_into_module_
+//! vars`/`real_var_lowers_with_real_type` declare and lower the two
+//! `integer`/`real` forms Syntax 3-1 defines, `multiple_names_in_one_var_
+//! declaration_all_lower` is the comma-list form, and `a_scalar_
+//! initializer_lands_on_the_var` is the `= constant_expression` form.
 //! T22 addendum (module structure lowering, VAMS-04): module-level `var`
 //! declarations (LRM Annex A.2.1.3 `module_or_generate_item_declaration`'s
 //! `integer_declaration`/`real_declaration`/`time_declaration`/

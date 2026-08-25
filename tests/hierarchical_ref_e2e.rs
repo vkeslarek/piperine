@@ -1,4 +1,12 @@
-//! LRM-COVERS: 6.7, 6.2.1
+//! LRM-COVERS: 6.7, 6.2.1, 6.7.1, 5.5, 5.5.5
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: both fixtures'
+//! `V(u1.u2.w2, gnd)` / `V($root.top.u1.u2.w2, gnd)` reads are exactly
+//! §6.7.1's own first usage rule ("Potential and flow access for named
+//! and unnamed branches ... can be done hierarchically") and §5.5.5's
+//! "Accessing nets and branch signals hierarchically" — a real DC
+//! operating-point read of a net two structural levels down the
+//! hierarchy, not merely an elaboration-time resolution.
 //!
 //! LRMW2-42 (`lrm-conformance-wave2`, T50): spec.md AC15's own requirement
 //! ("a hierarchical reference reads a nested net") — end-to-end, *simulated*

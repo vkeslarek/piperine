@@ -1,5 +1,15 @@
 //! `$limit` limiter formulas — the JIT-emitted `fetlim`/`limvds` must match
 //! the ngspice C reference (devsup.c) value-for-value (SC-19).
+//!
+//! LRM-COVERS: 9.17, 9.17.3
+//! §9.17.3 ($limit): `fetlim_matches_ngspice_reference` and the
+//! `limit_catalog_*`/`limiting_report_*` tests below prove `$limit(...)`
+//! (both the `fetlim` and `pnjlim` limiter-function forms) is JIT-emitted
+//! and numerically correct, not just parsed. §9.17 ("Analog kernel
+//! control system tasks and functions") is the organizational parent
+//! over 9.17.1 ($discontinuity)/9.17.2 ($bound_step)/9.17.3 ($limit),
+//! all three independently tested — carried here alongside its own
+//! genuinely-tested child.
 
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::SimCtx;

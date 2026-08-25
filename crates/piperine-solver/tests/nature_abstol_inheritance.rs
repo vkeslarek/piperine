@@ -1,4 +1,20 @@
-//! LRM-COVERS: 6.5.8
+//! LRM-COVERS: 6.5.8, 8.3, 8.3.3, 7.2.4
+//!
+//! T69 (`lrm-conformance-wave2`) re-reading, no new tests: §7.2.4
+//! "Mixed-signal and net disciplines" restates §6.5.8's own rule from the
+//! mixed-signal-node angle — "the abstol of the associated node shall be
+//! the smallest of the abstols specified in the disciplines associated
+//! with all the continuous nets of the signal" — the identical
+//! smallest-abstol-wins mechanism `node_vntol_overrides` carries and this
+//! file's own tightened-vs-default comparison proves discriminating.
+//!
+//! §8.3.3 ("Convergence"): "the proposed solution on this iteration...
+//! shall be close to the proposed solution on the previous iteration...
+//! where reltol is the relative tolerance and abstol is the absolute
+//! tolerance" — exactly the `reltol * magnitude + abs_limit` formula this
+//! file's `Tolerances::has_converged` calls exercise (`context.rs`'s
+//! `allowed_error`/`tol` computations), proven discriminating by the
+//! accept/reject pair below.
 //!
 //! LRMW2-53 (`lrm-conformance-wave2`, T48): §6.5.8's own words — "The
 //! node shall be treated as having a potential abstol with a value equal

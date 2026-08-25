@@ -1,3 +1,13 @@
+//! LRM-COVERS: 1.3.1.2, 3.12
+//! Wave-2 (T69) re-reading, no new tests: §1.3.1.2 "Reference directions"
+//! is the `+`/`-` terminal convention (Figure 1-2) a branch's declared
+//! `(pos, neg)` pair encodes directly — `named_branch_round_trips_
+//! through_accessors` asserts `b.pos() == pos("a")`/`b.neg() ==
+//! Some(pos("b"))` for `branch (a, b) br;`, i.e. `a` is the `+` terminal
+//! and `b` the `-` terminal, matching declared order. §3.12 "Branches" is
+//! this file's own subject, cited throughout its tests already; this adds
+//! the file-header declaration to match.
+//!
 //! VAMS T18 (VAMS-02) — POM `Branch` node, LRM §3.12 / §5.
 //!
 //! Asserts the structural contract of the POM `Branch` type:
