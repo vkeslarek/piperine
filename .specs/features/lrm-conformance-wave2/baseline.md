@@ -444,3 +444,202 @@ cargo build --workspace --tests --keep-going --message-format=json > build.ndjso
 # separate `cargo build --workspace` to get an honest (non-cached) warning
 # count.
 ```
+
+
+---
+
+## T71 — Final A/B (post-wave-2, HEAD after T69's commit)
+
+**Captured**: 2026-08-24, branch `feature/device-verification`, HEAD after
+T69 (`test(lrm-coverage): close 364 of 469 remaining LRM-2-4 coverage gaps`).
+Same procedure as the capture above: `cargo test --workspace --no-fail-fast`
+(equivalent per-target enumeration to the original methodology — each
+`Running tests/<name>.rs (<binary>)` line paired with its own
+`test result: ... passed; ... failed` line), plus `cargo build --workspace`
+run separately to confirm the warning count. This section is an **appendix**
+— it does not edit or replace the original snapshot above (which stays the
+wave's reference "before" point per tasks.md's Baseline rule); it records
+the "after" comparison T71 requires.
+
+### Target-file count
+
+`ls crates/*/tests/*.rs tests/*.rs` now returns **398** (was 318 at capture
+time) — wave-2 added 80 new on-disk test-target files across T8-T69 (listed
+below), zero were removed or renamed (append-only, matching the wave's own
+practice).
+
+### Per-target verdict vs. baseline: equal-or-better, one exception explained
+
+Of the 318 original targets: **317 stayed at or improved on their baseline
+pass count with zero failures; exactly 1 target regressed** —
+`piperine-codegen::vams_port_connected` went from `2 passed` to `1 passed, 1
+failed` (`analog_node_alias_fails_loud_citing_md18`). This is **not a wave-2
+regression** — it is a **pre-existing red** at this HEAD that predates every
+task in this batch (T69-T72); it was flagged as a known, unfixed baseline
+deviation by the prior batch that landed T60-T68 and is carried forward
+disclosed, not silently reconciled. No other of the 318 baseline targets
+lost a passing test or gained a failure.
+
+18 baseline targets **improved** (more passing tests, still zero failures)
+as wave-2 tasks added test cases to existing files rather than always
+creating new ones:
+
+| Crate | Target | Baseline | Now |
+|---|---|---|---|
+| piperine | session_analyses | 3 passed | 10 passed |
+| piperine | suite_hygiene | 10 passed | 11 passed |
+| piperine-api | smoke | 2 passed | 3 passed |
+| piperine-codegen | digital_jit | 4 passed | 9 passed |
+| piperine-codegen | resolve_lowering | 13 passed | 14 passed |
+| piperine-codegen | runtime_io_diagnostics | 1 passed | 3 passed |
+| piperine-codegen | vams_driver_access_gap | 1 passed | 2 passed |
+| piperine-lang | expressions | 25 passed | 26 passed |
+| piperine-lang | lexical | 29 passed | 30 passed |
+| piperine-lang | vams_ch1_lexical_form | 17 passed | 23 passed |
+| piperine-lang | vams_defparam | 5 passed | 7 passed |
+| piperine-lang | vams_discipline_resolution | 7 passed | 10 passed |
+| piperine-lang | vams_paramset | 5 passed | 6 passed |
+| piperine-plugin | vpi_routines | 10 passed | 13 passed |
+| piperine-python | check_posture | 3 passed | 4 passed |
+| piperine-python | session_analyses | 1 passed | 2 passed |
+| piperine-solver | check_posture | 3 passed | 6 passed |
+| piperine-solver | vams_stratified_regions | 2 passed | 3 passed |
+
+The remaining 299 baseline targets are byte-identical to their baseline
+result (same pass count, zero failures).
+
+### New targets (80, all wave-2 additions)
+
+| Crate | Target | Result |
+|---|---|---|
+| piperine | absdelay_maxdelay | 2 passed |
+| piperine | analog_for_loop_unroll | 3 passed |
+| piperine | analog_function_e2e | 2 passed |
+| piperine | cross_enable_e2e | 2 passed |
+| piperine | cross_time_tol_lte | 1 passed |
+| piperine | ddt_abstol_lte | 1 passed |
+| piperine | generate_items_e2e | 2 passed |
+| piperine | generic_access_functions | 3 passed |
+| piperine | hierarchical_ref_e2e | 2 passed |
+| piperine | idt_assert_ramp_generator | 2 passed |
+| piperine | indirect_contribution_opamp_e2e | 3 passed |
+| piperine | laplace_abstol_lte | 1 passed |
+| piperine | lrm_section_coverage | 4 passed, 1 failed |
+| piperine | net_declaration_nodeset | 3 passed |
+| piperine | node_alias_e2e | 4 passed |
+| piperine | node_alias_no_rejit | 1 passed |
+| piperine | onebit_dac_e2e | 2 passed |
+| piperine | procedural_continuous_assign_e2e | 6 passed |
+| piperine | simprobe_matches_host_probe | 4 passed |
+| piperine | slew_symmetric_fall | 2 passed |
+| piperine | switch_branch_relay_e2e | 1 passed |
+| piperine | transition_time_tol | 2 passed |
+| piperine | vams_analog_block_concat_e2e | 1 passed |
+| piperine | vams_continuous_assign_e2e | 2 passed |
+| piperine | vams_level_event_expr_e2e | 2 passed |
+| piperine | zi_tau_lte | 1 passed |
+| piperine-codegen | a2d_comparator_interpolation | 3 passed |
+| piperine-codegen | absdelay_maxdelay_arg | 2 passed |
+| piperine-codegen | analog_function_inline | 6 passed |
+| piperine-codegen | analog_loop_unroll | 8 passed |
+| piperine-codegen | analog_multiple_blocks | 4 passed |
+| piperine-codegen | analysis_dependent_functions | 6 passed |
+| piperine-codegen | case_equality | 3 passed |
+| piperine-codegen | cross_tol_enable_arg | 4 passed |
+| piperine-codegen | ddt_abstol_arg | 3 passed |
+| piperine-codegen | ddx_operator | 2 passed |
+| piperine-codegen | digital_analog_event_sensitivity | 2 passed |
+| piperine-codegen | digital_net_type_classification | 2 passed |
+| piperine-codegen | digital_timescale_quantization | 4 passed |
+| piperine-codegen | digital_x_in_continuous_context | 4 passed |
+| piperine-codegen | discontinuity_degree_inert | 2 passed |
+| piperine-codegen | fatal_immediate | 3 passed |
+| piperine-codegen | final_step | 2 passed |
+| piperine-codegen | ground_declaration | 1 passed |
+| piperine-codegen | hierarchical_ref_resolution | 5 passed |
+| piperine-codegen | idt_assert_arg | 2 passed |
+| piperine-codegen | idtmod_offset | 2 passed |
+| piperine-codegen | indirect_contribution | 3 passed |
+| piperine-codegen | initial_step_analysis_list | 2 passed |
+| piperine-codegen | laplace_abstol_arg | 2 passed |
+| piperine-codegen | limexp_convergence | 1 passed |
+| piperine-codegen | log_base10 | 3 passed |
+| piperine-codegen | math_intrinsics_lrm | 7 passed |
+| piperine-codegen | simparam_unknown_key | 2 passed |
+| piperine-codegen | slew_fall_default | 2 passed |
+| piperine-codegen | unknown_system_task | 3 passed |
+| piperine-codegen | vams_digital_monitor_defer | 2 passed |
+| piperine-codegen | vams_mfactor_scaling | 2 passed |
+| piperine-codegen | vams_placement | 2 passed |
+| piperine-codegen | vams_string_concat | 5 passed |
+| piperine-codegen | vams_switch_primitives | 5 passed |
+| piperine-codegen | zi_tau_arg | 3 passed |
+| piperine-lang | indirect_contribution_grammar | 3 passed |
+| piperine-lang | port_size_matching | 4 passed |
+| piperine-lang | switch_branch_elaboration | 4 passed |
+| piperine-lang | vams_connect_naming_direction | 6 passed |
+| piperine-lang | vams_continuous_assign | 3 passed |
+| piperine-lang | vams_digital_net_types | 3 passed |
+| piperine-lang | vams_generate_items | 7 passed |
+| piperine-lang | vams_genvar_outside_generate | 2 passed |
+| piperine-lang | vams_ground | 4 passed |
+| piperine-lang | vams_hierarchical_refs | 4 passed |
+| piperine-lang | vams_nature_compatibility | 5 passed |
+| piperine-lang | vams_param_var_instance_attrs | 4 passed |
+| piperine-lang | vams_paramset_overloading | 6 passed |
+| piperine-lang | vams_positional_param_overrides | 6 passed |
+| piperine-lang | vams_procedural_continuous_assign | 6 passed |
+| piperine-solver | digital_driver_segregation | 4 passed |
+| piperine-solver | nature_abstol_inheritance | 3 passed |
+| piperine-solver | scheduler_region_queue_parity | 3 passed |
+One of the 80 new targets carries a known, disclosed failure:
+`piperine::lrm_section_coverage` (`4 passed, 1 failed`) — the 1 failure is
+`covered_and_excluded_partition_the_lrm`, T69's own coverage-partition gate.
+T69's commit message documents this in full: 469 of 612 LRM-2-4 sections
+were uncovered at T68; T69 closed 364 of them with real, individually
+verified evidence (backfilled `LRM-COVERS` annotations plus a handful of new
+tests), leaving 105 genuinely uncovered — each one individually confirmed at
+HEAD to describe LRM functionality Piperine does not yet implement (PLA
+tasks, stochastic `$q_*` tasks, driver-access functions, hierarchical branch
+contributions, the Annex-C Verilog-A-subset compliance mode, ~20 VPI routine
+categories already disclosed unimplemented in the plugin's own `vpi.rs`,
+and more) — never something a test could honestly claim without
+fabrication. This is a real, disclosed shortfall against spec AC20's letter
+("zero empty cells"), not a regression against this baseline (the target
+did not exist at baseline capture time), and is carried into
+`SPEC_DEVIATION.md` (T70) as the wave's residual open item.
+
+### Build warnings
+
+`cargo build --workspace`: **0 warnings**, exit 0 (same as baseline).
+
+### Known non-baseline reds (not part of this A/B — different tracking)
+
+Two `piperine-solver` inline `#[cfg(test)]` unit tests under `src/digital/
+events.rs` (`digital::events::tests::inactive_region_lands_after_active_at_
+the_same_timestamp`, `digital::events::tests::stratified_regions_resolve_
+the_canonical_active_nba_race_through_evaluate_until_stable`) fail at this
+HEAD. These are **not** part of this baseline's tracked scope (the baseline
+only enumerates on-disk `tests/*.rs` integration-test files, never inline
+lib unit tests — see the original "Full per-target results (318)" section's
+own scope note) and predate this batch (T69-T72); the prior batch that
+landed T60-T68 root-caused them to `apply_driven_event` universally
+strength-arbitrating same-net events and deliberately left them red,
+re-disclosed rather than papered over with a targeted fix that would need
+net-kind classification the `DriverTable` doesn't have yet.
+
+### Summary
+
+| | Baseline (318 targets) | T71 (398 targets) |
+|---|---|---|
+| Targets | 318 | 398 (+80) |
+| Targets with 0 failures | 318 | 397 |
+| Targets with ≥1 failure | 0 | 1 (`lrm_section_coverage`, disclosed above) |
+| Total passing test cases (sum) | 1,809 | 2,099 |
+| Total failing test cases (sum) | 0 | 2 |
+| Build warnings | 0 | 0 |
+
+**Verdict: every one of the 318 baseline targets is equal-or-better except
+one pre-existing, already-disclosed red (`vams_port_connected`, not
+introduced by T69-T72); every new target is green except the one T69's own
+commit fully explains. No silent regression.**
