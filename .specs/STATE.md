@@ -1008,10 +1008,106 @@ wave-1's registry-style gates.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-08-06 — `ngspice-parity` DELIVERED (T1–T24 + Fix A/B,
-Verifier PASS, 22/22 ACs spec-anchored); `codegen-simplification` DELIVERED
-2026-08-03 (T1–T14, Verifier PASS with 2 minor non-blocking gaps); `dv-tester`
-DELIVERED 2026-08-01; `dv-gradients` DELIVERED 2026-07-31.
+**Last updated:** 2026-08-24 — `lrm-conformance-wave2` DELIVERED WITH
+DISCLOSED RESIDUE (T1–T72, all 72 tasks committed, branch
+`feature/device-verification`); prior entries below (ngspice-parity,
+codegen-simplification, dv-tester, dv-gradients, etc.) predate this and are
+kept as history.
+
+### Feature — `lrm-conformance-wave2` (DELIVERED WITH DISCLOSED RESIDUE 2026-08-24)
+
+Spec/design/tasks/baseline in `.specs/features/lrm-conformance-wave2/`
+(`spec.md`/`design.md`/`tasks.md`/`baseline.md`, none committed to git —
+pre-existing untracked state on this branch, not produced or fixed by this
+closure batch; `baseline.md` is tracked and was updated). All 72 tasks
+(T1–T72) are committed on `feature/device-verification`; T69–T72 (this
+final batch) landed as commits `1a335387` (T69), `90cf5192` (T70),
+`b3ee793b` (T71) — T72 is this STATE.md update.
+
+**What T1–T68 delivered (prior batches, already on this branch before this
+session):** re-verified the entire pre-wave-2 `SPEC_DEVIATION.md` audit
+(63 findings across §1 drops-silenciosos, §2 semantic divergences, §3
+missing constructs, §4 ignored operator args, §5 disclosed deviations) and
+closed 51 of them with dedicated tasks/tests/commits, plus built the
+`tests/lrm_section_coverage.rs` mechanism (MD-51) that derives LRM-2-4
+section coverage from `//! LRM-COVERS:` test-header declarations rather
+than a hand-maintained registry.
+
+**What this batch (T69–T72) delivered:**
+
+- **T69** (`1a335387`) — drove `covered_and_excluded_partition_the_lrm`
+  from 469/612 uncovered sections down to **105/612 uncovered**, via ~90
+  backfilled `LRM-COVERS` annotations (cross-checked against real test
+  bodies, not filename-guessed), a handful of new minimal tests, and 12
+  Annex E ids + 2 Annex C ids added to `coverage_exclusions.toml`
+  (`out_of_scope`/`informative`, each mapped to a real spec.md row or LRM
+  front-matter tag). **The gate stays red (105 uncovered)** — every one of
+  those 105 was individually source-verified to describe LRM functionality
+  Piperine genuinely does not implement yet (PLA tasks, stochastic
+  `$q_*`, driver-access functions, hierarchical branch contributions,
+  paramset output variables, the Annex-C Verilog-A-subset compliance mode,
+  ~20 disclosed-unimplemented VPI routine categories, and more). None map
+  to spec.md's Out of Scope table, so none could be excluded; closing them
+  for real means implementing the feature, not writing a test. **AC20's
+  letter ("zero empty cells") is not met; its spirit ("no claim without an
+  assertion that exercises the clause") is upheld throughout** — nothing
+  was fabricated to force a green run.
+- **T70** (`90cf5192`) — regenerated `SPEC_DEVIATION.md` against HEAD: of
+  the pre-wave-2 audit's 63 claims, 51 are now closed (each citing the real
+  commit hash that fixed it, verified via `git log`/`git show`, plus
+  current `file:line` evidence the bug/gap is gone) and 9 stay open as
+  disclosed rows with re-verified evidence and explicit LRM clauses — all
+  documented scope cuts (fail loud, not silent), not forgotten bugs.
+- **T71** (`b3ee793b`) — final per-target A/B appended to `baseline.md`
+  (original snapshot untouched): 317 of 318 baseline targets
+  equal-or-better with zero failures; the one exception
+  (`vams_port_connected`'s `analog_node_alias_fails_loud_citing_md18`) is a
+  pre-existing red that predates this batch, not introduced by T69–T72; 80
+  new targets landed across wave-2, all green except
+  `lrm_section_coverage`'s own known partition gap. `cargo build
+  --workspace` stays 0 warnings throughout. Also appended a second,
+  independent `WAVE2_REGISTRY` to `tests/lrm_conformance_matrix.rs` (pure
+  append, wave-1's `REGISTRY` untouched — 235 insertions, 0 deletions)
+  covering all 66 `LRMW2-*` requirement ids: 64 `Closed` naming a real
+  test, 2 (`LRMW2-01` baseline capture, `LRMW2-66` SPEC_DEVIATION.md
+  regen) are process/doc tasks with no assertion to name, disclosed as
+  `Pending` rather than fabricated and locked to exactly those two ids by
+  a dedicated guard test.
+- **T72** (this commit) — this STATE.md update.
+
+**Known non-regressions carried into the next session (none of these are
+new — all predate T69–T72, confirmed unchanged by T71's A/B):**
+- `covered_and_excluded_partition_the_lrm` — 105/612 LRM-2-4 sections
+  genuinely uncovered (see T69 above); closing further requires
+  implementing real features, not more test-writing.
+- `vams_port_connected.rs::analog_node_alias_fails_loud_citing_md18` — one
+  pre-existing failing test, root cause not investigated by this batch.
+- Two `piperine-solver` inline unit tests under `src/digital/events.rs`
+  (`inactive_region_lands_after_active_at_the_same_timestamp`,
+  `stratified_regions_resolve_the_canonical_active_nba_race_through_
+  evaluate_until_stable`) — root-caused by a prior batch to
+  `apply_driven_event` universally strength-arbitrating same-net events; a
+  targeted fix needs net-kind classification `DriverTable` doesn't have
+  yet. Deliberately left red and re-disclosed, not silently carried.
+
+**Decisions:** MD-51 (conformance declared at the test, gate derives the
+matrix) is unchanged and was followed throughout this batch — nothing in
+T69–T72 contradicts it; the 105-section residual is exactly the kind of
+disclosed gap MD-51's own design anticipated (a stale claim fails loud
+instead of drifting silently), not a mechanism failure. No new MD entry
+was added — the residual-gap disclosure lives in the T69 commit body,
+`SPEC_DEVIATION.md`, and `baseline.md`'s appendix, not as a fresh
+standing decision.
+
+**Next step for a future session (if resumed):** either (a) accept
+`lrm-conformance-wave2` as delivered-with-disclosed-residue and start a
+follow-on wave scoped explicitly to implement the 105 remaining LRM
+clauses (each already has a `file:line` pointer to where the gap lives,
+via `SPEC_DEVIATION.md` §6 "Ainda aberto" and the T69 commit body's
+category list), or (b) route each 105-item gap into ROADMAP.md as
+individually trackable follow-up items. This session did not choose
+between them — that is a product-priority call, not an implementation
+one.
 
 ### Feature — `ngspice-parity` (DELIVERED 2026-08-06)
 
