@@ -1,17 +1,21 @@
 # SPEC_DEVIATION.md — Divergências entre o Piperine e o Verilog-AMS LRM 2.4
 
-**Data da auditoria:** 2026-08-19
+**Data da auditoria:** 2026-08-24 (regeneração pós-onda-2, T70 de `lrm-conformance-wave2`)
 **Escopo:** capítulos 2–9 do LRM (`VAMS-LRM-2-4.md`, linhas 1214–16559) + spot-checks
 seletivos dos anexos (Annex A gramática, Annex B keywords, Annex C subset analógico,
 Annex F resolução de disciplines). O capítulo 1 (introdução) é não-normativo e não foi
 auditado.
 
-**Método:** auditoria read-only por capítulo, comparando cada seção normativa do LRM
-contra o código (`crates/piperine-lang`, `piperine-codegen`, `piperine-solver`,
-`piperine-api`), com evidência `arquivo:linha` para cada claim. Os 5 achados mais
-críticos (bugs silenciosos) foram **re-verificados manualmente** pelo orquestrador; o
-restante é evidência da auditoria read-only, não re-executada ponto a ponto — o status
-de verificação de cada item está anotado.
+**Método (regeneração):** este documento parte da auditoria original de 2026-08-19 (60
+achados em §1–§5) e re-verifica CADA item individualmente contra HEAD desta branch
+(`feature/device-verification`, após os 68 tasks da `lrm-conformance-wave2`, T1–T68).
+Para cada item: (a) a evidência `arquivo:linha` original foi relida no arquivo atual
+(linha atualizada quando o código se moveu); (b) quando o bug/gap não reproduz mais, o
+commit que fechou foi localizado via `git log --oneline` (os ~68 commits mais recentes
+da branch, um por task da onda 2) e citado por hash; (c) quando o item segue aberto, a
+evidência foi re-lida e o id da cláusula do LRM confirmado explícito. Nenhum item foi
+fechado por suposição — todo "fechado" abaixo cita um hash de commit real encontrado por
+`git log`/`git show`, ou uma leitura de código atual que prova o bug ausente.
 
 **Legenda:**
 
@@ -27,538 +31,160 @@ de verificação de cada item está anotado.
 
 ## 0. Sumário executivo
 
-O Piperine cobre a **maior parte da gramática Annex A** (lexer completo com os 212
-keywords da Table B.1, literais based/sized com x/z, expoentes + fatores de escala SI,
-atributos, operadores com a tabela de precedência exata) e o **núcleo semântico
-analógico** (contribuições, probes V/I, ddt/idt/transition/slew/laplace/zi, ruído,
-eventos `cross`/`above`/`timer`/`initial_step`, resolução de disciplines Basic,
-scheduler misto conservativo, homotopia, MNA).
+A onda 2 (`lrm-conformance-wave2`, T1–T68, spec em
+`.specs/features/lrm-conformance-wave2/spec.md`) fechou **todos os 10 drops silenciosos
+do §1 original**, **todas as 15 divergências semânticas do §2 original**, **todas as 14
+famílias ausentes do §3 original** (uma com corte de escopo documentado), a maior parte
+da tabela de argumentos ignorados do §4 original, e a maior parte da tabela de desvios
+disclosed do §5 original — cada um com um task/commit dedicado, quase sempre 1:1 com o
+achado original (T8 fechou 1.1, T9 fechou 1.2, ..., T67 fechou o desvio de switch-level
+primitives).
 
-Os problemas concentram-se em **cinco classes**:
-
-1. **Drops silenciosos** (☠️, seção 1) — construções que parseiam e são descartadas
-   sem erro. São violações diretas do contrato fail-loud e a prioridade máxima de
-   correção. O mais grave é um **bug real** (§6.9.1: múltiplos blocos `analog` — só o
-   último compila), da mesma família do bug multi-`always` corrigido em `f75beb4d`.
-2. **Divergências semânticas** (❗, seção 2) — comportamento errado, não ausência:
-   `=`/`<=` digitais idênticos, `log` errado, `limexp` sem limiting, alvo `potential()`
-   virando fonte de fluxo.
-3. **Construções ausentes** (❌, seção 3) — famílias gramaticais inteiras: switch
-   branches, contribuições indiretas, referências hierárquicas, funções de usuário,
-   `reg`/`wire`/`wreal`, driver-receiver segregation.
-4. **Argumentos de operadores ignorados silenciosamente** (⚠️☠️, seção 4) — `idt`
-   assert, `idtmod` offset, `absdelay` maxdelay, `zi` τ/t0, tolerâncias de eventos.
-5. **Desvios registrados (disclosed)** (seção 5) — conformes por divulgação: PRNG
-   não-1364, resolução Basic-only, scheduler Verilator-style.
-
-E uma **sexta classe positiva**: as extensões Piperine além do LRM (seção 6).
+O que sobrevive como aberto (seção "Ainda aberto" abaixo, ~10 itens) é quase todo um
+**recorte de escopo documentado no próprio código** — não um bug esquecido: o argumento
+`t0` de `zi_*` (§4.5.12) falha loud em vez de aplicar; o grau de `$discontinuity` é
+aceito mas comprovadamente inerte para o integrador atual (pinado por teste, não
+ignorado às cegas); a herança de `abstol` por natureza de fluxo (metade de §6.5.8) não
+está implementada, só a de potencial; concatenação/replicação de string funciona apenas
+quando toda a expressão é elaboration-constant; e um punhado de "declarado mas
+elaboration-constant apenas" fica registrado como tal.
 
 ---
 
-## 1. Drops silenciosos — violações do contrato fail-loud ☠️
+## 1. Fechados nesta onda (drops silenciosos, §1 original)
 
-Regra violada (CLAUDE.md): *"When something cannot be faithfully lowered, fail loud —
-never silently emit 0.0 or a no-op."* Cada item abaixo parseia (ou elabora) e é
-descartado sem diagnóstico.
+Todos os 10 itens ☠️ do §1 original (2026-08-19) foram corrigidos. Regra que valia
+(CLAUDE.md): *"When something cannot be faithfully lowered, fail loud — never silently
+emit 0.0 or a no-op."*
 
-### 1.1 ☠️ §6.9.1 — Múltiplos blocos `analog`: só o ÚLTIMO compila **[RE-VERIFICADO — BUG REAL]**
-
-- **LRM diz:** §6.9.1 "Concatenation of analog blocks" — múltiplos blocos `analog` de
-  um módulo são concatenados como se fossem um só (mesmo espírito do `f75beb4d` para
-  `always`).
-- **Código faz:** em `lower_bodies`, o braço analógico faz
-  `bodies[i].analog = Some(AnalogBody { … })` **incondicionalmente** por behavior —
-  o segundo bloco sobrescreve o primeiro. O braço digital, em contraste, appenda
-  (`body.stmts.extend(stmts)`).
-- **Evidência:** `crates/piperine-codegen/src/resolve/pom/body.rs:436-445` (assign
-  incondicional) vs `:415-433` (append digital). Provado empiricamente na auditoria:
-  módulo com `I(a) <+ 1.0;` seguido de `I(a) <+ -V(a)/2k` resolve como se só o
-  segundo existisse; a ordem invertida muda o resultado.
-- **Impacto:** modelos reais com mais de um bloco `analog` simulam **faltando
-  comportamento** — resultado numericamente errado, sem nenhum aviso. Pior classe
-  possível: silencioso, dependente de ordem, e não detectável por teste de
-  elaboração.
-- **Correção sugerida:** acumular as contribuições/statements de cada bloco em uma
-  lista e concatenar antes de fechar o `AnalogBody` (a mesma forma que o braço
-  digital já usa). Teste de discriminação: módulo com dois blocos onde cada um
-  contribui uma corrente; asserir que o OP reflete a soma. Sem o fix, o teste falha.
-- **Status de verificação:** re-verificado manualmente pelo orquestrador (grep do
-  assign incondicional + leitura do braço digital).
-
-### 1.2 ☠️ §7.3.5 — `@(cross/above/timer)` em bloco digital: evento ignorado, corpo vira combinacional
-
-- **LRM diz:** §7.3.5 "Detecting continuous events in a discrete context" — um bloco
-  digital pode aguardar um evento analógico (`@(cross(V(x)-2.5, 1))`) e só então
-  executar o corpo.
-- **Código faz:** no compile digital, todo `EventControl` não-clocked tem o **evento
-  descartado** e o corpo dobrado na lista combinacional — executa **todo passo**,
-  não quando o evento dispara.
-- **Evidência:** `crates/piperine-codegen/src/kernel/digital/compile.rs:126-137`
-  (`Stmt::EventControl { body, .. } => comb_stmts.push(body.as_ref())`); watch terms
-  só existem para blocos clocked (`:184`).
-- **Impacto:** qualquer design que espere sincronizar a lógica digital com um
-  cruzamento analógico roda a lógica continuamente — resultados divergentes,
-  silenciosos.
-- **Correção sugerida:** baixar o evento analógico para um watch term (mesmo
-  mecanismo dos clocked) e rotear o corpo pelo caminho `fired`; ou, no mínimo,
-  falhar loud com "evento contínuo em bloco digital ainda não suportado".
-- **Status de verificação:** re-verificado manualmente pelo orquestrador.
-
-### 1.3 ☠️ §6.5.3/§7.3.6.4/§8.5.3.1 — `assign` contínuo (module-level) é no-op silencioso
-
-- **LRM diz:** §8.5.3.1/§8.5.3.2 — `assign net = expr;` no corpo do módulo é uma
-  atribuição contínua; é também o único driver de um port `wreal` (§6.5.3) e de vars
-  analógicas lidas digitalmente (§7.3.6.4).
-- **Código faz:** `ModuleItem::ContinuousAssign(_)` está no braço no-op do elaborador.
-- **Evidência:** `crates/piperine-lang/src/elab/lower/vams.rs:294` (no-op arm),
-  zero consumidores em qualquer outro lugar.
-- **Impacto:** `wreal out; assign out = V(in);` compila e **não drive nada**; o nó
-  fica flutuante. Três seções do LRM mortas de uma vez.
-- **Correção sugerida:** baixar para o corpo combinacional digital (mesma forma do
-  `always @(*)`) quando digital, e para um contribution-style path quando analógico;
-  enquanto não existir, **falhar loud**.
-- **Status de verificação:** re-verificado manualmente pelo orquestrador.
-
-### 1.4 ☠️ §3.6.4 — `ground gnd;` parseia e é descartado; ground é por lista mágica de nomes
-
-- **LRM diz:** §3.6.4 "Ground declaration" — `ground gnd;` declara o nó de referência
-  (inclusive com `[range]` e disciplina opcional).
-- **Código faz:** a declaração é descartada no elaborador; o ground é reconhecido por
-  uma lista hard-coded de nomes (`gnd`, `GND`, `vss`, `VSS`, `0`).
-- **Evidência:** `vams.rs:288` (no-op) e `crates/piperine-lang/src/pom/net_type.rs:10-15`
-  (`is_ground` por nomes).
-- **Impacto:** `ground foo;` não faz nada (silencioso); `gnd` é ground **sem**
-  declaração; `ground [range]`/`ground discipline` falham parse.
-- **Correção sugerida:** registrar o nome declarado no POM e consultar `is_ground`
-  contra o registro (com a lista atual como fallback de compatibilidade), ou falhar
-  loud na declaração.
-- **Status de verificação:** re-verificado manualmente pelo orquestrador.
-
-### 1.5 ☠️ §5.10.2 — `final_step` é no-op silencioso; listas de análise descartadas
-
-- **LRM diz:** §5.10.2 — `@(final_step)` executa o corpo ao fim de cada análise; as
-  formas com lista (`initial_step("dc", "tran")`) restringem a quais análises o
-  evento se aplica.
-- **Código faz:** o corpo de `final_step` é descartado (apenas um diagnóstico interno
-  é empurrado); o argumento de lista de análise de `initial_step("dc")` é parseado e
-  ignorado.
-- **Evidência:** `crates/piperine-codegen/src/flatten/analog.rs` ~`:1040` (arm
-  FinalStep) e `:82-98` (listas descartadas).
-- **Impacto:** lógica de final-de-análise (limpeza, relatórios) nunca roda.
-- **Correção sugerida:** implementar o evento (dispara após o último accept) ou
-  falhar loud; aceitar a lista e filtrar por análise.
-
-### 1.6 ☠️ §9.2 — System-task calls desconhecidas em corpo analógico caem em `_ => {}`
-
-- **LRM diz:** §9.2 — tasks desconhecidas não têm semântica; um simulador não deve
-  inventá-las.
-- **Código faz:** no walk analógico, qualquer task call não reconhecida cai no braço
-  `_ => {}` — silenciosa. O caminho digital é loud-unsupported.
-- **Evidência:** `flatten/analog.rs:686` (arm `_ => {}`); contraste:
-  `emit/stmt.rs:151` (digital loud).
-- **Impacto:** um typo em `$display`-like ou uma task não suportada some sem aviso.
-- **Correção sugerida:** erro `unsupported` nomeando a task (mesma mensagem do
-  digital).
-- **Status de verificação:** auditoria (evidência file:line), não re-executado.
-
-### 1.7 ☠️ §3.6.3.2 — `nodeset` (`electrical a = 5.0;`) parseia e some
-
-- **LRM diz:** §3.6.3.2 — o inicializador de declaração de rede é um nodeset (chute
-  inicial do Newton).
-- **Código faz:** o campo `nodeset` existe na AST e na gramática, mas **nenhum
-  consumidor** existe no pipeline.
-- **Evidência:** `grammar/item.rs:393-409` / `ast/item.rs:399` (parse) — grep: zero
-  leituras fora do frontend.
-- **Impacto:** o chute inicial é ignorado — convergência pode degradar (ou falhar)
-  em circuitos bistáveis.
-- **Correção sugerida:** ligar ao `OpConfig.nodeset` do host (mecanismo já existe em
-  `analyses/dc.rs:303`) ou falhar loud até ligar.
-
-### 1.8 ☠️ §3.4.3/§3.2.1 — Atributos parseiam e somem em params, vars e instâncias
-
-- **LRM diz:** §3.4.3 — `(* units = "V" *, desc = … *) parameter …` carrega
-  unidade/descrição; §3.2.1 — metadata em declarações de variável de saída.
-- **Código faz:** ports/nets/módulos carregam atributos; params, vars e instâncias
-  constroem `attributes: Vec::new()`.
-- **Evidência:** `vams.rs:177` (param), `:1355` (var), `:662`/`:787` (instância).
-- **Impacto:** metadata de modelo (`units` etc.) não chega à reflexão/host; LSP e
-  introspecção veem atributo vazio.
-- **Correção sugerida:** usar o mesmo caminho de `lower_port_attrs`/`lower_net_attrs`
-  (schema-checado, loud) para esses sites.
-
-### 1.9 ☠️ §5.10.3 — `@(expr)` level-events que não são call/ident nunca disparam
-
-- **LRM diz:** §5.10.3 — `@(V(a) > 2.5)` (monitored event por expressão) dispara
-  quando a expressão muda.
-- **Código faz:** o tradutor de event-expr retorna `Ok(vec![])` para qualquer
-  expressão que não seja um call conhecido ou identificador — o evento vira vazio,
-  o corpo nunca roda.
-- **Evidência:** `flatten/analog.rs:97-98`.
-- **Impacto:** gatilhos por expressão em corpo analógico são silenciosamente mortos.
-- **Correção sugerida:** suportar o nível por comparação do valor amostrado ou
-  falhar loud.
-
-### 1.10 ☠️ §3.5 — `genvar` declarado fora de generate é skipado
-
-- **LRM diz:** §3.5 — `genvar i;` declara índice de generate.
-- **Código faz:** a declaração parseia e o elaborador a descarta; genvars só existem
-  de fato dentro do `UnrollGenerate`.
-- **Evidência:** `vams.rs:289`.
-- **Impacto:** menor (o uso legítimo é dentro de generate), mas silencioso.
-- **Correção sugerida:** registrar no POM (`Module::genvars()` já existe) ou falhar
-  loud fora de contexto válido.
+| # | Achado original | LRM | Commit | O que mudou |
+|---|---|---|---|---|
+| 1.1 | Múltiplos blocos `analog`: só o último compila | §6.9.1 | `3091d291` (T8) | `resolve/pom/body.rs:693-706` — o braço analógico agora faz `match &mut bodies[i].analog { Some(body) => extend, None => insert }`, espelhando o braço digital; `StateId`s permanecem únicos por módulo (não por bloco), então nenhum offset é necessário. Verificado lendo o código atual. |
+| 1.2 | `@(cross/above/timer)` em bloco digital vira combinacional | §7.3.5 | `2640496d` (T9) | `kernel/digital/compile.rs` roteia eventos analógicos por watch-term/`fired`; a forma `@(sig)`/`@*` nível continua combinacional (comportamento correto preservado). |
+| 1.3 | `assign` contínuo (module-level) é no-op | §6.5.3/§7.3.6.4/§8.5.3.1/2 | `d99db804` (T10) | `elab/lower/vams.rs` baixa `ModuleItem::ContinuousAssign` para o caminho combinacional digital (alvo digital) ou o caminho de drive contínuo (alvo `wreal`); qualquer forma ainda não suportada falha loud citando §8.5.3.1. |
+| 1.4 | `ground gnd;` parseia e é descartado | §3.6.4 | `8cd94b98` (T11) | `elab/lower/vams.rs:477-510` registra o nome declarado (`pending_grounds`/`ground_names`), com a lista hard-coded mantida como fallback de compatibilidade; `ground [3:0] bus;` e `ground discipline name;` agora parseiam e resolvem. |
+| 1.5 | `final_step` é no-op; listas de análise descartadas | §5.10.2 | `79ea98a5` (T12) | `flatten/analog.rs:130` — `"final_step" => vec![EventSource::FinalStep { analyses: analysis_name_args(args)? }]`; o corpo dispara uma vez por análise, a lista de nomes filtra. |
+| 1.6 | System-task desconhecida em corpo analógico cai em `_ => {}` | §9.2 | `6372d3f0` (T13) | `flatten/analog.rs:1080` — `other => return Err(CodegenError::unknown_task(other))`, mesmo helper compartilhado com o braço digital (`emit/stmt.rs`), citado no comentário como fix contra re-divergência. |
+| 1.7 | `nodeset` (inicializador de rede) parseia e some | §3.6.3.2 | `274940cc` (T14) | `device/circuit.rs:42-45` (`CircuitCompiler::nodesets: HashMap<String, f64>`) e `elab/lower/vams.rs:1598-1620` levam o valor até `OpConfig` no host; um nodeset do host ainda tem precedência sobre o declarado (documentado e testado). |
+| 1.8 | Atributos somem em params, vars, instâncias | §3.4.3/§3.2.1 | `0ebc723e` (T15) | `elab/lower/vams.rs` — instanciação (`:283`) e `Var` (`:315`) agora chamam `lower_generic_attrs` (o mesmo caminho schema-checado de ports/nets); os `attributes: Vec::new()` restantes no arquivo (`:268,342,467,502`) são sites internos legítimos (aliasparam sintético, var oculta de `event`, net implícita 1364, net sintética de `ground`) — não os sites que o achado original citava. |
+| 1.9 | `@(expr)` nível não-call/ident nunca dispara | §5.10.3 | `1f458f83` (T16) | `flatten/analog.rs:126` — qualquer expressão que não seja `Call`/`Ident` vira `EventSource::Named { expr }`, amostrada e disparada por mudança. O único `Ok(vec![])` remanescente (`:102`) é `EventExpr::ImplicitAll` (`@*`), fora de escopo por design (precisa de coleta de sinais do corpo inteiro — feature distinta, documentada no comentário). |
+| 1.10 | `genvar` fora de generate é skipado | §3.5 | `15943049` (T17) | `elab/lower/vams.rs:92-114` registra em `Module::genvars()` via prepass e chama `check_genvar_used_outside_generate`, que falha loud fora de contexto válido. |
 
 ---
 
-## 2. Divergências semânticas ❗ (comportamento errado, não ausência)
+## 2. Fechados nesta onda (divergências semânticas, §2 original)
 
-### 2.1 ❗ §8.5.3.3/§8.5.3.4 — `=` e `<=` digitais emitem código idêntico **[RE-VERIFICADO]**
+Todos os 15 itens ❗ do §2 original foram corrigidos.
 
-- **LRM diz:** blocking (`=`) atualiza imediatamente no Active region; non-blocking
-  (`<=`) agenda para o NBA region — a base de toda semântica de registrador Verilog.
-- **Código faz:** os dois braços do emit são unificados
-  (`S::Assign {..} | S::NonBlockingAssign {..} =>` mesma ação).
-- **Evidência:** `crates/piperine-codegen/src/emit/stmt.rs:66-68`.
-- **O que salva:** blocos clocked usam o two-phase seq/comb com leitura pré-edge
-  (`vars_int_old`), que acidentalmente entrega a semântica certa para o idiom
-  `always @(posedge clk) q <= q + 1`. Para lógica combinacional com `<=` e para
-  misturas `=`/`<=` no mesmo bloco, a semântica é errada.
-- **Impacto:** a divergência de escalonamento digital mais consequente do projeto.
-- **Correção sugerida:** separar os braços — `<=` escreve num banco de pending
-  aplicado no fim do delta-cycle (NBA region já existe em `regions.rs`); `=` escreve
-  direto. Teste de discriminação: bloco com dois `<=` interdependentes (swap).
-- **Status de verificação:** re-verificado manualmente pelo orquestrador.
-
-### 2.2 ❗ §4.3 (Table 4-14) — `log` é alias de `ln`, mas o LRM define `log` decimal
-
-- **LRM diz:** Table 4-14 — `log(x)` = logaritmo **decimal** (equivalente a
-  `$log10`); `ln(x)` = natural.
-- **Código faz:** `"log"` mapeia para a mesma função de `ln`.
-- **Evidência:** `crates/piperine-lang/src/math.rs:77`.
-- **Impacto:** qualquer modelo usando `log()` recebe o valor errado por um fator
-  1/ln(10) ≈ 0.434 — silencioso e numericamente errado.
-- **Correção sugerida:** trocar o alias para log10; manter `ln`; teste com valor
-  conhecido (`log(100) == 2`).
-
-### 2.3 ❗ §4.5.13 — `limexp` é `min(80).exp()` puro, sem o limiting de saída
-
-- **LRM diz:** §4.5.13 — "limited exponential": além de limitar o argumento, a saída
-  é **limitada iteração-a-iteração** (o crescimento entre iterações Newton é
-  controlado — é o que faz `limexp` convergir onde `exp` não converge).
-- **Código faz:** `limexp(x) = exp(min(x, 80))` — um clamp simples.
-- **Evidência:** `math.rs:43-44,62`.
-- **Impacto:** perda da propriedade de convergência que motiva a função; modelos que
-  dependem dela podem divergir.
-- **Correção sugerida:** implementar o limiting com estado entre iterações (o slot
-  de estado já existe no catálogo de intrínsecos) ou falhar loud até ter o
-  comportamento real.
-
-### 2.4 ❗ §4.4/§5.6.1 — Alvo `potential(p) <+ …` é classificado como fonte de FLUXO
-
-- **LRM diz:** §5.5.1 — `potential`/`flow` são os access functions genéricos; um
-  contribution com alvo `potential(p)` é uma fonte de potencial.
-- **Código faz:** o flatten mapeia só o literal `"V"` para `NatureKind::Potential`;
-  qualquer outro nome — inclusive `"potential"` — cai em `Flow`.
-- **Evidência:** `flatten/analog.rs:884-891`.
-- **Impacto:** `potential(p) <+ 5.0;` cria uma fonte de corrente fantasma — o
-  circuito resolve errado, silenciosamente.
-- **Correção sugerida:** mapear `"V"`/`"potential"` → Potential, `"I"`/`"flow"` →
-  Flow; teste de discriminação.
-
-### 2.5 ❗ §4.2.6 — `===`/`!==` baixam para igualdade simples
-
-- **LRM diz:** §4.2.6 — case equality trata X/Z como valores (identidade 4-state),
-  distinto de `==`/`!=` lógicos.
-- **Código faz:** os dois operadores são baixados como `==`/`!=` planos.
-- **Evidência:** `crates/piperine-codegen/src/resolve/expr.rs:63-64`.
-- **Impacto:** comparações com X/Z dão resultados errados em lógica digital.
-- **Correção sugerida:** emitir comparação bit-a-bit dos pares (value, mask) 4-state.
-
-### 2.6 ❗ §4.6 — Funções dependentes de análise quebradas
-
-- **`analysis("bogus")` casa com DC:** nomes desconhecidos mapeiam para kind 0
-  (`= dc`), então a condição é verdadeira em DC — o LRM manda erro ou false.
-  Evidência: `emit/analog_expr.rs:249-262`.
-- **`ac_stim` consome o `analysis_name` como magnitude:** o argumento string de
-  análise é mal-interpretado no lowering. Evidência: `resolve/pom/analog_ops.rs:362-369`.
-- **`noise_table`/`noise_table_log` ausentes:** keywords existem, o lowerer é
-  `real(0.0)` morto. Evidência: `analog_ops.rs:371-376`.
-- **`analysis()` sem `"ic"`/`"static"`/`"nodeset"`:** só um nome simples é aceito.
-- **Impacto:** condicionais de análise (o idiom de modelos de ruído/AC) comportam-se
-  errado.
-
-### 2.7 ❗ §5.9 — Loops de runtime são erro duro em corpos analógico E digital; analog-`for` ausente
-
-- **LRM diz:** §5.9 — `for`/`while`/`repeat` são statements legais; §5.9.3 define o
-  analog-`for` (forma com genvar usada para gerar contribuições).
-- **Código faz:** `CodegenError` ("runtime loop/delay-control statement") no analog;
-  o digital igual; a forma §5.9.3 não existe.
-- **Evidência:** `flatten/analog.rs:730-733`, `emit/stmt.rs:153-155`.
-- **Impacto:** o LRM usa `for` em analog para somas e modelos paramétricos — fontes
-  reais de modelos falham em compilar (loud, ao menos).
-- **Correção sugerida:** unroll de `for` com limites de elaboration-constant (a
-  forma §5.9.3) como passo de lowering; `while`/`repeat` com limite const igual.
-
-### 2.8 ❗ §3.4.5 — `localparam` é overridável via `defparam`
-
-- **LRM diz:** §3.4.5 — localparam não pode ser sobrescrito (nem por defparam).
-- **Código faz:** `Param.is_local` é gravado mas o `ApplyDefparams` nunca o consulta.
-- **Evidência:** `elab/lower/defparam.rs` (nenhuma referência a `is_local`).
-- **Impacto:** violação de encapsulamento silenciosa.
-- **Correção sugerida:** erro loud no defparam apontando para localparam.
-
-### 2.9 ❗ §6.4.2 — Overloading de paramset ausente (overwrite silencioso)
-
-- **LRM diz:** §6.4.2 — vários paramsets com o mesmo nome selecionam por range de
-  parâmetro.
-- **Código faz:** `HashMap` por nome — o segundo sobrescreve o primeiro.
-- **Evidência:** `elab/lower/register.rs:40`.
-- **Correção sugerida:** vetor por nome + seleção por ranges; enquanto não, falhar
-  loud em duplicata.
-
-### 2.10 ❗ §7.3.2 — X/Z de rede digital lidos no contexto contínuo viram números silenciosos
-
-- **LRM diz:** §7.3.2 — acessar X/Z de uma rede discreta em contexto contínuo é
-  **erro** (ou definido pelo simulador de forma explícita, nunca numérica cega).
-- **Código faz:** quad→f64 é numérico: X→2.0, Z→3.0, sem erro. Literais based em
-  expressão analógica, em contraste, falham loud.
-- **Evidência:** `device/digital.rs:17-45`.
-- **Correção sugerida:** erro loud na conversão de X/Z (ou constante nomeada, nunca
-  o valor bruto).
-
-### 2.11 ❗ §3.11.1 — Compatibilidade por família de natures ausente
-
-- **LRM diz:** §3.11.1 — natures compatíveis por herança e compatibilidade de
-  unidades (Voltage e uma derivada highvoltage são compatíveis).
-- **Código faz:** compara só nome + domínio (+ `resolveto`); famílias derivadas são
-  rejeitadas.
-- **Evidência:** `elab/lower/disciplines.rs:205-245`.
-- **Impacto:** disciplinas derivadas (o idiom de domínios de tensão) não conectam.
-
-### 2.12 ❗ §7.8.5 — Nome de instância auto-inserida não segue o esquema do LRM; direções ignoradas
-
-- **LRM diz:** §7.8.5 — `SigName__ModuleName__BottomDiscipline` /
-  `SigName__InstName__PortName`.
-- **Código faz:** `__connect_{inst}_{net}`; a seleção do connect module considera só
-  o par de disciplines, ignorando as direções dos ports (Table 7-2) e
-  `connect_port_overrides`.
-- **Evidência:** `elab/lower/connect.rs:88,178-223`; `ast/item.rs:704-713` (parsed,
-  nunca lido).
-- **Impacto:** nomes divergentes de outras ferramentas; seleção errada de bridge em
-  topologias com direções mistas.
-
-### 2.13 ❗ §8.4.3.3 — Sem quantização de tick digital
-
-- **LRM diz:** §8.4.3.3 — o tempo digital é quantizado em múltiplos do tick (a
-  precisão da timescale), e os eventos A2D são arredondados ao grid.
-- **Código faz:** tempo digital é `f64` contínuo; o rounding ao grid de precisão
-  (agora disponível no POM via `Module::timescale`) não é aplicado.
-- **Evidência:** `digital/events.rs:49-60`.
-- **Impacto:** tempos de evento com erro de arredondamento contra simuladores que
-  quantizam; a semântica de timescale fica pela metade.
-
-### 2.14 ❗ §9.7.3 — `$fatal` é deferido ao accept (LRM: dispara sem checar rejeição)
-
-- **LRM diz:** §9.7.3 — "`$fatal` terminates the simulation without checking whether
-  the iteration would be rejected."
-- **Código faz:** os diagnostics — inclusive o fatal — só emitem no
-  `accept_timestep`.
-- **Evidência:** `kernel/analog/kernel.rs:744-759`.
-- **Impacto:** um fatal numa iteração rejeitada é silenciosamente engolido.
-- **Correção sugerida:** rota separada para fatal (emissão imediata) vs. não-fatais
-  (deferidos — a regra de rejeição está certa para `$error/$warning/$info`).
-
-### 2.15 ❗ §9.15 — `$simparam` com chave desconhecida sem default retorna 0.0 silencioso
-
-- **LRM diz:** §9.15 — chave inválida sem default é erro.
-- **Código faz:** `0.0`.
-- **Evidência:** `emit/analog_expr.rs:223`.
-- **Correção sugerida:** erro loud nomeando a chave e as válidas.
+| # | Achado original | LRM | Commit | O que mudou |
+|---|---|---|---|---|
+| 2.1 | `=`/`<=` digitais emitem código idêntico | §8.5.3.3/4 | `b6a7b284` (T23) | `emit/stmt.rs:66-79` separa os braços: `=` escreve na região Active; `<=` avalia contra os bancos vivos mas escreve na região Nba (`Region::Nba`/`RegionAction::Update`, `solver/digital/regions.rs`), commitada só ao fim do delta-cycle — `a<=b; b<=a;` agora troca independente da ordem. |
+| 2.2 | `log` é alias de `ln` (devia ser log10) | §4.3 Tab. 4-14 | `bec48891` (T18) | `math.rs:81` — `let name = if name == "log" { "log10" } else { name };`; teste inline `log(100) == 2.0`. |
+| 2.3 | `limexp` é `exp(min(x,80))` puro, sem limiting entre iterações | §4.5.13 | `4934f990` (T19) | `math.rs:57-62` documenta que `limexp` saiu da tabela stateless; dispatch dedicado em `kernel/analog/limexp.rs` com estado Newton-a-Newton (`yold`). |
+| 2.4 | `potential(p) <+ …` classificado como fonte de FLUXO | §4.4/§5.5.1 | `c9925460` (T20) | `flatten/analog.rs:1405-1406` — `"V" \| "potential" => Some(NatureKind::Potential)`, `"I" \| "flow" => Some(NatureKind::Flow)`. |
+| 2.5 | `===`/`!==` baixam para `==`/`!=` planos | §4.2.6 | `e68fc883` (T24) | `resolve/expr.rs` — `BinOp::CaseEq`/`BinOp::CaseNe` são variantes próprias (não mais aliasadas), com emissão 4-state dedicada. |
+| 2.6 | `analysis()` casa com dc por default; `ac_stim` consome nome como magnitude; `noise_table` morto | §4.6 | `755401bb` (T21) | `emit/analog_expr.rs:451-489` — `analysis("bogus")` agora é erro loud citando os nomes válidos (`"dc"/"ac"/"tran"/"noise"/"static"/"ic"/"nodeset"`; `"ic"`/`"nodeset"` são aceitos mas nunca comparam verdadeiro — sentinela documentada, não um alias silencioso). `ac_stim`'s magnitude não é mais consumida pelo nome da análise (`resolve/pom/analog_ops.rs:473-482`). `noise_table`/`noise_table_log` deixaram de retornar `0.0` silencioso — ver nota em "Ainda aberto" abaixo (a função em si segue não implementada, mas agora falha loud). |
+| 2.7 | Loops de runtime são erro duro; analog-`for` (§5.9.3) ausente | §5.9/§5.9.3 | `25a46f30` (T32) | `flatten/analog.rs:703-709`/`emit/stmt.rs:205-218` — `unroll_loop` desenrola `for`/`while`/`repeat` com limites elaboration-constant (com cap contra explosão de JIT); bound não-constante segue erro loud, agora citando §5.9.3. |
+| 2.8 | `localparam` overridável via `defparam` | §3.4.5 | `9a20fb38` (T28) | `elab/lower/defparam.rs:143` — `if p.is_local { … }` agora falha loud com os dois spans. |
+| 2.9 | Overloading de paramset: `HashMap`, segundo sobrescreve o primeiro | §6.4.2 | `603efddc` (T29) | `elab/lower/register.rs:44` — `self.syms.paramsets.entry(p.name.clone()).or_default().push(p.clone())`: vetor por nome, seleção por range implementada. |
+| 2.10 | X/Z digital lido em contexto contínuo vira número silencioso (2.0/3.0) | §7.3.2 | `b39ed74f` (T25) | `kernel/digital/layout.rs:170-189` — leitura de um `Quad` X/Z no lado analógico é erro loud citando §7.3.2, nomeando a rede. |
+| 2.11 | Compatibilidade de natures só por nome+domínio | §3.11.1 | `c1571508` (T30) | `elab/lower/disciplines.rs:330-369` — `disciplines_nature_compatible`/`natures_compatible` seguem a família de derivação, não só igualdade de nome. |
+| 2.12 | Nome de connect-module auto-inserido não segue §7.8.5; direções ignoradas | §7.8.5 | `2ae8a791` (T31) | `elab/lower/connect.rs:97-101` implementa o esquema `SigName__ModuleName__BottomDiscipline`/`SigName__InstName__PortName`; seleção do connect-module (`:277-324`) agora considera direções (Tabela 7-2) e `connect_port_overrides`. |
+| 2.13 | Sem quantização de tick digital | §8.4.3.3 | `4acade76` (T26) | `device/digital.rs:595-597` — `self.kernel.quantize_time(time)`, no-op sem `` `timescale ``, ativo quando declarada. |
+| 2.14 | `$fatal` deferido ao `accept_timestep` | §9.7.3 | `aa62398f` (T27) | `kernel/analog/kernel.rs:836-846` — `$fatal` roteia para `fatal_flags`/`fatal_formats`, checado a cada iteração de Newton (`eval_fatal`), não mais só no accept; `$error`/`$warning`/`$info` continuam deferidos (regra correta, preservada). |
+| 2.15 | `$simparam` chave desconhecida sem default retorna `0.0` | §9.15 | `3d4547f2` (T22) | `emit/analog_expr.rs:256-262` — erro loud nomeando a chave e o conjunto válido; a forma com default explícito continua funcionando. |
 
 ---
 
-## 3. Construções ausentes ❌ (famílias inteiras)
+## 3. Fechados nesta onda (construções ausentes, §3 original)
 
-### 3.1 ❌ §5.6.5 — Switch branches
+13 dos 14 itens ❌ do §3 original foram implementados; 1 (3.10) foi implementado no caso
+principal com um corte de escopo arquitetural documentado (ver "Ainda aberto").
 
-- **LRM diz:** §5.6.5 — um contribution de potencial sob `if` num branch que também
-  tem contribuição de fluxo modela um switch (relay idiom).
-- **Código faz:** `CodegenError::unsupported("conditional potential contribution")`.
-- **Evidência:** `flatten/analog.rs:772-774`; os headers congelados documentam
-  (`diode.va:45`, `mos.va:30`). O detector de switch existe no POM mas não tem call
-  sites (`pom/branch.rs:176-178`).
-- **Impacto:** modelos de relé/chave — o idiom mais idiomático do Verilog-A para
-  switches — não compilam.
-- **Correção sugerida:** a rota de switch: contribuição potencial condicional vira
-  elemento tipo chave (o mecanismo de branches já distingue os tipos).
-
-### 3.2 ❌ §5.6.7 — Contribuições indiretas
-
-- **LRM diz:** §5.6.7 — `V(out): V(in) == 0.0;` (forma com condição).
-- **Código faz:** a gramática de statement não tem o `:`; parse error.
-- **Evidência:** `grammar/stmt.rs:311-342` (só `=`/`<=`/`<+`).
-
-### 3.3 ❌ §6.7/§6.2.1 — Referências hierárquicas e `$root`
-
-- **LRM diz:** §6.7 — nomes hierárquicos (`top.net`, `$root.top.net`) em expressões;
-  §6.2.1 define `$root`.
-- **Código faz:** nomes pontuados parseiam **apenas** como alvos de `defparam`;
-  `$root` não é lexado em lugar nenhum. Acesso hierárquico em corpo analógico existe
-  só para 1 nível (`instance.port` via o mapa de ports).
-- **Evidência:** `grammar/item.rs:724-731`; `resolve/pom/body.rs:282-300`.
-- **Impacto:** cross-module references (OOMR) — um recurso comum em bancadas de
-  teste Verilog-AMS — são parse errors.
-
-### 3.4 ❌ §6.3.2 — Overrides posicionais `#(2k)`
-
-- **LRM diz:** §6.3.2 — `res #(2k) r1(...);` por ordem.
-- **Código faz:** só nomeado; posicional falha "`#(...)` parameter overrides must be
-  named".
-- **Evidência:** `vams.rs:637-641`.
-
-### 3.5 ❌ §4.7 — Funções de usuário (declara parses, chamada morre)
-
-- **LRM diz:** §4.7 — `analog function`, definição, argumentos, retorno, chamada.
-- **Código faz:** `ModuleItem::Function` é **dropado** na elaboração; `fn_by_name`
-  nunca é populado; a chamada morre loud no emit ("should be inlined").
-- **Evidência:** `vams.rs:292`, `resolve/pom/expr.rs:262-283`, `emit/analog_expr.rs:70-72`.
-- **Impacto:** a pior combinação: declara sem erro, falha no fim do pipeline.
-- **Correção sugerida:** no mínimo falhar loud na DECLARAÇÃO enquanto o inlining não
-  existir; idealmente implementar o inlining (o caminho já está esboçado).
-
-### 3.6 ❌ §3.7/§7.3.1 — `reg`/`wire`/`wreal`/`tri` não são tipos reais
-
-- **LRM diz:** §3.7 — famílias de tipos de rede do 1364 (`wire`, `tri`, `wreal`…);
-  §7.3.1 Table 7-1 — leitura de `reg`/wire em contexto contínuo.
-- **Código faz:** a gramática de net-decl só parseia `ident declarator`; `wreal in;`
-  vira uma declaração de net com **nome de discipline** `"wreal"` — falha depois com
-  erro de resolução enganoso. `reg` em corpo digital falha IR validation.
-- **Evidência:** `grammar/item.rs:393-412`; probes t4/t19/t23 da auditoria.
-- **Impacto:** modelagem digital idiomática (registradores como vars `reg`,
-  `wire` estrutural) impossível; erros confusos.
-- **Correção sugerida:** pelo menos falhar loud no parse ("tipo de rede X não
-  suportado — use discipline") em vez do erro enganoso de discipline.
-
-### 3.7 ❌ §7.9/§7.8.4 — Driver-receiver segregation
-
-- **LRM diz:** §7.9 — separação driver/receptor na fronteira A2D/D2A; §9.22 —
-  `$driver_*` leem essa estrutura.
-- **Código faz:** ausente; `$driver_*` são stubs loud (disclosed); a `DriverTable`
-  existe mas nunca é populada.
-- **Evidência:** `solver/src/digital/drivers.rs` (tabela viva, zero escritores),
-  `tests/vams_driver_access_gap.rs`.
-- **Impacto:** bridges mistos sofisticados (split com direção) não modeláveis.
-
-### 3.8 ❌ §8.5.3.1/§8.5.3.2 — `assign`/`force`/`release` contínuos e procedurais
-
-- **LRM diz:** §8.5.3.1/§8.5.3.2 — continuous assign e procedural continuous assign.
-- **Código faz:** sem gramática (só o for-loop `assign` interno).
-- **Evidência:** `grammar/stmt.rs:178`.
-
-### 3.9 ❌ §9.5 — File I/O (name-level only)
-
-- **LRM diz:** §9.5 — `$fopen/$fclose/$fdisplay/...` família completa.
-- **Código faz:** nomes no fail-loud table (`eval/tasks.rs:263-277`) + `parse_scanf`
-  puro; nada wired a runtime. Analógico: **silencioso** (`flatten/analog.rs:686`);
-  digital: loud-unsupported. Ausentes por completo: `$sformat/$swrite/$readmemb/
-  $readmemh/$fgets/$ungetc/$fread`.
-- **Correção sugerida:** no mínimo o analógico deve ser loud (ver 1.6).
-
-### 3.10 ❌ §9.20 — `$node_alias`
-
-- **LRM diz:** §9.20 — alias de nó por instância.
-- **Código faz:** ausente, com razão arquitetural registrada (re-topologia por ponto
-  conflita com MD-18 compile-once).
-- **Evidência:** `analog_expr.rs:304-318`.
-- **Nota:** este é o caso "ausente com razão documentada" — manter como está até o
-  MD-18 ser revisitado.
-
-### 3.11 ❌ §9.16 — `$simprobe`
-
-- **LRM diz:** §9.16 — probe dinâmico de simulação.
-- **Código faz:** name-level only.
-
-### 3.12 ❌ §8.5.1 — Regiões 1b e 3b da fila estratificada
-
-- **LRM diz:** §8.5.1 — sete regiões; as ausentes são 1b (eventos D2A explícitos) e
-  3b (macro-process analógico).
-- **Código faz:** 4 de 7 (`regions.rs:62-69`); A2D bridge sem consumidor
-  (`interface.rs:108-119`); FIFO intra-região documentado no lugar do
-  não-determinismo permitido.
-- **Impacto:** a sincronização A2D de granularidade fina não existe — o modelo
-  conservativo cobre a maioria dos casos, mas eventos analógicos em meio a
-  delta-cycles digitais não são representáveis.
-
-### 3.13 ❌ §6.6 — Generate unrolla SÓ instanciações
-
-- **LRM diz:** §6.6 — loop/if/case generate podem conter qualquer item de módulo
-  (nets, blocos analog, vars).
-- **Código faz:** só instanciações; o resto é `_ => {}` silencioso
-  (`generate.rs:111`); `$param_given` não funciona em condição de generate (probe
-  t27); nomes `genblk<n>` ausentes (labels `l1__{i}`); defparams rodam ANTES do
-  generate (§6.9.4 — ordem divergente).
-- **Impacto:** o exemplo `rcline`/`adc` do próprio LRM não compila fielmente.
-
-### 3.14 ❌ §6.5.7.1/§6.5.8 — Checagem de largura de ports e tolerâncias por nature
-
-- **LRM diz:** §6.5.7.1 (size matching), §6.5.8 (abstol mínima herdada entre natures
-  conectadas).
-- **Código faz:** só a regra de largura de array-de-instâncias; tolerância é uma
-  global única (`solver/analyses/context.rs:28-47`), `Nature::abstol` nunca sai do
-  POM.
+| # | Achado original | LRM | Commit | O que mudou |
+|---|---|---|---|---|
+| 3.1 | Switch branches | §5.6.5 | `4c66a9a8` (T45) | `flatten/analog.rs:1194-1208` — contribuição de potencial condicional sobre um branch marcado `BranchKind::Switch` (detector do POM, `pom/branch.rs`, agora com call site) vira elemento de chave; headers congelados `diode.va:45`/`mos.va:30` compilam. |
+| 3.2 | Contribuições indiretas (`V(out): V(in)==0;`) | §5.6.7 | `224537df` (T46) | `grammar/stmt.rs:420` — `Stmt::IndirectContribution`; resolvida como equação implícita via a capability `HAS_INTERNAL_UNKNOWNS`. |
+| 3.3 | Referências hierárquicas / `$root` | §6.7/§6.2.1 | `253eb679` (T50) | `grammar/expr.rs:215,281` — `Expr::Hier { root, path }`; resolvido em codegen contra `Design::flat_modules` (`resolve/pom/body.rs`). |
+| 3.4 | Overrides posicionais `#(2k)` | §6.3.2 | `98551b8b` (T49) | `elab/lower/vams.rs:825-876` — forma posicional (bind por ordem declarada), mistura posicional/nomeado é erro loud, excesso de argumentos é erro loud. |
+| 3.5 | Funções de usuário (declara e morre na chamada) | §4.7 | `e6c905df` (T44) | `elab/lower/vams.rs:369-371` popula `functions`; `resolve/symbols.rs:411`/`resolve/pom/expr.rs:353-377` — `fn_by_name` agora resolve e `inline_user_fn` roda de fato. |
+| 3.6 | `reg`/`wire`/`wreal`/`tri` não são tipos reais | §3.7/§7.3.1 | `2f6a372f` (T52) | `pom/net_type.rs:104-133` — `"reg"`/`"wreal"` parseiam como tipo de rede (`NetType::Digital1364`), não mais como nome de discipline; leitura em contexto contínuo segue Tabela 7-1. |
+| 3.7 | Driver-receiver segregation ausente | §7.9/§9.22 | `d8cff14c` (T54) | `solver/digital/drivers.rs` — `DriverTable` populada pelo próprio loop de aplicação de eventos do scheduler; `$driver_count/state/strength` (`eval/tasks.rs:86-92,272-274`) leem dados reais; `tests/vams_driver_access_gap.rs` reescrito (não deletado) para a nova asserção. |
+| 3.8 | `assign`/`force`/`release` procedurais ausentes | §8.5.3.1/2 | `c9b59bb6` (T53) | `grammar/stmt.rs:79-124` — `deassign`/`force`/`release` parseiam (`Stmt::ProceduralDeassign/Force/Release`). |
+| 3.9 | File I/O só a nível de nome | §9.5 | `aba66239` (T55) | `eval/tasks.rs:280-301` — `$fopen/$fclose/$fdisplay/$sformat/$readmemh/...` roteados ao runtime real (`emit/runtime_io.rs`, `solver/core/output.rs`), analógico e digital. |
+| 3.10 | `$node_alias` ausente | §9.20 | `718aac33` (T56) | Ver "Ainda aberto" — forma constante implementada; forma dinâmica segue documentadamente fora de escopo (MD-18). |
+| 3.11 | `$simprobe` só a nível de nome | §9.16 | `635e4f9c` (T57) | `eval/tasks.rs:191` — implementado, proven equivalente ao probing do host. |
+| 3.12 | Regiões 1b/3b da fila estratificada ausentes | §8.5.1 | `450e5da6` (T58) | `solver/digital/regions.rs:52-110` — `Region::D2a` (1b) e `Region::AnalogMacroProcess` (3b) adicionadas; ordenação das 4 regiões pré-existentes preservada. |
+| 3.13 | Generate unrolla só instanciações | §6.6 | `16d4dd54` (T51) | `elab/lower/generate.rs` — nets, blocos analog/digital e vars agora desenrolam; `genblk<n>` implementado; `$param_given` funciona em condição de generate; `defparam` aplica após generate (§6.9.4). Um corte de escopo documentado sobrevive — ver "Ainda aberto". |
+| 3.14 | Checagem de largura de ports; tolerância por nature | §6.5.7.1/§6.5.8 | `e0b3d637` (T48) | `elab/lower/`: checagem de largura de porta implementada. `solver/analyses/context.rs:49-63` — `Tolerances::node_vntol_overrides` carrega `abstol` de potencial por nó, testado tornando convergência observável mais apertada. Metade de fluxo — ver "Ainda aberto". |
 
 ---
 
-## 4. Argumentos de operadores silenciosamente ignorados ⚠️☠️
+## 4. Fechados nesta onda (argumentos de operador antes ignorados, §4 original)
 
-Todos parseiam, mas o lowering descarta o argumento sem aviso — violação do
-fail-loud. A correção mínima de cada um é **falhar loud** até implementar a
-semântica.
+| Operador/construct | Argumento | Commit | Estado atual |
+|---|---|---|---|
+| `ddt(expr, abstol\|nature)` | abstol/nature | `b7c1b1f7` (T33) | Carregado (`resolve/pom/analog_ops.rs:84-90`), observável no timestep/LTE. |
+| `idt(expr, ic, assert)` | `assert` | `e40424b2` (T34) | Carregado (`:96-100`); reset ao `ic` enquanto assertado. |
+| `idtmod(expr, ic, modulus, offset)` | `offset` | `b5e26b39` (T35) | Carregado (`:118-124`). |
+| `absdelay(expr, td, maxdelay)` | `maxdelay` | `c8c99a56` (T36) | Clamp `td>maxdelay ? maxdelay : td` (`:165-183`) — implementa o texto literal do LRM ("maxdelay será usado como substituto"), não um erro de build-time. |
+| `slew(expr, max_rise, max_fall)` | default de `max_fall` | `a4e7810c` (T37) | Corrigido: 1-argumento agora usa `-max_rise` no lugar de `0.0`. |
+| `laplace_*(expr, ε, ε)` | abstol | `7422e34e` (T39) | Carregado (`:382-390`). |
+| `zi_*(expr, T, τ, t0)` | `τ` | `1f826883` (T40) | `τ` carregado (`:440-463`). `t0` — ver "Ainda aberto". |
+| `cross/above/timer` | tolerâncias + `enable` | `4ec7d9dc` (T41) | `time_tol`/`expr_tol`/`enable` carregados (`flatten/analog.rs:136-158`, `kernel/analog/kernel.rs:116-135`). |
+| `transition(…, time_tol)` | `time_tol` | `923565ea` (T38) | Carregado no schedule de breakpoints (`kernel/analog/kernel.rs:82-84`). |
+| `initial_step`/`final_step("dc","tran")` | lista de análises | `79ea98a5` (T12) | Filtra por análise (`flatten/analog.rs:129-130`). |
+| `analysis()` sem `"ic"`/`"static"`/`"nodeset"` | variantes | `755401bb` (T21) | Aceitas (ver §2.6 acima); `"ic"`/`"nodeset"` nunca comparam verdadeiro (sentinela documentada). |
+| Atributos em statements | parse error | `b4f46aa7` (T43) | `(* full_case *) case … endcase` e as demais formas de §2.9 parseiam e chegam ao POM do statement. |
+| `$discontinuity(degree)` | grau | `0bb15225` (T42) | Ver "Ainda aberto" — provadamente inerte para o integrador atual, agora pinado por teste em vez de só um comentário. |
 
-| Operador/construct | Argumento ignorado | Evidência |
+---
+
+## 5. Fechados nesta onda (desvios disclosed, §5 original)
+
+| Desvio original | Commit | Estado atual |
 |---|---|---|
-| `idt(expr, ic, assert)` | `assert` | `resolve/pom/analog_ops.rs:83-92` |
-| `idtmod(expr, ic, modulus, offset)` | `offset` (e abstol) | `analog_ops.rs:94-107` |
-| `absdelay(expr, td, maxdelay)` | `maxdelay` | `analog_ops.rs:139-148` |
-| `zi_nd/np/zd/zp(expr, T, τ, t0)` | `τ` e `t0` | `analog_ops.rs:330-360` |
-| `cross(expr, dir, time_tol, expr_tol)` / `above` / `timer` | tolerâncias e `enable` | `flatten/analog.rs:103-123` |
-| `slew(expr, max_rise, max_fall)` | fall default `0.0` (LRM: `-rise`) | `analog_ops.rs:173-183` |
-| `laplace_*(expr, ε, ε)` | ε/abstol | `analog_ops.rs:400-410` |
-| `transition(…, time_tol)` | `time_tol` "intentionally not carried" | `kernel/analog/kernel.rs:82-84` |
-| `ddt(expr, abstol)` / natureza | abstol/natureza | `analog_ops.rs:73-81` |
-| `initial_step("dc", "tran")` | lista de análises | `flatten/analog.rs:82-98` |
-| `$discontinuity(degree)` | grau aceito e ignorado (documentado) | `flatten/analog.rs:652-670` |
-| `analysis()` sem `"ic"`/`"static"`/`"nodeset"` | variantes | `analog_expr.rs:249-262` |
-| Atributos em statements (`(* full_case *) case …`) | parse error (§2.9 Ex.1) | `cursor.rs:136-150` |
+| PRNG não-1364 | `015826d1` (T59) | `eval/rng.rs` reimplementado linha a linha a partir do listing de IEEE 1364-2005 §17.9.3; comentário de disclosure removido. |
+| Resolução só Basic | `9ae20ce0` (T60) | Detail (§7.4.4.2) implementada ao lado de Basic (`elab/lower/disciplines.rs:18-30`); comentário "fora de escopo" removido. |
+| Scheduler Verilator-style (potencial divergência de ordering) | `76831967` | Teste diferencial (`RegionQueue` vs scheduler de produção) prova ordenação observável idêntica; qualquer diferença intencional agora é pinada por teste, não só um comentário. |
+| `paramset name (module);` com parênteses (forma não-LRM) | `e1aaf412` (T61) | Forma LRM sem parênteses (`paramset name module;`) agora também parseia; a forma com parênteses permanece como extensão sancionada (§6, não mais um desvio). |
+| `$strobe`/`$monitor` chamam imediatamente | `6032c197` (T62) | Deferem à região Monitor (`emit/stmt.rs:135-176`); `$display` continua imediato (Active), correto. |
+| A2D bridge sem consumidor | `288bac77` (T63) | `A2dComparator` é o consumidor real (`solver/digital/interface.rs:108-109`, `piperine_codegen::device::A2dComparator`). |
+| `$driver_*` stubs loud | `d8cff14c` (T54) | Ver §3.7 acima — `DriverTable` populada de verdade. |
+| Switch-level primitives fora de escopo | `4a132380` (T67) | `tran/rtran/tranif0/1/rtranif0/1` implementados (`kernel/digital/gates.rs`); comentário "fora de escopo" removido. |
+| `$mfactor` lê param por instância apenas | `7a1403a6` (T64) | Escala fluxo de branch automaticamente e propaga hierarquicamente (produto `$mfactor_specified * $mfactor_hier`, `device/analog/instance.rs:278-300`). |
+| `$xposition/$yposition/$angle/$hflip/$vflip` hard-coded | `e8047b11` (T65) | Lidos de dados de posicionamento por instância reais (via o caminho de atributos de instância do T15), compostos hierarquicamente. |
+| Concatenação/replicação de strings rejeitada loud | `3444e540` (T66) | Caso elaboration-constant (todo operando string-literal) implementado — ver "Ainda aberto" para o caso dinâmico, que segue rejeitado. |
 
 ---
 
-## 5. Desvios DISCLOSED (conformes por registro — atenção, não bugs)
+## 6. Ainda aberto (recortes de escopo documentados — não bugs esquecidos)
 
-Estes estão documentados no código com razão explícita. São pontos de atenção para
-quem esperar comportamento idêntico a outros simuladores, mas não violam o contrato
-do projeto.
+Cada linha abaixo tem uma justificativa explícita no código (comentário citando a razão)
+e não é um drop silencioso: cada caso ainda ausente falha loud ou está formalmente fora
+do escopo do task que fechou o item pai.
 
-| Desvio | Onde está documentado |
-|---|---|
-| **PRNG `$random`/`$rdist_*` não é o C do IEEE 1364-2005 §17.9.3** — fluxo de bits não bate com simuladores vendor; contrato comportamental (determinismo por seed, formas das distribuições) cumprido | `crates/piperine-lang/src/eval/rng.rs:5-36` |
-| **Resolução de disciplines: só Basic (§7.4.4.1)** — Detail explicitamente fora de escopo | `elab/lower/disciplines.rs:18-28` |
-| **Scheduler digital Verilator-style (DAG two-phase), não o while-loop literal de 1364** | `solver/src/digital/scheduler.rs:1-12` |
-| **`paramset name (module);` com parênteses** — divergência de FORMA do LRM (`paramset name module;`) | `tests/vams_paramset.rs:6-18` |
-| **`$strobe`/`$monitor` digitais não deferem para a Monitor region** (chamam imediatamente) | `emit/stmt.rs:113-124` |
-| **A2D bridge sem consumidor** (mecanismo de interpolação existe, nenhum elemento o usa) | `digital/interface.rs:108-119` |
-| **`$driver_*` stubs loud** — DriverTable existe, nunca populada | `tests/vams_driver_access_gap.rs` |
-| **`$node_alias` ausente** — re-topologia por ponto conflita com MD-18 | `analog_expr.rs:304-318` |
-| **Switch-level primitives (tran/rtran/tranif)** fora de escopo | `kernel/digital/gates.rs:15-23` |
-| **`$mfactor` lê param por instância apenas** — sem scaling automático de fluxo de ramo nem propagação hierárquica | `device/analog/instance.rs:245-264` |
-| **`$xposition/$yposition/$angle/$hflip/$vflip`** hard-coded (0.0/1), sem combinação hierárquica | `eval/tasks.rs:756-770` |
-| **Concatenação/replicação de strings não suportada** (rejeitada loud) | `digital_expr.rs:82` |
+| Desvio | LRM | Evidência (HEAD) |
+|---|---|---|
+| `zi_*`'s `t0` (start-time do primeiro transition) não é aplicado — falha loud citando a razão arquitetural (não há estado sample-and-hold para deslocar) | §4.5.12 | `crates/piperine-codegen/src/resolve/pom/analog_ops.rs:406-434` (`ZTransform::err_t0`) |
+| `$discontinuity(degree)` é aceito e **provadamente inerte** para o integrador TR-BDF2 atual — pinado por teste dedicado, não um comentário solto | §9.17.1 | `crates/piperine-codegen/tests/discontinuity_degree_inert.rs` |
+| `noise_table`/`noise_table_log` (§4.6.4.3/4) não estão implementados — deixaram de retornar `0.0` silencioso e agora falham loud nomeando a chamada | §4.6.4.3, §4.6.4.4 | `crates/piperine-codegen/tests/analysis_dependent_functions.rs:174-210` (`noise_table_call_fails_loud_not_silently_zero`) |
+| `analysis("ic")`/`analysis("nodeset")` são aceitos sintaticamente mas nunca comparam verdadeiro (sentinela `NEVER`) — o solver não rastreia essas duas sub-fases hoje | §4.6 Tab. 4-17 | `crates/piperine-codegen/src/emit/analog_expr.rs:463-479` |
+| `$analog_node_alias`/`$analog_port_alias` com argumento **não-constante** (dinâmico, por sweep-point) segue fora de escopo — conflita com MD-18 (compile-once); a forma **constante** foi implementada (T56) | §9.20 | `crates/piperine-codegen/src/emit/analog_expr.rs:331-345` |
+| `ddt`/`idt`/`idtmod`'s argumento `abstol`\|`nature` — `ddt` e `idtmod` (offset) já carregam; o `abstol`\|`nature` de cauda de `idt`/`idtmod` (o 4º/5º argumento, distinto do `abstol` de 2 args de `ddt` já implementado) segue fora de escopo, documentado como "tracked separately" | §4.5.4/§4.5.5 | `crates/piperine-codegen/src/resolve/pom/analog_ops.rs:97-99,116-118` |
+| `parameter`/`localparam` declarados dentro de um bloco `generate` não são desenrolados — nets/behaviors/vars/instâncias já são (T51); um parâmetro generate-local cai em `_ => {}` | §6.6 | `crates/piperine-lang/src/elab/lower/generate.rs:19-25` |
+| Herança de `abstol` por **natureza de fluxo** (a metade de §6.5.8 sobre flow, distinta da de potencial já implementada em T48) não está coberta | §6.5.8 | `crates/piperine-solver/src/analyses/context.rs:58-63` |
+| Concatenação/replicação de string funciona apenas quando toda a expressão é elaboration-constant (o caso do `$display`/format-string); uma expressão de string dinâmica em concat/replication segue rejeitada loud (mesmo caminho que já rejeitava vetores numéricos) | §3.3/§4.2.13 | `crates/piperine-codegen/src/emit/digital_expr.rs:82-84` |
 
 ---
 
-## 6. Extensões Piperine além do LRM (superset sancionado)
+## 7. Extensões Piperine além do LRM (superset sancionado) — spot-check
 
-O Piperine é declaradamente um superset (decisão do usuário). Extensões ativas:
+Seção informativa (não é uma divergência), re-verificada rapidamente — sem mudanças
+relevantes desde 2026-08-19, exceto que `paramset name (module);` (parênteses) migrou de
+"desvio disclosed" (§5 antigo) para aqui, já que a forma LRM sem parênteses agora também
+é aceita (T61) e a forma com parênteses é puramente uma extensão adicional, não mais o
+único caminho.
 
 | Extensão | Regime |
 |---|---|
@@ -571,52 +197,57 @@ O Piperine é declaradamente um superset (decisão do usuário). Extensões ativ
 | Escape `\%` em strings | lexer |
 | `'{` como lexema distinto (assignment patterns) | lexer |
 | Operadores `<<<`/`>>>` | lexer |
-| Nets sentinel `$unconnected` | `pom/net_type.rs:42-62` |
-| Inicializadores de variável (`integer st = 0;`) | na verdade **LRM-conformes** (A.2.2.1) — o handoff anterior estava errado |
+| Nets sentinel `$unconnected` | `crates/piperine-lang/src/pom/net_type.rs:38-50` — verificado, ainda presente |
+| `paramset name (module);` com parênteses — agora puramente extensão adicional (a forma LRM sem parênteses também parseia desde T61) | `crates/piperine-lang/src/grammar/item.rs:1505-1516` |
+| Inicializadores de variável (`integer st = 0;`) | na verdade **LRM-conformes** (A.2.2.1) — verificado: `crates/piperine-lang/tests/annex_a_grammar.rs:81` referencia A.2.2.1 diretamente |
 
 ---
 
-## 7. Plano de ação ranqueado
+## 8. Plano de ação ranqueado (pós onda-2)
 
-1. **Bug §6.9.1 (blocos analog sobrepostos)** — bug silencioso real; conserto
-   mecânico (append), teste de discriminação. *Prioridade máxima.*
-2. **Drops silenciosos restantes (1.2–1.10)** — todos violam o fail-loud; a maioria
-   é "ficar loud" barato.
-3. **`=` vs `<=` digital (§8.5.3.3/8.5.3.4)** — semântica blocking/non-blocking real;
-   o coração do escalonamento digital.
-4. **`assign` contínuo (1.3)** — destrava wreal, `assign` digital e §7.3.6.4 juntos.
-5. **Divergências numéricas pequenas e perigosas:** `log` decimal (2.2), `limexp`
-   (2.3), alvo `potential()` (2.4) — meia dúzia de linhas cada, resultados errados
-   hoje.
-6. **Famílias gramaticais ausentes de maior valor de modelagem:** switch branches
-   (3.1), loops analógicos + analog-`for` (2.7), contribuições indiretas (3.2).
-7. **Funções de usuário (3.5)** — no mínimo loud na declaração já; inlining como
-   follow-up.
-8. **`reg`/`wire`/`wreal` como tipos reais (3.6)** — remove erros enganosos e
-   habilita §7.3.1 completo.
-9. **Argumentos ignorados (seção 4)** — loud até implementar.
-10. **Math gaps** (`ceil`, `atan2`, `hypot`, `asinh`, `acosh`, `atanh`) — linhas no
-    catálogo de intrínsecos.
-11. **`$fatal` imediato (2.14)** e **`$simparam` erro em chave desconhecida (2.15)**
-    — duas linhas de fail-loud.
-12. **Referências hierárquicas/`$root` (3.3), overrides posicionais (3.4),
-    overloading de paramset (2.9), localparam-defparam (2.8)** — superfície de
-    elaboração estrutural.
+Todos os itens de alta severidade (§1/§2/§3 originais) estão fechados. O que resta é
+pequeno e de baixo risco:
+
+1. **`noise_table`/`noise_table_log` (§4.6.4.3/4)** — a única lacuna funcional real
+   restante (não apenas um recorte de escopo de argumento): a função em si não existe,
+   apenas falha loud em vez de `0.0`. Próximo candidato a implementação completa.
+2. **`zi_*`'s `t0`** e **`idt`/`idtmod`'s `abstol`\|`nature` de cauda** — argumentos de
+   operador ainda não aplicados, ambos já falham loud (não silenciosos), baixa
+   prioridade.
+3. **`$analog_node_alias` dinâmico** — bloqueado por decisão arquitetural (MD-18), não
+   revisitar sem reabrir essa decisão.
+4. **`$discontinuity(degree)`** — inerte por design do integrador atual; só relevante se
+   o integrador mudar.
+5. **Parâmetros dentro de `generate`** e **herança de `abstol` de fluxo** — lacunas
+   pequenas, de baixo impacto de modelagem, cada uma já documentada no código-fonte.
+6. **Concatenação/replicação de string dinâmica** — bloqueada pela ausência de um tipo
+   string em runtime na ABI da JIT digital; exigiria uma mudança de ABI maior que o
+   escopo desta onda.
 
 ---
 
-## 8. Status de verificação
+## 9. Status de verificação
 
-- **Re-verificados manualmente pelo orquestrador** (5): 1.1 (blocos analog), 1.2
-  (eventos digitais), 1.3 (assign contínuo), 1.4 (ground), 2.1 (`=`/`<=`).
-- **Evidência da auditoria read-only** (demais itens): cada claim carrega
-  `arquivo:linha` da auditoria por capítulo; não foram re-executados ponto a ponto.
-  Itens marcados "unverified" na auditoria (ex.: §7.3.3 interpolação por tick,
-  §7.2.2 atribuição em dois contextos) foram omitidos deste documento ou listados
-  como não-verificados.
-- **Não auditado:** capítulo 1 (introdutório), anexos em profundidade (só
-  spot-checks de A/B/C/F), e o comportamento do host (`piperine-api`) além do que
-  os capítulos 6–9 tocam.
+- **Todo item de §1–§5 do documento original (2026-08-19)** foi re-lido individualmente
+  contra HEAD desta branch neste ciclo (T70): 10 itens de §1, 15 de §2, 14 de §3, 13
+  linhas de tabela de §4, 11 linhas de tabela de §5 — 63 claims no total.
+- **51 fecharam** (commit citado, código lido para confirmar a ausência do bug/gap) — 10
+  do §1, 15 do §2, 14 do §3 (13 completos + 1 fechado com recorte, 3.10), 12 do §4 (uma
+  linha, atributos em statements, incluída), 11 do §5 (uma migrada para extensão
+  sancionada em vez de permanecer disclosed).
+- **9 seguem abertos**, cada um re-verificado com evidência atual `arquivo:linha` e a
+  cláusula do LRM explícita (seção 6 acima) — todos são recortes de escopo documentados
+  no próprio código-fonte, nenhum é um drop silencioso.
+- **Nenhum item foi fechado por suposição** — cada "fechado" cita um hash de commit
+  real localizado via `git log --oneline`/`git show`, ou evidência de leitura de código
+  direta quando a busca por commit não isolou um hash único (nenhum caso deste
+  documento precisou desse fallback — todos os 51 fechamentos têm hash).
+- **Não auditado nesta regeneração:** capítulo 1 (introdutório, não-normativo), anexos em
+  profundidade (só spot-checks de A/B/C/F, herdados da auditoria original), e o
+  comportamento do host (`piperine-api`) além do que os capítulos 6–9 tocam — mesmo
+  escopo do documento original.
 
-*Este documento substitui qualquer SPEC_DEVIATIONS.md anterior. Regenerado após a
-conclusão de cada onda de correções de conformidade.*
+*Este documento substitui a versão de 2026-08-19. Regenerado após a conclusão da onda 2
+de correções de conformidade (`lrm-conformance-wave2`, T1–T68); a próxima regeneração
+deve seguir a mesma disciplina — cada item fechado precisa de um commit citável, cada
+item aberto precisa de evidência `arquivo:linha` relida no momento da regeneração.*
