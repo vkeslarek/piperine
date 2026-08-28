@@ -629,6 +629,14 @@ impl Elaborator {
                 .collect();
         }
 
+        // T6 (LRMW3-01): a port-connection index (`inst(bus[9])`,
+        // `expr_to_net_ref`'s `name[index]` form) that names an
+        // out-of-range bit or indexes a scalar net is a loud error here,
+        // rather than surfacing later as a generic "unresolved net" once
+        // flattening/circuit-build looks for a node that was never
+        // registered.
+        validate_indexed_net_refs(&module)?;
+
         Ok(module)
     }
 
@@ -2130,7 +2138,12 @@ fn expr_to_net_ref(expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
                 )));
             };
             let idx = env.eval_nat(index).map_err(|e| {
-                ElabError::from(ElabErrorKind::ConstEval { context: "port connection index".into(), source: e })
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!(
+                        "port connection index `{name}[...]` (§5.5.2: the index must be a constant expression, though it may include genvar variables)"
+                    ),
+                    source: e,
+                })
             })?;
             Ok(NetRef::indexed(name.clone(), idx))
         }
@@ -2138,6 +2151,71 @@ fn expr_to_net_ref(expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
             "port connection must be a net name or `name[index]`".to_string(),
         ))),
     }
+}
+
+/// T6 (LRMW3-01, spec Edge Cases): a `NetRef { index: Some(i), .. }`
+/// produced by [`expr_to_net_ref`] (a port connection's `name[index]`
+/// form) is checked here, once per module, against the referenced net's
+/// *declared* width — `i >= width` or `width == 1` (indexing a scalar)
+/// each fail loud naming the net, the index, and the declared bounds,
+/// rather than surfacing later as a generic "unresolved net" once
+/// flattening/circuit-build looks for a node that was never registered.
+/// A referenced name this module doesn't itself declare (e.g. a
+/// hierarchical or not-yet-elaborated name) is skipped — out of this
+/// check's scope, not a false positive.
+fn validate_indexed_net_refs(module: &Module) -> Result<(), ElabError> {
+    // `Some(width)` only for a net actually declared `NetType::Array` —
+    // a width-1 array (e.g. `tap[0:segs-2]` monomorphized with `segs ==
+    // 2`) is still indexable at `[0]`; only a *bare* scalar
+    // (`Discipline`/`Digital1364`, no `Array` wrapper at all, `width()
+    // == 1` incidentally) has no range to index into. `None` covers a
+    // name this module doesn't declare a wire/port for (e.g. a
+    // hierarchical name) — out of this check's scope, not a false
+    // positive.
+    let array_width_of = |name: &str| -> Option<u64> {
+        let ty = module
+            .wires()
+            .iter()
+            .find(|w| w.name() == name)
+            .map(|w| w.net_type())
+            .or_else(|| module.ports().iter().find(|p| p.name() == name).map(|p| p.net_type()))?;
+        match ty {
+            NetType::Array(_, n) => Some(*n),
+            NetType::Discipline(_) | NetType::Digital1364(_) => None,
+        }
+    };
+    let is_declared_scalar = |name: &str| -> bool {
+        let ty = module
+            .wires()
+            .iter()
+            .find(|w| w.name() == name)
+            .map(|w| w.net_type())
+            .or_else(|| module.ports().iter().find(|p| p.name() == name).map(|p| p.net_type()));
+        matches!(ty, Some(NetType::Discipline(_) | NetType::Digital1364(_)))
+    };
+    for inst in module.instances() {
+        for port_ref in inst.ports() {
+            let Some(idx) = port_ref.index() else { continue };
+            if is_declared_scalar(port_ref.net()) {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: `{port_ref}` indexes scalar net `{}`, which was declared with no range",
+                    inst.name(),
+                    port_ref.net()
+                ))));
+            }
+            let Some(width) = array_width_of(port_ref.net()) else { continue };
+            if idx >= width {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "instance `{}`: `{port_ref}` is out of range — net `{}` is declared `[0:{}]` (0..{})",
+                    inst.name(),
+                    port_ref.net(),
+                    width - 1,
+                    width - 1
+                ))));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Evaluates a `nature`/attribute `Expr` that must be a string (e.g.

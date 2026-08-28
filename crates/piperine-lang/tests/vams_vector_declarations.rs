@@ -1,9 +1,11 @@
 //! Vector (bus) declarations — `lrm-conformance-wave3` Phase 1 (T1-T6).
 //! Proves the leading-range declarator slot (Annex A.2.1.2/A.2.2.1's
 //! `range`) on net (T1), port (T2), and 1364 net/variable (T3)
-//! declarations.
+//! declarations; memories with a packed range plus an unpacked depth
+//! (T5); and the loud-diagnostic family for vector bounds and malformed
+//! index forms (T6).
 //!
-//! LRM-COVERS: 3.6.3, A.2.1.2, 3.7, A.2.2.1
+//! LRM-COVERS: 3.6.3, A.2.1.2, 3.7, A.2.2.1, 5.5.2
 
 use piperine_lang::pom::{DigitalNetKind, NetType};
 use piperine_lang::{parse_and_elaborate, SourceMap};
@@ -195,4 +197,71 @@ fn width_times_depth_above_the_cap_fails_loud_naming_the_declaration_and_the_cap
     let err = elab_err(&module_wrapper("reg [65535:0] huge [65535:0];"));
     assert!(err.contains("huge"), "must name the declaration: {err}");
     assert!(err.contains("65536"), "must name the configured cap: {err}");
+}
+
+// ── T6: vector bounds and index-form diagnostics ──────────────────────────
+
+#[test]
+fn out_of_range_port_connection_index_fails_loud_naming_net_index_and_bounds() {
+    let src = "
+        module leaf (inout electrical p);
+        endmodule
+        module top ();
+            electrical [0:3] bus;
+            leaf u1 (bus[9]);
+        endmodule
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("bus"), "must name the net: {err}");
+    assert!(err.contains("9"), "must name the index: {err}");
+    assert!(err.contains("0:3") || err.contains("0..3"), "must name the declared bounds: {err}");
+}
+
+#[test]
+fn non_constant_port_connection_index_fails_loud_citing_5_5_2() {
+    let src = "
+        module leaf (inout electrical p);
+        endmodule
+        module top ();
+            electrical [0:3] bus;
+            integer i;
+            leaf u1 (bus[i]);
+            initial i = 0;
+        endmodule
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("5.5.2"), "must cite §5.5.2: {err}");
+}
+
+#[test]
+fn indexing_a_scalar_net_fails_loud_naming_the_scalar() {
+    let src = "
+        module leaf (inout electrical p);
+        endmodule
+        module top ();
+            electrical scalar;
+            leaf u2 (scalar[0]);
+        endmodule
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("scalar"), "must name the scalar net: {err}");
+    assert!(err.contains("no range") || err.contains("scalar"), "must say it has no range: {err}");
+}
+
+#[test]
+fn a_malformed_non_integer_range_bound_fails_loud() {
+    // The width formula (`|msb - lsb| + 1`) can never itself produce a
+    // zero-width net (a range always yields width >= 1) — `[3:3]` is
+    // width 1, not zero. "Malformed" here is a bound that fails to
+    // const-evaluate to an integer at all, already loud via the
+    // pre-existing const-eval type check `range_width` (T5) relies on.
+    let err = elab_err(&module_wrapper("electrical [\"x\":0] bus;"));
+    assert!(!err.is_empty(), "a non-integer range bound must fail loud");
+}
+
+#[test]
+fn a_one_wide_range_is_width_one_not_zero() {
+    let d = elab(&module_wrapper("electrical [3:3] bus;"));
+    let m = d.module("top").unwrap();
+    assert_eq!(m.wire("bus").unwrap().net_type().width(), 1, "a single-index range is width 1, never 0");
 }

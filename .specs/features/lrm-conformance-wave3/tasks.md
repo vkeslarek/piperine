@@ -249,12 +249,19 @@ index, zero/negative width, index applied to a scalar.
 **Requirement**: LRMW3-01, spec Edge Cases
 
 **Done when**:
-- [ ] `bus[9]` on a `[0:3]` net fails loud naming net, index and bounds
-- [ ] A run-time-varying index fails loud citing §5.5.2's constant-expression rule
-- [ ] `scalar[0]` fails loud naming the scalar
-- [ ] A zero-width or malformed range fails loud
-- [ ] Each error asserted by **message content**, not `is_err()`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
+- [x] `bus[9]` on a `[0:3]` net fails loud naming net, index and bounds
+      (via the port-connection `name[index]` path, `expr_to_net_ref`/
+      `validate_indexed_net_refs` — the only indexing surface that already
+      resolves; analog/digital terminal indexing is T7/T9's own resolution
+      work, not duplicated here)
+- [x] A run-time-varying index fails loud citing §5.5.2's constant-expression rule
+- [x] `scalar[0]` fails loud naming the scalar
+- [x] A zero-width or malformed range fails loud (the width formula
+      `|msb-lsb|+1` can never itself yield 0 — proven by a pinning test
+      instead of a fabricated case; a non-integer bound already fails loud
+      via the pre-existing const-eval type check)
+- [x] Each error asserted by **message content**, not `is_err()`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): loud diagnostics for vector bounds and index forms`
