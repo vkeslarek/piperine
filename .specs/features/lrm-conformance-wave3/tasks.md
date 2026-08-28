@@ -517,12 +517,12 @@ delay values).
 **Requirement**: LRMW3-07
 
 **Done when**:
-- [ ] `$setup(d, posedge clk, 1.0);` parses into `TimingCheckDecl` with data
+- [x] `$setup(d, posedge clk, 1.0);` parses into `TimingCheckDecl` with data
       event, reference event (edge-qualified), and limit
-- [ ] The optional notifier argument parses
-- [ ] An unknown `$…` inside a specify block fails loud naming it
-- [ ] Declares `//! LRM-COVERS: A.7.5, A.7.5.1, A.7.5.2, A.7.5.3`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_specify`
+- [x] The optional notifier argument parses
+- [x] An unknown `$…` inside a specify block fails loud naming it
+- [x] Declares `//! LRM-COVERS: A.7.5, A.7.5.1, A.7.5.2, A.7.5.3`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_specify`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): system timing-check grammar inside specify blocks`

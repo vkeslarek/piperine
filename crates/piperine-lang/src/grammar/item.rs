@@ -1448,22 +1448,151 @@ impl Grammar {
         let start = self.expect_kw("specify")?;
         let mut specparams = Vec::new();
         let mut paths = Vec::new();
+        let mut checks = Vec::new();
         while !self.at_kw("endspecify") {
             if self.at_eof() {
                 return Err(self.eof_error("'endspecify'".to_string()));
             }
             if self.at_kw("specparam") {
                 specparams.push(self.parse_specparam()?);
+            } else if matches!(self.peek(), Tok::SystemIdent(_)) {
+                checks.push(self.parse_system_timing_check()?);
             } else if self.at_punct("(") {
                 paths.push(self.parse_path_declaration()?);
             } else {
                 return Err(self.unexpected(
-                    "a specify_item: specparam or path declaration (A.7.1)".to_string(),
+                    "a specify_item: specparam, path, or system timing check declaration (A.7.1)"
+                        .to_string(),
                 ));
             }
         }
         let end = self.expect_kw("endspecify")?;
-        Ok(SpecifyBlock { span: PreprocessedSpan::new(start.start, end.end), specparams, paths })
+        Ok(SpecifyBlock {
+            span: PreprocessedSpan::new(start.start, end.end),
+            specparams,
+            paths,
+            checks,
+        })
+    }
+
+    /// `timing_check_event`/`controlled_timing_check_event`, Annex A.7.5.3.
+    /// `edge_required` distinguishes the mandatory-edge `controlled_*` form
+    /// ($width/$period's sole event) from the optional-edge ordinary form.
+    /// The `&&& timing_check_condition` qualifier is out of this task's
+    /// scope.
+    fn parse_timing_check_event(&mut self, edge_required: bool) -> Result<EventSpec, ParseError> {
+        let start = self.peek_span();
+        let edge = if self.eat_kw("posedge") {
+            Some(EdgeIdent::Posedge)
+        } else if self.eat_kw("negedge") {
+            Some(EdgeIdent::Negedge)
+        } else {
+            None
+        };
+        if edge_required && edge.is_none() {
+            return Err(self.unexpected(
+                "'posedge' or 'negedge' (A.7.5.3 controlled_timing_check_event)".to_string(),
+            ));
+        }
+        let (terminal, tspan) = self.expect_ident()?;
+        Ok(EventSpec { span: PreprocessedSpan::new(start.start, tspan.end), edge, terminal })
+    }
+
+    /// `system_timing_check`, Annex A.7.5.1 — the eight kinds LRMW3-07
+    /// scopes: `$setup`/`$hold`/`$setuphold`/`$width`/`$period`/
+    /// `$recovery`/`$removal`/`$skew`. An unrecognized `$…` (including the
+    /// in-LRM-but-out-of-scope `$recrem`/`$timeskew`/`$fullskew`/
+    /// `$nochange`) fails loud naming it, never silently accepted.
+    fn parse_system_timing_check(&mut self) -> Result<TimingCheckDecl, ParseError> {
+        let (name, start) = match self.peek().clone() {
+            Tok::SystemIdent(s) => (s, self.bump().span),
+            _ => unreachable!("caller checked at_system_ident"),
+        };
+        let kind = match name.as_str() {
+            "setup" => TimingCheckKind::Setup,
+            "hold" => TimingCheckKind::Hold,
+            "setuphold" => TimingCheckKind::SetupHold,
+            "width" => TimingCheckKind::Width,
+            "period" => TimingCheckKind::Period,
+            "recovery" => TimingCheckKind::Recovery,
+            "removal" => TimingCheckKind::Removal,
+            "skew" => TimingCheckKind::Skew,
+            _ => {
+                return Err(ParseError::new(
+                    ParseErrorKind::UnexpectedToken {
+                        expected: "a system timing check: $setup/$hold/$setuphold/$width/$period/$recovery/$removal/$skew (A.7.5.1)".to_string(),
+                        found: format!("'${name}'"),
+                    },
+                    start,
+                ));
+            }
+        };
+        self.expect_punct("(")?;
+        let (reference_event, data_event, mut limits): (EventSpec, Option<EventSpec>, Vec<Expr>) = match kind {
+            TimingCheckKind::Setup => {
+                let d = self.parse_timing_check_event(false)?;
+                self.expect_punct(",")?;
+                let r = self.parse_timing_check_event(false)?;
+                self.expect_punct(",")?;
+                let limit = self.parse_expr()?;
+                (r, Some(d), vec![limit])
+            }
+            TimingCheckKind::Hold
+            | TimingCheckKind::Recovery
+            | TimingCheckKind::Removal
+            | TimingCheckKind::Skew => {
+                let r = self.parse_timing_check_event(false)?;
+                self.expect_punct(",")?;
+                let d = self.parse_timing_check_event(false)?;
+                self.expect_punct(",")?;
+                let limit = self.parse_expr()?;
+                (r, Some(d), vec![limit])
+            }
+            TimingCheckKind::SetupHold => {
+                let r = self.parse_timing_check_event(false)?;
+                self.expect_punct(",")?;
+                let d = self.parse_timing_check_event(false)?;
+                self.expect_punct(",")?;
+                let setup_limit = self.parse_expr()?;
+                self.expect_punct(",")?;
+                let hold_limit = self.parse_expr()?;
+                (r, Some(d), vec![setup_limit, hold_limit])
+            }
+            TimingCheckKind::Width | TimingCheckKind::Period => {
+                let r = self.parse_timing_check_event(true)?;
+                self.expect_punct(",")?;
+                let limit = self.parse_expr()?;
+                (r, None, vec![limit])
+            }
+        };
+        // `[, [notifier]]` — `$width` additionally allows an optional
+        // `threshold` before the notifier (A.7.5.1/A.7.5.2); the threshold
+        // is parsed (so the argument list stays well-formed) but not yet
+        // enforced (LRMW3-07 scope is the limit, not the threshold).
+        let mut notifier = None;
+        if matches!(kind, TimingCheckKind::Width) && self.eat_punct(",") {
+            if !self.at_punct(")") {
+                let _threshold = self.parse_expr()?;
+                if self.eat_punct(",") && !self.at_punct(")") {
+                    let (n, _) = self.expect_ident()?;
+                    notifier = Some(n);
+                }
+            }
+        } else if self.eat_punct(",") && !self.at_punct(")") {
+            let (n, _) = self.expect_ident()?;
+            notifier = Some(n);
+        }
+        let end = self.expect_punct(")")?;
+        self.expect_punct(";")?;
+        limits.shrink_to_fit();
+        Ok(TimingCheckDecl {
+            span: PreprocessedSpan::new(start.start, end.end),
+            kind,
+            reference_event,
+            data_event,
+            limits,
+            notifier,
+        })
     }
 
     /// `specify_input_terminal_descriptor`/`specify_output_terminal_descriptor`,

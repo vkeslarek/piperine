@@ -618,6 +618,8 @@ pub struct SpecifyBlock {
     pub span: PreprocessedSpan,
     pub specparams: Vec<SpecparamDecl>,
     pub paths: Vec<PathDecl>,
+    /// System timing checks (Annex A.7.5, T16, LRMW3-07).
+    pub checks: Vec<TimingCheckDecl>,
 }
 
 /// `simple_path_declaration`, Annex A.7.2/A.7.3/A.7.4 — a parallel (`=>`)
@@ -637,6 +639,54 @@ pub struct PathDecl {
     /// wider forms) — kept as authored `Expr`; elaboration const-evaluates
     /// them (path delays are `constant_mintypmax_expression`, A.7.4).
     pub delays: Vec<Expr>,
+}
+
+/// `edge_identifier`, Annex A.7.2/A.7.5.3 — `posedge`/`negedge`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeIdent {
+    Posedge,
+    Negedge,
+}
+
+/// `timing_check_event`/`controlled_timing_check_event`, Annex A.7.5.3 —
+/// an optional edge qualifier plus a `specify_terminal_descriptor`. The
+/// `&&& timing_check_condition` qualifier is out of this task's scope.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventSpec {
+    pub span: PreprocessedSpan,
+    pub edge: Option<EdgeIdent>,
+    pub terminal: String,
+}
+
+/// `system_timing_check`, Annex A.7.5.1 — the eight kinds LRMW3-07 scopes
+/// (`$recrem`/`$timeskew`/`$fullskew`/`$nochange` are out of scope and fail
+/// loud naming the unrecognized `$` construct instead of a silent no-op).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimingCheckKind {
+    Setup,
+    Hold,
+    SetupHold,
+    Width,
+    Period,
+    Recovery,
+    Removal,
+    Skew,
+}
+
+/// One parsed system timing check (Annex A.7.5.1/A.7.5.2/A.7.5.3).
+/// `data_event` is `None` for the single-event forms (`$width`/`$period`,
+/// whose sole event is `reference_event` and is edge-mandatory —
+/// `controlled_timing_check_event`, A.7.5.3). `limits` carries one
+/// `timing_check_limit` for every kind except `$setuphold` (setup limit,
+/// then hold limit — A.7.5.1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimingCheckDecl {
+    pub span: PreprocessedSpan,
+    pub kind: TimingCheckKind,
+    pub reference_event: EventSpec,
+    pub data_event: Option<EventSpec>,
+    pub limits: Vec<Expr>,
+    pub notifier: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

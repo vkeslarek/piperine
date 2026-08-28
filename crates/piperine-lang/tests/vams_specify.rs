@@ -1,13 +1,13 @@
-//! LRM-COVERS: A.7.2, A.7.3, A.7.4
-//! `specify` blocks (T15, LRMW3-06): real grammar productions for
-//! `specparam` declarations and simple path declarations (parallel `=>`
-//! and full `*>`, 1/2/3/6/12 delay values) — replacing the old
-//! token-skipping stub. Grammar-level only: these tests read the parsed
-//! AST directly (`Parser`), never elaboration — later tasks (T16 system
-//! timing checks, T17 unsupported forms, T18 POM lowering) extend this
-//! same target.
+//! LRM-COVERS: A.7.2, A.7.3, A.7.4, A.7.5, A.7.5.1, A.7.5.2, A.7.5.3
+//! `specify` blocks (T15/T16, LRMW3-06/LRMW3-07): real grammar productions
+//! for `specparam` declarations and simple path declarations (parallel
+//! `=>` and full `*>`, 1/2/3/6/12 delay values, T15) and the eight
+//! in-scope system timing checks (T16) — replacing the old token-skipping
+//! stub. Grammar-level only: these tests read the parsed AST directly
+//! (`Parser`), never elaboration — later tasks (T17 unsupported forms, T18
+//! POM lowering) extend this same target.
 
-use piperine_lang::ast::{Item, ModuleItem, SpecifyBlock};
+use piperine_lang::ast::{Item, ModuleItem, SpecifyBlock, TimingCheckKind};
 use piperine_lang::Parser;
 
 fn parse_specify(module_src: &str) -> SpecifyBlock {
@@ -95,4 +95,96 @@ fn multiple_inputs_before_parallel_arrow_fails_loud() {
     let err = Parser::new().parse(full).expect_err("parallel form takes exactly one input");
     let msg = err.to_string();
     assert!(msg.contains("A.7.2"), "error cites the production: {msg}");
+}
+
+// ─────────────────────────────── T16 ───────────────────────────────────
+
+fn parse_specify_err(module_src: &str) -> String {
+    let full = format!(
+        "module top(a, y, clk, d);\n\
+         inout a, y, clk, d;\n\
+         {module_src}\n\
+         endmodule\n"
+    );
+    Parser::new().parse(&full).expect_err("expected a parse error").to_string()
+}
+
+#[test]
+fn setup_timing_check_parses_data_reference_and_limit() {
+    let sb = parse_specify("specify\n$setup(d, posedge clk, 1.0);\nendspecify");
+    assert_eq!(sb.checks.len(), 1);
+    let c = &sb.checks[0];
+    assert_eq!(c.kind, TimingCheckKind::Setup);
+    assert_eq!(c.data_event.as_ref().unwrap().terminal, "d");
+    assert!(c.data_event.as_ref().unwrap().edge.is_none());
+    assert_eq!(c.reference_event.terminal, "clk");
+    assert!(c.reference_event.edge.is_some(), "posedge qualifies the reference event");
+    assert_eq!(c.limits.len(), 1);
+}
+
+#[test]
+fn hold_timing_check_parses_reference_then_data() {
+    let sb = parse_specify("specify\n$hold(posedge clk, d, 0.5);\nendspecify");
+    assert_eq!(sb.checks.len(), 1);
+    let c = &sb.checks[0];
+    assert_eq!(c.kind, TimingCheckKind::Hold);
+    assert_eq!(c.reference_event.terminal, "clk");
+    assert_eq!(c.data_event.as_ref().unwrap().terminal, "d");
+}
+
+#[test]
+fn setuphold_timing_check_parses_two_limits() {
+    let sb = parse_specify("specify\n$setuphold(posedge clk, d, 1.0, 0.5);\nendspecify");
+    let c = &sb.checks[0];
+    assert_eq!(c.kind, TimingCheckKind::SetupHold);
+    assert_eq!(c.limits.len(), 2);
+}
+
+#[test]
+fn width_and_period_checks_require_a_controlled_reference_event() {
+    let sb = parse_specify("specify\n$width(posedge clk, 2.0);\n$period(posedge clk, 4.0);\nendspecify");
+    assert_eq!(sb.checks.len(), 2);
+    assert_eq!(sb.checks[0].kind, TimingCheckKind::Width);
+    assert!(sb.checks[0].data_event.is_none());
+    assert_eq!(sb.checks[1].kind, TimingCheckKind::Period);
+}
+
+#[test]
+fn width_check_missing_mandatory_edge_fails_loud() {
+    let msg = parse_specify_err("specify\n$width(clk, 2.0);\nendspecify");
+    assert!(msg.contains("A.7.5.3"), "error cites controlled_timing_check_event's production: {msg}");
+}
+
+#[test]
+fn recovery_removal_and_skew_checks_parse() {
+    let sb = parse_specify(
+        "specify\n\
+         $recovery(posedge clk, d, 1.0);\n\
+         $removal(posedge clk, d, 1.0);\n\
+         $skew(posedge clk, d, 1.0);\n\
+         endspecify",
+    );
+    assert_eq!(sb.checks.len(), 3);
+    assert_eq!(sb.checks[0].kind, TimingCheckKind::Recovery);
+    assert_eq!(sb.checks[1].kind, TimingCheckKind::Removal);
+    assert_eq!(sb.checks[2].kind, TimingCheckKind::Skew);
+}
+
+#[test]
+fn optional_notifier_argument_parses() {
+    let sb = parse_specify("reg notify_reg;\nspecify\n$setup(d, posedge clk, 1.0, notify_reg);\nendspecify");
+    assert_eq!(sb.checks[0].notifier.as_deref(), Some("notify_reg"));
+}
+
+#[test]
+fn width_check_optional_threshold_before_notifier_parses() {
+    let sb = parse_specify("reg notify_reg;\nspecify\n$width(posedge clk, 2.0, 1.0, notify_reg);\nendspecify");
+    assert_eq!(sb.checks[0].notifier.as_deref(), Some("notify_reg"));
+}
+
+#[test]
+fn unknown_dollar_construct_inside_specify_fails_loud_naming_it() {
+    let msg = parse_specify_err("specify\n$nochange(posedge clk, d, 0, 0);\nendspecify");
+    assert!(msg.contains("nochange"), "error names the unrecognized construct: {msg}");
+    assert!(msg.contains("A.7.5.1"), "error cites the production: {msg}");
 }
