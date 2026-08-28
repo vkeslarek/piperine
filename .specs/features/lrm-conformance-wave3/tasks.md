@@ -455,10 +455,11 @@ helper
 **Done when**:
 - [ ] Either: the sync/async × and/or/nand/nor array tasks drive their outputs
       from a loaded plane, asserted against IEEE 1364's own example
-- [ ] Or: every name in the family fails loud citing §9.8, with the reason
+- [x] Or: every name in the family fails loud citing §9.8, with the reason
       recorded in the commit body and in `docs/spec/part_iii_conformance.md`
-- [ ] Declares `//! LRM-COVERS: 9.8`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+      (chosen — see commit body)
+- [x] Declares `//! LRM-COVERS: 9.8`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): PLA modeling tasks (§9.8)`

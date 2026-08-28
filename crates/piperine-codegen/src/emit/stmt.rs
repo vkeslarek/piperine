@@ -202,6 +202,34 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     Ok(())
                 }
                 "finish" | "stop" => Ok(()),
+                // T14 (LRMW3-20, §9.8): the PLA-modeling task family —
+                // recognized by name (`piperine-lang/src/eval/tasks.rs`'s
+                // `SystemTaskKind::PlaArray`, so a call gets this specific
+                // rejection rather than a fuzzy-matched "unknown task"
+                // error), but deliberately not lowered. Loading a plane
+                // from a declared memory and driving outputs from it would
+                // need real per-instance runtime file I/O wired through a
+                // new JIT trampoline (the same infrastructure gap T12
+                // found and left open for `$readmemh`/`$readmemb` — see
+                // that task's commit body) *plus* a combinational-array
+                // evaluation model with no existing analog in this
+                // codebase. Building both from scratch is a materially
+                // larger feature than any other single task in this
+                // batch — recorded as a disclosed, deliberate loud
+                // rejection (spec.md P3 AC2 explicitly allows this
+                // outcome) rather than attempted under this task's
+                // remaining scope.
+                other @ ("async$and$array" | "async$and$plane" | "async$nand$array" | "async$nand$plane"
+                | "async$or$array" | "async$or$plane" | "async$nor$array" | "async$nor$plane"
+                | "sync$and$array" | "sync$and$plane" | "sync$nand$array" | "sync$nand$plane"
+                | "sync$or$array" | "sync$or$plane" | "sync$nor$array" | "sync$nor$plane") => {
+                    Err(CodegenError::unsupported(format!(
+                        "PLA-modeling system task `${other}` (LRM §9.8) is recognized but not lowered — \
+                         it would need real runtime plane-loading file I/O (the same gap left open for \
+                         $readmemh/$readmemb) plus a combinational-array evaluation model neither of \
+                         which exists in this codebase yet"
+                    )))
+                }
                 // T13/LRMW2-09: shared with the analog arm
                 // (`flatten/analog.rs`) through `CodegenError::unknown_task`
                 // so the two lowering paths cannot silently drift apart.

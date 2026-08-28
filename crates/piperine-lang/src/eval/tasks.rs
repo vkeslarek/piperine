@@ -155,6 +155,16 @@ pub enum SystemTaskKind {
     /// `$readmemh(file, mem[, start[, finish]])` — loads `mem` from a
     /// hex-radix text file.
     Readmemh,
+    /// The §9.8 PLA-modeling task family — `$async$and$array`/`$plane`,
+    /// `$async$nand$array`/`$plane`, `$async$or$array`/`$plane`,
+    /// `$async$nor$array`/`$plane`, and the `$sync$…` twins (16 names
+    /// total: `{async,sync} × {and,nand,or,nor} × {array,plane}`). T14
+    /// (LRMW3-20) recognizes every name here (so a call gets a §9.8-
+    /// specific rejection, not a fuzzy-matched "unknown task" error) but
+    /// deliberately does not lower any of them — see
+    /// `emit/stmt.rs::S::TaskCall`'s dispatch and this task's commit body
+    /// for why a real plane-loading implementation was not attempted.
+    PlaArray,
     /// `$random`/`$arandom` (§9.13.1) — a new 32-bit signed random number,
     /// updating the `inout` seed.
     Random,
@@ -299,6 +309,22 @@ impl SystemTasks {
         ("$swrite", SystemTaskKind::Swrite),
         ("$readmemb", SystemTaskKind::Readmemb),
         ("$readmemh", SystemTaskKind::Readmemh),
+        ("$async$and$array", SystemTaskKind::PlaArray),
+        ("$async$and$plane", SystemTaskKind::PlaArray),
+        ("$async$nand$array", SystemTaskKind::PlaArray),
+        ("$async$nand$plane", SystemTaskKind::PlaArray),
+        ("$async$or$array", SystemTaskKind::PlaArray),
+        ("$async$or$plane", SystemTaskKind::PlaArray),
+        ("$async$nor$array", SystemTaskKind::PlaArray),
+        ("$async$nor$plane", SystemTaskKind::PlaArray),
+        ("$sync$and$array", SystemTaskKind::PlaArray),
+        ("$sync$and$plane", SystemTaskKind::PlaArray),
+        ("$sync$nand$array", SystemTaskKind::PlaArray),
+        ("$sync$nand$plane", SystemTaskKind::PlaArray),
+        ("$sync$or$array", SystemTaskKind::PlaArray),
+        ("$sync$or$plane", SystemTaskKind::PlaArray),
+        ("$sync$nor$array", SystemTaskKind::PlaArray),
+        ("$sync$nor$plane", SystemTaskKind::PlaArray),
         ("$random", SystemTaskKind::Random),
         ("$arandom", SystemTaskKind::Arandom),
         ("$rdist_uniform", SystemTaskKind::RdistUniform),
