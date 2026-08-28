@@ -76,8 +76,40 @@ impl Codegen for Expr {
                 let value = b.builder.ins().select(flag, then_val.value, else_val.value);
                 Ok(Typed { value, ty: then_val.ty })
             }
-            Expr::Index { .. } | Expr::PartSelect { .. } => Err(CodegenError::unsupported(format!(
-                "bit-select/part-select in digital codegen: {self:?}"
+            // §4.2.1 bit-select (T9, LRMW3-01/LRMW3-03): scalarized vectors
+            // (MD-52) mean `q[2]` is simply the independently-named net
+            // `q[2]` — `structure.rs`'s element-node registration loop
+            // already put it in the symbol table, so this is one
+            // `load_ident` call through the same constant-fold rule every
+            // other widened terminal resolver in this crate uses
+            // (`resolve/pom/expr.rs::terminal_name_of` and its
+            // `flatten`/`emit`/`diff` twins). An undriven `q[2]` yields
+            // `X` (Table 7-3) for free: it is its own net, defaulting the
+            // same way any other undriven digital net already does — no
+            // special case needed.
+            Expr::Index { base, index, .. } => {
+                let Expr::Ident { name, .. } = base.as_ref() else {
+                    return Err(CodegenError::unsupported(format!(
+                        "digital bit-select base must be a plain vector identifier: {self:?}"
+                    )));
+                };
+                let i = piperine_lang::elab::const_eval::ConstEnv::new().eval_int(index).map_err(|e| {
+                    CodegenError::unsupported(format!(
+                        "digital bit-select index `{name}[...]` must be a constant expression \
+                         (LRM §5.5.2: the index shall be a constant expression, though it may \
+                         include genvar variables): {e}"
+                    ))
+                })?;
+                if i < 0 {
+                    return Err(CodegenError::unsupported(format!(
+                        "digital bit-select index `{name}[{i}]` must be non-negative"
+                    )));
+                }
+                let elem = crate::resolve::pom::structure::element_node_name(name, i as u64);
+                b.load_ident(&elem)
+            }
+            Expr::PartSelect { .. } => Err(CodegenError::unsupported(format!(
+                "part-select in digital codegen: {self:?}"
             ))),
             Expr::Concat { .. } | Expr::Replication { .. } => Err(CodegenError::unsupported(format!(
                 "vector concatenation/replication in digital codegen: {self:?}"

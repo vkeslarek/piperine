@@ -325,12 +325,12 @@ threading), test in `crates/piperine-codegen/tests/`
 **Requirement**: LRMW3-01, LRMW3-03
 
 **Done when**:
-- [ ] `always @(posedge clk) o = q[2];` compiles and propagates that bit
-- [ ] Reading a bit of an undriven vector yields `X` per Table 7-3, not a
+- [x] `always @(posedge clk) o = q[2];` compiles and propagates that bit
+- [x] Reading a bit of an undriven vector yields `X` per Table 7-3, not a
       silent `0`
-- [ ] Anything the arm still cannot lower keeps failing loud
-- [ ] Declares `//! LRM-COVERS: 4.2.1`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] Anything the arm still cannot lower keeps failing loud
+- [x] Declares `//! LRM-COVERS: 4.2.1`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): digital bit-select emission`
