@@ -1,4 +1,4 @@
-//! LRM-COVERS: 4.2.1
+//! LRM-COVERS: 4.2.1, 4.2.1.3
 //! LRMW3-01/LRMW3-03 (`lrm-conformance-wave3`): digital access through a
 //! vector index/part-select. Scalarized representation (MD-52): a width-N
 //! digital vector is N independently-named nets `q[0]`..`q[N-1]`
@@ -64,6 +64,24 @@ fn bit(digit: &str) -> Expr {
 
 fn assign(dest: &str, value: Expr) -> Stmt {
     Stmt::Assign { span: SP, target: ident(dest), value }
+}
+
+fn nonblocking(dest: &str, value: Expr) -> Stmt {
+    Stmt::NonBlockingAssign { span: SP, target: ident(dest), value }
+}
+
+/// A based literal `size'bdigits` (binary only — enough for T11's own
+/// fixtures).
+fn based_bin(size: u32, digits: &str) -> Expr {
+    Expr::Number {
+        span: SP,
+        value: NumberLit::Based(BasedNumber {
+            size: Some(size),
+            signed: false,
+            base: NumberBase::Binary,
+            digits: digits.to_string(),
+        }),
+    }
 }
 
 fn block(stmts: Vec<Stmt>) -> Stmt {
@@ -373,4 +391,146 @@ fn bit_select_of_an_undriven_net_reads_x_not_zero() {
     bench.set(clk, LogicValue::One);
     bench.step(1.0, &mut instance);
     assert_eq!(bench.nets[o.0], LogicValue::X, "an undriven q[2] must read back X (Table 7-3), never a silent 0");
+}
+
+// ── T11: whole-vector read/write (LRMW3-03, §4.2.1.3) ──────────────────────
+
+/// `module Dut(output q[0..3]); q <= 4'b0101;` — `q` is a whole 4-bit
+/// scalarized vector target, expanded by `expand_whole_vector_assign`
+/// (`emit/stmt.rs`) into four per-bit `NonBlockingAssign`s.
+fn literal_write_module() -> LoweredBody {
+    let mut m = LoweredBody::new("Dut");
+    let q: Vec<_> = (0..4).map(|i| m.symbols.add_node(format!("q[{i}]"), Domain::Digital)).collect();
+    for &n in &q {
+        m.ports.push(Port { node: n, direction: Direction::Out });
+    }
+    m.digital = Some(DigitalBody {
+        inputs: vec![],
+        outputs: q,
+        regs: vec![],
+        reg_inits: vec![],
+        stmts: vec![nonblocking("q", based_bin(4, "0101"))],
+    });
+    m
+}
+
+/// Done-when #1: `q <= 4'b0101;` sets the four bits per IEEE 1364 bit
+/// order — digit string `"0101"` read right-to-left is lsb-first
+/// (`q[0]=1, q[1]=0, q[2]=1, q[3]=0`), i.e. `q` reads as the number 5.
+#[test]
+fn whole_vector_nonblocking_write_sets_bits_in_1364_order() {
+    let module = literal_write_module();
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("whole-vector literal write must compile"));
+    let (q0, q1, q2, q3) = (DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3));
+    let mut instance = DigitalInstance::new(kernel, 0, vec![], vec![q0, q1, q2, q3], vec![]).expect("instance");
+    let mut bench = Bench::new(4);
+    bench.init(&mut instance);
+    bench.step(0.0, &mut instance);
+    assert_eq!(bench.nets[q0.0], LogicValue::One, "q[0] (lsb, rightmost digit) must be 1");
+    assert_eq!(bench.nets[q1.0], LogicValue::Zero, "q[1] must be 0");
+    assert_eq!(bench.nets[q2.0], LogicValue::One, "q[2] must be 1");
+    assert_eq!(bench.nets[q3.0], LogicValue::Zero, "q[3] (msb, leftmost digit) must be 0");
+}
+
+/// `module Dut(output a[0..1], output b[0..1]); a <= b; b <= a;` — a
+/// non-blocking whole-vector swap.
+fn whole_vector_swap_module() -> LoweredBody {
+    let mut m = LoweredBody::new("Dut");
+    let a: Vec<_> = (0..2).map(|i| m.symbols.add_node(format!("a[{i}]"), Domain::Digital)).collect();
+    let b: Vec<_> = (0..2).map(|i| m.symbols.add_node(format!("b[{i}]"), Domain::Digital)).collect();
+    for &n in a.iter().chain(&b) {
+        m.ports.push(Port { node: n, direction: Direction::Out });
+    }
+    let mut outputs = a.clone();
+    outputs.extend(&b);
+    m.digital = Some(DigitalBody {
+        inputs: vec![],
+        outputs,
+        regs: vec![],
+        reg_inits: vec![],
+        stmts: vec![nonblocking("a", ident("b")), nonblocking("b", ident("a"))],
+    });
+    m
+}
+
+/// Done-when #2: `a <= b; b <= a;` swaps correctly — region semantics
+/// (NBA reads live, writes stage) must survive scalarization: each
+/// expanded per-bit statement is its own genuine `NonBlockingAssign`, so
+/// `b`'s expansion still reads `a`'s *pre-step* value, not the value `a`'s
+/// own (already-executed, but only staged) expansion just computed.
+#[test]
+fn whole_vector_nonblocking_swap_exchanges_values() {
+    let module = whole_vector_swap_module();
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("whole-vector swap must compile"));
+    let (a0, a1, b0, b1) = (DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3));
+    let mut instance = DigitalInstance::new(kernel, 0, vec![], vec![a0, a1, b0, b1], vec![]).expect("instance");
+    let mut bench = Bench::new(4);
+    bench.init(&mut instance);
+    // a = 2'b01 (a0=1,a1=0), b = 2'b10 (b0=0,b1=1).
+    bench.set(a0, LogicValue::One);
+    bench.set(a1, LogicValue::Zero);
+    bench.set(b0, LogicValue::Zero);
+    bench.set(b1, LogicValue::One);
+    bench.step(0.0, &mut instance);
+    assert_eq!(bench.nets[a0.0], LogicValue::Zero, "a[0] <- old b[0]");
+    assert_eq!(bench.nets[a1.0], LogicValue::One, "a[1] <- old b[1]");
+    assert_eq!(bench.nets[b0.0], LogicValue::One, "b[0] <- old a[0]");
+    assert_eq!(bench.nets[b1.0], LogicValue::Zero, "b[1] <- old a[1]");
+}
+
+/// `module Dut(output wide[0..3]); wide <= 2'b11;` (2-bit literal into a
+/// 4-bit target: zero-extend) and a second module `wide2 <= narrow[0..1]`
+/// where `narrow` only has 2 elements feeding a 4-wide target — both
+/// exercise the zero-extend half of the width-mismatch rule; a 6-bit
+/// literal into the same 4-bit target exercises the truncate half.
+fn width_mismatch_module(literal: Expr) -> LoweredBody {
+    let mut m = LoweredBody::new("Dut");
+    let wide: Vec<_> = (0..4).map(|i| m.symbols.add_node(format!("wide[{i}]"), Domain::Digital)).collect();
+    for &n in &wide {
+        m.ports.push(Port { node: n, direction: Direction::Out });
+    }
+    m.digital = Some(DigitalBody {
+        inputs: vec![],
+        outputs: wide,
+        regs: vec![],
+        reg_inits: vec![],
+        stmts: vec![nonblocking("wide", literal)],
+    });
+    m
+}
+
+/// Done-when #3 (zero-extend half): a 2-bit literal `2'b11` into a 4-bit
+/// target zero-extends the high two bits — `wide = 0b0011`, not `X`/
+/// garbage in `wide[2]`/`wide[3]`.
+#[test]
+fn width_mismatch_zero_extends_a_narrower_literal() {
+    let module = width_mismatch_module(based_bin(2, "11"));
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("narrower literal must zero-extend"));
+    let (w0, w1, w2, w3) = (DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3));
+    let mut instance = DigitalInstance::new(kernel, 0, vec![], vec![w0, w1, w2, w3], vec![]).expect("instance");
+    let mut bench = Bench::new(4);
+    bench.init(&mut instance);
+    bench.step(0.0, &mut instance);
+    assert_eq!(bench.nets[w0.0], LogicValue::One, "wide[0] = 1 (literal bit 0)");
+    assert_eq!(bench.nets[w1.0], LogicValue::One, "wide[1] = 1 (literal bit 1)");
+    assert_eq!(bench.nets[w2.0], LogicValue::Zero, "wide[2] must zero-extend, not X/garbage");
+    assert_eq!(bench.nets[w3.0], LogicValue::Zero, "wide[3] must zero-extend, not X/garbage");
+}
+
+/// Done-when #3 (truncate half): a 6-bit literal `6'b110101` into a 4-bit
+/// target discards its top two (excess) bits — only the low four bits
+/// (`0101`) land.
+#[test]
+fn width_mismatch_truncates_a_wider_literal() {
+    let module = width_mismatch_module(based_bin(6, "110101"));
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("wider literal must truncate"));
+    let (w0, w1, w2, w3) = (DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3));
+    let mut instance = DigitalInstance::new(kernel, 0, vec![], vec![w0, w1, w2, w3], vec![]).expect("instance");
+    let mut bench = Bench::new(4);
+    bench.init(&mut instance);
+    bench.step(0.0, &mut instance);
+    assert_eq!(bench.nets[w0.0], LogicValue::One, "wide[0] = low nibble bit 0 (1)");
+    assert_eq!(bench.nets[w1.0], LogicValue::Zero, "wide[1] = low nibble bit 1 (0)");
+    assert_eq!(bench.nets[w2.0], LogicValue::One, "wide[2] = low nibble bit 2 (1)");
+    assert_eq!(bench.nets[w3.0], LogicValue::Zero, "wide[3] = low nibble bit 3 (0), the excess `11` above is discarded");
 }

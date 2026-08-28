@@ -74,11 +74,17 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             // the whole `comb`/`seq` call returns (`DigitalInstance::run`/
             // `eval_seq_phase`/`eval_comb_phase`), so `a <= b; b <= a;`
             // swaps regardless of statement order.
-            S::Assign { target, value, .. } => {
+            S::Assign { span, target, value } => {
+                if let Some(expanded) = self.expand_whole_vector_assign(target, value, false, *span)? {
+                    return self.emit_stmt(&expanded);
+                }
                 let v = value.emit(self)?;
                 self.emit_assign(target, v, AssignKind::Blocking)
             }
-            S::NonBlockingAssign { target, value, .. } => {
+            S::NonBlockingAssign { span, target, value } => {
+                if let Some(expanded) = self.expand_whole_vector_assign(target, value, true, *span)? {
+                    return self.emit_stmt(&expanded);
+                }
                 let v = value.emit(self)?;
                 self.emit_assign(target, v, AssignKind::NonBlocking)
             }
@@ -271,6 +277,52 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
     }
 
+    /// T11 (LRMW3-03, §4.2.1.3): if `target` names a *whole* scalarized
+    /// vector (a bare `Expr::Ident` whose name is not itself a registered
+    /// node/var, but whose `name[0]` element is — MD-52's scalarized
+    /// representation, `structure.rs`'s element-node loop), expand the
+    /// assignment into one `target[i] = <bit i of value>` `Stmt` per
+    /// element, `0..width`, and return it as a `Stmt::Block` for the
+    /// caller to re-dispatch through the ordinary (per-bit) `emit_stmt`
+    /// path — which already gets the Active/Nba region split right for
+    /// free, since each expanded statement is a normal `Assign`/
+    /// `NonBlockingAssign` of the same kind. Returns `Ok(None)` for any
+    /// scalar target (the overwhelmingly common case) — a bare-scalar
+    /// `Ident` whose name resolves directly is left to the existing
+    /// `emit_assign` path unchanged.
+    fn expand_whole_vector_assign(
+        &mut self,
+        target: &Expr,
+        value: &Expr,
+        non_blocking: bool,
+        span: piperine_lang::error::PreprocessedSpan,
+    ) -> Result<Option<Stmt>, CodegenError> {
+        let Expr::Ident { name, .. } = target else { return Ok(None) };
+        // A directly-resolvable scalar name (var, net, or a single-bit
+        // scalarized element like "q[2]") is not a whole-vector target.
+        if self.resolver.vars.contains_key(name) || self.resolver.nodes.contains_key(name) {
+            return Ok(None);
+        }
+        let Some(width) = vector_width(self.module, name) else { return Ok(None) };
+
+        let bits = rhs_bits_for_vector_assign(self.module, value, width)?;
+        debug_assert_eq!(bits.len(), width);
+
+        let mut stmts = Vec::with_capacity(width);
+        for (i, bit_value) in bits.into_iter().enumerate() {
+            let elem_target = Expr::Ident {
+                span,
+                name: crate::resolve::pom::structure::element_node_name(name, i as u64),
+            };
+            stmts.push(if non_blocking {
+                Stmt::NonBlockingAssign { span, target: elem_target, value: bit_value }
+            } else {
+                Stmt::Assign { span, target: elem_target, value: bit_value }
+            });
+        }
+        Ok(Some(Stmt::Block { span, name: None, decls: Vec::new(), stmts }))
+    }
+
     /// Assign to a destination (var or net).
     fn emit_assign(&mut self, dest: &Expr, value: Typed, kind: AssignKind) -> Result<(), CodegenError> {
         match dest {
@@ -427,5 +479,106 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         let zero = self.builder.ins().iconst(types::I64, 0);
         let flag = self.builder.ins().icmp(IntCC::NotEqual, fired_val, zero);
         self.emit_if_branch(flag, body, None)
+    }
+}
+
+/// The declared width of the scalarized vector named `base` — how many
+/// contiguous `base[0]`..`base[width-1]` element nodes `structure.rs`'s
+/// registration loop put in the symbol table — or `None` if `base[0]`
+/// isn't registered at all (not a vector name this pass recognizes).
+fn vector_width(module: &crate::resolve::LoweredBody, base: &str) -> Option<usize> {
+    let mut width = 0usize;
+    while module
+        .symbols
+        .nodes()
+        .any(|(_, info)| info.name == crate::resolve::pom::structure::element_node_name(base, width as u64))
+    {
+        width += 1;
+    }
+    if width == 0 { None } else { Some(width) }
+}
+
+/// A single-bit based literal `1'bX` (`X` one of `0`/`1`/`x`/`z`) — the
+/// per-element RHS `expand_whole_vector_assign` builds from a decoded
+/// literal digit.
+fn bit_literal(span: piperine_lang::error::PreprocessedSpan, digit: char) -> Expr {
+    Expr::Number {
+        span,
+        value: NumberLit::Based(piperine_lang::lexer::BasedNumber {
+            size: Some(1),
+            signed: false,
+            base: piperine_lang::lexer::NumberBase::Binary,
+            digits: digit.to_string(),
+        }),
+    }
+}
+
+/// The right-hand-side expression for element `i` (`0` = lsb) of a
+/// whole-vector assignment whose target has `width` elements — either a
+/// based-literal's own decoded bits, or another (possibly
+/// differently-sized) vector's own elements, both zero-extended/truncated
+/// per 1364 §4.2.1.3 (excess high bits of a *wider* source are discarded;
+/// a *narrower* source zero-fills the target's extra high bits).
+fn rhs_bits_for_vector_assign(
+    module: &crate::resolve::LoweredBody,
+    value: &Expr,
+    width: usize,
+) -> Result<Vec<Expr>, CodegenError> {
+    match value {
+        Expr::Number { span, value: NumberLit::Based(based) } => {
+            let digits: String = based.digits.chars().filter(|c| *c != '_').collect();
+            let bits_per_digit: u32 = match based.base {
+                piperine_lang::lexer::NumberBase::Binary => 1,
+                piperine_lang::lexer::NumberBase::Octal => 3,
+                piperine_lang::lexer::NumberBase::Hex => 4,
+                piperine_lang::lexer::NumberBase::Decimal => 0,
+            };
+            // lsb-first accumulation: rightmost digit is least significant.
+            let mut lsb_first: Vec<char> = Vec::new();
+            if bits_per_digit > 0 {
+                for ch in digits.chars().rev() {
+                    if matches!(ch, 'x' | 'X' | 'z' | 'Z') {
+                        for _ in 0..bits_per_digit {
+                            lsb_first.push('x');
+                        }
+                    } else {
+                        let v = ch.to_digit(1 << bits_per_digit).unwrap_or(0);
+                        for b in 0..bits_per_digit {
+                            lsb_first.push(if (v >> b) & 1 == 1 { '1' } else { '0' });
+                        }
+                    }
+                }
+            } else {
+                // Decimal: decode the whole value (no per-digit x/z, LRM
+                // §2.6.1's decimal-with-x/z form is unsized-only and out
+                // of this task's scope) and extract bits by shifting.
+                let v: i64 = digits.parse().unwrap_or(0);
+                for b in 0..64u32 {
+                    lsb_first.push(if (v >> b) & 1 == 1 { '1' } else { '0' });
+                }
+            }
+            Ok((0..width).map(|i| bit_literal(*span, lsb_first.get(i).copied().unwrap_or('0'))).collect())
+        }
+        Expr::Ident { span, name: src_name } => {
+            let src_width = vector_width(module, src_name).ok_or_else(|| {
+                CodegenError::unsupported(format!(
+                    "whole-vector assignment source `{src_name}` is neither a based literal nor a \
+                     recognized scalarized vector (LRM §4.2.1.3)"
+                ))
+            })?;
+            Ok((0..width)
+                .map(|i| {
+                    if i < src_width {
+                        Expr::Ident { span: *span, name: crate::resolve::pom::structure::element_node_name(src_name, i as u64) }
+                    } else {
+                        bit_literal(*span, '0')
+                    }
+                })
+                .collect())
+        }
+        other => Err(CodegenError::unsupported(format!(
+            "whole-vector assignment source must be a based literal or another vector's own name \
+             (LRM §4.2.1.3): {other:?}"
+        ))),
     }
 }

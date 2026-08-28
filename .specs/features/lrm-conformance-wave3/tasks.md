@@ -368,13 +368,13 @@ region the assignment already selected.
 **Requirement**: LRMW3-03
 
 **Done when**:
-- [ ] `q <= 4'b0101;` sets the four bits per IEEE 1364 bit order
-- [ ] A non-blocking whole-vector swap (`a <= b; b <= a;`) swaps correctly —
+- [x] `q <= 4'b0101;` sets the four bits per IEEE 1364 bit order
+- [x] A non-blocking whole-vector swap (`a <= b; b <= a;`) swaps correctly —
       the region semantics survive scalarization
-- [ ] A width mismatch on assignment truncates/zero-extends per 1364 and the
+- [x] A width mismatch on assignment truncates/zero-extends per 1364 and the
       behavior is asserted (not left implicit)
-- [ ] Declares `//! LRM-COVERS: 4.2.1.3`
-- [ ] Gate passes: `cargo test -p piperine-codegen` and
+- [x] Declares `//! LRM-COVERS: 4.2.1.3`
+- [x] Gate passes: `cargo test -p piperine-codegen` and
       `cargo test -p piperine-solver`
 
 **Tests**: integration · **Gate**: full
