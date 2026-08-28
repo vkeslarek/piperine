@@ -1,10 +1,11 @@
 //! Vector (bus) declarations — `lrm-conformance-wave3` Phase 1 (T1-T6).
 //! Proves the leading-range declarator slot (Annex A.2.1.2/A.2.2.1's
-//! `range`) on net (T1) and port (T2) declarations.
+//! `range`) on net (T1), port (T2), and 1364 net/variable (T3)
+//! declarations.
 //!
-//! LRM-COVERS: 3.6.3, A.2.1.2, 3.7
+//! LRM-COVERS: 3.6.3, A.2.1.2, 3.7, A.2.2.1
 
-use piperine_lang::pom::NetType;
+use piperine_lang::pom::{DigitalNetKind, NetType};
 use piperine_lang::{parse_and_elaborate, SourceMap};
 
 fn elab(src: &str) -> piperine_lang::Design {
@@ -109,4 +110,44 @@ fn port_list_form_and_body_redeclaration_form_agree_on_width() {
         let a = d.module("top").unwrap().port("a").expect("a declared");
         assert_eq!(a.net_type().width(), 4);
     }
+}
+
+// ── T3: leading range on 1364 net/variable declarations, A.2.2.1 ──────────
+
+#[test]
+fn leading_range_on_reg_gives_digital_array_width_four() {
+    let d = elab(&module_wrapper("reg [3:0] q;"));
+    let m = d.module("top").unwrap();
+    let w = m.wire("q").expect("q declared");
+    match w.net_type() {
+        NetType::Array(inner, n) => {
+            assert_eq!(*n, 4);
+            assert!(matches!(**inner, NetType::Digital1364(DigitalNetKind::Reg)));
+        }
+        other => panic!("expected NetType::Array(Digital1364(Reg), 4), got {other:?}"),
+    }
+}
+
+#[test]
+fn leading_range_on_wire_gives_digital_array_width_eight() {
+    let d = elab(&module_wrapper("wire [7:0] w;"));
+    let m = d.module("top").unwrap();
+    let w = m.wire("w").expect("w declared");
+    match w.net_type() {
+        NetType::Array(inner, n) => {
+            assert_eq!(*n, 8);
+            assert!(matches!(**inner, NetType::Digital1364(DigitalNetKind::Wire)));
+        }
+        other => panic!("expected NetType::Array(Digital1364(Wire), 8), got {other:?}"),
+    }
+}
+
+#[test]
+fn reg_vector_and_electrical_vector_of_equal_width_produce_equal_node_counts() {
+    let d_reg = elab(&module_wrapper("reg [3:0] q;"));
+    let d_elec = elab(&module_wrapper("electrical [3:0] bus;"));
+    let reg_w = d_reg.module("top").unwrap().wire("q").unwrap().net_type().width();
+    let elec_w = d_elec.module("top").unwrap().wire("bus").unwrap().net_type().width();
+    assert_eq!(reg_w, elec_w);
+    assert_eq!(reg_w, 4);
 }

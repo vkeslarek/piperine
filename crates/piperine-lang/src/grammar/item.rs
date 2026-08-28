@@ -506,7 +506,9 @@ impl Grammar {
             self.expect_kw("time")?;
             VarKind::Time
         };
-        let names = self.parse_var_declarator_list()?;
+        let leading_range = self.parse_optional_leading_range()?;
+        let mut names = self.parse_var_declarator_list()?;
+        apply_leading_range(&leading_range, &mut names)?;
         let end = self.expect_punct(";")?;
         Ok(VarDecl { span: PreprocessedSpan::new(start.start, end.end), doc, attrs, kind, names })
     }

@@ -168,12 +168,13 @@ declarations route through the same helper.
 **Requirement**: LRMW3-01
 
 **Done when**:
-- [ ] `reg [3:0] q;` / `wire [7:0] w;` elaborate to
-      `NetType::Array(Digital1364(_), N)`
-- [ ] A `reg` vector and an `electrical` vector of the same width produce the
+- [x] `reg [3:0] q;` / `wire [7:0] w;` elaborate to
+      `NetType::Array(Digital1364(_), N)` (already carried through parse_net_decl
+      by T1, unchanged here — same discipline-slot dispatch reg/wire already use)
+- [x] A `reg` vector and an `electrical` vector of the same width produce the
       same node count with the correct domains
-- [ ] Declares `//! LRM-COVERS: A.2.2.1`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
+- [x] Declares `//! LRM-COVERS: A.2.2.1`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): accept a leading range on 1364 net/variable declarations`
