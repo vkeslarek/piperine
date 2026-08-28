@@ -194,13 +194,15 @@ element loop recursive over nested `NetType::Array`.
 **Requirement**: LRMW3-01, LRMW3-04
 
 **Done when**:
-- [ ] One function owns the format; both call sites use it (MD-13 rule 2: it is
-      a method on the type that owns the naming, not a loose fn)
-- [ ] A 1-D vector yields `bus[0]`..`bus[N-1]`; a nested array yields
-      `mem[d][b]`
-- [ ] Round-trip test: every generated name resolves back through
+- [x] One function owns the format; both call sites use it (`element_node_name`
+      in `structure.rs`, called by the registration loop and by
+      `device::circuit::resolve_element_node`)
+- [x] A 1-D vector yields `bus[0]`..`bus[N-1]`; a nested array yields
+      `mem[d][b]` (proven directly against a synthetic nested `NetType::Array`
+      — T5's grammar doesn't exist yet to produce one from source)
+- [x] Round-trip test: every generated name resolves back through
       `resolve_node` to the node it was generated for
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `refactor(codegen): one owner for vector element-node naming`

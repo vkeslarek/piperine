@@ -275,4 +275,47 @@ impl<'p> CircuitCompiler<'p> {
         }
         body.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
     }
+
+    /// Resolve one element of a vector or memory net by its base name and
+    /// index path (T4) — outermost index first, e.g. `["3"]` for
+    /// `bus[3]`, `[2, 0]` for a memory's `mem[2][0]`. Builds the element
+    /// name through the same [`crate::resolve::pom::structure::
+    /// element_node_name`] the registration side used, so a name this
+    /// resolves always matches one `build_symbols_and_ports` actually
+    /// registered.
+    #[allow(dead_code)] // consumed by the Phase-2 vector-access tasks (T7/T9)
+    pub(super) fn resolve_element_node(body: &LoweredBody, base: &str, indices: &[u64]) -> Option<NodeId> {
+        let name = indices
+            .iter()
+            .fold(base.to_string(), |acc, i| crate::resolve::pom::structure::element_node_name(&acc, *i));
+        Self::resolve_node(body, &name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! T4 (LRMW3-01/LRMW3-04): a round trip through the two call sites
+    //! `element_node_name` owns the naming for — registration
+    //! (`resolve::pom::structure::build_symbols_and_ports`) and lookup
+    //! (`resolve_element_node`, here) — every name the registration side
+    //! generates for a vector wire must resolve back through the lookup
+    //! side to the exact node it was generated for.
+
+    use super::CircuitCompiler;
+    use crate::resolve::pom::lower_bodies;
+    use piperine_lang::{parse_and_elaborate, SourceMap};
+
+    #[test]
+    fn resolve_element_node_round_trips_every_registered_element() {
+        let src = "module Mid ();\n electrical tap[2:0];\nendmodule\n";
+        let design = parse_and_elaborate(src, &SourceMap::dummy()).expect("elaborates");
+        let bodies = lower_bodies(&design).expect("lowers");
+        let body = &bodies["Mid"];
+        for i in 0..3u64 {
+            let by_name = CircuitCompiler::resolve_node(body, &format!("tap[{i}]"));
+            let by_index = CircuitCompiler::resolve_element_node(body, "tap", &[i]);
+            assert!(by_name.is_some(), "tap[{i}] must resolve by name");
+            assert_eq!(by_index, by_name, "resolve_element_node(tap, [{i}]) must match resolve_node(\"tap[{i}]\")");
+        }
+    }
 }

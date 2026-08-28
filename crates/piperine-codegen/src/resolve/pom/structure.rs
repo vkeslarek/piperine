@@ -50,6 +50,36 @@ fn domain_of(prog: &Design, net_type: &NetType) -> Domain {
     }
 }
 
+/// The single owner of the `"{base}[{index}]"` element-node name format
+/// (T4, LRMW3-01/LRMW3-04) — every caller that names one element of a
+/// vector or memory net (this file's own registration loop below, and
+/// `device::circuit::resolve_element_node` at circuit-build time) builds
+/// the name through this function, so the two sides of the contract can
+/// never drift apart. A multi-dimensional name (a memory's `mem[d][b]`)
+/// is built by chaining calls one dimension at a time — outermost index
+/// first — never by a second, differently-shaped format string.
+pub(crate) fn element_node_name(base: &str, index: u64) -> String {
+    format!("{base}[{index}]")
+}
+
+/// Registers one node per leaf element of `ty`, recursing one level per
+/// `NetType::Array` dimension (T4) — a scalar net registers itself
+/// directly; a 1-D vector registers `base[0]`..`base[N-1]`; a nested
+/// array (a memory, T5's `Array(Array(elem, width), depth)`) registers
+/// `base[0][0]`..`base[depth-1][width-1]`, outer dimension first.
+fn register_element_nodes(symbols: &mut SymbolTable, base: &str, ty: &NetType, domain: Domain) {
+    match ty {
+        NetType::Array(inner, n) => {
+            for i in 0..*n {
+                register_element_nodes(symbols, &element_node_name(base, i), inner, domain);
+            }
+        }
+        NetType::Discipline(_) | NetType::Digital1364(_) => {
+            symbols.add_node(base.to_string(), domain);
+        }
+    }
+}
+
 /// Returns `true` if the named discipline declares `domain discrete`
 /// (LRM §3.6.2) — the digital/event-driven marker.
 fn is_digital_discipline(prog: &Design, name: &str) -> bool {
@@ -103,28 +133,22 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
     }
 
     // 3. Wires. A scalar wire becomes one node named after itself; an
-    // array wire becomes N distinct element nodes named `tap[0]`..`tap[N-1]`.
-    // The flat form lifts an array wire onto the parent verbatim
-    // (`flatten.rs`'s `inline_sub_instances`), and the spliced sub-instances'
-    // port bindings reference it as `NetRef { net: "<inst>.tap", index:
-    // Some(i) }` — the `Display` form `<inst>.tap[i]` is what `resolve_node`
-    // looks up at circuit-build time. Registering one scalar node for the
-    // lifted wire collapses every element onto a single net; registering
-    // one node per element makes `resolve_node("<inst>.tap[i]")` resolve to
-    // that element — and the parent-name fallback in `resolve_connections`
-    // never fires for an indexed ref.
+    // array wire becomes N distinct element nodes named `tap[0]`..`tap[N-1]`;
+    // a nested array (a memory, T5 — `NetType::Array(Array(base, width),
+    // depth)`) recurses one level per dimension, giving `mem[0][0]`..
+    // `mem[depth-1][width-1]`. The flat form lifts an array wire onto the
+    // parent verbatim (`flatten.rs`'s `inline_sub_instances`), and the
+    // spliced sub-instances' port bindings reference it as `NetRef { net:
+    // "<inst>.tap", index: Some(i) }` — the `Display` form `<inst>.tap[i]`
+    // is what `resolve_node` looks up at circuit-build time. Registering
+    // one scalar node for the lifted wire collapses every element onto a
+    // single net; registering one node per element makes
+    // `resolve_node("<inst>.tap[i]")` resolve to that element — and the
+    // parent-name fallback in `resolve_connections` never fires for an
+    // indexed ref.
     for w in m.wires() {
         let domain = domain_of(prog, w.net_type());
-        match w.net_type() {
-            NetType::Array(_, n) => {
-                for i in 0..*n {
-                    symbols.add_node(format!("{}[{}]", w.name(), i), domain);
-                }
-            }
-            NetType::Discipline(_) | NetType::Digital1364(_) => {
-                symbols.add_node(w.name(), domain);
-            }
-        }
+        register_element_nodes(&mut symbols, w.name(), w.net_type(), domain);
     }
 
     // 4. Vars — module-level persistent state (GAPS §I.15). The slot is
@@ -305,5 +329,41 @@ mod tests {
         assert!(bus0.is_some(), "s.bus[0] resolves to a node");
         assert!(bus1.is_some(), "s.bus[1] resolves to a node");
         assert_ne!(bus0, bus1, "the two element nodes are distinct NodeIds");
+    }
+
+    /// T4 (LRMW3-04): a nested `NetType::Array` (the shape T5's memory
+    /// grammar will produce — `Array(Array(elem, width), depth)`) recurses
+    /// one level per dimension, registering `mem[d][b]` for every
+    /// `(depth, width)` pair, outer dimension first. Built directly (T5's
+    /// grammar does not exist yet) to prove `register_element_nodes`
+    /// itself is already dimension-general, ahead of the grammar wiring.
+    #[test]
+    fn nested_array_registers_one_node_per_depth_times_width_element() {
+        use piperine_lang::pom::{Design, DigitalNetKind, Module, NetType, Wire};
+
+        let elem = NetType::Digital1364(DigitalNetKind::Reg);
+        let packed = NetType::Array(Box::new(elem), 4); // width 4
+        let memory_ty = NetType::Array(Box::new(packed), 8); // depth 8
+        let module = Module::new(
+            "Top".to_string(),
+            Vec::new(),
+            Vec::new(),
+            vec![Wire { span: None, attributes: Vec::new(), doc: None, name: "mem".to_string(), ty: memory_ty, nodeset: None }],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let design = Design::new();
+        let (symbols, _) = build_symbols_and_ports(&module, &design);
+        let names: std::collections::HashSet<String> = symbols.nodes().map(|(_, n)| n.name.clone()).collect();
+        let mem_names = names.iter().filter(|n| n.starts_with("mem")).count();
+        assert_eq!(mem_names, 32, "8 depth x 4 width = 32 element nodes: {names:?}");
+        for d in 0..8u64 {
+            for b in 0..4u64 {
+                let expected = format!("mem[{d}][{b}]");
+                assert!(names.contains(&expected), "{expected} must be registered: {names:?}");
+            }
+        }
+        assert!(!names.iter().any(|n| n == "mem"), "no collapsed scalar parent node: {names:?}");
     }
 }
