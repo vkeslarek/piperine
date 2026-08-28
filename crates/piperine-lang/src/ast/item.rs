@@ -84,6 +84,16 @@ pub struct Range {
 pub struct Declarator {
     pub name: String,
     pub range: Option<Range>,
+    /// A second, unpacked-dimension range on a memory declarator (T5,
+    /// LRMW3-04, Annex A.2.2.1's memory form: `reg [3:0] mem [0:7];`) —
+    /// `None` for every non-memory declarator. Populated either by a
+    /// second trailing `[d0:d1]` bracket after `range` (`mem[3:0][0:7]`),
+    /// or by `apply_leading_range`'s reinterpretation when a 1364
+    /// net-type declaration (`reg`/`wire`/`tri`/`wreal`) carries both a
+    /// leading range and its own trailing range — the leading range is
+    /// unambiguously the packed element width, so the trailing range
+    /// shifts here as the depth rather than erroring as a duplicate.
+    pub depth_range: Option<Range>,
     /// A variable initializer — Annex A.2.2.1's `variable_type ::=
     /// variable_identifier = constant_expression`. Always `None` for nets
     /// and ports (their productions carry no initializer; the grammar

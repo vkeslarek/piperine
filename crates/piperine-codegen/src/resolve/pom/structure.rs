@@ -366,4 +366,24 @@ mod tests {
         }
         assert!(!names.iter().any(|n| n == "mem"), "no collapsed scalar parent node: {names:?}");
     }
+
+    /// T5 (LRMW3-04) end to end: the real `reg [3:0] mem [0:7];` source
+    /// form (not a synthetic `NetType`) elaborates and registers the same
+    /// 32 `mem[d][b]` element nodes the synthetic test above proves
+    /// `register_element_nodes` handles generically.
+    #[test]
+    fn real_memory_source_registers_32_element_nodes() {
+        let design = parse_and_elaborate("module Top ();\n reg [3:0] mem [0:7];\nendmodule\n", &SourceMap::dummy())
+            .expect("elaborates");
+        let (symbols, _) = build_symbols_and_ports(design.module("Top").expect("Top exists"), &design);
+        let names: std::collections::HashSet<String> = symbols.nodes().map(|(_, n)| n.name.clone()).collect();
+        let mem_names = names.iter().filter(|n| n.starts_with("mem")).count();
+        assert_eq!(mem_names, 32, "8 depth x 4 width = 32 element nodes: {names:?}");
+        for d in 0..8u64 {
+            for b in 0..4u64 {
+                let expected = format!("mem[{d}][{b}]");
+                assert!(names.contains(&expected), "{expected} must be registered: {names:?}");
+            }
+        }
+    }
 }

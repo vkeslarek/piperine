@@ -33,14 +33,32 @@ fn is_direction_kw(t: &Tok) -> bool {
 /// Applies a leading `[msb:lsb]` range (Annex A.2.1.2/A.2.2.1's `range`
 /// slot, parsed by [`Grammar::parse_optional_leading_range`]) to every
 /// declarator in `names` that carries none of its own (§3.6.3: the range
-/// applies to the whole declaration list). A declarator that already
-/// carries its own range is a loud [`ParseErrorKind::LeadingRangeConflict`]
-/// naming both spans — a declared name may carry only one range.
-fn apply_leading_range(leading: &Option<Range>, names: &mut [Declarator]) -> Result<(), ParseError> {
+/// applies to the whole declaration list).
+///
+/// A declarator that already carries its own range is normally a loud
+/// [`ParseErrorKind::LeadingRangeConflict`] naming both spans — a
+/// declared name may carry only one range. The one exception is a 1364
+/// net-type declaration (`allow_memory_reinterpretation`, T5,
+/// LRMW3-04): there, the leading range is unambiguously the packed
+/// element width, so a lone trailing range on the declarator is
+/// reinterpreted as the memory's unpacked depth (`reg [3:0] mem [0:7];`)
+/// rather than erroring — unless the declarator *also* already has its
+/// own `depth_range` (a second trailing bracket), which would make three
+/// ranges total and is still a genuine conflict.
+fn apply_leading_range(
+    leading: &Option<Range>,
+    names: &mut [Declarator],
+    allow_memory_reinterpretation: bool,
+) -> Result<(), ParseError> {
     let Some(leading) = leading else { return Ok(()) };
     for d in names.iter_mut() {
-        match &d.range {
-            Some(own) => {
+        match (&d.range, &d.depth_range) {
+            (None, _) => d.range = Some(leading.clone()),
+            (Some(own), None) if allow_memory_reinterpretation => {
+                d.depth_range = Some(own.clone());
+                d.range = Some(leading.clone());
+            }
+            (Some(own), _) => {
                 return Err(ParseError::new(
                     ParseErrorKind::LeadingRangeConflict {
                         name: d.name.clone(),
@@ -50,7 +68,6 @@ fn apply_leading_range(leading: &Option<Range>, names: &mut [Declarator]) -> Res
                     own.span,
                 ));
             }
-            None => d.range = Some(leading.clone()),
         }
     }
     Ok(())
@@ -409,7 +426,7 @@ impl Grammar {
             self.bump();
             names.push(self.parse_declarator()?);
         }
-        apply_leading_range(&leading_range, &mut names)?;
+        apply_leading_range(&leading_range, &mut names, false)?;
         let end = self.peek_span();
         self.eat_punct(";");
         Ok(PortDecl { span: PreprocessedSpan::new(start.start, end.start), doc, attrs, dir, discipline, names })
@@ -425,7 +442,12 @@ impl Grammar {
         let (discipline, _) = self.expect_ident()?;
         let leading_range = self.parse_optional_leading_range()?;
         let mut names = self.parse_declarator_list()?;
-        apply_leading_range(&leading_range, &mut names)?;
+        // Only a 1364 net-type declaration (`reg`/`wire`/`tri`/`wreal`)
+        // can be a memory (Annex A.2.2.1) — a plain discipline net has no
+        // depth concept, so a leading range plus its own trailing range
+        // stays the T1 conflict error there.
+        let is_1364_net_type = crate::pom::DigitalNetKind::from_keyword(&discipline).is_some();
+        apply_leading_range(&leading_range, &mut names, is_1364_net_type)?;
         let nodeset = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
         self.expect_punct(";")?;
         Ok(NetDecl {
@@ -508,7 +530,7 @@ impl Grammar {
         };
         let leading_range = self.parse_optional_leading_range()?;
         let mut names = self.parse_var_declarator_list()?;
-        apply_leading_range(&leading_range, &mut names)?;
+        apply_leading_range(&leading_range, &mut names, false)?;
         let end = self.expect_punct(";")?;
         Ok(VarDecl { span: PreprocessedSpan::new(start.start, end.end), doc, attrs, kind, names })
     }
@@ -603,16 +625,26 @@ impl Grammar {
 
     fn parse_declarator(&mut self) -> Result<Declarator, ParseError> {
         let (name, _) = self.expect_ident()?;
-        let range = if self.eat_punct("[") {
-            let msb = self.parse_expr()?;
-            self.expect_punct(":")?;
-            let lsb = self.parse_expr()?;
-            let end = self.expect_punct("]")?;
-            Some(Range { span: end, msb, lsb })
-        } else {
-            None
-        };
-        Ok(Declarator { name, range, init: None })
+        let range = self.parse_optional_trailing_range()?;
+        // A memory's unpacked depth (T5, Annex A.2.2.1): a *second*
+        // trailing `[d0:d1]` right after the packed range —
+        // `mem[3:0][0:7]`. Absent unless `range` was itself present.
+        let depth_range = if range.is_some() { self.parse_optional_trailing_range()? } else { None };
+        Ok(Declarator { name, range, depth_range, init: None })
+    }
+
+    /// One `[msb:lsb]` bracket immediately at the cursor, or `None` if the
+    /// next token isn't `[` — the shared shape [`Self::parse_declarator`]'s
+    /// two (optional) trailing brackets both use.
+    fn parse_optional_trailing_range(&mut self) -> Result<Option<Range>, ParseError> {
+        if !self.eat_punct("[") {
+            return Ok(None);
+        }
+        let msb = self.parse_expr()?;
+        self.expect_punct(":")?;
+        let lsb = self.parse_expr()?;
+        let end = self.expect_punct("]")?;
+        Ok(Some(Range { span: end, msb, lsb }))
     }
 
     // ───────────────────────────────── parameters ───────────────────────

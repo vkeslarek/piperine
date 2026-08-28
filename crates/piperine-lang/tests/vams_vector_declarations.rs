@@ -151,3 +151,48 @@ fn reg_vector_and_electrical_vector_of_equal_width_produce_equal_node_counts() {
     assert_eq!(reg_w, elec_w);
     assert_eq!(reg_w, 4);
 }
+
+// ── T5: memories — packed range plus unpacked depth, A.2.2.1 ─────────────
+
+#[test]
+fn memory_with_leading_range_and_depth_elaborates_to_depth_8_times_width_4() {
+    let d = elab(&module_wrapper("reg [3:0] mem [0:7];"));
+    let m = d.module("top").unwrap();
+    let w = m.wire("mem").expect("mem declared");
+    match w.net_type() {
+        NetType::Array(inner, depth) => {
+            assert_eq!(*depth, 8, "outer dimension is depth");
+            match inner.as_ref() {
+                NetType::Array(elem, width) => {
+                    assert_eq!(*width, 4, "inner dimension is the packed width");
+                    assert!(matches!(**elem, NetType::Digital1364(DigitalNetKind::Reg)));
+                }
+                other => panic!("expected a nested Array(Digital1364(Reg), 4), got {other:?}"),
+            }
+        }
+        other => panic!("expected NetType::Array(Array(Reg,4), 8), got {other:?}"),
+    }
+    assert_eq!(w.net_type().width(), 32, "width() reports the flattened 8*4 element count");
+}
+
+#[test]
+fn memory_declared_with_only_a_depth_works() {
+    let d = elab(&module_wrapper("reg mem [0:7];"));
+    let m = d.module("top").unwrap();
+    let w = m.wire("mem").expect("mem declared");
+    match w.net_type() {
+        NetType::Array(elem, depth) => {
+            assert_eq!(*depth, 8);
+            assert!(matches!(**elem, NetType::Digital1364(DigitalNetKind::Reg)), "each element is a scalar reg");
+        }
+        other => panic!("expected NetType::Array(Digital1364(Reg), 8), got {other:?}"),
+    }
+    assert_eq!(w.net_type().width(), 8);
+}
+
+#[test]
+fn width_times_depth_above_the_cap_fails_loud_naming_the_declaration_and_the_cap() {
+    let err = elab_err(&module_wrapper("reg [65535:0] huge [65535:0];"));
+    assert!(err.contains("huge"), "must name the declaration: {err}");
+    assert!(err.contains("65536"), "must name the configured cap: {err}");
+}

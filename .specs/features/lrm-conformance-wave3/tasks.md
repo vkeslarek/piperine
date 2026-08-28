@@ -220,14 +220,17 @@ naming helper
 **Requirement**: LRMW3-04
 
 **Done when**:
-- [ ] `reg [3:0] mem [0:7];` elaborates to depth 8 × width 4 and registers 32
-      element nodes named `mem[d][b]`
-- [ ] `width()` reports 32
-- [ ] A memory declared with only a depth (`reg mem [0:7];`) works
-- [ ] A width×depth product above the configured cap fails loud naming the
-      declaration and the cap (design risk row)
-- [ ] Declares `//! LRM-COVERS: A.2.2.1`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
+- [x] `reg [3:0] mem [0:7];` elaborates to depth 8 × width 4 and registers 32
+      element nodes named `mem[d][b]` (element-node registration itself was
+      already proven generically in T4's nested-array test; this task proves
+      the grammar/elaboration side reaches that same `NetType::Array` shape)
+- [x] `width()` reports 32
+- [x] A memory declared with only a depth (`reg mem [0:7];`) works
+- [x] A width×depth product above the configured cap fails loud naming the
+      declaration and the cap (design risk row) — cap is `MAX_MEMORY_ELEMENTS
+      = 65_536` in `elab/lower/vams.rs`
+- [x] Declares `//! LRM-COVERS: A.2.2.1`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
       and `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full

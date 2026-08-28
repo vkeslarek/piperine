@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     BehaviorKind, BlockItemDecl, BranchDecl, CaseArm, ContinuousAssign, Declarator,
     Direction as AstDirection, Domain as VamsDomain, EventExpr, Expr, FunctionDecl, ModuleDecl,
-    ModuleItem, ParamType, PortConnection, PortDecl, Stmt, UnOp, VarKind,
+    ModuleItem, ParamType, PortConnection, PortDecl, Range, Stmt, UnOp, VarKind,
 };
 
 use crate::elab::const_eval::ConstEnv;
@@ -495,7 +495,8 @@ impl Elaborator {
                 ports.iter().any(|p| p.name == g.name) || wires.iter().any(|w| w.name == g.name);
             if !already_declared {
                 let discipline = g.discipline.as_deref().unwrap_or(super::disciplines::UNRESOLVED);
-                let synthetic = Declarator { name: g.name.clone(), range: g.range.clone(), init: None };
+                let synthetic =
+                    Declarator { name: g.name.clone(), range: g.range.clone(), depth_range: None, init: None };
                 let ty = declarator_net_type(&synthetic, discipline, &env)?;
                 wires.push(Wire {
                     span: Some(to_miette_span(g.span)),
@@ -1696,6 +1697,32 @@ fn lower_net_attrs(
 
 /// A `[msb:lsb]` range widens a scalar discipline into `NetType::Array`
 /// (LRM §3.7/3.6.3 `range`) — width is `|msb - lsb| + 1`.
+/// The width×depth cap on a single vector/memory declaration (T5, design
+/// risk row) — a loud, named error is strictly better than an OOM from an
+/// unbounded element count (a memory scalarizes to one node per element,
+/// MD-52).
+const MAX_MEMORY_ELEMENTS: u64 = 65_536;
+
+/// Const-evaluates one `[msb:lsb]` range's width, citing §3.6.3 on a
+/// non-constant bound — shared by a declarator's packed `range` and its
+/// unpacked `depth_range` (T5), so the two dimensions of a memory report
+/// identically-shaped errors.
+fn range_width(r: &Range, name: &str, env: &ConstEnv, which: &str) -> Result<u64, ElabError> {
+    let msb = env.eval_int(&r.msb).map_err(|e| {
+        ElabError::from(ElabErrorKind::ConstEval {
+            context: format!("net `{name}` {which} msb (§3.6.3: range bounds must be elaboration constants)"),
+            source: e,
+        })
+    })?;
+    let lsb = env.eval_int(&r.lsb).map_err(|e| {
+        ElabError::from(ElabErrorKind::ConstEval {
+            context: format!("net `{name}` {which} lsb (§3.6.3: range bounds must be elaboration constants)"),
+            source: e,
+        })
+    })?;
+    Ok((msb - lsb).unsigned_abs() + 1)
+}
+
 fn declarator_net_type(d: &Declarator, discipline: &str, env: &ConstEnv) -> Result<NetType, ElabError> {
     // §3.7 (T52, LRMW2-45): `wire`/`tri`/`reg`/`wreal` are 1364 net-type
     // keywords, not discipline names — before this fix, `wreal in;`
@@ -1706,25 +1733,27 @@ fn declarator_net_type(d: &Declarator, discipline: &str, env: &ConstEnv) -> Resu
         Some(kind) => NetType::Digital1364(kind),
         None => NetType::Discipline(discipline.to_string()),
     };
-    match &d.range {
-        None => Ok(base),
-        Some(r) => {
-            let msb = env.eval_int(&r.msb).map_err(|e| {
-                ElabError::from(ElabErrorKind::ConstEval {
-                    context: format!("net `{}` range msb (§3.6.3: range bounds must be elaboration constants)", d.name),
-                    source: e,
-                })
-            })?;
-            let lsb = env.eval_int(&r.lsb).map_err(|e| {
-                ElabError::from(ElabErrorKind::ConstEval {
-                    context: format!("net `{}` range lsb (§3.6.3: range bounds must be elaboration constants)", d.name),
-                    source: e,
-                })
-            })?;
-            let width = (msb - lsb).unsigned_abs() + 1;
-            Ok(NetType::Array(Box::new(base), width))
-        }
+    let packed = match &d.range {
+        None => base,
+        Some(r) => NetType::Array(Box::new(base), range_width(r, &d.name, env, "range")?),
+    };
+    // A memory's unpacked depth (T5, Annex A.2.2.1: `reg [3:0] mem
+    // [0:7];`) wraps the packed element in one more `NetType::Array`
+    // level — `NetType::width()`'s existing product rule already
+    // multiplies through both, so a "memory with only a depth" (`reg mem
+    // [0:7];`, `packed` still the bare 1-bit `base`) needs no special case.
+    let ty = match &d.depth_range {
+        None => packed,
+        Some(dr) => NetType::Array(Box::new(packed), range_width(dr, &d.name, env, "depth range")?),
+    };
+    let total = ty.width();
+    if total > MAX_MEMORY_ELEMENTS {
+        return Err(ElabError::from(ElabErrorKind::Other(format!(
+            "net `{}`: declared width x depth is {total} elements, over the {MAX_MEMORY_ELEMENTS}-element cap on a vector/memory declaration",
+            d.name
+        ))));
     }
+    Ok(ty)
 }
 
 /// `integer`/`real`/`time`/`realtime` (LRM Annex A.2.1.3 `variable_type`)
