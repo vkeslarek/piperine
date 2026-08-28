@@ -1,8 +1,8 @@
 //! Vector (bus) declarations — `lrm-conformance-wave3` Phase 1 (T1-T6).
 //! Proves the leading-range declarator slot (Annex A.2.1.2/A.2.2.1's
-//! `range`) on net (T1) declarations.
+//! `range`) on net (T1) and port (T2) declarations.
 //!
-//! LRM-COVERS: 3.6.3, A.2.1.2
+//! LRM-COVERS: 3.6.3, A.2.1.2, 3.7
 
 use piperine_lang::pom::NetType;
 use piperine_lang::{parse_and_elaborate, SourceMap};
@@ -75,4 +75,38 @@ fn non_constant_leading_range_bounds_fail_loud_citing_3_6_3() {
     let src = module_wrapper("integer i;\nelectrical [i:0] bus;\ninitial i = 0;");
     let err = elab_err(&src);
     assert!(err.contains("3.6.3"), "must cite §3.6.3: {err}");
+}
+
+// ── T2: leading range on port declarations, §3.7/A.2.1.2 ──────────────────
+
+#[test]
+fn leading_range_on_an_input_port_gives_width_eight() {
+    // A bare `input [0:7] p;` carries no discipline and would need Annex F
+    // connectivity-based resolution (unavailable to an unconnected,
+    // bodiless port); `wire` is the 1364 net-type keyword, not a
+    // discipline, so this exercises the leading-range slot without that
+    // dependency.
+    let d = elab("module top (p);\ninput wire [0:7] p;\nendmodule\n");
+    let m = d.module("top").unwrap();
+    let p = m.port("p").expect("p declared");
+    assert_eq!(p.net_type().width(), 8);
+}
+
+#[test]
+fn leading_range_on_a_discipline_bearing_inout_port_gives_width_four() {
+    let d = elab("module top (bus);\ninout electrical [3:0] bus;\nendmodule\n");
+    let m = d.module("top").unwrap();
+    let p = m.port("bus").expect("bus declared");
+    assert_eq!(p.net_type().width(), 4);
+    assert_eq!(p.net_type().discipline_name(), "electrical");
+}
+
+#[test]
+fn port_list_form_and_body_redeclaration_form_agree_on_width() {
+    let in_list = elab("module top (input wire [0:3] a);\nendmodule\n");
+    let in_body = elab("module top (a);\ninput wire [0:3] a;\nendmodule\n");
+    for d in [&in_list, &in_body] {
+        let a = d.module("top").unwrap().port("a").expect("a declared");
+        assert_eq!(a.net_type().width(), 4);
+    }
 }

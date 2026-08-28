@@ -144,12 +144,14 @@ the range to every declarator that carries none of its own.
 **Requirement**: LRMW3-01, LRMW3-05
 
 **Done when**:
-- [ ] `input [0:7] p;` and `inout electrical [3:0] bus;` elaborate to a
-      width-8/4 port
-- [ ] `Port::net_type().width()` reports the declared width
-- [ ] The port-list form and the body-redeclaration form agree
-- [ ] Declares `//! LRM-COVERS: 3.7, A.2.1.2`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
+- [x] `input [0:7] p;` and `inout electrical [3:0] bus;` elaborate to a
+      width-8/4 port (the bare `input` fixture adds `wire` since an
+      undisciplined, unconnected port fails Annex F resolution regardless
+      of range — confirmed pre-existing/unrelated to this task)
+- [x] `Port::net_type().width()` reports the declared width
+- [x] The port-list form and the body-redeclaration form agree
+- [x] Declares `//! LRM-COVERS: 3.7, A.2.1.2`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_vector_declarations`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): accept a leading range on port declarations`

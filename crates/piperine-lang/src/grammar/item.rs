@@ -397,6 +397,7 @@ impl Grammar {
         // next identifier is immediately followed by `,`/`;`/`)` it *is*
         // the first port name (no discipline given), not a discipline.
         let discipline = self.parse_optional_discipline_name();
+        let leading_range = self.parse_optional_leading_range()?;
         // A comma inside a port list is ambiguous: it either separates two
         // names under this *same* direction (`inout electrical p, n`) or
         // ends this port_declaration and starts the next one
@@ -408,6 +409,7 @@ impl Grammar {
             self.bump();
             names.push(self.parse_declarator()?);
         }
+        apply_leading_range(&leading_range, &mut names)?;
         let end = self.peek_span();
         self.eat_punct(";");
         Ok(PortDecl { span: PreprocessedSpan::new(start.start, end.start), doc, attrs, dir, discipline, names })
@@ -539,8 +541,43 @@ impl Grammar {
             if matches!(self.peek_at_next(), Tok::Ident(_)) {
                 return Some(self.expect_ident().ok()?.0);
             }
+            // `discipline_name [msb:lsb] name` (a leading range after a
+            // discipline, T2) also starts `Ident '['`, the same shape a
+            // bare `name[msb:lsb]` declarator's own range does — resolved
+            // by looking past the balanced range for a further identifier
+            // (present only in the discipline-then-leading-range case).
+            if matches!(self.peek_at_next(), Tok::Punct("[")) && self.range_then_ident_follows() {
+                return Some(self.expect_ident().ok()?.0);
+            }
         }
         None
+    }
+
+    /// True when, starting at the `[` immediately following the current
+    /// identifier (`peek_at(1)`), a balanced `[...]` range is itself
+    /// followed by another identifier. See
+    /// [`Self::parse_optional_discipline_name`]'s leading-range case.
+    fn range_then_ident_follows(&self) -> bool {
+        let mut off = 1usize; // the '[' at peek_at(1)
+        let mut depth = 0i32;
+        loop {
+            match self.peek_at(off) {
+                Tok::Punct("[") => {
+                    depth += 1;
+                    off += 1;
+                }
+                Tok::Punct("]") => {
+                    depth -= 1;
+                    off += 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                Tok::Eof => return false,
+                _ => off += 1,
+            }
+        }
+        matches!(self.peek_at(off), Tok::Ident(_))
     }
 
     /// `declarator { ',' declarator }` — Annex A.2.3 `list_of_port_identifiers`
