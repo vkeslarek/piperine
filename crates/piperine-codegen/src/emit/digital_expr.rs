@@ -108,9 +108,43 @@ impl Codegen for Expr {
                 let elem = crate::resolve::pom::structure::element_node_name(name, i as u64);
                 b.load_ident(&elem)
             }
-            Expr::PartSelect { .. } => Err(CodegenError::unsupported(format!(
-                "part-select in digital codegen: {self:?}"
-            ))),
+            // §4.2.1 part-select (T10, LRMW3-03): `b[msb:lsb]` reads its
+            // ordered chunk list (`part_select_names`) and packs it,
+            // declared-order-first (the name listed first in the source
+            // becomes the packed value's most-significant bit — the
+            // written order, not the numeric direction, so a `[7:4]`
+            // select and a `[4:7]` select of the *same* four physical bits
+            // read as the same declared-order sequence), into one integer
+            // value via shift-and-or. `n = b[7:4]` (`n` a plain
+            // integer-typed variable) is the natural single-value
+            // consumer of this; expanding a part-select *into* another
+            // vector's per-bit targets is T11's whole-vector assignment
+            // machinery (`emit/stmt.rs`), not this expression-level path.
+            Expr::PartSelect { base, msb, lsb, .. } => {
+                let Expr::Ident { name, .. } = base.as_ref() else {
+                    return Err(CodegenError::unsupported(format!(
+                        "digital part-select base must be a plain vector identifier: {self:?}"
+                    )));
+                };
+                let names = part_select_names(name, msb, lsb)?;
+                let n = names.len();
+                let mut acc: Option<cranelift_codegen::ir::Value> = None;
+                for (i, elem) in names.iter().enumerate() {
+                    let bit = b.load_ident(elem)?;
+                    let shift = (n - 1 - i) as i64;
+                    let shifted = if shift == 0 {
+                        bit.value
+                    } else {
+                        let amount = b.builder_i64(shift);
+                        b.builder.ins().ishl(bit.value, amount)
+                    };
+                    acc = Some(match acc {
+                        None => shifted,
+                        Some(prev) => b.builder.ins().bor(prev, shifted),
+                    });
+                }
+                Ok(Typed::int(acc.expect("part-select always selects at least one bit")))
+            }
             Expr::Concat { .. } | Expr::Replication { .. } => Err(CodegenError::unsupported(format!(
                 "vector concatenation/replication in digital codegen: {self:?}"
             ))),
@@ -133,4 +167,42 @@ impl Codegen for Expr {
             ))),
         }
     }
+}
+
+/// The ordered per-bit element-node names of `base[msb:lsb]` (LRM §4.2.1),
+/// in **declared order**: the bound written first becomes the first name
+/// in the list (a `[7:4]` select lists `base[7], base[6], base[5],
+/// base[4]`; a `[4:7]` select of the same physical bits — legal on a net
+/// declared with an ascending range — lists `base[4], base[5], base[6],
+/// base[7]`). This is the "ordered chunk list" both `Codegen::emit`'s
+/// pack-to-integer read above and T11's whole-vector assignment expansion
+/// (`emit/stmt.rs`) build on, so the two apply the identical bit order.
+///
+/// Bounds are *not* checked against the vector's declared width here —
+/// `Builder::load_ident` already fails loud (`"unresolved identifier"`) for
+/// a name no vector element ever registered, which already is an
+/// out-of-range part-select's failure mode; adding a second, earlier check
+/// would only duplicate that message.
+pub(crate) fn part_select_names(base: &str, msb: &Expr, lsb: &Expr) -> Result<Vec<String>, CodegenError> {
+    let env = piperine_lang::elab::const_eval::ConstEnv::new();
+    let m = env.eval_int(msb).map_err(|e| {
+        CodegenError::unsupported(format!(
+            "digital part-select `{base}[...]`'s msb must be a constant expression (LRM §5.5.2): {e}"
+        ))
+    })?;
+    let l = env.eval_int(lsb).map_err(|e| {
+        CodegenError::unsupported(format!(
+            "digital part-select `{base}[...]`'s lsb must be a constant expression (LRM §5.5.2): {e}"
+        ))
+    })?;
+    if m < 0 || l < 0 {
+        return Err(CodegenError::unsupported(format!(
+            "digital part-select `{base}[{m}:{l}]` indices must be non-negative"
+        )));
+    }
+    let indices: Vec<i64> = if m <= l { (m..=l).collect() } else { (l..=m).rev().collect() };
+    Ok(indices
+        .into_iter()
+        .map(|i| crate::resolve::pom::structure::element_node_name(base, i as u64))
+        .collect())
 }

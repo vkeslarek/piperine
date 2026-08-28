@@ -346,12 +346,12 @@ threading), test in `crates/piperine-codegen/tests/`
 **Requirement**: LRMW3-03
 
 **Done when**:
-- [ ] `n = b[7:4];` assigns the four selected bits in declared order
-- [ ] A descending and an ascending part-select of the same bits agree bit for
+- [x] `n = b[7:4];` assigns the four selected bits in declared order
+- [x] A descending and an ascending part-select of the same bits agree bit for
       bit
-- [ ] An out-of-range part-select fails loud
-- [ ] Declares `//! LRM-COVERS: 4.2.1`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] An out-of-range part-select fails loud
+- [x] Declares `//! LRM-COVERS: 4.2.1`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): digital part-select emission`

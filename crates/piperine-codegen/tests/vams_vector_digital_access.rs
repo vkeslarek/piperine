@@ -175,41 +175,178 @@ fn bit_select_reads_the_indexed_bit_on_a_clock_edge() {
     assert_eq!(bench.nets[o.0], LogicValue::Zero, "o must track q[2] specifically, which is now 0");
 }
 
-/// `module Dut(input b[4..7], output o); o = b[7:4];` — a part-select, not
-/// yet lowered by this task (T10's job) — used only to prove the
-/// `Expr::Index | Expr::PartSelect` arm was *narrowed*, not deleted:
-/// `Expr::PartSelect` must still fail loud, by name, not silently emit 0.
-fn part_select_module() -> LoweredBody {
+/// T10 (LRMW3-03): `n = b[7:4];` (`n` a plain `integer`-typed variable,
+/// the natural single-value consumer of a packed part-select read) packs
+/// the four selected bits declared-order-MSB-first, then a scalar output
+/// `result` reports whether `n` matches the expected 4-bit pattern —
+/// `DigitalNet`/`LogicValue` are strictly single-bit, so a packed
+/// multi-bit value can only be *observed* here through a derived
+/// comparison, not read back directly as one net.
+fn part_select_pack_module() -> LoweredBody {
+    use piperine_lang::ast::BinOp as VBinOp;
     let mut m = LoweredBody::new("Dut");
     let b4 = m.symbols.add_node("b[4]", Domain::Digital);
+    let b5 = m.symbols.add_node("b[5]", Domain::Digital);
+    let b6 = m.symbols.add_node("b[6]", Domain::Digital);
     let b7 = m.symbols.add_node("b[7]", Domain::Digital);
-    let o = m.symbols.add_node("o", Domain::Digital);
-    m.ports.push(Port { node: b4, direction: Direction::In });
-    m.ports.push(Port { node: b7, direction: Direction::In });
-    m.ports.push(Port { node: o, direction: Direction::Out });
+    let result = m.symbols.add_node("result", Domain::Digital);
+    let n = m.symbols.add_var("n", Type::Integer);
+    for node in [b4, b5, b6, b7] {
+        m.ports.push(Port { node, direction: Direction::In });
+    }
+    m.ports.push(Port { node: result, direction: Direction::Out });
     m.digital = Some(DigitalBody {
-        inputs: vec![b4, b7],
-        outputs: vec![o],
-        regs: vec![],
+        inputs: vec![b4, b5, b6, b7],
+        outputs: vec![result],
+        regs: vec![n],
         reg_inits: vec![],
-        stmts: vec![assign("o", part_select("b", 7, 4))],
+        stmts: vec![
+            assign("n", part_select("b", 7, 4)),
+            assign(
+                "result",
+                Expr::Binary { span: SP, op: VBinOp::Eq, lhs: Box::new(ident("n")), rhs: Box::new(int(11)) },
+            ),
+        ],
     });
     m
 }
 
-/// Done-when #3: "anything the arm still cannot lower keeps failing loud"
-/// — `Expr::PartSelect` (T10's job, not this task's) must still be
-/// rejected, by name, when it reaches digital codegen, not silently
-/// treated as bit-select or as a no-op.
+/// Done-when #1: `n = b[7:4];` assigns the four selected bits in declared
+/// order — `b7,b6,b5,b4 = 1,0,1,1` packs (MSB-first, declared order) to
+/// `0b1011 = 11`, so `result` (`n == 11`) reads `One`; flipping one input
+/// bit (a discriminating check against an off-by-one/wrong-order pack)
+/// must flip `result` to `Zero`.
 #[test]
-fn part_select_still_fails_loud_after_the_bit_select_widening() {
-    let module = part_select_module();
-    let err = match DigitalKernel::compile(&module) {
-        Ok(_) => panic!("a part-select must still fail loud (T10, not this task)"),
+fn part_select_packs_bits_in_declared_order() {
+    let module = part_select_pack_module();
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("part-select read must compile"));
+    let (b4, b5, b6, b7, result) = (DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3), DigitalNet(4));
+    let mut instance =
+        DigitalInstance::new(kernel, 0, vec![b4, b5, b6, b7], vec![result], vec![]).expect("instance");
+    let mut bench = Bench::new(5);
+    bench.init(&mut instance);
+
+    // b7 b6 b5 b4 = 1 0 1 1 -> 0b1011 = 11.
+    bench.set(b7, LogicValue::One);
+    bench.set(b6, LogicValue::Zero);
+    bench.set(b5, LogicValue::One);
+    bench.set(b4, LogicValue::One);
+    bench.step(0.0, &mut instance);
+    assert_eq!(bench.nets[result.0], LogicValue::One, "b[7:4] = 1011 = 11 must match n == 11");
+
+    // Flip b5 (the declared-order-2nd-from-lsb bit): 0b1001 = 9 != 11.
+    bench.set(b5, LogicValue::Zero);
+    bench.step(1.0, &mut instance);
+    assert_eq!(bench.nets[result.0], LogicValue::Zero, "b[7:4] = 1001 = 9 must not match n == 11");
+}
+
+/// Done-when #2: a descending part-select (`b[7:4]`) and an ascending
+/// part-select of the same four physical positions (`c[4:7]`, legal on a
+/// net declared with an ascending range) agree bit for bit — feeding the
+/// same values at the same *declared-order position* (first-listed name to
+/// first-listed name, and so on) on both must pack to the same value.
+fn part_select_direction_module() -> LoweredBody {
+    use piperine_lang::ast::BinOp as VBinOp;
+    let mut m = LoweredBody::new("Dut");
+    let b4 = m.symbols.add_node("b[4]", Domain::Digital);
+    let b5 = m.symbols.add_node("b[5]", Domain::Digital);
+    let b6 = m.symbols.add_node("b[6]", Domain::Digital);
+    let b7 = m.symbols.add_node("b[7]", Domain::Digital);
+    let c4 = m.symbols.add_node("c[4]", Domain::Digital);
+    let c5 = m.symbols.add_node("c[5]", Domain::Digital);
+    let c6 = m.symbols.add_node("c[6]", Domain::Digital);
+    let c7 = m.symbols.add_node("c[7]", Domain::Digital);
+    let result = m.symbols.add_node("result", Domain::Digital);
+    let n1 = m.symbols.add_var("n1", Type::Integer);
+    let n2 = m.symbols.add_var("n2", Type::Integer);
+    for node in [b4, b5, b6, b7, c4, c5, c6, c7] {
+        m.ports.push(Port { node, direction: Direction::In });
+    }
+    m.ports.push(Port { node: result, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
+        inputs: vec![b4, b5, b6, b7, c4, c5, c6, c7],
+        outputs: vec![result],
+        regs: vec![n1, n2],
+        reg_inits: vec![],
+        stmts: vec![
+            assign("n1", part_select("b", 7, 4)),
+            assign("n2", part_select("c", 4, 7)),
+            assign(
+                "result",
+                Expr::Binary { span: SP, op: VBinOp::Eq, lhs: Box::new(ident("n1")), rhs: Box::new(ident("n2")) },
+            ),
+        ],
+    });
+    m
+}
+
+#[test]
+fn descending_and_ascending_part_selects_of_the_same_bits_agree() {
+    let module = part_select_direction_module();
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("dual part-select read must compile"));
+    let (b4, b5, b6, b7, c4, c5, c6, c7, result) = (
+        DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3),
+        DigitalNet(4), DigitalNet(5), DigitalNet(6), DigitalNet(7),
+        DigitalNet(8),
+    );
+    let mut instance = DigitalInstance::new(
+        kernel,
+        0,
+        vec![b4, b5, b6, b7, c4, c5, c6, c7],
+        vec![result],
+        vec![],
+    )
+    .expect("instance");
+    let mut bench = Bench::new(9);
+    bench.init(&mut instance);
+
+    // b[7:4] declared order = [b7,b6,b5,b4] = [1,0,1,1].
+    // c[4:7] declared order = [c4,c5,c6,c7] — set to the SAME sequence
+    // position-for-position: c4=1, c5=0, c6=1, c7=1.
+    bench.set(b7, LogicValue::One);
+    bench.set(b6, LogicValue::Zero);
+    bench.set(b5, LogicValue::One);
+    bench.set(b4, LogicValue::One);
+    bench.set(c4, LogicValue::One);
+    bench.set(c5, LogicValue::Zero);
+    bench.set(c6, LogicValue::One);
+    bench.set(c7, LogicValue::One);
+    bench.step(0.0, &mut instance);
+    assert_eq!(bench.nets[result.0], LogicValue::One, "matching declared-order sequences must pack to the same value");
+
+    // Break the agreement: c6 now disagrees with b5's position.
+    bench.set(c6, LogicValue::Zero);
+    bench.step(1.0, &mut instance);
+    assert_eq!(bench.nets[result.0], LogicValue::Zero, "a disagreeing bit must be detected, not silently ignored");
+}
+
+/// Done-when #3: an out-of-range part-select fails loud — `b` only has
+/// elements `b[4]..b[7]`; `b[9:8]` names `b[9]`/`b[8]`, neither of which
+/// any vector element ever registered.
+#[test]
+fn out_of_range_part_select_fails_loud() {
+    let mut m = LoweredBody::new("Dut");
+    let b4 = m.symbols.add_node("b[4]", Domain::Digital);
+    let result = m.symbols.add_node("result", Domain::Digital);
+    let n = m.symbols.add_var("n", Type::Integer);
+    m.ports.push(Port { node: b4, direction: Direction::In });
+    m.ports.push(Port { node: result, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
+        inputs: vec![b4],
+        outputs: vec![result],
+        regs: vec![n],
+        reg_inits: vec![],
+        stmts: vec![assign("n", part_select("b", 9, 8))],
+    });
+    let err = match DigitalKernel::compile(&m) {
+        Ok(_) => panic!("an out-of-range part-select must fail loud, not silently resolve"),
         Err(e) => e,
     };
     let msg = err.to_string();
-    assert!(msg.contains("part-select"), "error must name the actual unsupported construct, got: {msg}");
+    assert!(
+        msg.contains("b[9]") || msg.contains("unresolved identifier"),
+        "error must name the missing element, got: {msg}"
+    );
 }
 
 /// Done-when #2: reading a bit of an undriven vector yields `X` (Table
