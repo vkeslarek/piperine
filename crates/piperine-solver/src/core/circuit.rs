@@ -534,6 +534,42 @@ impl CircuitInstance {
         Ok(())
     }
 
+    /// Consume `specify` timing-check violations at one accepted digital
+    /// event point (T21, LRMW3-07, spec P2 AC2) — the digital-domain
+    /// counterpart to [`Self::consume_validation_reports`], same posture
+    /// gate (`Off` polls nothing), same sink, same strict-abort-on-first-
+    /// `Error` rule. Call only once a transient step is accepted (never
+    /// from inside a speculative/rejected attempt — see
+    /// `DigitalState::check_timing_violations`'s own doc for why that is
+    /// safe by construction, not by caller discipline alone).
+    pub fn consume_timing_check_violations(
+        &self,
+        posture: crate::analyses::CheckPosture,
+        domain: crate::error::SolverDomain,
+        accepted_time: f64,
+        sink: &mut Vec<crate::core::validation::ValidationFinding>,
+    ) -> crate::core::result::Result<()> {
+        use crate::analyses::CheckPosture;
+        use crate::core::validation::ValidationSeverity;
+        if posture == CheckPosture::Off {
+            return Ok(());
+        }
+        let start = sink.len();
+        sink.extend(self.digital_state.check_timing_violations(accepted_time, "specify"));
+        if posture == CheckPosture::Strict
+            && let Some(finding) = sink[start..].iter().find(|f| f.severity == ValidationSeverity::Error)
+        {
+            return Err(crate::error::Error::simple(
+                domain,
+                format!(
+                    "timing check `{}` violated at t = {}: {} ({})",
+                    finding.label, finding.time, finding.value, finding.message
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     /// Evaluate every validating element's declared constraint margins at
     /// one accepted solution point (DVC-10/11). The analysis drivers call
     /// this **only** at the evaluation points design §C3 defines — DC at

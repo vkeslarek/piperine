@@ -631,14 +631,14 @@ events, under the run posture.
 **Requirement**: LRMW3-07, spec P2 AC2
 
 **Done when**:
-- [ ] A setup violation in a real transient run is reported naming the check,
+- [x] A setup violation in a real transient run is reported naming the check,
       the nets, the observed separation and the limit
-- [ ] A compliant run reports nothing
-- [ ] `checks = "off"` evaluates nothing (asserted by a cost/behavior test, not
+- [x] A compliant run reports nothing
+- [x] `checks = "off"` evaluates nothing (asserted by a cost/behavior test, not
       by inspection)
-- [ ] Enforcement never fires inside a rejected step (asserted with a forced
+- [x] Enforcement never fires inside a rejected step (asserted with a forced
       rejection)
-- [ ] Gate passes: `cargo test -p piperine-solver` and `cargo test -p piperine <root findings target>`
+- [x] Gate passes: `cargo test -p piperine-solver` and `cargo test -p piperine <root findings target>`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(solver): enforce timing checks through the findings channel`

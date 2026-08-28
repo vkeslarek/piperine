@@ -14,11 +14,12 @@
 //! reopening the gate-instantiation grammar.
 //!
 //! **`TimingCheckTable`**: LRM ch.10's `$setup`/`$hold`/`$width`-family
-//! timing-check *limits* as plain readable/writable records — enforcement
-//! (raising a violation when a real transient run breaches a limit) is
-//! explicitly out of this task's scope ("model half"); this table only
-//! makes the limits themselves a first-class, queryable per-net record
-//! instead of nonexistent.
+//! timing-check *limits* as plain readable/writable records. Enforcement
+//! (T21, LRMW3-07) lives in `DigitalState::check_timing_violations` —
+//! `Setup`/`Hold` (and the same-shape `Recovery`/`Removal`) are checked
+//! against the accepted digital event history; `Width`/`Period`/`Skew`
+//! are recorded here but not yet enforced (disclosed gap, that method's
+//! own doc).
 
 use std::collections::HashMap;
 
@@ -102,6 +103,12 @@ pub struct TimingCheckLimit {
     pub kind: TimingCheckKind,
     /// The limit value, seconds.
     pub limit: f64,
+    /// The check's other net (T21, LRMW3-07): the reference net for
+    /// `Setup`/`Recovery`, the data net for `Hold`/`Removal`. `None` for
+    /// the single-event forms (`Width`/`Period`, which have no second
+    /// net) and for `Skew` (enforcement out of this task's scope — see
+    /// `DigitalState::check_timing_violations`'s own doc).
+    pub paired_net: Option<DigitalNet>,
 }
 
 /// Per-net timing-check limit records — a net may carry more than one
@@ -135,6 +142,16 @@ impl TimingCheckTable {
     /// existed.
     pub fn clear(&mut self, net: DigitalNet) -> bool {
         self.entries.remove(&net).is_some()
+    }
+
+    /// Every `(keyed net, limit)` pair in the table — T21's enforcement
+    /// walk needs this to find a `Setup`/`Recovery` check from its
+    /// *reference* net's own accepted edge, which the check is not keyed
+    /// under (it is keyed under the data net, matching how a host reads
+    /// `$setup`'s own argument order back — see `TimingCheckLimit::
+    /// paired_net`'s doc).
+    pub fn iter(&self) -> impl Iterator<Item = (DigitalNet, &TimingCheckLimit)> {
+        self.entries.iter().flat_map(|(&net, limits)| limits.iter().map(move |l| (net, l)))
     }
 
     pub fn len(&self) -> usize {
@@ -174,8 +191,8 @@ mod tests {
         let net = DigitalNet(1);
         assert!(table.get(net).is_empty());
 
-        table.set(net, TimingCheckLimit { kind: TimingCheckKind::Setup, limit: 1e-9 });
-        table.set(net, TimingCheckLimit { kind: TimingCheckKind::Hold, limit: 0.5e-9 });
+        table.set(net, TimingCheckLimit { kind: TimingCheckKind::Setup, limit: 1e-9, paired_net: None });
+        table.set(net, TimingCheckLimit { kind: TimingCheckKind::Hold, limit: 0.5e-9, paired_net: None });
 
         let limits = table.get(net);
         assert_eq!(limits.len(), 2);

@@ -1,9 +1,9 @@
 //! Digital run state: the net values, the event queue, and the
 //! checkpoint/rollback snapshots the analog accept gate relies on.
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent, DriverTable};
-use crate::digital::delays::{DelayTable, TimingCheckTable};
+use crate::digital::delays::{DelayTable, TimingCheckKind, TimingCheckTable};
 
 /// Frozen scheduler snapshot for checkpoint/rollback.
 #[derive(Clone)]
@@ -12,6 +12,7 @@ struct Checkpoint {
     queue: BinaryHeap<Reverse<DigitalEvent>>,
     labels: Vec<String>,
     driver_table: DriverTable,
+    last_change: HashMap<DigitalNet, f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,13 @@ pub struct DigitalState {
     /// `event_queue`/`driver_table` these are not part of [`Checkpoint`].
     pub delay_table: DelayTable,
     pub timing_checks: TimingCheckTable,
+    /// The time each net most recently, accept-committed, changed value
+    /// (T21, LRMW3-07) — `check_timing_violations`'s only data source.
+    /// Rolled back alongside `nets`/`event_queue`/`driver_table` (unlike
+    /// `delay_table`/`timing_checks`, which are static configuration):
+    /// a rejected step's speculative changes must not survive to poison
+    /// the next accepted step's separation measurement.
+    last_change: HashMap<DigitalNet, f64>,
 }
 
 impl DigitalState {
@@ -49,6 +57,7 @@ impl DigitalState {
             driver_table: DriverTable::new(),
             delay_table: DelayTable::new(),
             timing_checks: TimingCheckTable::new(),
+            last_change: HashMap::new(),
         }
     }
 
@@ -67,6 +76,7 @@ impl DigitalState {
             driver_table: DriverTable::new(),
             delay_table: DelayTable::new(),
             timing_checks: TimingCheckTable::new(),
+            last_change: HashMap::new(),
         }
     }
 
@@ -104,6 +114,7 @@ impl DigitalState {
             queue: self.event_queue.clone(),
             labels: self.labels.clone(),
             driver_table: self.driver_table.clone(),
+            last_change: self.last_change.clone(),
         });
     }
 
@@ -113,10 +124,85 @@ impl DigitalState {
             self.event_queue = chk.queue;
             self.labels = chk.labels;
             self.driver_table = chk.driver_table;
+            self.last_change = chk.last_change;
         }
     }
 
     pub fn commit(&mut self) {
         self.checkpoint = None;
+    }
+
+    /// Records that `net` actually changed value at `time` (T21,
+    /// LRMW3-07) — called by the scheduler's own event-apply sites
+    /// (`scheduler.rs`), never here, since only the scheduler knows
+    /// "actually changed" (vs. an event that resolved to the same value).
+    pub(crate) fn record_change(&mut self, net: DigitalNet, time: f64) {
+        self.last_change.insert(net, time);
+    }
+
+    /// Walks `timing_checks` for a violation caused by whatever nets just
+    /// changed at exactly `accepted_time` (T21, LRMW3-07, spec P2 AC2) —
+    /// call this only once a transient step has been accepted (never from
+    /// inside a speculative/rejected attempt: `last_change` is rolled
+    /// back alongside `nets`, so a rejected attempt's spurious "changed at
+    /// t" entries never reach here in the first place).
+    ///
+    /// **Scope**: `Setup`/`Hold` are fully enforced, and `Recovery`/
+    /// `Removal` reuse the identical two-net "async net's own edge vs. a
+    /// stability window on the other net" shape (`Recovery` like `Setup`,
+    /// `Removal` like `Hold`). `Width`/`Period`/`Skew` are recorded (T20)
+    /// but not enforced here — a genuinely faithful check needs edge-
+    /// polarity-qualified history (posedge-only, say) this table does not
+    /// yet carry; extending it is future work, not a silent gap (this
+    /// doc is the disclosure).
+    pub fn check_timing_violations(&self, accepted_time: f64, instance_path: &str) -> Vec<crate::core::validation::ValidationFinding> {
+        use crate::core::validation::{ValidationFinding, ValidationSeverity};
+
+        // T20's population code always keys `Setup`/`Hold`/`Recovery`/
+        // `Removal` by the *data* net, with `paired_net` the reference
+        // net — regardless of which side's edge triggers the check.
+        let mut findings = Vec::new();
+        for (data_net, limit) in self.timing_checks.iter() {
+            let Some(reference_net) = limit.paired_net else { continue };
+            // `separation`: how long the data net had already been
+            // stable before the reference edge (Setup/Recovery), or how
+            // long the reference edge had already elapsed before the
+            // data net changed (Hold/Removal).
+            let separation = match limit.kind {
+                TimingCheckKind::Setup | TimingCheckKind::Recovery => {
+                    let Some(&t_ref) = self.last_change.get(&reference_net) else { continue };
+                    if t_ref != accepted_time {
+                        continue;
+                    }
+                    let Some(&t_data) = self.last_change.get(&data_net) else { continue };
+                    t_ref - t_data
+                }
+                TimingCheckKind::Hold | TimingCheckKind::Removal => {
+                    let Some(&t_data) = self.last_change.get(&data_net) else { continue };
+                    if t_data != accepted_time {
+                        continue;
+                    }
+                    let Some(&t_ref) = self.last_change.get(&reference_net) else { continue };
+                    t_data - t_ref
+                }
+                TimingCheckKind::Width | TimingCheckKind::Period | TimingCheckKind::Skew => continue,
+            };
+            if separation < limit.limit {
+                let data_label = self.label_or_default(data_net);
+                let ref_label = self.label_or_default(reference_net);
+                findings.push(ValidationFinding {
+                    severity: ValidationSeverity::Error,
+                    label: format!("{:?}", limit.kind),
+                    message: format!(
+                        "{:?} violation: data `{data_label}` / reference `{ref_label}` separated by {separation:e}s, limit {:e}s",
+                        limit.kind, limit.limit
+                    ),
+                    value: separation,
+                    time: accepted_time,
+                    instance_path: instance_path.to_string(),
+                });
+            }
+        }
+        findings
     }
 }

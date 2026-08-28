@@ -1054,6 +1054,15 @@ impl<'a> TransientSolver<'a> {
             crate::error::SolverDomain::Transient,
             &mut st.validation,
         )?;
+        // `specify` timing-check enforcement (T21, LRMW3-07, spec P2
+        // AC2): same accepted-step-only evaluation point, same posture
+        // gate, same findings sink as the constraint margins just above.
+        self.system.circuit.consume_timing_check_violations(
+            self.system.context.checks,
+            crate::error::SolverDomain::Transient,
+            t_next,
+            &mut st.validation,
+        )?;
         if self.apply_scheduled_sets(st, steps, dt_actual)? {
             // The value jump is a discontinuity: the next TR stage
             // must not re-derive a previous current across it.

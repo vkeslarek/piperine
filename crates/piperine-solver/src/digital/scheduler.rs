@@ -91,6 +91,7 @@ impl DigitalState {
                 let resolved = apply_driven_event(self, event);
                 if self.nets[event.net.0] != resolved {
                     self.nets[event.net.0] = resolved;
+                    self.record_change(event.net, event.time);
                     changed.insert(event.net);
                 }
             }
@@ -162,6 +163,7 @@ impl DigitalState {
                     let resolved = apply_driven_event(self, &ev);
                     if self.nets[ev.net.0] != resolved {
                         self.nets[ev.net.0] = resolved;
+                        self.record_change(ev.net, ev.time);
                         all_changed.insert(ev.net);
                     }
                 }
@@ -230,6 +232,7 @@ impl DigitalState {
                         let resolved = apply_driven_event(self, &ev);
                         if self.nets[ev.net.0] != resolved {
                             self.nets[ev.net.0] = resolved;
+                            self.record_change(ev.net, ev.time);
                             all_changed.insert(ev.net);
                         }
                     } else {

@@ -298,33 +298,31 @@ impl<'p> CircuitCompiler<'p> {
             let Some(top_name) = translate(keyed_terminal) else { continue };
             let Some(&idx) = info.digital_nets.get(&top_name) else { continue };
             let net = DigitalNet(idx);
+            // The paired (reference) net, when this check has one distinct
+            // from its keyed net — resolved the same way, `None` when
+            // translation/lookup fails rather than dropping the whole
+            // check (a check missing its pair just goes unenforced by
+            // `DigitalState::check_timing_violations`, still recorded and
+            // still readable).
+            let paired_net = check.data_terminal.as_deref().and_then(|_| {
+                translate(&check.reference_terminal).and_then(|n| info.digital_nets.get(&n).map(|&i| DigitalNet(i)))
+            });
             use piperine_lang::pom::SpecifyTimingCheckKind as PomKind;
+            let mut push = |kind: TimingCheckKind, limit: f64| {
+                circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind, limit, paired_net });
+            };
             match check.kind {
-                PomKind::Setup => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Setup, limit: check.limits[0] });
-                }
-                PomKind::Hold => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Hold, limit: check.limits[0] });
-                }
+                PomKind::Setup => push(TimingCheckKind::Setup, check.limits[0]),
+                PomKind::Hold => push(TimingCheckKind::Hold, check.limits[0]),
                 PomKind::SetupHold => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Setup, limit: check.limits[0] });
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Hold, limit: check.limits[1] });
+                    push(TimingCheckKind::Setup, check.limits[0]);
+                    push(TimingCheckKind::Hold, check.limits[1]);
                 }
-                PomKind::Width => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Width, limit: check.limits[0] });
-                }
-                PomKind::Period => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Period, limit: check.limits[0] });
-                }
-                PomKind::Recovery => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Recovery, limit: check.limits[0] });
-                }
-                PomKind::Removal => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Removal, limit: check.limits[0] });
-                }
-                PomKind::Skew => {
-                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Skew, limit: check.limits[0] });
-                }
+                PomKind::Width => push(TimingCheckKind::Width, check.limits[0]),
+                PomKind::Period => push(TimingCheckKind::Period, check.limits[0]),
+                PomKind::Recovery => push(TimingCheckKind::Recovery, check.limits[0]),
+                PomKind::Removal => push(TimingCheckKind::Removal, check.limits[0]),
+                PomKind::Skew => push(TimingCheckKind::Skew, check.limits[0]),
             }
         }
     }
