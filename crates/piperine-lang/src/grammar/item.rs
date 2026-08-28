@@ -1438,21 +1438,105 @@ impl Grammar {
 
     // ─────────────────────────────── specify / gates ───────────────────────
 
-    /// `specify_block`, Annex A.7.1 — this crate's scope treats the body as
-    /// opaque (path declarations and system timing checks are a VAMS-22/P3
-    /// concern per the design's Annex E note), so it is skipped token-by-
-    /// token rather than deep-parsed; the construct still parses instead of
-    /// rejecting a source that uses one.
+    /// `specify_block`, Annex A.7.1 — dispatches each `specify_item` to a
+    /// typed production: `specparam_declaration` (reuses
+    /// [`Self::parse_specparam`]) and `path_declaration` (simple paths land
+    /// on `paths` — T15's scope is the simple form only; system timing
+    /// checks and the recognized-but-unsupported forms are later tasks'
+    /// extensions to this same dispatcher, not a separate function).
     fn parse_specify_block(&mut self) -> Result<SpecifyBlock, ParseError> {
         let start = self.expect_kw("specify")?;
+        let mut specparams = Vec::new();
+        let mut paths = Vec::new();
         while !self.at_kw("endspecify") {
             if self.at_eof() {
                 return Err(self.eof_error("'endspecify'".to_string()));
             }
-            self.bump();
+            if self.at_kw("specparam") {
+                specparams.push(self.parse_specparam()?);
+            } else if self.at_punct("(") {
+                paths.push(self.parse_path_declaration()?);
+            } else {
+                return Err(self.unexpected(
+                    "a specify_item: specparam or path declaration (A.7.1)".to_string(),
+                ));
+            }
         }
         let end = self.expect_kw("endspecify")?;
-        Ok(SpecifyBlock { span: PreprocessedSpan::new(start.start, end.end), items: vec![] })
+        Ok(SpecifyBlock { span: PreprocessedSpan::new(start.start, end.end), specparams, paths })
+    }
+
+    /// `specify_input_terminal_descriptor`/`specify_output_terminal_descriptor`,
+    /// Annex A.7.3 — a bare terminal identifier. The optional
+    /// `[constant_range_expression]` bit-select is out of this task's
+    /// scope: a source using one fails to parse (never silently drops the
+    /// index).
+    fn parse_specify_terminal(&mut self) -> Result<String, ParseError> {
+        let (name, _) = self.expect_ident()?;
+        Ok(name)
+    }
+
+    /// `simple_path_declaration`, Annex A.7.2/A.7.3/A.7.4 — parallel
+    /// (`specify_input_terminal_descriptor [polarity] => output`) or
+    /// full-connection (`list_of_path_inputs [polarity] *> list_of_path_outputs`).
+    fn parse_path_declaration(&mut self) -> Result<PathDecl, ParseError> {
+        let start = self.expect_punct("(")?;
+        let mut inputs = vec![self.parse_specify_terminal()?];
+        while self.eat_punct(",") {
+            inputs.push(self.parse_specify_terminal()?);
+        }
+        // `polarity_operator`, Annex A.7.2 — parsed and discarded: it
+        // selects which transition of a *state-dependent* path applies,
+        // and a simple path has no state dependence for it to modulate.
+        let _ = self.eat_punct("+") || self.eat_punct("-");
+        let full = if self.eat_punct("=>") {
+            false
+        } else if self.eat_punct("*>") {
+            true
+        } else {
+            return Err(self.unexpected("'=>' or '*>' (A.7.2 simple_path_declaration)".to_string()));
+        };
+        if !full && inputs.len() != 1 {
+            return Err(ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    expected: "a single input terminal before '=>' (A.7.2 parallel_path_description) — use '*>' for a full-connection path".to_string(),
+                    found: format!("{} input terminals", inputs.len()),
+                },
+                start,
+            ));
+        }
+        let mut outputs = vec![self.parse_specify_terminal()?];
+        while self.eat_punct(",") {
+            outputs.push(self.parse_specify_terminal()?);
+        }
+        self.expect_punct(")")?;
+        let delays = self.parse_path_delay_value()?;
+        if !matches!(delays.len(), 1 | 2 | 3 | 6 | 12) {
+            return Err(ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    expected: "1, 2, 3, 6 or 12 delay expressions (A.7.4 list_of_path_delay_expressions)".to_string(),
+                    found: format!("{} delay expressions", delays.len()),
+                },
+                start,
+            ));
+        }
+        let end = self.expect_punct(";")?;
+        Ok(PathDecl { span: PreprocessedSpan::new(start.start, end.end), inputs, outputs, full, delays })
+    }
+
+    /// `path_delay_value`, Annex A.7.4 — `= expr` or `= (expr {, expr})`.
+    fn parse_path_delay_value(&mut self) -> Result<Vec<Expr>, ParseError> {
+        self.expect_punct("=")?;
+        if self.eat_punct("(") {
+            let mut delays = vec![self.parse_expr()?];
+            while self.eat_punct(",") {
+                delays.push(self.parse_expr()?);
+            }
+            self.expect_punct(")")?;
+            Ok(delays)
+        } else {
+            Ok(vec![self.parse_expr()?])
+        }
     }
 
     /// `gate_instantiation`, Annex A.4.2. Attribute-bearing. Drive strength

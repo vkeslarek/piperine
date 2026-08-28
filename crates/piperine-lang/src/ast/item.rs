@@ -607,13 +607,36 @@ pub struct GenerateRegion {
 
 // ─────────────────────────────── specify / gates ───────────────────────────
 
-/// `specify specify_item* endspecify` — 1364 timing specification,
-/// preserved as an opaque item list (its internals are a P3/VAMS-22
-/// concern, not this task's scope).
+/// `specify specify_item* endspecify` — Annex A.7.1. `specparam`
+/// declarations (Annex A.2.4) and simple path declarations (Annex
+/// A.7.2/A.7.3/A.7.4) land typed, in authored order per list, on
+/// `specparams`/`paths` (T15, LRMW3-06). System timing checks (T16) and
+/// recognized-but-unsupported forms (T17) extend this struct in their own
+/// tasks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecifyBlock {
     pub span: PreprocessedSpan,
-    pub items: Vec<Stmt>,
+    pub specparams: Vec<SpecparamDecl>,
+    pub paths: Vec<PathDecl>,
+}
+
+/// `simple_path_declaration`, Annex A.7.2/A.7.3/A.7.4 — a parallel (`=>`)
+/// or full-connection (`*>`) path with its delay value(s). `inputs`/
+/// `outputs` are plain terminal identifiers (a specify-terminal bit-select,
+/// `a[2]`, is out of this task's scope — the grammar simply does not
+/// attempt it, so a source using one fails to parse rather than silently
+/// dropping the index).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathDecl {
+    pub span: PreprocessedSpan,
+    pub inputs: Vec<String>,
+    pub outputs: Vec<String>,
+    /// `true` for a full-connection (`*>`) path, `false` for parallel (`=>`).
+    pub full: bool,
+    /// 1, 2, 3, 6 or 12 delay expressions per A.7.4 (rise/fall/turn-off and
+    /// wider forms) — kept as authored `Expr`; elaboration const-evaluates
+    /// them (path delays are `constant_mintypmax_expression`, A.7.4).
+    pub delays: Vec<Expr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

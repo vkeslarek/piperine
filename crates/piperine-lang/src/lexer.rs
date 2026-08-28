@@ -87,6 +87,12 @@ const PUNCT_TABLE: &[&str] = &[
     // 2-character
     "<+", "->", "<=", ">=", "==", "!=", "&&", "||", "**", "<<", ">>", "~&", "~|", "~^", "^~",
     "+:", "-:", "::",
+    // Annex A.7.2 specify-path operators — `=>` (parallel_path_description)
+    // and `*>` (full_path_description). Scoped to punctuation lexing only;
+    // neither collides with an existing production (`=` is never followed
+    // by a unary `>` comparison, and `*>` is the same non-collision `(*`/
+    // `*)` already rely on for `*`).
+    "=>", "*>",
     // §2.9.1's attribute-instance delimiters. Tokenizing these as their own
     // 2-character lexemes (rather than relying on the grammar layer to
     // disambiguate `(`+`*` / `*`+`)` from multiplication) is what lets

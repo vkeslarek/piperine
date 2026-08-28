@@ -492,15 +492,15 @@ delay values).
 **Requirement**: LRMW3-06
 
 **Done when**:
-- [ ] `specify (a => y) = (1.0, 1.0); endspecify` parses into `PathDecl` with
+- [x] `specify (a => y) = (1.0, 1.0); endspecify` parses into `PathDecl` with
       both delays
-- [ ] The full-connection form `(a, b *> y, z) = 1.5;` parses with the right
+- [x] The full-connection form `(a, b *> y, z) = 1.5;` parses with the right
       input/output lists
-- [ ] `specparam tr = 1.0;` inside the block parses and is readable from the AST
-- [ ] The block is no longer stored as an unread span (the old
+- [x] `specparam tr = 1.0;` inside the block parses and is readable from the AST
+- [x] The block is no longer stored as an unread span (the old
       `items: vec![]` shape is gone)
-- [ ] Declares `//! LRM-COVERS: A.7.2, A.7.3, A.7.4`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_specify`
+- [x] Declares `//! LRM-COVERS: A.7.2, A.7.3, A.7.4`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_specify`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): real specify-block grammar for paths and specparams`
