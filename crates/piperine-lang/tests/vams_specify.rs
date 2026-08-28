@@ -1,15 +1,14 @@
 //! LRM-COVERS: A.7.1, A.7.2, A.7.3, A.7.4, A.7.5, A.7.5.1, A.7.5.2, A.7.5.3
-//! `specify` blocks (T15/T16/T17, LRMW3-06/LRMW3-07): real grammar
+//! `specify` blocks (T15/T16/T17/T18, LRMW3-06/LRMW3-07): real grammar
 //! productions for `specparam` declarations and simple path declarations
 //! (parallel `=>` and full `*>`, 1/2/3/6/12 delay values, T15), the eight
-//! in-scope system timing checks (T16), and named loud-error recognition
-//! for the forms Piperine does not lower — edge-sensitive/state-dependent
+//! in-scope system timing checks (T16), named loud-error recognition for
+//! the forms Piperine does not lower — edge-sensitive/state-dependent
 //! paths, `PATHPULSE$`, `pulsestyle_*`, `showcancelled`/`noshowcancelled`
-//! (T17) — replacing the old token-skipping stub. T15/T16/T17's own tests
-//! read the parsed AST directly (`Parser`); T17's fail-loud tests also run
-//! the full `parse_and_elaborate` pipeline, since the loud error fires at
-//! elaboration (`ElabErrorKind::UnsupportedConstruct`), not at parse time.
-//! POM lowering of the *supported* forms is T18's target.
+//! (T17) — and const-evaluated POM lowering (`Module::specify()`, T18),
+//! replacing the old token-skipping stub. T15/T16/T17's own tests read
+//! the parsed AST directly (`Parser`); T17/T18's tests run the full
+//! `parse_and_elaborate` pipeline.
 
 use piperine_lang::ast::{Item, ModuleItem, SpecifyBlock, TimingCheckKind};
 use piperine_lang::{Parser, SourceMap};
@@ -316,10 +315,101 @@ fn every_recognized_specify_item_is_typed_not_an_unread_span() {
 #[test]
 fn a_supported_specify_block_still_elaborates_cleanly() {
     // Guards against T17's check firing on the happy path — a block with
-    // no unsupported forms elaborates past the specify arm (T18 will make
-    // it observable on the POM; for now this just proves no false-positive
-    // rejection).
+    // no unsupported forms elaborates past the specify arm.
     let full = "module top(a, y);\ninout electrical a, y;\nspecify\n(a => y) = 1.0;\nendspecify\nendmodule\n";
     piperine_lang::parse_and_elaborate(full, &SourceMap::dummy())
         .expect("a supported specify block elaborates without error");
+}
+
+// ─────────────────────────────── T18 ───────────────────────────────────
+
+fn elab(module_src: &str) -> piperine_lang::Design {
+    let full = format!(
+        "module top(a, y, clk, d);\n\
+         inout electrical a, y, clk, d;\n\
+         {module_src}\n\
+         endmodule\n"
+    );
+    piperine_lang::parse_and_elaborate(&full, &SourceMap::dummy())
+        .unwrap_or_else(|e| panic!("elaboration failed: {e:?}"))
+}
+
+#[test]
+fn module_specify_returns_the_authored_block_in_authored_order() {
+    let design = elab(
+        "specify\n\
+         specparam tr = 1.0;\n\
+         specparam tf = 2.0;\n\
+         (a => y) = (1.0, 1.0);\n\
+         $setup(d, posedge clk, 1.0);\n\
+         endspecify",
+    );
+    let m = design.module("top").expect("top elaborated");
+    let sb = m.specify();
+    assert_eq!(sb.specparams, vec![("tr".to_string(), 1.0), ("tf".to_string(), 2.0)]);
+    assert_eq!(sb.paths.len(), 1);
+    assert_eq!(sb.paths[0].delays, vec![1.0, 1.0]);
+    assert_eq!(sb.checks.len(), 1);
+    assert_eq!(sb.checks[0].kind, piperine_lang::pom::SpecifyTimingCheckKind::Setup);
+    assert_eq!(sb.checks[0].limits, vec![1.0]);
+}
+
+#[test]
+fn path_delay_values_are_const_evaluated_not_left_as_expressions() {
+    let design = elab("specify\n(a => y) = (2.0 + 1.0, 5.0 / 2.0);\nendspecify");
+    let m = design.module("top").expect("top elaborated");
+    assert_eq!(m.specify().paths[0].delays, vec![3.0, 2.5]);
+}
+
+#[test]
+fn multiple_specify_blocks_compose_in_authored_order() {
+    let design = elab(
+        "specify\nspecparam tr = 1.0;\nendspecify\n\
+         specify\nspecparam tf = 2.0;\nendspecify",
+    );
+    let m = design.module("top").expect("top elaborated");
+    assert_eq!(m.specify().specparams, vec![("tr".to_string(), 1.0), ("tf".to_string(), 2.0)]);
+}
+
+#[test]
+fn path_terminal_naming_a_non_port_fails_loud_citing_a_7_3() {
+    let full = "module top(a, y);\ninout electrical a, y;\nreal not_a_port;\nspecify\n(not_a_port => y) = 1.0;\nendspecify\nendmodule\n";
+    let err = piperine_lang::parse_and_elaborate(full, &SourceMap::dummy())
+        .expect_err("not_a_port is not a module port");
+    let msg = err.to_string();
+    assert!(msg.contains("not_a_port"), "{msg}");
+    assert!(msg.contains("A.7.3"), "{msg}");
+}
+
+#[test]
+fn timing_check_terminal_naming_a_non_port_fails_loud_citing_a_7_3() {
+    let full = "module top(a, y, clk, d);\ninout electrical a, y, clk, d;\nreal not_a_port;\nspecify\n$setup(not_a_port, posedge clk, 1.0);\nendspecify\nendmodule\n";
+    let err = piperine_lang::parse_and_elaborate(full, &SourceMap::dummy())
+        .expect_err("not_a_port is not a module port");
+    let msg = err.to_string();
+    assert!(msg.contains("not_a_port"), "{msg}");
+    assert!(msg.contains("A.7.3"), "{msg}");
+}
+
+#[test]
+fn a_module_with_no_specify_block_has_an_empty_one() {
+    let full = "module top(a, y);\ninout electrical a, y;\nendmodule\n";
+    let design = piperine_lang::parse_and_elaborate(full, &SourceMap::dummy()).expect("elaborate");
+    let m = design.module("top").expect("top elaborated");
+    assert!(m.specify().is_empty());
+}
+
+#[test]
+fn specify_block_round_trips_through_serde() {
+    let design = elab(
+        "specify\n\
+         specparam tr = 1.0;\n\
+         (a => y) = (1.0, 2.0);\n\
+         $setup(d, posedge clk, 1.0);\n\
+         endspecify",
+    );
+    let json = serde_json::to_string(&design).expect("serialize design");
+    let back: piperine_lang::Design = serde_json::from_str(&json).expect("deserialize design");
+    let m = back.module("top").expect("top survives");
+    assert_eq!(m.specify(), design.module("top").unwrap().specify());
 }

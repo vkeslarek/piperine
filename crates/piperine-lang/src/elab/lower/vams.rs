@@ -118,6 +118,12 @@ impl Elaborator {
         // whole module.
         let mut constraint_labels: Vec<(String, Option<miette::SourceSpan>)> = Vec::new();
         let mut gates: Vec<crate::pom::GateInstance> = Vec::new();
+        // `specify` blocks (T18, LRMW3-06/LRMW3-07): the raw authored AST
+        // is buffered here (the T17 unsupported-form check already ran
+        // inline, below) and const-evaluated into the POM's
+        // `SpecifyBlock` once `module`'s port list is final — path/check
+        // terminals validate against it (A.7.3).
+        let mut pending_specify: Vec<crate::ast::SpecifyBlock> = Vec::new();
         // `assign target = expr;` (§8.5.3.1/§8.5.3.2, LRMW2-06): collected
         // here, lowered into a synthesized behavior in a second pass below
         // once `ports`/`wires` are final — a target's domain (digital vs.
@@ -392,6 +398,7 @@ impl Elaborator {
                         })
                         .with_span(Some(to_miette_span(u.span))));
                     }
+                    pending_specify.push(sb.clone());
                 }
                 // `constraint begin … end` (sanctioned extension, MD-49 +
                 // `constraint-statements`): the authored statements land
@@ -650,6 +657,12 @@ impl Elaborator {
         // flattening/circuit-build looks for a node that was never
         // registered.
         validate_indexed_net_refs(&module)?;
+
+        // `specify` blocks (T18, LRMW3-06/LRMW3-07): const-evaluate every
+        // buffered block now that `module`'s port list is final, merging
+        // all blocks' lists in authored order (the same "multiple blocks
+        // compose" rule `constraints` already uses).
+        module.specify = lower_specify_blocks(&pending_specify, &module, &env)?;
 
         Ok(module)
     }
@@ -2177,6 +2190,99 @@ fn expr_to_net_ref(expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
 /// A referenced name this module doesn't itself declare (e.g. a
 /// hierarchical or not-yet-elaborated name) is skipped — out of this
 /// check's scope, not a false positive.
+/// Const-evaluates every buffered `ast::SpecifyBlock` (T18, LRMW3-06/
+/// LRMW3-07) into the POM's `pom::SpecifyBlock`, merging all blocks' lists
+/// in authored order. A path/check terminal naming something that is not
+/// one of `module`'s declared ports fails loud citing A.7.3 (the LRM
+/// restricts specify terminals to `input_port_identifier`/
+/// `output_port_identifier`/`inout_port_identifier`).
+fn lower_specify_blocks(
+    blocks: &[crate::ast::SpecifyBlock],
+    module: &Module,
+    env: &ConstEnv,
+) -> Result<crate::pom::SpecifyBlock, ElabError> {
+    use crate::pom::{PathDelay, SpecifyEdgeIdent as PomEdge, SpecifyTimingCheckKind as PomKind, TimingCheck};
+
+    let check_terminal = |name: &str, span: crate::PreprocessedSpan| -> Result<(), ElabError> {
+        if module.port(name).is_none() {
+            return Err(ElabError::from(ElabErrorKind::UnsupportedConstruct {
+                construct: format!("specify terminal `{name}`"),
+                clause: "A.7.3".to_string(),
+                replacement: format!(
+                    "a declared port of module `{}` (specify_input_terminal_descriptor/specify_output_terminal_descriptor names only a module port, A.7.3)",
+                    module.name()
+                ),
+            })
+            .with_span(Some(to_miette_span(span))));
+        }
+        Ok(())
+    };
+    let eval = |expr: &Expr, ctx: &str| -> Result<f64, ElabError> {
+        env.eval_f64(expr)
+            .map_err(|source| ElabError::from(ElabErrorKind::ConstEval { context: ctx.to_string(), source }))
+    };
+    let edge = |e: Option<crate::ast::EdgeIdent>| -> Option<PomEdge> {
+        e.map(|e| match e {
+            crate::ast::EdgeIdent::Posedge => PomEdge::Posedge,
+            crate::ast::EdgeIdent::Negedge => PomEdge::Negedge,
+        })
+    };
+
+    let mut out = crate::pom::SpecifyBlock::default();
+    for block in blocks {
+        for (name, expr) in block.specparams.iter().flat_map(|s| s.names.iter()) {
+            out.specparams.push((name.clone(), eval(expr, &format!("specparam `{name}`"))?));
+        }
+        for p in &block.paths {
+            for t in p.inputs.iter().chain(p.outputs.iter()) {
+                check_terminal(t, p.span)?;
+            }
+            let delays = p
+                .delays
+                .iter()
+                .map(|e| eval(e, "specify path delay"))
+                .collect::<Result<Vec<f64>, _>>()?;
+            out.paths.push(PathDelay {
+                inputs: p.inputs.clone(),
+                outputs: p.outputs.clone(),
+                full: p.full,
+                delays,
+            });
+        }
+        for c in &block.checks {
+            check_terminal(&c.reference_event.terminal, c.reference_event.span)?;
+            if let Some(d) = &c.data_event {
+                check_terminal(&d.terminal, d.span)?;
+            }
+            let kind = match c.kind {
+                crate::ast::TimingCheckKind::Setup => PomKind::Setup,
+                crate::ast::TimingCheckKind::Hold => PomKind::Hold,
+                crate::ast::TimingCheckKind::SetupHold => PomKind::SetupHold,
+                crate::ast::TimingCheckKind::Width => PomKind::Width,
+                crate::ast::TimingCheckKind::Period => PomKind::Period,
+                crate::ast::TimingCheckKind::Recovery => PomKind::Recovery,
+                crate::ast::TimingCheckKind::Removal => PomKind::Removal,
+                crate::ast::TimingCheckKind::Skew => PomKind::Skew,
+            };
+            let limits = c
+                .limits
+                .iter()
+                .map(|e| eval(e, "system timing check limit"))
+                .collect::<Result<Vec<f64>, _>>()?;
+            out.checks.push(TimingCheck {
+                kind,
+                reference_terminal: c.reference_event.terminal.clone(),
+                reference_edge: edge(c.reference_event.edge),
+                data_terminal: c.data_event.as_ref().map(|d| d.terminal.clone()),
+                data_edge: c.data_event.as_ref().and_then(|d| edge(d.edge)),
+                limits,
+                notifier: c.notifier.clone(),
+            });
+        }
+    }
+    Ok(out)
+}
+
 fn validate_indexed_net_refs(module: &Module) -> Result<(), ElabError> {
     // `Some(width)` only for a net actually declared `NetType::Array` —
     // a width-1 array (e.g. `tap[0:segs-2]` monomorphized with `segs ==

@@ -392,6 +392,12 @@ pub struct Module {
     /// form (MD-25): a `ground` declaration reads back exactly as written.
     #[serde(default)]
     pub ground_names: Vec<String>,
+    /// This module's `specify` block(s), merged in authored order across
+    /// blocks (T18, LRMW3-06/LRMW3-07) — const-evaluated, so (unlike
+    /// `behaviors`/`functions`) it round-trips through serde like the
+    /// rest of the POM.
+    #[serde(default)]
+    pub specify: crate::pom::SpecifyBlock,
     pub origin: Option<String>,
 }
 
@@ -433,7 +439,8 @@ impl Module {
             behaviors, functions: Vec::new(),
             branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
             constraints: Vec::new(), timescale: None, gates: Vec::new(),
-            ground_names: Vec::new(), origin: None,
+            ground_names: Vec::new(), specify: crate::pom::SpecifyBlock::default(),
+            origin: None,
         }
     }
 
@@ -480,6 +487,9 @@ impl Module {
     /// All authored constraint statements of this module's `constraint`
     /// block(s), in authored order across kinds (multiple blocks compose).
     pub fn constraints(&self) -> &[crate::pom::PomConstraintStmt] { &self.constraints }
+    /// This module's authored `specify` block(s) (LRM Annex A.7), merged
+    /// in authored order across blocks when more than one is present.
+    pub fn specify(&self) -> &crate::pom::SpecifyBlock { &self.specify }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

@@ -564,12 +564,12 @@ runs first owns it; the commit body records which)
 **Requirement**: LRMW3-06, LRMW3-07
 
 **Done when**:
-- [ ] `Module::specify()` returns the authored block, in authored order
-- [ ] Terminals naming something that is not a module port fail loud citing
+- [x] `Module::specify()` returns the authored block, in authored order
+- [x] Terminals naming something that is not a module port fail loud citing
       A.7.3
-- [ ] POM serde round-trips the block (the wire contract rule)
-- [ ] Declares `//! LRM-COVERS: A.7.3`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] POM serde round-trips the block (the wire contract rule)
+- [x] Declares `//! LRM-COVERS: A.7.3`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): lower specify blocks into the POM`
