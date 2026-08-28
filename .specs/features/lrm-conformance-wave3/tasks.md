@@ -279,13 +279,13 @@ genvars
 **Requirement**: LRMW3-02
 
 **Done when**:
-- [ ] `I(bus[0], g) <+ V(bus[0], g)/1e3;` compiles and stamps **that bit's**
+- [x] `I(bus[0], g) <+ V(bus[0], g)/1e3;` compiles and stamps **that bit's**
       node only (asserted through a DC solve, not through elaboration)
-- [ ] `V(bus[3], bus[1])` resolves both terminals
-- [ ] A non-constant index still fails loud (T6's rule, re-asserted here so
+- [x] `V(bus[3], bus[1])` resolves both terminals
+- [x] A non-constant index still fails loud (T6's rule, re-asserted here so
       widening cannot silently swallow it)
-- [ ] Declares `//! LRM-COVERS: 5.5.2`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] Declares `//! LRM-COVERS: 5.5.2`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): resolve analog terminals through a constant index`

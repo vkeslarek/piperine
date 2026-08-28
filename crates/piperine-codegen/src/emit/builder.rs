@@ -939,12 +939,25 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Index-aware terminal name (LRM §5.5.2) — the JIT-emission-stage twin of
+/// `resolve::pom::expr::terminal_name_of` / `flatten::analog`'s own copy.
+/// By the time an expression reaches emission, any enclosing `analog for`
+/// is already unrolled, so a vector-element `Expr::Index{base, index}`
+/// always carries a constant `index` here.
 pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
     match e? {
         // Hierarchical/scoped names (`load.p`) are already one joined
         // `Ident` string by the time they reach the AST — the grammar does
         // the joining (`piperine_lang::ast::expr`'s own doc comment).
         Expr::Ident { name, .. } => Some(name.clone()),
+        Expr::Index { base, index, .. } => {
+            let Expr::Ident { name, .. } = base.as_ref() else { return None };
+            let i = piperine_lang::elab::const_eval::ConstEnv::new().eval_int(index).ok()?;
+            if i < 0 {
+                return None;
+            }
+            Some(crate::resolve::pom::structure::element_node_name(name, i as u64))
+        }
         _ => None,
     }
 }

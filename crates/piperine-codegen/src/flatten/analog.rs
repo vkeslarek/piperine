@@ -1355,7 +1355,7 @@ impl<'m> AnalogFlattener<'m> {
                     "nonlinear flux (branch current inside the flux coefficient) is not supported",
                 ));
             }
-            let (pa, pb) = (self.resolve_node(a), self.resolve_node(b));
+            let (pa, pb) = (self.resolve_node(a)?, self.resolve_node(b)?);
             terms.push((pa, pb, self.finish_expr(coeff)?));
         }
         Ok((self.finish_expr(resistive)?, terms, Vec::new()))
@@ -1387,7 +1387,7 @@ impl<'m> AnalogFlattener<'m> {
                     "nonlinear branch-current impedance (I(...) inside its own coefficient) in a potential contribution",
                 ));
             }
-            let (pa, pb) = (self.resolve_node(a), self.resolve_node(b));
+            let (pa, pb) = (self.resolve_node(a)?, self.resolve_node(b)?);
             terms.push((pa, pb, self.finish_expr(coeff)?));
         }
         Ok((rest, terms))
@@ -1413,8 +1413,8 @@ impl<'m> AnalogFlattener<'m> {
             && let Some(nature_kind) = self.nature_kind_for_access(function) {
                 let plus_name = ident_str(Some(pos)).unwrap_or_else(|| "?".into());
                 let minus_name = neg.as_deref().and_then(|n| ident_str(Some(n))).unwrap_or_else(|| "0".into());
-                let plus = self.resolve_node(&plus_name);
-                let minus = self.resolve_node(&minus_name);
+                let plus = self.resolve_node(&plus_name)?;
+                let minus = self.resolve_node(&minus_name)?;
                 return Ok((nature_kind, plus, minus));
             }
         // A custom discipline access name (§3.6.1.2) has no dedicated AST
@@ -1434,8 +1434,8 @@ impl<'m> AnalogFlattener<'m> {
                 };
                 let plus_name = ident_str(Some(pos)).unwrap_or_else(|| "?".into());
                 let minus_name = neg.and_then(|n| ident_str(Some(n))).unwrap_or_else(|| "0".into());
-                let plus = self.resolve_node(&plus_name);
-                let minus = self.resolve_node(&minus_name);
+                let plus = self.resolve_node(&plus_name)?;
+                let minus = self.resolve_node(&minus_name)?;
                 return Ok((nature_kind, plus, minus));
             }
         // Anything that is not an access-function call. A bare-identifier
@@ -1458,14 +1458,24 @@ impl<'m> AnalogFlattener<'m> {
         )))
     }
 
-    fn resolve_node(&self, name: &str) -> NodeId {
+    /// Resolve a node name to its `NodeId`, or fail loud — an unresolved
+    /// name here (e.g. a widened terminal whose index never becomes an
+    /// elaboration constant, LRM §5.5.2/§5.9.3) must never silently
+    /// collapse to `NodeId::GROUND` and mis-wire the circuit
+    /// (CLAUDE.md's "fail loud, never a silent no-op" rule).
+    fn resolve_node(&self, name: &str) -> Result<NodeId, CodegenError> {
         if self.module.symbols.is_ground(name) {
-            return NodeId::GROUND;
+            return Ok(NodeId::GROUND);
         }
         self.module.symbols.nodes()
             .find(|(_, n)| n.name == name)
             .map(|(id, _)| id)
-            .unwrap_or(NodeId::GROUND)
+            .ok_or_else(|| CodegenError::unsupported(format!(
+                "analog terminal `{name}` does not resolve to a node (LRM §5.5.2: a vector element \
+                 index must be a constant expression, though it may include genvar variables — \
+                 an index that never becomes an elaboration constant, or a plain typo'd name, both \
+                 land here)"
+            )))
     }
 
     fn add_flow(&mut self, expr: PomExpr, plus: NodeId, minus: NodeId) -> Result<(), CodegenError> {
@@ -2025,9 +2035,25 @@ fn case_arm_cond(scrutinee: &PomExpr, arm: &piperine_lang::ast::CaseArm) -> PomE
     }
 }
 
+/// Index-aware terminal name (LRM §5.5.2) — the flatten-stage twin of
+/// `resolve::pom::expr::terminal_name_of`. By the time a contribution
+/// destination reaches this pass, any enclosing `analog for` has already
+/// been unrolled (`unroll_loop`/`unroll_for`'s `subst_stmt` substitution),
+/// so a genvar-indexed `Expr::Index{base, index}` always carries a plain
+/// integer-literal `index` here — no deferral needed, unlike the pom-stage
+/// copy. `ConstEnv::new()` (no environment) still folds a small constant
+/// expression (`bus[3-1]`), matching the pom-stage copy's fold rule.
 fn ident_str(e: Option<&PomExpr>) -> Option<String> {
     match e? {
         PomExpr::Ident { name, .. } => Some(name.clone()),
+        PomExpr::Index { base, index, .. } => {
+            let PomExpr::Ident { name, .. } = base.as_ref() else { return None };
+            let i = ConstEnv::new().eval_int(index).ok()?;
+            if i < 0 {
+                return None;
+            }
+            Some(crate::resolve::pom::structure::element_node_name(name, i as u64))
+        }
         _ => None,
     }
 }

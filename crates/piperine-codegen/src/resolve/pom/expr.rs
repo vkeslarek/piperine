@@ -38,22 +38,73 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
     };
     let nature = ctx.symbols.add_nature(function.as_str(), nature_kind);
 
-    let plus_name = ident_from_expr(Some(pos)).unwrap_or_else(|| "?".into());
-    let minus_name = neg.as_deref().and_then(|n| ident_from_expr(Some(n))).unwrap_or_else(|| "0".into());
-
-    let plus = ctx.require_node(&plus_name);
-    let minus = ctx.require_node(&minus_name);
+    let plus = resolve_terminal_or_defer(pos, ctx);
+    let minus = match neg.as_deref() {
+        Some(n) => resolve_terminal_or_defer(n, ctx),
+        None => ctx.require_node("0"),
+    };
 
     (nature, plus, minus)
 }
 
-/// A hierarchical/scoped name (`load.p`) is already one joined `Ident`
-/// string by the time it reaches this layer — the grammar does the
-/// joining (`ast/expr.rs`'s own doc comment); there is no separate
-/// `Field`-style AST node to unwrap, unlike PHDL.
-pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
+/// Resolve one contribution-destination terminal to a `NodeId`, tolerating
+/// a genvar-indexed vector access (LRM §5.5.2) whose index is not yet an
+/// elaboration constant *at this lowering stage* — `analog for` loops are
+/// unrolled later, in `flatten::analog::unroll_loop`, which substitutes the
+/// loop index with a concrete integer per iteration before the same
+/// terminal is re-resolved there for real. Deferring here only when the
+/// indexed vector itself demonstrably exists (its `[0]` element is a
+/// registered node) keeps a genuinely bad terminal (typo'd name, wrong
+/// shape) failing loud through `require_node` exactly as before this
+/// function existed (T7/design.md Risk row on `ident_from_expr` widening).
+fn resolve_terminal_or_defer(e: &Expr, ctx: &mut LowerCtx) -> NodeId {
+    if let Some(name) = terminal_name_of(Some(e), ctx) {
+        return ctx.require_node(&name);
+    }
+    if let Expr::Index { base, .. } = e
+        && let Expr::Ident { name, .. } = base.as_ref()
+        && ctx.lookup_node(&format!("{name}[0]")).is_some()
+    {
+        // Deferred: the concrete element resolves post-unroll in
+        // `flatten::analog::AnalogFlattener::parse_dest`. This placeholder
+        // is never stamped — `resolve_stmt`'s `S::Contribution` arm only
+        // uses this function's result for `scan_noise` attribution on
+        // *this* call, and the resolved statement itself keeps the whole
+        // (still-symbolic) target expression for the flattener to re-parse
+        // after unrolling.
+        return NodeId::GROUND;
+    }
+    ctx.require_node("?")
+}
+
+/// A destination/read terminal name, index-aware (LRM §5.5.2): a bare
+/// `Expr::Ident` resolves as before (unchanged behavior — a
+/// hierarchical/scoped name like `load.p` is already one joined `Ident`
+/// string by the time it reaches this layer, the grammar does the
+/// joining, `ast/expr.rs`'s own doc comment; there is no separate
+/// `Field`-style AST node to unwrap, unlike PHDL);
+/// `Expr::Index{base: Ident, index}` resolves to `"{base}[{i}]"` when
+/// `index` folds to a non-negative elaboration constant — via
+/// `piperine_lang::elab::const_eval::ConstEnv`, the same evaluator
+/// `flatten::analog`'s `for`-loop unroller uses to fold a genvar index
+/// per iteration — matching `structure.rs`'s own `name[i]` element-node
+/// naming (the format string is the contract between the two). `ctx` is
+/// accepted for interface symmetry with the deferred-resolution caller
+/// ([`resolve_terminal_or_defer`]) but unused here: constant folding
+/// needs no lowering-context lookup. Anything else (a non-constant
+/// index, any other expression shape) returns `None`, same as the
+/// former `ident_from_expr` did.
+pub(crate) fn terminal_name_of(e: Option<&Expr>, _ctx: &LowerCtx) -> Option<String> {
     match e? {
         Expr::Ident { name, .. } => Some(name.clone()),
+        Expr::Index { base, index, .. } => {
+            let Expr::Ident { name, .. } = base.as_ref() else { return None };
+            let i = piperine_lang::elab::const_eval::ConstEnv::new().eval_int(index).ok()?;
+            if i < 0 {
+                return None;
+            }
+            Some(super::structure::element_node_name(name, i as u64))
+        }
         _ => None,
     }
 }
@@ -286,7 +337,7 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
                 && args.len() == 2
                 && matches!(&args[0], Expr::Ident { .. }) =>
         {
-            let local = ident_from_expr(Some(&args[0])).expect("matched Expr::Ident above");
+            let local = terminal_name_of(Some(&args[0]), ctx).expect("matched Expr::Ident above");
             let resolved_second = resolve_expr(&args[1], ctx);
             if let Expr::Str { value: hier, .. } = &resolved_second {
                 // Only a plain, undotted, non-`$`-prefixed name resolves

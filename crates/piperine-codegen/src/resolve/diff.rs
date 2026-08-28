@@ -569,9 +569,23 @@ fn walk(expr: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
     }
 }
 
+/// Index-aware terminal name (LRM §5.5.2) — the branch-discovery-stage
+/// twin of `resolve::pom::expr::terminal_name_of`/`flatten::analog`'s
+/// copy: by the time [`collect_branches`] runs (JIT emission's
+/// branch-voltage precompute), any enclosing `analog for` is already
+/// unrolled, so a vector-element `Expr::Index{base, index}` always
+/// carries a constant `index` here.
 fn ident_str(e: &Expr) -> Option<String> {
     match e {
         Expr::Ident { name, .. } => Some(name.clone()),
+        Expr::Index { base, index, .. } => {
+            let Expr::Ident { name, .. } = base.as_ref() else { return None };
+            let i = piperine_lang::elab::const_eval::ConstEnv::new().eval_int(index).ok()?;
+            if i < 0 {
+                return None;
+            }
+            Some(crate::resolve::pom::structure::element_node_name(name, i as u64))
+        }
         _ => None,
     }
 }
