@@ -1710,10 +1710,16 @@ fn declarator_net_type(d: &Declarator, discipline: &str, env: &ConstEnv) -> Resu
         None => Ok(base),
         Some(r) => {
             let msb = env.eval_int(&r.msb).map_err(|e| {
-                ElabError::from(ElabErrorKind::ConstEval { context: format!("net `{}` range msb", d.name), source: e })
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("net `{}` range msb (§3.6.3: range bounds must be elaboration constants)", d.name),
+                    source: e,
+                })
             })?;
             let lsb = env.eval_int(&r.lsb).map_err(|e| {
-                ElabError::from(ElabErrorKind::ConstEval { context: format!("net `{}` range lsb", d.name), source: e })
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("net `{}` range lsb (§3.6.3: range bounds must be elaboration constants)", d.name),
+                    source: e,
+                })
             })?;
             let width = (msb - lsb).unsigned_abs() + 1;
             Ok(NetType::Array(Box::new(base), width))

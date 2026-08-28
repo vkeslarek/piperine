@@ -30,6 +30,32 @@ fn is_direction_kw(t: &Tok) -> bool {
     matches!(t, Tok::Ident(s) if s == "input" || s == "output" || s == "inout")
 }
 
+/// Applies a leading `[msb:lsb]` range (Annex A.2.1.2/A.2.2.1's `range`
+/// slot, parsed by [`Grammar::parse_optional_leading_range`]) to every
+/// declarator in `names` that carries none of its own (§3.6.3: the range
+/// applies to the whole declaration list). A declarator that already
+/// carries its own range is a loud [`ParseErrorKind::LeadingRangeConflict`]
+/// naming both spans — a declared name may carry only one range.
+fn apply_leading_range(leading: &Option<Range>, names: &mut [Declarator]) -> Result<(), ParseError> {
+    let Some(leading) = leading else { return Ok(()) };
+    for d in names.iter_mut() {
+        match &d.range {
+            Some(own) => {
+                return Err(ParseError::new(
+                    ParseErrorKind::LeadingRangeConflict {
+                        name: d.name.clone(),
+                        leading: leading.span,
+                        own: own.span,
+                    },
+                    own.span,
+                ));
+            }
+            None => d.range = Some(leading.clone()),
+        }
+    }
+    Ok(())
+}
+
 /// True when `t` is `parameter`/`localparam` — the same comma ambiguity as
 /// [`is_direction_kw`], for a `#(...)` parameter port list.
 fn is_param_kw(t: &Tok) -> bool {
@@ -395,7 +421,9 @@ impl Grammar {
         let attrs = self.parse_attr_instances()?;
         let start = self.peek_span();
         let (discipline, _) = self.expect_ident()?;
-        let names = self.parse_declarator_list()?;
+        let leading_range = self.parse_optional_leading_range()?;
+        let mut names = self.parse_declarator_list()?;
+        apply_leading_range(&leading_range, &mut names)?;
         let nodeset = if self.eat_punct("=") { Some(self.parse_expr()?) } else { None };
         self.expect_punct(";")?;
         Ok(NetDecl {
@@ -523,6 +551,15 @@ impl Grammar {
             names.push(self.parse_declarator()?);
         }
         Ok(names)
+    }
+
+    /// `[msb:lsb]` immediately after the discipline/direction/type token
+    /// and before the declarator list — Annex A.2.1.2/A.2.2.1's `range`
+    /// slot on `net_declaration`/`port_declaration`/1364 net and variable
+    /// declarations (§3.6.3): `electrical [0:3] bus;`, `input [0:7] p;`,
+    /// `reg [3:0] q;`. Absent when the next token isn't `[`.
+    pub(crate) fn parse_optional_leading_range(&mut self) -> Result<Option<Range>, ParseError> {
+        if self.at_punct("[") { Ok(Some(self.parse_range()?)) } else { Ok(None) }
     }
 
     fn parse_declarator(&mut self) -> Result<Declarator, ParseError> {

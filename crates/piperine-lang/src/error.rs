@@ -116,6 +116,13 @@ pub enum ParseErrorKind {
     /// An `` `end_keywords `` (§10.6) appeared with no open
     /// `` `begin_keywords `` to match.
     UnmatchedEndKeywords,
+    /// A declarator carries its own `[msb:lsb]` range while a leading
+    /// range already applies to the whole declaration list (§3.6.3) — a
+    /// declared name may carry only one range. `own` is this declarator's
+    /// own range span (the error's primary span); `leading` is the
+    /// declaration's leading range span, named so both locations are
+    /// reported.
+    LeadingRangeConflict { name: String, leading: PreprocessedSpan, own: PreprocessedSpan },
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -178,6 +185,15 @@ impl fmt::Display for ParseErrorKind {
             }
             ParseErrorKind::UnmatchedEndKeywords => {
                 write!(f, "`end_keywords has no matching `begin_keywords")
+            }
+            ParseErrorKind::LeadingRangeConflict { name, leading, own } => {
+                write!(
+                    f,
+                    "net `{name}` carries both a leading range (bytes {}..{}) and its own \
+                     declarator range (bytes {}..{}) — a declared name may carry only one \
+                     range (§3.6.3)",
+                    leading.start, leading.end, own.start, own.end
+                )
             }
         }
     }
