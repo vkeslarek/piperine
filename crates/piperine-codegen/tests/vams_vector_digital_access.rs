@@ -1,4 +1,4 @@
-//! LRM-COVERS: 4.2.1, 4.2.1.3
+//! LRM-COVERS: 4.2.1, 4.2.1.3, A.2.2.1
 //! LRMW3-01/LRMW3-03 (`lrm-conformance-wave3`): digital access through a
 //! vector index/part-select. Scalarized representation (MD-52): a width-N
 //! digital vector is N independently-named nets `q[0]`..`q[N-1]`
@@ -533,4 +533,120 @@ fn width_mismatch_truncates_a_wider_literal() {
     assert_eq!(bench.nets[w1.0], LogicValue::Zero, "wide[1] = low nibble bit 1 (0)");
     assert_eq!(bench.nets[w2.0], LogicValue::One, "wide[2] = low nibble bit 2 (1)");
     assert_eq!(bench.nets[w3.0], LogicValue::Zero, "wide[3] = low nibble bit 3 (0), the excess `11` above is discarded");
+}
+
+// ── T12: memory read/write through a constant index (LRMW3-04, §A.2.2.1) ──
+
+fn index_of_expr(base: &str, i: i64) -> Expr {
+    index_of(base, i)
+}
+
+/// `reg [1:0] mem [0:1];` scalarized as `mem[0][0]`, `mem[0][1]`,
+/// `mem[1][0]`, `mem[1][1]` (T5's nested naming) — an 8-node module:
+/// `mem[1] <= 2'b10;` writes word 1 through a constant index, then `d <=
+/// mem[1];` and `e <= mem[0];` read word 1 and word 0 back into two
+/// 2-bit output vectors.
+fn memory_module() -> LoweredBody {
+    let mut m = LoweredBody::new("Dut");
+    let mem00 = m.symbols.add_node("mem[0][0]", Domain::Digital);
+    let mem01 = m.symbols.add_node("mem[0][1]", Domain::Digital);
+    let mem10 = m.symbols.add_node("mem[1][0]", Domain::Digital);
+    let mem11 = m.symbols.add_node("mem[1][1]", Domain::Digital);
+    let d0 = m.symbols.add_node("d[0]", Domain::Digital);
+    let d1 = m.symbols.add_node("d[1]", Domain::Digital);
+    let e0 = m.symbols.add_node("e[0]", Domain::Digital);
+    let e1 = m.symbols.add_node("e[1]", Domain::Digital);
+    for n in [mem00, mem01, mem10, mem11] {
+        m.ports.push(Port { node: n, direction: Direction::Out });
+    }
+    for n in [d0, d1, e0, e1] {
+        m.ports.push(Port { node: n, direction: Direction::Out });
+    }
+    m.digital = Some(DigitalBody {
+        inputs: vec![],
+        outputs: vec![mem00, mem01, mem10, mem11, d0, d1, e0, e1],
+        regs: vec![],
+        reg_inits: vec![],
+        stmts: vec![
+            nonblocking("mem", based_bin(2, "10")).with_index_target("mem", 1),
+            nonblocking("d", index_of_expr("mem", 1)),
+            nonblocking("e", index_of_expr("mem", 0)),
+        ],
+    });
+    m
+}
+
+/// `Stmt` builder helper: rewrites a `nonblocking(base, value)`'s target
+/// from `Ident(base)` to `Index(base, i)` — used only to keep
+/// `memory_module`'s call sites reading as `mem[1] <= …` rather than a
+/// bespoke constructor per statement.
+trait WithIndexTarget {
+    fn with_index_target(self, base: &str, i: i64) -> Stmt;
+}
+impl WithIndexTarget for Stmt {
+    fn with_index_target(self, base: &str, i: i64) -> Stmt {
+        match self {
+            Stmt::NonBlockingAssign { span, value, .. } => {
+                Stmt::NonBlockingAssign { span, target: index_of(base, i), value }
+            }
+            Stmt::Assign { span, value, .. } => Stmt::Assign { span, target: index_of(base, i), value },
+            other => other,
+        }
+    }
+}
+
+/// Done-when #1: a word written at a constant index reads back at that
+/// index (`mem[1] <= 2'b10` then `d <= mem[1]` gives `d = 2'b10`) and
+/// leaves the *other* word untouched — `mem[0]` was never written, so
+/// `e <= mem[0]` must read back `X` in both bits, asserted per word (not
+/// just that *some* memory read happened).
+#[test]
+fn memory_word_write_and_read_through_constant_index() {
+    let module = memory_module();
+    let kernel = std::sync::Arc::new(DigitalKernel::compile(&module).expect("memory word read/write must compile"));
+    let nets: Vec<DigitalNet> = (0..8).map(DigitalNet).collect();
+    let (d0, d1, e0, e1) = (nets[4], nets[5], nets[6], nets[7]);
+    let mut instance = DigitalInstance::new(kernel, 0, vec![], nets.clone(), vec![]).expect("instance");
+    let mut bench = Bench::new(8);
+    bench.init(&mut instance);
+    bench.step(0.0, &mut instance);
+
+    // 2'b10: digit '0' (rightmost) -> bit0=0, digit '1' (leftmost) -> bit1=1.
+    assert_eq!(bench.nets[d0.0], LogicValue::Zero, "d[0] must be word 1's bit 0 (written 2'b10 -> bit0=0)");
+    assert_eq!(bench.nets[d1.0], LogicValue::One, "d[1] must be word 1's bit 1 (written 2'b10 -> bit1=1)");
+    assert_eq!(bench.nets[e0.0], LogicValue::X, "e[0] (word 0, never written) must read X, not a silent 0");
+    assert_eq!(bench.nets[e1.0], LogicValue::X, "e[1] (word 0, never written) must read X, not a silent 0");
+}
+
+/// Done-when #2: a non-constant memory index fails loud — `k` is a
+/// runtime `integer` variable, never an elaboration constant. `d <=
+/// mem[k];` reads through the non-constant index directly (the read side
+/// of `rhs_bits_for_vector_assign`'s `Expr::Index` arm).
+#[test]
+fn non_constant_memory_index_fails_loud() {
+    let mut m = LoweredBody::new("Dut");
+    let mem00 = m.symbols.add_node("mem[0][0]", Domain::Digital);
+    let mem10 = m.symbols.add_node("mem[1][0]", Domain::Digital);
+    let d0 = m.symbols.add_node("d[0]", Domain::Digital);
+    let k = m.symbols.add_var("k", Type::Integer);
+    m.ports.push(Port { node: mem00, direction: Direction::Out });
+    m.ports.push(Port { node: mem10, direction: Direction::Out });
+    m.ports.push(Port { node: d0, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
+        inputs: vec![],
+        outputs: vec![mem00, mem10, d0],
+        regs: vec![k],
+        reg_inits: vec![(k, int(0))],
+        stmts: vec![Stmt::NonBlockingAssign {
+            span: SP,
+            target: ident("d"),
+            value: Expr::Index { span: SP, base: Box::new(ident("mem")), index: Box::new(ident("k")) },
+        }],
+    });
+    let err = match DigitalKernel::compile(&m) {
+        Ok(_) => panic!("a non-constant memory index must fail loud, never silently resolve"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("5.5.2"), "error must cite LRM §5.5.2 (constant-index rule), got: {msg}");
 }

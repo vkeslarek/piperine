@@ -277,19 +277,21 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
     }
 
-    /// T11 (LRMW3-03, §4.2.1.3): if `target` names a *whole* scalarized
-    /// vector (a bare `Expr::Ident` whose name is not itself a registered
-    /// node/var, but whose `name[0]` element is — MD-52's scalarized
-    /// representation, `structure.rs`'s element-node loop), expand the
-    /// assignment into one `target[i] = <bit i of value>` `Stmt` per
-    /// element, `0..width`, and return it as a `Stmt::Block` for the
-    /// caller to re-dispatch through the ordinary (per-bit) `emit_stmt`
-    /// path — which already gets the Active/Nba region split right for
-    /// free, since each expanded statement is a normal `Assign`/
-    /// `NonBlockingAssign` of the same kind. Returns `Ok(None)` for any
-    /// scalar target (the overwhelmingly common case) — a bare-scalar
-    /// `Ident` whose name resolves directly is left to the existing
-    /// `emit_assign` path unchanged.
+    /// T11/T12 (LRMW3-03/LRMW3-04, §4.2.1.3/A.2.2.1): if `target` names a
+    /// *whole* scalarized vector or memory word — a bare `Expr::Ident`
+    /// whose name is not itself a registered node/var but whose `name[0]`
+    /// element is (MD-52's scalarized vector representation), or an
+    /// `Expr::Index{base: Ident, index}` naming a *constant* memory word
+    /// (`mem[a]`, T5's nested `Array(Array(elem, width), depth)` element
+    /// naming — `mem[a][0]` is the word's own scalarized element) — expand
+    /// the assignment into one `<word-base>[i] = <bit i of value>` `Stmt`
+    /// per element, `0..width`, returned as a `Stmt::Block` for the caller
+    /// to re-dispatch through the ordinary (per-bit) `emit_stmt` path,
+    /// which already gets the Active/Nba region split right for free
+    /// (each expanded statement is a normal `Assign`/`NonBlockingAssign`
+    /// of the same kind). Returns `Ok(None)` for any scalar target (the
+    /// overwhelmingly common case, and a plain non-memory bit-select
+    /// target like `q[2] = …`) — left to the existing `emit_assign` path.
     fn expand_whole_vector_assign(
         &mut self,
         target: &Expr,
@@ -297,13 +299,40 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         non_blocking: bool,
         span: piperine_lang::error::PreprocessedSpan,
     ) -> Result<Option<Stmt>, CodegenError> {
-        let Expr::Ident { name, .. } = target else { return Ok(None) };
-        // A directly-resolvable scalar name (var, net, or a single-bit
-        // scalarized element like "q[2]") is not a whole-vector target.
-        if self.resolver.vars.contains_key(name) || self.resolver.nodes.contains_key(name) {
-            return Ok(None);
-        }
-        let Some(width) = vector_width(self.module, name) else { return Ok(None) };
+        let word_base = match target {
+            Expr::Ident { name, .. } => {
+                // A directly-resolvable scalar name (var, net, or a
+                // single-bit scalarized element like "q[2]") is not a
+                // whole-vector target.
+                if self.resolver.vars.contains_key(name) || self.resolver.nodes.contains_key(name) {
+                    return Ok(None);
+                }
+                name.clone()
+            }
+            Expr::Index { base, index, .. } => {
+                let Expr::Ident { name, .. } = base.as_ref() else { return Ok(None) };
+                let i = piperine_lang::elab::const_eval::ConstEnv::new().eval_int(index).map_err(|e| {
+                    CodegenError::unsupported(format!(
+                        "memory index `{name}[...]` must be a constant expression (LRM §5.5.2): {e}"
+                    ))
+                })?;
+                if i < 0 {
+                    return Err(CodegenError::unsupported(format!(
+                        "memory index `{name}[{i}]` must be non-negative"
+                    )));
+                }
+                let elem = crate::resolve::pom::structure::element_node_name(name, i as u64);
+                // A plain (non-memory) bit-select target — "name[i]" is
+                // itself a registered scalar node/var — is not a
+                // whole-word target; leave it to `emit_assign`.
+                if self.resolver.vars.contains_key(&elem) || self.resolver.nodes.contains_key(&elem) {
+                    return Ok(None);
+                }
+                elem
+            }
+            _ => return Ok(None),
+        };
+        let Some(width) = vector_width(self.module, &word_base) else { return Ok(None) };
 
         let bits = rhs_bits_for_vector_assign(self.module, value, width)?;
         debug_assert_eq!(bits.len(), width);
@@ -312,7 +341,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         for (i, bit_value) in bits.into_iter().enumerate() {
             let elem_target = Expr::Ident {
                 span,
-                name: crate::resolve::pom::structure::element_node_name(name, i as u64),
+                name: crate::resolve::pom::structure::element_node_name(&word_base, i as u64),
             };
             stmts.push(if non_blocking {
                 Stmt::NonBlockingAssign { span, target: elem_target, value: bit_value }
@@ -513,6 +542,29 @@ fn bit_literal(span: piperine_lang::error::PreprocessedSpan, digit: char) -> Exp
     }
 }
 
+/// The per-element source `Expr`s for copying a `src_width`-wide
+/// scalarized vector/memory-word (named `src_base`) into a `width`-wide
+/// target — zero-extending (excess target elements read as literal `0`)
+/// or truncating (excess source elements dropped) per 1364 §4.2.1.3,
+/// shared by the plain-vector and memory-word read arms of
+/// [`rhs_bits_for_vector_assign`].
+fn vector_source_bits(
+    span: piperine_lang::error::PreprocessedSpan,
+    src_base: &str,
+    src_width: usize,
+    width: usize,
+) -> Vec<Expr> {
+    (0..width)
+        .map(|i| {
+            if i < src_width {
+                Expr::Ident { span, name: crate::resolve::pom::structure::element_node_name(src_base, i as u64) }
+            } else {
+                bit_literal(span, '0')
+            }
+        })
+        .collect()
+}
+
 /// The right-hand-side expression for element `i` (`0` = lsb) of a
 /// whole-vector assignment whose target has `width` elements — either a
 /// based-literal's own decoded bits, or another (possibly
@@ -566,19 +618,36 @@ fn rhs_bits_for_vector_assign(
                      recognized scalarized vector (LRM §4.2.1.3)"
                 ))
             })?;
-            Ok((0..width)
-                .map(|i| {
-                    if i < src_width {
-                        Expr::Ident { span: *span, name: crate::resolve::pom::structure::element_node_name(src_name, i as u64) }
-                    } else {
-                        bit_literal(*span, '0')
-                    }
-                })
-                .collect())
+            Ok(vector_source_bits(*span, src_name, src_width, width))
+        }
+        // T12 (LRMW3-04, §A.2.2.1): `d = mem[a];` — a memory-word read
+        // through a *constant* index, same rule as every other widened
+        // vector-element resolver in this crate (LRM §5.5.2).
+        Expr::Index { span, base, index } => {
+            let Expr::Ident { name: mem_name, .. } = base.as_ref() else {
+                return Err(CodegenError::unsupported(format!(
+                    "memory read base must be a plain identifier: {value:?}"
+                )));
+            };
+            let i = piperine_lang::elab::const_eval::ConstEnv::new().eval_int(index).map_err(|e| {
+                CodegenError::unsupported(format!(
+                    "memory index `{mem_name}[...]` must be a constant expression (LRM §5.5.2): {e}"
+                ))
+            })?;
+            if i < 0 {
+                return Err(CodegenError::unsupported(format!("memory index `{mem_name}[{i}]` must be non-negative")));
+            }
+            let word_base = crate::resolve::pom::structure::element_node_name(mem_name, i as u64);
+            let src_width = vector_width(module, &word_base).ok_or_else(|| {
+                CodegenError::unsupported(format!(
+                    "`{mem_name}[{i}]` does not name a declared memory word (LRM §A.2.2.1)"
+                ))
+            })?;
+            Ok(vector_source_bits(*span, &word_base, src_width, width))
         }
         other => Err(CodegenError::unsupported(format!(
-            "whole-vector assignment source must be a based literal or another vector's own name \
-             (LRM §4.2.1.3): {other:?}"
+            "whole-vector assignment source must be a based literal, another vector's own name, or \
+             a constant-indexed memory word (LRM §4.2.1.3/§A.2.2.1): {other:?}"
         ))),
     }
 }

@@ -391,13 +391,24 @@ region the assignment already selected.
 **Requirement**: LRMW3-04
 
 **Done when**:
-- [ ] A word written at index `d` reads back at index `d` and leaves the other
+- [x] A word written at index `d` reads back at index `d` and leaves the other
       words untouched (asserted per word, not per memory)
-- [ ] A constant index is required; a non-constant index fails loud
+- [x] A constant index is required; a non-constant index fails loud
 - [ ] `$readmemh` into a declared memory populates it (reuses the existing
-      task implementation)
-- [ ] Declares `//! LRM-COVERS: A.2.2.1`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+      task implementation) — **BLOCKED, see commit body**: verified there is
+      no existing codegen wiring to reuse. `SystemTaskKind::Readmemh` is a
+      recognized enum variant (`piperine-lang/src/eval/tasks.rs`) and
+      `FileTable::readmem` (`piperine-solver/src/core/output.rs`) can parse a
+      hex/binary text file into a flat `&mut [u64]`, but
+      `emit/stmt.rs::S::TaskCall`'s dispatch has no arm for
+      `"readmemh"`/`"readmemb"` at all — it falls to
+      `other => Err(CodegenError::unknown_task(other))`. Wiring it needs a
+      new JIT trampoline (file-argument resolution, a `FileTable::readmem`
+      call, then unpacking each returned `u64` word into that word's
+      per-bit scalarized nodes) — a materially larger feature than "reuse an
+      existing implementation," out of this task's remaining scope.
+- [x] Declares `//! LRM-COVERS: A.2.2.1`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): memory read/write through a constant index`
