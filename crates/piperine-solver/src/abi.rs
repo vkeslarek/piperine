@@ -37,6 +37,11 @@ pub use crate::math::integration::{TrBdf2, TrBdf2Phase};
 // Digital evaluation
 pub use crate::digital::interface::{interpolate_a2d_crossing, CrossDir, DigitalPorts, EvalCtx, EventSink, QueueSink};
 pub use crate::digital::{DigitalEvent, DigitalNet, DriverId, DriverKind, DriverRecord, DriverTable, LogicValue, Strength};
+// Path delays / timing-check limits (T19/T20, LRMW3-06/LRMW3-07) — a
+// codegen circuit builder populates these per destination net at build
+// time, so they need an ABI-surface re-export like every other
+// codegen-visible digital type on this page.
+pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
 pub use crate::digital::regions::{Region, RegionAction, RegionEvent, RegionOutcome, RegionQueue};
 pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;

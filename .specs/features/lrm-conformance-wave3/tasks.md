@@ -587,13 +587,13 @@ already resolved at elaboration
 **Requirement**: LRMW3-06
 
 **Done when**:
-- [ ] A `(a => y) = (2.0, 3.0)` path makes `y`'s rise and fall delays observable
+- [x] A `(a => y) = (2.0, 3.0)` path makes `y`'s rise and fall delays observable
       in a transient run (edge timing asserted, not the table read back)
-- [ ] The delay is quantized by `` `timescale`` when one is in force
-- [ ] **Disclosed deviation pinned**: two paths into one net collapse onto one
+- [x] The delay is quantized by `` `timescale`` when one is in force
+- [x] **Disclosed deviation pinned**: two paths into one net collapse onto one
       record, asserted by a dedicated test naming the deviation
-- [ ] Declares `//! LRM-COVERS: A.7.4`
-- [ ] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine-solver`
+- [x] Declares `//! LRM-COVERS: A.7.4`
+- [x] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine-solver`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): specify path delays populate the solver delay table`

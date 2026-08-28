@@ -16,6 +16,7 @@ use piperine_lang::pom::{Design, IntrospectionMeta, Module};
 
 use piperine_solver::abi::NodeIdentifier;
 use piperine_solver::abi::CircuitInstance;
+use piperine_solver::abi::{DigitalNet, PathDelay};
 
 use crate::resolve::{NodeId, ParamId};
 use crate::resolve::pom::LoweredBody;
@@ -232,7 +233,71 @@ impl<'p> CircuitCompiler<'p> {
         {
             builder.add_top_behavior_device()?;
         }
-        builder.finish(top)
+        let (mut circuit, info) = builder.finish(top)?;
+        Self::populate_specify_delays(&mut circuit, &info, self.design, top_module);
+        Ok((circuit, info))
+    }
+
+    /// T19 (LRMW3-06): each `specify` path delay writes a `PathDelay`
+    /// record — keyed by destination net, via `CircuitBuildInfo`'s own
+    /// name→digital-net-index map (`info.digital_nets`, the same lookup a
+    /// host uses to read a digital net's value back) — into the built
+    /// circuit's `DelayTable`. Two sources of `specify` blocks are
+    /// checked: `top_module`'s own (rare — a pure structural wrapper
+    /// normally declares none) and each leaf instance's own module (the
+    /// common case — a `specify` block lives on the model with the
+    /// behavior it times), translated from the instantiated module's own
+    /// port names into `top_module`'s net names through that instance's
+    /// positional port connections.
+    ///
+    /// A destination terminal that never became a digital net (e.g. a
+    /// purely analog port sharing the specify block's scope) has nothing
+    /// to key a digital delay by and is skipped, not an error — the
+    /// terminal name itself was already validated against the module's
+    /// port list at POM-lowering time (T18, A.7.3).
+    ///
+    /// **Disclosed deviation** (design.md C5): `DelayTable` is per
+    /// destination *net*, not per source→destination *path* — two paths
+    /// into the same net collapse onto whichever is written last. Kept as
+    /// the solver's existing data model (T60), not reopened here.
+    fn populate_specify_delays(circuit: &mut CircuitInstance, info: &CircuitBuildInfo, design: &Design, top_module: &Module) {
+        Self::apply_specify_paths(circuit, info, top_module.specify(), top_module.timescale, |name| Some(name.to_string()));
+
+        for inst in top_module.instances() {
+            let Some(callee) = design.module(&inst.module) else { continue };
+            let sb = callee.specify();
+            if sb.paths.is_empty() {
+                continue;
+            }
+            let translate = |name: &str| -> Option<String> {
+                let idx = callee.ports().iter().position(|p| p.name() == name)?;
+                inst.ports.get(idx).map(|nr| nr.net().to_string())
+            };
+            Self::apply_specify_paths(circuit, info, sb, callee.timescale, translate);
+        }
+    }
+
+    /// Shared body of [`Self::populate_specify_delays`]'s two passes:
+    /// const-evaluated (T18) delays, quantized to `timescale` (T19), for
+    /// every path in `sb`, keyed by `translate`d destination-terminal
+    /// names into `info.digital_nets`.
+    fn apply_specify_paths(
+        circuit: &mut CircuitInstance,
+        info: &CircuitBuildInfo,
+        sb: &piperine_lang::pom::SpecifyBlock,
+        timescale: Option<piperine_lang::directives::Timescale>,
+        translate: impl Fn(&str) -> Option<String>,
+    ) {
+        for path in &sb.paths {
+            let quantized: Vec<f64> = path.delays.iter().map(|&d| quantize_to_timescale(d, timescale)).collect();
+            let delay = path_delay_from_values(&quantized);
+            for out in &path.outputs {
+                let Some(top_name) = translate(out) else { continue };
+                if let Some(&idx) = info.digital_nets.get(&top_name) {
+                    circuit.digital_state.delay_table.set(DigitalNet(idx), delay);
+                }
+            }
+        }
     }
 
     /// Evaluate a module's parameter values: defaults in id order (later
@@ -289,6 +354,34 @@ impl<'p> CircuitCompiler<'p> {
             .iter()
             .fold(base.to_string(), |acc, i| crate::resolve::pom::structure::element_node_name(&acc, *i));
         Self::resolve_node(body, &name)
+    }
+}
+
+/// Rounds `value` to the nearest multiple of the module's `` `timescale ``
+/// precision grid (T19, LRM §8.4.3.3's rule, the same formula
+/// `DigitalKernel::quantize_time` applies to runtime event times — kept in
+/// sync with it) — a module with no `` `timescale `` directive quantizes
+/// nothing.
+fn quantize_to_timescale(value: f64, ts: Option<piperine_lang::directives::Timescale>) -> f64 {
+    match ts.map(|t| 10f64.powi(t.precision_exponent)) {
+        Some(grid) if grid > 0.0 => (value / grid).round() * grid,
+        _ => value,
+    }
+}
+
+/// Builds a solver `PathDelay` triad from a specify path's const-evaluated
+/// delay list (A.7.4): 1 value is uniform; 2 values are rise/fall with
+/// `turn_off` defaulting to their minimum (1364's own default-delay rule);
+/// 3+ values take the first three as rise/fall/turn_off — the wider
+/// 6/12-value forms (0-to-1/1-to-0/…/z-transition triads) collapse onto
+/// this same triad, a deliberate simplification matching `DelayTable`'s
+/// own disclosed per-net (not per-transition-pair) model.
+fn path_delay_from_values(delays: &[f64]) -> PathDelay {
+    match delays.len() {
+        0 => PathDelay::default(),
+        1 => PathDelay::uniform(delays[0]),
+        2 => PathDelay { rise: delays[0], fall: delays[1], turn_off: delays[0].min(delays[1]) },
+        _ => PathDelay { rise: delays[0], fall: delays[1], turn_off: delays[2] },
     }
 }
 

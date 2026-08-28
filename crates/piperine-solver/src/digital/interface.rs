@@ -17,6 +17,7 @@
 //! signature break — so a model compiled or written against version N keeps
 //! working. Treat changes here like changes to a published FFI header.
 
+use crate::digital::delays::{DelayTable, PathDelay};
 use crate::digital::{DigitalEvent, DigitalNet, LogicValue};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -65,6 +66,11 @@ pub struct QueueSink<'q> {
     base_time: f64,
     source: usize,
     seq: &'q mut u64,
+    /// A `specify` path delay table (T19/T21, LRMW3-06), consulted
+    /// additively on top of whatever delay the emitting model itself
+    /// computed — `None` (the default from [`Self::new`]) is the
+    /// pre-T19 behavior, no path-delay lookup at all.
+    delay_table: Option<&'q DelayTable>,
 }
 
 impl<'q> QueueSink<'q> {
@@ -76,14 +82,30 @@ impl<'q> QueueSink<'q> {
         source: usize,
         seq: &'q mut u64,
     ) -> Self {
-        Self { queue, base_time, source, seq }
+        Self { queue, base_time, source, seq, delay_table: None }
+    }
+
+    /// Attaches a `specify` [`DelayTable`] (T19) — every subsequent
+    /// [`EventSink::emit`] on this sink adds the destination net's
+    /// declared rise/fall/turn-off delay on top of the model's own
+    /// `delay` argument, keyed by the *destination* value (`One` → rise,
+    /// `Zero` → fall, anything else → `turn_off` — the simple, non-edge-
+    /// sensitive path-delay selection rule LRMW3-06 scopes).
+    pub fn with_delay_table(mut self, table: &'q DelayTable) -> Self {
+        self.delay_table = Some(table);
+        self
     }
 }
 
 impl EventSink for QueueSink<'_> {
     fn emit(&mut self, net: DigitalNet, value: LogicValue, delay: f64) {
+        let extra = self.delay_table.map(|t| t.get(net)).map(|pd: PathDelay| match value {
+            LogicValue::One => pd.rise,
+            LogicValue::Zero => pd.fall,
+            _ => pd.turn_off,
+        }).unwrap_or(0.0);
         self.queue.push(Reverse(DigitalEvent {
-            time: self.base_time + delay,
+            time: self.base_time + delay + extra,
             net,
             value,
             source: self.source,

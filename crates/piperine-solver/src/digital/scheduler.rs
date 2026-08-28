@@ -108,7 +108,8 @@ impl DigitalState {
             }
             for (i, device) in devices.iter_mut().enumerate() {
                 if fired[i] || device.has_input_on(&changed) {
-                    let mut sink = QueueSink::new(&mut self.event_queue, t, i, &mut seq);
+                    let mut sink =
+                        QueueSink::new(&mut self.event_queue, t, i, &mut seq).with_delay_table(&self.delay_table);
                     device.comb_phase(&ctx, &mut sink);
                 }
             }
@@ -219,7 +220,8 @@ impl DigitalState {
                     // Scope ctx so the immutable borrow of self.nets ends
                     // before we mutate it below when draining local_q.
                     let ctx = EvalCtx { time: t, nets: &self.nets, analog: analog_slice };
-                    let mut sink = QueueSink::new(&mut local_q, t, dev_idx, &mut seq);
+                    let mut sink =
+                        QueueSink::new(&mut local_q, t, dev_idx, &mut seq).with_delay_table(&self.delay_table);
                     device.comb_phase(&ctx, &mut sink);
                 }
 
