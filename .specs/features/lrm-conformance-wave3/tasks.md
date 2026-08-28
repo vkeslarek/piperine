@@ -302,12 +302,16 @@ threading), test in `crates/piperine-codegen/tests/`
 **Requirement**: LRMW3-02
 
 **Done when**:
-- [ ] §5.5.2's own `dac` example (verbatim from the LRM) elaborates, compiles
-      and produces the analytic weighted sum in a transient run
-- [ ] Each unrolled iteration resolves to its own bit (asserted by reading the
+- [x] §5.5.2's own `dac` example (verbatim from the LRM) elaborates, compiles
+      and produces the analytic weighted sum in a transient run (adapted per
+      `analog_loop_unroll.rs`'s own precedent: literal bound instead of a
+      `parameter` bound — see commit body)
+- [x] Each unrolled iteration resolves to its own bit (asserted by reading the
       per-bit node values, not by the summed output alone)
-- [ ] Declares `//! LRM-COVERS: 5.5.2`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] Declares `//! LRM-COVERS: 5.5.2`
+- [x] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine-lang`
+      (this task's actual fix landed in `piperine-lang`'s elaborator, not
+      `flatten/analog.rs` — see commit body)
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): genvar-indexed vector access in analog loops`

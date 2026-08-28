@@ -149,12 +149,18 @@ fn constant_index_resolves_both_terminals_of_a_read() {
 /// "the index ... shall be a constant expression"). `k` is a runtime
 /// `integer` variable, never elaboration-constant, and this contribution
 /// sits outside any `for`/`repeat` loop, so no unroll ever substitutes it.
-/// This actually fails during *elaboration*
-/// (`elab/lower/vams.rs::resolve_or_create_branch`/`expr_to_net_ref`,
-/// which resolves an access-function terminal's index against a
-/// `ConstEnv` to build the module's implicit branch list) — earlier than
-/// `piperine-codegen`'s own widened resolver ever runs, but the same LRM
-/// rule and the same "fail loud, never a silent 0/no-op" guarantee.
+///
+/// **Updated by T8** (LRMW3-02): elaboration itself no longer rejects this
+/// — `elab/lower/vams.rs::net_ref_for_branch` now tolerates *any*
+/// non-foldable `Expr::Index` terminal at the elaboration-branch-list
+/// stage, on the (correct, for T8's own genvar case) assumption that a
+/// real per-iteration substitution happens later in codegen. Since this
+/// contribution is *not* inside a `for` loop, that substitution never
+/// happens, so the still-unresolved `bus[k]` terminal now fails loud one
+/// stage later instead — `flatten::analog::AnalogFlattener::resolve_node`
+/// (T7's own fail-loud fix), citing the identical §5.5.2 rule. The
+/// guarantee this test pins ("never silently resolves to a node") holds
+/// unchanged; only which layer reports it moved.
 #[test]
 fn non_constant_index_still_fails_loud() {
     let err = match kernel(
@@ -172,7 +178,7 @@ fn non_constant_index_still_fails_loud() {
         "error must cite LRM §5.5.2 (the index-must-be-constant rule), got: {err}"
     );
     assert!(
-        err.contains("undefined name: k") || err.contains("const eval error"),
-        "error must name the actual failure (index `k` is not an elaboration constant), got: {err}"
+        err.contains("does not resolve to a node"),
+        "error must name the actual failure (the unresolved `bus[k]` terminal), got: {err}"
     );
 }

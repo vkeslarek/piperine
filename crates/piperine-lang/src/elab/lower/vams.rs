@@ -2648,8 +2648,8 @@ fn resolve_or_create_branch<'a>(
     }
 
     let env = ConstEnv::new();
-    let pos_ref = expr_to_net_ref(pos, &env)?;
-    let neg_ref = neg.map(|e| expr_to_net_ref(e, &env)).transpose()?;
+    let pos_ref = net_ref_for_branch(pos, &env)?;
+    let neg_ref = neg.map(|e| net_ref_for_branch(e, &env)).transpose()?;
     if let Some(idx) = branches
         .iter()
         .position(|b| b.is_implicit() && b.pos == pos_ref && b.neg == neg_ref)
@@ -2659,6 +2659,50 @@ fn resolve_or_create_branch<'a>(
 
     branches.push(Branch { span: None, doc: None, name: None, pos: pos_ref, neg: neg_ref, kind: BranchKind::Probe });
     Ok(branches.last_mut().unwrap())
+}
+
+/// [`expr_to_net_ref`] for an access-function terminal specifically
+/// (never a port connection, which keeps calling `expr_to_net_ref`
+/// directly and stays strict) — T8 (LRMW3-02, LRM §5.9.3's own "the index
+/// ... though it may include genvar variables"): a genvar-indexed vector
+/// element inside an `analog for` loop cannot fold against this pass's
+/// `env`, because elaboration builds this module's branch list once, over
+/// raw source, *before* `piperine-codegen`'s `flatten::analog::unroll_loop`
+/// ever substitutes the loop's concrete per-iteration index — that
+/// substitution, and the real per-bit node resolution, happen entirely in
+/// codegen (`resolve/pom/expr.rs`/`flatten/analog.rs`, T7/T8's own
+/// widened resolvers), which never consults this elaboration-level
+/// `Branch` list for wiring at all (it re-derives node ids from the
+/// unresolved `AccessFunction` AST it keeps symbolic for exactly this
+/// reason).
+///
+/// So when the index doesn't fold here, this falls back to a documented
+/// sentinel branch identity (a leading-digit-prefixed name, the same
+/// "unreachable by any real identifier" idiom `NetRef::unconnected` uses)
+/// instead of failing the whole module's elaboration. **Disclosed
+/// deviation**: every genvar-indexed access-function occurrence sharing
+/// one *base* net name collapses onto the same sentinel branch — a
+/// distinct-bit §5.4.2 potential/flow kind-conflict inside a genvar loop
+/// could go undetected (a strictly-worse read of a rule that would
+/// otherwise loudly reject the accidental error). This degrades to the
+/// same shape as the T46 precedent immediately above
+/// (`resolve_contribution_branches`'s indirect-contribution doc comment)
+/// rather than blocking a legitimate LRM construct outright. A
+/// non-constant index for a reason *other* than an unresolved identifier
+/// (a genuinely malformed expression shape) still fails loud unchanged —
+/// only the "undefined name" `ConstEvalError` case is tolerated.
+fn net_ref_for_branch(expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
+    match expr_to_net_ref(expr, env) {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            let Expr::Index { base, .. } = expr else { return Err(e) };
+            let Expr::Ident { name, .. } = base.as_ref() else { return Err(e) };
+            if !matches!(&e, ElabError { kind: ElabErrorKind::ConstEval { source, .. }, .. } if matches!(source, crate::elab::const_eval::ConstEvalError::Undefined(_))) {
+                return Err(e);
+            }
+            Ok(NetRef::simple(format!("0$genvar_branch:{name}")))
+        }
+    }
 }
 
 /// Validates a parameter's evaluated default against its declared
