@@ -90,6 +90,10 @@ pub enum TimingCheckKind {
     Width,
     Period,
     Skew,
+    /// `$recovery` (Annex A.7.5.1, T20, LRMW3-07).
+    Recovery,
+    /// `$removal` (Annex A.7.5.1, T20, LRMW3-07).
+    Removal,
 }
 
 /// One recorded timing-check limit on a net.

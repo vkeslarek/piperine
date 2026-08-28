@@ -609,11 +609,11 @@ already resolved at elaboration
 **Requirement**: LRMW3-07
 
 **Done when**:
-- [ ] Every parsed check kind maps to its `TimingCheckKind` (exhaustive match,
+- [x] Every parsed check kind maps to its `TimingCheckKind` (exhaustive match,
       no catch-all)
-- [ ] Limits are readable per net after a build
-- [ ] Declares `//! LRM-COVERS: A.7.5.1`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] Limits are readable per net after a build
+- [x] Declares `//! LRM-COVERS: A.7.5.1`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): timing-check limits populate the solver table`

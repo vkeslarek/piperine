@@ -16,7 +16,7 @@ use piperine_lang::pom::{Design, IntrospectionMeta, Module};
 
 use piperine_solver::abi::NodeIdentifier;
 use piperine_solver::abi::CircuitInstance;
-use piperine_solver::abi::{DigitalNet, PathDelay};
+use piperine_solver::abi::{DigitalNet, PathDelay, TimingCheckKind, TimingCheckLimit};
 
 use crate::resolve::{NodeId, ParamId};
 use crate::resolve::pom::LoweredBody;
@@ -262,11 +262,12 @@ impl<'p> CircuitCompiler<'p> {
     /// the solver's existing data model (T60), not reopened here.
     fn populate_specify_delays(circuit: &mut CircuitInstance, info: &CircuitBuildInfo, design: &Design, top_module: &Module) {
         Self::apply_specify_paths(circuit, info, top_module.specify(), top_module.timescale, |name| Some(name.to_string()));
+        Self::apply_specify_checks(circuit, info, top_module.specify(), |name| Some(name.to_string()));
 
         for inst in top_module.instances() {
             let Some(callee) = design.module(&inst.module) else { continue };
             let sb = callee.specify();
-            if sb.paths.is_empty() {
+            if sb.paths.is_empty() && sb.checks.is_empty() {
                 continue;
             }
             let translate = |name: &str| -> Option<String> {
@@ -274,6 +275,57 @@ impl<'p> CircuitCompiler<'p> {
                 inst.ports.get(idx).map(|nr| nr.net().to_string())
             };
             Self::apply_specify_paths(circuit, info, sb, callee.timescale, translate);
+            Self::apply_specify_checks(circuit, info, sb, translate);
+        }
+    }
+
+    /// T20 (LRMW3-07): each parsed system timing check (T18's
+    /// const-evaluated `pom::TimingCheck`) writes a `TimingCheckLimit`
+    /// into the built circuit's `TimingCheckTable`, keyed by the check's
+    /// data net — the single-event forms (`$width`/`$period`) key by
+    /// their sole (reference) net instead. `$setuphold` decomposes into
+    /// two entries (`Setup` with `limits[0]`, `Hold` with `limits[1]`) on
+    /// the same net — an exhaustive match, no catch-all, over every one
+    /// of the eight in-scope kinds.
+    fn apply_specify_checks(
+        circuit: &mut CircuitInstance,
+        info: &CircuitBuildInfo,
+        sb: &piperine_lang::pom::SpecifyBlock,
+        translate: impl Fn(&str) -> Option<String>,
+    ) {
+        for check in &sb.checks {
+            let keyed_terminal = check.data_terminal.as_deref().unwrap_or(&check.reference_terminal);
+            let Some(top_name) = translate(keyed_terminal) else { continue };
+            let Some(&idx) = info.digital_nets.get(&top_name) else { continue };
+            let net = DigitalNet(idx);
+            use piperine_lang::pom::SpecifyTimingCheckKind as PomKind;
+            match check.kind {
+                PomKind::Setup => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Setup, limit: check.limits[0] });
+                }
+                PomKind::Hold => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Hold, limit: check.limits[0] });
+                }
+                PomKind::SetupHold => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Setup, limit: check.limits[0] });
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Hold, limit: check.limits[1] });
+                }
+                PomKind::Width => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Width, limit: check.limits[0] });
+                }
+                PomKind::Period => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Period, limit: check.limits[0] });
+                }
+                PomKind::Recovery => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Recovery, limit: check.limits[0] });
+                }
+                PomKind::Removal => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Removal, limit: check.limits[0] });
+                }
+                PomKind::Skew => {
+                    circuit.digital_state.timing_checks.set(net, TimingCheckLimit { kind: TimingCheckKind::Skew, limit: check.limits[0] });
+                }
+            }
         }
     }
 
