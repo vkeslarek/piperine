@@ -4,7 +4,7 @@
 
 use crate::ast::Item;
 
-use crate::pom::ElabError;
+use crate::pom::{ElabError, ElabErrorKind};
 
 use super::Elaborator;
 
@@ -48,9 +48,20 @@ impl Elaborator {
                 Item::Primitive(p) => {
                     self.syms.primitives.insert(p.name.clone(), p.clone());
                 }
-                // `config` (1364 configuration-selection) lands in a
-                // later phase (spec Out of Scope).
-                Item::Config(_) => {}
+                // `config` (1364 configuration-selection, Annex A.1.5,
+                // T22, LRMW3-08 / spec P2 AC4): fails loud instead of
+                // silently accepting and discarding it — Piperine's own
+                // `Piperine.toml`/`SourceMap` is the replacement (spec §0
+                // rule 1: an exclusion names what to use instead).
+                Item::Config(c) => {
+                    let span = miette::SourceSpan::new(c.span.start.into(), c.span.end.saturating_sub(c.span.start));
+                    return Err(ElabError::from(ElabErrorKind::UnsupportedConstruct {
+                        construct: format!("config declaration `{}`", c.name),
+                        clause: "A.1.5".to_string(),
+                        replacement: "Piperine.toml / SourceMap (Piperine has no 1364 configuration-selection mechanism — build configuration lives in Piperine.toml)".to_string(),
+                    })
+                    .with_span(Some(span)));
+                }
                 // `const` (sanctioned extension, MD-50) is evaluated and
                 // landed on `Design::consts` by the `LowerDeclarations`
                 // pass — the eval needs the ConstEnv, not registration.

@@ -377,13 +377,41 @@ impl Elaborator {
                 }
                 // generate (T25), gates: not yet lowered — later tasks
                 // extend this match.
-                ModuleItem::Specparam(_)
-                | ModuleItem::Defparam(_)
-                | ModuleItem::Task(_)
+                ModuleItem::Defparam(_)
                 | ModuleItem::LoopGenerate(_)
                 | ModuleItem::IfGenerate(_)
                 | ModuleItem::CaseGenerate(_)
                 | ModuleItem::GenerateRegion(_) => {}
+                // A module-scope `specparam` (Annex A.2.7/§3.4.4 prose —
+                // outside a `specify` block, T22, LRMW3-08 / spec P2
+                // AC4): Piperine's `specify`-block specparam (T15/T18) is
+                // the only lowered form; a bare module-level one fails
+                // loud instead of vanishing.
+                ModuleItem::Specparam(sp) => {
+                    let span = miette::SourceSpan::new(sp.span.start.into(), sp.span.end.saturating_sub(sp.span.start));
+                    return Err(ElabError::from(ElabErrorKind::UnsupportedConstruct {
+                        construct: format!(
+                            "module-scope specparam `{}`",
+                            sp.names.first().map(|(n, _)| n.as_str()).unwrap_or("?")
+                        ),
+                        clause: "3.4.4".to_string(),
+                        replacement: "a specparam declared inside a specify block (Annex A.7.1, T15/T18)".to_string(),
+                    })
+                    .with_span(Some(span)));
+                }
+                // An in-module `task` declaration (Annex A.2.7, T22,
+                // LRMW3-08 / spec P2 AC4): Piperine has no digital-task
+                // execution model — a task declaration fails loud instead
+                // of vanishing.
+                ModuleItem::Task(t) => {
+                    let span = miette::SourceSpan::new(t.span.start.into(), t.span.end.saturating_sub(t.span.start));
+                    return Err(ElabError::from(ElabErrorKind::UnsupportedConstruct {
+                        construct: format!("task declaration `{}`", t.name),
+                        clause: "A.2.7".to_string(),
+                        replacement: "an `analog function`/`function` (LRM §4.7) or a plugin script (piperine-plugin)".to_string(),
+                    })
+                    .with_span(Some(span)));
+                }
                 // `specify` (T17, LRMW3-06 / spec P2 AC3): a form the
                 // grammar recognizes but Piperine does not lower fails
                 // loud here, citing its Annex A clause — never a silent

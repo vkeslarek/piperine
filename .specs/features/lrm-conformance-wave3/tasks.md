@@ -655,14 +655,14 @@ replacement }` and use it for the three silent no-op arms.
 **Requirement**: LRMW3-08, spec P2 AC4
 
 **Done when**:
-- [ ] A `config` declaration fails loud citing A.1.5 and naming
+- [x] A `config` declaration fails loud citing A.1.5 and naming
       `Piperine.toml`/`SourceMap` as the replacement (spec §0 rule 1)
-- [ ] A module-scope `specparam` outside a specify block, and a module-scope
+- [x] A module-scope `specparam` outside a specify block, and a module-scope
       `task`, each fail loud citing their clause
-- [ ] `elab_module`'s `ModuleItem` match has **no** silent `=> {}` arm left for
+- [x] `elab_module`'s `ModuleItem` match has **no** silent `=> {}` arm left for
       these three (asserted by a test per construct, not by reading the code)
-- [ ] Declares `//! LRM-COVERS: A.1.5, 3.4.4`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Declares `//! LRM-COVERS: A.1.5, 3.4.4`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): config/specparam/task fail loud instead of vanishing`
