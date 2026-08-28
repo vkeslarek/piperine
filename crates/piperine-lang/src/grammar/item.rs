@@ -1449,14 +1449,73 @@ impl Grammar {
         let mut specparams = Vec::new();
         let mut paths = Vec::new();
         let mut checks = Vec::new();
+        let mut unsupported = Vec::new();
         while !self.at_kw("endspecify") {
             if self.at_eof() {
                 return Err(self.eof_error("'endspecify'".to_string()));
             }
             if self.at_kw("specparam") {
-                specparams.push(self.parse_specparam()?);
+                // `pulse_control_specparam`, Annex A.2.4 — `PATHPULSE$`
+                // (bare or `PATHPULSE$in$out`) is a naming convention on
+                // the specparam identifier, not a distinct keyword, so it
+                // is caught here rather than falling into the ordinary
+                // `parse_specparam` path (whose value grammar cannot parse
+                // `(reject_limit, error_limit)` as an ordinary expression
+                // anyway — this gives it a named citation instead of a
+                // generic parse failure).
+                if matches!(self.peek_at(1), Tok::Ident(s) if s.starts_with("PATHPULSE$")) {
+                    let item_start = self.peek_span();
+                    self.skip_specify_item();
+                    unsupported.push(UnsupportedSpecifyForm {
+                        span: item_start,
+                        construct: "PATHPULSE$ pulse-control specparam",
+                        clause: "A.2.4",
+                    });
+                } else {
+                    specparams.push(self.parse_specparam()?);
+                }
+            } else if self.at_kw("if") || self.at_kw("ifnone") {
+                // `state_dependent_path_declaration`, Annex A.7.2.
+                let item_start = self.peek_span();
+                self.skip_specify_item();
+                unsupported.push(UnsupportedSpecifyForm {
+                    span: item_start,
+                    construct: "state-dependent path declaration",
+                    clause: "A.7.2",
+                });
+            } else if self.at_kw("pulsestyle_onevent") || self.at_kw("pulsestyle_ondetect") {
+                // `pulsestyle_declaration`, Annex A.7.1.
+                let item_start = self.peek_span();
+                self.skip_specify_item();
+                unsupported.push(UnsupportedSpecifyForm {
+                    span: item_start,
+                    construct: "pulsestyle declaration",
+                    clause: "A.7.1",
+                });
+            } else if self.at_kw("showcancelled") || self.at_kw("noshowcancelled") {
+                // `showcancelled_declaration`, Annex A.7.1.
+                let item_start = self.peek_span();
+                self.skip_specify_item();
+                unsupported.push(UnsupportedSpecifyForm {
+                    span: item_start,
+                    construct: "showcancelled declaration",
+                    clause: "A.7.1",
+                });
             } else if matches!(self.peek(), Tok::SystemIdent(_)) {
                 checks.push(self.parse_system_timing_check()?);
+            } else if self.at_punct("(")
+                && matches!(self.peek_at(1), Tok::Ident(s) if s == "posedge" || s == "negedge")
+            {
+                // `edge_sensitive_path_declaration`, Annex A.7.2 — the
+                // `[edge_identifier]` immediately after `(` is what
+                // distinguishes it from a simple path declaration.
+                let item_start = self.peek_span();
+                self.skip_specify_item();
+                unsupported.push(UnsupportedSpecifyForm {
+                    span: item_start,
+                    construct: "edge-sensitive path declaration",
+                    clause: "A.7.2",
+                });
             } else if self.at_punct("(") {
                 paths.push(self.parse_path_declaration()?);
             } else {
@@ -1472,7 +1531,21 @@ impl Grammar {
             specparams,
             paths,
             checks,
+            unsupported,
         })
+    }
+
+    /// Consumes tokens up to and including the next top-level `;` — keeps
+    /// the cursor synchronized past a recognized-but-unsupported
+    /// `specify_item` (T17) without deep-parsing its internals; the item
+    /// is still typed (construct + clause), never an unread span.
+    fn skip_specify_item(&mut self) {
+        while !self.at_punct(";") && !self.at_eof() {
+            self.bump();
+        }
+        if self.at_punct(";") {
+            self.bump();
+        }
     }
 
     /// `timing_check_event`/`controlled_timing_check_event`, Annex A.7.5.3.

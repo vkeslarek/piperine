@@ -543,11 +543,11 @@ runs first owns it; the commit body records which)
 **Requirement**: LRMW3-06, spec P2 AC3
 
 **Done when**:
-- [ ] Each unsupported form has its own test asserting the clause is cited
-- [ ] No specify construct reaches the POM as an unread span (asserted by a
+- [x] Each unsupported form has its own test asserting the clause is cited
+- [x] No specify construct reaches the POM as an unread span (asserted by a
       test that walks the parsed block and requires every item to be typed)
-- [ ] Declares `//! LRM-COVERS: A.7.2`
-- [ ] Gate passes: `cargo test -p piperine-lang --test vams_specify`
+- [x] Declares `//! LRM-COVERS: A.7.2`
+- [x] Gate passes: `cargo test -p piperine-lang --test vams_specify`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): unlowerable specify forms fail loud citing their production`

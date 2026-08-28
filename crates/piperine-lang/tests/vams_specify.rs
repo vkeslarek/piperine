@@ -1,14 +1,18 @@
-//! LRM-COVERS: A.7.2, A.7.3, A.7.4, A.7.5, A.7.5.1, A.7.5.2, A.7.5.3
-//! `specify` blocks (T15/T16, LRMW3-06/LRMW3-07): real grammar productions
-//! for `specparam` declarations and simple path declarations (parallel
-//! `=>` and full `*>`, 1/2/3/6/12 delay values, T15) and the eight
-//! in-scope system timing checks (T16) — replacing the old token-skipping
-//! stub. Grammar-level only: these tests read the parsed AST directly
-//! (`Parser`), never elaboration — later tasks (T17 unsupported forms, T18
-//! POM lowering) extend this same target.
+//! LRM-COVERS: A.7.1, A.7.2, A.7.3, A.7.4, A.7.5, A.7.5.1, A.7.5.2, A.7.5.3
+//! `specify` blocks (T15/T16/T17, LRMW3-06/LRMW3-07): real grammar
+//! productions for `specparam` declarations and simple path declarations
+//! (parallel `=>` and full `*>`, 1/2/3/6/12 delay values, T15), the eight
+//! in-scope system timing checks (T16), and named loud-error recognition
+//! for the forms Piperine does not lower — edge-sensitive/state-dependent
+//! paths, `PATHPULSE$`, `pulsestyle_*`, `showcancelled`/`noshowcancelled`
+//! (T17) — replacing the old token-skipping stub. T15/T16/T17's own tests
+//! read the parsed AST directly (`Parser`); T17's fail-loud tests also run
+//! the full `parse_and_elaborate` pipeline, since the loud error fires at
+//! elaboration (`ElabErrorKind::UnsupportedConstruct`), not at parse time.
+//! POM lowering of the *supported* forms is T18's target.
 
 use piperine_lang::ast::{Item, ModuleItem, SpecifyBlock, TimingCheckKind};
-use piperine_lang::Parser;
+use piperine_lang::{Parser, SourceMap};
 
 fn parse_specify(module_src: &str) -> SpecifyBlock {
     let full = format!(
@@ -187,4 +191,135 @@ fn unknown_dollar_construct_inside_specify_fails_loud_naming_it() {
     let msg = parse_specify_err("specify\n$nochange(posedge clk, d, 0, 0);\nendspecify");
     assert!(msg.contains("nochange"), "error names the unrecognized construct: {msg}");
     assert!(msg.contains("A.7.5.1"), "error cites the production: {msg}");
+}
+
+// ─────────────────────────────── T17 ───────────────────────────────────
+
+fn elab_err(module_src: &str) -> String {
+    let full = format!(
+        "module top(a, y, clk, d);\n\
+         inout a, y, clk, d;\n\
+         {module_src}\n\
+         endmodule\n"
+    );
+    piperine_lang::parse_and_elaborate(&full, &SourceMap::dummy())
+        .expect_err("expected an elaboration error")
+        .to_string()
+}
+
+#[test]
+fn edge_sensitive_path_is_recognized_and_named() {
+    let sb = parse_specify("specify\n(posedge a => (y : d)) = 1.0;\nendspecify");
+    assert_eq!(sb.paths.len(), 0, "not lowered into an ordinary path");
+    assert_eq!(sb.unsupported.len(), 1);
+    assert_eq!(sb.unsupported[0].construct, "edge-sensitive path declaration");
+    assert_eq!(sb.unsupported[0].clause, "A.7.2");
+}
+
+#[test]
+fn edge_sensitive_path_fails_loud_at_elaboration() {
+    let msg = elab_err("specify\n(posedge a => (y : d)) = 1.0;\nendspecify");
+    assert!(msg.contains("edge-sensitive path declaration"), "{msg}");
+    assert!(msg.contains("A.7.2"), "{msg}");
+}
+
+#[test]
+fn state_dependent_path_is_recognized_and_named() {
+    let sb = parse_specify("specify\nif (a) (a => y) = 1.0;\nendspecify");
+    assert_eq!(sb.unsupported.len(), 1);
+    assert_eq!(sb.unsupported[0].construct, "state-dependent path declaration");
+    assert_eq!(sb.unsupported[0].clause, "A.7.2");
+}
+
+#[test]
+fn state_dependent_path_fails_loud_at_elaboration() {
+    let msg = elab_err("specify\nif (a) (a => y) = 1.0;\nendspecify");
+    assert!(msg.contains("state-dependent path declaration"), "{msg}");
+    assert!(msg.contains("A.7.2"), "{msg}");
+}
+
+#[test]
+fn ifnone_path_is_recognized_and_named() {
+    let sb = parse_specify("specify\nifnone (a => y) = 1.0;\nendspecify");
+    assert_eq!(sb.unsupported[0].construct, "state-dependent path declaration");
+}
+
+#[test]
+fn pathpulse_specparam_is_recognized_and_named() {
+    let sb = parse_specify("specify\nspecparam PATHPULSE$a$y = (1.0, 2.0);\nendspecify");
+    assert_eq!(sb.specparams.len(), 0, "not lowered as an ordinary specparam");
+    assert_eq!(sb.unsupported.len(), 1);
+    assert_eq!(sb.unsupported[0].construct, "PATHPULSE$ pulse-control specparam");
+    assert_eq!(sb.unsupported[0].clause, "A.2.4");
+}
+
+#[test]
+fn pathpulse_specparam_fails_loud_at_elaboration() {
+    let msg = elab_err("specify\nspecparam PATHPULSE$a$y = (1.0, 2.0);\nendspecify");
+    assert!(msg.contains("PATHPULSE$"), "{msg}");
+    assert!(msg.contains("A.2.4"), "{msg}");
+}
+
+#[test]
+fn pulsestyle_declaration_is_recognized_and_named() {
+    let sb = parse_specify("specify\npulsestyle_onevent y;\nendspecify");
+    assert_eq!(sb.unsupported[0].construct, "pulsestyle declaration");
+    assert_eq!(sb.unsupported[0].clause, "A.7.1");
+}
+
+#[test]
+fn pulsestyle_declaration_fails_loud_at_elaboration() {
+    let msg = elab_err("specify\npulsestyle_onevent y;\nendspecify");
+    assert!(msg.contains("pulsestyle declaration"), "{msg}");
+    assert!(msg.contains("A.7.1"), "{msg}");
+}
+
+#[test]
+fn showcancelled_declaration_is_recognized_and_named() {
+    let sb = parse_specify("specify\nshowcancelled y;\nendspecify");
+    assert_eq!(sb.unsupported[0].construct, "showcancelled declaration");
+    assert_eq!(sb.unsupported[0].clause, "A.7.1");
+}
+
+#[test]
+fn showcancelled_declaration_fails_loud_at_elaboration() {
+    let msg = elab_err("specify\nshowcancelled y;\nendspecify");
+    assert!(msg.contains("showcancelled declaration"), "{msg}");
+    assert!(msg.contains("A.7.1"), "{msg}");
+}
+
+#[test]
+fn noshowcancelled_declaration_is_recognized_and_named() {
+    let sb = parse_specify("specify\nnoshowcancelled y;\nendspecify");
+    assert_eq!(sb.unsupported[0].construct, "showcancelled declaration");
+}
+
+#[test]
+fn every_recognized_specify_item_is_typed_not_an_unread_span() {
+    // Mixed block: every construct present must land on exactly one typed
+    // list — nothing is silently dropped and nothing double-counts.
+    let sb = parse_specify(
+        "specify\n\
+         specparam tr = 1.0;\n\
+         (a => y) = 1.0;\n\
+         $setup(d, posedge clk, 1.0);\n\
+         if (a) (a => y) = 1.0;\n\
+         showcancelled y;\n\
+         endspecify",
+    );
+    assert_eq!(sb.specparams.len(), 1);
+    assert_eq!(sb.paths.len(), 1);
+    assert_eq!(sb.checks.len(), 1);
+    assert_eq!(sb.unsupported.len(), 2);
+}
+
+#[test]
+fn a_supported_specify_block_still_elaborates_cleanly() {
+    // Guards against T17's check firing on the happy path — a block with
+    // no unsupported forms elaborates past the specify arm (T18 will make
+    // it observable on the POM; for now this just proves no false-positive
+    // rejection).
+    let full = "module top(a, y);\ninout electrical a, y;\nspecify\n(a => y) = 1.0;\nendspecify\nendmodule\n";
+    piperine_lang::parse_and_elaborate(full, &SourceMap::dummy())
+        .expect("a supported specify block elaborates without error");
 }

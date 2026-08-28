@@ -369,16 +369,30 @@ impl Elaborator {
                 ModuleItem::Function(f) => {
                     functions.push(lower_function_decl(f)?);
                 }
-                // generate (T25), specify/gates: not yet lowered —
-                // later tasks extend this match.
+                // generate (T25), gates: not yet lowered — later tasks
+                // extend this match.
                 ModuleItem::Specparam(_)
                 | ModuleItem::Defparam(_)
                 | ModuleItem::Task(_)
                 | ModuleItem::LoopGenerate(_)
                 | ModuleItem::IfGenerate(_)
                 | ModuleItem::CaseGenerate(_)
-                | ModuleItem::GenerateRegion(_)
-                | ModuleItem::Specify(_) => {}
+                | ModuleItem::GenerateRegion(_) => {}
+                // `specify` (T17, LRMW3-06 / spec P2 AC3): a form the
+                // grammar recognizes but Piperine does not lower fails
+                // loud here, citing its Annex A clause — never a silent
+                // no-op. Positive lowering (specparams/paths/checks onto
+                // the POM) is T18's extension of this same arm.
+                ModuleItem::Specify(sb) => {
+                    if let Some(u) = sb.unsupported.first() {
+                        return Err(ElabError::from(ElabErrorKind::UnsupportedConstruct {
+                            construct: u.construct.to_string(),
+                            clause: u.clause.to_string(),
+                            replacement: "a supported specify form (Annex A.7.2 simple path declarations, A.7.5.1 system timing checks) — see docs/spec/part_iii_conformance.md".to_string(),
+                        })
+                        .with_span(Some(to_miette_span(u.span))));
+                    }
+                }
                 // `constraint begin … end` (sanctioned extension, MD-49 +
                 // `constraint-statements`): the authored statements land
                 // on the POM in authored order — multiple blocks compose

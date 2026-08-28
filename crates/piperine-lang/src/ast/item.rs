@@ -620,6 +620,22 @@ pub struct SpecifyBlock {
     pub paths: Vec<PathDecl>,
     /// System timing checks (Annex A.7.5, T16, LRMW3-07).
     pub checks: Vec<TimingCheckDecl>,
+    /// Recognized-but-unsupported `specify_item`s (T17, LRMW3-06 / spec P2
+    /// AC3): edge-sensitive/state-dependent paths, `PATHPULSE$`,
+    /// `pulsestyle_*`, `showcancelled`/`noshowcancelled`. Each is typed —
+    /// never an unread span — so elaboration can fail loud naming the
+    /// construct and its Annex A clause.
+    pub unsupported: Vec<UnsupportedSpecifyForm>,
+}
+
+/// A `specify_item` the grammar recognized but Piperine does not lower
+/// (T17). `construct` and `clause` are the exact text elaboration cites in
+/// its loud error.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnsupportedSpecifyForm {
+    pub span: PreprocessedSpan,
+    pub construct: &'static str,
+    pub clause: &'static str,
 }
 
 /// `simple_path_declaration`, Annex A.7.2/A.7.3/A.7.4 — a parallel (`=>`)

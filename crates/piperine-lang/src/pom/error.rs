@@ -368,6 +368,22 @@ pub enum ElabErrorKind {
         #[label("defparam override here")]
         override_span: Option<miette::SourceSpan>,
     },
+    /// VAMS E4010 — a construct the grammar recognizes syntactically but
+    /// Piperine deliberately does not lower: a `specify` form outside
+    /// LRMW3-06's scope (edge-sensitive/state-dependent paths,
+    /// `PATHPULSE$`, `pulsestyle_*`, `showcancelled`/`noshowcancelled`,
+    /// T17), a `config` declaration (T22), a module-scope `specparam`
+    /// outside a `specify` block, or an in-module `task` declaration
+    /// (T22). Per spec §0 rule 1 (a superset surface excludes only with a
+    /// named replacement), `replacement` names what to use instead —
+    /// never a silent no-op.
+    #[error("{construct} is not supported ({clause}) — use {replacement} instead")]
+    #[diagnostic(code(E4010))]
+    UnsupportedConstruct {
+        construct: String,
+        clause: String,
+        replacement: String,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]
