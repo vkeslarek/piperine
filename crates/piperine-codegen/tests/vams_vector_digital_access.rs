@@ -141,9 +141,9 @@ fn bit_select_module() -> LoweredBody {
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let o = m.symbols.add_node("o", Domain::Digital);
     for n in [q0, q1, q2, q3, clk] {
-        m.ports.push(Port { node: n, direction: Direction::In });
+        m.ports.push(Port::scalar(n, Direction::In));
     }
-    m.ports.push(Port { node: o, direction: Direction::Out });
+    m.ports.push(Port::scalar(o, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![q0, q1, q2, q3, clk],
         outputs: vec![o],
@@ -210,9 +210,9 @@ fn part_select_pack_module() -> LoweredBody {
     let result = m.symbols.add_node("result", Domain::Digital);
     let n = m.symbols.add_var("n", Type::Integer);
     for node in [b4, b5, b6, b7] {
-        m.ports.push(Port { node, direction: Direction::In });
+        m.ports.push(Port::scalar(node, Direction::In));
     }
-    m.ports.push(Port { node: result, direction: Direction::Out });
+    m.ports.push(Port::scalar(result, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![b4, b5, b6, b7],
         outputs: vec![result],
@@ -278,9 +278,9 @@ fn part_select_direction_module() -> LoweredBody {
     let n1 = m.symbols.add_var("n1", Type::Integer);
     let n2 = m.symbols.add_var("n2", Type::Integer);
     for node in [b4, b5, b6, b7, c4, c5, c6, c7] {
-        m.ports.push(Port { node, direction: Direction::In });
+        m.ports.push(Port::scalar(node, Direction::In));
     }
-    m.ports.push(Port { node: result, direction: Direction::Out });
+    m.ports.push(Port::scalar(result, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![b4, b5, b6, b7, c4, c5, c6, c7],
         outputs: vec![result],
@@ -347,8 +347,8 @@ fn out_of_range_part_select_fails_loud() {
     let b4 = m.symbols.add_node("b[4]", Domain::Digital);
     let result = m.symbols.add_node("result", Domain::Digital);
     let n = m.symbols.add_var("n", Type::Integer);
-    m.ports.push(Port { node: b4, direction: Direction::In });
-    m.ports.push(Port { node: result, direction: Direction::Out });
+    m.ports.push(Port::scalar(b4, Direction::In));
+    m.ports.push(Port::scalar(result, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![b4],
         outputs: vec![result],
@@ -402,7 +402,7 @@ fn literal_write_module() -> LoweredBody {
     let mut m = LoweredBody::new("Dut");
     let q: Vec<_> = (0..4).map(|i| m.symbols.add_node(format!("q[{i}]"), Domain::Digital)).collect();
     for &n in &q {
-        m.ports.push(Port { node: n, direction: Direction::Out });
+        m.ports.push(Port::scalar(n, Direction::Out));
     }
     m.digital = Some(DigitalBody {
         inputs: vec![],
@@ -439,7 +439,7 @@ fn whole_vector_swap_module() -> LoweredBody {
     let a: Vec<_> = (0..2).map(|i| m.symbols.add_node(format!("a[{i}]"), Domain::Digital)).collect();
     let b: Vec<_> = (0..2).map(|i| m.symbols.add_node(format!("b[{i}]"), Domain::Digital)).collect();
     for &n in a.iter().chain(&b) {
-        m.ports.push(Port { node: n, direction: Direction::Out });
+        m.ports.push(Port::scalar(n, Direction::Out));
     }
     let mut outputs = a.clone();
     outputs.extend(&b);
@@ -487,7 +487,7 @@ fn width_mismatch_module(literal: Expr) -> LoweredBody {
     let mut m = LoweredBody::new("Dut");
     let wide: Vec<_> = (0..4).map(|i| m.symbols.add_node(format!("wide[{i}]"), Domain::Digital)).collect();
     for &n in &wide {
-        m.ports.push(Port { node: n, direction: Direction::Out });
+        m.ports.push(Port::scalar(n, Direction::Out));
     }
     m.digital = Some(DigitalBody {
         inputs: vec![],
@@ -557,10 +557,10 @@ fn memory_module() -> LoweredBody {
     let e0 = m.symbols.add_node("e[0]", Domain::Digital);
     let e1 = m.symbols.add_node("e[1]", Domain::Digital);
     for n in [mem00, mem01, mem10, mem11] {
-        m.ports.push(Port { node: n, direction: Direction::Out });
+        m.ports.push(Port::scalar(n, Direction::Out));
     }
     for n in [d0, d1, e0, e1] {
-        m.ports.push(Port { node: n, direction: Direction::Out });
+        m.ports.push(Port::scalar(n, Direction::Out));
     }
     m.digital = Some(DigitalBody {
         inputs: vec![],
@@ -629,9 +629,9 @@ fn non_constant_memory_index_fails_loud() {
     let mem10 = m.symbols.add_node("mem[1][0]", Domain::Digital);
     let d0 = m.symbols.add_node("d[0]", Domain::Digital);
     let k = m.symbols.add_var("k", Type::Integer);
-    m.ports.push(Port { node: mem00, direction: Direction::Out });
-    m.ports.push(Port { node: mem10, direction: Direction::Out });
-    m.ports.push(Port { node: d0, direction: Direction::Out });
+    m.ports.push(Port::scalar(mem00, Direction::Out));
+    m.ports.push(Port::scalar(mem10, Direction::Out));
+    m.ports.push(Port::scalar(d0, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![],
         outputs: vec![mem00, mem10, d0],

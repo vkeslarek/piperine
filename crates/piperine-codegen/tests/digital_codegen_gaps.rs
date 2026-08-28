@@ -89,14 +89,8 @@ fn digital_quad_real_coercion_both_directions() {
     let a = m.symbols.add_node("a", Domain::Digital);
     let z = m.symbols.add_node("z", Domain::Digital);
     let _r = m.symbols.add_var("r", Type::Real);
-    m.ports.push(piperine_codegen::resolve::Port {
-        node: a,
-        direction: piperine_codegen::resolve::Direction::In,
-    });
-    m.ports.push(piperine_codegen::resolve::Port {
-        node: z,
-        direction: piperine_codegen::resolve::Direction::Out,
-    });
+    m.ports.push(piperine_codegen::resolve::Port::scalar(a, piperine_codegen::resolve::Direction::In));
+    m.ports.push(piperine_codegen::resolve::Port::scalar(z, piperine_codegen::resolve::Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![a],
         outputs: vec![z],
@@ -147,10 +141,7 @@ fn digital_real_to_quad_coercion_does_not_truncate_fractional_nonzero() {
         let mut m = LoweredBody::new("frac_coerce");
         let z = m.symbols.add_node("z", Domain::Digital);
         let _r = m.symbols.add_var("r", Type::Real);
-        m.ports.push(piperine_codegen::resolve::Port {
-            node: z,
-            direction: piperine_codegen::resolve::Direction::Out,
-        });
+        m.ports.push(piperine_codegen::resolve::Port::scalar(z, piperine_codegen::resolve::Direction::Out));
         m.digital = Some(DigitalBody {
             inputs: vec![],
             outputs: vec![z],

@@ -423,20 +423,31 @@ region the assignment already selected.
 
 **What**: connecting a vector net to a vector port binds bit for bit; a width
 mismatch fails loud citing §6.5.7.1.
-**Where**: `crates/piperine-lang/src/elab/lower/{vams.rs,flatten.rs,passes.rs}`
+**Where (as executed — wider than originally scoped)**: §6.5.7.1's own
+width-mismatch fail-loud path (`CheckPortSizes`,
+`crates/piperine-lang/src/elab/lower/passes.rs`) was already implemented and
+needed no change. The "bind bit for bit" half turned out to be a
+`piperine-codegen`-only gap, not a `piperine-lang` one:
+`resolve/pom/structure.rs` (port registration), `resolve/mod.rs` (`Port`
+shape), `resolve/pom/body.rs` (the `label.port` hierarchical-access map),
+`device/builder.rs` (per-instance connection resolution + digital/A2D
+bridging), `emit/analog_expr.rs` (`$port_connected`), and
+`kernel/analog/compile.rs` (terminal ordering).
 **Depends on**: T2, T4
 **Reuses**: `CheckPortSizes` (already implemented), `NetRef{net,index}`,
-`inline_sub_instances`' broadcast rule
+`inline_sub_instances`' broadcast rule, `register_element_nodes`/
+`element_node_name` (the wire-array registration/naming `structure.rs`
+already had)
 **Requirement**: LRMW3-05
 
 **Done when**:
-- [ ] An 8-bit net on an 8-bit port connects bit for bit through the hierarchy
+- [x] An 8-bit net on an 8-bit port connects bit for bit through the hierarchy
       (asserted by solving and reading a leaf-side bit)
-- [ ] A 4-bit net on an 8-bit port fails loud citing §6.5.7.1
-- [ ] The existing array-of-instances broadcast rule is unchanged (regression
+- [x] A 4-bit net on an 8-bit port fails loud citing §6.5.7.1
+- [x] The existing array-of-instances broadcast rule is unchanged (regression
       test kept green, named in the commit body)
-- [ ] Declares `//! LRM-COVERS: 6.5.7.1, 7.2.3`
-- [ ] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-codegen`
+- [x] Declares `//! LRM-COVERS: 6.5.7.1, 7.2.3`
+- [x] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): bit-for-bit vector port binding with width checking`

@@ -76,8 +76,8 @@ fn inverter() -> LoweredBody {
     let mut m = LoweredBody::new("inverter");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
-    m.ports.push(Port { node: a, direction: Direction::In });
-    m.ports.push(Port { node: y, direction: Direction::Out });
+    m.ports.push(Port::scalar(a, Direction::In));
+    m.ports.push(Port::scalar(y, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![a],
         outputs: vec![y],
@@ -98,9 +98,9 @@ fn dff() -> LoweredBody {
     let d = m.symbols.add_node("d", Domain::Digital);
     let q = m.symbols.add_node("q", Domain::Digital);
     let r = m.symbols.add_var("r", Type::Quad);
-    m.ports.push(Port { node: clk, direction: Direction::In });
-    m.ports.push(Port { node: d, direction: Direction::In });
-    m.ports.push(Port { node: q, direction: Direction::Out });
+    m.ports.push(Port::scalar(clk, Direction::In));
+    m.ports.push(Port::scalar(d, Direction::In));
+    m.ports.push(Port::scalar(q, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![clk, d],
         outputs: vec![q],
@@ -218,9 +218,9 @@ fn pipeline_reads_pre_edge_values() {
     let q = m.symbols.add_node("q", Domain::Digital);
     let r1 = m.symbols.add_var("r1", Type::Quad);
     let r2 = m.symbols.add_var("r2", Type::Quad);
-    m.ports.push(Port { node: clk, direction: Direction::In });
-    m.ports.push(Port { node: d, direction: Direction::In });
-    m.ports.push(Port { node: q, direction: Direction::Out });
+    m.ports.push(Port::scalar(clk, Direction::In));
+    m.ports.push(Port::scalar(d, Direction::In));
+    m.ports.push(Port::scalar(q, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![clk, d],
         outputs: vec![q],
@@ -266,8 +266,8 @@ fn match_selects_arm_and_default() {
     let mut m = LoweredBody::new("mux_match");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
-    m.ports.push(Port { node: a, direction: Direction::In });
-    m.ports.push(Port { node: y, direction: Direction::Out });
+    m.ports.push(Port::scalar(a, Direction::In));
+    m.ports.push(Port::scalar(y, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![a],
         outputs: vec![y],
@@ -323,9 +323,9 @@ fn nba_swap() -> LoweredBody {
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let qa = m.symbols.add_node("qa", Domain::Digital);
     let qb = m.symbols.add_node("qb", Domain::Digital);
-    m.ports.push(Port { node: clk, direction: Direction::In });
-    m.ports.push(Port { node: qa, direction: Direction::Out });
-    m.ports.push(Port { node: qb, direction: Direction::Out });
+    m.ports.push(Port::scalar(clk, Direction::In));
+    m.ports.push(Port::scalar(qa, Direction::Out));
+    m.ports.push(Port::scalar(qb, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![clk],
         outputs: vec![qa, qb],
@@ -373,9 +373,9 @@ fn blocking_assignment_in_a_clocked_block_does_not_swap() {
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let qa = m.symbols.add_node("qa", Domain::Digital);
     let qb = m.symbols.add_node("qb", Domain::Digital);
-    m.ports.push(Port { node: clk, direction: Direction::In });
-    m.ports.push(Port { node: qa, direction: Direction::Out });
-    m.ports.push(Port { node: qb, direction: Direction::Out });
+    m.ports.push(Port::scalar(clk, Direction::In));
+    m.ports.push(Port::scalar(qa, Direction::Out));
+    m.ports.push(Port::scalar(qb, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![clk],
         outputs: vec![qa, qb],
@@ -410,8 +410,8 @@ fn nonblocking_swap_in_a_combinational_block_exchanges_values() {
     let mut m = LoweredBody::new("nba_swap_comb");
     let ya = m.symbols.add_node("ya", Domain::Digital);
     let yb = m.symbols.add_node("yb", Domain::Digital);
-    m.ports.push(Port { node: ya, direction: Direction::Out });
-    m.ports.push(Port { node: yb, direction: Direction::Out });
+    m.ports.push(Port::scalar(ya, Direction::Out));
+    m.ports.push(Port::scalar(yb, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![],
         outputs: vec![ya, yb],
@@ -447,9 +447,9 @@ fn blocking_write_is_visible_to_a_later_nonblocking_read_in_the_same_block() {
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
     let x = m.symbols.add_var("x", Type::Quad);
-    m.ports.push(Port { node: clk, direction: Direction::In });
-    m.ports.push(Port { node: a, direction: Direction::In });
-    m.ports.push(Port { node: y, direction: Direction::Out });
+    m.ports.push(Port::scalar(clk, Direction::In));
+    m.ports.push(Port::scalar(a, Direction::In));
+    m.ports.push(Port::scalar(y, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![clk, a],
         outputs: vec![y],
@@ -488,7 +488,7 @@ fn nonblocking_self_increment_still_increments_once_per_edge() {
     let mut m = LoweredBody::new("nba_counter");
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let cnt = m.symbols.add_var("cnt", Type::Integer);
-    m.ports.push(Port { node: clk, direction: Direction::In });
+    m.ports.push(Port::scalar(clk, Direction::In));
     m.digital = Some(DigitalBody {
         inputs: vec![clk],
         outputs: vec![],

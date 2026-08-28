@@ -48,10 +48,22 @@ fn port_connected_distinguishes_connected_from_unconnected() {
     assert_eq!(partial_flag, 0.0, "partial instance leaves port `n` unconnected");
 }
 
-/// §9.20: dynamic node aliasing fails loud citing MD-18, not a generic
-/// "unsupported" message.
+/// §9.20, the *dotted hierarchical constant* case — the one T56 left
+/// disclosed (`resolve/pom/expr.rs`'s own SPEC_DEVIATION note) and that
+/// neither `tests/node_alias_e2e.rs` test covers: the string argument is
+/// a compile-time constant, so it never reaches `emit_analog_expr`'s
+/// MD-18 fail-loud arm (that arm is reserved for a *non*-constant
+/// argument, pinned by `node_alias_e2e::non_constant_argument_fails_loud_citing_md_18`),
+/// but it names a net outside this module, which the constant folding
+/// does not resolve. It folds to the LRM's own "did not resolve" return
+/// value `0` and rewires nothing.
+///
+/// This test previously asserted the opposite (that a constant dotted
+/// string failed loud citing MD-18). That was true before T56 gave the
+/// constant form a real resolution path; it is rewritten rather than
+/// deleted so the boundary between the two forms stays falsifiable.
 #[test]
-fn analog_node_alias_fails_loud_citing_md18() {
+fn analog_node_alias_with_a_hierarchical_constant_folds_to_zero() {
     let src = r#"
         module dut (inout electrical p, inout electrical n);
             real ok;
@@ -60,13 +72,22 @@ fn analog_node_alias_fails_loud_citing_md18() {
                 V(p, n) <+ 1.0;
             end
         endmodule
+
+        module top ();
+            electrical vin, gnd;
+            dut d1 (vin, gnd);
+        endmodule
     "#;
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
     let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowers");
-    let err = match piperine_codegen::kernel::analog::AnalogKernel::compile(&bodies["dut"]) {
-        Ok(_) => panic!("$analog_node_alias must fail loud"),
-        Err(e) => e,
-    };
-    let msg = format!("{err}").to_lowercase();
-    assert!(msg.contains("md-18"), "should cite the architectural reason: {msg}");
+    piperine_codegen::kernel::analog::AnalogKernel::compile(&bodies["dut"])
+        .expect("a constant alias target must not reach the MD-18 fail-loud arm");
+
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let (mut circuit, _info) = compiler.build_circuit_mapped("top").expect("compiles");
+    circuit.dc(Context::default()).expect("dc starts").solve().expect("dc converges");
+
+    let dut = circuit.all_devices().iter().find(|d| d.name() == "d1").expect("`d1`");
+    let ok = dut.read_opvars().iter().find(|(n, _)| n == "ok").map(|(_, v)| *v).unwrap();
+    assert_eq!(ok, 0.0, "an unresolved hierarchical alias target returns 0 per §9.20");
 }

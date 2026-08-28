@@ -113,16 +113,29 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
         symbols.add_ground_name(name.clone());
     }
 
-    // 1. Ports
+    // 1. Ports. A scalar port registers one node named after itself,
+    // exactly as before; a vector port (`input [0:width-1] p;`, T13/
+    // LRMW3-05) recurses per element through the same `register_element_
+    // nodes` the wire path (§3 below) already uses, giving `p[0]`..
+    // `p[width-1]` — the identical naming convention a vector wire's
+    // elements get, so `device::circuit::resolve_element_node` and
+    // `device::builder`'s per-bit connection resolution address a vector
+    // port's bits exactly the way they address a vector wire's.
     for p in m.ports() {
         let domain = domain_of(prog, p.net_type());
-        let node_id = symbols.add_node(p.name(), domain);
+        let before = symbols.nodes().count();
+        register_element_nodes(&mut symbols, p.name(), p.net_type(), domain);
+        let node_ids: Vec<NodeId> = symbols
+            .nodes()
+            .skip(before)
+            .map(|(id, _)| id)
+            .collect();
         let direction = match p.direction() {
             PomDirection::Input => super::super::Direction::In,
             PomDirection::Output => super::super::Direction::Out,
             PomDirection::Inout => super::super::Direction::Inout,
         };
-        ports.push(Port { node: node_id, direction });
+        ports.push(Port { nodes: node_ids, direction });
     }
 
     // 2. Params

@@ -123,6 +123,61 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         Self::resolve_net_refs(self.top_body, instance.ports(), instance.name())
     }
 
+    /// Like [`Self::resolve_connections`], but expands a vector port's
+    /// declared position into one parent node per bit (T13/LRMW3-05).
+    /// `instance.ports()` carries exactly one `NetRef` per declared port
+    /// *position* — for a vector port that `NetRef` names the whole
+    /// connected net (§6.5.7.1's own width-matching rule, already checked
+    /// at elaboration time by `CheckPortSizes`), so it must be expanded
+    /// into `width` per-bit lookups here, one per `child_body`'s already
+    /// per-bit `Port::nodes`. A scalar port (`width == 1`) resolves
+    /// exactly as [`Self::resolve_connections`] would — this is a
+    /// superset, not a special case, and only `add_instance`'s ordinary
+    /// module-instantiation path (which has a `child_body` to read widths
+    /// from) uses it; the UDP/gate/plugin paths keep calling
+    /// [`Self::resolve_connections`] unchanged, since none of those port
+    /// kinds is ever a vector.
+    pub(super) fn resolve_connections_by_bit(
+        &self,
+        instance: &Instance,
+        child_body: &LoweredBody,
+    ) -> Result<Vec<NodeId>, CodegenError> {
+        let mut out = Vec::new();
+        for (port_ref, port) in instance.ports().iter().zip(child_body.ports.iter()) {
+            let width = port.nodes.len();
+            if width == 1 {
+                let name = port_ref.to_string();
+                let node = CircuitCompiler::resolve_node(self.top_body, &name)
+                    .or_else(|| CircuitCompiler::resolve_node(self.top_body, port_ref.net()))
+                    .ok_or_else(|| {
+                        CodegenError::Invalid(format!(
+                            "`{}`: unresolved net `{name}`",
+                            instance.name()
+                        ))
+                    })?;
+                out.push(node);
+                continue;
+            }
+            if port_ref.index().is_some() {
+                return Err(CodegenError::Invalid(format!(
+                    "instance `{}`: connecting single bit `{port_ref}` to a {width}-bit port",
+                    instance.name()
+                )));
+            }
+            for i in 0..width as u64 {
+                let name = crate::resolve::pom::structure::element_node_name(port_ref.net(), i);
+                let node = CircuitCompiler::resolve_node(self.top_body, &name).ok_or_else(|| {
+                    CodegenError::Invalid(format!(
+                        "instance `{}`: unresolved net `{name}` (bit {i} of `{port_ref}`)",
+                        instance.name()
+                    ))
+                })?;
+                out.push(node);
+            }
+        }
+        Ok(out)
+    }
+
     /// Resolves a bare `&[NetRef]` list against `body`'s node symbols —
     /// the same mechanism [`Self::resolve_connections`] uses for an
     /// ordinary instance's ports, generalized (T40/LRMC-C7-13) for a gate
@@ -218,8 +273,16 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 child.ports().len()
             )));
         }
-        let connections = self.resolve_connections(instance)?;
         let child_body = self.compiler.body(instance.module_name())?;
+        // T13/LRMW3-05: `instance.ports()` has one `NetRef` per *declared*
+        // port position, but a vector port's position must expand into one
+        // parent node per bit — `resolve_connections_by_bit` does that
+        // expansion using `child_body`'s already-per-bit `Port::nodes`, so
+        // `connections` here is flattened to one entry per bit, in the
+        // same order `child_body.ports` flattens to (see `flat_port_nodes`
+        // below and `kernel::analog::compile::terminal_order`, which
+        // flattens `module.ports` identically).
+        let connections = self.resolve_connections_by_bit(instance, child_body)?;
         let overrides = self.resolve_overrides(instance, child_body)?;
         let compiled = self.compiler.compiled(instance.module_name()).map_err(|e| {
             CodegenError::Invalid(format!(
@@ -293,16 +356,23 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         let digital = compiled
             .digital()
             .map(|kernel| {
+                // T13/LRMW3-05: `connections` is flattened one entry per
+                // *bit*, in the same order `child_body.ports` flattens to
+                // (each port's `nodes` in order) — `flat_port_nodes` is
+                // that same flattening, so position-in-`flat_port_nodes`
+                // is the correct index into `connections` for any of the
+                // child's declared port bits, scalar or vector alike.
+                let flat_port_nodes: Vec<NodeId> =
+                    child_body.ports.iter().flat_map(|p| p.nodes.iter().copied()).collect();
                 let map_nets = |nodes: &[NodeId],
                                 nets: &mut HashMap<NodeId, DigitalNet>|
                  -> Result<Vec<DigitalNet>, CodegenError> {
                     nodes
                         .iter()
                         .map(|node| {
-                            let port_index = child_body
-                                .ports
+                            let bit_index = flat_port_nodes
                                 .iter()
-                                .position(|p| p.node == *node)
+                                .position(|n| n == node)
                                 .ok_or_else(|| {
                                     CodegenError::unsupported(format!(
                                         "digital net `{}` of `{}` is not a port",
@@ -310,7 +380,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                                         child.name()
                                     ))
                                 })?;
-                            let parent = connections[port_index];
+                            let parent = connections[bit_index];
                             let next = nets.len();
                             Ok(*nets.entry(parent).or_insert(DigitalNet(next)))
                         })
@@ -338,22 +408,34 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 && digital.kernel().layout().num_analog() > 0 {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
-                    for (port_idx, port) in child_body.ports.iter().enumerate() {
-                        // Only ports the digital kernel actually reads as
-                        // analog (Electrical) terminals get a netlist node —
-                        // a digital-typed port (e.g. `output y : Bit`) must
-                        // never allocate an MNA unknown, or it leaves an
-                        // unstamped row (`SymbolicSingular`).
-                        if digital.kernel().layout().analog_index(port.node).is_none() {
-                            refs.push(None);
-                            node_ids.push(port.node);
-                            continue;
+                    // T13/LRMW3-05: `connections` is flattened one entry
+                    // per bit (see the earlier `flat_port_nodes` comment),
+                    // so this walk indexes it with a running flat counter
+                    // across every port's bits, not the port's own
+                    // position — the two coincide for an all-scalar
+                    // module (the pre-existing behavior), and diverge only
+                    // once an earlier port is a vector.
+                    let mut flat_idx = 0usize;
+                    for port in child_body.ports.iter() {
+                        for &node in &port.nodes {
+                            // Only ports the digital kernel actually reads as
+                            // analog (Electrical) terminals get a netlist node —
+                            // a digital-typed port (e.g. `output y : Bit`) must
+                            // never allocate an MNA unknown, or it leaves an
+                            // unstamped row (`SymbolicSingular`).
+                            if digital.kernel().layout().analog_index(node).is_none() {
+                                refs.push(None);
+                                node_ids.push(node);
+                                flat_idx += 1;
+                                continue;
+                            }
+                            let parent = connections.get(flat_idx).copied().unwrap_or(NodeId::GROUND);
+                            let node_id = self.node_identifier(parent);
+                            let reference = self.netlist.connect_node(node_id);
+                            refs.push(reference.idx().map(|_| reference));
+                            node_ids.push(node);
+                            flat_idx += 1;
                         }
-                        let parent = connections.get(port_idx).copied().unwrap_or(NodeId::GROUND);
-                        let node_id = self.node_identifier(parent);
-                        let reference = self.netlist.connect_node(node_id);
-                        refs.push(reference.idx().map(|_| reference));
-                        node_ids.push(port.node);
                     }
                     device.set_analog_terminals(refs, node_ids);
                 }
@@ -522,15 +604,22 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for port in self.top_body.ports.iter() {
-                        if digital.kernel().layout().analog_index(port.node).is_none() {
-                            refs.push(None);
-                            node_ids.push(port.node);
-                            continue;
+                        // T13/LRMW3-05: iterate every bit of a (possibly
+                        // vector) top-level port — the top's own ports map
+                        // directly onto circuit nodes, so no `connections`
+                        // indirection is needed here (unlike the
+                        // per-instance A2D bridge above).
+                        for &node in &port.nodes {
+                            if digital.kernel().layout().analog_index(node).is_none() {
+                                refs.push(None);
+                                node_ids.push(node);
+                                continue;
+                            }
+                            let node_id = self.node_identifier(node);
+                            let reference = self.netlist.connect_node(node_id);
+                            refs.push(reference.idx().map(|_| reference));
+                            node_ids.push(node);
                         }
-                        let node_id = self.node_identifier(port.node);
-                        let reference = self.netlist.connect_node(node_id);
-                        refs.push(reference.idx().map(|_| reference));
-                        node_ids.push(port.node);
                     }
                     device.set_analog_terminals(refs, node_ids);
                 }

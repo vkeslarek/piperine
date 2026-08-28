@@ -480,6 +480,41 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                             // gets a fresh internal node at codegen.
                             continue;
                         };
+                        let width = port.net_type().width();
+                        if width > 1 {
+                            // T13/LRMW3-05: a vector port's `net_ref`
+                            // names the whole connected net (its own
+                            // width already matched against the port's by
+                            // `CheckPortSizes`, §6.5.7.1) — there is no
+                            // single node a bare `label.port` could name,
+                            // so this registers one `label.port[i]` entry
+                            // per bit instead, resolved the same way
+                            // `device::builder::InstanceBuilder::
+                            // resolve_connections_by_bit` resolves the
+                            // circuit-build-time connection for the same
+                            // bit.
+                            for bit in 0..width {
+                                let elem_name = crate::resolve::pom::structure::element_node_name(net_ref.net(), bit);
+                                let parent_node = if let Some(&id) = node_by_name.get(&elem_name) {
+                                    id
+                                } else {
+                                    errors.push(LowerError {
+                                        module: m.name().to_string(),
+                                        what: "net (instance connection)",
+                                        name: elem_name.clone(),
+                                    });
+                                    NodeId::GROUND
+                                };
+                                instance_ports.insert(
+                                    crate::resolve::pom::structure::element_node_name(
+                                        &format!("{label}.{}", port.name()),
+                                        bit,
+                                    ),
+                                    parent_node,
+                                );
+                            }
+                            continue;
+                        }
                         // An indexed net ref (`tap[i]`, lifted from an
                         // array wire by the flatten pass or authored as
                         // `tap[i]` in a structural `for`) resolves through
@@ -576,16 +611,21 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 let mut inputs = Vec::new();
                 let mut outputs = Vec::new();
                 for port in &bodies[i].ports {
-                    let node = bodies[i].symbols.node(port.node);
-                    if node.domain != Domain::Digital {
-                        continue;
-                    }
-                    match port.direction {
-                        Direction::In => inputs.push(port.node),
-                        Direction::Out => outputs.push(port.node),
-                        Direction::Inout => {
-                            inputs.push(port.node);
-                            outputs.push(port.node);
+                    // T13/LRMW3-05: a vector port contributes one entry
+                    // per bit — same loop body as the scalar (1-element)
+                    // case, never a special-cased branch.
+                    for &node_id in &port.nodes {
+                        let node = bodies[i].symbols.node(node_id);
+                        if node.domain != Domain::Digital {
+                            continue;
+                        }
+                        match port.direction {
+                            Direction::In => inputs.push(node_id),
+                            Direction::Out => outputs.push(node_id),
+                            Direction::Inout => {
+                                inputs.push(node_id);
+                                outputs.push(node_id);
+                            }
                         }
                     }
                 }

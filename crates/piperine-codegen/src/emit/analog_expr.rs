@@ -311,7 +311,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 let node = self.resolver.nodes.get(&pname).copied().ok_or_else(|| {
                     CodegenError::Invalid(format!("$port_connected: `{pname}` is not a declared net"))
                 })?;
-                let idx = self.module.ports.iter().position(|p| p.node == node).ok_or_else(|| {
+                let idx = self.module.ports.iter().position(|p| p.nodes.contains(&node)).ok_or_else(|| {
                     CodegenError::Invalid(format!("$port_connected: `{pname}` is not a port of this module"))
                 })?;
                 let sim_ptr = self.sim_ptr();

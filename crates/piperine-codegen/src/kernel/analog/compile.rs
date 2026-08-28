@@ -317,7 +317,7 @@ impl<'m> AnalogCompiler<'m> {
     /// Ports in declaration order, then every non-ground internal node the
     /// flattened body touches.
     fn terminal_order(module: &LoweredBody, flat: &FlatAnalog) -> (Vec<NodeId>, usize) {
-        let mut terminals: Vec<NodeId> = module.ports.iter().map(|p| p.node).collect();
+        let mut terminals: Vec<NodeId> = module.ports.iter().flat_map(|p| p.nodes.iter().copied()).collect();
         let num_ports = terminals.len();
         let mut add = |node: NodeId| {
             if !node.is_ground() && !terminals.contains(&node) {

@@ -34,9 +34,9 @@ fn compare_module(name: &str, op: BinOp) -> LoweredBody {
     let a = m.symbols.add_node("a", Domain::Digital);
     let b = m.symbols.add_node("b", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
-    m.ports.push(Port { node: a, direction: Direction::In });
-    m.ports.push(Port { node: b, direction: Direction::In });
-    m.ports.push(Port { node: y, direction: Direction::Out });
+    m.ports.push(Port::scalar(a, Direction::In));
+    m.ports.push(Port::scalar(b, Direction::In));
+    m.ports.push(Port::scalar(y, Direction::Out));
     m.digital = Some(DigitalBody {
         inputs: vec![a, b],
         outputs: vec![y],

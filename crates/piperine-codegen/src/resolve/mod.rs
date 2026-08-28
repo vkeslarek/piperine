@@ -95,13 +95,42 @@ pub enum Direction {
     Inout,
 }
 
-/// A module port: a resolved node plus a direction. The node's domain
-/// (analog/digital) lives on its `NodeInfo`. This resolved form describes a
-/// module's *own* body only; instance-level structure (connections, param
-/// overrides) is resolved directly from the POM by `device::circuit` at
-/// circuit-build time.
+/// A module port: one resolved node per bit, plus a direction. A scalar
+/// port carries exactly one node (`nodes.len() == 1`); a vector port
+/// (`input [0:width-1] p;`, T13/LRMW3-05) carries one node per declared
+/// bit, in ascending index order (`p[0]`..`p[width-1]`), the same element
+/// nodes `register_element_nodes` (`resolve/pom/structure.rs`) registers
+/// for an array wire — a vector port is never a special-cased single node,
+/// just a `Vec` of length > 1. The node's domain (analog/digital) lives on
+/// its `NodeInfo`. This resolved form describes a module's *own* body
+/// only; instance-level structure (connections, param overrides) is
+/// resolved directly from the POM by `device::circuit` at circuit-build
+/// time.
 #[derive(Debug, Clone)]
 pub struct Port {
-    pub node: NodeId,
+    pub nodes: Vec<NodeId>,
     pub direction: Direction,
+}
+
+impl Port {
+    /// Construct a scalar (1-bit) port — the overwhelmingly common case.
+    pub fn scalar(node: NodeId, direction: Direction) -> Self {
+        Self { nodes: vec![node], direction }
+    }
+
+    /// The port's declared bit width (1 for a scalar port).
+    pub fn width(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// The node of a definitely-scalar port. Debug-asserts the port is
+    /// actually 1 bit wide — every caller of this method has already
+    /// special-cased vector ports elsewhere, or is on a path a vector port
+    /// cannot reach (LRM builtins/`$port_connected` bare-identifier
+    /// resolution, which does not itself resolve a vector port's base
+    /// name to a node — see `emit/analog_expr.rs`).
+    pub fn node(&self) -> NodeId {
+        debug_assert_eq!(self.nodes.len(), 1, "Port::node() called on a {}-bit port", self.nodes.len());
+        self.nodes[0]
+    }
 }

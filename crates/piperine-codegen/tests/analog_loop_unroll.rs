@@ -247,7 +247,7 @@ mod digital {
     fn repeat_toggle_module(name: &str, count: Expr) -> LoweredBody {
         let mut m = LoweredBody::new(name);
         let y = m.symbols.add_node("y", Domain::Digital);
-        m.ports.push(Port { node: y, direction: Direction::Out });
+        m.ports.push(Port::scalar(y, Direction::Out));
         m.digital = Some(DigitalBody {
             inputs: vec![],
             outputs: vec![y],
