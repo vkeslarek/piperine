@@ -700,13 +700,13 @@ and may override or add.
 **Requirement**: LRMW3-11
 
 **Done when**:
-- [ ] Attributes are inherited from the bound nature, including a value the
+- [x] Attributes are inherited from the bound nature, including a value the
       discipline itself overrode in T23
-- [ ] A local override and a new attribute both work
-- [ ] Compatibility follows the derivation family (asserted by connecting two
+- [x] A local override and a new attribute both work
+- [x] Compatibility follows the derivation family (asserted by connecting two
       nets of derived disciplines)
-- [ ] Declares `//! LRM-COVERS: 3.6.2.6`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Declares `//! LRM-COVERS: 3.6.2.6`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): natures derived from a discipline binding (§3.6.2.6)`

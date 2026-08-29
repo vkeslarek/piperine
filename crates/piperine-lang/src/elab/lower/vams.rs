@@ -753,6 +753,18 @@ impl Elaborator {
     /// chain (§3.6.1.1) — a value present at this level wins; an absent one
     /// inherits from the nearest ancestor that sets it. `visiting` detects
     /// a parent cycle.
+    ///
+    /// §3.6.2.6 (T24, LRMW3-11): `nature n : ttl.flow;` derives from the
+    /// nature *currently bound* to a discipline's `potential`/`flow`
+    /// slot, through that discipline's own §3.6.2.5 attribute overrides
+    /// (T23) — "if the nature binding ... changes, the new nature shall
+    /// automatically inherit the attributes for the changed nature." The
+    /// resolved bound nature is treated exactly like an ordinary `parent`
+    /// from here on (own attributes win, absent ones inherit), and the
+    /// built `Nature::parent` records that bound nature's name, so
+    /// existing ancestor-chain/compatibility logic
+    /// (`elab::lower::disciplines::nature_ancestor_chain`) needs no
+    /// changes to see through it.
     fn effective_nature(&self, name: &str, visiting: &mut HashSet<String>) -> Result<Nature, ElabError> {
         if !visiting.insert(name.to_string()) {
             return Err(ElabError::from(ElabErrorKind::Other(format!(
@@ -764,7 +776,39 @@ impl Elaborator {
             .natures
             .get(name)
             .ok_or_else(|| ElabError::from(ElabErrorKind::UndefinedType(name.to_string())))?;
-        let parent = decl.parent.as_deref().map(|p| self.effective_nature(p, visiting)).transpose()?;
+
+        let (parent_name, parent): (Option<String>, Option<Nature>) = if let Some(p) = decl.parent.as_deref() {
+            (Some(p.to_string()), Some(self.effective_nature(p, visiting)?))
+        } else if let Some((disc_name, slot)) = &decl.discipline_parent {
+            let disc = self.syms.disciplines.get(disc_name).ok_or_else(|| {
+                ElabError::from(ElabErrorKind::UndefinedType(disc_name.clone()))
+            })?;
+            let bound = match slot {
+                crate::ast::NatureSlot::Potential => disc.potential.as_deref(),
+                crate::ast::NatureSlot::Flow => disc.flow.as_deref(),
+            }
+            .ok_or_else(|| {
+                ElabError::from(ElabErrorKind::InvalidNatureBinding {
+                    discipline: disc_name.clone(),
+                    nature: name.to_string(),
+                    issue: format!(
+                        "discipline `{disc_name}` has no {slot:?} binding for nature `{name}` to derive from (§3.6.2.6)",
+                    ),
+                    span: None,
+                })
+            })?
+            .to_string();
+            let base = self.effective_nature(&bound, visiting)?;
+            let effective = crate::pom::nature::apply_discipline_overrides(&base, disc, *slot).map_err(|e| {
+                ElabError::from(ElabErrorKind::ConstEval {
+                    context: format!("discipline `{disc_name}` {slot:?} override, deriving nature `{name}`"),
+                    source: e,
+                })
+            })?;
+            (Some(bound), Some(effective))
+        } else {
+            (None, None)
+        };
 
         let env = ConstEnv::new();
         let abstol = decl
@@ -796,7 +840,7 @@ impl Elaborator {
             span: Some(to_miette_span(decl.span)),
             doc: decl.doc.clone(),
             name: name.to_string(),
-            parent: decl.parent.clone(),
+            parent: parent_name,
             abstol,
             access,
             units,
