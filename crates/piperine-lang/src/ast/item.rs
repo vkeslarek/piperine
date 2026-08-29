@@ -7,6 +7,17 @@ use crate::error::PreprocessedSpan;
 
 // ─────────────────────────── nature / discipline ──────────────────────────
 
+/// A discipline's binding slot for a nature — `potential` or `flow`
+/// (§3.6.2.2). Names which of a discipline's two nature bindings a
+/// §3.6.2.5 attribute override (`flow.abstol = 10u;`) applies to, or which
+/// binding a §3.6.2.6 discipline-derived nature (`nature n : ttl.flow;`)
+/// derives from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NatureSlot {
+    Potential,
+    Flow,
+}
+
 /// `nature name [: parent] { nature_item* } endnature` — §3.6.1, Annex A.1.6.
 /// Not attribute-bearing: `nature_declaration` is absent from LRM Syntax
 /// 2-5..2-10's attribute-instance sites.
@@ -18,7 +29,13 @@ pub struct NatureDecl {
     pub doc: Option<String>,
     pub name: String,
     /// `nature Voltage : Potential;` — a derived nature, §3.6.1.1.
+    /// Mutually exclusive with `discipline_parent` — the grammar parses
+    /// one or the other, never both.
     pub parent: Option<String>,
+    /// `nature ttl_net_curr : ttl.flow;` — derived from the nature
+    /// currently bound to a discipline's `potential`/`flow` slot,
+    /// §3.6.2.6. Mutually exclusive with `parent`.
+    pub discipline_parent: Option<(String, NatureSlot)>,
     /// The five standard attributes, §3.6.1.2 — named, not map entries,
     /// mirroring the POM's own `Nature` type (design.md §5.1) so the
     /// elaborator's translation is a straight field copy.
@@ -52,6 +69,15 @@ pub struct DisciplineDecl {
     pub domain: Option<Domain>,
     pub potential: Option<String>,
     pub flow: Option<String>,
+    /// §3.6.2.5 attribute overrides: `potential.attr = expr;` /
+    /// `flow.attr = expr;`, one entry per override. `access`/`units` are
+    /// rejected at parse time (§3.6.1.2 forbids overriding either from a
+    /// discipline).
+    pub attr_overrides: Vec<(NatureSlot, String, Expr)>,
+    /// §3.6.2.7 user-defined discipline attributes — a bare
+    /// `attr_name = expr;` in the discipline body that names neither
+    /// `domain`/`potential`/`flow` nor a slot-qualified override.
+    pub attributes: Vec<(String, Expr)>,
 }
 
 // ───────────────────────────────── module ──────────────────────────────────

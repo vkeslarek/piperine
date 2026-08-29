@@ -132,3 +132,33 @@ impl Kinded for Nature {
         Kind::Nature
     }
 }
+
+/// §3.6.2.5: applies a discipline's own attribute overrides for one slot
+/// (`potential`/`flow`) on top of `base` — the nature currently bound
+/// there — producing the *effective* nature nets of that discipline see.
+/// Only `abstol` gets typed handling (it is the LRM's own worked example
+/// and the attribute that reaches the solver's per-node tolerance,
+/// §6.5.8); any other override name lands in `user_attrs` evaluated as a
+/// constant expression. `access`/`units` overrides never reach here —
+/// §3.6.1.2's restriction is enforced at parse time
+/// ([`crate::error::ParseErrorKind::RestrictedNatureAttributeOverride`]).
+pub fn apply_discipline_overrides(
+    base: &Nature,
+    disc: &crate::ast::DisciplineDecl,
+    slot: crate::ast::NatureSlot,
+) -> Result<Nature, crate::elab::const_eval::ConstEvalError> {
+    let mut n = base.clone();
+    let env = crate::elab::const_eval::ConstEnv::new();
+    for (s, attr, expr) in &disc.attr_overrides {
+        if *s != slot {
+            continue;
+        }
+        if attr == "abstol" {
+            n.abstol = Some(env.eval_f64(expr)?);
+        } else {
+            let v = env.eval(expr)?;
+            n.user_attrs.insert(attr.clone(), v);
+        }
+    }
+    Ok(n)
+}

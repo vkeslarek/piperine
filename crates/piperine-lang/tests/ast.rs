@@ -21,6 +21,7 @@ fn nature_decl_carries_no_attrs_field() {
         span: span(), doc: None,
         name: "Voltage".into(),
         parent: Some("Potential".into()),
+        discipline_parent: None,
         abstol: None,
         access: Some("V".into()),
         units: None,
@@ -40,6 +41,8 @@ fn discipline_decl_carries_no_attrs_field() {
         domain: Some(Domain::Continuous),
         potential: Some("Voltage".into()),
         flow: Some("Current".into()),
+        attr_overrides: vec![],
+        attributes: vec![],
     };
     assert_eq!(d.domain, Some(Domain::Continuous));
 }
@@ -137,9 +140,12 @@ fn paramset_connectrules_config_are_not_attribute_bearing() {
 #[test]
 fn source_file_holds_all_seven_top_level_item_kinds() {
     let items = vec![
-        Item::Discipline(DisciplineDecl { span: span(), doc: None, name: "d".into(), domain: None, potential: None, flow: None }),
+        Item::Discipline(DisciplineDecl {
+            span: span(), doc: None, name: "d".into(), domain: None, potential: None, flow: None,
+            attr_overrides: vec![], attributes: vec![],
+        }),
         Item::Nature(NatureDecl {
-            span: span(), doc: None, name: "n".into(), parent: None, abstol: None, access: None,
+            span: span(), doc: None, name: "n".into(), parent: None, discipline_parent: None, abstol: None, access: None,
             units: None, idt_nature: None, ddt_nature: None, user_attrs: vec![],
         }),
         Item::Module(ModuleDecl {

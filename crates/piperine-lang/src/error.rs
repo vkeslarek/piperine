@@ -123,6 +123,10 @@ pub enum ParseErrorKind {
     /// declaration's leading range span, named so both locations are
     /// reported.
     LeadingRangeConflict { name: String, leading: PreprocessedSpan, own: PreprocessedSpan },
+    /// A discipline attribute override (`potential.attr = ...`/
+    /// `flow.attr = ...`, §3.6.2.5) named `access` or `units` — §3.6.1.2
+    /// forbids changing either from its base binding.
+    RestrictedNatureAttributeOverride { attr: String },
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -193,6 +197,13 @@ impl fmt::Display for ParseErrorKind {
                      declarator range (bytes {}..{}) — a declared name may carry only one \
                      range (§3.6.3)",
                     leading.start, leading.end, own.start, own.end
+                )
+            }
+            ParseErrorKind::RestrictedNatureAttributeOverride { attr } => {
+                write!(
+                    f,
+                    "discipline attribute override cannot change `{attr}` — §3.6.1.2 forbids \
+                     overriding `access`/`units` from a discipline binding (§3.6.2.5)"
                 )
             }
         }

@@ -679,11 +679,11 @@ nature's attribute for nets of that discipline.
 **Requirement**: LRMW3-11
 
 **Done when**:
-- [ ] The override reaches the solver and is **observable**: a tighter
+- [x] The override reaches the solver and is **observable**: a tighter
       `abstol` changes the accepted-iteration count on a fixture
-- [ ] Overriding an attribute §3.6.1.2 forbids fails loud
-- [ ] Declares `//! LRM-COVERS: 3.6.2.5`
-- [ ] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-solver`
+- [x] Overriding an attribute §3.6.1.2 forbids fails loud
+- [x] Declares `//! LRM-COVERS: 3.6.2.5`
+- [x] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-solver`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): discipline-level nature attribute override (§3.6.2.5)`

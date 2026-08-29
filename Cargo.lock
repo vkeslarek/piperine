@@ -1694,6 +1694,7 @@ name = "piperine-lang"
 version = "0.2.0"
 dependencies = [
  "miette",
+ "ndarray 0.17.2",
  "num-complex",
  "piperine-codegen",
  "piperine-solver",

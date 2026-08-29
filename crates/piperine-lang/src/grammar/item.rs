@@ -107,7 +107,33 @@ impl Grammar {
         let doc = self.doc_at(self.peek_span());
         let start = self.expect_kw("nature")?;
         let (name, _) = self.expect_ident()?;
-        let parent = if self.eat_punct(":") { Some(self.expect_ident()?.0) } else { None };
+        // `: parent` (§3.6.1.1) or `: discipline.slot` (§3.6.2.6) — the
+        // hierarchical-separator form names a discipline's `potential`/
+        // `flow` binding to derive from instead of another nature.
+        let (parent, discipline_parent) = if self.eat_punct(":") {
+            let (first, _) = self.expect_ident()?;
+            if self.eat_punct(".") {
+                let (slot_name, slot_span) = self.expect_ident()?;
+                let slot = match slot_name.as_str() {
+                    "potential" => NatureSlot::Potential,
+                    "flow" => NatureSlot::Flow,
+                    other => {
+                        return Err(ParseError::new(
+                            ParseErrorKind::UnexpectedToken {
+                                expected: "'potential' or 'flow'".to_string(),
+                                found: format!("`{other}`"),
+                            },
+                            slot_span,
+                        ));
+                    }
+                };
+                (None, Some((first, slot)))
+            } else {
+                (Some(first), None)
+            }
+        } else {
+            (None, None)
+        };
         self.eat_punct(";");
 
         let mut n = NatureDecl {
@@ -115,6 +141,7 @@ impl Grammar {
             span: start,
             name,
             parent,
+            discipline_parent,
             abstol: None,
             access: None,
             units: None,
@@ -143,6 +170,35 @@ impl Grammar {
         Ok(n)
     }
 
+    /// The body of a `potential`/`flow` discipline item, past the keyword:
+    /// either the ordinary binding form (`potential Voltage;`) or a
+    /// §3.6.2.5 attribute override (`potential.abstol = 10u;`) —
+    /// distinguished by whether a `.` follows the keyword. `access`/
+    /// `units` are rejected here (§3.6.1.2 forbids overriding either).
+    fn parse_discipline_slot_body(&mut self, d: &mut DisciplineDecl, slot: NatureSlot) -> Result<(), ParseError> {
+        if self.eat_punct(".") {
+            let (attr, attr_span) = self.expect_ident()?;
+            if attr == "access" || attr == "units" {
+                return Err(ParseError::new(
+                    ParseErrorKind::RestrictedNatureAttributeOverride { attr },
+                    attr_span,
+                ));
+            }
+            self.expect_punct("=")?;
+            let val = self.parse_expr()?;
+            self.expect_punct(";")?;
+            d.attr_overrides.push((slot, attr, val));
+            return Ok(());
+        }
+        let (name, _) = self.expect_ident()?;
+        match slot {
+            NatureSlot::Potential => d.potential = Some(name),
+            NatureSlot::Flow => d.flow = Some(name),
+        }
+        self.expect_punct(";")?;
+        Ok(())
+    }
+
     /// `discipline_declaration`, Annex A.1.7 — §3.6.2. Not attribute-bearing.
     pub fn parse_discipline_decl(&mut self) -> Result<DisciplineDecl, ParseError> {
         let doc = self.doc_at(self.peek_span());
@@ -150,7 +206,16 @@ impl Grammar {
         let (name, _) = self.expect_ident()?;
         self.eat_punct(";");
 
-        let mut d = DisciplineDecl { span: start, doc, name, domain: None, potential: None, flow: None };
+        let mut d = DisciplineDecl {
+            span: start,
+            doc,
+            name,
+            domain: None,
+            potential: None,
+            flow: None,
+            attr_overrides: vec![],
+            attributes: vec![],
+        };
         while !self.at_kw("enddiscipline") {
             if matches!(self.peek(), Tok::Eof) {
                 return Err(self.eof_error("'enddiscipline'".to_string()));
@@ -166,16 +231,28 @@ impl Grammar {
                 continue;
             }
             if self.eat_kw("potential") {
-                d.potential = Some(self.expect_ident()?.0);
-                self.expect_punct(";")?;
+                self.parse_discipline_slot_body(&mut d, NatureSlot::Potential)?;
                 continue;
             }
             if self.eat_kw("flow") {
-                d.flow = Some(self.expect_ident()?.0);
-                self.expect_punct(";")?;
+                self.parse_discipline_slot_body(&mut d, NatureSlot::Flow)?;
                 continue;
             }
-            return Err(self.unexpected("'domain', 'potential', or 'flow'".to_string()));
+            // §3.6.2.7: a bare `attr_name = expr;` user-defined discipline
+            // attribute — anything reaching here already isn't
+            // `domain`/`potential`/`flow` (those are consumed above), so a
+            // reserved binding name written without its keyword form (a
+            // token this arm can't produce) simply isn't representable —
+            // any other identifier is a legitimate user attribute.
+            if matches!(self.peek(), Tok::Ident(_)) {
+                let (attr, _) = self.expect_ident()?;
+                self.expect_punct("=")?;
+                let val = self.parse_expr()?;
+                self.expect_punct(";")?;
+                d.attributes.push((attr, val));
+                continue;
+            }
+            return Err(self.unexpected("'domain', 'potential', 'flow', or an attribute name".to_string()));
         }
         let end = self.expect_kw("enddiscipline")?;
         d.span = PreprocessedSpan::new(start.start, end.end);

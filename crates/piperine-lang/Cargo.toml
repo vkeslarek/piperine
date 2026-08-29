@@ -20,3 +20,8 @@ tempfile.workspace = true
 # this is the reverse edge, live only while running `cargo test`).
 piperine-codegen = { path = "../piperine-codegen" }
 piperine-solver = { path = "../piperine-solver" }
+# T23 (lrm-conformance-wave3): `discipline_attribute_override.rs` builds
+# the same `ndarray::Array1` voltage-step fixture
+# `nature_abstol_inheritance.rs` (piperine-solver) uses to prove
+# `Tolerances::node_vntol_overrides` discriminating.
+ndarray.workspace = true
