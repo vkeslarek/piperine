@@ -1,5 +1,5 @@
 import os, sys, math, piperine
-P = os.path.join(os.path.dirname(__file__), "14_bundle_model_card.vams")
+P = os.path.join(os.path.dirname(__file__), "14_diode_model_card.vams")
 def M(): return piperine.load(P).module("BiasCell")
 # test_measured_drop_matches_the_model_card
 # (Python can't construct a DiodeModel bundle + call forward_drop; replicate
@@ -13,4 +13,4 @@ m1 = M(); v1 = m1.op().v("out","gnd")
 m2 = M(); m2.set("d1","model_isat",1e-12); v2 = m2.op().v("out","gnd")
 shift = v1 - v2
 assert abs(shift - 0.119) < 5e-3, "isat scaling shifts drop by vt*ln(100)"
-print("14_bundle_model_card: PASS"); sys.stdout.flush()
+print("14_diode_model_card: PASS"); sys.stdout.flush()
