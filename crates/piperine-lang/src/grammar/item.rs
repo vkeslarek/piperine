@@ -220,6 +220,22 @@ impl Grammar {
             if matches!(self.peek(), Tok::Eof) {
                 return Err(self.eof_error("'enddiscipline'".to_string()));
             }
+            // §3.6.2.7: `domain`/`potential`/`flow` are reserved binding
+            // names (their own keyword forms are handled by the three
+            // arms below) — a bare `domain = expr;`/`potential = expr;`/
+            // `flow = expr;` is an attempt to redeclare one of them as a
+            // user-defined attribute, which collides with the reserved
+            // name and must fail loud rather than either silently
+            // shadowing the binding or falling into a confusing "expected
+            // continuous/discrete" parse error from the arms below.
+            if let Tok::Ident(name) = self.peek()
+                && matches!(name.as_str(), "domain" | "potential" | "flow")
+                && matches!(self.peek_at(1), Tok::Punct("="))
+            {
+                let attr = name.clone();
+                let span = self.peek_span();
+                return Err(ParseError::new(ParseErrorKind::ReservedDisciplineAttributeName { attr }, span));
+            }
             if self.eat_kw("domain") {
                 if self.eat_kw("continuous") {
                     d.domain = Some(Domain::Continuous);

@@ -127,6 +127,12 @@ pub enum ParseErrorKind {
     /// `flow.attr = ...`, §3.6.2.5) named `access` or `units` — §3.6.1.2
     /// forbids changing either from its base binding.
     RestrictedNatureAttributeOverride { attr: String },
+    /// A `discipline` body attribute (§3.6.2.7 user-defined attribute)
+    /// was named `domain`, `potential`, or `flow` — those three names are
+    /// reserved for the discipline's own binding forms (`domain
+    /// continuous;`, `potential <nature>;`, `flow <nature>;`) and cannot
+    /// double as a user-defined attribute name.
+    ReservedDisciplineAttributeName { attr: String },
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -204,6 +210,13 @@ impl fmt::Display for ParseErrorKind {
                     f,
                     "discipline attribute override cannot change `{attr}` — §3.6.1.2 forbids \
                      overriding `access`/`units` from a discipline binding (§3.6.2.5)"
+                )
+            }
+            ParseErrorKind::ReservedDisciplineAttributeName { attr } => {
+                write!(
+                    f,
+                    "discipline user-defined attribute cannot be named `{attr}` — `domain`, \
+                     `potential`, and `flow` are reserved discipline binding names (§3.6.2.7)"
                 )
             }
         }

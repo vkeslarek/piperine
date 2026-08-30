@@ -722,10 +722,10 @@ and may override or add.
 **Requirement**: LRMW3-11
 
 **Done when**:
-- [ ] A user attribute survives to `DisciplineDecl::attributes`
-- [ ] An attribute colliding with a reserved binding name fails loud
-- [ ] Declares `//! LRM-COVERS: 3.6.2.7`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] A user attribute survives to `DisciplineDecl::attributes`
+- [x] An attribute colliding with a reserved binding name fails loud
+- [x] Declares `//! LRM-COVERS: 3.6.2.7`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): user-defined discipline attributes (§3.6.2.7)`
