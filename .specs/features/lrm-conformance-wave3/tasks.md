@@ -1340,13 +1340,14 @@ silently tolerating it.
 **Requirement**: PSW3-03, spec P2 (axis B) AC4
 
 **Done when**:
-- [ ] A declared Rust-only surface that **gains** a Python binding fails the
+- [x] A declared Rust-only surface that **gains** a Python binding fails the
       test until the declaration is updated (the asymmetry list is exact, not a
       floor)
-- [ ] An undeclared asymmetry fails the test
-- [ ] Appendix C's list and the test's list are cross-checked via `include_str!`
-- [ ] Declares `//! SPEC-COVERS: appendix_c#3`
-- [ ] Gate passes: `cargo test -p piperine --test host_parity`
+- [x] An undeclared asymmetry fails the test (proven by the synthetic-
+      regression sanity test flagging a known-real Python binding)
+- [x] Appendix C's list and the test's list are cross-checked via `include_str!`
+- [x] Declares `//! SPEC-COVERS: appendix_c#3`
+- [x] Gate passes: `cargo test -p piperine --test host_parity`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(host): assert the declared Rust/Python asymmetries exactly`

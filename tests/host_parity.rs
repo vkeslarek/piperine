@@ -11,6 +11,20 @@
 //! `piperine-python/tests/facade_hygiene.rs`'s native/facade parity
 //! technique, extended cross-crate). `cargo test -p piperine host_parity`
 //! (Phase 1 / T8 full gate).
+//!
+//! T51 (`lrm-conformance-wave3`, PSW3-03/B5) adds the closing section:
+//! `docs/spec/appendix_c_host_surface.md` §3 *describes* three Rust-only
+//! asymmetries in prose (Driver/Policy/SamplePlan/CoverageDatabase,
+//! `Waveform` measurements/transforms + `ComplexWaveform` margins,
+//! `Module.constraints`) but nothing previously asserted them — an
+//! undeclared asymmetry and a documented one looked identical to this
+//! file. `host_parity_declared_rust_only_surface_has_no_python_binding`
+//! makes the declaration executable: it fails if any of these names
+//! *gains* a Python binding, and `host_parity_declared_asymmetry_list_
+//! matches_appendix_c` cross-checks the Rust-side list against the prose
+//! via `include_str!` so the two cannot silently drift apart.
+//!
+//! SPEC-COVERS: appendix_c#3
 
 use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
@@ -865,4 +879,185 @@ _probe()
     assert_eq!(python["severity"], format!("{:?}", finding.severity), "finding severity differs between hosts");
     let py_time: f64 = python["time"].parse().unwrap();
     assert_eq!(py_time, finding.time, "finding time differs between hosts");
+}
+
+// ── T51 (PSW3-03/B5): the declared Rust-only host asymmetries, asserted ────
+//
+// Every name below is documented in `docs/spec/appendix_c_host_surface.md`
+// §3 as Rust-only. This is the exact list, not a floor: a name gaining a
+// Python binding fails `host_parity_declared_rust_only_surface_has_no_
+// python_binding` until the declaration (both here and in appendix_c) is
+// updated to match.
+
+/// Top-level `piperine.<name>` classes/functions with no Python binding
+/// (Driver/Policy — optimize/center/high-sigma; SamplePlan, whose
+/// `monte_carlo`/`monte_carlo_around` methods are therefore unreachable
+/// too; CoverageDatabase; the free function `age`).
+const RUST_ONLY_MODULE_NAMES: &[&str] = &["Driver", "Policy", "SamplePlan", "CoverageDatabase", "age"];
+
+/// `Waveform` methods with no Python binding (HOST-14 measurements, HOST-15
+/// transforms).
+const RUST_ONLY_WAVEFORM_METHODS: &[&str] = &[
+    "slew_rate", "rise_time", "fall_time", "overshoot", "settling_time", "delay", "resample",
+    "derivative", "integral", "clip", "fft",
+];
+
+/// `ComplexWaveform` methods with no Python binding (HOST-16 margins).
+const RUST_ONLY_COMPLEX_WAVEFORM_METHODS: &[&str] =
+    &["bandwidth_3db", "unity_gain_freq", "phase_margin", "gain_margin"];
+
+/// The one declared reflection asymmetry: `Module::constraints()` exists on
+/// the POM and is reachable through the selector's `constraint::` axis
+/// (T49), but the Python `Module` wrapper has no `constraints` property.
+const RUST_ONLY_MODULE_ATTR: &str = "constraints";
+
+/// Runs a Python probe checking every declared Rust-only name and writes
+/// the space-separated list of names that turned out to have a Python
+/// binding anyway (empty = the declared asymmetry list still holds).
+fn python_names_that_gained_a_binding(out_path: &std::path::Path) -> String {
+    let module_names = RUST_ONLY_MODULE_NAMES.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let wave_names = RUST_ONLY_WAVEFORM_METHODS.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let cwave_names =
+        RUST_ONLY_COMPLEX_WAVEFORM_METHODS.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    design = piperine.load_str({phdl:?})
+    module = design.module("Top")
+    wf = module.tran(piperine.TranConfig(stop=1e-4, step=1e-6)).v("vin")
+    ac_trace = module.ac(piperine.AcConfig(fstart=1.0, fstop=1e6, points=5))
+    cwf = ac_trace.v("vin")
+
+    found = []
+    for n in [{module_names}]:
+        if hasattr(piperine, n):
+            found.append("module:" + n)
+    for n in [{wave_names}]:
+        if hasattr(wf, n):
+            found.append("waveform:" + n)
+    for n in [{cwave_names}]:
+        if hasattr(cwf, n):
+            found.append("complexwaveform:" + n)
+    if hasattr(module, {attr:?}):
+        found.append("module_attr:" + {attr:?})
+
+    with open({out:?}, "w") as f:
+        f.write(" ".join(found))
+
+_probe()
+"#,
+        phdl = RLC_PHDL,
+        module_names = module_names,
+        wave_names = wave_names,
+        cwave_names = cwave_names,
+        attr = RUST_ONLY_MODULE_ATTR,
+        out = out_path.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_asymmetry_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python asymmetry probe runs");
+    let result = std::fs::read_to_string(out_path).expect("read asymmetry probe output");
+    let _ = std::fs::remove_file(&script_path);
+    result
+}
+
+/// PSW3-03/B5, spec.md P2 (axis B) AC4: every declared Rust-only surface
+/// still has no Python binding. If this fails, either the declaration (this
+/// list + appendix_c §3) is stale and must be updated, or the missing
+/// binding was added without updating the declaration.
+#[test]
+fn host_parity_declared_rust_only_surface_has_no_python_binding() {
+    let out = std::env::temp_dir().join("piperine_host_parity_asymmetry.txt");
+    let found = python_names_that_gained_a_binding(&out);
+    let _ = std::fs::remove_file(&out);
+    assert!(
+        found.trim().is_empty(),
+        "these names were declared Rust-only (appendix_c#3) but now have a Python binding — \
+         update the declaration in both tests/host_parity.rs and \
+         docs/spec/appendix_c_host_surface.md §3, or this is an undeclared parity regression: {found}"
+    );
+}
+
+/// Sanity check that the probe in
+/// [`host_parity_declared_rust_only_surface_has_no_python_binding`] actually
+/// discriminates: a name that DOES have a Python binding (`op`, one of
+/// `Waveform`'s own real methods) must be reported "found", proving the
+/// mechanism would catch a real regression rather than vacuously passing
+/// over every input.
+#[test]
+fn host_parity_asymmetry_probe_flags_a_synthetic_regression() {
+    let out = std::env::temp_dir().join("piperine_host_parity_asymmetry_synthetic.txt");
+    let phdl_path = std::env::temp_dir().join("piperine_host_parity_asymmetry_synthetic.vams");
+    std::fs::write(&phdl_path, RLC_PHDL).expect("write phdl fixture");
+    let script = format!(
+        r#"
+import piperine
+
+def _probe():
+    design = piperine.load({phdl:?})
+    module = design.module("Top")
+    wf = module.tran(piperine.TranConfig(stop=1e-4, step=1e-6)).v("vin")
+    # "min" genuinely exists on Waveform (HOST-13) — treating it as if it
+    # were a declared-Rust-only name must be reported as "found", the same
+    # shape a real regression would take.
+    found = ["waveform:min"] if hasattr(wf, "min") else []
+    with open({out:?}, "w") as f:
+        f.write(" ".join(found))
+
+_probe()
+"#,
+        phdl = phdl_path.to_str().unwrap(),
+        out = out.to_str().unwrap(),
+    );
+    let script_path = std::env::temp_dir().join("piperine_host_parity_asymmetry_synthetic_script.py");
+    std::fs::write(&script_path, script).expect("write probe script");
+    piperine_python::embed::run_script(script_path.to_str().unwrap()).expect("python synthetic probe runs");
+    let found = std::fs::read_to_string(&out).expect("read synthetic probe output");
+    for p in [phdl_path, script_path, out] {
+        let _ = std::fs::remove_file(p);
+    }
+    assert_eq!(
+        found.trim(), "waveform:min",
+        "the asymmetry probe must report a known-present method as found, or it would \
+         vacuously pass on a real regression"
+    );
+}
+
+/// Cross-checks the Rust-side declared-asymmetry lists against
+/// `docs/spec/appendix_c_host_surface.md` §3's prose via `include_str!` —
+/// every name this file declares Rust-only must actually be named in the
+/// doc, so the two cannot silently drift apart (spec.md P2 axis-B AC4: "the
+/// asymmetry SHALL be declared in appendix_c_host_surface.md AND asserted
+/// by the parity test").
+#[test]
+fn host_parity_declared_asymmetry_list_matches_appendix_c() {
+    let doc = include_str!("../docs/spec/appendix_c_host_surface.md");
+    let mut missing = Vec::new();
+    for name in RUST_ONLY_MODULE_NAMES {
+        if !doc.contains(name) {
+            missing.push(format!("module name `{name}` not mentioned in appendix_c_host_surface.md"));
+        }
+    }
+    for name in RUST_ONLY_WAVEFORM_METHODS {
+        if !doc.contains(name) {
+            missing.push(format!("Waveform method `{name}` not mentioned in appendix_c_host_surface.md"));
+        }
+    }
+    for name in RUST_ONLY_COMPLEX_WAVEFORM_METHODS {
+        if !doc.contains(name) {
+            missing.push(format!("ComplexWaveform method `{name}` not mentioned in appendix_c_host_surface.md"));
+        }
+    }
+    assert!(
+        doc.contains(RUST_ONLY_MODULE_ATTR) && doc.contains("Module.constraints"),
+        "`Module.constraints` gap not mentioned in appendix_c_host_surface.md"
+    );
+    assert!(
+        missing.is_empty(),
+        "these declared Rust-only names in tests/host_parity.rs have no corresponding mention \
+         in docs/spec/appendix_c_host_surface.md §3 — the two lists have drifted apart:\n  {}",
+        missing.join("\n  ")
+    );
 }
