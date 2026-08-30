@@ -1,10 +1,22 @@
-//! LRM-COVERS: 7.6, 9.13, 12.15
+//! LRM-COVERS: 7.6, 9.13, 9.22.4, 12.15
 //! T47 (VAMS-15) — LRM chapter 9 general system tasks/functions, exercised
 //! through `piperine_lang`'s public surface (`piperine_lang::eval::tasks`).
 //! Mirrors T47's "Done when": the `$display`-family formats per LRM Table
 //! 9-1, `$abstime`/`$temperature`/`$bound_step` execute against a supplied
 //! [`SimEnvironment`], the §9.13 conversion functions round-trip, and an
 //! unknown `$name` fails loud naming near matches.
+//!
+//! lrm-conformance-wave3 (Phase 6, T38): §9.22.4 `driver_update` is an
+//! event-detection keyword (`@(driver_update signal)`), not a function
+//! with a return-value contract — `driver_access_names_all_resolve`
+//! proving it name-resolves the same way `SystemTasks::resolve` proves
+//! every other ch. 9 keyword IS the whole clause here. The seven
+//! `$driver_*` *functions*' own return contracts (§9.22.1-3, §9.23.1-4)
+//! are proven against their live data sources elsewhere —
+//! `crates/piperine-solver/src/digital/drivers.rs`'s inline tests and
+//! `crates/piperine-codegen/tests/vams_driver_access_gap.rs` — not
+//! claimed here, where only name resolution and parse/elaborate
+//! acceptance are checked.
 
 use piperine_lang::eval::tasks::{Conversions, SimEnvironment, SystemTaskError, SystemTaskKind, SystemTasks};
 use piperine_lang::eval::{Value, format_display};

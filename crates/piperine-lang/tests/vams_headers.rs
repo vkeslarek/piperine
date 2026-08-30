@@ -1,4 +1,11 @@
-//! LRM-COVERS: D.1, D.2, D.3
+//! LRM-COVERS: 9.23.4, D.1, D.2, D.3
+//! lrm-conformance-wave3 (Phase 6, T38): §9.23.4 `$driver_type`'s "bit
+//! meanings" (the LRM's own words) are the twelve `DRIVER_*` constants
+//! `driver_access_vams_bit_values_match_the_lrm_exactly` cross-checks
+//! against the LRM text directly, and
+//! `driver_access_constants_compose_with_driver_type_return_values`
+//! proves they compose as a bitmask the way `$driver_type`'s own return
+//! convention requires.
 //! T40 (VAMS-09) — the stdlib headers migrated to Verilog-AMS. Proves the
 //! two Annex-D-derived headers (`headers/disciplines.vams`,
 //! `headers/constants.vams`) each elaborate standalone (via `` `include``,

@@ -215,6 +215,31 @@ pub fn default_strength_for(value: LogicValue) -> Strength {
 
 #[cfg(test)]
 mod tests {
+    //! LRM-COVERS: 9.22.1, 9.22.2, 9.22.3, 9.23, 9.23.1, 9.23.2, 9.23.3
+    //! lrm-conformance-wave3 (Phase 6, T38): each `$driver_*` function's
+    //! own return-value contract, proven against this table (its live
+    //! data source — `crates/piperine-codegen/tests/
+    //! vams_driver_access_gap.rs` proves the same source is fed by a
+    //! real scheduler, not a mock):
+    //! §9.22.1 `$driver_count`: `single_driver_resolves_to_its_own_value`
+    //! (`driver_count` == 1) and `driver_kind_distinguishes_ordinary_
+    //! from_connect_module_sources` (multi-driver count).
+    //! §9.22.2 `$driver_state`: `resolved`/`resolved_by_kind` return the
+    //! `LogicValue` half of their tuple — proven throughout this module
+    //! (e.g. `stronger_driver_wins_table_7_3`).
+    //! §9.22.3 `$driver_strength`: the `Strength` half of the same tuple
+    //! — `equal_strength_opposing_values_contend_to_x`/
+    //! `high_z_driver_yields_unconditionally` exercise Table 7-3's
+    //! strength-resolution rule directly.
+    //! §9.23 (parent heading, "Supplementary connectmodule driver access
+    //! system functions") is organizational only over §9.23.1-4 below.
+    //! §9.23.1 `$driver_delay`: `driver_kind_distinguishes_ordinary_
+    //! from_connect_module_sources` asserts `recs[1].delay`.
+    //! §9.23.2 `$driver_next_state`: `next_state_is_queryable_
+    //! independent_of_current_state`.
+    //! §9.23.3 `$driver_next_strength`: the same test's `next_strength`
+    //! assertion.
+
     use super::*;
     use LogicValue::*;
 

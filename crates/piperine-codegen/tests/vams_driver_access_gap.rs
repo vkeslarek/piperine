@@ -1,4 +1,17 @@
-//! LRM-COVERS: 7.9, 9.22
+//! LRM-COVERS: 7.9, 9.22, 9.22.1, 9.22.5, 9.22.6
+//! lrm-conformance-wave3 (Phase 6, T38): §9.22.1's own return-value
+//! contract (a driver count reflecting the live number of drivers) is
+//! `the_driver_count_data_source_is_live_for_a_real_multiply_driven_net`
+//! below (count == 2 for two scheduled drivers). §9.22.5 ("Receiver net
+//! resolution" — "By not specifying the receiver value directly in the
+//! connect module driver, receiver segregation will be ignored, which is
+//! the default case") and §9.22.6 ("Connect module example using driver
+//! access functions") are both descriptive/example sections, not
+//! standalone callables: this file's own `bridge` connectmodule fixture
+//! (`connectmodule bridge (inout logic a, inout electrical b)`) is
+//! exactly their subject — a mixed digital/electrical connectmodule port
+//! calling a `$driver_*` function, with no `assign` statement overriding
+//! the receiver value (§9.22.5's own "default case").
 //! LRMC-C7-05 (T35, updated by T54/LRMW2-46): the seven `$driver_*`
 //! functions parse and elaborate (proven in `piperine-lang`'s own
 //! `vams_system_tasks.rs`). T54 closed the "nothing populates

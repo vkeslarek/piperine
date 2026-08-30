@@ -1044,10 +1044,10 @@ where the clause is proven only incidentally.
 **Requirement**: LRMW3-26
 
 **Done when**:
-- [ ] Each of §9.22.1–§9.22.6 and §9.23–§9.23.4 is declared by a test asserting
+- [x] Each of §9.22.1–§9.22.6 and §9.23–§9.23.4 is declared by a test asserting
       that function's own return contract
-- [ ] `$driver_type`'s bit meanings are asserted against `driver_access.vams`
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] `$driver_type`'s bit meanings are asserted against `driver_access.vams`
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): driver-access clause coverage`
