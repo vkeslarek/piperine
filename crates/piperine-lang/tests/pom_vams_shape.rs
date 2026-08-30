@@ -46,6 +46,7 @@ fn module_carries_branches_and_genvars_collections() {
         pos: NetRef::simple("a"),
         neg: Some(NetRef::simple("b")),
         kind: BranchKind::Probe,
+        is_port: false,
     });
     m.genvars.push("i".into());
 
@@ -82,6 +83,7 @@ fn module_branch_lookup_finds_named_branches() {
         pos: NetRef::simple("p"),
         neg: Some(NetRef::simple("n")),
         kind: BranchKind::Probe,
+        is_port: false,
     });
     m.branches.push(Branch {
         span: None,
@@ -90,6 +92,7 @@ fn module_branch_lookup_finds_named_branches() {
         pos: NetRef::simple("x"),
         neg: None,
         kind: BranchKind::Probe,
+        is_port: false,
     });
 
     assert!(m.branch("out").is_some());

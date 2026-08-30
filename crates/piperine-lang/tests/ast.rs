@@ -84,6 +84,7 @@ fn branch_decl_is_attribute_bearing() {
         pos: "a".into(),
         neg: Some("b".into()),
         names: vec!["br".into()],
+        is_port: false,
     };
     assert_eq!(b.names, vec!["br".to_string()]);
 }

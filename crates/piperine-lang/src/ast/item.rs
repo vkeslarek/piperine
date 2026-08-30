@@ -190,7 +190,10 @@ pub struct GroundDecl {
     pub name: String,
 }
 
-/// `branch (pos[,neg]) name1 [, name2 ...];` — §5.2, Annex A.1.4.
+/// `branch (pos[,neg]) name1 [, name2 ...];` — §5.2, Annex A.1.4. Also
+/// covers the §3.12.1 port-branch form `branch (<p>) name1 [, name2 ...];`
+/// (`is_port: true`, `pos` holding the port identifier, `neg` always
+/// `None` for that form — the grammar has no second `<port>` terminal).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BranchDecl {
     pub span: PreprocessedSpan,
@@ -198,6 +201,9 @@ pub struct BranchDecl {
     pub pos: String,
     pub neg: Option<String>,
     pub names: Vec<String>,
+    /// `true` for `branch (<p>) name;` (§3.12.1 port branch) — `pos` names
+    /// the port, not a net.
+    pub is_port: bool,
 }
 
 /// A scalar variable declaration (`integer`/`real`/`time`/`realtime`) at

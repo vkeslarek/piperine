@@ -99,6 +99,18 @@ pub struct Branch {
     /// [`BranchKind::Probe`].
     #[serde(default)]
     pub kind: BranchKind,
+    /// `true` for a §3.12.1 port branch (`branch (<p>) name;`) — `pos`
+    /// names the port, `neg` is filled in with the synthetic internal net
+    /// `elab/lower/vams.rs::apply_port_branches` creates to split the
+    /// port's upper/lower connections. Kept as a plain field rather than a
+    /// `BranchKind::Port` variant (the design's first sketch): the branch
+    /// is driven by an ordinary synthetic `V(p, inner) <+ 0;` contribution
+    /// during elaboration, which must transition it through the normal
+    /// [`BranchKind::Potential`] path — a dedicated `Port` kind would
+    /// immediately conflict with that transition in
+    /// [`Branch::record_contribution`].
+    #[serde(default)]
+    pub is_port: bool,
 }
 
 impl Branch {

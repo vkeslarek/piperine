@@ -990,15 +990,26 @@ impl Grammar {
         let attrs = self.parse_attr_instances()?;
         let start = self.expect_kw("branch")?;
         self.expect_punct("(")?;
+        // §3.12.1 port_branch_declaration: `branch ( < port_identifier > )`.
+        let is_port = self.eat_punct("<");
         let (pos, _) = self.expect_ident()?;
-        let neg = if self.eat_punct(",") { Some(self.expect_ident()?.0) } else { None };
+        let neg = if is_port {
+            None
+        } else if self.eat_punct(",") {
+            Some(self.expect_ident()?.0)
+        } else {
+            None
+        };
+        if is_port {
+            self.expect_punct(">")?;
+        }
         self.expect_punct(")")?;
         let mut names = vec![self.expect_ident()?.0];
         while self.eat_punct(",") {
             names.push(self.expect_ident()?.0);
         }
         let end = self.expect_punct(";")?;
-        Ok(BranchDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, pos, neg, names })
+        Ok(BranchDecl { span: PreprocessedSpan::new(start.start, end.end), attrs, pos, neg, names, is_port })
     }
 
     // ─────────────────────────── behavior constructs ──────────────────────

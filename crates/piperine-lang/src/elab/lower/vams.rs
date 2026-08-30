@@ -640,6 +640,12 @@ impl Elaborator {
         module.span = Some(to_miette_span(decl.span));
         module.doc = decl.doc.clone();
         module.branches = branches;
+        // §3.12.1 port branches — must run before the contribution-branch
+        // walk below: it renames every internal reference to a
+        // port-branch port at its fresh internal net, so a real
+        // contribution the module's own body makes to that port picks up
+        // the post-split identity, not the pre-split one.
+        let (port_branch_synths, port_branch_terminals) = apply_port_branches(&mut module)?;
         module.vars = vars;
         module.functions = functions;
         module.events = events;
@@ -671,6 +677,46 @@ impl Elaborator {
             }
             for stmt in behavior.body() {
                 resolve_contribution_branches(stmt, &decl.name, &mut module.branches, access_kinds, false)?;
+            }
+        }
+
+        // §5.4.3: a potential access function on a port branch (`V(probe_p)`)
+        // is meaningless — checked against the *authored* statements, before
+        // the synthetic `V(p, inner) <+ 0;` contributions (which never
+        // reference a port branch by name) are injected below.
+        if !port_branch_terminals.is_empty() {
+            let names = port_branch_names(&module);
+            for behavior in &module.behaviors {
+                for stmt in behavior.body() {
+                    check_no_potential_access_on_port_branch(stmt, &names, access_kinds, &decl.name)?;
+                }
+            }
+            // Every remaining single-arg access naming a port branch is a
+            // flow access (the check above already ruled out a potential
+            // one) — rewritten into the explicit `(port, inner)` pair so it
+            // resolves through the ordinary two-net flow-access path.
+            for behavior in &mut module.behaviors {
+                behavior.body = std::mem::take(&mut behavior.body)
+                    .into_iter()
+                    .map(|stmt| rewrite_port_branch_flow_access_stmt(stmt, &port_branch_terminals))
+                    .collect();
+            }
+        }
+
+        // Inject each port branch's synthetic ideal 0V contribution now —
+        // after the walk above, so it is never misidentified as a second,
+        // unnamed branch sharing the port branch's terminals.
+        if !port_branch_synths.is_empty() {
+            if let Some(b) = module.behaviors.iter_mut().find(|b| b.is_analog()) {
+                let mut new_body = port_branch_synths;
+                new_body.extend(std::mem::take(&mut b.body));
+                b.body = new_body;
+            } else {
+                module.behaviors.push(Behavior::new(
+                    "__port_branch".to_string(),
+                    BehaviorKind::Analog,
+                    port_branch_synths,
+                ));
             }
         }
 
@@ -2651,7 +2697,539 @@ fn lower_branch_decl(b: &BranchDecl, out: &mut Vec<Branch>) {
             pos: NetRef::simple(b.pos.clone()),
             neg: b.neg.clone().map(NetRef::simple),
             kind: BranchKind::Probe,
+            is_port: b.is_port,
         });
+    }
+}
+
+/// §3.12.1 port branches: `branch (<p>) probe_p [, probe_p2 ...];`
+/// declares a branch between port `p`'s upper (external) and lower
+/// (internal) connections — the LRM's own words. Piperine's ports have no
+/// separate upper/lower node identity by default (an instantiation binds a
+/// port directly to the parent's connected node, T30/LRMW3-15's own single-
+/// node model); this materializes the split for real: a fresh internal
+/// wire replaces every *internal* body reference to the port, and a
+/// synthetic ideal 0V contribution (`V(p, <fresh>) <+ 0;`) reconnects
+/// them — its branch current (the existing force-branch/
+/// `HAS_INTERNAL_UNKNOWNS` machinery, `flatten/analog.rs`'s `FlatForce`,
+/// unchanged) *is* the port's flow (§5.4.3). Two port-branch names sharing
+/// the same port both alias the identical `(port, fresh)` pair — stamping
+/// a *second* independent 0V source between the same two nodes would
+/// singularize the MNA matrix, so only one synthetic contribution is ever
+/// injected per distinct port, and every name declared on it shares that
+/// one pair.
+///
+/// **Scope (T29/LRMW3-13)**: the port must be scalar and a *local* port of
+/// this module — §3.12.1's second grammar alternative
+/// (`hierarchical_port_identifier`) is not implemented (a disclosed gap,
+/// no known consumer). An instance connection that passes the port
+/// straight through to a child instance is not rewritten — a port branch
+/// declared on a port this module also re-connects to a submodule is a
+/// disclosed gap (the LRM's own `current_sink` example has no instances
+/// at all).
+/// Renames internal references, creates the synthetic internal wire, and
+/// fixes up every port-branch's `(pos, neg)`/`kind` directly (bypassing
+/// `record_contribution`'s ordinary transition — the branch never receives
+/// a real `Stmt::Contribution` of its own, so nothing would ever drive
+/// it). Returns the synthetic `V(p, inner) <+ 0;` statement for each
+/// distinct port — the caller injects these *after*
+/// `resolve_contribution_branches`'s pass over the module's own authored
+/// statements, so the synthetic statement never gets misidentified as a
+/// *second*, unnamed branch sharing the same terminals (it already has an
+/// identity: the named port branch(es) on that port, fixed up above).
+fn apply_port_branches(module: &mut Module) -> Result<(Vec<Stmt>, HashMap<String, (String, String)>), ElabError> {
+    let port_names: std::collections::BTreeSet<String> = module
+        .branches
+        .iter()
+        .filter(|b| b.is_port)
+        .map(|b| b.pos.net().to_string())
+        .collect();
+    let mut synths = Vec::new();
+    // Probe name → `(port_name, inner_name)`, filled in below — the flow-
+    // access rewrite (`rewrite_port_branch_flow_access_stmt`) and the
+    // illegal-potential-access check both key off it.
+    let mut probe_terminals: HashMap<String, (String, String)> = HashMap::new();
+    for port_name in port_names {
+        let Some(port) = module.ports.iter().find(|p| p.name() == port_name) else {
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
+                "branch (<{port_name}>) ...: `{port_name}` is not a port of module `{}` (§3.12.1)",
+                module.name
+            ))));
+        };
+        let ty = port.ty.clone();
+        let inner_name = format!("0$portbranch:{port_name}");
+        module.wires.push(Wire {
+            span: None,
+            attributes: Vec::new(),
+            doc: None,
+            name: inner_name.clone(),
+            ty,
+            nodeset: None,
+        });
+        for b in module.branches.iter_mut().filter(|b| b.is_port && b.pos.net() == port_name) {
+            b.neg = Some(NetRef::simple(inner_name.clone()));
+            b.kind = BranchKind::Potential;
+            if let Some(name) = &b.name {
+                probe_terminals.insert(name.clone(), (port_name.clone(), inner_name.clone()));
+            }
+        }
+        for behavior in &mut module.behaviors {
+            behavior.body = std::mem::take(&mut behavior.body)
+                .into_iter()
+                .map(|stmt| rename_ident_in_stmt(stmt, &port_name, &inner_name))
+                .collect();
+        }
+        let nospan = crate::error::PreprocessedSpan { start: 0, end: 0 };
+        synths.push(Stmt::Contribution {
+            span: nospan,
+            target: Expr::AccessFunction {
+                span: nospan,
+                function: "V".to_string(),
+                pos: Box::new(Expr::Ident { span: nospan, name: port_name.clone() }),
+                neg: Some(Box::new(Expr::Ident { span: nospan, name: inner_name.clone() })),
+            },
+            value: Expr::Number { span: nospan, value: crate::lexer::NumberLit::Real(0.0) },
+        });
+    }
+    Ok((synths, probe_terminals))
+}
+
+/// Every declared port-branch name (§3.12.1) — §5.4.3: "a port branch...
+/// represent[s] the flow into the port"; a *potential* access function on
+/// one is meaningless and fails loud rather than silently reading whatever
+/// `V(<name>)` would otherwise resolve to.
+fn port_branch_names(module: &Module) -> Vec<String> {
+    module.branches.iter().filter(|b| b.is_port).filter_map(|b| b.name.clone()).collect()
+}
+
+/// §5.4.3: a potential access function (`V`/`potential`, or a custom
+/// discipline's own potential access name) on a port branch is illegal —
+/// walks every expression reachable from `stmt` (mirrors
+/// [`rewrite_port_access_expr`]'s full coverage) looking for one.
+fn check_no_potential_access_on_port_branch(
+    stmt: &Stmt,
+    port_branches: &[String],
+    access_kinds: &HashMap<String, BranchKind>,
+    module: &str,
+) -> Result<(), ElabError> {
+    let mut found: Option<String> = None;
+    for_each_expr_in_stmt(stmt, &mut |e| {
+        if found.is_some() {
+            return;
+        }
+        if let Expr::AccessFunction { function, pos, neg: None, .. } = e
+            && let Expr::Ident { name, .. } = pos.as_ref()
+            && port_branches.iter().any(|pb| pb == name)
+        {
+            let is_potential = function == "V"
+                || function == "potential"
+                || access_kinds.get(function.as_str()) == Some(&BranchKind::Potential);
+            if is_potential {
+                found = Some(name.clone());
+            }
+        }
+    });
+    if let Some(name) = found {
+        return Err(ElabError::from(ElabErrorKind::Other(format!(
+            "module `{module}`: `V({name})` is a potential access on port branch `{name}` \
+             (§5.4.3: a port branch represents the flow into a port, not a potential)"
+        ))));
+    }
+    Ok(())
+}
+
+/// §5.4.3: a bare `I(probe_p)`/flow-kind single-arg access on a port
+/// branch names "the flow into the port" — rewritten here into the fully
+/// explicit two-terminal `I(port, inner)` form (the same two nets the
+/// synthetic `V(port, inner) <+ 0;` contribution stamps as a force
+/// branch), so it resolves through the ordinary two-net flow-access path
+/// exactly like any other branch current read, instead of the single-arg
+/// *named*-branch form (a pre-existing, unrelated gap — no codegen
+/// consumer resolves a branch by name today, only by its net pair; see
+/// `resolve/pom/expr.rs::parse_contrib_dest`). Only reached once
+/// [`check_no_potential_access_on_port_branch`] has already ruled out an
+/// illegal potential access, so every remaining single-arg access naming a
+/// port branch here is a flow access — this pass never fails.
+fn rewrite_port_branch_flow_access_expr(expr: Expr, port_branches: &HashMap<String, (String, String)>) -> Expr {
+    let r = |e: Expr| rewrite_port_branch_flow_access_expr(e, port_branches);
+    match expr {
+        Expr::AccessFunction { span, function, pos, neg: None } => {
+            if let Expr::Ident { name, .. } = pos.as_ref()
+                && let Some((port_name, inner_name)) = port_branches.get(name)
+            {
+                return Expr::AccessFunction {
+                    span,
+                    function,
+                    pos: Box::new(Expr::Ident { span, name: port_name.clone() }),
+                    neg: Some(Box::new(Expr::Ident { span, name: inner_name.clone() })),
+                };
+            }
+            Expr::AccessFunction { span, function, pos: Box::new(r(*pos)), neg: None }
+        }
+        Expr::AccessFunction { span, function, pos, neg: Some(n) } => {
+            Expr::AccessFunction { span, function, pos: Box::new(r(*pos)), neg: Some(Box::new(r(*n))) }
+        }
+        other @ (Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } | Expr::Hier { .. }) => other,
+        Expr::Unary { span, op, operand } => Expr::Unary { span, op, operand: Box::new(r(*operand)) },
+        Expr::Binary { span, op, lhs, rhs } => Expr::Binary { span, op, lhs: Box::new(r(*lhs)), rhs: Box::new(r(*rhs)) },
+        Expr::Ternary { span, cond, then_branch, else_branch } => Expr::Ternary {
+            span,
+            cond: Box::new(r(*cond)),
+            then_branch: Box::new(r(*then_branch)),
+            else_branch: Box::new(r(*else_branch)),
+        },
+        Expr::Concat { span, parts } => Expr::Concat { span, parts: parts.into_iter().map(r).collect() },
+        Expr::Replication { span, count, parts } => {
+            Expr::Replication { span, count: Box::new(r(*count)), parts: parts.into_iter().map(r).collect() }
+        }
+        Expr::Index { span, base, index } => Expr::Index { span, base: Box::new(r(*base)), index: Box::new(r(*index)) },
+        Expr::PartSelect { span, base, msb, lsb } => {
+            Expr::PartSelect { span, base: Box::new(r(*base)), msb: Box::new(r(*msb)), lsb: Box::new(r(*lsb)) }
+        }
+        Expr::Call { span, name, args } => Expr::Call { span, name, args: args.into_iter().map(r).collect() },
+        Expr::SystemFunctionCall { span, name, args } => {
+            Expr::SystemFunctionCall { span, name, args: args.into_iter().map(r).collect() }
+        }
+        Expr::AssignmentPattern { span, replicate, parts } => {
+            Expr::AssignmentPattern { span, replicate: replicate.map(|c| Box::new(r(*c))), parts: parts.into_iter().map(r).collect() }
+        }
+    }
+}
+
+/// Statement-tree counterpart of [`rewrite_port_branch_flow_access_expr`]
+/// — mirrors [`rewrite_port_access_stmt`]'s full coverage.
+fn rewrite_port_branch_flow_access_stmt(stmt: Stmt, port_branches: &HashMap<String, (String, String)>) -> Stmt {
+    let e = |expr: Expr| rewrite_port_branch_flow_access_expr(expr, port_branches);
+    let s = |stmt: Box<Stmt>| Box::new(rewrite_port_branch_flow_access_stmt(*stmt, port_branches));
+    match stmt {
+        Stmt::Null { .. } | Stmt::Disable { .. } | Stmt::EventTrigger { .. } => stmt,
+        Stmt::Assign { span, target, value } => Stmt::Assign { span, target: e(target), value: e(value) },
+        Stmt::NonBlockingAssign { span, target, value } => {
+            Stmt::NonBlockingAssign { span, target: e(target), value: e(value) }
+        }
+        Stmt::Contribution { span, target, value } => Stmt::Contribution { span, target: e(target), value: e(value) },
+        Stmt::IndirectContribution { span, lhs, probe, rhs } => {
+            Stmt::IndirectContribution { span, lhs: e(lhs), probe: e(probe), rhs: e(rhs) }
+        }
+        Stmt::Block { span, name, decls, stmts } => Stmt::Block {
+            span,
+            name,
+            decls,
+            stmts: stmts.into_iter().map(|st| rewrite_port_branch_flow_access_stmt(st, port_branches)).collect(),
+        },
+        Stmt::If { span, cond, then_branch, else_branch } => {
+            Stmt::If { span, cond: e(cond), then_branch: s(then_branch), else_branch: else_branch.map(s) }
+        }
+        Stmt::Case { span, kind, selector, arms, attrs } => Stmt::Case {
+            span,
+            kind,
+            selector: e(selector),
+            arms: arms
+                .into_iter()
+                .map(|arm| CaseArm {
+                    span: arm.span,
+                    labels: arm.labels.map(|ls| ls.into_iter().map(&e).collect()),
+                    body: s(arm.body),
+                })
+                .collect(),
+            attrs,
+        },
+        Stmt::For { span, init, cond, step, body } => {
+            Stmt::For { span, init: s(init), cond: e(cond), step: s(step), body: s(body) }
+        }
+        Stmt::While { span, cond, body } => Stmt::While { span, cond: e(cond), body: s(body) },
+        Stmt::Repeat { span, count, body } => Stmt::Repeat { span, count: e(count), body: s(body) },
+        Stmt::Forever { span, body } => Stmt::Forever { span, body: s(body) },
+        Stmt::EventControl { span, events, body } => Stmt::EventControl {
+            span,
+            events: events
+                .into_iter()
+                .map(|ev| match ev {
+                    EventExpr::Level(x) => EventExpr::Level(e(x)),
+                    EventExpr::Posedge(x) => EventExpr::Posedge(e(x)),
+                    EventExpr::Negedge(x) => EventExpr::Negedge(e(x)),
+                    EventExpr::ImplicitAll => EventExpr::ImplicitAll,
+                })
+                .collect(),
+            body: s(body),
+        },
+        Stmt::DelayControl { span, delay, body } => Stmt::DelayControl { span, delay: e(delay), body: s(body) },
+        Stmt::TaskCall { span, name, args } => Stmt::TaskCall { span, name, args: args.into_iter().map(&e).collect() },
+        Stmt::ProceduralAssign { span, target, value } => {
+            Stmt::ProceduralAssign { span, target: e(target), value: e(value) }
+        }
+        Stmt::ProceduralDeassign { span, target } => Stmt::ProceduralDeassign { span, target: e(target) },
+        Stmt::Force { span, target, value } => Stmt::Force { span, target: e(target), value: e(value) },
+        Stmt::Release { span, target } => Stmt::Release { span, target: e(target) },
+    }
+}
+
+/// Generic read-only visitor over every [`Expr`] reachable from `stmt` —
+/// the read-side counterpart of [`rewrite_port_access_expr`]/
+/// [`rewrite_port_access_stmt`] (same full coverage, immutable). Shared by
+/// [`check_no_potential_access_on_port_branch`] (T29) and hierarchical
+/// implicit-branch creation for reads (T30/LRMW3-15).
+fn for_each_expr_in_stmt(stmt: &Stmt, f: &mut impl FnMut(&Expr)) {
+    fn walk_expr(expr: &Expr, f: &mut impl FnMut(&Expr)) {
+        f(expr);
+        match expr {
+            Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => {}
+            Expr::Unary { operand, .. } => walk_expr(operand, f),
+            Expr::Binary { lhs, rhs, .. } => {
+                walk_expr(lhs, f);
+                walk_expr(rhs, f);
+            }
+            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+                walk_expr(cond, f);
+                walk_expr(then_branch, f);
+                walk_expr(else_branch, f);
+            }
+            Expr::Concat { parts, .. } => {
+                for p in parts {
+                    walk_expr(p, f);
+                }
+            }
+            Expr::Replication { count, parts, .. } => {
+                walk_expr(count, f);
+                for p in parts {
+                    walk_expr(p, f);
+                }
+            }
+            Expr::Index { base, index, .. } => {
+                walk_expr(base, f);
+                walk_expr(index, f);
+            }
+            Expr::PartSelect { base, msb, lsb, .. } => {
+                walk_expr(base, f);
+                walk_expr(msb, f);
+                walk_expr(lsb, f);
+            }
+            Expr::Call { args, .. } | Expr::SystemFunctionCall { args, .. } => {
+                for a in args {
+                    walk_expr(a, f);
+                }
+            }
+            Expr::AccessFunction { pos, neg, .. } => {
+                walk_expr(pos, f);
+                if let Some(n) = neg {
+                    walk_expr(n, f);
+                }
+            }
+            Expr::AssignmentPattern { replicate, parts, .. } => {
+                if let Some(r) = replicate {
+                    walk_expr(r, f);
+                }
+                for p in parts {
+                    walk_expr(p, f);
+                }
+            }
+        }
+    }
+    match stmt {
+        Stmt::Null { .. } | Stmt::Disable { .. } | Stmt::EventTrigger { .. } => {}
+        Stmt::Assign { target, value, .. } | Stmt::NonBlockingAssign { target, value, .. } => {
+            walk_expr(target, f);
+            walk_expr(value, f);
+        }
+        Stmt::Contribution { target, value, .. } => {
+            walk_expr(target, f);
+            walk_expr(value, f);
+        }
+        Stmt::IndirectContribution { lhs, probe, rhs, .. } => {
+            walk_expr(lhs, f);
+            walk_expr(probe, f);
+            walk_expr(rhs, f);
+        }
+        Stmt::Block { stmts, .. } => {
+            for s in stmts {
+                for_each_expr_in_stmt(s, f);
+            }
+        }
+        Stmt::If { cond, then_branch, else_branch, .. } => {
+            walk_expr(cond, f);
+            for_each_expr_in_stmt(then_branch, f);
+            if let Some(e) = else_branch {
+                for_each_expr_in_stmt(e, f);
+            }
+        }
+        Stmt::Case { selector, arms, .. } => {
+            walk_expr(selector, f);
+            for arm in arms {
+                if let Some(labels) = &arm.labels {
+                    for l in labels {
+                        walk_expr(l, f);
+                    }
+                }
+                for_each_expr_in_stmt(&arm.body, f);
+            }
+        }
+        Stmt::For { init, cond, step, body, .. } => {
+            for_each_expr_in_stmt(init, f);
+            walk_expr(cond, f);
+            for_each_expr_in_stmt(step, f);
+            for_each_expr_in_stmt(body, f);
+        }
+        Stmt::While { cond, body, .. } | Stmt::Repeat { count: cond, body, .. } => {
+            walk_expr(cond, f);
+            for_each_expr_in_stmt(body, f);
+        }
+        Stmt::Forever { body, .. } => for_each_expr_in_stmt(body, f),
+        Stmt::EventControl { events, body, .. } => {
+            for ev in events {
+                match ev {
+                    EventExpr::Level(x) | EventExpr::Posedge(x) | EventExpr::Negedge(x) => walk_expr(x, f),
+                    EventExpr::ImplicitAll => {}
+                }
+            }
+            for_each_expr_in_stmt(body, f);
+        }
+        Stmt::DelayControl { delay, body, .. } => {
+            walk_expr(delay, f);
+            for_each_expr_in_stmt(body, f);
+        }
+        Stmt::TaskCall { args, .. } => {
+            for a in args {
+                walk_expr(a, f);
+            }
+        }
+        Stmt::ProceduralAssign { target, value, .. } | Stmt::Force { target, value, .. } => {
+            walk_expr(target, f);
+            walk_expr(value, f);
+        }
+        Stmt::ProceduralDeassign { target, .. } | Stmt::Release { target, .. } => walk_expr(target, f),
+    }
+}
+
+/// Renames every bare `Ident` occurrence of `from` to `to` reachable from
+/// `expr` — the leaf-substitution counterpart of
+/// [`rewrite_port_access_expr`]'s full recursive coverage, used by
+/// [`apply_port_branches`] to redirect a module's *internal* references to
+/// a port-branch port at the synthetic internal net.
+fn rename_ident_in_expr(expr: Expr, from: &str, to: &str) -> Expr {
+    match expr {
+        Expr::Ident { span, name } => Expr::Ident { span, name: if name == from { to.to_string() } else { name } },
+        other @ (Expr::Number { .. } | Expr::Str { .. } | Expr::PortAccess { .. } | Expr::Hier { .. }) => other,
+        Expr::Unary { span, op, operand } => {
+            Expr::Unary { span, op, operand: Box::new(rename_ident_in_expr(*operand, from, to)) }
+        }
+        Expr::Binary { span, op, lhs, rhs } => Expr::Binary {
+            span,
+            op,
+            lhs: Box::new(rename_ident_in_expr(*lhs, from, to)),
+            rhs: Box::new(rename_ident_in_expr(*rhs, from, to)),
+        },
+        Expr::Ternary { span, cond, then_branch, else_branch } => Expr::Ternary {
+            span,
+            cond: Box::new(rename_ident_in_expr(*cond, from, to)),
+            then_branch: Box::new(rename_ident_in_expr(*then_branch, from, to)),
+            else_branch: Box::new(rename_ident_in_expr(*else_branch, from, to)),
+        },
+        Expr::Concat { span, parts } => {
+            Expr::Concat { span, parts: parts.into_iter().map(|p| rename_ident_in_expr(p, from, to)).collect() }
+        }
+        Expr::Replication { span, count, parts } => Expr::Replication {
+            span,
+            count: Box::new(rename_ident_in_expr(*count, from, to)),
+            parts: parts.into_iter().map(|p| rename_ident_in_expr(p, from, to)).collect(),
+        },
+        Expr::Index { span, base, index } => Expr::Index {
+            span,
+            base: Box::new(rename_ident_in_expr(*base, from, to)),
+            index: Box::new(rename_ident_in_expr(*index, from, to)),
+        },
+        Expr::PartSelect { span, base, msb, lsb } => Expr::PartSelect {
+            span,
+            base: Box::new(rename_ident_in_expr(*base, from, to)),
+            msb: Box::new(rename_ident_in_expr(*msb, from, to)),
+            lsb: Box::new(rename_ident_in_expr(*lsb, from, to)),
+        },
+        Expr::Call { span, name, args } => {
+            Expr::Call { span, name, args: args.into_iter().map(|a| rename_ident_in_expr(a, from, to)).collect() }
+        }
+        Expr::AccessFunction { span, function, pos, neg } => Expr::AccessFunction {
+            span,
+            function,
+            pos: Box::new(rename_ident_in_expr(*pos, from, to)),
+            neg: neg.map(|n| Box::new(rename_ident_in_expr(*n, from, to))),
+        },
+        Expr::SystemFunctionCall { span, name, args } => Expr::SystemFunctionCall {
+            span,
+            name,
+            args: args.into_iter().map(|a| rename_ident_in_expr(a, from, to)).collect(),
+        },
+        Expr::AssignmentPattern { span, replicate, parts } => Expr::AssignmentPattern {
+            span,
+            replicate: replicate.map(|c| Box::new(rename_ident_in_expr(*c, from, to))),
+            parts: parts.into_iter().map(|p| rename_ident_in_expr(p, from, to)).collect(),
+        },
+    }
+}
+
+/// Statement-tree counterpart of [`rename_ident_in_expr`] — mirrors
+/// [`rewrite_port_access_stmt`]'s full coverage.
+fn rename_ident_in_stmt(stmt: Stmt, from: &str, to: &str) -> Stmt {
+    let e = |expr: Expr| rename_ident_in_expr(expr, from, to);
+    let s = |stmt: Box<Stmt>| Box::new(rename_ident_in_stmt(*stmt, from, to));
+    match stmt {
+        Stmt::Null { .. } | Stmt::Disable { .. } | Stmt::EventTrigger { .. } => stmt,
+        Stmt::Assign { span, target, value } => Stmt::Assign { span, target: e(target), value: e(value) },
+        Stmt::NonBlockingAssign { span, target, value } => {
+            Stmt::NonBlockingAssign { span, target: e(target), value: e(value) }
+        }
+        Stmt::Contribution { span, target, value } => Stmt::Contribution { span, target: e(target), value: e(value) },
+        Stmt::IndirectContribution { span, lhs, probe, rhs } => {
+            Stmt::IndirectContribution { span, lhs: e(lhs), probe: e(probe), rhs: e(rhs) }
+        }
+        Stmt::Block { span, name, decls, stmts } => Stmt::Block {
+            span,
+            name,
+            decls,
+            stmts: stmts.into_iter().map(|st| rename_ident_in_stmt(st, from, to)).collect(),
+        },
+        Stmt::If { span, cond, then_branch, else_branch } => {
+            Stmt::If { span, cond: e(cond), then_branch: s(then_branch), else_branch: else_branch.map(s) }
+        }
+        Stmt::Case { span, kind, selector, arms, attrs } => Stmt::Case {
+            span,
+            kind,
+            selector: e(selector),
+            arms: arms
+                .into_iter()
+                .map(|arm| CaseArm {
+                    span: arm.span,
+                    labels: arm.labels.map(|ls| ls.into_iter().map(&e).collect()),
+                    body: s(arm.body),
+                })
+                .collect(),
+            attrs,
+        },
+        Stmt::For { span, init, cond, step, body } => {
+            Stmt::For { span, init: s(init), cond: e(cond), step: s(step), body: s(body) }
+        }
+        Stmt::While { span, cond, body } => Stmt::While { span, cond: e(cond), body: s(body) },
+        Stmt::Repeat { span, count, body } => Stmt::Repeat { span, count: e(count), body: s(body) },
+        Stmt::Forever { span, body } => Stmt::Forever { span, body: s(body) },
+        Stmt::EventControl { span, events, body } => Stmt::EventControl {
+            span,
+            events: events
+                .into_iter()
+                .map(|ev| match ev {
+                    EventExpr::Level(x) => EventExpr::Level(e(x)),
+                    EventExpr::Posedge(x) => EventExpr::Posedge(e(x)),
+                    EventExpr::Negedge(x) => EventExpr::Negedge(e(x)),
+                    EventExpr::ImplicitAll => EventExpr::ImplicitAll,
+                })
+                .collect(),
+            body: s(body),
+        },
+        Stmt::DelayControl { span, delay, body } => Stmt::DelayControl { span, delay: e(delay), body: s(body) },
+        Stmt::TaskCall { span, name, args } => Stmt::TaskCall { span, name, args: args.into_iter().map(&e).collect() },
+        Stmt::ProceduralAssign { span, target, value } => {
+            Stmt::ProceduralAssign { span, target: e(target), value: e(value) }
+        }
+        Stmt::ProceduralDeassign { span, target } => Stmt::ProceduralDeassign { span, target: e(target) },
+        Stmt::Force { span, target, value } => Stmt::Force { span, target: e(target), value: e(value) },
+        Stmt::Release { span, target } => Stmt::Release { span, target: e(target) },
     }
 }
 
@@ -3062,7 +3640,7 @@ fn resolve_or_create_branch<'a>(
         return Ok(&mut branches[idx]);
     }
 
-    branches.push(Branch { span: None, doc: None, name: None, pos: pos_ref, neg: neg_ref, kind: BranchKind::Probe });
+    branches.push(Branch { span: None, doc: None, name: None, pos: pos_ref, neg: neg_ref, kind: BranchKind::Probe, is_port: false });
     Ok(branches.last_mut().unwrap())
 }
 
@@ -3097,6 +3675,17 @@ fn resolve_or_create_branch<'a>(
 /// (a genuinely malformed expression shape) still fails loud unchanged —
 /// only the "undefined name" `ConstEvalError` case is tolerated.
 fn net_ref_for_branch(expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
+    // A hierarchical terminal (`V(u1.u2.w2) <+ ...`, §5.6.8) — this
+    // module's own elaboration cannot resolve the path (it may cross a
+    // module it never sees), so it is recorded as a plain dotted-name
+    // `NetRef` purely for THIS module's own branch-identity/kind-conflict
+    // bookkeeping (T18's mechanism); the real node the path names is
+    // resolved later, at circuit-build time, by `piperine-codegen`'s
+    // `resolve/pom/body.rs::resolve_hier` (T30/LRMW3-15), which runs the
+    // identical resolution the read-side path already uses.
+    if let Expr::Hier { path, .. } = expr {
+        return Ok(NetRef::simple(path.join(".")));
+    }
     match expr_to_net_ref(expr, env) {
         Ok(r) => Ok(r),
         Err(e) => {

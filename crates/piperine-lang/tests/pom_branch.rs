@@ -40,6 +40,7 @@ fn named_branch(name: &str, p: &str, n: &str) -> Branch {
         pos: pos(p),
         neg: Some(pos(n)),
         kind: BranchKind::Probe,
+        is_port: false,
     }
 }
 
@@ -51,6 +52,7 @@ fn implicit_branch(p: &str, n: &str) -> Branch {
         pos: pos(p),
         neg: Some(pos(n)),
         kind: BranchKind::Probe,
+        is_port: false,
     }
 }
 
@@ -62,6 +64,7 @@ fn ground_branch(name: &str, p: &str) -> Branch {
         pos: pos(p),
         neg: None,
         kind: BranchKind::Probe,
+        is_port: false,
     }
 }
 
@@ -114,6 +117,7 @@ fn indexed_terminals_are_preserved() {
         pos: pos_idx("bus", 3),
         neg: Some(pos_idx("bus", 0)),
         kind: BranchKind::Probe,
+        is_port: false,
     };
     assert_eq!(b.pos(), &pos_idx("bus", 3));
     assert_eq!(b.neg(), Some(&pos_idx("bus", 0)));
@@ -163,6 +167,7 @@ fn potential_then_flow_conflicts_loud_with_e4001_citing_lrm_5_4_2() {
         pos: pos("a"),
         neg: Some(pos("b")),
         kind: BranchKind::Probe,
+        is_port: false,
     };
     assert!(b.record_contribution(BranchKind::Potential, None, "m").is_ok());
 
