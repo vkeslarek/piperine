@@ -818,13 +818,13 @@ gains `Port`
 **Requirement**: LRMW3-13
 
 **Done when**:
-- [ ] §3.12.1's own `current_sink` example reads a nonzero port current that
+- [x] §3.12.1's own `current_sink` example reads a nonzero port current that
       matches the current the connected network delivers
-- [ ] A module **without** a port branch produces the identical node count as
+- [x] A module **without** a port branch produces the identical node count as
       before (regression assert, named in the commit body)
-- [ ] `V(<p>)` (a potential access on a port branch) fails loud per §5.4.3
-- [ ] Declares `//! LRM-COVERS: 3.12.1, 5.4.3`
-- [ ] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine-lang`
+- [x] `V(<p>)` (a potential access on a port branch) fails loud per §5.4.3
+- [x] Declares `//! LRM-COVERS: 3.12.1, 5.4.3`
+- [x] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): port branches read the flow into a port (§3.12.1)`
