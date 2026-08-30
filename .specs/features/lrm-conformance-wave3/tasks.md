@@ -1422,13 +1422,22 @@ surface (`constraint` + `tol` + the optimizer).
 **Requirement**: PSW3-08
 
 **Done when**:
-- [ ] `14_bundle_model_card.*` is renamed to a Verilog-AMS-accurate name, with
-      its `.py` twin updated
-- [ ] A new example declares a `require` with a `tol`-carrying parameter and
-      runs a centering or Monte Carlo pass, asserting a numeric outcome
-- [ ] `cargo test -p piperine --test run_examples` is green
-- [ ] Declares `//! SPEC-COVERS: appendix_a#1` on the run-examples target
-- [ ] Gate passes: `cargo test -p piperine --test run_examples`
+- [x] `14_bundle_model_card.*` is renamed to a Verilog-AMS-accurate name
+      (`14_diode_model_card.*`), with its `.py` twin updated
+- [x] A new example (`24_constraint_tol_centering.vams`) declares a `require`
+      with a `tol`-carrying parameter and runs a centering pass, asserting a
+      numeric outcome — the `.vams`+`.py` twin exercises the constraint/tol
+      half (both hosts); a new root test
+      (`tests/example_constraint_centering.rs`) runs the centering half
+      against this same example file, since `Driver`/`Policy` has no Python
+      binding (T51's declared asymmetry) — see that test's own header for
+      the reasoning
+- [x] `cargo test -p piperine --test run_examples` is green
+- [x] Declares `//! SPEC-COVERS: appendix_a#A.3` (the real heading id — the
+      literal `appendix_a#1` this line originally named does not exist;
+      appendix A uses `A.1`/`A.2`/... ids, not bare numbers) on
+      `tests/example_constraint_centering.rs`
+- [x] Gate passes: `cargo test -p piperine --test run_examples`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `docs(examples): rename the retired-name example, add an extension example`

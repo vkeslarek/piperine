@@ -60,10 +60,6 @@ id = "appendix_a#A.2.7"
 reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
 
 [[declared_limitation]]
-id = "appendix_a#A.3"
-reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
-
-[[declared_limitation]]
 id = "appendix_a#A.4"
 reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
 

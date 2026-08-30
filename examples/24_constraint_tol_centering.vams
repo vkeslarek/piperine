@@ -1,0 +1,59 @@
+// The `constraint begin ... end` block, the `tol` random-variable
+// catalogue, and the host-side design-centering driver — Piperine's own
+// extension surface beyond the LRM (docs/spec/part_iv_reflection_selector.md
+// §9 "the selector language", docs/spec/appendix_c_host_surface.md §2
+// "gradient, driver, sampling, aging").
+//
+// A resistive divider with a mismatch-toleranced feedback resistor: two
+// competing `require`s bracket V(out) from both sides. The nominal
+// `r1 = 1500` sits exactly on the `head_lo` boundary (V(out) = 0.4, its
+// declared floor) -- known off-center geometry, so a design-centering pass
+// (examples/24_constraint_tol_centering.py's Rust-only twin,
+// `tests/example_constraint_centering.rs`) has real headroom to improve.
+// The plain op point and the constraint margins it produces are readable
+// from both hosts (this file's own `.py` twin exercises exactly that half);
+// `Driver`/`Policy::Center` itself has no Python binding yet
+// (docs/spec/appendix_c_host_surface.md §3's declared asymmetry, B5) so the
+// centering pass is proven on the Rust host instead.
+`include "disciplines.vams"
+
+module Vsrc (inout electrical p, inout electrical n);
+    parameter real dc = 1.0;
+    analog begin
+        V(p, n) <+ dc;
+    end
+endmodule
+
+module R (inout electrical p, inout electrical n);
+    // `tol gauss(sigma_rel = ...)`: the sanctioned random-variable
+    // catalogue extension (Part IV) -- a normal distribution's relative
+    // sigma, consumed by the host's Monte Carlo / centering machinery,
+    // never by elaboration itself (a plain op/tran run always uses the
+    // nominal 1500).
+    parameter real r = 1500.0 tol gauss(sigma_rel = 0.05);
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+    end
+endmodule
+
+module Dut (inout electrical p, inout electrical n);
+    parameter real hi = 0.6;
+    parameter real lo = 0.4;
+    analog begin
+        I(p, n) <+ V(p, n) / 1e3;
+    end
+    // The sanctioned `constraint begin ... end` extension (Part IV §3,
+    // MD-49): authored margin statements, reachable through the POM's
+    // `Module::constraints()` and the selector's `constraint::` axis.
+    constraint begin
+        require head_hi : V(p, n) <= hi;
+        require head_lo : V(p, n) >= lo;
+    end
+endmodule
+
+module Top ();
+    electrical gnd, in, out;
+    Vsrc v1 (.p(in), .n(gnd));
+    R r1 (.p(in), .n(out));
+    Dut dut1 (.p(out), .n(gnd));
+endmodule
