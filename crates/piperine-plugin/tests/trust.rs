@@ -1,5 +1,7 @@
 //! TOFU state machine (SPEC Part VI §3.2): accept records to the lockfile,
 //! reject aborts, a recorded hash never re-prompts, a changed hash is P0007.
+//!
+//! SPEC-COVERS: part_vi#3.1
 
 use std::path::Path;
 

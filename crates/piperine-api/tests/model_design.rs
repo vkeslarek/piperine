@@ -3,6 +3,8 @@
 //! `select` with its two fail-loud paths. Plus the MD-25 proof: the hierarchy
 //! the model exposes is the **authored** one, and codegen's flattened side
 //! artifact is unreachable through it.
+//!
+//! SPEC-COVERS: part_iv#2, part_iv#9
 
 use piperine_api::model::Design;
 use piperine_api::Error;

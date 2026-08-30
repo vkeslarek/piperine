@@ -1243,11 +1243,11 @@ surface (host API, plugins, POM, IR, constraints, sampling, drivers).
 **Requirement**: PSW3-10, spec G7
 
 **Done when**:
-- [ ] Every spec heading with an existing proving test is `Covered`
-- [ ] No claim is added to a target whose assertions do not prove it
-- [ ] The remaining red list is the honest axis-B gap list, and it matches the
+- [x] Every spec heading with an existing proving test is `Covered`
+- [x] No claim is added to a target whose assertions do not prove it
+- [x] The remaining red list is the honest axis-B gap list, and it matches the
       spec's B1–B10 plus whatever the backfill uncovers
-- [ ] Gate passes: `cargo test -p piperine --test spec_section_coverage`
+- [x] Gate passes: `cargo test -p piperine --test spec_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(spec-coverage): backfill SPEC-COVERS on the existing suite`

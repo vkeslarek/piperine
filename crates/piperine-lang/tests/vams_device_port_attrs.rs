@@ -6,6 +6,8 @@
 //! name that is neither of these two (nor seeded by the caller) fails loud
 //! (`ElabErrorKind::UnknownAttrSchema`, E2022) — MD-24's "no silent
 //! fallback" rule ported to VAMS (design P2 AC2).
+//!
+//! SPEC-COVERS: part_iii#6
 
 use piperine_lang::{parse_and_elaborate, parse_and_elaborate_seeded, seed_device_port_schemas, SourceMap};
 

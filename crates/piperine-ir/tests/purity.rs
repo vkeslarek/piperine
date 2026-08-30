@@ -2,6 +2,8 @@
 //! invariant lives in the gate, not in inspection). Two checks: the manifest
 //! declares zero in-tree dependencies, and no source file references
 //! `Element`, an MNA/matrix type, or a Cranelift symbol.
+//!
+//! SPEC-COVERS: part_ix#1
 
 use std::fs;
 use std::path::Path;

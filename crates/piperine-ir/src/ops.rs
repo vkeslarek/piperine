@@ -5,9 +5,13 @@
 //! accepted timesteps), not something this type can enforce on its own.
 //!
 //! Extracted from `piperine-codegen`'s
-//! `device/analog/operators.rs::Operator`, semantics unchanged. Codegen
-//! keeps its own copy until `codegen-simplification` delegates to this one
-//! (`.specs/features/dv-tester/design.md` §C1).
+//! `device/analog/operators.rs::Operator`, semantics unchanged. **Codegen
+//! no longer keeps a copy**: `device/analog/operators.rs::SlottedOperator`
+//! wraps this type and adds only the state-array slot (and `idt`'s `assert`
+//! reset / `idtmod`'s `offset`, neither of which is operator semantics), so
+//! this file is the single implementation both the JIT devices and the host
+//! device library call. Pinning that is `PSW3-04`
+//! (`.specs/features/lrm-conformance-wave3/spec.md`).
 
 use std::collections::VecDeque;
 
@@ -198,6 +202,7 @@ impl Operator {
 
 #[cfg(test)]
 mod tests {
+    //! SPEC-COVERS: part_ix#2
     use super::*;
 
     fn transition(delay: f64, rise: f64, fall: f64) -> Operator {

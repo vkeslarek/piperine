@@ -2,6 +2,7 @@
 //! `after_solve` sees the operating point, each firing exactly once per run.
 //!
 //! LRM-COVERS: 12.10, 12.16
+//! SPEC-COVERS: part_vi#1
 
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
