@@ -181,6 +181,17 @@ pub(crate) struct LowerCtx<'a> {
     /// (nonexistent) parameter reference. Only natures that declared an
     /// `abstol` attribute are present.
     pub nature_abstols: HashMap<String, f64>,
+    /// §4.6.4.6 (LRMW3-23): byte spans of the `white_noise`/`flicker_noise`
+    /// calls `scan_noise` has already attributed to a branch (pushed as
+    /// `(span.start, span.end)`, checked by `resolve_call`'s own
+    /// white_noise/flicker_noise arm). A call whose span is *not* here when
+    /// `resolve_call` reaches it was never scanned on its own contribution
+    /// — the LRM's own "correlated noise" idiom (`n = white_noise(pwr);`
+    /// followed by `V(a) <+ n; V(b) <+ n;`) is exactly this shape, and
+    /// Piperine does not yet track a shared noise-source identity across
+    /// separate contributions, so that idiom fails loud instead of
+    /// silently substituting `0.0` for a noise term nothing ever counted.
+    pub scanned_noise_spans: Vec<(usize, usize)>,
     /// User-function inlining recursion guard (§4.7): names currently
     /// being inlined, pushed on entry to `inline_user_fn` and popped on
     /// exit — a name already on the stack is a (possibly indirect)
@@ -243,6 +254,7 @@ impl<'a> LowerCtx<'a> {
             digital_shadows: Vec::new(),
             default_transition: None,
             nature_abstols: HashMap::new(),
+            scanned_noise_spans: Vec::new(),
             inlining_stack: Vec::new(),
             write_backs: Vec::new(),
             top_module,

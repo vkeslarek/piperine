@@ -998,12 +998,12 @@ where the clause is proven only incidentally.
 **Requirement**: LRMW3-23
 
 **Done when**:
-- [ ] Each id is declared by a target whose assertions actually prove the clause
+- [x] Each id is declared by a target whose assertions actually prove the clause
       (an incidental pass is not a claim — where none exists, the test is
       written in this task)
-- [ ] `declared_ids_exist_in_the_lrm` and `declaring_files_have_a_live_test`
+- [x] `declared_ids_exist_in_the_lrm` and `declaring_files_have_a_live_test`
       stay green
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): declare clauses proven by existing behavior tests`

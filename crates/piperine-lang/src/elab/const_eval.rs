@@ -123,6 +123,28 @@ impl ConstEnv {
                 .cloned()
                 .ok_or_else(|| ConstEvalError::Undefined(name.clone())),
             Expr::Unary { op, operand, .. } => self.eval_unary(*op, operand),
+            // §4.2.3: `&&`/`||` (like `?:` just below) use short-circuit
+            // evaluation — the right operand is not evaluated at all once
+            // the left already determines the result, so a runtime error
+            // (e.g. division by zero) in a short-circuited right operand
+            // must not surface. Handled here, ahead of `eval_binary`'s
+            // generic "evaluate both sides first" shape that every other
+            // binary operator still uses correctly (they are defined to
+            // always evaluate both operands).
+            Expr::Binary { op: BinOp::LogAnd, lhs, rhs, .. } => {
+                if !truthy(&self.eval(lhs)?)? {
+                    Ok(Value::Bool(false))
+                } else {
+                    Ok(Value::Bool(truthy(&self.eval(rhs)?)?))
+                }
+            }
+            Expr::Binary { op: BinOp::LogOr, lhs, rhs, .. } => {
+                if truthy(&self.eval(lhs)?)? {
+                    Ok(Value::Bool(true))
+                } else {
+                    Ok(Value::Bool(truthy(&self.eval(rhs)?)?))
+                }
+            }
             Expr::Binary { op, lhs, rhs, .. } => self.eval_binary(*op, lhs, rhs),
             Expr::Ternary { cond, then_branch, else_branch, .. } => {
                 match self.eval(cond)? {
@@ -266,14 +288,9 @@ impl ConstEnv {
                     _ => unreachable!(),
                 }))
             }
-            BinOp::LogAnd | BinOp::LogOr => {
-                let (a, b) = (truthy(&l)?, truthy(&r)?);
-                Ok(Value::Bool(match op {
-                    BinOp::LogAnd => a && b,
-                    BinOp::LogOr => a || b,
-                    _ => unreachable!(),
-                }))
-            }
+            // LogAnd/LogOr are handled in `eval` (short-circuit, §4.2.3)
+            // before `eval_binary` is ever called for them.
+            BinOp::LogAnd | BinOp::LogOr => unreachable!("short-circuited in `eval`"),
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::BitXnor => {
                 let (a, b) = (int_of(&l)?, int_of(&r)?);
                 Ok(Value::Int(match op {

@@ -167,7 +167,7 @@ pub(crate) fn terminal_name_of(e: Option<&Expr>, _ctx: &LowerCtx) -> Option<Stri
 
 pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
     walk(expr, &mut |e| {
-        let Expr::Call { name, args, .. } = e else { return true };
+        let Expr::Call { name, args, span } = e else { return true };
         match name.as_str() {
             "white_noise" => {
                 let psd = args.first().map(|a| resolve_expr(a, ctx)).unwrap_or_else(|| real(0.0));
@@ -175,6 +175,7 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                     if let Expr::Str { value, .. } = a { Some(value.clone()) } else { None }
                 });
                 ctx.noise_sources.push(NoiseSource { plus, minus, kind: NoiseKind::White { psd }, label });
+                ctx.scanned_noise_spans.push((span.start, span.end));
                 false
             }
             "flicker_noise" => {
@@ -184,6 +185,7 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                     if let Expr::Str { value, .. } = a { Some(value.clone()) } else { None }
                 });
                 ctx.noise_sources.push(NoiseSource { plus, minus, kind: NoiseKind::Flicker { psd, exponent }, label });
+                ctx.scanned_noise_spans.push((span.start, span.end));
                 false
             }
             _ => true,
@@ -528,6 +530,32 @@ fn resolve_call(name: &str, args: &[Expr], ctx: &mut LowerCtx, span: Preprocesse
         // dropped.
         let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
         return Expr::Call { span, name: name.to_string(), args: resolved };
+    }
+
+    // §4.6.4.6 (LRMW3-23): a `white_noise`/`flicker_noise` call that
+    // `scan_noise` never attributed to a branch — i.e. one reached only
+    // through `resolve_expr`'s ordinary recursion, not through a
+    // contribution's own `scan_noise(value, plus, minus, ctx)` call on
+    // this exact call site — is the LRM's own "correlated noise" idiom
+    // (`n = white_noise(pwr);` assigned once, then contributed on two
+    // separate branches: `V(a,b) <+ c1*n; V(c,d) <+ c2*n;`). Piperine's
+    // noise engine has no notion of a shared noise-source identity across
+    // contributions, so silently substituting `0.0` here (as the ordinary
+    // in-contribution occurrence correctly does — noise never perturbs
+    // the deterministic residual) would drop the noise term with no
+    // record of it ever existing. Fail loud instead, citing the clause,
+    // rather than the CLAUDE.md-forbidden silent zero.
+    if (name == "white_noise" || name == "flicker_noise")
+        && !ctx.scanned_noise_spans.contains(&(span.start, span.end))
+    {
+        ctx.errors.push(LowerError {
+            module: ctx.module_name.clone(),
+            what: "correlated noise (§4.6.4.6): a noise call used outside its own \
+                   contribution (e.g. assigned to a variable and reused across \
+                   branches) — Piperine does not yet track a shared noise-source \
+                   identity across contributions",
+            name: name.to_string(),
+        });
     }
 
     if let Some(op) = analog_ops().lookup(name) {

@@ -1,9 +1,17 @@
-//! LRM-COVERS: 6.5.3, 7.3.6.4, 8.5.3.1
+//! LRM-COVERS: 6.5.3, 7.3.6.4, 7.4.2, 8.5.3.1
 //!
 //! T10 (LRMW2-06): `crates/piperine-lang/tests/vams_continuous_assign.rs`
 //! proves the elaborated POM shape a module-level `assign` synthesizes;
 //! this file is the "actually drives the net" simulate-level proof for
 //! both domains the fix routes into (SPEC_DEVIATION.md finding 1.3).
+//!
+//! lrm-conformance-wave3 (Phase 6, T36): `wreal_target_is_driven_by_
+//! assign_end_to_end`'s `Follower (inout electrical in, inout wreal out)`
+//! instantiated as `Follower f1 (.in(mid), .out(out_net))` also proves
+//! §7.4.2 "Connection of discrete-time disciplines" — a `wreal` port
+//! connected across a module boundary to a top-level `wreal` net, with
+//! the driven value observed all the way through the connection (3.3 V),
+//! not merely elaborated.
 
 use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
