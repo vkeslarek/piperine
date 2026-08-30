@@ -124,6 +124,9 @@ impl Elaborator {
         // `SpecifyBlock` once `module`'s port list is final — path/check
         // terminals validate against it (A.7.3).
         let mut pending_specify: Vec<crate::ast::SpecifyBlock> = Vec::new();
+        // §3.6.3.1 (T27, LRMW3-10): non-fatal module lints — today, only
+        // "duplicate `desc` on both a net and its port declaration".
+        let mut lints: Vec<String> = Vec::new();
         // §3.9/§3.10 (T26, LRMW3-12): `electrical top.u1.n;` out-of-module
         // discipline declarations authored in this module — recorded here
         // (authored form, MD-25); resolved by a whole-design pass
@@ -164,6 +167,7 @@ impl Elaborator {
                         // never connect back to it.
                         if let Some(port) = ports.iter_mut().find(|p| p.name == d.name) {
                             port.ty = declarator_net_type(d, discipline, &env)?;
+                            merge_net_attrs_into_port(port, &net_attrs, &mut lints);
                             continue;
                         }
                         wires.push(declarator_to_wire(
@@ -700,6 +704,7 @@ impl Elaborator {
         // compose" rule `constraints` already uses).
         module.specify = lower_specify_blocks(&pending_specify, &module, &env)?;
         module.out_of_module_disciplines = out_of_module_disciplines;
+        module.lints = lints;
 
         Ok(module)
     }
@@ -1446,7 +1451,6 @@ pub(super) fn lower_generic_attrs(
     attrs: &[crate::ast::Attr],
     known_schemas: &HashSet<String>,
 ) -> Result<Vec<Attribute>, ElabError> {
-    let env = ConstEnv::new();
     attrs
         .iter()
         .map(|a| {
@@ -1454,20 +1458,32 @@ pub(super) fn lower_generic_attrs(
                 return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
                     .with_span(Some(to_miette_span(a.span))));
             }
-            let mut data = HashMap::new();
-            if let Some(expr) = &a.value {
-                let value = env.eval(expr).map_err(|e| {
-                    ElabError::from(ElabErrorKind::ConstEval {
-                        context: format!("attribute `{}`", a.name),
-                        source: e,
-                    })
-                    .with_span(Some(to_miette_span(a.span)))
-                })?;
-                data.insert(a.name.clone(), value);
-            }
-            Ok(Attribute { schema: a.name.clone(), data })
+            lower_one_generic_attr(a)
         })
         .collect()
+}
+
+/// §3.6.3.1 (T27, LRMW3-10): merges a two-step port declaration's
+/// net-side attributes (`electrical p;` naming an already-declared port
+/// `p`) into that port's own attributes. A same-schema attribute already
+/// present is replaced (net-side, declared second, wins); a `desc`
+/// collision additionally records a lint on `lints` — the LRM's own
+/// words: "the last attribute value shall be used and the tool can give
+/// a warning that a duplicate attribute specification has occurred."
+fn merge_net_attrs_into_port(port: &mut Port, net_attrs: &[Attribute], lints: &mut Vec<String>) {
+    for incoming in net_attrs {
+        if let Some(existing) = port.attributes.iter_mut().find(|a| a.schema == incoming.schema) {
+            if incoming.schema == "desc" {
+                lints.push(format!(
+                    "duplicate `desc` attribute on net `{}` — the net declaration's value overrides the port declaration's (§3.6.3.1)",
+                    port.name
+                ));
+            }
+            *existing = incoming.clone();
+        } else {
+            port.attributes.push(incoming.clone());
+        }
+    }
 }
 
 fn lower_module_attrs(
@@ -1517,6 +1533,10 @@ fn lower_port_attrs(
             return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
                 .with_span(Some(to_miette_span(a.span))));
         }
+        // §2.9.2/§3.6.3.1 (T27): `desc`/`units`/`op`/`multiplicity` (and
+        // any other bare registered schema) store as a generic
+        // single-field attribute — previously validated then discarded.
+        out.push(lower_one_generic_attr(a)?);
     }
     Ok(out)
 }
@@ -1749,14 +1769,18 @@ fn lower_net_attrs(
 ) -> Result<Vec<Attribute>, ElabError> {
     let Some(marker) = attrs.iter().find(|a| a.name == "rfport") else {
         // A net decl with attributes but no rfport marker: any name is
-        // loud, same as the port path.
+        // loud unless it is one of the LRM standard attributes (§2.9.2,
+        // §3.6.3.1, T27) — those are core-owned, not `rfport`-adjacent,
+        // and each becomes its own generic single-field `Attribute`.
+        let mut out = Vec::new();
         for a in attrs {
             if !known_schemas.contains(&a.name) {
                 return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(a.name.clone()))
                     .with_span(Some(to_miette_span(a.span))));
             }
+            out.push(lower_one_generic_attr(a)?);
         }
-        return Ok(Vec::new());
+        return Ok(out);
     };
     if !known_schemas.contains("rfport") {
         return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema("rfport".to_string()))
@@ -1766,6 +1790,9 @@ fn lower_net_attrs(
     let mut data = HashMap::new();
     let mut num = None;
     let mut z0 = None;
+    // Standard attributes (§2.9.2) may sit alongside `rfport` on the same
+    // net — collected separately, each its own generic `Attribute`.
+    let mut extra = Vec::new();
     for a in attrs {
         match a.name.as_str() {
             "rfport" => continue,
@@ -1785,6 +1812,9 @@ fn lower_net_attrs(
                 } else {
                     z0 = Some(value);
                 }
+            }
+            other if known_schemas.contains(other) => {
+                extra.push(lower_one_generic_attr(a)?);
             }
             other => {
                 return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(other.to_string()))
@@ -1808,7 +1838,60 @@ fn lower_net_attrs(
     })?;
     data.insert("num".to_string(), num);
     data.insert("z0".to_string(), z0);
-    Ok(vec![Attribute { schema: "rfport".to_string(), data }])
+    let mut out = vec![Attribute { schema: "rfport".to_string(), data }];
+    out.append(&mut extra);
+    Ok(out)
+}
+
+/// Lowers one attribute instance with no schema-specific field structure
+/// (§2.9.2's `desc`/`units`/`op`/`multiplicity`, and any other bare
+/// registered schema) into a single-field `Attribute` — the shape
+/// [`lower_generic_attrs`] already builds for params/vars/instances,
+/// reused here so ports and nets (`lower_port_attrs`/`lower_net_attrs`)
+/// store these attributes instead of merely validating and discarding
+/// them. `op`/`multiplicity` values are checked against their §2.9.2
+/// closed value set regardless of which declaration site reaches this.
+fn lower_one_generic_attr(a: &crate::ast::Attr) -> Result<Attribute, ElabError> {
+    let env = ConstEnv::new();
+    let mut data = HashMap::new();
+    if let Some(expr) = &a.value {
+        let value = env.eval(expr).map_err(|e| {
+            ElabError::from(ElabErrorKind::ConstEval { context: format!("attribute `{}`", a.name), source: e })
+                .with_span(Some(to_miette_span(a.span)))
+        })?;
+        validate_standard_attr_value(&a.name, &value, a.span)?;
+        data.insert(a.name.clone(), value);
+    }
+    Ok(Attribute { schema: a.name.clone(), data })
+}
+
+/// §2.9.2: `op` and `multiplicity` are LRM standard attributes with a
+/// closed set of legal string values, checked wherever a value reaches
+/// the POM regardless of which declaration site (`parameter`/variable/
+/// port/net) the attribute is attached to. Every other attribute name
+/// (including `desc`/`units`, which are free-form strings) is left
+/// unchecked here.
+fn validate_standard_attr_value(
+    name: &str,
+    value: &Value,
+    span: crate::error::PreprocessedSpan,
+) -> Result<(), ElabError> {
+    let allowed: &[&str] = match name {
+        "op" => &["yes", "no"],
+        "multiplicity" => &["multiply", "divide", "none"],
+        _ => return Ok(()),
+    };
+    let field_err = |reason: String| {
+        ElabError::from(ElabErrorKind::AttrSchemaField { schema: name.to_string(), field: name.to_string(), reason })
+            .with_span(Some(to_miette_span(span)))
+    };
+    let Some(got) = value.as_string() else {
+        return Err(field_err(format!("must be a string (one of {allowed:?}), got {value:?}")));
+    };
+    if !allowed.contains(&got) {
+        return Err(field_err(format!("must be one of {allowed:?}, got \"{got}\"")));
+    }
+    Ok(())
 }
 
 /// A `[msb:lsb]` range widens a scalar discipline into `NetType::Array`

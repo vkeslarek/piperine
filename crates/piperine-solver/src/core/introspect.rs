@@ -111,6 +111,11 @@ pub struct ParamDescriptor {
     pub scope: ParamScope,
     /// What a write to this parameter invalidates.
     pub invalidation: Invalidation,
+    /// LRM §2.9.2's `desc` standard attribute (T27, LRMW3-10) — a
+    /// help-message string for this parameter, when the source declared
+    /// one (`(* desc="..." *) parameter real r = ...;`). `None` when
+    /// undeclared.
+    pub desc: Option<String>,
 }
 
 /// What a query reports about an element.
@@ -429,6 +434,7 @@ mod tests {
                 bounds: Bounds { min: Some(0.0), max: None },
                 scope: ParamScope::Instance,
                 invalidation: Invalidation::Restamp,
+            desc: None,
             }]
         }
         fn get_param(&self, name: &str) -> Option<Value> {

@@ -93,6 +93,34 @@ fn jit_device_exposes_params_through_introspection() {
     ));
 }
 
+/// T27 (LRMW3-10): LRM §2.9.2's `desc` standard attribute, declared on a
+/// `parameter`, reaches the compiled device's own `ParamDescriptor` — the
+/// host-descriptor half of "readable through the POM and the host
+/// descriptor" (`crates/piperine-lang/tests/standard_attributes.rs` proves
+/// the POM half). `(* desc="effective resistance" *)` is the LRM's own
+/// §2.9.2 worked example, adapted to a `parameter` (its own worked example
+/// is a bare variable; this crate's leaf-device fixtures declare `r` as a
+/// parameter).
+#[test]
+fn parameter_desc_attribute_surfaces_on_the_compiled_devices_param_descriptor() {
+    let src = "
+        module R (inout electrical p, inout electrical n);
+            (* desc=\"effective resistance\" *) parameter real r = 1.0e3;
+            analog I(p, n) <+ V(p, n) / r;
+        endmodule
+        module Top (inout electrical a, inout electrical b);
+            R r1 (a, b);
+        endmodule
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse+elab");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let mut ci = from_ir(&elab, &bodies, "Top").expect("from_ir compiles Top");
+    let dev = &mut ci.all_devices_mut()[0];
+
+    let r = dev.list_params().into_iter().find(|p| p.name == "r").expect("`r` listed");
+    assert_eq!(r.desc.as_deref(), Some("effective resistance"));
+}
+
 #[test]
 fn from_ir_unknown_top_returns_err() {
     let src = "

@@ -766,14 +766,14 @@ rule
 **Requirement**: LRMW3-10
 
 **Done when**:
-- [ ] `(* desc="drain terminal" *) electrical d;` elaborates and the text is
+- [x] `(* desc="drain terminal" *) electrical d;` elaborates and the text is
       readable through the POM and the host descriptor
-- [ ] `units`/`op`/`multiplicity` validate their value domains loudly
+- [x] `units`/`op`/`multiplicity` validate their value domains loudly
       (`op` ∈ {"yes","no"}, `multiplicity` ∈ {"multiply","divide","none"})
-- [ ] A duplicate `desc` on both the net and the port declaration keeps the
+- [x] A duplicate `desc` on both the net and the port declaration keeps the
       last and warns (§3.6.3.1's own rule)
-- [ ] Declares `//! LRM-COVERS: 2.9.2, 3.6.3.1`
-- [ ] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine <descriptor target>`
+- [x] Declares `//! LRM-COVERS: 2.9.2, 3.6.3.1`
+- [x] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine <descriptor target>`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): LRM standard attributes desc/units/op/multiplicity`

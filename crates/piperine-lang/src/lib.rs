@@ -99,7 +99,26 @@ pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design
     // owned — unlike `device`/`port`, which a plugin host seeds. It is
     // registered on every elaboration path so a plain `Session` honors
     // `(* rfport(num, z0) *)` without plugin machinery.
-    parse_and_elaborate_seeded(input, source_map, |ctx| ctx.register_schema("rfport"))
+    //
+    // `desc`/`units`/`op`/`multiplicity` (LRM §2.9.2, T27/LRMW3-10) are
+    // core-owned the same way: they are LRM standard attributes, not a
+    // plugin contribution, so every elaboration path accepts them with
+    // no schema seeding from a plugin host.
+    parse_and_elaborate_seeded(input, source_map, |ctx| {
+        ctx.register_schema("rfport");
+        seed_standard_attr_schemas(ctx);
+    })
+}
+
+/// Register the four LRM §2.9.2 standard attributes (`desc`/`units`/`op`/
+/// `multiplicity`) into an elaboration context — core-owned the same way
+/// [`seed_device_port_schemas`] seeds `device`/`port`, so every
+/// elaboration path (not only one seeded by a plugin host) accepts them.
+pub fn seed_standard_attr_schemas(ctx: &mut elab::registry::ElabContext) {
+    ctx.register_schema("desc");
+    ctx.register_schema("units");
+    ctx.register_schema("op");
+    ctx.register_schema("multiplicity");
 }
 
 /// Like [`parse_and_elaborate`], but seeds the elaboration registries first —

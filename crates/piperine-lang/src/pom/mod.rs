@@ -22,7 +22,7 @@ pub use crate::value;
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, PomConstraintStmt, PomRequire};
 pub use branch::{Branch, BranchKind};
 pub use design::{Design, Project, RfPort};
-pub use introspection::{IntrospectionMeta, ModelId, TermMeta, VarMeta, VAR_KINDS, TERMINAL_KINDS};
+pub use introspection::{IntrospectionMeta, ModelId, ParamMeta, TermMeta, VarMeta, VAR_KINDS, TERMINAL_KINDS};
 pub use error::{ElabError, ElabErrorKind, ReflectError};
 pub use module::{Connection, Direction, Distribution, FromRange, GateInstance, Instance, Module, Param, Port, Var, Wire};
 pub use nature::Nature;

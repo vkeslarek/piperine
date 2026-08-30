@@ -406,6 +406,15 @@ pub struct Module {
     /// (MD-25): recorded where written, resolved elsewhere.
     #[serde(skip, default)]
     pub out_of_module_disciplines: Vec<crate::ast::OutOfModuleDisciplineDecl>,
+    /// Non-fatal elaboration lints recorded against this module — today,
+    /// only §3.6.3.1's own "duplicate `desc` attribute" case ("the tool
+    /// can give a warning that a duplicate attribute specification has
+    /// occurred"), T27/LRMW3-10. A `Vec<String>` rather than a whole
+    /// diagnostics subsystem: the LRM makes this genuinely optional
+    /// ("can give a warning"), so there is nothing here to enforce, only
+    /// to surface.
+    #[serde(default)]
+    pub lints: Vec<String>,
     pub origin: Option<String>,
 }
 
@@ -448,7 +457,7 @@ impl Module {
             branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
             constraints: Vec::new(), timescale: None, gates: Vec::new(),
             ground_names: Vec::new(), specify: crate::pom::SpecifyBlock::default(),
-            out_of_module_disciplines: Vec::new(),
+            out_of_module_disciplines: Vec::new(), lints: Vec::new(),
             origin: None,
         }
     }
@@ -504,6 +513,8 @@ impl Module {
     pub fn out_of_module_disciplines(&self) -> &[crate::ast::OutOfModuleDisciplineDecl] {
         &self.out_of_module_disciplines
     }
+    /// Non-fatal elaboration lints recorded against this module (§3.6.3.1).
+    pub fn lints(&self) -> &[String] { &self.lints }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

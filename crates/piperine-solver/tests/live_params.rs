@@ -58,6 +58,7 @@ impl Introspect for Resistor {
             bounds: Bounds { min: Some(1e-9), max: None },
             scope: ParamScope::Instance,
             invalidation: Invalidation::Restamp,
+            desc: None,
         }]
     }
 
@@ -140,6 +141,7 @@ impl Introspect for Vdc {
             bounds: Bounds::UNBOUNDED,
             scope: ParamScope::Instance,
             invalidation: Invalidation::OperatingPoint,
+            desc: None,
         }]
     }
 

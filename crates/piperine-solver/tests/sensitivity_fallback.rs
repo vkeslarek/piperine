@@ -73,6 +73,7 @@ impl Introspect for Conductor {
             bounds: Bounds::UNBOUNDED,
             scope: ParamScope::Instance,
             invalidation: Invalidation::Restamp,
+            desc: None,
         }]
     }
     fn get_param(&self, name: &str) -> Option<Value> {

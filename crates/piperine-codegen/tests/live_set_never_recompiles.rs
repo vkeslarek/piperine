@@ -87,6 +87,7 @@ impl Introspect for TempResistor {
             bounds: Bounds::UNBOUNDED,
             scope: ParamScope::Instance,
             invalidation: Invalidation::Temperature,
+            desc: None,
         }]
     }
 

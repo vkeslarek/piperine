@@ -34,6 +34,7 @@ impl Introspect for Resistor {
             bounds: Bounds { min: Some(0.0), max: None },
             scope: ParamScope::Instance,
             invalidation: Invalidation::Restamp,
+            desc: None,
         }]
     }
 

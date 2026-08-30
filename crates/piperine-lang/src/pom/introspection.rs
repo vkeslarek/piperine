@@ -70,6 +70,26 @@ impl TermMeta {
     }
 }
 
+/// Per-`parameter` metadata (T27, LRMW3-10) — carries LRM §2.9.2's own
+/// `desc` standard attribute through to the host descriptor. Unlike
+/// `VarMeta`/`TermMeta` (the PHDL-era `@name`/`@unit`/`@description`/
+/// `@kind` introspection-attribute family, PIA-05..14, which explicitly
+/// forbids attaching to a `param`), this reads the LRM-native `desc`
+/// attribute — a different schema name, so the two families coexist with
+/// no collision.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ParamMeta {
+    pub desc: Option<String>,
+}
+
+impl ParamMeta {
+    /// Whether any field is set (the resolver stores only non-empty
+    /// entries to keep the sidecar sparse, same rule as `VarMeta`).
+    pub fn has_any(&self) -> bool {
+        self.desc.is_some()
+    }
+}
+
 /// A per-module resolved bundle of declared introspection metadata. Built by
 /// [`Design::introspection_meta`](crate::pom::Design::introspection_meta);
 /// consumed by codegen's `Introspect` bridge, which prefers a sidecar field
@@ -84,11 +104,16 @@ pub struct IntrospectionMeta {
     /// Keyed by the POM port/wire name; the `@name(value)` is the display name
     /// held inside [`TermMeta::name`].
     pub terminals: HashMap<String, TermMeta>,
+    /// Keyed by the POM `parameter` name; carries LRM §2.9.2's `desc`
+    /// standard attribute (T27, LRMW3-10) — a distinct schema family from
+    /// `vars`/`terminals`'s own PIA attributes.
+    #[serde(default)]
+    pub params: HashMap<String, ParamMeta>,
 }
 
 impl IntrospectionMeta {
     /// Whether the sidecar carries any declared metadata at all.
     pub fn is_empty(&self) -> bool {
-        self.model.is_none() && self.vars.is_empty() && self.terminals.is_empty()
+        self.model.is_none() && self.vars.is_empty() && self.terminals.is_empty() && self.params.is_empty()
     }
 }

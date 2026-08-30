@@ -444,6 +444,10 @@ impl Introspect for PiperineDevice {
                     } else {
                         Invalidation::Restamp
                     },
+                    // LRM §2.9.2 `desc` (T27, LRMW3-10): the sidecar's
+                    // `params` bundle (a distinct schema family from
+                    // `vars`/`terminals`'s own PIA attributes).
+                    desc: self.meta.params.get(name).and_then(|pm| pm.desc.clone()),
                 })
             })
             .collect()

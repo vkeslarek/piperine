@@ -493,16 +493,28 @@ impl Design {
             }
         }
 
-        // None of the five introspection schemas target a `param` — any of them
-        // here is a placement error (PIA-19). Params carry only their own value.
+        // None of the five PIA introspection schemas target a `param` — any
+        // of them here is a placement error (PIA-19). LRM §2.9.2's `desc`
+        // (T27, LRMW3-10) is a distinct schema family and IS legal on a
+        // param — read into `meta.params` when present.
         for p in &module.params {
+            let mut pm = crate::pom::ParamMeta::default();
             for attr in &p.attributes {
                 match attr.schema() {
                     "model" | "name" | "unit" | "description" | "kind" => {
                         return Err(place_err(attr.schema(), "param"));
                     }
+                    "desc" => {
+                        pm.desc = Some(match attr.field("desc") {
+                            Some(Value::Str(s)) => s.clone(),
+                            other => return Err(field_err("desc", "desc", format!("expected a String, got {other:?}"))),
+                        })
+                    }
                     _ => {}
                 }
+            }
+            if pm.has_any() {
+                meta.params.insert(p.name().to_string(), pm);
             }
         }
 
