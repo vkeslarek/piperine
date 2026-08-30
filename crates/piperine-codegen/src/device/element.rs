@@ -51,6 +51,40 @@ pub struct PiperineDevice {
     /// Cached analog voltages (from `accept_timestep`), used by the A2D
     /// bridge when the solver passes `&[]` to `eval_discrete`.
     pub(super) last_analog_voltages: Vec<f64>,
+    /// §6.4.3 (T28, LRMW3-19): output variables this instance's paramset
+    /// declares (`Instance::paramset_output_vars`), if it was
+    /// instantiated through one. Empty otherwise.
+    pub(super) paramset_vars: Vec<ResolvedParamsetVar>,
+}
+
+/// A codegen-local, `Send + Sync`-safe copy of one
+/// `piperine_lang::pom::ParamsetOutputVar` (§6.4.3, T28). The POM type's
+/// own `param_env: HashMap<String, piperine_lang::pom::Value>` can hold
+/// `Value` variants backed by `Rc<Closure>`/`Rc<dyn Object>` (neither
+/// `Sync`), which would make `PiperineDevice` itself non-`Sync` — a bound
+/// `DigitalDevice`/`Element` require. Paramset parameters feeding a
+/// §6.4.3 formula are always numeric in practice (the LRM's own worked
+/// example, and every value this task's tests exercise), so `param_env`
+/// narrows to `f64` here; a non-numeric paramset parameter referenced in
+/// a formula coerces via `Value::coerce_real`'s own fallback rather than
+/// failing loud — a disclosed, narrow limitation, not silently wrong for
+/// the numeric case §6.4.3 actually describes.
+pub(super) struct ResolvedParamsetVar {
+    pub name: String,
+    pub described: bool,
+    pub param_env: std::collections::HashMap<String, f64>,
+    pub formula: piperine_lang::ast::Expr,
+}
+
+impl From<&piperine_lang::pom::ParamsetOutputVar> for ResolvedParamsetVar {
+    fn from(pv: &piperine_lang::pom::ParamsetOutputVar) -> Self {
+        Self {
+            name: pv.name.clone(),
+            described: pv.described,
+            param_env: pv.param_env.iter().map(|(k, v)| (k.clone(), v.coerce_real().unwrap_or(0.0))).collect(),
+            formula: pv.formula.clone(),
+        }
+    }
 }
 
 impl PiperineDevice {
@@ -68,7 +102,15 @@ impl PiperineDevice {
             analog_terminal_refs: Vec::new(),
             analog_terminal_node_ids: Vec::new(),
             last_analog_voltages: Vec::new(),
+            paramset_vars: Vec::new(),
         }
+    }
+
+    /// Records this instance's paramset output variables (§6.4.3, T28,
+    /// LRMW3-19) — called by the circuit builder right after
+    /// construction, from the POM `Instance` this device was built from.
+    pub fn set_paramset_output_vars(&mut self, vars: &[piperine_lang::pom::ParamsetOutputVar]) {
+        self.paramset_vars = vars.iter().map(ResolvedParamsetVar::from).collect();
     }
 
     /// Set the analog terminal references for a digital-only device.
@@ -376,6 +418,56 @@ impl DigitalDevice for PiperineDevice {
     }
 }
 
+impl PiperineDevice {
+    /// §6.4.3 (T28, LRMW3-19): overlays this instance's paramset output
+    /// variables onto `base` (the module's own opvars, from
+    /// `read_opvars`'s analog-kernel path). A *described* paramset
+    /// variable replaces a same-named entry (or is appended, if none
+    /// exists by that name); an *undescribed* one only hides a same-named
+    /// entry (removed, nothing put back — §6.4.3's second rule). Every
+    /// formula's `.field` references resolve against `base`'s own values,
+    /// computed once before any hiding/replacing.
+    fn apply_paramset_output_vars(&self, base: Vec<(String, f64)>) -> Vec<(String, f64)> {
+        if self.paramset_vars.is_empty() {
+            return base;
+        }
+        let lookup: std::collections::HashMap<&str, f64> = base.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+        let mut out: Vec<(String, f64)> =
+            base.iter().filter(|(name, _)| !self.paramset_vars.iter().any(|pv| &pv.name == name)).cloned().collect();
+        for pv in &self.paramset_vars {
+            if !pv.described {
+                continue;
+            }
+            out.push((pv.name.clone(), Self::eval_paramset_formula(pv, &lookup)));
+        }
+        out
+    }
+
+    /// Evaluates one paramset output variable's formula (§6.4.3):
+    /// `pv.param_env`'s bindings seed the paramset's own declared
+    /// parameters (plain identifiers); `lookup`'s entries (this
+    /// instance's own module output-variable values) are bound under
+    /// their leading-dot name, matching how the grammar preserved
+    /// `.module_output_variable_identifier` references in the formula
+    /// (`crates/piperine-lang/src/grammar/expr.rs`'s own doc comment on
+    /// the leading-`.` primary-expression case). Reuses `piperine-lang`'s
+    /// own constant evaluator — every free identifier here is bound by
+    /// construction (elaboration already validated both sets, T28's
+    /// `lower_paramset_instance`), so a resolution failure can only be an
+    /// internal bug; `unwrap_or(f64::NAN)` surfaces it visibly rather
+    /// than panicking (the `Introspect` ABI's `read_opvars` is
+    /// infallible).
+    fn eval_paramset_formula(pv: &ResolvedParamsetVar, lookup: &std::collections::HashMap<&str, f64>) -> f64 {
+        let globals: std::collections::HashMap<String, piperine_lang::pom::Value> =
+            pv.param_env.iter().map(|(k, v)| (k.clone(), piperine_lang::pom::Value::Real(*v))).collect();
+        let mut env = piperine_lang::elab::const_eval::ConstEnv::with_globals(globals);
+        for (name, value) in lookup {
+            env.define(format!(".{name}"), piperine_lang::pom::Value::Real(*value));
+        }
+        env.eval_f64(&pv.formula).unwrap_or(f64::NAN)
+    }
+}
+
 impl Introspect for PiperineDevice {
     /// Operating-point variables (ABI-30): the analog kernel's compiled
     /// opvar-eval function evaluated against the last accepted terminal
@@ -385,12 +477,13 @@ impl Introspect for PiperineDevice {
     /// else the kernel var id (PIA-07); the value is always looked up by the
     /// kernel id (renaming the label never breaks the value fetch).
     fn read_opvars(&self) -> Vec<(String, f64)> {
-        self.analog.as_ref().map_or_else(Vec::new, |a| {
+        let base = self.analog.as_ref().map_or_else(Vec::new, |a| {
             a.eval_opvars()
                 .into_iter()
                 .map(|(name, value)| (self.var_display_name(&name), value))
                 .collect()
-        })
+        });
+        self.apply_paramset_output_vars(base)
     }
 
     /// Declared query catalog (ABI-31 / PIA-05): one `QueryDescriptor` per
@@ -399,25 +492,40 @@ impl Introspect for PiperineDevice {
     /// annotate the descriptor when declared. Absent attributes → the bare
     /// `QueryDescriptor::opvar(name)` shape (PIA-08, no regression).
     fn list_queries(&self) -> Vec<piperine_solver::abi::QueryDescriptor> {
-        let Some(a) = &self.analog else { return Vec::new() };
-        let names = a.kernel().opvar_names();
-        if names.is_empty() {
-            return Vec::new();
+        let mut out: Vec<piperine_solver::abi::QueryDescriptor> = match &self.analog {
+            Some(a) => a
+                .kernel()
+                .opvar_names()
+                .iter()
+                .map(|n| {
+                    let Some(meta) = self.meta.vars.get(n) else {
+                        return piperine_solver::abi::QueryDescriptor::opvar(n.clone());
+                    };
+                    piperine_solver::abi::QueryDescriptor {
+                        name: meta.name.clone().unwrap_or_else(|| n.clone()),
+                        kind: piperine_solver::abi::QueryKind::OperatingVariable,
+                        unit: meta.unit.clone(),
+                        description: meta.description.clone(),
+                    }
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        // §6.4.3 (T28): a paramset output/hidden variable removes any
+        // catalog entry it shares a name with (module output variable it
+        // replaces or hides); a *described* paramset variable then adds
+        // its own entry back (the replacement). An undescribed one adds
+        // nothing — it only hides.
+        if !self.paramset_vars.is_empty() {
+            out.retain(|q| !self.paramset_vars.iter().any(|pv| pv.name == q.name));
+            out.extend(
+                self.paramset_vars
+                    .iter()
+                    .filter(|pv| pv.described)
+                    .map(|pv| piperine_solver::abi::QueryDescriptor::opvar(pv.name.clone())),
+            );
         }
-        names
-            .iter()
-            .map(|n| {
-                let Some(meta) = self.meta.vars.get(n) else {
-                    return piperine_solver::abi::QueryDescriptor::opvar(n.clone());
-                };
-                piperine_solver::abi::QueryDescriptor {
-                    name: meta.name.clone().unwrap_or_else(|| n.clone()),
-                    kind: piperine_solver::abi::QueryKind::OperatingVariable,
-                    unit: meta.unit.clone(),
-                    description: meta.description.clone(),
-                }
-            })
-            .collect()
+        out
     }
 
     fn list_params(&self) -> Vec<ParamDescriptor> {

@@ -832,6 +832,30 @@ pub struct ParamsetDecl {
     /// alternatives (module output variable, system parameter,
     /// `analog_function_statement`) are out of LRMC-C5-07's scope.
     pub statements: Vec<ParamsetStatement>,
+    /// §6.4.3 (T28, LRMW3-19): `integer`/`real` variable declarations —
+    /// reuses the module-level `VarDecl` shape verbatim (same production,
+    /// same `(* desc = ... *)` attribute-instance site, §3.2.1's output-
+    /// variable rule applies identically). A declared variable with a
+    /// `desc`/`units` attribute is a paramset output variable; one
+    /// without still *hides* a same-named module output variable
+    /// (§6.4.3's second rule).
+    pub vars: Vec<VarDecl>,
+    /// §6.4.3: `paramset_variable_identifier = paramset_expression;` —
+    /// a bare (no leading `.`) assignment giving one of `vars` its
+    /// formula. The RHS may reference a module output variable via
+    /// `.module_output_variable_identifier`.
+    pub var_assigns: Vec<ParamsetVarAssign>,
+}
+
+/// One `name = expr;` assignment inside a `paramset` body giving a
+/// declared paramset variable ([`ParamsetDecl::vars`]) its formula —
+/// §6.4.3. Distinct from [`ParamsetStatement`] (which always starts with
+/// a `.` and binds a *module parameter* instead).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamsetVarAssign {
+    pub span: PreprocessedSpan,
+    pub target: String,
+    pub value: Expr,
 }
 
 /// One `.field = expr;` binding inside a `paramset` body — see

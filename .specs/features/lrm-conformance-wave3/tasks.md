@@ -792,14 +792,14 @@ instances using it, overriding a same-named module variable, with the
 **Requirement**: LRMW3-19
 
 **Done when**:
-- [ ] `(* desc="cut-off frequency" *) real ft;` in a paramset is readable as an
+- [x] `(* desc="cut-off frequency" *) real ft;` in a paramset is readable as an
       opvar on an instance using that paramset
-- [ ] A paramset output variable **replaces** a same-named module output variable
-- [ ] An undescribed paramset variable **hides** the module's same-named output
+- [x] A paramset output variable **replaces** a same-named module output variable
+- [x] An undescribed paramset variable **hides** the module's same-named output
       variable (§6.4.3's second rule)
-- [ ] `.gm` (module-output reference) resolves inside the paramset expression
-- [ ] Declares `//! LRM-COVERS: 6.4.3`
-- [ ] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-codegen`
+- [x] `.gm` (module-output reference) resolves inside the paramset expression
+- [x] Declares `//! LRM-COVERS: 6.4.3`
+- [x] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): paramset output variables (§6.4.3)`

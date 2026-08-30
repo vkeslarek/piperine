@@ -398,6 +398,9 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             digital,
             meta,
         );
+        // §6.4.3 (T28, LRMW3-19): this instance's paramset output
+        // variables, if it was instantiated through one.
+        device.set_paramset_output_vars(instance.paramset_output_vars());
 
         // For digital-only devices with analog input ports (e.g. a
         // Comparator: `input vp : Electrical, input vn : Electrical,

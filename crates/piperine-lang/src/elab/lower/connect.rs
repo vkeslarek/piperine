@@ -118,6 +118,7 @@ impl ElabPass for InsertConnectModules {
                         ports: vec![port_ref.clone(), port_ref.clone()],
                         params: params.clone(),
                         range: None,
+                        paramset_output_vars: Vec::new(),
                     };
                     match mode {
                         ConnectMode::Split => split_insertions.push(new_inst),

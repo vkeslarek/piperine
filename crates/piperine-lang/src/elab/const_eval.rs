@@ -97,6 +97,22 @@ impl ConstEnv {
         self.bindings.iter().rev().find_map(|scope| scope.get(name))
     }
 
+    /// Every binding currently visible, innermost scope winning on a name
+    /// collision — a flat snapshot for a caller that needs to carry this
+    /// environment's values elsewhere rather than hold the `ConstEnv`
+    /// itself (T28, LRMW3-19: a paramset's own parameter values, carried
+    /// into `pom::ParamsetOutputVar::param_env` for later re-evaluation
+    /// against a live opvar reading).
+    pub fn all_bindings(&self) -> HashMap<String, Value> {
+        let mut out = HashMap::new();
+        for scope in &self.bindings {
+            for (k, v) in scope {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+        out
+    }
+
     /// Evaluates a compile-time expression to a scalar [`Value`].
     pub fn eval(&self, expr: &Expr) -> Result<Value, ConstEvalError> {
         match expr {

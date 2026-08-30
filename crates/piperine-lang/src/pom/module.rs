@@ -240,10 +240,43 @@ pub struct Instance {
     /// only, never here.
     #[serde(default)]
     pub range: Option<(i64, i64)>,
+    /// §6.4.3 (T28, LRMW3-19): output variables this instance's paramset
+    /// (if it was instantiated through one) declares — each either
+    /// *replaces* a same-named module output variable (a described
+    /// variable) or *hides* one (an undescribed variable with the same
+    /// name). Empty for an instance not resolved through a `paramset`.
+    /// Skipped on serialize: carries a compiled `Expr` formula, the same
+    /// rule `behaviors`/`functions` already follow (MD-25).
+    #[serde(skip, default)]
+    pub paramset_output_vars: Vec<ParamsetOutputVar>,
+}
+
+/// One paramset output variable resolved for a specific instance
+/// (§6.4.3, T28/LRMW3-19) — see [`Instance::paramset_output_vars`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamsetOutputVar {
+    pub name: String,
+    /// Whether this variable carries a `desc`/`units` attribute (§3.2.1)
+    /// — an LRM output variable, reported under `name`. `false` means an
+    /// *undescribed* paramset variable of this name: it still hides a
+    /// same-named module output variable (§6.4.3's second rule) but
+    /// contributes no reported value of its own.
+    pub described: bool,
+    /// The paramset's own declared-parameter values in scope for
+    /// `formula` — a plain (non-dotted) identifier resolves here.
+    pub param_env: std::collections::HashMap<String, Value>,
+    /// The authored formula. A leading-dot identifier (`.gm`) is a
+    /// `module_output_variable_identifier` reference (§6.4.3) — resolved
+    /// at query time against this same instance's own reported module
+    /// output variables.
+    pub formula: crate::ast::Expr,
 }
 
 impl Instance {
     pub fn attributes(&self) -> &[Attribute] { &self.attributes }
+    /// Output variables this instance's paramset declares (§6.4.3).
+    /// Empty when this instance was not resolved through a `paramset`.
+    pub fn paramset_output_vars(&self) -> &[ParamsetOutputVar] { &self.paramset_output_vars }
     /// The instance's label if set, otherwise the module name.
     pub fn name(&self) -> &str {
         self.label.as_deref().unwrap_or(&self.module)

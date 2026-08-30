@@ -918,6 +918,7 @@ impl Elaborator {
                 ports,
                 params: Vec::new(),
                 range: instance_range(ast_inst, env)?,
+                paramset_output_vars: Vec::new(),
             });
         }
 
@@ -1026,6 +1027,7 @@ impl Elaborator {
             ports,
             params,
             range: instance_range(ast_inst, env)?,
+            paramset_output_vars: Vec::new(),
         })
     }
 
@@ -1124,6 +1126,79 @@ impl Elaborator {
             params.push((stmt.target.clone(), value));
         }
 
+        // §6.4.3 (T28, LRMW3-19): paramset output-variable declarations.
+        // `desc`/`units` (§2.9.2/§3.2.1, T27) marks one an LRM output
+        // variable, reported in place of a same-named module output
+        // variable; an undescribed one still *hides* a same-named module
+        // output variable but contributes nothing of its own.
+        let target_var_names: HashSet<&str> = target.items.iter().filter_map(|item| match item {
+            ModuleItem::Var(v) => Some(v.names.iter().map(|d| d.name.as_str())),
+            _ => None,
+        }).flatten().collect();
+        let mut paramset_var_described: HashMap<String, bool> = HashMap::new();
+        for v in &ps.vars {
+            let attrs = lower_generic_attrs(&v.attrs, &self.ctx.schemas)?;
+            let described = attrs.iter().any(|a| a.schema == "desc" || a.schema == "units");
+            for d in &v.names {
+                paramset_var_described.insert(d.name.clone(), described);
+            }
+        }
+        let mut paramset_output_vars = Vec::new();
+        for assign in &ps.var_assigns {
+            let Some(&described) = paramset_var_described.get(assign.target.as_str()) else {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "paramset `{paramset_name}`: `{}` is assigned a formula but was never declared \
+                     (`real {}`/`integer {}`, §6.4.3)",
+                    assign.target, assign.target, assign.target
+                ))));
+            };
+            // Every identifier the formula references: a leading-dot name
+            // (`.gm`) must be a real variable of the associated module;
+            // a plain name must be one of the paramset's own declared
+            // parameters — checked now so a typo fails loud at
+            // elaboration, not silently at query time.
+            let mut idents = Vec::new();
+            collect_idents(&assign.value, &mut idents);
+            for name in &idents {
+                if let Some(field) = name.strip_prefix('.') {
+                    if !target_var_names.contains(field) {
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
+                            "paramset `{paramset_name}`: `.{field}` in `{}`'s formula names no \
+                             variable of module `{}` (§6.4.3)",
+                            assign.target, ps.module_name
+                        ))));
+                    }
+                } else if ps_env.lookup(name).is_none() {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "paramset `{paramset_name}`: `{name}` in `{}`'s formula names no parameter \
+                         of paramset `{paramset_name}` (§6.4.3)",
+                        assign.target
+                    ))));
+                }
+            }
+            paramset_output_vars.push(crate::pom::ParamsetOutputVar {
+                name: assign.target.clone(),
+                described,
+                param_env: ps_env.all_bindings(),
+                formula: assign.value.clone(),
+            });
+        }
+        // A declared variable with no assignment still exists (LRM's own
+        // module-var zero-init rule, §3.2, applies identically) — needed
+        // so an undescribed, unassigned variable still hides a same-named
+        // module output variable per §6.4.3's second rule.
+        for (name, described) in &paramset_var_described {
+            if ps.var_assigns.iter().any(|a| &a.target == name) {
+                continue;
+            }
+            paramset_output_vars.push(crate::pom::ParamsetOutputVar {
+                name: name.clone(),
+                described: *described,
+                param_env: HashMap::new(),
+                formula: Expr::Number { span: ps.span, value: crate::lexer::NumberLit::Real(0.0) },
+            });
+        }
+
         Ok(Instance {
             span: Some(to_miette_span(ast_inst.span)),
             label_span: Some(to_miette_span(ast_inst.name_span)),
@@ -1139,7 +1214,53 @@ impl Elaborator {
             // either task's Done-when, disclosed rather than silently
             // dropped: `ast_inst.range` is simply not read on this branch.
             range: None,
+            paramset_output_vars,
         })
+    }
+}
+
+/// Collects every `Expr::Ident` name reached by `e` (recursing through
+/// the ordinary arithmetic/call shapes) — used by §6.4.3's paramset
+/// output-variable lowering to validate every identifier a formula
+/// references. Best-effort: an `Expr` shape with no obvious "operand"
+/// sub-expressions (access functions, hierarchical refs, system calls,
+/// assignment patterns) is not walked — none of those are legal inside a
+/// `paramset_expression` (§6.4.3's own worked example is plain
+/// arithmetic), so under-collecting there costs nothing but a slightly
+/// later failure, never a false rejection.
+fn collect_idents(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Ident { name, .. } => out.push(name.clone()),
+        Expr::Unary { operand, .. } => collect_idents(operand, out),
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_idents(lhs, out);
+            collect_idents(rhs, out);
+        }
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            collect_idents(cond, out);
+            collect_idents(then_branch, out);
+            collect_idents(else_branch, out);
+        }
+        Expr::Concat { parts, .. } | Expr::Replication { parts, .. } => {
+            for p in parts {
+                collect_idents(p, out);
+            }
+        }
+        Expr::Index { base, index, .. } => {
+            collect_idents(base, out);
+            collect_idents(index, out);
+        }
+        Expr::PartSelect { base, msb, lsb, .. } => {
+            collect_idents(base, out);
+            collect_idents(msb, out);
+            collect_idents(lsb, out);
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                collect_idents(a, out);
+            }
+        }
+        _ => {}
     }
 }
 

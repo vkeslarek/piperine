@@ -760,6 +760,7 @@ impl Design {
                 ports: spec.ports.iter().map(|n| crate::pom::net_type::NetRef::simple(n.clone())).collect(),
                 params: spec.params,
                 range: None,
+                paramset_output_vars: Vec::new(),
             });
         }
         for (parent, spec) in staged_connections {
@@ -922,6 +923,8 @@ mod flat_module_tests {
                 module_name: "nmos".into(),
                 params: Vec::new(),
                 statements: Vec::new(),
+                vars: Vec::new(),
+                var_assigns: Vec::new(),
             }],
         );
         let by_lookup = design.paramset("nmos_fast").expect("paramset reachable by name");

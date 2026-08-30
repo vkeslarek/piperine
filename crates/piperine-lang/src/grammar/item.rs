@@ -2040,18 +2040,52 @@ impl Grammar {
         self.expect_punct(";")?;
         let mut params = vec![];
         let mut statements = vec![];
+        let mut vars = vec![];
+        let mut var_assigns = vec![];
         while !self.at_kw("endparamset") {
             if self.at_eof() {
                 return Err(self.eof_error("'endparamset'".to_string()));
             }
             if self.at_punct(".") {
                 statements.push(self.parse_paramset_statement()?);
-            } else {
-                params.push(self.parse_param_decl_body(false)?);
+                continue;
             }
+            // §6.4.3 (T28, LRMW3-19): `(* desc = ... *) real ft;` — a
+            // paramset output-variable declaration, the exact same
+            // production a module body's own `real`/`integer` declaration
+            // uses (`kw_after_attrs` looks past any leading attribute
+            // instances the same way `parse_module_item` already does).
+            if matches!(self.kw_after_attrs(), Some("integer") | Some("real") | Some("realtime") | Some("time")) {
+                vars.push(self.parse_var_decl()?);
+                continue;
+            }
+            // A bare `name = expr;` (no leading `.`, no `real`/`integer`
+            // keyword) is §6.4.3's other new form: giving a declared
+            // paramset variable its formula.
+            if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek_at(1), Tok::Punct("=")) {
+                var_assigns.push(self.parse_paramset_var_assign()?);
+                continue;
+            }
+            params.push(self.parse_param_decl_body(false)?);
         }
         let end = self.expect_kw("endparamset")?;
-        Ok(ParamsetDecl { span: PreprocessedSpan::new(start.start, end.end), name, module_name, params, statements })
+        Ok(ParamsetDecl {
+            span: PreprocessedSpan::new(start.start, end.end),
+            name, module_name, params, statements, vars, var_assigns,
+        })
+    }
+
+    /// `paramset_variable_identifier = paramset_expression ;` — §6.4.3
+    /// (T28, LRMW3-19), distinguished from [`Self::parse_paramset_statement`]
+    /// by the absence of a leading `.` (that form binds a *module
+    /// parameter*; this one gives a paramset-declared variable its value).
+    fn parse_paramset_var_assign(&mut self) -> Result<ParamsetVarAssign, ParseError> {
+        let start = self.peek_span();
+        let (target, _) = self.expect_ident()?;
+        self.expect_punct("=")?;
+        let value = self.parse_expr()?;
+        let end = self.expect_punct(";")?;
+        Ok(ParamsetVarAssign { span: PreprocessedSpan::new(start.start, end.end), target, value })
     }
 
     /// `.module_parameter_identifier = paramset_constant_expression;` —

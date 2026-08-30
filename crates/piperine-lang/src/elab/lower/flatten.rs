@@ -255,6 +255,7 @@ impl FlattenHierarchy {
                     ports,
                     params: inst.params.clone(),
                     range: None,
+                    paramset_output_vars: Vec::new(),
                 })
             })
             .collect()
@@ -371,6 +372,7 @@ impl FlattenHierarchy {
                 ports: new_ports,
                 params,
                 range: s.range,
+                paramset_output_vars: s.paramset_output_vars.clone(),
             });
         }
 
@@ -602,6 +604,7 @@ mod tests {
                 ports: vec![NetRef::indexed(net, index), NetRef::simple("p")],
                 params: Vec::new(),
                 range: None,
+                paramset_output_vars: Vec::new(),
             }],
             Vec::new(),
         )
@@ -627,6 +630,7 @@ mod tests {
                     ports: top_bindings,
                     params: Vec::new(),
                     range: None,
+                    paramset_output_vars: Vec::new(),
                 }],
             ),
         );
@@ -657,6 +661,7 @@ mod tests {
             ports: Vec::new(),
             params: Vec::new(),
             range: None,
+            paramset_output_vars: Vec::new(),
         }
     }
 
@@ -672,6 +677,7 @@ mod tests {
             ports: ports.iter().map(|p| NetRef::simple(*p)).collect(),
             params: Vec::new(),
             range: None,
+            paramset_output_vars: Vec::new(),
         }
     }
 

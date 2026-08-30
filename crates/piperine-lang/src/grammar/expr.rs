@@ -194,6 +194,27 @@ impl Grammar {
             }
             Tok::Punct("{") => self.parse_concat_or_replication(),
             Tok::Punct("'{") => self.parse_assignment_pattern(),
+            // §6.4.3 (T28, LRMW3-19): `.module_output_variable_identifier`
+            // — a bare leading `.` with no preceding name is otherwise
+            // never legal in expression position (Annex A's
+            // `hierarchical_identifier` always starts with an ordinary
+            // identifier), reserved here for a paramset output-variable
+            // formula's own module-output-variable reference. No new
+            // `Expr` variant: `Expr::Ident`'s own doc comment already
+            // covers "a hierarchical/scoped name segment already joined
+            // ... into one dotted string" — the leading dot survives into
+            // the name so nothing else in the grammar can ever produce
+            // it, and only `lower_paramset_output_vars` (elab/lower/
+            // vams.rs) interprets it; anywhere else it fails loud as an
+            // ordinary undefined identifier once resolved.
+            Tok::Punct(".") => {
+                self.bump();
+                let (name, end) = self.expect_ident()?;
+                Ok(Expr::Ident {
+                    span: crate::error::PreprocessedSpan::new(span.start, end.end),
+                    name: format!(".{name}"),
+                })
+            }
             // §6.2.1/§6.7 Syntax 6-9: `$root` is the hierarchical-path
             // root marker, not a system function — distinguished from
             // every other `$name` (which is always a call, possibly with
