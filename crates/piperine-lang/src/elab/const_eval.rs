@@ -171,6 +171,39 @@ impl ConstEnv {
             // scope; per-instantiation-sensitive generate re-evaluation is
             // a disclosed follow-up (T51 SPEC_DEVIATION).
             Expr::SystemFunctionCall { name, .. } if name == "param_given" => Ok(Value::Bool(false)),
+            // §9.14 (LRMW3-24): `$clog2` is the one math system function
+            // that is NOT an alias of an analog math operator (Table 4-14
+            // covers the rest — `$exp`/`$ln`/`$sqrt`/…, which fold through
+            // the ordinary `Expr::Call` math-builtin path once resolved,
+            // see `eval_call` below) — "the ceiling of the log base 2 of
+            // the argument", defined by IEEE 1364-2005. Computed by exact
+            // integer bit-counting, never `ceil(ln(n)/ln(2))`: a
+            // logarithm-based formula can round an exact power of two
+            // (e.g. `$clog2(1024)`) up by one due to floating-point error,
+            // silently mis-sizing every bus/memory address width computed
+            // from it — the LRM's own primary use case (a parameter default
+            // sizing a vector range). `$clog2(0)` and `$clog2(1)` are both
+            // `0` per 1364-2005's own definition; negative arguments have
+            // no defined ceiling-log2 and are rejected loud rather than
+            // silently coerced.
+            Expr::SystemFunctionCall { name, args, .. } if name == "clog2" => {
+                let n = match args.first().map(|a| self.eval(a)).transpose()? {
+                    Some(Value::Int(n)) => n,
+                    Some(Value::Nat(n)) => n as i64,
+                    Some(Value::Real(r)) => r as i64,
+                    _ => return Err(ConstEvalError::TypeMismatch),
+                };
+                if n < 0 {
+                    return Err(ConstEvalError::TypeMismatch);
+                }
+                let mut bound: u64 = 1;
+                let mut bits: i64 = 0;
+                while bound < n as u64 {
+                    bound <<= 1;
+                    bits += 1;
+                }
+                Ok(Value::Int(bits))
+            }
             // §3.3/§4.2.13 (T66/LRMW2-63): string concatenation/
             // replication is elaboration-constant when every operand
             // is — the LRM's own worked examples (§3.3: `a = {"Hi", b}`,

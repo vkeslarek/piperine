@@ -343,6 +343,17 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                 "${name}: dynamic per-sweep-point node aliasing conflicts with MD-18 \
                  (no re-JIT/re-topology during simulation — elaboration fixes devices once)"
             ))),
+            // §9.14: every math system function except `$clog2` is an
+            // alias of the identically-named analog math operator (Table
+            // 4-14) — `$exp(x)`/`$ln(x)`/`$sqrt(x)`/… dispatch through the
+            // same JIT path a bare `exp(x)` call already uses. `$clog2` is
+            // NOT such an alias (1364-2005 defines it independently, as an
+            // integer bit-width sizing function); it is not dispatched
+            // here — its practical use is elaboration-constant sizing
+            // (`elab::const_eval::ConstEnv::eval`'s own `$clog2` arm),
+            // never a runtime analog value, so a `$clog2` reaching this
+            // JIT path falls through to the catch-all below.
+            _ if math::math_fn(&key).is_some() => self.emit_analog_math_call(&key, args),
             _ => Err(CodegenError::unsupported(format!("syscall `{name}` in an analog expression"))),
         }
     }

@@ -1019,14 +1019,14 @@ where the clause is proven only incidentally.
 **Requirement**: LRMW3-24, LRMW3-25
 
 **Done when**:
-- [ ] `%r` on a real in the digital context is asserted
-- [ ] Multi-analysis file append (§9.5.1.1) and cross-context descriptor sharing
+- [x] `%r` on a real in the digital context is asserted
+- [x] Multi-analysis file append (§9.5.1.1) and cross-context descriptor sharing
       (§9.5.1.2) each have a test
-- [ ] §9.5.9's rejected-iteration rule is either implemented and tested, or
+- [x] §9.5.9's rejected-iteration rule is either implemented and tested, or
       declared a limitation with a pinning test (the choice recorded in the
       commit body)
-- [ ] `$finish`/`$stop` diagnostic levels asserted
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] `$finish`/`$stop` diagnostic levels asserted
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): display/file-I/O/control/math clause coverage`

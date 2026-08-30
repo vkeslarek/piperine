@@ -6,11 +6,27 @@
 //! (the JIT trampolines reaching it land in T5; the ch.9 task catalogue
 //! wiring lands in P3) and closes no LRMC-ID by itself.
 //!
-//! LRM-COVERS: 9.5.4.1
+//! LRM-COVERS: 9.5.1.1, 9.5.1.2, 9.5.4.1
 //! §9.5.4.1 ("Reading a line at a time"): `fgets_reads_one_line_including_
 //! the_newline` (in `mod tests` below) proves `FileTable::fgets` — the
 //! `$fgets` data source — reads through the next `\n` inclusive, and
 //! returns the remainder with no trailing newline at EOF.
+//! §9.5.1.1 ("opening and closing files during multiple analyses" —
+//! "If a file is opened in a write mode in the first analysis and
+//! reopened in that write mode in following analysis, then content
+//! written from the following analyses shall be appended"):
+//! `reopening_a_file_across_analyses_appends_not_truncates` proves
+//! `FileTable::open` always opens with `OpenOptions::append(true)`
+//! (never `truncate`), so a second `$fopen` of the same path in a later
+//! analysis keeps the first analysis's content.
+//! §9.5.1.2 ("Sharing of file descriptors between the analog and digital
+//! contexts" — a descriptor opened in either context is usable from
+//! both, if opened for writing/appending): `a_descriptor_opened_once_is_
+//! writable_from_either_context` — `FileTable`/`FileId` carry no
+//! analog/digital tag at all, so any live descriptor is inherently
+//! shared; proven by writing to the same `FileId` from two independent
+//! call sites (standing in for the two contexts) and reading both writes
+//! back.
 //!
 //! **Never a silent zero descriptor.** Every `FileTable` operation returns
 //! a typed [`FileError`] on failure instead of manufacturing a fake
@@ -574,6 +590,58 @@ mod tests {
         let mcd = McdTable::new();
         mcd.printf(&mut files, &sink, McdTable::STDOUT, "hello\n");
         assert_eq!(sink.stdout(), "hello\n");
+    }
+
+    /// §9.5.1.1: opening the same path a second time (standing in for a
+    /// second analysis in the same run) must append to, not truncate,
+    /// what the first "analysis" wrote.
+    #[test]
+    fn reopening_a_file_across_analyses_appends_not_truncates() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("lrmw3_t37_9511.txt");
+        let path = path.to_str().unwrap();
+        let _ = std::fs::remove_file(path);
+
+        let mut files = FileTable::new();
+        let first = files.open(path).expect("first analysis opens the file");
+        files.write(first, "first analysis\n").expect("write succeeds");
+        files.close(first).expect("close succeeds");
+
+        // "following analysis" reopens the same path in the same write mode.
+        let second = files.open(path).expect("second analysis reopens the file");
+        files.write(second, "second analysis\n").expect("write succeeds");
+        files.close(second).expect("close succeeds");
+
+        let content = std::fs::read_to_string(path).expect("read back");
+        assert_eq!(
+            content, "first analysis\nsecond analysis\n",
+            "the second analysis's content must be appended, never overwrite the first's"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// §9.5.1.2: a descriptor opened once is writable from any call site —
+    /// `FileTable`/`FileId` carry no context tag, so "the analog context"
+    /// and "the digital context" are simply two different call sites
+    /// writing through the same `FileId`.
+    #[test]
+    fn a_descriptor_opened_once_is_writable_from_either_context() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("lrmw3_t37_9512.txt");
+        let path = path.to_str().unwrap();
+        let _ = std::fs::remove_file(path);
+
+        let mut files = FileTable::new();
+        let fd = files.open(path).expect("opened once");
+        // Stand-in for "the analog context writes"...
+        files.write(fd, "from analog\n").expect("analog-context write succeeds");
+        // ...and "the digital context writes", both through the same `fd`.
+        files.write(fd, "from digital\n").expect("digital-context write succeeds");
+        files.close(fd).expect("close succeeds");
+
+        let content = std::fs::read_to_string(path).expect("read back");
+        assert_eq!(content, "from analog\nfrom digital\n", "both contexts' writes must land in the same file");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

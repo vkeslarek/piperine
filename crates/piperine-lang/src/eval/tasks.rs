@@ -487,6 +487,13 @@ fn render_spec(spec: char, arg: &Value, fmt: &str) -> Result<String, SystemTaskE
         'e' | 'E' => Ok(format!("{:e}", need_real()?)),
         'f' | 'F' => Ok(format!("{:.6}", need_real()?)),
         'g' | 'G' => Ok(format!("{}", need_real()?)),
+        // §9.4.7: "%r (or %R) may be used on real expressions in the
+        // digital context" — a real-valued format specifier the LRM
+        // extends into `$strobe`/`$display`/`$write`/`$monitor` for VAMS
+        // specifically (not an IEEE 1364-2005 base specifier); the LRM
+        // gives no distinct rendering rule from `%g`'s minimal decimal
+        // form, so this shares `%g`'s formatting.
+        'r' | 'R' => Ok(format!("{}", need_real()?)),
         't' | 'T' => Ok(format!("{}", need_real()?)),
         // `%v` (§17.5 net-strength display) needs drive-strength data
         // `Value` doesn't carry — a documented scope limit (this task's
@@ -1181,7 +1188,7 @@ impl SystemTaskError {
 
 #[cfg(test)]
 mod tests {
-    //! LRM-COVERS: 9.4.2, 9.4.3, 9.4.4, 9.4.5, 9.6, 9.10, 9.11
+    //! LRM-COVERS: 9.4.2, 9.4.3, 9.4.4, 9.4.5, 9.4.7, 9.6, 9.10, 9.11
     //! §9.4.2 (escape sequences \n/\t/\\/\"/\ddd/%%):
     //! `string_literal_escape_sequences_decode_per_table_2_2` and
     //! `display_format_percent_literal_and_hierarchical_name`'s `%%` case.
@@ -1199,6 +1206,12 @@ mod tests {
     //! usable in the analog context): `conversions_round_trip`'s
     //! `realtobits`/`bitstoreal` round trip.
     //! §9.4.5 (the `%s` string specifier): `display_format_decimal_and_string`.
+    //! §9.4.7 (`%r`/`%R` on a real expression "in the digital context",
+    //! VAMS's own extension of the display tasks, not an IEEE 1364-2005
+    //! base specifier): `display_format_percent_r_real_specifier` below —
+    //! before this task `render_spec` had no `'r'`/`'R'` arm at all, so
+    //! `%r` fell into the "not a recognized LRM Table 9-1 specifier"
+    //! error.
 
     use super::*;
 
@@ -1283,6 +1296,18 @@ mod tests {
         assert_eq!(format_display("%e", &[Value::Real(1234.5)], "top").unwrap(), "1.2345e3");
         assert_eq!(format_display("%f", &[Value::Real(1234.5)], "top").unwrap(), "1234.500000");
         assert_eq!(format_display("%g", &[Value::Real(1234.5)], "top").unwrap(), "1234.5");
+    }
+
+    /// §9.4.7: `%r`/`%R` render a real expression the same way `%g` does
+    /// (the LRM gives this VAMS-only extension no rendering rule of its
+    /// own, distinct from Table 9-23's base real-number specifiers) —
+    /// both case spellings, and rejected as a type mismatch on a
+    /// non-real argument exactly like `%g`/`%f`/`%e` already are.
+    #[test]
+    fn display_format_percent_r_real_specifier() {
+        assert_eq!(format_display("%r", &[Value::Real(1234.5)], "top").unwrap(), "1234.5");
+        assert_eq!(format_display("%R", &[Value::Real(1234.5)], "top").unwrap(), "1234.5");
+        assert!(format_display("%r", &[Value::Str("x".into())], "top").is_err());
     }
 
     #[test]

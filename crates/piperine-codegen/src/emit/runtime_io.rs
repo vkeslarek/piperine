@@ -337,6 +337,26 @@ pub const TASK_FNS: &[TaskFn] = &[
 
 #[cfg(test)]
 mod tests {
+    //! LRM-COVERS: 9.5.9
+    //! §9.5.9 ("Behavior of the file I/O tasks in the analog block during
+    //! iterative solving" — a rejected Newton iteration's file writes
+    //! "shall not be performed unless the iteration is accepted", the
+    //! `$fdebug` exception aside) is a **declared limitation**, not an
+    //! implemented behavior (T37's own "implement or declare a
+    //! limitation with a pinning test" choice, recorded in this task's
+    //! commit body): `pip_task_fdisplay`/`pip_task_fwrite`/… write
+    //! through `FileTable` unconditionally, on every call, with no
+    //! notion of "this call happened during a since-rejected Newton
+    //! iteration" anywhere in the ABI — implementing the rollback would
+    //! need either buffering every file write per iteration (deferred
+    //! until acceptance) or a file-position save/restore hook threaded
+    //! through the Newton loop, neither of which exists today.
+    //! `rejected_iteration_writes_are_not_rolled_back_declared_limitation`
+    //! pins the current (non-conformant) behavior with a real file on
+    //! disk, so a future implementation of the LRM's actual rule shows up
+    //! as an intentional, reviewed test change — never a silent
+    //! regression the other direction.
+
     use super::*;
     use std::mem::offset_of;
 
@@ -446,6 +466,46 @@ mod tests {
 
         let contents = std::fs::read_to_string(&path).expect("file exists and is readable");
         assert_eq!(contents, "t=0\nt=1\nt=2\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// §9.5.9 (declared limitation, see this module's `mod tests` header):
+    /// a write made during what stands in for a "rejected iteration" is
+    /// NOT rolled back — it lands in the file exactly like an accepted
+    /// one. This is the honest, current behavior, pinned so a future fix
+    /// changes this assertion deliberately rather than silently.
+    #[test]
+    fn rejected_iteration_writes_are_not_rolled_back_declared_limitation() {
+        use piperine_solver::prelude::FileTable;
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("lrmw3_t37_959_{}.txt", std::process::id()));
+        let path_str = path.to_str().unwrap();
+
+        let mut files = FileTable::new();
+        let mut ctx = SimCtx::default();
+        ctx.files = &mut files as *mut FileTable;
+
+        let fd = pip_task_fopen(&mut ctx as *mut SimCtx, path_str.as_ptr(), path_str.len() as u32);
+        assert!(fd >= 0, "fopen must return a real descriptor");
+
+        // Stand in for a Newton iteration that gets rejected: the write
+        // happens (there is no gate to stop it) even though, per §9.5.9,
+        // it never should have.
+        let rejected = FormatPool::intern("from a rejected iteration");
+        pip_task_fdisplay(&mut ctx as *mut SimCtx, fd, rejected, 0, std::ptr::null());
+        // The iteration that actually gets accepted.
+        let accepted = FormatPool::intern("from the accepted iteration");
+        pip_task_fdisplay(&mut ctx as *mut SimCtx, fd, accepted, 0, std::ptr::null());
+
+        pip_task_fflush(&mut ctx as *mut SimCtx, fd);
+        pip_task_fclose(&mut ctx as *mut SimCtx, fd);
+
+        let contents = std::fs::read_to_string(&path).expect("file exists and is readable");
+        assert_eq!(
+            contents, "from a rejected iteration\nfrom the accepted iteration\n",
+            "current (limited) behavior: both writes land, including the \"rejected\" one — \
+             §9.5.9 says the rejected write should not appear at all"
+        );
         let _ = std::fs::remove_file(&path);
     }
 

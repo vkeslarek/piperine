@@ -201,7 +201,21 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     }
                     Ok(())
                 }
-                "finish" | "stop" => Ok(()),
+                // §9.7.1/§9.7.2 (LRMW3-25): simulation-control termination
+                // is not implemented anywhere in this codebase (the
+                // analog-context arm below, `flatten/analog.rs`, already
+                // rejects it loud) — this used to be a silent `Ok(())`
+                // no-op in the digital context specifically, which
+                // CLAUDE.md's fail-loud contract forbids: a design that
+                // calls `$finish`/`$stop` expecting the run to end got no
+                // error and no termination. Declared limitation (T37):
+                // fails loud citing the clause instead, matching the
+                // analog side's own honesty, rather than silently doing
+                // nothing.
+                n @ ("finish" | "stop") => Err(CodegenError::unsupported(format!(
+                    "${n} (§9.7.1/§9.7.2): simulation-control termination is not implemented — \
+                     a call reaches this point instead of silently doing nothing"
+                ))),
                 // T14 (LRMW3-20, §9.8): the PLA-modeling task family —
                 // recognized by name (`piperine-lang/src/eval/tasks.rs`'s
                 // `SystemTaskKind::PlaArray`, so a call gets this specific
