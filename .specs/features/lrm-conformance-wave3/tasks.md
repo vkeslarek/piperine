@@ -842,13 +842,13 @@ gains `Port`
 **Requirement**: LRMW3-15
 
 **Done when**:
-- [ ] A `$strobe`/expression read of a leaf net returns the leaf's solved value
-- [ ] An unnamed branch is created in the **reading** module (§5.5.4), asserted
+- [x] A `$strobe`/expression read of a leaf net returns the leaf's solved value
+- [x] An unnamed branch is created in the **reading** module (§5.5.4), asserted
       through the branch catalog, not inferred
-- [ ] An unresolvable path fails loud naming the path and the nearest resolved
+- [x] An unresolvable path fails loud naming the path and the nearest resolved
       prefix
-- [ ] Declares `//! LRM-COVERS: 5.5.4`
-- [ ] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine <hier target>`
+- [x] Declares `//! LRM-COVERS: 5.5.4`
+- [x] Gate passes: `cargo test -p piperine-codegen` and `cargo test -p piperine <hier target>`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(codegen): resolve hierarchical probe reads at circuit build`

@@ -135,6 +135,16 @@ pub(crate) struct LowerCtx<'a> {
     /// before behavior lowering starts; `vars` gains entries only through
     /// [`LowerCtx::shadow_var_for`], which keeps its map in sync.
     nodes: HashMap<String, NodeId>,
+    /// The reverse of `nodes` — a node's own *canonical* registered name
+    /// (`SymbolTable::add_node`'s name), keyed by id. `resolve_hier` (T30/
+    /// LRMW3-15) needs this: a hierarchical path that resolves through the
+    /// `instance_ports` one-level shortcut (`"u1.p"` → the parent's own
+    /// node, e.g. `"x"`) must rewrite to `"x"`, the name actually
+    /// registered in this module's `SymbolTable` — emitting the alias
+    /// string `"u1.p"` itself (never a real node name outside the
+    /// multi-level flattened-wire case) fails at circuit-build/JIT-emit
+    /// time with "unresolved node".
+    node_names: HashMap<NodeId, String>,
     vars: HashMap<String, VarId>,
     /// State variables (ddt, idt, etc.) allocated during this behavior lowering.
     pub states: Vec<StateId>,
@@ -200,12 +210,14 @@ impl<'a> LowerCtx<'a> {
     /// table scan.
     pub fn new(symbols: &'a mut SymbolTable, module_name: String, is_digital: bool, top_module: Option<String>) -> Self {
         let nodes = symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
+        let node_names = symbols.nodes().map(|(id, n)| (id, n.name.clone())).collect();
         let vars = symbols.vars().map(|(id, v)| (v.name.clone(), id)).collect();
         Self {
             symbols,
             module_name,
             errors: Vec::new(),
             nodes,
+            node_names,
             vars,
             states: vec![],
             noise_sources: vec![],
@@ -345,8 +357,20 @@ impl<'a> LowerCtx<'a> {
         } else {
             joined.clone()
         };
-        if self.lookup_node(&local).is_some() {
-            PomExpr::Ident { span: super::expr::nospan(), name: local }
+        if let Some(id) = self.lookup_node(&local) {
+            // `lookup_node` may have resolved `local` through the
+            // `instance_ports` one-level shortcut (`"u1.p"` → the parent's
+            // own node), in which case `local` itself is only an alias,
+            // never a name registered in this module's own `SymbolTable`
+            // (T30/LRMW3-15) — translate to the node's actual canonical
+            // name so codegen's later JIT-emit-time lookup
+            // (`Builder::resolve_node`/`Resolver::nodes`, which only knows
+            // registered names) can find it. A multi-level hierarchical
+            // read of a nested *wire* (`u1.u2.w2`) already IS the
+            // canonical name (flatten lifted it under that exact dotted
+            // name), so this is a no-op for that case.
+            let canonical = self.node_names.get(&id).cloned().unwrap_or(local);
+            PomExpr::Ident { span: super::expr::nospan(), name: canonical }
         } else {
             let failing = local.rsplit('.').next().unwrap_or(&local).to_string();
             self.errors.push(LowerError {

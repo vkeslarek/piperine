@@ -680,6 +680,14 @@ impl Elaborator {
             }
         }
 
+        // §5.5.4/T30 (LRMW3-15): an access-function occurrence naming a
+        // hierarchical net anywhere OTHER than a contribution target (a
+        // plain expression read, a `$strobe` argument, ...) also
+        // implicitly declares an unnamed branch — the read-side
+        // counterpart of what `resolve_contribution_branches` already does
+        // for contribution targets.
+        collect_hier_read_branches(&mut module)?;
+
         // §5.4.3: a potential access function on a port branch (`V(probe_p)`)
         // is meaningless — checked against the *authored* statements, before
         // the synthetic `V(p, inner) <+ 0;` contributions (which never
@@ -2798,6 +2806,40 @@ fn apply_port_branches(module: &mut Module) -> Result<(Vec<Stmt>, HashMap<String
 /// represent[s] the flow into the port"; a *potential* access function on
 /// one is meaningless and fails loud rather than silently reading whatever
 /// `V(<name>)` would otherwise resolve to.
+/// §5.5.4 (T30/LRMW3-15): every access-function occurrence naming a
+/// hierarchical net implicitly declares an unnamed branch (§5.4.1's rule
+/// applied to a hierarchical terminal) — this covers every occurrence
+/// `resolve_contribution_branches` does not (a plain read, inside
+/// `$strobe`, a case selector, ...). The actual node the hierarchical path
+/// names is resolved later at circuit-build time
+/// (`piperine-codegen`'s `resolve/pom/body.rs::resolve_hier`); this pass
+/// only needs the branch's *identity* to exist in this module's own
+/// catalog, for the same kind-conflict bookkeeping any other implicit
+/// branch gets.
+fn collect_hier_read_branches(module: &mut Module) -> Result<(), ElabError> {
+    let mut found: Vec<(Expr, Option<Expr>)> = Vec::new();
+    for behavior in &module.behaviors {
+        if !behavior.is_analog() {
+            continue;
+        }
+        for stmt in behavior.body() {
+            for_each_expr_in_stmt(stmt, &mut |e| {
+                if let Expr::AccessFunction { pos, neg, .. } = e {
+                    let has_hier =
+                        matches!(pos.as_ref(), Expr::Hier { .. }) || matches!(neg.as_deref(), Some(Expr::Hier { .. }));
+                    if has_hier {
+                        found.push((pos.as_ref().clone(), neg.as_deref().cloned()));
+                    }
+                }
+            });
+        }
+    }
+    for (pos, neg) in &found {
+        resolve_or_create_branch(pos, neg.as_ref(), &mut module.branches)?;
+    }
+    Ok(())
+}
+
 fn port_branch_names(module: &Module) -> Vec<String> {
     module.branches.iter().filter(|b| b.is_port).filter_map(|b| b.name.clone()).collect()
 }
