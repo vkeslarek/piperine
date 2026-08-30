@@ -1086,12 +1086,12 @@ parameters
 **Requirement**: LRMW3-27
 
 **Done when**:
-- [ ] Dynamic parameters (§6.6.2.1) asserted through a DC parameter sweep on a
+- [x] Dynamic parameters (§6.6.2.1) asserted through a DC parameter sweep on a
       compiled session (MD-18 path)
-- [ ] Connect-module naming for built-in gate primitives (§7.8.5.1) implemented
+- [x] Connect-module naming for built-in gate primitives (§7.8.5.1) implemented
       or declared a limitation with a pinning test
-- [ ] A supply-sensitive connect-module example (§7.8.6) elaborates
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] A supply-sensitive connect-module example (§7.8.6) elaborates
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): connect-module and elaboration-order clauses`

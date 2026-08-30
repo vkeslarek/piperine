@@ -1,3 +1,4 @@
+//! LRM-COVERS: 6.6.2.1
 //! SC-07 — host-level `.dc` proof: nested two-param and source-only sweeps
 //! run on ONE compiled circuit via the restamp path (`set_element_param`),
 //! and every point equals an independent fresh-build solve of the same
@@ -5,6 +6,14 @@
 //! (user decision 2026-07-18). Lives in its own test binary (single
 //! `#[test]`) so the process-global `AnalogKernel::compile_count` deltas are
 //! not polluted by concurrent tests.
+//!
+//! lrm-conformance-wave3 (Phase 6, T40): §6.6.2.1 "Dynamic parameters" —
+//! "a series of operating point analyses where one or more parameters of
+//! the circuit change value between each analysis" is exactly this
+//! file's own subject: `v1.dc` and `r2.r` (neither influencing circuit
+//! *structure*, per §6.6.2.1's own generate-construct carve-out) swept
+//! across nested values on one compiled circuit (MD-18's restamp path,
+//! never re-elaboration).
 
 use std::path::PathBuf;
 
