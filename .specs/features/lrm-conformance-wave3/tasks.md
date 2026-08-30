@@ -1109,13 +1109,13 @@ the same clause, and map the thirteen ch. 12 ids onto the existing
 **Requirement**: LRMW3-28, LRMW3-29
 
 **Done when**:
-- [ ] Each Annex C id is declared **with a written reason** naming the chapter
+- [x] Each Annex C id is declared **with a written reason** naming the chapter
       test that proves the same delta (never a bare claim)
-- [ ] Each ch. 12 id maps to a `VpiCategory` whose support level
+- [x] Each ch. 12 id maps to a `VpiCategory` whose support level
       (`Native`/`Partial`/`NotSupported`) is asserted by `vpi_routines.rs`
-- [ ] An id whose category is `NotSupported` becomes an `OutOfScope` row in the
+- [x] An id whose category is `NotSupported` becomes an `OutOfScope` row in the
       wave-3 exclusions file instead of a coverage claim
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): Annex C cross-declarations and VPI category mapping`

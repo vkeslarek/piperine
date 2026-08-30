@@ -4,7 +4,29 @@
 //! (the `piperine_plugin` public surface), not just via `vpi.rs`'s own
 //! unit tests.
 //!
-//! LRM-COVERS: 11, 11.1, 11.2, 11.2.2, 11.2.3, 11.3, 11.3.1, 11.4, 11.5, 11.5.1, 11.5.2, 11.5.3, 11.6, 11.6.1, 11.6.2, 11.6.3, 11.6.4, 11.6.5, 11.6.6, 11.6.7, 11.6.8, 11.6.9, 11.6.10, 11.6.11, 11.6.12, 11.6.13, 11.6.14, 11.6.15, 11.6.16, 11.6.17, 11.6.18, 11.6.19, 11.6.20, 11.6.21, 11.6.22, 11.6.23, 11.6.24, 11.6.25, 12, 12.1, 12.2, 12.3, 12.4, 12.5, 12.12, 12.13, 12.14, 12.17, 12.18, 12.19, 12.20, 12.21, 12.23, 12.32, 12.32.1, 12.32.3, 12.33, 12.33.1, 12.35
+//! LRM-COVERS: 11, 11.1, 11.2, 11.2.2, 11.2.3, 11.3, 11.3.1, 11.4, 11.5, 11.5.1, 11.5.2, 11.5.3, 11.6, 11.6.1, 11.6.2, 11.6.3, 11.6.4, 11.6.5, 11.6.6, 11.6.7, 11.6.8, 11.6.9, 11.6.10, 11.6.11, 11.6.12, 11.6.13, 11.6.14, 11.6.15, 11.6.16, 11.6.17, 11.6.18, 11.6.19, 11.6.20, 11.6.21, 11.6.22, 11.6.23, 11.6.24, 11.6.25, 12, 12.1, 12.2, 12.3, 12.4, 12.5, 12.7, 12.8, 12.9, 12.12, 12.13, 12.14, 12.17, 12.18, 12.19, 12.20, 12.21, 12.23, 12.31.1, 12.31.2, 12.31.3, 12.31.4, 12.32, 12.32.1, 12.32.2, 12.32.3, 12.33, 12.33.1, 12.33.2, 12.35
+//!
+//! lrm-conformance-wave3 (Phase 6, T41) additions, each mapped onto the
+//! `VpiCategory` whose support level `every_category_carries_a_typed_
+//! support_level_and_named_mechanism` asserts is real (never a bare
+//! claim — this is the "written reason naming the chapter test" T41
+//! requires):
+//! §12.7 `vpi_get_analog_delta()`, §12.8 `vpi_get_analog_freq()`, §12.9
+//! `vpi_get_analog_time()` — all three are `TimeProcessing` (Table
+//! 11-9)'s own named routines; `TimeProcessing`'s `Partial` support
+//! level (its remaining gap after P5, see this file's own comment below)
+//! is asserted generically, alongside every other category, by
+//! `every_category_carries_a_typed_support_level_and_named_mechanism`.
+//! §12.31.1-4 (simulation-event/time/analog/action callbacks, the
+//! `vpi_register_cb()` parent's own subsections) — `SimulationCallbacks`
+//! (Table 11-1), asserted `Native` by
+//! `simulation_callbacks_is_native_after_t59`.
+//! §12.32.2 "Declaring derivatives for analog system task/functions" (a
+//! `vpi_register_systf()`/`vpi_register_analog_systf()` subsection) —
+//! `SystfCallbacks`/`AnalogSystfCallbacks` (Tables 11-2/11-3), asserted
+//! `Native` by `systf_and_analog_systf_route_through_t53s_native_abi`.
+//! §12.33.2 "Initializing VPI system task/function callbacks" — the same
+//! `SystfCallbacks`/`AnalogSystfCallbacks` family, same test.
 //!
 //! **Category-granularity note**: LRM ch. 11's own tables (11.4) group ch.
 //! 12's individually-named routines by function, not by object kind; ch.
