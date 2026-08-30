@@ -31,13 +31,36 @@ impl SourceMapIncludeResolver {
     }
 }
 
+/// Legacy Cadence-era include names, still ubiquitous in real-world
+/// Verilog-A sources, that alias LRM Annex D's own file names
+/// (`disciplines.vams`/`constants.vams`) — not an LRM production
+/// (Annex D names only the `.vams` files), but common enough in the wild
+/// that failing loud on it just sends every such source back to its
+/// author for a one-line edit. Checked only as a fallback, after every
+/// namespace/root/as-is candidate for the literal requested name has
+/// already missed, so a project that ships its own `discipline.h` is
+/// never shadowed by this alias.
+const LEGACY_INCLUDE_ALIASES: &[(&str, &str)] = &[
+    ("discipline.h", "disciplines.vams"),
+    ("disciplines.h", "disciplines.vams"),
+    ("constants.h", "constants.vams"),
+];
+
 impl IncludeResolver for SourceMapIncludeResolver {
     fn resolve(&self, path: &str) -> Option<String> {
-        self.namespace_paths
-            .iter()
-            .map(|ns| ns.join(path))
-            .chain(std::iter::once(self.root_path.join(path)))
-            .chain(std::iter::once(PathBuf::from(path)))
-            .find_map(|candidate| fs::read_to_string(&candidate).ok())
+        let candidates = |p: &str| {
+            self.namespace_paths
+                .iter()
+                .map(|ns| ns.join(p))
+                .chain(std::iter::once(self.root_path.join(p)))
+                .chain(std::iter::once(PathBuf::from(p)))
+                .collect::<Vec<_>>()
+        };
+        if let Some(found) = candidates(path).iter().find_map(|c| fs::read_to_string(c).ok()) {
+            return Some(found);
+        }
+        let basename = path.rsplit('/').next().unwrap_or(path);
+        let alias = LEGACY_INCLUDE_ALIASES.iter().find(|(legacy, _)| *legacy == basename)?.1;
+        candidates(alias).iter().find_map(|c| fs::read_to_string(c).ok())
     }
 }

@@ -1401,11 +1401,11 @@ including its precedence.
 **Requirement**: PSW3-05
 
 **Done when**:
-- [ ] `` `include "discipline.h" `` resolves to Annex D's `disciplines.vams`
-- [ ] A project shipping its **own** `discipline.h` wins over the alias
-- [ ] An unknown legacy name still fails loud
-- [ ] Declares `//! SPEC-COVERS: part_i#9`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] `` `include "discipline.h" `` resolves to Annex D's `disciplines.vams`
+- [x] A project shipping its **own** `discipline.h` wins over the alias
+- [x] An unknown legacy name still fails loud
+- [x] Declares `//! SPEC-COVERS: part_i#9`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(lang): legacy include aliases and their precedence`
