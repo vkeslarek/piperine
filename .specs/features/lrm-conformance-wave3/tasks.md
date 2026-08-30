@@ -1134,13 +1134,13 @@ names.
 **Requirement**: LRMW3-30, PSW3-09
 
 **Done when**:
-- [ ] Every `out_of_scope` row's `spec_row` matches a real row in a real
+- [x] Every `out_of_scope` row's `spec_row` matches a real row in a real
       spec.md Out of Scope table (wave 2's **or** wave 3's)
-- [ ] Every row names what replaces the LRM mechanism (spec §0 rule 1) —
+- [x] Every row names what replaces the LRM mechanism (spec §0 rule 1) —
       asserted by requiring a non-empty `replacement` field
-- [ ] The stale "expected until wave-2's closure work lands" message and the
+- [x] The stale "expected until wave-2's closure work lands" message and the
       `piperine-signal` header are gone (PSW3-06)
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): wave-3 exclusions and honest gate messaging`

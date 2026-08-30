@@ -1,0 +1,59 @@
+# LRM-2-4 section coverage exclusions — wave 3 (T42, lrm-conformance-wave3).
+#
+# Read alongside `.specs/features/lrm-conformance-wave2/coverage_exclusions.toml`
+# by `tests/lrm_section_coverage.rs::coverage_exclusions()` — the two files
+# are concatenated into one flat exclusion list, wave-2's own rows
+# untouched. Format matches wave-2's file exactly, with one addition
+# (PSW3-09, spec §0 rule 1): every `[[out_of_scope]]` row also carries a
+# non-empty `replacement` field naming what replaces the excluded LRM
+# mechanism — checked mechanically by
+# `out_of_scope_rows_match_spec_out_of_scope_table` (both files) and
+# `out_of_scope_rows_name_a_replacement` (this file's own new rule).
+#
+#   [[informative]]  — the LRM's own front matter marks the section
+#                       informative (not normative).
+#   [[out_of_scope]] — the section maps to a row in this feature's
+#                       (or wave-2's) spec.md Out of Scope table;
+#                       `spec_row` must match that table's Item column
+#                       text exactly (checked against both spec.md files
+#                       via include_str!, so an edit that renames or
+#                       drops the row is caught, not silently stale).
+#                       `replacement` must name what replaces the LRM
+#                       mechanism (never empty).
+#
+# All four entries below are ch. 12 VPI routine sections that fall under
+# this feature's own Out of Scope row: "The literal vpiHandle/C-struct VPI
+# object model (vpi_handle_multi, t_vpi_analog_systf_data,
+# vlog_startup_routines, vpi_sim_control) | These sections define a C ABI,
+# not language semantics. Piperine's equivalent is the native plugin ABI;
+# each such section maps to a VpiCategory entry that is Native, Partial,
+# or a typed NotSupported, never a silent absence." — §12.22/§12.22.1/
+# §12.22.2 define `vpi_handle_multi()` and its two subsections; §12.36
+# defines `vpi_sim_control()`. Both routines are literal C-struct/vpiHandle
+# APIs with no native-plugin-ABI equivalent to map onto (unlike every
+# other ch. 12 routine T41 mapped onto a `VpiCategory`), which is exactly
+# what this spec row already declares out of scope.
+
+[[out_of_scope]]
+id = "12.22"
+reason = "vpi_handle_multi() is a literal C-struct/vpiHandle multi-object-handle API — the C ABI itself, not language semantics a native plugin can reach."
+spec_row = "The literal `vpiHandle`/C-struct VPI object model"
+replacement = "Piperine's native plugin ABI (crates/piperine-plugin/src/vpi.rs's VpiCategory table) — each ch. 12 routine maps to a category that is Native, Partial, or a typed NotSupported, never a silent absence."
+
+[[out_of_scope]]
+id = "12.22.1"
+reason = "A subsection of vpi_handle_multi() (\"Derivatives for analog system task/functions\") — same C-struct API, same exclusion."
+spec_row = "The literal `vpiHandle`/C-struct VPI object model"
+replacement = "Piperine's native plugin ABI (crates/piperine-plugin/src/vpi.rs's VpiCategory table)."
+
+[[out_of_scope]]
+id = "12.22.2"
+reason = "A subsection of vpi_handle_multi() (\"Examples\") — same C-struct API, same exclusion."
+spec_row = "The literal `vpiHandle`/C-struct VPI object model"
+replacement = "Piperine's native plugin ABI (crates/piperine-plugin/src/vpi.rs's VpiCategory table)."
+
+[[out_of_scope]]
+id = "12.36"
+reason = "vpi_sim_control() is a literal C-struct/vpiHandle simulation-control API — the C ABI itself, not language semantics a native plugin can reach."
+spec_row = "The literal `vpiHandle`/C-struct VPI object model"
+replacement = "Piperine's native plugin ABI (crates/piperine-plugin/src/vpi.rs's VpiCategory table) — simulation control is reached natively through the host Session API instead."
