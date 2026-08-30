@@ -62,8 +62,7 @@ fn run(src: &str, stop_time: f64) -> LogicValue {
     let mut seq = 0u64;
     let mut sched = |time: f64, net: usize, value: LogicValue| {
         circuit.digital_state.schedule(DigitalEvent {
-            time, net: DigitalNet(net), value, source: usize::MAX, seq, region: Region::Active,
-        });
+            time, net: DigitalNet(net), value, source: usize::MAX, seq, region: Region::Active, strength: None });
         seq += 1;
     };
     sched(1.0, clk, LogicValue::One);

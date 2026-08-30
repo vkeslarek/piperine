@@ -72,8 +72,8 @@ fn driver_count_fails_loud_at_compile_instead_of_silently_returning_zero() {
 fn the_driver_count_data_source_is_live_for_a_real_multiply_driven_net() {
     let mut state = DigitalState::new(1);
     let net = DigitalNet(0);
-    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::One, source: 0, seq: 0, region: Region::Active });
-    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::Z, source: 1, seq: 1, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::One, source: 0, seq: 0, region: Region::Active, strength: None });
+    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::Z, source: 1, seq: 1, region: Region::Active, strength: None });
     state.evaluate_until_stable(1e-9, &mut [], Default::default(), &[]).expect("settles");
 
     assert_eq!(

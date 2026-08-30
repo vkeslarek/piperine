@@ -448,6 +448,18 @@ pub struct Module {
     /// to surface.
     #[serde(default)]
     pub lints: Vec<String>,
+    /// Every continuous-assign target's authored `drive_strength` spec
+    /// (§A.2.2.2, LRMW3-09) — `(target_name, level0_kw, level1_kw)`, e.g.
+    /// `("w", "weak0", "strong1")`. Lives on `Module` rather than `Wire`/
+    /// `Port` because the strength belongs to the *assign statement*, not
+    /// either declaration kind — `target_name` may name a wire or an
+    /// output port. Empty for the overwhelming common case (no continuous
+    /// assign in this module carries a strength annotation). Kept as raw
+    /// keyword text, not `piperine-solver`'s `Strength` enum — this crate
+    /// has no dependency on the solver; codegen's digital kernel (which
+    /// already depends on both) is where the keyword is interpreted.
+    #[serde(default)]
+    pub assign_drive_strengths: Vec<(String, String, String)>,
     pub origin: Option<String>,
 }
 
@@ -491,6 +503,7 @@ impl Module {
             constraints: Vec::new(), timescale: None, gates: Vec::new(),
             ground_names: Vec::new(), specify: crate::pom::SpecifyBlock::default(),
             out_of_module_disciplines: Vec::new(), lints: Vec::new(),
+            assign_drive_strengths: Vec::new(),
             origin: None,
         }
     }
@@ -548,6 +561,9 @@ impl Module {
     }
     /// Non-fatal elaboration lints recorded against this module (§3.6.3.1).
     pub fn lints(&self) -> &[String] { &self.lints }
+    /// Every continuous-assign target's authored `drive_strength` spec
+    /// (§A.2.2.2, LRMW3-09) — `(target_name, level0_kw, level1_kw)`.
+    pub fn assign_drive_strengths(&self) -> &[(String, String, String)] { &self.assign_drive_strengths }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

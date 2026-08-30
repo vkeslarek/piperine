@@ -83,6 +83,16 @@ pub struct DigitalBody {
     /// `Stmt` tree (the AST type). The `Codegen` trait emits these directly
     /// to Cranelift via the `Builder` — no `IrStmt` intermediate.
     pub stmts: Vec<piperine_lang::ast::Stmt>,
+    /// A wire's authored `drive_strength` spec (§A.2.2.2, LRMW3-09), keyed
+    /// by wire name — `(level0_kw, level1_kw)` raw keyword text, mirroring
+    /// `piperine_lang::pom::Wire::drive_strength`. Empty for the
+    /// overwhelming common case (no continuous assign in this module
+    /// carries a strength annotation). Kept as raw strings, not
+    /// `piperine-solver`'s `Strength` — this module stays solver-
+    /// independent; `kernel::digital::abi::DigitalKernel::compile` is
+    /// where the keyword is interpreted, since it already depends on
+    /// `piperine-solver`.
+    pub output_drive_strength: std::collections::HashMap<String, (String, String)>,
 }
 
 // ─── Ports ────────────────────────────────────────────────────────────────────

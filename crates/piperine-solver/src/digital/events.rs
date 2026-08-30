@@ -12,6 +12,7 @@
 //! by region now — see its own doc comment.
 use std::cmp::Ordering;
 
+use super::drivers::Strength;
 use super::regions::Region;
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,17 @@ pub struct DigitalEvent {
     /// event source that predates this field (the common case: an
     /// ordinary blocking-assign-derived write).
     pub region: Region,
+    /// LRM §7.9 Table 7-2 drive strength (LRMW3-09, A.2.2.2) explicitly
+    /// authored by the emitting model (e.g. a continuous assign carrying
+    /// `assign (strong1, weak0) w = r;`) — `None` for every event source
+    /// that predates this field (the overwhelming common case: an
+    /// ordinary write with no authored strength), which
+    /// [`super::scheduler::apply_driven_event`] falls back to
+    /// [`super::drivers::default_strength_for`] for, exactly as before
+    /// this field existed. Additive per this struct's own ABI-stability
+    /// contract (`interface.rs`'s module doc) — a model compiled against
+    /// an older version never needs to know this field exists.
+    pub strength: Option<Strength>,
 }
 
 impl PartialEq for DigitalEvent {
@@ -66,7 +78,8 @@ impl PartialEq for DigitalEvent {
         self.net == other.net &&
         self.value == other.value &&
         self.source == other.source &&
-        self.region == other.region
+        self.region == other.region &&
+        self.strength == other.strength
     }
 }
 
@@ -162,7 +175,7 @@ mod tests {
             net: DigitalNet(0),
             value: LogicValue::Zero,
             source: 99,
-            seq: 0, region: Region::Active,
+            seq: 0, region: Region::Active, strength: None,
         });
 
         let mut devices: Vec<Box<dyn Element>> = vec![
@@ -203,7 +216,7 @@ mod tests {
             value: LogicValue::One,
             source: 0,
             seq: 0,
-            region: Region::Active,
+            region: Region::Active, strength: None,
         });
         state.evaluate_until_stable(t_input, &mut devices, Default::default(), &[]).unwrap();
         assert_eq!(state.nets[output.0], LogicValue::X, "output must not flip before the delay elapses");
@@ -231,7 +244,7 @@ mod tests {
             net: DigitalNet(0),
             value: LogicValue::Zero,
             source: 0,
-            seq: 0, region: Region::Active,
+            seq: 0, region: Region::Active, strength: None,
         });
 
         assert_eq!(state.nets[0], LogicValue::One);
@@ -247,9 +260,9 @@ mod tests {
     fn test_event_ordering() {
         let mut state = DigitalState::new(1);
 
-        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 2, region: Region::Active });
-        state.schedule(DigitalEvent { time: 3.0, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active });
-        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::Z, source: 0, seq: 1, region: Region::Active });
+        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 2, region: Region::Active, strength: None });
+        state.schedule(DigitalEvent { time: 3.0, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active, strength: None });
+        state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::Z, source: 0, seq: 1, region: Region::Active, strength: None });
 
         let mut extracted = Vec::new();
         while let Some(Reverse(e)) = state.event_queue.pop() {
@@ -264,14 +277,21 @@ mod tests {
     }
 
     /// T38 (LRMC-C7-12) — §8.3's canonical race, through the *production*
-    /// path (`evaluate_until_stable`, not `RegionQueue` standalone):
-    /// two same-timestamp writes to the same net, one `Active`
-    /// (blocking-assign-derived) and one `Nba` (non-blocking-assign-
-    /// derived), scheduled in submission order that would give the wrong
-    /// answer if region were ignored. Regardless of submission order, the
-    /// LRM's stratified regions guarantee the final value is the `Nba`
-    /// write (`Region`'s derived `Ord` — `Active < Nba` — now the event
-    /// queue's own tie-break, ahead of `seq`).
+    /// path (`evaluate_until_stable`, not `RegionQueue` standalone): one
+    /// process writing the same variable twice at the same timestamp, once
+    /// blocking (`Active`) and once non-blocking (`Nba`), scheduled in a
+    /// submission order that would give the wrong answer if region were
+    /// ignored. Regardless of submission order the LRM's stratified regions
+    /// make the `Nba` write the surviving one (`Region`'s derived `Ord` —
+    /// `Active < Nba` — is the event queue's tie-break ahead of `seq`).
+    ///
+    /// **Both writes carry the same `source`.** A region race is two writes
+    /// from ONE process (§8.5.3.3/4's `a = b;` vs `a <= b;`), which is a
+    /// single driver updating twice — not two drivers. Two *distinct*
+    /// sources on one net are a §7.9 driver contention resolved by Table
+    /// 7-3, which is what `two_distinct_drivers_contend_per_table_7_3`
+    /// below pins; conflating the two is what made this test read `X`
+    /// after T54 gave the scheduler a real `DriverTable`.
     #[test]
     fn stratified_regions_resolve_the_canonical_active_nba_race_through_evaluate_until_stable() {
         for (active_seq, nba_seq) in [(0u64, 1u64), (1u64, 0u64)] {
@@ -282,15 +302,15 @@ mod tests {
                 value: LogicValue::Zero,
                 source: 0,
                 seq: active_seq,
-                region: Region::Active,
+                region: Region::Active, strength: None,
             });
             state.schedule(DigitalEvent {
                 time: 1.0,
                 net: DigitalNet(0),
                 value: LogicValue::One,
-                source: 1,
+                source: 0,
                 seq: nba_seq,
-                region: Region::Nba,
+                region: Region::Nba, strength: None,
             });
             state.evaluate_until_stable(1.0, &mut [], Default::default(), &[]).unwrap();
             assert_eq!(
@@ -301,10 +321,45 @@ mod tests {
         }
     }
 
+    /// T54/LRMW2-46's half of the same boundary: two *distinct* sources
+    /// driving one net at the same timestamp are drivers, not a region
+    /// race — strong-0 against strong-1 resolves to `X` per Table 7-3, no
+    /// matter which region each carries. This is the assertion that makes
+    /// the same-`source` requirement above falsifiable rather than a
+    /// stylistic choice.
+    #[test]
+    fn two_distinct_drivers_contend_per_table_7_3() {
+        let mut state = DigitalState::new(1);
+        state.schedule(DigitalEvent {
+            time: 1.0,
+            net: DigitalNet(0),
+            value: LogicValue::Zero,
+            source: 0,
+            seq: 0,
+            region: Region::Active, strength: None,
+        });
+        state.schedule(DigitalEvent {
+            time: 1.0,
+            net: DigitalNet(0),
+            value: LogicValue::One,
+            source: 1,
+            seq: 1,
+            region: Region::Nba, strength: None,
+        });
+        state.evaluate_until_stable(1.0, &mut [], Default::default(), &[]).unwrap();
+        assert_eq!(
+            state.nets[0],
+            LogicValue::X,
+            "two equal-strength opposing drivers contend to X (Table 7-3), \
+             regardless of the region each write arrived in"
+        );
+    }
+
     /// T38: `Inactive` (`#0`-delay) is exercised through the production
-    /// path too — scheduled at the same timestamp as an `Active` write to
-    /// the same net, `Inactive` must land after `Active` per §8.3's
-    /// region order (`Active < Inactive < Nba < Monitor`).
+    /// path too — the same process writing the same variable at the same
+    /// timestamp in `Active` and `Inactive`; `Inactive` must land after
+    /// `Active` per §8.3's region order (`Active < Inactive < Nba <
+    /// Monitor`).
     #[test]
     fn inactive_region_lands_after_active_at_the_same_timestamp() {
         let mut state = DigitalState::new(1);
@@ -314,52 +369,56 @@ mod tests {
             value: LogicValue::One,
             source: 0,
             seq: 0,
-            region: Region::Inactive,
+            region: Region::Inactive, strength: None,
         });
         state.schedule(DigitalEvent {
             time: 2.0,
             net: DigitalNet(0),
             value: LogicValue::Zero,
-            source: 1,
+            source: 0,
             seq: 1,
-            region: Region::Active,
+            region: Region::Active, strength: None,
         });
         state.evaluate_until_stable(2.0, &mut [], Default::default(), &[]).unwrap();
         assert_eq!(state.nets[0], LogicValue::One, "Inactive (#0) must land after Active at the same timestamp");
     }
 
     /// T38: `Monitor` sits last in the region order (`Active < Inactive <
-    /// Nba < Monitor`) — a same-timestamp `Monitor` write overrides every
-    /// other region's write to the same net, through the production path.
+    /// Nba < Monitor`) — a same-timestamp `Monitor` write from the same
+    /// process overrides every earlier region's write to the same
+    /// variable, through the production path. The Monitor value is `Zero`
+    /// (not `X`) on purpose: an `X` here would also be the value a driver
+    /// contention produces, so the assertion could not tell region order
+    /// from resolution.
     #[test]
     fn monitor_region_lands_last_at_the_same_timestamp() {
         let mut state = DigitalState::new(1);
         state.schedule(DigitalEvent {
             time: 3.0,
             net: DigitalNet(0),
-            value: LogicValue::X,
+            value: LogicValue::Zero,
             source: 0,
             seq: 0,
-            region: Region::Monitor,
+            region: Region::Monitor, strength: None,
         });
         state.schedule(DigitalEvent {
             time: 3.0,
             net: DigitalNet(0),
             value: LogicValue::One,
-            source: 1,
+            source: 0,
             seq: 1,
-            region: Region::Nba,
+            region: Region::Nba, strength: None,
         });
         state.schedule(DigitalEvent {
             time: 3.0,
             net: DigitalNet(0),
-            value: LogicValue::Zero,
-            source: 2,
+            value: LogicValue::One,
+            source: 0,
             seq: 2,
-            region: Region::Active,
+            region: Region::Active, strength: None,
         });
         state.evaluate_until_stable(3.0, &mut [], Default::default(), &[]).unwrap();
-        assert_eq!(state.nets[0], LogicValue::X, "Monitor drains last, overriding Active/Nba at the same timestamp");
+        assert_eq!(state.nets[0], LogicValue::Zero, "Monitor drains last, overriding Active/Nba at the same timestamp");
     }
 
     #[test]

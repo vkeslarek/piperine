@@ -255,7 +255,7 @@ fn test_zero_delay_chain_propagates_in_one_pass() {
     // net0→INV0(delay=0)→net1→INV1(delay=0)→net2; all settle in one pass
     let mut state = DigitalState::new(3);
     state.nets[0] = LogicValue::One;
-    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
@@ -275,7 +275,7 @@ fn test_fan_out_topology() {
     // net0→INV0→net1→{INV1→net2, INV2→net3}
     let mut state = DigitalState::new(4);
     state.nets[0] = LogicValue::Zero;
-    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
@@ -297,7 +297,7 @@ fn test_diamond_propagation() {
     // n0: 1→0, expect INV0→n1=1, INV1→n2=0, INV2→n3=0, AND→n4=0
     let mut state = DigitalState::new(5);
     state.nets[0] = LogicValue::One;
-    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
@@ -342,7 +342,7 @@ fn make_rs_latch_instance(title: &str, r_val: LogicValue, s_val: LogicValue, q_v
 fn test_rs_nor_latch_set() {
     let mut instance = make_rs_latch_instance("RSSet", LogicValue::Zero, LogicValue::Zero, LogicValue::X, LogicValue::X);
     // Apply S=1 at t=1ns
-    instance.digital_state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(1), value: LogicValue::One, source: 99, seq: 0, region: Region::Active });
+    instance.digital_state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(1), value: LogicValue::One, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
@@ -358,7 +358,7 @@ fn test_rs_nor_latch_set() {
 fn test_rs_nor_latch_reset() {
     // Pre-set latch: Q=1, QB=0; then R=1
     let mut instance = make_rs_latch_instance("RSReset", LogicValue::Zero, LogicValue::Zero, LogicValue::One, LogicValue::Zero);
-    instance.digital_state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active });
+    instance.digital_state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let options = TransientAnalysisOptions::new(10e-9, 1e-9);
     let _ = {
@@ -395,7 +395,7 @@ fn test_dff_rising_edge_capture() {
     let mut state = DigitalState::new(3);
     state.nets[0] = LogicValue::Zero; // CLK=0
     state.nets[1] = LogicValue::One;  // D=1
-    state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let mut instance = make_instance("DFFCapture");
     instance.digital_state = state;
@@ -417,7 +417,7 @@ fn test_dff_does_not_capture_on_falling_edge() {
     state.nets[0] = LogicValue::One;  // CLK=1
     state.nets[1] = LogicValue::One;  // D=1
     state.nets[2] = LogicValue::Zero; // Q=0 initially
-    state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let mut instance = make_instance("DFFNoCapture");
     instance.digital_state = state;
@@ -443,7 +443,7 @@ fn test_dff_pipeline_three_stages() {
     // Clock pulses: rise at 2,4,6ns; fall at 2.5,4.5,6.5ns
     for (i, &t) in [2e-9f64, 2.5e-9, 4e-9, 4.5e-9, 6e-9, 6.5e-9].iter().enumerate() {
         let val = if i % 2 == 0 { LogicValue::One } else { LogicValue::Zero };
-        state.schedule(DigitalEvent { time: t, net: DigitalNet(0), value: val, source: 99, seq: i as u64, region: Region::Active });
+        state.schedule(DigitalEvent { time: t, net: DigitalNet(0), value: val, source: 99, seq: i as u64, region: Region::Active, strength: None });
     }
 
     let mut instance = make_instance("DFFPipeline");
@@ -470,7 +470,7 @@ fn test_dff_pipeline_three_stages() {
 fn test_ring_oscillator_five_inv() {
     // 5 inverters in ring, 1ns delay each → period = 2*5*1ns = 10ns
     let mut state = DigitalState::new(5);
-    state.schedule(DigitalEvent { time: 0.0, net: DigitalNet(0), value: LogicValue::Zero, source: 999, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 0.0, net: DigitalNet(0), value: LogicValue::Zero, source: 999, seq: 0, region: Region::Active, strength: None });
 
     let mut instance = make_instance("RingOsc5");
     for i in 0..5usize {
@@ -628,7 +628,7 @@ fn test_a2d_rising_then_falling() {
 fn test_cosim_d2a_event_at_correct_time() {
     let mut instance = make_instance("D2ACosim");
     let mut state = DigitalState::new(1);
-    state.schedule(DigitalEvent { time: 5e-9, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 5e-9, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 0, region: Region::Active, strength: None });
 
     let mut d2a = Box::new(D2ADevice::new(DigitalNet(0)));
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
@@ -655,8 +655,8 @@ fn test_cosim_d2a_event_at_correct_time() {
 fn test_cosim_d2a_multiple_events() {
     let mut instance = make_instance("D2AMulti");
     let mut state = DigitalState::new(1);
-    state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One,  source: 0, seq: 0, region: Region::Active });
-    state.schedule(DigitalEvent { time: 7e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 1, region: Region::Active });
+    state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One,  source: 0, seq: 0, region: Region::Active, strength: None });
+    state.schedule(DigitalEvent { time: 7e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 1, region: Region::Active, strength: None });
 
     let mut d2a = Box::new(D2ADevice::new(DigitalNet(0)));
     let d2a_ptr: *mut D2ADevice = &mut *d2a;

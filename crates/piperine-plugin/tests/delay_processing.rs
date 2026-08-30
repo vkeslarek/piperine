@@ -94,8 +94,7 @@ fn put_delays_changes_observed_event_timing_in_a_live_run() {
         value: LogicValue::One,
         source: 0,
         seq: 0,
-        region: piperine_solver::abi::Region::Active,
-    });
+        region: piperine_solver::abi::Region::Active, strength: None });
     circuit.digital_state = state;
 
     circuit.run_digital_at(t_input).expect("settles at t_input");
@@ -126,8 +125,7 @@ fn put_delays_changes_observed_event_timing_in_a_live_run() {
         value: LogicValue::One,
         source: 0,
         seq: 0,
-        region: piperine_solver::abi::Region::Active,
-    });
+        region: piperine_solver::abi::Region::Active, strength: None });
     circuit2.digital_state = state2;
     circuit2.run_digital_at(t_input).expect("settles");
     circuit2.run_digital_at(t_input + 2.0e-6).expect("settles"); // old delay: nothing yet

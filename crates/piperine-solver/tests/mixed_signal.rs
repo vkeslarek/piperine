@@ -941,7 +941,7 @@ fn test_a2d_drives_digital_chain() {
     let mut state = DigitalState::new(2);
 
     // Inject comparator result: net 0 = One at t=1ns
-    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0, region: Region::Active, strength: None });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(SimpleInverter { input: DigitalNet(0), output: DigitalNet(1), id: 0 }),

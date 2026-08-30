@@ -56,7 +56,7 @@ fn rise_and_fall_delays_are_observable_as_event_timing() {
     let y = DigitalNet(nets["y"]);
 
     // Settle the initial state (a = 0, y = 0) at t = 0.
-    circuit.digital_state.schedule(DigitalEvent { time: 0.0, net: a, value: LogicValue::Zero, source: 999, seq: 0, region: Region::Active });
+    circuit.digital_state.schedule(DigitalEvent { time: 0.0, net: a, value: LogicValue::Zero, source: 999, seq: 0, region: Region::Active, strength: None });
     circuit
         .digital_state
         .evaluate_until_stable(0.0, &mut circuit.devices, Default::default(), &[])
@@ -74,7 +74,7 @@ fn rise_and_fall_delays_are_observable_as_event_timing() {
     // intrinsic delay is 0), so without the specify path delay `y` would
     // change at the same instant; with it, `y` must NOT change until
     // 10ns + 2ns (the declared rise delay).
-    circuit.digital_state.schedule(DigitalEvent { time: 10e-9, net: a, value: LogicValue::One, source: 999, seq: 1, region: Region::Active });
+    circuit.digital_state.schedule(DigitalEvent { time: 10e-9, net: a, value: LogicValue::One, source: 999, seq: 1, region: Region::Active, strength: None });
     circuit
         .digital_state
         .evaluate_until_stable(10e-9, &mut circuit.devices, Default::default(), &[])
@@ -88,7 +88,7 @@ fn rise_and_fall_delays_are_observable_as_event_timing() {
     assert_eq!(circuit.digital_state.nets[y.0], LogicValue::One, "y follows a's rise after exactly the declared 2ns rise delay");
 
     // a: 1 -> 0 at t = 20ns; y must follow only after the 3ns fall delay.
-    circuit.digital_state.schedule(DigitalEvent { time: 20e-9, net: a, value: LogicValue::Zero, source: 999, seq: 2, region: Region::Active });
+    circuit.digital_state.schedule(DigitalEvent { time: 20e-9, net: a, value: LogicValue::Zero, source: 999, seq: 2, region: Region::Active, strength: None });
     circuit
         .digital_state
         .evaluate_until_stable(20e-9, &mut circuit.devices, Default::default(), &[])

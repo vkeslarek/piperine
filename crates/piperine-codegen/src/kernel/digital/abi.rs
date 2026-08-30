@@ -44,6 +44,52 @@ use crate::error::CodegenError;
 
 use super::layout::*;
 
+pub use piperine_solver::abi::Strength;
+
+/// Resolves one `drive_strength` keyword to the output level it governs
+/// (`0` or `1`) and its [`Strength`] (§Annex A.2.2.2's `strength0`/
+/// `strength1` productions — the same keyword set `piperine-lang`'s
+/// grammar already validated at parse time, re-checked here since
+/// `piperine_lang::pom::Wire::drive_strength` stores raw text, not an
+/// enum, to keep that crate solver-independent).
+fn strength_keyword(kw: &str) -> Option<(u8, Strength)> {
+    match kw {
+        "supply0" => Some((0, Strength::Supply)),
+        "strong0" => Some((0, Strength::Strong)),
+        "pull0" => Some((0, Strength::Pull)),
+        "weak0" => Some((0, Strength::Weak)),
+        "highz0" => Some((0, Strength::HighZ)),
+        "supply1" => Some((1, Strength::Supply)),
+        "strong1" => Some((1, Strength::Strong)),
+        "pull1" => Some((1, Strength::Pull)),
+        "weak1" => Some((1, Strength::Weak)),
+        "highz1" => Some((1, Strength::HighZ)),
+        _ => None,
+    }
+}
+
+/// Resolves a wire's raw `(level0_kw, level1_kw)` pair (already
+/// order-normalized by the grammar — `l0` always governs a driven `0`,
+/// `l1` a driven `1`) into `(Strength, Strength)`. Fails loud on an
+/// unrecognized keyword — should be unreachable in practice since the
+/// grammar already validated the pair, but this is the codegen-side
+/// boundary that owns interpreting POM data, so it re-validates rather
+/// than trusting silently.
+pub(crate) fn parse_drive_strength_pair(level0_kw: &str, level1_kw: &str) -> Result<(Strength, Strength), CodegenError> {
+    let (lvl0, s0) = strength_keyword(level0_kw).ok_or_else(|| {
+        CodegenError::Invalid(format!("unrecognized drive_strength keyword `{level0_kw}` (§A.2.2.2)"))
+    })?;
+    let (lvl1, s1) = strength_keyword(level1_kw).ok_or_else(|| {
+        CodegenError::Invalid(format!("unrecognized drive_strength keyword `{level1_kw}` (§A.2.2.2)"))
+    })?;
+    if lvl0 != 0 || lvl1 != 1 {
+        return Err(CodegenError::Invalid(format!(
+            "drive_strength pair `({level0_kw}, {level1_kw})` is not one level-0 and one level-1 keyword (§A.2.2.2)"
+        )));
+    }
+    Ok((s0, s1))
+}
+
 /// The digital JIT ABI: one pointer-table argument. Field order is the JIT
 /// contract — the emitter reads fields by index (8 bytes each).
 #[repr(C)]
@@ -128,6 +174,12 @@ pub struct DigitalKernel {
     /// returns names, not positional indices.
     pub(crate) input_names: Vec<String>,
     pub(crate) output_names: Vec<String>,
+    /// Parallel to [`output_names`](Self::output_names): each output's
+    /// authored `drive_strength` spec (§A.2.2.2, LRMW3-09), already
+    /// resolved from raw keyword text to `(level0, level1)` `Strength`
+    /// pairs. `None` for the overwhelming common case (no continuous
+    /// assign strength annotation on that output).
+    pub(crate) output_strength: Vec<Option<(Strength, Strength)>>,
     pub(crate) layout: DigitalLayout,
     pub(crate) clocked_blocks: Vec<ClockedSpec>,
     pub(crate) num_watch_terms: usize,
@@ -179,6 +231,13 @@ impl DigitalKernel {
     /// via [`outputs`](Self::outputs) first.
     pub fn output_name(&self, i: usize) -> &str {
         &self.output_names[i]
+    }
+
+    /// Digital output `i`'s authored `drive_strength` spec (§A.2.2.2,
+    /// LRMW3-09), if any — `(level0, level1)`. Panics on out-of-range `i`,
+    /// same contract as [`output_name`](Self::output_name).
+    pub fn output_strength(&self, i: usize) -> Option<(Strength, Strength)> {
+        self.output_strength[i]
     }
 
     pub fn layout(&self) -> &DigitalLayout {

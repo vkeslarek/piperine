@@ -30,6 +30,17 @@ fn is_direction_kw(t: &Tok) -> bool {
     matches!(t, Tok::Ident(s) if s == "input" || s == "output" || s == "inout")
 }
 
+/// Which output level (`0` or `1`) a `drive_strength` keyword governs
+/// (§Annex A.2.2.2's `strength0`/`strength1` productions), or `None` if
+/// `kw` is not one of the LRM's own strength keywords.
+fn drive_strength_level(kw: &str) -> Option<u8> {
+    match kw {
+        "supply0" | "strong0" | "pull0" | "weak0" | "highz0" => Some(0),
+        "supply1" | "strong1" | "pull1" | "weak1" | "highz1" => Some(1),
+        _ => None,
+    }
+}
+
 /// Applies a leading `[msb:lsb]` range (Annex A.2.1.2/A.2.2.1's `range`
 /// slot, parsed by [`Grammar::parse_optional_leading_range`]) to every
 /// declarator in `names` that carries none of its own (§3.6.3: the range
@@ -1481,14 +1492,71 @@ impl Grammar {
     }
 
     /// `continuous_assign`, Annex A.6.1. Attribute-bearing, §Syntax 2-7.
+    /// Optionally carries a `drive_strength` spec (§A.2.2.2, LRMW3-09):
+    /// `assign (strong1, weak0) w = r;` — the pair may appear in either
+    /// order (each keyword is self-describing by its `0`/`1` suffix).
     fn parse_continuous_assign(&mut self) -> Result<ContinuousAssign, ParseError> {
         let attrs = self.parse_attr_instances()?;
         let start = self.expect_kw("assign")?;
+        let strength = if self.at_punct("(") && self.looks_like_drive_strength() {
+            Some(self.parse_drive_strength()?)
+        } else {
+            None
+        };
         let target = self.parse_lvalue()?;
         self.expect_punct("=")?;
         let value = self.parse_expr()?;
         let end = self.expect_punct(";")?;
-        Ok(ContinuousAssign { span: PreprocessedSpan::new(start.start, end.end), attrs, target, value })
+        Ok(ContinuousAssign { span: PreprocessedSpan::new(start.start, end.end), attrs, target, value, strength })
+    }
+
+    /// Whether the `(` at the cursor opens a `drive_strength` spec rather
+    /// than a parenthesized lvalue/expression — decided by peeking past it
+    /// for a known strength keyword without consuming anything.
+    fn looks_like_drive_strength(&self) -> bool {
+        matches!(self.peek_at(1), Tok::Ident(s) if drive_strength_level(s).is_some())
+    }
+
+    /// `drive_strength`, Annex A.2.2.2: `( strength0 , strength1 )` in
+    /// either order. Fails loud citing A.2.2.2 on an unrecognized keyword
+    /// or a same-level pair (e.g. two `0`-side keywords).
+    fn parse_drive_strength(&mut self) -> Result<DriveStrength, ParseError> {
+        self.expect_punct("(")?;
+        let (first, first_span) = self.expect_ident()?;
+        self.expect_punct(",")?;
+        let (second, second_span) = self.expect_ident()?;
+        self.expect_punct(")")?;
+        let first_level = drive_strength_level(&first).ok_or_else(|| {
+            ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    expected: "a drive-strength keyword (§A.2.2.2): supply0/1, strong0/1, pull0/1, weak0/1, highz0/1".to_string(),
+                    found: first.clone(),
+                },
+                first_span,
+            )
+        })?;
+        let second_level = drive_strength_level(&second).ok_or_else(|| {
+            ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    expected: "a drive-strength keyword (§A.2.2.2): supply0/1, strong0/1, pull0/1, weak0/1, highz0/1".to_string(),
+                    found: second.clone(),
+                },
+                second_span,
+            )
+        })?;
+        if first_level == second_level {
+            return Err(ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    expected: format!(
+                        "a drive_strength pair naming both output levels (§A.2.2.2) — `{first}` and `{second}` both govern level {first_level}"
+                    ),
+                    found: second,
+                },
+                second_span,
+            ));
+        }
+        let (level0, level1) = if first_level == 0 { (first, second) } else { (second, first) };
+        Ok(DriveStrength { level0, level1 })
     }
 
     /// One port/parameter connection at an instantiation site — ordered or

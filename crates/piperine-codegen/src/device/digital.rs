@@ -284,7 +284,7 @@ impl DigitalInstance {
 
         for i in 0..self.out_nets.len() {
             let (net, value) = (self.out_nets[i], s.outputs[i]);
-            self.push_event(event_queue, 0.0, net, value);
+            self.push_event(event_queue, 0.0, net, value, i);
         }
         self.scratch = s;
     }
@@ -327,7 +327,7 @@ impl DigitalInstance {
         for i in 0..self.out_nets.len() {
             let (net, new) = (self.out_nets[i], s.outputs[i]);
             if new != s.prev_outputs[i] {
-                self.push_event(event_queue, t, net, new);
+                self.push_event(event_queue, t, net, new, i);
             }
         }
         self.scratch = s;
@@ -443,7 +443,7 @@ impl DigitalInstance {
         for i in 0..self.out_nets.len() {
             let (net, new) = (self.out_nets[i], s.outputs[i]);
             if new != s.prev_outputs[i] {
-                self.push_event(event_queue, t, net, new);
+                self.push_event(event_queue, t, net, new, i);
             }
         }
         self.scratch = s;
@@ -585,23 +585,34 @@ impl DigitalInstance {
         let _ = Type::Real; // conversions are slot-driven
     }
 
+    /// `out_index` is this event's position in `self.out_nets`/
+    /// `self.kernel.outputs()` — used to look up an authored §A.2.2.2
+    /// `drive_strength` spec (LRMW3-09) for `net`, if any, so it reaches
+    /// the scheduler's `DriverTable` instead of the value-derived Table
+    /// 7-2 default.
     fn push_event(
         &mut self,
         queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
         time: f64,
         net: DigitalNet,
         value: i64,
+        out_index: usize,
     ) {
         // T26/LRMW2-26 (§8.4.3.3): quantize to the module's `` `timescale ``
         // precision grid — a no-op without a `` `timescale `` directive.
         let time = self.kernel.quantize_time(time);
+        let logic_value = Quad::to_logic(value);
+        let strength = self.kernel.output_strength(out_index).map(|(level0, level1)| {
+            if logic_value == LogicValue::One { level1 } else { level0 }
+        });
         queue.push(Reverse(DigitalEvent {
             time,
             net,
-            value: Quad::to_logic(value),
+            value: logic_value,
             source: self.device_id,
             seq: self.seq,
             region: Region::Active,
+            strength,
         }));
         self.seq += 1;
     }

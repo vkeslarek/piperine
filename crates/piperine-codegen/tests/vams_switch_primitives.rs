@@ -58,8 +58,7 @@ fn net(c: &Circuit, name: &str) -> DigitalNet {
 fn drive(c: &mut Circuit, assignments: &[(&str, LogicValue)]) {
     for (i, &(name, value)) in assignments.iter().enumerate() {
         c.instance.digital_state.schedule(DigitalEvent {
-            time: 0.0, net: net(c, name), value, source: usize::MAX, seq: i as u64, region: Region::Active,
-        });
+            time: 0.0, net: net(c, name), value, source: usize::MAX, seq: i as u64, region: Region::Active, strength: None });
     }
     let opts = TransientAnalysisOptions::new(1.0, 0.1);
     let mut tran = c.instance.transient(opts, Context::default()).unwrap();

@@ -55,16 +55,14 @@ fn digital_display_and_write_reach_the_host_sink() {
             value: LogicValue::Zero,
             source: usize::MAX,
             seq: (2 * i) as u64,
-            region: Region::Active,
-        });
+            region: Region::Active, strength: None });
         circuit.digital_state.schedule(DigitalEvent {
             time: base + 1.0,
             net: clk,
             value: LogicValue::One,
             source: usize::MAX,
             seq: (2 * i + 1) as u64,
-            region: Region::Active,
-        });
+            region: Region::Active, strength: None });
     }
 
     let opts = TransientAnalysisOptions::new(6.0, 0.1);

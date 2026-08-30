@@ -56,6 +56,26 @@ pub trait EventSink {
     /// Schedule `net` to take `value` at `now + delay`. `delay == 0.0` is a
     /// same-timestep (delta-cycle) update.
     fn emit(&mut self, net: DigitalNet, value: LogicValue, delay: f64);
+
+    /// Same as [`Self::emit`], but the emitting model supplies an explicit
+    /// LRM §7.9 Table 7-2 drive strength for this value-change (LRMW3-09,
+    /// A.2.2.2 — e.g. `assign (strong1, weak0) w = r;`) instead of letting
+    /// the scheduler fall back to [`super::drivers::default_strength_for`].
+    /// Additive: the default implementation drops `strength` and forwards
+    /// to [`Self::emit`], so an existing `EventSink` implementer (an
+    /// external co-simulator, a hand-written test double) keeps compiling
+    /// and behaving exactly as before without overriding it. Only
+    /// [`QueueSink`] threads the strength through to the scheduler today.
+    fn emit_with_strength(
+        &mut self,
+        net: DigitalNet,
+        value: LogicValue,
+        delay: f64,
+        strength: crate::digital::drivers::Strength,
+    ) {
+        let _ = strength;
+        self.emit(net, value, delay);
+    }
 }
 
 /// The concrete [`EventSink`] backing today's scheduler: a binary-heap event
@@ -97,8 +117,10 @@ impl<'q> QueueSink<'q> {
     }
 }
 
-impl EventSink for QueueSink<'_> {
-    fn emit(&mut self, net: DigitalNet, value: LogicValue, delay: f64) {
+impl QueueSink<'_> {
+    /// Shared push logic for [`EventSink::emit`]/[`EventSink::emit_with_strength`]
+    /// — the only difference between the two is whether `strength` is `Some`.
+    fn push(&mut self, net: DigitalNet, value: LogicValue, delay: f64, strength: Option<crate::digital::drivers::Strength>) {
         let extra = self.delay_table.map(|t| t.get(net)).map(|pd: PathDelay| match value {
             LogicValue::One => pd.rise,
             LogicValue::Zero => pd.fall,
@@ -111,8 +133,25 @@ impl EventSink for QueueSink<'_> {
             source: self.source,
             seq: *self.seq,
             region: crate::digital::regions::Region::Active,
+            strength,
         }));
         *self.seq += 1;
+    }
+}
+
+impl EventSink for QueueSink<'_> {
+    fn emit(&mut self, net: DigitalNet, value: LogicValue, delay: f64) {
+        self.push(net, value, delay, None);
+    }
+
+    fn emit_with_strength(
+        &mut self,
+        net: DigitalNet,
+        value: LogicValue,
+        delay: f64,
+        strength: crate::digital::drivers::Strength,
+    ) {
+        self.push(net, value, delay, Some(strength));
     }
 }
 

@@ -794,12 +794,25 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 match &mut bodies[i].digital {
                     Some(body) => body.stmts.extend(stmts),
                     None => {
+                        // §A.2.2.2 (LRMW3-09): carry every continuous
+                        // assign's authored `drive_strength` spec forward,
+                        // keyed by its target name (a wire or a port) —
+                        // `kernel::digital::abi::DigitalKernel::compile`
+                        // resolves the keyword text into a `Strength` pair
+                        // for whichever of these names it ends up
+                        // compiling as an output.
+                        let output_drive_strength = m
+                            .assign_drive_strengths()
+                            .iter()
+                            .map(|(name, l0, l1)| (name.clone(), (l0.clone(), l1.clone())))
+                            .collect();
                         bodies[i].digital = Some(DigitalBody {
                             inputs,
                             outputs,
                             regs,
                             reg_inits,
                             stmts,
+                            output_drive_strength,
                         });
                     }
                 }
@@ -903,6 +916,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                         regs: Vec::new(),
                         reg_inits: Vec::new(),
                         stmts: assigns,
+                        output_drive_strength: Default::default(),
                     });
                 }
             }

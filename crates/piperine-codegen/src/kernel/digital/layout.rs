@@ -279,7 +279,7 @@ mod tests {
     fn quad_layout(var_name: &str) -> (DigitalLayout, VarId) {
         let mut m = LoweredBody::new("t25_unit");
         let dreg = m.symbols.add_var(var_name, Type::Quad);
-        let body = DigitalBody { inputs: vec![], outputs: vec![], regs: vec![dreg], reg_inits: vec![], stmts: vec![] };
+        let body = DigitalBody { inputs: vec![], outputs: vec![], regs: vec![dreg], reg_inits: vec![], stmts: vec![], output_drive_strength: Default::default() };
         let mut layout = DigitalLayout::build(&m, &body);
         // Statements are empty here (this test drives the raw bank
         // directly, bypassing the JIT and the based-literal decoder — see

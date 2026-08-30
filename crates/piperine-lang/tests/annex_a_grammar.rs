@@ -19,7 +19,7 @@
 //! first and produced unusable noise; section-level is what the source
 //! document actually supports mechanically.
 //!
-//! LRM-COVERS: A.1, A.1.1, A.1.2, A.1.3, A.1.4, A.1.6, A.1.7, A.1.8, A.1.9, A.2, A.2.1, A.2.1.1, A.2.1.2, A.2.3, A.2.6, A.2.7, A.2.8, A.4, A.4.1, A.4.2, A.5.1, A.5.2, A.6, A.6.1, A.6.3, A.6.4, A.6.5, A.6.6, A.6.7, A.6.8, A.6.10, A.7, A.7.1, A.8, A.8.1, A.8.3, A.9, A.9.1, A.9.3
+//! LRM-COVERS: A.1, A.1.1, A.1.2, A.1.3, A.1.4, A.1.6, A.1.7, A.1.8, A.1.9, A.2, A.2.1, A.2.1.1, A.2.1.2, A.2.2.2, A.2.3, A.2.6, A.2.7, A.2.8, A.4, A.4.1, A.4.2, A.5.1, A.5.2, A.6, A.6.1, A.6.3, A.6.4, A.6.5, A.6.6, A.6.7, A.6.8, A.6.10, A.7, A.7.1, A.8, A.8.1, A.8.3, A.9, A.9.1, A.9.3
 //!
 //! Every `Coverage::Implemented` row above whose id appears in this list
 //! is proved by `every_annex_a_section_is_implemented_or_carries_a_
@@ -82,11 +82,7 @@ const SECTIONS: &[Section] = &[
         title: "Net and variable types",
         coverage: Coverage::OutOfScope("net_type/strength/charge-storage keyword set beyond `electrical`-style disciplines — full 1364 net-type table deferred to T47/T48 (Phase 9, VAMS-15/18)"),
     },
-    Section {
-        id: "A.2.2.2",
-        title: "Strengths",
-        coverage: Coverage::OutOfScope("drive-strength grammar exists (T11) but strength disambiguation from unnamed-instance terminals is a known non-blocking gap logged in T11's SPEC_DEVIATION; full semantics land with gate primitives, T48 (Phase 9, VAMS-18)"),
-    },
+    Section { id: "A.2.2.2", title: "Strengths", coverage: Coverage::Implemented },
     Section {
         id: "A.2.2.3",
         title: "Delays",
@@ -114,7 +110,7 @@ const SECTIONS: &[Section] = &[
     Section {
         id: "A.3.2",
         title: "Primitive strengths",
-        coverage: Coverage::OutOfScope("see A.2.2.2 — same non-blocking gap, same owner (T48)"),
+        coverage: Coverage::OutOfScope("gate/UDP primitive-instance strength disambiguation from unnamed-instance terminals is a known non-blocking gap logged in T11's SPEC_DEVIATION; full semantics land with gate primitives, T48 (Phase 9, VAMS-18) — distinct from A.2.2.2's `drive_strength` grammar production itself, which is now implemented (LRMW3-09, continuous-assign strength)"),
     },
     Section {
         id: "A.3.3",

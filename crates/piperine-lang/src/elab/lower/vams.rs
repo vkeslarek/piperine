@@ -583,6 +583,7 @@ impl Elaborator {
         // bare net-name target is handled — anything else (an indexed/
         // hierarchical LHS) fails loud rather than silently doing
         // nothing, same as the pre-existing no-op did NOT do.
+        let mut assign_drive_strengths: Vec<(String, String, String)> = Vec::new();
         for ca in &pending_assigns {
             let Expr::Ident { name: target_name, .. } = &ca.target else {
                 return Err(ElabError::from(ElabErrorKind::Other(format!(
@@ -633,10 +634,33 @@ impl Elaborator {
             };
             let kind = if is_digital { BehaviorKind::Always } else { BehaviorKind::Analog };
             behaviors.push(Behavior::new(decl.name.clone(), kind, vec![stmt]));
+
+            // §A.2.2.2 (LRMW3-09): an authored `drive_strength` spec only
+            // means something on a digital-domain target — it feeds Table
+            // 7-3 driver-strength resolution, a digital-only concept.
+            // Recorded module-wide (not on the `Wire`/`Port` record
+            // itself) since the strength belongs to the *assign
+            // statement*, and `target_name` may equally name a port or an
+            // internal wire.
+            if let Some(strength) = &ca.strength {
+                if !is_digital {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "assign target `{target_name}` carries a drive_strength spec (§A.2.2.2), \
+                         but is not a digital net — drive strength only applies to digital \
+                         continuous assigns (§7.9/Table 7-3)"
+                    ))));
+                }
+                assign_drive_strengths.push((
+                    target_name.clone(),
+                    strength.level0.clone(),
+                    strength.level1.clone(),
+                ));
+            }
         }
 
         let mut module =
             Module::new(decl.name.clone(), ports, params, wires, instances, Vec::new(), behaviors);
+        module.assign_drive_strengths = assign_drive_strengths;
         module.span = Some(to_miette_span(decl.span));
         module.doc = decl.doc.clone();
         module.branches = branches;

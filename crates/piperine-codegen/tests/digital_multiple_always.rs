@@ -42,16 +42,14 @@ fn run_and_capture(src: &str) -> String {
             value: LogicValue::Zero,
             source: usize::MAX,
             seq: (2 * i) as u64,
-            region: Region::Active,
-        });
+            region: Region::Active, strength: None });
         circuit.digital_state.schedule(DigitalEvent {
             time: base + 1.0,
             net: clk,
             value: LogicValue::One,
             source: usize::MAX,
             seq: (2 * i + 1) as u64,
-            region: Region::Active,
-        });
+            region: Region::Active, strength: None });
     }
 
     let mut tran = circuit.transient(TransientAnalysisOptions::new(6.0, 0.1), ctx).unwrap();

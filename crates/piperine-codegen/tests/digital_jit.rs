@@ -87,7 +87,7 @@ fn inverter() -> LoweredBody {
             "y",
             Expr::Unary { span: SP, op: UnOp::BitNot, operand: Box::new(ident("a")) },
         )],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -110,7 +110,7 @@ fn dff() -> LoweredBody {
             posedge("clk", block(vec![assign("r", ident("d"))])),
             assign("q", ident("r")),
         ],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -233,7 +233,7 @@ fn pipeline_reads_pre_edge_values() {
             ),
             assign("q", ident("r2")),
         ],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile pipe2"));
     let (clk_n, d_n, q_n) = (DigitalNet(0), DigitalNet(1), DigitalNet(2));
     let mut instance =
@@ -292,7 +292,7 @@ fn match_selects_arm_and_default() {
             ],
             attrs: vec![],
         }],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile mux_match"));
     let (a_n, y_n) = (DigitalNet(0), DigitalNet(1));
     let mut instance =
@@ -335,7 +335,7 @@ fn nba_swap() -> LoweredBody {
             "clk",
             block(vec![nonblocking("qa", ident("qb")), nonblocking("qb", ident("qa"))]),
         )],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -382,7 +382,7 @@ fn blocking_assignment_in_a_clocked_block_does_not_swap() {
         regs: vec![],
         reg_inits: vec![],
         stmts: vec![posedge("clk", block(vec![assign("qa", ident("qb")), assign("qb", ident("qa"))]))],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile blocking_no_swap"));
     let (clk, qa, qb) = (DigitalNet(0), DigitalNet(1), DigitalNet(2));
     let mut instance =
@@ -418,7 +418,7 @@ fn nonblocking_swap_in_a_combinational_block_exchanges_values() {
         regs: vec![],
         reg_inits: vec![],
         stmts: vec![nonblocking("ya", ident("yb")), nonblocking("yb", ident("ya"))],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile nba_swap_comb"));
     let (ya_n, yb_n) = (DigitalNet(0), DigitalNet(1));
     let mut instance =
@@ -459,7 +459,7 @@ fn blocking_write_is_visible_to_a_later_nonblocking_read_in_the_same_block() {
             "clk",
             block(vec![assign("x", ident("a")), nonblocking("y", ident("x"))]),
         )],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile mixed_block"));
     let (clk_n, a_n, y_n) = (DigitalNet(0), DigitalNet(1), DigitalNet(2));
     let mut instance =
@@ -506,7 +506,7 @@ fn nonblocking_self_increment_still_increments_once_per_edge() {
                 },
             )]),
         )],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile nba_counter"));
     let clk_n = DigitalNet(0);
     let mut instance = DigitalInstance::new(kernel, 0, vec![clk_n], vec![], vec![]).expect("instance");

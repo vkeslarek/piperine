@@ -108,7 +108,7 @@ fn digital_quad_real_coercion_both_directions() {
             ),
             assign("z", ident("r")),
         ],
-    });
+    output_drive_strength: Default::default() });
     let kernel = std::sync::Arc::new(
         DigitalKernel::compile(&m).expect("PB-07: coerce must compile, not Unsupported"),
     );
@@ -148,7 +148,7 @@ fn digital_real_to_quad_coercion_does_not_truncate_fractional_nonzero() {
             regs: vec![],
             reg_inits: vec![],
             stmts: vec![assign("r", real(level)), assign("z", ident("r"))],
-        });
+        output_drive_strength: Default::default() });
         let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("PB-07: coerce must compile"));
         let z_n = DigitalNet(0);
         let mut instance = DigitalInstance::new(kernel, 0, vec![], vec![z_n], vec![]).expect("instance");

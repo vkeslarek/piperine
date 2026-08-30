@@ -44,16 +44,14 @@ fn gate_primitives_simulate_end_to_end_and_produce_lrm_truth_table_values() {
         value: LogicValue::One,
         source: usize::MAX,
         seq: 0,
-        region: Region::Active,
-    });
+        region: Region::Active, strength: None });
     circuit.digital_state.schedule(DigitalEvent {
         time: 0.0,
         net: b,
         value: LogicValue::One,
         source: usize::MAX,
         seq: 1,
-        region: Region::Active,
-    });
+        region: Region::Active, strength: None });
 
     let opts = TransientAnalysisOptions::new(1.0, 0.1);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
@@ -105,16 +103,14 @@ fn udp_instance_simulates_end_to_end_and_produces_its_own_table_value() {
         value: LogicValue::One,
         source: usize::MAX,
         seq: 0,
-        region: Region::Active,
-    });
+        region: Region::Active, strength: None });
     circuit.digital_state.schedule(DigitalEvent {
         time: 0.0,
         net: b,
         value: LogicValue::Zero,
         source: usize::MAX,
         seq: 1,
-        region: Region::Active,
-    });
+        region: Region::Active, strength: None });
 
     let opts = TransientAnalysisOptions::new(1.0, 0.1);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();

@@ -264,7 +264,7 @@ mod digital {
                     )),
                 },
             ],
-        });
+        output_drive_strength: Default::default() });
         m
     }
 

@@ -150,7 +150,7 @@ fn bit_select_module() -> LoweredBody {
         regs: vec![],
         reg_inits: vec![],
         stmts: vec![posedge("clk", block(vec![assign("o", index_of("q", 2))]))],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -225,7 +225,7 @@ fn part_select_pack_module() -> LoweredBody {
                 Expr::Binary { span: SP, op: VBinOp::Eq, lhs: Box::new(ident("n")), rhs: Box::new(int(11)) },
             ),
         ],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -294,7 +294,7 @@ fn part_select_direction_module() -> LoweredBody {
                 Expr::Binary { span: SP, op: VBinOp::Eq, lhs: Box::new(ident("n1")), rhs: Box::new(ident("n2")) },
             ),
         ],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -355,7 +355,7 @@ fn out_of_range_part_select_fails_loud() {
         regs: vec![n],
         reg_inits: vec![],
         stmts: vec![assign("n", part_select("b", 9, 8))],
-    });
+    output_drive_strength: Default::default() });
     let err = match DigitalKernel::compile(&m) {
         Ok(_) => panic!("an out-of-range part-select must fail loud, not silently resolve"),
         Err(e) => e,
@@ -410,7 +410,7 @@ fn literal_write_module() -> LoweredBody {
         regs: vec![],
         reg_inits: vec![],
         stmts: vec![nonblocking("q", based_bin(4, "0101"))],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -449,7 +449,7 @@ fn whole_vector_swap_module() -> LoweredBody {
         regs: vec![],
         reg_inits: vec![],
         stmts: vec![nonblocking("a", ident("b")), nonblocking("b", ident("a"))],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -495,7 +495,7 @@ fn width_mismatch_module(literal: Expr) -> LoweredBody {
         regs: vec![],
         reg_inits: vec![],
         stmts: vec![nonblocking("wide", literal)],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -572,7 +572,7 @@ fn memory_module() -> LoweredBody {
             nonblocking("d", index_of_expr("mem", 1)),
             nonblocking("e", index_of_expr("mem", 0)),
         ],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 
@@ -642,7 +642,7 @@ fn non_constant_memory_index_fails_loud() {
             target: ident("d"),
             value: Expr::Index { span: SP, base: Box::new(ident("mem")), index: Box::new(ident("k")) },
         }],
-    });
+    output_drive_strength: Default::default() });
     let err = match DigitalKernel::compile(&m) {
         Ok(_) => panic!("a non-constant memory index must fail loud, never silently resolve"),
         Err(e) => e,

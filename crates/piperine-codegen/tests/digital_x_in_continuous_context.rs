@@ -48,7 +48,7 @@ fn quad_reg_module(name: &str, literal: &str) -> (LoweredBody, VarId) {
         regs: vec![dreg],
         reg_inits: vec![],
         stmts: vec![assign("dreg", bit(literal))],
-    });
+    output_drive_strength: Default::default() });
     (m, dreg)
 }
 
@@ -127,7 +127,7 @@ fn an_integer_var_holding_the_literal_value_two_is_not_mistaken_for_x() {
         regs: vec![cnt],
         reg_inits: vec![],
         stmts: vec![assign("cnt", Expr::Number { span: SP, value: NumberLit::Integer(2) })],
-    });
+    output_drive_strength: Default::default() });
     let instance = run_once(m);
 
     let vars = instance.export_vars().expect("an Integer var holding 2 is not X");

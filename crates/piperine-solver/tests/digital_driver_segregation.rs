@@ -20,10 +20,10 @@ fn multiply_driven_net_resolves_per_table_7_3_and_driver_table_is_live() {
     let net = DigitalNet(0);
 
     // Source 0 drives Zero (default strength: Strong, since it's not Z).
-    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active, strength: None });
     // Source 1 drives Z (default strength: HighZ) — should yield entirely
     // to source 0, per Table 7-3's "HighZ side yields unconditionally".
-    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::Z, source: 1, seq: 1, region: Region::Active });
+    state.schedule(DigitalEvent { time: 1e-9, net, value: LogicValue::Z, source: 1, seq: 1, region: Region::Active, strength: None });
 
     state.evaluate_until_stable(1e-9, &mut [], Default::default(), &[]).expect("settles");
 
@@ -44,8 +44,8 @@ fn multiply_driven_net_resolves_per_table_7_3_and_driver_table_is_live() {
 fn equal_strength_opposing_drivers_contend_to_x_on_the_live_net() {
     let mut state = DigitalState::new(1);
     let net = DigitalNet(0);
-    state.schedule(DigitalEvent { time: 2e-9, net, value: LogicValue::One, source: 0, seq: 0, region: Region::Active });
-    state.schedule(DigitalEvent { time: 2e-9, net, value: LogicValue::Zero, source: 1, seq: 1, region: Region::Active });
+    state.schedule(DigitalEvent { time: 2e-9, net, value: LogicValue::One, source: 0, seq: 0, region: Region::Active, strength: None });
+    state.schedule(DigitalEvent { time: 2e-9, net, value: LogicValue::Zero, source: 1, seq: 1, region: Region::Active, strength: None });
 
     state.evaluate_until_stable(2e-9, &mut [], Default::default(), &[]).expect("settles");
 
@@ -61,7 +61,7 @@ fn equal_strength_opposing_drivers_contend_to_x_on_the_live_net() {
 fn single_driver_net_is_unaffected_by_strength_resolution() {
     let mut state = DigitalState::new(1);
     let net = DigitalNet(0);
-    state.schedule(DigitalEvent { time: 3e-9, net, value: LogicValue::One, source: 0, seq: 0, region: Region::Active });
+    state.schedule(DigitalEvent { time: 3e-9, net, value: LogicValue::One, source: 0, seq: 0, region: Region::Active, strength: None });
     state.evaluate_until_stable(3e-9, &mut [], Default::default(), &[]).expect("settles");
     assert_eq!(state.nets[0], LogicValue::One);
     assert_eq!(state.driver_table.driver_count(net), 1);

@@ -223,15 +223,13 @@ fn mixed_analog_digital_fixture_with_a_connectmodule_bridge_simulates_end_to_end
             net: DigitalNet(clk_idx),
             value: LogicValue::Zero,
             source: usize::MAX,
-            seq: (2 * i) as u64, region: Region::Active,
-        });
+            seq: (2 * i) as u64, region: Region::Active, strength: None });
         circuit.digital_state.schedule(DigitalEvent {
             time: base + 1.0,
             net: DigitalNet(clk_idx),
             value: LogicValue::One,
             source: usize::MAX,
-            seq: (2 * i + 1) as u64, region: Region::Active,
-        });
+            seq: (2 * i + 1) as u64, region: Region::Active, strength: None });
     }
 
     let opts = TransientAnalysisOptions::new(4.0, 0.05);

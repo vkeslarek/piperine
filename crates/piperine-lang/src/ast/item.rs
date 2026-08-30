@@ -558,6 +558,27 @@ pub struct ContinuousAssign {
     pub attrs: Vec<Attr>,
     pub target: Expr,
     pub value: Expr,
+    /// An optional `drive_strength` spec (§Annex A.2.2.2 — `assign
+    /// (strong1, weak0) w = r;`), `None` when the assign carries no
+    /// strength annotation (the overwhelmingly common case).
+    pub strength: Option<DriveStrength>,
+}
+
+/// A parsed `( strength0-kw , strength1-kw )` pair, §Annex A.2.2.2. Each
+/// side is one of the LRM's own strength keywords (`supply0`/`strong0`/
+/// `pull0`/`weak0`/`highz0` for level 0, the `1`-suffixed set for level
+/// 1); the grammar accepts either order and classifies each keyword by
+/// its own suffix, so `level0`/`level1` here are always already sorted
+/// by which output level they govern, regardless of the source order.
+/// Kept as raw keyword text (not an enum) — `piperine-lang` has no
+/// dependency on `piperine-solver`'s `Strength` type, which is where
+/// these keywords are ultimately interpreted (codegen's digital kernel).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DriveStrength {
+    /// The strength keyword governing a driven `0` (e.g. `"weak0"`).
+    pub level0: String,
+    /// The strength keyword governing a driven `1` (e.g. `"strong1"`).
+    pub level1: String,
 }
 
 /// One port connection at an instantiation site — ordered (positional) or

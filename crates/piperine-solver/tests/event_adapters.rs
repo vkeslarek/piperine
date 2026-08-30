@@ -148,7 +148,7 @@ fn unified_queue_reads_earliest_across_all_sources() {
             net: piperine_solver::abi::DigitalNet(0),
             value: piperine_solver::abi::LogicValue::One,
             source: 0,
-            seq: 0, region: piperine_solver::abi::Region::Active,
+            seq: 0, region: piperine_solver::abi::Region::Active, strength: None,
         },
         "u0",
     );

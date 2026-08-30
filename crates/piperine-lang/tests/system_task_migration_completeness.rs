@@ -82,16 +82,14 @@ fn digital_sink_effect(module_src: &str, check: impl FnOnce(&BufferSink)) {
         value: LogicValue::Zero,
         source: usize::MAX,
         seq: 0,
-        region: Region::Active,
-    });
+        region: Region::Active, strength: None });
     circuit.digital_state.schedule(DigitalEvent {
         time: 1.0,
         net: clk,
         value: LogicValue::One,
         source: usize::MAX,
         seq: 1,
-        region: Region::Active,
-    });
+        region: Region::Active, strength: None });
 
     let opts = TransientAnalysisOptions::new(2.0, 0.1);
     let mut tran = circuit.transient(opts, ctx).unwrap();

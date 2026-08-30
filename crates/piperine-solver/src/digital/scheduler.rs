@@ -45,7 +45,10 @@ fn apply_driven_event(state: &mut DigitalState, event: &DigitalEvent) -> LogicVa
         // hand-built mixed-kind tables until that plumbing lands.
         DriverKind::Ordinary,
         event.value,
-        default_strength_for(event.value),
+        // LRMW3-09: an authored strength (a continuous assign's `(strong1,
+        // weak0)` spec, threaded through `EventSink::emit_with_strength`)
+        // wins over the value-derived Table 7-2 default.
+        event.strength.unwrap_or_else(|| default_strength_for(event.value)),
         0.0,
     );
     state.driver_table.resolved(event.net).0

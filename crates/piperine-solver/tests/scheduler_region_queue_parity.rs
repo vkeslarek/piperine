@@ -71,10 +71,10 @@ fn run_region_queue(events: &[DigitalEvent], num_nets: usize) -> Vec<LogicValue>
 #[test]
 fn single_driver_per_net_matches_the_region_queue_oracle_across_every_region() {
     let events = [
-        DigitalEvent { time: 5.0, net: net(3), value: LogicValue::X, source: 0, seq: 0, region: Region::Monitor },
-        DigitalEvent { time: 5.0, net: net(2), value: LogicValue::One, source: 1, seq: 1, region: Region::Nba },
-        DigitalEvent { time: 5.0, net: net(1), value: LogicValue::One, source: 2, seq: 2, region: Region::Inactive },
-        DigitalEvent { time: 5.0, net: net(0), value: LogicValue::Zero, source: 3, seq: 3, region: Region::Active },
+        DigitalEvent { time: 5.0, net: net(3), value: LogicValue::X, source: 0, seq: 0, region: Region::Monitor, strength: None },
+        DigitalEvent { time: 5.0, net: net(2), value: LogicValue::One, source: 1, seq: 1, region: Region::Nba, strength: None },
+        DigitalEvent { time: 5.0, net: net(1), value: LogicValue::One, source: 2, seq: 2, region: Region::Inactive, strength: None },
+        DigitalEvent { time: 5.0, net: net(0), value: LogicValue::Zero, source: 3, seq: 3, region: Region::Active, strength: None },
     ];
     let production = run_production(5.0, 4, &events);
     let oracle = run_region_queue(&events, 4);
@@ -91,8 +91,8 @@ fn single_driver_per_net_matches_the_region_queue_oracle_across_every_region() {
 #[test]
 fn same_source_writing_the_same_net_across_regions_matches_the_oracle() {
     let events = [
-        DigitalEvent { time: 6.0, net: net(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active },
-        DigitalEvent { time: 6.0, net: net(0), value: LogicValue::One, source: 0, seq: 1, region: Region::Nba },
+        DigitalEvent { time: 6.0, net: net(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active, strength: None },
+        DigitalEvent { time: 6.0, net: net(0), value: LogicValue::One, source: 0, seq: 1, region: Region::Nba, strength: None },
     ];
     let production = run_production(6.0, 1, &events);
     let oracle = run_region_queue(&events, 1);
@@ -115,8 +115,8 @@ fn same_source_writing_the_same_net_across_regions_matches_the_oracle() {
 #[test]
 fn two_sources_racing_across_regions_diverges_from_the_region_queue_oracle() {
     let events = [
-        DigitalEvent { time: 7.0, net: net(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active },
-        DigitalEvent { time: 7.0, net: net(0), value: LogicValue::One, source: 1, seq: 1, region: Region::Nba },
+        DigitalEvent { time: 7.0, net: net(0), value: LogicValue::Zero, source: 0, seq: 0, region: Region::Active, strength: None },
+        DigitalEvent { time: 7.0, net: net(0), value: LogicValue::One, source: 1, seq: 1, region: Region::Nba, strength: None },
     ];
     let production = run_production(7.0, 1, &events);
     let oracle = run_region_queue(&events, 1);

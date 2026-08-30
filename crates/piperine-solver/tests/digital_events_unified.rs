@@ -25,7 +25,7 @@ fn digital_event_enters_unified_queue_with_correct_semantics() {
         net: DigitalNet(2),
         value: LogicValue::One,
         source: 7,
-        seq: 0, region: Region::Active,
+        seq: 0, region: Region::Active, strength: None,
     };
     queue.push_digital_event(&event, "top.u1");
 
@@ -48,7 +48,7 @@ fn digital_event_peek_next_time_matches_event_time() {
             net: DigitalNet(0),
             value: LogicValue::Zero,
             source: 0,
-            seq: 0, region: Region::Active,
+            seq: 0, region: Region::Active, strength: None,
         },
         "u0",
     );
@@ -58,7 +58,7 @@ fn digital_event_peek_next_time_matches_event_time() {
             net: DigitalNet(1),
             value: LogicValue::One,
             source: 1,
-            seq: 1, region: Region::Active,
+            seq: 1, region: Region::Active, strength: None,
         },
         "u1",
     );
@@ -78,7 +78,7 @@ fn digital_events_drain_in_time_order() {
                 net: DigitalNet(net),
                 value: LogicValue::One,
                 source: 0,
-                seq: 0, region: Region::Active,
+                seq: 0, region: Region::Active, strength: None,
             },
             "u",
         );
@@ -100,7 +100,7 @@ fn drained_digital_events_return_on_rollback() {
             net: DigitalNet(0),
             value: LogicValue::One,
             source: 0,
-            seq: 0, region: Region::Active,
+            seq: 0, region: Region::Active, strength: None,
         },
         "u0",
     );
@@ -127,7 +127,7 @@ fn digital_event_round_trips_through_event_entry_digital_constructor() {
         net: DigitalNet(4),
         value: LogicValue::Z,
         source: 9,
-        seq: 42, region: Region::Active,
+        seq: 42, region: Region::Active, strength: None,
     };
     let entry = EventEntry::digital(event.time, event.net, "top.inv9");
     assert_eq!(entry.kind, EventKind::Digital);
@@ -158,7 +158,6 @@ fn digital_scheduler_emission_surface_unchanged() {
         net: DigitalNet(0),
         value: LogicValue::One,
         source: 0,
-        seq: 0, region: Region::Active,
-    });
+        seq: 0, region: Region::Active, strength: None });
     assert!((state.peek_next_event_time() - 1e-6).abs() < f64::MIN_POSITIVE);
 }

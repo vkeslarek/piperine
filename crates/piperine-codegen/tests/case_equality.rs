@@ -46,7 +46,7 @@ fn compare_module(name: &str, op: BinOp) -> LoweredBody {
             "y",
             Expr::Binary { span: SP, op, lhs: Box::new(ident("a")), rhs: Box::new(ident("b")) },
         )],
-    });
+    output_drive_strength: Default::default() });
     m
 }
 

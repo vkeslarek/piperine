@@ -361,7 +361,13 @@ impl DigitalDevice for PiperineDevice {
             let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
             digital.init(&mut q);
             for Reverse(ev) in q.into_sorted_vec() {
-                sink.emit(ev.net, ev.value, ev.time);
+                // LRMW3-09: relay the internal queue's authored strength
+                // (if any) onward instead of dropping it on this bridge —
+                // `DigitalInstance::push_event` already computed it.
+                match ev.strength {
+                    Some(s) => sink.emit_with_strength(ev.net, ev.value, ev.time, s),
+                    None => sink.emit(ev.net, ev.value, ev.time),
+                }
             }
         }
     }
@@ -390,7 +396,11 @@ impl DigitalDevice for PiperineDevice {
         let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
         digital.eval_comb_phase(ctx.time, ctx.nets, &av, &mut q);
         for Reverse(ev) in q.into_sorted_vec() {
-            sink.emit(ev.net, ev.value, ev.time - ctx.time);
+            // LRMW3-09: see `init`'s matching comment above.
+            match ev.strength {
+                Some(s) => sink.emit_with_strength(ev.net, ev.value, ev.time - ctx.time, s),
+                None => sink.emit(ev.net, ev.value, ev.time - ctx.time),
+            }
         }
 
         if let Some(analog) = &mut self.analog {

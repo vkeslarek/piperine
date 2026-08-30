@@ -257,6 +257,18 @@ impl<'m> DigitalCompiler<'m> {
             .iter()
             .map(|&id| self.module.symbols.node(id).name.clone())
             .collect();
+        // §A.2.2.2 (LRMW3-09): resolve each output's authored keyword pair
+        // (if any) into the pair of `Strength` levels
+        // `device::digital::DigitalInstance::push_event` picks between by
+        // the value it's about to emit.
+        let mut output_strength: Vec<Option<(super::abi::Strength, super::abi::Strength)>> =
+            Vec::with_capacity(output_names.len());
+        for name in &output_names {
+            output_strength.push(match self.body.output_drive_strength.get(name) {
+                Some((l0, l1)) => Some(super::abi::parse_drive_strength_pair(l0, l1)?),
+                None => None,
+            });
+        }
 
         // T26/LRMW2-26: LRM's own `` `timescale `` -> precision-grid rule
         // (§8.4.3.3): the grid step is `10^precision_exponent` seconds.
@@ -268,6 +280,7 @@ impl<'m> DigitalCompiler<'m> {
             outputs: self.body.outputs.clone(),
             input_names,
             output_names,
+            output_strength,
             layout: self.layout,
             clocked_blocks: clocked_specs,
             num_watch_terms: watch_terms.len(),

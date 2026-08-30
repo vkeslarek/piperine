@@ -58,7 +58,7 @@ fn a5_neg_in_digital_still_works() {
             target: ident("out"),
             value: Expr::Unary { span: SP, op: UnOp::Neg, operand: Box::new(ident("x")) },
         }],
-    });
+    output_drive_strength: Default::default() });
     DigitalKernel::compile(&module).expect("Neg in digital must still work");
 }
 
