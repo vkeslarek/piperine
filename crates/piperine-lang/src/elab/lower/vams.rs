@@ -124,6 +124,11 @@ impl Elaborator {
         // `SpecifyBlock` once `module`'s port list is final — path/check
         // terminals validate against it (A.7.3).
         let mut pending_specify: Vec<crate::ast::SpecifyBlock> = Vec::new();
+        // §3.9/§3.10 (T26, LRMW3-12): `electrical top.u1.n;` out-of-module
+        // discipline declarations authored in this module — recorded here
+        // (authored form, MD-25); resolved by a whole-design pass
+        // (`ResolveDisciplines`) once every module exists.
+        let mut out_of_module_disciplines: Vec<crate::ast::OutOfModuleDisciplineDecl> = Vec::new();
         // `assign target = expr;` (§8.5.3.1/§8.5.3.2, LRMW2-06): collected
         // here, lowered into a synthesized behavior in a second pass below
         // once `ports`/`wires` are final — a target's domain (digital vs.
@@ -490,6 +495,9 @@ impl Elaborator {
                         });
                     }
                 }
+                ModuleItem::OutOfModuleDiscipline(o) => {
+                    out_of_module_disciplines.push(o.clone());
+                }
             }
         }
 
@@ -691,6 +699,7 @@ impl Elaborator {
         // all blocks' lists in authored order (the same "multiple blocks
         // compose" rule `constraints` already uses).
         module.specify = lower_specify_blocks(&pending_specify, &module, &env)?;
+        module.out_of_module_disciplines = out_of_module_disciplines;
 
         Ok(module)
     }

@@ -141,6 +141,26 @@ pub struct PortDecl {
     pub names: Vec<Declarator>,
 }
 
+/// An out-of-module (out-of-context) discipline declaration, §3.9/§3.10 —
+/// `electrical top.u1.n;`: assigns a discipline to a net declared in a
+/// *different* module, named by a dotted hierarchical path. `path[0]`
+/// names a module by its own declared name; each middle segment names an
+/// instance inside the module reached so far; the final segment names the
+/// target net (a port or wire) inside the module reached by the last
+/// instance segment (or `path[0]` itself when the path has exactly two
+/// segments, the LRM's own minimal example `example2.net`). Resolution
+/// happens in a whole-design pass (`ResolveDisciplines`) since the target
+/// module may not exist yet while the declaring module lowers — this
+/// struct only records what was authored, and where.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutOfModuleDisciplineDecl {
+    pub span: PreprocessedSpan,
+    pub discipline: String,
+    /// The dotted path, at least two segments (`["example2", "net"]` or
+    /// `["top", "u1", "n"]`).
+    pub path: Vec<String>,
+}
+
 /// A net declaration inside a module body — §3.6.3/3.7.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetDecl {
@@ -936,6 +956,7 @@ pub enum ModuleItem {
     GenerateRegion(GenerateRegion),
     Specify(SpecifyBlock),
     Gate(GateInstantiation),
+    OutOfModuleDiscipline(OutOfModuleDisciplineDecl),
 }
 
 /// `module`/`macromodule`/`connectmodule` — §Annex A.1.2. Attribute-bearing,

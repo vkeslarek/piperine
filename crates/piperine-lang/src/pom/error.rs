@@ -384,6 +384,39 @@ pub enum ElabErrorKind {
         clause: String,
         replacement: String,
     },
+    /// VAMS E4013 — an out-of-module discipline declaration's dotted path
+    /// (§3.9/§3.10, `electrical top.u1.n;`, T26) could not be resolved: an
+    /// intermediate segment named no module/instance, or the final
+    /// segment named no port/wire in the module reached.
+    #[error("out-of-module discipline declaration `{path}` could not be resolved: {reason} (LRM §3.10)")]
+    #[diagnostic(
+        code(E4013),
+        help("Each segment before the last must name a module (the first segment) or an instance inside the module reached so far; the last segment must name a port or wire declared in that module.")
+    )]
+    OutOfModuleDisciplinePathUnresolved {
+        path: String,
+        reason: String,
+        #[label("declared here")]
+        span: Option<miette::SourceSpan>,
+    },
+    /// VAMS E4014 — two out-of-module discipline declarations name the
+    /// same target net with different disciplines — §3.10's own rule:
+    /// "It is not legal to have two different disciplines at the same
+    /// level of precedence for the same net" (T26).
+    #[error("out-of-module discipline declarations for `{path}` disagree: `{first_discipline}` vs `{second_discipline}` (LRM §3.10)")]
+    #[diagnostic(
+        code(E4014),
+        help("Two out-of-module references to the same net are only legal when they agree on the discipline. Remove or align one of the two declarations.")
+    )]
+    OutOfModuleDisciplineConflict {
+        path: String,
+        first_discipline: String,
+        #[label("first declared `{first_discipline}` here")]
+        first_span: Option<miette::SourceSpan>,
+        second_discipline: String,
+        #[label("also declared `{second_discipline}` here")]
+        second_span: Option<miette::SourceSpan>,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

@@ -742,12 +742,12 @@ module, and §3.10's precedence order decides conflicts.
 **Requirement**: LRMW3-12
 
 **Done when**:
-- [ ] An out-of-module declaration resolves the target net's discipline
-- [ ] Precedence follows §3.10 (out-of-module beats local declaration beats
+- [x] An out-of-module declaration resolves the target net's discipline
+- [x] Precedence follows §3.10 (out-of-module beats local declaration beats
       resolution), asserted per rank
-- [ ] Two conflicting out-of-module declarations fail loud naming both spans
-- [ ] Declares `//! LRM-COVERS: 3.9, 3.10`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Two conflicting out-of-module declarations fail loud naming both spans
+- [x] Declares `//! LRM-COVERS: 3.9, 3.10`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): out-of-module discipline declarations and §3.10 precedence`

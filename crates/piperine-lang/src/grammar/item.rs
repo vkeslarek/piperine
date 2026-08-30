@@ -479,6 +479,15 @@ impl Grammar {
             if looks_like_instantiation {
                 return Ok(ModuleItem::Instantiation(self.parse_module_instantiation()?));
             }
+            // §3.9/§3.10 (T26, LRMW3-12): `discipline_name ident ('.'
+            // ident)+ ;` — a dot immediately after the first declarator
+            // name is a dotted hierarchical path, never a legal net-name
+            // character (§2.8's identifier grammar has no `.`), so this
+            // shape is unambiguously the out-of-module form rather than
+            // an ordinary `discipline_name name_list;` net declaration.
+            if matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Punct(".")) {
+                return Ok(ModuleItem::OutOfModuleDiscipline(self.parse_out_of_module_discipline_decl()?));
+            }
             return Ok(ModuleItem::Net(self.parse_net_decl()?));
         }
         Err(self.unexpected(
@@ -551,6 +560,23 @@ impl Grammar {
             names,
             nodeset,
         })
+    }
+
+    /// `discipline_identifier hier_path ';'`, §3.9/§3.10 (T26,
+    /// LRMW3-12) — `electrical top.u1.n;`: an out-of-module discipline
+    /// declaration naming a net in another module by dotted path.
+    /// Distinguished from an ordinary net declaration by the dispatcher
+    /// (a dot after the first name), so by the time this runs the shape
+    /// is already known.
+    fn parse_out_of_module_discipline_decl(&mut self) -> Result<OutOfModuleDisciplineDecl, ParseError> {
+        let start = self.peek_span();
+        let (discipline, _) = self.expect_ident()?;
+        let mut path = vec![self.expect_ident()?.0];
+        while self.eat_punct(".") {
+            path.push(self.expect_ident()?.0);
+        }
+        let end = self.expect_punct(";")?;
+        Ok(OutOfModuleDisciplineDecl { span: PreprocessedSpan::new(start.start, end.end), discipline, path })
     }
 
     /// `ground_declaration ::= ground [discipline_identifier] [range]

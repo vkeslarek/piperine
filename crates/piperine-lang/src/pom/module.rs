@@ -398,6 +398,14 @@ pub struct Module {
     /// rest of the POM.
     #[serde(default)]
     pub specify: crate::pom::SpecifyBlock,
+    /// Out-of-module discipline declarations authored in *this* module
+    /// (LRM §3.9/§3.10, T26/LRMW3-12) — `electrical top.u1.n;`, an
+    /// out-of-context reference that names a net belonging to another
+    /// module (resolved by a whole-design pass, since the target module
+    /// may not even be known yet while this one lowers). Authored form
+    /// (MD-25): recorded where written, resolved elsewhere.
+    #[serde(skip, default)]
+    pub out_of_module_disciplines: Vec<crate::ast::OutOfModuleDisciplineDecl>,
     pub origin: Option<String>,
 }
 
@@ -440,6 +448,7 @@ impl Module {
             branches: Vec::new(), genvars: Vec::new(), events: Vec::new(),
             constraints: Vec::new(), timescale: None, gates: Vec::new(),
             ground_names: Vec::new(), specify: crate::pom::SpecifyBlock::default(),
+            out_of_module_disciplines: Vec::new(),
             origin: None,
         }
     }
@@ -490,6 +499,11 @@ impl Module {
     /// This module's authored `specify` block(s) (LRM Annex A.7), merged
     /// in authored order across blocks when more than one is present.
     pub fn specify(&self) -> &crate::pom::SpecifyBlock { &self.specify }
+    /// Out-of-module discipline declarations authored in this module
+    /// (LRM §3.9/§3.10) — `electrical top.u1.n;`.
+    pub fn out_of_module_disciplines(&self) -> &[crate::ast::OutOfModuleDisciplineDecl] {
+        &self.out_of_module_disciplines
+    }
 
     /// Look up a port by name.
     pub fn port(&self, name: &str) -> Option<&Port> {

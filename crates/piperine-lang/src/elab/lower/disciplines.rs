@@ -64,6 +64,14 @@ pub(super) struct ResolveDisciplines;
 
 impl ElabPass for ResolveDisciplines {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        // §3.9/§3.10 (T26, LRMW3-12): out-of-module declarations are
+        // precedence rank 1 — the highest of the three — so they are
+        // applied *before* both the local declaration a target net
+        // already carries and the fixed-point resolution loop below ever
+        // run, unconditionally overwriting whatever discipline (if any)
+        // the target net's own module gave it.
+        apply_out_of_module_disciplines(design)?;
+
         // Iterate to a fixed point: resolving one net in one module can
         // supply the discipline a connected net in *another* module needs
         // next round (an instance's port, seen from the callee side, is
@@ -138,6 +146,101 @@ fn unresolved_err(elab: &Elaborator, net: &str, module: &str) -> ElabError {
         reason: "no neighbouring net carries a discipline".to_string(),
         span: None,
     })
+}
+
+/// `byte range` → `miette::SourceSpan`, mirroring `elab/lower/vams.rs`'s
+/// and `elab/lower/defparam.rs`'s own private copies of this conversion.
+fn to_miette_span(span: crate::error::PreprocessedSpan) -> miette::SourceSpan {
+    miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))
+}
+
+/// §3.9/§3.10 (T26, LRMW3-12): collects every module's authored
+/// `out_of_module_disciplines`, resolves each dotted path against the
+/// whole design, and forcibly sets the target net's discipline — the
+/// highest of §3.10's three precedence ranks, so this runs before both
+/// the target's own local declaration and the fixed-point resolution
+/// loop that follows ever have a say. Two declarations that resolve to
+/// the same target net with *different* disciplines fail loud naming
+/// both spans (§3.10: "It is not legal to have two different disciplines
+/// at the same level of precedence for the same net").
+fn apply_out_of_module_disciplines(design: &mut Design) -> Result<(), ElabError> {
+    let mut resolved: HashMap<(String, String), (String, crate::error::PreprocessedSpan)> = HashMap::new();
+
+    let module_names: Vec<String> = design.modules.keys().cloned().collect();
+    for owner in &module_names {
+        let decls = design.modules[owner].out_of_module_disciplines.clone();
+        for decl in &decls {
+            let (target_module, target_net) = resolve_hier_path(design, &decl.path, decl.span)?;
+            let key = (target_module.clone(), target_net.clone());
+            if let Some((existing_disc, existing_span)) = resolved.get(&key) {
+                if *existing_disc != decl.discipline {
+                    return Err(ElabError::from(ElabErrorKind::OutOfModuleDisciplineConflict {
+                        path: format!("{target_module}.{target_net}"),
+                        first_discipline: existing_disc.clone(),
+                        first_span: Some(to_miette_span(*existing_span)),
+                        second_discipline: decl.discipline.clone(),
+                        second_span: Some(to_miette_span(decl.span)),
+                    }));
+                }
+                continue;
+            }
+            resolved.insert(key, (decl.discipline.clone(), decl.span));
+        }
+    }
+
+    for ((target_module, target_net), (discipline, _span)) in resolved {
+        let m = design.modules.get_mut(&target_module).unwrap();
+        if let Some(p) = m.ports.iter_mut().find(|p| p.name == target_net) {
+            p.ty = crate::pom::NetType::Discipline(discipline);
+        } else if let Some(w) = m.wires.iter_mut().find(|w| w.name == target_net) {
+            w.ty = crate::pom::NetType::Discipline(discipline);
+        }
+        // `resolve_hier_path` already proved the net exists — no `else`
+        // arm needed here.
+    }
+    Ok(())
+}
+
+/// Resolves an out-of-module discipline declaration's dotted path (§3.10)
+/// to `(target_module, target_net)`. `path[0]` names a module by its own
+/// declared name; each middle segment names an instance inside the
+/// module reached so far; the final segment names a port or wire
+/// declared in the module the last instance segment resolves to (or in
+/// `path[0]` itself, when the path has exactly two segments — the LRM's
+/// own minimal example, `example2.net`).
+fn resolve_hier_path(
+    design: &Design,
+    path: &[String],
+    span: crate::error::PreprocessedSpan,
+) -> Result<(String, String), ElabError> {
+    let path_text = path.join(".");
+    let unresolved = |reason: String| {
+        ElabError::from(ElabErrorKind::OutOfModuleDisciplinePathUnresolved {
+            path: path_text.clone(),
+            reason,
+            span: Some(to_miette_span(span)),
+        })
+    };
+
+    let mut current_module = path[0].clone();
+    if !design.modules.contains_key(&current_module) {
+        return Err(unresolved(format!("no module named `{current_module}`")));
+    }
+    for seg in &path[1..path.len() - 1] {
+        let inst = design.modules[&current_module]
+            .instances
+            .iter()
+            .find(|i| i.name() == seg)
+            .ok_or_else(|| unresolved(format!("module `{current_module}` has no instance named `{seg}`")))?;
+        current_module = inst.module.clone();
+    }
+    let net_name = path.last().unwrap().clone();
+    let target = &design.modules[&current_module];
+    let exists = target.ports.iter().any(|p| p.name == net_name) || target.wires.iter().any(|w| w.name == net_name);
+    if !exists {
+        return Err(unresolved(format!("module `{current_module}` declares no port or wire named `{net_name}`")));
+    }
+    Ok((current_module, net_name))
 }
 
 /// One propagation round over `module`: for every instance, compare each
