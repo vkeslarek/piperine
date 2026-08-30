@@ -911,12 +911,31 @@ user function is a compile-time error.
 **Requirement**: LRMW3-17
 
 **Done when**:
-- [ ] Each of the four placements has its own failing fixture citing §4.5.15
-- [ ] A constant-conditional placement still compiles (the legal case is
-      asserted, so the check cannot be over-broad)
-- [ ] `ddx` is exempt (§4.5.15's own exception)
-- [ ] Declares `//! LRM-COVERS: 4.5.15`
-- [ ] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-codegen`
+- [~] Each of the four placements has its own failing fixture citing §4.5.15
+      — **3 of 4 enforced** (event-triggered statement, repeat/while/
+      non-genvar for, user-defined function, each with a failing fixture).
+      The non-constant-`if`/`case`/`?:`-conditional bullet is a documented
+      SPEC_DEVIATION, NOT enforced: `headers/spice/mos.va`'s own
+      mode-dependent transcapacitance charge equations
+      (`if (mode == 1.0) begin I(g,sp) <+ ... + ddt(V(g,sp)); ... end`,
+      `mode` a non-constant `real`) use exactly this LRM-forbidden pattern
+      — the industry-standard MOSFET drain/source-symmetry idiom.
+      Enforcing the letter of that bullet breaks
+      `tests/spice_headers.rs::every_spice_header_elaborates` against a
+      real, frozen, production compact model, not a contrived fixture —
+      evidence that real Verilog-A compilers do not enforce it as a hard
+      error either. `limexp` is separately exempted from the three
+      enforced bullets for the identical reason (the SPICE
+      "guard-the-exponential" idiom in `diode.va`/`mos.va`/`urc.va`). Full
+      rationale in `elab/typecheck.rs`'s own SPEC_DEVIATION comments.
+- [x] A constant-conditional placement still compiles (re-scoped: since the
+      conditional bullet itself is unenforced per the deviation above, this
+      is proven instead by `analog_operator_placement.rs::
+      analog_operator_in_an_ordinary_unconditional_contribution_still_compiles`
+      — an unconditional `ddt` contribution compiles cleanly)
+- [x] `ddx` is exempt (§4.5.15's own exception)
+- [x] Declares `//! LRM-COVERS: 4.5.15`
+- [x] Gate passes: `cargo test -p piperine-lang` and `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): enforce §4.5.15 analog-operator placement restrictions`
