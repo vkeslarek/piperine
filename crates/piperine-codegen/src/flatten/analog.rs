@@ -844,6 +844,25 @@ pub struct AnalogFlattener<'m> {
     scope: Scope,
     out: FlatAnalog,
     potential_acc: Vec<(NodeId, NodeId, PomExpr)>,
+    /// §5.6.7.2 (T32/LRMW3-16): node pairs (order-normalized) that have
+    /// received a *direct* `<+` contribution, seen so far.
+    direct_targets: Vec<(NodeId, NodeId, PreprocessedSpan)>,
+    /// §5.6.7.2: node pairs (order-normalized) that have received an
+    /// *indirect* (`lhs : probe == rhs;`) assignment, seen so far. A
+    /// branch appearing in both this and `direct_targets` — in either
+    /// discovery order — is the §5.6.7.2 violation: "once a branch is
+    /// assigned indirectly, it shall not also be driven by a direct
+    /// contribution statement" (and the reverse case the LRM leaves
+    /// implicit but this checks symmetrically: a branch already driven
+    /// directly cannot later also be assigned indirectly).
+    indirect_targets: Vec<(NodeId, NodeId, PreprocessedSpan)>,
+}
+
+/// Order-normalizes a branch's terminal pair so `(a,b)` and `(b,a)` — the
+/// "any *parallel* branch between the same node pair" wording of T32's own
+/// Done-when bullet — compare equal.
+fn normalize_pair(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
+    if a.0 <= b.0 { (a, b) } else { (b, a) }
 }
 
 impl<'m> AnalogFlattener<'m> {
@@ -853,6 +872,8 @@ impl<'m> AnalogFlattener<'m> {
             scope: Scope::new(),
             out: FlatAnalog::default(),
             potential_acc: Vec::new(),
+            direct_targets: Vec::new(),
+            indirect_targets: Vec::new(),
         };
         // Every module var starts as a temp reading its own persistent-bank
         // slot (`Ident(name)`); an assignment later shadows it with a new temp.
@@ -951,11 +972,11 @@ impl<'m> AnalogFlattener<'m> {
     fn walk(&mut self, stmts: &[PomStmt], guard: Option<&PomExpr>) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
-                PomStmt::Contribution { target, value, .. } => {
-                    self.add_contrib(target, value, guard)?;
+                PomStmt::Contribution { target, value, span } => {
+                    self.add_contrib_inner(target, value, guard, false, *span)?;
                 }
-                PomStmt::IndirectContribution { lhs, probe, rhs, .. } => {
-                    self.add_indirect_contrib(lhs, probe, rhs, guard)?;
+                PomStmt::IndirectContribution { lhs, probe, rhs, span } => {
+                    self.add_indirect_contrib(lhs, probe, rhs, guard, *span)?;
                 }
                 PomStmt::Assign { target: PomExpr::Ident { name, .. }, value, .. }
                 | PomStmt::NonBlockingAssign { target: PomExpr::Ident { name, .. }, value, .. } => {
@@ -1178,8 +1199,44 @@ impl<'m> AnalogFlattener<'m> {
         Ok(())
     }
 
-    fn add_contrib(&mut self, dest: &PomExpr, expr: &PomExpr, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
+    /// `via_indirect` distinguishes a genuine direct `<+` ([`Self::walk`]'s
+    /// own call) from [`Self::add_indirect_contrib`]'s desugared call —
+    /// both funnel through this one accumulation path (an indirect
+    /// assignment stamps exactly like an equivalent potential
+    /// contribution), but §5.6.7.2's conflict check needs to know which is
+    /// which. `span` is the statement's own span, used only to label both
+    /// conflicting statements in the §5.6.7.2 error.
+    fn add_contrib_inner(
+        &mut self,
+        dest: &PomExpr,
+        expr: &PomExpr,
+        guard: Option<&PomExpr>,
+        via_indirect: bool,
+        span: PreprocessedSpan,
+    ) -> Result<(), CodegenError> {
         let (nature_kind, plus, minus) = self.parse_dest(dest)?;
+        // §5.6.7.2 (T32/LRMW3-16): once a branch received an indirect
+        // assignment, it (or any parallel branch between the same node
+        // pair) cannot also be driven by a direct contribution, and vice
+        // versa — checked before either side's own contribution
+        // accumulates, and independent of `nature_kind` (the conflict is
+        // about the branch, not whether the mismatched drive is a
+        // potential or a flow).
+        let pair = normalize_pair(plus, minus);
+        let (own, other) =
+            if via_indirect { (&mut self.indirect_targets, &self.direct_targets) } else { (&mut self.direct_targets, &self.indirect_targets) };
+        if let Some((_, _, other_span)) = other.iter().find(|(p, m, _)| (*p, *m) == pair) {
+            return Err(CodegenError::unsupported(format!(
+                "branch ({plus:?}, {minus:?}) receives both an indirect assignment and a direct \
+                 contribution (LRM §5.6.7.2: once a branch is assigned indirectly, it shall not \
+                 also be driven by a direct contribution statement, and vice versa) — the two \
+                 conflicting statements are at byte offsets {}..{} and {}..{}",
+                other_span.start, other_span.end, span.start, span.end
+            )));
+        }
+        if !own.iter().any(|(p, m, _)| (*p, *m) == pair) {
+            own.push((pair.0, pair.1, span));
+        }
         let resolved = self.subst(expr)?;
         let guarded = match guard {
             None => resolved.clone(),
@@ -1286,6 +1343,7 @@ impl<'m> AnalogFlattener<'m> {
         probe: &PomExpr,
         rhs: &PomExpr,
         guard: Option<&PomExpr>,
+        span: PreprocessedSpan,
     ) -> Result<(), CodegenError> {
         if guard.is_some() {
             return Err(CodegenError::unsupported(
@@ -1308,7 +1366,7 @@ impl<'m> AnalogFlattener<'m> {
             neg: Some(Box::new(node_ident(self.module, minus))),
         };
         let desugared = binary(BinOp::Add, self_read, binary(BinOp::Sub, probe.clone(), rhs.clone()));
-        self.add_contrib(lhs, &desugared, None)
+        self.add_contrib_inner(lhs, &desugared, None, true, span)
     }
 
     /// Split a potential contribution's value into `(resistive, flux_terms,

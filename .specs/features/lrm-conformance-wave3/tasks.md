@@ -888,11 +888,11 @@ gains `Port`
 **Requirement**: LRMW3-16
 
 **Done when**:
-- [ ] The conflict fails loud citing §5.6.7.2 and labelling both statements
-- [ ] A parallel branch between the same node pair is caught too
-- [ ] A legal indirect-only and a legal direct-only body both still compile
-- [ ] Declares `//! LRM-COVERS: 5.6.7.2`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] The conflict fails loud citing §5.6.7.2 and labelling both statements
+- [x] A parallel branch between the same node pair is caught too
+- [x] A legal indirect-only and a legal direct-only body both still compile
+- [x] Declares `//! LRM-COVERS: 5.6.7.2`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(codegen): reject mixed indirect/direct contribution (§5.6.7.2)`
