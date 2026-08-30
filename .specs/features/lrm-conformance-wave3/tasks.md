@@ -865,13 +865,13 @@ gains `Port`
 **Requirement**: LRMW3-15
 
 **Done when**:
-- [ ] A hierarchical contribution to a net drives it (asserted by solving and
+- [x] A hierarchical contribution to a net drives it (asserted by solving and
       reading the leaf node)
-- [ ] A hierarchical contribution to a **named** branch applies
-- [ ] A hierarchical contribution that would turn the target into a switch
+- [x] A hierarchical contribution to a **named** branch applies
+- [x] A hierarchical contribution that would turn the target into a switch
       branch fails loud citing §5.6.8.2
-- [ ] Declares `//! LRM-COVERS: 5.6.8, 5.6.8.1, 5.6.8.2`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+- [x] Declares `//! LRM-COVERS: 5.6.8, 5.6.8.1, 5.6.8.2`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(codegen): hierarchical contributions to nets and named branches`

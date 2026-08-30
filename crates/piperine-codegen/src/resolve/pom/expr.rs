@@ -25,6 +25,34 @@ fn real(v: f64) -> Expr {
     Expr::Number { span: NOSPAN, value: NumberLit::Real(v) }
 }
 
+/// §5.6.8.2 (T31/LRMW3-16): a hierarchical contribution to an
+/// already-declared *named* branch (`V(top.drv.br_v) <+ 1.8;`) whose
+/// access-function kind (V→Potential, I→Flow) disagrees with the branch's
+/// own already-elaborated kind would, for a *local* branch, be the
+/// §5.6.5 switch-branch promotion (legal only inside a conditional) —
+/// §5.6.8.2 forbids that promotion for a branch driven hierarchically:
+/// any kind mismatch here is unconditionally an error, never a switch
+/// promotion. Pushes a `LowerError` (never returns one — mirrors this
+/// module's other fail-loud-via-accumulator checks, `parse_contrib_dest`
+/// included) so `lower_bodies` discards the whole program.
+fn check_hierarchical_switch_conflict(target: &Expr, ctx: &mut LowerCtx) {
+    let Expr::AccessFunction { function, pos, neg: None, .. } = target else { return };
+    let Expr::Hier { root: false, path, .. } = pos.as_ref() else { return };
+    let Some((_, _, established)) = ctx.resolve_named_branch_hier(path) else { return };
+    let incoming = match function.as_str() {
+        "V" | "potential" => piperine_lang::pom::BranchKind::Potential,
+        "I" | "flow" => piperine_lang::pom::BranchKind::Flow,
+        _ => return,
+    };
+    if established != piperine_lang::pom::BranchKind::Probe && established != incoming {
+        ctx.errors.push(LowerError {
+            module: ctx.module_name.clone(),
+            what: "hierarchical contribution would turn the target into a switch branch (§5.6.8.2)",
+            name: path.join("."),
+        });
+    }
+}
+
 /// A contribution's `<+` destination is always an access-function call
 /// (`V(p,n)`/`I(br)`/a custom discipline access name) — LRM §5.4.1.
 pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, NodeId, NodeId) {
@@ -58,6 +86,34 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
 /// shape) failing loud through `require_node` exactly as before this
 /// function existed (T7/design.md Risk row on `ident_from_expr` widening).
 fn resolve_terminal_or_defer(e: &Expr, ctx: &mut LowerCtx) -> NodeId {
+    // A hierarchical contribution destination (`V(u1.a) <+ ...`, §5.6.8) —
+    // this runs on the *raw*, unresolved target (scan_noise's own branch
+    // attribution, ahead of the ordinary `resolve_expr` pass below), so a
+    // `Hier` terminal reaches here directly rather than as an already-
+    // resolved `Ident`. `resolve_hier` (T30/LRMW3-15) does the real work
+    // and already returns the node's canonical name as a plain `Ident`.
+    if let Expr::Hier { root, path, .. } = e {
+        // §5.6.8's named-branch form (`V(u1.br_v) <+ ...`) — the branch's
+        // OWN `+` terminal is this contribution's real plus node (its `-`
+        // terminal is not visible to this per-terminal function at all;
+        // `parse_contrib_dest`'s caller already treats a `None` `neg` as
+        // ground, which is this function's only use here — noise-source
+        // branch attribution, not the actual stamped contribution, which
+        // `resolve_expr`'s own `Expr::AccessFunction` arm rebuilds fully).
+        if !root
+            && let Some((plus_path, _minus_path, _kind)) = ctx.resolve_named_branch_hier(path)
+        {
+            let resolved = ctx.resolve_hier(false, &plus_path);
+            if let Expr::Ident { name, .. } = &resolved {
+                return ctx.require_node(name);
+            }
+        }
+        let resolved = ctx.resolve_hier(*root, path);
+        if let Expr::Ident { name, .. } = &resolved {
+            return ctx.require_node(name);
+        }
+        return NodeId::GROUND;
+    }
     if let Some(name) = terminal_name_of(Some(e), ctx) {
         return ctx.require_node(&name);
     }
@@ -279,6 +335,22 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
         },
 
         Expr::Call { name, args, .. } => resolve_call(name, args, ctx, expr.span()),
+
+        // §5.6.8 (T31/LRMW3-15/16): a single-arg access naming a
+        // hierarchical *branch* (`V(top.drv.br_v)`) resolves to the
+        // branch's own two terminals, each re-resolved through the
+        // ordinary `resolve_hier` path — not the generic per-argument
+        // resolution below, which would treat the whole dotted path as a
+        // single net name and (correctly) fail as an unresolvable one.
+        Expr::AccessFunction { span, function, pos, neg: None }
+            if matches!(pos.as_ref(), Expr::Hier { root: false, .. })
+                && let Expr::Hier { path, .. } = pos.as_ref()
+                && let Some((plus_path, minus_path, _kind)) = ctx.resolve_named_branch_hier(path) =>
+        {
+            let plus = ctx.resolve_hier(false, &plus_path);
+            let minus = ctx.resolve_hier(false, &minus_path);
+            Expr::AccessFunction { span: *span, function: function.clone(), pos: Box::new(plus), neg: Some(Box::new(minus)) }
+        }
 
         Expr::AccessFunction { span, function, pos, neg } => Expr::AccessFunction {
             span: *span,
@@ -722,6 +794,7 @@ pub(crate) fn resolve_stmt(stmt: &piperine_lang::ast::Stmt, ctx: &mut LowerCtx) 
             // would rewrite a `white_noise(…)` call away before it's seen.
             let (_nature, plus, minus) = parse_contrib_dest(target, ctx);
             scan_noise(value, plus, minus, ctx);
+            check_hierarchical_switch_conflict(target, ctx);
             let resolved =
                 S::Contribution { span: *span, target: resolve_expr(target, ctx), value: resolve_expr(value, ctx) };
             with_write_backs(ctx, *span, resolved)

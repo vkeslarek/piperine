@@ -202,13 +202,29 @@ pub(crate) struct LowerCtx<'a> {
     /// context's existing "own copy of what it needs" shape (`nodes`/
     /// `vars` are the same kind of snapshot).
     pub top_module: Option<String>,
+    /// The whole design — T31/LRMW3-15's own extra need beyond T30's:
+    /// resolving a hierarchical reference to a *named branch* declared
+    /// inside a nested instance (`V(top.drv.br_v) <+ ...`) requires
+    /// walking the raw (un-flattened) instance tree to find the owning
+    /// module and its own `branch (...) br_v;` declaration — `nodes`/
+    /// `instance_ports` (this module's own flat symbol table) have no
+    /// branch information at all. `None` only in tests that construct a
+    /// `LowerCtx` directly without a `Design` (`resolve_named_branch_hier`
+    /// degrades to "not a branch" in that case, same as no match).
+    pub design: Option<&'a Design>,
 }
 
 impl<'a> LowerCtx<'a> {
     /// Create a fresh lowering context. Snapshots the symbol table's
     /// name → id maps once — every later lookup is a hash probe, not a
     /// table scan.
-    pub fn new(symbols: &'a mut SymbolTable, module_name: String, is_digital: bool, top_module: Option<String>) -> Self {
+    pub fn new(
+        symbols: &'a mut SymbolTable,
+        module_name: String,
+        is_digital: bool,
+        top_module: Option<String>,
+        design: Option<&'a Design>,
+    ) -> Self {
         let nodes = symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
         let node_names = symbols.nodes().map(|(id, n)| (id, n.name.clone())).collect();
         let vars = symbols.vars().map(|(id, v)| (v.name.clone(), id)).collect();
@@ -230,6 +246,7 @@ impl<'a> LowerCtx<'a> {
             inlining_stack: Vec::new(),
             write_backs: Vec::new(),
             top_module,
+            design,
         }
     }
 
@@ -380,6 +397,56 @@ impl<'a> LowerCtx<'a> {
             });
             placeholder()
         }
+    }
+
+    /// §5.6.8's named-branch counterpart of [`Self::resolve_hier`]'s net
+    /// form: `top.drv.br_v` where `br_v` is a `branch (...) br_v;`
+    /// declared inside a nested instance. Walks the *authored*
+    /// (un-flattened) instance tree from this module down through every
+    /// prefix segment to find the module that owns `br_v`, then returns
+    /// its two terminals as dotted path *segments* (`prefix ++
+    /// [terminal_net]`, ground normalized to the literal `"gnd"` — global,
+    /// not instance-scoped) plus the branch's already-elaborated
+    /// [`BranchKind`] — the caller re-resolves each terminal through
+    /// [`Self::resolve_hier`], exactly like any other hierarchical net,
+    /// and uses the kind for the §5.6.8.2 conflict check.
+    ///
+    /// **Scope (T31/LRMW3-16)**: local (non-`$root`) hierarchical paths
+    /// only, and only for a terminal that is itself a wire at any depth
+    /// (`FlattenHierarchy` lifts those under their full dotted name,
+    /// matching `resolve_hier`) or a port one level down from wherever the
+    /// branch is declared (the same one-level `instance_ports` shortcut
+    /// T30 relies on) — a branch terminal that is itself a port two or
+    /// more levels deep is a disclosed gap.
+    pub fn resolve_named_branch_hier(
+        &self,
+        path: &[String],
+    ) -> Option<(Vec<String>, Vec<String>, piperine_lang::pom::BranchKind)> {
+        let design = self.design?;
+        let (branch_name, prefix) = path.split_last()?;
+        if prefix.is_empty() {
+            // A bare branch name with no instance prefix is not a
+            // hierarchical reference at all — out of scope here (and
+            // `Expr::Hier` never parses with an empty path anyway).
+            return None;
+        }
+        let mut owner = design.module(&self.module_name)?;
+        for label in prefix {
+            let inst = owner.instances().iter().find(|i| i.label() == Some(label.as_str()))?;
+            owner = design.module(inst.module_name())?;
+        }
+        let branch = owner.branches().iter().find(|b| b.name() == Some(branch_name.as_str()) && !b.is_port)?;
+        let mut plus = prefix.to_vec();
+        plus.push(branch.pos().net().to_string());
+        let minus = match branch.neg() {
+            None => vec!["gnd".to_string()],
+            Some(nr) => {
+                let mut m = prefix.to_vec();
+                m.push(nr.net().to_string());
+                m
+            }
+        };
+        Some((plus, minus, branch.kind()))
     }
 }
 
@@ -615,7 +682,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
 
         for behavior in m.behaviors() {
             let is_digital = behavior.is_digital();
-            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, top_module_name.clone());
+            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, top_module_name.clone(), Some(prog));
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.default_transition = prog.directives().default_transition;
@@ -779,7 +846,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
         // predicate form with no margin lands in `errors` — the run fails
         // loud, never a silent `0.0`.
         if !m.constraints().is_empty() {
-            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false, top_module_name.clone());
+            let mut ctx = LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), false, top_module_name.clone(), Some(prog));
             ctx.instance_ports = instance_ports.clone();
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.default_transition = prog.directives().default_transition;
