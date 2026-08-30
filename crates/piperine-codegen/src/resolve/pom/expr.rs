@@ -445,11 +445,77 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
             args: args.iter().map(|a| resolve_expr(a, ctx)).collect(),
         },
 
+        // §5.5.3 (LRMW3-14): `net.potential.attr` / `net.flow.attr` reads a
+        // nature attribute's value through a net reference — tried first
+        // because it shares `Expr::Hier`'s three-segment dotted shape with
+        // an ordinary hierarchical name but resolves to a literal, never a
+        // node. Any other three-segment path (not a net, not a slot name,
+        // no such attribute) falls through to the §6.7 hierarchical-name
+        // resolution below, which fails loud on an unresolved name exactly
+        // as it did before this attribute form existed.
+        //
         // §6.7/§6.2.1 (T50, LRMW2-42): resolved to a plain node-name
         // `Ident` against this module's own flattened instance tree (or a
         // fail-loud placeholder) — see `LowerCtx::resolve_hier`'s own doc
         // comment for the full resolution rule.
-        Expr::Hier { root, path, .. } => ctx.resolve_hier(*root, path),
+        Expr::Hier { root, path, .. } => resolve_nature_attr_access(path, ctx)
+            .unwrap_or_else(|| ctx.resolve_hier(*root, path)),
+    }
+}
+
+/// §5.5.3: resolves `net.potential.<attr>` / `net.flow.<attr>` — a
+/// hierarchical-shaped reference that is not a hierarchical name at all,
+/// but a read of the nature attribute bound to `net`'s discipline in the
+/// named slot. `net` must be a port or wire of the *current* module;
+/// `<attr>` resolves through §3.6.2.5's discipline-level override first
+/// (the same precedence T23 gave the solver-facing tolerance path), then
+/// falls back to the nature's own declared attribute. `abstol` is typed
+/// numerically; any other attribute is looked up in `user_attrs` and must
+/// itself be numeric (LRM naturally-numeric attributes: `abstol`).
+/// Returns `None` for anything that does not match this shape (wrong
+/// segment count, unknown net, undeclared slot binding, undeclared
+/// attribute) so the caller falls back to ordinary hierarchical-reference
+/// resolution.
+fn resolve_nature_attr_access(path: &[String], ctx: &LowerCtx) -> Option<Expr> {
+    let [net_name, slot, attr] = path else { return None };
+    let design = ctx.design?;
+    let module = design.module(&ctx.module_name)?;
+    let net_type = module
+        .ports()
+        .iter()
+        .find(|p| p.name() == net_name.as_str())
+        .map(piperine_lang::pom::traits::NetTyped::net_type)
+        .or_else(|| {
+            module.wires().iter().find(|w| w.name() == net_name.as_str()).map(piperine_lang::pom::traits::NetTyped::net_type)
+        })?;
+    let piperine_lang::pom::NetType::Discipline(disc_name) = net_type else { return None };
+    let disc = design.discipline(disc_name)?;
+    let nature_slot = match slot.as_str() {
+        "potential" => piperine_lang::ast::NatureSlot::Potential,
+        "flow" => piperine_lang::ast::NatureSlot::Flow,
+        _ => return None,
+    };
+    let nat_name = match nature_slot {
+        piperine_lang::ast::NatureSlot::Potential => disc.potential.as_deref()?,
+        piperine_lang::ast::NatureSlot::Flow => disc.flow.as_deref()?,
+    };
+    // §3.6.2.5: a discipline-level override for this slot/attribute wins
+    // over the bound nature's own declared value.
+    let env = piperine_lang::elab::const_eval::ConstEnv::new();
+    for (s, name, expr) in &disc.attr_overrides {
+        if *s == nature_slot && name == attr {
+            return env.eval_f64(expr).ok().map(real);
+        }
+    }
+    let nat = design.nature(nat_name)?;
+    if attr.as_str() == "abstol" {
+        return nat.abstol().map(real);
+    }
+    match nat.user_attrs().get(attr.as_str())? {
+        piperine_lang::value::Value::Real(v) => Some(real(*v)),
+        piperine_lang::value::Value::Int(v) => Some(real(*v as f64)),
+        piperine_lang::value::Value::Nat(v) => Some(real(*v as f64)),
+        _ => None,
     }
 }
 
