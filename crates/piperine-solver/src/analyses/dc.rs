@@ -150,7 +150,11 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let CircuitInstance { devices, digital_state, .. } = &mut *self.circuit;
         let dc_state = DcAnalysisState::new(state, &digital_state.nets, src_scale);
         for dc in devices.iter_mut() {
-            all_stamps.extend(dc.load_dc(&dc_state, &self.context));
+            let device_stamps = dc.load_dc(&dc_state, &self.context);
+            if let Some(err) = crate::analyses::non_finite_stamp_error(dc.name(), &device_stamps) {
+                return Err(err);
+            }
+            all_stamps.extend(device_stamps);
         }
 
         // gmin stepping: a node-to-ground conductance on every voltage node,

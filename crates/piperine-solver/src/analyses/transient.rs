@@ -322,7 +322,11 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         let CircuitInstance { devices, digital_state, .. } = &mut *self.circuit;
         let tran_state = TransientAnalysisState::new(state, &digital_state.nets);
         for tran in devices.iter_mut() {
-            all_stamps.extend(tran.load_transient(&tran_state, &tran_ctx, &self.context));
+            let device_stamps = tran.load_transient(&tran_state, &tran_ctx, &self.context);
+            if let Some(err) = crate::analyses::non_finite_stamp_error(tran.name(), &device_stamps) {
+                return Err(err);
+            }
+            all_stamps.extend(device_stamps);
         }
 
         // gshunt: user-set circuit-wide diagonal conductance on every node.

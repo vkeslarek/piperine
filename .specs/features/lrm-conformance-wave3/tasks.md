@@ -974,13 +974,13 @@ conditional are an error; analog filter functions likewise.
 **Requirement**: LRMW3-18
 
 **Done when**:
-- [ ] Contributing `1.0/0.0` reports a typed error naming the branch and citing
+- [x] Contributing `1.0/0.0` reports a typed error naming the branch and citing
       §7.3.2.1, not a generic convergence failure
-- [ ] The pre-existing non-finite convergence-failure test still passes (it is
+- [x] The pre-existing non-finite convergence-failure test still passes (it is
       updated in place, never deleted)
-- [ ] The §16 table row and its enforcement cell are updated in the same commit
-- [ ] Declares `//! LRM-COVERS: 7.3.2.1`
-- [ ] Gate passes: `cargo test -p piperine-solver`
+- [x] The §16 table row and its enforcement cell are updated in the same commit
+- [x] Declares `//! LRM-COVERS: 7.3.2.1`
+- [x] Gate passes: `cargo test -p piperine-solver`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(solver): name the branch and cite §7.3.2.1 on a non-finite contribution`

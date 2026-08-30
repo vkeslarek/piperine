@@ -1,3 +1,5 @@
+//! LRM-COVERS: 7.3.2.1
+//!
 //! The normative failure rules of SPEC Part VII §16, enforced.
 //!
 //! Each rule in that table says a specific condition SHALL be an analysis or
@@ -144,7 +146,16 @@ fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
 }
 
 // ─── §15 — a linear solve returning NaN or infinity ───────────────────────────
+// ─── §7.3.2.1 (T35/LRMW3-18) — a non-finite contribution names the branch ─────
 
+/// T35/LRMW3-18: retargets this test in place (never deleted) once the
+/// non-finite check moved from `math/newton_raphson.rs`'s post-solve guard
+/// (which only sees the assembled solution vector, with no way back to
+/// which device produced a bad entry) to `analyses::non_finite_stamp_error`
+/// — checked per-device, right where `NanSource::load_dc`'s own stamps are
+/// collected (`analyses/dc.rs`'s `assemble`), before they are summed into
+/// the shared matrix/RHS alongside every other device. The device's own
+/// `Element::name()` ("nan") is what makes the branch nameable.
 #[test]
 fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
     let mut netlist = Netlist::new();
@@ -160,16 +171,12 @@ fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
         .dc(Context::default())
         .and_then(|mut dc| dc.solve())
         .map(|_| ())
-        .expect_err("§15: a NaN in the system must fail, never converge");
-    // The guard lives in the Newton driver; the DC driver wraps it.
+        .expect_err("§15/§7.3.2.1: a NaN contribution must fail, never converge");
+    assert_rule(&err, SolverDomain::Element, "§7.3.2.1");
+    let text = err.to_string();
     assert!(
-        matches!(err, Error::Simple { .. } | Error::WithCause { .. }),
-        "§15 must be a typed solver error: {err}"
-    );
-    let text = err.to_string().to_ascii_lowercase();
-    assert!(
-        text.contains("finite") || text.contains("nan") || text.contains("converge"),
-        "§15's message must say what went wrong: {err}"
+        text.contains("device `nan`"),
+        "§7.3.2.1's message must name the offending device (`nan`, its `Element::name()`): {err}"
     );
 }
 
