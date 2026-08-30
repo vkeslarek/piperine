@@ -705,7 +705,7 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// Three entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// Four entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/ngspice/` and the golden targets — so it links no workspace crate,
@@ -717,10 +717,13 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// workspace crate linked. `lrm_section_coverage.rs` (T4/T5,
 /// lrm-conformance-wave2) is the same shape one wave over: a `VAMS-LRM-2-4.md`
 /// heading parse + `coverage_exclusions.toml` read + `//! LRM-COVERS:`
-/// source scrape, no workspace crate linked either. An entry added here
-/// must move the expected set in [`root_targets_match_the_naming_rule`]
-/// with it, so the exemption cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 3] = [
+/// source scrape, no workspace crate linked either. `spec_section_coverage.rs`
+/// (T45, lrm-conformance-wave3) is the axis-B sibling of the same shape: a
+/// `docs/spec/*.md` heading parse + `//! SPEC-COVERS:` source scrape, no
+/// workspace crate linked either. An entry added here must move the expected
+/// set in [`root_targets_match_the_naming_rule`] with it, so the exemption
+/// cannot be granted quietly.
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 4] = [
     (
         "lrm_conformance_matrix.rs",
         "lrm-conformance-closure LRMC-ID registry (MD-31, T9) — a repo-policy proof \
@@ -732,6 +735,12 @@ const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 3] = [
         "lrm-conformance-wave2 LRM-2-4 section coverage gate (T4/T5) — a repo-policy proof \
          (VAMS-LRM-2-4.md heading parse + coverage_exclusions.toml read + LRM-COVERS \
          source scrape), not a host-surface or cross-crate one",
+    ),
+    (
+        "spec_section_coverage.rs",
+        "lrm-conformance-wave3 axis-B docs/spec coverage gate (T45) — a repo-policy proof \
+         (docs/spec/*.md heading parse + SPEC-COVERS source scrape), not a host-surface or \
+         cross-crate one",
     ),
     (
         "ngspice_parity_matrix.rs",

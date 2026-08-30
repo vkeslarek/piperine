@@ -1201,11 +1201,11 @@ heading into ids and scrapes `SPEC-COVERS` declarations.
 **Requirement**: PSW3-10, spec G7
 
 **Done when**:
-- [ ] `spec_sections()` returns a stable id set; a count assertion pins it so a
+- [x] `spec_sections()` returns a stable id set; a count assertion pins it so a
       spec edit that adds a heading is visible
-- [ ] `declared_ids_exist_in_the_spec` catches a typo'd id
-- [ ] `declaring_files_have_a_live_test` catches a claim with no live test
-- [ ] Gate passes: `cargo test -p piperine --test spec_section_coverage`
+- [x] `declared_ids_exist_in_the_spec` catches a typo'd id
+- [x] `declaring_files_have_a_live_test` catches a claim with no live test
+- [x] Gate passes: `cargo test -p piperine --test spec_section_coverage`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(spec-coverage): heading parser and SPEC-COVERS scraper`
