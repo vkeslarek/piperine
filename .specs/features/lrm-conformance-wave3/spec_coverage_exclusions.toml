@@ -1,0 +1,1161 @@
+# Piperine-spec (axis B) section coverage exclusions (T46,
+# lrm-conformance-wave3).
+#
+# Every entry maps one docs/spec/*.md section id (as parsed by
+# tests/spec_section_coverage.rs's `spec_sections()`) to why the axis-B gate
+# does not yet require it to be `Covered`. Two kinds, mirroring axis A's
+# shape (spec.md's design C11):
+#
+#   [[informative]]         — a prose/overview heading with nothing of its
+#                              own to prove (everything under it is proven by
+#                              its own numbered subsections).
+#   [[declared_limitation]] — a real, honest gap: either the surface is not
+#                              yet backfilled with a SPEC-COVERS declaration
+#                              (T47's own job, shrinking this file heading by
+#                              heading as real coverage lands), or it is a
+#                              genuinely undertested/asymmetric surface
+#                              (spec.md's B1-B10 probed-gaps table) tracked
+#                              for Phase 8 (T49-T55).
+#
+# T46 seeds every one of the 284 parsed headings here as `declared_limitation`
+# (none had a SPEC-COVERS claim yet) so `covered_and_excluded_partition_the_spec`
+# is green from the moment this file exists — T47 then promotes real ids to
+# `Covered` by adding SPEC-COVERS declarations to proving tests and deleting
+# their entry here (the overlap check forbids an id being both).
+
+[[declared_limitation]]
+id = "appendix_a#A.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.2.7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.4.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_a#A.4.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_b#B.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_b#B.1.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_b#B.1.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_b#B.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_c#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_c#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_c#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "appendix_c#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#1.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#11"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#12"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#2.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#2.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#2.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#2.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#2.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_i#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ii#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#1.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#4.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#4.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#4.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#5.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#5.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#5.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#5.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#5.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iii#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_iv#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#10.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#10.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#11.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#12"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#13"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#14"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#15"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#2.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#2.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#2.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#3.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#3.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#3.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#3.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#4.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#4.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#5.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#5.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#5.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#6.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#6.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#7.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#7.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#7.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#7.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#7.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#8.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#8.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#8.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#8.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_ix#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_v#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_v#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_v#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_v#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_v#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_v#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#10.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#10.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#10.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#10.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#11"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#12"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#3.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#3.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#3.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#5.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#5.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#5.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#5.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#5.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#8.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#8.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#8.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#A.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#A.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#A.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vi#A.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#10.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#10.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#10.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#10.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#10.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#11"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#12"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#13"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#14"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#14.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#14.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#14.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#15.9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#16"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#17"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#17.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#17.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#18"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#19.7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#20.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#21"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#22"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#23"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#3.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#4.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#4.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#4.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#5.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#5.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#5.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_vii#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#11"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#12"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#13"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#14"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#15"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#16"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#17.9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_viii#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#10"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#11"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#11.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#11.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#11.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#2.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#2.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#2.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#3.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#3.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#3.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#4.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#4.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#5"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#5.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#5.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#5.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#6"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#6.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#6.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#6.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#7"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#7.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#7.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#7.3"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#7.4"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#8"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#8.1"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#8.2"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+
+[[declared_limitation]]
+id = "part_x#9"
+reason = "Axis-B backfill pending (lrm-conformance-wave3 T47/T48) — no SPEC-COVERS declaration exists yet for this heading; tracked as an honest axis-B gap, not asserted implemented."
+

@@ -14,7 +14,7 @@
 //! no `SPEC-COVERS` declaration (mirroring T6's "declaring is optional"
 //! rule for `LRM-COVERS`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 // Same shared walker `lrm_section_coverage.rs` uses; `integration_targets`/
 // `root_targets` stay unused here for the same MD-33 reason that file
@@ -231,6 +231,157 @@ fn declaring_files_have_a_live_test() {
         "these files declare SPEC-COVERS with no live (non-#[ignore]d) #[test] to back the \
          claim — a coverage claim with no test proves nothing:\n  {}",
         unfalsifiable.join("\n  ")
+    );
+}
+
+// ─── T46: axis-B partition (`covered_and_excluded_partition_the_spec`) ────────
+
+/// A heading with no proving test is not automatically a defect — it may be
+/// prose with nothing to prove (`Informative`) or a documented gap
+/// (`DeclaredLimitation`, e.g. "Rust-only, no Python binding" — spec.md's B5).
+/// Both require a real, non-empty reason; the difference from axis A's
+/// `OutOfScope` is that axis B has no LRM-mandated alternative to name — the
+/// reason just has to be honest.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExclusionKind {
+    Informative,
+    DeclaredLimitation,
+}
+
+struct Exclusion {
+    kind: ExclusionKind,
+    id: String,
+    reason: Option<String>,
+}
+
+/// A minimal, format-specific reader for `spec_coverage_exclusions.toml` —
+/// same shape as `lrm_section_coverage.rs::parse_exclusions`: `[[informative]]`
+/// / `[[declared_limitation]]` array-of-tables with `id`/`reason` string keys.
+fn parse_exclusions(text: &str) -> Vec<Exclusion> {
+    let mut out = Vec::new();
+    let mut kind: Option<ExclusionKind> = None;
+    let mut id = String::new();
+    let mut reason: Option<String> = None;
+
+    fn flush(out: &mut Vec<Exclusion>, kind: Option<ExclusionKind>, id: &str, reason: &Option<String>) {
+        if let Some(kind) = kind {
+            if !id.is_empty() {
+                out.push(Exclusion { kind, id: id.to_string(), reason: reason.clone() });
+            }
+        }
+    }
+
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == "[[informative]]" || line == "[[declared_limitation]]" {
+            flush(&mut out, kind, &id, &reason);
+            kind = Some(if line == "[[informative]]" {
+                ExclusionKind::Informative
+            } else {
+                ExclusionKind::DeclaredLimitation
+            });
+            id.clear();
+            reason = None;
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue };
+        let key = key.trim();
+        let value = parse_toml_string(value.trim());
+        match key {
+            "id" => id = value,
+            "reason" => reason = Some(value),
+            _ => {}
+        }
+    }
+    flush(&mut out, kind, &id, &reason);
+    out
+}
+
+/// Unquote a TOML basic string (`"…"`, with `\"` escapes) — the only string
+/// shape `spec_coverage_exclusions.toml` uses.
+fn parse_toml_string(raw: &str) -> String {
+    let inner = raw.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(raw);
+    inner.replace("\\\"", "\"")
+}
+
+fn coverage_exclusions() -> Vec<Exclusion> {
+    let path = repo_root().join(".specs/features/lrm-conformance-wave3/spec_coverage_exclusions.toml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    parse_exclusions(&text)
+}
+
+/// Every `declared_limitation`/`informative` entry must carry a non-empty
+/// `reason` — an exclusion with no stated reason is exactly the "silent
+/// absence" this gate exists to prevent (spec.md P2 axis-B AC1).
+#[test]
+fn excluded_rows_have_a_reason() {
+    let mut bad = Vec::new();
+    for excl in coverage_exclusions() {
+        let label = match excl.kind {
+            ExclusionKind::Informative => "informative",
+            ExclusionKind::DeclaredLimitation => "declared_limitation",
+        };
+        match &excl.reason {
+            None => bad.push(format!("{}: {label} entry has no `reason` field", excl.id)),
+            Some(r) if r.trim().is_empty() => {
+                bad.push(format!("{}: {label} entry's `reason` field is empty", excl.id))
+            }
+            Some(_) => {}
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "every exclusion entry must name a real, non-empty reason (Informative or \
+         DeclaredLimitation alike):\n  {}",
+        bad.join("\n  ")
+    );
+}
+
+#[test]
+fn covered_and_excluded_partition_the_spec() {
+    let sections = spec_sections();
+    let excluded: BTreeSet<String> = coverage_exclusions().into_iter().map(|e| e.id).collect();
+    let covered: BTreeSet<String> = declared_coverage().into_iter().flat_map(|d| d.ids).collect();
+
+    let overlap: Vec<&String> = covered.intersection(&excluded).collect();
+    assert!(
+        overlap.is_empty(),
+        "these ids are claimed as both Covered (SPEC-COVERS) and excluded \
+         (Informative/DeclaredLimitation) in spec_coverage_exclusions.toml — pick one:\n  {}",
+        overlap.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n  ")
+    );
+
+    let mut missing: Vec<&String> =
+        sections.iter().filter(|id| !covered.contains(*id) && !excluded.contains(*id)).collect();
+    missing.sort();
+    if missing.is_empty() {
+        return;
+    }
+    // Grouped by spec file prefix (`part_iv`, `appendix_c`, …) so a red run
+    // stays legible instead of dumping hundreds of raw ids.
+    let mut by_group: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for id in &missing {
+        let group = id.split('#').next().unwrap_or(id);
+        by_group.entry(group).or_default().push(id.as_str());
+    }
+    let mut lines = Vec::new();
+    for (group, ids) in &by_group {
+        let shown: Vec<&str> = ids.iter().take(3).copied().collect();
+        let more = if ids.len() > 3 { ", …" } else { "" };
+        lines.push(format!("  {group}: {} uncovered ({}{more})", ids.len(), shown.join(", ")));
+    }
+    panic!(
+        "{} of {} docs/spec sections are neither Covered (SPEC-COVERS) nor excluded \
+         (Informative/DeclaredLimitation in spec_coverage_exclusions.toml). Every Piperine-only \
+         surface must resolve to a verdict (spec.md G7) — fix by declaring coverage or an \
+         Informative/DeclaredLimitation row, never by weakening this assertion:\n{}",
+        missing.len(),
+        sections.len(),
+        lines.join("\n")
     );
 }
 

@@ -1223,10 +1223,10 @@ heading into ids and scrapes `SPEC-COVERS` declarations.
 **Requirement**: PSW3-10, spec G7
 
 **Done when**:
-- [ ] The partition test exists and reports the real gap list grouped by spec file
-- [ ] `DeclaredLimitation` rows require a non-empty reason
-- [ ] The test is proven able to fail (a heading with no verdict)
-- [ ] Gate passes: `cargo test -p piperine --test spec_section_coverage`
+- [x] The partition test exists and reports the real gap list grouped by spec file
+- [x] `DeclaredLimitation` rows require a non-empty reason
+- [x] The test is proven able to fail (a heading with no verdict)
+- [x] Gate passes: `cargo test -p piperine --test spec_section_coverage`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(spec-coverage): partition every docs/spec heading`
