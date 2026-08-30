@@ -1180,10 +1180,10 @@ already validates `LRM-COVERS`.
 **Requirement**: PSW3-10
 
 **Done when**:
-- [ ] Well-formed ids (`part_viii#15.2`, `appendix_c#3`) accept; malformed ones
+- [x] Well-formed ids (`part_viii#15.2`, `appendix_c#3`) accept; malformed ones
       fail with a named message
-- [ ] The check is proven able to fail (temporary malformed declaration)
-- [ ] Gate passes: `cargo test -p piperine --test suite_hygiene`
+- [x] The check is proven able to fail (temporary malformed declaration)
+- [x] Gate passes: `cargo test -p piperine --test suite_hygiene`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(hygiene): SPEC-COVERS declaration syntax rule`
