@@ -1266,12 +1266,12 @@ used for spec tables)
 **Requirement**: PSW3-07
 
 **Done when**:
-- [ ] Every row of the extensions table names a live test
-- [ ] Adding a row without a test turns it red (proven)
-- [ ] The wave-2 targets whose coverage claims were dropped because they prove
+- [x] Every row of the extensions table names a live test
+- [x] Adding a row without a test turns it red (proven)
+- [x] The wave-2 targets whose coverage claims were dropped because they prove
       an extension (`vams_constraint_block.rs`, `vams_param_distributions.rs`,
       `vams_doc_comments.rs`, `vams_device_port_attrs.rs`) are now claimed here
-- [ ] Gate passes: `cargo test -p piperine --test spec_section_coverage`
+- [x] Gate passes: `cargo test -p piperine --test spec_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(spec-coverage): every sanctioned extension names its test`

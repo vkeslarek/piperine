@@ -246,17 +246,28 @@ mapping declared per section; the rest are the behavioral gaps of §5.1–§5.3.
 Piperine accepts a small, deliberate superset. Each item is an extension, not
 a divergence: no LRM-legal program changes meaning because of it.
 
-| Extension | Where |
-|---|---|
-| `constraint begin … end` with `require`/`var`/`target`/`cover`/`cover cross`, analysis scoping (`@ dc`/`@ tran`/`@ ac`) and `after`/`dur` windows | MD-49; Part VII §3.5, Part VIII |
-| `tol gauss/uniform(...) [global]` on parameters (the random-variable catalogue) | Part VIII sampling/Monte Carlo |
-| `const <name> = <expr>;` at file scope | MD-50, Part I |
-| `(* rfport, num, z0 *)` attribute schema for S-parameter ports | Part VII `.sp` |
-| `(* device = … *)` / `(* port = … *)` attribute schemas | Part VI |
-| `///` doc comments attached to declarations | Part I §1.1; surfaced by the LSP |
-| `@(initial_step) V(a,b) <+ value;` as a UIC seed (SPICE `.ic`) | Part VII §10.1 |
-| `\%` escape in strings; `'{`, `<<<`, `>>>` lexemes; `$unconnected` sentinel nets | `crates/piperine-lang/src/lexer.rs`, `pom/net_type.rs` |
-| `paramset name (module);` (parenthesized form) alongside the LRM's `paramset name module;` | `crates/piperine-lang/src/grammar/item.rs` |
+**T48 correction (`lrm-conformance-wave3`):** three lexemes previously listed
+here — `\%` (§2.7 Table 2-2, tracked as `LRMC-C7-08`), and `'{`/`}` assignment
+patterns (§3.4.4/§4.2.14, `constant_param_arrayinit`) — are standard
+VAMS-LRM-2-4 syntax, not a Piperine extension; `<<<`/`>>>` are the LRM's own
+arithmetic-shift spellings of `<<`/`>>`. All three were misclassified here;
+they belong on axis A (`tests/lrm_section_coverage.rs`), not this table. Only
+`$unconnected` (the LRM defines the *concept* of an unconnected port,
+§6.5.7/§9.2, but never a named sentinel net) is a genuine Piperine-only
+identifier, kept below. The "Test" column names the live test that proves
+each row (PSW3-07, T48) — read mechanically by `tests/spec_extension_gate.rs`.
+
+| Extension | Where | Test |
+|---|---|---|
+| `constraint begin … end` with `require`/`var`/`target`/`cover`/`cover cross`, analysis scoping (`@ dc`/`@ tran`/`@ ac`) and `after`/`dur` windows | MD-49; Part VII §3.5, Part VIII | `crates/piperine-lang/tests/vams_constraint_block.rs::a_scope_group_parses_and_carries_analysis_and_window` |
+| `tol gauss/uniform(...) [global]` on parameters (the random-variable catalogue) | Part VIII sampling/Monte Carlo | `crates/piperine-lang/tests/vams_param_distributions.rs::a_gauss_clause_with_sigma_and_global_parses` |
+| `const <name> = <expr>;` at file scope | MD-50, Part I | `crates/piperine-api/tests/model_design.rs::const_reads_a_global_and_reports_none_for_an_unknown_name` |
+| `(* rfport, num, z0 *)` attribute schema for S-parameter ports | Part VII `.sp` | `crates/piperine-python/tests/sp_parity.rs::python_sp_matches_rust_sp` |
+| `(* device = … *)` / `(* port = … *)` attribute schemas | Part VI | `crates/piperine-lang/tests/vams_device_port_attrs.rs::device_attribute_lowers_into_the_device_schema_when_seeded` |
+| `///` doc comments attached to declarations | Part I §1.1; surfaced by the LSP | `crates/piperine-lang/tests/vams_doc_comments.rs::doc_runs_reach_module_param_and_port` |
+| `@(initial_step) V(a,b) <+ value;` as a UIC seed (SPICE `.ic`) | Part VII §10.1 | `crates/piperine-codegen/tests/margin_tran_points.rs::uic_skips_t0_while_a_computed_op_is_evaluated` |
+| `$unconnected` sentinel nets for an unconnected port | `pom/net_type.rs` | `crates/piperine-lang/tests/vams_unconnected_ports.rs::distinct_unconnected_ports_get_distinct_sentinel_nets` |
+| `paramset name (module);` (parenthesized form) alongside the LRM's `paramset name module;` | `crates/piperine-lang/src/grammar/item.rs` | `crates/piperine-lang/tests/vams_paramset.rs::both_paramset_forms_parse_to_the_same_pom` |
 
 ---
 

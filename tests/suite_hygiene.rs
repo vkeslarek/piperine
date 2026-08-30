@@ -705,7 +705,7 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// Four entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// Five entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/ngspice/` and the golden targets — so it links no workspace crate,
@@ -723,7 +723,13 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// workspace crate linked either. An entry added here must move the expected
 /// set in [`root_targets_match_the_naming_rule`] with it, so the exemption
 /// cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 4] = [
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 5] = [
+    (
+        "spec_extension_gate.rs",
+        "lrm-conformance-wave3 axis-B extension gate (T48, B9) — a repo-policy proof \
+         (part_iii_conformance.md #6 table parse + registry cross-check), not a \
+         host-surface or cross-crate one",
+    ),
     (
         "lrm_conformance_matrix.rs",
         "lrm-conformance-closure LRMC-ID registry (MD-31, T9) — a repo-policy proof \
