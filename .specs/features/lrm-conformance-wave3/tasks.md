@@ -1157,13 +1157,13 @@ mutation-checked.
 **Requirement**: LRMW3-30, spec G1
 
 **Done when**:
-- [ ] Zero uncovered sections
-- [ ] A temporary removal of one `LRM-COVERS` line turns the gate red, and a
+- [x] Zero uncovered sections
+- [x] A temporary removal of one `LRM-COVERS` line turns the gate red, and a
       temporary bogus id turns `declared_ids_exist_in_the_lrm` red — both
       reverted, both recorded in the commit body
-- [ ] `docs/spec/part_iii_conformance.md` §1.1's numbers are regenerated from
+- [x] `docs/spec/part_iii_conformance.md` §1.1's numbers are regenerated from
       the real run in the same commit
-- [ ] Gate passes: `cargo build --workspace && cargo test --workspace`
+- [x] Gate passes: `cargo build --workspace && cargo test --workspace`
 
 **Tests**: integration · **Gate**: build
 **Commit**: `test(lrm-coverage): close the LRM coverage matrix to zero gaps`

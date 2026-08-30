@@ -16,7 +16,7 @@ Conformance is not a prose claim in this repository. Three test targets bind it:
 
 | Target | What it enforces |
 |---|---|
-| `tests/lrm_section_coverage.rs` | Parses **every** `##`..`######` heading id out of `VAMS-LRM-2-4.md` itself (612 today: 486 numbered + 126 annex) and requires each to be either **Covered** — declared by a `//! LRM-COVERS: <ids>` header on a test target or inline `#[cfg(test)]` module that contains a live, non-`#[ignore]`d `#[test]` — or **excluded** in `.specs/features/lrm-conformance-wave2/coverage_exclusions.toml` as `Informative` (the LRM's own front matter says so) or `OutOfScope` (mapped to a row in a feature spec's Out of Scope table). No cell may be empty. Because the id set is read from the LRM, a heading the gate does not know about fails it. |
+| `tests/lrm_section_coverage.rs` | Parses **every** `##`..`######` heading id out of `VAMS-LRM-2-4.md` itself (612 today: 486 numbered + 126 annex) and requires each to be either **Covered** — declared by a `//! LRM-COVERS: <ids>` header on a test target or inline `#[cfg(test)]` module that contains a live, non-`#[ignore]`d `#[test]` — or **excluded** in `.specs/features/lrm-conformance-wave2/coverage_exclusions.toml` **or** `.specs/features/lrm-conformance-wave3/coverage_exclusions.toml` as `Informative` (the LRM's own front matter says so) or `OutOfScope` (mapped to a row in a feature spec's Out of Scope table, with a required `replacement` field naming what replaces the LRM mechanism, spec §0 rule 1). No cell may be empty. Because the id set is read from the LRM, a heading the gate does not know about fails it. |
 | `tests/lrm_conformance_matrix.rs` | Cross-checks the wave-1 and wave-2 finding registries against those features' own `spec.md` traceability tables (`include_str!`, so a spec edit that renames or drops an ID is caught), and verifies every "Closed" entry names a test that really exists and is not `#[ignore]`d. |
 | `crates/piperine-lang/tests/annex_a_grammar.rs` | Walks Annex A's productions and records, per production, whether the parser implements it — see Appendix B. |
 
@@ -24,15 +24,27 @@ Conformance is not a prose claim in this repository. Three test targets bind it:
 
 ```text
 612 LRM-2-4 headings
-├── 475 Covered   (a live test declares the id)
-├──  20 Excluded  (Annex G informative ×6, C.19/C.20 pointers, Annex E netlist-profile ×12)
-└── 105 No verdict → tests/lrm_section_coverage.rs::covered_and_excluded_partition_the_lrm FAILS
+├── 588 Covered   (a live test declares the id)
+├──  24 Excluded  (8 Informative: Annex G ×6, C.19/C.20 pointers; 16 OutOfScope:
+│                  Annex E netlist-profile ×12, ch. 12 vpiHandle/C-struct ×4)
+└──   0 No verdict — tests/lrm_section_coverage.rs::covered_and_excluded_partition_the_lrm PASSES
 ```
 
-The gate is **red on this branch**. Wave 2's plan predicted zero gaps at its
-T69; T69 closed 364 of the 469 open at that point and the remaining 105 were
-never re-planned. §5 below enumerates all 105 with triage; the work is
-specified in `.specs/features/lrm-conformance-wave3/spec.md`.
+The gate is **green** (`lrm-conformance-wave3`, T43). Wave 2's plan predicted
+zero gaps at its T69; T69 closed 364 of the 469 open at that point, leaving 105
+unclaimed. Wave 3 (T36-T43) closed the remaining 105 to zero: real fixes where
+the clause was genuinely unimplemented (§1.3.4's signal-flow illegal-
+contribution rule, §4.2.3's `&&`/`||` short-circuit evaluation, §4.6.4.6's
+correlated-noise silent-drop, §5.5.3's nature-attribute access, §9.4.7's `%r`
+specifier, §9.14's `$clog2`/math-function aliases), coverage backfill on
+already-correct behavior everywhere else, and a small number of honestly
+declared limitations with a pinning test where implementing the full clause
+was out of scope for a coverage-closure phase (§4.2.1.2's x/z-to-real
+coercion, §7.8.5.1's connect-module gate-primitive naming, §9.5.9's
+rejected-iteration file-I/O rollback, §9.7.1/§9.7.2's `$finish`/`$stop`,
+§A.2.2.2's `assign` drive strengths). The gate is mutation-proven (T43):
+removing a declaration or introducing a bogus id turns it red, reverted after
+confirming.
 
 *Reproduce:* `cargo test --test lrm_section_coverage`.
 
@@ -130,7 +142,19 @@ every Verilog-A-legal program behaves as Annex C requires.
 
 ---
 
-## §5 Open gaps (not implemented)
+## §5 Open gaps (not implemented) — historical, superseded by wave 3
+
+**This section predates `lrm-conformance-wave3` (T1-T43), which closed the
+coverage gate to zero (§1.1) — most of the vector/grammar gaps below are now
+implemented (`.specs/features/lrm-conformance-wave3/spec.md` and `tasks.md`
+are the record of what changed and why), and the handful of items that
+remain genuinely open are now individually declared limitations with a
+pinning test rather than a "no verdict" gap: §4.2.1.2 (x/z-to-real
+coercion), §7.8.5.1 (connect-module gate-primitive naming), §9.5.9
+(rejected-iteration file-I/O rollback), §9.7.1/§9.7.2 (`$finish`/`$stop`
+termination), §A.2.2.2 (`assign` drive strengths) — see each one's own test
+file for the exact scope of what is and is not implemented. The table below
+is kept as the pre-wave-3 evidence record, not a current gap list.**
 
 Everything below was verified by elaborating or compiling a minimal fixture
 against this branch. `ELAB-ERR` = parse/elaborate failure, `LOWER-ERR` =
