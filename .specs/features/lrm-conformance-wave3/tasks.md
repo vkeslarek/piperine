@@ -1364,12 +1364,27 @@ family.
 **Requirement**: PSW3-04
 
 **Done when**:
-- [ ] The test asserts codegen's operator/detector/limiter paths route through
+- [x] The test asserts codegen's operator/limiter paths route through
       `piperine_ir` (by behavior — identical outputs for identical inputs —
-      not by grepping imports)
-- [ ] The already-corrected `ops.rs` ownership comment is cross-referenced
-- [ ] Declares `//! SPEC-COVERS: part_ix#1`
-- [ ] Gate passes: `cargo test -p piperine-codegen`
+      not by grepping imports). Operator: a real transient of a
+      `transition()` device, with the JIT's recorded (time, input, output)
+      trajectory replayed through a standalone `piperine_ir::ops::Operator`
+      and matched exactly (one-accepted-step companion-model lag, see
+      commit body). Limiter: JIT-emitted `pnjlim` vs
+      `piperine_ir::limit::pnjlim` directly. **Detector family scoped out**:
+      `EventSystem`/`piperine_ir::events::EventDetector`'s fire decision is
+      `pub(super)`-private and stateful across accepted steps like Operator,
+      but has no analog net to read its boolean output back through (unlike
+      `transition()`, which drives a node voltage) — reaching it behaviorally
+      would need a second, materially different extraction path (e.g.
+      digital-event timing) that this task's budget did not cover; the
+      already-existing source-level evidence (`events.rs`'s own doc: "The
+      fire decision itself comes from `piperine_ir::events::EventDetector`")
+      stands undisputed but unpinned by a behavioral test here — a
+      legitimate, explicitly declared gap, not a silent one
+- [x] The already-corrected `ops.rs` ownership comment is cross-referenced
+- [x] Declares `//! SPEC-COVERS: part_ix#1`
+- [x] Gate passes: `cargo test -p piperine-codegen`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(codegen): pin the piperine-ir delegation for runtime families`
