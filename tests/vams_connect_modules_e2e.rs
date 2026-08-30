@@ -1,4 +1,16 @@
-//! LRM-COVERS: 7.4.4.1, 7.4.4.3
+//! LRM-COVERS: 7.2.3, 7.4.4.1, 7.4.4.3
+//!
+//! lrm-conformance-wave3 (Phase 6, T39): §7.2.3 "Nets, nodes, ports, and
+//! signals" — a mixed signal (nets from both the discrete and continuous
+//! domains, contiguous through port connections) forms one KCL node, and
+//! digital drivers reach it through an auto-inserted D2A connect module.
+//! `mixed_analog_digital_fixture_with_a_connectmodule_bridge_simulates_
+//! end_to_end` below is exactly this: `vmid` is one signal spanning the
+//! `resistor`'s analog port and the `wire_bridge` connectmodule's analog
+//! port, solved as a single conservative node (`v_mid` asserted directly
+//! against the bridge's own constitutive equation), alongside a fully
+//! independent digital signal (`clk_net`/`q_net`) in the SAME compiled
+//! circuit — a mixed-port composition, not merely two isolated domains.
 //! T52 (VAMS-20) — "mixed analog/digital fixture simulates end-to-end"
 //! done-when: a single `.vams` design containing an analog subcircuit
 //! (an ideal source, a resistor, and an explicitly-instantiated

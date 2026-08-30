@@ -1,3 +1,4 @@
+//! LRM-COVERS: 8.4.7
 //! Rollback lifecycle contract tests (ABI-01..08): the checkpoint/restore
 //! pair on `Element` is driven by the solver around every candidate step.
 //!
@@ -6,6 +7,16 @@
 //!   rejection; accept discards.
 //! - T3: DC homotopy retry drives checkpoint before each strategy + restore on
 //!   strategy fallthrough.
+//!
+//! lrm-conformance-wave3 (Phase 6, T39): §8.4.7 point 2c ("Having
+//! calculated the solution for a given time, the analog engine can
+//! either accept or reject that solution; it cannot calculate a solution
+//! for a future time until it has accepted the solution for the current
+//! time") is exactly this file's own subject —
+//! `transient_reject_drives_restore_accept_discards` (T2) proves the
+//! reject-then-restore half directly; the solver's own transient loop
+//! (driving these hooks) never advances past a rejected step's time,
+//! satisfying the second half structurally.
 
 use piperine_solver::abi::*;
 use piperine_solver::prelude::Context;

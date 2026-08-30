@@ -1063,13 +1063,13 @@ where the clause is proven only incidentally.
 **Requirement**: LRMW3-21, LRMW3-22, LRMW3-27
 
 **Done when**:
-- [ ] Signal-flow gets real fixtures: a potential-only and a flow-only
+- [x] Signal-flow gets real fixtures: a potential-only and a flow-only
       discipline each driving a working module, plus the illegal-contribution
       rule (§1.3.4's own "current contributions are not legal") asserted loud
-- [ ] Namespace rules asserted (an access function shadowed by a local
+- [x] Namespace rules asserted (an access function shadowed by a local
       identifier; a net declared only at module scope)
-- [ ] Initialization order (nodeset → `analog initial` → `initial`) asserted
-- [ ] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
+- [x] Initialization order (nodeset → `analog initial` → `initial`) asserted
+- [x] Gate passes: `cargo test -p piperine --test lrm_section_coverage`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lrm-coverage): namespace, signal-flow and scheduling clauses`

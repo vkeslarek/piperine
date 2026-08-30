@@ -46,6 +46,7 @@ pub fn typecheck_program_accumulating(design: &Design) -> Vec<ElabError> {
                 check_analog_subset(stmt, &mut errors);
                 check_analog_operator_placement_stmt(stmt, module, false, &mut errors);
                 check_conditional_restrictions_stmt(stmt, module, CondState::default(), &mut errors);
+                check_signal_flow_contribution_stmt(stmt, module, design, &mut errors);
             }
         }
         // §4.5.15's own fourth bullet: "Analog operators ... can not be
@@ -393,6 +394,84 @@ fn annex_c_error(construct_kind: &str, span: crate::PreprocessedSpan) -> ElabErr
         context: "analog block".to_string(),
         span: Some(miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))),
     })
+}
+
+/// §1.3.4 (LRMW3-22): "If a node is bound only to disciplines which have
+/// potential nature only, current contributions to that node are not
+/// legal. Flow for such a node is not defined. Conversely, if a node is
+/// bound only to disciplines which have flow nature only, potential
+/// contributions to that node are not legal." Checked locally, against
+/// the discipline the CURRENT module's own port/wire declaration binds
+/// to a contribution's `V(...)`/`I(...)` terminal — a node this module
+/// cannot see (bound to a *different* module's own signal-flow net at a
+/// higher level of the hierarchy) is out of this check's reach, a
+/// disclosed narrowing matching this project's existing "own module's
+/// symbol table only" scope for other structural checks in this file.
+fn check_signal_flow_contribution_stmt(stmt: &Stmt, module: &Module, design: &Design, errors: &mut Vec<ElabError>) {
+    match stmt {
+        Stmt::Contribution { target, span, .. } => {
+            if let Expr::AccessFunction { function, pos, neg, .. } = target {
+                let wants_flow = matches!(function.as_str(), "I" | "flow");
+                let wants_potential = matches!(function.as_str(), "V" | "potential");
+                if !wants_flow && !wants_potential {
+                    return;
+                }
+                for terminal in [Some(pos.as_ref()), neg.as_deref()].into_iter().flatten() {
+                    let Expr::Ident { name, .. } = terminal else { continue };
+                    let Some(disc) = discipline_of_local_net(module, design, name) else { continue };
+                    let missing = if wants_flow { disc.flow.is_none() } else { disc.potential.is_none() };
+                    if missing {
+                        let (what, nature) = if wants_flow {
+                            ("current (flow)", "potential")
+                        } else {
+                            ("potential", "flow")
+                        };
+                        errors.push(ElabError::from(ElabErrorKind::Other(format!(
+                            "{what} contribution to `{name}` (LRM §1.3.4): its discipline `{}` declares \
+                             {nature} nature only — a {what} contribution to a {nature}-only signal-flow \
+                             node is not legal",
+                            disc.name
+                        ))));
+                    }
+                    let _ = span;
+                }
+            }
+        }
+        Stmt::Block { stmts, .. } => stmts.iter().for_each(|s| check_signal_flow_contribution_stmt(s, module, design, errors)),
+        Stmt::If { then_branch, else_branch, .. } => {
+            check_signal_flow_contribution_stmt(then_branch, module, design, errors);
+            if let Some(e) = else_branch {
+                check_signal_flow_contribution_stmt(e, module, design, errors);
+            }
+        }
+        Stmt::Case { arms, .. } => {
+            for arm in arms {
+                check_signal_flow_contribution_stmt(&arm.body, module, design, errors);
+            }
+        }
+        Stmt::For { body, .. }
+        | Stmt::While { body, .. }
+        | Stmt::Repeat { body, .. }
+        | Stmt::Forever { body, .. }
+        | Stmt::DelayControl { body, .. }
+        | Stmt::EventControl { body, .. } => check_signal_flow_contribution_stmt(body, module, design, errors),
+        _ => {}
+    }
+}
+
+/// The discipline bound to `name` if it is a port or wire declared
+/// directly on `module` (own-scope lookup only, see this check's own doc
+/// comment).
+fn discipline_of_local_net<'a>(module: &Module, design: &'a Design, name: &str) -> Option<&'a crate::ast::DisciplineDecl> {
+    use crate::pom::net_type::NetType;
+    let ty = module
+        .ports()
+        .iter()
+        .find(|p| p.name() == name)
+        .map(|p| p.net_type())
+        .or_else(|| module.wires().iter().find(|w| w.name() == name).map(|w| w.net_type()))?;
+    let NetType::Discipline(disc_name) = ty else { return None };
+    design.discipline(disc_name)
 }
 
 // ─── T34/LRMW3-17 — §5.8.4 conditional-statement restrictions ────────────────
