@@ -218,6 +218,27 @@ fn out_of_range_port_connection_index_fails_loud_naming_net_index_and_bounds() {
 }
 
 #[test]
+fn boundary_port_connection_index_at_width_fails_loud_naming_net_index_and_bounds() {
+    // Pins the exact boundary: `[0:3]` is width 4, so index 4 is the
+    // smallest value that is actually out of range (distinct from the
+    // comfortably-out-of-range `bus[9]` case above). Regression test for
+    // the `idx >= width` check in `elab/lower/vams.rs` — an `idx > width`
+    // mutant must fail this test while passing everything else.
+    let src = "
+        module leaf (inout electrical p);
+        endmodule
+        module top ();
+            electrical [0:3] bus;
+            leaf u1 (bus[4]);
+        endmodule
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("bus"), "must name the net: {err}");
+    assert!(err.contains('4'), "must name the index: {err}");
+    assert!(err.contains("0:3") || err.contains("0..3"), "must name the declared bounds: {err}");
+}
+
+#[test]
 fn non_constant_port_connection_index_fails_loud_citing_5_5_2() {
     let src = "
         module leaf (inout electrical p);
