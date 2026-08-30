@@ -1006,7 +1006,177 @@ wave-1's registry-style gates.
 
 ---
 
+
+### MD-52: digital vectors are scalarized per bit
+
+`lrm-conformance-wave3` design decision (2026-08-27, user-confirmed).
+A width-N digital net (`reg [3:0] q`, `wire [7:0] bus`, a memory
+`reg [3:0] mem [0:7]`) lowers to **N independent `Quad` nets** named
+`q[0]`..`q[N-1]` (`mem[d][b]` for a memory), exactly as an analog array net
+already does (`resolve/pom/structure.rs`'s element-node loop). `q[i]` resolves
+to one net; a part-select resolves to an ordered chunk list; a whole-vector
+read or write expands to per-bit operations emitted in declared bit order, in
+the region the assignment already selected (`=` Active, `<=` Nba).
+
+**Why not packed.** A packed word (2 bits per 4-state bit in an `i64`) needs a
+new value class in the digital ABI, `SigRef`-style chunk plumbing through
+`emit`, and per-word rework of `DriverTable`, `layout`, `compile` and
+`network` — for a runtime win nothing currently asks for, and a 32-bit width
+ceiling. Scalarizing changes **no ABI**: driver resolution by strength,
+the stratified regions, checkpoint/rollback and `$driver_*` all keep working
+untouched.
+
+**Known cost, accepted:** net count grows with width × depth (a `[3:0]` × 8
+memory is 32 nets). A width×depth cap fails loud rather than exhausting
+memory. The packed representation stays the documented future optimization —
+`piperine-ir` already models it (`Ty::Bits(N)` + `SigRef` chunk lists), so
+adopting it later is a backend change, not a language change.
+
+**Status:** Locked (user, 2026-08-27).
+
+---
+
+### MD-53: the superset surface is gated the same way the LRM surface is
+
+`lrm-conformance-wave3` design decision (2026-08-27, user-confirmed).
+Piperine is a **superset** of Verilog-AMS, so conformance has two axes: LRM ↔
+impl (MD-51's `LRM-COVERS` gate) and **Piperine's own spec ↔ impl** — the
+`constraint`/`tol`/host-API/plugin/POM/IR surface the LRM never mentions,
+which had no gate at all.
+
+Axis B copies MD-51's shape rather than inventing a second one: a test
+declares what it proves with `//! SPEC-COVERS: <ids>` (ids are
+`<spec file stem>#<heading number>`, e.g. `part_viii#15.2`), and
+`tests/spec_section_coverage.rs` **derives** the matrix by parsing
+`docs/spec/*.md`'s own headings. Every heading must resolve to `Covered`,
+`DeclaredLimitation { reason }` (an honest documented gap, e.g. "Rust-only,
+no Python binding"), or `Informative { reason }`. A spec claim added without a
+test turns the gate red; a declaration naming a heading that does not exist,
+or living in a file with no live test, turns it red too.
+
+Three rules travel with it (spec §0):
+1. An LRM clause Piperine deliberately does not implement is an exclusion
+   **naming its replacement**, never a defect.
+2. A clause implemented differently on purpose is a deviation with a pinning
+   test.
+3. An extension is **not** exempt from proof — it needs the same live test an
+   LRM clause needs.
+
+**Status:** Locked (user, 2026-08-27).
+
+---
+
 ## Handoff Snapshot
+
+### Feature — `lrm-conformance-wave3` — CLOSED (2026-08-30)
+
+All 55 tasks (T1-T55, Phases 1-8) executed and committed on
+`feature/device-verification`. Verifier PASS (with 3 gaps found and
+fixed post-hoc, re-verified independently) —
+`.specs/features/lrm-conformance-wave3/validation.md`. Both coverage
+gates now green: axis-A (`tests/lrm_section_coverage.rs`) reaches zero
+uncovered LRM sections (612 headings: 588 Covered, 24 Excluded), the
+project's long-standing known-red baseline target; axis-B
+(`tests/spec_section_coverage.rs`), built from scratch this wave, reaches
+zero unverdicted `docs/spec/` headings (284: 15 Covered, 269
+DeclaredLimitation). `cargo build --workspace` zero warnings,
+`cargo test --workspace` fully green, no known-red targets left. Notable
+follow-ups disclosed but deliberately left open (see validation.md and
+individual commit bodies): §4.5.15's `if`/`case`/`?:` conditional
+restriction not enforced (real SPICE headers use the pattern); `wire`/`reg`
+misclassifying as analog in the continuous-assign domain check
+(`elab/lower/vams.rs`); most of axis-B's 269 headings remain
+`DeclaredLimitation` pending further backfill in a future wave, same
+multi-wave pattern axis-A itself followed.
+
+### Feature — `lrm-conformance-wave3` (SPEC + DESIGN + TASKS 2026-08-27, execution not started) — historical pre-execution research below
+
+**Why it exists.** Wave 2's own closure gate was never green:
+`tests/lrm_section_coverage.rs::covered_and_excluded_partition_the_lrm` fails
+with **105 of 612 LRM-2-4 sections carrying no verdict** (475 Covered, 20
+excluded). Wave 2's tasks.md predicted T69 would close the matrix; T69 closed
+364 of 469 and the remainder was never re-planned.
+
+**What direct probing found** (one minimal fixture per suspect clause,
+elaborated/compiled against HEAD of `feature/device-verification`):
+
+- **Vectors/buses do not exist.** No range form parses anywhere —
+  `electrical [0:3] bus`, `input [0:3] p`, `reg [3:0] q`, `wire [3:0] w`,
+  part-select `b[7:4]`, memory `reg [3:0] mem [0:7]`. The post-declarator
+  form (`electrical bus[0:3]`) parses but does not lower a literal index.
+  `README.md`'s advertised `generate` ladder over `electrical tap[n-1:0]`
+  could not compile.
+- **Two parse-and-vanish constructs** (fail-loud violations of the same class
+  as wave 2's §1): `specify … endspecify` (body stored as an unread `String`)
+  and `config … endconfig` (`ConfigDecl { body: String::new() }`). `specparam`
+  and in-module `task` declarations are also no-op match arms.
+- **Illegal-but-accepted:** an analog operator under a non-constant conditional
+  (§4.5.15/§5.8.4) and a NaN/±infinity contribution (§7.3.2.1).
+- **Missing families:** port branches `branch (<p>)` (§3.12.1), nature-attribute
+  access `a.potential.abstol` (§5.5.3), hierarchical contributions (§5.6.8),
+  paramset output variables (§6.4.3), standard attributes `desc`/`units`/`op`/
+  `multiplicity` (§2.9.2), discipline attribute override + nature-from-discipline
+  derivation (§3.6.2.5/6/7), out-of-module discipline declaration (§3.10), drive
+  strengths (A.2.2.2), PLA tasks (§9.8).
+
+**Also fixed in this session (unrelated red tests, not part of the wave):**
+`piperine-solver`'s `digital::events` region-race tests asserted a *region*
+race using two distinct `source` ids, which T54's real `DriverTable` correctly
+resolves to `X` per Table 7-3; rewritten (never deleted) to use one source, with
+a new `two_distinct_drivers_contend_per_table_7_3` pinning the other half.
+`vams_port_connected::analog_node_alias_fails_loud_citing_md18` was stale after
+T56 gave the constant form a resolution path; rewritten to pin the disclosed
+dotted-hierarchical-constant behavior (folds to `0`).
+
+**Docs.** `docs/spec/` was rewritten this session as the authoritative technical
+specification (index, Part I, Part II, the new Part III "LRM Conformance"
+replacing the retired Part III stub and absorbing the root `SPEC_DEVIATION.md`,
+Part IV, Part V, Part IX retitled to `piperine-ir`, Part VII extended with
+§21–§23 pole-zero/distortion/S-parameters, cross-crate renames elsewhere).
+`README.md` was rewritten in a "what you can do" shape with an honest
+"What doesn't work yet" section. Root `SPEC_DEVIATION.md` moved to
+`.specs/features/lrm-conformance-wave2/`.
+
+**Two axes (superset rule).** The spec was widened after review: axis A is
+LRM↔impl (the 105 sections), axis B is **Piperine's own spec↔impl** — the
+superset surface the LRM never mentions (`constraint`/`tol`/`const`/doc
+comments/`@device`/`rfport`/UIC seed, the whole host API incl. the
+optimize-center-high-sigma driver, sampling, Monte Carlo, aging, coverage, the
+host device library and sequencer, plugins, POM+selector, `piperine-ir`, CLI).
+Axis B has **no coverage gate at all today**; building one is `PSW3-10`. The
+superset rule is normative in the spec's §0: a deliberately unimplemented LRM
+clause is an exclusion naming its replacement (never a defect), a deliberate
+difference is a pinned deviation, and an extension is not exempt from proof.
+Axis-B probed gaps B1–B10 (inert selector axes, unreachable POM/error variants,
+Rust-only host surfaces, stale `piperine-ir` ownership claim, untested
+`` `include`` legacy aliases, a self-describing-as-expected red gate, no
+extension gate, retired-name example) carry ids `PSW3-01..10`.
+
+**Design + tasks written (2026-08-27).** `design.md` corrected the spec's
+biggest assumption: **most vector machinery already exists** (`NetType::Array`,
+per-element node registration `bus[0]..bus[N-1]`, `NetRef{net,index}` lifting,
+`Expr::Index`/`PartSelect` in AST *and* grammar). The real seams are three:
+the leading `[range]` in the grammar, `ident_from_expr`'s `Expr::Ident`-only
+terminal resolution (`resolve/pom/expr.rs:54`), and the single `unsupported`
+arm for digital index/part-select (`emit/digital_expr.rs:79`). Two other spec
+assumptions were corrected: `parse_specify_block` skips tokens and returns an
+empty item list (so the grammar must be *written*, not just lowered), and
+NaN/inf contribution is already detected — as a generic convergence failure,
+so the work is retargeting the message.
+
+Confirmed decisions: **MD-52** (digital vectors scalarized per bit) and
+**MD-53** (axis-B `SPEC-COVERS` gate mirroring MD-51).
+
+`tasks.md`: **55 tasks in 8 phases** (1 vector foundation · 2 vector access ·
+3 specify+config · 4 discipline/nature/attributes · 5 branches/contributions/
+restrictions · 6 axis-A coverage closure · 7 axis-B gate · 8 axis-B gap
+closure), with a Test Coverage Matrix derived from CLAUDE.md/AGENTS.md/MD-28/
+MD-31/MD-51 + suite_hygiene, gate commands, and all three pre-approval checks
+(granularity, diagram cross-check, test co-location) green.
+
+**Next step:** user approval of tasks.md, then Execute (8 batches at the
+~7-task budget — sub-agent offer pending).
+
 
 **Last updated:** 2026-08-24 — `lrm-conformance-wave2` DELIVERED WITH
 DISCLOSED RESIDUE (T1–T72, all 72 tasks committed, branch

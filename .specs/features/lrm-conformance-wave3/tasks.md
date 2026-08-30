@@ -14,7 +14,7 @@ discrimination sensor).
 
 **Spec**: `.specs/features/lrm-conformance-wave3/spec.md`
 **Design**: `.specs/features/lrm-conformance-wave3/design.md`
-**Status**: Draft (awaiting approval)
+**Status**: Closed (2026-08-30) — all 55 tasks executed, Verifier PASS post-fix; see `validation.md`
 
 ---
 
