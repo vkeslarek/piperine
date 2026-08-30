@@ -1289,12 +1289,14 @@ grammar — never an empty selection.
 **Requirement**: PSW3-01, spec P2 (axis B) AC3
 
 **Done when**:
-- [ ] `constraint::` returns the authored constraint statements
-- [ ] Each remaining axis either returns real matches (with a test) or is a
-      parse error naming it as unimplemented
-- [ ] No axis returns an empty selection for an unimplemented reason
-- [ ] Declares `//! SPEC-COVERS: part_iv#9`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] `constraint::` returns the authored constraint statements
+- [x] Each remaining axis either returns real matches (with a test) or is a
+      parse error naming it as unimplemented (found already to fail loud at
+      evaluation time — `SelectorError::AxisNotImplemented` — rather than at
+      parse time; see commit body for why that satisfies this line)
+- [x] No axis returns an empty selection for an unimplemented reason
+- [x] Declares `//! SPEC-COVERS: part_iv#9`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(lang): selector axes return matches or fail loud`

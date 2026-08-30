@@ -40,6 +40,7 @@ pub enum Kind {
     Bundle,
     Capability,
     Attribute,
+    Constraint,
 }
 
 impl fmt::Display for Kind {
@@ -59,6 +60,7 @@ impl fmt::Display for Kind {
             Self::Bundle => write!(f, "bundle"),
             Self::Capability => write!(f, "capability"),
             Self::Attribute => write!(f, "attribute"),
+            Self::Constraint => write!(f, "constraint"),
         }
     }
 }
@@ -82,6 +84,7 @@ pub enum Node<'a> {
     Wire(&'a crate::pom::Wire),
     Behavior(&'a crate::pom::Behavior),
     Attribute(&'a crate::pom::module::Attribute),
+    Constraint(&'a crate::pom::behavior::PomConstraintStmt),
 }
 
 impl<'a> PartialEq for Node<'a> {
@@ -94,6 +97,7 @@ impl<'a> PartialEq for Node<'a> {
             (Node::Wire(a), Node::Wire(b)) => std::ptr::eq(*a, *b),
             (Node::Behavior(a), Node::Behavior(b)) => std::ptr::eq(*a, *b),
             (Node::Attribute(a), Node::Attribute(b)) => std::ptr::eq(*a, *b),
+            (Node::Constraint(a), Node::Constraint(b)) => std::ptr::eq(*a, *b),
             _ => false,
         }
     }
@@ -109,6 +113,7 @@ impl<'a> Kinded for Node<'a> {
             Node::Wire(_) => Kind::Wire,
             Node::Behavior(_) => Kind::Behavior,
             Node::Attribute(_) => Kind::Attribute,
+            Node::Constraint(_) => Kind::Constraint,
         }
     }
 }
@@ -234,6 +239,10 @@ impl<'a> Named for Node<'a> {
             Node::Wire(w) => w.name(),
             Node::Behavior(_) => "", // Behaviors do not have a name
             Node::Attribute(_) => "", // Attributes do not have a name
+            // `target` statements are unlabeled (their `target#<n>` name is
+            // assigned by codegen's lowering, not authored) — the empty
+            // string mirrors Behavior/Attribute's unnamed-node convention.
+            Node::Constraint(c) => c.label().unwrap_or(""),
         }
     }
 }
@@ -246,6 +255,17 @@ impl<'a> TryFrom<Node<'a>> for &'a crate::pom::module::Attribute {
     type Error = &'static str;
     fn try_from(node: Node<'a>) -> Result<Self, Self::Error> {
         if let Node::Attribute(a) = node { Ok(a) } else { Err("Node is not an Attribute") }
+    }
+}
+
+impl<'a> From<&'a crate::pom::behavior::PomConstraintStmt> for Node<'a> {
+    fn from(c: &'a crate::pom::behavior::PomConstraintStmt) -> Self { Node::Constraint(c) }
+}
+
+impl<'a> TryFrom<Node<'a>> for &'a crate::pom::behavior::PomConstraintStmt {
+    type Error = &'static str;
+    fn try_from(node: Node<'a>) -> Result<Self, Self::Error> {
+        if let Node::Constraint(c) = node { Ok(c) } else { Err("Node is not a Constraint") }
     }
 }
 

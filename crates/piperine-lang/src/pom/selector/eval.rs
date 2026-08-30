@@ -250,14 +250,24 @@ impl<'a> Evaluator<'a> {
                         }
                     }
             }
-            // MD-45 (2026-08-12): dv-core `constraint` blocks (and the POM
-            // `ConstraintBlock` node they walked to) are deleted with
-            // `piperine-lang/src/parse/` — no VAMS Annex A production.
-            // `.constraint` selector queries now always yield the empty
-            // set rather than resolving to a dead node kind; a future
-            // phase re-anchors constraint blocks on VAMS `(* attribute *)`
-            // syntax (tasks.md open item #5).
-            Axis::Constraint => {}
+            // T49 (lrm-conformance-wave3, PSW3-01/B1): `constraint::`
+            // dispatches to the module's own authored constraint statements
+            // (`Module::constraints()`, MD-49's Verilog-AMS `constraint
+            // begin … end` block) rather than an empty arm — the pre-VAMS
+            // `ConstraintBlock` this comment used to reference no longer
+            // exists, but the axis itself now has a real target.
+            Axis::Constraint => {
+                if let Node::Module(m) = node {
+                    for c in m.constraints() {
+                        res.push(Node::Constraint(c));
+                    }
+                } else if let Node::Instance(inst) = node
+                    && let Some(child_mod) = self.design.module(inst.module_name()) {
+                        for c in child_mod.constraints() {
+                            res.push(Node::Constraint(c));
+                        }
+                    }
+            }
 
             Axis::Attr => {
                 if let Node::Module(m) = node {
