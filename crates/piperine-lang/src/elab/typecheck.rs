@@ -45,6 +45,7 @@ pub fn typecheck_program_accumulating(design: &Design) -> Vec<ElabError> {
             for stmt in behavior.body() {
                 check_analog_subset(stmt, &mut errors);
                 check_analog_operator_placement_stmt(stmt, module, false, &mut errors);
+                check_conditional_restrictions_stmt(stmt, module, CondState::default(), &mut errors);
             }
         }
         // §4.5.15's own fourth bullet: "Analog operators ... can not be
@@ -392,4 +393,211 @@ fn annex_c_error(construct_kind: &str, span: crate::PreprocessedSpan) -> ElabErr
         context: "analog block".to_string(),
         span: Some(miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))),
     })
+}
+
+// ─── T34/LRMW3-17 — §5.8.4 conditional-statement restrictions ────────────────
+
+/// §5.8.4's own "analog filter function" family (§4.5.7–§4.5.12: the
+/// operators the LRM's own prose calls "filters" rather than plain
+/// operators) — a narrower set than [`ANALOG_OP_NAMES`] (`ddt`/`idt`/
+/// `idtmod` are excluded; §5.8.4 never mentions them, and unlike the
+/// filter family, no header conflict was found for them under a
+/// conditional here, see below).
+const FILTER_FN_NAMES: &[&str] = &[
+    "transition", "slew", "delay", "absdelay", "laplace_zd", "laplace_nd", "laplace_zp",
+    "laplace_np", "zi_zd", "zi_nd", "zi_zp", "zi_np",
+];
+
+/// Propagated conditional-nesting state for [`check_conditional_restrictions_stmt`].
+#[derive(Clone, Copy, Default)]
+struct CondState {
+    /// Number of enclosing `if`/`case` levels (0 at the top of a
+    /// behavior body) — §5.8.4's own "the conditional statements cannot
+    /// be conditionally executed (nested conditional statements)"
+    /// restriction on filter functions fires at depth >= 2, regardless of
+    /// constantness at either level.
+    depth: u32,
+    /// Whether any enclosing `if`/`case` (any depth) had a non-constant
+    /// controlling expression — sticky once set, exactly like T33's
+    /// `illegal` flag.
+    nonconst_ancestor: bool,
+}
+
+/// Recursively walks a statement tree enforcing §5.8.4's two restrictions:
+/// an event-triggered statement under a non-constant conditional, and a
+/// filter function under either a non-constant conditional or a nested
+/// one (regardless of constantness). Unlike T33's analog-operator
+/// placement check, no header conflict was found for either restriction
+/// (`headers/spice/*.va` never uses `@(cross(...))`/`@(timer(...))` nor a
+/// filter function inside any `if`/`case` at all) — both are enforced in
+/// full, without the SPEC_DEVIATION carve-outs T33 needed.
+fn check_conditional_restrictions_stmt(stmt: &Stmt, module: &Module, st: CondState, errors: &mut Vec<ElabError>) {
+    let check = |e: &Expr, errors: &mut Vec<ElabError>| check_expr_for_conditional_restriction(e, module, st, errors);
+    match stmt {
+        Stmt::Assign { target, value, .. }
+        | Stmt::NonBlockingAssign { target, value, .. }
+        | Stmt::Contribution { target, value, .. }
+        | Stmt::ProceduralAssign { target, value, .. }
+        | Stmt::Force { target, value, .. } => {
+            check(target, errors);
+            check(value, errors);
+        }
+        Stmt::IndirectContribution { lhs, probe, rhs, .. } => {
+            check(lhs, errors);
+            check(probe, errors);
+            check(rhs, errors);
+        }
+        Stmt::ProceduralDeassign { target, .. } | Stmt::Release { target, .. } => check(target, errors),
+        Stmt::Block { stmts, .. } => stmts.iter().for_each(|s| check_conditional_restrictions_stmt(s, module, st, errors)),
+        Stmt::If { cond, then_branch, else_branch, .. } => {
+            check(cond, errors);
+            let inner = CondState {
+                depth: st.depth + 1,
+                nonconst_ancestor: st.nonconst_ancestor || !expr_is_constant(cond, module),
+            };
+            check_conditional_restrictions_stmt(then_branch, module, inner, errors);
+            if let Some(e) = else_branch {
+                check_conditional_restrictions_stmt(e, module, inner, errors);
+            }
+        }
+        Stmt::Case { selector, arms, .. } => {
+            check(selector, errors);
+            let inner = CondState {
+                depth: st.depth + 1,
+                nonconst_ancestor: st.nonconst_ancestor || !expr_is_constant(selector, module),
+            };
+            for arm in arms {
+                if let Some(labels) = &arm.labels {
+                    labels.iter().for_each(|l| check_expr_for_conditional_restriction(l, module, inner, errors));
+                }
+                check_conditional_restrictions_stmt(&arm.body, module, inner, errors);
+            }
+        }
+        // §5.8.4's own second sentence: "Event control statements ...
+        // cannot be used inside conditional statements unless the
+        // conditional expression is a constant expression."
+        Stmt::EventControl { events, body, .. } => {
+            if st.nonconst_ancestor {
+                errors.push(conditional_restriction_error("event control statement", stmt.span()));
+            }
+            events.iter().for_each(|ev| {
+                let e = match ev {
+                    crate::ast::EventExpr::Level(x)
+                    | crate::ast::EventExpr::Posedge(x)
+                    | crate::ast::EventExpr::Negedge(x) => Some(x),
+                    crate::ast::EventExpr::ImplicitAll => None,
+                };
+                if let Some(e) = e {
+                    check(e, errors);
+                }
+            });
+            // Entering an event-control body is not itself a conditional
+            // level — `st` passes through unchanged.
+            check_conditional_restrictions_stmt(body, module, st, errors);
+        }
+        Stmt::For { init, cond, step, body, .. } => {
+            check_conditional_restrictions_stmt(init, module, st, errors);
+            check(cond, errors);
+            check_conditional_restrictions_stmt(step, module, st, errors);
+            check_conditional_restrictions_stmt(body, module, st, errors);
+        }
+        Stmt::While { cond, body, .. } => {
+            check(cond, errors);
+            check_conditional_restrictions_stmt(body, module, st, errors);
+        }
+        Stmt::Repeat { count, body, .. } => {
+            check(count, errors);
+            check_conditional_restrictions_stmt(body, module, st, errors);
+        }
+        Stmt::Forever { body, .. } => check_conditional_restrictions_stmt(body, module, st, errors),
+        Stmt::DelayControl { delay, body, .. } => {
+            check(delay, errors);
+            check_conditional_restrictions_stmt(body, module, st, errors);
+        }
+        Stmt::TaskCall { args, .. } => args.iter().for_each(|a| check(a, errors)),
+        Stmt::Null { .. } | Stmt::Disable { .. } | Stmt::EventTrigger { .. } => {}
+    }
+}
+
+/// The expression-tree counterpart of [`check_conditional_restrictions_stmt`]
+/// — reports a filter-function call reached under a non-constant
+/// conditional or a nested one (`st.nonconst_ancestor || st.depth >= 2`).
+fn check_expr_for_conditional_restriction(expr: &Expr, module: &Module, st: CondState, errors: &mut Vec<ElabError>) {
+    let r = |e: &Expr, errors: &mut Vec<ElabError>| check_expr_for_conditional_restriction(e, module, st, errors);
+    match expr {
+        Expr::Call { name, args, span } => {
+            if FILTER_FN_NAMES.contains(&name.as_str()) && (st.nonconst_ancestor || st.depth >= 2) {
+                errors.push(conditional_restriction_error(name, *span));
+            }
+            args.iter().for_each(|a| r(a, errors));
+        }
+        Expr::Number { .. } | Expr::Str { .. } | Expr::Ident { .. } | Expr::PortAccess { .. } | Expr::Hier { .. } => {}
+        Expr::Unary { operand, .. } => r(operand, errors),
+        Expr::Binary { lhs, rhs, .. } => {
+            r(lhs, errors);
+            r(rhs, errors);
+        }
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            r(cond, errors);
+            r(then_branch, errors);
+            r(else_branch, errors);
+        }
+        Expr::Concat { parts, .. } => parts.iter().for_each(|p| r(p, errors)),
+        Expr::Replication { count, parts, .. } => {
+            r(count, errors);
+            parts.iter().for_each(|p| r(p, errors));
+        }
+        Expr::Index { base, index, .. } => {
+            r(base, errors);
+            r(index, errors);
+        }
+        Expr::PartSelect { base, msb, lsb, .. } => {
+            r(base, errors);
+            r(msb, errors);
+            r(lsb, errors);
+        }
+        Expr::AccessFunction { pos, neg, .. } => {
+            r(pos, errors);
+            if let Some(n) = neg {
+                r(n, errors);
+            }
+        }
+        Expr::SystemFunctionCall { args, .. } => args.iter().for_each(|a| r(a, errors)),
+        Expr::AssignmentPattern { replicate, parts, .. } => {
+            if let Some(rep) = replicate {
+                r(rep, errors);
+            }
+            parts.iter().for_each(|p| r(p, errors));
+        }
+    }
+}
+
+/// A syntactic constant-expression approximation shared by both
+/// restrictions this file enforces (§5.8.4's own "unless the conditional
+/// expression is a constant expression"): a number/string literal, one of
+/// this module's own `parameter`s, or a combination of those through
+/// unary/binary/ternary operators. A net, variable, or hierarchical
+/// reference is never constant — the conservative direction a
+/// restriction like this must not under-enforce.
+fn expr_is_constant(expr: &Expr, module: &Module) -> bool {
+    match expr {
+        Expr::Number { .. } | Expr::Str { .. } => true,
+        Expr::Ident { name, .. } => module.params().iter().any(|p| &p.name == name),
+        Expr::Unary { operand, .. } => expr_is_constant(operand, module),
+        Expr::Binary { lhs, rhs, .. } => expr_is_constant(lhs, module) && expr_is_constant(rhs, module),
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            expr_is_constant(cond, module) && expr_is_constant(then_branch, module) && expr_is_constant(else_branch, module)
+        }
+        _ => false,
+    }
+}
+
+fn conditional_restriction_error(what: &str, span: crate::PreprocessedSpan) -> ElabError {
+    ElabError::from(ElabErrorKind::Other(format!(
+        "`{what}` under a non-constant/nested conditional (LRM §5.8.4: event control \
+         statements cannot be used inside a conditional unless its controlling expression is \
+         constant, and an analog filter function cannot be used inside a nested conditional at \
+         all)"
+    )))
+    .with_span(Some(miette::SourceSpan::new(span.start.into(), span.end.saturating_sub(span.start))))
 }

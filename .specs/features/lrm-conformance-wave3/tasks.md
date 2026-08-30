@@ -952,11 +952,11 @@ conditional are an error; analog filter functions likewise.
 **Requirement**: LRMW3-17
 
 **Done when**:
-- [ ] A `@(cross(...))` under a data-dependent `if` fails loud citing §5.8.4
-- [ ] A nested conditional around a filter function fails loud
-- [ ] The constant-condition case still compiles
-- [ ] Declares `//! LRM-COVERS: 5.8.4`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] A `@(cross(...))` under a data-dependent `if` fails loud citing §5.8.4
+- [x] A nested conditional around a filter function fails loud
+- [x] The constant-condition case still compiles
+- [x] Declares `//! LRM-COVERS: 5.8.4`
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(lang): enforce §5.8.4 conditional-statement restrictions`
