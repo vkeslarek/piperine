@@ -50,14 +50,35 @@ pub enum Value {
     /// (`piperine_solver::abi::LogicValue`-shaped) stays the 1-bit
     /// projection; this is the frontend's only four-state *value* form.
     Logic(LogicVec),
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL enum-literal
+    /// value; VAMS has no enum-typed value construct). No construction
+    /// site exists outside this definition. Proven by
+    /// `crates/piperine-lang/tests/pom_retired_variants_unreachable.rs`
+    /// (T50, `lrm-conformance-wave3`, PSW3-02/B3).
+    #[doc(hidden)]
     EnumVariant(String, String),
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL tuple-literal
+    /// value; VAMS has no tuple-typed value construct). See
+    /// [`Value::EnumVariant`].
+    #[doc(hidden)]
     Tuple(Vec<Value>),
     /// A `Vec`-like value-layer list. Shared/mutable so `.push(...)` is visible
-    /// through every alias of the same list (SPEC §6.1).
+    /// through every alias of the same list (SPEC §6.1). **Not** retired —
+    /// unlike its `EnumVariant`/`Tuple`/`Record` neighbors, this variant
+    /// *is* reachable from real Verilog-AMS source: the `'{...}` array
+    /// assignment-pattern extension lowers to it
+    /// (`elab::const_eval::ConstEnv::eval_array`, called from
+    /// `elab::lower::vams`'s array-`parameter` default lowering). See T50's
+    /// commit body — `docs/spec/part_iv_reflection_selector.md` §5's
+    /// "retired-front-end survivors" wording is corrected at T55 to drop
+    /// `List` from that list.
     List(Rc<RefCell<Vec<Value>>>),
-    /// A bundle-literal instance (config bundles included). Field lookup
-    /// falls back to the bundle's declared `FieldDecl.default` at
-    /// construction time — there is no lazy default resolution here.
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL bundle-literal
+    /// value; VAMS has no bundle/record-typed value construct). See
+    /// [`Value::EnumVariant`]. Field lookup falls back to the bundle's
+    /// declared `FieldDecl.default` at construction time — there is no lazy
+    /// default resolution here.
+    #[doc(hidden)]
     Record {
         /// The bundle type this literal instantiates (`"DiodeModel"`) —
         /// what `impl` method dispatch resolves against.

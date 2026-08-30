@@ -1315,13 +1315,15 @@ reserved.
 **Requirement**: PSW3-02
 
 **Done when**:
-- [ ] A traversal over every fixture in the corpus produces none of them
-- [ ] Each variant carries a `reserved — unreachable from Verilog-AMS` doc line
+- [x] A traversal over every fixture in the corpus produces none of them
+      (`Value::List` excluded — found genuinely reachable via `'{...}`; see
+      commit body)
+- [x] Each variant carries a `reserved — unreachable from Verilog-AMS` doc line
       pointing at this test
-- [ ] Removal is scheduled separately (breaking change), recorded in the commit
+- [x] Removal is scheduled separately (breaking change), recorded in the commit
       body
-- [ ] Declares `//! SPEC-COVERS: part_iv#10`
-- [ ] Gate passes: `cargo test -p piperine-lang`
+- [x] Declares `//! SPEC-COVERS: part_iv#10` (also part_iv#5)
+- [x] Gate passes: `cargo test -p piperine-lang`
 
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(pom): prove the retired variants unreachable from Verilog-AMS`

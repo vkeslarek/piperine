@@ -94,13 +94,22 @@ pub enum ElabErrorKind {
     #[error("contribution `<+` is not allowed in a digital block")]
     #[diagnostic(code(E2005))]
     ContribInDigital,
-    /// A contribution (`<+`) was used inside a `mod` body.
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL `mod` body;
+    /// VAMS has no `mod` declaration, so no elaboration path constructs
+    /// this variant). Proven by
+    /// `crates/piperine-lang/tests/pom_retired_variants_unreachable.rs`
+    /// (T50, `lrm-conformance-wave3`, PSW3-02/B4). A contribution (`<+`)
+    /// was used inside a `mod` body.
     #[error("contribution `<+` is not allowed in a mod body")]
     #[diagnostic(code(E2006))]
+    #[doc(hidden)]
     ContribInModBody,
-    /// A force (`<-`) was used inside a `mod` body.
+    /// Reserved — unreachable from Verilog-AMS. See
+    /// [`ElabErrorKind::ContribInModBody`]. A force (`<-`) was used inside
+    /// a `mod` body.
     #[error("force `<-` is not allowed in a mod body")]
     #[diagnostic(code(E2007))]
+    #[doc(hidden)]
     ForceInModBody,
     /// An event kind name was not recognized.
     #[error("unknown event kind: `{0}`")]
@@ -143,31 +152,48 @@ pub enum ElabErrorKind {
         lhs: String,
         rhs: String,
     },
-    /// GAPS §I.14 — a `param` declared with a bundle type names a bundle
-    /// that was never declared.
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL bundle-typed
+    /// `param`; VAMS has no bundle-typed parameter declaration, so no
+    /// elaboration path constructs this variant). Proven by
+    /// `crates/piperine-lang/tests/pom_retired_variants_unreachable.rs`
+    /// (T50, `lrm-conformance-wave3`, PSW3-02/B4). GAPS §I.14 — a `param`
+    /// declared with a bundle type names a bundle that was never declared.
     #[error("unknown bundle `{0}`")]
     #[diagnostic(code(E2015))]
+    #[doc(hidden)]
     UnknownBundle(String),
-    /// GAPS §I.14 — a bundle literal used as a `param` default (or an
-    /// instance override) names a field the bundle doesn't have.
+    /// Reserved — unreachable from Verilog-AMS. See
+    /// [`ElabErrorKind::UnknownBundle`]. GAPS §I.14 — a bundle literal used
+    /// as a `param` default (or an instance override) names a field the
+    /// bundle doesn't have.
     #[error("bundle `{bundle}` has no field `{field}`")]
     #[diagnostic(code(E2016))]
+    #[doc(hidden)]
     BundleFieldUnknown { bundle: String, field: String },
-    /// GAPS §I.14 — a bundle-typed `param`'s default must be a bundle
-    /// literal of the same bundle type (`Foo {}` or `Foo { .f = e, .. }`).
+    /// Reserved — unreachable from Verilog-AMS. See
+    /// [`ElabErrorKind::UnknownBundle`]. GAPS §I.14 — a bundle-typed
+    /// `param`'s default must be a bundle literal of the same bundle type
+    /// (`Foo {}` or `Foo { .f = e, .. }`).
     #[error("bundle param `{param}` default must be a `{expected}` literal, found {found}")]
     #[diagnostic(code(E2017))]
+    #[doc(hidden)]
     BundleParamDefault { param: String, expected: String, found: String },
-    /// GAPS §I.14 — a bundle field has no default and no override was
-    /// given, so the flattened scalar param has no value to fall back to.
+    /// Reserved — unreachable from Verilog-AMS. See
+    /// [`ElabErrorKind::UnknownBundle`]. GAPS §I.14 — a bundle field has no
+    /// default and no override was given, so the flattened scalar param
+    /// has no value to fall back to.
     #[error("bundle field `{bundle}.{field}` has no default and was not overridden in param `{param}`")]
     #[diagnostic(code(E2018))]
+    #[doc(hidden)]
     BundleFieldNoDefault { param: String, bundle: String, field: String },
-    /// GAPS §I.14 — a module both declares a bundle-typed `param` and an
-    /// explicit scalar `param` whose name collides with the flattened
-    /// `{param}_{field}` naming convention.
+    /// Reserved — unreachable from Verilog-AMS. See
+    /// [`ElabErrorKind::UnknownBundle`]. GAPS §I.14 — a module both
+    /// declares a bundle-typed `param` and an explicit scalar `param` whose
+    /// name collides with the flattened `{param}_{field}` naming
+    /// convention.
     #[error("param `{0}` collides with a flattened bundle field name")]
     #[diagnostic(code(E2019))]
+    #[doc(hidden)]
     BundleParamNameCollision(String),
     /// GAPS §B.4 — two or more drivers on a net without a resolve clause.
     #[error("multiple drivers on net `{net}` in module `{module}` (discipline `{discipline}` does not resolve)")]
@@ -177,9 +203,15 @@ pub enum ElabErrorKind {
         net: String,
         discipline: String,
     },
-    /// A `match` does not cover every possible value of the scrutinee.
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL `match`
+    /// statement; VAMS has no `match`/enum-scrutinee construct, so no
+    /// elaboration path constructs this variant). Proven by
+    /// `crates/piperine-lang/tests/pom_retired_variants_unreachable.rs`
+    /// (T50, `lrm-conformance-wave3`, PSW3-02/B4). A `match` does not cover
+    /// every possible value of the scrutinee.
     #[error("non-exhaustive match in module `{module}`: {missing}")]
     #[diagnostic(code(E2024))]
+    #[doc(hidden)]
     NonExhaustiveMatch {
         module: String,
         /// What is missing — either variant names or a note about wildcard.
@@ -199,10 +231,15 @@ pub enum ElabErrorKind {
         help("Piperine's own extension attributes (`device`, `port`, …) must be registered before elaboration runs — a plugin host does this via `PluginHost::seed_schemas`. Check the attribute's spelling, or that a plugin providing it is loaded.")
     )]
     UnknownAttrSchema(String),
-    /// An item is accessed from outside its declaring package without being
-    /// declared `pub`.
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL package
+    /// visibility; VAMS has no package/`pub` declaration, so no elaboration
+    /// path constructs this variant). Proven by
+    /// `crates/piperine-lang/tests/pom_retired_variants_unreachable.rs`
+    /// (T50, `lrm-conformance-wave3`, PSW3-02/B4). An item is accessed from
+    /// outside its declaring package without being declared `pub`.
     #[error("item `{item}` is private to package `{owner_pkg}`")]
     #[diagnostic(code(E2021))]
+    #[doc(hidden)]
     PrivateItem {
         item: String,
         owner_pkg: String,

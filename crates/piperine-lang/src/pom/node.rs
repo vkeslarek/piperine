@@ -36,8 +36,19 @@ pub enum Kind {
     Discipline,
     Nature,
     Branch,
+    /// Reserved — unreachable from Verilog-AMS (retired PHDL value-layer
+    /// concept, MD-45). No `Node` variant exists for it, so no traversal
+    /// can produce it; kept only because removing a public enum variant is
+    /// a breaking change. Proven unreachable by
+    /// `crates/piperine-lang/tests/pom_retired_variants_unreachable.rs`
+    /// (T50, `lrm-conformance-wave3`, PSW3-02/B2).
+    #[doc(hidden)]
     Enum,
+    /// Reserved — unreachable from Verilog-AMS. See [`Kind::Enum`].
+    #[doc(hidden)]
     Bundle,
+    /// Reserved — unreachable from Verilog-AMS. See [`Kind::Enum`].
+    #[doc(hidden)]
     Capability,
     Attribute,
     Constraint,
