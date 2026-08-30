@@ -108,12 +108,36 @@ impl Instance {
     }
 }
 
-/// A reflected param — name, declared value type, and default value.
+/// A reflected param — name, declared value type, default value, and any
+/// LRM §2.9.2 standard attributes (`desc`/`units`/`op`/`multiplicity`,
+/// T27/LRMW3-10) the declaration carries.
 #[derive(Debug, Clone)]
 pub struct Param {
     name: String,
     ty: ValueType,
     default: Option<Value>,
+    desc: Option<String>,
+    units: Option<String>,
+    op: Option<String>,
+    multiplicity: Option<String>,
+}
+
+/// Reads one LRM §2.9.2 standard attribute's string value off a
+/// declaration's authored attribute-instance list — `None` when the
+/// declaration carries no such attribute. Every standard attribute value
+/// is a string literal (`(* desc="..." *)`), per T27's grammar (`piperine-
+/// lang/tests/standard_attributes.rs`), so a non-`Str` value (impossible
+/// through that grammar, but not a type-level guarantee here) also reads
+/// as `None` rather than panicking.
+fn standard_attr(attributes: &[piperine_lang::pom::module::Attribute], schema: &str) -> Option<String> {
+    attributes
+        .iter()
+        .find(|a| a.schema() == schema)
+        .and_then(|a| a.field(schema))
+        .and_then(|v| match v {
+            Value::Str(s) => Some(s.clone()),
+            _ => None,
+        })
 }
 
 impl Param {
@@ -123,6 +147,10 @@ impl Param {
             name: param.name().to_string(),
             ty: param.value_type().clone(),
             default: param.default().cloned(),
+            desc: standard_attr(param.attributes(), "desc"),
+            units: standard_attr(param.attributes(), "units"),
+            op: standard_attr(param.attributes(), "op"),
+            multiplicity: standard_attr(param.attributes(), "multiplicity"),
         }
     }
 
@@ -139,6 +167,27 @@ impl Param {
     /// The pre-folded default value, or `None` when the param has none.
     pub fn default(&self) -> Option<&Value> {
         self.default.as_ref()
+    }
+
+    /// The `(* desc="..." *)` standard attribute (§2.9.2), if declared.
+    pub fn desc(&self) -> Option<&str> {
+        self.desc.as_deref()
+    }
+
+    /// The `(* units="..." *)` standard attribute (§2.9.2), if declared.
+    pub fn units(&self) -> Option<&str> {
+        self.units.as_deref()
+    }
+
+    /// The `(* op="yes"|"no" *)` standard attribute (§2.9.2), if declared.
+    pub fn op(&self) -> Option<&str> {
+        self.op.as_deref()
+    }
+
+    /// The `(* multiplicity="multiply"|"divide"|"none" *)` standard
+    /// attribute (§2.9.2), if declared.
+    pub fn multiplicity(&self) -> Option<&str> {
+        self.multiplicity.as_deref()
     }
 }
 

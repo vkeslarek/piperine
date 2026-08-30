@@ -104,6 +104,40 @@ fn param_reflects_name_type_and_default() {
     assert_eq!(label.default(), Some(&Value::Str(String::new())), "the declared default (the empty string)");
 }
 
+/// Gap-fix batch: LRM §2.9.2 standard attributes (`desc`/`units`/`op`/
+/// `multiplicity`, T27/LRMW3-10) already parse and land in the POM
+/// (`piperine-lang/tests/standard_attributes.rs`) — this proves the other
+/// half spec.md's AC4 requires: they surface on the host-facing `Param`
+/// descriptor too, through the actual `piperine_api::model` API a host
+/// calls (not by reaching into POM internals).
+#[test]
+fn param_surfaces_standard_attributes_on_the_host_descriptor() {
+    let src = r#"
+        module m ();
+            (* desc="effective resistance", units="Ohms", op="yes", multiplicity="divide" *)
+            parameter real reff = 1.0;
+            parameter real plain = 2.0;
+        endmodule
+        "#;
+    let design = parse_and_elaborate(src, &SourceMap::dummy()).expect("fixture elaborates");
+    let m = design.module("m").expect("m present");
+    let params: Vec<Param> = m.params().iter().map(Param::of).collect();
+
+    let reff = params.iter().find(|p| p.name() == "reff").expect("`reff` reflected");
+    assert_eq!(reff.desc(), Some("effective resistance"));
+    assert_eq!(reff.units(), Some("Ohms"));
+    assert_eq!(reff.op(), Some("yes"));
+    assert_eq!(reff.multiplicity(), Some("divide"));
+
+    // A param with no standard attributes carries `None` for all four —
+    // not an empty string or a spurious default.
+    let plain = params.iter().find(|p| p.name() == "plain").expect("`plain` reflected");
+    assert_eq!(plain.desc(), None);
+    assert_eq!(plain.units(), None);
+    assert_eq!(plain.op(), None);
+    assert_eq!(plain.multiplicity(), None);
+}
+
 #[test]
 fn behavior_reflects_name_and_kind() {
     let design = fixture();
