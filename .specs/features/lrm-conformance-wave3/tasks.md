@@ -1455,10 +1455,19 @@ the closure work changed.
 **Requirement**: PSW3-10, spec G8
 
 **Done when**:
-- [ ] Zero unverdicted headings
-- [ ] Part IV §10's divergence list is regenerated against what T49/T50 changed
-- [ ] Part III §4/§5 regenerated from the real gate output
-- [ ] Gate passes: `cargo build --workspace && cargo test --workspace`
+- [x] Zero unverdicted headings (`covered_and_excluded_partition_the_spec`
+      green: 284 total, 15 Covered, 269 DeclaredLimitation, 0 Informative,
+      0 unverdicted)
+- [x] Part IV §10's divergence list is regenerated against what T49/T50
+      changed: item 2 (`constraint::`) closed, item 3 (four connectivity
+      axes) corrected from "silently empty" to "already fail loud", item 1
+      (`Kind`) and item 4 (`Value`) updated to "reserved, proven unreachable"
+      with `List` removed from the retired list (found genuinely reachable);
+      §5 and §9's axis table updated to match
+- [x] Part III §4/§5 checked against the real gate output
+      (`lrm_section_coverage.rs`, unaffected by this batch's axis-B-only
+      work): still accurate at 612/588/24/0, no drift — no edit needed
+- [x] Gate passes: `cargo build --workspace && cargo test --workspace`
 
 **Tests**: integration · **Gate**: build
 **Commit**: `test(spec-coverage): close the axis-B matrix and regenerate the spec`
