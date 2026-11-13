@@ -599,6 +599,7 @@ fn every_b3_production_parses_with_span() {
     natures_signals_and_sigtypes();
     modules_ports_items_and_generation();
     behavior_blocks_and_builtin_forms();
+    spans_of_instances_calls_places_names_and_attributes();
 }
 
 fn natures_signals_and_sigtypes() {
@@ -890,6 +891,105 @@ fn behavior_blocks_and_builtin_forms() {
     let value = c.value.as_ref().unwrap();
     assert!(matches!(&value.kind, ExprKind::IncludeStr(l) if l.kind == LitKind::Str("a.txt".into())));
     assert_eq!(text(src, &value.span), "include_str!(\"a.txt\")");
+}
+
+/// B.3's remaining productions: each node's span covers exactly its text.
+fn spans_of_instances_calls_places_names_and_attributes() {
+    // ---- sigtype ----
+    for src in ["flip Stream<T>", "[flip Stream<T>; N]", "[[Electrical; 2]; 3]", "Option<Electrical>"] {
+        assert_eq!(text(src, &ty(src).span), src);
+    }
+    let src = "[flip Stream<T>; N]";
+    let t = ty(src);
+    let TypeKind::Array { elem, len } = &t.kind else { panic!() };
+    assert_eq!((text(src, &elem.span), text(src, &len.span)), ("flip Stream<T>", "N"));
+
+    // ---- instance: call with a param block, callee, call, arguments ----
+    let src = "let u = Resistor(a, gnd) { r: 1k, tc1: 0.1 };";
+    let ModuleItemKind::Let { value, .. } = &module_item(src).kind else { panic!() };
+    assert_eq!(text(src, &value.span), "Resistor(a, gnd) { r: 1k, tc1: 0.1 }");
+    let ExprKind::Call { callee, args, params } = &value.kind else { panic!() };
+    assert_eq!(text(src, &callee.span), "Resistor");
+    assert_eq!(args.iter().map(|a| text(src, &a.span)).collect::<Vec<_>>(), ["a", "gnd"]);
+    let fields = params.as_ref().unwrap();
+    assert_eq!(fields.iter().map(|f| text(src, &f.span)).collect::<Vec<_>>(), ["r: 1k", "tc1: 0.1"]);
+    assert_eq!(fields.iter().map(|f| text(src, &f.name.span)).collect::<Vec<_>>(), ["r", "tc1"]);
+    let src = "Nch::<2>(d, g, s, b, w: 1u)";
+    let e = expr(src);
+    assert_eq!(text(src, &e.span), src);
+    let ExprKind::Call { callee, args, .. } = &e.kind else { panic!() };
+    assert_eq!(text(src, &callee.span), "Nch::<2>");
+    assert_eq!(text(src, &args[4].span), "w: 1u");
+    assert_eq!(text(src, &args[4].name.as_ref().unwrap().span), "w");
+    assert_eq!(text(src, &args[4].value.span), "1u");
+    // callee: a call, a parenthesized expression.
+    let src = "nch(0.13u, 2u)(d, g, s, b)";
+    let e = expr(src);
+    assert_eq!(text(src, &e.span), src);
+    let ExprKind::Call { callee, .. } = &e.kind else { panic!() };
+    assert_eq!(text(src, &callee.span), "nch(0.13u, 2u)");
+    let src = "(pick)(x)";
+    let ExprKind::Call { callee, args, .. } = &expr(src).kind else { panic!() };
+    assert_eq!((text(src, &callee.span), text(src, &args[0].span)), ("(pick)", "x"));
+
+    // ---- method_call ----
+    let src = "x.scale(2, by: 3)";
+    let e = expr(src);
+    assert_eq!(text(src, &e.span), src);
+    let ExprKind::MethodCall { recv, method, args, .. } = &e.kind else { panic!() };
+    assert_eq!(text(src, &recv.span), "x");
+    assert_eq!(text(src, &method.span), "scale");
+    assert_eq!(args.iter().map(|a| text(src, &a.span)).collect::<Vec<_>>(), ["2", "by: 3"]);
+    let src = "a.b().c::<T>(1)";
+    let ExprKind::MethodCall { recv, generics, .. } = &expr(src).kind else { panic!() };
+    assert_eq!(text(src, &recv.span), "a.b()");
+    assert!(generics.is_some());
+
+    // ---- names: `analog<N, M> for ...` ----
+    let src = "analog<N, M> for Urc<N, M> { i(a, b) +> 1.0; }";
+    let ItemKind::Behavior(b) = &only_item(src).kind else { panic!() };
+    assert_eq!(b.names.iter().map(|n| text(src, &n.span)).collect::<Vec<_>>(), ["N", "M"]);
+    assert_eq!(text(src, &b.target.span), "Urc<N, M>");
+
+    // ---- place: path, index and field steps ----
+    for place_src in ["st", "st.n", "sh[3]", "bus[i].data", "a::b[0][1].c"] {
+        let src = format!("{place_src} = y;");
+        let ModuleItemKind::Def { place, .. } = &module_item(&src).kind else { panic!() };
+        assert_eq!(text(&src, &place.span), place_src);
+    }
+    let src = "bus[i].data = y;";
+    let ModuleItemKind::Def { place, .. } = &module_item(src).kind else { panic!() };
+    let ExprKind::Field { expr: base, name } = &place.kind else { panic!() };
+    assert_eq!((text(src, &base.span), text(src, &name.span)), ("bus[i]", "data"));
+
+    // ---- attr_derivative, attr_derive, attr_link ----
+    for (src, attr_text, args) in [
+        ("#[derivative(df_dx, df_dy)] extern \"C\" fn f(x: f64, y: f64) -> f64;", "#[derivative(df_dx, df_dy)]", vec!["df_dx", "df_dy"]),
+        ("#[derive(Repr, Clone)] struct S;", "#[derive(Repr, Clone)]", vec!["Repr", "Clone"]),
+        (
+            "#[link(\"x.osdi\", model = \"bsim4\")] extern \"osdi\" module B() { w: f64; }",
+            "#[link(\"x.osdi\", model = \"bsim4\")]",
+            vec!["\"x.osdi\"", "model = \"bsim4\""],
+        ),
+    ] {
+        let item = only_item(src);
+        let attr = &item.meta.attrs[0];
+        assert_eq!(text(src, &attr.span), attr_text);
+        assert_eq!(text(src, &attr.path.span), &attr_text[2..attr_text.find('(').unwrap()]);
+        let AttrInput::List(list) = &attr.input else { panic!() };
+        let shown: Vec<&str> = list
+            .iter()
+            .map(|a| match a {
+                AttrArg::Path(p) => text(src, &p.span),
+                AttrArg::Lit(l) => text(src, &l.span),
+                AttrArg::NameValue(n, l) => &src[n.span.0.start..l.span.0.end],
+            })
+            .collect();
+        assert_eq!(shown, args, "{src}");
+    }
+    let src = "#[doc = \"x\"] pub nature N { value: bool }";
+    let item = only_item(src);
+    assert_eq!(text(src, &item.meta.attrs[0].span), "#[doc = \"x\"]");
 }
 
 #[test]
