@@ -1354,8 +1354,9 @@ Proof: run reflect | test json_is_deterministic ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** B1 (Phase 1, T1–T6) Sonnet worker at f553b9c5 - returned (HEAD 8c3f84a8, 15 pom tests); B2 (Phase 2, T7–T11) Sonnet worker at 2bdfd477
+**Dispatched:** B1 (Phase 1, T1–T6) Sonnet worker at f553b9c5 - returned (HEAD 8c3f84a8, 15 pom tests); B2 (Phase 2, T7–T11) Sonnet worker at 2bdfd477 - returned (HEAD 8cf88529); B3 (Phase 3, T12–T17) Sonnet worker at NEXT
 **B1 notes:** test helper `codes` in msl tests leaks a boxed str after `Diagnostic.code` became `Cow` (T1); shorthand struct-pattern binding points at the whole pattern; bare ident patterns (`None`) lowered as Binding until resolution refines; ExprKind has 31 variants (design said 33); `BuiltinId` lives in resolution.rs until T22; `Design::root()` returns `Decl` until T10 Namespace handle.
+**B2 notes:** root file keeps children beside it like mod.msl (`is_root` param, SPEC_DEVIATION in source.rs); a loaded file's root is its `mod b;` namespace; non-UTF-8 files keep lossy text; `Design::root()` still `Decl` (use `.as_namespace()`); Import span of `a::{b}` leaf includes braces.
 **Walked:** none (no screen; the stories' Independent Tests are the tests named in `## Checks`)
 
 ---
