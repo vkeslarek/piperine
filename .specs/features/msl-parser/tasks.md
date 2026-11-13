@@ -105,8 +105,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-01
 
 **Done when**:
-- [ ] Tests `contribution_and_commit_operators_are_single_tokens`, `keywords_reserved_vs_contextual`, `doc_comments_are_tokens` pass
-- [ ] Run lexer passes; build gate passes
+- [x] Tests `contribution_and_commit_operators_are_single_tokens`, `keywords_reserved_vs_contextual`, `doc_comments_are_tokens` pass
+- [x] Run lexer passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick

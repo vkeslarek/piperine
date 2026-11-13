@@ -6,7 +6,9 @@
 //! modules of this crate.
 
 pub mod diag;
+pub mod lexer;
 pub mod span;
 
 pub use diag::{Diagnostic, render};
+pub use lexer::{lex, lex_bytes};
 pub use span::Span;
