@@ -1,7 +1,7 @@
 # msl-pom verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at 8616c95b (code HEAD; caad2711 only edits tasks.md `## Handoff`)
+**Verdict**: PASS (round 2; round 1 was FAIL)
+**Proofs**: `proofs.md` at 5965ea85 (round 2, 104 pass; round 1 at 8616c95b)
 **Verifier**: independent sub-agent (author != verifier)
 
 Scope judged: spec.md POM-01..POM-15, tasks.md `## Checks` C1-C95, the diff f871dcac..8616c95b, `docs/pom/`, and the user's intent ("faithful to the language's own structures ... ALL the code ... like Java reflection") plus the CLAUDE.md rule "POM navigability mirrors the source". I wrote probes as a throwaway test target (removed, never committed): glob and re-export cycles, `super` past the root, prelude names in type and expression positions, privacy through expressions and private namespaces, behavior blocks in inline `mod`s, named connections out of order, `use` in a function body, shadowing by ports, closures and locals, `mod` in a function body, qualified names, multi-file serde and determinism, E0330 across generation arms, templates and bundle literals, writers, access aliases on generic natures, `crate`/`super` from loaded files, doc comments across `mod b;`, 12 malformed sources (no panic, `check()` clean), nature-kind edge cases, commits at every depth, serde and `dump()` determinism over all 110 corpus fences, and depth-256 serde and `to_ast`.
@@ -114,6 +114,14 @@ On the Handoff items:
 | C93 | `pom_reflect` `design_and_storage_types_implement_serde` | yes |
 | C94 | `pom_reflect` `gallery_design_round_trips_through_json` | yes - `Design: PartialEq` is derived over every arena; my probe extends this to all 110 fences |
 | C95 | `pom_reflect` `json_is_deterministic` | yes |
+| C96 | `pom_design` `docs_keep_kind_and_file_across_mod_files` | yes - six pairs with overlapping doc texts, `to_ast() == parse` per file; it does not assert the new `Doc.inner`/`Doc.file` fields directly (my probe: `(false, 0), (true, 1)`, correct) |
+| C97 | `pom_resolve` `use_in_a_block_resolves_with_block_scope` | yes - use before the item, alias, glob, enum glob, no leak out of a nested block, one `E0161` for the unresolvable import; my probe in an `analog` block and under an `if` also scopes correctly |
+| C98 | `pom_reflect` `references_navigate_to_declarations` | yes - exact declarations through `Design::decl`, `Path::target`, `Expr::{resolution,target,as_path}` for a read, a commit place, a type path and two member accesses; a literal has no target |
+| C99 | `pom_classify` `generic_carrier_follows_the_resolved_bound` | yes - unresolved bound gives `Unknown`, a user `x::Nature` gives `ValueInput`, the prelude bound gives `Carrier` (and through an array) |
+| C100 | `pom_reflect` `qualified_names_are_unambiguous_and_findable` | yes - exact strings for impl and behavior-block items, two `X` distinct, and every printed name round-trips through `find` |
+| C101 | `pom_classify` `named_binding_without_a_target_is_e0161` | yes - exact spans for 5 kinds (connection, param binding, struct field, template field, fn argument) and the unresolved/linked slots |
+| C102 | `pom_classify` `missing_instance_member_is_e0343` | yes - one `E0343` at `nope`, nothing else reported, and the member stays `Unresolved` |
+| C103 | `pom_resolve` `access_name_resolves_to_its_quantity` | yes - every `v` path (the `access:` declaration and the `v(p)` probe) is the quantity |
 
 ## Findings
 
@@ -129,3 +137,21 @@ On the Handoff items:
 | 8 (Minor) some names stay `Unresolved` with no diagnostic, which contradicts resolution.md ("the slot stays `Unresolved`, one `E0161` is reported") | Probe: nature `access: v` paths are `Unresolved` silently; `R(q: x)` with no port `q` and `R(x) { nope: 1.0 }` with no param `nope` report nothing; `c.nope` on an instance of a known module reports nothing, while part III §8.4.8 says "A missing or non-`pub` item is `E0343`" | Report `E0343` for a missing member of a known instance, and either diagnose or document the other silent cases | 75fd9b5c |
 | 9 (Minor) the C92 proof names only half of its criterion | tasks.md C92 `Proof: run design / load_from_disk_equals_in_memory_build`; the unreadable-root half lives in `unreadable_root_is_an_empty_root_with_e0161` | Name both tests in the proof (or merge them) | 678a5aca |
 | 10 (Cosmetic) stale doc text | `Design::diagnostics` says "parse diagnostics first, in file order", but they are sorted by file/offset/code (design.rs). reflection.md `### Reference` repeats "A node that names a declaration: see `Reflect::references`." twice | Fix both sentences | 11b8f98a, 678a5aca |
+
+## Round 2
+
+Verifier re-check at 5965ea85 (fix commits 4d56a937..678a5aca). I read each fix's test and ran throwaway probes (removed, not committed).
+
+- 1 confirmed - `Doc` now carries `inner` and `file`, and C96 rebuilds every file of six overlapping pairs; on `/// x` + `//! x` my probe gets `docs()` = `[(outer, file 0), (inner, file 1)]`.
+- 2 confirmed - C97 covers the block scope; my probes in an `analog` block, under an `if` and in a nested block resolve the import inside and not outside it.
+- 3 confirmed - `Design::decl`, `Path::target`/`resolution` and `Expr::resolution`/`target`/`as_path` exist and C98 pins the exact declarations.
+- 4 confirmed - C44's test now reads `Shared` as a parameter type, `Mode` as a type and in a path, and `LIMIT` in an expression, from `m::deep`, and asserts the exact prelude declarations.
+- 5 confirmed - C47 now asserts `S::X` is the inherent impl's const (distinct from the trait impl's) and `Tr::run` is the trait's own `fn`.
+- 6 confirmed - C99.
+- 7 confirmed - C100: `impl S.X`, `impl Tr for S.X` and `analog for Z.z` are distinct, and `find` takes every printed name.
+- 8 confirmed - C101, C102 and C103 diagnose or resolve each silent case I listed.
+- 9 confirmed - the C92 proof now requires both tests to report `ok` (count of 2).
+- 10 confirmed - the `Design::diagnostics` doc and the duplicated `Reference` sentence are fixed in both the source and reflection.md.
+
+No finding is reopened. One residual note, not a finding: C96 proves the `inner`/`file` fields only through `to_ast` equality, never by reading them; my probe shows they hold the right values.
+

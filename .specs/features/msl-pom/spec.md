@@ -313,21 +313,21 @@
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| POM-01 | P1: Build a design from sources | Tasks | In Tasks |
-| POM-02 | P1: The declaration tree mirrors the source | Tasks | In Tasks |
-| POM-03 | P1: The declaration tree mirrors the source | Tasks | In Tasks |
-| POM-04 | P1: The declaration tree mirrors the source | Tasks | In Tasks |
-| POM-05 | P1: The declaration tree mirrors the source | Tasks | In Tasks |
-| POM-06 | P1: The declaration tree mirrors the source | Tasks | In Tasks |
-| POM-07 | P1: The declaration tree mirrors the source | Tasks | In Tasks |
-| POM-08 | P1: Names are linked to their declarations | Tasks | In Tasks |
-| POM-09 | P1: Names are linked to their declarations | Tasks | In Tasks |
-| POM-10 | P2: Members resolve through declared types | Tasks | In Tasks |
-| POM-11 | P1: Reflection queries; P2: Reverse queries | Tasks | In Tasks |
-| POM-12 | P1: Authored structure is never rewritten | Tasks | In Tasks |
-| POM-13 | P1: Reference documentation | Tasks | In Tasks |
-| POM-14 | P1: Every source builds | Tasks | In Tasks |
-| POM-15 | P1: The design serializes | Tasks | In Tasks |
+| POM-01 | P1: Build a design from sources | Tasks | Verified |
+| POM-02 | P1: The declaration tree mirrors the source | Tasks | Verified |
+| POM-03 | P1: The declaration tree mirrors the source | Tasks | Verified |
+| POM-04 | P1: The declaration tree mirrors the source | Tasks | Verified |
+| POM-05 | P1: The declaration tree mirrors the source | Tasks | Verified |
+| POM-06 | P1: The declaration tree mirrors the source | Tasks | Verified |
+| POM-07 | P1: The declaration tree mirrors the source | Tasks | Verified |
+| POM-08 | P1: Names are linked to their declarations | Tasks | Verified |
+| POM-09 | P1: Names are linked to their declarations | Tasks | Verified |
+| POM-10 | P2: Members resolve through declared types | Tasks | Verified |
+| POM-11 | P1: Reflection queries; P2: Reverse queries | Tasks | Verified |
+| POM-12 | P1: Authored structure is never rewritten | Tasks | Verified |
+| POM-13 | P1: Reference documentation | Tasks | Verified |
+| POM-14 | P1: Every source builds | Tasks | Verified |
+| POM-15 | P1: The design serializes | Tasks | Verified |
 
 **Coverage:** 15 total, 15 mapped to tasks, 0 unmapped.
 
