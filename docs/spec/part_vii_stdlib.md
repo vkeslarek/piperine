@@ -142,7 +142,7 @@ pub fn cast<A: Repr, B: Repr>(a: A) -> B where A::WIDTH == B::WIDTH {
 3. A width mismatch is `E0701`.
 4. A definition between carriers of equal width and different types is written with `cast` (§8.2.6).
 
-```rust
+```rust,fragment
 signal sh: [Bit; 8];
 byte = cast(sh);            // byte: Bit<u8>; sh[0] is the least significant level
 ```
@@ -313,7 +313,8 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 
 #### 22.2.3 `white_noise`, `flicker_noise`, `noise_table`
 
-```rust
+<!-- spec-bug: `…` stands for an elided body in `noise_table`; the example is pseudocode -->
+```rust,compile_fail
 pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
 pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
 pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64, f64); N]; … }   // head and params only
@@ -475,7 +476,8 @@ Dynamic semantics:
 8. When `reset` falls, integration continues from the held value (§15.2.1).
 9. `idt` follows VAMS 4.5.4 with no rule of its own.
 
-```rust
+<!-- spec-bug: an `analog for` block and a body `let` in one block; the `let` belongs in the module body, so no single entry of the grammar accepts the pair -->
+```rust,compile_fail
 analog for Pi { v(outp) +> k1 * v(inp) + k2 * idt(v(inp), 0.0); }
 let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);
 ```
@@ -519,7 +521,7 @@ digital<S> for idtmod<S> {
 | --- | --- | --- | --- | --- |
 | `idtmod(x, ic, modulus, offset)` | `start`, or the last seated `base` | the wrapped integral | kept, except when seated | `x / jω` |
 
-```rust
+```rust,fragment
 let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5);    // phase in [-0.5, 0.5)
 ```
 
@@ -629,7 +631,7 @@ Dynamic semantics:
 | --- | --- | --- | --- | --- |
 | `transition(x, td, tr, tf)` | `x.known_or(0.0)` | the ramp at `now()`, or the resting value | the value at `now()`; a corner moves nothing | constant: no response (§11.1) |
 
-```rust
+```rust,fragment
 let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
 ```
 
@@ -799,7 +801,7 @@ pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64);
 
 > **Resolution.** The generator algorithm is implementation-defined and **MUST** be documented. Rules 1–5 are the contract. A sequence, and so a result that depends on one, is portable only between implementations that document the same generator (G.64).
 
-```rust
+```rust,fragment
 on clk.changed() {
     let (j, next) = normal(rng, 0.0, jitter);
     rng <- next;

@@ -402,7 +402,7 @@ call           ::= path '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')'           
 
 **Examples**
 
-```rust
+```rust,fragment
 cross(e)                    // rising, simulator tolerances
 cross(e, 1p)                // with ttol
 cross(e, etol: 1u)          // skips ttol
@@ -530,7 +530,7 @@ and hides the unknown. A model that wants that writes it: `if c.known_or(false) 
 
 **Examples**
 
-```rust
+```rust,fragment
 on fref.rise() || fvco.rise() {          // state has no initial value here
     let mut s = state;                   // s: i2, all levels unknown
     if fref.rise() && s < 1 { s += 1; }  // condition unknown: s = merge(s, s + 1) = unknown

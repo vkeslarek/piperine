@@ -118,7 +118,7 @@ SI_SUFFIX  ::= 'T' | 'G' | 'M' | 'k' | 'm' | 'u' | 'n' | 'p' | 'f' | 'a'
 
 **Examples**
 
-```rust
+```rust,fragment
 r:  f64 = 1k;          // 1000.0
 c:  f64 = 2.2u;        // 2.2e-6
 cs: f64 = 10f;         // 1e-14

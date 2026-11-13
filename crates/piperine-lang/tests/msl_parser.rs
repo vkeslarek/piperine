@@ -896,3 +896,31 @@ fn contextual_keywords_are_identifiers_outside_nature() {
     assert!(!parse("analog { }").diagnostics.is_empty());
     assert!(!parse("analog Foo { }").diagnostics.is_empty());
 }
+
+#[test]
+fn struct_expression_field_shorthand() {
+    // Rust 2024 value grammar: `Logic { v, s: Strength::Strong }` is
+    // `Logic { v: v, s: .. }`; the shorthand field's value is the name itself.
+    let ExprKind::Struct { fields, .. } = &expr("Logic { v, s: Strength::Strong }").kind else { panic!() };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name.name, "v");
+    assert!(matches!(&fields[0].value.kind, ExprKind::Path(p) if path_names(p) == ["v"]));
+    assert!(matches!(&fields[1].value.kind, ExprKind::Path(p) if path_names(p) == ["Strength", "Strong"]));
+}
+
+#[test]
+fn nested_tuple_index() {
+    // `x.0.1` is two tuple indexes, though the lexer reads `0.1` as a float.
+    let src = "x.0.1";
+    let e = expr(src);
+    let ExprKind::Field { expr: inner, name } = &e.kind else { panic!("{:?}", e.kind) };
+    assert_eq!(name.name, "1");
+    let ExprKind::Field { expr: base, name } = &inner.kind else { panic!() };
+    assert_eq!(name.name, "0");
+    assert!(matches!(&base.kind, ExprKind::Path(p) if path_names(p) == ["x"]));
+    assert_eq!(text(src, &e.span), "x.0.1");
+    assert_eq!(text(src, &inner.span), "x.0");
+    // Three levels, and an ordinary float field is not one.
+    assert!(matches!(&expr("a.0.1.2").kind, ExprKind::Field { name, .. } if name.name == "2"));
+    assert!(!parse_expr("x.1.5e3").1.is_empty());
+}

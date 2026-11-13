@@ -304,8 +304,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-03
 
 **Done when**:
-- [ ] Tests `every_valid_spec_block_parses_clean`, `every_compile_fail_block_diagnoses` pass; the test prints the count of blocks per class
-- [ ] Run corpus passes; build gate passes
+- [x] Tests `every_valid_spec_block_parses_clean`, `every_compile_fail_block_diagnoses` pass; the test prints the count of blocks per class
+- [x] Run corpus passes; build gate passes
 
 **Tests**: integration
 **Gate**: full

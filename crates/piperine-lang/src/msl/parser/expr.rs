@@ -92,6 +92,8 @@ fn gt_op<'a, I: In<'a>>(want: GtOp) -> P<'a, I, GtOp> {
 #[derive(Clone)]
 enum Post {
     Field(Ident),
+    /// `x.0.1`: the lexer reads `0.1` as one float, so it is split here.
+    Field2(Ident, Ident),
     Method(Ident, Option<GenericArgs>, Vec<Arg>),
     Call(Vec<Arg>, Option<Vec<FieldInit>>),
     Index(Expr),
@@ -101,6 +103,13 @@ enum Post {
 fn apply_post<'a, I: In<'a>>(lhs: Expr, post: Post, e: &mut MapExtra<'a, '_, I, Extra<'a>>) -> Expr {
     let kind = match post {
         Post::Field(name) => ExprKind::Field { expr: boxed(lhs), name },
+        Post::Field2(first, second) => {
+            let inner = Expr {
+                span: Loc(lhs.span.0.to(first.span.0)),
+                kind: ExprKind::Field { expr: boxed(lhs), name: first },
+            };
+            ExprKind::Field { expr: boxed(inner), name: second }
+        }
         Post::Method(method, generics, args) => {
             ExprKind::MethodCall { recv: boxed(lhs), method, generics, args }
         }
@@ -176,10 +185,19 @@ pub(crate) fn build<'a, I: In<'a>>(
             }
         });
 
+    // `name: value`, or the shorthand `name` for `name: name`.
     let field_init = ident()
-        .then_ignore(punct(Punct::Colon))
-        .then(expr.clone())
-        .map_with(|(name, value), e| FieldInit { name, value, span: Loc(e.span()) });
+        .then(punct(Punct::Colon).ignore_then(expr.clone()).or_not())
+        .map_with(|(name, value), e| {
+            let value = value.unwrap_or_else(|| Expr {
+                span: name.span,
+                kind: ExprKind::Path(Path {
+                    segments: vec![PathSeg { ident: name.clone(), args: None }],
+                    span: name.span,
+                }),
+            });
+            FieldInit { name, value, span: Loc(e.span()) }
+        });
     let field_inits = field_init
         .separated_by(punct(Punct::Comma))
         .allow_trailing()
@@ -316,6 +334,26 @@ pub(crate) fn build<'a, I: In<'a>>(
         .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
     let tuple_index = select! { Token::Int(s) => s }
         .map_with(|name, e| Ident { name, span: Loc(e.span()) });
+    // `0.1` after a dot: two tuple indexes lexed as one float.
+    let nested_tuple_index = select! { Token::Float { raw, .. } => raw }.try_map(|raw: String, span: Span| {
+        match raw.split_once('.') {
+            Some((a, b))
+                if !a.is_empty()
+                    && !b.is_empty()
+                    && a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit()) =>
+            {
+                let mid = span.start + a.len();
+                Ok((
+                    Ident { name: a.to_string(), span: Loc(Span::new(span.start, mid)) },
+                    Ident { name: b.to_string(), span: Loc(Span::new(mid + 1, span.end)) },
+                ))
+            }
+            _ => Err(Rich::custom(
+                span,
+                Custom { code: "E0900", message: format!("`{raw}` is not a tuple index"), help: None },
+            )),
+        }
+    });
     let method_or_field = punct(Punct::Dot).ignore_then(first_of(vec![
         ident()
             .then(ty::generic_args(h, true).or_not())
@@ -323,6 +361,7 @@ pub(crate) fn build<'a, I: In<'a>>(
             .map(|((name, g), a)| Post::Method(name, g, a))
             .boxed(),
         ident().or(tuple_index).map(Post::Field).boxed(),
+        nested_tuple_index.map(|(a, b)| Post::Field2(a, b)).boxed(),
     ]));
     let call = args.clone().then(if allow_struct { field_inits.clone().or_not().boxed() } else {
         empty().to(None).boxed()

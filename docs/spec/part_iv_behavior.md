@@ -312,7 +312,7 @@ equilibrium solves, so `analysis(Static)` is true there (G.33).
 
 **Examples**
 
-```rust
+```rust,fragment
 let n = noise(4.0 * K_B * temperature() / r, "thermal");
 i(a, mid) +> n;
 i(mid, b) +> -n;          // fully correlated

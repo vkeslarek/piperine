@@ -219,7 +219,8 @@ argument, a generation range or condition, an array length, a param default and 
 
 **Examples**
 
-```rust
+<!-- spec-bug: a module head with `…` standing for an elided body is not source; the example is pseudocode -->
+```rust,compile_fail
 module AsyncFifo<T: Repr, const A: u32>(in wclk: Bit, in rclk: Bit, rx: flip Stream<T>, tx: Stream<T>)
     where A >= 1 { … }
 
@@ -640,7 +641,8 @@ Its type is `Name`. Calling it with connections places an instance.
 
 **Examples**
 
-```rust
+<!-- spec-bug: `let bank = …;` ("in a parent's body") sits at file scope next to module declarations in one block; no entry of the grammar accepts the mixture -->
+```rust,compile_fail
 /// One-transistor one-capacitor DRAM cell; Cell is the bundle of §7.
 module Dram1T1C(c: Cell) {
     cs: f64 = 30f;

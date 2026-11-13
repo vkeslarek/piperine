@@ -205,7 +205,7 @@ sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
 
 **Examples**
 
-```rust
+```rust,fragment
 signal en:    Bit;                       // starts unknown
 signal count: Bit<u8> = 0;
 signal level: Bit<f64> = 0.0;            // real-number modeling: piecewise constant
@@ -421,7 +421,7 @@ the flow of a branch.
 
 **Examples**
 
-```rust
+```rust,fragment
 signal mid:  Electrical;          // internal node
 signal vout: Electrical = 0.0;    // where Newton starts; held there through a transient's operating point (§16)
 ```

@@ -237,7 +237,7 @@ That analysis is defined and not yet implemented (Appendix C.2, G.37).
 **Status: Provisional.** In force: a drive written with a bare `after` holds its value in `Dc` (§16.1.3), as in VAMS. A DC sweep does not move it.
 Logic that must follow a sweep says so, in one of two ways:
 
-```rust
+```rust,fragment
 q = e after if analysis(Tran) { tpd } else { 0.0 };     // §8.2.5 allows it
 q = inertial(e, tpd);                                    // follows its input in an operating point (§22.5.8)
 ```
