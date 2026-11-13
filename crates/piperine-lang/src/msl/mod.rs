@@ -5,6 +5,7 @@
 //! spanned AST, plus diagnostics. It shares nothing with the Verilog-AMS
 //! modules of this crate.
 
+pub mod ast;
 pub mod diag;
 pub mod lexer;
 pub mod span;

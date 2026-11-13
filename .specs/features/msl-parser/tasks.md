@@ -141,8 +141,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-02
 
 **Done when**:
-- [ ] One AST type or variant per B.3 production (listed in a doc comment table mapping production → type)
-- [ ] Build gate passes
+- [x] One AST type or variant per B.3 production (listed in a doc comment table mapping production → type)
+- [x] Build gate passes
 
 **Tests**: none
 **Gate**: build
