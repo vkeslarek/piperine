@@ -136,12 +136,7 @@ pub(super) fn run(design: &Design) -> Classified {
         let id = DeclId(i as u32);
         match &design.decl_data(id).kind {
             DeclKind::Port(_) => out.port_kinds.push((id, port_kind(design, id, &bundles))),
-            // SPEC_DEVIATION: the design says the slot is filled for every struct; only a bundle
-            // is written (`Some(true)`), so a struct that is no bundle keeps `bundle() == None`.
-            // Reason: the existing `pom_tree::struct_fields_and_enum_variants` asserts `None`
-            // for a non-bundle struct, and a test is never changed by a worker; `is_bundle()` is
-            // the question hosts ask and it answers the same either way.
-            DeclKind::Struct(_) if bundles.contains(&id) => out.bundles.push((id, true)),
+            DeclKind::Struct(_) => out.bundles.push((id, bundles.contains(&id))),
             DeclKind::Impl(i) => {
                 if let Resolution::Decl(d) = design.type_resolution(i.self_ty) {
                     if matches!(design.decl_data(d).kind, DeclKind::Module(_)) {

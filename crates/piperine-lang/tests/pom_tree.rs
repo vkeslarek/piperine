@@ -263,7 +263,7 @@ enum E { A, Data(u8) = 3, Named { x: u8, y: u16 } }
     let s = design.find("S").and_then(|d| d.as_struct()).expect("struct S");
     assert_eq!(s.form(), FieldsForm::Named);
     assert_eq!(s.generics().len(), 1);
-    assert_eq!(s.bundle(), None, "the bundle flag stays unset until classification");
+    assert_eq!(s.bundle(), Some(false), "a classified non-bundle struct carries Some(false)");
     let fields = s.fields();
     assert_eq!(fields.iter().map(|f| f.name()).collect::<Vec<_>>(), [Some("a"), Some("valid"), Some("c")]);
     assert_eq!(fields.iter().map(|f| f.dir()).collect::<Vec<_>>(), [Some(Dir::In), Some(Dir::Out), None]);
