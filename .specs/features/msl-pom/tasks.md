@@ -1354,7 +1354,8 @@ Proof: run reflect | test json_is_deterministic ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** B1 (Phase 1, T1–T6) Sonnet worker at f553b9c5
+**Dispatched:** B1 (Phase 1, T1–T6) Sonnet worker at f553b9c5 - returned (HEAD 8c3f84a8, 15 pom tests); B2 (Phase 2, T7–T11) Sonnet worker at NEXT
+**B1 notes:** test helper `codes` in msl tests leaks a boxed str after `Diagnostic.code` became `Cow` (T1); shorthand struct-pattern binding points at the whole pattern; bare ident patterns (`None`) lowered as Binding until resolution refines; ExprKind has 31 variants (design said 33); `BuiltinId` lives in resolution.rs until T22; `Design::root()` returns `Decl` until T10 Namespace handle.
 **Walked:** none (no screen; the stories' Independent Tests are the tests named in `## Checks`)
 
 ---
