@@ -343,3 +343,153 @@ impl Design {
         Path::new(self, id)
     }
 }
+
+/// The statements under `stmts`, each followed by those nested in it
+/// (blocks, `if`, `match`, loops), in source order. Items inside a block are
+/// declarations of their own and are not entered.
+pub(crate) fn nested_stmts(design: &Design, stmts: &[StmtId]) -> Vec<StmtId> {
+    let mut out = Vec::new();
+    for s in stmts {
+        walk_stmt(design, *s, &mut out);
+    }
+    out
+}
+
+fn walk_stmt(design: &Design, id: StmtId, out: &mut Vec<StmtId>) {
+    out.push(id);
+    match &design.stmt_node(id).kind {
+        StmtKind::Expr { expr, .. } => walk_expr(design, *expr, out),
+        StmtKind::Let { init, else_, .. } => {
+            if let Some(e) = init {
+                walk_expr(design, *e, out);
+            }
+            if let Some(b) = else_ {
+                walk_block(design, b, out);
+            }
+        }
+        StmtKind::Item(_)
+        | StmtKind::Contribution { .. }
+        | StmtKind::Commit { .. }
+        | StmtKind::Empty
+        | StmtKind::Signal(_)
+        | StmtKind::Reaction(_) => {}
+    }
+}
+
+fn walk_block(design: &Design, block: &crate::pom::body::Block, out: &mut Vec<StmtId>) {
+    for s in &block.stmts {
+        walk_stmt(design, *s, out);
+    }
+}
+
+fn walk_expr(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {
+    match &design.expr_node(id).kind {
+        ExprKind::Block(b) | ExprKind::Loop { body: b } | ExprKind::While { body: b, .. } | ExprKind::For { body: b, .. } => {
+            walk_block(design, b, out)
+        }
+        ExprKind::If { then, else_, .. } => {
+            walk_block(design, then, out);
+            if let Some(e) = else_ {
+                walk_expr(design, *e, out);
+            }
+        }
+        ExprKind::Match { arms, .. } => {
+            for a in arms {
+                walk_expr(design, a.body, out);
+            }
+        }
+        ExprKind::Paren(inner) => walk_expr(design, *inner, out),
+        _ => {}
+    }
+}
+
+/// `lhs +> rhs;`
+#[derive(Clone, Copy)]
+pub struct Contribution<'d> {
+    stmt: Stmt<'d>,
+}
+
+impl<'d> Contribution<'d> {
+    pub(crate) fn new(design: &'d Design, id: StmtId) -> Self {
+        Contribution { stmt: Stmt::new(design, id) }
+    }
+
+    pub fn stmt(self) -> Stmt<'d> {
+        self.stmt
+    }
+
+    pub fn lhs(self) -> Expr<'d> {
+        match self.stmt.kind() {
+            StmtKind::Contribution { lhs, .. } => self.stmt.design.expr(*lhs),
+            _ => unreachable!("Contribution handle over a non-contribution statement"),
+        }
+    }
+
+    pub fn rhs(self) -> Expr<'d> {
+        match self.stmt.kind() {
+            StmtKind::Contribution { rhs, .. } => self.stmt.design.expr(*rhs),
+            _ => unreachable!("Contribution handle over a non-contribution statement"),
+        }
+    }
+}
+
+/// `place <- value [after delay];`
+#[derive(Clone, Copy)]
+pub struct Commit<'d> {
+    stmt: Stmt<'d>,
+}
+
+impl<'d> Commit<'d> {
+    pub(crate) fn new(design: &'d Design, id: StmtId) -> Self {
+        Commit { stmt: Stmt::new(design, id) }
+    }
+
+    pub fn stmt(self) -> Stmt<'d> {
+        self.stmt
+    }
+
+    pub fn place(self) -> Expr<'d> {
+        match self.stmt.kind() {
+            StmtKind::Commit { place, .. } => self.stmt.design.expr(*place),
+            _ => unreachable!("Commit handle over a non-commit statement"),
+        }
+    }
+
+    pub fn value(self) -> Expr<'d> {
+        match self.stmt.kind() {
+            StmtKind::Commit { value, .. } => self.stmt.design.expr(*value),
+            _ => unreachable!("Commit handle over a non-commit statement"),
+        }
+    }
+
+    pub fn after(self) -> Option<Expr<'d>> {
+        match self.stmt.kind() {
+            StmtKind::Commit { after, .. } => after.map(|e| self.stmt.design.expr(e)),
+            _ => unreachable!("Commit handle over a non-commit statement"),
+        }
+    }
+}
+
+impl PartialEq for Contribution<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.stmt == other.stmt
+    }
+}
+
+impl std::fmt::Debug for Contribution<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Contribution({:?})", self.stmt.id())
+    }
+}
+
+impl PartialEq for Commit<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.stmt == other.stmt
+    }
+}
+
+impl std::fmt::Debug for Commit<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Commit({:?})", self.stmt.id())
+    }
+}

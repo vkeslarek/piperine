@@ -2,6 +2,7 @@
 //! [`Reflect`] trait every declaration handle shares.
 
 mod body;
+mod hardware;
 mod items;
 
 use super::body::Lit;
@@ -11,7 +12,8 @@ use super::ids::DeclId;
 use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
-pub use body::{Expr, Path, Pat, SourceFile, Stmt, Type};
+pub use body::{Commit, Contribution, Expr, Path, Pat, SourceFile, Stmt, Type};
+pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
 pub use items::{Const, Enum, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Struct, Trait, Use, Variant};
 
 /// The generic declaration handle: any kind, read through [`Decl::kind`].
@@ -108,6 +110,20 @@ pub trait Reflect<'d>: Copy {
 
     fn is_pub(self) -> bool {
         self.decl().data().public
+    }
+
+    /// The module this declaration belongs to: itself for a module, else the
+    /// nearest enclosing module (through generation). None outside any
+    /// module.
+    fn module(self) -> Option<Module<'d>> {
+        let mut at = Some(self.decl());
+        while let Some(d) = at {
+            if let Some(m) = d.as_module() {
+                return Some(m);
+            }
+            at = d.declared_in();
+        }
+        None
     }
 
     /// The declaration that lexically contains this one; none for a file's
@@ -218,6 +234,26 @@ impl Design {
     /// The root file's namespace.
     pub fn root(&self) -> Decl<'_> {
         Decl::new(self, self.root_id())
+    }
+
+    /// Every module of the design, in source order.
+    pub fn modules(&self) -> Vec<Module<'_>> {
+        (0..self.decl_count()).filter_map(|i| Decl::new(self, DeclId(i as u32)).as_module()).collect()
+    }
+
+    /// The first module named `name`, wherever it is declared.
+    pub fn module(&self, name: &str) -> Option<Module<'_>> {
+        self.modules().into_iter().find(|m| m.name() == Some(name))
+    }
+
+    /// Every nature of the design, in source order.
+    pub fn natures(&self) -> Vec<Nature<'_>> {
+        (0..self.decl_count()).filter_map(|i| Decl::new(self, DeclId(i as u32)).as_nature()).collect()
+    }
+
+    /// The first nature named `name`.
+    pub fn nature(&self, name: &str) -> Option<Nature<'_>> {
+        self.natures().into_iter().find(|n| n.name() == Some(name))
     }
 
     /// The declaration at a `::` path from the root, each segment a child

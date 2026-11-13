@@ -147,7 +147,7 @@ impl Lowerer<'_> {
         Arg { name: a.name.as_ref().map(name), value: self.expr(&a.value), res: Resolution::Unresolved, span: a.span.0 }
     }
 
-    fn field_init(&mut self, f: &ast::FieldInit) -> FieldInit {
+    pub(crate) fn field_init(&mut self, f: &ast::FieldInit) -> FieldInit {
         FieldInit { name: name(&f.name), value: self.expr(&f.value), res: Resolution::Unresolved, span: f.span.0 }
     }
 
@@ -257,6 +257,14 @@ impl Lowerer<'_> {
         Block { stmts: b.stmts.iter().map(|s| self.stmt(s)).collect(), span: b.span.0 }
     }
 
+    /// A `Reaction` declaration as the last child of the owner.
+    pub(crate) fn reaction(&mut self, r: &ast::Reaction, span: crate::msl::Span) -> DeclId {
+        let id = self.new_decl(DeclKind::Error, None, span, false);
+        let data = self.within(id, |lw| ReactionData { event: lw.expr(&r.event), body: lw.block(&r.body) });
+        self.design.decl_mut(id).kind = DeclKind::Reaction(data);
+        id
+    }
+
     pub(crate) fn stmt(&mut self, s: &ast::Stmt) -> StmtId {
         let kind = match &s.kind {
             ast::StmtKind::Let { pat, ty, init, else_ } => StmtKind::Let {
@@ -287,12 +295,7 @@ impl Lowerer<'_> {
                 self.design.decl_mut(id).kind = DeclKind::Signal(data);
                 StmtKind::Signal(id)
             }
-            ast::StmtKind::Reaction(r) => {
-                let id = self.new_decl(DeclKind::Error, None, s.span.0, false);
-                let data = self.within(id, |lw| ReactionData { event: lw.expr(&r.event), body: lw.block(&r.body) });
-                self.design.decl_mut(id).kind = DeclKind::Reaction(data);
-                StmtKind::Reaction(id)
-            }
+            ast::StmtKind::Reaction(r) => StmtKind::Reaction(self.reaction(r, s.span.0)),
         };
         self.design.push_stmt(StmtNode { kind, span: s.span.0, owner: self.owner })
     }

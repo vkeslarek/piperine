@@ -7,13 +7,11 @@
 
 mod body;
 mod files;
+mod hardware;
 mod items;
 mod meta;
 
-use super::decl::{
-    BehaviorData, ConstData, DeclData, DeclKind, ModuleData,
-    NamespaceData, NamespaceOrigin, NatureData,
-};
+use super::decl::{ConstData, DeclData, DeclKind, NamespaceData, NamespaceOrigin};
 use super::design::Design;
 use super::meta::Meta;
 use super::source::SourceProvider;
@@ -130,9 +128,9 @@ impl Lowerer<'_> {
                 };
                 DeclKind::Namespace(NamespaceData { origin })
             }
-            ast::ItemKind::Nature(_) => DeclKind::Nature(NatureData::default()),
-            ast::ItemKind::Module(_) => DeclKind::Module(ModuleData::default()),
-            ast::ItemKind::Behavior(_) => DeclKind::Behavior(BehaviorData::default()),
+            ast::ItemKind::Nature(n) => self.nature_decl(n),
+            ast::ItemKind::Module(m) => self.module_decl(m),
+            ast::ItemKind::Behavior(b) => self.behavior_decl(b),
             ast::ItemKind::Error => DeclKind::Error,
         }
     }

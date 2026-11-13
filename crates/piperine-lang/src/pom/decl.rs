@@ -4,9 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::body::{Block, Lit};
+use super::body::{Block, BehaviorKind, FieldInit, Lit, QuantityRole};
+use super::resolution::{NatureKind, PortKind};
 use super::meta::Meta;
-use super::ids::{DeclId, ExprId, FileId, PatId, PathId, TypeId};
+use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use crate::msl::Span;
 pub use crate::msl::ast::Dir;
 
@@ -231,20 +232,63 @@ pub enum GenericParamData {
     Const { ty: TypeId, default: Option<ExprId> },
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct NatureData {}
+/// `nature Name<..> { potential: Voltage { .. }, flow: Current { .. }, value: T, resolve: f }`;
+/// generics and quantities are children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NatureData {
+    /// The fields in source order, repeated and mixed ones included.
+    pub fields: Vec<NatureFieldNode>,
+    /// Computed from the declared fields.
+    pub kind: NatureKind,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct QuantityData {}
+/// One field of a nature, as written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NatureFieldNode {
+    /// `potential: Voltage { .. }` or `flow: ..`: the `Quantity` declaration.
+    Quantity(DeclId),
+    /// `value: T`
+    Value(TypeId),
+    /// `resolve: expr`
+    Resolve(ExprId),
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ModuleData {}
+/// `potential: Voltage { access: v, units: "V" }`: the attribute list as
+/// written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuantityData {
+    pub role: QuantityRole,
+    pub attrs: Vec<FieldInit>,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct PortData {}
+/// `[extern "abi"] module Name<..>(ports) -> ret where cond { items result }`;
+/// generics, ports and body items are children, in that order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModuleData {
+    pub abi: Option<Lit>,
+    pub ret: Option<TypeId>,
+    pub where_: Option<ExprId>,
+    /// The trailing expression: the module's result.
+    pub result: Option<ExprId>,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ParamData {}
+/// `dir name: ty = default`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PortData {
+    pub dir: Option<Dir>,
+    pub ty: TypeId,
+    pub default: Option<ExprId>,
+    /// Classification slot: unknown until the classification pass sets it.
+    pub kind: PortKind,
+}
+
+/// `name: ty = default where cond;`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParamData {
+    pub ty: TypeId,
+    pub default: Option<ExprId>,
+    pub where_: Option<ExprId>,
+}
 
 /// `signal name: ty = init;`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -253,8 +297,13 @@ pub struct SignalData {
     pub init: Option<ExprId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct LetData {}
+/// `let pat = value;` in a module body; the bindings of the pattern are
+/// children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LetData {
+    pub pat: PatId,
+    pub value: ExprId,
+}
 
 /// One identifier a pattern introduces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -281,14 +330,43 @@ pub enum BindingOrigin {
     GenFor,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DefinitionData {}
+/// `place = value after delay;`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DefinitionData {
+    pub place: ExprId,
+    pub value: ExprId,
+    pub after: Option<ExprId>,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct GenerationData {}
+/// `for pat in iter { items }` or `if cond { items } else ..` over module or
+/// digital items, held as written: nothing is unrolled. The items are
+/// children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GenerationData {
+    /// The bindings of `pat` are children before the items.
+    For { pat: PatId, iter: ExprId, body: Vec<DeclId> },
+    If { cond: ExprId, then: Vec<DeclId>, else_: Option<GenElseNode> },
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct BehaviorData {}
+/// What follows `else` in a generation `if`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GenElseNode {
+    Block(Vec<DeclId>),
+    /// `else if ..`: the nested `Generation`, a child of this one.
+    If(DeclId),
+}
+
+/// `analog<N> for Target { .. }` or `digital for Target { .. }`; an analog
+/// block's bindings and items, a digital block's reactions and generations,
+/// are children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BehaviorData {
+    pub kind: BehaviorKind,
+    pub names: Vec<Name>,
+    pub target: PathId,
+    /// The statements of an `analog` block; empty for `digital`.
+    pub body: Vec<StmtId>,
+}
 
 /// `on event { ... }`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

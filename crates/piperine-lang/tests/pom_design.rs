@@ -55,8 +55,12 @@ fn two_builds_dump_identical() {
     let lines: Vec<_> = first.lines().collect();
     assert!(lines[0].starts_with("Namespace "));
     assert!(lines[1].trim_start().starts_with("Module R "));
-    assert!(lines[2].trim_start().starts_with("Namespace a "));
-    assert!(lines[3].trim_start().starts_with("Const N "));
+    assert!(lines[2].trim_start().starts_with("Port p "));
+    assert!(lines[3].trim_start().starts_with("Port n "));
+    assert!(lines[4].trim_start().starts_with("Namespace a "));
+    assert!(lines[5].trim_start().starts_with("Const N "));
+    assert!(lines[6].trim_start().starts_with("Nature V "));
+    assert!(lines[7].trim_start().starts_with("Quantity Voltage "));
 }
 
 #[test]

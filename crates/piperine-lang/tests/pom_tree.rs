@@ -167,6 +167,18 @@ enum E {
     A,
     B,
 }
+/// module doc
+module Md(
+    /// port doc
+    a: Electrical,
+    b: Electrical,
+) {
+    /// param doc
+    r: f64 = 1.0;
+    /// signal doc
+    signal s: Bit;
+    t: f64 = 2.0;
+}
 ";
     let design = build(text);
     assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
@@ -188,6 +200,14 @@ enum E {
     let e = design.find("E").and_then(|d| d.as_enum()).unwrap();
     assert_eq!(texts(e.variants()[0].decl()), [" variant doc"]);
     assert!(e.variants()[1].docs().is_empty());
+    // Modules, ports, params and signals carry their own docs.
+    let md = design.module("Md").unwrap();
+    assert_eq!(texts(md.decl()), [" module doc"]);
+    assert_eq!(texts(md.ports()[0].decl()), [" port doc"]);
+    assert!(md.ports()[1].docs().is_empty());
+    assert_eq!(texts(md.param("r").unwrap().decl()), [" param doc"]);
+    assert!(md.param("t").unwrap().docs().is_empty());
+    assert_eq!(texts(md.signal("s").unwrap().decl()), [" signal doc"]);
 }
 
 #[test]
@@ -343,4 +363,347 @@ fn use_tree_flattens_to_imports() {
     assert_eq!(tree.path.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["a"]);
     assert!(matches!(&tree.kind, piperine_lang::pom::UseTreeKind::Group(g) if g.len() == 3));
     assert!(design.find("x").is_none());
+}
+
+#[test]
+fn nature_quantities_and_kind() {
+    use piperine_lang::msl::ast::Quantity as Role;
+    use piperine_lang::pom::NatureKind;
+    let text = "\
+nature Electrical {
+    potential: Voltage { access: v, units: \"V\", abstol: 1u },
+    flow: Current { access: i }
+}
+nature Signalf { potential: Voltage { access: v } }
+nature Disc { value: f64 }
+nature Res { value: f64, resolve: pick }
+nature Twice { potential: A { access: a }, potential: B { access: b } }
+nature Mixed { potential: A { access: a }, value: f64 }
+nature Empty { }
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let kind = |n: &str| design.nature(n).unwrap_or_else(|| panic!("nature {n}")).kind();
+    assert_eq!(kind("Electrical"), NatureKind::Conservative);
+    assert_eq!(kind("Signalf"), NatureKind::SignalFlow);
+    assert_eq!(kind("Disc"), NatureKind::Discrete);
+    assert_eq!(kind("Res"), NatureKind::Resolved);
+    assert_eq!(kind("Twice"), NatureKind::Invalid);
+    assert_eq!(kind("Mixed"), NatureKind::Invalid);
+    assert_eq!(kind("Empty"), NatureKind::Invalid);
+
+    let e = design.nature("Electrical").unwrap();
+    let qs = e.quantities();
+    assert_eq!(qs.len(), 2);
+    assert_eq!((qs[0].role(), qs[0].name()), (Role::Potential, Some("Voltage")));
+    assert_eq!((qs[1].role(), qs[1].name()), (Role::Flow, Some("Current")));
+    assert_eq!(qs[0].access().map(|x| x.text()), Some("v"));
+    assert_eq!(qs[0].units().map(|x| x.text()), Some("\"V\""));
+    assert_eq!(qs[0].abstol().map(|x| x.text()), Some("1u"));
+    assert_eq!(qs[1].access().map(|x| x.text()), Some("i"));
+    assert!(qs[1].units().is_none() && qs[1].abstol().is_none());
+    assert_eq!(e.potential(), Some(qs[0]));
+    assert_eq!(e.flow(), Some(qs[1]));
+    assert_eq!(qs[0].declared_in(), Some(e.decl()));
+    // The quantities are the nature's children, nothing is hoisted.
+    assert_eq!(e.decl().children().len(), 2);
+    // A repeated field stays in the list as written.
+    assert_eq!(design.nature("Twice").unwrap().quantities().len(), 2);
+    let res = design.nature("Res").unwrap();
+    assert_eq!(res.value_type().map(|t| t.text()), Some("f64"));
+    assert_eq!(res.resolve_fn().map(|x| x.text()), Some("pick"));
+    assert!(design.nature("Disc").unwrap().resolve_fn().is_none());
+}
+
+#[test]
+fn ports_in_order_with_direction_type_default() {
+    use piperine_lang::pom::Dir;
+    let design = build("module M(in a: Bit, out b: Bit<u8>, c: Electrical, d: f64 = 2.0) {}");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("M").expect("module M");
+    let ports = m.ports();
+    assert_eq!(ports.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("a"), Some("b"), Some("c"), Some("d")]);
+    assert_eq!(ports.iter().map(|p| p.index()).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    assert_eq!(ports.iter().map(|p| p.direction()).collect::<Vec<_>>(), [Some(Dir::In), Some(Dir::Out), None, None]);
+    assert_eq!(ports.iter().map(|p| p.ty().text()).collect::<Vec<_>>(), ["Bit", "Bit<u8>", "Electrical", "f64"]);
+    assert_eq!(ports.iter().map(|p| p.default().map(|e| e.text())).collect::<Vec<_>>(), [None, None, None, Some("2.0")]);
+    assert_eq!(m.port("c"), Some(ports[2]));
+    assert!(m.port("zz").is_none());
+    assert_eq!(ports[0].declared_in(), Some(m.decl()));
+}
+
+#[test]
+fn extern_module_abi() {
+    let text = "\
+#[link(\"bsim4.osdi\", model = \"bsim4\")]
+extern \"osdi\" module Bsim4(d: Electrical) { l: f64 = 1u; }
+module Plain() {}
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let b = design.module("Bsim4").unwrap();
+    assert!(b.is_extern());
+    assert_eq!(b.abi(), Some("osdi"));
+    assert_eq!(b.attr("link").map(|a| a.named("model").is_some()), Some(true));
+    let p = design.module("Plain").unwrap();
+    assert!(!p.is_extern());
+    assert_eq!(p.abi(), None);
+}
+
+#[test]
+fn module_result_and_result_type() {
+    let design = build("module Mx(a: f64) -> f64 { a * 2.0 }\nmodule Nx(a: f64) {}");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("Mx").unwrap();
+    assert_eq!(m.result_type().map(|t| t.text()), Some("f64"));
+    assert_eq!(m.result().map(|e| e.text()), Some("a * 2.0"));
+    let n = design.module("Nx").unwrap();
+    assert!(n.result_type().is_none() && n.result().is_none());
+}
+
+#[test]
+fn module_generics_and_where() {
+    let design = build("module G<T: Repr, const A: u32>(p: T) where A >= 1 {}");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let g = design.module("G").unwrap();
+    let generics = g.generics();
+    assert_eq!(generics.iter().map(|x| x.name()).collect::<Vec<_>>(), [Some("T"), Some("A")]);
+    assert!(!generics[0].is_const());
+    assert_eq!(generics[0].bounds().iter().map(|b| b.text()).collect::<Vec<_>>(), ["Repr"]);
+    assert!(generics[1].is_const());
+    assert_eq!(generics[1].const_type().map(|t| t.text()), Some("u32"));
+    assert_eq!(g.where_clause().map(|e| e.text()), Some("A >= 1"));
+    // Children: generics first, then ports.
+    let labels: Vec<_> = g.decl().children().iter().map(|c| c.kind().label()).collect();
+    assert_eq!(labels, ["GenericParam", "GenericParam", "Port"]);
+}
+
+#[test]
+fn signal_is_declared_in_its_module_only() {
+    let design = build("module abc() { signal w: Bit; }\nmodule other() { signal z: Bit; }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let abc = design.module("abc").unwrap();
+    let w = abc.signal("w").expect("signal w");
+    assert_eq!(w.declared_in(), Some(abc.decl()));
+    assert_eq!(w.module(), Some(abc));
+    assert_eq!(abc.signals().iter().map(|s| s.name()).collect::<Vec<_>>(), [Some("w")]);
+    let other = design.module("other").unwrap();
+    assert!(other.signal("w").is_none());
+    assert_eq!(other.signals().iter().map(|s| s.name()).collect::<Vec<_>>(), [Some("z")]);
+    assert!(design.root().children().iter().all(|c| c.kind().label() == "Module"));
+}
+
+#[test]
+fn params_type_default_where_required() {
+    let design = build("module P() { r: f64 where r > 0.0; tc1: f64 = 0.0; o: Option<f64>; }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("P").unwrap();
+    let params = m.params();
+    assert_eq!(params.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("r"), Some("tc1"), Some("o")]);
+    let r = m.param("r").unwrap();
+    assert_eq!(r.ty().text(), "f64");
+    assert!(r.default().is_none());
+    assert_eq!(r.where_clause().map(|e| e.text()), Some("r > 0.0"));
+    assert!(r.is_required());
+    let tc1 = m.param("tc1").unwrap();
+    assert_eq!(tc1.default().map(|e| e.text()), Some("0.0"));
+    assert!(tc1.where_clause().is_none());
+    assert!(!tc1.is_required());
+    let o = m.param("o").unwrap();
+    assert!(o.default().is_none());
+    assert!(!o.is_required());
+}
+
+#[test]
+fn signal_pub_type_init() {
+    let design = build("module S() { pub signal sn: Electrical = 0.0; signal hid: Bit; }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("S").unwrap();
+    let sn = m.signal("sn").unwrap();
+    assert!(sn.is_pub());
+    assert_eq!(sn.ty().text(), "Electrical");
+    assert_eq!(sn.init().map(|e| e.text()), Some("0.0"));
+    let hid = m.signal("hid").unwrap();
+    assert!(!hid.is_pub() && hid.init().is_none());
+}
+
+#[test]
+fn body_let_pattern_names_each_component() {
+    use piperine_lang::pom::BindingOrigin;
+    let design = build("module L(a: f64, b: f64) { let (r, f) = (a, b); }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("L").unwrap();
+    let lets = m.lets();
+    assert_eq!(lets.len(), 1);
+    assert_eq!(lets[0].value().text(), "(a, b)");
+    let r = m.named("r").expect("name r");
+    let f = m.named("f").expect("name f");
+    assert_eq!(r.let_item(), Some(lets[0]));
+    assert_eq!(f.let_item(), Some(lets[0]));
+    assert_eq!(r.origin(), BindingOrigin::BodyLet);
+    assert_eq!(r.value().map(|e| e.text()), Some("(a, b)"));
+    assert_eq!(lets[0].bindings().iter().map(|b| b.name()).collect::<Vec<_>>(), [Some("r"), Some("f")]);
+    assert!(m.named("a").is_none());
+}
+
+#[test]
+fn definition_place_value_after() {
+    let design = build("module D() { signal q: Bit; signal qn: Bit; q = !(r | qn) after tpd; }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("D").unwrap();
+    let defs = m.definitions();
+    assert_eq!(defs.len(), 1);
+    assert_eq!(defs[0].place().text(), "q");
+    assert_eq!(defs[0].value().text(), "!(r | qn)");
+    assert_eq!(defs[0].after().map(|e| e.text()), Some("tpd"));
+    // Body order: two signals and the definition.
+    let labels: Vec<_> = m.items().iter().map(|d| d.kind().label()).collect();
+    assert_eq!(labels, ["Signal", "Signal", "Definition"]);
+}
+
+#[test]
+fn generation_for_holds_its_signal_once() {
+    use piperine_lang::pom::BindingOrigin;
+    let design = build("module G() { for k in 0..4 { signal s: Bit; } }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("G").unwrap();
+    let signals = m.signals();
+    assert_eq!(signals.len(), 1, "nothing is unrolled");
+    let s = signals[0];
+    assert_eq!(s.name(), Some("s"));
+    let g = s.generation().expect("parent is a generation");
+    assert_eq!(s.declared_in(), Some(g.decl()));
+    assert_eq!(g.declared_in(), Some(m.decl()));
+    assert_eq!(s.module(), Some(m));
+    assert!(g.is_for());
+    assert_eq!(g.iter().map(|e| e.text()), Some("0..4"));
+    assert_eq!(g.pattern().map(|p| p.text()), Some("k"));
+    // The pattern's binding is a GenFor child before the items.
+    let kids: Vec<_> = g.decl().children().iter().map(|c| c.kind().label()).collect();
+    assert_eq!(kids, ["Binding", "Signal"]);
+    let binding = g.decl().children()[0].as_binding().unwrap();
+    assert_eq!(binding.origin(), BindingOrigin::GenFor);
+    assert_eq!(m.generations(), vec![g]);
+    assert_eq!(m.signal("s"), Some(s));
+    // The module's own children hold the generation, not the signal.
+    assert_eq!(m.items().len(), 1);
+}
+
+#[test]
+fn generation_if_chain_exposes_three_arms() {
+    let design = build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; } else { signal z: Bit; } }");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("G").unwrap();
+    let gens = m.generations();
+    assert_eq!(gens.len(), 1);
+    assert!(!gens[0].is_for());
+    let arms = gens[0].arms();
+    assert_eq!(arms.len(), 3);
+    assert_eq!(arms.iter().map(|a| a.condition().map(|c| c.text())).collect::<Vec<_>>(), [Some("a"), Some("b"), None]);
+    let names = |i: usize| arms[i].items().iter().map(|d| d.name()).collect::<Vec<_>>();
+    assert_eq!((names(0), names(1), names(2)), (vec![Some("x")], vec![Some("y")], vec![Some("z")]));
+    // Deep accessors reach all three, in source order, each held once.
+    assert_eq!(m.signals().iter().map(|s| s.name()).collect::<Vec<_>>(), [Some("x"), Some("y"), Some("z")]);
+    // The `else if` is a generation inside the first.
+    assert_eq!(gens[0].generations().len(), 1);
+    assert_eq!(m.signal("y").unwrap().generation(), Some(gens[0].generations()[0]));
+}
+
+#[test]
+fn analog_block_is_a_file_item() {
+    use piperine_lang::pom::BehaviorKind;
+    let design = build("module M(p: Electrical) {}\nanalog for M { }\nanalog for M { }");
+    let root = design.root();
+    let kids = root.children();
+    assert_eq!(kids.iter().map(|k| k.kind().label()).collect::<Vec<_>>(), ["Module", "Behavior", "Behavior"]);
+    let b = kids[1].as_behavior().expect("behavior");
+    assert_eq!(b.kind(), BehaviorKind::Analog);
+    assert_eq!(b.declared_in(), Some(root));
+    assert_eq!(b.name(), None);
+    assert_eq!(b.target().text(), "M");
+    assert!(b.names().is_empty());
+    assert!(b.contributions().is_empty() && b.reactions().is_empty());
+}
+
+#[test]
+fn nested_contribution_is_listed() {
+    let text = "\
+module R(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+analog for R {
+    if r > 0.0 { v(p, n) / r +> i(p, n); } else { 0.0 +> i(p, n); }
+    for k in 0..2 { match k { 0 => { v(p) +> i(n); } _ => {} } }
+}
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let b = design.root().children()[1].as_behavior().unwrap();
+    let cs = b.contributions();
+    assert_eq!(cs.len(), 3);
+    assert_eq!(cs[0].lhs().text(), "v(p, n) / r");
+    assert_eq!(cs[0].rhs().text(), "i(p, n)");
+    assert_eq!(cs[1].lhs().text(), "0.0");
+    assert_eq!(cs[2].lhs().text(), "v(p)");
+    assert_eq!(cs[2].rhs().text(), "i(n)");
+    assert_eq!(b.statements().len(), 2);
+}
+
+#[test]
+fn behavior_generic_names() {
+    let design = build("module Short<N: u32>() {}\nanalog<N> for Short<N> { }\nanalog<A, B> for Two<A, B> { }");
+    let b = design.root().children()[1].as_behavior().unwrap();
+    assert_eq!(b.names(), ["N"]);
+    assert_eq!(b.target().text(), "Short<N>");
+    assert_eq!(b.target().segments()[0].name.text, "Short");
+    let two = design.root().children()[2].as_behavior().unwrap();
+    assert_eq!(two.names(), ["A", "B"]);
+}
+
+#[test]
+fn reactions_and_deep_commits() {
+    let text = "\
+module Q() { signal a: Bit; signal b: Bit; }
+digital for Q {
+    on clk.rise() { a <- true; if c { b <- false after 1n; } }
+    on rst { a <- false; }
+}
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let b = design.root().children()[1].as_behavior().unwrap();
+    let rs = b.reactions();
+    assert_eq!(rs.len(), 2);
+    assert_eq!(rs[0].event().text(), "clk.rise()");
+    assert_eq!(rs[1].event().text(), "rst");
+    assert_eq!(rs[0].body().stmts.len(), 2);
+    let commits = rs[0].commits();
+    assert_eq!(commits.len(), 2);
+    assert_eq!((commits[0].place().text(), commits[0].value().text()), ("a", "true"));
+    assert!(commits[0].after().is_none());
+    assert_eq!((commits[1].place().text(), commits[1].value().text()), ("b", "false"));
+    assert_eq!(commits[1].after().map(|e| e.text()), Some("1n"));
+    assert_eq!(rs[1].commits().len(), 1);
+    assert_eq!(rs[0].declared_in(), Some(b.decl()));
+    assert_eq!(b.kind(), piperine_lang::pom::BehaviorKind::Digital);
+}
+
+#[test]
+fn reaction_in_digital_generation() {
+    let text = "\
+module Q() { signal s: Bit; }
+digital for Q {
+    on a { s <- true; }
+    for k in 0..3 { on clk { s <- false; } }
+}
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let b = design.root().children()[1].as_behavior().unwrap();
+    let rs = b.reactions();
+    assert_eq!(rs.iter().map(|r| r.event().text()).collect::<Vec<_>>(), ["a", "clk"], "deep, in source order");
+    let gens = b.generations();
+    assert_eq!(gens.len(), 1);
+    assert_eq!(rs[1].declared_in(), Some(gens[0].decl()));
+    assert_eq!(gens[0].declared_in(), Some(b.decl()));
+    assert_eq!(rs[0].declared_in(), Some(b.decl()));
+    assert_eq!(rs[1].commits().len(), 1);
 }

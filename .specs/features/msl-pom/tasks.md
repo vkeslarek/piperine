@@ -379,10 +379,10 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `nature_quantities_and_kind` passes in `pom_tree.rs` (C21: POM-04 AC 1)
-- [ ] A repeated or mixed field gives `NatureKind::Invalid`; the fields stay in the list as written
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `nature_quantities_and_kind` passes in `pom_tree.rs` (C21: POM-04 AC 1)
+- [x] A repeated or mixed field gives `NatureKind::Invalid`; the fields stay in the list as written
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
@@ -400,13 +400,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `ports_in_order_with_direction_type_default` passes in `pom_tree.rs` (C13: POM-03 AC 1)
-- [ ] Test `extern_module_abi` passes in `pom_tree.rs` (C18: POM-03 AC 6)
-- [ ] Test `module_result_and_result_type` passes in `pom_tree.rs` (C19: POM-03 AC 7)
-- [ ] Test `module_generics_and_where` passes in `pom_tree.rs` (C20: POM-03 AC 8)
-- [ ] Extends `doc_comments_reach_docs` with module and port docs
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `ports_in_order_with_direction_type_default` passes in `pom_tree.rs` (C13: POM-03 AC 1)
+- [x] Test `extern_module_abi` passes in `pom_tree.rs` (C18: POM-03 AC 6)
+- [x] Test `module_result_and_result_type` passes in `pom_tree.rs` (C19: POM-03 AC 7)
+- [x] Test `module_generics_and_where` passes in `pom_tree.rs` (C20: POM-03 AC 8)
+- [x] Extends `doc_comments_reach_docs` with module and port docs
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
@@ -424,15 +424,15 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `signal_is_declared_in_its_module_only` passes in `pom_tree.rs` (C8: POM-02 AC 2)
-- [ ] Test `params_type_default_where_required` passes in `pom_tree.rs` (C14: POM-03 AC 2)
-- [ ] Test `signal_pub_type_init` passes in `pom_tree.rs` (C15: POM-03 AC 3)
-- [ ] Test `body_let_pattern_names_each_component` passes in `pom_tree.rs` (C16: POM-03 AC 4)
-- [ ] Test `definition_place_value_after` passes in `pom_tree.rs` (C17: POM-03 AC 5)
-- [ ] `is_required()` is syntactic: no default and a type that is not a path ending in `Option`
-- [ ] Extends `doc_comments_reach_docs` with param and signal docs
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `signal_is_declared_in_its_module_only` passes in `pom_tree.rs` (C8: POM-02 AC 2)
+- [x] Test `params_type_default_where_required` passes in `pom_tree.rs` (C14: POM-03 AC 2)
+- [x] Test `signal_pub_type_init` passes in `pom_tree.rs` (C15: POM-03 AC 3)
+- [x] Test `body_let_pattern_names_each_component` passes in `pom_tree.rs` (C16: POM-03 AC 4)
+- [x] Test `definition_place_value_after` passes in `pom_tree.rs` (C17: POM-03 AC 5)
+- [x] `is_required()` is syntactic: no default and a type that is not a path ending in `Option`
+- [x] Extends `doc_comments_reach_docs` with param and signal docs
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
@@ -450,11 +450,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `generation_for_holds_its_signal_once` passes in `pom_tree.rs` (C9: POM-02 AC 3)
-- [ ] Test `generation_if_chain_exposes_three_arms` passes in `pom_tree.rs` (C10: POM-02 AC 4)
-- [ ] Items are held once, exactly as written: nothing is unrolled
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `generation_for_holds_its_signal_once` passes in `pom_tree.rs` (C9: POM-02 AC 3)
+- [x] Test `generation_if_chain_exposes_three_arms` passes in `pom_tree.rs` (C10: POM-02 AC 4)
+- [x] Items are held once, exactly as written: nothing is unrolled
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
@@ -472,13 +472,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `nested_contribution_is_listed` passes in `pom_tree.rs` (C28: POM-05 AC 2)
-- [ ] Test `behavior_generic_names` passes in `pom_tree.rs` (C31: POM-05 AC 5)
-- [ ] Test `analog_block_is_a_file_item` passes in `pom_tree.rs`
-- [ ] `contributions()` walks every nested block (`if`, `match`, `for`, plain blocks)
-- [ ] The `module` link is filled in T27
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `nested_contribution_is_listed` passes in `pom_tree.rs` (C28: POM-05 AC 2)
+- [x] Test `behavior_generic_names` passes in `pom_tree.rs` (C31: POM-05 AC 5)
+- [x] Test `analog_block_is_a_file_item` passes in `pom_tree.rs`
+- [x] `contributions()` walks every nested block (`if`, `match`, `for`, plain blocks)
+- [x] The `module` link is filled in T27
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
@@ -496,11 +496,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `reactions_and_deep_commits` passes in `pom_tree.rs` (C29: POM-05 AC 3)
-- [ ] Test `reaction_in_digital_generation` passes in `pom_tree.rs` (C30: POM-05 AC 4)
-- [ ] `reactions()` is deep: it includes reactions written inside generation, in source order
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `reactions_and_deep_commits` passes in `pom_tree.rs` (C29: POM-05 AC 3)
+- [x] Test `reaction_in_digital_generation` passes in `pom_tree.rs` (C30: POM-05 AC 4)
+- [x] `reactions()` is deep: it includes reactions written inside generation, in source order
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
@@ -1357,6 +1357,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Dispatched:** B1 (Phase 1, T1–T6) Sonnet worker at f553b9c5 - returned (HEAD 8c3f84a8, 15 pom tests); B2 (Phase 2, T7–T11) Sonnet worker at 2bdfd477 - returned (HEAD 8cf88529); B3 (Phase 3, T12–T17) Sonnet worker at 8244631b
 **B1 notes:** test helper `codes` in msl tests leaks a boxed str after `Diagnostic.code` became `Cow` (T1); shorthand struct-pattern binding points at the whole pattern; bare ident patterns (`None`) lowered as Binding until resolution refines; ExprKind has 31 variants (design said 33); `BuiltinId` lives in resolution.rs until T22; `Design::root()` returns `Decl` until T10 Namespace handle.
 **B2 notes:** root file keeps children beside it like mod.msl (`is_root` param, SPEC_DEVIATION in source.rs); a loaded file's root is its `mod b;` namespace; non-UTF-8 files keep lossy text; `Design::root()` still `Decl` (use `.as_namespace()`); Import span of `a::{b}` leaf includes braces.
+**B3 notes:** T12-T17 landed in ONE commit (the lowering/handles are interlinked; intermediate commits would not build warning-free). `ast::Quantity` is exported as `QuantityRole` (the handle `Quantity` takes the name; SPEC_DEVIATION in body.rs). `Binding::value()` is the whole `let` value (no tuple destructuring). `Module::{signals,params,lets,definitions}` deep; `generations()` direct only; `Generation::arms()` flattens an else-if chain (the else-if is a child Generation of the outer). `Reflect::module()` is itself-or-ancestor (a Behavior's link comes in T27). `Design::{module,modules,nature,natures}` added. T12 `NatureKind` rule: (1p,1f)=Conservative,(1p)=SignalFlow,(1v)=Discrete,(1v,1r)=Resolved, else Invalid. pom_design `two_builds_dump_identical` line indices updated (Module now has Port children; assertions strengthened). `Module.behaviors`/`instances` slots not yet added (T27/T30).
 **Walked:** none (no screen; the stories' Independent Tests are the tests named in `## Checks`)
 
 ---

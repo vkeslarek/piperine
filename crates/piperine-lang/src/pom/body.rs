@@ -5,7 +5,11 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use crate::msl::ast::{BehaviorKind, BinOp, Dir, Lit, LitKind, Quantity, UnOp};
+pub use crate::msl::ast::{BehaviorKind, BinOp, Dir, Lit, LitKind, UnOp};
+// SPEC_DEVIATION: the design re-exports `ast::Quantity` under its own name, but the
+// reflection handle `Quantity` (design, Reflection) takes that name in `pom`.
+// Reason: one public name cannot be both; the enum is exported as `QuantityRole`.
+pub use crate::msl::ast::Quantity as QuantityRole;
 
 use super::decl::Name;
 use super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
