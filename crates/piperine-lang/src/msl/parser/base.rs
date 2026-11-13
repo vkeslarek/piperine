@@ -1,0 +1,132 @@
+//! Shared parser plumbing: error types, the recursive handles, token helpers.
+
+use chumsky::extra;
+use chumsky::input::ValueInput;
+use chumsky::prelude::*;
+use chumsky::recursive::{Indirect, Recursive};
+
+use crate::msl::ast::*;
+use crate::msl::lexer::{Kw, Punct, Token};
+use crate::msl::span::Span;
+
+use super::{pat, ty};
+
+/// A custom parse error: a spec code, a message, an optional help line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Custom {
+    pub code: &'static str,
+    pub message: String,
+    pub help: Option<String>,
+}
+
+impl std::fmt::Display for Custom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+pub(crate) type Err<'a> = Rich<'a, Token, Span, Custom>;
+pub(crate) type Extra<'a> = extra::Err<Err<'a>>;
+pub(crate) type P<'a, I, O> = Boxed<'a, 'a, I, O, Extra<'a>>;
+pub(crate) type Rec<'a, I, O> = Recursive<Indirect<'a, 'a, I, O, Extra<'a>>>;
+
+/// An input of spanned MSL tokens.
+pub(crate) trait In<'a>: ValueInput<'a, Token = Token, Span = Span> {}
+impl<'a, I> In<'a> for I where I: ValueInput<'a, Token = Token, Span = Span> {}
+
+/// The mutually recursive parsers, declared up front and defined once.
+#[derive(Clone)]
+pub(crate) struct Handles<'a, I: In<'a>> {
+    pub ty: Rec<'a, I, Type>,
+    /// A pattern, alternatives (`a | b`) included.
+    pub pat: Rec<'a, I, Pat>,
+    /// A pattern with no top-level alternative: `let`, parameters, `for`.
+    pub pat1: Rec<'a, I, Pat>,
+    pub expr: Rec<'a, I, Expr>,
+    pub block: Rec<'a, I, Block>,
+}
+
+pub(crate) fn handles<'a, I: In<'a>>() -> Handles<'a, I> {
+    let mut h = Handles {
+        ty: Recursive::declare(),
+        pat: Recursive::declare(),
+        pat1: Recursive::declare(),
+        expr: Recursive::declare(),
+        block: Recursive::declare(),
+    };
+    let (expr, block) = placeholder_expr(&h);
+    h.expr.define(expr);
+    h.block.define(block);
+    let p = ty::build(&h);
+    h.ty.define(p);
+    let (pat, pat1) = pat::build(&h);
+    h.pat.define(pat);
+    h.pat1.define(pat1);
+    h
+}
+
+/// Stand-in until the expression parser lands: a literal, a path, or a
+/// braced one of those.
+fn placeholder_expr<'a, I: In<'a>>(
+    h: &Handles<'a, I>,
+) -> (P<'a, I, Expr>, P<'a, I, Block>) {
+    let atom = lit_expr().or(ty::path(h, true).map_with(|p: Path, e| Expr {
+        span: Loc(e.span()),
+        kind: ExprKind::Path(p),
+    }));
+    let block = atom
+        .clone()
+        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+        .map_with(|expr: Expr, e| Block {
+            stmts: vec![Stmt { span: expr.span, kind: StmtKind::Expr { expr, semi: false } }],
+            span: Loc(e.span()),
+        });
+    (atom.boxed(), block.boxed())
+}
+
+// ---- token-level helpers ----------------------------------------------------------------------
+
+pub(crate) fn punct<'a, I: In<'a>>(p: Punct) -> impl Parser<'a, I, (), Extra<'a>> + Clone {
+    just(Token::Punct(p)).ignored()
+}
+
+pub(crate) fn kw<'a, I: In<'a>>(k: Kw) -> impl Parser<'a, I, (), Extra<'a>> + Clone {
+    just(Token::Kw(k)).ignored()
+}
+
+pub(crate) fn ident<'a, I: In<'a>>() -> impl Parser<'a, I, Ident, Extra<'a>> + Clone {
+    select! { Token::Ident(name) => name }
+        .map_with(|name, e| Ident { name, span: Loc(e.span()) })
+        .labelled("identifier")
+}
+
+/// An identifier or one of `self`, `Self`, `super`, `crate`: a path segment.
+pub(crate) fn path_ident<'a, I: In<'a>>() -> impl Parser<'a, I, Ident, Extra<'a>> + Clone {
+    let kw_seg = select! {
+        Token::Kw(Kw::SelfLower) => "self",
+        Token::Kw(Kw::SelfUpper) => "Self",
+        Token::Kw(Kw::Super) => "super",
+        Token::Kw(Kw::Crate) => "crate",
+    }
+    .map_with(|name, e| Ident { name: name.to_string(), span: Loc(e.span()) });
+    ident().or(kw_seg).labelled("identifier")
+}
+
+/// Any literal: integer, float, string, `true`/`false`, `Unknown`.
+pub(crate) fn lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone {
+    select! {
+        Token::Int(s) => LitKind::Int(s),
+        Token::Float { value, raw } => LitKind::Float { value, raw },
+        Token::Str(s) => LitKind::Str(s),
+        Token::Kw(Kw::True) => LitKind::Bool(true),
+        Token::Kw(Kw::False) => LitKind::Bool(false),
+        Token::Unknown => LitKind::Unknown,
+    }
+    .map_with(|kind, e| Lit { kind, span: Loc(e.span()) })
+    .labelled("literal")
+}
+
+pub(crate) fn lit_expr<'a, I: In<'a>>() -> impl Parser<'a, I, Expr, Extra<'a>> + Clone {
+    lit().map(|l| Expr { span: l.span, kind: ExprKind::Lit(l) })
+}
+

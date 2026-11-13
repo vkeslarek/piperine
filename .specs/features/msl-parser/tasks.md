@@ -159,8 +159,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-02
 
 **Done when**:
-- [ ] Test `inherited_rust_forms_parse` covers the type/pattern classes (extended in T6/T7)
-- [ ] Run parser passes; build gate passes
+- [x] Test `inherited_rust_forms_parse` covers the type/pattern classes (extended in T6/T7)
+- [x] Run parser passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick

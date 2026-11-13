@@ -43,3 +43,22 @@ impl From<Span> for miette::SourceSpan {
         (s.start, s.len()).into()
     }
 }
+
+impl chumsky::span::Span for Span {
+    type Context = ();
+    type Offset = usize;
+
+    fn new(_: (), range: Range<usize>) -> Self {
+        Span { start: range.start, end: range.end }
+    }
+
+    fn context(&self) {}
+
+    fn start(&self) -> usize {
+        self.start
+    }
+
+    fn end(&self) -> usize {
+        self.end
+    }
+}
