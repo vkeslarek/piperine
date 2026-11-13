@@ -170,3 +170,99 @@ pub(crate) fn string_lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> 
 pub(crate) fn first_of<'a, I: In<'a>, O: 'a>(alts: Vec<P<'a, I, O>>) -> P<'a, I, O> {
     choice(alts).boxed()
 }
+
+// ---- error recovery ---------------------------------------------------------------------------
+//
+// A construct that fails to parse is replaced by an error node and parsing
+// resumes at the next boundary, so one run reports every error in the file
+// and still returns a partial tree. Recovery always consumes at least one
+// token, so a repeating parser cannot loop on it.
+
+fn is_lbrace(t: &Token) -> bool {
+    matches!(t, Token::Punct(Punct::LBrace))
+}
+
+fn is_closer(t: &Token) -> bool {
+    delim_close(t)
+}
+
+/// A token that starts a file-level item.
+fn starts_item(t: &Token) -> bool {
+    matches!(
+        t,
+        Token::Kw(
+            Kw::Fn | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Const | Kw::Use | Kw::Mod
+                | Kw::Module | Kw::Nature | Kw::Pub | Kw::Extern
+        ) | Token::Punct(Punct::Pound)
+            | Token::DocOuter(_)
+    )
+}
+
+/// Skip the rest of a failed item: stop after its `{ .. }` body or `;`, or
+/// before the next item keyword or a closing delimiter that is not ours.
+fn skip_rest_of_item<'a, I: In<'a>>() -> P<'a, I, ()> {
+    let behavior_start = select! { Token::Ident(s) if s == "analog" || s == "digital" => () }
+        .then(any().filter(|t: &Token| matches!(t, Token::Kw(Kw::For) | Token::Punct(Punct::Lt))))
+        .rewind()
+        .ignored();
+    let more = choice((
+        // A bracket or parenthesis group is skipped whole.
+        any()
+            .filter(|t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket)))
+            .rewind()
+            .ignore_then(skip_group()),
+        any()
+            .filter(|t: &Token| {
+                !is_closer(t) && !starts_item(t) && !matches!(t, Token::Punct(Punct::Semi | Punct::LBrace))
+            })
+            .ignored(),
+    ))
+    .and_is(behavior_start.not());
+    let done = choice((
+        any().filter(is_lbrace).rewind().ignore_then(skip_group()),
+        just(Token::Punct(Punct::Semi)).ignored(),
+    ));
+    more.repeated().ignore_then(done.or_not()).ignored().boxed()
+}
+
+/// Skip the rest of a failed statement: through its `;`, or up to the `}`
+/// that closes the block.
+fn skip_rest_of_stmt<'a, I: In<'a>>() -> P<'a, I, ()> {
+    let more = choice((
+        any().filter(delim_open).rewind().ignore_then(skip_group()),
+        any()
+            .filter(|t: &Token| !is_closer(t) && !matches!(t, Token::Punct(Punct::Semi)))
+            .ignored(),
+    ));
+    more.repeated().ignore_then(just(Token::Punct(Punct::Semi)).ignored().or_not()).ignored().boxed()
+}
+
+/// `p`, or on failure an error node covering what was skipped. `item_like`
+/// picks the boundary: a whole item (after its body) or a statement (after
+/// its `;`).
+pub(crate) fn recover<'a, I: In<'a>, O: Clone + 'a>(
+    p: P<'a, I, O>,
+    item_like: bool,
+    error: fn(Span) -> O,
+) -> P<'a, I, O> {
+    recover_unless(p, item_like, error, None)
+}
+
+/// [`recover`] that stands aside where `unless` matches: a module body ends
+/// with an expression that is no item, and must not be skipped as one.
+pub(crate) fn recover_unless<'a, I: In<'a>, O: Clone + 'a>(
+    p: P<'a, I, O>,
+    item_like: bool,
+    error: fn(Span) -> O,
+    unless: Option<P<'a, I, ()>>,
+) -> P<'a, I, O> {
+    let skip = if item_like { skip_rest_of_item() } else { skip_rest_of_stmt() };
+    // The first token is taken unconditionally (never a closing delimiter:
+    // the enclosing group must see it), so recovery makes progress.
+    let first = any().filter(|t: &Token| !is_closer(t));
+    let skipped = first.ignore_then(skip).map_with(move |_, e| error(e.span()));
+    match unless {
+        None => p.recover_with(via_parser(skipped)).boxed(),
+        Some(unless) => p.recover_with(via_parser(skipped.and_is(unless.not()))).boxed(),
+    }
+}

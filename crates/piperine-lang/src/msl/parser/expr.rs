@@ -604,7 +604,7 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         .ignore_then(h.item.clone())
         .map_with(move |item, e| mk(StmtKind::Item(Box::new(item)), e.span()));
 
-    first_of(vec![
+    let stmt = first_of(vec![
         empty.boxed(),
         let_stmt.boxed(),
         item_stmt.boxed(),
@@ -613,6 +613,10 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         block_like_stmt.boxed(),
         simple.boxed(),
     ])
-        .labelled("statement")
-        .boxed()
+    .labelled("statement")
+    .boxed();
+    recover(stmt, false, |span| Stmt {
+        kind: StmtKind::Expr { expr: Expr { kind: ExprKind::Error, span: Loc(span) }, semi: true },
+        span: Loc(span),
+    })
 }

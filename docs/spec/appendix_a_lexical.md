@@ -180,6 +180,7 @@ rl: f64 = 1T;
 
 | Code | Condition | Phase |
 | --- | --- | --- |
+| `E0900` | a syntax error no other row names: an unexpected token (the message names the token found and the constructs expected), an unterminated block comment or string literal, an unexpected character, an unknown literal suffix, an unmatched closing delimiter, or source that is not valid UTF-8 | parse |
 | `E0901` | a macro invocation other than `emit!` or `include_str!`, or a macro definition | parse |
 | `E0902` | a malformed SI literal: a suffix with an exponent, with a type suffix, or on a non-decimal literal | parse |
 | `E0903` | a keyword used as an identifier, or a Rust keyword where no production accepts it | parse |
@@ -188,3 +189,4 @@ rl: f64 = 1T;
 | `E0906` | `Unknown` where the inferred type does not implement `Repr`, or where no type can be inferred | elaboration |
 | `E0907` | `+>` or `<-` inside an expression, where no statement form accepts it. A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404` | parse |
 | `E0908` | `Unknown` used as a binding, item or field name | parse |
+| `E0910` | delimiters nested deeper than 256 levels | parse |

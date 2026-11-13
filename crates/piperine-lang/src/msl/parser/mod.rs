@@ -9,7 +9,7 @@ use chumsky::prelude::*;
 
 use super::ast::*;
 use super::diag::Diagnostic;
-use super::lexer::{Kw, Punct, Token, lex};
+use super::lexer::{Kw, Punct, Token, lex, lex_bytes};
 use super::span::Span;
 
 mod base;
@@ -23,4 +23,4 @@ pub mod ty;
 
 pub(crate) use base::*;
 pub use base::Custom;
-pub use entry::{MAX_DEPTH, ParseResult, parse, parse_block, parse_expr, parse_generics, parse_module_item, parse_pat, parse_type};
+pub use entry::{MAX_DEPTH, ParseResult, parse, parse_block, parse_bytes, parse_expr, parse_generics, parse_module_item, parse_pat, parse_type};

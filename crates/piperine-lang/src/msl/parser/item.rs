@@ -302,7 +302,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         msl::behavior_block(h),
         macro_rules.boxed(),
     ]);
-    meta(h)
+    let item = meta(h)
         .then(kw(Kw::Pub).or_not())
         .then(kind)
         .map_with(|((meta, public), kind), e| Item {
@@ -312,5 +312,6 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             span: Loc(e.span()),
         })
         .labelled("item")
-        .boxed()
+        .boxed();
+    recover(item, true, |span| Item { meta: Meta::default(), public: false, kind: ItemKind::Error, span: Loc(span) })
 }

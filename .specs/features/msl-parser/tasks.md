@@ -286,8 +286,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-04, MSLP-06
 
 **Done when**:
-- [ ] Tests `multiple_errors_in_source_order_with_partial_ast`, `unexpected_token_names_found_and_expected`, `diagnostic_has_code_message_label_help`, `empty_source_empty_file` pass
-- [ ] Run errors passes; build gate passes
+- [x] Tests `multiple_errors_in_source_order_with_partial_ast`, `unexpected_token_names_found_and_expected`, `diagnostic_has_code_message_label_help`, `empty_source_empty_file` pass
+- [x] Run errors passes; build gate passes
 
 **Tests**: integration
 **Gate**: full

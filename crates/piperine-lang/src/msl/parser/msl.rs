@@ -146,8 +146,12 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
     first_of(vec![leaf, generation.map(wrap).boxed()])
 }
 
-/// One item of a module body.
+/// One item of a module body, with error recovery.
 pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItem> {
+    recover_item(h, None)
+}
+
+fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>) -> P<'a, I, ModuleItem> {
     // `name: type = default where cond;`
     let param = ident()
         .then_ignore(punct(Punct::Colon))
@@ -210,7 +214,13 @@ pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleI
         public: false,
         kind: ModuleItemKind::Gen(g),
     };
-    gen_of(h, first_of(vec![leaf, def]), wrap).labelled("module item").boxed()
+    let item = gen_of(h, first_of(vec![leaf, def]), wrap).labelled("module item").boxed();
+    recover_unless(
+        item,
+        true,
+        |span| ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(span) },
+        unless,
+    )
 }
 
 // ---- modules ----------------------------------------------------------------------------------
@@ -236,7 +246,15 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
-    let body = module_item(h)
+    // The body's last expression is the result, not an item to skip.
+    let result_ahead = h
+        .expr
+        .clone()
+        .then(just(Token::Punct(Punct::RBrace)))
+        .rewind()
+        .ignored()
+        .boxed();
+    let body = recover_item(h, Some(result_ahead))
         .repeated()
         .collect::<Vec<_>>()
         .then(h.expr.clone().or_not())
@@ -305,7 +323,8 @@ fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
             DigitalItem { kind: DigitalItemKind::Error, span: Loc(e.span()) }
         })
         .boxed();
-    first_of(vec![gen_of(h, reaction, wrap), stray]).labelled("reaction").boxed()
+    let item = first_of(vec![gen_of(h, reaction, wrap), stray]).labelled("reaction").boxed();
+    recover(item, true, |span| DigitalItem { kind: DigitalItemKind::Error, span: Loc(span) })
 }
 
 /// `analog [<names>] for Path { stmts }` or `digital [<names>] for Path { reactions }`.

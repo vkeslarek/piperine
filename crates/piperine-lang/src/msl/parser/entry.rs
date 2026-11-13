@@ -44,19 +44,101 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
             name_error(&at_span().unwrap_or(Token::Error), span)
         }
         RichReason::ExpectedFound { found, .. } => {
+            // A found token the error did not keep is recovered from its span.
             let found = match found {
-                Some(t) => t.to_string(),
-                None => "end of input".to_string(),
+                Some(t) => Some((**t).clone()),
+                None => at_span(),
             };
-            let expected: Vec<String> = e.expected().map(|p| p.to_string()).collect();
+            let found = found.map_or_else(|| "end of input".to_string(), |t| t.to_string());
+            let expected = summarize_expected(e);
             let message = if expected.is_empty() {
                 format!("unexpected {found}")
             } else {
-                format!("unexpected {found}, expected {}", expected.join(", "))
+                format!("unexpected {found}, expected {}", join_alternatives(&expected))
             };
             Diagnostic::new("E0900", message, span, format!("found {found}"))
         }
     }
+}
+
+/// The most alternatives a message lists before it says "or N more".
+const MAX_EXPECTED: usize = 6;
+
+/// A token that continues an expression: an operator or a postfix form.
+fn is_operator(t: &Token) -> bool {
+    use Punct::*;
+    matches!(
+        t,
+        Token::Kw(Kw::As)
+            | Token::Punct(
+                Plus | Minus | Star | Slash | Percent | Caret | And | Or | AndAnd | OrOr | Shl | PlusEq
+                    | MinusEq | StarEq | SlashEq | PercentEq | CaretEq | AndEq | OrEq | ShlEq | Eq
+                    | EqEq | Ne | Gt | Lt | Le | Not | Dot | DotDot | DotDotEq | Question | LParen | LBracket
+            )
+    )
+}
+
+/// The expected set of an error as a short list: constructs (labels) and
+/// delimiters first, then keywords, with the many operator tokens of an
+/// expression collapsed into "an operator" (or dropped when an expression
+/// is itself expected).
+fn summarize_expected(e: &Err<'_>) -> Vec<String> {
+    let mut ranked: Vec<(u8, String)> = Vec::new();
+    let mut operators = 0;
+    let mut expression = false;
+    for p in e.expected() {
+        match p {
+            RichPattern::Token(t) => {
+                if is_operator(t) {
+                    operators += 1;
+                } else if matches!(**t, Token::Punct(Punct::Semi | Punct::Comma | Punct::RParen | Punct::RBracket | Punct::RBrace | Punct::LBrace)) {
+                    ranked.push((0, t.to_string()));
+                } else {
+                    ranked.push((2, t.to_string()));
+                }
+            }
+            RichPattern::Label(l) => {
+                expression |= &**l == "expression";
+                ranked.push((1, l.to_string()));
+            }
+            RichPattern::EndOfInput => ranked.push((3, "end of input".to_string())),
+            _ => {}
+        }
+    }
+    if operators >= 3 && !expression {
+        ranked.push((1, "an operator".to_string()));
+    } else if !expression {
+        // Few enough to name: they were dropped from the count above.
+        for p in e.expected() {
+            if let RichPattern::Token(t) = p {
+                if is_operator(t) {
+                    ranked.push((2, t.to_string()));
+                }
+            }
+        }
+    }
+    ranked.sort();
+    ranked.dedup();
+    ranked.into_iter().map(|(_, s)| s).collect()
+}
+
+/// `a`, `a or b`, `a, b or c`, and past [`MAX_EXPECTED`] `a, b, .. or N more`.
+fn join_alternatives(items: &[String]) -> String {
+    let (shown, more) = if items.len() > MAX_EXPECTED {
+        (&items[..MAX_EXPECTED - 1], items.len() - (MAX_EXPECTED - 1))
+    } else {
+        (items, 0)
+    };
+    let mut out = match shown {
+        [] => String::new(),
+        [only] => only.clone(),
+        [init @ .., last] if more == 0 => format!("{} or {last}", init.join(", ")),
+        all => all.join(", "),
+    };
+    if more > 0 {
+        out.push_str(&format!(" or {more} more"));
+    }
+    out
 }
 
 type Parsed<O> = (Option<O>, Vec<Diagnostic>);
@@ -73,6 +155,9 @@ fn finish<O>(
     };
     diags.extend(errors.iter().filter(|e| !reported(e)).map(|e| to_diagnostic(e, tokens)));
     diags.sort_by_key(|d| d.span().start);
+    // Recovery can report one position twice (a rewound alternative and the
+    // enclosing group): one diagnostic per code and span.
+    diags.dedup_by(|b, a| a.code == b.code && a.span() == b.span());
     (value, diags)
 }
 
@@ -187,6 +272,18 @@ pub struct ParseResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Parse a source file given as bytes: invalid UTF-8 is one diagnostic and an
+/// empty file.
+pub fn parse_bytes(bytes: &[u8]) -> ParseResult {
+    match std::str::from_utf8(bytes) {
+        Ok(src) => parse(src),
+        Err(_) => ParseResult {
+            file: File { inner_docs: Vec::new(), items: Vec::new(), span: Loc(Span::new(0, 0)) },
+            diagnostics: lex_bytes(bytes).1,
+        },
+    }
+}
+
 /// Parse a whole source file.
 pub fn parse(src: &str) -> ParseResult {
     let (tokens, diags) = lex_limited(src);
@@ -196,8 +293,23 @@ pub fn parse(src: &str) -> ParseResult {
         .map_with(|text, e| Doc { text, span: Loc(e.span()) })
         .repeated()
         .collect::<Vec<_>>();
+    // A closing delimiter with no opener is skipped and reported once, so the
+    // items after it still parse.
+    let stray = any()
+        .filter(|t: &Token| matches!(t, Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace)))
+        .validate(|t, e, emitter| {
+            emitter.emit(Rich::custom(
+                e.span(),
+                Custom {
+                    code: "E0900",
+                    message: format!("unmatched {t}"),
+                    help: Some("remove it, or add the opening delimiter".into()),
+                },
+            ));
+            Item { meta: Meta::default(), public: false, kind: ItemKind::Error, span: Loc(e.span()) }
+        });
     let file = inner_docs
-        .then(h.item.clone().repeated().collect::<Vec<_>>())
+        .then(first_of(vec![h.item.clone().boxed(), stray.boxed()]).repeated().collect::<Vec<_>>())
         .then_ignore(end())
         .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
     let (file, mut diagnostics) = finish(file.parse(input).into_output_errors(), diags, &tokens);
@@ -234,7 +346,8 @@ fn name_error(found: &Token, span: Span) -> Diagnostic {
             format!("{found} is not part of the language"),
             span,
             "a syntactic form left out of the language",
-        ),
+        )
+        .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out"),
         other => Diagnostic::new(
             "E0903",
             format!("{other} is a reserved keyword and cannot be used as an identifier"),

@@ -1,7 +1,8 @@
 //! Scope: MSL parse-phase diagnostics (`piperine_lang::msl`): the spec's error
 //! codes at the offending span, recovery, and professional messages
 //! (requirement MSLP-04, MSLP-06). Grows with the parser: T6 starts it with
-//! the nesting limit and the in-expression `+>` / `<-` error.
+//! the nesting limit and the in-expression `+>` / `<-` error; T7-T11 add the
+//! context errors, recovery and the message shape.
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::parser::{MAX_DEPTH, parse, parse_expr};
@@ -209,4 +210,168 @@ fn module_forms_report_e0302_e0303_e0331() {
     // E0331: `let mut` in a module body.
     let found = codes("module M() { let mut x = 1; }");
     assert!(found.contains(&("E0331", Span::new(17, 22))), "{found:?}");
+}
+
+#[test]
+fn multiple_errors_in_source_order_with_partial_ast() {
+    // MSLP-04 AC 3: three independent errors give three diagnostics, in
+    // source order, and a partial AST that keeps every valid item.
+    let src = "fn a() {}\nstruct { x: u8 }\nfn b() { let = 1; let y = 2; }\nconst C: u8 = ;\nfn d() {}";
+    let r = parse(src);
+    let spans: Vec<Span> = r.diagnostics.iter().map(|d| d.span()).collect();
+    let at = |needle: &str| {
+        let i = src.find(needle).unwrap();
+        Span::new(i, i + needle.len())
+    };
+    assert_eq!(spans, [at("{ x: u8 }"), at("= 1;"), at(";\nfn d")].map(|s| Span::new(s.start, s.start + 1)), "{:?}", r.diagnostics);
+    assert!(r.diagnostics.iter().all(|d| d.code == "E0900"), "{:?}", r.diagnostics);
+    assert!(spans.windows(2).all(|w| w[0].start < w[1].start), "source order");
+
+    use piperine_lang::msl::ast::{ExprKind, ItemKind, StmtKind};
+    let fns: Vec<&str> = r
+        .file
+        .items
+        .iter()
+        .filter_map(|i| match &i.kind {
+            ItemKind::Fn(f) => Some(f.name.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fns, ["a", "b", "d"], "the valid items survive");
+    assert!(r.file.items.iter().any(|i| matches!(i.kind, ItemKind::Error)), "the broken items are error nodes");
+    // `b` keeps the statement after its broken one.
+    let ItemKind::Fn(b) = &r.file.items.iter().find(|i| matches!(&i.kind, ItemKind::Fn(f) if f.name.name == "b")).unwrap().kind
+    else {
+        unreachable!()
+    };
+    let body = b.body.as_ref().unwrap();
+    assert!(matches!(&body.stmts[0].kind, StmtKind::Expr { expr, .. } if matches!(expr.kind, ExprKind::Error)));
+    assert!(matches!(body.stmts[1].kind, StmtKind::Let { .. }));
+
+    // Errors inside one block are each reported, and the function stays.
+    let r = parse("fn f() { let = 1; x +; let ok = 3; }");
+    assert_eq!(r.diagnostics.len(), 2, "{:?}", r.diagnostics);
+    assert_eq!(r.file.items.len(), 1);
+
+    // Within a module body, a behavior block and a reaction.
+    for src in [
+        "module M(a: Bit) { r: ; s: f64; }\nfn later() {}",
+        "analog for M { i(p, n) +> ; j(p, n) +> 1.0; }\nfn later() {}",
+        "digital for M { on e { q <- ; r <- 1; } }\nfn later() {}",
+        "nature N { potential: }\nfn later() {}",
+    ] {
+        let r = parse(src);
+        assert_eq!(r.diagnostics.len(), 1, "{src:?}: {:?}", r.diagnostics);
+        assert!(
+            matches!(&r.file.items.last().unwrap().kind, ItemKind::Fn(f) if f.name.name == "later"),
+            "{src:?}: the item after the error still parses"
+        );
+    }
+
+    // A closing delimiter with no opener is skipped, once.
+    let r = parse("}\nfn f() {}");
+    assert_eq!(r.diagnostics.len(), 1);
+    assert_eq!(r.diagnostics[0].message, "unmatched `}`");
+    assert!(r.file.items.iter().any(|i| matches!(&i.kind, ItemKind::Fn(f) if f.name.name == "f")));
+    // The module result is not mistaken for a broken item.
+    assert!(parse("module M(a: Bit) -> Bit { r: f64; a }").diagnostics.is_empty());
+}
+
+#[test]
+fn unexpected_token_names_found_and_expected() {
+    // MSLP-04 AC 4: the message names the found token and what was expected.
+    for (src, found, expected) in [
+        ("fn f() { let x = 1 }", "`}`", "`;`"),
+        ("const C: u8 = ;", "`;`", "expression"),
+        ("fn f( { }", "`{`", "`)`"),
+        ("struct S { a: u8, , }", "`,`", "identifier"),
+        ("nature N { potential: }", "`}`", "identifier"),
+        ("fn f() {", "end of input", "`}`"),
+    ] {
+        let r = parse(src);
+        let d = &r.diagnostics[0];
+        assert_eq!(d.code, "E0900", "{src:?}");
+        assert!(
+            d.message.starts_with(&format!("unexpected {found}, expected ")) && d.message.contains(expected),
+            "{src:?}: {}",
+            d.message
+        );
+    }
+    // The expected set is summarized: the dozens of operators that could
+    // continue an expression collapse into one phrase, and no message lists
+    // more than six alternatives.
+    let r = parse("fn f() { let x = 1 }");
+    assert_eq!(r.diagnostics[0].message, "unexpected `}`, expected `;` or an operator");
+    for src in ["fn f() { let x = 1 }", "digital for M { on { } }", "struct S { a: u8, , }", "fn f( { }"] {
+        for d in parse(src).diagnostics {
+            let listed = d.message.split_once("expected ").map_or(0, |(_, rest)| rest.split(", ").count());
+            assert!(listed <= 6, "{src:?}: {}", d.message);
+        }
+    }
+}
+
+#[test]
+fn diagnostic_has_code_message_label_help() {
+    // MSLP-04 AC 2: every diagnostic has a code, a one-line message, a
+    // primary label at a span inside the source, and a help line naming the
+    // correct form for each spec row (the generic E0900 syntax error has none).
+    let deep = format!("const A: u8 = {}1{};", "[".repeat(300), "]".repeat(300));
+    let fixtures = [
+        ("E0910", deep.as_str()),
+        ("E0101", "fn f() { let x: dyn T = 1; }"),
+        ("E0121", "fn f() { x +> 1.0; }"),
+        ("E0302", "module M(a: Bit) { a }"),
+        ("E0303", "fn f() { module M() {} }"),
+        ("E0331", "module M() { let mut x = 1; }"),
+        ("E0404", "analog for M { q <- 1; }"),
+        ("E0434", "digital for M { q <- 1; }"),
+        ("E0901", "fn f() { println!(\"x\"); }"),
+        ("E0902", "const A: f64 = 1e3m;"),
+        ("E0903", "fn out() {}"),
+        ("E0905", "const A: u8 = 'a';"),
+        ("E0907", "fn f() { let x = a +> b; }"),
+        ("E0908", "fn f() { let Unknown = 1; }"),
+        ("E0900", "fn f( { }"),
+    ];
+    for (code, src) in fixtures {
+        let r = parse(src);
+        let d = r
+            .diagnostics
+            .iter()
+            .find(|d| d.code == code)
+            .unwrap_or_else(|| panic!("{src:?} does not report {code}: {:?}", r.diagnostics));
+        assert!(!d.message.is_empty() && !d.message.contains('\n'), "{code}: message {:?}", d.message);
+        assert!(!d.primary.1.is_empty(), "{code}: primary label text");
+        assert!(d.span().start <= d.span().end && d.span().end <= src.len(), "{code}: span {:?}", d.span());
+        assert!(!d.span().is_empty() || d.span().end == src.len(), "{code}: an empty label span away from the end");
+        if code != "E0900" {
+            assert!(d.help.as_deref().is_some_and(|h| !h.is_empty()), "{code}: help names the correct form");
+        }
+    }
+    // Lexical errors come with the same shape.
+    for (code, src) in [("E0900", "/* never closed"), ("E0900", "const A: &str = \"open")] {
+        let r = parse(src);
+        let d = r.diagnostics.iter().find(|d| d.code == code).expect(src);
+        assert!(!d.message.is_empty() && !d.primary.1.is_empty() && d.help.is_some(), "{src:?}");
+    }
+}
+
+#[test]
+fn empty_source_empty_file() {
+    // MSLP-06: an empty source is an empty file and no diagnostics; so is a
+    // source of whitespace and comments.
+    for src in ["", "   \n\t\n", "// just a comment\n/* and another */\n"] {
+        let r = parse(src);
+        assert!(r.file.items.is_empty() && r.file.inner_docs.is_empty(), "{src:?}");
+        assert!(r.diagnostics.is_empty(), "{src:?}: {:?}", r.diagnostics);
+    }
+    let r = piperine_lang::msl::parser::parse_bytes(b"");
+    assert!(r.file.items.is_empty() && r.diagnostics.is_empty());
+    // Inner doc comments alone make a file with docs and no items.
+    let r = parse("//! The crate docs.\n");
+    assert_eq!((r.file.inner_docs.len(), r.file.items.len(), r.diagnostics.len()), (1, 0, 0));
+    // Invalid UTF-8: one diagnostic and no items.
+    let r = piperine_lang::msl::parser::parse_bytes(&[b'f', b'n', 0xff, 0xfe]);
+    assert_eq!(r.diagnostics.len(), 1);
+    assert!(r.file.items.is_empty());
 }
