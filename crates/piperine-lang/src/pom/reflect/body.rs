@@ -114,6 +114,14 @@ impl<'d> Expr<'d> {
     pub fn text(self) -> &'d str {
         text_in(self.enclosing(), self.span())
     }
+
+    /// The instance this call is, when it is classified as one.
+    pub fn as_instance(self) -> Option<super::Instance<'d>> {
+        match self.kind() {
+            ExprKind::Call { class: crate::pom::resolution::CallClass::Instance { .. }, .. } => Some(super::Instance::new(self.design, self.id)),
+            _ => None,
+        }
+    }
 }
 
 /// A statement node.

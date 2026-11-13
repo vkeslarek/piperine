@@ -13,7 +13,7 @@ use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
 pub use body::{Commit, Contribution, Expr, Path, Pat, SourceFile, Stmt, Type};
-pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
+pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Instance, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
 pub use items::{Const, Enum, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Struct, Trait, Use, Variant};
 
 /// The generic declaration handle: any kind, read through [`Decl::kind`].

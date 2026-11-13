@@ -211,6 +211,43 @@ impl Design {
         }
     }
 
+    /// Store the class of a call expression and what each of its named
+    /// arguments and param bindings names.
+    pub(super) fn set_call(&mut self, expr: ExprId, class_: super::resolution::CallClass, args: &[(usize, super::resolution::Resolution)], params: &[(usize, super::resolution::Resolution)]) {
+        if let super::body::ExprKind::Call { class, args: written, params: block, .. } = &mut self.exprs[expr.index()].kind {
+            *class = class_;
+            for (i, res) in args {
+                if let Some(a) = written.get_mut(*i) {
+                    a.res = *res;
+                }
+            }
+            for (i, res) in params {
+                if let Some(f) = block.as_mut().and_then(|b| b.get_mut(*i)) {
+                    f.res = *res;
+                }
+            }
+        }
+    }
+
+    /// Store the class of a `Name { .. }` expression and what each field names.
+    pub(super) fn set_struct(&mut self, expr: ExprId, class_: super::resolution::StructClass, names: &[(usize, super::resolution::Resolution)]) {
+        if let super::body::ExprKind::Struct { class, fields, .. } = &mut self.exprs[expr.index()].kind {
+            *class = class_;
+            for (i, res) in names {
+                if let Some(f) = fields.get_mut(*i) {
+                    f.res = *res;
+                }
+            }
+        }
+    }
+
+    /// Record an instance in the index of its module.
+    pub(super) fn push_instance(&mut self, module: DeclId, expr: ExprId) {
+        if let DeclKind::Module(m) = &mut self.decls[module.index()].kind {
+            m.instances.push(expr);
+        }
+    }
+
     /// Store what segment `index` of `path` names.
     pub(super) fn set_segment_res(&mut self, path: PathId, index: usize, res: super::resolution::Resolution) {
         if let Some(segment) = self.paths[path.index()].segments.get_mut(index) {

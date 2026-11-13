@@ -78,5 +78,17 @@ pub(super) fn run(design: &mut Design) {
     for (decl, bundle) in classified.bundles {
         design.set_bundle(decl, bundle);
     }
+    for facts in classified.structs {
+        design.set_struct(facts.expr, facts.class, &facts.fields);
+    }
+    for facts in classified.calls {
+        design.set_call(facts.expr, facts.class, &facts.args, &facts.params);
+    }
+    for (module, expr) in classified.instances {
+        design.push_instance(module, expr);
+    }
+    for (file, diagnostic) in classified.diagnostics {
+        design.push_diagnostic(file, diagnostic);
+    }
     design.sort_diagnostics();
 }

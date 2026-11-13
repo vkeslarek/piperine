@@ -796,18 +796,18 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `named_instance_with_connections_and_params` passes in `pom_classify.rs` (C54: POM-09 AC 3)
-- [ ] Test `anonymous_instance_in_analog_and_plain_call` passes in `pom_classify.rs` (C55: POM-09 AC 4)
-- [ ] Test `struct_expression_classes` passes in `pom_classify.rs` (C56: POM-09 AC 5)
-- [ ] Test `instance_through_template_value` passes in `pom_classify.rs` (C57: POM-09 AC 6)
-- [ ] Test `impl_on_module_is_e0130` passes in `pom_classify.rs` (C62: POM-09 AC 11)
-- [ ] Test `generation_body_is_not_unrolled` passes in `pom_classify.rs` (C77: POM-12 AC 1)
-- [ ] Test `self_placement_under_generation_if` passes in `pom_classify.rs` (C78: POM-12 AC 2)
-- [ ] Test `unresolved_callee_is_plain_call` passes in `pom_classify.rs`
-- [ ] Classification creates no node: an `Instance` is a view over a `Call` expression
-- [ ] The instance name is the binding of a body `let` whose whole value is the call and whose pattern is one identifier
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `named_instance_with_connections_and_params` passes in `pom_classify.rs` (C54: POM-09 AC 3)
+- [x] Test `anonymous_instance_in_analog_and_plain_call` passes in `pom_classify.rs` (C55: POM-09 AC 4)
+- [x] Test `struct_expression_classes` passes in `pom_classify.rs` (C56: POM-09 AC 5)
+- [x] Test `instance_through_template_value` passes in `pom_classify.rs` (C57: POM-09 AC 6)
+- [x] Test `impl_on_module_is_e0130` passes in `pom_classify.rs` (C62: POM-09 AC 11)
+- [x] Test `generation_body_is_not_unrolled` passes in `pom_classify.rs` (C77: POM-12 AC 1)
+- [x] Test `self_placement_under_generation_if` passes in `pom_classify.rs` (C78: POM-12 AC 2)
+- [x] Test `unresolved_callee_is_plain_call` passes in `pom_classify.rs`
+- [x] Classification creates no node: an `Instance` is a view over a `Call` expression
+- [x] The instance name is the binding of a body `let` whose whole value is the call and whose pattern is one identifier
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

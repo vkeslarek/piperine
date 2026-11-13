@@ -290,6 +290,7 @@ impl Refs {
             DeclKind::Module(m) => {
                 self.types.extend(m.ret);
                 self.exprs.extend(m.where_.iter().chain(&m.result));
+                self.exprs.extend(&m.instances);
                 self.resolved.extend(&m.behaviors);
             }
             DeclKind::Port(p) => {

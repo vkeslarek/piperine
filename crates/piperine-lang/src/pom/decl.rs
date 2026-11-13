@@ -276,6 +276,10 @@ pub struct ModuleData {
     /// The behavior blocks bound to this module, in source order; filled by
     /// name resolution.
     pub behaviors: Vec<DeclId>,
+    /// Every call of this module's body and blocks classified as an
+    /// instance, in source order; filled by classification. An instance is a
+    /// view over the call, not a node.
+    pub instances: Vec<ExprId>,
 }
 
 /// `dir name: ty = default`.
