@@ -2,8 +2,10 @@
 
 use std::ops::Range;
 
+use serde::{Deserialize, Serialize};
+
 /// A half-open byte range `start..end` into the source text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

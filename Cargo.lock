@@ -1789,6 +1789,9 @@ dependencies = [
  "chumsky",
  "logos",
  "miette",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

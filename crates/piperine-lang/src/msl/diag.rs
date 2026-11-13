@@ -1,17 +1,20 @@
 //! The one diagnostic type of the MSL front end.
 
+use std::borrow::Cow;
 use std::fmt;
 
 use miette::{GraphicalReportHandler, GraphicalTheme, LabeledSpan, NamedSource};
+
+use serde::{Deserialize, Serialize};
 
 use super::span::Span;
 
 /// An MSL error: a spec code (`E09xx`, `E0121`, ...), a one-line message, a
 /// primary label at the offending span, optional secondary labels and an
 /// optional help line naming the correct form.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
-    pub code: &'static str,
+    pub code: Cow<'static, str>,
     pub message: String,
     /// The offending span and the text of its label.
     pub primary: (Span, String),
@@ -22,7 +25,7 @@ pub struct Diagnostic {
 impl Diagnostic {
     pub fn new(code: &'static str, message: impl Into<String>, span: Span, label: impl Into<String>) -> Self {
         Diagnostic {
-            code,
+            code: Cow::Borrowed(code),
             message: message.into(),
             primary: (span, label.into()),
             secondary: Vec::new(),
@@ -55,7 +58,7 @@ impl std::error::Error for Diagnostic {}
 
 impl miette::Diagnostic for Diagnostic {
     fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
-        Some(Box::new(self.code))
+        Some(Box::new(self.code.clone()))
     }
 
     fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {

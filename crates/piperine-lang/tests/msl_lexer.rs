@@ -252,7 +252,7 @@ fn inherited_lexical_forms_lex() {
     // An unterminated raw string is one diagnostic at its opener.
     let d = diagnostics("a r#\"never closed");
     assert_eq!(d.len(), 1, "{d:?}");
-    assert_eq!((d[0].code, d[0].span()), ("E0900", Span::new(2, 5)));
+    assert_eq!((&*d[0].code, d[0].span()), ("E0900", Span::new(2, 5)));
     // A raw byte string is a dropped class.
     assert_eq!(diagnostics("br\"x\"")[0].code, "E0905");
     // `1.` is one float token; the dot of `1..`, `1.f` and `1._` stays apart.

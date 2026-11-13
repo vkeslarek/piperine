@@ -75,7 +75,7 @@ fn nesting_without_delimiters_is_also_bounded() {
                 assert!(
                     deep.diagnostics.iter().any(|d| d.code == "E0910"),
                     "{kind}: no E0910 at 20000: {:?}",
-                    deep.diagnostics.iter().map(|d| d.code).collect::<Vec<_>>()
+                    deep.diagnostics.iter().map(|d| &*d.code).collect::<Vec<_>>()
                 );
                 let _ = piperine_lang::msl::print(&deep.file);
                 let ok = parse(&chain_source(kind, 100));
@@ -101,7 +101,11 @@ fn plus_gt_and_commit_inside_an_expression_report_e0907() {
 
 /// The codes of a source's diagnostics with their spans.
 fn codes(src: &str) -> Vec<(&'static str, Span)> {
-    parse(src).diagnostics.iter().map(|d| (d.code, d.span())).collect()
+    parse(src)
+        .diagnostics
+        .iter()
+        .map(|d| (&*Box::leak(d.code.to_string().into_boxed_str()), d.span()))
+        .collect()
 }
 
 #[test]
@@ -649,7 +653,7 @@ fn unclosed_delimiter_is_reported_at_the_opener() {
     let r = parse(src);
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     let d = &r.diagnostics[0];
-    assert_eq!((d.code, d.span()), ("E0900", Span::new(10, 11)));
+    assert_eq!((&*d.code, d.span()), ("E0900", Span::new(10, 11)));
     assert_eq!(d.secondary.first().map(|(s, _)| *s), Some(Span::new(23, 24)), "{d:?}");
     assert!(d.message.contains("expected `)`"), "{}", d.message);
 

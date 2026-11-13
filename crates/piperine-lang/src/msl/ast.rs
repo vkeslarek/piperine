@@ -30,10 +30,12 @@
 //! | `attr_*` | [`Attr`] / [`AttrInput`] |
 //! | `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path`, `const_item` | [`Stmt`], [`Expr`], [`Type`], [`Pat`], [`Block`], [`Generics`], [`GenericArgs`], [`Path`], [`ConstItem`] |
 
+use serde::{Deserialize, Serialize};
+
 use super::span::Span;
 
 /// A node's source range. Equality ignores it; see the module docs.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Loc(pub Span);
 
 impl PartialEq for Loc {
@@ -233,13 +235,13 @@ pub struct Expr {
     pub span: Loc,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Lit {
     pub kind: LitKind,
     pub span: Loc,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LitKind {
     /// The text, type suffix included.
     Int(String),
@@ -252,7 +254,7 @@ pub enum LitKind {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnOp {
     Neg,
     Not,
@@ -261,7 +263,7 @@ pub enum UnOp {
     Ref,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinOp {
     Add, Sub, Mul, Div, Rem, BitXor, BitAnd, BitOr, Shl, Shr,
     And, Or, Eq, Ne, Lt, Le, Gt, Ge,
@@ -433,7 +435,7 @@ pub enum FnParam {
     Error(Loc),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Dir {
     In,
     Out,
@@ -557,7 +559,7 @@ pub struct NatureField {
     pub span: Loc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Quantity {
     Potential,
     Flow,
@@ -639,7 +641,7 @@ pub enum GenElse<X> {
     If(Gen<X>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BehaviorKind {
     Analog,
     Digital,

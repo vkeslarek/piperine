@@ -128,15 +128,15 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `build_retains_name_text_and_ast` passes in `pom_design.rs` (C1: POM-01 AC 1)
-- [ ] Test `parse_diagnostics_pass_through_with_file` passes in `pom_design.rs` (C2: POM-01 AC 2)
-- [ ] Test `design_is_send_and_sync` passes in `pom_design.rs` (C4: POM-01 AC 4)
-- [ ] `Design` has no public `&mut self` method and no `Cell`/`RefCell`/`Rc` field
-- [ ] Ids are hand-written newtypes over `u32`: no macro
-- [ ] From this task on, every storage type derives `Debug, Clone, PartialEq, Serialize, Deserialize`, and side tables are `BTreeMap` or `Vec`
-- [ ] The five existing `msl_*` targets still pass after the `Diagnostic.code` change (`cargo test -p piperine-lang`)
-- [ ] Gate passes: run design; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `build_retains_name_text_and_ast` passes in `pom_design.rs` (C1: POM-01 AC 1)
+- [x] Test `parse_diagnostics_pass_through_with_file` passes in `pom_design.rs` (C2: POM-01 AC 2)
+- [x] Test `design_is_send_and_sync` passes in `pom_design.rs` (C4: POM-01 AC 4)
+- [x] `Design` has no public `&mut self` method and no `Cell`/`RefCell`/`Rc` field
+- [x] Ids are hand-written newtypes over `u32`: no macro
+- [x] From this task on, every storage type derives `Debug, Clone, PartialEq, Serialize, Deserialize`, and side tables are `BTreeMap` or `Vec`
+- [x] The five existing `msl_*` targets still pass after the `Diagnostic.code` change (`cargo test -p piperine-lang`)
+- [x] Gate passes: run design; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
