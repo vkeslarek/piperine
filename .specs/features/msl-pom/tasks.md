@@ -585,10 +585,10 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `every_spec_block_builds_with_consistent_invariants` passes in `pom_corpus.rs` (C86: POM-14 AC 1)
-- [ ] A fence that panics fails the test with its file and line (`std::panic::catch_unwind`)
-- [ ] Gate passes: run corpus; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_spec_block_builds_with_consistent_invariants` passes in `pom_corpus.rs` (C86: POM-14 AC 1)
+- [x] A fence that panics fails the test with its file and line (`std::panic::catch_unwind`)
+- [x] Gate passes: run corpus; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

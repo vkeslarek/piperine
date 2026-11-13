@@ -64,14 +64,14 @@ pub struct DesignDiagnostic {
 /// [`Design::builder`]; nothing mutates it afterwards.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Design {
-    files: Vec<SourceFileData>,
-    root_file: FileId,
-    decls: Vec<DeclData>,
-    exprs: Vec<ExprNode>,
-    stmts: Vec<StmtNode>,
-    pats: Vec<PatNode>,
-    types: Vec<TypeNode>,
-    paths: Vec<PathNode>,
+    pub(super) files: Vec<SourceFileData>,
+    pub(super) root_file: FileId,
+    pub(super) decls: Vec<DeclData>,
+    pub(super) exprs: Vec<ExprNode>,
+    pub(super) stmts: Vec<StmtNode>,
+    pub(super) pats: Vec<PatNode>,
+    pub(super) types: Vec<TypeNode>,
+    pub(super) paths: Vec<PathNode>,
     diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -225,37 +225,6 @@ impl Design {
         for c in &d.children {
             self.dump_decl(*c, depth + 1, out);
         }
-    }
-
-    /// The internal inconsistencies of the arenas, one message each; empty
-    /// when the design is well formed.
-    pub fn check(&self) -> Vec<String> {
-        let mut problems = Vec::new();
-        for (i, d) in self.decls.iter().enumerate() {
-            let id = DeclId(i as u32);
-            if d.file.index() >= self.files.len() {
-                problems.push(format!("{id:?}: file {:?} does not exist", d.file));
-            } else if d.span.start > d.span.end || d.span.end > self.files[d.file.index()].text.len() {
-                problems.push(format!("{id:?}: span {}..{} is outside its file", d.span.start, d.span.end));
-            }
-            match d.parent {
-                Some(p) if p.index() >= self.decls.len() => problems.push(format!("{id:?}: parent {p:?} does not exist")),
-                Some(p) if !self.decls[p.index()].children.contains(&id) => {
-                    problems.push(format!("{id:?}: not listed among the children of its parent {p:?}"))
-                }
-                _ => {}
-            }
-            for c in &d.children {
-                match self.decls.get(c.index()) {
-                    None => problems.push(format!("{id:?}: child {c:?} does not exist")),
-                    Some(child) if child.parent != Some(id) => {
-                        problems.push(format!("{id:?}: child {c:?} names another parent"))
-                    }
-                    Some(_) => {}
-                }
-            }
-        }
-        problems
     }
 
     pub(crate) fn file_count(&self) -> usize {

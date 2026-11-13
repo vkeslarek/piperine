@@ -7,6 +7,7 @@ mod spec_corpus;
 
 use piperine_lang::msl::parser::parse;
 use piperine_lang::pom::Design;
+use serde_json::{Value, json};
 use spec_corpus::{Class, corpus};
 
 /// The first line where two trees differ, spans included, with a little context.
@@ -109,4 +110,84 @@ struct ;
     assert!(!parsed.diagnostics.is_empty());
     let design = Design::builder().source("top.msl", src).build();
     assert_lossless(&design, &parsed.file, "the hand-written source");
+}
+
+#[test]
+fn every_spec_block_builds_with_consistent_invariants() {
+    let mut built = 0;
+    let mut failures = Vec::new();
+    for block in corpus() {
+        let at = format!("{}:{}", block.file, block.line);
+        let result = std::panic::catch_unwind(|| {
+            let design = Design::builder().source("block.msl", block.text.as_str()).build();
+            design.check()
+        });
+        match result {
+            Ok(problems) if problems.is_empty() => built += 1,
+            Ok(problems) => failures.push(format!("{at}: {}", problems.join("; "))),
+            Err(_) => failures.push(format!("{at}: the build panicked")),
+        }
+    }
+    println!("built {built} fences, {} failed", failures.len());
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(built > 0, "no fence was built: the corpus is empty");
+}
+
+/// A well-formed design with a path, an expression, a statement item and a
+/// resolution slot, as JSON, to corrupt one link at a time.
+fn design_json() -> Value {
+    let src = "const X: u32 = { fn g() { } a };";
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.check().is_empty(), "{:?}", design.check());
+    serde_json::to_value(&design).expect("a design serializes")
+}
+
+/// Corrupt the design with `edit` and return what `check()` reports.
+fn corrupted(edit: impl FnOnce(&mut Value)) -> Vec<String> {
+    let mut json = design_json();
+    edit(&mut json);
+    let design: Design = serde_json::from_value(json).expect("a corrupted design still deserializes");
+    design.check()
+}
+
+fn reports(problems: &[String], word: &str) -> bool {
+    problems.iter().any(|p| p.contains(word))
+}
+
+#[test]
+fn check_reports_every_kind_of_broken_link() {
+    // An id past the end of its arena.
+    let p = corrupted(|j| j["exprs"][0]["kind"] = json!({ "Path": 9999 }));
+    assert!(reports(&p, "path 9999"), "{p:?}");
+    let p = corrupted(|j| j["stmts"][0]["kind"] = json!({ "Item": 9999 }));
+    assert!(reports(&p, "decl 9999"), "{p:?}");
+    // An owner that does not exist.
+    let p = corrupted(|j| j["exprs"][0]["owner"] = json!(9999));
+    assert!(reports(&p, "owner"), "{p:?}");
+    let p = corrupted(|j| j["types"][0]["owner"] = json!(9999));
+    assert!(reports(&p, "owner"), "{p:?}");
+    // A resolved link that points at no declaration.
+    let p = corrupted(|j| j["paths"][0]["segments"][0]["res"] = json!({ "Decl": 9999 }));
+    assert!(reports(&p, "resolution"), "{p:?}");
+    // A declaration listed under two parents, or twice under one.
+    let p = corrupted(|j| {
+        let child = j["decls"][0]["children"][0].clone();
+        j["decls"][0]["children"].as_array_mut().unwrap().push(child);
+    });
+    assert!(reports(&p, "twice"), "{p:?}");
+    // Parent and child disagree.
+    let p = corrupted(|j| j["decls"][1]["parent"] = json!(2));
+    assert!(!p.is_empty());
+    // Two declarations that are each other's parent: no root reaches them.
+    let p = corrupted(|j| {
+        j["decls"][0]["children"] = json!([]);
+        j["decls"][1]["parent"] = json!(2);
+        j["decls"][1]["children"] = json!([2]);
+        j["decls"][2]["parent"] = json!(1);
+        j["decls"][2]["children"] = json!([1]);
+    });
+    assert!(reports(&p, "not reachable from any root"), "{p:?}");
+    // A child expression past the end of the arena.
+    let p = corrupted(|j| j["exprs"][0]["kind"] = json!({ "Unary": { "op": "Neg", "expr": 9999 } }));
+    assert!(reports(&p, "expression 9999"), "{p:?}");
 }

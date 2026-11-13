@@ -6,6 +6,7 @@
 //! module `abc` is found there and nowhere else.
 
 mod body;
+mod check;
 mod decl;
 mod design;
 mod ids;
