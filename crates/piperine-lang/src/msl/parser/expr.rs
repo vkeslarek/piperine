@@ -9,7 +9,7 @@
 //! literal or instance param block at the top level (`if x { .. }`,
 //! `match v { .. }`, `for i in r { .. }`, `on e { .. }`), as in Rust.
 
-use chumsky::pratt::{infix, left, postfix, prefix};
+use chumsky::pratt::{infix, left, none, postfix, prefix};
 use chumsky::input::MapExtra;
 
 use super::*;
@@ -33,6 +33,12 @@ fn gt<'a, I: In<'a>>() -> impl Parser<'a, I, Span, Extra<'a>> + Clone {
 
 fn eq_tok<'a, I: In<'a>>() -> impl Parser<'a, I, Span, Extra<'a>> + Clone {
     just(Token::Punct(Punct::Eq)).map_with(|_, e| e.span())
+}
+
+/// After `as T`, `<` and `<<` open generic arguments, never a comparison or
+/// a shift (Rust rejects `a as u8 < b`).
+fn next_not_angle<'a, I: In<'a>>() -> impl Parser<'a, I, (), Extra<'a>> + Clone {
+    any().filter(|t: &Token| !matches!(t, Token::Punct(Punct::Lt | Punct::Shl))).rewind().ignored().or(end())
 }
 
 fn next_is_not<'a, I: In<'a>>(p: Punct) -> impl Parser<'a, I, (), Extra<'a>> + Clone {
@@ -209,6 +215,8 @@ pub(crate) fn build<'a, I: In<'a>>(
     #[derive(Clone)]
     enum EmitArg {
         Named(FieldInit),
+        /// `name: value`: a field spelled like a struct field.
+        Colon(Span),
         Positional(Expr),
     }
     let emit_arg = first_of(vec![
@@ -217,6 +225,11 @@ pub(crate) fn build<'a, I: In<'a>>(
             .then(expr.clone())
             .map_with(|(name, value), e| FieldInit { name, value, span: Loc(e.span()) })
             .map(EmitArg::Named)
+            .boxed(),
+        ident()
+            .then_ignore(punct(Punct::Colon))
+            .then_ignore(expr.clone())
+            .map_with(|_, e| EmitArg::Colon(e.span()))
             .boxed(),
         expr.clone().map(EmitArg::Positional).boxed(),
     ]);
@@ -251,6 +264,10 @@ pub(crate) fn build<'a, I: In<'a>>(
                     emitter.emit(bad(f.span.0, "the first argument is not a string literal"));
                     return mk(ExprKind::Error, e.span());
                 }
+                Some(EmitArg::Colon(span)) => {
+                    emitter.emit(bad(span, "the first argument is not a string literal"));
+                    return mk(ExprKind::Error, e.span());
+                }
                 None => {
                     emitter.emit(bad(e.span(), "the stream name is missing"));
                     return mk(ExprKind::Error, e.span());
@@ -261,6 +278,10 @@ pub(crate) fn build<'a, I: In<'a>>(
             for arg in args {
                 match arg {
                     EmitArg::Named(f) => fields.push(f),
+                    EmitArg::Colon(span) => {
+                        emitter.emit(bad(span, "a field is not `name = value`"));
+                        ok = false;
+                    }
                     EmitArg::Positional(x) => {
                         emitter.emit(bad(x.span.0, "a field is not `name = value`"));
                         ok = false;
@@ -475,7 +496,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .pratt((
             postfix(15, postfix_op, apply_post::<I>),
             prefix(14, unary_op, |op, rhs: Expr, e| mk(ExprKind::Unary { op, expr: boxed(rhs) }, e.span())),
-            postfix(13, kw(Kw::As).ignore_then(h.ty.clone()), |lhs: Expr, ty, e| {
+            postfix(13, kw(Kw::As).ignore_then(h.ty.clone()).then_ignore(next_not_angle()), |lhs: Expr, ty, e| {
                 mk(ExprKind::Cast { expr: boxed(lhs), ty }, e.span())
             }),
             infix(left(12), mul_op, binary::<I>),
@@ -484,7 +505,7 @@ pub(crate) fn build<'a, I: In<'a>>(
             infix(left(9), op(Punct::And, BinOp::BitAnd), binary::<I>),
             infix(left(8), op(Punct::Caret, BinOp::BitXor), binary::<I>),
             infix(left(7), op(Punct::Or, BinOp::BitOr), binary::<I>),
-            infix(left(6), cmp_op, binary::<I>),
+            infix(none(6), cmp_op, binary::<I>),
             infix(left(5), op(Punct::AndAnd, BinOp::And), binary::<I>),
             infix(left(4), op(Punct::OrOr, BinOp::Or), binary::<I>),
         ))

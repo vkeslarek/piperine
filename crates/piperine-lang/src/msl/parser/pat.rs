@@ -120,8 +120,23 @@ pub(crate) fn build<'a, I: In<'a>>(
         punct(Punct::At).ignore_then(pat1.clone()).map(Tail::At),
     ))
     .or_not();
-    let path_pat = ty::path(h, true).then(tail).map_with(move |(path, tail), e| {
-        let span = e.span();
+    let path_pat = ty::path(h, true).then(tail).validate(move |(path, tail), e, emitter| {
+        // `self`, `Self`, `super` and `crate` are path keywords: never a name.
+        if let (None | Some(Tail::At(_)), [seg]) = (&tail, path.segments.as_slice()) {
+            if seg.args.is_none() && matches!(seg.ident.name.as_str(), "self" | "Self" | "super" | "crate") {
+                emitter.emit(Rich::custom(
+                    seg.ident.span.0,
+                    Custom {
+                        code: "E0903",
+                        message: format!("`{}` is a reserved keyword and cannot be used as an identifier", seg.ident.name),
+                        help: Some("choose another name for the binding".into()),
+                    },
+                ));
+            }
+        }
+        (path, tail, e.span())
+    })
+    .map(move |(path, tail, span)| {
         match tail {
             Some(Tail::Tuple(pats)) => mk(PatKind::TupleStruct { path, pats }, span),
             Some(Tail::Struct(fields, rest)) => mk(PatKind::Struct { path, fields, rest }, span),

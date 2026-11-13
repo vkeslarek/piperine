@@ -62,6 +62,21 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
             )
             .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out")
         }
+        // A Rust keyword no production of the language accepts anywhere.
+        RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Kw(k) if unused_keyword(*k)) => {
+            name_error(&t, span)
+        }
+        // `Unknown` where a declaration or field name goes: `Unknown: T = ..`.
+        RichReason::ExpectedFound { found: Some(t), .. }
+            if matches!(&**t, Token::Unknown)
+                && tokens
+                    .iter()
+                    .position(|(_, s)| *s == span)
+                    .and_then(|i| tokens.get(i + 1))
+                    .is_some_and(|(n, _)| matches!(n, Token::Punct(Punct::Colon))) =>
+        {
+            name_error(&t, span)
+        }
         RichReason::ExpectedFound { found: Some(t), .. } if names_expected(e, &t) => name_error(&t, span),
         RichReason::ExpectedFound { found: None, .. } if at_span().is_some_and(|t| names_expected(e, &t)) => {
             name_error(&at_span().unwrap_or(Token::Error), span)
@@ -176,7 +191,28 @@ fn finish<O>(
     let reported = |e: &Err<'_>| {
         matches!(e.reason(), RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Error))
     };
-    diags.extend(errors.iter().filter(|e| !reported(e)).map(|e| to_diagnostic(e, tokens)));
+    // An error at the end of input after a lexical error is that same fault
+    // seen again; after an unclosed delimiter it is the same fault too, and
+    // the diagnostic that names the opening position replaces it. Without
+    // such an error the parser already named the fault: the unclosed-delimiter
+    // reports are dropped.
+    let at_eof = |e: &Err<'_>| {
+        matches!(e.reason(), RichReason::ExpectedFound { found: None, .. })
+            && !tokens.iter().any(|(_, s)| s == e.span())
+    };
+    let unclosed = |d: &Diagnostic| d.primary.1 == UNCLOSED;
+    let eof_error = errors.iter().any(|e| at_eof(e));
+    if !eof_error {
+        diags.retain(|d| !unclosed(d));
+    }
+    let ended_early = eof_error && diags.iter().any(|d| unclosed(d) || d.message.starts_with("unterminated"))
+        || diags.iter().any(|d| d.message.starts_with("unterminated"));
+    diags.extend(
+        errors
+            .iter()
+            .filter(|e| !reported(e) && !(ended_early && at_eof(e)))
+            .map(|e| to_diagnostic(e, tokens)),
+    );
     diags.sort_by_key(|d| d.span().start);
     // Recovery can report one position twice (a rewound alternative and the
     // enclosing group): one diagnostic per code and span.
@@ -298,6 +334,56 @@ fn overflow(diags: &mut Vec<Diagnostic>, span: Span) {
     );
 }
 
+/// The primary label of an unclosed-delimiter diagnostic.
+const UNCLOSED: &str = "this delimiter is never closed";
+
+/// The closing delimiter that matches an opener.
+fn closer_of(t: &Token) -> &'static str {
+    match t {
+        Token::Punct(Punct::LParen) => ")",
+        Token::Punct(Punct::LBracket) => "]",
+        _ => "}",
+    }
+}
+
+/// Unclosed delimiters, each reported at its opener (with the closer that
+/// met it or the end of input as a second label), as `rustc` does. A closer
+/// that matches no opener is left to the parser (`unmatched`).
+fn unclosed_delimiters(tokens: &[(Token, Span)], src_len: usize) -> Vec<Diagnostic> {
+    let kind = |t: &Token| match t {
+        Token::Punct(Punct::LParen | Punct::RParen) => 0,
+        Token::Punct(Punct::LBracket | Punct::RBracket) => 1,
+        _ => 2,
+    };
+    let report = |open: usize, found: Option<&Token>, at: Span| {
+        let (t, span) = &tokens[open];
+        let closer = closer_of(t);
+        let (found, label) = match found {
+            Some(f) => (f.to_string(), "reached this closing delimiter first"),
+            None => ("end of input".to_string(), "the input ends here"),
+        };
+        Diagnostic::new("E0900", format!("unexpected {found}, expected `{closer}`"), *span, UNCLOSED)
+            .with_label(at, label)
+            .with_help(format!("add the closing `{closer}` for {t}"))
+    };
+    let mut out = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    for (i, (t, span)) in tokens.iter().enumerate() {
+        if is_open(t) {
+            stack.push(i);
+        } else if is_close(t) {
+            let Some(depth) = stack.iter().rposition(|&o| kind(&tokens[o].0) == kind(t)) else { continue };
+            for open in stack.drain(depth..).skip(1) {
+                out.push(report(open, Some(t), *span));
+            }
+        }
+    }
+    for open in stack {
+        out.push(report(open, None, Span::new(src_len, src_len)));
+    }
+    out
+}
+
 /// Lex `src`, then bound the nesting: a tree level is a delimiter, or a
 /// token of a chain ([`is_nesting`]) since the last `;`, `,` or end of a
 /// statement. Past [`MAX_DEPTH`] levels the group or the rest of the chain
@@ -305,6 +391,11 @@ fn overflow(diags: &mut Vec<Diagnostic>, span: Span) {
 /// parser and every tree walk stay shallow.
 fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     let (tokens, mut diags) = lex(src);
+    // An unterminated string or comment swallows the rest of the file: the
+    // delimiters it hid are not a second fault.
+    if !diags.iter().any(|d| d.message.starts_with("unterminated")) {
+        diags.extend(unclosed_delimiters(&tokens, src.len()));
+    }
     let mut out = Vec::with_capacity(tokens.len());
     // Per open delimiter, the chain tokens counted since its last boundary.
     let mut chains = vec![0usize];
@@ -432,6 +523,17 @@ pub fn parse(src: &str) -> ParseResult {
 
 /// Labels of the positions that take a name or a value.
 const NAME_LABELS: &[&str] = &["identifier", "pattern", "path", "expression", "type"];
+
+/// A Rust strict or reserved keyword that no production of MSL uses (E0903
+/// wherever one is found); `unsafe`, `async`, `await` and `dyn` are E0101.
+fn unused_keyword(k: Kw) -> bool {
+    use Kw::*;
+    matches!(
+        k,
+        Type | Static | Abstract | Become | Box | Do | Final | Macro | Override | Priv | Typeof | Unsized
+            | Virtual | Yield | Try | Gen
+    )
+}
 
 /// A keyword or `Unknown` found where a name was expected.
 fn names_expected(e: &Err<'_>, found: &Token) -> bool {

@@ -111,10 +111,17 @@ fn place<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
 fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
     h: &Handles<'a, I>,
     leaf: P<'a, I, X>,
+    late: Option<P<'a, I, X>>,
     wrap: fn(Gen<X>) -> X,
 ) -> P<'a, I, X> {
+    // `late` is tried after a generation: a bare statement that `E0434`
+    // names, inside a generation's list too (`else { y = 2; }`).
+    let with_late = |mut alts: Vec<P<'a, I, X>>| {
+        alts.extend(late.clone());
+        first_of(alts)
+    };
     let generation = recursive(|generation: Recursive<chumsky::recursive::Direct<'a, 'a, I, Gen<X>, Extra<'a>>>| {
-        let item = first_of(vec![leaf.clone(), generation.clone().map(wrap).boxed()]);
+        let item = with_late(vec![leaf.clone(), generation.clone().map(wrap).boxed()]);
         let list = item
             .repeated()
             .collect::<Vec<_>>()
@@ -143,7 +150,7 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
             });
         first_of(vec![for_.boxed(), if_.boxed()])
     });
-    first_of(vec![leaf, generation.map(wrap).boxed()])
+    with_late(vec![leaf, generation.map(wrap).boxed()])
 }
 
 /// One item of a module body, with error recovery.
@@ -214,7 +221,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         public: false,
         kind: ModuleItemKind::Gen(g),
     };
-    let item = gen_of(h, first_of(vec![leaf, def]), wrap).labelled("module item").boxed();
+    let item = gen_of(h, first_of(vec![leaf, def]), None, wrap).labelled("module item").boxed();
     recover_unless(
         item,
         true,
@@ -323,7 +330,7 @@ fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
             DigitalItem { kind: DigitalItemKind::Error, span: Loc(e.span()) }
         })
         .boxed();
-    let item = first_of(vec![gen_of(h, reaction, wrap), stray]).labelled("reaction").boxed();
+    let item = gen_of(h, reaction, Some(stray), wrap).labelled("reaction").boxed();
     recover(item, true, |span| DigitalItem { kind: DigitalItemKind::Error, span: Loc(span) })
 }
 

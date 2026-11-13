@@ -474,10 +474,21 @@ fn classify_number(text: &str, span: Span) -> Result<Token, Diagnostic> {
                 Ok(Token::Float { value: parse_f64(number, *exp), raw: text.to_string() })
             }
         }
-        Some(_) if has_exp => Err(malformed_si("an SI literal has no exponent")),
-        Some(_) => Err(malformed_si("an SI literal has no type suffix")),
-        None => Err(unknown_suffix(text, span)),
+        // An SI letter then a type suffix (`5mf64`) is a malformed SI
+        // literal; any other letters (`1meg`, `1kHz`) are an unknown suffix.
+        Some(_) if is_type_suffix(chars.as_str().trim_start_matches('_')) => {
+            if has_exp {
+                Err(malformed_si("an SI literal has no exponent"))
+            } else {
+                Err(malformed_si("an SI literal has no type suffix"))
+            }
+        }
+        _ => Err(unknown_suffix(text, span)),
     }
+}
+
+fn is_type_suffix(s: &str) -> bool {
+    s == "f32" || s == "f64" || INT_SUFFIXES.contains(&s)
 }
 
 fn si_letter(c: char) -> bool {

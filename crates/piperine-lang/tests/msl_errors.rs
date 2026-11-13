@@ -460,6 +460,7 @@ fn fixtures() -> Vec<Fixture> {
         // Part VI
         fixture("E0602", "fn f() { emit!(", "1", ", a = 2); }"),
         fixture("E0602", "fn f() { emit!(\"s\", ", "3", "); }"),
+        fixture("E0602", "fn f() { emit!(\"s\", ", "a: 1", "); }"),
         fixture("E0611", "const A: &'static str = include_str!(", "1", ");"),
         // Appendix A
         fixture("E0900", "fn f( ", "{", " }"),
@@ -468,10 +469,19 @@ fn fixtures() -> Vec<Fixture> {
         fixture("E0901", "fn f() { ", "println!(\"x\")", "; }"),
         fixture("E0902", "const A: f64 = ", "1e3m", ";"),
         fixture("E0903", "fn ", "out", "() {}"),
+        // The row's other half: a Rust keyword no production accepts.
+        fixture("E0903", "", "type", " A = u8;"),
+        fixture("E0903", "", "static", " X: u8 = 1;"),
+        fixture("E0903", "fn f() { ", "yield", " 1; }"),
+        fixture("E0903", "fn f() { let ", "self", " = 1; }"),
+        // An SI letter with letters that are no type suffix: an unknown suffix.
+        fixture("E0900", "const A: f64 = ", "1meg", ";"),
         fixture("E0905", "const A: u8 = ", "'a'", ";"),
         fixture("E0907", "fn f() { let x = a ", "+>", " b; }"),
         fixture("E0907", "fn f() { g(a ", "<-", " b); }"),
         fixture("E0908", "fn f() { let ", "Unknown", " = 1; }"),
+        fixture("E0908", "module M() { ", "Unknown", ": f64 = 1.0; }"),
+        fixture("E0908", "fn f() { S { ", "Unknown", ": 1 }; }"),
         // The 257th nested delimiter.
         Fixture {
             code: "E0910",
@@ -581,5 +591,93 @@ fn rendered_output_is_miette_graphical() {
         // The help line.
         let help = d.help.as_deref().unwrap_or_else(|| panic!("{code}: this diagnostic names its fix"));
         assert!(lines.iter().any(|l| l.trim() == format!("help: {help}")), "{code}: help in\n{out}");
+    }
+}
+
+#[test]
+fn keyword_diagnostics_cover_both_halves_of_e0903() {
+    // Appendix A row E0903: "a keyword used as an identifier, or a Rust
+    // keyword where no production accepts it". Every unused Rust keyword,
+    // and the path keywords as bindings.
+    for kw in ["type", "static", "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized", "virtual", "yield", "try", "gen"] {
+        let src = format!("fn f() {{ {kw} 1; }}");
+        let found = codes(&src);
+        assert_eq!(found.first(), Some(&("E0903", Span::new(9, 9 + kw.len()))), "{kw}: {found:?}");
+    }
+    for (src, at, len) in [
+        ("fn f() { let self = 1; }", 13, 4),
+        ("fn f() { let Self = 1; }", 13, 4),
+        ("fn f() { let super = 1; }", 13, 5),
+        ("fn f() { let crate = 1; }", 13, 5),
+        ("fn f() { for self in x {} }", 13, 4),
+        ("fn f() { let (a, self) = t; }", 17, 4),
+    ] {
+        let found = codes(src);
+        assert_eq!(found, vec![("E0903", Span::new(at, at + len))], "{src:?}");
+    }
+    // As a path segment or a constructor the same words stay valid.
+    let r = parse("impl S { fn f(self) -> Self { Self { a: self.a } } fn g() -> u8 { crate::x + super::y } }");
+    assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+}
+
+#[test]
+fn unclosed_delimiter_is_reported_at_the_opener() {
+    // The fault is the opening delimiter, not the end of the file: the
+    // primary label sits on it, a second label on what met it first.
+    let src = "fn f() { g(1, 2; h(3); }";
+    let r = parse(src);
+    assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
+    let d = &r.diagnostics[0];
+    assert_eq!((d.code, d.span()), ("E0900", Span::new(10, 11)));
+    assert_eq!(d.secondary.first().map(|(s, _)| *s), Some(Span::new(23, 24)), "{d:?}");
+    assert!(d.message.contains("expected `)`"), "{}", d.message);
+
+    // At the end of input the second label is the end.
+    let r = parse("fn f() { let x = 1;");
+    assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
+    assert_eq!(r.diagnostics[0].span(), Span::new(7, 8));
+    assert!(r.diagnostics[0].message.starts_with("unexpected end of input, expected `}`"));
+
+    // Source order: the unclosed `[` of the first function precedes the later
+    // function's own error, though the parser ran to the end of the file.
+    let src = "fn f() { let x = [1, 2; let y = 3; }\nfn g() { let = 1; }";
+    let found = codes(src);
+    let at = src.find('[').unwrap();
+    assert_eq!(found.first(), Some(&("E0900", Span::new(at, at + 1))), "{found:?}");
+    let later = src.find("= 1; }").unwrap();
+    assert!(found.contains(&("E0900", Span::new(later, later + 1))), "{found:?}");
+    assert!(found.windows(2).all(|w| w[0].1.start <= w[1].1.start));
+    assert_eq!(found.len(), 2, "{found:?}");
+}
+
+#[test]
+fn one_fault_is_one_diagnostic() {
+    // No second error after the end of input for a fault already reported.
+    for src in [
+        "fn f() { let s = \"abc",
+        "fn f() {\n/* abc\n}",
+        "fn a() {}\nfn f() { let s = \"abc\nfn g() {}",
+    ] {
+        let found = codes(src);
+        assert_eq!(found.len(), 1, "{src:?}: {found:?}");
+    }
+    // A generation `if` in a digital block takes an `else`; the statement in
+    // it is E0434 alone.
+    let src = "digital for M { if c { on e {} } else { y = 2; } }";
+    let at = src.find("y = 2;").unwrap();
+    assert_eq!(codes(src), vec![("E0434", Span::new(at, at + 6))]);
+}
+
+#[test]
+fn comparisons_do_not_chain() {
+    // Rust 2024 makes `==`, `!=`, `<`, `<=`, `>`, `>=` one non-associative
+    // level: a chain is an error, a parenthesized one is not.
+    for src in ["a < b < c", "a == b == c", "a <= b > c", "a != b < c", "a as u8 < b"] {
+        let (_, diags) = parse_expr(src);
+        assert!(!diags.is_empty() && diags.iter().all(|d| d.code == "E0900"), "{src:?}: {diags:?}");
+    }
+    for src in ["(a < b) == (c < d)", "a == b && c < d", "a < b || c > d", "a as u8 > b as u8"] {
+        let (_, diags) = parse_expr(src);
+        assert!(diags.is_empty(), "{src:?}: {diags:?}");
     }
 }
