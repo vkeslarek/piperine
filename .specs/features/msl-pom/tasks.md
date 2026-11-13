@@ -1006,11 +1006,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `every_reflection_method_is_documented` passes in `pom_docs.rs` (C81: POM-13 AC 2)
-- [ ] C84 holds: its command exits 0 (POM-13 AC 5)
-- [ ] Each `rust` example is complete (its own `use piperine_lang::pom::Design;`, its own source string, its own `assert`s): no hidden `#` lines, they would show in mkdocs
-- [ ] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_reflection_method_is_documented` passes in `pom_docs.rs` (C81: POM-13 AC 2)
+- [x] C84 holds: its command exits 0 (POM-13 AC 5)
+- [x] Each `rust` example is complete (its own `use piperine_lang::pom::Design;`, its own source string, its own `assert`s): no hidden `#` lines, they would show in mkdocs
+- [x] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

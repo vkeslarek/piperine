@@ -9,3 +9,7 @@ pub mod index {}
 /// Storage reference: `docs/pom/model.md`.
 #[doc = include_str!("../../../../docs/pom/model.md")]
 pub mod model {}
+
+/// Handles and every method: `docs/pom/reflection.md`.
+#[doc = include_str!("../../../../docs/pom/reflection.md")]
+pub mod reflection {}

@@ -63,3 +63,61 @@ fn every_public_pom_type_has_a_heading() {
     assert!(checked > 100, "the scrape found only {checked} public types");
     assert!(missing.is_empty(), "no `### `Name`` heading in docs/pom/ for: {missing:?}");
 }
+
+/// The `pub fn` methods of the handles under `src/pom/reflect/`, as (owner type, method): every
+/// `pub fn` of an `impl X` block, and every `fn` of `pub trait X`.
+fn reflect_methods() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for file in rust_files(&repo().join("crates/piperine-lang/src/pom/reflect")) {
+        let text = std::fs::read_to_string(&file).unwrap();
+        let mut owner: Option<(String, bool)> = None; // (type, inside a trait)
+        for line in text.lines() {
+            if !line.starts_with(' ') && !line.is_empty() {
+                owner = None;
+                let words: Vec<&str> = line.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).collect();
+                if line.starts_with("impl") && !line.contains(" for ") {
+                    // `impl<'d> Name<'d> {` or `impl Name {`
+                    if let Some(name) = words.iter().skip(1).find(|w| w.chars().next().is_some_and(char::is_uppercase)) {
+                        owner = Some((name.to_string(), false));
+                    }
+                } else if let Some(rest) = line.strip_prefix("pub trait ") {
+                    owner = Some((rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap().to_string(), true));
+                }
+            } else if let Some((ty, in_trait)) = &owner {
+                let t = line.trim_start();
+                let rest = if *in_trait { t.strip_prefix("fn ").or_else(|| t.strip_prefix("pub fn ")) } else { t.strip_prefix("pub fn ") };
+                if let (Some(rest), true) = (rest, line.starts_with("    ") && !line.starts_with("     ")) {
+                    let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                    out.push((ty.clone(), name));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The text of the `### `Name`` section of `reflection.md` (up to the next `### ` heading).
+fn section<'a>(page: &'a str, name: &str) -> &'a str {
+    let head = format!("### `{name}`");
+    let Some(start) = page.lines().scan(0usize, |at, l| { let s = *at; *at += l.len() + 1; Some((s, l)) }).find(|(_, l)| l.starts_with(&head)).map(|(s, _)| s) else {
+        return "";
+    };
+    let rest = &page[start..];
+    let end = rest[1..].find("\n### ").map_or(rest.len(), |i| i + 1);
+    &rest[..end]
+}
+
+#[test]
+fn every_reflection_method_is_documented() {
+    let docs = pom_docs();
+    let page = &docs.iter().find(|(n, _)| n == "reflection.md").expect("docs/pom/reflection.md").1;
+    let methods = reflect_methods();
+    assert!(methods.len() > 200, "the scrape found only {} methods", methods.len());
+    let mut missing = Vec::new();
+    for (owner, name) in &methods {
+        if !page.contains(&format!("`{name}(")) || !section(page, owner).contains(&format!("`{name}(")) {
+            missing.push(format!("{owner}::{name}"));
+        }
+    }
+    assert!(missing.is_empty(), "not mentioned as `name(` under its `### `Type`` heading of reflection.md: {missing:?}");
+}
