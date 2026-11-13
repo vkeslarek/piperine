@@ -64,7 +64,7 @@ T3 → T4 → T5 → T6 → T7
 ### Phase 3: MSL additions and diagnostics
 
 ```
-T7 → T8 → T9 → T10 → T11
+T7 → T16 → T8 → T9 → T10 → T11
 ```
 
 ### Phase 4: Corpus, error fixtures, printer
@@ -204,11 +204,30 @@ T11 → T12 → T13 → T14 → T15
 
 ---
 
+### T16: Bounded stack usage
+
+**What**: reduce per-nesting-level stack use so 256 levels parse in a debug build on an 8 MiB caller stack; remove the 512 MiB parser thread (parse runs on the caller's thread). Typical levers: box/erase recursive chumsky parsers (`.boxed()`, `Recursive` declared once per grammar area), fewer combinator layers per precedence level, `#[inline(never)]` on hot recursion points; measure before/after.
+**Where**: `crates/piperine-lang/src/msl/parser/expr.rs` (+ the thread spawn site in `parser/mod.rs`)
+**Depends on**: T7
+**Reuses**: existing parser
+**Requirement**: MSLP-04
+
+**Done when**:
+- [ ] Test `depth_limit_fits_8mib_stack_in_debug` passes (spawns an 8 MiB thread, parses 256 nested parens/blocks clean and 300 with E0910, no overflow)
+- [ ] no thread with a stack > 8 MiB is created by `msl::parse`
+- [ ] Run errors + run parser pass; build gate passes
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `perf(lang/msl): bound parser stack depth`
+
+---
+
 ### T8: Natures and signals
 
 **What**: `nature_decl` (discrete `value`/`resolve`, continuous `potential`/`flow` with attribute blocks, generics), `signal_decl`, carrier-typed struct fields (bundles), `flip` sigtypes.
 **Where**: `crates/piperine-lang/src/msl/parser/msl.rs`
-**Depends on**: T7
+**Depends on**: T16
 **Reuses**: B.3 `nature_decl`, `signal_decl`, `sigtype`
 **Requirement**: MSLP-02
 
@@ -410,6 +429,9 @@ Proof: run errors | test rendered_output_is_miette_graphical ... ok
 **C20** - 300 nested parentheses yield a depth diagnostic and no stack overflow (MSLP-04, AC 6)
 Proof: run errors | test depth_over_256_is_diagnostic_not_overflow ... ok
 
+**C28** - 256 nesting levels parse in debug on an 8 MiB caller-thread stack; no larger-stack thread is spawned (MSLP-04, AC 7)
+Proof: run errors | test depth_limit_fits_8mib_stack_in_debug ... ok
+
 **C21** - for every corpus file, strip_spans(parse(print(ast))) == strip_spans(ast) (MSLP-05, AC 1)
 Proof: run print | test roundtrip_ast_equal_over_corpus ... ok
 
@@ -435,8 +457,8 @@ Proof: run parser | test contextual_keywords_are_identifiers_outside_nature ... 
 
 ## Handoff
 
-**Settled mid-build:** sub-agents accepted - user: "Lança sempre Sonnet para implementação, Opus para verifier"
-**Dispatched:** B1 (T1–T7) Sonnet worker at 3f0d8b50 - returned (HEAD 1642e69c, 19 tests green)
+**Settled mid-build:** stack fix as new T16 - user: "2" (option: fix in B2, target 8 MiB debug); sub-agents accepted - user: "Lança sempre Sonnet para implementação, Opus para verifier"
+**Dispatched:** B1 (T1–T7) Sonnet worker at 3f0d8b50 - returned (HEAD 1642e69c, 19 tests green); B2 (T16, T8–T15) Sonnet worker at NEXT
 **B1 gaps carried to B2:** parser runs on a 512 MiB-stack thread (debug build overflowed 2 MB at ~50 nested parens); tuple index `x.0.1` not parsed (lexer reads `0.1` as float); raw strings / `r#ident` not lexed; `check.rs` must extend placement checks (E0404) to analog/reaction/closure contexts in T10/T11; E0900 rows for unterminated/non-UTF-8 to add in T11; E0900 expected-token lists need summarizing (T11); E0121 vs E0404 and E0101 vs E0903 overlaps in the spec.
 **Walked:** n/a - no screen; Independent Tests are the integration targets above
 
@@ -449,8 +471,8 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4
 
 Phase 1:  T1 → T2 → T3
 Phase 2:  T4 → T5 → T6 → T7
-Phase 3:  T8 → T9 → T10 → T11
+Phase 3:  T16 → T8 → T9 → T10 → T11
 Phase 4:  T12 → T13 → T14 → T15
 ```
 
-Batches (~7 tasks, whole phases): **B1** = Phase 1 + 2 (T1–T7), **B2** = Phase 3 + 4 (T8–T15). Each batch is one Sonnet worker; Opus Verifier after T15.
+Batches (~7 tasks, whole phases): **B1** = Phase 1 + 2 (T1–T7), **B2** = Phase 3 + 4 (T16, T8–T15). Each batch is one Sonnet worker; Opus Verifier after T15.

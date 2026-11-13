@@ -99,6 +99,7 @@
 4. IF an unexpected token is found THEN the diagnostic SHALL name the token found and the tokens or construct expected.  <!-- unwanted -->
 5. WHEN diagnostics are rendered THEN the output SHALL be `miette` graphical reports showing the source line, the span underline and the code.  <!-- event-driven -->
 6. IF nesting exceeds 256 levels THEN the parser SHALL report a diagnostic and stop descending, without a stack overflow.  <!-- unwanted -->
+7. The parser SHALL parse 256 nesting levels in a debug build on the caller's thread with an 8 MiB stack, without spawning a larger-stack thread.  <!-- ubiquitous -->
 
 **Independent Test**: one fixture per parse-phase error row asserting code and span; snapshot of rendered output for 3 fixtures.
 
@@ -136,7 +137,7 @@
 | MSLP-01 | P1: Lex (AC 1–7) | Design | Pending |
 | MSLP-02 | P1: Parse AST (AC 1–2, 5–6) | Design | Pending |
 | MSLP-03 | P1: Parse corpus (AC 3–4) | Design | Pending |
-| MSLP-04 | P1: Errors (AC 1–6) | Design | Pending |
+| MSLP-04 | P1: Errors (AC 1–7) | Design | Pending |
 | MSLP-05 | P2: Printer (AC 1–3) | Design | Pending |
 | MSLP-06 | Edge cases | Design | Pending |
 
