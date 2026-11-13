@@ -189,4 +189,4 @@ rl: f64 = 1T;
 | `E0906` | `Unknown` where the inferred type does not implement `Repr`, or where no type can be inferred | elaboration |
 | `E0907` | `+>` or `<-` inside an expression, where no statement form accepts it. A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404` | parse |
 | `E0908` | `Unknown` used as a binding, item or field name | parse |
-| `E0910` | delimiters nested deeper than 256 levels | parse |
+| `E0910` | nesting deeper than 256 levels (delimiters and operator chains) | parse |

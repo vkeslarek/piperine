@@ -232,54 +232,138 @@ pub fn parse_block(src: &str) -> Parsed<Block> {
     finish(h.block.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
-/// The deepest delimiter nesting the parser descends into (E0910).
+/// The deepest nesting the parser descends into (E0910).
 pub const MAX_DEPTH: usize = 256;
 
-/// Lex `src`, then replace every delimited group nested deeper than
-/// [`MAX_DEPTH`] by one [`Token::Error`], reporting `E0910`: the parser
-/// never descends that far, so it cannot overflow the stack.
+fn is_open(t: &Token) -> bool {
+    matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace))
+}
+
+fn is_close(t: &Token) -> bool {
+    matches!(t, Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace))
+}
+
+/// A token that adds one level to the tree a chain of it builds: every
+/// operator, `as`, `else` (an `else if` chain nests), `return`, `break`,
+/// `move`, `ref` and `mut`. `,` `;` `:` `::` `=>` `#` `@` `$` `_` and the
+/// delimiters do not: they end a chain or only separate.
+fn is_nesting(t: &Token) -> bool {
+    use Punct::*;
+    match t {
+        Token::Kw(Kw::As | Kw::Else | Kw::Return | Kw::Break | Kw::Move | Kw::Ref | Kw::Mut) => true,
+        Token::Punct(p) => !matches!(
+            p,
+            Comma | Semi | Colon | ColonColon | FatArrow | Pound | At | Dollar | Underscore
+                | LParen | RParen | LBracket | RBracket | LBrace | RBrace
+        ),
+        _ => false,
+    }
+}
+
+/// Index where the skip of an overflowing group (`whole_group`: past its
+/// closer) or of the rest of a chain (up to a `;`, `,` or closing delimiter
+/// of the starting level, unconsumed) ends; nested groups are skipped whole.
+fn skip_overflow(tokens: &[(Token, Span)], from: usize, whole_group: bool) -> usize {
+    let mut nest = 0usize;
+    let mut j = from;
+    while j < tokens.len() {
+        let t = &tokens[j].0;
+        if is_open(t) {
+            nest += 1;
+        } else if is_close(t) {
+            if nest == 0 {
+                return j;
+            }
+            nest -= 1;
+            if nest == 0 && whole_group {
+                return j + 1;
+            }
+        } else if nest == 0 && !whole_group && matches!(t, Token::Punct(Punct::Semi | Punct::Comma)) {
+            return j;
+        }
+        j += 1;
+    }
+    j
+}
+
+fn overflow(diags: &mut Vec<Diagnostic>, span: Span) {
+    diags.push(
+        Diagnostic::new(
+            "E0910",
+            format!("nesting deeper than {MAX_DEPTH} levels"),
+            span,
+            "the parser stops descending here",
+        )
+        .with_help("split the expression into `let` bindings or functions"),
+    );
+}
+
+/// Lex `src`, then bound the nesting: a tree level is a delimiter, or a
+/// token of a chain ([`is_nesting`]) since the last `;`, `,` or end of a
+/// statement. Past [`MAX_DEPTH`] levels the group or the rest of the chain
+/// is replaced by one [`Token::Error`] and `E0910` is reported, so the
+/// parser and every tree walk stay shallow.
 fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     let (tokens, mut diags) = lex(src);
-    let opens = |t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace));
-    let closes = |t: &Token| matches!(t, Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace));
     let mut out = Vec::with_capacity(tokens.len());
-    let mut depth = 0usize;
+    // Per open delimiter, the chain tokens counted since its last boundary.
+    let mut chains = vec![0usize];
+    // Per level, whether its first `=` (a binding's, free of charge) was seen.
+    let mut eq_seen = vec![false];
+    let mut total = 0usize; // open delimiters + all chain counts
     let mut i = 0;
     while i < tokens.len() {
         let (tok, span) = &tokens[i];
-        if opens(tok) && depth == MAX_DEPTH {
-            // Skip to the matching close, nesting-aware.
-            let mut nest = 0usize;
-            let mut j = i;
-            while j < tokens.len() {
-                if opens(&tokens[j].0) {
-                    nest += 1;
-                } else if closes(&tokens[j].0) {
-                    nest -= 1;
-                    if nest == 0 {
-                        break;
-                    }
-                }
-                j += 1;
+        if is_open(tok) {
+            // A call or index chained after `)`/`]` adds a level to its operand.
+            let after_closer = i > 0 && matches!(tokens[i - 1].0, Token::Punct(Punct::RParen | Punct::RBracket));
+            let extra = usize::from(after_closer && !matches!(tok, Token::Punct(Punct::LBrace)));
+            if total + 1 + extra > MAX_DEPTH {
+                let end = skip_overflow(&tokens, i, true);
+                let last = tokens.get(end.saturating_sub(1)).map_or(span.end, |(_, s)| s.end);
+                overflow(&mut diags, *span);
+                out.push((Token::Error, Span::new(span.start, last)));
+                i = end;
+                continue;
             }
-            let end = tokens.get(j).map_or(span.end, |(_, s)| s.end);
-            diags.push(
-                Diagnostic::new(
-                    "E0910",
-                    format!("nesting deeper than {MAX_DEPTH} levels"),
-                    *span,
-                    "the parser stops descending here",
-                )
-                .with_help("split the expression into `let` bindings or functions"),
-            );
-            out.push((Token::Error, Span::new(span.start, end)));
-            i = j + 1;
-            continue;
-        }
-        if opens(tok) {
-            depth += 1;
-        } else if closes(tok) {
-            depth = depth.saturating_sub(1);
+            if let Some(c) = chains.last_mut() {
+                *c += extra;
+            }
+            total += 1 + extra;
+            chains.push(0);
+            eq_seen.push(false);
+        } else if is_close(tok) {
+            if chains.len() > 1 {
+                total -= chains.pop().unwrap_or(0) + 1;
+                eq_seen.pop();
+            }
+            let continues = tokens.get(i + 1).is_some_and(|(t, _)| is_nesting(t));
+            if matches!(tok, Token::Punct(Punct::RBrace)) && !continues {
+                total -= chains.last_mut().map_or(0, std::mem::take);
+                eq_seen.last_mut().map(|e| *e = false);
+            }
+        } else if matches!(tok, Token::Punct(Punct::Semi | Punct::Comma)) {
+            total -= chains.last_mut().map_or(0, std::mem::take);
+            eq_seen.last_mut().map(|e| *e = false);
+        } else if matches!(tok, Token::Punct(Punct::Eq)) && eq_seen.last().is_some_and(|e| !*e) {
+            if let Some(e) = eq_seen.last_mut() {
+                *e = true;
+            }
+        } else if is_nesting(tok) {
+            if total + 1 > MAX_DEPTH {
+                let end = skip_overflow(&tokens, i, false);
+                let last = tokens.get(end.saturating_sub(1)).map_or(span.end, |(_, s)| s.end);
+                overflow(&mut diags, *span);
+                out.push((Token::Error, Span::new(span.start, last)));
+                total -= chains.last_mut().map_or(0, std::mem::take);
+                eq_seen.last_mut().map(|e| *e = false);
+                i = end;
+                continue;
+            }
+            if let Some(c) = chains.last_mut() {
+                *c += 1;
+            }
+            total += 1;
         }
         out.push((tok.clone(), *span));
         i += 1;

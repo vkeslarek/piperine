@@ -45,6 +45,47 @@ fn depth_over_256_is_diagnostic_not_overflow() {
     assert_eq!(diags[0].code, "E0910");
 }
 
+/// The nesting shapes that use no delimiter, as `chain_source` builds them.
+const CHAINS: &[&str] = &[
+    "unary minus", "binary +1", "cast chain", "closure chain", "return chain", "else-if chain", "generic angle",
+];
+
+fn chain_source(kind: &str, n: usize) -> String {
+    match kind {
+        "unary minus" => format!("fn f() -> f64 {{ {}1 }}", "-".repeat(n)),
+        "binary +1" => format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(n)),
+        "cast chain" => format!("fn f() -> f64 {{ 1 {}}}", "as f64 ".repeat(n)),
+        "closure chain" => format!("fn f() {{ {}1 }}", "|x| ".repeat(n)),
+        "return chain" => format!("fn f() -> f64 {{ {}1 }}", "return ".repeat(n)),
+        "else-if chain" => format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(n)),
+        _ => format!("fn f() -> {}u8{} {{ 1 }}", "Option<".repeat(n), ">".repeat(n)),
+    }
+}
+
+#[test]
+fn nesting_without_delimiters_is_also_bounded() {
+    // MSLP-04 AC 6 says "nesting", not "delimiters": prefix, cast, closure,
+    // `return`, `else if`, generic and binary chains past 256 levels give
+    // E0910 and no stack overflow, parse and print, on an 8 MiB stack.
+    let handle = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            for kind in CHAINS {
+                let deep = parse(&chain_source(kind, 20000));
+                assert!(
+                    deep.diagnostics.iter().any(|d| d.code == "E0910"),
+                    "{kind}: no E0910 at 20000: {:?}",
+                    deep.diagnostics.iter().map(|d| d.code).collect::<Vec<_>>()
+                );
+                let _ = piperine_lang::msl::print(&deep.file);
+                let ok = parse(&chain_source(kind, 100));
+                assert!(ok.diagnostics.is_empty(), "{kind} at 100: {:?}", ok.diagnostics);
+            }
+        })
+        .expect("spawn the 8 MiB test thread");
+    handle.join().expect("no stack overflow, no panic");
+}
+
 #[test]
 fn plus_gt_and_commit_inside_an_expression_report_e0907() {
     // Appendix A.5 rule 6 / A.6: neither token is an expression operator.
