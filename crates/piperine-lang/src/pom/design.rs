@@ -241,6 +241,14 @@ impl Design {
         }
     }
 
+    /// Store what the member of a field access or a method call names.
+    pub(super) fn set_member(&mut self, expr: ExprId, res_: super::resolution::Resolution) {
+        match &mut self.exprs[expr.index()].kind {
+            super::body::ExprKind::Field { res, .. } | super::body::ExprKind::MethodCall { res, .. } => *res = res_,
+            _ => {}
+        }
+    }
+
     /// Record an instance in the index of its module.
     pub(super) fn push_instance(&mut self, module: DeclId, expr: ExprId) {
         if let DeclKind::Module(m) = &mut self.decls[module.index()].kind {

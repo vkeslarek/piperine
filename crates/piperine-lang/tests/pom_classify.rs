@@ -2,7 +2,8 @@
 //! behavior-block binding): which module a behavior block belongs to and the
 //! errors `E0401`, `E0402` and `E0403` when it does not; what a declared type
 //! makes of a port (`PortKind`) and of a struct (the bundle flag); and what a
-//! call or a `Name { .. }` expression is: instance, template, literal.
+//! call or a `Name { .. }` expression is: instance, template, literal; and what
+//! a member (`inst.name`, `bundle.field`, `carrier.method()`) resolves to.
 
 #[path = "support/pom.rs"]
 mod support;
@@ -444,4 +445,120 @@ analog for M {
     let shadowed = with_prelude("fn v(x: f64) -> f64 { x }\nmodule M(a: Electrical) { let y = v(1.0); }\n");
     assert!(shadowed.diagnostics().is_empty(), "{:?}", shadowed.diagnostics());
     assert_eq!(call_classes(&shadowed), [("v(1.0)".to_string(), CallClass::Function)]);
+}
+
+/// What the member expression with this text resolves to (a field access or a method call).
+fn member_res(design: &Design, text: &str) -> Resolution {
+    let e = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .find(|e| e.text() == text && !e.enclosing().file().is_prelude() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
+        .unwrap_or_else(|| panic!("member expression `{text}`"));
+    match e.kind() {
+        ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn instance_pub_member_resolves() {
+    let src = "\
+module Cell(a: Electrical) {
+    pub signal sn: Electrical;
+    pub k: f64 = 1.0;
+    pub let q = 2.0;
+}
+module Top(a: Electrical) {
+    let c = Cell(a);
+    let x = c.sn;
+    let y = c.k;
+    let z = c.q;
+    let p = c.a;
+}
+";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let cell = design.module("Cell").unwrap();
+    let decl = |d: piperine_lang::pom::Decl| Resolution::Decl(d.id());
+    assert_eq!(member_res(&design, "c.sn"), decl(cell.signal("sn").unwrap().decl()));
+    assert_eq!(member_res(&design, "c.k"), decl(cell.param("k").unwrap().decl()));
+    assert_eq!(member_res(&design, "c.q"), decl(cell.named("q").unwrap().decl()));
+    // A port is the module's interface: always readable by its parent.
+    assert_eq!(member_res(&design, "c.a"), decl(cell.port("a").unwrap().decl()));
+}
+
+#[test]
+fn instance_private_member_is_e0343() {
+    let src = "\
+module Cell(a: Electrical) {
+    signal hid: Electrical;
+    pub signal open: Electrical;
+}
+module Top(a: Electrical) {
+    let c = Cell(a);
+    let x = c.hid;
+    let y = c.open;
+}
+";
+    let design = with_prelude(src);
+    let errors = with_code(&design, "E0343");
+    assert_eq!(errors.len(), 1, "{:?}", design.diagnostics());
+    // At the member name, and the member is still linked.
+    assert_eq!(primary_text(&design, errors[0]), "hid");
+    let cell = design.module("Cell").unwrap();
+    assert_eq!(member_res(&design, "c.hid"), Resolution::Decl(cell.signal("hid").unwrap().decl().id()));
+    assert_eq!(support::codes(&design), ["E0343"]);
+}
+
+#[test]
+fn bundle_field_resolves() {
+    let src = "\
+struct Stream { out valid: Bit, in ready: Bit }
+struct Outer { s: Stream }
+fn f(h: Stream) { let t: Stream = h; h.valid; t.ready; }
+module Tx(tx: Stream, rx: flip Stream, o: Outer, arr: [Stream; 2]) {
+    signal bus: Stream;
+    let a = tx.valid;
+    let b = rx.ready;
+    let c = bus.ready;
+    let d = o.s.valid;
+    let e = arr[1].valid;
+}
+";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let stream = design.find("Stream").and_then(|d| d.as_struct()).unwrap();
+    let field = |s: &piperine_lang::pom::Struct, name: &str| Resolution::Decl(s.fields().into_iter().find(|f| f.name() == Some(name)).unwrap().decl().id());
+    let valid = field(&stream, "valid");
+    let ready = field(&stream, "ready");
+    assert_eq!(member_res(&design, "tx.valid"), valid);
+    assert_eq!(member_res(&design, "rx.ready"), ready);
+    assert_eq!(member_res(&design, "bus.ready"), ready);
+    assert_eq!(member_res(&design, "o.s.valid"), valid);
+    assert_eq!(member_res(&design, "arr[1].valid"), valid);
+    // A nested field is a field of the outer struct first.
+    let outer = design.find("Outer").and_then(|d| d.as_struct()).unwrap();
+    assert_eq!(member_res(&design, "o.s"), field(&outer, "s"));
+    // A function parameter and an annotated local have declared types too.
+    assert_eq!(member_res(&design, "h.valid"), valid);
+    assert_eq!(member_res(&design, "t.ready"), ready);
+}
+
+#[test]
+fn unknown_receiver_is_deferred_without_diagnostic() {
+    let src = "\
+fn f() -> f64 { 1.0 }
+module M<T>(a: f64, g: T) {
+    let q = a;
+    let r = q.thing;
+    let s = f().bar;
+    let t = a.other;
+    let u = g.field;
+}
+";
+    let design = with_prelude(src);
+    let deferred = Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown);
+    for text in ["q.thing", "f().bar", "a.other", "g.field"] {
+        assert_eq!(member_res(&design, text), deferred, "`{text}`");
+    }
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }

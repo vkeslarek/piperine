@@ -846,13 +846,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `instance_pub_member_resolves` passes in `pom_classify.rs` (C63: POM-10 AC 1)
-- [ ] Test `instance_private_member_is_e0343` passes in `pom_classify.rs` (C64: POM-10 AC 2)
-- [ ] Test `bundle_field_resolves` passes in `pom_classify.rs` (C65: POM-10 AC 3)
-- [ ] Test `unknown_receiver_is_deferred_without_diagnostic` passes in `pom_classify.rs` (C67: POM-10 AC 5)
-- [ ] The receiver is a chain of paths, fields, indexes and parens whose root has a declared type
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `instance_pub_member_resolves` passes in `pom_classify.rs` (C63: POM-10 AC 1)
+- [x] Test `instance_private_member_is_e0343` passes in `pom_classify.rs` (C64: POM-10 AC 2)
+- [x] Test `bundle_field_resolves` passes in `pom_classify.rs` (C65: POM-10 AC 3)
+- [x] Test `unknown_receiver_is_deferred_without_diagnostic` passes in `pom_classify.rs` (C67: POM-10 AC 5)
+- [x] The receiver is a chain of paths, fields, indexes and parens whose root has a declared type
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

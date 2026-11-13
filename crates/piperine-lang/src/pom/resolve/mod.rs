@@ -5,6 +5,7 @@
 mod behaviors;
 mod classify;
 mod imports;
+mod members;
 mod names;
 mod scopes;
 
@@ -95,6 +96,13 @@ pub(super) fn run(design: &mut Design) {
         design.push_instance(module, expr);
     }
     for (file, diagnostic) in classified.diagnostics {
+        design.push_diagnostic(file, diagnostic);
+    }
+    let members = members::run(design);
+    for (expr, res) in members.res {
+        design.set_member(expr, res);
+    }
+    for (file, diagnostic) in members.diagnostics {
         design.push_diagnostic(file, diagnostic);
     }
     design.sort_diagnostics();
