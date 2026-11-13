@@ -268,10 +268,10 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `struct_fields_and_enum_variants` passes in `pom_tree.rs` (C22: POM-04 AC 2)
-- [ ] `Struct.bundle` slot stays `None` until T29
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `struct_fields_and_enum_variants` passes in `pom_tree.rs` (C22: POM-04 AC 2)
+- [x] `Struct.bundle` slot stays `None` until T29
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

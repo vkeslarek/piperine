@@ -4,7 +4,7 @@
 use super::body::{Expr, Path, Type};
 use super::{Decl, Reflect};
 use crate::pom::body::{Block, LitKind};
-use crate::pom::decl::{ConstData, DeclKind, FnData, FnParamData, GenericParamData};
+use crate::pom::decl::{ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, StructData, VariantData};
 
 /// `const NAME: ty = value;`
 #[derive(Clone, Copy)]
@@ -252,5 +252,195 @@ impl<'d> Decl<'d> {
 
     pub fn as_generic_param(self) -> Option<GenericParam<'d>> {
         matches!(self.kind(), DeclKind::GenericParam(_)).then_some(GenericParam { decl: self })
+    }
+}
+
+/// `struct S<..> { fields }`
+#[derive(Clone, Copy)]
+pub struct Struct<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Struct<'d> {
+    fn data(self) -> &'d StructData {
+        match self.decl.kind() {
+            DeclKind::Struct(s) => s,
+            _ => unreachable!("Struct handle over a non-struct declaration"),
+        }
+    }
+
+    /// Named, tuple or unit, as written.
+    pub fn form(self) -> FieldsForm {
+        self.data().form
+    }
+
+    /// Whether the struct is a bundle; none until classification.
+    pub fn bundle(self) -> Option<bool> {
+        self.data().bundle
+    }
+
+    pub fn generics(self) -> Vec<GenericParam<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
+    }
+
+    pub fn fields(self) -> Vec<Field<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_field()).collect()
+    }
+}
+
+/// A field of a struct or of a variant.
+#[derive(Clone, Copy)]
+pub struct Field<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Field<'d> {
+    fn data(self) -> &'d FieldData {
+        match self.decl.kind() {
+            DeclKind::Field(f) => f,
+            _ => unreachable!("Field handle over a non-field declaration"),
+        }
+    }
+
+    pub fn dir(self) -> Option<Dir> {
+        self.data().dir
+    }
+
+    pub fn ty(self) -> Type<'d> {
+        self.decl.design().ty(self.data().ty)
+    }
+}
+
+/// `enum E<..> { variants }`
+#[derive(Clone, Copy)]
+pub struct Enum<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Enum<'d> {
+    pub fn generics(self) -> Vec<GenericParam<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
+    }
+
+    pub fn variants(self) -> Vec<Variant<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_variant()).collect()
+    }
+}
+
+/// A variant of an enum.
+#[derive(Clone, Copy)]
+pub struct Variant<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Variant<'d> {
+    fn data(self) -> &'d VariantData {
+        match self.decl.kind() {
+            DeclKind::Variant(v) => v,
+            _ => unreachable!("Variant handle over a non-variant declaration"),
+        }
+    }
+
+    pub fn form(self) -> FieldsForm {
+        self.data().form
+    }
+
+    pub fn fields(self) -> Vec<Field<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_field()).collect()
+    }
+
+    /// The `= value` after the variant.
+    pub fn discriminant(self) -> Option<Expr<'d>> {
+        self.data().discriminant.map(|e| self.decl.design().expr(e))
+    }
+}
+
+impl<'d> Reflect<'d> for Struct<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl<'d> Reflect<'d> for Field<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl<'d> Reflect<'d> for Enum<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl<'d> Reflect<'d> for Variant<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl PartialEq for Struct<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl PartialEq for Field<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl PartialEq for Enum<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl PartialEq for Variant<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl std::fmt::Debug for Struct<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Struct({:?})", self.decl.id())
+    }
+}
+
+impl std::fmt::Debug for Field<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Field({:?})", self.decl.id())
+    }
+}
+
+impl std::fmt::Debug for Enum<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Enum({:?})", self.decl.id())
+    }
+}
+
+impl std::fmt::Debug for Variant<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Variant({:?})", self.decl.id())
+    }
+}
+
+impl<'d> Decl<'d> {
+    pub fn as_struct(self) -> Option<Struct<'d>> {
+        matches!(self.kind(), DeclKind::Struct(_)).then_some(Struct { decl: self })
+    }
+
+    pub fn as_field(self) -> Option<Field<'d>> {
+        matches!(self.kind(), DeclKind::Field(_)).then_some(Field { decl: self })
+    }
+
+    pub fn as_enum(self) -> Option<Enum<'d>> {
+        matches!(self.kind(), DeclKind::Enum(_)).then_some(Enum { decl: self })
+    }
+
+    pub fn as_variant(self) -> Option<Variant<'d>> {
+        matches!(self.kind(), DeclKind::Variant(_)).then_some(Variant { decl: self })
     }
 }

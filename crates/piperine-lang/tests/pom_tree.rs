@@ -157,6 +157,16 @@ fn f() {}
 /// const doc
 const N: u32 = 1;
 fn plain() {}
+struct S {
+    /// field doc
+    a: u32,
+    b: u32,
+}
+enum E {
+    /// variant doc
+    A,
+    B,
+}
 ";
     let design = build(text);
     assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
@@ -171,6 +181,13 @@ fn plain() {}
     // The doc span is the comment's own text range.
     let doc = &design.find("f").unwrap().docs()[0];
     assert_eq!(&text[doc.span.range()], "/// fn doc");
+    // Fields and variants carry their own docs.
+    let s = design.find("S").and_then(|d| d.as_struct()).unwrap();
+    assert_eq!(texts(s.fields()[0].decl()), [" field doc"]);
+    assert!(s.fields()[1].docs().is_empty());
+    let e = design.find("E").and_then(|d| d.as_enum()).unwrap();
+    assert_eq!(texts(e.variants()[0].decl()), [" variant doc"]);
+    assert!(e.variants()[1].docs().is_empty());
 }
 
 #[test]
@@ -206,4 +223,52 @@ const M: u32 = 2;
     assert_eq!(link.path().segments()[0].res, piperine_lang::pom::Resolution::Unresolved);
     assert!(n.attr("missing").is_none());
     assert!(design.find("M").unwrap().attrs().is_empty());
+}
+
+#[test]
+fn struct_fields_and_enum_variants() {
+    use piperine_lang::pom::{Dir, FieldsForm};
+    let text = "\
+struct S<T> { pub in a: u32, out valid: Bit, c: T }
+struct P(u8, u16);
+struct U;
+enum E { A, Data(u8) = 3, Named { x: u8, y: u16 } }
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+
+    let s = design.find("S").and_then(|d| d.as_struct()).expect("struct S");
+    assert_eq!(s.form(), FieldsForm::Named);
+    assert_eq!(s.generics().len(), 1);
+    assert_eq!(s.bundle(), None, "the bundle flag stays unset until classification");
+    let fields = s.fields();
+    assert_eq!(fields.iter().map(|f| f.name()).collect::<Vec<_>>(), [Some("a"), Some("valid"), Some("c")]);
+    assert_eq!(fields.iter().map(|f| f.dir()).collect::<Vec<_>>(), [Some(Dir::In), Some(Dir::Out), None]);
+    assert_eq!(fields.iter().map(|f| f.is_pub()).collect::<Vec<_>>(), [true, false, false]);
+    assert_eq!(fields.iter().map(|f| f.ty().text()).collect::<Vec<_>>(), ["u32", "Bit", "T"]);
+    assert_eq!(fields[1].declared_in(), Some(s.decl()));
+    assert_eq!(fields[1].text(), "out valid: Bit");
+
+    let p = design.find("P").and_then(|d| d.as_struct()).expect("tuple struct P");
+    assert_eq!(p.form(), FieldsForm::Tuple);
+    let pf = p.fields();
+    assert_eq!(pf.iter().map(|f| f.name()).collect::<Vec<_>>(), [None, None]);
+    assert_eq!(pf.iter().map(|f| f.ty().text()).collect::<Vec<_>>(), ["u8", "u16"]);
+
+    let u = design.find("U").and_then(|d| d.as_struct()).expect("unit struct U");
+    assert_eq!(u.form(), FieldsForm::Unit);
+    assert!(u.fields().is_empty());
+
+    let e = design.find("E").and_then(|d| d.as_enum()).expect("enum E");
+    let variants = e.variants();
+    assert_eq!(variants.iter().map(|v| v.name()).collect::<Vec<_>>(), [Some("A"), Some("Data"), Some("Named")]);
+    assert_eq!(variants.iter().map(|v| v.form()).collect::<Vec<_>>(), [FieldsForm::Unit, FieldsForm::Tuple, FieldsForm::Named]);
+    assert!(variants[0].discriminant().is_none());
+    assert_eq!(variants[1].discriminant().map(|d| d.text()), Some("3"));
+    assert_eq!(variants[1].fields().iter().map(|f| f.ty().text()).collect::<Vec<_>>(), ["u8"]);
+    assert_eq!(variants[2].fields().iter().map(|f| f.name()).collect::<Vec<_>>(), [Some("x"), Some("y")]);
+    assert_eq!(variants[2].declared_in(), Some(e.decl()));
+    assert_eq!(variants[2].fields()[0].declared_in(), Some(variants[2].decl()));
+    assert!(design.find("S").unwrap().as_enum().is_none());
+    assert!(design.check().is_empty());
 }

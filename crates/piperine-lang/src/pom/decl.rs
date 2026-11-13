@@ -8,6 +8,7 @@ use super::body::{Block, Lit};
 use super::meta::Meta;
 use super::ids::{DeclId, ExprId, FileId, PatId, PathId, TypeId};
 use crate::msl::Span;
+pub use crate::msl::ast::Dir;
 
 /// An identifier as written, with its range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,17 +143,43 @@ pub enum FnParamData {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct StructData {}
+/// How a struct or a variant lists its fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldsForm {
+    /// `{ a: T }`
+    Named,
+    /// `(T, U)`
+    Tuple,
+    /// no fields
+    Unit,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct FieldData {}
+/// `struct S<..> { fields }`; the fields are children after the generics.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StructData {
+    pub form: FieldsForm,
+    /// Classification slot: none until the classification pass sets it.
+    pub bundle: Option<bool>,
+}
 
+/// `dir name: ty`; the name is absent in a tuple field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FieldData {
+    pub dir: Option<Dir>,
+    pub ty: TypeId,
+}
+
+/// `enum E<..> { variants }`; the variants are children after the generics.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct EnumData {}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct VariantData {}
+/// `Name`, `Name(T)`, `Name { f: T }`, with an optional `= discriminant`;
+/// the fields are children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariantData {
+    pub form: FieldsForm,
+    pub discriminant: Option<ExprId>,
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct TraitData {}

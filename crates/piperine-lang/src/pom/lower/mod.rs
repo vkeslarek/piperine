@@ -10,8 +10,8 @@ mod items;
 mod meta;
 
 use super::decl::{
-    BehaviorData, ConstData, DeclData, DeclKind, EnumData, ImplData, ModuleData,
-    NamespaceData, NamespaceOrigin, NatureData, StructData, TraitData, UseData,
+    BehaviorData, ConstData, DeclData, DeclKind, ImplData, ModuleData,
+    NamespaceData, NamespaceOrigin, NatureData, TraitData, UseData,
 };
 use super::design::Design;
 use super::meta::Meta;
@@ -85,8 +85,8 @@ impl Lowerer<'_> {
     fn item_kind(&mut self, kind: &ast::ItemKind) -> DeclKind {
         match kind {
             ast::ItemKind::Fn(f) => self.fn_decl(f),
-            ast::ItemKind::Struct(_) => DeclKind::Struct(StructData::default()),
-            ast::ItemKind::Enum(_) => DeclKind::Enum(EnumData::default()),
+            ast::ItemKind::Struct(s) => self.struct_decl(s),
+            ast::ItemKind::Enum(e) => self.enum_decl(e),
             ast::ItemKind::Impl(_) => DeclKind::Impl(ImplData::default()),
             ast::ItemKind::Trait(_) => DeclKind::Trait(TraitData::default()),
             ast::ItemKind::Const(c) => self.const_item(c),
