@@ -63,7 +63,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `namespaces(&self)` | `Vec<Namespace<'_>>` | Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude files; a file's unnamed root is not listed. |
 | `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the design, in source order. |
 | `nature(&self, name: &str)` | `Option<Nature<'_>>` | The first nature named `name`. |
-| `find(&self, path: &str)` | `Option<Decl<'_>>` | The declaration at a `::` path from the root, each segment a child name: `a::M` is `M` inside namespace `a`. |
+| `find(&self, path: &str)` | `Option<Decl<'_>>` | The declaration at a `::` path from the root, each segment a child name: `a::M` is `M` inside namespace `a`; or a name `qualified_name` printed (`a::E.A`, `impl S.X`), the first declaration with exactly it. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
@@ -207,7 +207,7 @@ The trait every declaration handle implements. Only `decl()` is required; everyt
 | `module(self)` | `Option<Module<'d>>` | The module this declaration belongs to: itself for a module, else the nearest enclosing module (through generation). None outside any module. |
 | `declared_in(self)` | `Option<Decl<'d>>` | The declaration that lexically contains this one; none for a file's root namespace. |
 | `references(self)` | `Vec<Reference<'d>>` | Every path with a segment, and every member expression, that resolved to this declaration, in source order. |
-| `qualified_name(self)` | `String` | The namespace path joined by `::`, then the member chain joined by `.`: signal `w` of module `M` in `mod a` is `a::M.w`. A generation, an unnamed declaration (an `impl`, a `use`, a behavior block) and a file's root namespace add no segment. |
+| `qualified_name(self)` | `String` | The namespace path joined by `::`, then the member chain joined by `.`: signal `w` of module `M` in `mod a` is `a::M.w`. An `impl` adds its header (`impl S`, `impl Tr for S`) and a behavior block its own (`analog for M`), so their items do not share a name with another impl's or the module's: `impl Tr for S.X`, `analog for M.z`. A generation, a `use` and a file's root namespace add no segment. |
 
 Every declaration handle (`Module`, `Port`, `Signal`, ..., and the generic `Decl`) implements
 `Reflect`, so these methods are available on all of them.

@@ -156,9 +156,12 @@ pub trait Reflect<'d>: Copy {
     }
 
     /// The namespace path joined by `::`, then the member chain joined by
-    /// `.`: signal `w` of module `M` in `mod a` is `a::M.w`. A generation, an
-    /// unnamed declaration (an `impl`, a `use`, a behavior block) and a
-    /// file's root namespace add no segment.
+    /// `.`: signal `w` of module `M` in `mod a` is `a::M.w`. An `impl` adds
+    /// its header (`impl S`, `impl Tr for S`) and a behavior block its own
+    /// (`analog for M`), so their items do not share a name with another
+    /// impl's or with the module's; `Design::find` accepts every name this
+    /// prints. A generation, a `use` and a file's root namespace add no
+    /// segment.
     fn qualified_name(self) -> String {
         let mut chain = Vec::new();
         let mut at = Some(self.decl());
@@ -170,19 +173,39 @@ pub trait Reflect<'d>: Copy {
         let mut out = String::new();
         let mut in_members = false;
         for d in chain {
-            let Some(name) = d.name() else { continue };
-            if matches!(d.kind(), DeclKind::Generation(_)) {
-                continue;
-            }
+            let Some(segment) = qualified_segment(d) else { continue };
             if !out.is_empty() {
                 out.push_str(if in_members { "." } else { "::" });
             }
-            out.push_str(name);
+            out.push_str(&segment);
             if !matches!(d.kind(), DeclKind::Namespace(_)) {
                 in_members = true;
             }
         }
         out
+    }
+}
+
+/// What one declaration adds to a qualified name, if anything.
+fn qualified_segment(d: Decl<'_>) -> Option<String> {
+    let design = d.design();
+    match d.kind() {
+        DeclKind::Generation(_) => None,
+        DeclKind::Impl(i) => {
+            let self_ty = design.ty(i.self_ty).text();
+            Some(match i.trait_ {
+                Some(t) => format!("impl {} for {self_ty}", design.path(t).text()),
+                None => format!("impl {self_ty}"),
+            })
+        }
+        DeclKind::Behavior(b) => {
+            let kind = match b.kind {
+                crate::msl::ast::BehaviorKind::Analog => "analog",
+                crate::msl::ast::BehaviorKind::Digital => "digital",
+            };
+            Some(format!("{kind} for {}", design.path(b.target).text()))
+        }
+        _ => d.name().map(str::to_string),
     }
 }
 
@@ -348,12 +371,11 @@ impl Design {
     }
 
     /// The declaration at a `::` path from the root, each segment a child
-    /// name: `a::M` is `M` inside namespace `a`.
+    /// name (`a::M` is `M` inside namespace `a`), or at a name
+    /// [`Reflect::qualified_name`] prints (`a::E.A`, `impl S.X`).
     pub fn find(&self, path: &str) -> Option<Decl<'_>> {
-        let mut at = self.root();
-        for segment in path.split("::") {
-            at = at.children().into_iter().find(|c| c.name() == Some(segment))?;
-        }
-        Some(at)
+        let walked = path.split("::").try_fold(self.root(), |at, segment| at.children().into_iter().find(|c| c.name() == Some(segment)));
+        // The other form is a name `qualified_name` printed: the first declaration with exactly it.
+        walked.or_else(|| self.decls().into_iter().find(|d| d.qualified_name() == path))
     }
 }

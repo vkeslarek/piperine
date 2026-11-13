@@ -509,3 +509,35 @@ digital for M { on a { q <- s; } }
     assert!(!literals.is_empty());
     assert!(literals.iter().all(|e| e.target().is_none() && e.resolution() == Resolution::Unresolved));
 }
+
+/// A qualified name tells apart items that share a short name, and `find`
+/// accepts every form `qualified_name` prints.
+#[test]
+fn qualified_names_are_unambiguous_and_findable() {
+    let src = "\
+trait Tr { fn run() -> u32; }
+struct S {}
+enum E { A }
+impl S { const X: u32 = 1; }
+impl Tr for S { const X: u32 = 3; fn run() -> u32 { 4 } }
+mod a { pub enum E { A } pub module M() {} }
+module Z(p: Electrical) { signal q: Electrical; }
+analog for Z { signal z: Electrical; }
+";
+    let design = with_prelude(src);
+    let names: Vec<String> = design.decls().into_iter().filter(|d| !d.file().is_prelude()).map(|d| d.qualified_name()).collect();
+    for expected in ["impl S.X", "impl Tr for S.X", "impl Tr for S.run", "a::E.A", "Z.q", "analog for Z.z"] {
+        assert!(names.iter().any(|n| n == expected), "`{expected}` in {names:?}");
+    }
+    // Two items named `X` do not share a qualified name.
+    let xs: Vec<_> = design.decls().into_iter().filter(|d| d.name() == Some("X") && !d.file().is_prelude()).map(|d| d.qualified_name()).collect();
+    assert_eq!(xs, ["impl S.X", "impl Tr for S.X"]);
+    // Every name printed finds the declaration that printed it (the first one, for equal names).
+    for d in design.decls().into_iter().filter(|d| !d.file().is_prelude() && d.name().is_some() && !matches!(d.kind(), piperine_lang::pom::DeclKind::Binding(_))) {
+        let q = d.qualified_name();
+        let found = design.find(&q).unwrap_or_else(|| panic!("`{q}` finds nothing"));
+        assert_eq!(found.qualified_name(), q);
+    }
+    assert_eq!(design.find("a::E.A").map(|d| d.id()), design.find("a::E::A").map(|d| d.id()));
+    assert!(design.find("a::E.B").is_none());
+}
