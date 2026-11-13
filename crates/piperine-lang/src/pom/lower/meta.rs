@@ -5,10 +5,11 @@
 use super::Lowerer;
 use super::body::name;
 use crate::msl::ast;
+use crate::pom::ids::FileId;
 use crate::pom::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
 
-pub(super) fn doc(d: &ast::Doc) -> Doc {
-    Doc { text: d.text.clone(), block: d.block, span: d.span.0 }
+pub(super) fn doc(d: &ast::Doc, inner: bool, file: FileId) -> Doc {
+    Doc { text: d.text.clone(), block: d.block, inner, file, span: d.span.0 }
 }
 
 impl Lowerer<'_> {
@@ -36,6 +37,6 @@ impl Lowerer<'_> {
                 AttrNode { path, input, span: a.span.0 }
             })
             .collect();
-        Meta { docs: meta.docs.iter().map(doc).collect(), attrs }
+        Meta { docs: meta.docs.iter().map(|d| doc(d, false, self.file)).collect(), attrs }
     }
 }

@@ -49,7 +49,7 @@ pub(crate) fn lower_file(
     let chain = vec![provider.canonical(&path)];
     let mut lw = Lowerer { design, file, owner: ns, provider, path, is_root: true, inline: Vec::new(), chain };
     // The `//!` comments at the top of a file are the file namespace's docs.
-    lw.design.decl_mut(ns).meta.docs = ast.inner_docs.iter().map(meta::doc).collect();
+    lw.design.decl_mut(ns).meta.docs = ast.inner_docs.iter().map(|d| meta::doc(d, true, file)).collect();
     for item in &ast.items {
         lw.item(item);
     }

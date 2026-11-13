@@ -65,14 +65,14 @@ impl<'d> Rebuild<'d> {
         let root = self.data(self.design.file_root(file.id()));
         // A loaded file's namespace is its `mod b;` item, whose span is not
         // the file's: the file spans its whole text. Its `//!` comments are
-        // told from the item's own docs by what the text says at their span.
+        // told from the item's own docs by their kind and file.
         let external = !matches!(root.kind, DeclKind::Namespace(ref n) if n.origin == NamespaceOrigin::Root);
         let span = if external { Span::new(0, file.text().len()) } else { root.span };
         let inner_docs = root
             .meta
             .docs
             .iter()
-            .filter(|d| !external || written_as(file.text(), d, "//!", "/*!"))
+            .filter(|d| d.inner && d.file == file.id())
             .map(|d| self.doc(d))
             .collect();
         let items = root.children.iter().map(|c| self.item(*c)).collect();
@@ -415,15 +415,11 @@ impl<'d> Rebuild<'d> {
 
     /// The docs and attributes of a declaration. A `mod b;` item that loaded
     /// a file also holds that file's `//!` comments: only the docs the
-    /// declaring file wrote with `///` or `/** */` belong to the item.
+    /// declaring file wrote (`Doc::inner` is false) belong to the item.
     fn item_meta(&self, data: &DeclData) -> ast::Meta {
         let mut meta = self.meta(&data.meta);
-        if matches!(&data.kind, DeclKind::Namespace(n) if matches!(n.origin, NamespaceOrigin::External { file: Some(_) })) {
-            let text = self.design.file_data(data.file).text.as_str();
-            let keep: Vec<_> = data.meta.docs.iter().map(|d| written_as(text, d, "///", "/**")).collect();
-            let mut keep = keep.into_iter();
-            meta.docs.retain(|_| keep.next().unwrap_or(false));
-        }
+        let outer = data.meta.docs.iter().filter(|d| !d.inner);
+        meta.docs = outer.map(|d| self.doc(d)).collect();
         meta
     }
 
@@ -659,15 +655,4 @@ fn use_tree(t: &UseTreeNode) -> ast::UseTree {
         UseTreeKind::Group(children) => ast::UseKind::Group(children.iter().map(use_tree).collect()),
     };
     ast::UseTree { path: t.path.iter().map(ident).collect(), kind, span: loc(t.span) }
-}
-
-/// Whether `doc` is written in `text` with the line marker `line` or the
-/// block marker `block` followed by its text.
-fn written_as(text: &str, doc: &super::meta::Doc, line: &str, block: &str) -> bool {
-    let Some(written) = text.get(doc.span.range()) else { return false };
-    if doc.block {
-        written.strip_prefix(block).is_some_and(|rest| rest.starts_with(&doc.text))
-    } else {
-        written.strip_prefix(line) == Some(doc.text.as_str())
-    }
 }

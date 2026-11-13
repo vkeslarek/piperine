@@ -52,7 +52,7 @@ impl Lowerer<'_> {
         }
         let decl = self.design.decl_mut(id);
         decl.kind = DeclKind::Namespace(NamespaceData { origin: NamespaceOrigin::External { file: Some(file) } });
-        decl.meta.docs.extend(parsed.file.inner_docs.iter().map(doc));
+        decl.meta.docs.extend(parsed.file.inner_docs.iter().map(|d| doc(d, true, file)));
 
         let canonical = self.provider.canonical(&path);
         let saved_file = std::mem::replace(&mut self.file, file);

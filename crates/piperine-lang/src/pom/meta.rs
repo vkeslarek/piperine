@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::body::Lit;
 use super::decl::Name;
-use super::ids::{ExprId, PathId};
+use super::ids::{ExprId, FileId, PathId};
 use crate::msl::Span;
 
 /// A doc comment: the text after the marker, or between the markers of a
@@ -13,6 +13,11 @@ use crate::msl::Span;
 pub struct Doc {
     pub text: String,
     pub block: bool,
+    /// Written as `//!` or `/*! */`: it documents the namespace around it,
+    /// not the item after it.
+    pub inner: bool,
+    /// The file the comment was written in (its `span` is an offset there).
+    pub file: FileId,
     pub span: Span,
 }
 

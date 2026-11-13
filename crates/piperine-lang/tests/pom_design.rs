@@ -274,3 +274,25 @@ fn non_utf8_file_is_a_parse_diagnostic() {
     assert_eq!(design.files().len(), 2);
     assert!(design.check().is_empty());
 }
+
+/// Every file of a multi-file design rebuilds to exactly the tree its text
+/// parses to, also when the declaring file's `///` and the loaded file's
+/// `//!` say the same words (POM-01 AC 5, the lossless claim per file).
+#[test]
+fn docs_keep_kind_and_file_across_mod_files() {
+    let pairs: &[(&str, &str)] = &[
+        ("/// x\nmod b;\n", "//! x\n"),
+        ("/// y\nmod b;\n", "//! x\n//! y\n"),
+        ("/** x */\nmod b;\n", "/*! x */\n"),
+        ("/// x\n/// x\nmod b;\n", "//! x\n/// x\nfn f() {}\n"),
+        ("//! x\n/// x\nmod b;\n", "//! x\n//! x\n"),
+        ("/// a\nmod b;\n", "//! a\n/// a\nmodule M() {}\n"),
+    ];
+    for (top, b) in pairs {
+        let design = files_design(&[("top.msl", top), ("b.msl", b)]);
+        assert!(codes(&design).is_empty(), "{top:?} + {b:?}: {:?}", design.diagnostics());
+        for (file, text) in design.files().iter().zip([top, b]) {
+            assert_eq!(file.to_ast(), parse(text).file, "{top:?} + {b:?}: {}", file.name());
+        }
+    }
+}

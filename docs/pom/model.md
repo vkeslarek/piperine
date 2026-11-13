@@ -1068,6 +1068,8 @@ A doc comment: the text after the marker, or between the markers of a block comm
 | --- | --- | --- |
 | `text` | `String` | The text after the marker (or between the block markers), verbatim. |
 | `block` | `bool` | Whether it is a block comment. |
+| `inner` | `bool` | Whether it was written `//!` or `/*! */`: it documents the namespace around it. |
+| `file` | `FileId` | The file the comment was written in; `span` is an offset in that file. |
 | `span` | `Span` | Byte range of the comment. |
 
 ### `Meta`
