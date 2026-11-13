@@ -34,48 +34,55 @@ pub fn corpus() -> Vec<Block> {
     for path in files {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let text = std::fs::read_to_string(&path).expect("spec file is UTF-8");
-        let mut open: Option<(usize, Class, String)> = None;
-        for (i, line) in text.lines().enumerate() {
-            let trimmed = line.trim_start();
-            match &mut open {
-                None => {
-                    if let Some(info) = trimmed.strip_prefix("```") {
-                        let class = match info.trim() {
-                            "rust" => Some(Class::Valid),
-                            "rust,compile_fail" => Some(Class::CompileFail),
-                            "rust,fragment" => Some(Class::Fragment),
-                            other if other.starts_with("rust") => {
-                                panic!("{name}:{}: unknown fence class `{other}`", i + 1)
-                            }
-                            _ => None,
-                        };
-                        // A fence of another language or none is not the corpus,
-                        // but its closing fence must still be consumed.
-                        open = Some((i + 1, class.unwrap_or(Class::Valid), String::new()));
-                        if class.is_none() {
-                            open.as_mut().unwrap().2.push('\u{0}');
+        blocks.extend(extract(&name, &text));
+    }
+    blocks
+}
+
+/// The ```` ```rust* ```` fences of one markdown text, in order.
+pub fn extract(name: &str, text: &str) -> Vec<Block> {
+    let mut blocks = Vec::new();
+    let mut open: Option<(usize, Class, String)> = None;
+    for (i, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        match &mut open {
+            None => {
+                if let Some(info) = trimmed.strip_prefix("```") {
+                    let class = match info.trim() {
+                        "rust" => Some(Class::Valid),
+                        "rust,compile_fail" => Some(Class::CompileFail),
+                        "rust,fragment" => Some(Class::Fragment),
+                        other if other.starts_with("rust") => {
+                            panic!("{name}:{}: unknown fence class `{other}`", i + 1)
                         }
-                    }
-                }
-                Some((start, class, body)) => {
-                    if trimmed.starts_with("```") {
-                        if !body.starts_with('\u{0}') {
-                            blocks.push(Block {
-                                file: name.clone(),
-                                line: *start,
-                                class: *class,
-                                text: std::mem::take(body),
-                            });
-                        }
-                        open = None;
-                    } else {
-                        body.push_str(line);
-                        body.push('\n');
+                        _ => None,
+                    };
+                    // A fence of another language or none is not the corpus,
+                    // but its closing fence must still be consumed.
+                    open = Some((i + 1, class.unwrap_or(Class::Valid), String::new()));
+                    if class.is_none() {
+                        open.as_mut().unwrap().2.push('\u{0}');
                     }
                 }
             }
+            Some((start, class, body)) => {
+                if trimmed.starts_with("```") {
+                    if !body.starts_with('\u{0}') {
+                        blocks.push(Block {
+                            file: name.to_string(),
+                            line: *start,
+                            class: *class,
+                            text: std::mem::take(body),
+                        });
+                    }
+                    open = None;
+                } else {
+                    body.push_str(line);
+                    body.push('\n');
+                }
+            }
         }
-        assert!(open.is_none(), "{name}: a code fence is never closed");
     }
+    assert!(open.is_none(), "{name}: a code fence is never closed");
     blocks
 }

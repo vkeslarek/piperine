@@ -313,11 +313,10 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 
 #### 22.2.3 `white_noise`, `flicker_noise`, `noise_table`
 
-<!-- spec-bug: `…` stands for an elided body in `noise_table`; the example is pseudocode -->
-```rust,compile_fail
+```rust
 pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
 pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
-pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64, f64); N]; … }   // head and params only
+pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64, f64); N]; }   // head and params only
 ```
 
 | Module | Power spectral density |
@@ -476,9 +475,11 @@ Dynamic semantics:
 8. When `reset` falls, integration continues from the held value (§15.2.1).
 9. `idt` follows VAMS 4.5.4 with no rule of its own.
 
-<!-- spec-bug: an `analog for` block and a body `let` in one block; the `let` belongs in the module body, so no single entry of the grammar accepts the pair -->
-```rust,compile_fail
+```rust
 analog for Pi { v(outp) +> k1 * v(inp) + k2 * idt(v(inp), 0.0); }
+```
+
+```rust,fragment
 let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);
 ```
 

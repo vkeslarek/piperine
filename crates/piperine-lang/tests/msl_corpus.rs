@@ -11,7 +11,7 @@
 mod spec_corpus;
 
 use piperine_lang::msl::parser::{parse, parse_block, parse_expr};
-use spec_corpus::{Block, Class, corpus};
+use spec_corpus::{Block, Class, corpus, extract};
 
 fn count(blocks: &[Block], class: Class) -> usize {
     blocks.iter().filter(|b| b.class == class).count()
@@ -71,11 +71,24 @@ fn every_valid_spec_block_parses_clean() {
 fn every_compile_fail_block_diagnoses() {
     let blocks = corpus();
     let fails: Vec<&Block> = blocks.iter().filter(|b| b.class == Class::CompileFail).collect();
-    println!("compile_fail blocks: {}", fails.len());
+    println!("compile_fail blocks in docs/spec: {}", fails.len());
+    // Every `rust,compile_fail` fence illustrates an error: the file parse
+    // alone must report it (no context that would accept it).
     let silent: Vec<String> = fails
         .iter()
-        .filter(|b| parse(&b.text).diagnostics.is_empty() && parse_block(&format!("{{\n{}\n}}", b.text)).1.is_empty())
+        .filter(|b| parse(&b.text).diagnostics.is_empty())
         .map(|b| format!("{}:{}", b.file, b.line))
         .collect();
     assert!(silent.is_empty(), "compile_fail blocks that parse clean: {silent:?}");
+
+    // The spec holds no error illustration as a fence today, so the loop above
+    // can be empty: a control fence runs the same classification and check, so
+    // the test still fails if `rust,compile_fail` stopped being recognized or
+    // a clean source were accepted as an error example.
+    let control = extract("control.md", "```rust,compile_fail\nfn f( { }\n```\n```rust\nfn f() {}\n```\n");
+    assert_eq!(control.len(), 2);
+    assert_eq!(control[0].class, Class::CompileFail);
+    assert!(!parse(&control[0].text).diagnostics.is_empty(), "a broken source diagnoses");
+    assert_eq!(control[1].class, Class::Valid);
+    assert!(parse(&control[1].text).diagnostics.is_empty());
 }

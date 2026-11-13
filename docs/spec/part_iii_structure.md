@@ -219,11 +219,12 @@ argument, a generation range or condition, an array length, a param default and 
 
 **Examples**
 
-<!-- spec-bug: a module head with `…` standing for an elided body is not source; the example is pseudocode -->
-```rust,compile_fail
+```rust
 module AsyncFifo<T: Repr, const A: u32>(in wclk: Bit, in rclk: Bit, rx: flip Stream<T>, tx: Stream<T>)
-    where A >= 1 { … }
+    where A >= 1 { }   // the body is elided
+```
 
+```rust,fragment
 let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);   // in port: a discrete expression
 let lim  = slew(v(a), 1M, 1M);                                           // value input: may probe
 ```
@@ -641,8 +642,7 @@ Its type is `Name`. Calling it with connections places an instance.
 
 **Examples**
 
-<!-- spec-bug: `let bank = …;` ("in a parent's body") sits at file scope next to module declarations in one block; no entry of the grammar accepts the mixture -->
-```rust,compile_fail
+```rust
 /// One-transistor one-capacitor DRAM cell; Cell is the bundle of §7.
 module Dram1T1C(c: Cell) {
     cs: f64 = 30f;
@@ -655,13 +655,21 @@ module MemoryBank<C: Fn(Cell), const ROWS: u32, const COLS: u32>(in wl: [Bit; RO
     cell: C;
     for r in 0..ROWS { for c in 0..COLS { pub let cells = cell(Cell { wl: wl[r], bl: bl[c] }); } }
 }
-let bank = MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // in a parent's body
+```
 
+```rust,fragment
+let bank = MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // in a parent's body
+```
+
+```rust
 /// Binning: the function picks the params, the caller places the result.
 pub fn nch(l: f64, w: f64) -> Bsim4 {
     let vth0 = if l < 0.18u { 0.42 } else if l < 1u { 0.45 } else { 0.47 };
     Bsim4 { l: l, w: w, vth0: vth0 }
 }
+```
+
+```rust,fragment
 let m1 = nch(0.13u, 2u)(d, g, s, b);                                       // likewise
 ```
 
