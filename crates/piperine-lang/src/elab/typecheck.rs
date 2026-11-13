@@ -135,7 +135,7 @@ fn check_expr_for_illegal_op(expr: &Expr, module: &Module, forced: bool, errors:
         // restriction's rationale does not actually apply to this form,
         // and every widely-deployed Verilog-A compiler this repo's own
         // fixtures were sourced from accepts it. Reported as a coverage
-        // gap in `docs/spec/part_iii_conformance.md`, not silently
+        // gap (formerly listed in Part III of the retired VAMS spec (git history before 72181d1a)), not silently
         // dropped.
         Expr::Ternary { cond, then_branch, else_branch, .. } => {
             r(cond, forced, errors);

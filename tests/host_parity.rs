@@ -13,7 +13,7 @@
 //! (Phase 1 / T8 full gate).
 //!
 //! T51 (`lrm-conformance-wave3`, PSW3-03/B5) adds the closing section:
-//! `docs/spec/appendix_c_host_surface.md` §3 *describes* three Rust-only
+//! Appendix C §3 of the retired VAMS spec (git history before 72181d1a) *described* three Rust-only
 //! asymmetries in prose (Driver/Policy/SamplePlan/CoverageDatabase,
 //! `Waveform` measurements/transforms + `ComplexWaveform` margins,
 //! `Module.constraints`) but nothing previously asserted them — an
@@ -882,7 +882,7 @@ _probe()
 
 // ── T51 (PSW3-03/B5): the declared Rust-only host asymmetries, asserted ────
 //
-// Every name below is documented in `docs/spec/appendix_c_host_surface.md`
+// Every name below is documented in Appendix C of the retired VAMS spec (git history before 72181d1a)
 // §3 as Rust-only. This is the exact list, not a floor: a name gaining a
 // Python binding fails `host_parity_declared_rust_only_surface_has_no_
 // python_binding` until the declaration (both here and in appendix_c) is

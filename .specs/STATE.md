@@ -1039,6 +1039,10 @@ adopting it later is a backend change, not a language change.
 ### MD-53: the superset surface is gated the same way the LRM surface is
 
 `lrm-conformance-wave3` design decision (2026-08-27, user-confirmed).
+
+**Status (2026-11-12):** retired. `docs/spec/` was replaced by the MSL
+specification and the axis-B gate (`spec_section_coverage.rs`, `SPEC-COVERS`)
+was deleted with it in 72181d1a (user decision). Axis A (LRM ↔ impl) stands.
 Piperine is a **superset** of Verilog-AMS, so conformance has two axes: LRM ↔
 impl (MD-51's `LRM-COVERS` gate) and **Piperine's own spec ↔ impl** — the
 `constraint`/`tol`/host-API/plugin/POM/IR surface the LRM never mentions,

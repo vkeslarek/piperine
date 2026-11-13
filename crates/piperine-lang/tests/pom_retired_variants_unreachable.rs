@@ -30,7 +30,7 @@
 //! `elab::lower::vams`'s array-`parameter` default lowering, confirmed by
 //! `list_is_reachable_via_array_assignment_pattern` below). `List` is
 //! therefore excluded from this file's "prove unreachable" claims; T55
-//! corrects `docs/spec/part_iv_reflection_selector.md` §5 to drop it from
+//! corrects Part IV §5 of the retired VAMS spec (git history before 72181d1a) to drop it from
 //! the retired-variant list.
 //!
 

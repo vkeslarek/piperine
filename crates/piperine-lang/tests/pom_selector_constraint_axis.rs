@@ -3,7 +3,7 @@
 //! production (`crate::pom::selector::ast::Axis::Constraint`) that dispatched
 //! to an **empty arm** — `constraint::` parsed, always matched nothing, and
 //! there was no way to tell "no constraints authored" apart from "this axis
-//! is unimplemented" (`docs/spec/part_iv_reflection_selector.md` §10 item 2).
+//! is unimplemented" (Part IV §10 item 2 of the retired VAMS spec (git history before 72181d1a)).
 //! This file proves the axis now dispatches to `Module::constraints()` for
 //! real: it returns the authored `require`/`var`/`target`/`cover` statements
 //! of a module's `constraint begin … end` block (MD-49), by name where the

@@ -6,7 +6,7 @@
 //! (`piperine-lang/src/eval/tasks.rs::SystemTaskKind::PlaArray`) but
 //! deliberately not lowered — each name fails loud citing §9.8, with the
 //! reason recorded in this task's commit body and in
-//! `docs/spec/part_iii_conformance.md` (spec.md's P3 AC2 explicitly allows
+//! Part III of the retired VAMS spec (git history before 72181d1a) (spec.md's P3 AC2 explicitly allows
 //! either a real implementation or this documented loud rejection).
 //!
 //! A real implementation would need a new JIT trampoline for runtime

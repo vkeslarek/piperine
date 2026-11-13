@@ -69,8 +69,8 @@ pub enum Value {
     /// assignment-pattern extension lowers to it
     /// (`elab::const_eval::ConstEnv::eval_array`, called from
     /// `elab::lower::vams`'s array-`parameter` default lowering). See T50's
-    /// commit body — `docs/spec/part_iv_reflection_selector.md` §5's
-    /// "retired-front-end survivors" wording is corrected at T55 to drop
+    /// commit body — the "retired-front-end survivors" wording in Part IV §5 of
+    /// the retired VAMS spec (git history before 72181d1a) is corrected at T55 to drop
     /// `List` from that list.
     List(Rc<RefCell<Vec<Value>>>),
     /// Reserved — unreachable from Verilog-AMS (retired PHDL bundle-literal
