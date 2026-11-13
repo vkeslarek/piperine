@@ -1,9 +1,9 @@
 # msl-parser proofs
 
-**HEAD**: 430f7271
+**HEAD**: bce437cc
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 30 pass, 1 fail
+**Result**: 30 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -35,9 +35,8 @@
 | C25 | `run lexer / test non_utf8_one_diagnostic ... ok` | pass |
 | C26 | `run parser / test unknown_as_value_ok_as_name_e0908 ... ok` | pass |
 | C27 | `run parser / test contextual_keywords_are_identifiers_outside_nature ... ok` | pass |
-| Build | `export CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target` | pass |
 | Build | `cargo build -p piperine-lang --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^warning')` | pass |
-| Build | `cargo test -p piperine --test suite_hygiene` | **fail** - error: failed to build archive at /var/tmp/piperine-target/debug/deps/libpiperine_lang-86348b4d0b3e1 |
+| Build | `cargo test -p piperine --test suite_hygiene` | pass |
 
 ## Output
 
@@ -46,19 +45,19 @@
 ```
 running 9 tests
 test contribution_and_commit_operators_are_single_tokens ... ok
+test doc_comments_are_tokens ... ok
+test inherited_lexical_forms_lex ... ok
+test dropped_token_class_reports_e0905 ... ok
 test malformed_si_literal_reports_e0902 ... ok
 test non_utf8_one_diagnostic ... ok
-test dropped_token_class_reports_e0905 ... ok
-test doc_comments_are_tokens ... ok
+test keywords_reserved_vs_contextual ... ok
 test si_literal_scaled_value_and_raw_text ... ok
 test unterminated_comment_and_string_one_diagnostic ... ok
-test inherited_lexical_forms_lex ... ok
-test keywords_reserved_vs_contextual ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
-     Running tests/msl_lexer.rs (/home/keslarek/Git/piperine/target/debug/deps/msl_lexer-c42ef259f0281ddc)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running tests/msl_lexer.rs (/var/tmp/piperine-target/debug/deps/msl_lexer-c42ef259f0281ddc)
 ```
 
 `Run parser` - exit 0
@@ -66,11 +65,11 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 test struct_expression_field_shorthand ... ok
 test nested_tuple_index ... ok
-test contextual_keywords_are_identifiers_outside_nature ... ok
 test doc_comments_and_attrs_attach ... ok
-test contribution_commit_at_any_depth ... ok
-test unknown_as_value_ok_as_name_e0908 ... ok
 test inherited_rust_forms_parse_items ... ok
+test unknown_as_value_ok_as_name_e0908 ... ok
+test contextual_keywords_are_identifiers_outside_nature ... ok
+test contribution_commit_at_any_depth ... ok
 test inherited_rust_forms_parse ... ok
 test inherited_rust_forms_parse_expressions ... ok
 test every_b3_production_parses_with_span ... ok
@@ -78,7 +77,7 @@ test every_b3_production_parses_with_span ... ok
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
-     Running tests/msl_parser.rs (/home/keslarek/Git/piperine/target/debug/deps/msl_parser-8d652cb9b0cc9d6d)
+     Running tests/msl_parser.rs (/var/tmp/piperine-target/debug/deps/msl_parser-8d652cb9b0cc9d6d)
 ```
 
 `Run corpus` - exit 0
@@ -91,27 +90,27 @@ test every_valid_spec_block_parses_clean ... ok
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
-     Running tests/msl_corpus.rs (/home/keslarek/Git/piperine/target/debug/deps/msl_corpus-0e2a749f6d36b2c3)
+     Running tests/msl_corpus.rs (/var/tmp/piperine-target/debug/deps/msl_corpus-0e2a749f6d36b2c3)
 ```
 
 `Run errors` - exit 0
 
 ```
-test one_fault_is_one_diagnostic ... ok
 test unclosed_delimiter_is_reported_at_the_opener ... ok
+test comparisons_do_not_chain ... ok
+test statements_of_the_wrong_block_kind_report_e0404 ... ok
 test unexpected_token_names_found_and_expected ... ok
 test keyword_diagnostics_cover_both_halves_of_e0903 ... ok
-test statements_of_the_wrong_block_kind_report_e0404 ... ok
 test diagnostic_has_code_message_label_help ... ok
 test parse_phase_rows_report_their_codes ... ok
 test depth_limit_fits_8mib_stack_in_debug ... ok
-test nesting_without_delimiters_is_also_bounded ... ok
 test depth_over_256_is_diagnostic_not_overflow ... ok
+test nesting_without_delimiters_is_also_bounded ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
-     Running tests/msl_errors.rs (/home/keslarek/Git/piperine/target/debug/deps/msl_errors-15caf477c1ca8646)
+     Running tests/msl_errors.rs (/var/tmp/piperine-target/debug/deps/msl_errors-15caf477c1ca8646)
 ```
 
 `Run print` - exit 0
@@ -129,5 +128,5 @@ test print_is_idempotent_over_corpus ... ok
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
-     Running tests/msl_print.rs (/home/keslarek/Git/piperine/target/debug/deps/msl_print-71d3a22c1acbc9be)
+     Running tests/msl_print.rs (/var/tmp/piperine-target/debug/deps/msl_print-71d3a22c1acbc9be)
 ```
