@@ -11,14 +11,14 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-parser/design.md`
 **Status**: Approved
 **Approved**: 2026-11-13 - user: "Faz uma limpeza antes de iniciar para limpar lixinhos. Aprovo e pode iniciar"
-**Build**: `export CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target; cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning'); cargo test -p piperine --test suite_hygiene`
-**Run lexer**: `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target cargo test -p piperine-lang --test msl_lexer`
-**Run parser**: `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target cargo test -p piperine-lang --test msl_parser`
-**Run errors**: `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target cargo test -p piperine-lang --test msl_errors`
-**Run corpus**: `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target cargo test -p piperine-lang --test msl_corpus`
-**Run print**: `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target cargo test -p piperine-lang --test msl_print`
+**Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning'); cargo test -p piperine --test suite_hygiene`
+**Run lexer**: `cargo test -p piperine-lang --test msl_lexer`
+**Run parser**: `cargo test -p piperine-lang --test msl_parser`
+**Run errors**: `cargo test -p piperine-lang --test msl_errors`
+**Run corpus**: `cargo test -p piperine-lang --test msl_corpus`
+**Run print**: `cargo test -p piperine-lang --test msl_print`
 
-Executors: Sonnet sub-agents. Verifier: Opus. Every cargo command uses `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target` (disk at 92%). Work in `/home/keslarek/Git/piperine-msl-spec`, branch `feature/msl-parser`.
+Executors: Sonnet sub-agents. Verifier: Opus. Cargo uses the environment's shared `CARGO_TARGET_DIR` (`/var/tmp/piperine-target`); the earlier per-command override split the cache in two and the build ran out of disk. Work in `/home/keslarek/Git/piperine-msl-spec`, branch `feature/msl-parser`.
 
 ---
 
@@ -42,7 +42,7 @@ Executors: Sonnet sub-agents. Verifier: Opus. Every cargo command uses `CARGO_TA
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
 | Quick | after a task that adds/changes tests in one target | the task's own `Run <target>` line |
-| Full | after a parser task (parser + errors + corpus may move together) | `CARGO_TARGET_DIR=/home/keslarek/Git/piperine/target cargo test -p piperine-lang --test msl_lexer --test msl_parser --test msl_errors` (+ `--test msl_corpus`/`--test msl_print` once they exist) |
+| Full | after a parser task (parser + errors + corpus may move together) | `cargo test -p piperine-lang --test msl_lexer --test msl_parser --test msl_errors` (+ `--test msl_corpus`/`--test msl_print` once they exist) |
 | Build | every task before commit | `**Build**` line above |
 
 ---
