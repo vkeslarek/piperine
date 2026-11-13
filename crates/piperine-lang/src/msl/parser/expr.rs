@@ -9,6 +9,9 @@
 //! literal or instance param block at the top level (`if x { .. }`,
 //! `match v { .. }`, `for i in r { .. }`, `on e { .. }`), as in Rust.
 
+use chumsky::pratt::{infix, left, postfix, prefix};
+use chumsky::input::MapExtra;
+
 use super::*;
 
 fn mk(kind: ExprKind, span: Span) -> Expr {
@@ -83,6 +86,33 @@ fn gt_op<'a, I: In<'a>>(want: GtOp) -> P<'a, I, GtOp> {
             .try_map(|((a, b), c), sp| touching(&[a, b, c], sp, ">>=").map(|_| GtOp::ShrEq))
             .boxed(),
     }
+}
+
+/// A postfix form: field, method call, call, index, `?`.
+#[derive(Clone)]
+enum Post {
+    Field(Ident),
+    Method(Ident, Option<GenericArgs>, Vec<Arg>),
+    Call(Vec<Arg>, Option<Vec<FieldInit>>),
+    Index(Expr),
+    Try,
+}
+
+fn apply_post<'a, I: In<'a>>(lhs: Expr, post: Post, e: &mut MapExtra<'a, '_, I, Extra<'a>>) -> Expr {
+    let kind = match post {
+        Post::Field(name) => ExprKind::Field { expr: boxed(lhs), name },
+        Post::Method(method, generics, args) => {
+            ExprKind::MethodCall { recv: boxed(lhs), method, generics, args }
+        }
+        Post::Call(args, params) => ExprKind::Call { callee: boxed(lhs), args, params },
+        Post::Index(i) => ExprKind::Index { expr: boxed(lhs), index: boxed(i) },
+        Post::Try => ExprKind::Try(boxed(lhs)),
+    };
+    mk(kind, e.span())
+}
+
+fn binary<'a, I: In<'a>>(lhs: Expr, op: BinOp, rhs: Expr, e: &mut MapExtra<'a, '_, I, Extra<'a>>) -> Expr {
+    mk(ExprKind::Binary { op, lhs: boxed(lhs), rhs: boxed(rhs) }, e.span())
 }
 
 // ---- builders ---------------------------------------------------------------------------------
@@ -236,15 +266,16 @@ pub(crate) fn build<'a, I: In<'a>>(
     let closure = kw(Kw::Move)
         .or_not()
         .then(closure_params)
-        .then(
+        .then(first_of(vec![
             punct(Punct::Arrow)
                 .ignore_then(h.ty.clone())
                 .then(h.block.clone().map_with(|b: Block, e| {
                     mk(ExprKind::Block(b), e.span())
                 }))
                 .map(|(ty, body)| (Some(ty), body))
-                .or(me.clone().map(|body| (None, body))),
-        )
+                .boxed(),
+            me.clone().map(|body| (None, body)).boxed(),
+        ]))
         .map_with(|((mv, params), (ret, body)), e| {
             mk(
                 ExprKind::Closure { is_move: mv.is_some(), params, ret, body: boxed(body) },
@@ -252,33 +283,27 @@ pub(crate) fn build<'a, I: In<'a>>(
             )
         });
 
-    let atom = choice((
-        lit_expr(),
-        emit,
-        include_str,
-        paren_or_tuple,
-        array,
+    // A slice of boxed alternatives, not a tuple: a tuple `choice` keeps every
+    // alternative's temporaries in one stack frame (60 KiB in a debug build).
+    let atom = first_of(vec![
+        lit_expr().boxed(),
+        emit.boxed(),
+        include_str.boxed(),
+        paren_or_tuple.boxed(),
+        array.boxed(),
         block_like(h),
-        break_,
-        continue_,
-        return_,
-        closure,
-        error_atom,
-        macro_call,
+        break_.boxed(),
+        continue_.boxed(),
+        return_.boxed(),
+        closure.boxed(),
+        error_atom.boxed(),
+        macro_call.boxed(),
         path_atom,
-    ))
+    ])
     .labelled("expression")
     .boxed();
 
     // ---- postfix ----
-    #[derive(Clone)]
-    enum Post {
-        Field(Ident),
-        Method(Ident, Option<GenericArgs>, Vec<Arg>),
-        Call(Vec<Arg>, Option<Vec<FieldInit>>),
-        Index(Expr),
-        Try,
-    }
     let arg = ident()
         .then_ignore(punct(Punct::Colon))
         .or_not()
@@ -291,13 +316,14 @@ pub(crate) fn build<'a, I: In<'a>>(
         .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
     let tuple_index = select! { Token::Int(s) => s }
         .map_with(|name, e| Ident { name, span: Loc(e.span()) });
-    let method_or_field = punct(Punct::Dot).ignore_then(choice((
+    let method_or_field = punct(Punct::Dot).ignore_then(first_of(vec![
         ident()
             .then(ty::generic_args(h, true).or_not())
             .then(args.clone())
-            .map(|((name, g), a)| Post::Method(name, g, a)),
-        ident().or(tuple_index).map(Post::Field),
-    )));
+            .map(|((name, g), a)| Post::Method(name, g, a))
+            .boxed(),
+        ident().or(tuple_index).map(Post::Field).boxed(),
+    ]));
     let call = args.clone().then(if allow_struct { field_inits.clone().or_not().boxed() } else {
         empty().to(None).boxed()
     }).map(|(a, p)| Post::Call(a, p));
@@ -305,103 +331,74 @@ pub(crate) fn build<'a, I: In<'a>>(
         .clone()
         .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
         .map(Post::Index);
-    let postfix = choice((method_or_field, call, index, punct(Punct::Question).to(Post::Try)));
+    let postfix_op = first_of(vec![
+        method_or_field.boxed(),
+        call.boxed(),
+        index.boxed(),
+        punct(Punct::Question).to(Post::Try).boxed(),
+    ]);
+    let op = |p: Punct, b: BinOp| punct(p).to(b);
 
-    let postfixed = atom
-        .foldl_with(postfix.repeated(), |lhs, post, e| {
-            let span = e.span();
-            let kind = match post {
-                Post::Field(name) => ExprKind::Field { expr: boxed(lhs), name },
-                Post::Method(method, generics, args) => {
-                    ExprKind::MethodCall { recv: boxed(lhs), method, generics, args }
-                }
-                Post::Call(args, params) => ExprKind::Call { callee: boxed(lhs), args, params },
-                Post::Index(i) => ExprKind::Index { expr: boxed(lhs), index: boxed(i) },
-                Post::Try => ExprKind::Try(boxed(lhs)),
-            };
-            mk(kind, span)
-        })
-        .boxed();
-
-    // ---- unary, cast ----
+    // ---- operators: one Pratt parser over the atom ----
+    //
+    // One precedence-climbing loop replaces a parser per precedence level, so
+    // a nesting level costs one frame chain rather than a dozen (T16).
     let unary_op = choice((
         punct(Punct::Minus).to(UnOp::Neg),
         punct(Punct::Not).to(UnOp::Not),
         punct(Punct::Star).to(UnOp::Deref),
         punct(Punct::And).to(UnOp::Ref),
-    ))
-    .map_with(|op, e| (op, e.span()));
-    let unary = unary_op
-        .repeated()
-        .foldr(postfixed, |(op, sp), rhs| {
-            let span = sp.to(rhs.span.0);
-            mk(ExprKind::Unary { op, expr: boxed(rhs) }, span)
-        })
-        .boxed();
-
-    let cast = unary
-        .foldl_with(kw(Kw::As).ignore_then(h.ty.clone()).repeated(), |lhs, ty, e| {
-            mk(ExprKind::Cast { expr: boxed(lhs), ty }, e.span())
-        })
-        .boxed();
-
-    // ---- binary levels ----
-    let level = |operand: P<'a, I, Expr>, op: P<'a, I, BinOp>| -> P<'a, I, Expr> {
-        operand
-            .clone()
-            .foldl_with(op.then(operand).repeated(), |lhs, (op, rhs), e| {
-                mk(ExprKind::Binary { op, lhs: boxed(lhs), rhs: boxed(rhs) }, e.span())
-            })
-            .boxed()
-    };
-    let op = |p: Punct, b: BinOp| punct(p).to(b);
-
-    let mul = level(
-        cast,
-        choice((op(Punct::Star, BinOp::Mul), op(Punct::Slash, BinOp::Div), op(Punct::Percent, BinOp::Rem)))
-            .boxed(),
-    );
-    let add = level(mul, choice((op(Punct::Plus, BinOp::Add), op(Punct::Minus, BinOp::Sub))).boxed());
-    let shift = level(
-        add,
-        choice((op(Punct::Shl, BinOp::Shl), gt_op(GtOp::Shr).to(BinOp::Shr))).boxed(),
-    );
-    let bitand = level(shift, op(Punct::And, BinOp::BitAnd).boxed());
-    let bitxor = level(bitand, op(Punct::Caret, BinOp::BitXor).boxed());
-    let bitor = level(bitxor, op(Punct::Or, BinOp::BitOr).boxed());
-    let cmp = level(
-        bitor,
-        choice((
-            op(Punct::EqEq, BinOp::Eq),
-            op(Punct::Ne, BinOp::Ne),
-            op(Punct::Le, BinOp::Le),
-            op(Punct::Lt, BinOp::Lt),
-            gt_op(GtOp::Ge).to(BinOp::Ge),
-            gt_op(GtOp::Gt).to(BinOp::Gt),
+    ));
+    let mul_op = choice((op(Punct::Star, BinOp::Mul), op(Punct::Slash, BinOp::Div), op(Punct::Percent, BinOp::Rem)));
+    let add_op = choice((op(Punct::Plus, BinOp::Add), op(Punct::Minus, BinOp::Sub)));
+    let shift_op = choice((op(Punct::Shl, BinOp::Shl), gt_op(GtOp::Shr).to(BinOp::Shr)));
+    let cmp_op = choice((
+        op(Punct::EqEq, BinOp::Eq),
+        op(Punct::Ne, BinOp::Ne),
+        op(Punct::Le, BinOp::Le),
+        op(Punct::Lt, BinOp::Lt),
+        gt_op(GtOp::Ge).to(BinOp::Ge),
+        gt_op(GtOp::Gt).to(BinOp::Gt),
+    ));
+    let or = atom
+        .pratt((
+            postfix(15, postfix_op, apply_post::<I>),
+            prefix(14, unary_op, |op, rhs: Expr, e| mk(ExprKind::Unary { op, expr: boxed(rhs) }, e.span())),
+            postfix(13, kw(Kw::As).ignore_then(h.ty.clone()), |lhs: Expr, ty, e| {
+                mk(ExprKind::Cast { expr: boxed(lhs), ty }, e.span())
+            }),
+            infix(left(12), mul_op, binary::<I>),
+            infix(left(11), add_op, binary::<I>),
+            infix(left(10), shift_op, binary::<I>),
+            infix(left(9), op(Punct::And, BinOp::BitAnd), binary::<I>),
+            infix(left(8), op(Punct::Caret, BinOp::BitXor), binary::<I>),
+            infix(left(7), op(Punct::Or, BinOp::BitOr), binary::<I>),
+            infix(left(6), cmp_op, binary::<I>),
+            infix(left(5), op(Punct::AndAnd, BinOp::And), binary::<I>),
+            infix(left(4), op(Punct::OrOr, BinOp::Or), binary::<I>),
         ))
-        .boxed(),
-    );
-    let and = level(cmp, op(Punct::AndAnd, BinOp::And).boxed());
-    let or = level(and, op(Punct::OrOr, BinOp::Or).boxed());
+        .boxed();
 
     // ---- range, assignment ----
     let range_op = choice((punct(Punct::DotDotEq).to(true), punct(Punct::DotDot).to(false)));
-    let range = range_op
+    let prefix_range = range_op
         .clone()
         .then(or.clone().or_not())
         .map_with(|(inclusive, hi), e| {
             mk(ExprKind::Range { lo: None, hi: hi.map(boxed), inclusive }, e.span())
         })
-        .or(or
-            .clone()
-            .then(range_op.then(or.clone().or_not()).or_not())
-            .map_with(|(lo, tail), e| match tail {
-                None => lo,
-                Some((inclusive, hi)) => {
-                    mk(ExprKind::Range { lo: Some(boxed(lo)), hi: hi.map(boxed), inclusive }, e.span())
-                }
-            }))
         .boxed();
+    let infix_range = or
+        .clone()
+        .then(range_op.then(or.clone().or_not()).or_not())
+        .map_with(|(lo, tail), e| match tail {
+            None => lo,
+            Some((inclusive, hi)) => {
+                mk(ExprKind::Range { lo: Some(boxed(lo)), hi: hi.map(boxed), inclusive }, e.span())
+            }
+        })
+        .boxed();
+    let range = first_of(vec![prefix_range, infix_range]);
 
     let assign_op = choice((
         punct(Punct::Eq).to(None),
@@ -432,20 +429,21 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
     let block_expr = block.clone().map_with(|b: Block, e| mk(ExprKind::Block(b), e.span()));
 
     // `let pat = expr` or an expression, with no struct literal at the top.
-    let cond = choice((
+    let cond = first_of(vec![
         kw(Kw::Let)
             .ignore_then(h.pat.clone())
             .then_ignore(punct(Punct::Eq))
             .then(h.expr_ns.clone())
-            .map_with(|(pat, e), sp| mk(ExprKind::Let { pat, expr: boxed(e) }, sp.span())),
-        h.expr_ns.clone(),
-    ));
+            .map_with(|(pat, e), sp| mk(ExprKind::Let { pat, expr: boxed(e) }, sp.span()))
+            .boxed(),
+        h.expr_ns.clone().boxed(),
+    ]);
 
     let if_expr = recursive(|if_expr| {
         kw(Kw::If)
             .ignore_then(cond.clone())
             .then(block.clone())
-            .then(kw(Kw::Else).ignore_then(if_expr.or(block_expr.clone())).or_not())
+            .then(kw(Kw::Else).ignore_then(first_of(vec![if_expr.boxed(), block_expr.clone().boxed()])).or_not())
             .map_with(|((cond, then), else_), e| {
                 mk(ExprKind::If { cond: boxed(cond), then, else_: else_.map(boxed) }, e.span())
             })
@@ -495,7 +493,7 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
             mk(ExprKind::For { pat, iter: boxed(iter), body }, e.span())
         });
 
-    choice((if_expr, match_expr, while_expr, loop_expr, for_expr, block_expr)).boxed()
+    first_of(vec![if_expr.boxed(), match_expr.boxed(), while_expr.boxed(), loop_expr.boxed(), for_expr.boxed(), block_expr.boxed()])
 }
 
 /// A block: `{ stmt* }`.
@@ -548,19 +546,21 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         Semi,
         Last,
     }
-    let tail = choice((
+    let tail = first_of(vec![
         punct(Punct::PlusGt)
             .ignore_then(h.expr.clone())
             .then_ignore(semi.clone())
-            .map(Tail::Contribution),
+            .map(Tail::Contribution)
+            .boxed(),
         punct(Punct::LtMinus)
             .ignore_then(h.expr.clone())
             .then(kw(Kw::After).ignore_then(h.expr.clone()).or_not())
             .then_ignore(semi.clone())
-            .map(|(v, after)| Tail::Commit(v, after)),
-        semi.to(Tail::Semi),
-        punct(Punct::RBrace).rewind().to(Tail::Last),
-    ));
+            .map(|(v, after)| Tail::Commit(v, after))
+            .boxed(),
+        semi.to(Tail::Semi).boxed(),
+        punct(Punct::RBrace).rewind().to(Tail::Last).boxed(),
+    ]);
     let simple = any()
         .filter(move |t: &Token| !starts_block_like(t))
         .rewind()
@@ -604,7 +604,15 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         .ignore_then(h.item.clone())
         .map_with(move |item, e| mk(StmtKind::Item(Box::new(item)), e.span()));
 
-    choice((empty, let_stmt, item_stmt, signal_stmt, reaction_stmt, block_like_stmt, simple))
+    first_of(vec![
+        empty.boxed(),
+        let_stmt.boxed(),
+        item_stmt.boxed(),
+        signal_stmt.boxed(),
+        reaction_stmt.boxed(),
+        block_like_stmt.boxed(),
+        simple.boxed(),
+    ])
         .labelled("statement")
         .boxed()
 }

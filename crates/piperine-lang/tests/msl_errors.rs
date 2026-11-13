@@ -123,3 +123,36 @@ fn keyword_as_identifier_reports_e0903() {
     let r = parse("fn analog() {} fn flow(potential: u8, value: u8, resolve: u8) {}");
     assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
+
+#[test]
+fn depth_limit_fits_8mib_stack_in_debug() {
+    // MSLP-04 AC 7: 256 nesting levels parse on the caller's thread with an
+    // 8 MiB stack (the default main-thread size), 300 report E0910, and the
+    // parser spawns no larger-stack thread of its own.
+    let handle = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            for (open, close) in [("(", ")"), ("{ ", " }"), ("[", "]"), ("f(", ")"), ("if a { ", " }")] {
+                let src = format!("{}1{}", open.repeat(256), close.repeat(256));
+                let (expr, diags) = parse_expr(&src);
+                assert!(expr.is_some(), "{open:?} at 256");
+                assert!(diags.is_empty(), "{open:?} at 256: {diags:?}");
+                let src = format!("{}1{}", open.repeat(300), close.repeat(300));
+                let (_, diags) = parse_expr(&src);
+                assert!(
+                    !diags.is_empty() && diags.iter().all(|d| d.code == "E0910"),
+                    "{open:?} at 300: {diags:?}"
+                );
+            }
+            // The whole-file entry holds too, on the same stack.
+            let body = format!("{}1{}", "{ ".repeat(250), " }".repeat(250));
+            let r = parse(&format!("fn f() {{ {body} }}"));
+            assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+        })
+        .expect("spawn the 8 MiB test thread");
+    handle.join().expect("no stack overflow, no panic");
+
+    // No thread is spawned by the parser: its entry module names no stack size.
+    let entry = include_str!("../src/msl/parser/entry.rs");
+    assert!(!entry.contains("stack_size") && !entry.contains("thread::"), "the parser runs on the caller's thread");
+}

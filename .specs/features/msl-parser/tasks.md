@@ -213,9 +213,9 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-04
 
 **Done when**:
-- [ ] Test `depth_limit_fits_8mib_stack_in_debug` passes (spawns an 8 MiB thread, parses 256 nested parens/blocks clean and 300 with E0910, no overflow)
-- [ ] no thread with a stack > 8 MiB is created by `msl::parse`
-- [ ] Run errors + run parser pass; build gate passes
+- [x] Test `depth_limit_fits_8mib_stack_in_debug` passes (spawns an 8 MiB thread, parses 256 nested parens/blocks clean and 300 with E0910, no overflow)
+- [x] no thread with a stack > 8 MiB is created by `msl::parse`
+- [x] Run errors + run parser pass; build gate passes
 
 **Tests**: integration
 **Gate**: full

@@ -141,7 +141,17 @@ pub(crate) fn build<'a, I: In<'a>>(
         }
     });
 
-    let no_alt = choice((wild, rest, reference, tuple, slice, range_to, lit_or_range, binding_mods, path_pat))
+    let no_alt = first_of(vec![
+        wild.boxed(),
+        rest.boxed(),
+        reference.boxed(),
+        tuple.boxed(),
+        slice.boxed(),
+        range_to.boxed(),
+        lit_or_range.boxed(),
+        binding_mods.boxed(),
+        path_pat.boxed(),
+    ])
         .labelled("pattern")
         .boxed();
 

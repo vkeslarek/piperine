@@ -288,17 +288,17 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             ItemKind::Error
         });
 
-    let kind = choice((
-        fn_decl(h).map(ItemKind::Fn),
-        const_item(h).map(|c| ItemKind::Const(c)),
-        struct_decl,
-        enum_decl,
-        impl_block,
-        trait_decl,
-        use_decl,
-        mod_decl,
-        macro_rules,
-    ));
+    let kind = first_of(vec![
+        fn_decl(h).map(ItemKind::Fn).boxed(),
+        const_item(h).map(|c| ItemKind::Const(c)).boxed(),
+        struct_decl.boxed(),
+        enum_decl.boxed(),
+        impl_block.boxed(),
+        trait_decl.boxed(),
+        use_decl.boxed(),
+        mod_decl.boxed(),
+        macro_rules.boxed(),
+    ]);
     meta(h)
         .then(kw(Kw::Pub).or_not())
         .then(kind)

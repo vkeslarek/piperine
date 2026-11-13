@@ -162,3 +162,11 @@ pub(crate) fn string_lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> 
         .labelled("string literal")
 }
 
+
+/// Ordered choice over boxed alternatives. A tuple `choice` holds every
+/// alternative's temporaries in one stack frame (tens of KiB in a debug
+/// build, per nesting level); a vector of boxed parsers is tried in a loop
+/// and costs one small frame.
+pub(crate) fn first_of<'a, I: In<'a>, O: 'a>(alts: Vec<P<'a, I, O>>) -> P<'a, I, O> {
+    choice(alts).boxed()
+}

@@ -78,52 +78,42 @@ fn finish<O>(
 
 /// Parse `src` as one type. Lexical diagnostics come first-class in the result.
 pub fn parse_type(src: &str) -> Parsed<Type> {
-    big_stack(|| {
-        let (tokens, diags) = lex_limited(src);
-        let input = token_input(&tokens, src.len());
-        let h = handles();
-        finish(ty::build(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
-    })
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    finish(ty::build(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
 /// Parse `src` as one pattern.
 pub fn parse_pat(src: &str) -> Parsed<Pat> {
-    big_stack(|| {
-        let (tokens, diags) = lex_limited(src);
-        let input = token_input(&tokens, src.len());
-        let h = handles();
-        finish(h.pat.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
-    })
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    finish(h.pat.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
 /// Parse `src` as generic parameters (`<T: Repr = bool, const N: u32>`).
 pub fn parse_generics(src: &str) -> Parsed<Generics> {
-    big_stack(|| {
-        let (tokens, diags) = lex_limited(src);
-        let input = token_input(&tokens, src.len());
-        let h = handles();
-        finish(ty::generics(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
-    })
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    finish(ty::generics(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
 /// Parse `src` as one expression.
 pub fn parse_expr(src: &str) -> Parsed<Expr> {
-    big_stack(|| {
-        let (tokens, diags) = lex_limited(src);
-        let input = token_input(&tokens, src.len());
-        let h = handles();
-        finish(h.expr.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
-    })
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    finish(h.expr.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
 /// Parse `src` as one braced block `{ stmt* }`.
 pub fn parse_block(src: &str) -> Parsed<Block> {
-    big_stack(|| {
-        let (tokens, diags) = lex_limited(src);
-        let input = token_input(&tokens, src.len());
-        let h = handles();
-        finish(h.block.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
-    })
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    finish(h.block.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
 /// The deepest delimiter nesting the parser descends into (E0910).
@@ -181,32 +171,6 @@ fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     (out, diags)
 }
 
-/// Stack for the parser thread. Parsing recurses through one function per
-/// grammar layer, and a debug build spends tens of kilobytes per nesting
-/// level, so a source at the depth limit needs far more than the default.
-/// The stack is address space, committed only as it is touched.
-const PARSER_STACK: usize = 512 << 20;
-
-/// Run `f` on a thread with [`PARSER_STACK`]; inline when that thread cannot
-/// be created.
-fn big_stack<T: Send>(f: impl FnOnce() -> T + Send) -> T {
-    let slot = std::sync::Mutex::new(Some(f));
-    let take = || slot.lock().ok().and_then(|mut g| g.take());
-    std::thread::scope(|scope| {
-        let spawned = std::thread::Builder::new()
-            .stack_size(PARSER_STACK)
-            .spawn_scoped(scope, || take().map(|f| f()));
-        match spawned {
-            Ok(handle) => match handle.join() {
-                Ok(Some(out)) => out,
-                Ok(None) => unreachable!("the parse closure runs once"),
-                Err(panic) => std::panic::resume_unwind(panic),
-            },
-            Err(_) => take().map(|f| f()).expect("the parse closure runs once"),
-        }
-    })
-}
-
 /// The result of [`parse`]: always a file (partial on error) and every
 /// diagnostic, in source order.
 #[derive(Debug, Clone, PartialEq)]
@@ -217,28 +181,26 @@ pub struct ParseResult {
 
 /// Parse a whole source file.
 pub fn parse(src: &str) -> ParseResult {
-    big_stack(|| {
-        let (tokens, diags) = lex_limited(src);
-        let input = token_input(&tokens, src.len());
-        let h = handles();
-        let inner_docs = select! { Token::DocInner(text) => text }
-            .map_with(|text, e| Doc { text, span: Loc(e.span()) })
-            .repeated()
-            .collect::<Vec<_>>();
-        let file = inner_docs
-            .then(h.item.clone().repeated().collect::<Vec<_>>())
-            .then_ignore(end())
-            .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
-        let (file, mut diagnostics) = finish(file.parse(input).into_output_errors(), diags, &tokens);
-        let file = file.unwrap_or(File {
-            inner_docs: Vec::new(),
-            items: Vec::new(),
-            span: Loc(Span::new(0, src.len())),
-        });
-        diagnostics.extend(check::file(&file));
-        diagnostics.sort_by_key(|d| d.span().start);
-        ParseResult { file, diagnostics }
-    })
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    let inner_docs = select! { Token::DocInner(text) => text }
+        .map_with(|text, e| Doc { text, span: Loc(e.span()) })
+        .repeated()
+        .collect::<Vec<_>>();
+    let file = inner_docs
+        .then(h.item.clone().repeated().collect::<Vec<_>>())
+        .then_ignore(end())
+        .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
+    let (file, mut diagnostics) = finish(file.parse(input).into_output_errors(), diags, &tokens);
+    let file = file.unwrap_or(File {
+        inner_docs: Vec::new(),
+        items: Vec::new(),
+        span: Loc(Span::new(0, src.len())),
+    });
+    diagnostics.extend(check::file(&file));
+    diagnostics.sort_by_key(|d| d.span().start);
+    ParseResult { file, diagnostics }
 }
 
 /// Labels of the positions that take a name or a value.

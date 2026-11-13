@@ -156,7 +156,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
     let infer = punct(Punct::Underscore).map_with(move |_, e| mk(TypeKind::Infer, e.span()));
     let path_ty = path(h, false).map_with(move |p, e| mk(TypeKind::Path(p), e.span()));
 
-    choice((flip, reference, array_or_slice, tuple_or_paren, infer, path_ty))
+    first_of(vec![flip.boxed(), reference.boxed(), array_or_slice.boxed(), tuple_or_paren.boxed(), infer.boxed(), path_ty.boxed()])
         .labelled("type")
         .boxed()
 }
