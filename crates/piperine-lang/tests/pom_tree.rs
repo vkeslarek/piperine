@@ -81,3 +81,65 @@ fn const_type_and_value() {
     assert_eq!(value.enclosing(), n.decl());
     assert!(design.find("f").unwrap().as_const().is_none());
 }
+
+#[test]
+fn fn_abi_params_ret_body() {
+    use piperine_lang::pom::{Reflect, TypeKind};
+    let text = "\
+#[derivative(f_dx)] extern \"C\" fn f(x: f64) -> f64;
+const fn g<T: Repr, const N: u32 = 4>(self, a: T, b: f64) -> T where N >= 1 { a }
+";
+    let design = build(text);
+    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+
+    let f = design.find("f").and_then(|d| d.as_function()).expect("function f");
+    assert_eq!(f.abi(), Some("C"));
+    assert!(!f.is_const());
+    let params = f.params();
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0].name(), Some("x"));
+    assert_eq!(params[0].ty().map(|t| t.text()), Some("f64"));
+    assert!(!params[0].is_self());
+    assert_eq!(f.ret().map(|t| t.text()), Some("f64"));
+    assert!(f.body().is_none());
+    assert!(f.where_clause().is_none());
+    assert!(f.generics().is_empty());
+
+    let g = design.find("g").and_then(|d| d.as_function()).expect("function g");
+    assert!(g.is_const());
+    assert_eq!(g.abi(), None);
+    let params = g.params();
+    assert_eq!(params.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("self"), Some("a"), Some("b")]);
+    assert!(params[0].is_self() && params[0].ty().is_none());
+    assert!(matches!(params[1].ty().map(|t| t.kind()), Some(TypeKind::Path(_))));
+    assert_eq!(g.where_clause().map(|e| e.text()), Some("N >= 1"));
+    let body = g.body().expect("a body");
+    assert_eq!(body.stmts.len(), 1);
+
+    let generics = g.generics();
+    assert_eq!(generics.len(), 2);
+    assert!(!generics[0].is_const());
+    assert_eq!(generics[0].bounds().iter().map(|b| b.text()).collect::<Vec<_>>(), ["Repr"]);
+    assert!(generics[1].is_const());
+    assert_eq!(generics[1].const_type().map(|t| t.text()), Some("u32"));
+    assert_eq!(generics[1].default_value().map(|e| e.text()), Some("4"));
+    // Children of the function: generics, then params, in source order.
+    let labels: Vec<_> = g.decl().children().iter().map(|c| c.kind().label()).collect();
+    assert_eq!(labels, ["GenericParam", "GenericParam", "FnParam", "FnParam", "FnParam"]);
+}
+
+#[test]
+fn item_in_fn_body_is_declared_in_the_fn() {
+    let design = build("fn f() { const K: u32 = 1; { fn inner() {} } }\nfn g() {}");
+    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let f = design.find("f").expect("function f");
+    let k = design.find("f::K").expect("K is found through f");
+    assert_eq!(k.declared_in(), Some(f));
+    let inner = design.find("f::inner").expect("an item in a nested block belongs to the function");
+    assert_eq!(inner.declared_in(), Some(f));
+    // Not leaked to the namespace, nor to another function.
+    assert!(design.find("K").is_none());
+    assert!(design.find("g::K").is_none());
+    assert_eq!(design.root().children().len(), 2);
+    assert!(design.check().is_empty());
+}

@@ -223,11 +223,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `item_in_fn_body_is_declared_in_the_fn` passes in `pom_tree.rs` (C12: POM-02 AC 6)
-- [ ] Test `fn_abi_params_ret_body` passes in `pom_tree.rs` (C23: POM-04 AC 3)
-- [ ] A generics helper shared by every later item kind
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `item_in_fn_body_is_declared_in_the_fn` passes in `pom_tree.rs` (C12: POM-02 AC 6)
+- [x] Test `fn_abi_params_ret_body` passes in `pom_tree.rs` (C23: POM-04 AC 3)
+- [x] A generics helper shared by every later item kind
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

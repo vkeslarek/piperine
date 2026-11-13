@@ -10,7 +10,7 @@ use super::ids::DeclId;
 use crate::msl::Span;
 
 pub use body::{Expr, Path, Pat, SourceFile, Stmt, Type};
-pub use items::Const;
+pub use items::{Const, FnParam, Function, GenericParam};
 
 /// The generic declaration handle: any kind, read through [`Decl::kind`].
 #[derive(Clone, Copy)]

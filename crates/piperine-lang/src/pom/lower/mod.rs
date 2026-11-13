@@ -6,9 +6,10 @@
 //! value items.
 
 mod body;
+mod items;
 
 use super::decl::{
-    BehaviorData, ConstData, DeclData, DeclKind, EnumData, FnData, ImplData, ModuleData,
+    BehaviorData, ConstData, DeclData, DeclKind, EnumData, ImplData, ModuleData,
     NamespaceData, NamespaceOrigin, NatureData, StructData, TraitData, UseData,
 };
 use super::design::Design;
@@ -75,7 +76,7 @@ impl Lowerer<'_> {
 
     fn item_kind(&mut self, kind: &ast::ItemKind) -> DeclKind {
         match kind {
-            ast::ItemKind::Fn(_) => DeclKind::Fn(FnData::default()),
+            ast::ItemKind::Fn(f) => self.fn_decl(f),
             ast::ItemKind::Struct(_) => DeclKind::Struct(StructData::default()),
             ast::ItemKind::Enum(_) => DeclKind::Enum(EnumData::default()),
             ast::ItemKind::Impl(_) => DeclKind::Impl(ImplData::default()),

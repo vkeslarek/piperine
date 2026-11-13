@@ -4,8 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ids::{DeclId, ExprId, FileId, PatId, TypeId};
-use super::body::Block;
+use super::body::{Block, Lit};
+use super::ids::{DeclId, ExprId, FileId, PatId, PathId, TypeId};
 use crate::msl::Span;
 
 /// An identifier as written, with its range.
@@ -118,11 +118,27 @@ pub struct ConstData {
     pub value: Option<ExprId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct FnData {}
+/// `fn name<..>(params) -> ret where cond { body }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FnData {
+    pub is_const: bool,
+    /// `extern "C" fn`: the ABI string.
+    pub abi: Option<Lit>,
+    pub ret: Option<TypeId>,
+    pub where_: Option<ExprId>,
+    /// None for a declaration ending in `;`.
+    pub body: Option<Block>,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct FnParamData {}
+/// One parameter of a function.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FnParamData {
+    /// `self`
+    SelfValue,
+    Named { ty: TypeId },
+    /// A malformed parameter already reported by a diagnostic.
+    Error,
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct StructData {}
@@ -142,8 +158,12 @@ pub struct TraitData {}
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ImplData {}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct GenericParamData {}
+/// `<T: Bound = Default>` or `<const N: u32 = 4>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GenericParamData {
+    Type { bounds: Vec<PathId>, default: Option<TypeId> },
+    Const { ty: TypeId, default: Option<ExprId> },
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct NatureData {}
