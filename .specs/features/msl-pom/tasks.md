@@ -1336,7 +1336,7 @@ Proof: run design | test nested_mod_files_follow_rust_layout ... ok
 Proof: run design | test mod_cycle_is_e0161_and_not_reloaded ... ok
 
 **C92** - `Design::load(path)` on a temp directory gives the same `dump()` as the in-memory build of the same files; an unreadable root gives an empty root and one `E0161` naming the path (POM-01, AC 10)
-Proof: run design | test load_from_disk_equals_in_memory_build ... ok
+Proof: `cargo test -p piperine-lang --test pom_design 2>&1 | tee /dev/stderr | grep -cE 'test (load_from_disk_equals_in_memory_build|unreadable_root_is_an_empty_root_with_e0161) \.\.\. ok' | grep -qx 2`
 
 **C93** - `Design` and every public storage type of `pom` implement `Serialize` and `Deserialize` (POM-15, AC 1)
 Proof: run reflect | test design_and_storage_types_implement_serde ... ok
@@ -1348,6 +1348,30 @@ Proof: run reflect | test gallery_design_round_trips_through_json ... ok
 Proof: run reflect | test json_is_deterministic ... ok
 
 ---
+
+**C96** - a `mod b;` file rebuilds to its own parse (`to_ast() == parse`) per file even when the declaring file's `///` and the loaded file's `//!` carry the same text; `Doc` records `inner` and `file` (POM-01, AC 5)
+Proof: run design | test docs_keep_kind_and_file_across_mod_files ... ok
+
+**C97** - a `use` in a block is visible in the whole block and not outside it; an unresolvable one is one `E0161` (POM-08, AC 7 and AC 9)
+Proof: run resolve | test use_in_a_block_resolves_with_block_scope ... ok
+
+**C98** - from a path, expression or member a reader reaches the declaration handle (`Design::decl`, `Path::target`, `Expr::resolution`/`target`/`as_path`) (POM-11)
+Proof: run reflect | test references_navigate_to_declarations ... ok
+
+**C99** - a generic is a carrier only when its bound resolves to the prelude's `Nature`; an unresolved bound is `Unknown` (POM-09, AC 1)
+Proof: run classify | test generic_carrier_follows_the_resolved_bound ... ok
+
+**C100** - `qualified_name()` tells impl items and behavior-block items apart, and `find` accepts every name it prints (POM-11)
+Proof: run reflect | test qualified_names_are_unambiguous_and_findable ... ok
+
+**C101** - a named connection, param binding, field or argument the callee lacks is one `E0161` at the name (POM-08, AC 9)
+Proof: run classify | test named_binding_without_a_target_is_e0161 ... ok
+
+**C102** - a missing member of an instance of a known module is `E0343` at the member name (§8.4.8)
+Proof: run classify | test missing_instance_member_is_e0343 ... ok
+
+**C103** - a nature's `access` name resolves to its quantity (POM-08)
+Proof: run resolve | test access_name_resolves_to_its_quantity ... ok
 
 ## Handoff
 
