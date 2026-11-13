@@ -593,7 +593,7 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
     let starts_item = |t: &Token| {
         matches!(
             t,
-            Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Pub | Kw::Extern)
+            Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Module | Kw::Pub | Kw::Extern)
                 | Token::Punct(Punct::Pound)
                 | Token::DocOuter(_)
         )

@@ -572,6 +572,7 @@ fn module_item(src: &str) -> ModuleItem {
 fn every_b3_production_parses_with_span() {
     natures_signals_and_sigtypes();
     modules_ports_items_and_generation();
+    behavior_blocks_and_builtin_forms();
 }
 
 fn natures_signals_and_sigtypes() {
@@ -764,4 +765,134 @@ fn modules_ports_items_and_generation() {
     let ModuleItemKind::Gen(g) = &module_item("for i in 0..2 { for j in 0..2 { a[i][j] = 0; } }").kind else { panic!() };
     let GenKind::For { body, .. } = &g.kind else { panic!() };
     assert!(matches!(body[0].kind, ModuleItemKind::Gen(_)));
+}
+
+fn behavior_blocks_and_builtin_forms() {
+    // ---- behavior_block: analog ----
+    let src = "analog for Resistor { i(p, n) +> v(p, n) / r; }";
+    let item = only_item(src);
+    assert_eq!(text(src, &item.span), src);
+    let ItemKind::Behavior(b) = &item.kind else { panic!("{:?}", item.kind) };
+    assert_eq!(b.kind, BehaviorKind::Analog);
+    assert!(b.names.is_empty());
+    assert_eq!(path_names(&b.target), ["Resistor"]);
+    let BehaviorBody::Analog(stmts) = &b.body else { panic!() };
+    assert_eq!(stmts.len(), 1);
+    assert!(matches!(stmts[0].kind, StmtKind::Contribution { .. }));
+    assert_eq!(text(src, &stmts[0].span), "i(p, n) +> v(p, n) / r;");
+
+    // `names`: the generic names of the module, and a target with arguments.
+    let src = "analog<N, M> for Urc<N, M> { let k = N * M; i(a, b) +> k; }";
+    let ItemKind::Behavior(b) = &only_item(src).kind else { panic!() };
+    assert_eq!(b.names.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["N", "M"]);
+    assert!(b.target.segments[0].args.is_some());
+    let BehaviorBody::Analog(stmts) = &b.body else { panic!() };
+    assert_eq!(stmts.len(), 2);
+    // `contribution` at any depth of an analog block (B.3.4 rule 1).
+    let ItemKind::Behavior(b) =
+        &only_item("analog for M { if a { for k in 0..3 { match x { _ => { i(p, n) +> 1.0; } } } } }").kind
+    else {
+        panic!()
+    };
+    assert!(matches!(b.body, BehaviorBody::Analog(_)));
+
+    // ---- behavior_block: digital, reaction, commit ----
+    let src = "digital for Reg { on clk.rise() { q <- d after 1n; } }";
+    let item = only_item(src);
+    assert_eq!(text(src, &item.span), src);
+    let ItemKind::Behavior(b) = &item.kind else { panic!() };
+    assert_eq!(b.kind, BehaviorKind::Digital);
+    let BehaviorBody::Digital(items) = &b.body else { panic!() };
+    let DigitalItemKind::Reaction(r) = &items[0].kind else { panic!() };
+    assert_eq!(text(src, &r.event.span), "clk.rise()");
+    assert_eq!(text(src, &items[0].span), "on clk.rise() { q <- d after 1n; }");
+    assert!(matches!(&r.body.stmts[0].kind, StmtKind::Commit { after: Some(_), .. }));
+    let ItemKind::Behavior(b) = &only_item("digital<W> for Pipe<W> { on a { x <- 1; } on b { y[2] <- 0; } }").kind else {
+        panic!()
+    };
+    assert_eq!(b.names.len(), 1);
+    let BehaviorBody::Digital(items) = &b.body else { panic!() };
+    assert_eq!(items.len(), 2);
+
+    // gen<digital_item>: for / if over reactions.
+    let src = "digital for P { for i in 0..N { on e(i) { q[i] <- d[i]; } } if C { on a { x <- 1; } } else { on b { x <- 0; } } }";
+    let ItemKind::Behavior(b) = &only_item(src).kind else { panic!() };
+    let BehaviorBody::Digital(items) = &b.body else { panic!() };
+    assert!(matches!(&items[0].kind, DigitalItemKind::Gen(g) if matches!(g.kind, GenKind::For { .. })));
+    let DigitalItemKind::Gen(g) = &items[1].kind else { panic!() };
+    let GenKind::If { then, else_, .. } = &g.kind else { panic!() };
+    assert!(matches!(then[0].kind, DigitalItemKind::Reaction(_)));
+    assert!(matches!(&**else_.as_ref().unwrap(), GenElse::Block(_)));
+
+    // A commit at any depth of a reaction (B.3.4 rule 2).
+    let ItemKind::Behavior(_) =
+        &only_item("digital for M { on e { if a { match x { _ => { q <- 1; } } } } }").kind
+    else {
+        panic!()
+    };
+
+    // ---- attr_derivative, attr_derive, attr_link; call and method_call with named arguments ----
+    let item = only_item("#[derivative(df_dx, df_dy)] extern \"C\" fn f(x: f64, y: f64) -> f64;");
+    let AttrInput::List(args) = &item.meta.attrs[0].input else { panic!() };
+    assert_eq!(args.len(), 2);
+    assert!(matches!(&item.kind, ItemKind::Fn(f) if f.abi.is_some() && f.body.is_none()));
+    let item = only_item("#[derive(Repr, Clone)] struct S;");
+    assert!(matches!(&item.meta.attrs[0].input, AttrInput::List(a) if a.len() == 2));
+    let item = only_item("#[link(\"x.osdi\", model = \"bsim4\")] extern \"osdi\" module B() { w: f64; }");
+    let AttrInput::List(args) = &item.meta.attrs[0].input else { panic!() };
+    assert!(matches!(&args[0], AttrArg::Lit(_)) && matches!(&args[1], AttrArg::NameValue(n, _) if n.name == "model"));
+    let ExprKind::Call { args, .. } = &expr("f(1, 2, w: 3, l: 4)").kind else { panic!() };
+    assert_eq!(args.iter().filter(|a| a.name.is_some()).count(), 2);
+    let ExprKind::MethodCall { method, args, .. } = &expr("x.scale(2, by: 3)").kind else { panic!() };
+    assert_eq!((method.name.as_str(), args.len(), args[1].name.is_some()), ("scale", 2, true));
+
+    // ---- emit, include_str (B.3.2 built-in `!` forms) ----
+    let src = "emit!(\"sim\", finish = true, code = 3)";
+    let e = expr(src);
+    let ExprKind::Emit { stream, fields } = &e.kind else { panic!("{:?}", e.kind) };
+    assert_eq!(stream.kind, LitKind::Str("sim".into()));
+    assert_eq!(fields.iter().map(|f| f.name.name.as_str()).collect::<Vec<_>>(), ["finish", "code"]);
+    assert_eq!(text(src, &e.span), src);
+    assert!(matches!(expr("emit!(\"sim\")").kind, ExprKind::Emit { .. }));
+    assert!(matches!(expr("emit!(\"sim\", a = 1,)").kind, ExprKind::Emit { .. }));
+    // An `emit` statement inside a behavior block.
+    let ItemKind::Behavior(b) = &only_item("analog for M { emit!(\"x\", a = 1); }").kind else { panic!() };
+    let BehaviorBody::Analog(stmts) = &b.body else { panic!() };
+    assert!(matches!(&stmts[0].kind, StmtKind::Expr { expr: Expr { kind: ExprKind::Emit { .. }, .. }, semi: true }));
+    let src = "const A: &'static str = include_str!(\"a.txt\");";
+    let ItemKind::Const(c) = &only_item(src).kind else { panic!() };
+    let value = c.value.as_ref().unwrap();
+    assert!(matches!(&value.kind, ExprKind::IncludeStr(l) if l.kind == LitKind::Str("a.txt".into())));
+    assert_eq!(text(src, &value.span), "include_str!(\"a.txt\")");
+}
+
+#[test]
+fn contextual_keywords_are_identifiers_outside_nature() {
+    // MSLP-06: `potential`, `flow`, `value`, `resolve`, `analog`, `digital`
+    // are identifiers everywhere except at the position their production names.
+    let f = file(
+        "fn analog(digital: f64) -> f64 { digital }
+         fn flow(potential: f64, value: f64, resolve: f64) -> f64 { potential + value * resolve }
+         struct S { value: f64, flow: f64, potential: f64 }
+         const resolve: f64 = 1.0;
+         module digital(analog: Electrical, flow: Electrical) { potential: f64; value = analog; }
+         analog for digital { let potential = 1.0; let flow = potential; flow +> analog; }
+         digital for analog { on potential { value <- resolve; } }",
+    );
+    assert_eq!(f.items.len(), 7);
+    assert!(matches!(f.items[4].kind, ItemKind::Module(_)));
+    assert!(matches!(f.items[5].kind, ItemKind::Behavior(_)));
+    // Calls, fields, paths and patterns.
+    for src in ["analog(1.0)", "digital.flow", "value::resolve", "potential + flow", "x.analog().digital"] {
+        expr(src);
+    }
+    pat("analog");
+    pat("value");
+    // Inside a nature the words keep their meaning; elsewhere in the same
+    // file they stay names.
+    let f = file("nature N { potential: P, flow: F } fn value() { let potential = 1; potential }");
+    assert_eq!(f.items.len(), 2);
+    // `analog` not followed by `for` or `<` is not a behavior block.
+    assert!(!parse("analog { }").diagnostics.is_empty());
+    assert!(!parse("analog Foo { }").diagnostics.is_empty());
 }

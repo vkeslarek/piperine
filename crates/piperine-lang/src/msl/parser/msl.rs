@@ -173,7 +173,24 @@ pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleI
         .then_ignore(punct(Punct::Semi))
         .map(|((place, value), after)| ModuleItemKind::Def { place, value, after })
         .boxed();
-    let declared = first_of(vec![signal_decl(h), param, let_item]);
+    // E0303: a module declaration is not a module item.
+    let nested = any()
+        .filter(|t: &Token| matches!(t, Token::Kw(Kw::Module | Kw::Extern)))
+        .rewind()
+        .ignore_then(h.item.clone())
+        .validate(|item, _, emitter| {
+            emitter.emit(Rich::custom(
+                item.span.0,
+                Custom {
+                    code: "E0303",
+                    message: "a module declaration inside a module body".into(),
+                    help: Some("modules are declared at file scope; instantiate the inner one instead".into()),
+                },
+            ));
+            ModuleItemKind::Error
+        })
+        .boxed();
+    let declared = first_of(vec![signal_decl(h), param, let_item, nested]);
     let leaf = item::meta(h)
         .then(kw(Kw::Pub).or_not())
         .then(declared)
@@ -254,4 +271,89 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
             kind
         })
         .boxed()
+}
+
+// ---- behavior blocks --------------------------------------------------------------------------
+
+/// `on event { stmts and commits }`; the event is an expression that does
+/// not take a struct literal, so the `{` opens the body.
+fn reaction<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Reaction> {
+    kw(Kw::On)
+        .ignore_then(h.expr_ns.clone())
+        .then(h.block.clone())
+        .map(|(event, body)| Reaction { event, body })
+        .boxed()
+}
+
+/// One item of a `digital` block: a reaction or a generation over reactions.
+/// A bare statement is parsed so that `E0434` can name it.
+fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
+    let reaction = reaction(h)
+        .map_with(|r, e| DigitalItem { kind: DigitalItemKind::Reaction(r), span: Loc(e.span()) })
+        .boxed();
+    let wrap = |g: Gen<DigitalItem>| DigitalItem { span: g.span, kind: DigitalItemKind::Gen(g) };
+    let stray = expr::stmt(h)
+        .validate(|_, e, emitter| {
+            emitter.emit(Rich::custom(
+                e.span(),
+                Custom {
+                    code: "E0434",
+                    message: "a statement outside a reaction in a `digital` block".into(),
+                    help: Some("a `digital` block holds reactions: `on event { .. }`".into()),
+                },
+            ));
+            DigitalItem { kind: DigitalItemKind::Error, span: Loc(e.span()) }
+        })
+        .boxed();
+    first_of(vec![gen_of(h, reaction, wrap), stray]).labelled("reaction").boxed()
+}
+
+/// `analog [<names>] for Path { stmts }` or `digital [<names>] for Path { reactions }`.
+pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKind> {
+    let names = ident()
+        .separated_by(punct(Punct::Comma))
+        .at_least(1)
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(punct(Punct::Lt), punct(Punct::Gt));
+    // `analog` and `digital` are keywords only in front of `for` or `<`.
+    let head = |name: &'static str| {
+        word(name)
+            .ignore_then(names.clone().or_not())
+            .then_ignore(kw(Kw::For))
+            .then(ty::path(h, false))
+    };
+    let analog = head("analog")
+        .then(
+            expr::stmt(h)
+                .repeated()
+                .collect::<Vec<_>>()
+                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
+        )
+        .map(|((names, target), stmts)| {
+            ItemKind::Behavior(BehaviorBlock {
+                kind: BehaviorKind::Analog,
+                names: names.unwrap_or_default(),
+                target,
+                body: BehaviorBody::Analog(stmts),
+            })
+        })
+        .boxed();
+    let digital = head("digital")
+        .then(
+            digital_item(h)
+                .repeated()
+                .collect::<Vec<_>>()
+                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
+        )
+        .map(|((names, target), items)| {
+            ItemKind::Behavior(BehaviorBlock {
+                kind: BehaviorKind::Digital,
+                names: names.unwrap_or_default(),
+                target,
+                body: BehaviorBody::Digital(items),
+            })
+        })
+        .boxed();
+    first_of(vec![analog, digital])
 }

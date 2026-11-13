@@ -611,6 +611,8 @@ pub enum ModuleItemKind {
     /// `place = value after delay;`
     Def { place: Expr, value: Expr, after: Option<Expr> },
     Gen(Gen<ModuleItem>),
+    /// A malformed item already reported by a diagnostic.
+    Error,
 }
 
 /// `gen<X>`: generation `for`/`if` over params, repeating a production `X`.
@@ -664,6 +666,8 @@ pub struct DigitalItem {
 pub enum DigitalItemKind {
     Reaction(Reaction),
     Gen(Gen<DigitalItem>),
+    /// A malformed item already reported by a diagnostic (`E0434`).
+    Error,
 }
 
 /// `on event { statements and commits }`

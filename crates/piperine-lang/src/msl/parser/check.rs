@@ -1,8 +1,39 @@
 //! Checks that need the whole tree: forms the grammar parses everywhere but
 //! a context forbids. The parser accepts `signal`, `on`, `+>` and `<-` as
 //! statements in any block; this pass names them where they do not belong.
+//!
+//! A statement of the wrong kind in a function body is `E0121` (Part I §3
+//! rule 6); in any other block that is not its own (`+>` outside `analog`,
+//! `<-` and `on` outside a reaction, `bound_step` outside `analog`, any of
+//! them in a closure that is not inside a function) it is `E0404` (Part IV
+//! §10 rule 8). A `module` inside a block is `E0303`.
 
 use super::*;
+
+/// The kind of block a statement sits in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ctx {
+    /// The body of a `fn` (closures inside it included).
+    Fn,
+    Analog,
+    Reaction,
+    /// A closure outside a function.
+    Closure,
+    /// Anywhere else: a module body, a `const` initializer.
+    Other,
+}
+
+impl Ctx {
+    fn name(self) -> &'static str {
+        match self {
+            Ctx::Fn => "a function body",
+            Ctx::Analog => "an `analog` block",
+            Ctx::Reaction => "a reaction",
+            Ctx::Closure => "a closure",
+            Ctx::Other => "this block",
+        }
+    }
+}
 
 /// Context diagnostics of a parsed file, in source order.
 pub(crate) fn file(file: &File) -> Vec<Diagnostic> {
@@ -24,7 +55,119 @@ fn item_kind(kind: &ItemKind, out: &mut Vec<Diagnostic>) {
         ItemKind::Impl(i) => impl_items(&i.items, out),
         ItemKind::Trait(t) => impl_items(&t.items, out),
         ItemKind::Mod(m) => items(m.items.as_deref().unwrap_or(&[]), out),
+        ItemKind::Module(m) => module(m, out),
+        ItemKind::Behavior(b) => match &b.body {
+            BehaviorBody::Analog(stmts) => stmts.iter().for_each(|s| stmt(s, Ctx::Analog, out)),
+            BehaviorBody::Digital(list) => digital(list, out),
+        },
+        ItemKind::Const(c) => {
+            if let Some(v) = &c.value {
+                expr(v, Ctx::Other, out);
+            }
+        }
         _ => {}
+    }
+}
+
+fn module(m: &ModuleDecl, out: &mut Vec<Diagnostic>) {
+    let mut e = |x: &Expr| expr(x, Ctx::Other, out);
+    m.where_.iter().for_each(&mut e);
+    m.ports.iter().filter_map(|p| p.default.as_ref()).for_each(&mut e);
+    m.result.iter().for_each(&mut e);
+    module_items(&m.body, out);
+}
+
+fn module_items(list: &[ModuleItem], out: &mut Vec<Diagnostic>) {
+    for item in list {
+        let mut e = |x: &Expr| expr(x, Ctx::Other, out);
+        match &item.kind {
+            ModuleItemKind::Param { default, where_, .. } => {
+                default.iter().chain(where_.iter()).for_each(&mut e);
+            }
+            ModuleItemKind::Signal { init, .. } => init.iter().for_each(&mut e),
+            ModuleItemKind::Let { pat, value } => {
+                e(value);
+                if let Some(span) = mutable_binding(pat) {
+                    out.push(
+                        Diagnostic::new(
+                            "E0331",
+                            "`let mut` in a module body",
+                            span,
+                            "a module body is declarative: its bindings are immutable",
+                        )
+                        .with_help("drop `mut`; compute the value in one expression"),
+                    );
+                }
+            }
+            ModuleItemKind::Def { place, value, after } => {
+                e(place);
+                e(value);
+                after.iter().for_each(&mut e);
+            }
+            ModuleItemKind::Gen(g) => {
+                let (exprs, lists) = generation(g);
+                exprs.into_iter().for_each(|x| expr(x, Ctx::Other, out));
+                lists.into_iter().for_each(|l| module_items(l, out));
+            }
+            ModuleItemKind::Error => {}
+        }
+    }
+}
+
+/// The span of the first `mut` binding inside a pattern.
+fn mutable_binding(p: &Pat) -> Option<Span> {
+    match &p.kind {
+        PatKind::Ident { mutable: true, .. } => Some(p.span.0),
+        PatKind::Ident { sub: Some(s), .. } => mutable_binding(s),
+        PatKind::Tuple(v) | PatKind::Slice(v) | PatKind::Or(v) => v.iter().find_map(mutable_binding),
+        PatKind::TupleStruct { pats, .. } => pats.iter().find_map(mutable_binding),
+        PatKind::Struct { fields, .. } => fields.iter().filter_map(|f| f.pat.as_ref()).find_map(mutable_binding),
+        PatKind::Ref(inner) => mutable_binding(inner),
+        _ => None,
+    }
+}
+
+/// The expressions (conditions, iterator) and the item lists of a generation,
+/// its `else` chain included.
+fn generation<X>(g: &Gen<X>) -> (Vec<&Expr>, Vec<&[X]>) {
+    let mut exprs = Vec::new();
+    let mut lists: Vec<&[X]> = Vec::new();
+    let mut next = Some(g);
+    while let Some(g) = next {
+        next = None;
+        match &g.kind {
+            GenKind::For { iter, body, .. } => {
+                exprs.push(iter);
+                lists.push(body);
+            }
+            GenKind::If { cond, then, else_ } => {
+                exprs.push(cond);
+                lists.push(then);
+                match else_.as_deref() {
+                    Some(GenElse::Block(b)) => lists.push(b),
+                    Some(GenElse::If(inner)) => next = Some(inner),
+                    None => {}
+                }
+            }
+        }
+    }
+    (exprs, lists)
+}
+
+fn digital(list: &[DigitalItem], out: &mut Vec<Diagnostic>) {
+    for item in list {
+        match &item.kind {
+            DigitalItemKind::Reaction(r) => {
+                expr(&r.event, Ctx::Reaction, out);
+                block(&r.body, Ctx::Reaction, out);
+            }
+            DigitalItemKind::Gen(g) => {
+                let (exprs, lists) = generation(g);
+                exprs.into_iter().for_each(|x| expr(x, Ctx::Reaction, out));
+                lists.into_iter().for_each(|l| digital(l, out));
+            }
+            DigitalItemKind::Error => {}
+        }
     }
 }
 
@@ -38,87 +181,111 @@ fn impl_items(list: &[ImplItem], out: &mut Vec<Diagnostic>) {
 
 fn fn_decl(f: &FnDecl, out: &mut Vec<Diagnostic>) {
     if let Some(body) = &f.body {
-        block(body, true, out);
+        block(body, Ctx::Fn, out);
     }
 }
 
-/// E0121: a function body holds no `signal`, no `<-`, no `+>`, no
-/// `bound_step` and no `on` (Part I §3 rule 6).
-fn forbidden(what: &str, span: Span, help: &str) -> Diagnostic {
-    Diagnostic::new(
-        "E0121",
-        format!("{what} in a function body"),
-        span,
-        "a function has no time and no carriers",
-    )
-    .with_help(help)
+/// The diagnostic of a statement of the wrong kind: `E0121` in a function
+/// body, `E0404` in any other block.
+fn misplaced(ctx: Ctx, what: &str, span: Span, fn_help: &str, help: &str) -> Diagnostic {
+    if ctx == Ctx::Fn {
+        Diagnostic::new(
+            "E0121",
+            format!("{what} in a function body"),
+            span,
+            "a function has no time and no carriers",
+        )
+        .with_help(fn_help)
+    } else {
+        Diagnostic::new("E0404", format!("{what} in {}", ctx.name()), span, "a statement of the wrong kind here")
+            .with_help(help)
+    }
 }
 
-fn block(b: &Block, in_fn: bool, out: &mut Vec<Diagnostic>) {
+fn block(b: &Block, ctx: Ctx, out: &mut Vec<Diagnostic>) {
     for s in &b.stmts {
-        stmt(s, in_fn, out);
+        stmt(s, ctx, out);
     }
 }
 
-fn stmt(s: &Stmt, in_fn: bool, out: &mut Vec<Diagnostic>) {
+fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
     let span = s.span.0;
     match &s.kind {
         StmtKind::Let { init, .. } => {
             if let Some(e) = init {
-                expr(e, in_fn, out);
+                expr(e, ctx, out);
             }
         }
-        StmtKind::Expr { expr: e, .. } => expr(e, in_fn, out),
+        StmtKind::Expr { expr: e, .. } => expr(e, ctx, out),
         StmtKind::Item(item) => {
+            if matches!(item.kind, ItemKind::Module(_)) {
+                out.push(
+                    Diagnostic::new(
+                        "E0303",
+                        "a module declaration inside a block",
+                        item.span.0,
+                        "modules are declared at file scope",
+                    )
+                    .with_help("move the `module` out of the block, or into a `mod`"),
+                );
+            }
             // A nested function is a function body of its own.
             item_kind(&item.kind, out);
         }
         StmtKind::Contribution { lhs, rhs } => {
-            if in_fn {
-                out.push(forbidden(
+            if ctx != Ctx::Analog {
+                out.push(misplaced(
+                    ctx,
                     "a contribution (`+>`)",
                     span,
                     "put the contribution in an `analog` block of a `module`",
+                    "a contribution belongs in an `analog` block; a reaction commits with `<-`",
                 ));
             }
-            expr(lhs, in_fn, out);
-            expr(rhs, in_fn, out);
+            expr(lhs, ctx, out);
+            expr(rhs, ctx, out);
         }
         StmtKind::Commit { place, value, after } => {
-            if in_fn {
-                out.push(forbidden(
+            if ctx != Ctx::Reaction {
+                out.push(misplaced(
+                    ctx,
                     "a commit (`<-`)",
                     span,
                     "put the commit in a reaction (`on event { .. }`) of a `digital` block",
+                    "a commit belongs in a reaction (`on event { .. }`) of a `digital` block; an `analog` block contributes with `+>`",
                 ));
             }
-            expr(place, in_fn, out);
-            expr(value, in_fn, out);
+            expr(place, ctx, out);
+            expr(value, ctx, out);
             if let Some(a) = after {
-                expr(a, in_fn, out);
+                expr(a, ctx, out);
             }
         }
         StmtKind::Signal { init, .. } => {
-            if in_fn {
-                out.push(forbidden("`signal`", span, "declare the carrier in the body of a `module`"));
+            if ctx == Ctx::Fn {
+                out.push(misplaced(ctx, "`signal`", span, "declare the carrier in the body of a `module`", ""));
             }
             if let Some(e) = init {
-                expr(e, in_fn, out);
+                expr(e, ctx, out);
             }
         }
         StmtKind::Reaction(r) => {
-            if in_fn {
-                out.push(forbidden("`on`", span, "a reaction belongs in a `digital` block"));
-            }
-            expr(&r.event, in_fn, out);
-            block(&r.body, in_fn, out);
+            out.push(misplaced(
+                ctx,
+                "`on`",
+                span,
+                "a reaction belongs in a `digital` block",
+                "a reaction is a top-level item of a `digital` block",
+            ));
+            expr(&r.event, ctx, out);
+            block(&r.body, ctx, out);
         }
         StmtKind::Empty => {}
     }
 }
 
-fn expr(e: &Expr, in_fn: bool, out: &mut Vec<Diagnostic>) {
-    let mut sub = |x: &Expr| expr(x, in_fn, out);
+fn expr(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {
+    let mut sub = |x: &Expr| expr(x, ctx, out);
     match &e.kind {
         ExprKind::Lit(_) | ExprKind::Path(_) | ExprKind::Continue | ExprKind::Error | ExprKind::IncludeStr(_) => {}
         ExprKind::Unary { expr: x, .. }
@@ -148,18 +315,18 @@ fn expr(e: &Expr, in_fn: bool, out: &mut Vec<Diagnostic>) {
         }
         ExprKind::Break(v) | ExprKind::Return(v) => v.iter().for_each(|x| sub(x)),
         ExprKind::Call { callee, args, params } => {
-            if in_fn {
-                if let ExprKind::Path(p) = &callee.kind {
-                    if p.segments.len() == 1 && p.segments[0].ident.name == "bound_step" {
-                        out.push(forbidden(
-                            "`bound_step`",
-                            e.span.0,
-                            "call `bound_step` from an `analog` block",
-                        ));
-                    }
+            if let ExprKind::Path(p) = &callee.kind {
+                if ctx != Ctx::Analog && p.segments.len() == 1 && p.segments[0].ident.name == "bound_step" {
+                    out.push(misplaced(
+                        ctx,
+                        "`bound_step`",
+                        e.span.0,
+                        "call `bound_step` from an `analog` block",
+                        "`bound_step` bounds the analog time step: call it from an `analog` block",
+                    ));
                 }
             }
-            let mut sub = |x: &Expr| expr(x, in_fn, out);
+            let mut sub = |x: &Expr| expr(x, ctx, out);
             sub(callee);
             args.iter().for_each(|a| sub(&a.value));
             params.iter().flatten().for_each(|f| sub(&f.value));
@@ -168,31 +335,36 @@ fn expr(e: &Expr, in_fn: bool, out: &mut Vec<Diagnostic>) {
             sub(recv);
             args.iter().for_each(|a| sub(&a.value));
         }
-        ExprKind::Block(b) | ExprKind::Loop { body: b } => block(b, in_fn, out),
+        ExprKind::Block(b) | ExprKind::Loop { body: b } => block(b, ctx, out),
         ExprKind::If { cond, then, else_ } => {
             sub(cond);
-            block(then, in_fn, out);
+            block(then, ctx, out);
             if let Some(x) = else_ {
-                expr(x, in_fn, out);
+                expr(x, ctx, out);
             }
         }
         ExprKind::Match { scrutinee, arms } => {
             sub(scrutinee);
             for a in arms {
                 if let Some(g) = &a.guard {
-                    expr(g, in_fn, out);
+                    expr(g, ctx, out);
                 }
-                expr(&a.body, in_fn, out);
+                expr(&a.body, ctx, out);
             }
         }
         ExprKind::While { cond, body } => {
             sub(cond);
-            block(body, in_fn, out);
+            block(body, ctx, out);
         }
         ExprKind::For { iter, body, .. } => {
             sub(iter);
-            block(body, in_fn, out);
+            block(body, ctx, out);
         }
-        ExprKind::Closure { body, .. } => sub(body),
+        // A closure is a function: inside a function body it stays part of
+        // it; elsewhere it is a block of its own kind.
+        ExprKind::Closure { body, .. } => {
+            let inner = if ctx == Ctx::Fn { Ctx::Fn } else { Ctx::Closure };
+            expr(body, inner, out);
+        }
     }
 }

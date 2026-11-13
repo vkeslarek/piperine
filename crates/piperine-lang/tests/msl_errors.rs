@@ -156,3 +156,57 @@ fn depth_limit_fits_8mib_stack_in_debug() {
     let entry = include_str!("../src/msl/parser/entry.rs");
     assert!(!entry.contains("stack_size") && !entry.contains("thread::"), "the parser runs on the caller's thread");
 }
+
+#[test]
+fn statements_of_the_wrong_block_kind_report_e0404() {
+    // Part IV §10 rule 8: a well-formed statement in a block of the wrong
+    // kind is E0404 (E0907 is `+>` or `<-` inside an expression).
+    for (src, what) in [
+        // `<-` and `on` in an analog block.
+        ("analog for M { q <- 1; }", "q <- 1;"),
+        ("analog for M { on e { } }", "on e { }"),
+        // `+>` and `bound_step` in a reaction (nested blocks too).
+        ("digital for M { on e { i(p, n) +> 1.0; } }", "i(p, n) +> 1.0;"),
+        ("digital for M { on e { if a { bound_step(1.0); } } }", "bound_step(1.0)"),
+        // In a closure outside a function.
+        ("analog for M { let f = |x| { q <- x; }; }", "q <- x;"),
+        ("digital for M { on e { let f = |x| { i(p, n) +> x; }; } }", "i(p, n) +> x;"),
+        // In a module-body expression.
+        ("module M() { let f = |x| { q <- x; }; }", "q <- x;"),
+    ] {
+        let found = codes(src);
+        let at = src.find(what).expect("fixture holds its statement");
+        assert!(found.contains(&("E0404", Span::new(at, at + what.len()))), "{src:?}: {found:?}");
+        assert!(!found.iter().any(|(c, _)| *c == "E0121"), "{src:?}: {found:?}");
+    }
+    // Well-placed statements are clean.
+    for src in [
+        "analog for M { i(p, n) +> 1.0; bound_step(1.0); if a { j(p, n) +> 2.0; } }",
+        "digital for M { on e { q <- 1; if a { q <- 2 after 1n; } } }",
+    ] {
+        let found = codes(src);
+        assert!(found.is_empty(), "{src:?}: {found:?}");
+    }
+}
+
+#[test]
+fn a_statement_outside_a_reaction_in_digital_reports_e0434() {
+    let found = codes("digital for M { q <- 1; on e { } }");
+    assert_eq!(found, [("E0434", Span::new(16, 23))]);
+    // Inside a generation too.
+    let found = codes("digital for M { for i in 0..2 { x = 1; } }");
+    assert_eq!(found.first().map(|f| f.0), Some("E0434"), "{found:?}");
+}
+
+#[test]
+fn module_forms_report_e0302_e0303_e0331() {
+    // E0302: a result expression needs `-> T`.
+    assert_eq!(codes("module M(a: Bit) { a }"), [("E0302", Span::new(19, 20))]);
+    assert!(codes("module M(a: Bit) -> Bit { a }").is_empty());
+    // E0303: a module in a block or a function.
+    let found = codes("fn f() { module M() {} }");
+    assert!(found.contains(&("E0303", Span::new(9, 22))), "{found:?}");
+    // E0331: `let mut` in a module body.
+    let found = codes("module M() { let mut x = 1; }");
+    assert!(found.contains(&("E0331", Span::new(17, 22))), "{found:?}");
+}
