@@ -154,3 +154,9 @@ fn sized(name: &str) -> Option<BuiltinId> {
         _ => None,
     }
 }
+
+/// Is `name` a core primitive of §14 that a model must not redefine
+/// (§14 rule 1, `E0457`)?
+pub(crate) fn is_core_primitive(name: &str) -> bool {
+    BUILTINS.iter().any(|b| b.name == name && b.section.starts_with("§14") && b.kind != BuiltinKind::Method)
+}

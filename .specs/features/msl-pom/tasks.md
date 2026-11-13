@@ -628,12 +628,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `core_name_redefined_is_e0457` passes in `pom_resolve.rs` (C49: POM-08 AC 13)
-- [ ] Test `duplicate_member_name_is_e0330` passes in `pom_resolve.rs` (C50: POM-08 AC 14)
-- [ ] A module name enters both tables (§3.4.5)
-- [ ] Lookup of a repeated name returns the first declaration
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `core_name_redefined_is_e0457` passes in `pom_resolve.rs` (C49: POM-08 AC 13)
+- [x] Test `duplicate_member_name_is_e0330` passes in `pom_resolve.rs` (C50: POM-08 AC 14)
+- [x] A module name enters both tables (§3.4.5)
+- [x] Lookup of a repeated name returns the first declaration
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

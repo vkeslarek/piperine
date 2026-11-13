@@ -14,6 +14,7 @@ mod ids;
 mod lower;
 mod meta;
 mod reflect;
+mod resolve;
 mod resolution;
 mod source;
 mod to_ast;

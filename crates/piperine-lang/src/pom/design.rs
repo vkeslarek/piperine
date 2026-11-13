@@ -275,6 +275,7 @@ impl DesignBuilder {
                 let message = format!("cannot read the root file `{}`", path.display());
                 design.push_diagnostic(design.root_file, Diagnostic::new("E0161", message, Span::new(0, 0), "unreadable file"));
             }
+            super::resolve::run(&mut design);
             return design;
         }
         let mut memory = MemorySources::new();
@@ -287,6 +288,7 @@ impl DesignBuilder {
         let empty = (String::new(), String::new());
         let (name, text) = self.sources.first().unwrap_or(&empty);
         design.root_file = design.add_file(name, PathBuf::from(name), text.as_bytes(), false, &memory);
+        super::resolve::run(&mut design);
         design
     }
 }
