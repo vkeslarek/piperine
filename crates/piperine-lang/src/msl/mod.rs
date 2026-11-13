@@ -2,8 +2,7 @@
 //!
 //! Parser for the Piperine mixed-signal language specified in `docs/spec/`
 //! (Appendix A lexical structure, Appendix B.3 grammar): text to tokens to a
-//! spanned AST, plus diagnostics. It shares nothing with the Verilog-AMS
-//! modules of this crate.
+//! spanned AST, plus diagnostics.
 
 pub mod ast;
 pub mod diag;
