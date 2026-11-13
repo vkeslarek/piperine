@@ -250,10 +250,10 @@ pub struct NatureData {
 pub enum NatureFieldNode {
     /// `potential: Voltage { .. }` or `flow: ..`: the `Quantity` declaration.
     Quantity(DeclId),
-    /// `value: T`
-    Value(TypeId),
-    /// `resolve: expr`
-    Resolve(ExprId),
+    /// `value: T`; `span` covers the whole field.
+    Value { ty: TypeId, span: Span },
+    /// `resolve: expr`; `span` covers the whole field.
+    Resolve { expr: ExprId, span: Span },
 }
 
 /// `potential: Voltage { access: v, units: "V" }`: the attribute list as

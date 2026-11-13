@@ -45,8 +45,8 @@ impl Lowerer<'_> {
                     self.design.decl_mut(id).kind = DeclKind::Quantity(QuantityData { role: *which, attrs });
                     NatureFieldNode::Quantity(id)
                 }
-                ast::NatureFieldKind::Value(t) => NatureFieldNode::Value(self.ty(t)),
-                ast::NatureFieldKind::Resolve(e) => NatureFieldNode::Resolve(self.expr(e)),
+                ast::NatureFieldKind::Value(t) => NatureFieldNode::Value { ty: self.ty(t), span: f.span.0 },
+                ast::NatureFieldKind::Resolve(e) => NatureFieldNode::Resolve { expr: self.expr(e), span: f.span.0 },
             })
             .collect();
         DeclKind::Nature(NatureData { fields, kind: nature_kind(&n.fields) })

@@ -563,11 +563,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `every_spec_block_round_trips_to_its_ast` passes in `pom_corpus.rs` (C32: POM-06 AC 1)
-- [ ] A `rust,fragment` fence is included when `parse` accepts it as a file
-- [ ] The test prints how many fences it compared and fails on zero
-- [ ] Gate passes: run corpus; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_spec_block_round_trips_to_its_ast` passes in `pom_corpus.rs` (C32: POM-06 AC 1)
+- [x] A `rust,fragment` fence is included when `parse` accepts it as a file
+- [x] The test prints how many fences it compared and fails on zero
+- [x] Gate passes: run corpus; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

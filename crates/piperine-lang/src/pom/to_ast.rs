@@ -3,13 +3,18 @@
 //! tree the parser returned is the proof that the POM keeps every construct.
 //! Resolution results are dropped: they are not syntax.
 
+use std::collections::BTreeSet;
+
 use super::body::{
     Arg, Arm, Block, ClosureParam, ExprKind, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, PatKind,
     PathNode, StmtKind, TypeKind,
 };
-use super::decl::{DeclData, DeclKind, FnParamData, GenericParamData, Name};
+use super::decl::{
+    DeclData, DeclKind, FieldsForm, FnParamData, GenElseNode, GenericParamData, GenerationData, Name, NamespaceOrigin,
+    NatureFieldNode, UseTreeKind, UseTreeNode,
+};
 use super::design::Design;
-use super::ids::{DeclId, ExprId, PatId, PathId, TypeId};
+use super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::meta::{AttrArgNode, AttrInputNode, Meta};
 use super::reflect::SourceFile;
 use crate::msl::{Span, ast};
@@ -18,13 +23,17 @@ impl SourceFile<'_> {
     /// The syntax tree of this file, rebuilt from the declaration tree and
     /// the body arenas, spans included.
     pub fn to_ast(self) -> ast::File {
-        Rebuild { design: self.design() }.file(self)
+        Rebuild::new(self.design()).file(self)
     }
 }
 
-/// The rebuilding walk over one design.
+/// The rebuilding walk over one design. `embedded` holds the declarations
+/// that a statement of a block owns (items, signals, reactions): they are
+/// children of the enclosing declaration like its own items, and this set
+/// tells the two apart.
 struct Rebuild<'d> {
     design: &'d Design,
+    embedded: BTreeSet<DeclId>,
 }
 
 fn loc(span: Span) -> ast::Loc {
@@ -35,7 +44,17 @@ fn ident(name: &Name) -> ast::Ident {
     ast::Ident { name: name.text.clone(), span: loc(name.span) }
 }
 
-impl Rebuild<'_> {
+impl<'d> Rebuild<'d> {
+    fn new(design: &'d Design) -> Self {
+        let embedded = (0..design.stmt_count())
+            .filter_map(|i| match design.stmt_node(StmtId(i as u32)).kind {
+                StmtKind::Item(d) | StmtKind::Signal(d) | StmtKind::Reaction(d) => Some(d),
+                _ => None,
+            })
+            .collect();
+        Rebuild { design, embedded }
+    }
+
     fn data(&self, id: DeclId) -> &DeclData {
         self.design.decl_data(id)
     }
@@ -47,13 +66,13 @@ impl Rebuild<'_> {
         // A loaded file's namespace is its `mod b;` item, whose span is not
         // the file's: the file spans its whole text. Its `//!` comments are
         // told from the item's own docs by what the text says at their span.
-        let external = !matches!(root.kind, DeclKind::Namespace(ref n) if n.origin == super::decl::NamespaceOrigin::Root);
+        let external = !matches!(root.kind, DeclKind::Namespace(ref n) if n.origin == NamespaceOrigin::Root);
         let span = if external { Span::new(0, file.text().len()) } else { root.span };
         let inner_docs = root
             .meta
             .docs
             .iter()
-            .filter(|d| !external || is_inner_doc(file.text(), d.span))
+            .filter(|d| !external || written_as(file.text(), d, "//!", "/*!"))
             .map(|d| self.doc(d))
             .collect();
         let items = root.children.iter().map(|c| self.item(*c)).collect();
@@ -300,7 +319,7 @@ impl Rebuild<'_> {
         ast::Block { stmts: b.stmts.iter().map(|s| self.stmt(*s)).collect(), span: loc(b.span) }
     }
 
-    fn stmt(&self, id: super::ids::StmtId) -> ast::Stmt {
+    fn stmt(&self, id: StmtId) -> ast::Stmt {
         let node = self.design.stmt_node(id);
         let kind = match &node.kind {
             StmtKind::Let { pat, ty, init, else_ } => ast::StmtKind::Let {
@@ -343,7 +362,7 @@ impl Rebuild<'_> {
 
     /// The children of `d` of one kind, in order.
     fn children_of<T>(&self, d: DeclId, pick: impl Fn(DeclId, &DeclData) -> Option<T>) -> Vec<T> {
-        self.data(d).children.iter().filter_map(|c| pick(*c, self.data(*c))).collect()
+        self.data(d).children.iter().filter(|c| !self.embedded.contains(c)).filter_map(|c| pick(*c, self.data(*c))).collect()
     }
 
     fn generics(&self, d: DeclId) -> Option<ast::Generics> {
@@ -394,19 +413,261 @@ impl Rebuild<'_> {
         }
     }
 
+    /// The docs and attributes of a declaration. A `mod b;` item that loaded
+    /// a file also holds that file's `//!` comments: only the docs the
+    /// declaring file wrote with `///` or `/** */` belong to the item.
+    fn item_meta(&self, data: &DeclData) -> ast::Meta {
+        let mut meta = self.meta(&data.meta);
+        if matches!(&data.kind, DeclKind::Namespace(n) if matches!(n.origin, NamespaceOrigin::External { file: Some(_) })) {
+            let text = self.design.file_data(data.file).text.as_str();
+            let keep: Vec<_> = data.meta.docs.iter().map(|d| written_as(text, d, "///", "/**")).collect();
+            let mut keep = keep.into_iter();
+            meta.docs.retain(|_| keep.next().unwrap_or(false));
+        }
+        meta
+    }
+
     /// One item of a file, a module or a block.
     fn item(&self, d: DeclId) -> ast::Item {
         let data = self.data(d);
         let kind = match &data.kind {
             DeclKind::Const(_) => ast::ItemKind::Const(self.const_item(d)),
             DeclKind::Fn(_) => ast::ItemKind::Fn(self.fn_decl(d)),
-            _ => ast::ItemKind::Error,
+            DeclKind::Struct(s) => ast::ItemKind::Struct(ast::StructDecl {
+                name: ident(self.name(d)),
+                generics: self.generics(d),
+                fields: self.fields(d, s.form),
+            }),
+            DeclKind::Enum(_) => ast::ItemKind::Enum(ast::EnumDecl {
+                name: ident(self.name(d)),
+                generics: self.generics(d),
+                variants: self.children_of(d, |c, v| match &v.kind {
+                    DeclKind::Variant(vd) => Some(ast::Variant {
+                        meta: self.meta(&v.meta),
+                        name: ident(self.name(c)),
+                        fields: self.fields(c, vd.form),
+                        discriminant: vd.discriminant.map(|e| self.expr(e)),
+                        span: loc(v.span),
+                    }),
+                    _ => None,
+                }),
+            }),
+            DeclKind::Trait(t) => ast::ItemKind::Trait(ast::TraitDecl {
+                name: ident(self.name(d)),
+                generics: self.generics(d),
+                supertraits: t.supertraits.iter().map(|p| self.path(*p)).collect(),
+                items: self.impl_items(d),
+            }),
+            DeclKind::Impl(i) => ast::ItemKind::Impl(ast::ImplBlock {
+                generics: self.generics(d),
+                trait_: i.trait_.map(|p| self.path(p)),
+                self_ty: self.ty(i.self_ty),
+                items: self.impl_items(d),
+            }),
+            DeclKind::Use(u) => ast::ItemKind::Use(use_tree(&u.tree)),
+            DeclKind::Namespace(n) => ast::ItemKind::Mod(ast::ModItem {
+                name: ident(self.name(d)),
+                items: match n.origin {
+                    NamespaceOrigin::Inline => Some(self.children_of(d, |c, _| Some(self.item(c)))),
+                    NamespaceOrigin::External { .. } | NamespaceOrigin::Root => None,
+                },
+            }),
+            DeclKind::Nature(n) => ast::ItemKind::Nature(ast::NatureDecl {
+                name: ident(self.name(d)),
+                generics: self.generics(d),
+                fields: n.fields.iter().map(|f| self.nature_field(f)).collect(),
+            }),
+            DeclKind::Module(m) => ast::ItemKind::Module(self.module_decl(d, m)),
+            DeclKind::Behavior(b) => ast::ItemKind::Behavior(self.behavior(d, b)),
+            DeclKind::Error => ast::ItemKind::Error,
+            other => unreachable!("a {} is not an item", other.label()),
         };
-        ast::Item { meta: self.meta(&data.meta), public: data.public, kind, span: loc(data.span) }
+        ast::Item { meta: self.item_meta(data), public: data.public, kind, span: loc(data.span) }
+    }
+
+    /// The fields of a struct or variant: its `Field` children, in the form
+    /// it was written.
+    fn fields(&self, d: DeclId, form: FieldsForm) -> ast::Fields {
+        let fields = self.children_of(d, |_, f| match &f.kind {
+            DeclKind::Field(fd) => Some(ast::Field {
+                meta: self.meta(&f.meta),
+                public: f.public,
+                dir: fd.dir,
+                name: f.name.as_ref().map(ident),
+                ty: self.ty(fd.ty),
+                span: loc(f.span),
+            }),
+            _ => None,
+        });
+        match form {
+            FieldsForm::Named => ast::Fields::Named(fields),
+            FieldsForm::Tuple => ast::Fields::Tuple(fields),
+            FieldsForm::Unit => ast::Fields::Unit,
+        }
+    }
+
+    /// The functions and constants of an `impl` or a `trait`.
+    fn impl_items(&self, d: DeclId) -> Vec<ast::ImplItem> {
+        self.children_of(d, |c, data| {
+            let kind = match &data.kind {
+                DeclKind::Fn(_) => ast::ImplItemKind::Fn(self.fn_decl(c)),
+                DeclKind::Const(_) => ast::ImplItemKind::Const(self.const_item(c)),
+                _ => return None,
+            };
+            Some(ast::ImplItem { meta: self.meta(&data.meta), public: data.public, kind, span: loc(data.span) })
+        })
+    }
+
+    fn nature_field(&self, f: &NatureFieldNode) -> ast::NatureField {
+        match f {
+            NatureFieldNode::Quantity(q) => {
+                let data = self.data(*q);
+                let DeclKind::Quantity(qd) = &data.kind else { unreachable!("a nature field names a Quantity") };
+                ast::NatureField {
+                    kind: ast::NatureFieldKind::Quantity {
+                        which: qd.role,
+                        name: ident(self.name(*q)),
+                        attrs: qd.attrs.iter().map(|a| self.field_init(a)).collect(),
+                    },
+                    span: loc(data.span),
+                }
+            }
+            NatureFieldNode::Value { ty, span } => {
+                ast::NatureField { kind: ast::NatureFieldKind::Value(self.ty(*ty)), span: loc(*span) }
+            }
+            NatureFieldNode::Resolve { expr, span } => {
+                ast::NatureField { kind: ast::NatureFieldKind::Resolve(self.expr(*expr)), span: loc(*span) }
+            }
+        }
+    }
+
+    // ---- modules and behavior -------------------------------------------------------------
+
+    fn module_decl(&self, d: DeclId, m: &super::decl::ModuleData) -> ast::ModuleDecl {
+        let ports = self.children_of(d, |c, p| match &p.kind {
+            DeclKind::Port(pd) => Some(ast::Port {
+                meta: self.meta(&p.meta),
+                dir: pd.dir,
+                name: ident(self.name(c)),
+                ty: self.ty(pd.ty),
+                default: pd.default.map(|e| self.expr(e)),
+                span: loc(p.span),
+            }),
+            _ => None,
+        });
+        ast::ModuleDecl {
+            abi: m.abi.clone(),
+            name: ident(self.name(d)),
+            generics: self.generics(d),
+            ports,
+            ret: m.ret.map(|t| self.ty(t)),
+            where_: m.where_.map(|e| self.expr(e)),
+            body: self.children_of(d, |c, data| self.module_item(c, data)),
+            result: m.result.map(|e| self.expr(e)),
+        }
+    }
+
+    /// A body item of a module or a generation; none for a child of another
+    /// kind (a generic parameter, a port, a binding).
+    fn module_item(&self, c: DeclId, data: &DeclData) -> Option<ast::ModuleItem> {
+        let kind = match &data.kind {
+            DeclKind::Param(p) => ast::ModuleItemKind::Param {
+                name: ident(self.name(c)),
+                ty: self.ty(p.ty),
+                default: p.default.map(|e| self.expr(e)),
+                where_: p.where_.map(|e| self.expr(e)),
+            },
+            DeclKind::Signal(s) => ast::ModuleItemKind::Signal {
+                name: ident(self.name(c)),
+                ty: self.ty(s.ty),
+                init: s.init.map(|e| self.expr(e)),
+            },
+            DeclKind::Let(l) => ast::ModuleItemKind::Let { pat: self.pat(l.pat), value: self.expr(l.value) },
+            DeclKind::Definition(def) => ast::ModuleItemKind::Def {
+                place: self.expr(def.place),
+                value: self.expr(def.value),
+                after: def.after.map(|e| self.expr(e)),
+            },
+            DeclKind::Generation(_) => ast::ModuleItemKind::Gen(self.generation(c, &|x| self.module_item_of(x))),
+            DeclKind::Error => ast::ModuleItemKind::Error,
+            _ => return None,
+        };
+        Some(ast::ModuleItem { meta: self.meta(&data.meta), public: data.public, kind, span: loc(data.span) })
+    }
+
+    fn module_item_of(&self, c: DeclId) -> ast::ModuleItem {
+        self.module_item(c, self.data(c)).expect("a generation holds module items")
+    }
+
+    /// `gen<X>`: a generation, its items rebuilt by `item`.
+    fn generation<X>(&self, d: DeclId, item: &dyn Fn(DeclId) -> X) -> ast::Gen<X> {
+        let data = self.data(d);
+        let DeclKind::Generation(g) = &data.kind else { unreachable!("caller matched Generation") };
+        let items = |ids: &[DeclId]| ids.iter().map(|i| item(*i)).collect::<Vec<_>>();
+        let kind = match g {
+            GenerationData::For { pat, iter, body } => {
+                ast::GenKind::For { pat: self.pat(*pat), iter: self.expr(*iter), body: items(body) }
+            }
+            GenerationData::If { cond, then, else_ } => ast::GenKind::If {
+                cond: self.expr(*cond),
+                then: items(then),
+                else_: else_.as_ref().map(|e| {
+                    Box::new(match e {
+                        GenElseNode::Block(ids) => ast::GenElse::Block(items(ids)),
+                        GenElseNode::If(nested) => ast::GenElse::If(self.generation(*nested, item)),
+                    })
+                }),
+            },
+        };
+        ast::Gen { kind, span: loc(data.span) }
+    }
+
+    fn behavior(&self, d: DeclId, b: &super::decl::BehaviorData) -> ast::BehaviorBlock {
+        let body = match b.kind {
+            super::body::BehaviorKind::Analog => ast::BehaviorBody::Analog(b.body.iter().map(|s| self.stmt(*s)).collect()),
+            super::body::BehaviorKind::Digital => {
+                ast::BehaviorBody::Digital(self.children_of(d, |c, data| self.digital_item(c, data)))
+            }
+        };
+        ast::BehaviorBlock {
+            kind: b.kind,
+            names: b.names.iter().map(ident).collect(),
+            target: self.path(b.target),
+            body,
+        }
+    }
+
+    fn digital_item(&self, c: DeclId, data: &DeclData) -> Option<ast::DigitalItem> {
+        let kind = match &data.kind {
+            DeclKind::Reaction(_) => ast::DigitalItemKind::Reaction(self.reaction(c)),
+            DeclKind::Generation(_) => ast::DigitalItemKind::Gen(self.generation(c, &|x| self.digital_item_of(x))),
+            DeclKind::Error => ast::DigitalItemKind::Error,
+            _ => return None,
+        };
+        Some(ast::DigitalItem { kind, span: loc(data.span) })
+    }
+
+    fn digital_item_of(&self, c: DeclId) -> ast::DigitalItem {
+        self.digital_item(c, self.data(c)).expect("a generation holds digital items")
     }
 }
 
-/// Whether the doc at `span` of `text` is a `//!` or `/*!` comment.
-fn is_inner_doc(text: &str, span: Span) -> bool {
-    text.get(span.range()).is_some_and(|t| t.starts_with("//!") || t.starts_with("/*!"))
+fn use_tree(t: &UseTreeNode) -> ast::UseTree {
+    let kind = match &t.kind {
+        UseTreeKind::Simple { alias } => ast::UseKind::Simple { alias: alias.as_ref().map(ident) },
+        UseTreeKind::Glob => ast::UseKind::Glob,
+        UseTreeKind::Group(children) => ast::UseKind::Group(children.iter().map(use_tree).collect()),
+    };
+    ast::UseTree { path: t.path.iter().map(ident).collect(), kind, span: loc(t.span) }
+}
+
+/// Whether `doc` is written in `text` with the line marker `line` or the
+/// block marker `block` followed by its text.
+fn written_as(text: &str, doc: &super::meta::Doc, line: &str, block: &str) -> bool {
+    let Some(written) = text.get(doc.span.range()) else { return false };
+    if doc.block {
+        written.strip_prefix(block).is_some_and(|rest| rest.starts_with(&doc.text))
+    } else {
+        written.strip_prefix(line) == Some(doc.text.as_str())
+    }
 }

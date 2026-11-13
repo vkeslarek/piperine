@@ -74,7 +74,7 @@ impl<'d> Nature<'d> {
     /// The type of the first `value: T` field.
     pub fn value_type(self) -> Option<Type<'d>> {
         self.data().fields.iter().find_map(|f| match f {
-            NatureFieldNode::Value(t) => Some(self.decl.design().ty(*t)),
+            NatureFieldNode::Value { ty, .. } => Some(self.decl.design().ty(*ty)),
             _ => None,
         })
     }
@@ -82,7 +82,7 @@ impl<'d> Nature<'d> {
     /// The expression of the first `resolve: f` field.
     pub fn resolve_fn(self) -> Option<Expr<'d>> {
         self.data().fields.iter().find_map(|f| match f {
-            NatureFieldNode::Resolve(e) => Some(self.decl.design().expr(*e)),
+            NatureFieldNode::Resolve { expr, .. } => Some(self.decl.design().expr(*expr)),
             _ => None,
         })
     }
