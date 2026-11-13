@@ -4,8 +4,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
-use super::ids::{DeclId, FileId};
+use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
 use crate::msl::{self, Diagnostic, ast};
 
@@ -63,6 +64,11 @@ pub struct Design {
     files: Vec<SourceFileData>,
     root_file: FileId,
     decls: Vec<DeclData>,
+    exprs: Vec<ExprNode>,
+    stmts: Vec<StmtNode>,
+    pats: Vec<PatNode>,
+    types: Vec<TypeNode>,
+    paths: Vec<PathNode>,
     diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -84,6 +90,72 @@ impl Design {
         let id = DeclId(self.decls.len() as u32);
         self.decls.push(data);
         id
+    }
+
+    pub(crate) fn push_expr(&mut self, node: ExprNode) -> ExprId {
+        self.exprs.push(node);
+        ExprId(self.exprs.len() as u32 - 1)
+    }
+
+    pub(crate) fn push_stmt(&mut self, node: StmtNode) -> StmtId {
+        self.stmts.push(node);
+        StmtId(self.stmts.len() as u32 - 1)
+    }
+
+    pub(crate) fn push_pat(&mut self, node: PatNode) -> PatId {
+        self.pats.push(node);
+        PatId(self.pats.len() as u32 - 1)
+    }
+
+    pub(crate) fn push_type(&mut self, node: TypeNode) -> TypeId {
+        self.types.push(node);
+        TypeId(self.types.len() as u32 - 1)
+    }
+
+    pub(crate) fn push_path(&mut self, node: PathNode) -> PathId {
+        self.paths.push(node);
+        PathId(self.paths.len() as u32 - 1)
+    }
+
+    /// The expression with this id. Ids come from this design.
+    pub fn expr_node(&self, id: ExprId) -> &ExprNode {
+        &self.exprs[id.index()]
+    }
+
+    pub fn stmt_node(&self, id: StmtId) -> &StmtNode {
+        &self.stmts[id.index()]
+    }
+
+    pub fn pat_node(&self, id: PatId) -> &PatNode {
+        &self.pats[id.index()]
+    }
+
+    pub fn type_node(&self, id: TypeId) -> &TypeNode {
+        &self.types[id.index()]
+    }
+
+    pub fn path_node(&self, id: PathId) -> &PathNode {
+        &self.paths[id.index()]
+    }
+
+    pub fn expr_count(&self) -> usize {
+        self.exprs.len()
+    }
+
+    pub fn stmt_count(&self) -> usize {
+        self.stmts.len()
+    }
+
+    pub fn pat_count(&self) -> usize {
+        self.pats.len()
+    }
+
+    pub fn type_count(&self) -> usize {
+        self.types.len()
+    }
+
+    pub fn path_count(&self) -> usize {
+        self.paths.len()
     }
 
     pub(crate) fn decl_mut(&mut self, id: DeclId) -> &mut DeclData {
@@ -193,7 +265,7 @@ impl DesignBuilder {
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
         let mut design =
-            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), diagnostics: Vec::new() };
+            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new() };
         for (name, text) in &self.prelude {
             design.add_file(name, text, true);
         }

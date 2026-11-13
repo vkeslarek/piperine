@@ -1,11 +1,13 @@
 //! Handles over bodies and files: [`SourceFile`] here, expression and
 //! statement handles as the body tasks add them.
 
-use std::path::Path;
+use std::path::Path as FsPath;
 
+use super::super::body::{ExprKind, ExprNode, PatKind, PatNode, PathNode, PathSegment, StmtKind, StmtNode, TypeKind, TypeNode};
 use super::super::design::Design;
-use super::super::ids::FileId;
-use crate::msl::ast;
+use super::super::ids::{ExprId, FileId, PatId, PathId, StmtId, TypeId};
+use super::{Decl, Reflect};
+use crate::msl::{Span, ast};
 
 /// A source file of a [`Design`]: its name, text and retained syntax tree.
 #[derive(Clone, Copy)]
@@ -29,7 +31,7 @@ impl<'d> SourceFile<'d> {
     }
 
     /// The path it was read from, virtual or on disk.
-    pub fn path(self) -> Option<&'d Path> {
+    pub fn path(self) -> Option<&'d FsPath> {
         self.design.file_data(self.id).path.as_deref()
     }
 
@@ -63,5 +65,281 @@ impl Design {
     /// Every file, prelude sources first, then the root, then loaded files.
     pub fn files(&self) -> Vec<SourceFile<'_>> {
         (0..self.file_count()).map(|i| SourceFile::new(self, FileId(i as u32))).collect()
+    }
+}
+
+/// The authored text of `span` in the file of the declaration `owner`.
+fn text_in<'d>(owner: Decl<'d>, span: Span) -> &'d str {
+    owner.file().text().get(span.range()).unwrap_or("")
+}
+
+/// An expression node.
+#[derive(Clone, Copy)]
+pub struct Expr<'d> {
+    design: &'d Design,
+    id: ExprId,
+}
+
+impl<'d> Expr<'d> {
+    pub(crate) fn new(design: &'d Design, id: ExprId) -> Self {
+        Expr { design, id }
+    }
+
+    pub fn id(self) -> ExprId {
+        self.id
+    }
+
+    pub fn node(self) -> &'d ExprNode {
+        self.design.expr_node(self.id)
+    }
+
+    pub fn kind(self) -> &'d ExprKind {
+        &self.node().kind
+    }
+
+    pub fn span(self) -> Span {
+        self.node().span
+    }
+
+    /// The nearest declaration that contains this expression.
+    pub fn enclosing(self) -> Decl<'d> {
+        Decl::new(self.design, self.node().owner)
+    }
+
+    /// The authored text of the expression.
+    pub fn text(self) -> &'d str {
+        text_in(self.enclosing(), self.span())
+    }
+}
+
+/// A statement node.
+#[derive(Clone, Copy)]
+pub struct Stmt<'d> {
+    design: &'d Design,
+    id: StmtId,
+}
+
+impl<'d> Stmt<'d> {
+    pub(crate) fn new(design: &'d Design, id: StmtId) -> Self {
+        Stmt { design, id }
+    }
+
+    pub fn id(self) -> StmtId {
+        self.id
+    }
+
+    pub fn node(self) -> &'d StmtNode {
+        self.design.stmt_node(self.id)
+    }
+
+    pub fn kind(self) -> &'d StmtKind {
+        &self.node().kind
+    }
+
+    pub fn span(self) -> Span {
+        self.node().span
+    }
+
+    pub fn enclosing(self) -> Decl<'d> {
+        Decl::new(self.design, self.node().owner)
+    }
+
+    pub fn text(self) -> &'d str {
+        text_in(self.enclosing(), self.span())
+    }
+}
+
+/// A pattern node.
+#[derive(Clone, Copy)]
+pub struct Pat<'d> {
+    design: &'d Design,
+    id: PatId,
+}
+
+impl<'d> Pat<'d> {
+    pub(crate) fn new(design: &'d Design, id: PatId) -> Self {
+        Pat { design, id }
+    }
+
+    pub fn id(self) -> PatId {
+        self.id
+    }
+
+    pub fn node(self) -> &'d PatNode {
+        self.design.pat_node(self.id)
+    }
+
+    pub fn kind(self) -> &'d PatKind {
+        &self.node().kind
+    }
+
+    pub fn span(self) -> Span {
+        self.node().span
+    }
+
+    pub fn enclosing(self) -> Decl<'d> {
+        Decl::new(self.design, self.node().owner)
+    }
+
+    pub fn text(self) -> &'d str {
+        text_in(self.enclosing(), self.span())
+    }
+}
+
+/// A type node.
+#[derive(Clone, Copy)]
+pub struct Type<'d> {
+    design: &'d Design,
+    id: TypeId,
+}
+
+impl<'d> Type<'d> {
+    pub(crate) fn new(design: &'d Design, id: TypeId) -> Self {
+        Type { design, id }
+    }
+
+    pub fn id(self) -> TypeId {
+        self.id
+    }
+
+    pub fn node(self) -> &'d TypeNode {
+        self.design.type_node(self.id)
+    }
+
+    pub fn kind(self) -> &'d TypeKind {
+        &self.node().kind
+    }
+
+    pub fn span(self) -> Span {
+        self.node().span
+    }
+
+    pub fn enclosing(self) -> Decl<'d> {
+        Decl::new(self.design, self.node().owner)
+    }
+
+    pub fn text(self) -> &'d str {
+        text_in(self.enclosing(), self.span())
+    }
+}
+
+/// A path node.
+#[derive(Clone, Copy)]
+pub struct Path<'d> {
+    design: &'d Design,
+    id: PathId,
+}
+
+impl<'d> Path<'d> {
+    pub(crate) fn new(design: &'d Design, id: PathId) -> Self {
+        Path { design, id }
+    }
+
+    pub fn id(self) -> PathId {
+        self.id
+    }
+
+    pub fn node(self) -> &'d PathNode {
+        self.design.path_node(self.id)
+    }
+
+    pub fn segments(self) -> &'d [PathSegment] {
+        &self.node().segments
+    }
+
+    pub fn span(self) -> Span {
+        self.node().span
+    }
+
+    pub fn enclosing(self) -> Decl<'d> {
+        Decl::new(self.design, self.node().owner)
+    }
+
+    pub fn text(self) -> &'d str {
+        text_in(self.enclosing(), self.span())
+    }
+}
+
+impl PartialEq for Expr<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && self.id == other.id
+    }
+}
+
+impl std::fmt::Debug for Expr<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Expr({:?})", self.id)
+    }
+}
+
+impl PartialEq for Stmt<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && self.id == other.id
+    }
+}
+
+impl std::fmt::Debug for Stmt<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Stmt({:?})", self.id)
+    }
+}
+
+impl PartialEq for Pat<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && self.id == other.id
+    }
+}
+
+impl std::fmt::Debug for Pat<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Pat({:?})", self.id)
+    }
+}
+
+impl PartialEq for Type<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && self.id == other.id
+    }
+}
+
+impl std::fmt::Debug for Type<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Type({:?})", self.id)
+    }
+}
+
+impl PartialEq for Path<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && self.id == other.id
+    }
+}
+
+impl std::fmt::Debug for Path<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Path({:?})", self.id)
+    }
+}
+
+
+impl Design {
+    /// A handle on the expression with this id.
+    pub fn expr(&self, id: ExprId) -> Expr<'_> {
+        Expr::new(self, id)
+    }
+
+    pub fn stmt(&self, id: StmtId) -> Stmt<'_> {
+        Stmt::new(self, id)
+    }
+
+    pub fn pat(&self, id: PatId) -> Pat<'_> {
+        Pat::new(self, id)
+    }
+
+    pub fn ty(&self, id: TypeId) -> Type<'_> {
+        Type::new(self, id)
+    }
+
+    pub fn path(&self, id: PathId) -> Path<'_> {
+        Path::new(self, id)
     }
 }

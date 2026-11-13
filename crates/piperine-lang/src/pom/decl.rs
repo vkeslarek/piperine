@@ -4,7 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ids::{DeclId, FileId};
+use super::ids::{DeclId, ExprId, FileId, PatId, TypeId};
+use super::body::Block;
 use crate::msl::Span;
 
 /// An identifier as written, with its range.
@@ -110,8 +111,12 @@ pub struct NamespaceData {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct UseData {}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ConstData {}
+/// `const NAME: ty = value;`; the value is absent in a trait.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConstData {
+    pub ty: TypeId,
+    pub value: Option<ExprId>,
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct FnData {}
@@ -155,14 +160,40 @@ pub struct PortData {}
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ParamData {}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct SignalData {}
+/// `signal name: ty = init;`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignalData {
+    pub ty: TypeId,
+    pub init: Option<ExprId>,
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct LetData {}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct BindingData {}
+/// One identifier a pattern introduces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BindingData {
+    /// The pattern that introduces it (the whole struct pattern for the
+    /// shorthand `S { x }`).
+    pub pat: PatId,
+    pub origin: BindingOrigin,
+}
+
+/// The syntactic place a binding comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BindingOrigin {
+    /// A module-body `let`.
+    BodyLet,
+    /// A `let` statement in a block.
+    Local,
+    ClosureParam,
+    MatchArm,
+    For,
+    /// `if let` / `while let`.
+    IfLet,
+    /// The pattern of a generation `for`.
+    GenFor,
+}
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DefinitionData {}
@@ -173,5 +204,9 @@ pub struct GenerationData {}
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct BehaviorData {}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ReactionData {}
+/// `on event { ... }`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReactionData {
+    pub event: ExprId,
+    pub body: Block,
+}

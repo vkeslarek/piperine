@@ -19,5 +19,5 @@ pub use decl::*;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use ids::{DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
 pub use meta::{Doc, Meta};
-pub use reflect::{Decl, Reflect, SourceFile};
+pub use reflect::{Const, Decl, Expr, Path, Pat, Reflect, SourceFile, Stmt, Type};
 pub use resolution::*;

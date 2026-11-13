@@ -199,13 +199,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `const_type_and_value` passes in `pom_tree.rs` (C26: POM-04 AC 6)
-- [ ] Test `every_expression_form_has_its_kind` passes in `pom_body.rs` (C34: POM-06 AC 3)
-- [ ] Test `statement_pattern_and_type_forms_lower` passes in `pom_body.rs`
-- [ ] `Contribution`, `Commit`, `Signal` and `Reaction` statements are lowered here; their tests come with the behavior tasks
-- [ ] Error expressions become `ExprKind::Error`
-- [ ] Gate passes: run tree, run body; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `const_type_and_value` passes in `pom_tree.rs` (C26: POM-04 AC 6)
+- [x] Test `every_expression_form_has_its_kind` passes in `pom_body.rs` (C34: POM-06 AC 3)
+- [x] Test `statement_pattern_and_type_forms_lower` passes in `pom_body.rs`
+- [x] `Contribution`, `Commit`, `Signal` and `Reaction` statements are lowered here; their tests come with the behavior tasks
+- [x] Error expressions become `ExprKind::Error`
+- [x] Gate passes: run tree, run body; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

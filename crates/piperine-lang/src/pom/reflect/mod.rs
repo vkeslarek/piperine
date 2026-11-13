@@ -2,13 +2,15 @@
 //! [`Reflect`] trait every declaration handle shares.
 
 mod body;
+mod items;
 
 use super::decl::{DeclData, DeclKind};
 use super::design::Design;
 use super::ids::DeclId;
 use crate::msl::Span;
 
-pub use body::SourceFile;
+pub use body::{Expr, Path, Pat, SourceFile, Stmt, Type};
+pub use items::Const;
 
 /// The generic declaration handle: any kind, read through [`Decl::kind`].
 #[derive(Clone, Copy)]

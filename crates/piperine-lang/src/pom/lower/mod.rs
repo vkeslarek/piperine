@@ -1,5 +1,11 @@
 //! Stage 1: the syntax tree to the arenas. A pure function of the tree: it
 //! reads no scope and resolves nothing. Only this module pushes to the arenas.
+//!
+//! `mod.rs` holds the walk state and the declaration spine; `body.rs` lowers
+//! paths, types, patterns, expressions and statements; `items.rs` lowers the
+//! value items.
+
+mod body;
 
 use super::decl::{
     BehaviorData, ConstData, DeclData, DeclKind, EnumData, FnData, ImplData, ModuleData,
@@ -57,37 +63,62 @@ impl Lowerer<'_> {
         out
     }
 
-    /// One declaration per item, recursing into inline modules.
+    /// One declaration per item. The declaration is pushed first (so ids
+    /// follow source order and the item's own bodies have an owner), then its
+    /// payload is lowered with the declaration as owner and stored.
     pub(crate) fn item(&mut self, item: &ast::Item) -> DeclId {
-        let (kind, name) = match &item.kind {
-            ast::ItemKind::Fn(f) => (DeclKind::Fn(FnData::default()), Some(&f.name)),
-            ast::ItemKind::Struct(s) => (DeclKind::Struct(StructData::default()), Some(&s.name)),
-            ast::ItemKind::Enum(e) => (DeclKind::Enum(EnumData::default()), Some(&e.name)),
-            ast::ItemKind::Impl(_) => (DeclKind::Impl(ImplData::default()), None),
-            ast::ItemKind::Trait(t) => (DeclKind::Trait(TraitData::default()), Some(&t.name)),
-            ast::ItemKind::Const(c) => (DeclKind::Const(ConstData::default()), Some(&c.name)),
-            ast::ItemKind::Use(_) => (DeclKind::Use(UseData::default()), None),
-            ast::ItemKind::Mod(m) => {
-                let origin = if m.items.is_some() {
-                    NamespaceOrigin::Inline
-                } else {
-                    NamespaceOrigin::External { file: None }
-                };
-                (DeclKind::Namespace(NamespaceData { origin }), Some(&m.name))
-            }
-            ast::ItemKind::Nature(n) => (DeclKind::Nature(NatureData::default()), Some(&n.name)),
-            ast::ItemKind::Module(m) => (DeclKind::Module(ModuleData::default()), Some(&m.name)),
-            ast::ItemKind::Behavior(_) => (DeclKind::Behavior(BehaviorData::default()), None),
-            ast::ItemKind::Error => (DeclKind::Error, None),
-        };
-        let id = self.new_decl(kind, name, item.span.0, item.public);
-        if let ast::ItemKind::Mod(ast::ModItem { items: Some(items), .. }) = &item.kind {
-            self.within(id, |lw| {
-                for inner in items {
-                    lw.item(inner);
-                }
-            });
-        }
+        let id = self.new_decl(DeclKind::Error, item_name(&item.kind), item.span.0, item.public);
+        let kind = self.within(id, |lw| lw.item_kind(&item.kind));
+        self.design.decl_mut(id).kind = kind;
         id
+    }
+
+    fn item_kind(&mut self, kind: &ast::ItemKind) -> DeclKind {
+        match kind {
+            ast::ItemKind::Fn(_) => DeclKind::Fn(FnData::default()),
+            ast::ItemKind::Struct(_) => DeclKind::Struct(StructData::default()),
+            ast::ItemKind::Enum(_) => DeclKind::Enum(EnumData::default()),
+            ast::ItemKind::Impl(_) => DeclKind::Impl(ImplData::default()),
+            ast::ItemKind::Trait(_) => DeclKind::Trait(TraitData::default()),
+            ast::ItemKind::Const(c) => self.const_item(c),
+            ast::ItemKind::Use(_) => DeclKind::Use(UseData::default()),
+            ast::ItemKind::Mod(m) => {
+                let origin = match &m.items {
+                    Some(items) => {
+                        for inner in items {
+                            self.item(inner);
+                        }
+                        NamespaceOrigin::Inline
+                    }
+                    None => NamespaceOrigin::External { file: None },
+                };
+                DeclKind::Namespace(NamespaceData { origin })
+            }
+            ast::ItemKind::Nature(_) => DeclKind::Nature(NatureData::default()),
+            ast::ItemKind::Module(_) => DeclKind::Module(ModuleData::default()),
+            ast::ItemKind::Behavior(_) => DeclKind::Behavior(BehaviorData::default()),
+            ast::ItemKind::Error => DeclKind::Error,
+        }
+    }
+
+    /// `const NAME: ty = value;` (the owner is the constant itself).
+    pub(crate) fn const_item(&mut self, c: &ast::ConstItem) -> DeclKind {
+        let ty = self.ty(&c.ty);
+        let value = c.value.as_ref().map(|v| self.expr(v));
+        DeclKind::Const(ConstData { ty, value })
+    }
+}
+
+fn item_name(kind: &ast::ItemKind) -> Option<&ast::Ident> {
+    match kind {
+        ast::ItemKind::Fn(f) => Some(&f.name),
+        ast::ItemKind::Struct(s) => Some(&s.name),
+        ast::ItemKind::Enum(e) => Some(&e.name),
+        ast::ItemKind::Trait(t) => Some(&t.name),
+        ast::ItemKind::Const(c) => Some(&c.name),
+        ast::ItemKind::Mod(m) => Some(&m.name),
+        ast::ItemKind::Nature(n) => Some(&n.name),
+        ast::ItemKind::Module(m) => Some(&m.name),
+        ast::ItemKind::Impl(_) | ast::ItemKind::Use(_) | ast::ItemKind::Behavior(_) | ast::ItemKind::Error => None,
     }
 }

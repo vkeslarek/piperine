@@ -65,3 +65,19 @@ fn inline_mod_is_a_namespace() {
     assert_eq!(a.children(), vec![m]);
     assert!(design.find("M").is_none(), "M is inside a, not at the root");
 }
+
+#[test]
+fn const_type_and_value() {
+    use piperine_lang::pom::{ExprKind, LitKind, TypeKind};
+    let design = build("const N: u32 = 8;\nfn f() {}");
+    assert!(design.diagnostics().is_empty());
+    let n = design.find("N").and_then(|d| d.as_const()).expect("constant N");
+    assert_eq!(n.name(), Some("N"));
+    assert_eq!(n.ty().text(), "u32");
+    assert!(matches!(n.ty().kind(), TypeKind::Path(_)));
+    let value = n.value().expect("a value expression");
+    assert_eq!(value.text(), "8");
+    assert!(matches!(value.kind(), ExprKind::Lit(l) if l.kind == LitKind::Int("8".into())));
+    assert_eq!(value.enclosing(), n.decl());
+    assert!(design.find("f").unwrap().as_const().is_none());
+}
