@@ -44,8 +44,47 @@ pub(crate) fn file(file: &File) -> Vec<Diagnostic> {
 }
 
 fn items(list: &[Item], out: &mut Vec<Diagnostic>) {
+    let mut seen = std::collections::HashSet::new();
     for item in list {
         item_kind(&item.kind, out);
+        if let ItemKind::Fn(f) = &item.kind {
+            overload(f, &mut seen, out);
+        }
+    }
+}
+
+/// E0143: a second function of the same name in one scope is an overload.
+fn overload(f: &FnDecl, seen: &mut std::collections::HashSet<String>, out: &mut Vec<Diagnostic>) {
+    if !seen.insert(f.name.name.clone()) {
+        out.push(
+            Diagnostic::new(
+                "E0143",
+                format!("an overload of `{}` in a function signature", f.name.name),
+                f.name.span.0,
+                "this name is already a function in this scope",
+            )
+            .with_help("functions are not overloaded: give each its own name"),
+        );
+    }
+}
+
+/// E0142: no positional argument follows a named one (Part I §3.2.4).
+fn argument_order(args: &[Arg], out: &mut Vec<Diagnostic>) {
+    let mut named = None;
+    for a in args {
+        match (&a.name, &named) {
+            (Some(n), None) => named = Some(n.name.clone()),
+            (None, Some(n)) => out.push(
+                Diagnostic::new(
+                    "E0142",
+                    "a positional argument after a named one",
+                    a.span.0,
+                    format!("follows the named argument `{n}`"),
+                )
+                .with_help("write the positional arguments first: `f(1, 2, name: 3)`"),
+            ),
+            _ => {}
+        }
     }
 }
 
@@ -172,9 +211,11 @@ fn digital(list: &[DigitalItem], out: &mut Vec<Diagnostic>) {
 }
 
 fn impl_items(list: &[ImplItem], out: &mut Vec<Diagnostic>) {
+    let mut seen = std::collections::HashSet::new();
     for item in list {
         if let ImplItemKind::Fn(f) = &item.kind {
             fn_decl(f, out);
+            overload(f, &mut seen, out);
         }
     }
 }
@@ -326,12 +367,15 @@ fn expr(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {
                     ));
                 }
             }
+            argument_order(args, out);
             let mut sub = |x: &Expr| expr(x, ctx, out);
             sub(callee);
             args.iter().for_each(|a| sub(&a.value));
             params.iter().flatten().for_each(|f| sub(&f.value));
         }
         ExprKind::MethodCall { recv, args, .. } => {
+            argument_order(args, out);
+            let mut sub = |x: &Expr| expr(x, ctx, out);
             sub(recv);
             args.iter().for_each(|a| sub(&a.value));
         }

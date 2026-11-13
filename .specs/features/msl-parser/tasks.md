@@ -322,8 +322,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-04
 
 **Done when**:
-- [ ] Tests `parse_phase_rows_report_their_codes`, `every_parse_phase_row_has_a_fixture` pass
-- [ ] Run errors passes; build gate passes
+- [x] Tests `parse_phase_rows_report_their_codes`, `every_parse_phase_row_has_a_fixture` pass
+- [x] Run errors passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick

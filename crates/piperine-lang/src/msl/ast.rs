@@ -426,6 +426,8 @@ pub enum FnParam {
     /// `self`
     SelfValue(Loc),
     Named { name: Ident, ty: Type, span: Loc },
+    /// A malformed parameter already reported by a diagnostic (`E0143`).
+    Error(Loc),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

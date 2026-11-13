@@ -39,6 +39,29 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
                  `<-` is a commit statement `place <- value;` in a reaction",
             )
         }
+        // A form Part I §1 rule 2 leaves out, wherever it is found.
+        RichReason::ExpectedFound { found: Some(t), .. }
+            if matches!(&**t, Token::Kw(Kw::Unsafe | Kw::Async | Kw::Await | Kw::Dyn)) =>
+        {
+            name_error(&t, span)
+        }
+        // `&mut`: the `&` before the `mut` that was found is part of the form.
+        RichReason::ExpectedFound { found: Some(t), .. }
+            if matches!(&**t, Token::Kw(Kw::Mut))
+                && tokens.iter().any(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start) =>
+        {
+            let start = tokens
+                .iter()
+                .find(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start)
+                .map_or(span.start, |(_, s)| s.start);
+            Diagnostic::new(
+                "E0101",
+                "a mutable reference is not part of the language",
+                Span::new(start, span.end),
+                "a syntactic form left out of the language",
+            )
+            .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out")
+        }
         RichReason::ExpectedFound { found: Some(t), .. } if names_expected(e, &t) => name_error(&t, span),
         RichReason::ExpectedFound { found: None, .. } if at_span().is_some_and(|t| names_expected(e, &t)) => {
             name_error(&at_span().unwrap_or(Token::Error), span)

@@ -204,33 +204,105 @@ pub(crate) fn build<'a, I: In<'a>>(
         .collect::<Vec<_>>()
         .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
 
+    // `emit!("stream", name = value, ..)`: the arguments are parsed loosely so
+    // a wrong shape is the spec's E0602, not a generic syntax error.
+    #[derive(Clone)]
+    enum EmitArg {
+        Named(FieldInit),
+        Positional(Expr),
+    }
+    let emit_arg = first_of(vec![
+        ident()
+            .then_ignore(punct(Punct::Eq))
+            .then(expr.clone())
+            .map_with(|(name, value), e| FieldInit { name, value, span: Loc(e.span()) })
+            .map(EmitArg::Named)
+            .boxed(),
+        expr.clone().map(EmitArg::Positional).boxed(),
+    ]);
     let emit = select! { Token::Ident(s) if s == "emit" => () }
         .ignore_then(punct(Punct::Not))
         .ignore_then(
-            string_lit()
-                .then(
-                    punct(Punct::Comma)
-                        .ignore_then(
-                            ident()
-                                .then_ignore(punct(Punct::Eq))
-                                .then(expr.clone())
-                                .map_with(|(name, value), e| FieldInit {
-                                    name,
-                                    value,
-                                    span: Loc(e.span()),
-                                }),
-                        )
-                        .repeated()
-                        .collect::<Vec<_>>(),
-                )
-                .then_ignore(punct(Punct::Comma).or_not())
+            emit_arg
+                .separated_by(punct(Punct::Comma))
+                .allow_trailing()
+                .collect::<Vec<_>>()
                 .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
         )
-        .map_with(|(stream, fields), e| mk(ExprKind::Emit { stream, fields }, e.span()));
+        .validate(|args, e, emitter| {
+            let bad = |span: Span, what: &str| {
+                Rich::custom(
+                    span,
+                    Custom {
+                        code: "E0602",
+                        message: format!("{what} in `emit!`"),
+                        help: Some("write `emit!(\"stream\", name = value, ..)`: a string literal, then `name = value` fields".into()),
+                    },
+                )
+            };
+            let mut args = args.into_iter();
+            let stream = match args.next() {
+                Some(EmitArg::Positional(Expr { kind: ExprKind::Lit(l @ Lit { kind: LitKind::Str(_), .. }), .. })) => l,
+                Some(EmitArg::Positional(x)) => {
+                    emitter.emit(bad(x.span.0, "the first argument is not a string literal"));
+                    return mk(ExprKind::Error, e.span());
+                }
+                Some(EmitArg::Named(f)) => {
+                    emitter.emit(bad(f.span.0, "the first argument is not a string literal"));
+                    return mk(ExprKind::Error, e.span());
+                }
+                None => {
+                    emitter.emit(bad(e.span(), "the stream name is missing"));
+                    return mk(ExprKind::Error, e.span());
+                }
+            };
+            let mut fields = Vec::new();
+            let mut ok = true;
+            for arg in args {
+                match arg {
+                    EmitArg::Named(f) => fields.push(f),
+                    EmitArg::Positional(x) => {
+                        emitter.emit(bad(x.span.0, "a field is not `name = value`"));
+                        ok = false;
+                    }
+                }
+            }
+            if ok { mk(ExprKind::Emit { stream, fields }, e.span()) } else { mk(ExprKind::Error, e.span()) }
+        });
     let include_str = select! { Token::Ident(s) if s == "include_str" => () }
         .ignore_then(punct(Punct::Not))
-        .ignore_then(string_lit().delimited_by(punct(Punct::LParen), punct(Punct::RParen)))
-        .map_with(|s, e| mk(ExprKind::IncludeStr(s), e.span()));
+        .ignore_then(
+            expr.clone()
+                .separated_by(punct(Punct::Comma))
+                .allow_trailing()
+                .collect::<Vec<_>>()
+                .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
+        )
+        .validate(|args, e, emitter| {
+            let bad = |span: Span| {
+                Rich::custom(
+                    span,
+                    Custom {
+                        code: "E0611",
+                        message: "the argument of `include_str!` is not a string literal".into(),
+                        help: Some("write `include_str!(\"path/to/file\")`".into()),
+                    },
+                )
+            };
+            match args.as_slice() {
+                [Expr { kind: ExprKind::Lit(l @ Lit { kind: LitKind::Str(_), .. }), .. }] => {
+                    mk(ExprKind::IncludeStr(l.clone()), e.span())
+                }
+                [x] => {
+                    emitter.emit(bad(x.span.0));
+                    mk(ExprKind::Error, e.span())
+                }
+                _ => {
+                    emitter.emit(bad(e.span()));
+                    mk(ExprKind::Error, e.span())
+                }
+            }
+        });
 
     let path_atom = {
         let path = ty::path(h, true);

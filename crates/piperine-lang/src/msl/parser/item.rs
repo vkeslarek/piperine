@@ -58,13 +58,38 @@ pub(crate) fn dir<'a, I: In<'a>>() -> impl Parser<'a, I, Dir, Extra<'a>> + Clone
 /// `fn name<G>(params) -> T where cond { body }` or `... ;`, with the
 /// optional `const` and `extern "C"` in front.
 pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
-    let param = choice((
-        kw(Kw::SelfLower).map_with(|_, e| FnParam::SelfValue(Loc(e.span()))),
+    // E0143: a signature has no default value and no variadic parameter.
+    let signature_error = |span: Span, what: &str| {
+        Rich::custom(
+            span,
+            Custom {
+                code: "E0143",
+                message: format!("{what} in a function signature"),
+                help: Some("a function takes a fixed list of `name: type` parameters; model optional values with `Option<T>`".into()),
+            },
+        )
+    };
+    let default_value = punct(Punct::Eq).ignore_then(h.expr.clone()).map_with(|_, e| e.span());
+    let param = first_of(vec![
+        kw(Kw::SelfLower).map_with(|_, e| FnParam::SelfValue(Loc(e.span()))).boxed(),
         ident()
             .then_ignore(punct(Punct::Colon))
             .then(h.ty.clone())
-            .map_with(|(name, ty), e| FnParam::Named { name, ty, span: Loc(e.span()) }),
-    ));
+            .then(default_value.or_not())
+            .validate(move |((name, ty), default), e, emitter| {
+                if let Some(span) = default {
+                    emitter.emit(signature_error(span, "a default value"));
+                }
+                FnParam::Named { name, ty, span: Loc(e.span()) }
+            })
+            .boxed(),
+        punct(Punct::DotDotDot)
+            .validate(move |_, e, emitter| {
+                emitter.emit(signature_error(e.span(), "a variadic parameter"));
+                FnParam::Error(Loc(e.span()))
+            })
+            .boxed(),
+    ]);
     kw(Kw::Const)
         .or_not()
         .then(kw(Kw::Extern).ignore_then(string_lit()).or_not())

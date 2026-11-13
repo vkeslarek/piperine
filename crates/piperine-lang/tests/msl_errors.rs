@@ -375,3 +375,119 @@ fn empty_source_empty_file() {
     assert_eq!(r.diagnostics.len(), 1);
     assert!(r.file.items.is_empty());
 }
+
+// ---- one fixture per parse-phase error row (T13) -----------------------------------------------
+
+/// A minimal source for one spec error row: `prefix + at + suffix`, where
+/// `at` is the text the diagnostic must label (`E0xxx` at exactly that span).
+struct Fixture {
+    code: &'static str,
+    prefix: String,
+    at: &'static str,
+    suffix: String,
+}
+
+fn fixture(code: &'static str, prefix: &str, at: &'static str, suffix: &str) -> Fixture {
+    Fixture { code, prefix: prefix.to_string(), at, suffix: suffix.to_string() }
+}
+
+/// Every parse-phase row of the spec's error tables, at least once.
+fn fixtures() -> Vec<Fixture> {
+    vec![
+        // Part I
+        fixture("E0101", "fn f() { let x: ", "dyn", " T = 1; }"),
+        fixture("E0101", "fn f() { ", "unsafe", " { } }"),
+        fixture("E0101", "", "async", " fn f() {}"),
+        fixture("E0101", "fn f(x: ", "&mut", " u8) {}"),
+        fixture("E0121", "fn f() { ", "x +> 1.0;", " }"),
+        fixture("E0121", "fn f() { ", "bound_step(1.0)", "; }"),
+        fixture("E0142", "fn f() { g(a: 1, ", "2", "); }"),
+        fixture("E0143", "fn f(x: f64 ", "= 1.0", ") {}"),
+        fixture("E0143", "fn f(", "...", ") {}"),
+        fixture("E0143", "fn f() {} fn ", "f", "(x: u8) {}"),
+        // Part III
+        fixture("E0302", "module M(a: Bit) { ", "a", " }"),
+        fixture("E0303", "fn f() { ", "module M() {}", " }"),
+        fixture("E0303", "module M() { ", "module N() {}", " }"),
+        fixture("E0331", "module M() { let ", "mut x", " = 1; }"),
+        // Part IV
+        fixture("E0404", "analog for M { ", "q <- 1;", " }"),
+        fixture("E0404", "digital for M { on e { ", "i(p, n) +> 1.0;", " } }"),
+        fixture("E0434", "digital for M { ", "q <- 1;", " }"),
+        // Part VI
+        fixture("E0602", "fn f() { emit!(", "1", ", a = 2); }"),
+        fixture("E0602", "fn f() { emit!(\"s\", ", "3", "); }"),
+        fixture("E0611", "const A: &'static str = include_str!(", "1", ");"),
+        // Appendix A
+        fixture("E0900", "fn f( ", "{", " }"),
+        fixture("E0900", "fn f() { let x = 1 ", "}", ""),
+        fixture("E0900", "fn f() {} ", "/*", " never closed"),
+        fixture("E0901", "fn f() { ", "println!(\"x\")", "; }"),
+        fixture("E0902", "const A: f64 = ", "1e3m", ";"),
+        fixture("E0903", "fn ", "out", "() {}"),
+        fixture("E0905", "const A: u8 = ", "'a'", ";"),
+        fixture("E0907", "fn f() { let x = a ", "+>", " b; }"),
+        fixture("E0907", "fn f() { g(a ", "<-", " b); }"),
+        fixture("E0908", "fn f() { let ", "Unknown", " = 1; }"),
+        // The 257th nested delimiter.
+        Fixture {
+            code: "E0910",
+            prefix: format!("const A: u8 = {}", "[".repeat(256)),
+            at: "[",
+            suffix: format!("1{};", "]".repeat(257)),
+        },
+    ]
+}
+
+#[test]
+fn parse_phase_rows_report_their_codes() {
+    // MSLP-04 AC 1: the minimal source of each parse-phase row reports that
+    // row's code at the offending span.
+    for f in fixtures() {
+        let src = format!("{}{}{}", f.prefix, f.at, f.suffix);
+        let span = Span::new(f.prefix.len(), f.prefix.len() + f.at.len());
+        let found = codes(&src);
+        assert!(
+            found.contains(&(f.code, span)),
+            "{}: {:?} labels {span:?} ({:?}); found {found:?}",
+            f.code,
+            src,
+            f.at
+        );
+    }
+}
+
+/// The codes of every spec error-table row whose phase is `parse`.
+fn spec_parse_phase_codes() -> std::collections::BTreeSet<String> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec");
+    let mut codes = std::collections::BTreeSet::new();
+    for entry in std::fs::read_dir(dir).expect("docs/spec exists") {
+        let path = entry.expect("directory entry").path();
+        if path.extension().is_none_or(|e| e != "md") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("spec file is UTF-8");
+        for line in text.lines() {
+            let cells: Vec<&str> = line.trim().trim_matches('|').split('|').map(str::trim).collect();
+            let Some(first) = cells.first() else { continue };
+            let Some(code) = first.strip_prefix("`E").and_then(|c| c.strip_suffix('`')) else { continue };
+            if code.len() == 4 && code.bytes().all(|b| b.is_ascii_digit()) && cells.last() == Some(&"parse") {
+                codes.insert(format!("E{code}"));
+            }
+        }
+    }
+    codes
+}
+
+#[test]
+fn every_parse_phase_row_has_a_fixture() {
+    // A parse-phase row added to the spec without a fixture fails here.
+    let spec = spec_parse_phase_codes();
+    assert!(spec.len() >= 19, "the spec's tables list at least the 17 rows and E0900/E0910: {spec:?}");
+    let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
+    let missing: Vec<&String> = spec.difference(&covered).collect();
+    assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
+    // And a fixture for a code the spec does not list as `parse` is stale.
+    let stale: Vec<&String> = covered.difference(&spec).collect();
+    assert!(stale.is_empty(), "fixtures for codes that are not parse-phase rows: {stale:?}");
+}
