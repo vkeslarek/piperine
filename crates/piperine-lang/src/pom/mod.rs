@@ -5,6 +5,7 @@
 //! reflection handles. The model mirrors the source: a signal declared in
 //! module `abc` is found there and nowhere else.
 
+pub mod guide;
 mod body;
 mod builtin;
 mod check;

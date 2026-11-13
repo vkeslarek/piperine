@@ -984,11 +984,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `every_public_pom_type_has_a_heading` passes in `pom_docs.rs` (C80: POM-13 AC 1)
-- [ ] The test scrapes `pub struct|enum|trait` (not `pub(crate)`) from every `.rs` under `src/pom/`
-- [ ] MSL examples use ```` ```msl ```` fences
-- [ ] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_public_pom_type_has_a_heading` passes in `pom_docs.rs` (C80: POM-13 AC 1)
+- [x] The test scrapes `pub struct|enum|trait` (not `pub(crate)`) from every `.rs` under `src/pom/`
+- [x] MSL examples use ```` ```msl ```` fences
+- [x] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
