@@ -1,0 +1,373 @@
+# Appendix F. Gallery: mixed-signal systems
+
+This appendix is **informative**. It adds no rule. Each system combines reactions, definitions
+and `analog` blocks; the walkthroughs show which instants are time points, which are jumps, and
+what each analysis can and cannot say about the system.
+
+**Models referenced.**
+
+| Model | Defined in |
+| --- | --- |
+| `SampleHold` | §12.1 |
+| `Comparator` | §13 |
+| `Resistor`, `Capacitor`, `Switch` | §8, §11; declarations as assumed in Appendix D |
+| `Dram1T1C`, `MemoryBank`, bundle `Cell` | §8.4, §7 |
+| `Vco`, `RSwitch` | D.3, D.6 |
+| `Tran`, `Keeper`, `Logic`, `Wire` | §22.3 |
+
+**Guarded instants.** Claims marked "(guarded instant)" rest on §17.2.2: a reaction counts at a
+scheduled time only if its event fires at `(t, 0)` (Appendix D).
+
+## F.1 SAR ADC
+
+**Purpose.** An 8-bit successive-approximation converter: a sample-and-hold, a resistive DAC, a
+comparator located by the solver, and a binary search in a reaction.
+
+```rust
+/// 8-bit DAC: ideal level, ladder resistance, output switch.
+module Dac8(in code: Bit<u8>, vout: Electrical) {
+    vref: f64 = 1.0; rout: f64 = 1k; rsw: f64 = 200.0;
+    signal src: Electrical;
+    pub signal core: Electrical;
+}
+analog for Dac8 {
+    v(src) +> vref * (code.known_or(0x80) as f64) / 256.0;     // unknown code: mid-scale
+    i(src, core) +> v(src, core) / rout;
+    i(core, vout) +> v(core, vout) / rsw;
+}
+
+/// Binary search; cmp is high when the input is above the DAC.
+module SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0x80, out done: Bit = false) {
+    signal bit: Bit<u3> = 7;
+    signal busy: Bit = false;
+}
+digital for SarLogic {
+    on clk.rise() && start && !busy { busy <- true; bit <- 7; code <- 0x80; done <- false; }
+    on clk.rise() && busy {
+        let kept = if cmp { code } else { code & !(1u8 << bit) };
+        if bit == 0 { code <- kept; done <- true; busy <- false; }
+        else { code <- kept | (1u8 << (bit - 1)); bit <- bit - 1; }
+    }
+}
+
+module SarAdc(vin: Electrical, in clk: Bit, in start: Bit, out code: Bit<u8>, out done: Bit) {
+    cpar: f64 = 50f;
+    signal vh: Electrical;
+    signal vdac: Electrical;
+    signal cmp: Bit;
+    let sh = SampleHold(vin, vh, start);      // 12.1
+    let dac = Dac8(code, vdac);
+    let comp = Comparator(vh, vdac, cmp);    // 13
+    let logic = SarLogic(clk, start, cmp, code, done);
+}
+analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's own branch on a public node
+```
+
+> **Resolution.** `rsw` is written `200.0`. The source model had the integer literal `200` as
+> the default of an `f64` param, which §3.2.3 does not convert.
+
+**Semantics walkthrough: structure.**
+
+| Aspect | Trace |
+| --- | --- |
+| Discrete drives | `code` and `done` are driven by `logic` through its `out` ports, which supply the initial values. `SarAdc` passes its own `out` ports down and writes neither (§5.2). `cmp` is driven by `comp`; `held` by `sh`. |
+| Branches | `Dac8`: a potential branch `(src, gnd)` and two flow branches. `SampleHold`: a potential branch `(vh, gnd)`. `SarAdc`: its own flow branch `(dac.core, gnd)`, attached to a public node of a child (§8.2, `pub` rule). |
+| Loads | `Comparator` and `SampleHold` probe their inputs and draw no flow (§11 rule 4). `vdac` carries no flow, so `v(vdac) = v(dac.core)`. |
+| Reading `code` | `Dac8` reads it through `known_or(0x80)`: an unknown code is mid-scale (§3.3.5). |
+
+**Semantics walkthrough: the operating point.**
+
+| Aspect | Trace |
+| --- | --- |
+| `(0, 0)` commits | `code ← 0x80`, `done ← false`, `bit ← 7`, `busy ← false`, `held ← 0.0`, `cmp ← false` (§16 step 2). |
+| Solve | `v(vh) = 0`. `v(src) = v(dac.core) = v(vdac) = vref / 2`; `cpar` carries no flow. Every node has a resistive path. |
+| Reactions of `(0, 0)` | `v(vh, vdac)` is negative. `dn = above(−v(inp, inn))` fires through its `init()` arm (§22.2). `q <- up` commits false, the value `cmp` already has. |
+| `clk` or `start` high at 0 | Their first commits are edges (§13 rule 6). With both high, a conversion starts at `(0, 0)` and `sh` samples the operating point's `v(vin)`. |
+
+**Semantics walkthrough: one conversion.**
+
+| Instant | Trace |
+| --- | --- |
+| `start` rises at `(t_s, 0)` | A time point: the `SampleHold` reaction probes (§12.1.5, §17.2.2). It commits `held <- v(vin)`. |
+| `(t_s, 1)` | `held` applies and `analog` reads it: a jump (§15 step 3.4). `vh` is the potential of a source with no state, so it steps. `cross` is compared across the jump (§13 rule 5). A crossing found there fires at `(t_s, 2)`, and `cmp` applies at `(t_s, 3)`. |
+| First `clk` edge with `start` high | The first reaction fires: `busy`, `bit ← 7`, `code ← 0x80`, `done ← false`. The second does not: it reads the old `busy` (§12.1.1). |
+| Each of the next eight edges | The second reaction reads `cmp` and `code`. It keeps or clears bit `bit`, and sets the next lower bit as the new trial. |
+| One microstep later | `code` applies; `Dac8` reads it: a jump. `cpar · v(core)` is a state and stays (§15.2.1). `v(src)` steps, and the flow through `rout` with it. |
+| Between edges | `v(vdac)` settles with time constant `rout · cpar`, 50 ps. If it passes `v(vh)`, the comparator's `cross` is located (§17.3) and `cmp` follows at the next microstep. |
+| Last edge (`bit == 0`) | `code <- kept; done <- true; busy <- false`. `code` changes only if bit 0 was cleared. |
+| Never together | `busy` separates the two reactions. If both guards held, source order would decide each level (§12.1.2). |
+
+**Semantics walkthrough: time points and analyses.**
+
+| Aspect | Trace |
+| --- | --- |
+| Time points per conversion | The `start` edge; each `clk` edge whose reaction can change `code` (guarded instant); each located comparator crossing. Up to nine commits change `code`, each a jump. |
+| Timing requirement | `cmp` must be settled when the next edge reads it. The clock period must exceed several `rout · cpar`; the model does not check it. A `Setup` monitor on `cmp` does (§22.5). |
+| Level-sensitive `start` | `SarLogic` reads `start` as a level, `SampleHold` as an edge. If `start` stays high after `done`, the next edge starts a new conversion of the same held sample. |
+| `Dc` | The operating point above. `at`-free and delay-free, so reactions run at each sweep point (§16.1). |
+| `Ac` | `held` and `code` are constant (§11.1): `vh` and `src` are potential sources of zero small-signal value. `vin` has no path to any output. The zero-order-hold response of `SampleHold` appears only in a periodic analysis (§11.1, §16.3). |
+| `Noise` | No `noise` instance: the resistances are written as bare contributions. |
+| Unknown `cmp` | `kept` is the merge of both arms (§3.3.3): the bit under test becomes unknown, and stays so in `code`. `Dac8` then outputs mid-scale. |
+| Gradients | `held` is real and carries the sensitivity of `v(vin)` at the sampling instant. `code` is not real and acts through event times only (§23.3.4). |
+
+## F.2 Charge-pump PLL
+
+**Purpose.** A phase-frequency detector with a reset delay, a charge pump, a passive loop filter,
+the VCO of D.3 and a divider. The top module is pure structure.
+
+```rust
+module Pfd(in fref: Bit, in fdiv: Bit, out up: Bit = false, out dn: Bit = false) { treset: f64 = 50p; }
+digital for Pfd {
+    on fref.rise() { up <- true; }
+    on fdiv.rise() { dn <- true; }
+    on (up.changed() || dn.changed()) && up && dn { up <- false after treset; dn <- false after treset; }
+}
+
+module ChargePump(in up: Bit, in dn: Bit, vc: Electrical) { icp: f64 = 100u; }
+analog for ChargePump {
+    i(vc) +> if dn.high() { icp } else { 0.0 } - if up.high() { icp } else { 0.0 };
+}
+
+module Divider<const N: u32>(in clk: Bit, out q: Bit = false) where N >= 2 && N % 2 == 0 {
+    signal cnt: Bit<u32> = 0;
+}
+digital<N> for Divider<N> {
+    on clk.rise() { if cnt == N / 2 - 1 { cnt <- 0; q <- !q; } else { cnt <- cnt + 1; } }
+}
+
+/// Pure structure.
+module Pll(in fref: Bit, out clk: Bit) {
+    r: f64 = 10k; c1: f64 = 10p; c2: f64 = 1p;
+    signal up: Bit;
+    signal dn: Bit;
+    signal fdiv: Bit;
+    signal vc: Electrical = 0.0;
+    signal mid: Electrical = 0.0;
+    let pfd = Pfd(fref, fdiv, up, dn);
+    let cp = ChargePump(up, dn, vc);
+    let rz = Resistor(vc, mid) { r: r };
+    let cz = Capacitor(mid, gnd) { c: c1 };
+    let cp2 = Capacitor(vc, gnd) { c: c2 };
+    let vco = Vco(vc, clk);                  // D.3
+    let div = Divider::<8>(clk, fdiv);
+}
+```
+
+> **Resolution.** `where N >= 2 && N % 2 == 0` is added to `Divider` (§8.1, const-generic
+> constraint). `N / 2 - 1` wraps for `N < 2`, and an odd `N` would divide by `N − 1`.
+
+**Semantics walkthrough: the operating point.**
+
+| Aspect | Trace |
+| --- | --- |
+| Drives | `up`, `dn` by `pfd`; `fdiv` by `div`; `clk` by `vco`. Each driver supplies the initial value (§5.2). |
+| Branch signs | `i(vc)` is the flow from `vc` to `gnd` through the pump (§6). `dn` adds `icp` out of `vc`; `up` subtracts it, charging the filter. |
+| No DC path | `vc` and `mid` see capacitors and a current source only. Both have `= 0.0` and are held through the transient's operating point (§16). |
+| Holds | Two holds to `gnd` and a resistor between them. The resistor is a flow branch, so no loop of potential contributions exists. |
+| `(0, 0)` | All discrete initial values are committed. `up.changed()` and `dn.changed()` fire (§13 rule 6); the guard `up && dn` is false. The VCO's `above` fires (D.3). |
+| `(0, 1)` | `clk ← true`. `clk.rise()` runs the divider: `cnt <- 1`. The divider counts the edge at time 0. |
+| `fref` high at 0 | `fref.rise()` fires at `(0, 0)`. `up` applies at `(0, 1)`; `analog` reads it, so the equilibrium is solved again with the hold absorbing `icp` (§16 step 4). |
+| First step | The holds are removed. Both nodes carry `ddt` states, so the release is not a jump (§16). |
+
+**Semantics walkthrough: the detector.**
+
+| Situation | Trace |
+| --- | --- |
+| `fref` leads | `fref.rise()` at `(t1, 0)`; `up` applies at `(t1, 1)`: a jump, the pump flow steps by `icp`. `c2 · v(vc)` and `c1 · v(mid)` stay (§15.2.1). |
+| `fdiv` follows at `t2` | `dn` applies at `(t2, 1)`. Its `changed()` fires there with `up && dn` true: the third reaction commits both resets for `t2 + treset`. |
+| Overlap | For `treset` both are high and the pump flow is `icp − icp = 0`. |
+| Reset | At `(t2 + treset, 0)` both fall. `changed()` fires; the guard is false. |
+| Both edges in one microstep | Both commits apply at `(t, 1)`. The third reaction fires once (§13 rule 1) and schedules one reset. |
+| Edge on the reset tick | The reset applies at `(t, 0)`. The edge's reaction runs at `(t, 0)` and its `up <- true` applies at `(t, 1)`. No two commits meet (§12.1.2), and the edge counts. |
+| Edge while the reset is pending | `up` is already high. `up <- true` comes from another statement and does not cancel the reset (§12.1.4). Both outputs fall when it is due: the edge is lost, as in a real detector's dead zone. |
+
+**Semantics walkthrough: time points and analyses.**
+
+| Aspect | Trace |
+| --- | --- |
+| Time points | Rising `fref` and `fdiv` edges whose reactions can change `up` or `dn` (guarded instant); reset times; every VCO edge and wrap, which are located crossings (§17.2 table). |
+| VCO edges | An edge that only advances the divider's counter is a time point anyway: it is located. It is not a jump. |
+| Jumps | Changes of `up` and `dn`, and the two jumps of each VCO wrap (D.3). |
+| Loop frequency | `vc` starts at 0 V: the VCO runs at `f0`, 1 GHz, and `fdiv` at 125 MHz. |
+| `Dc` | Singular, naming `vc` and `mid`: the truth about a charge-pump filter (§16). |
+| `Ac`, `Noise` | Their operating point fails the same way, also at a transient's last instant (§16.4.2). The loop is closed through discrete carriers and event times, so its response needs a periodic analysis (§16.3, G.30). |
+| Unknown | Every carrier has an initial value. A `fref` that goes from low to unknown fires `rise()` (§22.1); the reaction is unguarded, so `up <- true` is committed known. |
+| Gradients | Edge times move with `kvco`, `f0`, `icp` and the filter params through the located VCO crossings (§23.3.2). |
+
+## F.3 DRAM array with a swappable cell
+
+**Purpose.** An array whose cell is a template param. A behavioral cell replaces the
+charge-based cell of §8.4 without touching the array.
+
+```rust
+/// Behavioral cell with the ports of Dram1T1C (§8.4), for fast runs.
+module BehavioralCell(c: Cell) { vdd: f64 = 1.0; ron: f64 = 2k; signal bit: Bit = false; }
+analog for BehavioralCell {
+    if c.wl.high() { i(c.bl) +> (v(c.bl) - if bit.high() { vdd } else { 0.0 }) / ron; }
+}
+digital for BehavioralCell {
+    on c.wl.fall() && c.wl.prev().is_known() { bit <- v(c.bl) > vdd / 2.0; }
+}
+
+module SenseAmp(bl: Electrical, vref: Electrical, in en: Bit, out q: Bit) {}
+digital for SenseAmp { on en.rise() { q <- v(bl, vref) > 0.0; } }
+
+module Dram<const ROWS: u32, const COLS: u32>(in wl: [Bit; ROWS], in pre: Bit, in sense: Bit, out q: [Bit; COLS]) {
+    cbl: f64 = 100f; vpre: f64 = 0.5;
+    signal bl: [Electrical; COLS];
+    signal vref: Electrical;
+    pub let bank = MemoryBank::<_, ROWS, COLS>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // 8.4
+    for c in 0..COLS {
+        let cb = Capacitor(bl[c], gnd) { c: cbl };
+        let pc = RSwitch(bl[c], vref, pre);  // D.6
+        let sa = SenseAmp(bl[c], vref, sense, q[c]);
+    }
+}
+analog<ROWS, COLS> for Dram<ROWS, COLS> { v(vref) +> vpre; }
+```
+
+> **Resolution.** The store reaction of `BehavioralCell` is guarded by
+> `c.wl.prev().is_known()`. A word line that starts low has fallen at `(0, 0)` (§13 rule 6). The
+> unguarded reaction would then overwrite the declared `bit = false` with a comparison of the
+> precharged bit line against `vdd / 2`. The guard is the idiom of §12.1.
+
+**Semantics walkthrough: structure.**
+
+| Aspect | Trace |
+| --- | --- |
+| Template | `cell: C` with `C: Fn(Cell)` holds for every module whose port list is `(Cell)` (§8.4). The param is structural (§8.1.2). |
+| Swap | `BehavioralCell {}` in place of `Dram1T1C { cs: 30f }` changes every cell. `MemoryBank` is untouched. |
+| Bundle | `Cell { wl: wl[r], bl: bl[c] }` is a bundle literal (§7). `wl` is an `in` field: the cell reads it. `bl` is a node. |
+| Generation | Two nested `for`s place `ROWS × COLS` cells; the `let` makes a two-dimensional array (§8.2). `Dram`'s own `for` places three instances per column. |
+| Paths | A storage node is probed as `bank.cells[3][5].sn`: `bank`, `cells` and `sn` are all `pub` (§8.2, `pub` rule). The host can read any path regardless (§21). |
+| Drives | Each `q[c]` is driven by one `SenseAmp`. `vref` has one potential branch, from `Dram`. |
+
+**Semantics walkthrough: `Dram1T1C` in the array.**
+
+| Aspect | Trace |
+| --- | --- |
+| Operating point | Word lines low: the access branch has `g = 0` and carries no flow. Each `bl[c]` reaches `vref` through an `RSwitch`, on or off: 0.5 V. Each `sn` is held at 0 V, and its leak agrees (§16). |
+| `(0, 0)` | `SenseAmp` has no initial `q`: it is unknown until the first `sense` edge. If `sense` starts high, `en.rise()` fires and reads the operating point (§13 rule 6). |
+| Precharge | `pre` high: `bl` follows `vref` through `ron`. `pre` low: `bl` floats on `cbl`, leaking through `roff`. |
+| Word line rises | `analog` of `COLS` cells reads it: a time point and a jump. The switch is resistive, so `cs · v(sn)` and `cbl · v(bl)` stay (§15.2.1). The flows step. |
+| Charge sharing | `sn` and `bl` approach each other with time constant near `ron · cs · cbl / (cs + cbl)`, about 0.1 ns. The bit line moves by `(v(sn) − vpre) · cs / (cs + cbl)`. |
+| Sensing | `sense` rises: a time point, since the reaction probes (§12.1.5). It commits `q[c] <- v(bl, vref) > 0.0`, read from the solution before that microstep (§15 table). |
+| Word line falls | A jump with nothing forced. The cell keeps the shared level, not its old one: the read is destructive. |
+| Limits of the model | The array has no write driver and no restore. Every `sn` starts at 0 V and reads as 0. A write path is one more branch per bit line. |
+| `Dc` | Solvable: every node has a resistive path (`rleak`, `roff`). |
+| `Ac` | Linearized with the word lines as found at the operating point (§11.1). |
+| `Noise` | No `noise` instance. |
+
+**Semantics walkthrough: `BehavioralCell`.**
+
+| Aspect | Trace |
+| --- | --- |
+| Branch kind | The branch `(c.bl, gnd)` gets a flow contribution or none. No contribution is zero flow (§11 rule 4). The kind never changes, so this is not a switch branch (§11 rule 2). |
+| Word line high | The cell drives the bit line toward `vdd` or 0 V through `ron`. |
+| Word line falls, `(t, n)` | The reaction probes the solution from before the change (§15 table): the bit line as the cell and any writer left it. It commits `bit`. The same microstep's jump removes the cell's flow (§15 step 3.4). |
+| `(t, n + 1)` | `bit` applies. `analog` reads it statically, so a jump is solved; with the word line low it moves nothing. |
+| Unknown `wl` | `high()` reads it as low (§22.1). A fall to unknown fires `fall()`; the stored bit is the probe's comparison, which is known. |
+| Time points | Every word-line change that `analog` reads; every fall, since the reaction probes. |
+
+## F.4 Two tristate buses joined by a pass gate
+
+**Purpose.** Two resolved lines, each with two tristate devices, joined by a bidirectional gate,
+with a keeper on one side. Nothing here is analog.
+
+```rust
+/// A device on a shared line: drives when enabled, always listens.
+module Dev(in d: Bit, in oe: Bit, out seen: Bit, pad: Wire) {
+    pad = if oe { Logic::strong(d) } else { Logic::Z };
+    seen = pad.v;
+}
+
+module Board(in en: Bit, in d: [Bit; 4], in oe: [Bit; 4], out seen: [Bit; 4]) {
+    signal la: Wire;
+    signal lb: Wire;
+    let a0 = Dev(d[0], oe[0], seen[0], la);
+    let a1 = Dev(d[1], oe[1], seen[1], la);
+    let b0 = Dev(d[2], oe[2], seen[2], lb);
+    let b1 = Dev(d[3], oe[3], seen[3], lb);
+    let gate = Tran(la, lb, en);             // 22.3
+    let keep = Keeper(lb);
+}
+```
+
+| Situation | `la` | `lb` |
+| --- | --- | --- |
+| `oe[0]`, gate on | strong `d[0]` | strong `d[0]`, through the gate |
+| `oe[0]` and `oe[2]`, gate on, levels differ | strong, level unknown | strong, level unknown |
+| nobody enabled, gate on | weak, the keeper's level, through the gate | weak, the keeper's level |
+| nobody enabled, gate off | high impedance (`s == HighZ`, level unknown) | weak, the keeper's level |
+
+**Semantics walkthrough.**
+
+| Aspect | Trace |
+| --- | --- |
+| Drives of `la` | `a0`, `a1`, and the gate's drive, which is `lb.others()` while `en` is high (§22.3). |
+| Drives of `lb` | `b0`, `b1`, the keeper, and the gate's drive, `la.others()`. |
+| `others()` | The resolution of every drive but the caller's own (§5.2). From the gate, `lb.others()` is `b0`, `b1` and the keeper; `la.others()` is `a0` and `a1`. |
+| No loop | Neither gate drive depends on the gate's other drive. The keeper's drive reads `last`, written by a reaction. Dependencies are per drive (§8.2.3): no relaxation is needed. |
+| Row 1 | `lb.others()` is `weak(last)`, so `la = wired(strong d[0], Z, weak)`: strong `d[0]`. `la.others()` is strong `d[0]`, and it beats the keeper on `lb`. |
+| Row 2 | Each side resolves two strong drives that disagree: strength `Strong`, level `merge` of both, unknown (§22.3). |
+| Row 3 | `la.others()` is `Z`. `lb` is the keeper's `weak(last)`, and the gate carries it to `la`. |
+| Row 4 | Both gate drives are `Z`. `la` resolves `Z` drives only: `Logic::Z`, whose level is unknown. |
+| Settling | One microstep: definitions and `resolve` are evaluated in dependency order (§8.2.1). `seen` settles in the same microstep, after the line. |
+| Row 1, microstep by microstep | `(t, 0)`: `oe[0]` applies; `la`, `lb` and `seen` settle; `changed()` fires. The keeper's reaction runs, since `lb.s > Weak`, and commits `last <- lb.v`. `(t, 1)`: the keeper's drive becomes `weak(d[0])`; both resolved values are unchanged. |
+| The keeper's memory | `last` has no initial value: before the first strong drive, rows 3 and 4 show a weak unknown level. After the contention of row 2 the keeper stores unknown. |
+| Unknown `en` | Each gate drive is the merge of its arms (§3.3.3): a level stays known only where `others()` and `Z` agree. |
+| A second gate | A second `Tran` between `la` and `lb` makes each gate's drive depend on the other's: a loop among resolved drives. It settles by relaxation to the same table (§8.2.3, §22.3). |
+| Solver | No node, no probe: no time point (§17.2.2). In a small-signal sweep nothing happens (§16.2). |
+
+Undriven, contended and kept are three different values, told apart by the strength.
+
+## F.5 Charge sharing through an ideal switch
+
+**Purpose.** The jump rule on its smallest example: an ideal switch closes between two
+capacitors at different potentials.
+
+```rust
+module ShareCharge(in close: Bit) {
+    pub signal a: Electrical = 1.0;            // held at 1 V through the transient's operating point
+    pub signal b: Electrical = 0.0;            // held at 0 V
+    let c1 = Capacitor(a, gnd) { c: 1p };
+    let c2 = Capacitor(b, gnd) { c: 3p };
+    let sw = Switch(a, b, close);              // 11: a short while close is high
+}
+```
+
+> **Resolution.** `a` and `b` are internal public nodes with `= value`. The source model took
+> them as ports and stated "a at 1 V", "b at 0 V" in comments only. A node with no DC path
+> starts a transient from its `= value` (§16), so the initial charge is now part of the model.
+
+**Semantics walkthrough.**
+
+| Aspect | Trace |
+| --- | --- |
+| Branches | Two capacitor branches to `gnd`. `Switch` has a switch branch `(a, b)`: potential while `close` is high, flow otherwise (§11 rule 2). The selector is a discrete carrier, so the nodes are not merged and the branch keeps its flow unknown (§11 rule 3). |
+| Operating point | `close` must be low. The switch is open; neither node has a DC path; both are held at their `= value` (§16). |
+| `close` high at 0 | The holds on `a` and `b` and the short between them close a loop of potential contributions. The solve is singular and names them (§16). |
+| First step | The holds are removed; `1p · v(a)` and `3p · v(b)` are the states. Nothing moves until the switch closes. |
+| `close` rises at `(t, 0)` | The commit applies; `analog` reads `close`: a jump in that microstep (§15 step 3.4). |
+
+At that instant the jump rule (§15.2) writes, with `i` the switch flow and `h → 0`:
+
+| Row | Equation | Source |
+| --- | --- | --- |
+| node `a` | `1p · (v(a) − 1) / h + i = 0` | `ddt` reads `(q − q⁻) / h` |
+| node `b` | `3p · (v(b) − 0) / h − i = 0` | the same |
+| switch | `v(a) − v(b) = 0` | the constraint that forces the jump |
+
+| Step | Trace |
+| --- | --- |
+| First pass | Adding the node rows removes `i`: `1p · (v − 1) + 3p · v = 0`. So `v(a) = v(b) = 0.25 V`. |
+| Conservation | The cut that the switch closes holds 1 pC before and `4p · 0.25 = 1 pC` after (§15.2.2). |
+| The impulse | `i = 0.75 pC / h`. It exists only inside the solve; no probe reads it (§15.2.2). |
+| Second pass | It starts from 0.25 V on both nodes and moves nothing. Every `ddt` is 0, so `i = 0` (§15.2.4). |
+| `(t, 1)` | A probe or a `cross` reads 0.25 V and zero switch flow. |
+| Restart | Both states moved: the integrator drops their history and starts from the right value (§15.2.6). |
+| Afterwards | `a` and `b` float together at 0.25 V. The transient is determined by the states (§15.2.1). |
+| `Dc` | Singular with the switch open or closed: no node has a DC path. Nothing is held outside a transient's operating point (§16). |
+| `Ac`, `Noise` | Their operating point fails the same way. |
+| Unknown `close` | `high()` reads it as low: the switch is open (§22.1). |
+| Gradients | Across the jump the sensitivities of the states obey the same backward-Euler limit (§23.3.2). |
