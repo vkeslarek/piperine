@@ -7,12 +7,14 @@
 
 mod body;
 mod items;
+mod meta;
 
 use super::decl::{
     BehaviorData, ConstData, DeclData, DeclKind, EnumData, ImplData, ModuleData,
     NamespaceData, NamespaceOrigin, NatureData, StructData, TraitData, UseData,
 };
 use super::design::Design;
+use super::meta::Meta;
 use super::ids::{DeclId, FileId};
 use crate::msl::Span;
 use crate::msl::ast;
@@ -28,6 +30,8 @@ pub(crate) struct Lowerer<'a> {
 /// Lower every item of `ast` as a child of the namespace `ns`.
 pub(crate) fn lower_file(design: &mut Design, file: FileId, ns: DeclId, ast: &ast::File) {
     let mut lw = Lowerer { design, file, owner: ns };
+    // The `//!` comments at the top of a file are the file namespace's docs.
+    lw.design.decl_mut(ns).meta.docs = ast.inner_docs.iter().map(meta::doc).collect();
     for item in &ast.items {
         lw.item(item);
     }
@@ -50,6 +54,7 @@ impl Lowerer<'_> {
             file: self.file,
             span,
             public,
+            meta: Meta::default(),
         };
         let id = self.design.push_decl(data);
         self.design.decl_mut(self.owner).children.push(id);
@@ -70,7 +75,10 @@ impl Lowerer<'_> {
     pub(crate) fn item(&mut self, item: &ast::Item) -> DeclId {
         let id = self.new_decl(DeclKind::Error, item_name(&item.kind), item.span.0, item.public);
         let kind = self.within(id, |lw| lw.item_kind(&item.kind));
-        self.design.decl_mut(id).kind = kind;
+        let meta = self.within(id, |lw| lw.meta(&item.meta));
+        let decl = self.design.decl_mut(id);
+        decl.kind = kind;
+        decl.meta = meta;
         id
     }
 

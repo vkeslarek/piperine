@@ -245,12 +245,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `doc_comments_reach_docs` passes in `pom_tree.rs` (C35: POM-07 AC 1)
-- [ ] Test `attribute_arguments_are_exposed` passes in `pom_tree.rs` (C36: POM-07 AC 2)
-- [ ] `doc_comments_reach_docs` starts with file, `mod`, fn and const docs and is extended in T7, T13 and T14 for field, variant, module, port, param, signal
-- [ ] Attribute paths are stored, not resolved
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `doc_comments_reach_docs` passes in `pom_tree.rs` (C35: POM-07 AC 1)
+- [x] Test `attribute_arguments_are_exposed` passes in `pom_tree.rs` (C36: POM-07 AC 2)
+- [x] `doc_comments_reach_docs` starts with file, `mod`, fn and const docs and is extended in T7, T13 and T14 for field, variant, module, port, param, signal
+- [x] Attribute paths are stored, not resolved
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

@@ -4,9 +4,11 @@
 mod body;
 mod items;
 
+use super::body::Lit;
 use super::decl::{DeclData, DeclKind};
 use super::design::Design;
 use super::ids::DeclId;
+use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
 pub use body::{Expr, Path, Pat, SourceFile, Stmt, Type};
@@ -87,6 +89,23 @@ pub trait Reflect<'d>: Copy {
         self.file().text().get(self.span().range()).unwrap_or("")
     }
 
+    /// The doc comments in order, one per comment. On a file's root
+    /// namespace these are the file's `//!` comments.
+    fn docs(self) -> &'d [Doc] {
+        &self.decl().data().meta.docs
+    }
+
+    /// The attributes in order.
+    fn attrs(self) -> Vec<Attr<'d>> {
+        let d = self.decl();
+        d.data().meta.attrs.iter().map(|node| Attr { owner: d, node }).collect()
+    }
+
+    /// The first attribute whose path is written `name`.
+    fn attr(self, name: &str) -> Option<Attr<'d>> {
+        self.attrs().into_iter().find(|a| a.name() == name)
+    }
+
     fn is_pub(self) -> bool {
         self.decl().data().public
     }
@@ -96,6 +115,96 @@ pub trait Reflect<'d>: Copy {
     fn declared_in(self) -> Option<Decl<'d>> {
         let d = self.decl();
         d.data().parent.map(|p| Decl::new(d.design, p))
+    }
+}
+
+/// An attribute: `#[path]`, `#[path(args)]` or `#[path = expr]`.
+#[derive(Clone, Copy)]
+pub struct Attr<'d> {
+    owner: Decl<'d>,
+    node: &'d AttrNode,
+}
+
+impl<'d> Attr<'d> {
+    pub fn node(self) -> &'d AttrNode {
+        self.node
+    }
+
+    /// The path as written, segments joined by `::`.
+    pub fn name(self) -> String {
+        let path = self.path();
+        path.segments().iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>().join("::")
+    }
+
+    /// The attribute's path node; its resolution stays `Unresolved`.
+    pub fn path(self) -> Path<'d> {
+        self.owner.design().path(self.node.path)
+    }
+
+    pub fn span(self) -> Span {
+        self.node.span
+    }
+
+    /// The authored text, `#[...]` included.
+    pub fn text(self) -> &'d str {
+        self.owner.file().text().get(self.node.span.range()).unwrap_or("")
+    }
+
+    pub fn input(self) -> &'d AttrInputNode {
+        &self.node.input
+    }
+
+    /// The `= expr` value of `#[path = expr]`.
+    pub fn value(self) -> Option<Expr<'d>> {
+        match &self.node.input {
+            AttrInputNode::Eq(e) => Some(self.owner.design().expr(*e)),
+            AttrInputNode::None | AttrInputNode::List(_) => None,
+        }
+    }
+
+    /// The literal arguments written without a name, in order.
+    pub fn positional(self) -> Vec<&'d Lit> {
+        match &self.node.input {
+            AttrInputNode::List(args) => args
+                .iter()
+                .filter_map(|a| match a {
+                    AttrArgNode::Lit(l) => Some(l),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The path arguments, as in `#[derive(Repr, Clone)]`, in order.
+    pub fn paths(self) -> Vec<Path<'d>> {
+        match &self.node.input {
+            AttrInputNode::List(args) => args
+                .iter()
+                .filter_map(|a| match a {
+                    AttrArgNode::Path(p) => Some(self.owner.design().path(*p)),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The value of the argument `name = lit`.
+    pub fn named(self, name: &str) -> Option<&'d Lit> {
+        match &self.node.input {
+            AttrInputNode::List(args) => args.iter().find_map(|a| match a {
+                AttrArgNode::NameValue(n, l) if n.text == name => Some(l),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Debug for Attr<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Attr({})", self.name())
     }
 }
 

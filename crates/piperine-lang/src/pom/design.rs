@@ -8,6 +8,7 @@ use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
 use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
+use super::meta::Meta;
 use crate::msl::{self, Diagnostic, ast};
 
 /// A source file as the design stores it: its text and the retained syntax
@@ -291,6 +292,7 @@ impl Design {
             file: id,
             span: parsed.file.span.0,
             public: true,
+            meta: Meta::default(),
         });
         self.files.push(SourceFileData {
             name: name.to_string(),

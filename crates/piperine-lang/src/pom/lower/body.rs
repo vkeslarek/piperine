@@ -9,10 +9,9 @@ use crate::pom::body::{
 };
 use crate::pom::decl::{BindingData, BindingOrigin, DeclKind, Name, ReactionData, SignalData};
 use crate::pom::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
-use crate::pom::meta::Meta;
 use crate::pom::resolution::{CallClass, Resolution, StructClass};
 
-pub(crate) fn name(i: &ast::Ident) -> Name {
+pub(super) fn name(i: &ast::Ident) -> Name {
     Name { text: i.name.clone(), span: i.span.0 }
 }
 
@@ -211,7 +210,7 @@ impl Lowerer<'_> {
                 arms: arms
                     .iter()
                     .map(|a| Arm {
-                        meta: Meta::default(),
+                        meta: self.meta(&a.meta),
                         pat: self.pat(&a.pat, BindingOrigin::MatchArm),
                         guard: a.guard.as_ref().map(|g| self.expr(g)),
                         body: self.expr(&a.body),

@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::body::{Block, Lit};
+use super::meta::Meta;
 use super::ids::{DeclId, ExprId, FileId, PatId, PathId, TypeId};
 use crate::msl::Span;
 
@@ -26,6 +27,7 @@ pub struct DeclData {
     pub file: FileId,
     pub span: Span,
     pub public: bool,
+    pub meta: Meta,
 }
 
 /// What a declaration is, with its payload.

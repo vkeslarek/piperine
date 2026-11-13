@@ -143,3 +143,67 @@ fn item_in_fn_body_is_declared_in_the_fn() {
     assert_eq!(design.root().children().len(), 2);
     assert!(design.check().is_empty());
 }
+
+#[test]
+fn doc_comments_reach_docs() {
+    let text = "\
+//! File line 1
+//! File line 2
+/// Module doc
+/** block doc */
+mod a { }
+/// fn doc
+fn f() {}
+/// const doc
+const N: u32 = 1;
+fn plain() {}
+";
+    let design = build(text);
+    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let texts = |d: piperine_lang::pom::Decl<'_>| d.docs().iter().map(|x| x.text.clone()).collect::<Vec<_>>();
+    assert_eq!(texts(design.root()), [" File line 1", " File line 2"]);
+    let a = design.find("a").unwrap();
+    assert_eq!(texts(a), [" Module doc", " block doc "]);
+    assert_eq!(a.docs().iter().map(|d| d.block).collect::<Vec<_>>(), [false, true]);
+    assert_eq!(texts(design.find("f").unwrap()), [" fn doc"]);
+    assert_eq!(texts(design.find("N").unwrap()), [" const doc"]);
+    assert!(design.find("plain").unwrap().docs().is_empty());
+    // The doc span is the comment's own text range.
+    let doc = &design.find("f").unwrap().docs()[0];
+    assert_eq!(&text[doc.span.range()], "/// fn doc");
+}
+
+#[test]
+fn attribute_arguments_are_exposed() {
+    use piperine_lang::pom::LitKind;
+    let text = "\
+#[link(\"bsim4.osdi\", model = \"bsim4\")]
+#[derive(Repr, Clone)]
+#[doc = \"hello\"]
+const N: u32 = 1;
+const M: u32 = 2;
+";
+    let design = build(text);
+    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let n = design.find("N").unwrap();
+    assert_eq!(n.attrs().len(), 3);
+
+    let link = n.attr("link").expect("attribute link");
+    assert_eq!(link.name(), "link");
+    let positional = link.positional();
+    assert_eq!(positional.len(), 1);
+    assert_eq!(positional[0].kind, LitKind::Str("bsim4.osdi".into()));
+    assert_eq!(link.named("model").map(|l| &l.kind), Some(&LitKind::Str("bsim4".into())));
+    assert!(link.named("other").is_none());
+    assert_eq!(link.text(), "#[link(\"bsim4.osdi\", model = \"bsim4\")]");
+
+    let derive = n.attr("derive").unwrap();
+    assert_eq!(derive.paths().iter().map(|p| p.text()).collect::<Vec<_>>(), ["Repr", "Clone"]);
+    let doc = n.attr("doc").unwrap();
+    assert_eq!(doc.value().map(|e| e.text()), Some("\"hello\""));
+
+    // The path is stored as written, never resolved.
+    assert_eq!(link.path().segments()[0].res, piperine_lang::pom::Resolution::Unresolved);
+    assert!(n.attr("missing").is_none());
+    assert!(design.find("M").unwrap().attrs().is_empty());
+}
