@@ -870,9 +870,9 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `methods_resolve_to_impl_fn_or_builtin` passes in `pom_classify.rs` (C66: POM-10 AC 4)
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `methods_resolve_to_impl_fn_or_builtin` passes in `pom_classify.rs` (C66: POM-10 AC 4)
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

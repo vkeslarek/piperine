@@ -562,3 +562,55 @@ module M<T>(a: f64, g: T) {
     }
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
+
+#[test]
+fn methods_resolve_to_impl_fn_or_builtin() {
+    let src = "\
+struct Pair { a: Electrical }
+impl Pair { pub fn vd(self) -> f64 { 1.0 } }
+impl Electrical { pub fn big(self) -> f64 { 1.0 } }
+impl Bit { pub fn prev(self) -> bool { true } }
+impl Logic { pub fn lowest(self) -> Logic { self } }
+module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
+    signal s: Bit;
+    let r = clk.rise();
+    let ch = s.changed();
+    let pv = s.prev();
+    let ot = s.others();
+    let inf = p.inflow();
+    let lv = w.level(1);
+    let bg = p.big();
+    let vd = pr.vd();
+    let lo = w.lowest();
+    let no = clk.nothere();
+    let un = a.rise();
+    let tail = pr.a.changed();
+}
+";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let impl_fn = |owner: &str, name: &str| {
+        let items = design.root().children().into_iter().filter_map(|c| c.as_impl()).filter(|i| i.self_ty().text() == owner).flat_map(|i| i.items());
+        Resolution::Decl(items.into_iter().find(|f| f.name() == Some(name)).unwrap_or_else(|| panic!("`{name}` in an impl of {owner}")).id())
+    };
+    let builtin = |name: &str| Resolution::Builtin(piperine_lang::pom::builtin_method(name).unwrap());
+    // `rise` is declared by the prelude's `impl Bit`.
+    let rise = design.nature("Bit").unwrap().impls().into_iter().flat_map(|i| i.items()).find(|f| f.name() == Some("rise")).unwrap();
+    let prelude_rise = Resolution::Decl(rise.id());
+    assert_eq!(member_res(&design, "clk.rise()"), prelude_rise);
+    // The carrier built-ins come first: a user `impl Bit` cannot take `prev` or `changed`.
+    assert_eq!(member_res(&design, "s.changed()"), builtin("changed"));
+    assert_eq!(member_res(&design, "s.prev()"), builtin("prev"));
+    assert_eq!(member_res(&design, "s.others()"), builtin("others"));
+    assert_eq!(member_res(&design, "p.inflow()"), builtin("inflow"));
+    assert_eq!(member_res(&design, "w.level(1)"), builtin("level"));
+    // Then the `impl`s of the nature or bundle, then those of the value type.
+    assert_eq!(member_res(&design, "p.big()"), impl_fn("Electrical", "big"));
+    assert_eq!(member_res(&design, "pr.vd()"), impl_fn("Pair", "vd"));
+    assert_eq!(member_res(&design, "w.lowest()"), impl_fn("Logic", "lowest"));
+    // A carrier field is a carrier: `pr.a.changed()` is the built-in too.
+    assert_eq!(member_res(&design, "pr.a.changed()"), builtin("changed"));
+    // A known receiver with no such method names nothing; an unknown receiver defers.
+    assert_eq!(member_res(&design, "clk.nothere()"), Resolution::Unresolved);
+    assert_eq!(member_res(&design, "a.rise()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+}

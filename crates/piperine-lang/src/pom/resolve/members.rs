@@ -1,12 +1,14 @@
-//! Stage 7: members. `e.name` is linked when the declarations alone decide
-//! the type of `e`: an instance of a known module (its items), a value of a
-//! declared struct or bundle type (its fields). Anything else is `Deferred`
-//! and reports nothing: a type checker fills it later.
+//! Stage 7: members. `e.name` and `e.m()` are linked when the declarations
+//! alone decide the type of `e`: an instance of a known module (its items), a
+//! value of a declared struct or bundle type (its fields), a carrier (its
+//! methods, in the order of §3.1.7). Anything else is `Deferred` and reports
+//! nothing: a type checker fills it later.
 
 use std::collections::BTreeMap;
 
 use super::super::body::{ExprKind, PatKind, StmtKind};
-use super::super::decl::DeclKind;
+use super::super::builtin::builtin_method;
+use super::super::decl::{DeclKind, FnParamData, NatureFieldNode};
 use super::super::design::Design;
 use super::super::ids::{DeclId, ExprId, FileId, TypeId};
 use super::super::resolution::{CallClass, DeferReason, Resolution};
@@ -27,6 +29,8 @@ enum Recv {
     Instance(DeclId),
     /// A value of this struct (or bundle) type: its fields are the members.
     Struct(DeclId),
+    /// A carrier of this nature; none for a generic bounded by `Nature`.
+    Carrier(Option<DeclId>),
     /// Nothing declared tells.
     Unknown,
 }
@@ -42,6 +46,9 @@ pub(super) fn run(design: &Design) -> Members {
     let mut out = Members::default();
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
+        if let ExprKind::MethodCall { recv, method, .. } = &design.expr_node(expr).kind {
+            out.res.push((expr, reader.method(*recv, &method.text)));
+        }
         if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
             let (res, error) = reader.field(*recv, &name.text);
             out.res.push((expr, res));
@@ -82,8 +89,36 @@ impl Reader<'_> {
                 Some(f) => (Resolution::Decl(f), None),
                 None => (Resolution::Unresolved, None),
             },
-            Recv::Unknown => deferred,
+            // The fields of a carrier come from its value type, which needs inference.
+            Recv::Carrier(_) | Recv::Unknown => deferred,
         }
+    }
+
+    /// The method `name` of the receiver: the carrier built-ins, then the
+    /// `impl`s of its nature or bundle, then those of the value it reads.
+    fn method(&self, recv: ExprId, name: &str) -> Resolution {
+        let design = self.design;
+        let in_impls = |target: DeclId| design.impls_of(target).into_iter().find_map(|i| child_fn(design, i, name)).map(Resolution::Decl);
+        let found = match self.receiver(recv) {
+            Recv::Carrier(nature) => builtin_method(name).map(Resolution::Builtin).or_else(|| {
+                let nature = nature?;
+                in_impls(nature).or_else(|| {
+                    let DeclKind::Nature(n) = &design.decl_data(nature).kind else { return None };
+                    let ty = n.fields.iter().find_map(|f| match f {
+                        NatureFieldNode::Value { ty, .. } => Some(*ty),
+                        _ => None,
+                    })?;
+                    match design.type_resolution(ty) {
+                        Resolution::Decl(value) => in_impls(value),
+                        _ => None,
+                    }
+                })
+            }),
+            Recv::Struct(s) => in_impls(s),
+            Recv::Instance(_) => None,
+            Recv::Unknown => return Resolution::Deferred(DeferReason::ReceiverTypeUnknown),
+        };
+        found.unwrap_or(Resolution::Unresolved)
     }
 
     /// The type of a receiver chain: paths, fields, indexes and parentheses
@@ -98,7 +133,7 @@ impl Reader<'_> {
             ExprKind::Field { expr: inner, name, .. } => match self.receiver(*inner) {
                 Recv::Instance(m) => self.member_of(m, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
                 Recv::Struct(s) => child_field(self.design, s, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
-                Recv::Unknown => Recv::Unknown,
+                Recv::Carrier(_) | Recv::Unknown => Recv::Unknown,
             },
             _ => Recv::Unknown,
         }
@@ -120,6 +155,14 @@ impl Reader<'_> {
                 return Recv::Instance(m);
             }
         }
+        // `self` is a value of the type its `impl` is written for.
+        if let DeclKind::FnParam(FnParamData::SelfValue) = &design.decl_data(d).kind {
+            let imp = design.decl_data(d).parent.and_then(|f| design.decl_data(f).parent);
+            return match imp.map(|i| &design.decl_data(i).kind) {
+                Some(DeclKind::Impl(i)) => self.of_type(i.self_ty),
+                _ => Recv::Unknown,
+            };
+        }
         match self.local_types.get(&d).copied().or_else(|| design.declared_type(d)) {
             Some(ty) => self.of_type(ty),
             None => Recv::Unknown,
@@ -131,6 +174,8 @@ impl Reader<'_> {
             Resolution::Decl(t) => match &self.design.decl_data(t).kind {
                 DeclKind::Struct(_) => Recv::Struct(t),
                 DeclKind::Module(_) => Recv::Instance(t),
+                DeclKind::Nature(_) => Recv::Carrier(Some(t)),
+                DeclKind::GenericParam(_) if self.design.is_nature_generic(t) => Recv::Carrier(None),
                 _ => Recv::Unknown,
             },
             _ => Recv::Unknown,
@@ -179,5 +224,13 @@ fn child_field(design: &Design, owner: DeclId, name: &str) -> Option<DeclId> {
     design.decl_data(owner).children.iter().copied().find(|c| {
         let d = design.decl_data(*c);
         matches!(d.kind, DeclKind::Field(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
+    })
+}
+
+/// The function `name` written in an `impl` block.
+fn child_fn(design: &Design, imp: DeclId, name: &str) -> Option<DeclId> {
+    design.decl_data(imp).children.iter().copied().find(|c| {
+        let d = design.decl_data(*c);
+        matches!(d.kind, DeclKind::Fn(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
     })
 }

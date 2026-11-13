@@ -103,7 +103,7 @@ impl Design {
     }
 
     /// Is `decl` a generic parameter bounded by `Nature`?
-    fn is_nature_generic(&self, decl: DeclId) -> bool {
+    pub(crate) fn is_nature_generic(&self, decl: DeclId) -> bool {
         let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &self.decl_data(decl).kind else { return false };
         bounds.iter().any(|b| self.path_node(*b).segments.last().is_some_and(|s| s.name.text == "Nature"))
     }
