@@ -8,7 +8,8 @@ use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
 use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
-use super::source::{MemorySources, SourceProvider};
+use super::source::{DiskSources, MemorySources, SourceProvider};
+use crate::msl::Span;
 use super::meta::Meta;
 use crate::msl::{self, Diagnostic, ast};
 
@@ -77,6 +78,12 @@ pub struct Design {
 impl Design {
     pub fn builder() -> DesignBuilder {
         DesignBuilder::default()
+    }
+
+    /// Read the tree rooted at `root` from disk: `mod b;` follows Rust's
+    /// layout. An unreadable root gives an empty root and one `E0161`.
+    pub fn load(root: impl Into<PathBuf>) -> Design {
+        Design::builder().root_file(root).build()
     }
 
     /// Every diagnostic of the build, parse diagnostics first, in file order.
@@ -256,6 +263,7 @@ impl Design {
 pub struct DesignBuilder {
     prelude: Vec<(String, String)>,
     sources: Vec<(String, String)>,
+    root_file: Option<PathBuf>,
 }
 
 impl DesignBuilder {
@@ -272,30 +280,47 @@ impl DesignBuilder {
         self
     }
 
+    /// The root file, read from disk with the files its `mod` items name. A
+    /// root file replaces the virtual sources.
+    pub fn root_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.root_file = Some(path.into());
+        self
+    }
+
     /// Parse every file and assemble the design. Files are numbered prelude
     /// sources first, then the root. A parse error never stops the build: the
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
+        let mut design =
+            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new() };
+        if let Some(path) = &self.root_file {
+            let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+            let bytes = DiskSources.read(path);
+            design.root_file = design.add_file(&name, path.clone(), bytes.as_deref().unwrap_or_default(), false, &DiskSources);
+            if bytes.is_none() {
+                let message = format!("cannot read the root file `{}`", path.display());
+                design.push_diagnostic(design.root_file, Diagnostic::new("E0161", message, Span::new(0, 0), "unreadable file"));
+            }
+            return design;
+        }
         let mut memory = MemorySources::new();
         for (path, text) in &self.sources {
             memory.insert(path, text.as_str());
         }
-        let mut design =
-            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new() };
         for (name, text) in &self.prelude {
-            design.add_file(name, text, true, &memory);
+            design.add_file(name, PathBuf::from(name), text.as_bytes(), true, &memory);
         }
         let empty = (String::new(), String::new());
         let (name, text) = self.sources.first().unwrap_or(&empty);
-        design.root_file = design.add_file(name, text, false, &memory);
+        design.root_file = design.add_file(name, PathBuf::from(name), text.as_bytes(), false, &memory);
         design
     }
 }
 
 impl Design {
-    fn add_file(&mut self, name: &str, text: &str, prelude: bool, provider: &dyn SourceProvider) -> FileId {
+    fn add_file(&mut self, name: &str, path: PathBuf, bytes: &[u8], prelude: bool, provider: &dyn SourceProvider) -> FileId {
         let id = FileId(self.files.len() as u32);
-        let parsed = msl::parser::parse(text);
+        let parsed = msl::parser::parse_bytes(bytes);
         for diagnostic in parsed.diagnostics {
             self.diagnostics.push(DesignDiagnostic { file: id, diagnostic });
         }
@@ -311,13 +336,13 @@ impl Design {
         });
         self.files.push(SourceFileData {
             name: name.to_string(),
-            path: Some(PathBuf::from(name)),
+            path: Some(path.clone()),
             prelude,
-            text: text.to_string(),
+            text: String::from_utf8_lossy(bytes).into_owned(),
             ast: parsed.file.clone(),
             root,
         });
-        lower_file(self, id, root, &parsed.file, provider, PathBuf::from(name));
+        lower_file(self, id, root, &parsed.file, provider, path);
         id
     }
 }

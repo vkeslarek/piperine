@@ -355,13 +355,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `mod_cycle_is_e0161_and_not_reloaded` passes in `pom_design.rs` (C91: POM-01 AC 9)
-- [ ] Test `load_from_disk_equals_in_memory_build` passes in `pom_design.rs` (C92: POM-01 AC 10)
-- [ ] Test `non_utf8_file_is_a_parse_diagnostic` passes in `pom_design.rs`
-- [ ] Tests build their trees in `tempfile::tempdir()`; the cycle test makes a directory symlink (`std::os::unix::fs::symlink`) and is `#[cfg(unix)]`
-- [ ] Nothing but `std::fs` and `std::path` is used by the loader
-- [ ] Gate passes: run design; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `mod_cycle_is_e0161_and_not_reloaded` passes in `pom_design.rs` (C91: POM-01 AC 9)
+- [x] Test `load_from_disk_equals_in_memory_build` passes in `pom_design.rs` (C92: POM-01 AC 10)
+- [x] Test `non_utf8_file_is_a_parse_diagnostic` passes in `pom_design.rs`
+- [x] Tests build their trees in `tempfile::tempdir()`; the cycle test makes a directory symlink (`std::os::unix::fs::symlink`) and is `#[cfg(unix)]`
+- [x] Nothing but `std::fs` and `std::path` is used by the loader
+- [x] Gate passes: run design; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -185,3 +185,88 @@ fn prelude_files_are_numbered_first() {
     let files = design.files();
     assert_eq!(files.iter().map(|f| (f.name(), f.is_prelude())).collect::<Vec<_>>(), [("std.msl", true), ("top.msl", false), ("b.msl", false)]);
 }
+
+fn write(root: &std::path::Path, rel: &str, text: &str) {
+    let path = root.join(rel);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, text).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn mod_cycle_is_e0161_and_not_reloaded() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "mod.msl", "mod a;\nmodule Top() {}\n");
+    write(dir.path(), "a/mod.msl", "mod back;\n");
+    // `a/back` is the root directory again: `a/back/mod.msl` is the root file.
+    std::os::unix::fs::symlink(dir.path(), dir.path().join("a/back")).unwrap();
+
+    let design = Design::load(dir.path().join("mod.msl"));
+    let cycles: Vec<_> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0161").collect();
+    assert_eq!(cycles.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics().len(), 1);
+    assert!(cycles[0].diagnostic.message.contains("cycle"), "{}", cycles[0].diagnostic.message);
+    assert_eq!(cycles[0].file, FileId(1), "reported in the file that holds `mod back;`");
+    assert_eq!(cycles[0].diagnostic.span(), design.find("a::back").unwrap().span());
+    // The root and `a/mod.msl` are loaded once; `back` stays empty.
+    assert_eq!(design.files().len(), 2);
+    assert!(design.find("a::back").unwrap().children().is_empty());
+    assert!(design.find("Top").is_some());
+}
+
+#[test]
+fn load_from_disk_equals_in_memory_build() {
+    let dir = tempfile::tempdir().unwrap();
+    let top = "mod b;\nmod x;\nmodule Top() {}\n";
+    let b = "mod c;\nmodule B() {}\n";
+    let c = "//! c docs\nmodule C() {}\n";
+    let x = "const N: u32 = 8;\n";
+    write(dir.path(), "top.msl", top);
+    write(dir.path(), "b.msl", b);
+    write(dir.path(), "b/c.msl", c);
+    write(dir.path(), "x/mod.msl", x);
+
+    let disk = Design::load(dir.path().join("top.msl"));
+    let memory = files_design(&[("top.msl", top), ("b.msl", b), ("b/c.msl", c), ("x/mod.msl", x)]);
+    assert!(disk.diagnostics().is_empty(), "{:?}", disk.diagnostics());
+    assert_eq!(disk.dump(), memory.dump());
+    assert!(disk.dump().lines().count() > 6);
+    assert_eq!(disk.diagnostics(), memory.diagnostics());
+    assert_eq!(disk.files().iter().map(|f| f.name()).collect::<Vec<_>>(), memory.files().iter().map(|f| f.name()).collect::<Vec<_>>());
+    assert_eq!(disk.files()[0].path(), Some(dir.path().join("top.msl").as_path()));
+    assert!(disk.check().is_empty());
+
+    // The builder form reads the same tree.
+    let built = Design::builder().root_file(dir.path().join("top.msl")).build();
+    assert_eq!(built.dump(), disk.dump());
+}
+
+#[test]
+fn unreadable_root_is_an_empty_root_with_e0161() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("nope.msl");
+    let design = Design::load(&missing);
+    assert!(design.root().children().is_empty());
+    assert_eq!(design.files().len(), 1);
+    let diags = design.diagnostics();
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].diagnostic.code, "E0161");
+    assert_eq!(diags[0].file, FileId(0));
+    assert!(diags[0].diagnostic.message.contains(&missing.display().to_string()), "{}", diags[0].diagnostic.message);
+    assert!(design.check().is_empty());
+}
+
+#[test]
+fn non_utf8_file_is_a_parse_diagnostic() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "top.msl", "mod b;\nmodule Top() {}\n");
+    std::fs::write(dir.path().join("b.msl"), [0x6d, 0xff, 0xfe, 0x20]).unwrap();
+    let design = Design::load(dir.path().join("top.msl"));
+    let diags = design.diagnostics();
+    assert!(!diags.is_empty(), "invalid UTF-8 must be reported");
+    assert!(diags.iter().all(|d| d.file == FileId(1) && d.diagnostic.code != "E0161"), "{diags:?}");
+    assert!(design.find("b").unwrap().children().is_empty());
+    assert!(design.find("Top").is_some());
+    assert_eq!(design.files().len(), 2);
+    assert!(design.check().is_empty());
+}

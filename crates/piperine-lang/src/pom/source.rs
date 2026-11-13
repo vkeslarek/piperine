@@ -41,6 +41,21 @@ impl SourceProvider for MemorySources {
     }
 }
 
+/// The filesystem. `canonical` is `std::fs::canonicalize`, falling back to
+/// the path itself when it cannot be resolved.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiskSources;
+
+impl SourceProvider for DiskSources {
+    fn read(&self, path: &Path) -> Option<Vec<u8>> {
+        std::fs::read(path).ok()
+    }
+
+    fn canonical(&self, path: &Path) -> PathBuf {
+        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    }
+}
+
 /// `path` without `.` components and with `..` folded into its parent.
 fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
