@@ -245,3 +245,14 @@ fn long_chains_print_without_overflow() {
         .expect("spawn");
     handle.join().expect("no stack overflow");
 }
+
+#[test]
+fn inherited_lexical_forms_roundtrip() {
+    // Raw strings print as the equal cooked string; `1.`, `let ... else` and
+    // non-ASCII identifiers print back as written.
+    let text = assert_roundtrip(
+        "lexical forms",
+        "fn café() -> f64 { let Some(x) = o else { return 1.; }; let s = r#\"a\\b\"q\"#; x + 1. }",
+    );
+    assert!(text.contains("café") && text.contains("else") && text.contains("1."), "{text}");
+}

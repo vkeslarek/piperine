@@ -252,9 +252,12 @@ fn block(b: &Block, ctx: Ctx, out: &mut Vec<Diagnostic>) {
 fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
     let span = s.span.0;
     match &s.kind {
-        StmtKind::Let { init, .. } => {
+        StmtKind::Let { init, else_, .. } => {
             if let Some(e) = init {
                 expr(e, ctx, out);
+            }
+            if let Some(b) = else_ {
+                block(b, ctx, out);
             }
         }
         StmtKind::Expr { expr: e, .. } => expr(e, ctx, out),

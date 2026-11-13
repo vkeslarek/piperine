@@ -362,7 +362,8 @@ pub struct Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
-    Let { pat: Pat, ty: Option<Type>, init: Option<Expr> },
+    /// `let pat: ty = init else { diverge };` (`else_` only with an `init`).
+    Let { pat: Pat, ty: Option<Type>, init: Option<Expr>, else_: Option<Block> },
     /// An expression statement. `semi: false` on the last statement of a
     /// block is the block's value.
     Expr { expr: Expr, semi: bool },

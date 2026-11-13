@@ -649,9 +649,22 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
     let let_stmt = kw(Kw::Let)
         .ignore_then(pat::binding(h))
         .then(punct(Punct::Colon).ignore_then(h.ty.clone()).or_not())
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then(
+            punct(Punct::Eq)
+                .ignore_then(h.expr.clone())
+                // `else` is matched without listing it among the expected tokens: it is
+                // rare enough that an error after `let x = 1` names `;` first.
+                .then(select! { Token::Kw(Kw::Else) => () }.ignore_then(h.block.clone()).or_not())
+                .or_not(),
+        )
         .then_ignore(semi.clone())
-        .map_with(move |((pat, ty), init), e| mk(StmtKind::Let { pat, ty, init }, e.span()));
+        .map_with(move |((pat, ty), tail), e| {
+            let (init, else_) = match tail {
+                Some((init, else_)) => (Some(init), else_),
+                None => (None, None),
+            };
+            mk(StmtKind::Let { pat, ty, init, else_ }, e.span())
+        });
 
     // Which of the two statement forms applies is decided by the first token,
     // so a statement is never parsed twice (that would cost 2^depth when an

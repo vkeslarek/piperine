@@ -236,3 +236,33 @@ fn non_utf8_one_diagnostic() {
     assert!(diags.is_empty());
     assert_eq!(toks.len(), 1);
 }
+
+#[test]
+fn inherited_lexical_forms_lex() {
+    // Appendix A.1: identifiers, literals and the value syntax are Rust's.
+    // Raw strings: one string token, spanning `r#*"` to the closing run.
+    let (toks, diags) = lex(r###"r"a\b" r#"q"q"# r##"x"#y"##"###);
+    assert!(diags.is_empty(), "{diags:?}");
+    assert_eq!(toks.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>(), vec![
+        Token::Str("a\\\\b".into()),
+        Token::Str("q\\\"q".into()),
+        Token::Str("x\\\"#y".into()),
+    ]);
+    assert_eq!(toks[0].1, Span::new(0, 6));
+    // An unterminated raw string is one diagnostic at its opener.
+    let d = diagnostics("a r#\"never closed");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!((d[0].code, d[0].span()), ("E0900", Span::new(2, 5)));
+    // A raw byte string is a dropped class.
+    assert_eq!(diagnostics("br\"x\"")[0].code, "E0905");
+    // `1.` is one float token; the dot of `1..`, `1.f` and `1._` stays apart.
+    assert_eq!(one_token("1."), float(1.0, "1."));
+    assert_eq!(tokens("1..2").len(), 3);
+    assert_eq!(tokens("1.max").len(), 3);
+    // Non-ASCII identifiers, and a byte order mark that is not a token.
+    assert_eq!(one_token("café"), Token::Ident("café".into()));
+    assert_eq!(one_token("µ"), Token::Ident("µ".into()));
+    let (toks, diags) = lex("\u{FEFF}x");
+    assert!(diags.is_empty());
+    assert_eq!(toks, vec![(Token::Ident("x".into()), Span::new(3, 4))]);
+}

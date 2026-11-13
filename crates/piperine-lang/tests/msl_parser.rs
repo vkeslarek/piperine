@@ -159,6 +159,32 @@ fn inherited_rust_forms_parse() {
     // Spans.
     assert_eq!(pat("Some(x)").span.0, Span::new(0, 7));
     assert_eq!(pat("(None, y) | (y, None)").span.0, Span::new(0, 21));
+
+    // ---- inherited lexical forms ----
+    // Raw strings (`r"..."`, `r#"..."#`) are string literals; the AST keeps the
+    // value, a backslash or quote inside it escaped.
+    let raw = expr(r##"r#"a "b" \c"#"##);
+    assert!(matches!(&raw.kind, ExprKind::Lit(Lit { kind: LitKind::Str(s), .. }) if s == r#"a \"b\" \\c"#), "{raw:?}");
+    assert_eq!(raw.span.0, Span::new(0, 13));
+    assert!(matches!(&expr(r#"r"x""#).kind, ExprKind::Lit(Lit { kind: LitKind::Str(s), .. }) if s == "x"));
+    // `1.` is a float; `1..2`, `1.max(2)` and `t.0.1` keep their meaning.
+    assert!(matches!(&expr("1.").kind, ExprKind::Lit(Lit { kind: LitKind::Float { raw, .. }, .. }) if raw == "1."));
+    assert!(matches!(&expr("1. + 2.5").kind, ExprKind::Binary { .. }));
+    assert!(matches!(&expr("1..2").kind, ExprKind::Range { .. }));
+    assert!(matches!(&expr("1.max(2)").kind, ExprKind::MethodCall { .. }));
+    assert!(matches!(&expr("t.0.1").kind, ExprKind::Field { .. }));
+    // Non-ASCII identifiers (Rust's `XID_Start` / `XID_Continue`).
+    let f = file("fn café(µ: f64) -> f64 { let π = µ; π }");
+    let ItemKind::Fn(decl) = &f.items[0].kind else { panic!() };
+    assert_eq!(decl.name.name, "café");
+    // A leading byte order mark is skipped; spans stay in source bytes.
+    let f = file("\u{FEFF}fn f() {}");
+    assert_eq!(f.items[0].span.0, Span::new(3, 12));
+    // `let ... else`.
+    let b = block("{ let Some(x) = o else { return 0; }; x }");
+    let StmtKind::Let { else_: Some(diverge), init: Some(_), .. } = &b.stmts[0].kind else { panic!("{:?}", b.stmts[0]) };
+    assert_eq!(diverge.stmts.len(), 1);
+    assert!(matches!(&block("{ let x = 1; }").stmts[0].kind, StmtKind::Let { else_: None, .. }));
 }
 
 /// The expression is `lhs op rhs`; returns both sides.

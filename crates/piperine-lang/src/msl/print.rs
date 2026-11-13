@@ -460,13 +460,16 @@ fn block(b: &Block) -> String {
 
 fn stmt(s: &Stmt) -> String {
     match &s.kind {
-        StmtKind::Let { pat: p, ty: t, init } => {
+        StmtKind::Let { pat: p, ty: t, init, else_ } => {
             let mut out = format!("let {}", pat1(p));
             if let Some(t) = t {
                 out.push_str(&format!(": {}", ty(t)));
             }
             if let Some(i) = init {
                 out.push_str(&format!(" = {}", expr(i)));
+            }
+            if let Some(b) = else_ {
+                out.push_str(&format!(" else {}", block(b)));
             }
             out.push(';');
             out

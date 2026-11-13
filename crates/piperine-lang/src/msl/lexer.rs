@@ -155,8 +155,15 @@ enum Raw {
     Char,
     #[regex(r"'[A-Za-z_][A-Za-z0-9_]*")]
     Lifetime,
-    #[regex(r"[A-Za-z_][A-Za-z0-9_]*")]
+    // Rust's identifiers: `XID_Start` or `_`, then `XID_Continue`.
+    #[regex(r"[\p{XID_Start}_][\p{XID_Continue}]*")]
     Ident,
+    // `r"..."`, `r#"..."#`: the callback finds the closing quote and hashes.
+    #[regex(r##"r#*""##, raw_string)]
+    RawStr,
+    // `br"..."`, `br#"..."#`: a byte string, a dropped class.
+    #[regex(r##"br#*""##, raw_string)]
+    RawByteStr,
     #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][+-]?[0-9][0-9_]*)?[A-Za-z_][A-Za-z0-9_]*")]
     #[regex(r"[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][+-]?[0-9][0-9_]*)?")]
     Number,
@@ -239,17 +246,63 @@ fn string(lex: &mut logos::Lexer<Raw>) -> bool {
     false
 }
 
+/// Whether the `.` at `span` closes the float literal `1.`: it touches a
+/// plain decimal integer (not a tuple index, `x.0.`) and is followed by no
+/// `.`, `_` or identifier start (`1..2`, `1.max(2)` keep their dot).
+fn float_dot(tokens: &[(Token, Span)], src: &str, span: Span) -> bool {
+    let Some((Token::Int(digits), int_span)) = tokens.last() else { return false };
+    let index = tokens.len() >= 2
+        && matches!(&tokens[tokens.len() - 2], (Token::Punct(Punct::Dot), s) if s.end == int_span.start);
+    int_span.end == span.start
+        && !index
+        && digits.bytes().all(|b| b.is_ascii_digit() || b == b'_')
+        && !src[span.end..].starts_with(|c: char| c == '.' || c == '_' || c.is_alphabetic())
+}
+
+/// Consume a raw string body after its `r#*"` opener; `false` when the file
+/// ends before the closing quote and the same number of hashes.
+fn raw_string(lex: &mut logos::Lexer<Raw>) -> bool {
+    let hashes = lex.slice().bytes().filter(|b| *b == b'#').count();
+    let closer: String = std::iter::once('"').chain(std::iter::repeat_n('#', hashes)).collect();
+    match lex.remainder().find(&closer) {
+        Some(at) => {
+            lex.bump(at + closer.len());
+            true
+        }
+        None => {
+            lex.bump(lex.remainder().len());
+            false
+        }
+    }
+}
+
+/// The cooked spelling of a raw string's body: backslash and quote escaped,
+/// so the token's text reads back as the same value.
+fn cook(body: &str) -> String {
+    body.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// Lex `src`. Malformed tokens yield a diagnostic and, where a value was
 /// expected, a [`Token::Error`] placeholder; lexing always runs to the end.
 pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     let mut tokens = Vec::new();
     let mut diags = Vec::new();
-    let mut lexer = Raw::lexer(src);
+    // A byte order mark opens the file and is not a token.
+    let bom = if src.starts_with('\u{FEFF}') { '\u{FEFF}'.len_utf8() } else { 0 };
+    let mut lexer = Raw::lexer(&src[bom..]);
     while let Some(result) = lexer.next() {
         let range = lexer.span();
-        let span = Span::new(range.start, range.end);
+        let span = Span::new(range.start + bom, range.end + bom);
         let text = lexer.slice();
         match result {
+            Ok(Raw::Punct(Punct::Dot)) if float_dot(&tokens, src, span) => {
+                // `1.`: a float literal, as in Rust.
+                let (prev, prev_span) = tokens.pop().expect("float_dot saw the integer");
+                let Token::Int(digits) = prev else { unreachable!("float_dot saw the integer") };
+                let raw = format!("{digits}.");
+                let whole = Span::new(prev_span.start, span.end);
+                tokens.push((Token::Float { value: parse_f64(&digits, 0), raw }, whole));
+            }
             Ok(Raw::Punct(p)) => tokens.push((Token::Punct(p), span)),
             Ok(Raw::Ident) => tokens.push((classify_ident(text), span)),
             Ok(Raw::Number) => match classify_number(text, span) {
@@ -259,6 +312,16 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                     tokens.push((Token::Error, span));
                 }
             },
+            Ok(Raw::RawStr) => {
+                let open = text.find('"').map_or(1, |i| i + 1);
+                let hashes = open - 2;
+                let body = &text[open..text.len() - 1 - hashes];
+                tokens.push((Token::Str(cook(body)), span));
+            }
+            Ok(Raw::RawByteStr) => {
+                diags.push(dropped_class("b\"", span));
+                tokens.push((Token::Error, span));
+            }
             Ok(Raw::Str) => tokens.push((Token::Str(text[1..text.len() - 1].to_string()), span)),
             Ok(Raw::LineComment) => {
                 let line = text.strip_suffix('\r').unwrap_or(text);
@@ -353,8 +416,10 @@ fn lex_failure(src: &str, span: Span) -> (Diagnostic, Option<Token>) {
         )
         .with_help("close it with `*/`");
         (d, None)
-    } else if rest.starts_with('"') || rest.starts_with("b\"") {
-        let open = if rest.starts_with('"') { 1 } else { 2 };
+    } else if rest.starts_with('"') || rest.starts_with("b\"") || rest.starts_with('r') || rest.starts_with("br") {
+        // A string, byte string or raw string whose closing quote never came:
+        // the opener is the quote or the `r#*"` run.
+        let open = rest.find('"').map_or(1, |i| i + 1);
         let d = Diagnostic::new(
             "E0900",
             "unterminated string literal",
