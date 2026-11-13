@@ -111,8 +111,38 @@ pub struct NamespaceData {
     pub origin: NamespaceOrigin,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct UseData {}
+/// `use a::{b, c as d, e::*};`: the tree as written, and the same imports
+/// flattened to one entry per leaf.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UseData {
+    pub tree: UseTreeNode,
+    pub imports: Vec<Import>,
+}
+
+/// One node of a `use` tree: the path written at this level and what follows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UseTreeNode {
+    pub path: Vec<Name>,
+    pub kind: UseTreeKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum UseTreeKind {
+    Simple { alias: Option<Name> },
+    Glob,
+    Group(Vec<UseTreeNode>),
+}
+
+/// One leaf of a `use` tree with its full path. The path node spans from the
+/// first written segment to the last, so for a group leaf its text includes
+/// the braces in between.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Import {
+    pub path: PathId,
+    pub alias: Option<Name>,
+    pub glob: bool,
+}
 
 /// `const NAME: ty = value;`; the value is absent in a trait.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

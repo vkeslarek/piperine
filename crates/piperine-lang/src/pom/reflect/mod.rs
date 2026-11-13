@@ -12,7 +12,7 @@ use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
 pub use body::{Expr, Path, Pat, SourceFile, Stmt, Type};
-pub use items::{Const, Enum, Field, FnParam, Function, GenericParam, Impl, Struct, Trait, Variant};
+pub use items::{Const, Enum, Field, FnParam, Function, GenericParam, Impl, ImportRef, Struct, Trait, Use, Variant};
 
 /// The generic declaration handle: any kind, read through [`Decl::kind`].
 #[derive(Clone, Copy)]

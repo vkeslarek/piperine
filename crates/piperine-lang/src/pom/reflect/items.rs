@@ -4,7 +4,7 @@
 use super::body::{Expr, Path, Type};
 use super::{Decl, Reflect};
 use crate::pom::body::{Block, LitKind};
-use crate::pom::decl::{ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, VariantData};
+use crate::pom::decl::{ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, UseData, UseTreeNode, VariantData};
 
 /// `const NAME: ty = value;`
 #[derive(Clone, Copy)]
@@ -549,5 +549,70 @@ impl<'d> Decl<'d> {
 
     pub fn as_impl(self) -> Option<Impl<'d>> {
         matches!(self.kind(), DeclKind::Impl(_)).then_some(Impl { decl: self })
+    }
+}
+
+/// `use a::{b, c as d};`
+#[derive(Clone, Copy)]
+pub struct Use<'d> {
+    decl: Decl<'d>,
+}
+
+/// One flattened leaf of a `use` tree.
+#[derive(Clone, Copy, Debug)]
+pub struct ImportRef<'d> {
+    pub path: Path<'d>,
+    pub alias: Option<&'d str>,
+    pub glob: bool,
+}
+
+impl<'d> Use<'d> {
+    fn data(self) -> &'d UseData {
+        match self.decl.kind() {
+            DeclKind::Use(u) => u,
+            _ => unreachable!("Use handle over a non-use declaration"),
+        }
+    }
+
+    /// The tree as written.
+    pub fn tree(self) -> &'d UseTreeNode {
+        &self.data().tree
+    }
+
+    /// One entry per leaf, in source order.
+    pub fn imports(self) -> Vec<ImportRef<'d>> {
+        self.data()
+            .imports
+            .iter()
+            .map(|i| ImportRef {
+                path: self.decl.design().path(i.path),
+                alias: i.alias.as_ref().map(|a| a.text.as_str()),
+                glob: i.glob,
+            })
+            .collect()
+    }
+}
+
+impl<'d> Reflect<'d> for Use<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl PartialEq for Use<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl std::fmt::Debug for Use<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Use({:?})", self.decl.id())
+    }
+}
+
+impl<'d> Decl<'d> {
+    pub fn as_use(self) -> Option<Use<'d>> {
+        matches!(self.kind(), DeclKind::Use(_)).then_some(Use { decl: self })
     }
 }

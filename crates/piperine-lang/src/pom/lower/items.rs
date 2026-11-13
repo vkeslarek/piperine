@@ -2,7 +2,10 @@
 
 use super::Lowerer;
 use crate::msl::ast;
-use crate::pom::decl::{DeclKind, EnumData, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, VariantData};
+use crate::pom::decl::{DeclKind, EnumData, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, Import, StructData, TraitData, UseData, UseTreeKind, UseTreeNode, VariantData};
+use crate::pom::body::{PathNode, PathSegment};
+use crate::pom::resolution::Resolution;
+use super::body::name;
 
 impl Lowerer<'_> {
     /// One `GenericParam` declaration per parameter, as children of the
@@ -136,4 +139,49 @@ impl Lowerer<'_> {
             decl.meta = meta;
         }
     }
+
+    /// A `use`: the tree as written plus the flattened imports.
+    pub(crate) fn use_decl(&mut self, u: &ast::UseTree) -> DeclKind {
+        let tree = use_tree(u);
+        let mut imports = Vec::new();
+        self.flatten_use(&tree, &mut Vec::new(), &mut imports);
+        DeclKind::Use(UseData { tree, imports })
+    }
+
+    /// One import per leaf, each with the prefixes above it.
+    fn flatten_use(&mut self, node: &UseTreeNode, prefix: &mut Vec<crate::pom::decl::Name>, out: &mut Vec<Import>) {
+        let depth = prefix.len();
+        prefix.extend(node.path.iter().cloned());
+        match &node.kind {
+            UseTreeKind::Group(children) => {
+                for c in children {
+                    self.flatten_use(c, prefix, out);
+                }
+            }
+            UseTreeKind::Simple { alias } => out.push(self.import(prefix, node, alias.clone(), false)),
+            UseTreeKind::Glob => out.push(self.import(prefix, node, None, true)),
+        }
+        prefix.truncate(depth);
+    }
+
+    fn import(&mut self, path: &[crate::pom::decl::Name], leaf: &UseTreeNode, alias: Option<crate::pom::decl::Name>, glob: bool) -> Import {
+        let start = path.first().map_or(leaf.span.start, |n| n.span.start);
+        let end = path.last().map_or(leaf.span.end, |n| n.span.end);
+        let segments = path
+            .iter()
+            .map(|n| PathSegment { name: n.clone(), args: None, res: Resolution::Unresolved })
+            .collect();
+        let span = crate::msl::Span::new(start, end);
+        let path = self.design.push_path(PathNode { segments, span, owner: self.owner });
+        Import { path, alias, glob }
+    }
+}
+
+fn use_tree(u: &ast::UseTree) -> UseTreeNode {
+    let kind = match &u.kind {
+        ast::UseKind::Simple { alias } => UseTreeKind::Simple { alias: alias.as_ref().map(name) },
+        ast::UseKind::Glob => UseTreeKind::Glob,
+        ast::UseKind::Group(children) => UseTreeKind::Group(children.iter().map(use_tree).collect()),
+    };
+    UseTreeNode { path: u.path.iter().map(name).collect(), kind, span: u.span.0 }
 }

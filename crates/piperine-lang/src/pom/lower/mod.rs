@@ -11,7 +11,7 @@ mod meta;
 
 use super::decl::{
     BehaviorData, ConstData, DeclData, DeclKind, ModuleData,
-    NamespaceData, NamespaceOrigin, NatureData, UseData,
+    NamespaceData, NamespaceOrigin, NatureData,
 };
 use super::design::Design;
 use super::meta::Meta;
@@ -90,7 +90,7 @@ impl Lowerer<'_> {
             ast::ItemKind::Impl(i) => self.impl_decl(i),
             ast::ItemKind::Trait(t) => self.trait_decl(t),
             ast::ItemKind::Const(c) => self.const_item(c),
-            ast::ItemKind::Use(_) => DeclKind::Use(UseData::default()),
+            ast::ItemKind::Use(u) => self.use_decl(u),
             ast::ItemKind::Mod(m) => {
                 let origin = match &m.items {
                     Some(items) => {

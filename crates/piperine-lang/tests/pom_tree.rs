@@ -311,3 +311,36 @@ trait Tr: Base + Other { const C: u32; fn f(self); }
     assert!(items[0].as_impl().is_none() && items[0].as_trait().is_none());
     assert!(design.check().is_empty());
 }
+
+#[test]
+fn use_tree_flattens_to_imports() {
+    let text = "use a::{b, c as d, e::*};\nuse x::y;\nuse z::*;\n";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let uses = design.root().children();
+    assert_eq!(uses.len(), 3);
+    assert!(uses.iter().all(|u| u.name().is_none() && u.kind().label() == "Use"));
+
+    let segs = |p: piperine_lang::pom::Path<'_>| p.segments().iter().map(|s| s.name.text.clone()).collect::<Vec<_>>();
+    let imports = uses[0].as_use().expect("use item").imports();
+    assert_eq!(imports.len(), 3);
+    assert_eq!(segs(imports[0].path), ["a", "b"]);
+    assert_eq!((imports[0].alias, imports[0].glob), (None, false));
+    assert_eq!(segs(imports[1].path), ["a", "c"]);
+    assert_eq!((imports[1].alias, imports[1].glob), (Some("d"), false));
+    assert_eq!(segs(imports[2].path), ["a", "e"]);
+    assert_eq!((imports[2].alias, imports[2].glob), (None, true));
+
+    let single = uses[1].as_use().unwrap().imports();
+    assert_eq!(single.len(), 1);
+    assert_eq!(segs(single[0].path), ["x", "y"]);
+    assert_eq!(single[0].path.text(), "x::y");
+    let glob = uses[2].as_use().unwrap().imports();
+    assert_eq!((glob.len(), glob[0].glob, segs(glob[0].path)), (1, true, vec!["z".to_string()]));
+
+    // The tree as written is kept: one group under the prefix `a`.
+    let tree = &uses[0].as_use().unwrap().tree();
+    assert_eq!(tree.path.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["a"]);
+    assert!(matches!(&tree.kind, piperine_lang::pom::UseTreeKind::Group(g) if g.len() == 3));
+    assert!(design.find("x").is_none());
+}
