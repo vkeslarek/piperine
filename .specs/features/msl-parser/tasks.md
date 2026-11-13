@@ -436,7 +436,8 @@ Proof: run parser | test contextual_keywords_are_identifiers_outside_nature ... 
 ## Handoff
 
 **Settled mid-build:** sub-agents accepted - user: "Lança sempre Sonnet para implementação, Opus para verifier"
-**Dispatched:** B1 (T1–T7) Sonnet worker at 3f0d8b50
+**Dispatched:** B1 (T1–T7) Sonnet worker at 3f0d8b50 - returned (HEAD 1642e69c, 19 tests green)
+**B1 gaps carried to B2:** parser runs on a 512 MiB-stack thread (debug build overflowed 2 MB at ~50 nested parens); tuple index `x.0.1` not parsed (lexer reads `0.1` as float); raw strings / `r#ident` not lexed; `check.rs` must extend placement checks (E0404) to analog/reaction/closure contexts in T10/T11; E0900 rows for unterminated/non-UTF-8 to add in T11; E0900 expected-token lists need summarizing (T11); E0121 vs E0404 and E0101 vs E0903 overlaps in the spec.
 **Walked:** n/a - no screen; Independent Tests are the integration targets above
 
 ---
