@@ -340,8 +340,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-05
 
 **Done when**:
-- [ ] Tests `roundtrip_ast_equal_over_corpus`, `print_is_idempotent_over_corpus`, `printer_preserves_docs_and_attrs` pass
-- [ ] Run print passes; build gate passes
+- [x] Tests `roundtrip_ast_equal_over_corpus`, `print_is_idempotent_over_corpus`, `printer_preserves_docs_and_attrs` pass
+- [x] Run print passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick

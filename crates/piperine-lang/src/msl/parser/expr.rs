@@ -560,9 +560,8 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
             })
     });
 
-    let arm = h
-        .pat
-        .clone()
+    let arm = item::meta(h)
+        .then(h.pat.clone())
         .then(kw(Kw::If).ignore_then(h.expr.clone()).or_not())
         .then_ignore(punct(Punct::FatArrow))
         .then(choice((
@@ -574,8 +573,8 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
                 .clone()
                 .then_ignore(choice((punct(Punct::Comma), punct(Punct::RBrace).rewind()))),
         )))
-        .map_with(|((pat, guard), body), e| Arm {
-            meta: Meta::default(),
+        .map_with(|(((meta, pat), guard), body), e| Arm {
+            meta,
             pat,
             guard,
             body,

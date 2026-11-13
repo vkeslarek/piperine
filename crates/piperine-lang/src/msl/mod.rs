@@ -9,8 +9,10 @@ pub mod ast;
 pub mod diag;
 pub mod lexer;
 pub mod parser;
+pub mod print;
 pub mod span;
 
 pub use diag::{Diagnostic, render};
 pub use lexer::{lex, lex_bytes};
+pub use print::print;
 pub use span::Span;
