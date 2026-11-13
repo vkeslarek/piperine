@@ -651,13 +651,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `use_and_qualified_paths_resolve` passes in `pom_resolve.rs` (C43: POM-08 AC 7)
-- [ ] Test `prelude_source_items_are_visible_everywhere` passes in `pom_resolve.rs` (C44: POM-08 AC 8)
-- [ ] Test `private_item_links_and_reports_e0161` passes in `pom_resolve.rs` (C46: POM-08 AC 10)
-- [ ] Test `local_item_wins_over_glob` passes in `pom_resolve.rs`
-- [ ] The fixture must build with zero diagnostics once T28 lands; until then only its own tests read it
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `use_and_qualified_paths_resolve` passes in `pom_resolve.rs` (C43: POM-08 AC 7)
+- [x] Test `prelude_source_items_are_visible_everywhere` passes in `pom_resolve.rs` (C44: POM-08 AC 8)
+- [x] Test `private_item_links_and_reports_e0161` passes in `pom_resolve.rs` (C46: POM-08 AC 10)
+- [x] Test `local_item_wins_over_glob` passes in `pom_resolve.rs`
+- [x] The fixture must build with zero diagnostics once T28 lands; until then only its own tests read it
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

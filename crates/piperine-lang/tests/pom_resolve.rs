@@ -57,7 +57,7 @@ fn builtin_table_has_every_core_primitive() {
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{Design, DesignDiagnostic};
+use piperine_lang::pom::{Design, DesignDiagnostic, PathId, Reflect, Resolution};
 use support::{build, codes};
 
 /// The diagnostics of one code.
@@ -98,4 +98,143 @@ fn duplicate_member_name_is_e0330() {
         assert_eq!(d.diagnostic.secondary.len(), 1, "{d:?}");
         assert_eq!(d.diagnostic.secondary[0].0.start as usize, label, "{d:?}");
     }
+}
+
+/// The per-segment resolutions of every path whose segments, joined by `::`,
+/// read `joined`, in arena order.
+fn resolutions(design: &Design, joined: &str) -> Vec<Vec<Resolution>> {
+    (0..design.path_count())
+        .map(|i| design.path(PathId(i as u32)))
+        .filter(|p| p.segments().iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>().join("::") == joined)
+        .map(|p| p.segments().iter().map(|s| s.res).collect())
+        .collect()
+}
+
+/// The single path written `joined`: its resolutions.
+fn one(design: &Design, joined: &str) -> Vec<Resolution> {
+    let mut all = resolutions(design, joined);
+    assert_eq!(all.len(), 1, "exactly one path `{joined}`");
+    all.remove(0)
+}
+
+fn decl(design: &Design, path: &str) -> Resolution {
+    Resolution::Decl(design.find(path).unwrap_or_else(|| panic!("`{path}` is declared")).id())
+}
+
+const PRELUDE_FIXTURE: &str = include_str!("fixtures/pom/prelude.msl");
+
+#[test]
+fn use_and_qualified_paths_resolve() {
+    let src = "\
+mod a {
+    pub fn f() {}
+    pub const K: u32 = 1;
+    pub struct S {}
+    pub mod deep { pub fn g() {} pub fn h() {} }
+}
+mod b {
+    use super::a::f;
+    use crate::a::K as Kay;
+    use super::a::{S, deep};
+    pub use super::a::deep::*;
+    use self::f as ff;
+    use Kay as K2;
+}
+mod c {
+    use super::b::h;
+}
+use a::deep::g;
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let root = Resolution::Decl(design.root().id());
+    let ns_a = decl(&design, "a");
+    // Simple, with `super`: every segment resolves to what it names.
+    assert_eq!(one(&design, "super::a::f"), [root, ns_a, decl(&design, "a::f")]);
+    // Alias, with `crate`.
+    assert_eq!(one(&design, "crate::a::K"), [root, ns_a, decl(&design, "a::K")]);
+    // Group leaves, and a glob's prefix names the namespace it imports.
+    assert_eq!(one(&design, "super::a::S"), [root, ns_a, decl(&design, "a::S")]);
+    let deep = [root, ns_a, decl(&design, "a::deep")];
+    assert_eq!(resolutions(&design, "super::a::deep"), [deep, deep]);
+    // `self::` reaches an import of the same namespace; an alias is a name like any other.
+    assert_eq!(one(&design, "self::f"), [decl(&design, "b"), decl(&design, "a::f")]);
+    assert_eq!(one(&design, "Kay"), [decl(&design, "a::K")]);
+    // A `pub use` glob re-exports: `b::h` reaches `a::deep::h` from `c`.
+    assert_eq!(one(&design, "super::b::h"), [root, decl(&design, "b"), decl(&design, "a::deep::h")]);
+    // A path relative to the namespace that writes it.
+    assert_eq!(one(&design, "a::deep::g"), [ns_a, decl(&design, "a::deep"), decl(&design, "a::deep::g")]);
+}
+
+#[test]
+fn prelude_source_items_are_visible_everywhere() {
+    let prelude = "pub enum Mode { A, B }\npub struct Shared {}\nstruct Hidden {}\n";
+    let src = "use Mode::A;\nmod m { use Shared; }\nuse Hidden;\n";
+    let design = Design::builder().prelude("std.msl", prelude).source("top.msl", src).build();
+    // From the root and from a nested namespace, without any `use` of the prelude.
+    let mode = Resolution::Decl(
+        (0..design.decl_count()).map(|i| piperine_lang::pom::DeclId(i as u32)).find(|d| design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == "Mode")).unwrap(),
+    );
+    let a = one(&design, "Mode::A");
+    assert_eq!(a[0], mode);
+    assert!(matches!(a[1], Resolution::Decl(_)));
+    assert!(matches!(one(&design, "Shared")[0], Resolution::Decl(_)));
+    // Only the `pub` items are visible: `Hidden` is not found.
+    assert_eq!(one(&design, "Hidden"), [Resolution::Unresolved]);
+    let missing = with_code(&design, "E0161");
+    assert_eq!(missing.len(), 1, "{missing:?}");
+    assert_eq!(primary_text(&design, missing[0]), "Hidden");
+    // The same through the spec fixture: its natures are there for the asking.
+    let design = Design::builder().prelude("prelude.msl", PRELUDE_FIXTURE).source("top.msl", "use Electrical;\nuse Bit;\n").build();
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let Resolution::Decl(electrical) = one(&design, "Electrical")[0] else { panic!("Electrical resolves") };
+    assert!(design.decl_data(electrical).file != design.root().file().id());
+    assert!(design.root().file().id() != piperine_lang::pom::FileId(0));
+    assert!(design.files()[0].is_prelude());
+}
+
+#[test]
+fn private_item_links_and_reports_e0161() {
+    let src = "\
+mod a {
+    fn secret() {}
+    pub fn open() {}
+    mod inner { use super::secret; }
+    use self::secret as s;
+}
+use a::secret;
+use a::open;
+use a::nothing;
+";
+    let design = build(src);
+    let errors = with_code(&design, "E0161");
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    // The private item is linked, and one error says so at the import path.
+    assert_eq!(one(&design, "a::secret"), [decl(&design, "a"), decl(&design, "a::secret")]);
+    assert!(errors[0].diagnostic.message.contains("private"), "{:?}", errors[0]);
+    assert_eq!(primary_text(&design, errors[0]), "a::secret");
+    // Absent is another error: nothing to link.
+    assert_eq!(one(&design, "a::nothing"), [decl(&design, "a"), Resolution::Unresolved]);
+    assert!(!errors[1].diagnostic.message.contains("private"), "{:?}", errors[1]);
+    assert_eq!(primary_text(&design, errors[1]), "a::nothing");
+    // The public one and the accesses from inside the declaring namespace are clean.
+    assert_eq!(one(&design, "a::open"), [decl(&design, "a"), decl(&design, "a::open")]);
+    assert_eq!(one(&design, "super::secret"), [decl(&design, "a"), decl(&design, "a::secret")]);
+    assert_eq!(one(&design, "self::secret"), [decl(&design, "a"), decl(&design, "a::secret")]);
+}
+
+#[test]
+fn local_item_wins_over_glob() {
+    let src = "\
+mod a { pub fn dup() {} pub fn only() {} }
+fn dup() {}
+use a::*;
+mod c { use super::dup as x; use super::only as y; }
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    // The local `dup` is found, not the glob's; the glob still supplies what is not local.
+    let root = Resolution::Decl(design.root().id());
+    assert_eq!(one(&design, "super::dup"), [root, decl(&design, "dup")]);
+    assert_eq!(one(&design, "super::only"), [root, decl(&design, "a::only")]);
 }

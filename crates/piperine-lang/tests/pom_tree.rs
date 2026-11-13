@@ -4,10 +4,13 @@
 
 #[path = "support/pom.rs"]
 mod support;
+#[path = "support/lowering.rs"]
+mod lowering;
 
 use piperine_lang::msl::parser::parse;
 use piperine_lang::pom::{DeclKind, NamespaceOrigin, Reflect};
-use support::{build, codes};
+use lowering::lowering_codes;
+use support::build;
 
 #[test]
 fn root_children_mirror_items_in_source_order() {
@@ -27,7 +30,7 @@ analog for R { }
     let ast = parse(text).file;
     assert!(parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
     let design = build(text);
-    assert!(codes(&design).is_empty());
+    assert!(lowering_codes(&design).is_empty());
     let root = design.root();
     let children = root.children();
     assert_eq!(children.len(), ast.items.len());
@@ -90,7 +93,7 @@ fn fn_abi_params_ret_body() {
 const fn g<T: Repr, const N: u32 = 4>(self, a: T, b: f64) -> T where N >= 1 { a }
 ";
     let design = build(text);
-    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
 
     let f = design.find("f").and_then(|d| d.as_function()).expect("function f");
     assert_eq!(f.abi(), Some("C"));
@@ -131,7 +134,7 @@ const fn g<T: Repr, const N: u32 = 4>(self, a: T, b: f64) -> T where N >= 1 { a 
 #[test]
 fn item_in_fn_body_is_declared_in_the_fn() {
     let design = build("fn f() { const K: u32 = 1; { fn inner() {} } }\nfn g() {}");
-    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let f = design.find("f").expect("function f");
     let k = design.find("f::K").expect("K is found through f");
     assert_eq!(k.declared_in(), Some(f));
@@ -181,7 +184,7 @@ module Md(
 }
 ";
     let design = build(text);
-    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let texts = |d: piperine_lang::pom::Decl<'_>| d.docs().iter().map(|x| x.text.clone()).collect::<Vec<_>>();
     assert_eq!(texts(design.root()), [" File line 1", " File line 2"]);
     let a = design.find("a").unwrap();
@@ -221,7 +224,7 @@ const N: u32 = 1;
 const M: u32 = 2;
 ";
     let design = build(text);
-    assert!(support::codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let n = design.find("N").unwrap();
     assert_eq!(n.attrs().len(), 3);
 
@@ -255,7 +258,7 @@ struct U;
 enum E { A, Data(u8) = 3, Named { x: u8, y: u16 } }
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
 
     let s = design.find("S").and_then(|d| d.as_struct()).expect("struct S");
     assert_eq!(s.form(), FieldsForm::Named);
@@ -302,7 +305,7 @@ impl Tr for S { fn f(self); }
 trait Tr: Base + Other { const C: u32; fn f(self); }
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let items = design.root().children();
     assert_eq!(items.iter().map(|d| d.kind().label()).collect::<Vec<_>>(), ["Struct", "Impl", "Impl", "Trait"]);
 
@@ -336,7 +339,7 @@ trait Tr: Base + Other { const C: u32; fn f(self); }
 fn use_tree_flattens_to_imports() {
     let text = "use a::{b, c as d, e::*};\nuse x::y;\nuse z::*;\n";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let uses = design.root().children();
     assert_eq!(uses.len(), 3);
     assert!(uses.iter().all(|u| u.name().is_none() && u.kind().label() == "Use"));
@@ -382,7 +385,7 @@ nature Mixed { potential: A { access: a }, value: f64 }
 nature Empty { }
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let kind = |n: &str| design.nature(n).unwrap_or_else(|| panic!("nature {n}")).kind();
     assert_eq!(kind("Electrical"), NatureKind::Conservative);
     assert_eq!(kind("Signalf"), NatureKind::SignalFlow);
@@ -419,7 +422,7 @@ nature Empty { }
 fn ports_in_order_with_direction_type_default() {
     use piperine_lang::pom::Dir;
     let design = build("module M(in a: Bit, out b: Bit<u8>, c: Electrical, d: f64 = 2.0) {}");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("M").expect("module M");
     let ports = m.ports();
     assert_eq!(ports.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("a"), Some("b"), Some("c"), Some("d")]);
@@ -440,7 +443,7 @@ extern \"osdi\" module Bsim4(d: Electrical) { l: f64 = 1u; }
 module Plain() {}
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.module("Bsim4").unwrap();
     assert!(b.is_extern());
     assert_eq!(b.abi(), Some("osdi"));
@@ -453,7 +456,7 @@ module Plain() {}
 #[test]
 fn module_result_and_result_type() {
     let design = build("module Mx(a: f64) -> f64 { a * 2.0 }\nmodule Nx(a: f64) {}");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("Mx").unwrap();
     assert_eq!(m.result_type().map(|t| t.text()), Some("f64"));
     assert_eq!(m.result().map(|e| e.text()), Some("a * 2.0"));
@@ -464,7 +467,7 @@ fn module_result_and_result_type() {
 #[test]
 fn module_generics_and_where() {
     let design = build("module G<T: Repr, const A: u32>(p: T) where A >= 1 {}");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let g = design.module("G").unwrap();
     let generics = g.generics();
     assert_eq!(generics.iter().map(|x| x.name()).collect::<Vec<_>>(), [Some("T"), Some("A")]);
@@ -481,7 +484,7 @@ fn module_generics_and_where() {
 #[test]
 fn signal_is_declared_in_its_module_only() {
     let design = build("module abc() { signal w: Bit; }\nmodule other() { signal z: Bit; }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let abc = design.module("abc").unwrap();
     let w = abc.signal("w").expect("signal w");
     assert_eq!(w.declared_in(), Some(abc.decl()));
@@ -496,7 +499,7 @@ fn signal_is_declared_in_its_module_only() {
 #[test]
 fn params_type_default_where_required() {
     let design = build("module P() { r: f64 where r > 0.0; tc1: f64 = 0.0; o: Option<f64>; }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("P").unwrap();
     let params = m.params();
     assert_eq!(params.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("r"), Some("tc1"), Some("o")]);
@@ -517,7 +520,7 @@ fn params_type_default_where_required() {
 #[test]
 fn signal_pub_type_init() {
     let design = build("module S() { pub signal sn: Electrical = 0.0; signal hid: Bit; }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("S").unwrap();
     let sn = m.signal("sn").unwrap();
     assert!(sn.is_pub());
@@ -531,7 +534,7 @@ fn signal_pub_type_init() {
 fn body_let_pattern_names_each_component() {
     use piperine_lang::pom::BindingOrigin;
     let design = build("module L(a: f64, b: f64) { let (r, f) = (a, b); }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("L").unwrap();
     let lets = m.lets();
     assert_eq!(lets.len(), 1);
@@ -549,7 +552,7 @@ fn body_let_pattern_names_each_component() {
 #[test]
 fn definition_place_value_after() {
     let design = build("module D() { signal q: Bit; signal qn: Bit; q = !(r | qn) after tpd; }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("D").unwrap();
     let defs = m.definitions();
     assert_eq!(defs.len(), 1);
@@ -565,7 +568,7 @@ fn definition_place_value_after() {
 fn generation_for_holds_its_signal_once() {
     use piperine_lang::pom::BindingOrigin;
     let design = build("module G() { for k in 0..4 { signal s: Bit; } }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("G").unwrap();
     let signals = m.signals();
     assert_eq!(signals.len(), 1, "nothing is unrolled");
@@ -592,7 +595,7 @@ fn generation_for_holds_its_signal_once() {
 #[test]
 fn generation_if_chain_exposes_three_arms() {
     let design = build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; } else { signal z: Bit; } }");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("G").unwrap();
     let gens = m.generations();
     assert_eq!(gens.len(), 1);
@@ -635,7 +638,7 @@ analog for R {
 }
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.root().children()[1].as_behavior().unwrap();
     let cs = b.contributions();
     assert_eq!(cs.len(), 3);
@@ -668,7 +671,7 @@ digital for Q {
 }
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.root().children()[1].as_behavior().unwrap();
     let rs = b.reactions();
     assert_eq!(rs.len(), 2);
@@ -696,7 +699,7 @@ digital for Q {
 }
 ";
     let design = build(text);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.root().children()[1].as_behavior().unwrap();
     let rs = b.reactions();
     assert_eq!(rs.iter().map(|r| r.event().text()).collect::<Vec<_>>(), ["a", "clk"], "deep, in source order");

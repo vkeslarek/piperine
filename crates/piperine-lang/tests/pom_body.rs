@@ -4,6 +4,8 @@
 
 #[path = "support/pom.rs"]
 mod support;
+#[path = "support/lowering.rs"]
+mod lowering;
 
 use std::collections::BTreeSet;
 
@@ -11,6 +13,7 @@ use piperine_lang::pom::{
     BindingOrigin, DeclId, DeclKind, Design, ExprId, ExprKind, FnParamData, PatId, PatKind, PathId, Reflect, StmtId,
     StmtKind, TypeId, TypeKind,
 };
+use lowering::lowering_codes;
 use support::{build, codes};
 
 fn expr_kind_name(k: &ExprKind) -> &'static str {
@@ -132,7 +135,7 @@ fn every_expression_form_has_its_kind() {
     let mut seen = BTreeSet::new();
     for (expected, snippet) in forms {
         let design = build(&format!("const X: u32 = {snippet};"));
-        assert!(codes(&design).is_empty(), "`{snippet}` must parse cleanly: {:?}", design.diagnostics());
+        assert!(lowering_codes(&design).is_empty(), "`{snippet}` must parse cleanly: {:?}", design.diagnostics());
         let kinds = expr_kinds(&design);
         assert!(kinds.contains(expected), "`{snippet}` yields no {expected} node, only {kinds:?}");
         assert!(!kinds.contains("Error"), "`{snippet}` must not yield an Error node");
@@ -244,7 +247,7 @@ digital for M {
 fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
     // Specific, independently written expectations.
     let design = build("const X: u32 = { let a = 1; a + 1 };");
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let x = design.find("X").unwrap();
     let value = x.as_const().and_then(|c| c.value()).unwrap();
     assert_eq!(value.text(), "{ let a = 1; a + 1 }");
@@ -270,7 +273,7 @@ fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
 
     // The audit: every node of every arena, nearest declaration that contains it.
     let design = build(AUDIT_SRC);
-    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
     let text = design.files().last().unwrap().text();
     let decls: Vec<_> = (0..design.decl_count()).map(|i| (DeclId(i as u32), design.decl_data(DeclId(i as u32)))).collect();
     let nearest = |span: piperine_lang::msl::Span, owner: DeclId| {

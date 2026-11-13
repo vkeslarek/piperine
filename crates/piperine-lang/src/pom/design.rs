@@ -181,6 +181,13 @@ impl Design {
         self.paths.len()
     }
 
+    /// Store what segment `index` of `path` names.
+    pub(super) fn set_segment_res(&mut self, path: PathId, index: usize, res: super::resolution::Resolution) {
+        if let Some(segment) = self.paths[path.index()].segments.get_mut(index) {
+            segment.res = res;
+        }
+    }
+
     pub(crate) fn decl_mut(&mut self, id: DeclId) -> &mut DeclData {
         &mut self.decls[id.index()]
     }
