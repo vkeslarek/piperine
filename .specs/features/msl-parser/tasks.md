@@ -457,9 +457,10 @@ Proof: run parser | test contextual_keywords_are_identifiers_outside_nature ... 
 
 ## Handoff
 
-**Settled mid-build:** stack fix as new T16 - user: "2" (option: fix in B2, target 8 MiB debug); sub-agents accepted - user: "Lança sempre Sonnet para implementação, Opus para verifier"
+**Settled mid-build:** F7 - user: "Declarar stacker e aceitar" (heap stack growth allowed, feature declared); F8 - user: "Corrigir os exemplos na spec" (split/complete the 4 elided spec examples, re-fence as rust); stack fix as new T16 - user: "2" (option: fix in B2, target 8 MiB debug); sub-agents accepted - user: "Lança sempre Sonnet para implementação, Opus para verifier"
 **Dispatched:** B1 (T1–T7) Sonnet worker at 3f0d8b50 - returned (HEAD 1642e69c, 19 tests green); B2 (T16, T8–T15) Sonnet worker at b489121c - returned (HEAD 6eda5251, 39 tests green); Verifier (Opus) at 6eda5251 + proofs.md commit
 **B1 gaps carried to B2:** parser runs on a 512 MiB-stack thread (debug build overflowed 2 MB at ~50 nested parens); tuple index `x.0.1` not parsed (lexer reads `0.1` as float); raw strings / `r#ident` not lexed; `check.rs` must extend placement checks (E0404) to analog/reaction/closure contexts in T10/T11; E0900 rows for unterminated/non-UTF-8 to add in T11; E0900 expected-token lists need summarizing (T11); E0121 vs E0404 and E0101 vs E0903 overlaps in the spec.
+**Fix round:** Sonnet fix worker closed F1-F13 in 6 commits (see verification.md `Closed`); spec has no `compile_fail` fence left after F8, so C11 checks the mechanism with a control fence.
 **Walked:** n/a - no screen; Independent Tests are the integration targets above
 
 ---
