@@ -148,7 +148,7 @@ rl: f64 = 1T;
 
 ## A.4 Doc comments
 
-`///` and `//!` doc comments are metadata ([§21](part_vi_io.md#21-metadata)).
+`///` and `//!` doc comments (and the block forms `/** */`, `/*! */`) are metadata ([§21](part_vi_io.md#21-metadata)).
 
 **Static semantics**
 

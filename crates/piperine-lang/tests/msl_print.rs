@@ -176,3 +176,72 @@ extern \"osdi\" module M(
         assert_eq!(attributes(src), attributes(&text), "{label}: attributes");
     }
 }
+
+/// `src` printed, re-parsed and printed again: the tree is equal and the text
+/// is a fixed point.
+fn assert_roundtrip(label: &str, src: &str) -> String {
+    let first = parsed(label, src);
+    let text = print(&first);
+    let second = parsed(&format!("{label} (printed)"), &text);
+    assert!(first == second, "{label}: the printed text parses to another tree:\n{text}");
+    assert_eq!(text, print(&second), "{label}: not idempotent");
+    text
+}
+
+#[test]
+fn string_literals_are_printed_verbatim() {
+    // MSLP-05 AC 1/2: a string's contents are Part I values; layout never
+    // re-indents the continuation lines of a multi-line or `\`-continued one.
+    for (label, src) in [
+        ("multi-line", "fn f() { let s = \"a\n  b\"; }"),
+        ("continued", "fn f() { let s = \"a \\\n      b\"; }"),
+        ("nested block", "fn f() { if c { let s = \"x\n\ty  \n\nz\"; } }"),
+        ("in a call", "fn f() { g(\"one\ntwo\", \"three\"); }"),
+    ] {
+        let text = assert_roundtrip(label, src);
+        // The literal's bytes appear unchanged in the output.
+        let lit = &src[src.find('"').unwrap()..=src.find('"').map(|i| i + src[i + 1..].find('"').unwrap() + 1).unwrap()];
+        assert!(text.contains(lit), "{label}: {lit:?} not verbatim in\n{text}");
+    }
+}
+
+#[test]
+fn block_doc_comments_are_kept() {
+    // Appendix A.4 / Rust: `/** */` and `/*! */` are doc comments, outer and
+    // inner, and printing keeps them.
+    let src = "/*! inner\n   more */\n/** outer */\nfn f() {}\n/** a\n    b */\nstruct S { /** field */ a: u8 }\n";
+    let first = parsed("block docs", src);
+    assert_eq!(first.inner_docs.len(), 1);
+    assert_eq!(first.items[0].meta.docs.len(), 1);
+    let text = assert_roundtrip("block docs", src);
+    assert!(text.contains("/*! inner\n   more */"), "{text}");
+    assert!(text.contains("/** outer */"), "{text}");
+    assert!(text.contains("/** a\n    b */"), "{text}");
+    assert!(text.contains("/** field */"), "{text}");
+}
+
+#[test]
+fn long_chains_print_without_overflow() {
+    // A left-nested sum and an `else if` chain are as deep as they are long;
+    // at the nesting limit they print on an 8 MiB stack, and past it the
+    // parser's E0910 keeps the tree shallow enough to print.
+    let handle = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            let sum = format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(250));
+            let text = assert_roundtrip("sum 250", &sum);
+            assert!(text.len() > 500);
+            let chain = format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(250));
+            assert_roundtrip("else-if 250", &chain);
+            for src in [
+                format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(5000)),
+                format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(5000)),
+            ] {
+                let r = parse(&src);
+                assert!(r.diagnostics.iter().any(|d| d.code == "E0910"));
+                let _ = print(&r.file);
+            }
+        })
+        .expect("spawn");
+    handle.join().expect("no stack overflow");
+}

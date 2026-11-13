@@ -19,7 +19,7 @@ const WIDTH: usize = 80;
 pub fn print(file: &File) -> String {
     let mut out = String::new();
     for d in &file.inner_docs {
-        out.push_str(&format!("//!{}\n", d.text));
+        out.push_str(&format!("{}\n", doc(d, "!")));
     }
     if !file.inner_docs.is_empty() && !file.items.is_empty() {
         out.push('\n');
@@ -29,7 +29,55 @@ pub fn print(file: &File) -> String {
     if !items.is_empty() {
         out.push('\n');
     }
+    dec(&out)
+}
+
+// ---- verbatim text ----------------------------------------------------------------------------
+//
+// A string literal or doc comment is printed as written: layout (indentation,
+// line fitting) must neither see nor touch its line breaks. While a node's text
+// is built, a `\0` marks an escape: `\0n`, `\0r` stand for a line break and a
+// carriage return inside such text, `\00` for a NUL; [`print`] restores them.
+
+fn enc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\0' => out.push_str("\00"),
+            '\n' => out.push_str("\0n"),
+            '\r' => out.push_str("\0r"),
+            c => out.push(c),
+        }
+    }
     out
+}
+
+fn dec(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\0' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            _ => out.push('\0'),
+        }
+    }
+    out
+}
+
+/// A doc comment in its own form; `kind` is `"/"` (outer) or `"!"` (inner).
+fn doc(d: &Doc, kind: &str) -> String {
+    let text = enc(&d.text);
+    if d.block {
+        let star = if kind == "!" { "!" } else { "*" };
+        format!("/*{star}{text}*/")
+    } else {
+        format!("//{kind}{text}")
+    }
 }
 
 // ---- layout helpers ---------------------------------------------------------------------------
@@ -68,7 +116,7 @@ fn ident(i: &Ident) -> String {
 fn meta(m: &Meta) -> String {
     let mut out = String::new();
     for d in &m.docs {
-        out.push_str(&format!("///{}\n", d.text));
+        out.push_str(&format!("{}\n", doc(d, "/")));
     }
     for a in &m.attrs {
         out.push_str(&format!("{}\n", attr(a)));
@@ -249,7 +297,7 @@ fn lit(l: &Lit) -> String {
     match &l.kind {
         LitKind::Int(s) => s.clone(),
         LitKind::Float { raw, .. } => raw.clone(),
-        LitKind::Str(s) => format!("\"{s}\""),
+        LitKind::Str(s) => format!("\"{}\"", enc(s)),
         LitKind::Bool(b) => b.to_string(),
         LitKind::Unknown => "Unknown".to_string(),
     }

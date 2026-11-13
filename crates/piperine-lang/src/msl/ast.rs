@@ -61,10 +61,12 @@ pub struct File {
     pub span: Loc,
 }
 
-/// A `///` or `//!` doc comment: the text after the marker, verbatim.
+/// A doc comment: `///` or `//!` (the text after the marker) or, with
+/// `block`, `/** */` or `/*! */` (the text between the markers), verbatim.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Doc {
     pub text: String,
+    pub block: bool,
     pub span: Loc,
 }
 

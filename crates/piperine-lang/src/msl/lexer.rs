@@ -109,6 +109,10 @@ pub enum Token {
     DocOuter(String),
     /// `//!` doc comment: the text after the marker, verbatim.
     DocInner(String),
+    /// `/** .. */` doc comment: the text between the markers, verbatim.
+    DocOuterBlock(String),
+    /// `/*! .. */` doc comment: the text between the markers, verbatim.
+    DocInnerBlock(String),
     Punct(Punct),
     /// Stands for a malformed token already reported by a diagnostic.
     Error,
@@ -124,7 +128,9 @@ impl std::fmt::Display for Token {
             Token::Float { raw, .. } => write!(f, "`{raw}`"),
             Token::Str(_) => f.write_str("string literal"),
             Token::StaticLifetime => f.write_str("`'static`"),
-            Token::DocOuter(_) | Token::DocInner(_) => f.write_str("doc comment"),
+            Token::DocOuter(_) | Token::DocInner(_) | Token::DocOuterBlock(_) | Token::DocInnerBlock(_) => {
+                f.write_str("doc comment")
+            },
             Token::Punct(p) => write!(f, "`{}`", p.as_str()),
             Token::Error => f.write_str("invalid token"),
         }
@@ -262,7 +268,16 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                     tokens.push((Token::DocInner(line[3..].to_string()), span));
                 }
             }
-            Ok(Raw::BlockComment) => {}
+            Ok(Raw::BlockComment) => {
+                // Rust's rule: `/**` and `/*!` open a doc comment, except
+                // `/***` (and longer) and the empty `/**/`.
+                let body = || text[3..text.len() - 2].to_string();
+                if text.starts_with("/**") && !text.starts_with("/***") && text.len() > 4 {
+                    tokens.push((Token::DocOuterBlock(body()), span));
+                } else if text.starts_with("/*!") {
+                    tokens.push((Token::DocInnerBlock(body()), span));
+                }
+            }
             Ok(Raw::Lifetime) if text == "'static" => tokens.push((Token::StaticLifetime, span)),
             Ok(Raw::ByteStr | Raw::ByteChar | Raw::Char | Raw::Lifetime) => {
                 diags.push(dropped_class(text, span));

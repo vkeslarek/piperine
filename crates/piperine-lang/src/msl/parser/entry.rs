@@ -396,8 +396,8 @@ pub fn parse(src: &str) -> ParseResult {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    let inner_docs = select! { Token::DocInner(text) => text }
-        .map_with(|text, e| Doc { text, span: Loc(e.span()) })
+    let inner_docs = select! { Token::DocInner(text) => (text, false), Token::DocInnerBlock(text) => (text, true) }
+        .map_with(|(text, block), e| Doc { text, block, span: Loc(e.span()) })
         .repeated()
         .collect::<Vec<_>>();
     // A closing delimiter with no opener is skipped and reported once, so the

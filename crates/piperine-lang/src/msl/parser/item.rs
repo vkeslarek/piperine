@@ -10,8 +10,8 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
         Doc(Doc),
         Attr(Attr),
     }
-    let doc = select! { Token::DocOuter(text) => text }
-        .map_with(|text, e| One::Doc(Doc { text, span: Loc(e.span()) }));
+    let doc = select! { Token::DocOuter(text) => (text, false), Token::DocOuterBlock(text) => (text, true) }
+        .map_with(|(text, block), e| One::Doc(Doc { text, block, span: Loc(e.span()) }));
 
     let arg = choice((
         lit().map(AttrArg::Lit),

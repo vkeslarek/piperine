@@ -183,6 +183,16 @@ fn doc_comments_are_tokens() {
     assert_eq!(tokens("//// not doc\ny"), vec![Token::Ident("y".into())]);
     // Block comments nest, as in Rust.
     assert_eq!(tokens("/* a /* b */ c */ z"), vec![Token::Ident("z".into())]);
+    // Block doc comments are doc tokens too, as in Rust: `/** */` outer,
+    // `/*! */` inner; `/***`, `/**/` and `/* */` are plain comments.
+    assert_eq!(
+        tokens("/** a */ /*! b */ /*** c */ /**/ /* d */ x"),
+        vec![
+            Token::DocOuterBlock(" a ".into()),
+            Token::DocInnerBlock(" b ".into()),
+            Token::Ident("x".into()),
+        ]
+    );
     // The doc token's span covers the whole comment line.
     let (toks, _) = lex("/// hi\nx");
     assert_eq!(toks[0].1, Span::new(0, 6));

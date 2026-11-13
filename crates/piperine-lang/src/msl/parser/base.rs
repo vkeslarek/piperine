@@ -195,6 +195,7 @@ fn starts_item(t: &Token) -> bool {
                 | Kw::Module | Kw::Nature | Kw::Pub | Kw::Extern
         ) | Token::Punct(Punct::Pound)
             | Token::DocOuter(_)
+            | Token::DocOuterBlock(_)
     )
 }
 
