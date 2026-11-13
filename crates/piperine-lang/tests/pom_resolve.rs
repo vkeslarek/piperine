@@ -500,3 +500,72 @@ module M(pin: f64) {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(primary_text(&loopvar, errors[0]), "k");
 }
+
+#[test]
+fn associated_paths_resolve_to_variant_const_fn() {
+    let src = "\
+enum Mode { A, B(u8) }
+trait Tr { const X: u32; fn run() -> u32; }
+struct S {}
+impl S { const K: u32 = 1; fn make() -> u32 { Self::K } }
+impl Tr for S { const X: u32 = 3; fn run() -> u32 { 4 } }
+impl Mode { fn first() -> Mode { Mode::A } }
+fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let inner = |outer: &str, name: &str| -> Resolution {
+        let owner = design.find(outer).unwrap_or_else(|| panic!("`{outer}`"));
+        let impls: Vec<_> = (0..design.decl_count())
+            .map(|i| piperine_lang::pom::DeclId(i as u32))
+            .filter(|d| design.decl_data(*d).kind.label() == "Impl" || *d == owner.id())
+            .collect();
+        let found = impls.iter().flat_map(|i| design.decl_data(*i).children.clone()).find(|c| design.decl_data(*c).name.as_ref().is_some_and(|n| n.text == name) && !matches!(design.decl_data(*c).kind.label(), "Binding"));
+        Resolution::Decl(found.unwrap_or_else(|| panic!("`{name}` in an impl of `{outer}`")))
+    };
+    // A variant of an enum, with the enum as the first segment.
+    let mode = decl(&design, "Mode");
+    let variant = |n: &str| Resolution::Decl(design.decl_data(design.find("Mode").unwrap().id()).children.iter().copied().find(|c| design.decl_data(*c).name.as_ref().is_some_and(|x| x.text == n)).unwrap());
+    assert_eq!(resolutions(&design, "Mode::A"), [[mode, variant("A")]]);
+    assert_eq!(resolutions(&design, "Mode::B"), [[mode, variant("B")]]);
+    // An associated const or fn of an impl of the type, inherent or of a trait.
+    let s = decl(&design, "S");
+    assert_eq!(resolutions(&design, "S::K"), [[s, inner("S", "K")]]);
+    assert_eq!(resolutions(&design, "S::make"), [[s, inner("S", "make")]]);
+    let x = resolutions(&design, "S::X");
+    assert_eq!(x[0][0], s);
+    assert!(matches!(x[0][1], Resolution::Decl(_)));
+    // `Self::K` in an impl: Self is the struct, K its const.
+    assert_eq!(resolutions(&design, "Self::K"), [[s, inner("S", "K")]]);
+    // `Trait::item` names the trait's own item.
+    let t = resolutions(&design, "Tr::run");
+    assert_eq!(t[0][0], decl(&design, "Tr"));
+    assert!(matches!(t[0][1], Resolution::Decl(_)));
+    // An item the type does not have is one error at the whole path.
+    let missing = build("struct S {}\nenum E { A }\nfn f() { S::nope; E::B; }");
+    let errors = with_code(&missing, "E0161");
+    let at: Vec<_> = errors.iter().map(|d| primary_text(&missing, d)).collect();
+    assert_eq!(at, ["S::nope", "E::B"]);
+    assert_eq!(one(&missing, "S::nope"), [decl(&missing, "S"), Resolution::Unresolved]);
+}
+
+#[test]
+fn fixture_prelude_builds_clean() {
+    // As a prelude beside an empty root, and as the root itself: no diagnostics either way.
+    let as_prelude = Design::builder().prelude("prelude.msl", PRELUDE_FIXTURE).source("top.msl", "").build();
+    assert!(as_prelude.diagnostics().is_empty(), "{:?}", as_prelude.diagnostics());
+    let as_root = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
+    assert!(as_root.diagnostics().is_empty(), "{:?}", as_root.diagnostics());
+    assert!(as_root.check().is_empty());
+    // It declares what the spec says the prelude does.
+    for name in ["Bit", "Wire", "Electrical", "Thermal", "VSignal"] {
+        assert!(as_root.nature(name).is_some(), "nature `{name}`");
+    }
+    for name in ["idt", "above", "transition"] {
+        assert!(as_root.module(name).is_some(), "module `{name}`");
+    }
+    // The module `idt` is named by its own block, and the block's generic is the module's.
+    let idt = as_root.module("idt").unwrap();
+    assert_eq!(idt.behaviors().len(), 1);
+    assert_eq!(as_root.module("transition").unwrap().digital_blocks().len(), 1);
+}

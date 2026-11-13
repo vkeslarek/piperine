@@ -4,11 +4,11 @@
 
 use std::collections::BTreeMap;
 
-use super::super::body::PathSegment;
+use super::super::body::{PathSegment, TypeKind};
 use super::super::decl::DeclKind;
 use super::super::design::Design;
 use super::super::ids::{DeclId, PathId};
-use super::super::resolution::Resolution;
+use super::super::resolution::{DeferReason, Resolution};
 use super::{Ctx, Output};
 use crate::msl::Diagnostic;
 
@@ -240,7 +240,14 @@ impl Ctx<'_> {
             let name = segment.name.text.as_str();
             let next = match current {
                 Resolution::Decl(d) => self.member(d, name, if i + 1 == segments.len() { last } else { Prefer::Types }, ns, visiting),
-                _ => None,
+                // An associated item of a built-in type needs its type: left for inference.
+                Resolution::Builtin(_) | Resolution::Deferred(_) => {
+                    for later in &mut walked.res[i..] {
+                        *later = Resolution::Deferred(DeferReason::ReceiverTypeUnknown);
+                    }
+                    return walked;
+                }
+                Resolution::Unresolved => None,
             };
             match next {
                 Some((found, visible)) => {
@@ -268,9 +275,42 @@ impl Ctx<'_> {
                 let (found, visible) = self.ns_item(owner, name, prefer, Some(from), visiting)?;
                 Some((Resolution::Decl(found), visible))
             }
-            DeclKind::Enum(_) => self.variant(owner, name).map(|v| (Resolution::Decl(v), true)),
+            DeclKind::Enum(_) => self.variant(owner, name).or_else(|| self.associated(owner, name)).map(|v| (Resolution::Decl(v), true)),
+            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Trait(_) | DeclKind::Module(_) => {
+                self.associated(owner, name).map(|v| (Resolution::Decl(v), true))
+            }
             _ => None,
         }
+    }
+
+    /// The associated constant or function `name` of `owner`: an item of one
+    /// of its `impl` blocks, or of the trait itself.
+    fn associated(&self, owner: DeclId, name: &str) -> Option<DeclId> {
+        let design = self.design;
+        let named = |item: &DeclId| {
+            let d = design.decl_data(*item);
+            matches!(d.kind, DeclKind::Fn(_) | DeclKind::Const(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
+        };
+        let own = matches!(design.decl_data(owner).kind, DeclKind::Trait(_)).then_some(owner);
+        own.iter().chain(self.impls.get(&owner).into_iter().flatten()).find_map(|holder| design.decl_data(*holder).children.iter().copied().find(named))
+    }
+
+    /// Every `impl` by the declaration its self type names.
+    pub(super) fn collect_impls(&self) -> BTreeMap<DeclId, Vec<DeclId>> {
+        let design = self.design;
+        let mut impls: BTreeMap<DeclId, Vec<DeclId>> = BTreeMap::new();
+        for i in 0..design.decl_count() {
+            let id = DeclId(i as u32);
+            let DeclKind::Impl(imp) = &design.decl_data(id).kind else { continue };
+            let TypeKind::Path(path) = &design.type_node(imp.self_ty).kind else { continue };
+            let Some(ns) = self.parent_namespace(id) else { continue };
+            let node = design.path_node(*path);
+            let walked = self.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(ns, name, Prefer::Types, visiting));
+            if let (None, Some(Resolution::Decl(target))) = (walked.error, walked.res.last()) {
+                impls.entry(*target).or_default().push(id);
+            }
+        }
+        impls
     }
 
     /// Write the resolution of every import path and report the ones that do

@@ -750,11 +750,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `associated_paths_resolve_to_variant_const_fn` passes in `pom_resolve.rs` (C47: POM-08 AC 11)
-- [ ] Test `fixture_prelude_builds_clean` passes in `pom_resolve.rs`
-- [ ] An `impl` is found by the declaration its self type resolves to
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `associated_paths_resolve_to_variant_const_fn` passes in `pom_resolve.rs` (C47: POM-08 AC 11)
+- [x] Test `fixture_prelude_builds_clean` passes in `pom_resolve.rs`
+- [x] An `impl` is found by the declaration its self type resolves to
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

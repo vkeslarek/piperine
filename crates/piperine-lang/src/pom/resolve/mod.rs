@@ -35,6 +35,9 @@ pub(super) struct Ctx<'a> {
     root: DeclId,
     /// The module each behavior block is bound to (stage 4).
     links: BTreeMap<DeclId, DeclId>,
+    /// The `impl` blocks of each declaration, by the declaration their self
+    /// type names (stage 5 reads associated items through them).
+    impls: BTreeMap<DeclId, Vec<DeclId>>,
 }
 
 /// Run every resolution stage over a freshly lowered design.
@@ -47,11 +50,13 @@ pub(super) fn run(design: &mut Design) {
             prelude: design.files.iter().filter(|f| f.prelude).map(|f| f.root).collect(),
             root: design.root_id(),
             links: BTreeMap::new(),
+            impls: BTreeMap::new(),
         };
         let mut out = Output::default();
         out.diagnostics.extend(ctx.scopes.diagnostics(design));
         ctx.resolve_imports(&mut out);
         ctx.links = ctx.bind_behaviors(&mut out);
+        ctx.impls = ctx.collect_impls();
         ctx.resolve_names(&mut out);
         out.links = ctx.links;
         out
