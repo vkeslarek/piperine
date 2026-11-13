@@ -675,12 +675,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `type_paths_resolve_to_declarations` passes in `pom_resolve.rs` (C41: POM-08 AC 5)
-- [ ] Test `builtin_names_resolve_to_table_entries` passes in `pom_resolve.rs` (C42: POM-08 AC 6)
-- [ ] Test `self_type_resolves` passes in `pom_resolve.rs` (C48: POM-08 AC 12)
-- [ ] Compute `(PathId, segment, Resolution)` pairs, then apply them
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `type_paths_resolve_to_declarations` passes in `pom_resolve.rs` (C41: POM-08 AC 5)
+- [x] Test `builtin_names_resolve_to_table_entries` passes in `pom_resolve.rs` (C42: POM-08 AC 6)
+- [x] Test `self_type_resolves` passes in `pom_resolve.rs` (C48: POM-08 AC 12)
+- [x] Compute `(PathId, segment, Resolution)` pairs, then apply them
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

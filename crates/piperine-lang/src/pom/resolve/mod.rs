@@ -3,6 +3,7 @@
 //! from the immutable design into an [`Output`], then the answers are applied.
 
 mod imports;
+mod names;
 mod scopes;
 
 use super::design::Design;
@@ -42,6 +43,7 @@ pub(super) fn run(design: &mut Design) {
         let mut out = Output::default();
         out.diagnostics.extend(ctx.scopes.diagnostics(design));
         ctx.resolve_imports(&mut out);
+        ctx.resolve_names(&mut out);
         out
     };
     for (path, index, res) in out.segments {

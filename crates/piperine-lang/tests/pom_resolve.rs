@@ -238,3 +238,89 @@ mod c { use super::dup as x; use super::only as y; }
     assert_eq!(one(&design, "super::dup"), [root, decl(&design, "dup")]);
     assert_eq!(one(&design, "super::only"), [root, decl(&design, "a::only")]);
 }
+
+#[test]
+fn type_paths_resolve_to_declarations() {
+    let src = "\
+nature Volt { potential: Pot { access: v } }
+struct Pair { a: u8 }
+enum Mode { A, B }
+trait Tr {}
+module Sub() {}
+module M<N: Tr, const W: u32>(p: Volt, m: Mode, b: Pair, g: N) {
+    signal s: [Sub; 2];
+}
+fn f<T: Tr>(x: T, t: Sub, w: Pair) -> Mode { x }
+struct Holder<U: Tr = Pair> { u: U, e: Mode }
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let at = |path: &str, nth: usize| -> Resolution { resolutions(&design, path).remove(nth)[0] };
+    assert_eq!(at("Volt", 0), decl(&design, "Volt"));
+    assert_eq!(at("Mode", 0), decl(&design, "Mode"));
+    assert_eq!(at("Pair", 0), decl(&design, "Pair"));
+    // A trait as a bound, in a generic parameter list and a default.
+    assert_eq!(resolutions(&design, "Tr").len(), 3);
+    assert!(resolutions(&design, "Tr").iter().all(|r| r[0] == decl(&design, "Tr")));
+    // A module is a type (section 3.4.5), also inside an array type.
+    assert_eq!(resolutions(&design, "Sub").len(), 2);
+    assert!(resolutions(&design, "Sub").iter().all(|r| r[0] == decl(&design, "Sub")));
+    // A generic parameter resolves to its parameter declaration, not to an item.
+    let n = design.module("M").unwrap().decl().children().into_iter().find(|c| c.name() == Some("N")).unwrap();
+    assert_eq!(resolutions(&design, "N"), [[Resolution::Decl(n.id())]]);
+    let t = design.find("f").unwrap().children().into_iter().find(|c| c.name() == Some("T")).unwrap();
+    assert_eq!(resolutions(&design, "T"), [[Resolution::Decl(t.id())]]);
+    let u = design.find("Holder").unwrap().children().into_iter().find(|c| c.name() == Some("U")).unwrap();
+    assert_eq!(resolutions(&design, "U"), [[Resolution::Decl(u.id())]]);
+    // Outside the declaration its generics are not names.
+    let outside = build("fn g<T>(x: T) {}\nfn h(y: T) {}");
+    let errors = with_code(&outside, "E0161");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(primary_text(&outside, errors[0]), "T");
+}
+
+#[test]
+fn builtin_names_resolve_to_table_entries() {
+    let src = "fn f(a: f64, b: u8, c: Option<f64>, d: [u128; 4]) {}\ntrait Tr<T: Repr> {}\n";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    for (name, section) in [("f64", "§1"), ("u8", "§1"), ("Option", "§1"), ("u128", "§1"), ("Repr", "§2")] {
+        let all = resolutions(&design, name);
+        assert!(!all.is_empty(), "`{name}` is written");
+        for r in all {
+            let Resolution::Builtin(id) = r[0] else { panic!("`{name}` is a built-in") };
+            assert_eq!(id.name(), name);
+            assert_eq!(id.info().section, section, "{name}");
+        }
+    }
+    // A declaration shadows the table; so does an import.
+    let shadow = build("struct Option {}\nmod m { pub struct f64 {} }\nuse m::f64;\nfn g(a: Option, b: f64) {}");
+    assert!(with_code(&shadow, "E0161").is_empty(), "{:?}", shadow.diagnostics());
+    assert_eq!(one(&shadow, "Option"), [decl(&shadow, "Option")]);
+    let imported = resolutions(&shadow, "f64");
+    assert_eq!(imported.last().unwrap(), &[decl(&shadow, "m::f64")]);
+}
+
+#[test]
+fn self_type_resolves() {
+    let src = "\
+struct S { a: u8 }
+trait Tr { fn make() -> Self; }
+impl S { fn dup(self) -> Self { self } }
+impl Tr for S { fn make() -> Self { S { a: 1 } } }
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    // In arena order: the trait's `Self`, then the inherent impl's, then the trait impl's.
+    let selfs = resolutions(&design, "Self");
+    assert_eq!(selfs.len(), 3);
+    assert_eq!(selfs[0], [decl(&design, "Tr")]);
+    assert_eq!(selfs[1], [decl(&design, "S")]);
+    assert_eq!(selfs[2], [decl(&design, "S")]);
+    // The impl's own header: the trait and the self type.
+    assert_eq!(resolutions(&design, "Tr").len(), 1);
+    assert_eq!(resolutions(&design, "Tr")[0], [decl(&design, "Tr")]);
+    // `Self` outside an impl or a trait names nothing.
+    let stray = build("fn f() -> Self {}");
+    assert_eq!(with_code(&stray, "E0161").len(), 1);
+}
