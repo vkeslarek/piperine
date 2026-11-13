@@ -358,8 +358,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-04
 
 **Done when**:
-- [ ] Test `rendered_output_is_miette_graphical` passes
-- [ ] Run errors passes; build gate passes
+- [x] Test `rendered_output_is_miette_graphical` passes
+- [x] Run errors passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick

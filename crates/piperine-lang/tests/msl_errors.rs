@@ -1,10 +1,12 @@
 //! Scope: MSL parse-phase diagnostics (`piperine_lang::msl`): the spec's error
-//! codes at the offending span, recovery, and professional messages
-//! (requirement MSLP-04, MSLP-06). Grows with the parser: T6 starts it with
-//! the nesting limit and the in-expression `+>` / `<-` error; T7-T11 add the
-//! context errors, recovery and the message shape.
+//! codes at the offending span, recovery, professional messages and their
+//! rendering (requirement MSLP-04, MSLP-06). T6 starts it with the nesting
+//! limit and the in-expression `+>` / `<-` error; T7-T11 add the context
+//! errors, recovery and the message shape; T13 adds one fixture per
+//! parse-phase row of the spec's error tables and the guard that keeps the
+//! fixtures complete; T15 checks the miette graphical rendering.
 
-use piperine_lang::msl::Span;
+use piperine_lang::msl::{Span, render};
 use piperine_lang::msl::parser::{MAX_DEPTH, parse, parse_expr};
 
 #[test]
@@ -490,4 +492,53 @@ fn every_parse_phase_row_has_a_fixture() {
     // And a fixture for a code the spec does not list as `parse` is stale.
     let stale: Vec<&String> = covered.difference(&spec).collect();
     assert!(stale.is_empty(), "fixtures for codes that are not parse-phase rows: {stale:?}");
+}
+
+#[test]
+fn rendered_output_is_miette_graphical() {
+    // MSLP-04 AC 5: a rendered diagnostic is a miette graphical report that
+    // shows the code, the source line, the underline at the span and the
+    // help line. One diagnostic per family: E0907 (a context error),
+    // E0900 (a syntax error) and E0902 (a lexical error).
+    for (code, src) in [
+        ("E0907", "fn f() { let x = a +> b; }"),
+        ("E0900", "}\nfn f() {}"),
+        ("E0902", "const A: f64 = 1e3m;"),
+    ] {
+        let r = parse(src);
+        let d = r.diagnostics.iter().find(|d| d.code == code).unwrap_or_else(|| panic!("{code}: {:?}", r.diagnostics));
+        let out = render(d, "model.msl", src);
+        let lines: Vec<&str> = out.lines().collect();
+
+        // The code, on its own line, and the message under the error mark.
+        assert!(lines.iter().any(|l| l.trim() == code), "{code}: code line in\n{out}");
+        assert!(out.contains(&format!("× {}", d.message)), "{code}: message in\n{out}");
+        // The file name with the line and column of the span start.
+        let (line_no, col) = {
+            let before = &src[..d.span().start];
+            (before.matches('\n').count() + 1, before.len() - before.rfind('\n').map_or(0, |i| i + 1) + 1)
+        };
+        assert!(out.contains(&format!("[model.msl:{line_no}:{col}]")), "{code}: location in\n{out}");
+
+        // The source line, then, under the span, an underline as long as the span.
+        let src_line = src.lines().nth(line_no - 1).unwrap();
+        let at = lines
+            .iter()
+            .position(|l| l.contains("│") && l.ends_with(src_line))
+            .unwrap_or_else(|| panic!("{code}: source line in\n{out}"));
+        let start_in_line = lines[at].chars().count() - src_line.chars().count() + (col - 1);
+        let underline: Vec<char> = lines[at + 1].chars().collect();
+        assert!(underline.contains(&'·'), "{code}: an underline row follows the source line:\n{out}");
+        let marks = |c: &char| matches!(c, '─' | '┬' | '┴' | '┼');
+        let first = underline.iter().position(marks).unwrap_or_else(|| panic!("{code}: underline in\n{out}"));
+        assert_eq!(first, start_in_line, "{code}: the underline starts at the span:\n{out}");
+        let run = underline[first..].iter().take_while(|c| marks(c)).count();
+        assert_eq!(run, d.span().len(), "{code}: the underline is the span's length:\n{out}");
+        // The label text hangs off the underline.
+        assert!(lines[at + 2].contains(&d.primary.1), "{code}: label text in\n{out}");
+
+        // The help line.
+        let help = d.help.as_deref().unwrap_or_else(|| panic!("{code}: this diagnostic names its fix"));
+        assert!(lines.iter().any(|l| l.trim() == format!("help: {help}")), "{code}: help in\n{out}");
+    }
 }
