@@ -3,17 +3,20 @@
 
 mod body;
 mod hardware;
+mod index;
 mod items;
 
 use super::body::Lit;
 use super::decl::{DeclData, DeclKind};
 use super::design::Design;
 use super::ids::DeclId;
+use super::index::ReferenceId;
 use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
 pub use body::{Commit, Contribution, Expr, Path, Pat, SourceFile, Stmt, Type};
 pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Instance, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
+pub use index::{Reference, Writer};
 pub use items::{Const, Enum, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Struct, Trait, Use, Variant};
 
 /// The generic declaration handle: any kind, read through [`Decl::kind`].
@@ -135,6 +138,21 @@ pub trait Reflect<'d>: Copy {
     fn declared_in(self) -> Option<Decl<'d>> {
         let d = self.decl();
         d.data().parent.map(|p| Decl::new(d.design, p))
+    }
+
+    /// Every path with a segment, and every member expression, that resolved
+    /// to this declaration, in source order.
+    fn references(self) -> Vec<Reference<'d>> {
+        let d = self.decl();
+        d.design()
+            .index
+            .references(d.id())
+            .iter()
+            .map(|r| match *r {
+                ReferenceId::Path(p) => Reference::Path(d.design().path(p)),
+                ReferenceId::Member(e) => Reference::Member(d.design().expr(e)),
+            })
+            .collect()
     }
 
     /// The namespace path joined by `::`, then the member chain joined by

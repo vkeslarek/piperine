@@ -73,6 +73,7 @@ pub struct Design {
     pub(super) types: Vec<TypeNode>,
     pub(super) paths: Vec<PathNode>,
     diagnostics: Vec<DesignDiagnostic>,
+    pub(super) index: super::index::Index,
 }
 
 impl Design {
@@ -348,7 +349,7 @@ impl DesignBuilder {
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
         let mut design =
-            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new() };
+            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new(), index: Default::default() };
         if let Some(path) = &self.root_file {
             let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
             let bytes = DiskSources.read(path);

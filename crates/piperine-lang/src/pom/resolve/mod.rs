@@ -106,4 +106,5 @@ pub(super) fn run(design: &mut Design) {
         design.push_diagnostic(file, diagnostic);
     }
     design.sort_diagnostics();
+    design.index = super::index::build(design);
 }

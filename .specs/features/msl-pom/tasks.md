@@ -915,12 +915,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `references_in_source_order` passes in `pom_reflect.rs` (C74: POM-11 AC 7)
-- [ ] Test `writers_are_definitions_and_commits` passes in `pom_reflect.rs` (C75: POM-11 AC 8)
-- [ ] Test `instantiated_by_lists_instances` passes in `pom_reflect.rs` (C76: POM-11 AC 9)
-- [ ] The root of a place is found by stripping `Field`, `Index` and `Paren`
-- [ ] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `references_in_source_order` passes in `pom_reflect.rs` (C74: POM-11 AC 7)
+- [x] Test `writers_are_definitions_and_commits` passes in `pom_reflect.rs` (C75: POM-11 AC 8)
+- [x] Test `instantiated_by_lists_instances` passes in `pom_reflect.rs` (C76: POM-11 AC 9)
+- [x] The root of a place is found by stripping `Field`, `Index` and `Paren`
+- [x] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

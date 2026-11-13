@@ -2,7 +2,7 @@
 //! and casts, the carrier nature of a port or signal, the instance views and
 //! the reverse queries.
 
-use piperine_lang::pom::{Decl, Design, Reflect};
+use piperine_lang::pom::{Decl, Design, Reference, Reflect, Writer};
 
 const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
 
@@ -194,4 +194,114 @@ fn handle_equality() {
     assert_ne!(a.module("M").unwrap().decl(), a.module("Top").unwrap().decl());
     assert_eq!(a.module("M").unwrap().decl(), a.find("a::M").unwrap());
     assert_eq!(a.module("M").unwrap().signal("w").unwrap(), a.module("M").unwrap().signal("w").unwrap());
+}
+
+const REVERSE: &str = "\
+module Cell(p: Bit) {}
+module Top(a: Bit, b: Bit) {
+    signal s: Bit;
+    signal t: Bit;
+    s = a;
+    let u = Cell(s);
+    let v = Cell(s);
+    t = b & s;
+}
+digital for Top {
+    on a { s <- true; t[0] <- false; }
+    on b { (s) <- false; }
+}
+";
+
+#[test]
+fn references_in_source_order() {
+    let design = with_prelude(REVERSE);
+    let top = design.module("Top").unwrap();
+    let s = top.signal("s").unwrap();
+    let refs = s.references();
+    let texts: Vec<_> = refs
+        .iter()
+        .map(|r| match r {
+            Reference::Path(p) => (p.text().to_string(), p.span().start),
+            Reference::Member(e) => (e.text().to_string(), e.span().start),
+        })
+        .collect();
+    // `s = a;`, `Cell(s)` twice, `b & s`, `s <- true`, `(s) <- false`.
+    assert_eq!(texts.iter().map(|t| t.0.as_str()).collect::<Vec<_>>(), ["s", "s", "s", "s", "s", "s"]);
+    assert!(texts.windows(2).all(|w| w[0].1 < w[1].1), "source order: {texts:?}");
+    // A reference through `decl()` handle is the same list.
+    assert_eq!(s.decl().references(), refs);
+    // A declaration nothing names has none.
+    assert!(design.module("Cell").unwrap().port("p").unwrap().references().is_empty());
+    // A module is referenced by the callee of each placement.
+    assert_eq!(design.module("Cell").unwrap().references().len(), 2);
+}
+
+#[test]
+fn member_references_are_listed() {
+    let src = "\
+module Cell(p: Bit) { pub signal q: Bit; }
+module Top() {
+    signal s: Bit;
+    let c = Cell(s);
+    signal t: Bit;
+    t = c.q;
+}
+";
+    let design = with_prelude(src);
+    let q = design.module("Cell").unwrap().signal("q").unwrap();
+    let refs = q.references();
+    assert_eq!(refs.len(), 1);
+    assert!(matches!(refs[0], Reference::Member(e) if e.text() == "c.q"));
+}
+
+#[test]
+fn writers_are_definitions_and_commits() {
+    let design = with_prelude(REVERSE);
+    let top = design.module("Top").unwrap();
+    let s = top.signal("s").unwrap();
+    let t = top.signal("t").unwrap();
+    let writers = s.writers();
+    assert_eq!(writers.len(), 3, "{writers:?}");
+    assert!(matches!(writers[0], Writer::Definition(d) if d.place().text() == "s"));
+    assert!(matches!(writers[1], Writer::Commit(c) if c.place().text() == "s"));
+    assert!(matches!(writers[2], Writer::Commit(c) if c.place().text() == "(s)"), "Paren is stripped");
+    // `t = ..` is a definition; `t[0] <- ..` has `t` as the root of an index place.
+    let tw = t.writers();
+    assert_eq!(tw.len(), 2, "{tw:?}");
+    assert!(matches!(tw[0], Writer::Definition(_)));
+    assert!(matches!(tw[1], Writer::Commit(c) if c.place().text() == "t[0]"));
+    // Reads are not writes: `a` and `b` are only read.
+    assert!(top.port("a").unwrap().writers().is_empty());
+}
+
+#[test]
+fn port_writers_and_field_roots() {
+    let src = "\
+struct Bus { valid: Bit }
+module M(o: Bit, bus: Bus) {
+    o = true;
+    bus.valid = false;
+}
+";
+    let design = with_prelude(src);
+    let m = design.module("M").unwrap();
+    assert_eq!(m.port("o").unwrap().writers().len(), 1);
+    assert_eq!(m.port("bus").unwrap().writers().len(), 1, "a field place is rooted at its carrier");
+}
+
+#[test]
+fn instantiated_by_lists_instances() {
+    let src = "\
+module Cell(p: Bit) {}
+module A() { signal s: Bit; let u = Cell(s); }
+module B() { signal s: Bit; let v = Cell(s); let w = Cell(s); }
+module C() { signal s: Bit; }
+";
+    let design = with_prelude(src);
+    let cell = design.module("Cell").unwrap();
+    let by: Vec<_> = cell.instantiated_by().iter().map(|i| (i.name().unwrap().to_string(), i.module())).collect();
+    assert_eq!(by.iter().map(|b| b.0.as_str()).collect::<Vec<_>>(), ["u", "v", "w"]);
+    assert!(by.iter().all(|b| b.1 == Some(cell)));
+    assert!(design.module("C").unwrap().instantiated_by().is_empty());
+    assert_eq!(cell.instantiated_by()[0].declared_in().module(), design.module("A"));
 }
