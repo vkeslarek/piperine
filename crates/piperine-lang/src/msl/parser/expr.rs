@@ -159,7 +159,7 @@ pub(crate) fn build<'a, I: In<'a>>(
     let emit = select! { Token::Ident(s) if s == "emit" => () }
         .ignore_then(punct(Punct::Not))
         .ignore_then(
-            lit_string()
+            string_lit()
                 .then(
                     punct(Punct::Comma)
                         .ignore_then(
@@ -181,7 +181,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .map_with(|(stream, fields), e| mk(ExprKind::Emit { stream, fields }, e.span()));
     let include_str = select! { Token::Ident(s) if s == "include_str" => () }
         .ignore_then(punct(Punct::Not))
-        .ignore_then(lit_string().delimited_by(punct(Punct::LParen), punct(Punct::RParen)))
+        .ignore_then(string_lit().delimited_by(punct(Punct::LParen), punct(Punct::RParen)))
         .map_with(|s, e| mk(ExprKind::IncludeStr(s), e.span()));
 
     let path_atom = {
@@ -198,6 +198,18 @@ pub(crate) fn build<'a, I: In<'a>>(
         }
     };
 
+    // Any other `name!(..)` is a macro: E0901, then the group is skipped.
+    let macro_call = ty::path(h, true)
+        .filter(|p: &Path| {
+            !(p.segments.len() == 1 && matches!(p.segments[0].ident.name.as_str(), "emit" | "include_str"))
+        })
+        .then_ignore(punct(Punct::Not))
+        .then_ignore(skip_group())
+        .validate(|_, e, emitter| {
+            emitter.emit(macro_error(e.span()));
+            mk(ExprKind::Error, e.span())
+        });
+
     // A malformed token already reported by the lexer.
     let error_atom = just(Token::Error).map_with(|_, e| mk(ExprKind::Error, e.span()));
 
@@ -210,9 +222,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .map_with(|v, e| mk(ExprKind::Return(v.map(boxed)), e.span()));
 
     // `move |a, b: T| -> R { .. }` / `|x| x + 1` / `|| 0`.
-    let closure_param = h
-        .pat1
-        .clone()
+    let closure_param = pat::binding(h)
         .then(punct(Punct::Colon).ignore_then(h.ty.clone()).or_not())
         .map_with(|(pat, ty), e| ClosureParam { pat, ty, span: Loc(e.span()) });
     let closure_params = choice((
@@ -254,6 +264,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         return_,
         closure,
         error_atom,
+        macro_call,
         path_atom,
     ))
     .labelled("expression")
@@ -414,13 +425,6 @@ pub(crate) fn build<'a, I: In<'a>>(
         .boxed()
 }
 
-/// A string literal token as a [`Lit`].
-fn lit_string<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone {
-    select! { Token::Str(s) => LitKind::Str(s) }
-        .map_with(|kind, e| Lit { kind, span: Loc(e.span()) })
-        .labelled("string literal")
-}
-
 /// `if`, `match`, `while`, `loop`, `for` and a plain block: expressions that
 /// end at their closing brace, so a statement needs no `;` after them.
 pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
@@ -483,7 +487,7 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
         .ignore_then(block.clone())
         .map_with(|body, e| mk(ExprKind::Loop { body }, e.span()));
     let for_expr = kw(Kw::For)
-        .ignore_then(h.pat1.clone())
+        .ignore_then(pat::binding(h))
         .then_ignore(kw(Kw::In))
         .then(h.expr_ns.clone())
         .then(block)
@@ -514,7 +518,7 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
     let empty = semi.clone().map_with(move |_, e| mk(StmtKind::Empty, e.span()));
 
     let let_stmt = kw(Kw::Let)
-        .ignore_then(h.pat1.clone())
+        .ignore_then(pat::binding(h))
         .then(punct(Punct::Colon).ignore_then(h.ty.clone()).or_not())
         .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .then_ignore(semi.clone())
@@ -571,5 +575,36 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         mk(kind, e.span())
     });
 
-    choice((empty, let_stmt, block_like_stmt, simple)).labelled("statement").boxed()
+    // `signal` and `on` are module and `digital` forms: parsed here so a
+    // context check can name them where they are not allowed.
+    let signal_stmt = kw(Kw::Signal)
+        .ignore_then(ident())
+        .then_ignore(punct(Punct::Colon))
+        .then(h.ty.clone())
+        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(punct(Punct::Semi))
+        .map_with(move |((name, ty), init), e| mk(StmtKind::Signal { name, ty, init }, e.span()));
+    let reaction_stmt = kw(Kw::On)
+        .ignore_then(h.expr_ns.clone())
+        .then(h.block.clone())
+        .map_with(move |(event, body), e| mk(StmtKind::Reaction(Reaction { event, body }), e.span()));
+
+    // A Rust item inside a block starts with an item keyword or `#`/`///`.
+    let starts_item = |t: &Token| {
+        matches!(
+            t,
+            Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Pub | Kw::Extern)
+                | Token::Punct(Punct::Pound)
+                | Token::DocOuter(_)
+        )
+    };
+    let item_stmt = any()
+        .filter(starts_item)
+        .rewind()
+        .ignore_then(h.item.clone())
+        .map_with(move |item, e| mk(StmtKind::Item(Box::new(item)), e.span()));
+
+    choice((empty, let_stmt, item_stmt, signal_stmt, reaction_stmt, block_like_stmt, simple))
+        .labelled("statement")
+        .boxed()
 }

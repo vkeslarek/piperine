@@ -195,8 +195,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-02, MSLP-04
 
 **Done when**:
-- [ ] Tests `inherited_rust_forms_parse` (complete), `doc_comments_and_attrs_attach`, `unknown_as_value_ok_as_name_e0908` pass
-- [ ] Run parser + run errors pass; build gate passes
+- [x] Tests `inherited_rust_forms_parse` (complete), `doc_comments_and_attrs_attach`, `unknown_as_value_ok_as_name_e0908` pass
+- [x] Run parser + run errors pass; build gate passes
 
 **Tests**: integration
 **Gate**: full

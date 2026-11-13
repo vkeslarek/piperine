@@ -6,7 +6,7 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::ast::*;
-use piperine_lang::msl::parser::{parse_block, parse_expr, parse_generics, parse_pat, parse_type};
+use piperine_lang::msl::parser::{parse, parse_block, parse_expr, parse_generics, parse_pat, parse_type};
 
 fn ty(src: &str) -> Type {
     let (t, diags) = parse_type(src);
@@ -30,6 +30,19 @@ fn block(src: &str) -> Block {
     let (b, diags) = parse_block(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     b.unwrap_or_else(|| panic!("{src:?} did not parse"))
+}
+
+/// Parse a whole file, expecting no diagnostics.
+fn file(src: &str) -> File {
+    let r = parse(src);
+    assert!(r.diagnostics.is_empty(), "{src:?}: {:?}", r.diagnostics);
+    r.file
+}
+
+fn only_item(src: &str) -> Item {
+    let mut f = file(src);
+    assert_eq!(f.items.len(), 1, "{src:?}");
+    f.items.remove(0)
 }
 
 fn path_names(p: &Path) -> Vec<&str> {
@@ -386,4 +399,156 @@ fn unknown_as_value_ok_as_name_e0908() {
     let ExprKind::Call { args, .. } = &expr("f(Unknown, 1)").kind else { panic!() };
     assert!(matches!(args[0].value.kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. })));
     assert!(matches!(&expr("Some(Unknown)").kind, ExprKind::Call { .. }));
+
+    // The name half: as a binding, item or field name it is `E0908`, at the
+    // token itself.
+    for src in [
+        "fn Unknown() {}",
+        "struct Unknown;",
+        "enum E { Unknown }",
+        "struct S { Unknown: u8 }",
+        "const Unknown: u8 = 1;",
+        "fn f(Unknown: u8) {}",
+        "fn f() { let Unknown = 1; }",
+        "fn f() { let (a, Unknown) = t; }",
+        "fn f() { for Unknown in 0..3 {} }",
+        "fn f() { let g = |Unknown| 1; }",
+    ] {
+        let at = src.find("Unknown").unwrap();
+        let r = parse(src);
+        let d = r.diagnostics.iter().find(|d| d.code == "E0908").unwrap_or_else(|| panic!("{src:?}: {:?}", r.diagnostics));
+        assert_eq!(d.span(), Span::new(at, at + 7), "{src:?}");
+    }
+    // A pattern that merely matches the literal is fine.
+    let r = parse("fn f() { match x { Unknown => 1, _ => 2 }; }");
+    assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+}
+
+#[test]
+fn inherited_rust_forms_parse_items() {
+    // ---- fn ----
+    let ItemKind::Fn(f) = only_item("fn windup(u: f64, lo: f64, hi: f64) -> f64 { u.clamp(lo, hi) - u }").kind else { panic!() };
+    assert_eq!(f.name.name, "windup");
+    assert_eq!(f.params.len(), 3);
+    assert!(f.ret.is_some() && f.body.is_some() && !f.is_const && f.abi.is_none());
+    let item = only_item("pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }");
+    assert!(item.public);
+    // A declaration without a body, `extern "C"`, `const fn`, generics, `where`, `self`.
+    let ItemKind::Fn(f) = only_item("pub fn pnjlim(new: f64, old: f64) -> f64;").kind else { panic!() };
+    assert!(f.body.is_none());
+    let ItemKind::Fn(f) = only_item("extern \"C\" fn erfcx(x: f64) -> f64;").kind else { panic!() };
+    assert!(matches!(&f.abi, Some(Lit { kind: LitKind::Str(s), .. }) if s == "C"));
+    let ItemKind::Fn(f) = only_item("const fn parse(s: &'static str) -> u32 { 0 }").kind else { panic!() };
+    assert!(f.is_const);
+    let ItemKind::Fn(f) = only_item("fn f<const N: u32>(x: f64) -> f64 where N >= 1 { x }").kind else { panic!() };
+    assert!(f.generics.is_some());
+    let Some(Expr { kind: ExprKind::Binary { op: BinOp::Ge, .. }, .. }) = &f.where_ else { panic!("{:?}", f.where_) };
+    let ItemKind::Fn(f) = only_item("fn celsius(self) -> f64 { 1.0 }").kind else { panic!() };
+    assert!(matches!(f.params[0], FnParam::SelfValue(_)));
+    // No trailing-comma requirement, and a trailing comma is fine.
+    file("fn f(a: u8,) {}");
+    // ---- struct ----
+    let ItemKind::Struct(s) = only_item("struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }").kind else { panic!() };
+    let Fields::Named(fields) = &s.fields else { panic!() };
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].dir, Some(Dir::Out));
+    assert_eq!(fields[1].dir, Some(Dir::In));
+    assert!(matches!(only_item("struct Wrap(u8, f64);").kind, ItemKind::Struct(StructDecl { fields: Fields::Tuple(v), .. }) if v.len() == 2));
+    assert!(matches!(only_item("struct U;").kind, ItemKind::Struct(StructDecl { fields: Fields::Unit, .. })));
+    assert!(matches!(only_item("struct Diff { p: Electrical, n: Electrical }").kind, ItemKind::Struct(_)));
+    // ---- enum ----
+    let ItemKind::Enum(e) = only_item("enum Tx { Idle, Start, Data { n: u3 }, Stop }").kind else { panic!() };
+    assert_eq!(e.variants.len(), 4);
+    assert!(matches!(e.variants[2].fields, Fields::Named(_)));
+    let ItemKind::Enum(e) = only_item("enum Op { Add = 0b00, Sub = 0b01, }").kind else { panic!() };
+    assert!(e.variants[0].discriminant.is_some());
+    assert!(matches!(only_item("enum Opt<T> { No, Yes(T) }").kind, ItemKind::Enum(EnumDecl { variants, .. }) if matches!(variants[1].fields, Fields::Tuple(_))));
+    // ---- impl, trait ----
+    let ItemKind::Impl(i) = only_item("impl<T> Stream<T> { pub fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid } }").kind else { panic!() };
+    assert!(i.trait_.is_none() && i.generics.is_some() && i.items.len() == 1);
+    assert!(i.items[0].public);
+    let ItemKind::Impl(i) = only_item("impl<T: Repr> Known for T {}").kind else { panic!() };
+    assert_eq!(path_names(i.trait_.as_ref().unwrap()), ["Known"]);
+    // An `impl` may hold `const` items (B.3.5 amendment 4).
+    let ItemKind::Impl(i) = only_item("impl Logic { pub const Z: Logic = Logic::z(); }").kind else { panic!() };
+    assert!(matches!(i.items[0].kind, ImplItemKind::Const(_)));
+    let ItemKind::Trait(t) = only_item(
+        "pub trait Repr: Copy { const WIDTH: u32; fn encode(self) -> [bool; Self::WIDTH]; fn known(self) -> Option<Self> { Some(self) } }",
+    )
+    .kind
+    else {
+        panic!()
+    };
+    assert_eq!(t.supertraits.len(), 1);
+    assert_eq!(t.items.len(), 3);
+    assert!(matches!(&t.items[0].kind, ImplItemKind::Const(ConstItem { value: None, .. })));
+    // ---- const, use, mod ----
+    let ItemKind::Const(c) = only_item("const IV: [(f64, f64); 64] = parse_table(include_str!(\"diode_iv.tbl\"));").kind else { panic!() };
+    assert_eq!(c.name.name, "IV");
+    let ItemKind::Use(u) = only_item("use a::b::{c, d as e, f::*};").kind else { panic!() };
+    assert_eq!(u.path.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+    let UseKind::Group(g) = &u.kind else { panic!() };
+    assert_eq!(g.len(), 3);
+    assert!(matches!(&g[1].kind, UseKind::Simple { alias: Some(a) } if a.name == "e"));
+    assert!(matches!(g[2].kind, UseKind::Glob));
+    assert!(matches!(only_item("use crate::prelude::*;").kind, ItemKind::Use(UseTree { kind: UseKind::Glob, .. })));
+    let ItemKind::Mod(m) = only_item("mod m { fn f() {} const X: u8 = 1; }").kind else { panic!() };
+    assert_eq!(m.items.as_ref().map(Vec::len), Some(2));
+    assert!(matches!(only_item("mod ext;").kind, ItemKind::Mod(ModItem { items: None, .. })));
+    // Items inside a block.
+    let b = block("{ const K: u8 = 1; fn g() {} let x = K; x }");
+    assert!(matches!(b.stmts[0].kind, StmtKind::Item(_)) && matches!(b.stmts[1].kind, StmtKind::Item(_)));
+    // Several items, in order; an empty file has none.
+    assert_eq!(file("fn a() {} fn b() {} struct C;").items.len(), 3);
+    assert!(file("").items.is_empty());
+    assert!(file("  // just a comment\n").items.is_empty());
+    // The spec's closure-in-fn example, whole.
+    file("pub fn tri<T: Repr>(d: &[Option<T>]) -> Option<T> {\n    d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })\n}");
+    file("pub fn finish() { emit!(\"sim\", finish = true); }");
+}
+
+#[test]
+fn doc_comments_and_attrs_attach() {
+    let src = "/// Ideal resistor.\n/// Two lines.\n#[derive(Repr, Clone)]\n#[repr(u2)]\npub enum Op {\n    /// the add\n    Add = 0,\n    #[doc = \"sub\"] Sub = 1,\n}\n";
+    let item = only_item(src);
+    // Docs keep their text verbatim and attach to the next item.
+    let texts: Vec<_> = item.meta.docs.iter().map(|d| d.text.as_str()).collect();
+    assert_eq!(texts, [" Ideal resistor.", " Two lines."]);
+    assert_eq!(item.meta.attrs.len(), 2);
+    assert_eq!(path_names(&item.meta.attrs[0].path), ["derive"]);
+    let AttrInput::List(args) = &item.meta.attrs[0].input else { panic!() };
+    assert_eq!(args.len(), 2);
+    assert!(matches!(&args[0], AttrArg::Path(p) if path_names(p) == ["Repr"]));
+    assert_eq!(path_names(&item.meta.attrs[1].path), ["repr"]);
+    // The item's span starts at its first doc comment.
+    assert_eq!(item.span.0.start, 0);
+    let ItemKind::Enum(e) = &item.kind else { panic!() };
+    // Variants take docs and attributes too.
+    assert_eq!(e.variants[0].meta.docs[0].text, " the add");
+    assert!(matches!(&e.variants[1].meta.attrs[0].input, AttrInput::Eq(_)));
+    assert_eq!(path_names(&e.variants[1].meta.attrs[0].path), ["doc"]);
+
+    // Struct fields, impl items.
+    let item = only_item("struct S {\n    /// a doc\n    #[doc = \"x\"]\n    pub a: Bit,\n    b: Bit,\n}");
+    let ItemKind::Struct(StructDecl { fields: Fields::Named(f), .. }) = &item.kind else { panic!() };
+    assert_eq!(f[0].meta.docs.len(), 1);
+    assert_eq!(f[0].meta.attrs.len(), 1);
+    assert!(f[0].public);
+    assert!(f[1].meta.docs.is_empty() && f[1].meta.attrs.is_empty());
+    let item = only_item("impl X {\n    /// method doc\n    pub fn f(self) {}\n    /// const doc\n    const C: u8 = 1;\n}");
+    let ItemKind::Impl(i) = &item.kind else { panic!() };
+    assert_eq!(i.items[0].meta.docs[0].text, " method doc");
+    assert_eq!(i.items[1].meta.docs[0].text, " const doc");
+
+    // `#[link(..)]` with a string and a name-value argument.
+    let item = only_item("#[link(\"bsim4.osdi\", model = \"bsim4\")] fn f() {}");
+    let AttrInput::List(args) = &item.meta.attrs[0].input else { panic!() };
+    assert!(matches!(&args[0], AttrArg::Lit(Lit { kind: LitKind::Str(s), .. }) if s == "bsim4.osdi"));
+    assert!(matches!(&args[1], AttrArg::NameValue(n, _) if n.name == "model"));
+
+    // Ordinary comments are discarded; `//!` is the file's inner doc.
+    let f = file("//! crate doc\n// plain\n/* block */\nfn f() {}");
+    assert_eq!(f.inner_docs.len(), 1);
+    assert_eq!(f.inner_docs[0].text, " crate doc");
+    assert!(f.items[0].meta.docs.is_empty());
 }

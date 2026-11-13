@@ -9,7 +9,7 @@ use crate::msl::ast::*;
 use crate::msl::lexer::{Kw, Punct, Token};
 use crate::msl::span::Span;
 
-use super::{expr, pat, ty};
+use super::{expr, item, pat, ty};
 
 /// A custom parse error: a spec code, a message, an optional help line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +46,7 @@ pub(crate) struct Handles<'a, I: In<'a>> {
     /// An expression that refuses a struct literal at the top level.
     pub expr_ns: Rec<'a, I, Expr>,
     pub block: Rec<'a, I, Block>,
+    pub item: Rec<'a, I, Item>,
 }
 
 pub(crate) fn handles<'a, I: In<'a>>() -> Handles<'a, I> {
@@ -56,6 +57,7 @@ pub(crate) fn handles<'a, I: In<'a>>() -> Handles<'a, I> {
         expr: Recursive::declare(),
         expr_ns: Recursive::declare(),
         block: Recursive::declare(),
+        item: Recursive::declare(),
     };
     let p = ty::build(&h);
     h.ty.define(p);
@@ -68,6 +70,8 @@ pub(crate) fn handles<'a, I: In<'a>>() -> Handles<'a, I> {
     h.expr_ns.define(p);
     let p = expr::block(&h);
     h.block.define(p);
+    let p = item::build(&h);
+    h.item.define(p);
     h
 }
 
@@ -115,5 +119,46 @@ pub(crate) fn lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone
 
 pub(crate) fn lit_expr<'a, I: In<'a>>() -> impl Parser<'a, I, Expr, Extra<'a>> + Clone {
     lit().map(|l| Expr { span: l.span, kind: ExprKind::Lit(l) })
+}
+
+
+fn delim_open(t: &Token) -> bool {
+    matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace))
+}
+
+fn delim_close(t: &Token) -> bool {
+    matches!(t, Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace))
+}
+
+/// A balanced `( .. )`, `[ .. ]` or `{ .. }` group, contents skipped.
+pub(crate) fn skip_group<'a, I: In<'a>>() -> P<'a, I, ()> {
+    recursive(|nested| {
+        let inner = choice((
+            nested,
+            any().filter(|t: &Token| !delim_open(t) && !delim_close(t)).ignored(),
+        ))
+        .repeated();
+        any().filter(delim_open).ignore_then(inner).then_ignore(any().filter(delim_close)).ignored()
+    })
+    .boxed()
+}
+
+/// The `E0901` of a macro invocation or definition.
+pub(crate) fn macro_error(span: Span) -> Err<'static> {
+    Rich::custom(
+        span,
+        Custom {
+            code: "E0901",
+            message: "macros are not part of the language".into(),
+            help: Some("the only `!` forms are the built-ins `emit!` and `include_str!`".into()),
+        },
+    )
+}
+
+/// A string literal token as a [`Lit`].
+pub(crate) fn string_lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone {
+    select! { Token::Str(s) => LitKind::Str(s) }
+        .map_with(|kind, e| Lit { kind, span: Loc(e.span()) })
+        .labelled("string literal")
 }
 

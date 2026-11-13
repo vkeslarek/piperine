@@ -1,6 +1,6 @@
 //! Public entry points: lex, parse, and turn parse errors into diagnostics.
 
-use chumsky::error::RichReason;
+use chumsky::error::{RichPattern, RichReason};
 
 use super::*;
 
@@ -14,8 +14,10 @@ pub(crate) fn token_input<'a>(
 }
 
 /// Turn a parse error into the spec's [`Diagnostic`].
-pub(crate) fn to_diagnostic(e: &Err<'_>) -> Diagnostic {
+pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic {
     let span = *e.span();
+    // An error that carries no found token but sits on one: recover it.
+    let at_span = || tokens.iter().find(|(_, s)| *s == span && !s.is_empty()).map(|(t, _)| t.clone());
     match e.reason() {
         RichReason::Custom(c) => {
             let mut d = Diagnostic::new(c.code, c.message.clone(), span, c.message.clone());
@@ -37,6 +39,10 @@ pub(crate) fn to_diagnostic(e: &Err<'_>) -> Diagnostic {
                  `<-` is a commit statement `place <- value;` in a reaction",
             )
         }
+        RichReason::ExpectedFound { found: Some(t), .. } if names_expected(e, &t) => name_error(&t, span),
+        RichReason::ExpectedFound { found: None, .. } if at_span().is_some_and(|t| names_expected(e, &t)) => {
+            name_error(&at_span().unwrap_or(Token::Error), span)
+        }
         RichReason::ExpectedFound { found, .. } => {
             let found = match found {
                 Some(t) => t.to_string(),
@@ -55,13 +61,17 @@ pub(crate) fn to_diagnostic(e: &Err<'_>) -> Diagnostic {
 
 type Parsed<O> = (Option<O>, Vec<Diagnostic>);
 
-fn finish<O>(out: (Option<O>, Vec<Err<'_>>), mut diags: Vec<Diagnostic>) -> Parsed<O> {
+fn finish<O>(
+    out: (Option<O>, Vec<Err<'_>>),
+    mut diags: Vec<Diagnostic>,
+    tokens: &[(Token, Span)],
+) -> Parsed<O> {
     let (value, errors) = out;
     // A `Token::Error` was already reported by the lexer or the depth check.
     let reported = |e: &Err<'_>| {
         matches!(e.reason(), RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Error))
     };
-    diags.extend(errors.iter().filter(|e| !reported(e)).map(to_diagnostic));
+    diags.extend(errors.iter().filter(|e| !reported(e)).map(|e| to_diagnostic(e, tokens)));
     diags.sort_by_key(|d| d.span().start);
     (value, diags)
 }
@@ -72,7 +82,7 @@ pub fn parse_type(src: &str) -> Parsed<Type> {
         let (tokens, diags) = lex_limited(src);
         let input = token_input(&tokens, src.len());
         let h = handles();
-        finish(ty::build(&h).then_ignore(end()).parse(input).into_output_errors(), diags)
+        finish(ty::build(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
     })
 }
 
@@ -82,7 +92,7 @@ pub fn parse_pat(src: &str) -> Parsed<Pat> {
         let (tokens, diags) = lex_limited(src);
         let input = token_input(&tokens, src.len());
         let h = handles();
-        finish(h.pat.clone().then_ignore(end()).parse(input).into_output_errors(), diags)
+        finish(h.pat.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
     })
 }
 
@@ -92,7 +102,7 @@ pub fn parse_generics(src: &str) -> Parsed<Generics> {
         let (tokens, diags) = lex_limited(src);
         let input = token_input(&tokens, src.len());
         let h = handles();
-        finish(ty::generics(&h).then_ignore(end()).parse(input).into_output_errors(), diags)
+        finish(ty::generics(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
     })
 }
 
@@ -102,7 +112,7 @@ pub fn parse_expr(src: &str) -> Parsed<Expr> {
         let (tokens, diags) = lex_limited(src);
         let input = token_input(&tokens, src.len());
         let h = handles();
-        finish(h.expr.clone().then_ignore(end()).parse(input).into_output_errors(), diags)
+        finish(h.expr.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
     })
 }
 
@@ -112,7 +122,7 @@ pub fn parse_block(src: &str) -> Parsed<Block> {
         let (tokens, diags) = lex_limited(src);
         let input = token_input(&tokens, src.len());
         let h = handles();
-        finish(h.block.clone().then_ignore(end()).parse(input).into_output_errors(), diags)
+        finish(h.block.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
     })
 }
 
@@ -195,4 +205,72 @@ fn big_stack<T: Send>(f: impl FnOnce() -> T + Send) -> T {
             Err(_) => take().map(|f| f()).expect("the parse closure runs once"),
         }
     })
+}
+
+/// The result of [`parse`]: always a file (partial on error) and every
+/// diagnostic, in source order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseResult {
+    pub file: File,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Parse a whole source file.
+pub fn parse(src: &str) -> ParseResult {
+    big_stack(|| {
+        let (tokens, diags) = lex_limited(src);
+        let input = token_input(&tokens, src.len());
+        let h = handles();
+        let inner_docs = select! { Token::DocInner(text) => text }
+            .map_with(|text, e| Doc { text, span: Loc(e.span()) })
+            .repeated()
+            .collect::<Vec<_>>();
+        let file = inner_docs
+            .then(h.item.clone().repeated().collect::<Vec<_>>())
+            .then_ignore(end())
+            .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
+        let (file, mut diagnostics) = finish(file.parse(input).into_output_errors(), diags, &tokens);
+        let file = file.unwrap_or(File {
+            inner_docs: Vec::new(),
+            items: Vec::new(),
+            span: Loc(Span::new(0, src.len())),
+        });
+        diagnostics.extend(check::file(&file));
+        diagnostics.sort_by_key(|d| d.span().start);
+        ParseResult { file, diagnostics }
+    })
+}
+
+/// Labels of the positions that take a name or a value.
+const NAME_LABELS: &[&str] = &["identifier", "pattern", "path", "expression", "type"];
+
+/// A keyword or `Unknown` found where a name was expected.
+fn names_expected(e: &Err<'_>, found: &Token) -> bool {
+    matches!(found, Token::Kw(_) | Token::Unknown)
+        && e.expected().any(|p| matches!(p, RichPattern::Label(l) if NAME_LABELS.contains(&&**l)))
+}
+
+fn name_error(found: &Token, span: Span) -> Diagnostic {
+    match found {
+        Token::Unknown => Diagnostic::new(
+            "E0908",
+            "`Unknown` is a literal, not a name",
+            span,
+            "cannot name a binding, item or field `Unknown`",
+        )
+        .with_help("choose another name"),
+        Token::Kw(Kw::Unsafe | Kw::Async | Kw::Await | Kw::Dyn) => Diagnostic::new(
+            "E0101",
+            format!("{found} is not part of the language"),
+            span,
+            "a syntactic form left out of the language",
+        ),
+        other => Diagnostic::new(
+            "E0903",
+            format!("{other} is a reserved keyword and cannot be used as an identifier"),
+            span,
+            "reserved keyword",
+        )
+        .with_help("choose another name; raw identifiers (`r#name`) are not supported"),
+    }
 }

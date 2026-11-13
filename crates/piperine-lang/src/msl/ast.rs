@@ -372,6 +372,11 @@ pub enum StmtKind {
     Commit { place: Expr, value: Expr, after: Option<Expr> },
     /// A lone `;`.
     Empty,
+    /// `signal name: type = init;`, a module-body form. Parsed in any block
+    /// so a context check can report it where it is not allowed.
+    Signal { name: Ident, ty: Type, init: Option<Expr> },
+    /// `on event { .. }`, a `digital` form, parsed for the same reason.
+    Reaction(Reaction),
 }
 
 // ---- items ------------------------------------------------------------------------------------
@@ -397,6 +402,8 @@ pub enum ItemKind {
     Nature(NatureDecl),
     Module(ModuleDecl),
     Behavior(BehaviorBlock),
+    /// A malformed item already reported by a diagnostic (a macro definition).
+    Error,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -4,7 +4,7 @@
 //! the nesting limit and the in-expression `+>` / `<-` error.
 
 use piperine_lang::msl::Span;
-use piperine_lang::msl::parser::{MAX_DEPTH, parse_expr};
+use piperine_lang::msl::parser::{MAX_DEPTH, parse, parse_expr};
 
 #[test]
 fn depth_over_256_is_diagnostic_not_overflow() {
@@ -53,4 +53,73 @@ fn plus_gt_and_commit_inside_an_expression_report_e0907() {
         assert_eq!(diags[0].span(), Span::new(at + 2, at + 4), "{src:?}");
         assert!(diags[0].help.is_some());
     }
+}
+
+/// The codes of a source's diagnostics with their spans.
+fn codes(src: &str) -> Vec<(&'static str, Span)> {
+    parse(src).diagnostics.iter().map(|d| (d.code, d.span())).collect()
+}
+
+#[test]
+fn forbidden_forms_in_a_function_body_report_e0121() {
+    // Part I §3 rule 6: a function body has no `signal`, `<-`, `+>`,
+    // `bound_step` and no `on`.
+    for (src, at, len) in [
+        ("fn f() { signal x: Bit; }", 9, 14),
+        ("fn f() { on clk.rise() { q <- d; } }", 9, 25),
+        ("fn f() { q <- d; }", 9, 7),
+        ("fn f() { i(p, n) +> 1.0; }", 9, 15),
+        ("fn f() { bound_step(1.0); }", 9, 15),
+        // Nested in control flow and closures: still the function body.
+        ("fn f() { if a { x +> 1.0; } }", 16, 9),
+        ("fn f() { let g = |x| { y <- x; }; }", 23, 7),
+    ] {
+        let found = codes(src);
+        assert!(
+            found.contains(&("E0121", Span::new(at, at + len))),
+            "{src:?}: {found:?}"
+        );
+    }
+    // The same statements are fine outside a function body.
+    let r = parse("fn f() {} struct S;");
+    assert!(r.diagnostics.is_empty());
+    // A method body is a function body.
+    let found = codes("impl X { fn f(self) { q <- 1; } }");
+    assert!(found.iter().any(|(c, _)| *c == "E0121"), "{found:?}");
+}
+
+#[test]
+fn macros_other_than_emit_and_include_str_report_e0901() {
+    // Appendix A.1 rule 5: any other `path !` followed by a delimiter, and
+    // `macro_rules`, are errors; `emit!` and `include_str!` are grammar forms.
+    for (src, at, len) in [
+        ("fn f() { println!(\"x\"); }", 9, 13),
+        ("fn f() { let v = vec![1, 2]; }", 17, 10),
+        ("fn f() { a::b!{ } }", 9, 8),
+        ("macro_rules! m { () => {} }", 0, 27),
+    ] {
+        let found = codes(src);
+        assert!(found.contains(&("E0901", Span::new(at, at + len))), "{src:?}: {found:?}");
+    }
+    let r = parse("fn f() { emit!(\"sim\", finish = true); } const A: &'static str = include_str!(\"a.txt\");");
+    assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+}
+
+#[test]
+fn keyword_as_identifier_reports_e0903() {
+    // Appendix A.1 rule 6: an added keyword is not an identifier, nor is a
+    // Rust keyword (`out` is reserved, so `fn out()` is an error).
+    for (src, at, len) in [
+        ("fn out() {}", 3, 3),
+        ("fn f(on: u8) {}", 5, 2),
+        ("struct S { after: u8 }", 11, 5),
+        ("fn f() { let flip = 1; }", 13, 4),
+        ("const module: u8 = 1;", 6, 6),
+    ] {
+        let found = codes(src);
+        assert_eq!(found.first(), Some(&("E0903", Span::new(at, at + len))), "{src:?}: {found:?}");
+    }
+    // Contextual keywords stay identifiers.
+    let r = parse("fn analog() {} fn flow(potential: u8, value: u8, resolve: u8) {}");
+    assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
