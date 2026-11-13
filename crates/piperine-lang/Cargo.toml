@@ -4,29 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-thiserror = "2.0"
-num-complex.workspace = true
 miette = { version = "7.6.0", features = ["fancy"] }
-serde = { workspace = true, features = ["derive", "rc"] }
-serde_json = "1"
 # `stacker` is declared on purpose: MSL's 256-level nesting bound fits an 8 MiB
 # debug stack because chumsky grows the stack in heap segments past a red zone
 # (`Recursive` parsers). Dropping it would overflow on deeply nested sources.
 chumsky = { version = "=0.13.0", default-features = false, features = ["std", "stacker", "pratt"] }
 logos = "=0.16.1"
 
-[dev-dependencies]
-tempfile.workspace = true
-# T45 (LRMC-C7-10): `system_task_migration_completeness.rs` asserts each
-# system task's real *effect*, which needs a compiled kernel — the same
-# dev-dependency-cycle shape `piperine-solver`'s own test suite already
-# has on `piperine-lang`+`piperine-codegen` (a dev-only edge, not a real
-# build cycle: `piperine-codegen` depends on `piperine-lang` normally,
-# this is the reverse edge, live only while running `cargo test`).
-piperine-codegen = { path = "../piperine-codegen" }
-piperine-solver = { path = "../piperine-solver" }
-# T23 (lrm-conformance-wave3): `discipline_attribute_override.rs` builds
-# the same `ndarray::Array1` voltage-step fixture
-# `nature_abstol_inheritance.rs` (piperine-solver) uses to prove
-# `Tolerances::node_vntol_overrides` discriminating.
-ndarray.workspace = true
