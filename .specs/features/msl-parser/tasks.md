@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-parser/design.md`
-**Status**: Approved
+**Status**: Done
 **Approved**: 2026-11-13 - user: "Faz uma limpeza antes de iniciar para limpar lixinhos. Aprovo e pode iniciar"
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning'); cargo test -p piperine --test suite_hygiene`
 **Run lexer**: `cargo test -p piperine-lang --test msl_lexer`

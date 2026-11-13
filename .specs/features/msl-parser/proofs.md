@@ -1,6 +1,6 @@
 # msl-parser proofs
 
-**HEAD**: bce437cc
+**HEAD**: 56353def
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 30 pass, 0 fail
@@ -45,33 +45,33 @@
 ```
 running 9 tests
 test contribution_and_commit_operators_are_single_tokens ... ok
-test doc_comments_are_tokens ... ok
 test inherited_lexical_forms_lex ... ok
+test doc_comments_are_tokens ... ok
 test dropped_token_class_reports_e0905 ... ok
 test malformed_si_literal_reports_e0902 ... ok
 test non_utf8_one_diagnostic ... ok
 test keywords_reserved_vs_contextual ... ok
-test si_literal_scaled_value_and_raw_text ... ok
 test unterminated_comment_and_string_one_diagnostic ... ok
+test si_literal_scaled_value_and_raw_text ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/msl_lexer.rs (/var/tmp/piperine-target/debug/deps/msl_lexer-c42ef259f0281ddc)
 ```
 
 `Run parser` - exit 0
 
 ```
-test struct_expression_field_shorthand ... ok
 test nested_tuple_index ... ok
+test struct_expression_field_shorthand ... ok
 test doc_comments_and_attrs_attach ... ok
-test inherited_rust_forms_parse_items ... ok
-test unknown_as_value_ok_as_name_e0908 ... ok
-test contextual_keywords_are_identifiers_outside_nature ... ok
 test contribution_commit_at_any_depth ... ok
-test inherited_rust_forms_parse ... ok
+test inherited_rust_forms_parse_items ... ok
+test contextual_keywords_are_identifiers_outside_nature ... ok
+test unknown_as_value_ok_as_name_e0908 ... ok
 test inherited_rust_forms_parse_expressions ... ok
+test inherited_rust_forms_parse ... ok
 test every_b3_production_parses_with_span ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
@@ -87,7 +87,7 @@ running 2 tests
 test every_compile_fail_block_diagnoses ... ok
 test every_valid_spec_block_parses_clean ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
      Running tests/msl_corpus.rs (/var/tmp/piperine-target/debug/deps/msl_corpus-0e2a749f6d36b2c3)
@@ -96,10 +96,10 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run errors` - exit 0
 
 ```
-test unclosed_delimiter_is_reported_at_the_opener ... ok
-test comparisons_do_not_chain ... ok
-test statements_of_the_wrong_block_kind_report_e0404 ... ok
+test multiple_errors_in_source_order_with_partial_ast ... ok
+test rendered_output_is_miette_graphical ... ok
 test unexpected_token_names_found_and_expected ... ok
+test statements_of_the_wrong_block_kind_report_e0404 ... ok
 test keyword_diagnostics_cover_both_halves_of_e0903 ... ok
 test diagnostic_has_code_message_label_help ... ok
 test parse_phase_rows_report_their_codes ... ok
@@ -107,9 +107,9 @@ test depth_limit_fits_8mib_stack_in_debug ... ok
 test depth_over_256_is_diagnostic_not_overflow ... ok
 test nesting_without_delimiters_is_also_bounded ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/msl_errors.rs (/var/tmp/piperine-target/debug/deps/msl_errors-15caf477c1ca8646)
 ```
 
@@ -125,8 +125,8 @@ test printer_preserves_docs_and_attrs ... ok
 test roundtrip_ast_equal_over_corpus ... ok
 test print_is_idempotent_over_corpus ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/msl_print.rs (/var/tmp/piperine-target/debug/deps/msl_print-71d3a22c1acbc9be)
 ```

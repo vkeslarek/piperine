@@ -134,14 +134,14 @@
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----------- | ------ | ------- |
-| MSLP-01 | P1: Lex (AC 1–7) | Design | Pending |
-| MSLP-02 | P1: Parse AST (AC 1–2, 5–6) | Design | Pending |
-| MSLP-03 | P1: Parse corpus (AC 3–4) | Design | Pending |
-| MSLP-04 | P1: Errors (AC 1–7) | Design | Pending |
-| MSLP-05 | P2: Printer (AC 1–3) | Design | Pending |
-| MSLP-06 | Edge cases | Design | Pending |
+| MSLP-01 | P1: Lex (AC 1–7) | Verified | Verified |
+| MSLP-02 | P1: Parse AST (AC 1–2, 5–6) | Verified | Verified |
+| MSLP-03 | P1: Parse corpus (AC 3–4) | Verified | Verified |
+| MSLP-04 | P1: Errors (AC 1–7) | Verified | Verified |
+| MSLP-05 | P2: Printer (AC 1–3) | Verified | Verified |
+| MSLP-06 | Edge cases | Verified | Verified |
 
-**Coverage:** 6 total, 0 mapped to tasks.
+**Coverage:** 6 total, 6 mapped to tasks, 0 unmapped.
 
 ---
 
