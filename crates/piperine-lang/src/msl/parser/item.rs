@@ -51,7 +51,7 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
         .boxed()
 }
 
-fn dir<'a, I: In<'a>>() -> impl Parser<'a, I, Dir, Extra<'a>> + Clone {
+pub(crate) fn dir<'a, I: In<'a>>() -> impl Parser<'a, I, Dir, Extra<'a>> + Clone {
     choice((kw(Kw::In).to(Dir::In), kw(Kw::Out).to(Dir::Out)))
 }
 
@@ -298,6 +298,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         use_decl.boxed(),
         mod_decl.boxed(),
         msl::nature_decl(h),
+        msl::module_decl(h),
         macro_rules.boxed(),
     ]);
     meta(h)

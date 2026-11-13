@@ -570,6 +570,11 @@ fn module_item(src: &str) -> ModuleItem {
 
 #[test]
 fn every_b3_production_parses_with_span() {
+    natures_signals_and_sigtypes();
+    modules_ports_items_and_generation();
+}
+
+fn natures_signals_and_sigtypes() {
     // ---- nature_decl, nature_field (B.3.2, Part II §4) ----
     let src = "nature Electrical { potential: Voltage { access: v, units: \"V\" }, flow: Current { access: i }, }";
     let item = only_item(src);
@@ -638,4 +643,125 @@ fn every_b3_production_parses_with_span() {
     let it = module_item("/// doc\n#[a] pub signal s: [Bit; 4];");
     assert!(it.public);
     assert_eq!((it.meta.docs.len(), it.meta.attrs.len()), (1, 1));
+}
+
+fn modules_ports_items_and_generation() {
+    // ---- module_decl, port, dir, param ----
+    let src = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; tc1: f64 = 0.0; }";
+    let item = only_item(src);
+    assert_eq!(text(src, &item.span), src);
+    let ItemKind::Module(m) = &item.kind else { panic!("{:?}", item.kind) };
+    assert_eq!(m.name.name, "Resistor");
+    assert_eq!(m.ports.len(), 2);
+    assert_eq!(text(src, &m.ports[0].span), "p: Electrical");
+    assert!(m.abi.is_none() && m.ret.is_none() && m.where_.is_none() && m.result.is_none());
+    assert_eq!(m.body.len(), 2);
+    let ModuleItemKind::Param { name, ty, default, where_ } = &m.body[0].kind else { panic!() };
+    assert_eq!(name.name, "r");
+    assert_path_type(ty, &["f64"]);
+    assert!(default.is_none() && where_.is_some());
+    assert_eq!(text(src, &m.body[0].span), "r: f64 where r > 0.0;");
+    let ModuleItemKind::Param { default, where_, .. } = &m.body[1].kind else { panic!() };
+    assert!(default.is_some() && where_.is_none());
+    let ModuleItemKind::Param { default, where_, .. } =
+        &module_item("tnom: f64 = 300.15 where tnom > 0.0;").kind else { panic!() };
+    assert!(default.is_some() && where_.is_some());
+
+    // Directions, defaults, attributes, docs on ports; generics; result type;
+    // `where`; `pub extern "abi" module`.
+    let src = "pub extern \"osdi\" module Q<N: u32>(/// d\n#[a] in a: Bit, out b: Bit = Bit::Low, c: f64) -> Bit where N > 0 { r: f64; }";
+    let item = only_item(src);
+    assert!(item.public);
+    let ItemKind::Module(m) = &item.kind else { panic!() };
+    assert_eq!(m.abi.as_ref().map(|l| l.kind.clone()), Some(LitKind::Str("osdi".into())));
+    assert!(m.generics.is_some() && m.ret.is_some() && m.where_.is_some());
+    assert_eq!(m.ports.iter().map(|p| p.dir).collect::<Vec<_>>(), [Some(Dir::In), Some(Dir::Out), None]);
+    assert_eq!((m.ports[0].meta.docs.len(), m.ports[0].meta.attrs.len()), (1, 1));
+    assert!(m.ports[1].default.is_some() && m.ports[2].default.is_none());
+    // A port may take a sigtype.
+    let ItemKind::Module(m) = only_item("module M(rx: flip Stream<T>, v: [Electrical; 4]) {}").kind else { panic!() };
+    assert!(matches!(m.ports[0].ty.kind, TypeKind::Flip(_)));
+    assert!(matches!(m.ports[1].ty.kind, TypeKind::Array { .. }));
+    // An empty port list and a trailing comma.
+    assert!(matches!(only_item("module M() {}").kind, ItemKind::Module(_)));
+    let ItemKind::Module(m) = only_item("module M(a: Bit,) {}").kind else { panic!() };
+    assert_eq!(m.ports.len(), 1);
+
+    // ---- module result expression ----
+    let src = "module Id(a: Bit) -> Bit { a }";
+    let ItemKind::Module(m) = &only_item(src).kind else { panic!() };
+    assert_eq!(text(src, &m.result.as_ref().unwrap().span), "a");
+    let src = "module Sum(a: Bit) -> Bit { let t = a + 1; t * 2 }";
+    let ItemKind::Module(m) = &only_item(src).kind else { panic!() };
+    assert_eq!(m.body.len(), 1);
+    assert_eq!(text(src, &m.result.as_ref().unwrap().span), "t * 2");
+
+    // ---- `let`, definitions, `after`, places ----
+    let src = "let x = a + b;";
+    let it = module_item(src);
+    assert_eq!(text(src, &it.span), src);
+    assert!(matches!(&it.kind, ModuleItemKind::Let { pat, .. } if matches!(pat.kind, PatKind::Ident { .. })));
+    let src = "y = a after 1n;";
+    let it = module_item(src);
+    assert_eq!(text(src, &it.span), src);
+    let ModuleItemKind::Def { place, value, after } = &it.kind else { panic!("{:?}", it.kind) };
+    assert!(matches!(place.kind, ExprKind::Path(_)) && matches!(value.kind, ExprKind::Path(_)));
+    assert_eq!(text(src, &after.as_ref().unwrap().span), "1n");
+    let ModuleItemKind::Def { place, after, .. } = &module_item("st.n = x;").kind else { panic!() };
+    assert!(matches!(&place.kind, ExprKind::Field { name, .. } if name.name == "n") && after.is_none());
+    let ModuleItemKind::Def { place, .. } = &module_item("sh[3] = y;").kind else { panic!() };
+    assert!(matches!(place.kind, ExprKind::Index { .. }));
+    let ModuleItemKind::Def { place, .. } = &module_item("bus[i].data = y;").kind else { panic!() };
+    assert!(matches!(&place.kind, ExprKind::Field { expr, .. } if matches!(expr.kind, ExprKind::Index { .. })));
+
+    // ---- instance: positional, named, param block, callees ----
+    let ItemKind::Module(m) = only_item(
+        "module T(a: Electrical) { let u = Resistor(a, gnd) { r: 1k }; let v = Nch(d, g, s, b, w: 1u); }",
+    )
+    .kind
+    else {
+        panic!()
+    };
+    let ModuleItemKind::Let { value, .. } = &m.body[0].kind else { panic!() };
+    let ExprKind::Call { callee, args, params } = &value.kind else { panic!("{:?}", value.kind) };
+    assert!(matches!(callee.kind, ExprKind::Path(_)));
+    assert_eq!(args.len(), 2);
+    assert_eq!(params.as_ref().map(Vec::len), Some(1));
+    let ModuleItemKind::Let { value, .. } = &m.body[1].kind else { panic!() };
+    let ExprKind::Call { args, params, .. } = &value.kind else { panic!() };
+    assert_eq!((args.len(), args[4].name.as_ref().map(|n| n.name.as_str()), params.is_none()), (5, Some("w"), true));
+    // The callee is a call or a parenthesized expression (B.3.5 amendment 6).
+    let ExprKind::Call { callee, args, .. } = &expr("nch(0.13u, 2u)(d, g, s, b)").kind else { panic!() };
+    assert!(matches!(callee.kind, ExprKind::Call { .. }) && args.len() == 4);
+    let ExprKind::Call { callee, .. } = &expr("(pick)(x)").kind else { panic!() };
+    assert!(matches!(callee.kind, ExprKind::Paren(_)));
+    // ---- template: `path generic_args? { fields }` ----
+    let src = "Resistor { r: 1k, tc1: 0.1 }";
+    let e = expr(src);
+    let ExprKind::Struct { path, fields } = &e.kind else { panic!("{:?}", e.kind) };
+    assert_eq!((path_names(path), fields.len()), (vec!["Resistor"], 2));
+    assert_eq!(text(src, &e.span), src);
+    let ExprKind::Struct { path, .. } = &expr("Nch::<2> { w: 1u }").kind else { panic!() };
+    assert!(path.segments[0].args.is_some());
+
+    // ---- gen<module_item>: for, if / else if / else ----
+    let src = "for i in 0..N { q[i] = d[i]; r: f64; }";
+    let it = module_item(src);
+    assert_eq!(text(src, &it.span), src);
+    let ModuleItemKind::Gen(g) = &it.kind else { panic!("{:?}", it.kind) };
+    assert_eq!(text(src, &g.span), src);
+    let GenKind::For { pat, iter, body } = &g.kind else { panic!() };
+    assert!(matches!(pat.kind, PatKind::Ident { .. }) && matches!(iter.kind, ExprKind::Range { .. }));
+    assert_eq!(body.len(), 2);
+    let src = "if A { x = 1; } else if B { x = 2; } else { x = 3; }";
+    let ModuleItemKind::Gen(g) = &module_item(src).kind else { panic!() };
+    let GenKind::If { then, else_, .. } = &g.kind else { panic!() };
+    assert_eq!(then.len(), 1);
+    let GenElse::If(second) = &**else_.as_ref().unwrap() else { panic!() };
+    let GenKind::If { else_, .. } = &second.kind else { panic!() };
+    assert!(matches!(&**else_.as_ref().unwrap(), GenElse::Block(b) if b.len() == 1));
+    // Nested generation, and `else for` (B.3.5 amendment 7 reads `else gen<X>`).
+    let ModuleItemKind::Gen(g) = &module_item("for i in 0..2 { for j in 0..2 { a[i][j] = 0; } }").kind else { panic!() };
+    let GenKind::For { body, .. } = &g.kind else { panic!() };
+    assert!(matches!(body[0].kind, ModuleItemKind::Gen(_)));
 }

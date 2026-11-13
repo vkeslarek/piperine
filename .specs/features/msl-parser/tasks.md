@@ -250,8 +250,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-02
 
 **Done when**:
-- [ ] `every_b3_production_parses_with_span` covers module productions
-- [ ] Run parser passes; build gate passes
+- [x] `every_b3_production_parses_with_span` covers module productions
+- [x] Run parser passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick

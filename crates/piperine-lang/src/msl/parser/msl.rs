@@ -77,10 +77,104 @@ fn signal_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItemKind> {
         .boxed()
 }
 
+/// A `place`: a path followed by `[expr]` and `.name` steps. It names a
+/// carrier, an element of one or a field of one.
+fn place<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
+    #[derive(Clone)]
+    enum Step {
+        Index(Expr),
+        Field(Ident),
+    }
+    let step = first_of(vec![
+        h.expr
+            .clone()
+            .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
+            .map(Step::Index)
+            .boxed(),
+        punct(Punct::Dot).ignore_then(ident()).map(Step::Field).boxed(),
+    ]);
+    ty::path(h, true)
+        .map_with(|path, e| Expr { span: Loc(e.span()), kind: ExprKind::Path(path) })
+        .foldl_with(step.repeated(), |lhs, step, e| {
+            let kind = match step {
+                Step::Index(i) => ExprKind::Index { expr: Box::new(lhs), index: Box::new(i) },
+                Step::Field(name) => ExprKind::Field { expr: Box::new(lhs), name },
+            };
+            Expr { kind, span: Loc(e.span()) }
+        })
+        .boxed()
+}
+
+/// `gen<X>`: generation `for` and `if` over params, repeating the production
+/// `leaf`. The result parses `X` itself: a leaf, or a generation wrapped by
+/// `wrap` into an `X`.
+fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
+    h: &Handles<'a, I>,
+    leaf: P<'a, I, X>,
+    wrap: fn(Gen<X>) -> X,
+) -> P<'a, I, X> {
+    let generation = recursive(|generation: Recursive<chumsky::recursive::Direct<'a, 'a, I, Gen<X>, Extra<'a>>>| {
+        let item = first_of(vec![leaf.clone(), generation.clone().map(wrap).boxed()]);
+        let list = item
+            .repeated()
+            .collect::<Vec<_>>()
+            .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+            .boxed();
+        let for_ = kw(Kw::For)
+            .ignore_then(pat::binding(h))
+            .then_ignore(kw(Kw::In))
+            .then(h.expr_ns.clone())
+            .then(list.clone())
+            .map_with(|((pat, iter), body), e| Gen {
+                kind: GenKind::For { pat, iter, body },
+                span: Loc(e.span()),
+            });
+        let else_ = kw(Kw::Else).ignore_then(first_of(vec![
+            list.clone().map(GenElse::Block).boxed(),
+            generation.clone().map(GenElse::If).boxed(),
+        ]));
+        let if_ = kw(Kw::If)
+            .ignore_then(h.expr_ns.clone())
+            .then(list)
+            .then(else_.or_not())
+            .map_with(|((cond, then), else_), e| Gen {
+                kind: GenKind::If { cond, then, else_: else_.map(Box::new) },
+                span: Loc(e.span()),
+            });
+        first_of(vec![for_.boxed(), if_.boxed()])
+    });
+    first_of(vec![leaf, generation.map(wrap).boxed()])
+}
+
 /// One item of a module body.
 pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItem> {
-    let declared = first_of(vec![signal_decl(h)]);
-    item::meta(h)
+    // `name: type = default where cond;`
+    let param = ident()
+        .then_ignore(punct(Punct::Colon))
+        .then(h.ty.clone())
+        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then(kw(Kw::Where).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(punct(Punct::Semi))
+        .map(|(((name, ty), default), where_)| ModuleItemKind::Param { name, ty, default, where_ })
+        .boxed();
+    // `let pat = expr;`: a body `let` takes no type annotation.
+    let let_item = kw(Kw::Let)
+        .ignore_then(pat::binding(h))
+        .then_ignore(punct(Punct::Eq))
+        .then(h.expr.clone())
+        .then_ignore(punct(Punct::Semi))
+        .map(|(pat, value)| ModuleItemKind::Let { pat, value })
+        .boxed();
+    // `place = expr [after expr];`
+    let def = place(h)
+        .then_ignore(punct(Punct::Eq))
+        .then(h.expr.clone())
+        .then(kw(Kw::After).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(punct(Punct::Semi))
+        .map(|((place, value), after)| ModuleItemKind::Def { place, value, after })
+        .boxed();
+    let declared = first_of(vec![signal_decl(h), param, let_item]);
+    let leaf = item::meta(h)
         .then(kw(Kw::Pub).or_not())
         .then(declared)
         .map_with(|((meta, public), kind), e| ModuleItem {
@@ -89,6 +183,75 @@ pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleI
             kind,
             span: Loc(e.span()),
         })
-        .labelled("module item")
+        .boxed();
+    let def = def
+        .map_with(|kind, e| ModuleItem { meta: Meta::default(), public: false, kind, span: Loc(e.span()) })
+        .boxed();
+    let wrap = |g: Gen<ModuleItem>| ModuleItem {
+        span: g.span,
+        meta: Meta::default(),
+        public: false,
+        kind: ModuleItemKind::Gen(g),
+    };
+    gen_of(h, first_of(vec![leaf, def]), wrap).labelled("module item").boxed()
+}
+
+// ---- modules ----------------------------------------------------------------------------------
+
+/// `[extern "abi"] module Name<G>(ports) [-> T] [where cond] { items [result] }`
+pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKind> {
+    let port = item::meta(h)
+        .then(item::dir().or_not())
+        .then(ident())
+        .then_ignore(punct(Punct::Colon))
+        .then(h.ty.clone())
+        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .map_with(|((((meta, dir), name), ty), default), e| Port {
+            meta,
+            dir,
+            name,
+            ty,
+            default,
+            span: Loc(e.span()),
+        });
+    let ports = port
+        .separated_by(punct(Punct::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
+    let body = module_item(h)
+        .repeated()
+        .collect::<Vec<_>>()
+        .then(h.expr.clone().or_not())
+        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
+    kw(Kw::Extern)
+        .ignore_then(string_lit())
+        .or_not()
+        .then_ignore(kw(Kw::Module))
+        .then(ident())
+        .then(ty::generics(h).or_not())
+        .then(ports)
+        .then(punct(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
+        .then(kw(Kw::Where).ignore_then(h.expr_ns.clone()).or_not())
+        .then(body)
+        .map(|((((((abi, name), generics), ports), ret), where_), (body, result))| {
+            ItemKind::Module(ModuleDecl { abi, name, generics, ports, ret, where_, body, result })
+        })
+        .validate(|kind, _, emitter| {
+            // E0302: a result expression needs the `-> T` head (§8 rule 3).
+            if let ItemKind::Module(m) = &kind {
+                if let (None, Some(result)) = (&m.ret, &m.result) {
+                    emitter.emit(Rich::custom(
+                        result.span.0,
+                        Custom {
+                            code: "E0302",
+                            message: "a module without `-> T` cannot end with an expression".into(),
+                            help: Some("declare the result type: `module M(..) -> T { .. }`".into()),
+                        },
+                    ));
+                }
+            }
+            kind
+        })
         .boxed()
 }
