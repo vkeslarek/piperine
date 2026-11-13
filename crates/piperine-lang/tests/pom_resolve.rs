@@ -168,8 +168,8 @@ use a::deep::g;
 
 #[test]
 fn prelude_source_items_are_visible_everywhere() {
-    let prelude = "pub enum Mode { A, B }\npub struct Shared {}\nstruct Hidden {}\n";
-    let src = "use Mode::A;\nmod m { use Shared; }\nuse Hidden;\n";
+    let prelude = "pub enum Mode { A, B }\npub struct Shared {}\nstruct Hidden {}\npub const LIMIT: u32 = 3;\n";
+    let src = "use Mode::A;\nmod m { use Shared; mod deep { fn f(x: Shared) -> u32 { let y: Mode = Mode::B; LIMIT } } }\nuse Hidden;\n";
     let design = Design::builder().prelude("std.msl", prelude).source("top.msl", src).build();
     // From the root and from a nested namespace, without any `use` of the prelude.
     let mode = Resolution::Decl(
@@ -178,7 +178,16 @@ fn prelude_source_items_are_visible_everywhere() {
     let a = one(&design, "Mode::A");
     assert_eq!(a[0], mode);
     assert!(matches!(a[1], Resolution::Decl(_)));
-    assert!(matches!(one(&design, "Shared")[0], Resolution::Decl(_)));
+    // Names read in a signature, a type and a body of a nested namespace, with no `use`.
+    let shared = Resolution::Decl(design.decl_data(design.decl(piperine_lang::pom::DeclId(0)).id()).children.iter().copied().find(|c| design.decl_data(*c).name.as_ref().is_some_and(|n| n.text == "Shared")).unwrap());
+    assert_eq!(resolutions(&design, "Shared"), [[shared], [shared]], "the `use` in `m` and the parameter type in `deep`");
+    let limit = &resolutions(&design, "LIMIT")[0];
+    assert_eq!(limit.len(), 1);
+    let Resolution::Decl(limit) = limit[0] else { panic!("LIMIT resolves") };
+    assert_eq!(design.decl_data(limit).kind.label(), "Const");
+    assert_eq!(design.decl_data(limit).file, design.files()[0].id(), "the prelude's const, not a guess");
+    assert_eq!(resolutions(&design, "Mode"), [[mode]], "the type annotation");
+    assert_eq!(resolutions(&design, "Mode::B")[0][0], mode);
     // Only the `pub` items are visible: `Hidden` is not found.
     assert_eq!(one(&design, "Hidden"), [Resolution::Unresolved]);
     let missing = with_code(&design, "E0161");
@@ -532,15 +541,15 @@ fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
     let s = decl(&design, "S");
     assert_eq!(resolutions(&design, "S::K"), [[s, inner("S", "K")]]);
     assert_eq!(resolutions(&design, "S::make"), [[s, inner("S", "make")]]);
-    let x = resolutions(&design, "S::X");
-    assert_eq!(x[0][0], s);
-    assert!(matches!(x[0][1], Resolution::Decl(_)));
+    // The const of `impl Tr for S`, not the trait's declaration.
+    assert_eq!(resolutions(&design, "S::X"), [[s, inner("S", "X")]]);
+    assert_ne!(inner("S", "X"), inner("Tr", "X"));
     // `Self::K` in an impl: Self is the struct, K its const.
     assert_eq!(resolutions(&design, "Self::K"), [[s, inner("S", "K")]]);
     // `Trait::item` names the trait's own item.
-    let t = resolutions(&design, "Tr::run");
-    assert_eq!(t[0][0], decl(&design, "Tr"));
-    assert!(matches!(t[0][1], Resolution::Decl(_)));
+    let tr = design.find("Tr").unwrap();
+    let trait_run = tr.children().into_iter().find(|c| c.name() == Some("run")).unwrap();
+    assert_eq!(resolutions(&design, "Tr::run"), [[decl(&design, "Tr"), Resolution::Decl(trait_run.id())]]);
     // An item the type does not have is one error at the whole path.
     let missing = build("struct S {}\nenum E { A }\nfn f() { S::nope; E::B; }");
     let errors = with_code(&missing, "E0161");
@@ -595,4 +604,18 @@ fn h() { use a::nothing; }
     let errors = with_code(&design, "E0161");
     let at: Vec<&str> = errors.iter().map(|d| primary_text(&design, d)).collect();
     assert_eq!(at, ["y", "a::nothing"], "{errors:?}");
+}
+
+/// A nature's `access: v` introduces the accessor name: its path names the
+/// quantity that introduces it, not nothing, and no `E0161` is reported.
+#[test]
+fn access_name_resolves_to_its_quantity() {
+    let src = "nature Volt { potential: Voltage { access: v, units: \"V\" } }\nmodule M(p: Volt) { signal s: f64; s = v(p); }\n";
+    let design = build(src);
+    assert!(design.diagnostics().iter().all(|d| d.diagnostic.code != "E0161" || primary_text(&design, d) != "v"), "{:?}", design.diagnostics());
+    let nature = design.nature("Volt").unwrap();
+    let quantity = nature.quantities()[0].decl().id();
+    let access: Vec<_> = (0..design.path_count()).map(|i| design.path(PathId(i as u32))).filter(|p| p.text() == "v").collect();
+    assert!(!access.is_empty());
+    assert!(access.iter().all(|p| p.resolution() == Resolution::Decl(quantity)), "{access:?}");
 }

@@ -87,7 +87,7 @@ impl Design {
         Design::builder().root_file(root).build()
     }
 
-    /// Every diagnostic of the build, parse diagnostics first, in file order.
+    /// Every diagnostic of the build (parse diagnostics included), sorted by file, offset and code.
     pub fn diagnostics(&self) -> &[DesignDiagnostic] {
         &self.diagnostics
     }

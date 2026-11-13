@@ -52,10 +52,15 @@ pub(super) fn run(design: &Design) -> Members {
         if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
             let (res, error) = reader.field(*recv, &name.text);
             out.res.push((expr, res));
-            if let Some(private) = error {
+            if let Some((module, missing)) = error {
                 let owner = design.expr_node(expr).owner;
-                let message = format!("`{}` is not `pub` in module `{}`", name.text, design.decl_data(private).name.as_ref().map_or("", |n| n.text.as_str()));
-                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0343", message, name.span, "not `pub`")));
+                let module_name = design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str());
+                let (message, label) = if missing {
+                    (format!("no item `{}` in module `{module_name}`", name.text), "no such item")
+                } else {
+                    (format!("`{}` is not `pub` in module `{module_name}`", name.text), "not `pub`")
+                };
+                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0343", message, name.span, label)));
             }
         }
     }
@@ -76,14 +81,15 @@ fn local_types(design: &Design) -> BTreeMap<DeclId, TypeId> {
 
 impl Reader<'_> {
     /// The member `name` of the receiver expression: what it names, and the
-    /// module whose private item it is when it is not `pub`.
-    fn field(&self, recv: ExprId, name: &str) -> (Resolution, Option<DeclId>) {
+    /// module whose item it is when the item is not `pub` or does not exist
+    /// (`true`): both are `E0343` (§8.4.8).
+    fn field(&self, recv: ExprId, name: &str) -> (Resolution, Option<(DeclId, bool)>) {
         let deferred = (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), None);
         match self.receiver(recv) {
             Recv::Instance(module) => match self.member_of(module, name) {
                 Some(item) if self.visible(item) => (Resolution::Decl(item), None),
-                Some(item) => (Resolution::Decl(item), Some(module)),
-                None => (Resolution::Unresolved, None),
+                Some(item) => (Resolution::Decl(item), Some((module, false))),
+                None => (Resolution::Unresolved, Some((module, true))),
             },
             Recv::Struct(s) => match child_field(self.design, s, name) {
                 Some(f) => (Resolution::Decl(f), None),

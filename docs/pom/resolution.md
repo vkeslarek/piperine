@@ -171,10 +171,10 @@ its authored shape.
 | `Path { .. }` | `ExprKind::Struct::class` | `StructClass::Template(decl)` | the path names a module |
 | | | `StructClass::BundleLiteral` | the path names a bundle |
 | | | `StructClass::StructLiteral` | otherwise |
-| `name: T` in a port list | `PortData::kind` | `PortKind::Carrier` | `T` resolves to a nature (or an array / `flip` of one) |
+| `name: T` in a port list | `PortData::kind` | `PortKind::Carrier` | `T` resolves to a nature, or to a generic whose bound resolves to the prelude's `Nature` (or an array / `flip` of one) |
 | | | `PortKind::Bundle` | `T` resolves to a bundle struct |
 | | | `PortKind::ValueInput` | `T` is a value type |
-| | | `PortKind::Unknown` | `T` does not resolve |
+| | | `PortKind::Unknown` | `T` does not resolve, or is a generic with a bound that does not resolve |
 | `struct S { .. }` | `StructData::bundle` | `Some(true)` | a field is a carrier, an array of carriers or a bundle |
 | | | `Some(false)` | no field is: a plain value struct |
 | `nature N { .. }` | `NatureData::kind` | `NatureKind` | computed from the fields: `potential` + `flow` is `Conservative`; `potential` alone `SignalFlow`; `value` alone `Discrete`; `value` + `resolve` `Resolved`; any other mix `Invalid` |
@@ -219,8 +219,11 @@ assert_eq!(class("p"), CallClass::Probe);
 | `self` in an `impl` | | a value of the impl's self type, then as above |
 | anything else | `Deferred` | `Deferred` |
 
-* A member item that is not `pub` still resolves, and `E0343` is reported at the member name.
-* A member that a known receiver does not have stays `Unresolved`, with no diagnostic.
+* A member item that is not `pub` still resolves, and `E0343` is reported at the member name. A
+  member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8).
+* A field a declared struct does not have stays `Unresolved` with no diagnostic: the POM has no
+  code for it (only the eight binding codes), and a type checker reports it.
+* A method a known receiver does not have stays `Unresolved`, with no diagnostic.
 * A receiver whose type needs inference is `Resolution::Deferred(DeferReason::ReceiverTypeUnknown)`
   with no diagnostic: a type checker fills it later.
 
@@ -276,9 +279,9 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | Code | Stage | Meaning | Span |
 | --- | --- | --- | --- |
 | `E0130` | 6 | an `impl` block written for a module | the self type of the `impl` |
-| `E0161` | 0, 3, 5 | a name that resolves to nothing; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
+| `E0161` | 0, 3, 5 | a name that resolves to nothing, including a named connection, param binding, struct field or function argument the callee does not have; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
 | `E0330` | 2 | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
-| `E0343` | 7 | a member item that is not `pub`, named from outside its module | the member name |
+| `E0343` | 7 | a member of an instance that is missing or not `pub`, named from outside its module (§8.4.8) | the member name |
 | `E0401` | 4 | a behavior block with no usable module | the target path |
 | `E0402` | 4 | a behavior block for an `extern` module | the target path |
 | `E0403` | 4 | the generic names of a behavior block differ from its module's | the head of the block |

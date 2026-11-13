@@ -614,3 +614,73 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     assert_eq!(member_res(&design, "clk.nothere()"), Resolution::Unresolved);
     assert_eq!(member_res(&design, "a.rise()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
 }
+
+/// POM-09 AC 1: a generic is a carrier because its bound resolves to the
+/// prelude's `Nature`; an unresolved bound is `Unknown`, and another trait
+/// that is merely spelled `Nature` is a value bound.
+#[test]
+fn generic_carrier_follows_the_resolved_bound() {
+    let src = "module M<N: Nature>(g: N) {}";
+    // No declaration of `Nature` anywhere: the bound is unresolved, nothing is guessed.
+    let none = build(src);
+    assert_eq!(none.module("M").unwrap().port("g").unwrap().kind(), PortKind::Unknown);
+    assert!(none.diagnostics().iter().any(|d| d.diagnostic.code == "E0161"));
+    // A user `trait Nature` outside the prelude is not the carrier bound.
+    let user = with_prelude("mod x { pub trait Nature {} }\nmodule M<N: x::Nature>(g: N) {}");
+    assert_eq!(user.module("M").unwrap().port("g").unwrap().kind(), PortKind::ValueInput);
+    // The prelude's `Nature` still makes a carrier, through arrays too.
+    let real = with_prelude("module M<N: Nature>(g: N, ga: [N; 2]) {}");
+    let kinds: Vec<_> = real.module("M").unwrap().ports().iter().map(|p| p.kind()).collect();
+    assert_eq!(kinds, [PortKind::Carrier, PortKind::Carrier]);
+}
+
+/// A name written for a port, a param, a field or a parameter that the
+/// callee does not have names nothing: one `E0161` at that name (resolution.md,
+/// "the slot stays `Unresolved`, one `E0161` is reported").
+#[test]
+fn named_binding_without_a_target_is_e0161() {
+    let src = "\
+struct Plain { x: f64 }
+fn f(a: f64) -> f64 { a }
+module R(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+module Top() {
+    signal s: Electrical;
+    let ok = R(p: s, n: s) { r: 2.0 };
+    let bad = R(q: s, n: s) { nope: 1.0 };
+    let pl = Plain { x: 1.0, y: 2.0 };
+    let t = R { zz: 3.0 };
+    let v = f(b: 1.0);
+}
+";
+    let design = with_prelude(src);
+    let errors = with_code(&design, "E0161");
+    let at: Vec<&str> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(at, ["q", "nope", "y", "zz", "b"], "{:?}", design.diagnostics());
+    assert!(errors.iter().all(|d| d.diagnostic.message.contains("no ")), "{errors:?}");
+    // The names that do exist link, the ones that do not stay unresolved.
+    let call = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with("R(q: s")).unwrap();
+    let ExprKind::Call { args, params, .. } = call.kind() else { panic!("a call") };
+    assert_eq!(args[0].res, Resolution::Unresolved);
+    assert!(matches!(args[1].res, Resolution::Decl(_)));
+    assert_eq!(params.as_ref().unwrap()[0].res, Resolution::Unresolved);
+}
+
+/// §8.4.8: a member that is missing or not `pub` is `E0343`.
+#[test]
+fn missing_instance_member_is_e0343() {
+    let src = "\
+module Cell(a: Electrical) { pub signal open: Electrical; }
+module Top(a: Electrical) {
+    let c = Cell(a);
+    let y = c.open;
+    let z = c.nope;
+}
+";
+    let design = with_prelude(src);
+    let errors = with_code(&design, "E0343");
+    assert_eq!(errors.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(primary_text(&design, errors[0]), "nope");
+    assert!(errors[0].diagnostic.message.contains("Cell"), "{:?}", errors[0]);
+    assert_eq!(member_res(&design, "c.nope"), Resolution::Unresolved);
+    assert_eq!(support::codes(&design), ["E0343"]);
+}

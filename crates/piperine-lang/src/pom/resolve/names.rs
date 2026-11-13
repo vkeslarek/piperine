@@ -152,9 +152,14 @@ impl Names<'_, '_> {
                 }
             }
             DeclKind::Quantity(q) => {
-                // `access: v` names the accessor the nature introduces; it is not a reference.
-                for attr in q.attrs.iter().filter(|a| a.name.text != "access") {
-                    self.expr(attr.value);
+                // `access: v` introduces the accessor name: its path names the
+                // quantity, and is not a reference to look up.
+                for attr in &q.attrs {
+                    if attr.name.text != "access" {
+                        self.expr(attr.value);
+                    } else if let ExprKind::Path(p) = &self.ctx.design.expr_node(attr.value).kind {
+                        self.out.segments.push((*p, 0, Resolution::Decl(id)));
+                    }
                 }
             }
             DeclKind::Variant(v) => {

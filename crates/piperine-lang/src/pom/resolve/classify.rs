@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::body::{ExprKind, TypeKind};
 use super::super::builtin::BuiltinKind;
-use super::super::decl::{DeclKind, FnParamData, GenericParamData};
+use super::super::decl::{DeclKind, FnParamData, GenericParamData, Name};
 use super::super::design::Design;
 use super::super::ids::{DeclId, ExprId, FileId, PathId, TypeId};
 use super::super::resolution::{CallClass, PortKind, Resolution, StructClass};
@@ -102,10 +102,29 @@ impl Design {
         }
     }
 
-    /// Is `decl` a generic parameter bounded by `Nature`?
+    /// The resolution of the last segment of a bound path.
+    fn bound_resolution(&self, bound: PathId) -> Resolution {
+        self.path_node(bound).segments.last().map_or(Resolution::Unresolved, |s| s.res)
+    }
+
+    /// Is `decl` a generic parameter bounded by the prelude's `Nature`? The
+    /// bound counts by what it resolved to, not by how it is spelled.
     pub(crate) fn is_nature_generic(&self, decl: DeclId) -> bool {
         let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &self.decl_data(decl).kind else { return false };
-        bounds.iter().any(|b| self.path_node(*b).segments.last().is_some_and(|s| s.name.text == "Nature"))
+        bounds.iter().any(|b| match self.bound_resolution(*b) {
+            Resolution::Decl(t) => {
+                let data = self.decl_data(t);
+                matches!(data.kind, DeclKind::Trait(_)) && data.name.as_ref().is_some_and(|n| n.text == "Nature") && self.file_data(data.file).prelude
+            }
+            _ => false,
+        })
+    }
+
+    /// Is `decl` a generic parameter with a bound that resolved to nothing?
+    /// What it carries is not known then.
+    fn has_unresolved_bound(&self, decl: DeclId) -> bool {
+        let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &self.decl_data(decl).kind else { return false };
+        bounds.iter().any(|b| self.bound_resolution(*b) == Resolution::Unresolved)
     }
 
     /// Is a type a carrier: a nature or a `Nature`-bounded generic, under arrays and `flip`?
@@ -186,6 +205,7 @@ fn port_kind(design: &Design, port: DeclId, bundles: &BTreeSet<DeclId>) -> PortK
     }
     match design.type_resolution(ty) {
         Resolution::Decl(d) if bundles.contains(&d) => PortKind::Bundle,
+        Resolution::Decl(d) if design.has_unresolved_bound(d) => PortKind::Unknown,
         Resolution::Decl(_) | Resolution::Builtin(_) => PortKind::ValueInput,
         Resolution::Unresolved | Resolution::Deferred(_) => match &design.type_node(design.peel_type(ty)).kind {
             // Tuples and slices of values are values; `_` and a missing name tell nothing.
@@ -223,6 +243,14 @@ fn child_named(design: &Design, owner: DeclId, name: &str, want: fn(&DeclKind) -
     None
 }
 
+/// The `E0161` for a name written for something `owner` does not have: a port,
+/// a param, a field or a function parameter.
+fn missing_binding(design: &Design, owner: DeclId, what: &str, name: &Name, from: DeclId) -> (FileId, Diagnostic) {
+    let owner_name = design.decl_data(owner).name.as_ref().map_or("", |n| n.text.as_str());
+    let message = format!("no {what} `{}` in `{owner_name}`", name.text);
+    (design.decl_data(from).file, Diagnostic::new("E0161", message, name.span, "not found"))
+}
+
 fn is_param(k: &DeclKind) -> bool {
     matches!(k, DeclKind::Param(_))
 }
@@ -256,7 +284,14 @@ fn struct_expressions(design: &Design, bundles: &BTreeSet<DeclId>, out: &mut Cla
             DeclKind::Struct(_) | DeclKind::Variant(_) => (StructClass::StructLiteral, is_field),
             _ => (StructClass::Unclassified, is_field),
         };
-        let named = fields.iter().enumerate().filter_map(|(k, f)| Some((k, Resolution::Decl(child_named(design, target, &f.name.text, want)?)))).collect();
+        let named: Vec<(usize, Resolution)> = fields.iter().enumerate().filter_map(|(k, f)| Some((k, Resolution::Decl(child_named(design, target, &f.name.text, want)?)))).collect();
+        if class != StructClass::Unclassified {
+            let what = if matches!(class, StructClass::Template(_)) { "param" } else { "field" };
+            let unnamed = fields.iter().enumerate().filter(|(k, _)| !named.iter().any(|(n, _)| n == k));
+            for (_, f) in unnamed {
+                out.diagnostics.push(missing_binding(design, target, what, &f.name, design.expr_node(expr).owner));
+            }
+        }
         classes.insert(expr, class);
         out.structs.push(StructFacts { expr, class, fields: named });
     }
@@ -428,6 +463,21 @@ fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, 
             Some((_, DeclKind::Fn(_))) => CallFacts { expr, class, args: named(is_fn_param), params: Vec::new() },
             _ => CallFacts { expr, class, args: Vec::new(), params: Vec::new() },
         };
+        if let Some(owner) = target {
+            let (arg_what, from) = (if matches!(design.decl_data(owner).kind, DeclKind::Module(_)) { "port" } else { "parameter" }, node.owner);
+            for (k, a) in args.iter().enumerate() {
+                if let Some(name) = &a.name {
+                    if !facts.args.iter().any(|(n, _)| *n == k) {
+                        out.diagnostics.push(missing_binding(design, owner, arg_what, name, from));
+                    }
+                }
+            }
+            for (k, f) in params.iter().flatten().enumerate() {
+                if !facts.params.iter().any(|(n, _)| *n == k) {
+                    out.diagnostics.push(missing_binding(design, owner, "param", &f.name, from));
+                }
+            }
+        }
         if matches!(class, CallClass::Instance { .. }) {
             if let Some(module) = enclosing_module(design, node.owner) {
                 out.instances.push((module, expr));
