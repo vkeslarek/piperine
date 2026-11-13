@@ -518,12 +518,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `node_text_is_authored_text_and_enclosing_is_nearest_decl` passes in `pom_body.rs` (C33: POM-06 AC 2)
-- [ ] Test `error_nodes_are_kept` passes in `pom_body.rs` (C87: POM-14 AC 2)
-- [ ] Test `depth_256_builds_on_default_stack` passes in `pom_body.rs` (C88: POM-14 AC 3)
-- [ ] If the depth test overflows, wrap the recursive body-lowering functions in `stacker::maybe_grow` and add `stacker` to `Cargo.toml`; otherwise add no dependency
-- [ ] Gate passes: run body; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `node_text_is_authored_text_and_enclosing_is_nearest_decl` passes in `pom_body.rs` (C33: POM-06 AC 2)
+- [x] Test `error_nodes_are_kept` passes in `pom_body.rs` (C87: POM-14 AC 2)
+- [x] Test `depth_256_builds_on_default_stack` passes in `pom_body.rs` (C88: POM-14 AC 3)
+- [x] If the depth test overflows, wrap the recursive body-lowering functions in `stacker::maybe_grow` and add `stacker` to `Cargo.toml`; otherwise add no dependency
+- [x] Gate passes: run body; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

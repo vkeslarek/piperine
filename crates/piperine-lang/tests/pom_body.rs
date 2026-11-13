@@ -8,7 +8,8 @@ mod support;
 use std::collections::BTreeSet;
 
 use piperine_lang::pom::{
-    BindingOrigin, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Reflect, StmtId, StmtKind, TypeId, TypeKind,
+    BindingOrigin, DeclId, DeclKind, Design, ExprId, ExprKind, FnParamData, PatId, PatKind, PathId, Reflect, StmtId,
+    StmtKind, TypeId, TypeKind,
 };
 use support::{build, codes};
 
@@ -217,4 +218,168 @@ const X: u32 = {
     let k = kids.iter().find(|k| k.name() == Some("K")).unwrap();
     assert_eq!(k.declared_in(), Some(x));
     assert!(design.check().is_empty(), "{:?}", design.check());
+}
+
+/// A source with every body-node kind, nested in a const, a fn, a module and
+/// both behavior blocks.
+const AUDIT_SRC: &str = "\
+const A: u32 = { let (b, c) = (1, 2); if b < c { b } else { c } };
+fn f(x: u32, y: [u8; 4]) -> u32 {
+    let z: &u32 = &x;
+    match x { 0 | 1 => 2, n if n > 3 => n, _ => 0 }
+}
+module M(a: electrical, b: electrical) {
+    signal s: u32 = 1;
+}
+analog for M {
+    a +> b.v / 2.0;
+    let k: f64 = 3.0;
+}
+digital for M {
+    on rising(a) { s <- s + 1 after 2; }
+}
+";
+
+#[test]
+fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
+    // Specific, independently written expectations.
+    let design = build("const X: u32 = { let a = 1; a + 1 };");
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let x = design.find("X").unwrap();
+    let value = x.as_const().and_then(|c| c.value()).unwrap();
+    assert_eq!(value.text(), "{ let a = 1; a + 1 }");
+    assert_eq!(value.enclosing(), x);
+    let texts: BTreeSet<&str> = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32)).text()).collect();
+    for want in ["1", "a + 1", "a"] {
+        assert!(texts.contains(want), "no expression with text {want:?} in {texts:?}");
+    }
+    let pat_texts: Vec<&str> = (0..design.pat_count()).map(|i| design.pat(PatId(i as u32)).text()).collect();
+    assert_eq!(pat_texts, ["a"]);
+    let ty_texts: Vec<&str> = (0..design.type_count()).map(|i| design.ty(TypeId(i as u32)).text()).collect();
+    assert_eq!(ty_texts, ["u32"]);
+
+    // A body inside a function is enclosed by the function, not the file.
+    let design = build("fn f(x: u32) -> u32 { x + 1 }");
+    let f = design.find("f").unwrap();
+    let body_expr = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == "x + 1").unwrap();
+    assert_eq!(body_expr.enclosing(), f);
+    // A parameter's type is enclosed by the parameter.
+    let param = f.children().into_iter().find(|c| c.name() == Some("x")).unwrap();
+    let ty = (0..design.type_count()).map(|i| design.ty(TypeId(i as u32))).find(|t| t.text() == "u32" && t.enclosing() == param);
+    assert!(ty.is_some(), "the parameter type is enclosed by the parameter");
+
+    // The audit: every node of every arena, nearest declaration that contains it.
+    let design = build(AUDIT_SRC);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let text = design.files().last().unwrap().text();
+    let decls: Vec<_> = (0..design.decl_count()).map(|i| (DeclId(i as u32), design.decl_data(DeclId(i as u32)))).collect();
+    let nearest = |span: piperine_lang::msl::Span, owner: DeclId| {
+        // The innermost non-binding declaration whose span holds `span`.
+        let best = decls
+            .iter()
+            .filter(|(_, d)| !matches!(d.kind, DeclKind::Binding(_)))
+            .filter(|(_, d)| d.span.start <= span.start && span.end <= d.span.end && d.parent.is_some())
+            .min_by_key(|(_, d)| d.span.len())
+            .map(|(id, _)| *id);
+        assert_eq!(best, Some(owner), "span {span:?} ({:?}) is enclosed by the wrong declaration", &text[span.range()]);
+    };
+    let mut audited = 0;
+    for i in 0..design.expr_count() {
+        let e = design.expr(ExprId(i as u32));
+        assert!(!e.span().is_empty(), "expression {i} has an empty span");
+        assert_eq!(e.text(), &text[e.span().range()]);
+        nearest(e.span(), e.enclosing().id());
+        audited += 1;
+    }
+    for i in 0..design.stmt_count() {
+        let s = design.stmt(StmtId(i as u32));
+        assert_eq!(s.text(), &text[s.span().range()]);
+        nearest(s.span(), s.enclosing().id());
+        audited += 1;
+    }
+    for i in 0..design.pat_count() {
+        let p = design.pat(PatId(i as u32));
+        assert_eq!(p.text(), &text[p.span().range()]);
+        nearest(p.span(), p.enclosing().id());
+        audited += 1;
+    }
+    for i in 0..design.type_count() {
+        let t = design.ty(TypeId(i as u32));
+        assert_eq!(t.text(), &text[t.span().range()]);
+        nearest(t.span(), t.enclosing().id());
+        audited += 1;
+    }
+    for i in 0..design.path_count() {
+        let p = design.path(PathId(i as u32));
+        assert_eq!(p.text(), &text[p.span().range()]);
+        nearest(p.span(), p.enclosing().id());
+        audited += 1;
+    }
+    assert!(audited > 60, "the audit must cover a real body, audited {audited}");
+}
+
+#[test]
+fn error_nodes_are_kept() {
+    // Item.
+    let src = "struct ;";
+    let design = build(src);
+    assert!(!design.diagnostics().is_empty());
+    let kids = design.root().children();
+    let err = kids.iter().find(|k| matches!(k.kind(), DeclKind::Error)).expect("an Error item");
+    assert_eq!(err.text(), src);
+
+    // Module item.
+    let src = "module M() { module N() {} }";
+    let design = build(src);
+    assert!(codes(&design).contains(&"E0303".to_string()));
+    let m = design.find("M").unwrap();
+    let err = m.children().into_iter().find(|k| matches!(k.kind(), DeclKind::Error)).expect("an Error module item");
+    assert_eq!(err.text(), "module N() {}");
+    assert_eq!(err.declared_in(), Some(m));
+
+    // Digital item.
+    let src = "digital for M { q <- 1; }";
+    let design = build(src);
+    assert!(codes(&design).contains(&"E0434".to_string()));
+    let beh = design.root().children().into_iter().find(|k| matches!(k.kind(), DeclKind::Behavior(_))).expect("behavior");
+    let err = beh.children().into_iter().find(|k| matches!(k.kind(), DeclKind::Error)).expect("an Error digital item");
+    assert_eq!(err.text(), "q <- 1;");
+
+    // Function parameter.
+    let src = "fn f(a: u32, ...) { }";
+    let design = build(src);
+    assert!(codes(&design).contains(&"E0143".to_string()));
+    let f = design.find("f").unwrap();
+    let err = f
+        .children()
+        .into_iter()
+        .find(|k| matches!(k.kind(), DeclKind::FnParam(FnParamData::Error)))
+        .expect("an Error fn param");
+    assert_eq!(err.text(), "...");
+
+    // Expression.
+    let design = build("const X: u32 = emit!(1);");
+    let e = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .find(|e| matches!(e.kind(), ExprKind::Error))
+        .expect("an Error expression");
+    assert_eq!(e.text(), "emit!(1)");
+    assert!(design.check().is_empty(), "{:?}", design.check());
+}
+
+#[test]
+fn depth_256_builds_on_default_stack() {
+    // The test thread has the default 2 MiB stack. The parser's limit is 256
+    // levels: 256 nested parentheses parse, and the build must complete.
+    for open_close in [("(", ")"), ("{ ", " }"), ("-", ""), ("[", "]")] {
+        let (open, close) = open_close;
+        let src = format!("const X: u32 = {}1{};", open.repeat(256), close.repeat(256));
+        let design = build(&src);
+        assert!(design.expr_count() >= 256, "`{open}` x256: {} expression nodes", design.expr_count());
+        assert!(design.check().is_empty(), "{:?}", design.check());
+    }
+    // One past the limit is reported, not a crash.
+    let src = format!("const X: u32 = {}1{};", "(".repeat(300), ")".repeat(300));
+    let design = build(&src);
+    assert!(!design.diagnostics().is_empty());
 }
