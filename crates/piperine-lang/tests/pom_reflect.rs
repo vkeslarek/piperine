@@ -6,6 +6,7 @@
 mod spec_corpus;
 
 use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
+use serde::{Serialize, de::DeserializeOwned};
 use spec_corpus::{Class, corpus};
 
 const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
@@ -392,4 +393,66 @@ fn sar_adc_instances_name_their_modules() {
     assert_eq!(design.module("Dac8").unwrap().instantiated_by().len(), 1);
     let code = design.module("Dac8").unwrap().port("code").unwrap();
     assert_eq!(adc.instance("dac").unwrap().connection(code).unwrap().text(), "code");
+}
+
+#[test]
+fn design_and_storage_types_implement_serde() {
+    use piperine_lang::pom::*;
+    fn serde<T: Serialize + DeserializeOwned>() {}
+    serde::<Design>();
+    serde::<DesignDiagnostic>();
+    serde::<SourceFileData>();
+    serde::<SourceFileRepr>();
+    serde::<(DeclId, ExprId, StmtId, PatId, TypeId, PathId, FileId)>();
+    serde::<(DeclData, DeclKind, NamespaceData, NamespaceOrigin, UseData, UseTreeNode, UseTreeKind, ConstData, FnData, FnParamData)>();
+    serde::<(StructData, FieldData, EnumData, VariantData, TraitData, ImplData, GenericParamData, FieldsForm)>();
+    serde::<(NatureData, QuantityData, NatureFieldNode, ModuleData, PortData, ParamData, SignalData, LetData)>();
+    serde::<(BindingData, BindingOrigin, DefinitionData, GenerationData, GenElseNode, BehaviorData, ReactionData)>();
+    serde::<(ExprNode, ExprKind, StmtNode, StmtKind, PatNode, PatKind, TypeNode, TypeKind, PathNode, PathSegment)>();
+    serde::<(Arg, Arm, Block, ClosureParam, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, Lit, LitKind)>();
+    serde::<(Resolution, DeferReason, CallClass, StructClass, PortKind, NatureKind, BuiltinId)>();
+    serde::<(Meta, Doc, AttrNode, AttrInputNode, AttrArgNode, Import, Index, ReferenceId, WriterId)>();
+}
+
+/// The F.1 design with the models it takes from other sections, built with the fixture prelude.
+fn sar_adc() -> Design {
+    let fence = |needle: &str| corpus().into_iter().find(|b| b.text.contains(needle)).unwrap().text;
+    with_prelude(&[fence("module SarAdc"), fence("module SampleHold"), fence("module Comparator")].join("\n"))
+}
+
+#[test]
+fn gallery_design_round_trips_through_json() {
+    let design = sar_adc();
+    assert!(!design.diagnostics().is_empty() || design.decl_count() > 50);
+    let json = serde_json::to_string(&design).unwrap();
+    let back: Design = serde_json::from_str(&json).unwrap();
+    assert!(back == design, "the deserialized design is equal to the original");
+    assert_eq!(back.dump(), design.dump());
+    assert_eq!(back.diagnostics(), design.diagnostics());
+    assert_eq!(back.files().len(), design.files().len());
+    for (a, b) in back.files().iter().zip(design.files().iter()) {
+        assert_eq!(a.ast(), b.ast(), "{}: the retained tree is rebuilt from the text", a.name());
+        assert_eq!(a.text(), b.text());
+    }
+    // The reverse index survives too.
+    assert_eq!(back.module("Dac8").unwrap().instantiated_by().len(), 1);
+}
+
+#[test]
+fn json_is_deterministic() {
+    let design = sar_adc();
+    let first = serde_json::to_string(&design).unwrap();
+    assert_eq!(first, serde_json::to_string(&design).unwrap());
+    // A second build of the same sources serializes to the same bytes.
+    assert_eq!(first, serde_json::to_string(&sar_adc()).unwrap());
+    // The retained syntax tree is not part of the serialized form.
+    let value: serde_json::Value = serde_json::from_str(&first).unwrap();
+    fn has_key(v: &serde_json::Value, key: &str) -> bool {
+        match v {
+            serde_json::Value::Object(m) => m.contains_key(key) || m.values().any(|v| has_key(v, key)),
+            serde_json::Value::Array(a) => a.iter().any(|v| has_key(v, key)),
+            _ => false,
+        }
+    }
+    assert!(!has_key(&value, "ast"), "no `ast` key in the JSON");
 }

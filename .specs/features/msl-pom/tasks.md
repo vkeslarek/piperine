@@ -961,12 +961,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `design_and_storage_types_implement_serde` passes in `pom_reflect.rs` (C93: POM-15 AC 1)
-- [ ] Test `gallery_design_round_trips_through_json` passes in `pom_reflect.rs` (C94: POM-15 AC 2)
-- [ ] Test `json_is_deterministic` passes in `pom_reflect.rs` (C95: POM-15 AC 3)
-- [ ] The retained AST is not in the JSON: the test checks that the serialized text holds no `"ast"` key and that the deserialized `ast()` equals the original's
-- [ ] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `design_and_storage_types_implement_serde` passes in `pom_reflect.rs` (C93: POM-15 AC 1)
+- [x] Test `gallery_design_round_trips_through_json` passes in `pom_reflect.rs` (C94: POM-15 AC 2)
+- [x] Test `json_is_deterministic` passes in `pom_reflect.rs` (C95: POM-15 AC 3)
+- [x] The retained AST is not in the JSON: the test checks that the serialized text holds no `"ast"` key and that the deserialized `ast()` equals the original's
+- [x] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
