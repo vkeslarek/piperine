@@ -72,7 +72,7 @@ Proof: `cd crates/piperine-lang/tests && test -z "$(ls *.rs | grep -v '^msl_')"`
 Proof: `cargo build -p piperine-lang --all-targets 2>&1 | (! grep -qE '^(warning|error)')`
 
 **C4** - the 49 MSL tests still pass (RVF-02, AC 4)
-Proof: `test "$(cargo test -p piperine-lang --test msl_lexer --test msl_parser --test msl_errors --test msl_corpus --test msl_print 2>&1 | grep -oE '[0-9]+ passed' | awk '{s+=$1} END {print s}')" -ge 49`
+Proof: `out=$(cargo test -p piperine-lang --test msl_lexer --test msl_parser --test msl_errors --test msl_corpus --test msl_print 2>&1) && ! echo "$out" | grep -qE 'FAILED|[1-9][0-9]* failed|test result: FAILED' && test "$(echo "$out" | grep -oE '[0-9]+ passed' | awk '{s+=$1} END {print s}')" -eq 49`
 
 **C5** - no unused dependency in `Cargo.toml` (RVF-02, AC 5)
-Proof: `cd crates/piperine-lang && for d in $(sed -n '/^\[dependencies\]/,/^\[/p' Cargo.toml | grep -oE '^[a-z0-9_-]+' ); do n=$(echo $d | tr - _); grep -rqE "\b$n::|use $n\b|extern crate $n" src tests || { echo "unused: $d"; exit 1; }; done`
+Proof: `cd crates/piperine-lang && code=$(find src tests -name '*.rs' | xargs sed 's@//.*@@') && for d in $(sed -n '/^\[dependencies\]/,/^\[/p' Cargo.toml | grep -oE '^[a-z0-9_-]+'); do n=$(echo $d | tr - _); echo "$code" | grep -qE "\b$n::|use $n\b|extern crate $n" || { echo "unused: $d"; exit 1; }; done && echo "$code" | grep -q 'chumsky::pratt' && echo "$code" | grep -q 'fn depth_over_256' && cargo tree -e features -i chumsky | grep -q 'feature "stacker"' && cargo tree -e features -i chumsky | grep -q 'feature "std"'`
