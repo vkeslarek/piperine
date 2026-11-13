@@ -1,12 +1,20 @@
 //! Scope: the classifications the resolver makes over names (POM-09 and the
 //! behavior-block binding): which module a behavior block belongs to and the
-//! errors `E0401`, `E0402` and `E0403` when it does not.
+//! errors `E0401`, `E0402` and `E0403` when it does not; what a declared type
+//! makes of a port (`PortKind`) and of a struct (the bundle flag).
 
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{Design, DesignDiagnostic};
+use piperine_lang::pom::{Design, DesignDiagnostic, PortKind, Reflect};
 use support::build;
+
+const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
+
+/// A design of `src` with the fixture prelude beside it.
+fn with_prelude(src: &str) -> Design {
+    Design::builder().prelude("prelude.msl", PRELUDE).source("top.msl", src).build()
+}
 
 fn with_code<'a>(design: &'a Design, code: &str) -> Vec<&'a DesignDiagnostic> {
     design.diagnostics().iter().filter(|d| d.diagnostic.code == code).collect()
@@ -81,4 +89,79 @@ fn behavior_for_module_in_other_source_is_e0401() {
     let own = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "pub module M() {}\nanalog for M { }\n").build();
     assert!(with_code(&own, "E0401").is_empty(), "{:?}", own.diagnostics());
     assert_eq!(own.find("b::M").and_then(|d| d.as_module()).unwrap().behaviors().len(), 1);
+}
+
+#[test]
+fn port_kinds() {
+    let src = "\
+struct Pair { a: Electrical, b: Electrical }
+struct Val { x: f64 }
+enum Mode { A, B }
+module M<N: Nature, T: Repr>(
+    p: Electrical, q: [Bit; 4], r: Pair, in s: Pair, t: flip Pair, u: [flip Pair; 2],
+    f: f64, o: Option<f64>, v: Val, m: Mode, g: N, ga: [N; 2], h: T, z: Nope,
+) {}
+";
+    let design = with_prelude(src);
+    let m = design.module("M").unwrap();
+    let kinds: Vec<(&str, PortKind)> = m.ports().iter().map(|p| (p.name().unwrap(), p.kind())).collect();
+    let expected = [
+        ("p", PortKind::Carrier),
+        ("q", PortKind::Carrier),
+        ("r", PortKind::Bundle),
+        ("s", PortKind::Bundle),
+        ("t", PortKind::Bundle),
+        ("u", PortKind::Bundle),
+        ("f", PortKind::ValueInput),
+        ("o", PortKind::ValueInput),
+        ("v", PortKind::ValueInput),
+        ("m", PortKind::ValueInput),
+        // A generic bounded by `Nature` is a carrier; any other generic is a value.
+        ("g", PortKind::Carrier),
+        ("ga", PortKind::Carrier),
+        ("h", PortKind::ValueInput),
+        // Nothing declares `Nope`.
+        ("z", PortKind::Unknown),
+    ];
+    assert_eq!(kinds, expected);
+}
+
+#[test]
+fn struct_with_carrier_field_is_bundle() {
+    let src = "\
+struct Cell { in wl: Bit, bl: Electrical }
+struct Arr { xs: [Electrical; 2] }
+struct Nested { c: Cell, n: u8 }
+struct Deep { inner: Nested }
+struct Plain { x: f64, y: Option<f64> }
+struct Empty {}
+struct Generic<N: Nature> { a: N }
+struct Dangling { q: Nope }
+";
+    let design = with_prelude(src);
+    let bundle = |name: &str| design.find(name).and_then(|d| d.as_struct()).unwrap_or_else(|| panic!("struct {name}: {:?}", design.diagnostics())).is_bundle();
+    for yes in ["Cell", "Arr", "Nested", "Deep", "Generic"] {
+        assert!(bundle(yes), "`{yes}` is a bundle");
+    }
+    for no in ["Plain", "Empty", "Dangling"] {
+        assert!(!bundle(no), "`{no}` is not a bundle");
+    }
+}
+
+#[test]
+fn self_referential_struct_bundle_check_ends() {
+    let src = "\
+struct Me { next: Me, x: f64 }
+struct A { b: B }
+struct B { a: A }
+struct C { d: D }
+struct D { c: C, wire: Electrical }
+struct E { c: C }
+";
+    let design = with_prelude(src);
+    let bundle = |name: &str| design.find(name).and_then(|d| d.as_struct()).unwrap().is_bundle();
+    // A cycle with no carrier in it is no bundle.
+    assert!(!bundle("Me") && !bundle("A") && !bundle("B"));
+    // A cycle with a carrier on it is a bundle all around, whichever member is met first.
+    assert!(bundle("C") && bundle("D") && bundle("E"));
 }

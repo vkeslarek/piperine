@@ -71,6 +71,12 @@ impl<'d> Nature<'d> {
         self.quantities().into_iter().find(|q| q.role() == QuantityRole::Flow)
     }
 
+    /// The `impl` blocks written for this nature, in source order.
+    pub fn impls(self) -> Vec<super::Impl<'d>> {
+        let design = self.decl.design();
+        design.impls_of(self.decl.id()).into_iter().filter_map(|i| Decl::new(design, i).as_impl()).collect()
+    }
+
     /// The type of the first `value: T` field.
     pub fn value_type(self) -> Option<Type<'d>> {
         self.data().fields.iter().find_map(|f| match f {
@@ -308,6 +314,12 @@ impl<'d> Port<'d> {
     pub fn kind(self) -> PortKind {
         self.data().kind
     }
+
+    /// The nature of the port's type, through arrays and `flip`.
+    pub fn nature(self) -> Option<Nature<'d>> {
+        let design = self.decl.design();
+        design.nature_of(self.data().ty).and_then(|n| Decl::new(design, n).as_nature())
+    }
 }
 
 /// `name: ty = default where cond;` in a module body.
@@ -370,6 +382,12 @@ impl<'d> Signal<'d> {
 
     pub fn init(self) -> Option<Expr<'d>> {
         self.data().init.map(|e| self.decl.design().expr(e))
+    }
+
+    /// The nature of the signal's type, through arrays and `flip`.
+    pub fn nature(self) -> Option<Nature<'d>> {
+        let design = self.decl.design();
+        design.nature_of(self.data().ty).and_then(|n| Decl::new(design, n).as_nature())
     }
 
     /// The generation the signal is written in, if its parent is one.

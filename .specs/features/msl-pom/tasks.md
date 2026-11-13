@@ -772,13 +772,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `port_kinds` passes in `pom_classify.rs` (C52: POM-09 AC 1)
-- [ ] Test `struct_with_carrier_field_is_bundle` passes in `pom_classify.rs` (C53: POM-09 AC 2)
-- [ ] Test `carrier_nature_through_array_and_flip` passes in `pom_reflect.rs` (C71: POM-11 AC 4)
-- [ ] Test `self_referential_struct_bundle_check_ends` passes in `pom_classify.rs`
-- [ ] A generic param bounded by `Nature` makes a carrier port
-- [ ] Gate passes: run classify, run reflect; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `port_kinds` passes in `pom_classify.rs` (C52: POM-09 AC 1)
+- [x] Test `struct_with_carrier_field_is_bundle` passes in `pom_classify.rs` (C53: POM-09 AC 2)
+- [x] Test `carrier_nature_through_array_and_flip` passes in `pom_reflect.rs` (C71: POM-11 AC 4)
+- [x] Test `self_referential_struct_bundle_check_ends` passes in `pom_classify.rs`
+- [x] A generic param bounded by `Nature` makes a carrier port
+- [x] Gate passes: run classify, run reflect; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

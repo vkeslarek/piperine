@@ -279,6 +279,11 @@ impl<'d> Struct<'d> {
         self.data().bundle
     }
 
+    /// Whether a field is a carrier, an array of carriers or a bundle.
+    pub fn is_bundle(self) -> bool {
+        self.data().bundle == Some(true)
+    }
+
     pub fn generics(self) -> Vec<GenericParam<'d>> {
         self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
     }

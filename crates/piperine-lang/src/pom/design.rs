@@ -197,6 +197,20 @@ impl Design {
         }
     }
 
+    /// Store the kind of a port.
+    pub(super) fn set_port_kind(&mut self, port: DeclId, kind: super::resolution::PortKind) {
+        if let DeclKind::Port(p) = &mut self.decls[port.index()].kind {
+            p.kind = kind;
+        }
+    }
+
+    /// Store the bundle flag of a struct.
+    pub(super) fn set_bundle(&mut self, decl: DeclId, bundle: bool) {
+        if let DeclKind::Struct(s) = &mut self.decls[decl.index()].kind {
+            s.bundle = Some(bundle);
+        }
+    }
+
     /// Store what segment `index` of `path` names.
     pub(super) fn set_segment_res(&mut self, path: PathId, index: usize, res: super::resolution::Resolution) {
         if let Some(segment) = self.paths[path.index()].segments.get_mut(index) {

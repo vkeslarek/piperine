@@ -3,6 +3,7 @@
 //! from the immutable design into an [`Output`], then the answers are applied.
 
 mod behaviors;
+mod classify;
 mod imports;
 mod names;
 mod scopes;
@@ -69,6 +70,13 @@ pub(super) fn run(design: &mut Design) {
     }
     for (file, diagnostic) in out.diagnostics {
         design.push_diagnostic(file, diagnostic);
+    }
+    let classified = classify::run(design);
+    for (port, kind) in classified.port_kinds {
+        design.set_port_kind(port, kind);
+    }
+    for (decl, bundle) in classified.bundles {
+        design.set_bundle(decl, bundle);
     }
     design.sort_diagnostics();
 }
