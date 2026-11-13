@@ -1354,7 +1354,7 @@ Proof: run reflect | test json_is_deterministic ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 (Phase 1, T1–T6) Sonnet worker at f553b9c5
 **Walked:** none (no screen; the stories' Independent Tests are the tests named in `## Checks`)
 
 ---
