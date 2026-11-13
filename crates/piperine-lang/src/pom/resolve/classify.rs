@@ -11,7 +11,7 @@ use super::super::body::{ExprKind, TypeKind};
 use super::super::builtin::BuiltinKind;
 use super::super::decl::{DeclKind, FnParamData, GenericParamData};
 use super::super::design::Design;
-use super::super::ids::{DeclId, ExprId, FileId, TypeId};
+use super::super::ids::{DeclId, ExprId, FileId, PathId, TypeId};
 use super::super::resolution::{CallClass, PortKind, Resolution, StructClass};
 use crate::msl::Diagnostic;
 
@@ -41,6 +41,23 @@ pub(super) struct Classified {
     /// `(module, call)` for every instance, in source order.
     pub instances: Vec<(DeclId, ExprId)>,
     pub diagnostics: Vec<(FileId, Diagnostic)>,
+    /// `(path, segment, what it names)`: the callee of an access call.
+    pub segments: Vec<(PathId, usize, Resolution)>,
+}
+
+/// The quantities that declare each access name (`v`, `i`, ..), in source order.
+pub(super) fn access_table(design: &Design) -> BTreeMap<String, Vec<DeclId>> {
+    let mut table: BTreeMap<String, Vec<DeclId>> = BTreeMap::new();
+    for i in 0..design.decl_count() {
+        let id = DeclId(i as u32);
+        let DeclKind::Quantity(q) = &design.decl_data(id).kind else { continue };
+        let Some(access) = q.attrs.iter().find(|a| a.name.text == "access") else { continue };
+        let ExprKind::Path(p) = &design.expr_node(access.value).kind else { continue };
+        if let [one] = design.path_node(*p).segments.as_slice() {
+            table.entry(one.name.text.clone()).or_default().push(id);
+        }
+    }
+    table
 }
 
 impl Design {
@@ -138,7 +155,7 @@ pub(super) fn run(design: &Design) -> Classified {
         }
     }
     let templates = struct_expressions(design, &bundles, &mut out);
-    call_expressions(design, &templates, &mut out);
+    call_expressions(design, &templates, &access_table(design), &mut out);
     out
 }
 
@@ -348,11 +365,54 @@ fn callee_class(design: &Design, callee: ExprId, templates: &BTreeMap<ExprId, St
     }
 }
 
-fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, out: &mut Classified) {
+/// The nature of an expression read from a declaration: a path to something
+/// with a declared type, through indexes and parentheses.
+fn nature_of_expr(design: &Design, mut expr: ExprId) -> Option<DeclId> {
+    loop {
+        match &design.expr_node(expr).kind {
+            ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => expr = *inner,
+            ExprKind::Path(_) => {
+                let Resolution::Decl(d) = path_res(design, expr) else { return None };
+                return design.nature_of(design.declared_type(d)?);
+            }
+            _ => return None,
+        }
+    }
+}
+
+/// A call whose callee is the access name of a quantity, or the built-in
+/// `potential` / `flow`: the callee's resolution, when this call decides it.
+/// A declaration in scope with that name already resolved the path and wins.
+fn probe_callee(design: &Design, callee: ExprId, first: Option<ExprId>, access: &BTreeMap<String, Vec<DeclId>>) -> Option<(PathId, Resolution)> {
+    let ExprKind::Path(path) = &design.expr_node(callee).kind else { return None };
+    let node = design.path_node(*path);
+    let [segment] = node.segments.as_slice() else { return None };
+    match segment.res {
+        Resolution::Builtin(b) if matches!(b.info().name, "potential" | "flow") => Some((*path, segment.res)),
+        Resolution::Unresolved if segment.args.is_none() => {
+            let candidates = access.get(&segment.name.text)?;
+            let nature = first.and_then(|e| nature_of_expr(design, e));
+            let by_nature = nature.and_then(|n| candidates.iter().copied().find(|q| design.decl_data(*q).parent == Some(n)));
+            let res = match (by_nature, candidates.as_slice()) {
+                (Some(q), _) | (None, &[q]) => Resolution::Decl(q),
+                _ => Resolution::Deferred(super::super::resolution::DeferReason::AmbiguousAccess),
+            };
+            Some((*path, res))
+        }
+        _ => None,
+    }
+}
+
+fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, access: &BTreeMap<String, Vec<DeclId>>, out: &mut Classified) {
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
         let node = design.expr_node(expr);
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { continue };
+        if let Some((path, res)) = probe_callee(design, *callee, args.first().map(|a| a.value), access) {
+            out.segments.push((path, 0, res));
+            out.calls.push(CallFacts { expr, class: CallClass::Probe, args: Vec::new(), params: Vec::new() });
+            continue;
+        }
         let (class, target) = callee_class(design, *callee, templates);
         let named = |want: fn(&DeclKind) -> bool| -> Vec<(usize, Resolution)> {
             let Some(target) = target else { return Vec::new() };

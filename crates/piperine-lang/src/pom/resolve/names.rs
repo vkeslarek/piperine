@@ -514,7 +514,12 @@ impl Names<'_, '_> {
                 self.ty(*ty);
             }
             ExprKind::Call { callee, args, params, .. } => {
+                // The access name of a nature is no declaration; classification links it.
+                let alias = matches!(&design.expr_node(*callee).kind, ExprKind::Path(p)
+                    if matches!(design.path_node(*p).segments.as_slice(), [one] if one.args.is_none() && self.ctx.access.contains_key(&one.name.text)));
+                self.quiet += u32::from(alias);
                 self.expr(*callee);
+                self.quiet -= u32::from(alias);
                 for a in args {
                     self.expr(a.value);
                 }

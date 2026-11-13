@@ -825,10 +825,10 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `access_alias_resolves_by_first_argument` passes in `pom_classify.rs` (C61: POM-09 AC 10)
-- [ ] A declaration with the same name in scope wins over an alias (G.16 stays open in the spec)
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `access_alias_resolves_by_first_argument` passes in `pom_classify.rs` (C61: POM-09 AC 10)
+- [x] A declaration with the same name in scope wins over an alias (G.16 stays open in the spec)
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

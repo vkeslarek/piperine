@@ -394,3 +394,54 @@ fn unresolved_callee_is_plain_call() {
     assert_eq!(support::codes(&design), ["E0161"]);
     assert!(design.module("T").unwrap().instances().is_empty());
 }
+
+#[test]
+fn access_alias_resolves_by_first_argument() {
+    let src = "\
+module M(a: Electrical, b: VSignal, t: Thermal) {
+    signal o: Electrical;
+}
+analog for M {
+    let q = a;
+    let x = v(a);
+    let y = v(b);
+    let z = temp(t);
+    let c = i(a);
+    let m = v(q);
+    let p = potential(o);
+    let n = nothing(a);
+}
+";
+    let design = with_prelude(src);
+    let callee_res = |call: &str| -> Resolution {
+        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == call && !e.enclosing().file().is_prelude()).unwrap_or_else(|| panic!("call `{call}`"));
+        let ExprKind::Call { callee, .. } = e.kind() else { panic!("a call") };
+        let ExprKind::Path(p) = design.expr(*callee).kind() else { panic!("a path callee") };
+        design.path(*p).segments()[0].res
+    };
+    let quantity_of = |nature: &str, access: &str| {
+        let q = design.nature(nature).unwrap().quantities().into_iter().find(|q| q.access().is_some_and(|a| a.text() == access)).unwrap();
+        Resolution::Decl(q.decl().id())
+    };
+    // The nature of the first argument picks among the natures that declare `v`.
+    assert_eq!(callee_res("v(a)"), quantity_of("Electrical", "v"));
+    assert_eq!(callee_res("v(b)"), quantity_of("VSignal", "v"));
+    // One nature declares `temp` and one `i`: no argument needed.
+    assert_eq!(callee_res("temp(t)"), quantity_of("Thermal", "temp"));
+    assert_eq!(callee_res("i(a)"), quantity_of("Electrical", "i"));
+    // The first argument has no declared type and two natures declare `v`.
+    assert_eq!(callee_res("v(q)"), Resolution::Deferred(piperine_lang::pom::DeferReason::AmbiguousAccess));
+    // Every one of them is a probe; so is the built-in `potential`.
+    let classes = call_classes(&design);
+    for call in ["v(a)", "v(b)", "temp(t)", "i(a)", "v(q)", "potential(o)"] {
+        assert_eq!(classes.iter().find(|(t, _)| t == call).unwrap().1, CallClass::Probe, "{call}");
+    }
+    // A name that is no alias is still reported once; an alias is not.
+    assert_eq!(support::codes(&design), ["E0161"]);
+    assert_eq!(primary_text(&design, &design.diagnostics()[0]), "nothing");
+    assert_eq!(classes.iter().find(|(t, _)| t == "nothing(a)").unwrap().1, CallClass::Function);
+    // A declaration in scope wins over the alias.
+    let shadowed = with_prelude("fn v(x: f64) -> f64 { x }\nmodule M(a: Electrical) { let y = v(1.0); }\n");
+    assert!(shadowed.diagnostics().is_empty(), "{:?}", shadowed.diagnostics());
+    assert_eq!(call_classes(&shadowed), [("v(1.0)".to_string(), CallClass::Function)]);
+}

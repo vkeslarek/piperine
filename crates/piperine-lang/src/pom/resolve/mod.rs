@@ -39,6 +39,9 @@ pub(super) struct Ctx<'a> {
     /// The `impl` blocks of each declaration, by the declaration their self
     /// type names (stage 5 reads associated items through them).
     impls: BTreeMap<DeclId, Vec<DeclId>>,
+    /// The access names quantities declare (`v`, `i`, ..): a call of one that
+    /// no declaration names is an access call, not an unresolved name.
+    access: BTreeMap<String, Vec<DeclId>>,
 }
 
 /// Run every resolution stage over a freshly lowered design.
@@ -52,6 +55,7 @@ pub(super) fn run(design: &mut Design) {
             root: design.root_id(),
             links: BTreeMap::new(),
             impls: BTreeMap::new(),
+            access: classify::access_table(design),
         };
         let mut out = Output::default();
         out.diagnostics.extend(ctx.scopes.diagnostics(design));
@@ -83,6 +87,9 @@ pub(super) fn run(design: &mut Design) {
     }
     for facts in classified.calls {
         design.set_call(facts.expr, facts.class, &facts.args, &facts.params);
+    }
+    for (path, index, res) in classified.segments {
+        design.set_segment_res(path, index, res);
     }
     for (module, expr) in classified.instances {
         design.push_instance(module, expr);
