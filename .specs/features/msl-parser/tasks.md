@@ -123,8 +123,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-01, MSLP-06
 
 **Done when**:
-- [ ] Tests `si_literal_scaled_value_and_raw_text`, `malformed_si_literal_reports_e0902`, `dropped_token_class_reports_e0905`, `unterminated_comment_and_string_one_diagnostic`, `non_utf8_one_diagnostic` pass
-- [ ] Run lexer passes; build gate passes
+- [x] Tests `si_literal_scaled_value_and_raw_text`, `malformed_si_literal_reports_e0902`, `dropped_token_class_reports_e0905`, `unterminated_comment_and_string_one_diagnostic`, `non_utf8_one_diagnostic` pass
+- [x] Run lexer passes; build gate passes
 
 **Tests**: integration
 **Gate**: quick
