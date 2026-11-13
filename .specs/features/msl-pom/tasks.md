@@ -154,14 +154,14 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `two_builds_dump_identical` passes in `pom_design.rs` (C3: POM-01 AC 3)
-- [ ] Test `root_children_mirror_items_in_source_order` passes in `pom_tree.rs` (C7: POM-02 AC 1)
-- [ ] Test `inline_mod_is_a_namespace` passes in `pom_tree.rs` (C11: POM-02 AC 5)
-- [ ] Test `empty_source_has_empty_root` passes in `pom_design.rs`
-- [ ] `children` is in source order; ids are assigned in source order
-- [ ] `dump()` prints one line per declaration: indent, kind, name, `start..end`; no `HashMap` iteration
-- [ ] Gate passes: run design, run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `two_builds_dump_identical` passes in `pom_design.rs` (C3: POM-01 AC 3)
+- [x] Test `root_children_mirror_items_in_source_order` passes in `pom_tree.rs` (C7: POM-02 AC 1)
+- [x] Test `inline_mod_is_a_namespace` passes in `pom_tree.rs` (C11: POM-02 AC 5)
+- [x] Test `empty_source_has_empty_root` passes in `pom_design.rs`
+- [x] `children` is in source order; ids are assigned in source order
+- [x] `dump()` prints one line per declaration: indent, kind, name, `start..end`; no `HashMap` iteration
+- [x] Gate passes: run design, run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

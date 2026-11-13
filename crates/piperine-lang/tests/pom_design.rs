@@ -41,3 +41,29 @@ fn design_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Design>();
 }
+
+#[test]
+fn two_builds_dump_identical() {
+    let text = "/// A resistor.\nmodule R(p: Electrical, n: Electrical) {}\nmod a { const N: u32 = 8; }\nnature V { potential: Voltage { access: v } }\n";
+    assert!(parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
+    let first = build(text).dump();
+    let second = build(text).dump();
+    assert!(!first.is_empty());
+    assert_eq!(first, second);
+    // Ids are assigned in source order, so the order of lines is the order of
+    // the source, and the same call twice cannot disagree.
+    let lines: Vec<_> = first.lines().collect();
+    assert!(lines[0].starts_with("Namespace "));
+    assert!(lines[1].trim_start().starts_with("Module R "));
+    assert!(lines[2].trim_start().starts_with("Namespace a "));
+    assert!(lines[3].trim_start().starts_with("Const N "));
+}
+
+#[test]
+fn empty_source_has_empty_root() {
+    let design = build("");
+    assert!(design.root().children().is_empty());
+    assert_eq!(design.files().len(), 1);
+    assert!(design.diagnostics().is_empty());
+    assert!(design.check().is_empty());
+}
