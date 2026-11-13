@@ -13,3 +13,11 @@ pub mod model {}
 /// Handles and every method: `docs/pom/reflection.md`.
 #[doc = include_str!("../../../../docs/pom/reflection.md")]
 pub mod reflection {}
+
+/// Language construct to POM: `docs/pom/mapping.md`.
+#[doc = include_str!("../../../../docs/pom/mapping.md")]
+pub mod mapping {}
+
+/// Name resolution, built-ins, classification, diagnostics: `docs/pom/resolution.md`.
+#[doc = include_str!("../../../../docs/pom/resolution.md")]
+pub mod resolution {}

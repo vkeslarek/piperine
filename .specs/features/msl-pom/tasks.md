@@ -1028,11 +1028,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `every_b3_production_is_mapped` passes in `pom_docs.rs` (C82: POM-13 AC 3)
-- [ ] Test `msl_fences_parse_clean` passes in `pom_docs.rs` (C83: POM-13 AC 4)
-- [ ] The test reads the production names from B.3.2 (`^name ::=` lines) at run time
-- [ ] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_b3_production_is_mapped` passes in `pom_docs.rs` (C82: POM-13 AC 3)
+- [x] Test `msl_fences_parse_clean` passes in `pom_docs.rs` (C83: POM-13 AC 4)
+- [x] The test reads the production names from B.3.2 (`^name ::=` lines) at run time
+- [x] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

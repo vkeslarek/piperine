@@ -121,3 +121,80 @@ fn every_reflection_method_is_documented() {
     }
     assert!(missing.is_empty(), "not mentioned as `name(` under its `### `Type`` heading of reflection.md: {missing:?}");
 }
+
+/// The names of the productions of Appendix B.3.2: the `name ::=` lines of its code block.
+fn b32_productions() -> Vec<String> {
+    let text = std::fs::read_to_string(repo().join("docs/spec/appendix_b_grammar.md")).unwrap();
+    let start = text.find("### B.3.2").expect("B.3.2 heading");
+    let end = text[start..].find("### B.3.3").map_or(text.len(), |i| start + i);
+    text[start..end]
+        .lines()
+        .filter_map(|l| {
+            let (name, rest) = l.split_once(char::is_whitespace)?;
+            (rest.trim_start().starts_with("::=") && !name.starts_with("//")).then(|| name.to_string())
+        })
+        .collect()
+}
+
+#[test]
+fn every_b3_production_is_mapped() {
+    let productions = b32_productions();
+    assert!(productions.len() >= 30, "the scrape found only {productions:?}");
+    for known in ["nature_decl", "module_decl", "instance", "reaction", "gen<X>", "attr_link"] {
+        assert!(productions.iter().any(|p| p == known), "{known} is read from B.3.2: {productions:?}");
+    }
+    let docs = pom_docs();
+    let page = &docs.iter().find(|(n, _)| n == "mapping.md").expect("docs/pom/mapping.md").1;
+    let mut types = Vec::new();
+    for file in rust_files(&repo().join("crates/piperine-lang/src/pom")) {
+        let text = std::fs::read_to_string(file).unwrap();
+        types.extend(text.lines().filter_map(public_type_name).map(str::to_string));
+    }
+    let rows: Vec<&str> = page.lines().filter(|l| l.starts_with('|')).collect();
+    let mut unmapped = Vec::new();
+    for p in &productions {
+        let key = format!("`{p}`");
+        let names_a_type = |row: &&str| {
+            row.split('`').skip(1).step_by(2).any(|code| {
+                let ident: String = code.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                types.iter().any(|t| *t == ident)
+            })
+        };
+        // The production sits in the first cell; a type is named in the same row.
+        let mapped = rows.iter().any(|r| r.split('|').nth(1).is_some_and(|cell| cell.contains(&key)) && names_a_type(r));
+        if !mapped {
+            unmapped.push(p.clone());
+        }
+    }
+    assert!(unmapped.is_empty(), "no row of docs/pom/mapping.md maps: {unmapped:?}");
+}
+
+#[test]
+fn msl_fences_parse_clean() {
+    let mut fences = 0;
+    for (file, text) in pom_docs() {
+        let mut open: Option<(usize, String)> = None;
+        for (i, line) in text.lines().enumerate() {
+            match &mut open {
+                None => {
+                    if line.trim_start() == "```msl" {
+                        open = Some((i + 1, String::new()));
+                    }
+                }
+                Some((at, body)) => {
+                    if line.trim_start().starts_with("```") {
+                        fences += 1;
+                        let parsed = piperine_lang::msl::parser::parse(body);
+                        assert!(parsed.diagnostics.is_empty(), "{file}:{at}: msl fence does not parse: {:?}", parsed.diagnostics);
+                        open = None;
+                    } else {
+                        body.push_str(line);
+                        body.push('\n');
+                    }
+                }
+            }
+        }
+        assert!(open.is_none(), "{file}: an msl fence is never closed");
+    }
+    assert!(fences >= 10, "docs/pom holds only {fences} msl fences");
+}
