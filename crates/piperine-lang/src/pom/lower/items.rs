@@ -13,6 +13,7 @@ impl Lowerer<'_> {
     /// generics.
     pub(crate) fn generics(&mut self, generics: &Option<ast::Generics>) {
         let Some(g) = generics else { return };
+        self.design.decl_mut(self.owner).generics_span = Some(g.span.0);
         for p in &g.params {
             let id = self.new_decl(DeclKind::Error, Some(&p.name), p.span.0, false);
             let data = self.within(id, |lw| match &p.kind {

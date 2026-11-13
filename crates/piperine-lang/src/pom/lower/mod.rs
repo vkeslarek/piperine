@@ -71,6 +71,7 @@ impl Lowerer<'_> {
             children: Vec::new(),
             file: self.file,
             span,
+            generics_span: None,
             public,
             meta: Meta::default(),
         };

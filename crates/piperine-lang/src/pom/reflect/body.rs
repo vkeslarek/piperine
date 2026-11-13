@@ -25,6 +25,10 @@ impl<'d> SourceFile<'d> {
         self.id
     }
 
+    pub(crate) fn design(self) -> &'d Design {
+        self.design
+    }
+
     /// The name it was registered under, or its file name on disk.
     pub fn name(self) -> &'d str {
         &self.design.file_data(self.id).name

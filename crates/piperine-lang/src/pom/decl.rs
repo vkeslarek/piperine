@@ -28,6 +28,9 @@ pub struct DeclData {
     pub children: Vec<DeclId>,
     pub file: FileId,
     pub span: Span,
+    /// The range of the `<..>` list when the declaration wrote one (even an
+    /// empty one); its parameters are `GenericParam` children.
+    pub generics_span: Option<Span>,
     pub public: bool,
     pub meta: Meta,
 }

@@ -541,11 +541,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `value_bodies_round_trip` passes in `pom_body.rs`
-- [ ] Never reads the retained `ast::File`
-- [ ] Spans are written back into every `Loc`
-- [ ] Gate passes: run body; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `value_bodies_round_trip` passes in `pom_body.rs`
+- [x] Never reads the retained `ast::File`
+- [x] Spans are written back into every `Loc`
+- [x] Gate passes: run body; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

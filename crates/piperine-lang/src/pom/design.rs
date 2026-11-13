@@ -95,6 +95,11 @@ impl Design {
         &self.files[id.index()]
     }
 
+    /// The `Namespace` declaration of a file.
+    pub(crate) fn file_root(&self, id: FileId) -> DeclId {
+        self.files[id.0 as usize].root
+    }
+
     pub(crate) fn push_file(&mut self, data: SourceFileData) -> FileId {
         self.files.push(data);
         FileId(self.files.len() as u32 - 1)
@@ -331,6 +336,7 @@ impl Design {
             children: Vec::new(),
             file: id,
             span: parsed.file.span.0,
+            generics_span: None,
             public: true,
             meta: Meta::default(),
         });

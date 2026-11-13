@@ -14,6 +14,7 @@ mod meta;
 mod reflect;
 mod resolution;
 mod source;
+mod to_ast;
 
 pub use body::*;
 pub use decl::*;

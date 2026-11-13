@@ -383,3 +383,100 @@ fn depth_256_builds_on_default_stack() {
     let design = build(&src);
     assert!(!design.diagnostics().is_empty());
 }
+
+/// Parse `src`, build it, rebuild the tree from the arenas and demand the same
+/// tree, spans included (`Loc` equality ignores spans, `Debug` prints them).
+fn assert_round_trips(src: &str) {
+    let parsed = piperine_lang::msl::parser::parse(src).file;
+    let design = build(src);
+    let rebuilt = design.files()[0].to_ast();
+    assert_eq!(rebuilt, parsed, "structure differs for:\n{src}");
+    assert_eq!(format!("{rebuilt:?}"), format!("{parsed:?}"), "spans differ for:\n{src}");
+}
+
+#[test]
+fn value_bodies_round_trip() {
+    // Every expression form, as the value of a const.
+    let forms = [
+        "1", "2.5e3", "\"s\"", "true", "Unknown", "a", "-a", "!a", "*a", "&a", "a + b * c - d / e % f", "a ^ b & c | d",
+        "a << 1 >> 2", "a && b || c", "a == b", "a != b", "a < b", "a <= b", "a > b", "a >= b", "a = b", "a += b",
+        "a <<= b", "a as f64", "f(1, x: 2)", "a.m(1)", "a.m::<u8>(1, x: 2)", "a.b", "t.0", "a[0]", "0..4", "0..=4", "..4",
+        "0..", "..", "(a)", "(a, b)", "()", "[1, 2]", "[0; 4]", "S { x: 1, y: 2 }", "{ 1 }", "{ }",
+        "if a { 1 } else { 2 }", "if a { 1 } else if b { 2 } else { 3 }", "if a { 1 }", "if let Some(x) = y { 1 }",
+        "match a { _ => 1 }", "match a { 0 | 1 => 2, n if n > 3 => n, #[x] _ => 0, }", "while a { }", "loop { }",
+        "for i in 0..4 { }", "loop { break; }", "loop { break 1; }", "loop { continue; }", "return 1", "return",
+        "|x| x + 1", "move |x: u32, y| -> u32 { x }", "a?", "emit!(\"s\", a = 1)", "include_str!(\"f.txt\")",
+        "m(1) { w: 2 }", "a::b::<T>::c", "self::a", "super::a", "crate::a",
+    ];
+    for form in forms {
+        assert_round_trips(&format!("const X: u32 = {form};"));
+    }
+    // Statements, patterns and types.
+    assert_round_trips(
+        "\
+const X: u32 = {
+    let a = 1;
+    let b: u32;
+    let (c, d) = (1, 2);
+    let S { e, f: g, .. } = s;
+    let T(h, ..) = t;
+    let Phase::Liquid = p;
+    let i @ 1..=5 = n;
+    let (1 | 2) = n;
+    let &r = q;
+    let [j, k] = arr;
+    let _ = z;
+    let -1 = n;
+    let mut m = 1;
+    let ref n2 = 1;
+    let Some(v) = o else { return };
+    let 1.. = n;
+    let ..5 = n;
+    const K: u32 = 1;
+    fn inner(x: u32) -> u32 { x }
+    ;
+    a + 1;
+    a +> b;
+    a <- b after c;
+    a <- b;
+    signal sg: T = 1;
+    signal sg2: T;
+    on ev { x <- 1; }
+    let t1: [u8; 4] = x;
+    let t2: [u8] = x;
+    let t3: (A, B) = x;
+    let t4: &T = x;
+    let t5: &'static T = x;
+    let t6: flip T = x;
+    let t7: _ = x;
+    let t8: () = x;
+    let t9: Vec<u8, { N }, 3> = x;
+    let t10: Box<Fn(A, B) -> C> = x;
+    a + 1
+};",
+    );
+}
+
+#[test]
+fn fns_consts_metas_and_generics_round_trip() {
+    for src in [
+        "const A: u32 = 1;",
+        "pub const A: u32 = 1;",
+        "/// docs\n#[a] #[b(1, \"s\", k = 2, c::d)] #[e = 3] pub const A: u32 = 1;",
+        "/** block */ const A: u32 = 1;",
+        "//! inner\n//! more\nconst A: u32 = 1;",
+        "fn f() { }",
+        "pub const fn f(self, x: u32, y: f64) -> f64 where x > 0 { x }",
+        "fn f<T>() { }",
+        "fn f<>() { }",
+        "fn f<T: A + B = C, const N: u32 = 4, U>(a: [T; N]) -> T { a[0] }",
+        "extern \"C\" fn erfcx(x: f64) -> f64;",
+        "#[derivative(erfcx_dx)] extern \"C\" fn erfcx(x: f64) -> f64;",
+        "fn f() -> u32 { const K: u32 = 1; fn g() { } K }",
+        "const A: u32 = 1;\nconst B: u32 = 2;\nfn f() { }",
+        "",
+        "  // a comment\n",
+    ] {
+        assert_round_trips(src);
+    }
+}
