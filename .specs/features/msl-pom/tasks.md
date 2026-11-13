@@ -179,9 +179,9 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] One variant per AST variant, child nodes by id, nothing desugared
-- [ ] Every slot starts `Unresolved` / `Unclassified` / `Unknown`
-- [ ] Build line passes with no warning
+- [x] One variant per AST variant, child nodes by id, nothing desugared
+- [x] Every slot starts `Unresolved` / `Unclassified` / `Unknown`
+- [x] Build line passes with no warning
 
 **Tests**: none
 **Gate**: build
