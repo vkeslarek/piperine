@@ -59,6 +59,7 @@ pub mod fmt;
 pub mod grammar;
 pub mod keywords;
 pub mod lexer;
+pub mod msl;
 pub mod parser;
 pub mod preprocessor;
 pub mod source_provenance;

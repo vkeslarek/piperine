@@ -86,9 +86,9 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-04
 
 **Done when**:
-- [ ] `cargo build -p piperine-lang --all-targets` has zero warnings
-- [ ] `Diagnostic` carries code, message, primary label span, optional help
-- [ ] Build gate passes
+- [x] `cargo build -p piperine-lang --all-targets` has zero warnings
+- [x] `Diagnostic` carries code, message, primary label span, optional help
+- [x] Build gate passes
 
 **Tests**: none
 **Gate**: build
@@ -436,7 +436,7 @@ Proof: run parser | test contextual_keywords_are_identifiers_outside_nature ... 
 ## Handoff
 
 **Settled mid-build:** sub-agents accepted - user: "Lança sempre Sonnet para implementação, Opus para verifier"
-**Dispatched:** none
+**Dispatched:** B1 (T1–T7) Sonnet worker at 3f0d8b50
 **Walked:** n/a - no screen; Independent Tests are the integration targets above
 
 ---

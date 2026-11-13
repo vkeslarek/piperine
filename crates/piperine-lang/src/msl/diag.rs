@@ -1,0 +1,86 @@
+//! The one diagnostic type of the MSL front end.
+
+use std::fmt;
+
+use miette::{GraphicalReportHandler, GraphicalTheme, LabeledSpan, NamedSource};
+
+use super::span::Span;
+
+/// An MSL error: a spec code (`E09xx`, `E0121`, ...), a one-line message, a
+/// primary label at the offending span, optional secondary labels and an
+/// optional help line naming the correct form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Diagnostic {
+    pub code: &'static str,
+    pub message: String,
+    /// The offending span and the text of its label.
+    pub primary: (Span, String),
+    pub secondary: Vec<(Span, String)>,
+    pub help: Option<String>,
+}
+
+impl Diagnostic {
+    pub fn new(code: &'static str, message: impl Into<String>, span: Span, label: impl Into<String>) -> Self {
+        Diagnostic {
+            code,
+            message: message.into(),
+            primary: (span, label.into()),
+            secondary: Vec::new(),
+            help: None,
+        }
+    }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+
+    pub fn with_label(mut self, span: Span, label: impl Into<String>) -> Self {
+        self.secondary.push((span, label.into()));
+        self
+    }
+
+    pub fn span(&self) -> Span {
+        self.primary.0
+    }
+}
+
+impl fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Diagnostic {}
+
+impl miette::Diagnostic for Diagnostic {
+    fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        Some(Box::new(self.code))
+    }
+
+    fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        self.help.as_ref().map(|h| Box::new(h) as Box<dyn fmt::Display>)
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
+        let primary = LabeledSpan::new_primary_with_span(Some(self.primary.1.clone()), self.primary.0);
+        let rest = self
+            .secondary
+            .iter()
+            .map(|(s, l)| LabeledSpan::new_with_span(Some(l.clone()), *s));
+        Some(Box::new(std::iter::once(primary).chain(rest)))
+    }
+}
+
+/// Render `diag` as a `miette` graphical report (no color) against `src`,
+/// named `name` in the report header.
+pub fn render(diag: &Diagnostic, name: &str, src: &str) -> String {
+    let report = miette::Report::new(diag.clone())
+        .with_source_code(NamedSource::new(name, src.to_string()));
+    let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode_nocolor());
+    let mut out = String::new();
+    match handler.render_report(&mut out, report.as_ref()) {
+        Ok(()) => out,
+        Err(_) => format!("error[{}]: {}", diag.code, diag.message),
+    }
+}
