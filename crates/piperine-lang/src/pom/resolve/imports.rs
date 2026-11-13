@@ -167,9 +167,14 @@ impl Ctx<'_> {
     /// names, or a variant of the enum it names.
     fn glob_item(&self, entry: &ImportEntry, ns: DeclId, name: &str, prefer: Prefer, visiting: &mut Vec<Visit>) -> Option<DeclId> {
         let target = self.import_target(entry, ns, visiting)?;
+        self.glob_member(target, name, prefer, ns, visiting)
+    }
+
+    /// What a glob of `target` brings under `name`, seen from namespace `from`.
+    pub(super) fn glob_member(&self, target: DeclId, name: &str, prefer: Prefer, from: DeclId, visiting: &mut Vec<Visit>) -> Option<DeclId> {
         match &self.design.decl_data(target).kind {
             DeclKind::Namespace(_) => {
-                let (found, visible) = self.ns_item(target, name, prefer, Some(ns), visiting)?;
+                let (found, visible) = self.ns_item(target, name, prefer, Some(from), visiting)?;
                 visible.then_some(found)
             }
             DeclKind::Enum(_) => self.variant(target, name),

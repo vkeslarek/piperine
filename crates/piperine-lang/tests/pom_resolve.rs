@@ -569,3 +569,30 @@ fn fixture_prelude_builds_clean() {
     assert_eq!(idt.behaviors().len(), 1);
     assert_eq!(as_root.module("transition").unwrap().digital_blocks().len(), 1);
 }
+
+/// POM-08 AC 7 and AC 9: a `use` in a block is an item of that block, visible
+/// in the whole block (Rust scoping), and an unresolvable one is one E0161.
+#[test]
+fn use_in_a_block_resolves_with_block_scope() {
+    let src = "\
+mod a { pub fn x() {} pub const K: u32 = 1; pub mod deep { pub fn g() {} } pub enum E { P } }
+fn f() { early(); use a::x as early; use a::K as Kay; use a::deep::*; use a::E::*; Kay; g(); P; }
+fn k() { { use a::x as y; } y(); }
+fn h() { use a::nothing; }
+";
+    let design = build(src);
+    let (ns_a, x) = (decl(&design, "a"), decl(&design, "a::x"));
+    // Used before the `use` item in the same block: the item is block-wide.
+    assert_eq!(one(&design, "early"), [x]);
+    assert_eq!(resolutions(&design, "a::x"), [[ns_a, x], [ns_a, x]]);
+    assert_eq!(one(&design, "Kay"), [decl(&design, "a::K")]);
+    assert_eq!(one(&design, "g"), [decl(&design, "a::deep::g")]);
+    let e = design.decl_data(design.find("a::E").unwrap().id()).children[0];
+    assert_eq!(one(&design, "P"), [Resolution::Decl(e)]);
+    // The name does not leave the block that imports it.
+    assert_eq!(one(&design, "y"), [Resolution::Unresolved]);
+    assert_eq!(one(&design, "a::nothing"), [ns_a, Resolution::Unresolved]);
+    let errors = with_code(&design, "E0161");
+    let at: Vec<&str> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(at, ["y", "a::nothing"], "{errors:?}");
+}

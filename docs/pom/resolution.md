@@ -34,7 +34,9 @@ A single-segment name is looked up in this order; the first hit wins.
    (closure parameters, `match` arms, `for`), function parameters, the generics of every enclosing
    declaration, `Self`, and the members of the enclosing module (its ports, params, signals
    and body `let` names). An item nested in a block does not see the locals and generics around
-   it, only the items of the blocks it sits in.
+   it, only the items of the blocks it sits in. A `use` in a block is one of those items: its
+   names are visible in the whole block (also before the `use`), not outside it, and a path that
+   does not resolve is one `E0161`, as at the top level.
 2. **The items and imports of the enclosing namespace**: its own declarations, its `use` leaves
    and its glob imports.
 3. **The prelude sources**: the `pub` items of every prelude source are visible in every file.

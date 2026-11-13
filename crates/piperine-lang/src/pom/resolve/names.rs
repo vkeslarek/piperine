@@ -29,6 +29,9 @@ enum Frame {
     Locals(Vec<(String, DeclId)>),
     /// The items written in one block: visible in the whole block.
     Items(Vec<(String, DeclId)>),
+    /// The names the `use` items of one block bring in: visible in the whole
+    /// block like its other items. A glob keeps the declaration it names.
+    Imports { named: Vec<(String, Resolution)>, globs: Vec<DeclId> },
     /// An item nested in a block does not see the locals and generics around
     /// it, only the items of the blocks it sits in.
     Barrier,
@@ -274,6 +277,16 @@ impl Names<'_, '_> {
                         return Some(Resolution::Decl(*d));
                     }
                 }
+                Frame::Imports { named, globs } => {
+                    if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved) {
+                        return Some(*res);
+                    }
+                    for target in globs {
+                        if let Some(found) = self.ctx.glob_member(*target, name, prefer, self.ns, visiting) {
+                            return Some(Resolution::Decl(found));
+                        }
+                    }
+                }
                 _ if hidden => {}
                 Frame::Locals(names) => {
                     if let Some((_, d)) = names.iter().rev().find(|(n, _)| n == name) {
@@ -443,6 +456,9 @@ impl Names<'_, '_> {
             })
             .collect();
         self.frames.push(Frame::Items(items));
+        let imports_at = self.frames.len();
+        self.frames.push(Frame::Imports { named: Vec::new(), globs: Vec::new() });
+        self.block_uses(stmts, imports_at);
         self.frames.push(Frame::Locals(Vec::new()));
         for s in stmts {
             match &design.stmt_node(*s).kind {
@@ -487,6 +503,33 @@ impl Names<'_, '_> {
         }
         self.frames.pop();
         self.frames.pop();
+        self.frames.pop();
+    }
+
+    /// The `use` items of one block, in source order: each path resolves
+    /// from the namespace and the block items (never the locals), and its
+    /// name joins the `Imports` frame at `at`, so a later `use` can build on
+    /// an earlier one and every read in the block sees them all.
+    fn block_uses(&mut self, stmts: &[StmtId], at: usize) {
+        let design = self.ctx.design;
+        for s in stmts {
+            let StmtKind::Item(d) = &design.stmt_node(*s).kind else { continue };
+            let DeclKind::Use(u) = &design.decl_data(*d).kind else { continue };
+            for import in &u.imports {
+                self.frames.push(Frame::Barrier);
+                let res = self.path(import.path, Prefer::Types);
+                self.frames.pop();
+                let Frame::Imports { named, globs } = &mut self.frames[at] else { continue };
+                match (import.glob, res) {
+                    (true, Resolution::Decl(target)) => globs.push(target),
+                    (true, _) => {}
+                    (false, res) => {
+                        let last = design.path_node(import.path).segments.last().map(|seg| seg.name.text.clone()).unwrap_or_default();
+                        named.push((import.alias.as_ref().map_or(last, |a| a.text.clone()), res));
+                    }
+                }
+            }
+        }
     }
 
     fn opt_expr(&mut self, e: Option<ExprId>) {
