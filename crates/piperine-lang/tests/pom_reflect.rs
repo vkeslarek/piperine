@@ -2,7 +2,11 @@
 //! and casts, the carrier nature of a port or signal, the instance views and
 //! the reverse queries.
 
-use piperine_lang::pom::{Decl, Design, Reference, Reflect, Writer};
+#[path = "support/spec_corpus.rs"]
+mod spec_corpus;
+
+use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
+use spec_corpus::{Class, corpus};
 
 const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
 
@@ -304,4 +308,88 @@ module C() { signal s: Bit; }
     assert!(by.iter().all(|b| b.1 == Some(cell)));
     assert!(design.module("C").unwrap().instantiated_by().is_empty());
     assert_eq!(cell.instantiated_by()[0].declared_in().module(), design.module("A"));
+}
+
+/// Every parse-clean ```` ```rust ```` fence of Appendices D, E and F, with its origin.
+fn gallery() -> Vec<(String, String)> {
+    corpus()
+        .into_iter()
+        .filter(|b| b.class == Class::Valid)
+        .filter(|b| ["appendix_d", "appendix_e", "appendix_f"].iter().any(|a| b.file.starts_with(a)))
+        .map(|b| (format!("{}:{}", b.file, b.line), b.text))
+        .collect()
+}
+
+/// What a file of a design holds: the number of each node kind owned by its declarations,
+/// and the kinds of its declarations, in arena order.
+fn shape(design: &Design, file: &str) -> (usize, usize, usize, usize, Vec<&'static str>) {
+    let in_file = |owner: piperine_lang::pom::DeclId| design.decl_data(owner).file == design.files().iter().find(|f| f.name() == file).unwrap().id();
+    let exprs = (0..design.expr_count()).filter(|i| in_file(design.expr_node(ExprId(*i as u32)).owner)).count();
+    let stmts = (0..design.stmt_count()).filter(|i| in_file(design.stmt_node(StmtId(*i as u32)).owner)).count();
+    let pats = (0..design.pat_count()).filter(|i| in_file(design.pat_node(PatId(*i as u32)).owner)).count();
+    let types = (0..design.type_count()).filter(|i| in_file(design.type_node(TypeId(*i as u32)).owner)).count();
+    let decls = design.decls().into_iter().filter(|d| in_file(d.id())).map(|d| d.kind().label()).collect();
+    (exprs, stmts, pats, types, decls)
+}
+
+#[test]
+fn resolution_creates_no_node() {
+    let mut sources = vec![("local".to_string(), REVERSE.to_string()), ("names".to_string(), NAMES.to_string())];
+    sources.extend(gallery());
+    assert!(sources.len() > 10);
+    for (at, text) in sources {
+        let without = Design::builder().source("top.msl", text.clone()).build();
+        let with = with_prelude(&text);
+        assert_eq!(shape(&with, "top.msl"), shape(&without, "top.msl"), "{at}: resolving against a prelude changed the node set");
+        let (a, b) = (with.files().into_iter().find(|f| f.name() == "top.msl").unwrap(), without.files().into_iter().find(|f| f.name() == "top.msl").unwrap());
+        assert_eq!(a.to_ast(), b.to_ast(), "{at}: the rebuilt tree depends on resolution");
+    }
+}
+
+#[test]
+fn gallery_signals_are_declared_in_their_module() {
+    let mut signals = 0;
+    for (at, text) in gallery() {
+        let design = with_prelude(&text);
+        for m in design.modules().into_iter().filter(|m| !m.file().is_prelude()) {
+            for s in m.signals() {
+                signals += 1;
+                assert_eq!(s.module(), Some(m), "{at}: signal {:?} is declared in {:?}", s.name(), m.name());
+                assert!(
+                    s.declared_in().is_some_and(|d| d == m.decl() || d.as_generation().is_some()),
+                    "{at}: the parent of {:?} is its module or a generation of it",
+                    s.name()
+                );
+                assert_eq!(m.signal(s.name().unwrap()).and_then(|x| x.module()), Some(m));
+            }
+        }
+        // Every signal declaration of the design is listed by exactly one module.
+        for d in design.decls().into_iter().filter(|d| !d.file().is_prelude()) {
+            if let Some(s) = d.as_signal() {
+                let owner = s.module().unwrap_or_else(|| panic!("{at}: signal {:?} is in no module", s.name()));
+                assert_eq!(owner.signals().iter().filter(|x| **x == s).count(), 1, "{at}: {:?}", s.name());
+            }
+        }
+    }
+    assert!(signals > 20, "the galleries declare signals; found {signals}");
+}
+
+#[test]
+fn sar_adc_instances_name_their_modules() {
+    // F.1 with the two models it takes from other sections (§12.1, §13), as one source.
+    let fence = |needle: &str| corpus().into_iter().find(|b| b.text.contains(needle)).unwrap_or_else(|| panic!("a fence holds `{needle}`")).text;
+    let text = [fence("module SarAdc"), fence("module SampleHold"), fence("module Comparator")].join("\n");
+    let design = with_prelude(&text);
+    let adc = design.module("SarAdc").unwrap();
+    let placed: Vec<_> = adc.instances().iter().filter_map(|i| Some((i.name()?.to_string(), i.module()?.name()?.to_string()))).collect();
+    assert_eq!(
+        placed,
+        [("sh", "SampleHold"), ("dac", "Dac8"), ("comp", "Comparator"), ("logic", "SarLogic")].map(|(a, b)| (a.to_string(), b.to_string()))
+    );
+    for (name, callee) in [("sh", "SampleHold"), ("dac", "Dac8"), ("comp", "Comparator"), ("logic", "SarLogic")] {
+        assert_eq!(adc.instance(name).unwrap().callee().text(), callee);
+    }
+    assert_eq!(design.module("Dac8").unwrap().instantiated_by().len(), 1);
+    let code = design.module("Dac8").unwrap().port("code").unwrap();
+    assert_eq!(adc.instance("dac").unwrap().connection(code).unwrap().text(), "code");
 }

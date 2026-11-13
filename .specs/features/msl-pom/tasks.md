@@ -938,12 +938,12 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `resolution_creates_no_node` passes in `pom_reflect.rs` (C79: POM-12 AC 3)
-- [ ] Test `gallery_signals_are_declared_in_their_module` passes in `pom_reflect.rs`
-- [ ] Test `sar_adc_instances_name_their_modules` passes in `pom_reflect.rs`
-- [ ] A name error the POM finds in a gallery is reported to the user in the task summary; `docs/spec/` is not edited
-- [ ] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `resolution_creates_no_node` passes in `pom_reflect.rs` (C79: POM-12 AC 3)
+- [x] Test `gallery_signals_are_declared_in_their_module` passes in `pom_reflect.rs`
+- [x] Test `sar_adc_instances_name_their_modules` passes in `pom_reflect.rs`
+- [x] A name error the POM finds in a gallery is reported to the user in the task summary; `docs/spec/` is not edited
+- [x] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
