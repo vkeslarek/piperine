@@ -4,11 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::builtin::BuiltinId;
 use super::ids::DeclId;
-
-/// An entry of the built-in table (`builtin.rs` gives it its information).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct BuiltinId(pub u16);
 
 /// What a name refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

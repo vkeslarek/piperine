@@ -606,11 +606,11 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `builtin_table_has_every_core_primitive` passes in `pom_resolve.rs`
-- [ ] Data + plain helpers, no macro
-- [ ] `u1`..`u128`, `i1`..`i128`, `f16`/`f32`/`f64`/`f128` match; `u0`, `u129`, `f8` do not
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `builtin_table_has_every_core_primitive` passes in `pom_resolve.rs`
+- [x] Data + plain helpers, no macro
+- [x] `u1`..`u128`, `i1`..`i128`, `f16`/`f32`/`f64`/`f128` match; `u0`, `u129`, `f8` do not
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
