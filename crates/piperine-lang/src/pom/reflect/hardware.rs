@@ -11,7 +11,7 @@ use crate::pom::decl::{
 };
 use crate::pom::design::Design;
 use crate::pom::ids::DeclId;
-use crate::pom::resolution::{CallClass, NatureKind, PortKind};
+use crate::pom::resolution::{CallClass, NatureKind, PortKind, Resolution};
 use crate::pom::ids::ExprId;
 use crate::pom::body::LitKind;
 
@@ -1051,6 +1051,20 @@ impl<'d> Instance<'d> {
     /// The connection arguments, in order.
     pub fn connections(self) -> Vec<Expr<'d>> {
         self.call().1.iter().map(|a| self.design.expr(a.value)).collect()
+    }
+
+    /// The argument written for `port`: the connection named after it, else
+    /// the unnamed one at its position. None when the instance's module is
+    /// unknown, is not the port's module, or no argument is written there.
+    pub fn connection(self, port: Port<'d>) -> Option<Expr<'d>> {
+        let module = self.module()?;
+        if port.declared_in()? != module.decl() {
+            return None;
+        }
+        let args = self.call().1;
+        let named = args.iter().find(|a| a.res == Resolution::Decl(port.decl().id()));
+        let arg = named.or_else(|| args.get(port.index()).filter(|a| a.name.is_none()))?;
+        Some(self.design.expr(arg.value))
     }
 
     /// The `{ name: value }` param bindings as written.

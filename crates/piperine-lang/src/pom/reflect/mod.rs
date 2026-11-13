@@ -136,6 +136,36 @@ pub trait Reflect<'d>: Copy {
         let d = self.decl();
         d.data().parent.map(|p| Decl::new(d.design, p))
     }
+
+    /// The namespace path joined by `::`, then the member chain joined by
+    /// `.`: signal `w` of module `M` in `mod a` is `a::M.w`. A generation, an
+    /// unnamed declaration (an `impl`, a `use`, a behavior block) and a
+    /// file's root namespace add no segment.
+    fn qualified_name(self) -> String {
+        let mut chain = Vec::new();
+        let mut at = Some(self.decl());
+        while let Some(d) = at {
+            chain.push(d);
+            at = d.declared_in();
+        }
+        chain.reverse();
+        let mut out = String::new();
+        let mut in_members = false;
+        for d in chain {
+            let Some(name) = d.name() else { continue };
+            if matches!(d.kind(), DeclKind::Generation(_)) {
+                continue;
+            }
+            if !out.is_empty() {
+                out.push_str(if in_members { "." } else { "::" });
+            }
+            out.push_str(name);
+            if !matches!(d.kind(), DeclKind::Namespace(_)) {
+                in_members = true;
+            }
+        }
+        out
+    }
 }
 
 /// An attribute: `#[path]`, `#[path(args)]` or `#[path = expr]`.
@@ -240,14 +270,47 @@ impl Design {
         Decl::new(self, self.root_id())
     }
 
-    /// Every module of the design, in source order.
-    pub fn modules(&self) -> Vec<Module<'_>> {
-        (0..self.decl_count()).filter_map(|i| Decl::new(self, DeclId(i as u32)).as_module()).collect()
+    /// Every declaration of the design in arena (source) order, prelude
+    /// files first.
+    pub fn decls(&self) -> Vec<Decl<'_>> {
+        (0..self.decl_count()).map(|i| Decl::new(self, DeclId(i as u32))).collect()
     }
 
-    /// The first module named `name`, wherever it is declared.
+    /// The declarations of the files that are not prelude sources.
+    fn authored(&self) -> impl Iterator<Item = Decl<'_>> {
+        self.decls().into_iter().filter(|d| !d.file().is_prelude())
+    }
+
+    /// Every module of the design, prelude files first, in source order.
+    pub fn modules(&self) -> Vec<Module<'_>> {
+        self.decls().into_iter().filter_map(Decl::as_module).collect()
+    }
+
+    /// The first module named `name`: the first match in a non-prelude file
+    /// in file order, else the first match in a prelude source.
     pub fn module(&self, name: &str) -> Option<Module<'_>> {
-        self.modules().into_iter().find(|m| m.name() == Some(name))
+        let named = |m: &Module<'_>| m.name() == Some(name);
+        self.authored().filter_map(Decl::as_module).find(named).or_else(|| self.modules().into_iter().find(named))
+    }
+
+    /// Every free function (a `fn` directly in a namespace) of the non-prelude
+    /// files, in source order.
+    pub fn functions(&self) -> Vec<Function<'_>> {
+        self.authored()
+            .filter(|d| d.declared_in().is_some_and(|p| p.as_namespace().is_some()))
+            .filter_map(Decl::as_function)
+            .collect()
+    }
+
+    /// Every struct of the non-prelude files, in source order.
+    pub fn structs(&self) -> Vec<Struct<'_>> {
+        self.authored().filter_map(Decl::as_struct).collect()
+    }
+
+    /// Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude
+    /// files; a file's unnamed root is not listed.
+    pub fn namespaces(&self) -> Vec<Namespace<'_>> {
+        self.authored().filter_map(Decl::as_namespace).filter(|n| n.name().is_some()).collect()
     }
 
     /// Every nature of the design, in source order.

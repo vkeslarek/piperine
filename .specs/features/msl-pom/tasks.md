@@ -890,14 +890,14 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `lookups_by_name_and_path` passes in `pom_reflect.rs` (C68: POM-11 AC 1)
-- [ ] Test `qualified_names` passes in `pom_reflect.rs` (C69: POM-11 AC 2)
-- [ ] Test `casts_match_kind_only` passes in `pom_reflect.rs` (C70: POM-11 AC 3)
-- [ ] Test `instance_connection_by_port` passes in `pom_reflect.rs` (C72: POM-11 AC 5)
-- [ ] Test `handle_equality` passes in `pom_reflect.rs` (C73: POM-11 AC 6)
-- [ ] `module(name)` searches every non-prelude namespace in file order and returns the first match
-- [ ] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `lookups_by_name_and_path` passes in `pom_reflect.rs` (C68: POM-11 AC 1)
+- [x] Test `qualified_names` passes in `pom_reflect.rs` (C69: POM-11 AC 2)
+- [x] Test `casts_match_kind_only` passes in `pom_reflect.rs` (C70: POM-11 AC 3)
+- [x] Test `instance_connection_by_port` passes in `pom_reflect.rs` (C72: POM-11 AC 5)
+- [x] Test `handle_equality` passes in `pom_reflect.rs` (C73: POM-11 AC 6)
+- [x] `module(name)` searches every non-prelude namespace in file order and returns the first match
+- [x] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
