@@ -177,8 +177,8 @@ T11 → T12 → T13 → T14 → T15
 **Requirement**: MSLP-02, MSLP-04
 
 **Done when**:
-- [ ] Tests `contribution_commit_at_any_depth`, `depth_over_256_is_diagnostic_not_overflow`, `unknown_as_value_ok_as_name_e0908` (value half) pass
-- [ ] Run parser + run errors pass; build gate passes
+- [x] Tests `contribution_commit_at_any_depth`, `depth_over_256_is_diagnostic_not_overflow`, `unknown_as_value_ok_as_name_e0908` (value half) pass
+- [x] Run parser + run errors pass; build gate passes
 
 **Tests**: integration
 **Gate**: full

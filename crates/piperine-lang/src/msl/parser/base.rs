@@ -9,7 +9,7 @@ use crate::msl::ast::*;
 use crate::msl::lexer::{Kw, Punct, Token};
 use crate::msl::span::Span;
 
-use super::{pat, ty};
+use super::{expr, pat, ty};
 
 /// A custom parse error: a spec code, a message, an optional help line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +43,8 @@ pub(crate) struct Handles<'a, I: In<'a>> {
     /// A pattern with no top-level alternative: `let`, parameters, `for`.
     pub pat1: Rec<'a, I, Pat>,
     pub expr: Rec<'a, I, Expr>,
+    /// An expression that refuses a struct literal at the top level.
+    pub expr_ns: Rec<'a, I, Expr>,
     pub block: Rec<'a, I, Block>,
 }
 
@@ -52,36 +54,21 @@ pub(crate) fn handles<'a, I: In<'a>>() -> Handles<'a, I> {
         pat: Recursive::declare(),
         pat1: Recursive::declare(),
         expr: Recursive::declare(),
+        expr_ns: Recursive::declare(),
         block: Recursive::declare(),
     };
-    let (expr, block) = placeholder_expr(&h);
-    h.expr.define(expr);
-    h.block.define(block);
     let p = ty::build(&h);
     h.ty.define(p);
     let (pat, pat1) = pat::build(&h);
     h.pat.define(pat);
     h.pat1.define(pat1);
+    let p = expr::build(&h, true, h.expr.clone());
+    h.expr.define(p);
+    let p = expr::build(&h, false, h.expr_ns.clone());
+    h.expr_ns.define(p);
+    let p = expr::block(&h);
+    h.block.define(p);
     h
-}
-
-/// Stand-in until the expression parser lands: a literal, a path, or a
-/// braced one of those.
-fn placeholder_expr<'a, I: In<'a>>(
-    h: &Handles<'a, I>,
-) -> (P<'a, I, Expr>, P<'a, I, Block>) {
-    let atom = lit_expr().or(ty::path(h, true).map_with(|p: Path, e| Expr {
-        span: Loc(e.span()),
-        kind: ExprKind::Path(p),
-    }));
-    let block = atom
-        .clone()
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
-        .map_with(|expr: Expr, e| Block {
-            stmts: vec![Stmt { span: expr.span, kind: StmtKind::Expr { expr, semi: false } }],
-            span: Loc(e.span()),
-        });
-    (atom.boxed(), block.boxed())
 }
 
 // ---- token-level helpers ----------------------------------------------------------------------
