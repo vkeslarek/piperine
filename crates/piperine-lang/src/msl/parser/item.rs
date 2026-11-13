@@ -297,6 +297,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         trait_decl.boxed(),
         use_decl.boxed(),
         mod_decl.boxed(),
+        msl::nature_decl(h),
         macro_rules.boxed(),
     ]);
     meta(h)

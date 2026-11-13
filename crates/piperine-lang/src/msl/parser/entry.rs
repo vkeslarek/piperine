@@ -108,6 +108,14 @@ pub fn parse_expr(src: &str) -> Parsed<Expr> {
     finish(h.expr.clone().then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
 }
 
+/// Parse `src` as one item of a module body.
+pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
+    let (tokens, diags) = lex_limited(src);
+    let input = token_input(&tokens, src.len());
+    let h = handles();
+    finish(msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors(), diags, &tokens)
+}
+
 /// Parse `src` as one braced block `{ stmt* }`.
 pub fn parse_block(src: &str) -> Parsed<Block> {
     let (tokens, diags) = lex_limited(src);

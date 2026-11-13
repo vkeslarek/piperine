@@ -17,9 +17,10 @@ mod check;
 mod entry;
 pub mod expr;
 pub mod item;
+pub mod msl;
 pub mod pat;
 pub mod ty;
 
 pub(crate) use base::*;
 pub use base::Custom;
-pub use entry::{MAX_DEPTH, ParseResult, parse, parse_block, parse_expr, parse_generics, parse_pat, parse_type};
+pub use entry::{MAX_DEPTH, ParseResult, parse, parse_block, parse_expr, parse_generics, parse_module_item, parse_pat, parse_type};

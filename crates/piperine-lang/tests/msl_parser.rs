@@ -1,6 +1,7 @@
 //! Scope: the MSL parser (`piperine_lang::msl::parser`) building spanned AST
 //! nodes (requirement MSLP-02, MSLP-06). Types, paths, generics and patterns
-//! (T5), extended with expressions/statements (T6) and items (T7).
+//! (T5), extended with expressions/statements (T6), items (T7) and the
+//! language's own productions (T8-T10).
 //! Fixtures are minimal sources; assertions name the AST node and, where the
 //! spec says a node's span covers its text, the exact byte range.
 
@@ -551,4 +552,90 @@ fn doc_comments_and_attrs_attach() {
     assert_eq!(f.inner_docs.len(), 1);
     assert_eq!(f.inner_docs[0].text, " crate doc");
     assert!(f.items[0].meta.docs.is_empty());
+}
+
+// ---- Appendix B.3 productions (T8 onwards) ----------------------------------------------------
+
+/// The source text a node's span covers.
+fn text<'s>(src: &'s str, span: &Loc) -> &'s str {
+    &src[span.0.range()]
+}
+
+/// A module item, expecting no diagnostics.
+fn module_item(src: &str) -> ModuleItem {
+    let (it, diags) = piperine_lang::msl::parser::parse_module_item(src);
+    assert!(diags.is_empty(), "{src:?}: {diags:?}");
+    it.unwrap_or_else(|| panic!("{src:?} did not parse"))
+}
+
+#[test]
+fn every_b3_production_parses_with_span() {
+    // ---- nature_decl, nature_field (B.3.2, Part II §4) ----
+    let src = "nature Electrical { potential: Voltage { access: v, units: \"V\" }, flow: Current { access: i }, }";
+    let item = only_item(src);
+    assert_eq!(text(src, &item.span), src);
+    let ItemKind::Nature(n) = &item.kind else { panic!("{:?}", item.kind) };
+    assert_eq!(n.name.name, "Electrical");
+    assert_eq!(n.fields.len(), 2);
+    let NatureFieldKind::Quantity { which, name, attrs } = &n.fields[0].kind else { panic!() };
+    assert_eq!((*which, name.name.as_str()), (Quantity::Potential, "Voltage"));
+    assert_eq!(attrs.iter().map(|a| a.name.name.as_str()).collect::<Vec<_>>(), ["access", "units"]);
+    assert_eq!(text(src, &n.fields[0].span), "potential: Voltage { access: v, units: \"V\" }");
+    let NatureFieldKind::Quantity { which, attrs, .. } = &n.fields[1].kind else { panic!() };
+    assert_eq!((*which, attrs.len()), (Quantity::Flow, 1));
+
+    // Discrete natures: `value` and `resolve`; generics; no trailing comma.
+    let src = "nature Bit<T: Repr> { value: T, resolve: wired_or }";
+    let item = only_item(src);
+    let ItemKind::Nature(n) = &item.kind else { panic!() };
+    assert!(n.generics.is_some());
+    assert!(matches!(n.fields[0].kind, NatureFieldKind::Value(_)));
+    assert!(matches!(&n.fields[1].kind, NatureFieldKind::Resolve(Expr { kind: ExprKind::Path(_), .. })));
+    assert_eq!(text(src, &n.fields[1].span), "resolve: wired_or");
+
+    // `pub` and attributes in front (B.3.5 amendment 1).
+    let item = only_item("#[doc = \"x\"] pub nature N { value: bool }");
+    assert!(item.public);
+    assert_eq!(item.meta.attrs.len(), 1);
+
+    // ---- sigtype (Part II §7): `flip`, arrays of sigtypes ----
+    let t = ty("flip Stream<T>");
+    let TypeKind::Flip(inner) = &t.kind else { panic!("{t:?}") };
+    assert_path_type(inner, &["Stream"]);
+    let t = ty("[flip Stream<T>; N]");
+    let TypeKind::Array { elem, len } = &t.kind else { panic!("{t:?}") };
+    assert!(matches!(elem.kind, TypeKind::Flip(_)));
+    assert!(matches!(len.kind, ExprKind::Path(_)));
+    let t = ty("[[Electrical; 2]; 3]");
+    assert!(matches!(&t.kind, TypeKind::Array { elem, .. } if matches!(elem.kind, TypeKind::Array { .. })));
+    assert_path_type(&ty("Option<Electrical>"), &["Option"]);
+
+    // ---- struct_field: carrier fields make a bundle; `dir` per field ----
+    let src = "struct Stream<T> { in data: T, out ready: Bit, pub valid: Bit }";
+    let item = only_item(src);
+    let ItemKind::Struct(s) = &item.kind else { panic!() };
+    let Fields::Named(fields) = &s.fields else { panic!() };
+    assert_eq!(fields.iter().map(|f| f.dir).collect::<Vec<_>>(), [Some(Dir::In), Some(Dir::Out), None]);
+    assert!(fields[2].public);
+    assert_eq!(text(src, &fields[0].span), "in data: T");
+    let src = "struct Pair { a: flip Stream<T>, b: [Electrical; 2] }";
+    let ItemKind::Struct(s) = only_item(src).kind else { panic!() };
+    let Fields::Named(fields) = &s.fields else { panic!() };
+    assert!(matches!(fields[0].ty.kind, TypeKind::Flip(_)));
+    assert!(matches!(fields[1].ty.kind, TypeKind::Array { .. }));
+
+    // ---- signal_decl ----
+    let src = "signal x: Bit<u8> = 0;";
+    let it = module_item(src);
+    assert_eq!(text(src, &it.span), src);
+    let ModuleItemKind::Signal { name, ty, init } = &it.kind else { panic!("{:?}", it.kind) };
+    assert_eq!(name.name, "x");
+    assert_path_type(ty, &["Bit"]);
+    assert!(init.is_some());
+    let it = module_item("signal rx: flip Stream<T>;");
+    let ModuleItemKind::Signal { ty, init, .. } = &it.kind else { panic!() };
+    assert!(matches!(ty.kind, TypeKind::Flip(_)) && init.is_none());
+    let it = module_item("/// doc\n#[a] pub signal s: [Bit; 4];");
+    assert!(it.public);
+    assert_eq!((it.meta.docs.len(), it.meta.attrs.len()), (1, 1));
 }
