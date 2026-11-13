@@ -186,7 +186,9 @@ fn prelude_source_items_are_visible_everywhere() {
     assert_eq!(primary_text(&design, missing[0]), "Hidden");
     // The same through the spec fixture: its natures are there for the asking.
     let design = Design::builder().prelude("prelude.msl", PRELUDE_FIXTURE).source("top.msl", "use Electrical;\nuse Bit;\n").build();
-    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    // (Whether the fixture builds clean by itself is `fixture_prelude_builds_clean`'s question.)
+    let root_file = design.root().file().id();
+    assert!(design.diagnostics().iter().all(|d| d.file != root_file), "{:?}", design.diagnostics());
     let Resolution::Decl(electrical) = one(&design, "Electrical")[0] else { panic!("Electrical resolves") };
     assert!(design.decl_data(electrical).file != design.root().file().id());
     assert!(design.root().file().id() != piperine_lang::pom::FileId(0));
@@ -294,6 +296,13 @@ fn builtin_names_resolve_to_table_entries() {
         }
     }
     // A declaration shadows the table; so does an import.
+    // Core primitives and constants are names of expressions too.
+    let exprs = build("fn g() -> f64 { ddt(temperature()) * K_B }");
+    assert!(with_code(&exprs, "E0161").is_empty(), "{:?}", exprs.diagnostics());
+    for (name, section) in [("ddt", "§14.5"), ("temperature", "§14.4"), ("K_B", "§1")] {
+        let Resolution::Builtin(id) = one(&exprs, name)[0] else { panic!("`{name}` is a built-in") };
+        assert_eq!((id.name().as_str(), id.info().section), (name, section));
+    }
     let shadow = build("struct Option {}\nmod m { pub struct f64 {} }\nuse m::f64;\nfn g(a: Option, b: f64) {}");
     assert!(with_code(&shadow, "E0161").is_empty(), "{:?}", shadow.diagnostics());
     assert_eq!(one(&shadow, "Option"), [decl(&shadow, "Option")]);
@@ -323,4 +332,93 @@ impl Tr for S { fn make() -> Self { S { a: 1 } } }
     // `Self` outside an impl or a trait names nothing.
     let stray = build("fn f() -> Self {}");
     assert_eq!(with_code(&stray, "E0161").len(), 1);
+}
+
+/// The `Binding` or `FnParam` declaration named `name` among the children of `owner`.
+fn local(design: &Design, owner: &str, name: &str) -> Resolution {
+    let owner = design.find(owner).unwrap_or_else(|| panic!("`{owner}` is declared"));
+    let found = owner.children().into_iter().filter(|c| c.name() == Some(name) && matches!(c.kind().label(), "Binding" | "FnParam")).collect::<Vec<_>>();
+    assert_eq!(found.len(), 1, "one local `{name}` in `{}`", owner.name().unwrap_or("-"));
+    Resolution::Decl(found[0].id())
+}
+
+#[test]
+fn shadowed_local_resolves_to_previous_binding() {
+    let design = build("fn f() -> u32 { let x = 1; let x = x + 1; x }");
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let bindings: Vec<_> = design.find("f").unwrap().children().into_iter().filter(|c| c.name() == Some("x")).map(|c| c.id()).collect();
+    assert_eq!(bindings.len(), 2);
+    // In source order: the right-hand `x` is the first local, the tail `x` the second.
+    assert_eq!(resolutions(&design, "x"), [[Resolution::Decl(bindings[0])], [Resolution::Decl(bindings[1])]]);
+}
+
+#[test]
+fn binders_scope_their_names() {
+    let src = "\
+fn f(p: u32, opt: Option<u32>) -> u32 {
+    let g = |c| c + 1;
+    let m = match opt { Some(a) => a, None => 0 };
+    for i in 0..p { i; }
+    if let Some(q) = opt { q; }
+    while let Some(w) = opt { w; }
+    c; a; i; q; w;
+    p
+}
+";
+    let design = build(src);
+    // Each binder's name resolves inside its scope and not after it.
+    for name in ["c", "a", "i", "q", "w"] {
+        assert_eq!(resolutions(&design, name), [[local(&design, "f", name)], [Resolution::Unresolved]], "`{name}`");
+    }
+    let outside = with_code(&design, "E0161");
+    let texts: Vec<_> = outside.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(texts, ["c", "a", "i", "q", "w"]);
+    // Function parameters are names of the whole body, and of nothing outside it.
+    assert!(resolutions(&design, "p").iter().all(|r| r[0] == local(&design, "f", "p")));
+    assert!(resolutions(&design, "opt").iter().all(|r| r[0] == local(&design, "f", "opt")));
+    // `Some(a)` names the built-in variant; `None` is a pattern binding, not a reference.
+    assert!(resolutions(&design, "Some").iter().all(|r| matches!(r[0], Resolution::Builtin(_))));
+    // Items of a function body are names of that body; an inner item sees no local of the outer one.
+    let nested = build("fn outer() { let x = 1; fn inner() -> u32 { x } inner(); helper(); fn helper() {} }");
+    let errors = with_code(&nested, "E0161");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(primary_text(&nested, errors[0]), "x");
+}
+
+#[test]
+fn unresolved_path_is_one_e0161() {
+    let src = "fn f() -> u32 { missing + 1 }\nstruct S { a: Nope }\nconst K: u32 = gone::far;\n";
+    let design = build(src);
+    // The build completed: the declarations are all there.
+    assert!(design.find("f").is_some() && design.find("S").is_some() && design.find("K").is_some());
+    let errors = with_code(&design, "E0161");
+    let texts: Vec<_> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(texts, ["missing", "Nope", "gone::far"]);
+    assert_eq!(one(&design, "missing"), [Resolution::Unresolved]);
+    assert_eq!(one(&design, "gone::far"), [Resolution::Unresolved, Resolution::Unresolved]);
+    // The same path read twice is two paths, so two errors.
+    let twice = build("fn g() { nope; nope; }");
+    assert_eq!(with_code(&twice, "E0161").len(), 2);
+}
+
+#[test]
+fn diagnostics_are_ordered() {
+    let src = "\
+fn a() { first_missing; }
+module M(x: f64, x: f64) {}
+use nowhere::x;
+fn ddt() {}
+mod nofile;
+";
+    let prelude = "pub fn pf() { prelude_missing; }\n";
+    let design = Design::builder().prelude("std.msl", prelude).source("top.msl", src).build();
+    let found: Vec<(u32, usize, String)> = design.diagnostics().iter().map(|d| (d.file.0, d.diagnostic.span().start, d.diagnostic.code.to_string())).collect();
+    let mut sorted = found.clone();
+    sorted.sort();
+    assert_eq!(found, sorted, "ordered by file, then offset, then code");
+    // Nothing is lost by the ordering: the prelude's error, then the root's, one of each code.
+    let codes: Vec<&str> = found.iter().map(|(_, _, c)| c.as_str()).collect();
+    assert_eq!(codes, ["E0161", "E0161", "E0330", "E0161", "E0457", "E0161"]);
+    assert_eq!(found[0].0, 0);
+    assert!(found[1..].iter().all(|(f, _, _)| *f == 1));
 }

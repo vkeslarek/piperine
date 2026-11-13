@@ -65,6 +65,7 @@ impl Imports {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Prefer {
     Types,
+    Values,
 }
 
 /// An import being resolved: the namespace and the entry's place in it.
@@ -128,6 +129,7 @@ impl Ctx<'_> {
         if let Some(table) = self.scopes.namespaces.get(&ns) {
             let (first, second) = match prefer {
                 Prefer::Types => (&table.types, &table.values),
+                Prefer::Values => (&table.values, &table.types),
             };
             if let Some(found) = Self::find_entry(first, name).or_else(|| Self::find_entry(second, name)) {
                 return Some((found, inside || self.design.decl_data(found).public));

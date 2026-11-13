@@ -698,13 +698,13 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `shadowed_local_resolves_to_previous_binding` passes in `pom_resolve.rs` (C39: POM-08 AC 3)
-- [ ] Test `binders_scope_their_names` passes in `pom_resolve.rs` (C40: POM-08 AC 4)
-- [ ] Test `unresolved_path_is_one_e0161` passes in `pom_resolve.rs` (C45: POM-08 AC 9)
-- [ ] Test `diagnostics_are_ordered` passes in `pom_resolve.rs` (C51: POM-08 AC 15)
-- [ ] A pattern path that names a constant or variant resolves; a plain identifier pattern is a binding, not a reference
-- [ ] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `shadowed_local_resolves_to_previous_binding` passes in `pom_resolve.rs` (C39: POM-08 AC 3)
+- [x] Test `binders_scope_their_names` passes in `pom_resolve.rs` (C40: POM-08 AC 4)
+- [x] Test `unresolved_path_is_one_e0161` passes in `pom_resolve.rs` (C45: POM-08 AC 9)
+- [x] Test `diagnostics_are_ordered` passes in `pom_resolve.rs` (C51: POM-08 AC 15)
+- [x] A pattern path that names a constant or variant resolves; a plain identifier pattern is a binding, not a reference
+- [x] Gate passes: run resolve; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

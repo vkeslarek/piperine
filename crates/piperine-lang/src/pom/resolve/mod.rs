@@ -52,4 +52,5 @@ pub(super) fn run(design: &mut Design) {
     for (file, diagnostic) in out.diagnostics {
         design.push_diagnostic(file, diagnostic);
     }
+    design.sort_diagnostics();
 }

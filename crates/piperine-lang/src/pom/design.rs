@@ -181,6 +181,12 @@ impl Design {
         self.paths.len()
     }
 
+    /// Order the diagnostics by file, then start offset, then code (stable
+    /// for the rest).
+    pub(super) fn sort_diagnostics(&mut self) {
+        self.diagnostics.sort_by(|a, b| (a.file, a.diagnostic.span().start, &a.diagnostic.code).cmp(&(b.file, b.diagnostic.span().start, &b.diagnostic.code)));
+    }
+
     /// Store what segment `index` of `path` names.
     pub(super) fn set_segment_res(&mut self, path: PathId, index: usize, res: super::resolution::Resolution) {
         if let Some(segment) = self.paths[path.index()].segments.get_mut(index) {
