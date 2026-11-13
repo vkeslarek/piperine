@@ -288,6 +288,12 @@ impl Design {
         Decl::new(self, self.root_id())
     }
 
+    /// The declaration with this id, as a handle: the way from a
+    /// `Resolution::Decl(id)` to the declaration. Ids come from this design.
+    pub fn decl(&self, id: DeclId) -> Decl<'_> {
+        Decl::new(self, id)
+    }
+
     /// Every declaration of the design in arena (source) order, prelude
     /// files first.
     pub fn decls(&self) -> Vec<Decl<'_>> {

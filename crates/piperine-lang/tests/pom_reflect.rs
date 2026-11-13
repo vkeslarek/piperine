@@ -456,3 +456,56 @@ fn json_is_deterministic() {
     }
     assert!(!has_key(&value, "ast"), "no `ast` key in the JSON");
 }
+
+/// POM-08 story: from a reference, a reader reaches the declaration handle
+/// (path, expression, member, struct literal) and from the id, a handle.
+#[test]
+fn references_navigate_to_declarations() {
+    use piperine_lang::pom::{ExprKind, Resolution};
+    let src = "\
+struct Stream { out valid: Bit }
+fn pick(h: Stream) -> Bit { h.valid }
+module M(a: Bit, out q: Bit, h: Stream) { signal s: Bit; s = a; let v = h.valid; let n = 1; }
+digital for M { on a { q <- s; } }
+";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("M").unwrap();
+    let s = m.signal("s").unwrap();
+
+    // Design::decl turns any id into a handle that answers every question.
+    let root_id = design.root().id();
+    assert_eq!(design.decl(root_id), design.root());
+    assert_eq!(design.decl(s.decl().id()).as_signal(), Some(s));
+
+    // A signal read in a reaction: expr -> path -> the declaration -> its module.
+    let commit = m.digital_blocks()[0].reactions()[0].commits()[0];
+    let read = commit.value();
+    let path = read.as_path().expect("`s` is a path expression");
+    assert_eq!(path.target(), Some(s.decl()));
+    assert_eq!(read.resolution(), Resolution::Decl(s.decl().id()));
+    assert_eq!(read.target().and_then(|d| d.as_signal()).and_then(|x| x.declared_in()), Some(m.decl()));
+    // The place `q` of the commit reaches the port.
+    assert_eq!(commit.place().target(), Some(m.port("q").unwrap().decl()));
+
+    // A type path reaches its declaration.
+    let piperine_lang::pom::TypeKind::Path(p) = m.port("a").unwrap().ty().kind() else { panic!("`Bit` is a path type") };
+    let type_path = design.path(*p);
+    let bit = design.nature("Bit").unwrap().decl();
+    assert_eq!(type_path.target(), Some(bit));
+    assert_eq!(type_path.resolution(), Resolution::Decl(bit.id()));
+
+    // A member access reaches the field.
+    let field = design.find("Stream").and_then(|d| d.as_struct()).unwrap().fields()[0].decl();
+    let accesses: Vec<_> = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .filter(|e| matches!(e.kind(), ExprKind::Field { .. }))
+        .collect();
+    assert_eq!(accesses.len(), 2);
+    assert!(accesses.iter().all(|e| e.target() == Some(field) && e.as_path().is_none()));
+
+    // An expression that names nothing has no target.
+    let literals: Vec<_> = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).filter(|e| matches!(e.kind(), ExprKind::Lit(_))).collect();
+    assert!(!literals.is_empty());
+    assert!(literals.iter().all(|e| e.target().is_none() && e.resolution() == Resolution::Unresolved));
+}

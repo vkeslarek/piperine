@@ -6,6 +6,7 @@ use std::path::Path as FsPath;
 use super::super::body::{ExprKind, ExprNode, PatKind, PatNode, PathNode, PathSegment, StmtKind, StmtNode, TypeKind, TypeNode};
 use super::super::design::Design;
 use super::super::ids::{ExprId, FileId, PatId, PathId, StmtId, TypeId};
+use super::super::resolution::Resolution;
 use super::{Decl, Reflect};
 use crate::msl::{Span, ast};
 
@@ -113,6 +114,35 @@ impl<'d> Expr<'d> {
     /// The authored text of the expression.
     pub fn text(self) -> &'d str {
         text_in(self.enclosing(), self.span())
+    }
+
+    /// The path this expression is, when it is a path expression (`s`, `a::X`).
+    pub fn as_path(self) -> Option<Path<'d>> {
+        match self.kind() {
+            ExprKind::Path(p) => Some(Path::new(self.design, *p)),
+            _ => None,
+        }
+    }
+
+    /// What this expression names: a path's last segment, a struct literal's
+    /// path, a field access or method call's member, a call's callee. Every
+    /// other expression names nothing and answers `Unresolved`.
+    pub fn resolution(self) -> Resolution {
+        match self.kind() {
+            ExprKind::Path(p) | ExprKind::Struct { path: p, .. } => Path::new(self.design, *p).resolution(),
+            ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
+            ExprKind::Call { callee, .. } => Expr::new(self.design, *callee).resolution(),
+            _ => Resolution::Unresolved,
+        }
+    }
+
+    /// The declaration [`Expr::resolution`] names, as a handle; none for an
+    /// unresolved name, a built-in or a deferred one.
+    pub fn target(self) -> Option<Decl<'d>> {
+        match self.resolution() {
+            Resolution::Decl(id) => Some(self.design.decl(id)),
+            _ => None,
+        }
     }
 
     /// The instance this call is, when it is classified as one.
@@ -269,6 +299,20 @@ impl<'d> Path<'d> {
 
     pub fn text(self) -> &'d str {
         text_in(self.enclosing(), self.span())
+    }
+
+    /// What the path names: the resolution of its last segment.
+    pub fn resolution(self) -> Resolution {
+        self.segments().last().map_or(Resolution::Unresolved, |s| s.res)
+    }
+
+    /// The declaration the path names, as a handle; none when the last
+    /// segment is unresolved, a built-in or deferred.
+    pub fn target(self) -> Option<Decl<'d>> {
+        match self.resolution() {
+            Resolution::Decl(id) => Some(self.design.decl(id)),
+            _ => None,
+        }
     }
 }
 

@@ -61,11 +61,11 @@ tree one level at a time.
 | generic parameter | `<T: Bound = D>`, `<const N: u32 = 4>` | `GenericParamData` | `GenericParam` | `Function::generics`, `Module::generics`, ... |
 | body `let` | `let pat = expr;` in a module body | `LetData` with `BindingData` children | `Let`, `Binding` | `Module::lets`, `Module::named(name)` |
 | block `let` | `let pat: T = e else { .. };` | `StmtKind::Let` with `BindingData` declarations | `Stmt`, `Binding` | `Stmt::kind` |
-| expression | every other expression | `ExprKind` | `Expr` | `Expr::kind`, `Expr::text` |
+| expression | every other expression | `ExprKind` | `Expr` | `Expr::kind`, `Expr::text`, `Expr::as_path`, `Expr::target` |
 | pattern | `(a, b)`, `S { x, .. }`, `a \| b` | `PatKind` | `Pat` | `Let::pattern` |
 | type | `[T; N]`, `&T`, `(A, B)`, `flip T` | `TypeKind` | `Type` | `Port::ty`, `Field::ty` |
-| path | `a::b<T>::c` | `PathNode` with `PathSegment`s | `Path` | `Path::segments` |
-| doc comment | `/// text`, `//! text` | `Doc` in `Meta` | `Reflect` | `Reflect::docs` |
+| path | `a::b<T>::c` | `PathNode` with `PathSegment`s | `Path` | `Path::segments`, `Path::target` (the declaration it names) |
+| doc comment | `/// text`, `//! text` | `Doc` in `Meta` (`inner`, `file`) | `Reflect` | `Reflect::docs` |
 | attribute | `#[a(b)]` | `AttrNode` in `Meta` | `Attr` | `Reflect::attrs`, `Reflect::attr(name)` |
 | malformed item or expression | any text the parser rejected | `DeclKind::Error`, `ExprKind::Error` | `Decl`, `Expr` | `Decl::kind` |
 

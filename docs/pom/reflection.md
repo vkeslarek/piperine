@@ -33,7 +33,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `check(&self)` | `Vec<String>` | The internal inconsistencies of the arenas, one message each; empty when the design is well formed. |
 | `builder()` | `DesignBuilder` | A builder with no sources. |
 | `load(root: impl Into<PathBuf>)` | `Design` | Read the tree rooted at `root` from disk: `mod b;` follows Rust's layout. An unreadable root gives an empty root and one `E0161`. |
-| `diagnostics(&self)` | `&[DesignDiagnostic]` | Every diagnostic of the build, parse diagnostics first, in file order. |
+| `diagnostics(&self)` | `&[DesignDiagnostic]` | Every diagnostic of the build, every diagnostic sorted by file, offset and code. |
 | `expr_node(&self, id: ExprId)` | `&ExprNode` | The expression with this id. Ids come from this design. |
 | `stmt_node(&self, id: StmtId)` | `&StmtNode` | The statement node with this id. |
 | `pat_node(&self, id: PatId)` | `&PatNode` | The pattern node with this id. |
@@ -54,6 +54,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `ty(&self, id: TypeId)` | `Type<'_>` | A handle on the type with this id. |
 | `path(&self, id: PathId)` | `Path<'_>` | A handle on the path with this id. |
 | `root(&self)` | `Decl<'_>` | The root file's namespace. |
+| `decl(&self, id: DeclId)` | `Decl<'_>` | The declaration with this id, as a handle: the way from a `Resolution::Decl(id)` to the declaration. Ids come from this design. |
 | `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, prelude files first. |
 | `modules(&self)` | `Vec<Module<'_>>` | Every module of the design, prelude files first, in source order. |
 | `module(&self, name: &str)` | `Option<Module<'_>>` | The first module named `name`: the first match in a non-prelude file in file order, else the first match in a prelude source. |
@@ -1084,6 +1085,9 @@ An expression node.
 | `enclosing(self)` | `Decl<'d>` | The nearest declaration that contains this expression. |
 | `text(self)` | `&'d str` | The authored text of the expression. |
 | `as_instance(self)` | `Option<Instance<'d>>` | The instance this call is, when it is classified as one. |
+| `as_path(self)` | `Option<Path<'d>>` | The path this expression is, when it is a path expression (`s`, `a::X`). |
+| `resolution(self)` | `Resolution` | What this expression names: a path's last segment, a struct literal's path, a field access or method call's member, a call's callee. Every other expression names nothing and answers `Unresolved`. |
+| `target(self)` | `Option<Decl<'d>>` | The declaration `resolution()` names, as a handle; none for an unresolved name, a built-in or a deferred one. |
 
 Body nodes are read through `Expr`, `Stmt`, `Pat`, `Type` and `Path`. Each gives the node
 (`kind()`), its range (`span()`), its authored text and the declaration that owns it.
@@ -1188,9 +1192,11 @@ A path node.
 | `span(self)` | `Span` | The byte range in the file text. |
 | `enclosing(self)` | `Decl<'d>` | The nearest declaration that contains it. |
 | `text(self)` | `&'d str` | The authored text. |
+| `resolution(self)` | `Resolution` | What the path names: the resolution of its last segment. |
+| `target(self)` | `Option<Decl<'d>>` | The declaration the path names, as a handle; none when the last segment is unresolved, a built-in or deferred. |
 
 A path stores one resolution per segment (`segments()[i].res`); the path's own resolution is that
-of its last segment.
+of its last segment. `target()` turns it into the declaration handle.
 
 ```rust
 use piperine_lang::pom::{Design, Reflect, Resolution};
@@ -1215,8 +1221,6 @@ assert_eq!(path.enclosing(), y.decl());
 
 A node that names a declaration: see `Reflect::references`.
 
-A node that names a declaration: see `Reflect::references`.
-
 | Variant | Payload | Meaning |
 | --- | --- | --- |
 | `Path` | `(Path<'d>)` | A path (a segment of it resolved to the declaration). |
@@ -1233,6 +1237,27 @@ assert_eq!(refs.len(), 2);                              // `s = a;` and `let u =
 assert!(refs.iter().all(|r| matches!(r, Reference::Path(p) if p.text() == "a")));
 // The nature `Bit` is referenced by the type of `a` and of `s`.
 assert_eq!(design.nature("Bit").unwrap().references().len(), 2);
+```
+
+Navigating from a use to its definition: a signal read in a reaction, the path it is, the
+declaration it names, and the module that declares it.
+
+```rust
+use piperine_lang::pom::{Design, Reflect, Resolution};
+
+let src = "nature Bit { value: bool }\nmodule M(a: Bit, out q: Bit) { signal s: Bit; s = a; }\ndigital for M { on a { q <- s; } }";
+let design = Design::builder().source("top.msl", src).build();
+let m = design.module("M").unwrap();
+let commit = m.digital_blocks()[0].reactions()[0].commits()[0];
+let read = commit.value();                        // the `s` of `q <- s;`
+let signal = read.target().unwrap().as_signal().unwrap();
+assert_eq!(signal, m.signal("s").unwrap());
+assert_eq!(signal.declared_in(), Some(m.decl()));
+// The same through the id a resolution holds.
+let Resolution::Decl(id) = read.resolution() else { panic!("resolved") };
+assert_eq!(design.decl(id), signal.decl());
+// From the declaration back to its uses: the read is among them.
+assert!(signal.references().iter().any(|r| matches!(r, piperine_lang::pom::Reference::Path(p) if p.target() == Some(signal.decl()))));
 ```
 
 ### `Writer`
