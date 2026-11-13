@@ -7,9 +7,10 @@
 //! sources and last the built-in table. A multi-segment path resolves segment
 //! by segment through `Ctx::walk`.
 
-use super::super::body::{Block, ExprKind, GenericArgNode, GenericArgsNode, PatKind, StmtKind, TypeKind};
-use super::super::decl::{DeclKind, FnParamData, GenericParamData, NatureFieldNode};
-use super::super::ids::{DeclId, ExprId, PatId, PathId, TypeId};
+use super::super::body::{BehaviorKind, Block, ExprKind, GenericArgNode, GenericArgsNode, PatKind, StmtKind, TypeKind};
+use super::super::decl::{DeclKind, FnParamData, GenerationData, GenericParamData, NatureFieldNode};
+use super::super::decl::BehaviorData;
+use super::super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
 use super::imports::{Prefer, Visit, path_diagnostic};
 use super::{Ctx, Output};
@@ -21,6 +22,8 @@ enum Frame {
     Generics(DeclId),
     /// What `Self` names here.
     SelfTy(Resolution),
+    /// The members of this module: its ports, params, signals and body `let`s.
+    Module(DeclId),
     /// Names bound one after another (a block's `let`s, a binder's pattern,
     /// a function's parameters): the latest of a repeated name wins.
     Locals(Vec<(String, DeclId)>),
@@ -37,6 +40,9 @@ struct Names<'c, 'a> {
     frames: Vec<Frame>,
     /// The namespace the walk is inside.
     ns: DeclId,
+    /// Inside this many behavior blocks bound to no module: a name read
+    /// there that finds nothing is not reported (the block already is).
+    quiet: u32,
 }
 
 impl Ctx<'_> {
@@ -46,7 +52,7 @@ impl Ctx<'_> {
             let id = DeclId(i as u32);
             let data = self.design.decl_data(id);
             if data.parent.is_none() {
-                let mut names = Names { ctx: self, out: &mut *out, frames: Vec::new(), ns: id };
+                let mut names = Names { ctx: self, out: &mut *out, frames: Vec::new(), ns: id, quiet: 0 };
                 names.decl(id);
             }
         }
@@ -155,22 +161,59 @@ impl Names<'_, '_> {
                 }
             }
             DeclKind::Module(m) => {
+                self.frames.push(Frame::Module(id));
                 self.children(id);
                 if let Some(ret) = m.ret {
                     self.ty(ret);
                 }
+                self.opt_expr(m.where_);
+                self.opt_expr(m.result);
+                self.frames.pop();
             }
-            DeclKind::Port(p) => self.ty(p.ty),
-            DeclKind::Param(p) => self.ty(p.ty),
-            DeclKind::Signal(s) => self.ty(s.ty),
-            DeclKind::Struct(_) | DeclKind::Enum(_) | DeclKind::Generation(_) => self.children(id),
+            DeclKind::Port(p) => {
+                self.ty(p.ty);
+                self.opt_expr(p.default);
+            }
+            DeclKind::Param(p) => {
+                self.ty(p.ty);
+                self.opt_expr(p.default);
+                self.opt_expr(p.where_);
+            }
+            DeclKind::Signal(s) => {
+                self.ty(s.ty);
+                self.opt_expr(s.init);
+            }
+            DeclKind::Let(l) => {
+                self.pat(l.pat);
+                self.expr(l.value);
+            }
+            DeclKind::Definition(d) => {
+                self.expr(d.place);
+                self.expr(d.value);
+                self.opt_expr(d.after);
+            }
+            DeclKind::Generation(GenerationData::For { pat, iter, .. }) => {
+                self.expr(*iter);
+                self.pat(*pat);
+                let mut names = Vec::new();
+                self.bindings(*pat, &mut names);
+                self.frames.push(Frame::Locals(names));
+                self.children(id);
+                self.frames.pop();
+            }
+            DeclKind::Generation(GenerationData::If { cond, .. }) => {
+                self.expr(*cond);
+                self.children(id);
+            }
+            DeclKind::Behavior(b) => self.behavior(id, b),
+            DeclKind::Reaction(r) => {
+                self.expr(r.event);
+                self.block(&r.body);
+            }
+            DeclKind::Struct(_) | DeclKind::Enum(_) => self.children(id),
             DeclKind::Use(_)
             | DeclKind::FnParam(_)
-            | DeclKind::Let(_)
             | DeclKind::Binding(_)
-            | DeclKind::Definition(_)
-            | DeclKind::Behavior(_)
-            | DeclKind::Reaction(_)
             | DeclKind::Error => {}
         }
         self.frames.pop();
@@ -237,6 +280,12 @@ impl Names<'_, '_> {
                         return Some(Resolution::Decl(*d));
                     }
                 }
+                Frame::Module(module) => {
+                    let members = self.ctx.scopes.members.get(module);
+                    if let Some((_, d)) = members.and_then(|m| m.iter().find(|(n, _)| n == name)) {
+                        return Some(Resolution::Decl(*d));
+                    }
+                }
                 Frame::Generics(owner) => {
                     let found = design.decl_data(*owner).children.iter().copied().find(|c| {
                         let d = design.decl_data(*c);
@@ -270,7 +319,7 @@ impl Names<'_, '_> {
         for (i, res) in walked.res.iter().enumerate() {
             self.out.segments.push((id, i, *res));
         }
-        if let Some(error) = walked.error {
+        if let (Some(error), 0) = (walked.error, self.quiet) {
             let file = ctx.design.decl_data(node.owner).file;
             self.out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, error)));
         }
@@ -380,9 +429,13 @@ impl Names<'_, '_> {
     /// `{ stmts }`: a scope of its own, names bound one after another, the
     /// items it holds visible throughout.
     fn block(&mut self, block: &Block) {
+        self.stmt_list(&block.stmts);
+    }
+
+    /// Statements as one scope.
+    fn stmt_list(&mut self, stmts: &[StmtId]) {
         let design = self.ctx.design;
-        let items = block
-            .stmts
+        let items = stmts
             .iter()
             .filter_map(|s| match &design.stmt_node(*s).kind {
                 StmtKind::Item(d) => design.decl_data(*d).name.as_ref().map(|n| (n.text.clone(), *d)),
@@ -391,7 +444,7 @@ impl Names<'_, '_> {
             .collect();
         self.frames.push(Frame::Items(items));
         self.frames.push(Frame::Locals(Vec::new()));
-        for s in &block.stmts {
+        for s in stmts {
             match &design.stmt_node(*s).kind {
                 StmtKind::Let { pat, ty, init, else_ } => {
                     if let Some(t) = ty {
@@ -556,6 +609,52 @@ impl Names<'_, '_> {
                     self.expr(f.value);
                 }
             }
+        }
+    }
+}
+
+// ---- behavior blocks ---------------------------------------------------------------------------
+
+impl Names<'_, '_> {
+    /// A block reads the members of its module; the generic names it lists
+    /// stand for the module's generics by position. A block bound to no
+    /// module, or with the wrong names, reports no name error: it has one.
+    fn behavior(&mut self, id: DeclId, block: &BehaviorData) {
+        let design = self.ctx.design;
+        let module = self.ctx.links.get(&id).copied();
+        let mut pushed = 0;
+        if let Some(m) = module {
+            self.frames.push(Frame::Module(m));
+            let generics = design.decl_data(m).children.iter().copied().filter(|c| matches!(design.decl_data(*c).kind, DeclKind::GenericParam(_)));
+            let names = block.names.iter().zip(generics).map(|(n, g)| (n.text.clone(), g)).collect();
+            self.frames.push(Frame::Locals(names));
+            pushed = 2;
+        }
+        // A block with no module, or with names that are not the module's, has its error already.
+        let quiet = module.is_none_or(|m| !self.ctx.names_match(block, m));
+        if quiet {
+            self.quiet += 1;
+        }
+        // The target is resolved by stage 4; its generic arguments are types of this scope.
+        for segment in &design.path_node(block.target).segments {
+            if let Some(args) = &segment.args {
+                self.generic_args(args);
+            }
+        }
+        if block.kind == BehaviorKind::Analog {
+            self.stmt_list(&block.body);
+        } else {
+            for child in &design.decl_data(id).children {
+                if matches!(design.decl_data(*child).kind, DeclKind::Reaction(_) | DeclKind::Generation(_)) {
+                    self.decl(*child);
+                }
+            }
+        }
+        if quiet {
+            self.quiet -= 1;
+        }
+        for _ in 0..pushed {
+            self.frames.pop();
         }
     }
 }

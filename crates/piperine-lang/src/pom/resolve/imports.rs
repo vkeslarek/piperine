@@ -95,7 +95,7 @@ pub(super) struct Walked {
 
 impl Ctx<'_> {
     /// The nearest namespace strictly above `decl`.
-    fn parent_namespace(&self, decl: DeclId) -> Option<DeclId> {
+    pub(super) fn parent_namespace(&self, decl: DeclId) -> Option<DeclId> {
         let mut at = self.design.decl_data(decl).parent;
         while let Some(d) = at {
             if matches!(self.design.decl_data(d).kind, DeclKind::Namespace(_)) {

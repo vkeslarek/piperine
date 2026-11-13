@@ -146,6 +146,22 @@ impl<'d> Module<'d> {
         self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
     }
 
+    /// The behavior blocks of this module (in its file), in source order.
+    pub fn behaviors(self) -> Vec<Behavior<'d>> {
+        let design = self.decl.design();
+        self.data().behaviors.iter().filter_map(|b| Decl::new(design, *b).as_behavior()).collect()
+    }
+
+    /// The `analog` blocks of this module, in source order.
+    pub fn analog_blocks(self) -> Vec<Behavior<'d>> {
+        self.behaviors().into_iter().filter(|b| b.kind() == BehaviorKind::Analog).collect()
+    }
+
+    /// The `digital` blocks of this module, in source order.
+    pub fn digital_blocks(self) -> Vec<Behavior<'d>> {
+        self.behaviors().into_iter().filter(|b| b.kind() == BehaviorKind::Digital).collect()
+    }
+
     /// The ports in source order.
     pub fn ports(self) -> Vec<Port<'d>> {
         self.decl.children().into_iter().filter_map(|c| c.as_port()).collect()
@@ -565,6 +581,12 @@ impl<'d> Behavior<'d> {
     /// The generic names of `analog<N, M>`, in order.
     pub fn names(self) -> Vec<&'d str> {
         self.data().names.iter().map(|n| n.text.as_str()).collect()
+    }
+
+    /// The module this block belongs to: the one its target names, when that
+    /// module is declared in the same file and is not `extern`.
+    pub fn module(self) -> Option<Module<'d>> {
+        self.data().module.and_then(|m| Decl::new(self.decl.design(), m).as_module())
     }
 
     /// The target path as written, generic arguments included.

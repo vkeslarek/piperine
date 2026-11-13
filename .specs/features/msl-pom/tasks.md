@@ -722,17 +722,17 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `analog_block_is_file_item_linked_to_module` passes in `pom_tree.rs` (C27: POM-05 AC 1)
-- [ ] Test `block_reads_resolve_to_module_members` passes in `pom_resolve.rs` (C37: POM-08 AC 1)
-- [ ] Test `body_names_are_order_independent` passes in `pom_resolve.rs` (C38: POM-08 AC 2)
-- [ ] Test `behavior_without_module_is_e0401` passes in `pom_classify.rs` (C58: POM-09 AC 7)
-- [ ] Test `behavior_for_extern_module_is_e0402` passes in `pom_classify.rs` (C59: POM-09 AC 8)
-- [ ] Test `behavior_names_mismatch_is_e0403` passes in `pom_classify.rs` (C60: POM-09 AC 9)
-- [ ] Test `several_analog_blocks_in_order` passes in `pom_tree.rs`
-- [ ] Test `behavior_for_module_in_other_source_is_e0401` passes in `pom_classify.rs`
-- [ ] A block's generic names resolve to the module's generic params by position
-- [ ] Gate passes: run tree, run resolve, run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `analog_block_is_file_item_linked_to_module` passes in `pom_tree.rs` (C27: POM-05 AC 1)
+- [x] Test `block_reads_resolve_to_module_members` passes in `pom_resolve.rs` (C37: POM-08 AC 1)
+- [x] Test `body_names_are_order_independent` passes in `pom_resolve.rs` (C38: POM-08 AC 2)
+- [x] Test `behavior_without_module_is_e0401` passes in `pom_classify.rs` (C58: POM-09 AC 7)
+- [x] Test `behavior_for_extern_module_is_e0402` passes in `pom_classify.rs` (C59: POM-09 AC 8)
+- [x] Test `behavior_names_mismatch_is_e0403` passes in `pom_classify.rs` (C60: POM-09 AC 9)
+- [x] Test `several_analog_blocks_in_order` passes in `pom_tree.rs`
+- [x] Test `behavior_for_module_in_other_source_is_e0401` passes in `pom_classify.rs`
+- [x] A block's generic names resolve to the module's generic params by position
+- [x] Gate passes: run tree, run resolve, run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -710,3 +710,48 @@ digital for Q {
     assert_eq!(rs[0].declared_in(), Some(b.decl()));
     assert_eq!(rs[1].commits().len(), 1);
 }
+
+#[test]
+fn analog_block_is_file_item_linked_to_module() {
+    use piperine_lang::pom::BehaviorKind;
+    let design = build("module M(p: Electrical) {}\nmodule N() {}\nanalog for M { }\ndigital for N { }\nanalog for M { }");
+    let root = design.root();
+    let m = design.module("M").expect("module M");
+    let blocks: Vec<_> = root.children().into_iter().filter_map(|c| c.as_behavior()).collect();
+    assert_eq!(blocks.len(), 3);
+    // Declared in the file namespace, linked to the module they name.
+    assert!(blocks.iter().all(|b| b.declared_in() == Some(root)));
+    assert_eq!(blocks[0].kind(), BehaviorKind::Analog);
+    assert_eq!(blocks[0].module(), Some(m));
+    assert_eq!(blocks[1].module(), design.module("N"));
+    assert_eq!(blocks[2].module(), Some(m));
+    // The module lists its blocks in source order, and nothing else's.
+    assert_eq!(m.behaviors(), [blocks[0], blocks[2]]);
+    assert_eq!(design.module("N").unwrap().behaviors(), [blocks[1]]);
+    // A declaration inside a block reaches its module through the block.
+    assert_eq!(blocks[1].decl().module(), design.module("N"));
+}
+
+#[test]
+fn several_analog_blocks_in_order() {
+    let src = "\
+module M(p: Electrical, n: Electrical) {}
+analog for M { v(p, n) +> i(p, n); }
+digital for M { on p.changed() { } }
+analog for M { 0.0 +> i(p); }
+";
+    let design = build(src);
+    let m = design.module("M").unwrap();
+    let all = m.behaviors();
+    assert_eq!(all.len(), 3);
+    assert_eq!(all.iter().map(|b| b.text().split(" for").next().unwrap()).collect::<Vec<_>>(), ["analog", "digital", "analog"]);
+    let analog = m.analog_blocks();
+    assert_eq!(analog.len(), 2);
+    assert_eq!(analog[0].contributions()[0].lhs().text(), "v(p, n)");
+    assert_eq!(analog[1].contributions()[0].lhs().text(), "0.0");
+    let digital = m.digital_blocks();
+    assert_eq!(digital.len(), 1);
+    assert_eq!(digital[0].reactions().len(), 1);
+    // The three are in file order, as written.
+    assert!(all[0].span().start < all[1].span().start && all[1].span().start < all[2].span().start);
+}

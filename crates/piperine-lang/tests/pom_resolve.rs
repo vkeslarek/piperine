@@ -422,3 +422,81 @@ mod nofile;
     assert_eq!(found[0].0, 0);
     assert!(found[1..].iter().all(|(f, _, _)| *f == 1));
 }
+
+#[test]
+fn block_reads_resolve_to_module_members() {
+    let src = "\
+module M<G: u32>(pin: f64) {
+    rp: f64 = 1.0;
+    signal sg: f64;
+    let lt = 2.0;
+    for k in 0..2 { signal gs: f64; }
+}
+analog<G> for M<G> {
+    pin; rp; sg; lt; gs; G;
+}
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("M").unwrap();
+    let child = |name: &str| {
+        let found = m.decl().children().into_iter().find(|c| c.name() == Some(name)).or_else(|| {
+            let generation = m.decl().children().into_iter().find(|c| c.kind().label() == "Generation")?;
+            generation.children().into_iter().find(|c| c.name() == Some(name))
+        });
+        Resolution::Decl(found.unwrap_or_else(|| panic!("member `{name}`")).id())
+    };
+    // The block reads a port, a param, a signal, a body `let`, a signal in a generation and a generic.
+    for (read, declared) in [("pin", "pin"), ("rp", "rp"), ("sg", "sg"), ("gs", "gs")] {
+        assert_eq!(resolutions(&design, read), [[child(declared)]], "`{read}`");
+    }
+    // `G` is written twice: in the target `M<G>` and in the body.
+    assert_eq!(resolutions(&design, "G"), [[child("G")], [child("G")]]);
+    assert_eq!(resolutions(&design, "lt").len(), 1);
+    let Resolution::Decl(lt) = resolutions(&design, "lt")[0][0] else { panic!("`lt` resolves") };
+    assert_eq!(design.decl_data(lt).kind.label(), "Binding");
+    // The `G` of `analog<G> for M<G>` is the module's generic by position.
+    let g = child("G");
+    let target = design.root().children().into_iter().find_map(|c| c.as_behavior()).unwrap().target();
+    let piperine_lang::pom::GenericArgsNode::Angle { args, .. } = target.segments()[0].args.as_ref().unwrap() else { panic!("angle args") };
+    let piperine_lang::pom::GenericArgNode::Type(arg) = &args[0] else { panic!("a type argument") };
+    let piperine_lang::pom::TypeKind::Path(arg_path) = &design.ty(*arg).kind() else { panic!("a path") };
+    assert_eq!(design.path(*arg_path).segments()[0].res, g);
+    // Names of one module are no names of another.
+    let other = build("module A() { signal a: f64; }\nmodule B() { signal b: f64; }\nanalog for B { a; }");
+    let errors = with_code(&other, "E0161");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(primary_text(&other, errors[0]), "a");
+}
+
+#[test]
+fn body_names_are_order_independent() {
+    let src = "\
+module M(pin: f64) {
+    let a = b + 1.0;
+    let b = 2.0;
+    early: f64 = late;
+    late: f64 = pin;
+    signal s: f64 = later_sig;
+    signal later_sig: f64;
+    for k in 0..2 { signal g: f64 = tail; }
+    tail: f64 = 1.0;
+}
+";
+    let design = build(src);
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("M").unwrap();
+    let named = |name: &str| m.decl().children().into_iter().find(|c| c.name() == Some(name)).map(|c| Resolution::Decl(c.id())).unwrap();
+    // Read before the declaration: the parameter, the signal and the let binding.
+    assert_eq!(resolutions(&design, "late"), [[named("late")]]);
+    assert_eq!(resolutions(&design, "later_sig"), [[named("later_sig")]]);
+    assert_eq!(resolutions(&design, "tail"), [[named("tail")]]);
+    let let_b = design.decl_data(m.decl().children().into_iter().find(|c| c.kind().label() == "Let" && c.children().iter().any(|x| x.name() == Some("b"))).unwrap().id()).children[0];
+    assert_eq!(resolutions(&design, "b"), [[Resolution::Decl(let_b)]]);
+    assert_eq!(resolutions(&design, "pin"), [[named("pin")]]);
+    // A generation's loop variable is a name of the generation only.
+    let loopvar = build("module L() { for k in 0..2 { signal g: f64 = k; } early: f64 = k; }");
+    let errors = with_code(&loopvar, "E0161");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(primary_text(&loopvar, errors[0]), "k");
+}

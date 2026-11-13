@@ -273,6 +273,9 @@ pub struct ModuleData {
     pub where_: Option<ExprId>,
     /// The trailing expression: the module's result.
     pub result: Option<ExprId>,
+    /// The behavior blocks bound to this module, in source order; filled by
+    /// name resolution.
+    pub behaviors: Vec<DeclId>,
 }
 
 /// `dir name: ty = default`.
@@ -369,6 +372,9 @@ pub struct BehaviorData {
     pub target: PathId,
     /// The statements of an `analog` block; empty for `digital`.
     pub body: Vec<StmtId>,
+    /// The module of the same file the target names; filled by name
+    /// resolution, none when the target names no usable module.
+    pub module: Option<DeclId>,
 }
 
 /// `on event { ... }`

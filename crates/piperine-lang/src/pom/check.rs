@@ -290,6 +290,7 @@ impl Refs {
             DeclKind::Module(m) => {
                 self.types.extend(m.ret);
                 self.exprs.extend(m.where_.iter().chain(&m.result));
+                self.resolved.extend(&m.behaviors);
             }
             DeclKind::Port(p) => {
                 self.types.push(p.ty);
@@ -331,6 +332,7 @@ impl Refs {
             DeclKind::Behavior(b) => {
                 self.paths.push(b.target);
                 self.stmts.extend(&b.body);
+                self.resolved.extend(b.module);
             }
             DeclKind::Reaction(r) => {
                 self.exprs.push(r.event);

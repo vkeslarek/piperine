@@ -121,6 +121,10 @@ pub trait Reflect<'d>: Copy {
             if let Some(m) = d.as_module() {
                 return Some(m);
             }
+            // A behavior block is a file item: its module is the one it names.
+            if let Some(b) = d.as_behavior() {
+                return b.module();
+            }
             at = d.declared_in();
         }
         None

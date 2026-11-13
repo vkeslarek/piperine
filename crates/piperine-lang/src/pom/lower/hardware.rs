@@ -76,7 +76,7 @@ impl Lowerer<'_> {
             self.module_item(item);
         }
         let result = m.result.as_ref().map(|e| self.expr(e));
-        DeclKind::Module(ModuleData { abi: m.abi.clone(), ret, where_, result })
+        DeclKind::Module(ModuleData { abi: m.abi.clone(), ret, where_, result, behaviors: Vec::new() })
     }
 
     /// One declaration per body item, as the last child of the owner.
@@ -161,7 +161,7 @@ impl Lowerer<'_> {
                 Vec::new()
             }
         };
-        DeclKind::Behavior(BehaviorData { kind: b.kind, names, target, body })
+        DeclKind::Behavior(BehaviorData { kind: b.kind, names, target, body, module: None })
     }
 
     fn digital_item(&mut self, item: &ast::DigitalItem) -> DeclId {

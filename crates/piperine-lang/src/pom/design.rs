@@ -187,6 +187,16 @@ impl Design {
         self.diagnostics.sort_by(|a, b| (a.file, a.diagnostic.span().start, &a.diagnostic.code).cmp(&(b.file, b.diagnostic.span().start, &b.diagnostic.code)));
     }
 
+    /// Bind a behavior block to its module, both ways.
+    pub(super) fn bind_behavior(&mut self, behavior: DeclId, module: DeclId) {
+        if let DeclKind::Behavior(b) = &mut self.decls[behavior.index()].kind {
+            b.module = Some(module);
+        }
+        if let DeclKind::Module(m) = &mut self.decls[module.index()].kind {
+            m.behaviors.push(behavior);
+        }
+    }
+
     /// Store what segment `index` of `path` names.
     pub(super) fn set_segment_res(&mut self, path: PathId, index: usize, res: super::resolution::Resolution) {
         if let Some(segment) = self.paths[path.index()].segments.get_mut(index) {
