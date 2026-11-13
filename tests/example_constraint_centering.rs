@@ -12,7 +12,6 @@
 //! exactly, but against the real example file rather than an inline
 //! string, so a regression in the example itself would be caught here too.
 //!
-//! SPEC-COVERS: appendix_a#A.3
 
 use piperine::prelude::CheckPosture;
 use piperine::{CenterSpec, Driver, DriverOutcome, Policy, SamplePlan, Session, SolverConfig};

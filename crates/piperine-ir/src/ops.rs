@@ -202,7 +202,6 @@ impl Operator {
 
 #[cfg(test)]
 mod tests {
-    //! SPEC-COVERS: part_ix#2
     use super::*;
 
     fn transition(delay: f64, rise: f64, fall: f64) -> Operator {

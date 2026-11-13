@@ -87,7 +87,7 @@ both a package and the workspace) — always pass `--workspace`.
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver (a dependency that declares contributions **is** a plugin — MD-30), `SourceMap` recipe, GitHub-release device-binary fetch + cache (`release.rs`), plugin lockfile. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
-| `piperine-signal` | Pure mechanism crate for the `dv-tester` host device library (MD-36): no `Element`, no MNA/matrix, no Cranelift, **no in-tree dependency** — a purity guard (`tests/purity.rs`) proves it mechanically. Extracted-from-codegen families, semantics intact (codegen keeps its own copies until `codegen-simplification` delegates to this crate): runtime operators (`ops.rs`: `delay`/`slew`/`transition`/`idt`/`idtmod`), event detectors (`events.rs`: `cross`/`above`/`timer`), `table` (`behavior/table.rs`), the junction limiter (`limit.rs`: pnjlim/fetlim). Native (new) families: `Wave` (`wave.rs`, value-from-time descriptors + per-kind DC values), `Behavior` (`behavior/kinds.rs`, value-from-state with closed-form Jacobians, `BehaviorKind` trait), `Measure` (`measure/`, streaming reductions with published error bounds, `MeasureKind` trait), tier-2 crossing prediction (`events.rs::predict_crossing`), and `verify_derivatives` (`verify.rs`, the FD oracle every `BehaviorKind` is checked against). Consumed by `piperine-api`'s host device library (Part VII §20, Part VIII §17 in `docs/spec/`). |
+| `piperine-signal` | Pure mechanism crate for the `dv-tester` host device library (MD-36): no `Element`, no MNA/matrix, no Cranelift, **no in-tree dependency** — a purity guard (`tests/purity.rs`) proves it mechanically. Extracted-from-codegen families, semantics intact (codegen keeps its own copies until `codegen-simplification` delegates to this crate): runtime operators (`ops.rs`: `delay`/`slew`/`transition`/`idt`/`idtmod`), event detectors (`events.rs`: `cross`/`above`/`timer`), `table` (`behavior/table.rs`), the junction limiter (`limit.rs`: pnjlim/fetlim). Native (new) families: `Wave` (`wave.rs`, value-from-time descriptors + per-kind DC values), `Behavior` (`behavior/kinds.rs`, value-from-state with closed-form Jacobians, `BehaviorKind` trait), `Measure` (`measure/`, streaming reductions with published error bounds, `MeasureKind` trait), tier-2 crossing prediction (`events.rs::predict_crossing`), and `verify_derivatives` (`verify.rs`, the FD oracle every `BehaviorKind` is checked against). Consumed by `piperine-api`'s host device library. |
 
 ## The analog device path
 
@@ -170,7 +170,7 @@ proving a plugin shipping such a file is inert).
 
 Known gap: four analog operators (`idtmod`, `absdelay`, `table`, `ac_stim`) resolve
 through codegen's own operator registry rather than a language-level declaration —
-tracked in `docs/spec/part_v_builtins.md` §2 and `ROADMAP.md`.
+tracked in `ROADMAP.md`.
 
 Regression guard (rewritten for VAMS, T36, design R9 "rewritten, never deleted"):
 `crates/piperine-lang/tests/extern_coverage_guard.rs`.
@@ -219,12 +219,11 @@ no list here — the tree is the list, and a guard keeps it honest.
 - Verilog-AMS language reference: `VAMS-LRM-2-4.md` (LRM 2.4, the sole grammar/semantics
   source, C7) — Annex G (change history) and Annex H (glossary) are additionally ported as
   reference material under `docs/reference/` (T57).
-- `docs/spec/` (Parts I–X + appendices A/B/C; `index.md` is the map) — Piperine's own
-  formal specification of elaboration/solver/host-API/plugin/codegen architecture, written
-  against PHDL originally; retained as historical/architectural reference (most of it
-  describes backend concerns that outlived the frontend swap) but its concrete grammar
-  text (Parts I–IV) is superseded by `VAMS-LRM-2-4.md` — see each file's own supersession
-  notice.
+- `docs/spec/` (Parts I–VIII + appendices A–G; `index.md` is the map) — the Piperine
+  mixed-signal language (MSL) specification: the Rust-like target language for the next
+  frontend (11 concepts, 65 constructs beyond Rust). It does **not** describe the current
+  Verilog-AMS frontend, whose authority stays `VAMS-LRM-2-4.md`. Design record (adversarial
+  critic/builder rounds, review): `.specs/features/msl-spec/`.
 - Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

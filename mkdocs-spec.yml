@@ -1,11 +1,11 @@
-site_name: Piperine PHDL
-site_description: Piperine PHDL Simulator and Language Specification
+site_name: Piperine
+site_description: Piperine mixed-signal language specification
 
 # === [ SPECIFICATION VERSION ] ===
-# Change this field when the PHDL language version evolves.
+# Change this field when the language specification evolves.
 # Independent of the Rust simulator codebase version.
 extra:
-  phdl_version: "0.3.0"
+  spec_version: "0.4.0"
 # ===================================
 theme:
   name: material
@@ -15,19 +15,25 @@ plugins:
   - macros
   - with-pdf:
       output_path: pdf/piperine-spec.pdf
-      cover_title: "Piperine Hardware Definition Language"
+      cover_title: "Piperine Mixed-Signal Language"
       cover_subtitle: "Complete Specification"
-      cover_version: "v0.3.0" # Update here as well to reflect on the PDF cover
+      cover_version: "v0.4.0" # Update here as well to reflect on the PDF cover
 
 nav:
-  - Specification (PHDL):
-    - Intro: spec/index.md
-    - Language: spec/part_i_language.md
-    - Elaboration: spec/part_ii_elaboration.md
-    - Interpreted Context (Bench): spec/part_iii_interpreted_context.md
-    - Reflection & Selector: spec/part_iv_reflection_selector.md
-    - Builtins Reference: spec/part_v_builtins.md
-    - Plugins: spec/part_vi_plugins.md
-    - Solver: spec/part_vii_solver.md
-    - Worked Examples: spec/appendix_a_worked_examples.md
-    - Complete Grammar (EBNF): spec/appendix_b_grammar.md
+  - Specification:
+    - Overview: spec/index.md
+    - "I. Values": spec/part_i_values.md
+    - "II. Carriers": spec/part_ii_carriers.md
+    - "III. Structure": spec/part_iii_structure.md
+    - "IV. Behavior": spec/part_iv_behavior.md
+    - "V. Execution": spec/part_v_execution.md
+    - "VI. Input and output": spec/part_vi_io.md
+    - "VII. Standard library": spec/part_vii_stdlib.md
+    - "VIII. The host": spec/part_viii_host.md
+    - "A. Lexical structure": spec/appendix_a_lexical.md
+    - "B. Grammar and reference": spec/appendix_b_grammar.md
+    - "C. Implementation": spec/appendix_c_implementation.md
+    - "D. Gallery: analog": spec/appendix_d_gallery_analog.md
+    - "E. Gallery: digital": spec/appendix_e_gallery_digital.md
+    - "F. Gallery: mixed-signal": spec/appendix_f_gallery_mixed.md
+    - "G. Scope and open questions": spec/appendix_g_scope.md

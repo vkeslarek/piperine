@@ -502,8 +502,7 @@ VS Code extension (`editors/vscode/`) activates on `.vams`/`.va`.
 | Document | What it covers |
 |----------|----------------|
 | `VAMS-LRM-2-4.md` | The Verilog-AMS language reference (LRM 2.4) — the sole grammar/semantics source for the frontend |
-| `docs/spec/` (Parts I–X + appendices) | Piperine's own architecture spec (elaboration, solver, host API, plugins, codegen) — written against the now-retired PHDL originally, retained as historical/architectural reference; see the supersession notice in `docs/spec/index.md` |
-| `docs/spec/part_viii_host_api.md` | The Python + Rust host APIs (load / Design / Module / Session, uniform analyses, introspection, CLI) |
+| `docs/spec/` | The Piperine mixed-signal language (MSL) specification — target design for the next frontend (`index.md` is the entry point) |
 | `CLAUDE.md` | Architecture overview (the pipeline, crate responsibilities) |
 | `ROADMAP.md` | Where it's going — the pillars to V1, and the post-V1 gallery |
 

@@ -133,9 +133,9 @@ and cross-crate proofs. Do not maintain a file list anywhere — enumerate with
 ## Documentation
 
 - Verilog-AMS language reference: `VAMS-LRM-2-4.md` (the sole grammar/semantics source)
-- `docs/spec/` (Parts I–X + appendices A/B/C) — Piperine's own architecture spec, written
-  against PHDL originally and retained as historical/architectural reference; see
-  `docs/spec/index.md`'s supersession notice
+- `docs/spec/` — the Piperine mixed-signal language (MSL) specification, the target
+  design for the next frontend (not a description of the current VAMS frontend);
+  design record in `.specs/features/msl-spec/`
 - Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

@@ -18,7 +18,6 @@
 //! the replay reproduces the JIT's own recorded output net voltage
 //! sample-for-sample.
 //!
-//! SPEC-COVERS: part_ix#1
 
 use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::CircuitCompiler;

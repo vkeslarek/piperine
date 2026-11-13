@@ -128,30 +128,6 @@ fn the_detectors_recognise_what_they_forbid() {
     }
 
     for offender in [
-        "//! SPEC-COVERS: §part_iv#9",
-        "//! SPEC-COVERS: part_iv:9",
-        "//! SPEC-COVERS:",
-        "//! SPEC-COVERS: ",
-        "//! SPEC-COVERS: part_iv#9,",
-        "//! SPEC-COVERS: part_iv#9.x",
-        "//! SPEC-COVERS: #9",
-        "//! SPEC-COVERS: part_iv#",
-        "//! SPEC-COVERS: part_iv#9 appendix_c#3",
-    ] {
-        assert!(is_malformed_spec_covers(offender), "must be flagged as malformed: {offender:?}");
-    }
-    for innocent in [
-        "//! SPEC-COVERS: part_iv#9",
-        "//! SPEC-COVERS: part_viii#15.2, appendix_c#3",
-        "//! SPEC-COVERS: appendix_a#A.1",
-        "//! SPEC-COVERS: appendix_b#B.1.1",
-        "// SPEC-COVERS: part_iv#9 in a regular comment",
-        "",
-    ] {
-        assert!(!is_malformed_spec_covers(innocent), "must not be flagged: {innocent:?}");
-    }
-
-    for offender in [
         "#![allow(dead_code)]",
         "  #![allow(unused_imports)]",
         "#![allow(clippy::all)]",
@@ -408,78 +384,6 @@ fn lrm_covers_declarations_are_well_formed() {
     );
 }
 
-// ─── 4b. SPEC-COVERS declarations are well-formed (T44, lrm-conformance-wave3) ─
-
-/// Whether one `//! SPEC-COVERS:` line is malformed: not the canonical
-/// comma-separated list of `<file-prefix>#<heading-id>` ids
-/// (`tests/spec_section_coverage.rs::spec_sections`'s own id shape — a
-/// lowercase/underscore file prefix like `part_iv`/`appendix_c`, a literal
-/// `#`, then a dot-separated heading token that is either all digit groups
-/// or a leading uppercase letter followed by digit groups). Declaring at all
-/// is optional; a line that does declare must be parseable by the axis-B
-/// coverage gate, so a missing `#` separator, a stray `§`, a trailing/empty
-/// segment, or a space-separated id list (instead of comma-separated) all
-/// fail here rather than silently scraping as zero or malformed ids.
-fn is_malformed_spec_covers(line: &str) -> bool {
-    let Some(rest) = line.trim_start().strip_prefix("//! SPEC-COVERS:") else {
-        return false;
-    };
-    let rest = rest.trim();
-    if rest.is_empty() {
-        return true;
-    }
-    let ids: Vec<&str> = rest.split(',').map(str::trim).collect();
-    if ids.iter().any(|id| id.is_empty()) {
-        return true;
-    }
-    for id in &ids {
-        if id.contains('§') || id.contains(char::is_whitespace) {
-            return true;
-        }
-        let Some((prefix, heading)) = id.split_once('#') else { return true };
-        if prefix.is_empty() || heading.is_empty() {
-            return true;
-        }
-        if !prefix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
-            return true;
-        }
-        let segments: Vec<&str> = heading.split('.').collect();
-        let Some(first) = segments.first() else { return true };
-        let digit_group = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
-        let numbered_head = digit_group(first);
-        let letter_head = first.len() == 1 && first.chars().next().is_some_and(|c| c.is_ascii_uppercase());
-        if !(numbered_head || letter_head) {
-            return true;
-        }
-        if segments[1..].iter().any(|seg| !digit_group(seg)) {
-            return true;
-        }
-    }
-    false
-}
-
-/// Declaring `SPEC-COVERS` is optional (mirrors T6's `LRM-COVERS` rule); a
-/// declaration that exists must be well-formed, because
-/// `spec_section_coverage.rs`'s axis-B gate derives its whole matrix from
-/// parsing exactly this shape.
-#[test]
-fn spec_covers_declarations_are_well_formed() {
-    let mut offences = Vec::new();
-    for (path, text) in rust_sources() {
-        for (index, line) in text.lines().enumerate() {
-            if is_malformed_spec_covers(line) {
-                offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
-            }
-        }
-    }
-    assert!(
-        offences.is_empty(),
-        "malformed SPEC-COVERS declaration (must be a bare comma-separated \
-         `<file-prefix>#<heading-id>` list — no `§`, no missing `#`, not empty):\n  {}",
-        offences.join("\n  ")
-    );
-}
-
 // ─── 5. No file-scope lint suppression (MD-33) ────────────────────────────────
 
 /// Whether one source line switches a lint off for a whole file. A file-scope
@@ -705,7 +609,7 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// Five entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// Three entries. `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/ngspice/` and the golden targets — so it links no workspace crate,
@@ -717,19 +621,10 @@ fn workspace_crates_used(text: &str) -> Vec<&'static str> {
 /// workspace crate linked. `lrm_section_coverage.rs` (T4/T5,
 /// lrm-conformance-wave2) is the same shape one wave over: a `VAMS-LRM-2-4.md`
 /// heading parse + `coverage_exclusions.toml` read + `//! LRM-COVERS:`
-/// source scrape, no workspace crate linked either. `spec_section_coverage.rs`
-/// (T45, lrm-conformance-wave3) is the axis-B sibling of the same shape: a
-/// `docs/spec/*.md` heading parse + `//! SPEC-COVERS:` source scrape, no
-/// workspace crate linked either. An entry added here must move the expected
+/// source scrape, no workspace crate linked either. An entry added here must move the expected
 /// set in [`root_targets_match_the_naming_rule`] with it, so the exemption
 /// cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 5] = [
-    (
-        "spec_extension_gate.rs",
-        "lrm-conformance-wave3 axis-B extension gate (T48, B9) — a repo-policy proof \
-         (part_iii_conformance.md #6 table parse + registry cross-check), not a \
-         host-surface or cross-crate one",
-    ),
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 3] = [
     (
         "lrm_conformance_matrix.rs",
         "lrm-conformance-closure LRMC-ID registry (MD-31, T9) — a repo-policy proof \
@@ -741,12 +636,6 @@ const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 5] = [
         "lrm-conformance-wave2 LRM-2-4 section coverage gate (T4/T5) — a repo-policy proof \
          (VAMS-LRM-2-4.md heading parse + coverage_exclusions.toml read + LRM-COVERS \
          source scrape), not a host-surface or cross-crate one",
-    ),
-    (
-        "spec_section_coverage.rs",
-        "lrm-conformance-wave3 axis-B docs/spec coverage gate (T45) — a repo-policy proof \
-         (docs/spec/*.md heading parse + SPEC-COVERS source scrape), not a host-surface or \
-         cross-crate one",
     ),
     (
         "ngspice_parity_matrix.rs",

@@ -7,11 +7,11 @@ grammar/semantics source is `VAMS-LRM-2-4.md` at the repo root. PHDL, the
 project's own earlier language, has been retired in full (MD-44/MD-45).
 
 Choose a section from the navigation menu:
-* **Specification**: `docs/spec/` — Piperine's own architecture spec
-  (elaboration, solver, host API, plugins, codegen pipeline), written
-  against the now-retired PHDL originally and retained as
-  historical/architectural reference; see its own supersession notice
-  (`docs/spec/index.md`).
+* **Specification**: `docs/spec/` — the Piperine mixed-signal language
+  (MSL) specification: a Rust-like language for analog, digital and
+  mixed-signal models (11 concepts). It is the target design for the next
+  frontend; the current Verilog-AMS frontend is not described by it.
+  Design record: `.specs/features/msl-spec/`.
 * **Reference**: `docs/reference/` — Verilog-AMS LRM Annex G (change
   history) and Annex H (glossary), ported as informative reference
   material.

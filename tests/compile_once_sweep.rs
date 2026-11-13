@@ -3,7 +3,6 @@
 //! point. Lives in its own test binary so [`AnalogKernel::compile_count`]
 //! deltas are not polluted by concurrent tests in the same process.
 //!
-//! SPEC-COVERS: part_viii#1
 
 use std::path::PathBuf;
 

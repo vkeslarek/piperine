@@ -431,7 +431,7 @@ impl Elaborator {
                         return Err(ElabError::from(ElabErrorKind::UnsupportedConstruct {
                             construct: u.construct.to_string(),
                             clause: u.clause.to_string(),
-                            replacement: "a supported specify form (Annex A.7.2 simple path declarations, A.7.5.1 system timing checks) — see docs/spec/part_iii_conformance.md".to_string(),
+                            replacement: "a supported specify form (Annex A.7.2 simple path declarations, A.7.5.1 system timing checks)".to_string(),
                         })
                         .with_span(Some(to_miette_span(u.span))));
                     }

@@ -5,7 +5,6 @@
 //! distribution` — the authored carrier the surviving `SamplePlan` walk
 //! reads. `tol`/`global` are contextual keywords (Annex B untouched).
 //!
-//! SPEC-COVERS: part_iii#6
 
 use piperine_lang::value::Value;
 use piperine_lang::{parse_and_elaborate, Grammar, Keywords, Lexer, SourceMap};

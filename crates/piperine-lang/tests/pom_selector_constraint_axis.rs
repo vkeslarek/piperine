@@ -11,7 +11,6 @@
 //! distinguishable as "this module truly authored none" rather than "the
 //! axis does nothing".
 //!
-//! SPEC-COVERS: part_iv#9
 
 use piperine_lang::pom::node::Node;
 use piperine_lang::pom::traits::{Kinded, Named};

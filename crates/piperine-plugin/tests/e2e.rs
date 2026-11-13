@@ -4,7 +4,6 @@
 //! through the root host API (`Session`). This is the Phase-2 gate of
 //! `Plugin plan.md`.
 //!
-//! SPEC-COVERS: part_vi#1
 
 use std::rc::Rc;
 

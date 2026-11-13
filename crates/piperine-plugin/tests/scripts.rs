@@ -2,7 +2,6 @@
 //! `#[pip::script]` writes only what its `[permissions] filesystem` globs
 //! allow, and an unknown script name is `None` (the CLI maps that to P0009).
 //!
-//! SPEC-COVERS: part_vi#1
 
 use piperine_plugin::{Ctx, Manifest, Plugin, PluginHost};
 

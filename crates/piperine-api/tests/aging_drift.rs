@@ -9,7 +9,6 @@
 //! **Migrated** (constraints-on-vams): the fixtures run against the
 //! `constraint begin … end` producer.
 //!
-//! SPEC-COVERS: part_viii#16
 
 use piperine_api::{age, AgingSpec, DriftRate, Session, SolverConfig, StressSource};
 use piperine_lang::SourceMap;

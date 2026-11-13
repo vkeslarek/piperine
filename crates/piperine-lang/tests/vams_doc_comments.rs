@@ -9,7 +9,6 @@
 //! why the runs are attached out of band rather than left in the token
 //! stream.
 //!
-//! SPEC-COVERS: part_iii#6
 
 use piperine_lang::SourceMap;
 

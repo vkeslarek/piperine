@@ -1,4 +1,4 @@
-name: Release PHDL Specification
+name: Release Language Specification
 
 on:
   push:
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'PHDL Specification Version (e.g., 1.0.0)'
+        description: 'Language Specification Version (e.g., 1.0.0)'
         required: true
         default: '1.0.0'
 
@@ -52,12 +52,12 @@ jobs:
             RAW_VERSION="${{ github.event.inputs.version }}"
           else
             # Extract version directly from mkdocs.yml
-            RAW_VERSION=$(grep 'phdl_version:' mkdocs.yml | awk -F '"' '{print $2}')
+            RAW_VERSION=$(grep 'spec_version:' mkdocs.yml | awk -F '"' '{print $2}')
           fi
           
           echo "VERSION=${RAW_VERSION}" >> $GITHUB_ENV
-          echo "RELEASE_NAME=PHDL Specification v${RAW_VERSION}" >> $GITHUB_ENV
-          echo "TAG_NAME=phdl-v${RAW_VERSION}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=Language Specification v${RAW_VERSION}" >> $GITHUB_ENV
+          echo "TAG_NAME=spec-v${RAW_VERSION}" >> $GITHUB_ENV
 
       - name: Rename Generated PDF
         run: |

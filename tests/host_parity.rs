@@ -24,7 +24,6 @@
 //! matches_appendix_c` cross-checks the Rust-side list against the prose
 //! via `include_str!` so the two cannot silently drift apart.
 //!
-//! SPEC-COVERS: appendix_c#3
 
 use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
@@ -975,8 +974,7 @@ fn host_parity_declared_rust_only_surface_has_no_python_binding() {
     assert!(
         found.trim().is_empty(),
         "these names were declared Rust-only (appendix_c#3) but now have a Python binding — \
-         update the declaration in both tests/host_parity.rs and \
-         docs/spec/appendix_c_host_surface.md §3, or this is an undeclared parity regression: {found}"
+         update the declaration in tests/host_parity.rs, or this is an undeclared parity regression: {found}"
     );
 }
 
@@ -1025,39 +1023,3 @@ _probe()
     );
 }
 
-/// Cross-checks the Rust-side declared-asymmetry lists against
-/// `docs/spec/appendix_c_host_surface.md` §3's prose via `include_str!` —
-/// every name this file declares Rust-only must actually be named in the
-/// doc, so the two cannot silently drift apart (spec.md P2 axis-B AC4: "the
-/// asymmetry SHALL be declared in appendix_c_host_surface.md AND asserted
-/// by the parity test").
-#[test]
-fn host_parity_declared_asymmetry_list_matches_appendix_c() {
-    let doc = include_str!("../docs/spec/appendix_c_host_surface.md");
-    let mut missing = Vec::new();
-    for name in RUST_ONLY_MODULE_NAMES {
-        if !doc.contains(name) {
-            missing.push(format!("module name `{name}` not mentioned in appendix_c_host_surface.md"));
-        }
-    }
-    for name in RUST_ONLY_WAVEFORM_METHODS {
-        if !doc.contains(name) {
-            missing.push(format!("Waveform method `{name}` not mentioned in appendix_c_host_surface.md"));
-        }
-    }
-    for name in RUST_ONLY_COMPLEX_WAVEFORM_METHODS {
-        if !doc.contains(name) {
-            missing.push(format!("ComplexWaveform method `{name}` not mentioned in appendix_c_host_surface.md"));
-        }
-    }
-    assert!(
-        doc.contains(RUST_ONLY_MODULE_ATTR) && doc.contains("Module.constraints"),
-        "`Module.constraints` gap not mentioned in appendix_c_host_surface.md"
-    );
-    assert!(
-        missing.is_empty(),
-        "these declared Rust-only names in tests/host_parity.rs have no corresponding mention \
-         in docs/spec/appendix_c_host_surface.md §3 — the two lists have drifted apart:\n  {}",
-        missing.join("\n  ")
-    );
-}

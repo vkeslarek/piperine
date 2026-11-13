@@ -9,7 +9,6 @@
 //! live VAMS `tol gauss(sigma_rel = …)` parameter-distribution surface
 //! and the in-module `constraint begin … end` producer.
 //!
-//! SPEC-COVERS: part_viii#15
 
 use std::collections::HashMap;
 

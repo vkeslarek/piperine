@@ -33,7 +33,6 @@
 //! corrects `docs/spec/part_iv_reflection_selector.md` §5 to drop it from
 //! the retired-variant list.
 //!
-//! SPEC-COVERS: part_iv#5, part_iv#10
 
 use piperine_lang::pom::node::{Kind, Node};
 use piperine_lang::pom::traits::Kinded;

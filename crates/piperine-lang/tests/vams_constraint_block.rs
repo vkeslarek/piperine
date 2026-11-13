@@ -5,7 +5,6 @@
 //! their production sites, never Annex B reserved words), and anything
 //! else inside the block is a typed error — never a silent skip.
 //!
-//! SPEC-COVERS: part_iii#6
 
 use piperine_lang::ast::*;
 use piperine_lang::keywords::Keywords;

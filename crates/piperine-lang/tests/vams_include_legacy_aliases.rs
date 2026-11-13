@@ -8,7 +8,6 @@
 //! project's own `discipline.h` wins over the alias), and proves an unknown
 //! legacy name still fails loud rather than silently matching something.
 //!
-//! SPEC-COVERS: part_i#9
 
 use piperine_lang::{IncludeResolver, SourceMap, SourceMapIncludeResolver};
 

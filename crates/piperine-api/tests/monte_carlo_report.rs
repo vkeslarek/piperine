@@ -10,7 +10,6 @@
 //! `global` are contextual keywords and the keyed args (`sigma_rel`,
 //! `rel`) are const-evaluated in module scope.
 //!
-//! SPEC-COVERS: part_viii#16
 
 use piperine_api::prelude::CheckPosture;
 use piperine_api::{MonteCarloResult, SampleOutcome, SamplePlan, Session, SolverConfig};
