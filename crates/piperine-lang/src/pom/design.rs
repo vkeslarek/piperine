@@ -8,6 +8,7 @@ use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
 use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
+use super::source::{MemorySources, SourceProvider};
 use super::meta::Meta;
 use crate::msl::{self, Diagnostic, ast};
 
@@ -85,6 +86,15 @@ impl Design {
 
     pub(crate) fn file_data(&self, id: FileId) -> &SourceFileData {
         &self.files[id.index()]
+    }
+
+    pub(crate) fn push_file(&mut self, data: SourceFileData) -> FileId {
+        self.files.push(data);
+        FileId(self.files.len() as u32 - 1)
+    }
+
+    pub(crate) fn push_diagnostic(&mut self, file: FileId, diagnostic: Diagnostic) {
+        self.diagnostics.push(DesignDiagnostic { file, diagnostic });
     }
 
     pub(crate) fn push_decl(&mut self, data: DeclData) -> DeclId {
@@ -255,7 +265,8 @@ impl DesignBuilder {
         self
     }
 
-    /// A virtual source file. The first one is the root.
+    /// A virtual source file. The first one is the root; the others are found
+    /// by the `mod` items of the files that name them.
     pub fn source(mut self, path: impl Into<String>, text: impl Into<String>) -> Self {
         self.sources.push((path.into(), text.into()));
         self
@@ -265,20 +276,24 @@ impl DesignBuilder {
     /// sources first, then the root. A parse error never stops the build: the
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
+        let mut memory = MemorySources::new();
+        for (path, text) in &self.sources {
+            memory.insert(path, text.as_str());
+        }
         let mut design =
             Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new() };
         for (name, text) in &self.prelude {
-            design.add_file(name, text, true);
+            design.add_file(name, text, true, &memory);
         }
         let empty = (String::new(), String::new());
         let (name, text) = self.sources.first().unwrap_or(&empty);
-        design.root_file = design.add_file(name, text, false);
+        design.root_file = design.add_file(name, text, false, &memory);
         design
     }
 }
 
 impl Design {
-    fn add_file(&mut self, name: &str, text: &str, prelude: bool) -> FileId {
+    fn add_file(&mut self, name: &str, text: &str, prelude: bool, provider: &dyn SourceProvider) -> FileId {
         let id = FileId(self.files.len() as u32);
         let parsed = msl::parser::parse(text);
         for diagnostic in parsed.diagnostics {
@@ -302,7 +317,7 @@ impl Design {
             ast: parsed.file.clone(),
             root,
         });
-        lower_file(self, id, root, &parsed.file);
+        lower_file(self, id, root, &parsed.file, provider, PathBuf::from(name));
         id
     }
 }

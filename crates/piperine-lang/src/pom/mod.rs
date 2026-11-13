@@ -13,11 +13,13 @@ mod lower;
 mod meta;
 mod reflect;
 mod resolution;
+mod source;
 
 pub use body::*;
 pub use decl::*;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use ids::{DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
 pub use meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
-pub use reflect::{Attr, Const, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
+pub use reflect::{Attr, Const, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
 pub use resolution::*;
+pub use source::{MemorySources, SourceProvider};

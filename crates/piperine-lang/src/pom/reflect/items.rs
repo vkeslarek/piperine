@@ -1,10 +1,10 @@
 //! Handles over value items: `Const` here; functions, structs, enums, traits,
 //! impls and imports as the item tasks add them.
 
-use super::body::{Expr, Path, Type};
+use super::body::{Expr, Path, SourceFile, Type};
 use super::{Decl, Reflect};
 use crate::pom::body::{Block, LitKind};
-use crate::pom::decl::{ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, UseData, UseTreeNode, VariantData};
+use crate::pom::decl::{NamespaceData, NamespaceOrigin, ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, UseData, UseTreeNode, VariantData};
 
 /// `const NAME: ty = value;`
 #[derive(Clone, Copy)]
@@ -614,5 +614,69 @@ impl std::fmt::Debug for Use<'_> {
 impl<'d> Decl<'d> {
     pub fn as_use(self) -> Option<Use<'d>> {
         matches!(self.kind(), DeclKind::Use(_)).then_some(Use { decl: self })
+    }
+}
+
+/// A namespace: a file's top, `mod a { }` or `mod a;`.
+#[derive(Clone, Copy)]
+pub struct Namespace<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Namespace<'d> {
+    fn data(self) -> &'d NamespaceData {
+        match self.decl.kind() {
+            DeclKind::Namespace(n) => n,
+            _ => unreachable!("Namespace handle over a non-namespace declaration"),
+        }
+    }
+
+    pub fn origin(self) -> &'d NamespaceOrigin {
+        &self.data().origin
+    }
+
+    /// Every declaration directly inside, in source order.
+    pub fn items(self) -> Vec<Decl<'d>> {
+        self.decl.children()
+    }
+
+    /// The namespaces directly inside, in source order.
+    pub fn submodules(self) -> Vec<Namespace<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_namespace()).collect()
+    }
+
+    /// The file this namespace is the top of: a file's root namespace, or the
+    /// file `mod a;` loaded. None for an inline module and for a `mod a;`
+    /// whose file was not loaded.
+    pub fn source_file(self) -> Option<SourceFile<'d>> {
+        match self.origin() {
+            NamespaceOrigin::Root => Some(self.file()),
+            NamespaceOrigin::External { file } => file.map(|f| SourceFile::new(self.decl.design(), f)),
+            NamespaceOrigin::Inline => None,
+        }
+    }
+}
+
+impl<'d> Reflect<'d> for Namespace<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl PartialEq for Namespace<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl std::fmt::Debug for Namespace<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Namespace({:?})", self.decl.id())
+    }
+}
+
+impl<'d> Decl<'d> {
+    pub fn as_namespace(self) -> Option<Namespace<'d>> {
+        matches!(self.kind(), DeclKind::Namespace(_)).then_some(Namespace { decl: self })
     }
 }

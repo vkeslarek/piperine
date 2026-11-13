@@ -6,6 +6,7 @@
 //! value items.
 
 mod body;
+mod files;
 mod items;
 mod meta;
 
@@ -15,6 +16,8 @@ use super::decl::{
 };
 use super::design::Design;
 use super::meta::Meta;
+use super::source::SourceProvider;
+use std::path::PathBuf;
 use super::ids::{DeclId, FileId};
 use crate::msl::Span;
 use crate::msl::ast;
@@ -25,11 +28,28 @@ pub(crate) struct Lowerer<'a> {
     pub(crate) design: &'a mut Design,
     pub(crate) file: FileId,
     pub(crate) owner: DeclId,
+    /// Where `mod b;` looks for its file.
+    pub(crate) provider: &'a dyn SourceProvider,
+    /// The path of the file being lowered, and whether it is a root file.
+    pub(crate) path: PathBuf,
+    pub(crate) is_root: bool,
+    /// The enclosing inline modules of the current file, outermost first.
+    pub(crate) inline: Vec<String>,
+    /// The canonical paths of the files being loaded, outermost first.
+    pub(crate) chain: Vec<PathBuf>,
 }
 
 /// Lower every item of `ast` as a child of the namespace `ns`.
-pub(crate) fn lower_file(design: &mut Design, file: FileId, ns: DeclId, ast: &ast::File) {
-    let mut lw = Lowerer { design, file, owner: ns };
+pub(crate) fn lower_file(
+    design: &mut Design,
+    file: FileId,
+    ns: DeclId,
+    ast: &ast::File,
+    provider: &dyn SourceProvider,
+    path: PathBuf,
+) {
+    let chain = vec![provider.canonical(&path)];
+    let mut lw = Lowerer { design, file, owner: ns, provider, path, is_root: true, inline: Vec::new(), chain };
     // The `//!` comments at the top of a file are the file namespace's docs.
     lw.design.decl_mut(ns).meta.docs = ast.inner_docs.iter().map(meta::doc).collect();
     for item in &ast.items {
@@ -79,6 +99,11 @@ impl Lowerer<'_> {
         let decl = self.design.decl_mut(id);
         decl.kind = kind;
         decl.meta = meta;
+        if let ast::ItemKind::Mod(m) = &item.kind {
+            if m.items.is_none() {
+                self.load_mod(id, item.span.0, &m.name.name);
+            }
+        }
         id
     }
 
@@ -94,9 +119,11 @@ impl Lowerer<'_> {
             ast::ItemKind::Mod(m) => {
                 let origin = match &m.items {
                     Some(items) => {
+                        self.inline.push(m.name.name.clone());
                         for inner in items {
                             self.item(inner);
                         }
+                        self.inline.pop();
                         NamespaceOrigin::Inline
                     }
                     None => NamespaceOrigin::External { file: None },

@@ -329,15 +329,15 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `mod_loads_sibling_file_or_mod_file` passes in `pom_design.rs` (C5: POM-01 AC 5)
-- [ ] Test `mod_without_file_is_empty_namespace_e0161` passes in `pom_design.rs` (C6: POM-01 AC 6)
-- [ ] Test `mod_with_two_candidates_is_e0161` passes in `pom_design.rs` (C89: POM-01 AC 7)
-- [ ] Test `nested_mod_files_follow_rust_layout` passes in `pom_design.rs` (C90: POM-01 AC 8)
-- [ ] Files are numbered prelude sources first, then the root, then each loaded file in the order its `mod` item is met
-- [ ] `find("b::M")` walks namespaces across files
-- [ ] `#[path]` is given no meaning
-- [ ] Gate passes: run design; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `mod_loads_sibling_file_or_mod_file` passes in `pom_design.rs` (C5: POM-01 AC 5)
+- [x] Test `mod_without_file_is_empty_namespace_e0161` passes in `pom_design.rs` (C6: POM-01 AC 6)
+- [x] Test `mod_with_two_candidates_is_e0161` passes in `pom_design.rs` (C89: POM-01 AC 7)
+- [x] Test `nested_mod_files_follow_rust_layout` passes in `pom_design.rs` (C90: POM-01 AC 8)
+- [x] Files are numbered prelude sources first, then the root, then each loaded file in the order its `mod` item is met
+- [x] `find("b::M")` walks namespaces across files
+- [x] `#[path]` is given no meaning
+- [x] Gate passes: run design; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
