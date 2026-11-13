@@ -1070,6 +1070,55 @@ Three rules travel with it (spec §0):
 
 ---
 
+### MD-54: the MSL POM is an arena model built once; only lowering creates nodes
+
+`msl-pom` design decision (2026-11-13). The Piperine Object Model of the MSL
+frontend is `piperine_lang::pom`: one owning, immutable `Design` holding arenas
+addressed by typed ids (`DeclId`, `ExprId`, `StmtId`, `PatId`, `TypeId`,
+`PathId`, `FileId`); the public face is `Copy` handles `(design, id)` in the
+style of Java reflection. It is the concrete form of the navigability rule for
+MSL: the tree mirrors the authored code, bodies included, and converts back to
+the syntax tree (`to_ast`).
+
+Three rules travel with it:
+1. Only lowering (AST → arenas) creates nodes. Name resolution, classification
+   and every later analysis write into slots or side tables keyed by the ids.
+2. Elaborated forms (unrolled generation, monomorphized modules, instance
+   copies, the flat netlist) are separate artifacts keyed by POM ids, never
+   edits of the `Design`.
+3. The `Design` and every storage type derive `Serialize`/`Deserialize` (user,
+   2026-11-13: "Derive já"). The retained syntax tree is not serialized; it is
+   rebuilt from the retained source text.
+
+Trade-off: a second tree beside the AST (lowering plus the reverse conversion)
+instead of an `Rc` object graph or AST-valued bodies with span-keyed tables;
+chosen for `Send + Sync`, plain serde and stable ids for the type checker.
+
+**Scope:** `piperine-lang` and every consumer of the frontend (type checker,
+elaborator, codegen, LSP, host API).
+**Status:** Locked (msl-pom spec approved 2026-11-13).
+(rule 3 is already the user's decision).
+
+### MD-55: MSL source files are `.msl`, and `mod` follows Rust's on-disk rules
+
+User decision (2026-11-13: "Regras do Rust no disco"). `mod b;` loads `b.msl`
+or `b/mod.msl` relative to the declaring file, exactly as rustc resolves
+`b.rs` / `b/mod.rs`; the loader lives in `piperine-lang` (`pom::source`) behind
+a `SourceProvider` with a disk and an in-memory implementation, so one rule
+set serves files, tests and unsaved editor buffers. A `mod` that cannot be
+loaded (no file, two candidates, a cycle) is `E0161` (§3.4). `#[path]` has no
+meaning: it is not an attribute of the language (Appendix B.1).
+
+The extension `.msl` is the planner's default: `docs/spec/` names none.
+
+Trade-off: `piperine-lang` reads the filesystem, instead of the host
+registering each source under a namespace path.
+
+**Scope:** `piperine-lang`, `piperine-project`, the CLI and the LSP.
+**Status:** Locked (user, 2026-11-13); the extension is open to correction.
+
+---
+
 ## Handoff Snapshot
 
 ### Feature — `lrm-conformance-wave3` — CLOSED (2026-08-30)
