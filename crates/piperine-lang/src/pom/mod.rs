@@ -1,9 +1,32 @@
-//! # The Piperine object model
+//! # The Piperine object model (POM)
 //!
-//! One call turns MSL sources into an immutable [`Design`]: arenas of
-//! declarations and body nodes addressed by typed ids, read through `Copy`
-//! reflection handles. The model mirrors the source: a signal declared in
-//! module `abc` is found there and nowhere else.
+//! One call turns MSL sources into an immutable [`Design`]:
+//!
+//! ```text
+//! sources ─► parse ─► lower ─► resolve ─► index ─► Design
+//! ```
+//!
+//! * **Storage.** Arenas of declarations ([`DeclData`]), expressions, statements, patterns,
+//!   types and paths, addressed by typed ids ([`DeclId`], [`ExprId`], ..). Nodes never move or
+//!   disappear after the build.
+//! * **Reflection.** `Copy` handles that borrow a design ([`Module`], [`Port`], [`Signal`],
+//!   [`Instance`], ..) and the [`Reflect`] trait they share. Ask a module for its ports, a
+//!   signal for the module it is declared in, an instance for the module it places, a
+//!   declaration for its [`references`](Reflect::references).
+//! * **Resolution.** Names, calls, struct expressions, ports and members are resolved and
+//!   classified into slots of the existing nodes (`Resolution`, `CallClass`, `PortKind`, ..);
+//!   what needs type inference is `Deferred`. Problems are `diagnostics()`, never a failure:
+//!   `build()` always returns a design.
+//! * **The one rule.** The model's navigability mirrors the source. Hierarchy and generation are
+//!   held as written (a `for` over a thousand items is one declaration), resolution only adds
+//!   links, and a lossless [`SourceFile::to_ast`] proves nothing was dropped. A transform that
+//!   needs another shape is a side artifact built from a design.
+//! * **Serialization.** Every storage type implements `Serialize` and `Deserialize`; the retained
+//!   syntax tree is rebuilt from the file text.
+//!
+//! The reference documentation is under `docs/pom/` (overview, storage model, reflection,
+//! construct-to-POM mapping, name resolution), and its `rust` examples are the doctests of
+//! [`guide`].
 
 pub mod guide;
 mod body;

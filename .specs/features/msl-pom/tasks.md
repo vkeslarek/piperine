@@ -1050,9 +1050,9 @@ T37 → T38 → T39 → T40 → T41
 
 **Done when**:
 
-- [ ] Test `mkdocs_nav_lists_every_pom_page` passes in `pom_docs.rs` (C85: POM-13 AC 6)
-- [ ] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `mkdocs_nav_lists_every_pom_page` passes in `pom_docs.rs` (C85: POM-13 AC 6)
+- [x] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

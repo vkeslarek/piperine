@@ -198,3 +198,15 @@ fn msl_fences_parse_clean() {
     }
     assert!(fences >= 10, "docs/pom holds only {fences} msl fences");
 }
+
+#[test]
+fn mkdocs_nav_lists_every_pom_page() {
+    let yml = std::fs::read_to_string(repo().join("mkdocs.yml")).unwrap();
+    let nav = &yml[yml.find("\nnav:").expect("mkdocs.yml has a nav") + 1..];
+    assert!(nav.contains("Object model"), "the nav has an `Object model` section");
+    let pages = pom_docs();
+    assert!(pages.len() >= 5, "docs/pom holds {} pages", pages.len());
+    for (file, _) in pages {
+        assert!(nav.lines().any(|l| l.trim_end().ends_with(&format!("pom/{file}"))), "mkdocs.yml nav does not list docs/pom/{file}");
+    }
+}

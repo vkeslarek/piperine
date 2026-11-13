@@ -33,3 +33,9 @@ nav:
       - "E. Gallery: digital": spec/appendix_e_gallery_digital.md
       - "F. Gallery: mixed-signal": spec/appendix_f_gallery_mixed.md
       - "G. Scope and open questions": spec/appendix_g_scope.md
+  - Object model:
+      - Overview: pom/index.md
+      - "Model (storage)": pom/model.md
+      - "Reflection": pom/reflection.md
+      - "Construct to POM": pom/mapping.md
+      - "Name resolution": pom/resolution.md
