@@ -181,11 +181,18 @@ pub struct VariantData {
     pub discriminant: Option<ExprId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct TraitData {}
+/// `trait Name<..>: Super { items }`; generics and items are children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TraitData {
+    pub supertraits: Vec<PathId>,
+}
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ImplData {}
+/// `impl<..> Trait for Type { items }`; generics and items are children.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImplData {
+    pub trait_: Option<PathId>,
+    pub self_ty: TypeId,
+}
 
 /// `<T: Bound = Default>` or `<const N: u32 = 4>`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

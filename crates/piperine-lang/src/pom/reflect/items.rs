@@ -4,7 +4,7 @@
 use super::body::{Expr, Path, Type};
 use super::{Decl, Reflect};
 use crate::pom::body::{Block, LitKind};
-use crate::pom::decl::{ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, StructData, VariantData};
+use crate::pom::decl::{ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, VariantData};
 
 /// `const NAME: ty = value;`
 #[derive(Clone, Copy)]
@@ -442,5 +442,112 @@ impl<'d> Decl<'d> {
 
     pub fn as_variant(self) -> Option<Variant<'d>> {
         matches!(self.kind(), DeclKind::Variant(_)).then_some(Variant { decl: self })
+    }
+}
+
+/// `trait Name<..>: Super { items }`
+#[derive(Clone, Copy)]
+pub struct Trait<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Trait<'d> {
+    fn data(self) -> &'d TraitData {
+        match self.decl.kind() {
+            DeclKind::Trait(t) => t,
+            _ => unreachable!("Trait handle over a non-trait declaration"),
+        }
+    }
+
+    pub fn generics(self) -> Vec<GenericParam<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
+    }
+
+    pub fn supertraits(self) -> Vec<Path<'d>> {
+        self.data().supertraits.iter().map(|p| self.decl.design().path(*p)).collect()
+    }
+
+    /// The functions and constants, in source order.
+    pub fn items(self) -> Vec<Decl<'d>> {
+        self.decl.children().into_iter().filter(|c| !matches!(c.kind(), DeclKind::GenericParam(_))).collect()
+    }
+}
+
+/// `impl<..> Trait for Type { items }`
+#[derive(Clone, Copy)]
+pub struct Impl<'d> {
+    decl: Decl<'d>,
+}
+
+impl<'d> Impl<'d> {
+    fn data(self) -> &'d ImplData {
+        match self.decl.kind() {
+            DeclKind::Impl(i) => i,
+            _ => unreachable!("Impl handle over a non-impl declaration"),
+        }
+    }
+
+    pub fn generics(self) -> Vec<GenericParam<'d>> {
+        self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
+    }
+
+    /// The trait of `impl Trait for Type`; none for an inherent impl.
+    pub fn trait_path(self) -> Option<Path<'d>> {
+        self.data().trait_.map(|p| self.decl.design().path(p))
+    }
+
+    pub fn self_ty(self) -> Type<'d> {
+        self.decl.design().ty(self.data().self_ty)
+    }
+
+    /// The functions and constants, in source order.
+    pub fn items(self) -> Vec<Decl<'d>> {
+        self.decl.children().into_iter().filter(|c| !matches!(c.kind(), DeclKind::GenericParam(_))).collect()
+    }
+}
+
+impl<'d> Reflect<'d> for Trait<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl<'d> Reflect<'d> for Impl<'d> {
+    fn decl(self) -> Decl<'d> {
+        self.decl
+    }
+}
+
+impl PartialEq for Trait<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl PartialEq for Impl<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
+}
+
+impl std::fmt::Debug for Trait<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Trait({:?})", self.decl.id())
+    }
+}
+
+impl std::fmt::Debug for Impl<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Impl({:?})", self.decl.id())
+    }
+}
+
+impl<'d> Decl<'d> {
+    pub fn as_trait(self) -> Option<Trait<'d>> {
+        matches!(self.kind(), DeclKind::Trait(_)).then_some(Trait { decl: self })
+    }
+
+    pub fn as_impl(self) -> Option<Impl<'d>> {
+        matches!(self.kind(), DeclKind::Impl(_)).then_some(Impl { decl: self })
     }
 }

@@ -2,7 +2,7 @@
 
 use super::Lowerer;
 use crate::msl::ast;
-use crate::pom::decl::{DeclKind, EnumData, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, StructData, VariantData};
+use crate::pom::decl::{DeclKind, EnumData, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, VariantData};
 
 impl Lowerer<'_> {
     /// One `GenericParam` declaration per parameter, as children of the
@@ -97,5 +97,43 @@ impl Lowerer<'_> {
             decl.meta = meta;
         }
         form
+    }
+
+    /// A trait: generics, then its items, as children of the trait.
+    pub(crate) fn trait_decl(&mut self, t: &ast::TraitDecl) -> DeclKind {
+        self.generics(&t.generics);
+        let supertraits = t.supertraits.iter().map(|p| self.path(p)).collect();
+        self.impl_items(&t.items);
+        DeclKind::Trait(TraitData { supertraits })
+    }
+
+    /// An `impl`: generics, then its items, as children of the block.
+    pub(crate) fn impl_decl(&mut self, i: &ast::ImplBlock) -> DeclKind {
+        self.generics(&i.generics);
+        let trait_ = i.trait_.as_ref().map(|p| self.path(p));
+        let self_ty = self.ty(&i.self_ty);
+        self.impl_items(&i.items);
+        DeclKind::Impl(ImplData { trait_, self_ty })
+    }
+
+    /// The functions and constants of an `impl` or a `trait`.
+    fn impl_items(&mut self, items: &[ast::ImplItem]) {
+        for item in items {
+            let name = match &item.kind {
+                ast::ImplItemKind::Fn(f) => &f.name,
+                ast::ImplItemKind::Const(c) => &c.name,
+            };
+            let id = self.new_decl(DeclKind::Error, Some(name), item.span.0, item.public);
+            let (kind, meta) = self.within(id, |lw| {
+                let kind = match &item.kind {
+                    ast::ImplItemKind::Fn(f) => lw.fn_decl(f),
+                    ast::ImplItemKind::Const(c) => lw.const_item(c),
+                };
+                (kind, lw.meta(&item.meta))
+            });
+            let decl = self.design.decl_mut(id);
+            decl.kind = kind;
+            decl.meta = meta;
+        }
     }
 }

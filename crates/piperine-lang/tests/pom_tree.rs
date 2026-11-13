@@ -272,3 +272,42 @@ enum E { A, Data(u8) = 3, Named { x: u8, y: u16 } }
     assert!(design.find("S").unwrap().as_enum().is_none());
     assert!(design.check().is_empty());
 }
+
+#[test]
+fn impl_and_trait_parts() {
+    let text = "\
+struct Stream<T> { v: T }
+impl<T> Stream<T> { const K: u32 = 1; fn get(self) -> T { self.v } }
+impl Tr for S { fn f(self); }
+trait Tr: Base + Other { const C: u32; fn f(self); }
+";
+    let design = build(text);
+    assert!(codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let items = design.root().children();
+    assert_eq!(items.iter().map(|d| d.kind().label()).collect::<Vec<_>>(), ["Struct", "Impl", "Impl", "Trait"]);
+
+    let inherent = items[1].as_impl().expect("impl block");
+    assert_eq!(inherent.name(), None);
+    assert_eq!(inherent.generics().len(), 1);
+    assert_eq!(inherent.self_ty().text(), "Stream<T>");
+    assert!(inherent.trait_path().is_none());
+    let inner = inherent.items();
+    assert_eq!(inner.iter().map(|d| (d.kind().label(), d.name())).collect::<Vec<_>>(), [("Const", Some("K")), ("Fn", Some("get"))]);
+    assert_eq!(inner[0].declared_in(), Some(inherent.decl()));
+    assert!(inner[1].as_function().unwrap().params()[0].is_self());
+
+    let of_trait = items[2].as_impl().expect("trait impl");
+    assert_eq!(of_trait.trait_path().map(|p| p.text()), Some("Tr"));
+    assert_eq!(of_trait.self_ty().text(), "S");
+    assert_eq!(of_trait.items().len(), 1);
+    assert!(of_trait.items()[0].as_function().unwrap().body().is_none());
+
+    let tr = items[3].as_trait().expect("trait Tr");
+    assert_eq!(tr.name(), Some("Tr"));
+    assert_eq!(tr.supertraits().iter().map(|p| p.text()).collect::<Vec<_>>(), ["Base", "Other"]);
+    let ti = tr.items();
+    assert_eq!(ti.iter().map(|d| (d.kind().label(), d.name())).collect::<Vec<_>>(), [("Const", Some("C")), ("Fn", Some("f"))]);
+    assert!(ti[0].as_const().unwrap().value().is_none());
+    assert!(items[0].as_impl().is_none() && items[0].as_trait().is_none());
+    assert!(design.check().is_empty());
+}
