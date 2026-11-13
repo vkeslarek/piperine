@@ -196,9 +196,30 @@ fn depth_limit_fits_8mib_stack_in_debug() {
         .expect("spawn the 8 MiB test thread");
     handle.join().expect("no stack overflow, no panic");
 
-    // No thread is spawned by the parser: its entry module names no stack size.
-    let entry = include_str!("../src/msl/parser/entry.rs");
-    assert!(!entry.contains("stack_size") && !entry.contains("thread::"), "the parser runs on the caller's thread");
+    // The fit rests on chumsky's `stacker` feature (heap-grown stack segments,
+    // allowed by AC 7), so the manifest declares it explicitly rather than by
+    // default...
+    let manifest = include_str!("../Cargo.toml");
+    let chumsky = manifest.lines().find(|l| l.starts_with("chumsky")).expect("chumsky dependency");
+    assert!(chumsky.contains("\"stacker\""), "stacker is declared: {chumsky}");
+    // ...and no thread is spawned by any MSL source: none names a stack size.
+    fn sources(dir: &std::path::Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).expect("src/msl is readable") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(std::fs::read_to_string(&path).expect("source"));
+            }
+        }
+    }
+    let mut all = Vec::new();
+    sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/msl"), &mut all);
+    assert!(all.len() >= 10, "{} sources scanned", all.len());
+    assert!(
+        all.iter().all(|s| !s.contains("stack_size") && !s.contains("thread::")),
+        "the parser runs on the caller's thread"
+    );
 }
 
 #[test]

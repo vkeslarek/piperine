@@ -99,7 +99,7 @@
 4. IF an unexpected token is found THEN the diagnostic SHALL name the token found and the tokens or construct expected.  <!-- unwanted -->
 5. WHEN diagnostics are rendered THEN the output SHALL be `miette` graphical reports showing the source line, the span underline and the code.  <!-- event-driven -->
 6. IF nesting exceeds 256 levels THEN the parser SHALL report a diagnostic and stop descending, without a stack overflow.  <!-- unwanted -->
-7. The parser SHALL parse 256 nesting levels in a debug build on the caller's thread with an 8 MiB stack, without spawning a larger-stack thread.  <!-- ubiquitous -->
+7. The parser SHALL parse 256 nesting levels in a debug build on the caller's thread with an 8 MiB stack, without spawning a larger-stack thread; growing the stack on the heap (chumsky `stacker`, declared explicitly) is allowed.  <!-- ubiquitous -->
 
 **Independent Test**: one fixture per parse-phase error row asserting code and span; snapshot of rendered output for 3 fixtures.
 
