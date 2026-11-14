@@ -1,9 +1,9 @@
 # MSL Packages verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at d08dec18 (118 pass, 0 fail; only spec-doc commits since, verified against HEAD 150e45c6)
+**Verdict**: FAIL - F1 to F11 verified closed; three new Low findings (N1 to N3) are open and go to the user
+**Proofs**: `proofs.md` at 5e7ecc01 (118 pass, 0 fail; HEAD 435cb79d adds docs only). Round 1 read d08dec18
 **Verifier**: independent sub-agent (author != verifier), Opus
-**Round**: 1
+**Round**: 2
 
 Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `crates/piperine-project/tests/`, run with `cargo test -p <crate> --test <probe> -- --nocapture`, then deleted. Sources kept in the session scratchpad (`verify-packages/zz_verify_probe.rs`, `zz_verify_probe_project.rs`).
 
@@ -23,7 +23,7 @@ Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `cra
 | C10 | `spec_text.rs` `e0163_is_defined_in_3_5` | yes - exact substrings and table cells of the decided wording |
 | C11 | `spec_text.rs` `phase_package_is_listed` | yes - exact substrings and table cells of the decided wording |
 | C12 | `spec_text.rs` `s36_fixes_the_package_layout` | yes - exact substrings and table cells of the decided wording |
-| C13 | `spec_text.rs` `s36_lists_every_manifest_key` | yes - fixed (F11 closed at dd62877e); was: asserts a row for each key and the closing `E0171` sentence, but not that no other key row exists, which "exactly" claims (F11) |
+| C13 | `spec_text.rs` `s36_lists_every_manifest_key` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F11 closed at dd62877e); was: asserts a row for each key and the closing `E0171` sentence, but not that no other key row exists, which "exactly" claims (F11) |
 | C14 | `spec_text.rs` `s36_names_are_identifiers` | yes - exact substrings and table cells of the decided wording |
 | C15 | `spec_text.rs` `s36_states_the_dependency_sources` | yes - exact substrings and table cells of the decided wording |
 | C16 | `spec_text.rs` `s36_gives_the_version_requirement_table` | yes - exact substrings and table cells of the decided wording |
@@ -50,24 +50,24 @@ Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `cra
 | C37 | `pom_crates.rs` `crate_names_the_root_of_the_containing_crate` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C38 | `pom_crates.rs` `a_renamed_dependency_resolves_by_its_dependency_name` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C39 | `pom_crates.rs` `a_local_name_wins_over_a_dependency_in_a_path` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
-| C40 | `pom_crates.rs` `a_use_path_that_names_a_local_and_a_dependency_is_e0163` | yes - fixed (F11 closed at dd62877e); was: yes - one `E0163`, no `E0161`, both remedies in help, segments `Unresolved`, five use forms; the span is not asserted |
+| C40 | `pom_crates.rs` `a_use_path_that_names_a_local_and_a_dependency_is_e0163` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F11 closed at dd62877e); was: yes - one `E0163`, no `E0161`, both remedies in help, segments `Unresolved`, five use forms; the span is not asserted |
 | C41 | `pom_crates.rs` `crate_prefix_names_the_local_one_in_a_clash` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C42 | `pom_crates.rs` `std_is_a_dependency_of_every_crate` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
-| C43 | `pom_crates.rs` `the_prelude_reaches_every_crate` | yes - fixed (F3 closed at 4f2703dc); was: asserts the const `P` in expressions; the check names a port `p: Bit` (type namespace), which no test exercises (F3) |
+| C43 | `pom_crates.rs` `the_prelude_reaches_every_crate` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F3 closed at 4f2703dc); was: asserts the const `P` in expressions; the check names a port `p: Bit` (type namespace), which no test exercises (F3) |
 | C44 | `pom_crates.rs` `a_dependency_name_hides_a_prelude_item` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C45 | `pom_crates.rs` `a_crate_that_is_no_dependency_is_e0161_with_help` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C46 | `pom_crates.rs` `a_private_item_of_another_crate_is_e0161` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
-| C47 | `pom_crates.rs` `a_pub_item_in_a_private_namespace_is_e0161` | yes - fixed (F11 closed at dd62877e); was: asserts one `E0161`; the check says the message names `inner`, not asserted (F11) |
+| C47 | `pom_crates.rs` `a_pub_item_in_a_private_namespace_is_e0161` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F11 closed at dd62877e); was: asserts one `E0161`; the check says the message names `inner`, not asserted (F11) |
 | C48 | `pom_crates.rs` `super_at_a_crate_root_is_e0161` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C49 | `pom_crates.rs` `a_glob_of_a_dependency_brings_only_pub_items` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C50 | `pom_crates.rs` `a_pub_use_re_exports_across_crates` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C51 | `pom_crates.rs` `embedded_std_builds_clean_and_has_a_prelude` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
-| C52 | `pom_crates.rs` `prelude_items_resolve_without_an_import` | yes - fixed (F3 closed at 4f2703dc); was: const `P` in expressions, not the nature `Bit` in a port the check names (F3) |
+| C52 | `pom_crates.rs` `prelude_items_resolve_without_an_import` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F3 closed at 4f2703dc); was: const `P` in expressions, not the nature `Bit` in a port the check names (F3) |
 | C53 | `pom_crates.rs` `only_pub_items_of_std_prelude_are_implicit` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C54 | `pom_crates.rs` `std_source_replaces_the_embedded_library` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
-| C55 | `pom_crates.rs` `a_namespace_item_hides_a_prelude_item` | yes - fixed (F3 closed at 4f2703dc); was: local const hides prelude const; the check names a local `nature Bit` (F3) |
+| C55 | `pom_crates.rs` `a_namespace_item_hides_a_prelude_item` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F3 closed at 4f2703dc); was: local const hides prelude const; the check names a local `nature Bit` (F3) |
 | C56 | `pom_crates.rs` `std_files_are_numbered_last` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
-| C57 | `pom_crates.rs` `std_files_see_the_prelude` | yes - fixed (F3 closed at 4f2703dc); was: a const in `std` uses `P`; the check names a module port `p: Bit` (F3) |
+| C57 | `pom_crates.rs` `std_files_see_the_prelude` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F3 closed at 4f2703dc); was: a const in `std` uses `P`; the check names a module port `p: Bit` (F3) |
 | C58 | `pom_crates.rs` `a_crate_reports_its_name_root_and_files` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C59 | `pom_crates.rs` `declarations_and_files_know_their_crate` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C60 | `pom_crates.rs` `a_crate_lists_its_declared_dependencies` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
@@ -77,7 +77,7 @@ Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `cra
 | C64 | `pom_crates.rs` `crate_find_inverts_qualified_name` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C65 | `pom_crates.rs` `a_multi_crate_design_round_trips_through_json` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C66 | `pom_crates.rs` `from_json_rejects_out_of_range_crate_links` | yes - each of six links set to 99999 is `Err` naming 99999; a companion test proves no panic over 40 corruptions |
-| C67 | `pom_crates.rs` `from_json_rejects_a_dependency_cycle` | yes - fixed (F11 closed at dd62877e); was: rejects 2-, 1- and 3-crate cycles and accepts a diamond; `contains('b')` holds for any message (F11) |
+| C67 | `pom_crates.rs` `from_json_rejects_a_dependency_cycle` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F11 closed at dd62877e); was: rejects 2-, 1- and 3-crate cycles and accepts a diamond; `contains('b')` holds for any message (F11) |
 | C68 | `pom_crates.rs` `from_json_rejects_a_crate_whose_root_is_not_its_own` | yes - asserts the resolution/crate/value the criterion fixes and counts every diagnostic |
 | C69 | `pom_docs.rs` `docs_describe_crates_and_no_prelude_sources` | yes - page text and the mapping row asserted |
 | C70 | `pom_docs.rs` `mapping_has_a_crate_row` | yes - page text and the mapping row asserted |
@@ -120,7 +120,7 @@ Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `cra
 | C107 | `lock.rs` `stale_entries_leave_the_lockfile` | yes - exact lockfile bytes or commits asserted |
 | C108 | `lock.rs` `an_invalid_lockfile_is_e0176` | yes - truncated, `version = 2` and no-version each one `E0176` in the lockfile, `target/deps` absent; also under `update` |
 | C109 | `lock.rs` `a_locked_checkout_needs_no_repository` | yes - source repository and the `db` clone deleted, second resolution reads the kept checkout |
-| C110 | `lock.rs` `only_the_root_lockfile_counts` | yes - fixed (F2 closed at 0e76f02f); was: the dependency's lockfile pins the dependency itself, which is checked out before that file could be read; a resolver that merged dependency lockfiles still passes (F2) |
+| C110 | `lock.rs` `only_the_root_lockfile_counts` | yes (round 2 re-judged: the new assertion fails if the claim is false) - fixed (F2 closed at 0e76f02f); was: the dependency's lockfile pins the dependency itself, which is checked out before that file could be read; a resolver that merged dependency lockfiles still passes (F2) |
 | C111 | `project.rs` `the_project_root_is_the_nearest_manifest` | yes |
 | C112 | `project.rs` `load_project_builds_the_design_of_a_package_graph` | yes |
 | C113 | `project.rs` `a_package_error_stops_load_project` | yes |
@@ -139,6 +139,22 @@ Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `cra
 - U6: holds as the spec states it. Probes: ordinary type, expression and pattern paths (`util::E::A` in a `match`) pick the local `mod util` with no diagnostic; `use util::K`, `use util::{K}`, `use util::*`, `use util as u`, a block `use`, and a glob-imported local `util` are each one `E0163`; `use crate::util::K` and `use self::util::K` resolve locally; a nested `mod m { use util::K; }` reaches the dependency (Rust-correct). One divergence from "Rust 2018 exactly": F10.
 - POM navigability: holds. Each crate keeps its own root (C33); with a populated `std_source` (a module in `std` and in `std::prelude`) `design.modules()`, `consts()`, `namespaces()` list only the root crate's items and `root_crate().decls()` holds no `std` declaration.
 
+## Round 2
+
+Re-judged each fix at 1bd39cf8 (HEAD 435cb79d) by reading the change and its test, and re-ran every round-1 probe: P1 to P9 and Q1 to Q6 now behave as the findings asked (Q1 no panic; Q2 dependency lockfile ignored; Q3 `main`/`zz` are `E0176`; Q4 3 crates; Q5 `master`/`HEAD` rejected, a 7-digit id accepted; P2 one `E0163`; P5 `fn util` hides nothing; P7 `std.msl` is `std_` with one `E0171`; P8 swapped crates and bad dependency names rejected).
+
+- F1 closed at f5ab1373: no overflow and a test at the limit, but the fix drops the upper bound instead of moving it up a component; see N1.
+- F2 closed at 0e76f02f: the dependency's lockfile now pins a transitive `base` at an older commit and the test asserts the head. It fails if dependency lockfiles are honoured.
+- F3 closed at 4f2703dc: C43, C52, C55 and C57 each add the `Bit` nature in a port type, positive and hiding case, `std`'s own file included.
+- F4 closed at b4537a14: named, aliased, type-position and block imports report once; a different missing name still reports. A glob import that hits `E0163` still cascades (`use util::*; const Y: u32 = K;` gives `E0163` + `E0161`). A glob binds no single name, so §3.5.5's "the name that `use` binds" does not cover it. Accepted.
+- F5 closed at ca38f5b7: the root crate is first, `std` is last and named `std`, and dependency names are checked; five bad names are tested.
+- F6 closed at f38976ca: six bad commits are `E0176` at the value under both options, and nothing is fetched.
+- F7 closed at 4eb455d3: reserved stems get `_` and one `E0171`. `pom_design::mod_cycle_is_e0161_and_not_reloaded` is a legitimate update: its root file is `mod.msl` and `mod` is a keyword, so the new rule adds `E0171`. The test still pins exactly one `E0161` with its file and span, and asserts the full code set exactly. It is not weakened. Note: `E0171` is a `package`-phase code that the POM raises on a lone file with no manifest; the §3.6 row now says so. Also see N3.
+- F8 closed at 0bed27bc: identity, checkout directory and lock source use the normalized URL. git fetches with the first spelling seen, and a later spelling fetches through the clone's `origin`. That is acceptable. But stripping `.git` merges two distinct local repositories; see N2.
+- F9 closed at 17551fe0: `rev` must be 7 to 40 hex digits (`E0171`), and §3.6.7 says so. The fixtures changed `r` to `abcdef0` only in `git_refs_are_exclusive_and_git_only`, where the claim is exclusivity. The faults and messages asserted are unchanged, so this is not a weakening.
+- F10 closed at 30bc9ab0: the head of a path of several segments is looked up in the type namespace. Eight value-item cases reach the dependency, and six type-item kinds clash in `use` and win in a path. Regression spot-check: `X::N` on a generic, `E::A`, an imported enum's `F::B` and `Self::Z` resolve clean. A local `use util::K` beside `fn K` still clashes on `util` only. U6 now holds as settled.
+- F11 closed at dd62877e: nine key rows and eleven keys are counted, the `E0163` span is the `use` path, the message names `inner`, and the cycle text is exact.
+
 ## Findings
 
 | Finding | Evidence | Fix | Closed |
@@ -154,3 +170,6 @@ Probes were throwaway targets copied into `crates/piperine-lang/tests/` and `cra
 | F9 (Low) - `rev` accepts any revspec, not only a commit id | Probe: `rev = "<7-char prefix>"`, `rev = "master"`, `rev = "HEAD"` each resolve (`git.rs` `revparse_single(r)`). C97 says "a full commit id"; §3.6.7 leaves `rev` unconstrained | decide whether `rev` is a commit id (reject others as E0172/E0171) and state it in §3.6.7 | 17551fe0 |
 | F10 (Low) - U6 says "Rust 2018 exactly", but the clash ignores namespaces: a local value item shadows a dependency in a type path | Probe: app `fn util() -> u32 { 1 }\nconst X: u32 = util::K;` with dependency `util` -> `E0161 cannot find K` (Rust resolves `util::` in the type namespace to the crate); `use util::K;` beside `fn util` -> `E0163` (no ambiguity in Rust). Matches the namespace-blind wording of §3.5.4/5 | user decision: keep the spec's rule (and drop "exactly" from the record) or make rules 4 and 5 consider only items of the type namespace | 30bc9ab0 |
 | F11 (Low) - assertions looser than their check | C13 checks each key row is present, not that no other key row exists ("exactly those eleven"); C47 asserts the code, not that the message names `inner`; C67 `p.contains('b')` holds for any message containing "b" | count the key rows; assert `inner` in C47's message; assert the chain `app -> b -> app` | dd62877e |
+| N1 (Low) - F1's fix drops the upper bound when bumping it overflows: `0.MAX` and `0.0.MAX` admit `1.0.0`. A caret on `0.x` must stay below `1.0.0` (on `0.0.x`, below `0.1.0`) | Probe: `Requirement { major: 0, minor: Some(u64::MAX), patch: None }.admits(1.0.0) == true`; `0.0.MAX` admits `0.1.0` and `1.0.0`. `paths.rs` `a_requirement_at_the_integer_limit_does_not_overflow` asserts `admits(MAX.MAX.MAX)` for `0.MAX` and `0.0.MAX`, which encodes the wrong bound | on overflow, carry to the next component up (`0.MAX` -> `<1.0.0`, `0.0.MAX` -> `<0.1.0`, `MAX` -> none) and assert those bounds | open - round 2, to the user |
+| N2 (Low) - stripping `.git` merges two different repositories: `<dir>/util` and `<dir>/util.git` become one identity, and the second dependency silently gets the first's commit and content | Probe: two local repositories `util` (`// plain`) and `util.git` (`// dotgit`), with `u1`/`u2` on each (`package = "util"`): 2 crates, and both edges reach `// plain`. `git.rs` `normalize_url`. The F8 test uses one repository only | strip `.git` only where it names the same remote (or compare canonical local paths), or limit §3.6.10 to the trailing `/` | open - round 2, to the user |
+| N3 (Low) - the stem `_` names the root crate `_` with no diagnostic, although `is_crate_name("_")` is false | Probe: `Design::builder().source("_.msl", "")` gives root crate `_` and zero diagnostics. `crate_name` exempts `name == "_"` before the reserved-name check. §3.6.4 says a stem the rule forbids is `E0171` | treat `_` like any reserved stem (`__` plus `E0171`) or state the exemption in §3.6.4 | open - round 2, to the user |
