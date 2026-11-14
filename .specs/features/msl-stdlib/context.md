@@ -101,3 +101,12 @@ Recommendation: one `pub` namespace per §22.x section, plus two for what Part V
 - The fences of Parts I to VI built clean against `std` (A-03 counted 46 of 95 with `E0161`). Most are pieces that need a context table of their own.
 - `str` methods in Appendix H (byte access), which would let `logic` and `matches_bits` be written in MSL.
 - Binding each intrinsic to an engine implementation (elaborator and codegen do not exist yet).
+
+## Answers (user, 2026-11-14)
+
+| Q | Answer (user's choice, verbatim option) | Effect |
+| - | --------------------------------------- | ------ |
+| Q1 | "extern \"intrinsic\" (Recommended)" | `extern "intrinsic"` on `fn` and `module`, legal only in crate `std` |
+| Q2 | "As many as possible" | every std item expressible in MSL today gets an MSL body, even though nothing executes bodies yet; only what MSL cannot express stays `extern "intrinsic"` |
+| Q3 | "Rename the analysis kind" | the std module keeps the name `Tran`; the analysis kind `Tran` is renamed; plus a guard that no std export equals a core name |
+| Q4+Q5 | "Yes, both (Recommended)" | namespaces `std::{constants, carriers, values, analog, nets, convert, monitor, io}`, all re-exported by `std::prelude`; `Q`, `K_B`, `EPS0`, `PI`, `E`, `inf` move to `std::constants` (`inf` = `1.0 / 0.0`) |
