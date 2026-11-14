@@ -1737,7 +1737,7 @@ Proof: run pomcorpus | test every_spec_block_round_trips_to_its_ast ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 (Phase 1) Sonnet worker at 8700cc5f
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above
 
 ---
