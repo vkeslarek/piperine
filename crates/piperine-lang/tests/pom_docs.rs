@@ -238,6 +238,76 @@ fn every_b1_construct_is_mapped() {
     assert_eq!(rows.iter().filter(|r| r.first().is_some_and(|c| c.parse::<usize>().is_ok())).count(), 65, "one row per construct, no extra");
 }
 
+/// The table rows (`| .. |` lines) of the `## heading` section of a page, as trimmed cells.
+fn section_rows(page: &str, heading: &str) -> Vec<Vec<String>> {
+    page_section(page, heading).into_iter().filter(|l| l.starts_with('|')).map(|l| l.split('|').map(|c| c.trim().to_string()).skip(1).collect()).collect()
+}
+
+fn page_of(name: &str) -> String {
+    pom_docs().into_iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("docs/pom/{name}")).1
+}
+
+#[test]
+fn place_has_no_parenthesized_form_in_the_docs() {
+    // B.3.2 note 4: a `place` takes no parentheses.
+    let mapping = page_of("mapping.md");
+    let row = mapping.lines().find(|l| l.starts_with("| `place` |")).expect("a `place` row in mapping.md");
+    assert!(!row.contains("(s)") && !row.contains("Paren"), "the `place` row still has a parenthesized form: {row}");
+    let reflection = page_of("reflection.md");
+    let writers = reflection.lines().find(|l| l.starts_with("| `writers(self)` |")).expect("the `Signal::writers` row");
+    assert!(!writers.contains("(s)"), "`Signal::writers` still names the parenthesized place: {writers}");
+}
+
+#[test]
+fn every_code_the_pom_reports_is_documented() {
+    let mut codes = std::collections::BTreeSet::new();
+    for file in rust_files(&repo().join("crates/piperine-lang/src/pom")) {
+        let text = std::fs::read_to_string(file).unwrap();
+        let bytes = text.as_bytes();
+        // Every string literal `"E` followed by four digits and a closing quote: a code, whether it is
+        // passed to `Diagnostic::new` directly or through a helper.
+        for (at, _) in text.match_indices("\"E") {
+            let code = &text[at + 1..(at + 6).min(text.len())];
+            if code.len() == 5 && code[1..].bytes().all(|b| b.is_ascii_digit()) && bytes.get(at + 6) == Some(&b'"') {
+                codes.insert(code.to_string());
+            }
+        }
+    }
+    assert!(codes.len() >= 17 && codes.contains("E0125") && codes.contains("E0263"), "the scrape found only {codes:?}");
+    let rows = section_rows(&page_of("resolution.md"), "## Diagnostics");
+    let documented: std::collections::BTreeSet<String> = rows.iter().filter_map(|r| r.first()).map(|c| c.trim_matches('`').to_string()).collect();
+    let missing: Vec<_> = codes.difference(&documented).collect();
+    assert!(missing.is_empty(), "the Diagnostics table of resolution.md has no row for: {missing:?}");
+}
+
+/// The `(name, kind)` of every `row(..)` of `BUILTINS` in `src/pom/builtin.rs`.
+fn builtin_rows() -> Vec<(String, String)> {
+    let text = std::fs::read_to_string(repo().join("crates/piperine-lang/src/pom/builtin.rs")).unwrap();
+    text.lines()
+        .filter_map(|l| {
+            let rest = l.trim_start().strip_prefix("row(\"")?;
+            let (name, rest) = rest.split_once('"')?;
+            let kind = rest.split("BuiltinKind::").nth(1)?.split(|c: char| !c.is_alphanumeric()).next()?;
+            Some((name.to_string(), kind.to_string()))
+        })
+        .collect()
+}
+
+#[test]
+fn every_builtin_row_is_documented() {
+    let rows = builtin_rows();
+    assert!(rows.len() >= 60 && rows.iter().any(|(n, k)| n == "ddt" && k == "Module"), "the scrape found only {rows:?}");
+    let table = section_rows(&page_of("resolution.md"), "## The built-in table");
+    let mut missing = Vec::new();
+    for (name, kind) in &rows {
+        let named = table.iter().any(|r| r.first().is_some_and(|c| c.as_str() == format!("`{kind}`")) && r.get(1).is_some_and(|c| c.contains(&format!("`{name}`"))));
+        if !named {
+            missing.push(format!("{kind} {name}"));
+        }
+    }
+    assert!(missing.is_empty(), "the built-in table of resolution.md has no entry for: {missing:?}");
+}
+
 #[test]
 fn msl_fences_parse_clean() {
     let mut fences = 0;

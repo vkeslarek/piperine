@@ -801,7 +801,7 @@ assert_eq!(m.param("r").unwrap().ty().text(), "f64");
 | `init(self)` | `Option<Expr<'d>>` | The `= init` value. |
 | `nature(self)` | `Option<Nature<'d>>` | The nature of the signal's type, through arrays and `flip`. |
 | `generation(self)` | `Option<Generation<'d>>` | The generation the signal is written in, if its parent is one. |
-| `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this signal (`s`, `s[i]`, `s.f`, `(s)`), or ends in it as a member of an instance (`c.w`, `c.w[i]`), in source order. |
+| `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this signal (`s`, `s[i]`, `s.f`), or ends in it as a member of an instance (`c.w`, `c.w[i]`), in source order. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};

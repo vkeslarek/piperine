@@ -1300,14 +1300,14 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `place_has_no_parenthesized_form_in_the_docs` passes in `pom_docs.rs` (C124: POL-22 AC 2)
-- [ ] Test `every_code_the_pom_reports_is_documented` passes in `pom_docs.rs` (C125: POL-22 AC 3)
-- [ ] Test `every_builtin_row_is_documented` passes in `pom_docs.rs` (C126: POL-22 AC 4)
-- [ ] Test `every_reflection_method_is_documented` still passes in `pom_docs.rs` (C127: POL-22 AC 5)
-- [ ] `every_public_pom_type_has_a_heading` and `msl_fences_parse_clean` pass
-- [ ] The diagnostics guard scrapes `Diagnostic::new("E` in `src/pom/**/*.rs`
-- [ ] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `place_has_no_parenthesized_form_in_the_docs` passes in `pom_docs.rs` (C124: POL-22 AC 2)
+- [x] Test `every_code_the_pom_reports_is_documented` passes in `pom_docs.rs` (C125: POL-22 AC 3)
+- [x] Test `every_builtin_row_is_documented` passes in `pom_docs.rs` (C126: POL-22 AC 4)
+- [x] Test `every_reflection_method_is_documented` still passes in `pom_docs.rs` (C127: POL-22 AC 5)
+- [x] `every_public_pom_type_has_a_heading` and `msl_fences_parse_clean` pass
+- [x] The diagnostics guard scrapes `Diagnostic::new("E` in `src/pom/**/*.rs`
+- [x] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

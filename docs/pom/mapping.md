@@ -40,7 +40,7 @@ tree one level at a time.
 | `reaction` | `on event { .. }` | `ReactionData` | `Reaction` | `Behavior::reactions` |
 | `contribution` | `i(p, n) +> expr;` | `StmtKind::Contribution` | `Contribution` | `Behavior::contributions` |
 | `commit` | `q <- v after d;` | `StmtKind::Commit` | `Commit` | `Reaction::commits` |
-| `place` | `s`, `s[i]`, `s.f`, `(s)` as the target of `=` or `<-` | `ExprKind` (`Path`, `Index`, `Field`, `Paren`) | `Expr` | `Definition::place`, `Commit::place` |
+| `place` | `s`, `s[i]`, `s.f` as the target of `=` or `<-`; a parenthesized place is `E0900` (B.3.2 note 4) | `ExprKind` (`Path`, `Index`, `Field`) | `Expr` | `Definition::place`, `Commit::place` |
 | `emit` | `emit!("stream", f = e)` | `ExprKind::Emit` | `Expr` | `Expr::kind` |
 | `include_str` | `include_str!("file")` | `ExprKind::IncludeStr` | `Expr` | `Expr::kind` |
 | `attr_derivative` | `#[derivative(f, g)]` | `AttrNode` | `Attr` | `Reflect::attr("derivative")`, `Attr::paths` |
