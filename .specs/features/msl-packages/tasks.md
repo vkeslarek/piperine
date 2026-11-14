@@ -509,14 +509,14 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `the_project_root_is_the_nearest_manifest` passes in `project.rs` (C111: PKG-14 AC 1)
-- [ ] Test `the_crate_holds_no_retired_surface` passes in `project.rs` (C115: PKG-15 AC 1)
-- [ ] `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')` exits 0
-- [ ] `tests/project.rs` opens with a `//!` scope header and uses `tempfile::tempdir()`
-- [ ] `get_current_project_root` is deleted with the rest (the CLI's helper)
-- [ ] The other workspace crates are not touched
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `the_project_root_is_the_nearest_manifest` passes in `project.rs` (C111: PKG-14 AC 1)
+- [x] Test `the_crate_holds_no_retired_surface` passes in `project.rs` (C115: PKG-15 AC 1)
+- [x] `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')` exits 0
+- [x] `tests/project.rs` opens with a `//!` scope header and uses `tempfile::tempdir()`
+- [x] `get_current_project_root` is deleted with the rest (the CLI's helper)
+- [x] The other workspace crates are not touched
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
