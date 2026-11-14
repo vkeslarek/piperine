@@ -365,10 +365,10 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Everything in the removal map row is gone; the three capability bits are left vacant with a one-line comment, no other flag changes value
-- [ ] Test functions whose every assertion is about `HAS_DISTO2`, `HAS_DISTO3`, `NUMERIC_JACOBIAN` or `disto` (in `capabilities_contract.rs`, `failure_rules.rs`, `validation_gating.rs` or elsewhere) are removed and named in `removed.txt`; the 9 unit tests of `disto.rs` are named there too
-- [ ] New target `removed_surface.rs` with a `//!` header, a helper `names_found(names: &[&str]) -> Vec<String>` that scans every `.rs` file under `crates/piperine-*solver*/src`, and the tests `disto_is_gone` (C14) and `the_scan_catches_a_planted_name` (C20: the helper's core, run on a string that holds one of the names, reports it)
-- [ ] Gate: full
+- [x] Everything in the removal map row is gone; the three capability bits are left vacant with a one-line comment, no other flag changes value
+- [x] Test functions whose every assertion is about `HAS_DISTO2`, `HAS_DISTO3`, `NUMERIC_JACOBIAN` or `disto` (in `capabilities_contract.rs`, `failure_rules.rs`, `validation_gating.rs` or elsewhere) are removed and named in `removed.txt`; the 9 unit tests of `disto.rs` are named there too
+- [x] New target `removed_surface.rs` with a `//!` header, a helper `names_found(names: &[&str]) -> Vec<String>` that scans every `.rs` file under `crates/piperine-*solver*/src`, and the tests `disto_is_gone` (C14) and `the_scan_catches_a_planted_name` (C20: the helper's core, run on a string that holds one of the names, reports it)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full

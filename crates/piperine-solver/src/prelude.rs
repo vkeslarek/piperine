@@ -31,7 +31,6 @@ pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimi
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;
-pub use crate::analyses::disto::{DistoOptions, DistoSolver};
 pub use crate::analyses::noise::{NoiseAnalysisOptions, NoiseKind};
 pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
@@ -55,7 +54,7 @@ pub use crate::analyses::convergence::{
 
 // ── Results ────────────────────────────────────────────────────────────────
 pub use crate::core::result::{
-    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, DistoResult, NoiseAnalysisResult, NoiseContribution,
+    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult, NoiseContribution,
     PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
 };
 
