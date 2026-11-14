@@ -1092,7 +1092,7 @@ Proof: run book | test the_book_says_transient ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** B1 (T1-T7, Sonnet) at 0ae471d1
+**Dispatched:** B1 (T1-T7, Sonnet) at 0ae471d1 - returned (T1-T7 a7fb0985..8dcb9818; gaps: STD-06 visible-trait rule unspecified (all blanket impls scanned); some tests green-before)
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above. The Book is a page, but it is published by the orchestrator after the merge and has no binding capture.
 
 ---
