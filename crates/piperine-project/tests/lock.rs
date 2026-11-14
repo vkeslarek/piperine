@@ -196,12 +196,27 @@ fn a_locked_checkout_needs_no_repository() {
 #[test]
 fn only_the_root_lockfile_counts() {
     let (_tmp, base) = workspace();
+    // `base` has two commits; its head is the second.
+    let (base_repo, old) = named_repo(&base.join("base-repo"), "base", "");
+    let mut again = package_files("base", "1.0.0", "");
+    again.push(("marker.txt".to_string(), "newer".to_string()));
+    let head = commit(&base_repo, &files(&again), "second");
+    assert_ne!(old, head);
+    // `util`'s own committed lockfile pins `base` at the OLD commit: a resolver that honoured it
+    // would check `base` out at `old`.
     let util = repo(&base.join("util-repo"));
+    let source = format!("git+{}", url(&base_repo));
     let mut all = package_files("util", "1.0.0", "");
-    all.push(("Piperine.lock".to_string(), format!("version = 1\n\n[[package]]\nname = \"util\"\nversion = \"1.0.0\"\nsource = \"git+{}\"\ncommit = \"{}\"\n", url(&util), "0123456789abcdef0123456789abcdef01234567")));
-    let oid = commit(&util, &files(&all), "util with a lockfile");
+    for (name, text) in all.iter_mut() {
+        if name == "Piperine.toml" {
+            text.push_str(&format!("\n[dependencies]\nbase = {{ git = \"{}\" }}\n", url(&base_repo)));
+        }
+    }
+    all.push(("Piperine.lock".to_string(), format!("version = 1\n\n[[package]]\nname = \"base\"\nversion = \"1.0.0\"\nsource = \"{source}\"\ncommit = \"{old}\"\n")));
+    commit(&util, &files(&all), "util with a lockfile");
     let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
     let graph = ok(&app);
-    assert_eq!(graph.packages[1].commit, Some(oid.to_string()));
-    assert!(lock_of(&app).contains(&oid.to_string()) && !lock_of(&app).contains("0123456789abcdef"));
+    let locked_base = graph.packages.iter().find(|p| p.manifest.package.name == "base").expect("base resolved");
+    assert_eq!(locked_base.commit, Some(head.to_string()), "the dependency's lockfile must be ignored");
+    assert!(lock_of(&app).contains(&head.to_string()) && !lock_of(&app).contains(&old.to_string()));
 }
