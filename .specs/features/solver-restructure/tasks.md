@@ -130,14 +130,14 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Elements exist for every module in the five targets: `R`, `C`, `D`, `Vsrc`, `Vsine`, `Vramp`, `ROpt`, `ClockSrc`, `Comparator`, `ToggleDff`; each quotes the Verilog-A text it replaces in a comment and exposes the params the tests read or set (`list_params`, `get_param`, `set_param` with the right `Invalidation`)
-- [ ] `param_stamps` is implemented, with `HAS_SENSITIVITY`, on every element whose parameter an adjoint test differentiates analytically
-- [ ] Test `divider_reads_the_analytic_ratio` passes (C4)
-- [ ] Test `rc_step_reads_one_minus_exp` passes (C5)
-- [ ] Test `diode_satisfies_its_own_equation` passes (C6)
-- [ ] Test `param_stamps_match_a_central_difference` passes for every element that implements `param_stamps`
-- [ ] No existing helper is changed
-- [ ] Gate: quick, on `helper_devices`
+- [x] Elements exist for every module in the five targets: `R`, `C`, `D`, `Vsrc`, `Vsine`, `Vramp`, `ROpt`, `ClockSrc`, `Comparator`, `ToggleDff`; each quotes the Verilog-A text it replaces in a comment and exposes the params the tests read or set (`list_params`, `get_param`, `set_param` with the right `Invalidation`)
+- [x] `param_stamps` is implemented, with `HAS_SENSITIVITY`, on every element whose parameter an adjoint test differentiates analytically
+- [x] Test `divider_reads_the_analytic_ratio` passes (C4)
+- [x] Test `rc_step_reads_one_minus_exp` passes (C5)
+- [x] Test `diode_satisfies_its_own_equation` passes (C6)
+- [x] Test `param_stamps_match_a_central_difference` passes for every element that implements `param_stamps`
+- [x] No existing helper is changed
+- [x] Gate: quick, on `helper_devices`
 
 **Tests**: integration
 **Gate**: quick
