@@ -53,6 +53,16 @@ A source file of the design.
 | --- | --- | --- |
 | `0` | `u32` | Index into the file list. |
 
+### `CrateId`
+
+*struct* in `src/pom/ids.rs`.
+
+A crate of a design, or of a crate graph.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `0` | `u32` | Index into the crate list. |
+
 ### `DeclId`
 
 *struct* in `src/pom/ids.rs`.
@@ -217,6 +227,61 @@ Files held in memory, keyed by their normalized path (`.` removed, `..` folded).
 *struct* in `src/pom/source.rs`.
 
 The filesystem. `canonical` is `std::fs::canonicalize`, falling back to the path itself.
+
+## The crate graph
+
+A build over several crates takes a `CrateGraph`: plain data, built by the host (the package loader or a test), with no manifest and no file read. A rejected call leaves the graph unchanged.
+
+### `CrateGraph`
+
+*struct* in `src/pom/crates.rs`.
+
+The crates of a build in insertion order; the first is the root crate.
+
+| Method | Meaning |
+| --- | --- |
+| `new() -> CrateGraph` | An empty graph. |
+| `add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError>` | Add a crate; `InvalidName` unless `is_crate_name(name)`. |
+| `add_dependency(&mut self, from: CrateId, name: &str, to: CrateId) -> Result<(), GraphError>` | Give `from` a dependency called `name` on `to`; `UnknownCrate`, `InvalidName`, `DuplicateDependency` or `Cycle`. |
+| `crates(&self) -> &[CrateNode]` | The crates in insertion order. |
+
+`is_crate_name(name: &str) -> bool` is true for one identifier that is no keyword and not `std`.
+
+### `CrateNode`
+
+*struct* in `src/pom/crates.rs`.
+
+One crate of a graph.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `String` | The crate's name. |
+| `root` | `PathBuf` | The crate root file. |
+| `dependencies` | `Vec<DependencyData>` | Its named dependencies, in the order added. |
+
+### `DependencyData`
+
+*struct* in `src/pom/crates.rs`.
+
+An edge of the graph.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `String` | The name the depending crate gives it. |
+| `krate` | `CrateId` | The crate it names. |
+
+### `GraphError`
+
+*enum* in `src/pom/crates.rs`.
+
+Why a call on a `CrateGraph` was refused.
+
+| Variant | Meaning |
+| --- | --- |
+| `InvalidName { name }` | Not an identifier, a keyword, or `std`. |
+| `DuplicateDependency { krate, name }` | The crate already has a dependency of this name. |
+| `UnknownCrate { id }` | The id does not belong to the graph. |
+| `Cycle { names }` | The edge would close a cycle; `names` lists it, the first crate repeated last. |
 
 ## Declarations
 

@@ -255,18 +255,18 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `graph_keeps_crates_and_edges_as_given` passes in `pom_crates.rs` (C22: PKG-03 AC 1)
-- [ ] Test `graph_rejects_invalid_and_reserved_names` passes in `pom_crates.rs` (C23: PKG-03 AC 2)
-- [ ] Test `graph_rejects_a_cycle_and_names_it` passes in `pom_crates.rs` (C24: PKG-03 AC 3)
-- [ ] Test `graph_rejects_a_repeated_dependency_name` passes in `pom_crates.rs` (C25: PKG-03 AC 4)
-- [ ] Test `graph_rejects_a_foreign_id` passes in `pom_crates.rs` (C26: PKG-03 AC 5)
-- [ ] Test `piperine_lang_takes_the_graph_as_data` passes in `pom_crates.rs` (C27: PKG-03 AC 6)
-- [ ] `pom_crates.rs` opens with a `//!` scope header; no `#[ignore]`, no file-scope `#![allow]`
-- [ ] A rejected call leaves the graph equal to its clone taken before the call
-- [ ] The cycle check is a reachability walk over the stored edges; nothing recurses without bound
-- [ ] `docs/pom/model.md` has a `### ` heading for each new public type (`pom_docs` enforces it)
-- [ ] Gate passes: run crates, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `graph_keeps_crates_and_edges_as_given` passes in `pom_crates.rs` (C22: PKG-03 AC 1)
+- [x] Test `graph_rejects_invalid_and_reserved_names` passes in `pom_crates.rs` (C23: PKG-03 AC 2)
+- [x] Test `graph_rejects_a_cycle_and_names_it` passes in `pom_crates.rs` (C24: PKG-03 AC 3)
+- [x] Test `graph_rejects_a_repeated_dependency_name` passes in `pom_crates.rs` (C25: PKG-03 AC 4)
+- [x] Test `graph_rejects_a_foreign_id` passes in `pom_crates.rs` (C26: PKG-03 AC 5)
+- [x] Test `piperine_lang_takes_the_graph_as_data` passes in `pom_crates.rs` (C27: PKG-03 AC 6)
+- [x] `pom_crates.rs` opens with a `//!` scope header; no `#[ignore]`, no file-scope `#![allow]`
+- [x] A rejected call leaves the graph equal to its clone taken before the call
+- [x] The cycle check is a reachability walk over the stored edges; nothing recurses without bound
+- [x] `docs/pom/model.md` has a `### ` heading for each new public type (`pom_docs` enforces it)
+- [x] Gate passes: run crates, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
