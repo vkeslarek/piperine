@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 pub mod error;
 pub mod git;
 pub mod manifest;
+pub mod resolver;
 
 pub use error::PackageError;
 pub use manifest::{Dependency, GitRef, Manifest, Package, Requirement, Source, Version};
+pub use resolver::{Options, PackageGraph, ResolvedPackage, resolve};
 
 /// Finds the root directory of the current project by looking for Piperine.toml.
 /// Starts from `current_dir` and traverses up the directory tree.

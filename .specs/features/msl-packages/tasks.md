@@ -612,17 +612,17 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `path_dependencies_are_relative_to_their_manifest` passes in `paths.rs` (C85: PKG-11 AC 1)
-- [ ] Test `the_graph_mirrors_the_manifests` passes in `paths.rs` (C86: PKG-11 AC 2)
-- [ ] Test `a_shared_dependency_is_one_crate` passes in `paths.rs` (C87: PKG-11 AC 3)
-- [ ] Test `a_path_without_a_package_is_e0172` passes in `paths.rs` (C88: PKG-11 AC 4)
-- [ ] Test `a_package_without_a_crate_root_is_e0175` passes in `paths.rs` (C89: PKG-11 AC 5)
-- [ ] `tests/support/mod.rs` opens with a `//!` header; it writes packages into a `tempdir` (`package(dir, name, version, deps, lib_text)`): plain functions, no macro
-- [ ] `E0172` and `E0175` point at the dependency's key in the manifest that names it; for the root package `E0175` has a zero span in its own manifest
-- [ ] A git dependency is `E0172` "git dependencies are not resolved yet" until T22: fail loud, never skipped
-- [ ] The first crate of the graph is the root package
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `path_dependencies_are_relative_to_their_manifest` passes in `paths.rs` (C85: PKG-11 AC 1)
+- [x] Test `the_graph_mirrors_the_manifests` passes in `paths.rs` (C86: PKG-11 AC 2)
+- [x] Test `a_shared_dependency_is_one_crate` passes in `paths.rs` (C87: PKG-11 AC 3)
+- [x] Test `a_path_without_a_package_is_e0172` passes in `paths.rs` (C88: PKG-11 AC 4)
+- [x] Test `a_package_without_a_crate_root_is_e0175` passes in `paths.rs` (C89: PKG-11 AC 5)
+- [x] `tests/support/mod.rs` opens with a `//!` header; it writes packages into a `tempdir` (`package(dir, name, version, deps, lib_text)`): plain functions, no macro
+- [x] `E0172` and `E0175` point at the dependency's key in the manifest that names it; for the root package `E0175` has a zero span in its own manifest
+- [x] A git dependency is `E0172` "git dependencies are not resolved yet" until T22: fail loud, never skipped
+- [x] The first crate of the graph is the root package
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
