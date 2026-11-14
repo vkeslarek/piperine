@@ -1117,6 +1117,82 @@ registering each source under a namespace path.
 **Scope:** `piperine-lang`, `piperine-project`, the CLI and the LSP.
 **Status:** Locked (user, 2026-11-13); the extension is open to correction.
 
+### MD-56: the MSL audit's language decisions (D1 to D17)
+
+User decision (2026-11-14: "sim"), accepting the seventeen recommendations of
+`.specs/features/msl-audit/report.md` ("Spec decisions needed") as written.
+Feature `msl-polish` writes them into `docs/spec/` and brings the parser and
+the POM into line; D4 is the next feature, `msl-stdlib`.
+
+- **D1** B.3.6 is the complete list of what is removed from Rust (type aliases,
+  associated types, trait-bound `where`, `impl Trait`, qualified paths,
+  `pub(..)`, labels, pattern and `mut` parameters, `&self`, ...). Taken in:
+  function-pointer types `fn(T) -> U`, a negative literal as a const generic
+  argument.
+- **D2** The inherited Rust library is a closed catalogue (Appendix H); a name
+  outside it is `E0161`.
+- **D3** `gnd`, `Nature`, `m`, `dtemp` and `str` are core names (built-in table),
+  not prelude source.
+- **D4** The standard library is a normative source (`std/*.msl`), Part VII's
+  fences are excerpts of it, and "the galleries build clean" is a gate.
+  **Deferred to `msl-stdlib`.**
+- **D5** One name per table (type, value) per namespace; an item or explicit
+  `use` beats a glob; two globs clash only when the name is used. Code `E0162`.
+- **D6** A behavior block repeats its module's generic names, same names, same
+  order.
+- **D7** A shared borrow of any value is allowed as a call argument; `E0102`
+  covers the rest.
+- **D8** `E0910` counts nesting only (256). Flat chains have their own bound:
+  4096 links on one path (planner default inside the decision).
+- **D9** Doc comments and attributes go wherever Rust takes an outer attribute,
+  and before reactions, definitions, generation and nature quantities. Docs of
+  a quantity and of a reaction are metadata (§21).
+- **D10** A plain identifier pattern that resolves to a constant, a unit variant
+  or a unit struct is that path, not a binding.
+- **D11** The POM reports the structural errors it can already see under the
+  spec's codes (`E0320`, `E0140`, `E0370`, `E0201`; by the same rule `E0263`,
+  `E0125`, `E0206`, `E0211`).
+- **D12** An out-of-range literal is a parse error, `E0909`.
+- **D13** Items sit at namespace scope (a file or an inline `mod`); a block and
+  its module share a file, any namespace of it.
+- **D14** `E0404` for `<-`, `+>`, `on`, `signal` in any block or body that is not
+  theirs, a module body included; `E0121` only in a `fn` body, where it wins.
+- **D15** `r#name` is an identifier for the seven added keywords (closes G.15).
+- **D16** `{ r }` is accepted in param blocks and templates and the tree keeps
+  the authored form (closes G.14).
+- **D17** A place takes no parentheses, in a definition or in a commit.
+
+Trade-off: the language is narrower than "Rust minus a few things" on paper
+(B.3.6 and Appendix H are closed lists that must be kept), in exchange for a
+grammar and a library surface a type checker and a conformance suite can be
+written against.
+
+**Scope:** `docs/spec/`, `piperine-lang` (`msl`, `pom`), `docs/pom/`, and every
+later consumer of the frontend.
+**Status:** Locked (user, 2026-11-14). D4 open until `msl-stdlib`.
+
+### MD-57: a spec edit lands where its guard can pass; `spec_text` guards the wording
+
+`msl-polish` design decision (2026-11-14). `docs/spec/` is normative and is
+read by tests, so the specification leads and every commit stays green:
+
+1. Prose, rules, `Resolution` notes and elaboration-phase error rows are
+   written first, each with a test in `crates/piperine-lang/tests/spec_text.rs`
+   that asserts the decided fact (a row, a code, a short phrase; never a
+   sentence).
+2. Three kinds of edit travel with their implementation, because an existing
+   guard reads them: an error row of phase `parse` (its fixture, `msl_errors`),
+   a `rust` or `rust,fragment` fence (`msl_corpus`, `pom_corpus`), a new
+   production name of B.3.2 (`docs/pom/mapping.md`, `pom_docs`).
+3. No guard is relaxed to let a spec edit through.
+
+Trade-off: for the length of a feature the specification can be ahead of the
+implementation; the alternative (spec and code in one commit per decision)
+makes every task span four layers.
+
+**Scope:** every feature that edits `docs/spec/`.
+**Status:** Locked (msl-polish spec approved 2026-11-14).
+
 ---
 
 ## Handoff Snapshot
