@@ -334,30 +334,66 @@ impl Design {
         self.decls().into_iter().filter(|d| !d.file().is_prelude())
     }
 
-    /// Every module of the design, prelude files first, in source order.
+    /// Every module of the non-prelude files, in source order.
     pub fn modules(&self) -> Vec<Module<'_>> {
-        self.decls().into_iter().filter_map(Decl::as_module).collect()
+        self.authored().filter_map(Decl::as_module).collect()
     }
 
-    /// The first module named `name`: the first match in a non-prelude file
-    /// in file order, else the first match in a prelude source.
+    /// The first declaration `accept` takes: one of a non-prelude file, else
+    /// one of a prelude source. The one precedence of every by-name lookup.
+    fn first_project_first(&self, accept: impl Fn(Decl<'_>) -> bool) -> Option<Decl<'_>> {
+        self.authored().find(|d| accept(*d)).or_else(|| self.decls().into_iter().find(|d| accept(*d)))
+    }
+
+    /// The module named `name`: the first match in a non-prelude file, else
+    /// the first match in a prelude source.
     pub fn module(&self, name: &str) -> Option<Module<'_>> {
-        let named = |m: &Module<'_>| m.name() == Some(name);
-        self.authored().filter_map(Decl::as_module).find(named).or_else(|| self.modules().into_iter().find(named))
+        self.first_project_first(|d| d.as_module().is_some_and(|m| m.name() == Some(name))).and_then(Decl::as_module)
     }
 
     /// Every free function (a `fn` directly in a namespace) of the non-prelude
     /// files, in source order.
     pub fn functions(&self) -> Vec<Function<'_>> {
-        self.authored()
-            .filter(|d| d.declared_in().is_some_and(|p| p.as_namespace().is_some()))
-            .filter_map(Decl::as_function)
-            .collect()
+        self.authored().filter(Design::is_free).filter_map(Decl::as_function).collect()
+    }
+
+    fn is_free(d: &Decl<'_>) -> bool {
+        d.declared_in().is_some_and(|p| p.as_namespace().is_some())
+    }
+
+    /// The free function named `name`, project files first.
+    pub fn function(&self, name: &str) -> Option<Function<'_>> {
+        self.first_project_first(|d| Design::is_free(&d) && d.as_function().is_some_and(|f| f.name() == Some(name))).and_then(Decl::as_function)
     }
 
     /// Every struct of the non-prelude files, in source order.
     pub fn structs(&self) -> Vec<Struct<'_>> {
         self.authored().filter_map(Decl::as_struct).collect()
+    }
+
+    /// The struct named `name`, project files first.
+    pub fn struct_named(&self, name: &str) -> Option<Struct<'_>> {
+        self.first_project_first(|d| d.as_struct().is_some_and(|s| s.name() == Some(name))).and_then(Decl::as_struct)
+    }
+
+    /// Every enum of the non-prelude files, in source order.
+    pub fn enums(&self) -> Vec<Enum<'_>> {
+        self.authored().filter_map(Decl::as_enum).collect()
+    }
+
+    /// Every trait of the non-prelude files, in source order.
+    pub fn traits(&self) -> Vec<Trait<'_>> {
+        self.authored().filter_map(Decl::as_trait).collect()
+    }
+
+    /// Every `const` item of the non-prelude files, in source order.
+    pub fn consts(&self) -> Vec<Const<'_>> {
+        self.authored().filter_map(Decl::as_const).collect()
+    }
+
+    /// Every `impl` block of the non-prelude files, in source order.
+    pub fn impls(&self) -> Vec<Impl<'_>> {
+        self.authored().filter_map(Decl::as_impl).collect()
     }
 
     /// Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude
@@ -366,14 +402,20 @@ impl Design {
         self.authored().filter_map(Decl::as_namespace).filter(|n| n.name().is_some()).collect()
     }
 
-    /// Every nature of the design, in source order.
+    /// Every nature of the non-prelude files, in source order.
     pub fn natures(&self) -> Vec<Nature<'_>> {
-        (0..self.decl_count()).filter_map(|i| Decl::new(self, DeclId(i as u32)).as_nature()).collect()
+        self.authored().filter_map(Decl::as_nature).collect()
     }
 
-    /// The first nature named `name`.
+    /// The nature named `name`, project files first.
     pub fn nature(&self, name: &str) -> Option<Nature<'_>> {
-        self.natures().into_iter().find(|n| n.name() == Some(name))
+        self.first_project_first(|d| d.as_nature().is_some_and(|n| n.name() == Some(name))).and_then(Decl::as_nature)
+    }
+
+    /// The prelude sources, in registration order. The typed collections do
+    /// not list their items; `decls()` does.
+    pub fn prelude_files(&self) -> Vec<SourceFile<'_>> {
+        self.files().into_iter().filter(|f| f.is_prelude()).collect()
     }
 
     /// The declaration at a `::` path from the root, each segment a child
@@ -382,6 +424,6 @@ impl Design {
     pub fn find(&self, path: &str) -> Option<Decl<'_>> {
         let walked = path.split("::").try_fold(self.root(), |at, segment| at.children().into_iter().find(|c| c.name() == Some(segment)));
         // The other form is a name `qualified_name` printed: the first declaration with exactly it.
-        walked.or_else(|| self.decls().into_iter().find(|d| d.qualified_name() == path))
+        walked.or_else(|| self.first_project_first(|d| d.qualified_name() == path))
     }
 }

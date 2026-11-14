@@ -566,3 +566,82 @@ analog for Z { signal z: Electrical; }
     assert_eq!(design.find("a::E.A").map(|d| d.id()), design.find("a::E::A").map(|d| d.id()));
     assert!(design.find("a::E.B").is_none());
 }
+
+const SHADOW_PRELUDE: &str = "\
+pub nature Bit { value: bool }
+pub module Buf(a: Bit) {}
+pub struct S { p: f64 }
+pub fn f() -> f64 { 1.0 }
+pub enum E { P }
+pub trait Tr {}
+pub const K: f64 = 1.0;
+";
+
+const SHADOW_PROJECT: &str = "\
+nature Bit { value: bool }
+module Buf(a: Bit) {}
+struct S { q: f64 }
+fn f() -> f64 { 2.0 }
+enum E { Q }
+trait Tr {}
+const K: f64 = 2.0;
+impl S { fn m(self) -> f64 { 1.0 } }
+";
+
+fn shadowed() -> Design {
+    Design::builder().prelude("shadow.msl", SHADOW_PRELUDE).source("top.msl", SHADOW_PROJECT).build()
+}
+
+#[test]
+fn by_name_lookups_prefer_project_files() {
+    let design = shadowed();
+    let project = |d: Decl<'_>| !d.file().is_prelude();
+    assert!(project(design.nature("Bit").unwrap().decl()));
+    assert!(project(design.module("Buf").unwrap().decl()));
+    assert!(project(design.struct_named("S").unwrap().decl()));
+    assert!(project(design.function("f").unwrap().decl()));
+    assert!(project(design.find("Bit").unwrap()));
+    assert!(project(design.find("S").unwrap()));
+    assert!(project(design.find("f").unwrap()));
+    // A name only the prelude declares is still found.
+    let only = Design::builder().prelude("shadow.msl", SHADOW_PRELUDE).source("top.msl", "module Top() {}\n").build();
+    assert!(only.nature("Bit").unwrap().file().is_prelude());
+    assert!(only.struct_named("S").unwrap().file().is_prelude());
+    assert!(only.function("f").unwrap().file().is_prelude());
+}
+
+#[test]
+fn collections_list_project_files_only() {
+    let design = shadowed();
+    let all_project = |v: Vec<Decl<'_>>| v.iter().all(|d| !d.file().is_prelude());
+    assert!(all_project(design.modules().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.natures().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.structs().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.enums().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.traits().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.consts().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.impls().iter().map(|x| x.decl()).collect()));
+    assert!(all_project(design.functions().iter().map(|x| x.decl()).collect()));
+    assert_eq!(design.natures().len(), 1);
+    assert_eq!(design.modules().len(), 1);
+    let prelude = design.prelude_files();
+    assert_eq!(prelude.len(), 1);
+    assert!(prelude[0].is_prelude());
+    assert_eq!(prelude[0].name(), "shadow.msl");
+    // `decls()` and `files()` still list everything.
+    assert_eq!(design.files().len(), 2);
+    assert!(design.decls().iter().any(|d| d.file().is_prelude()));
+}
+
+#[test]
+fn design_has_a_collection_and_lookup_per_item_kind() {
+    let design = shadowed();
+    assert_eq!(design.enums().iter().map(|e| e.name()).collect::<Vec<_>>(), [Some("E")]);
+    assert_eq!(design.traits().iter().map(|e| e.name()).collect::<Vec<_>>(), [Some("Tr")]);
+    assert_eq!(design.consts().iter().map(|e| e.name()).collect::<Vec<_>>(), [Some("K")]);
+    assert_eq!(design.impls().len(), 1);
+    assert_eq!(design.struct_named("S").unwrap().fields()[0].name(), Some("q"));
+    assert_eq!(design.function("f").unwrap().name(), Some("f"));
+    assert!(design.struct_named("Nope").is_none());
+    assert!(design.function("Nope").is_none());
+}

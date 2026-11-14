@@ -1108,13 +1108,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `by_name_lookups_prefer_project_files` passes in `pom_reflect.rs` (C109: POL-20 AC 1)
-- [ ] Test `collections_list_project_files_only` passes in `pom_reflect.rs` (C110: POL-20 AC 2)
-- [ ] Test `design_has_a_collection_and_lookup_per_item_kind` passes in `pom_reflect.rs` (C111: POL-20 AC 3)
-- [ ] `module_lookup_prefers_authored_files` still passes unchanged
-- [ ] `decls()` and `files()` still list everything, prelude included
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `by_name_lookups_prefer_project_files` passes in `pom_reflect.rs` (C109: POL-20 AC 1)
+- [x] Test `collections_list_project_files_only` passes in `pom_reflect.rs` (C110: POL-20 AC 2)
+- [x] Test `design_has_a_collection_and_lookup_per_item_kind` passes in `pom_reflect.rs` (C111: POL-20 AC 3)
+- [x] `module_lookup_prefers_authored_files` still passes unchanged
+- [x] `decls()` and `files()` still list everything, prelude included
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

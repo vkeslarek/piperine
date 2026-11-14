@@ -26,7 +26,7 @@ read is in [Model](model.md).
 
 ### `Design`
 
-The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. `functions()`, `structs()` and `namespaces()` list the non-prelude files only; `modules()`, `natures()` and `decls()` include prelude sources.
+The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup prefers the project's declaration over a prelude source's; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the non-prelude files only, in source order. `decls()` and `files()` list everything, prelude sources included; `prelude_files()` gives the prelude's own files.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
@@ -56,14 +56,21 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `root(&self)` | `Decl<'_>` | The root file's namespace. |
 | `decl(&self, id: DeclId)` | `Decl<'_>` | The declaration with this id, as a handle: the way from a `Resolution::Decl(id)` to the declaration. Ids come from this design. |
 | `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, prelude files first. |
-| `modules(&self)` | `Vec<Module<'_>>` | Every module of the design, prelude files first, in source order. |
-| `module(&self, name: &str)` | `Option<Module<'_>>` | The first module named `name`: the first match in a non-prelude file in file order, else the first match in a prelude source. |
+| `prelude_files(&self)` | `Vec<SourceFile<'_>>` | The prelude sources, in registration order. |
+| `modules(&self)` | `Vec<Module<'_>>` | Every module of the non-prelude files, in source order. |
+| `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the first match in a non-prelude file, else the first match in a prelude source. |
 | `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the non-prelude files, in source order. |
+| `function(&self, name: &str)` | `Option<Function<'_>>` | The free function named `name`, project files first. |
 | `structs(&self)` | `Vec<Struct<'_>>` | Every struct of the non-prelude files, in source order. |
+| `struct_named(&self, name: &str)` | `Option<Struct<'_>>` | The struct named `name`, project files first. |
+| `enums(&self)` | `Vec<Enum<'_>>` | Every enum of the non-prelude files, in source order. |
+| `traits(&self)` | `Vec<Trait<'_>>` | Every trait of the non-prelude files, in source order. |
+| `consts(&self)` | `Vec<Const<'_>>` | Every `const` item of the non-prelude files, in source order. |
+| `impls(&self)` | `Vec<Impl<'_>>` | Every `impl` block of the non-prelude files, in source order. |
 | `namespaces(&self)` | `Vec<Namespace<'_>>` | Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude files; a file's unnamed root is not listed. |
-| `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the design, in source order. |
-| `nature(&self, name: &str)` | `Option<Nature<'_>>` | The first nature named `name`. |
-| `find(&self, path: &str)` | `Option<Decl<'_>>` | The declaration at a `::` path from the root, each segment a child name: `a::M` is `M` inside namespace `a`; or a name `qualified_name` printed (`a::E.A`, `impl S.X`), the first declaration with exactly it. |
+| `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the non-prelude files, in source order. |
+| `nature(&self, name: &str)` | `Option<Nature<'_>>` | The nature named `name`, project files first. |
+| `find(&self, path: &str)` | `Option<Decl<'_>>` | The declaration at a `::` path from the root, each segment a child name: `a::M` is `M` inside namespace `a`; or a name `qualified_name` printed (`a::E.A`, `impl S.X`), the first declaration with exactly it, project files first. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
