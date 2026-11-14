@@ -782,19 +782,19 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `str_is_a_builtin_type` passes in `pom_resolve.rs` (C11: POL-03 AC 2)
-- [ ] Test `nature_bound_is_builtin_and_classifies_the_port` passes in `pom_classify.rs` (C12: POL-03 AC 3)
-- [ ] Test `gnd_is_a_builtin_node` passes in `pom_resolve.rs` (C13: POL-03 AC 4)
-- [ ] Test `m_and_dtemp_resolve_inside_a_module` passes in `pom_resolve.rs` (C14: POL-03 AC 5)
-- [ ] Test `m_and_dtemp_are_unknown_outside_a_module` passes in `pom_resolve.rs` (C15: POL-03 AC 6)
-- [ ] Test `a_local_shadows_an_implicit_param` passes in `pom_resolve.rs` (C16: POL-03 AC 7)
-- [ ] Test `core_names_cannot_be_redeclared` passes in `pom_resolve.rs` (C17: POL-03 AC 8)
-- [ ] Test `fixture_prelude_declares_no_core_name` passes in `pom_resolve.rs` (C18: POL-03 AC 9)
-- [ ] `fixture_prelude_builds_clean` and `builtin_table_has_every_core_primitive` still pass
-- [ ] `m` and `dtemp` are not reported by `E0457`: their rule is `E0375` (§8.5.2), left to elaboration
-- [ ] The stand-ins `State`, `Logic` and `init` stay in the fixture: they are standard-library items (`msl-stdlib`)
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `str_is_a_builtin_type` passes in `pom_resolve.rs` (C11: POL-03 AC 2)
+- [x] Test `nature_bound_is_builtin_and_classifies_the_port` passes in `pom_classify.rs` (C12: POL-03 AC 3)
+- [x] Test `gnd_is_a_builtin_node` passes in `pom_resolve.rs` (C13: POL-03 AC 4)
+- [x] Test `m_and_dtemp_resolve_inside_a_module` passes in `pom_resolve.rs` (C14: POL-03 AC 5)
+- [x] Test `m_and_dtemp_are_unknown_outside_a_module` passes in `pom_resolve.rs` (C15: POL-03 AC 6)
+- [x] Test `a_local_shadows_an_implicit_param` passes in `pom_resolve.rs` (C16: POL-03 AC 7)
+- [x] Test `core_names_cannot_be_redeclared` passes in `pom_resolve.rs` (C17: POL-03 AC 8)
+- [x] Test `fixture_prelude_declares_no_core_name` passes in `pom_resolve.rs` (C18: POL-03 AC 9)
+- [x] `fixture_prelude_builds_clean` and `builtin_table_has_every_core_primitive` still pass
+- [x] `m` and `dtemp` are not reported by `E0457`: their rule is `E0375` (§8.5.2), left to elaboration
+- [x] The stand-ins `State`, `Logic` and `init` stay in the fixture: they are standard-library items (`msl-stdlib`)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

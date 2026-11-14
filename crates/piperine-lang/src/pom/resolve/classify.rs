@@ -107,17 +107,11 @@ impl Design {
         self.path_node(bound).segments.last().map_or(Resolution::Unresolved, |s| s.res)
     }
 
-    /// Is `decl` a generic parameter bounded by the prelude's `Nature`? The
+    /// Is `decl` a generic parameter bounded by the core `Nature` (§3.4.2)? The
     /// bound counts by what it resolved to, not by how it is spelled.
     pub(crate) fn is_nature_generic(&self, decl: DeclId) -> bool {
         let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &self.decl_data(decl).kind else { return false };
-        bounds.iter().any(|b| match self.bound_resolution(*b) {
-            Resolution::Decl(t) => {
-                let data = self.decl_data(t);
-                matches!(data.kind, DeclKind::Trait(_)) && data.name.as_ref().is_some_and(|n| n.text == "Nature") && self.file_data(data.file).prelude
-            }
-            _ => false,
-        })
+        bounds.iter().any(|b| matches!(self.bound_resolution(*b), Resolution::Builtin(t) if t.info().name == "Nature"))
     }
 
     /// Is `decl` a generic parameter with a bound that resolved to nothing?

@@ -17,6 +17,11 @@ pub enum BuiltinKind {
     Method,
     Event,
     Statement,
+    /// A reference node of the language: `gnd`.
+    Node,
+    /// A name every module instance carries (`m`, `dtemp`, §8.5): in scope
+    /// only inside a module body and the blocks bound to a module.
+    ImplicitParam,
 }
 
 /// One row of [`BUILTINS`].
@@ -59,9 +64,14 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("Noise", BuiltinKind::Variant, "§11.1.1"),
     row("Static", BuiltinKind::Variant, "§11.1.1"),
     row("Repr", BuiltinKind::Trait, "§2"),
+    row("Nature", BuiltinKind::Trait, "§4"),
     row("Fn", BuiltinKind::Trait, "§3"),
     row("Clone", BuiltinKind::Trait, "§3"),
     row("Copy", BuiltinKind::Trait, "§3"),
+    row("str", BuiltinKind::Type, "§1"),
+    row("gnd", BuiltinKind::Node, "§6"),
+    row("m", BuiltinKind::ImplicitParam, "§8.5"),
+    row("dtemp", BuiltinKind::ImplicitParam, "§8.5"),
     row("Q", BuiltinKind::Const, "§1"),
     row("K_B", BuiltinKind::Const, "§1"),
     row("EPS0", BuiltinKind::Const, "§1"),
@@ -131,7 +141,7 @@ pub fn builtin(name: &str) -> Option<BuiltinId> {
     if let Some(id) = sized(name) {
         return Some(id);
     }
-    let row = BUILTINS.iter().position(|b| b.name == name && b.kind != BuiltinKind::Method)?;
+    let row = BUILTINS.iter().position(|b| b.name == name && !matches!(b.kind, BuiltinKind::Method | BuiltinKind::ImplicitParam))?;
     // The family rows `uN`, `iN`, `fN` are spellings of no name.
     if row <= FLOAT_ROW {
         return None;
@@ -142,6 +152,13 @@ pub fn builtin(name: &str) -> Option<BuiltinId> {
 /// The method row named `name` (`prev`, `others`, `level`, `inflow`, `changed`).
 pub fn builtin_method(name: &str) -> Option<BuiltinId> {
     let row = BUILTINS.iter().position(|b| b.name == name && b.kind == BuiltinKind::Method)?;
+    Some(BuiltinId::new(row, 0))
+}
+
+/// The implicit param row named `name` (`m`, `dtemp`): a name only inside a
+/// module body and the blocks bound to a module, so `builtin` never gives it.
+pub fn builtin_implicit(name: &str) -> Option<BuiltinId> {
+    let row = BUILTINS.iter().position(|b| b.name == name && b.kind == BuiltinKind::ImplicitParam)?;
     Some(BuiltinId::new(row, 0))
 }
 
@@ -160,8 +177,10 @@ fn sized(name: &str) -> Option<BuiltinId> {
     }
 }
 
-/// Is `name` a core primitive of §14 that a model must not redefine
-/// (§14 rule 1, `E0457`)?
+/// Is `name` a core name a model must not redefine (§14 rule 1, `E0457`):
+/// a core primitive of §14, `gnd`, `Nature` or `str`? `m` and `dtemp` are not
+/// reported here: their rule is `E0375` (§8.5.2), left to elaboration.
 pub(crate) fn is_core_primitive(name: &str) -> bool {
-    BUILTINS.iter().any(|b| b.name == name && b.section.starts_with("§14") && b.kind != BuiltinKind::Method)
+    matches!(name, "gnd" | "Nature" | "str")
+        || BUILTINS.iter().any(|b| b.name == name && b.section.starts_with("§14") && b.kind != BuiltinKind::Method)
 }

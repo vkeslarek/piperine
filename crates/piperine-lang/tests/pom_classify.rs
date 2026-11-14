@@ -616,19 +616,19 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
 }
 
 /// POM-09 AC 1: a generic is a carrier because its bound resolves to the
-/// prelude's `Nature`; an unresolved bound is `Unknown`, and another trait
+/// core `Nature` (POL-03); an unresolved bound is `Unknown`, and another trait
 /// that is merely spelled `Nature` is a value bound.
 #[test]
 fn generic_carrier_follows_the_resolved_bound() {
-    let src = "module M<N: Nature>(g: N) {}";
-    // No declaration of `Nature` anywhere: the bound is unresolved, nothing is guessed.
+    let src = "module M<N: Nope>(g: N) {}";
+    // No declaration of `Nope` anywhere: the bound is unresolved, nothing is guessed.
     let none = build(src);
     assert_eq!(none.module("M").unwrap().port("g").unwrap().kind(), PortKind::Unknown);
     assert!(none.diagnostics().iter().any(|d| d.diagnostic.code == "E0161"));
     // A user `trait Nature` outside the prelude is not the carrier bound.
     let user = with_prelude("mod x { pub trait Nature {} }\nmodule M<N: x::Nature>(g: N) {}");
     assert_eq!(user.module("M").unwrap().port("g").unwrap().kind(), PortKind::ValueInput);
-    // The prelude's `Nature` still makes a carrier, through arrays too.
+    // The core `Nature` makes a carrier, through arrays too.
     let real = with_prelude("module M<N: Nature>(g: N, ga: [N; 2]) {}");
     let kinds: Vec<_> = real.module("M").unwrap().ports().iter().map(|p| p.kind()).collect();
     assert_eq!(kinds, [PortKind::Carrier, PortKind::Carrier]);
@@ -712,4 +712,19 @@ module Top() {
     let files = design.files();
     let top_file = files.iter().find(|f| !f.is_prelude()).expect("the root file");
     assert_eq!(top_file.to_ast(), parsed);
+}
+
+/// POL-03 AC 3: `Nature` is a core name, so a generic bounded by it is a
+/// carrier with no prelude registered and no diagnostic.
+#[test]
+fn nature_bound_is_builtin_and_classifies_the_port() {
+    let design = build("module M<N: Nature>(g: N, ga: [N; 2]) {}");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let kinds: Vec<_> = design.module("M").unwrap().ports().iter().map(|p| p.kind()).collect();
+    assert_eq!(kinds, [PortKind::Carrier, PortKind::Carrier]);
+    let bound = (0..design.path_count())
+        .map(|i| design.path(piperine_lang::pom::PathId(i as u32)))
+        .find(|p| p.segments().iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>() == ["Nature"])
+        .expect("the bound path");
+    assert!(matches!(bound.segments()[0].res, Resolution::Builtin(b) if b.info().kind == piperine_lang::pom::BuiltinKind::Trait));
 }

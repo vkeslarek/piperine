@@ -660,3 +660,89 @@ module Top() {
     assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     assert!(with_code(&design, "E0401").is_empty(), "{:?}", design.diagnostics());
 }
+
+// ---- core names (POL-03) -----------------------------------------------------------------------
+
+/// The built-in kind a path of one segment resolved to, for every path spelled `name`.
+fn builtin_kinds(design: &Design, name: &str) -> Vec<Option<BuiltinKind>> {
+    resolutions(design, name)
+        .into_iter()
+        .map(|segments| match segments.as_slice() {
+            [Resolution::Builtin(b)] => Some(b.info().kind),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn str_is_a_builtin_type() {
+    let design = build("const S: &'static str = \"x\";\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(builtin_kinds(&design, "str"), [Some(BuiltinKind::Type)]);
+}
+
+#[test]
+fn gnd_is_a_builtin_node() {
+    let src = "\
+module M(p: f64) { let a = gnd; }
+analog for M { let b = gnd; }
+digital for M { on at(1.0) { let c = gnd; } }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(builtin_kinds(&design, "gnd"), [Some(BuiltinKind::Node); 3]);
+}
+
+#[test]
+fn m_and_dtemp_resolve_inside_a_module() {
+    let src = "\
+module M(p: f64) { let a = m; let b = dtemp; }
+analog for M { let c = m; let d = dtemp; }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(builtin_kinds(&design, "m"), [Some(BuiltinKind::ImplicitParam); 2]);
+    assert_eq!(builtin_kinds(&design, "dtemp"), [Some(BuiltinKind::ImplicitParam); 2]);
+}
+
+#[test]
+fn m_and_dtemp_are_unknown_outside_a_module() {
+    let src = "fn f() -> f64 { m }\nconst C: f64 = dtemp;\n";
+    let design = build(src);
+    let found = with_code(&design, "E0161");
+    let at: Vec<&str> = found.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(at, ["m", "dtemp"], "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics().len(), 2);
+    assert_eq!(one(&design, "m"), [Resolution::Unresolved]);
+    assert_eq!(one(&design, "dtemp"), [Resolution::Unresolved]);
+}
+
+#[test]
+fn a_local_shadows_an_implicit_param() {
+    let src = "\
+module M() {}
+analog for M { let m = 2.0; let k = m; let f = |dtemp: f64| dtemp; }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert!(matches!(one(&design, "m")[0], Resolution::Decl(_)), "{:?}", one(&design, "m"));
+    assert!(matches!(one(&design, "dtemp")[0], Resolution::Decl(_)), "{:?}", one(&design, "dtemp"));
+}
+
+#[test]
+fn core_names_cannot_be_redeclared() {
+    let src = "fn gnd() {}\ntrait Nature {}\nstruct str {}\n";
+    let design = build(src);
+    let found = with_code(&design, "E0457");
+    let at: Vec<&str> = found.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(at, ["gnd", "Nature", "str"], "{:?}", design.diagnostics());
+}
+
+#[test]
+fn fixture_prelude_declares_no_core_name() {
+    let design = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
+    for name in ["Nature", "gnd", "m", "dtemp", "str"] {
+        assert!(design.find(name).is_none(), "the fixture prelude declares `{name}`");
+    }
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+}

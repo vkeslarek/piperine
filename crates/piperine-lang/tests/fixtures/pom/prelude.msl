@@ -1,10 +1,8 @@
 //! The prelude the `pom_*` tests register: the natures of §4, `impl Bit` of
 //! §22.1.5 and the modules `idt`, `above` and `transition` of §22.2, copied
-//! from the spec. A few stand-ins (`Nature`, `State`, `Logic`, `init`) give
+//! from the spec. A few stand-ins (`State`, `Logic`, `init`) give
 //! the names the copied text uses a declaration; the spec defines them in
 //! sections this fixture does not reproduce.
-
-pub trait Nature {}
 
 pub nature State { potential: Level { access: lvl, units: "1", abstol: 1u } }
 

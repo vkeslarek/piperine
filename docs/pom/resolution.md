@@ -116,21 +116,23 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 
 | Kind | Names (section) |
 | --- | --- |
-| `Type` | `uN` (§1), `iN` (§1), `fN` (§1), `bool` (§1), `usize` (§1), `isize` (§1), `UInt` (§1), `Int` (§1), `Float` (§1), `Option` (§1), `Event` (§13), `Analysis` (§11.1) |
+| `Type` | `str` (§1), `uN` (§1), `iN` (§1), `fN` (§1), `bool` (§1), `usize` (§1), `isize` (§1), `UInt` (§1), `Int` (§1), `Float` (§1), `Option` (§1), `Event` (§13), `Analysis` (§11.1) |
 | `Variant` | `Some` (§1), `None` (§1), `Dc` (§11.1.1), `Tran` (§11.1.1), `Ac` (§11.1.1), `Noise` (§11.1.1), `Static` (§11.1.1) |
-| `Trait` | `Repr` (§2), `Fn` (§3), `Clone` (§3), `Copy` (§3) |
+| `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone` (§3), `Copy` (§3) |
 | `Const` | `Q` (§1), `K_B` (§1), `EPS0` (§1), `PI` (§1), `E` (§1), `inf` (§1) |
 | `Fn` | `potential` (§14.1), `flow` (§14.1), `ddx` (§14.2), `ac_stim` (§14.3), `temperature` (§14.4), `simparam` (§14.4), `analysis` (§14.4), `now` (§14.4), `freq` (§14.4) |
 | `Module` | `ddt` (§14.5), `delay` (§14.6), `limit` (§14.7), `noise` (§14.8), `cross` (§14.9), `at` (§14.9) |
 | `Event` | `settle` (§14.9) |
 | `Statement` | `bound_step` (§14.10) |
+| `Node` | `gnd` (§6) |
+| `ImplicitParam` | `m` (§8.5), `dtemp` (§8.5): in scope only inside a module body and the blocks bound to a module; `builtin_implicit(name)` finds one |
 | `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `level` (§14.12), `inflow` (§14.1) |
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
 `f64`, `f128`). Standard-library modules such as `idt`, `transition` and `above` are *not*
 built in: they are declared in the standard library's prelude sources (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. A namespace item named like a core
-primitive of §14 is `E0457`.
+primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
 
 ```rust
 use piperine_lang::pom::{builtin, builtin_method, BuiltinKind, Design, Resolution};
@@ -171,7 +173,7 @@ its authored shape.
 | `Path { .. }` | `ExprKind::Struct::class` | `StructClass::Template(decl)` | the path names a module |
 | | | `StructClass::BundleLiteral` | the path names a bundle |
 | | | `StructClass::StructLiteral` | otherwise |
-| `name: T` in a port list | `PortData::kind` | `PortKind::Carrier` | `T` resolves to a nature, or to a generic whose bound resolves to the prelude's `Nature` (or an array / `flip` of one) |
+| `name: T` in a port list | `PortData::kind` | `PortKind::Carrier` | `T` resolves to a nature, or to a generic whose bound resolves to the core `Nature` (or an array / `flip` of one) |
 | | | `PortKind::Bundle` | `T` resolves to a bundle struct |
 | | | `PortKind::ValueInput` | `T` is a value type |
 | | | `PortKind::Unknown` | `T` does not resolve, or is a generic with a bound that does not resolve |

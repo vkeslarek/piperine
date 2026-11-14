@@ -1182,6 +1182,8 @@ What a built-in is.
 | `Method` | — | A built-in method (`changed`, `prev`, `others`, `level`, `inflow`); reached only as a member, never as a name. |
 | `Event` | — | A built-in event (`settle`). |
 | `Statement` | — | A built-in statement (`bound_step`). |
+| `Node` | — | A reference node (`gnd`). |
+| `ImplicitParam` | — | `m` and `dtemp`: names only inside a module body and the blocks bound to a module (`builtin_implicit`; `builtin` never returns one). |
 
 ### `BuiltinInfo`
 
