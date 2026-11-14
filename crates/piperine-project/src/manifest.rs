@@ -22,6 +22,12 @@ pub struct Version {
     pub patch: u64,
 }
 
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
 /// The `[package]` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Package {
@@ -39,6 +45,38 @@ pub struct Requirement {
     pub major: u64,
     pub minor: Option<u64>,
     pub patch: Option<u64>,
+}
+
+impl Requirement {
+    /// Cargo's caret rule: `>=` the requirement with its missing parts zero, and below the next
+    /// version that changes the leftmost non-zero part that was written.
+    pub fn admits(&self, version: Version) -> bool {
+        let lower = Version { major: self.major, minor: self.minor.unwrap_or(0), patch: self.patch.unwrap_or(0) };
+        let upper = if self.major > 0 {
+            Version { major: self.major + 1, minor: 0, patch: 0 }
+        } else {
+            match (self.minor, self.patch) {
+                (None, _) => Version { major: 1, minor: 0, patch: 0 },
+                (Some(minor), _) if minor > 0 => Version { major: 0, minor: minor + 1, patch: 0 },
+                (Some(_), None) => Version { major: 0, minor: 1, patch: 0 },
+                (Some(_), Some(patch)) => Version { major: 0, minor: 0, patch: patch + 1 },
+            }
+        };
+        lower <= version && version < upper
+    }
+}
+
+impl std::fmt::Display for Requirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.major)?;
+        if let Some(minor) = self.minor {
+            write!(f, ".{minor}")?;
+            if let Some(patch) = self.patch {
+                write!(f, ".{patch}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The git reference a dependency asks for; none means the repository's default branch.

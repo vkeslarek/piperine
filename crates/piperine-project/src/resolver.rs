@@ -119,6 +119,18 @@ impl Walk {
             }
         };
         let manifest = Manifest::load(&target)?;
+        let wanted = dependency.package.as_deref().unwrap_or(&dependency.name);
+        if manifest.package.name != wanted {
+            let message = format!("dependency `{}` asks for the package `{wanted}`, but `{}` holds the package `{}`", dependency.name, target.display(), manifest.package.name);
+            let help = (dependency.package.is_none()).then(|| format!("name the package with `package = \"{}\"`, or rename the dependency", manifest.package.name));
+            return Err(vec![fault(dir, dependency.name_span, "E0173", message, "not the package asked for", help)]);
+        }
+        if let Some(requirement) = dependency.requirement {
+            if !requirement.admits(manifest.package.version) {
+                let message = format!("dependency `{}` requires version `{requirement}`, but the package `{}` is `{}`", dependency.name, manifest.package.name, manifest.package.version);
+                return Err(vec![fault(dir, dependency.name_span, "E0173", message, "the version does not satisfy the requirement", None)]);
+            }
+        }
         if !crate_root(&target).is_file() {
             let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&target).display());
             return Err(vec![fault(dir, dependency.name_span, "E0175", message, "this package has no `src/lib.msl`", None)]);

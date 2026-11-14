@@ -6,7 +6,7 @@
 #[allow(dead_code)]
 mod support;
 
-use piperine_project::{Options, PackageError, PackageGraph, resolve};
+use piperine_project::{Manifest, Options, PackageError, PackageGraph, Version, resolve};
 use support::{package, workspace};
 
 fn ok(dir: &std::path::Path) -> PackageGraph {
@@ -107,4 +107,80 @@ fn a_package_without_a_crate_root_is_e0175() {
     assert_eq!(error.file, app.join("Piperine.toml"));
     assert!(error.diagnostic.span().is_empty());
     assert!(error.diagnostic.message.contains(&app.join("src/lib.msl").display().to_string()));
+}
+
+#[test]
+fn a_package_of_another_name_is_e0173() {
+    let (_tmp, base) = workspace();
+    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
+    package(&base.join("util"), "utils", "1.0.0", &[], "");
+    let error = only(&app);
+    assert_eq!(error.code(), "E0173");
+    assert_eq!(error.file, app.join("Piperine.toml"));
+    assert_eq!(&error.text[error.diagnostic.span().range()], "util");
+    let message = &error.diagnostic.message;
+    assert!(message.contains("`util`") && message.contains("`utils`"), "{message}");
+}
+
+#[test]
+fn package_key_renames_a_dependency() {
+    let (_tmp, base) = workspace();
+    let app = package(&base.join("app"), "app", "1.0.0", &["u2 = { path = \"../util\", package = \"util\" }"], "");
+    package(&base.join("util"), "util", "1.0.0", &[], "");
+    let graph = ok(&app);
+    let crates = graph.graph.crates();
+    assert_eq!(crates[1].name, "util");
+    let edge = &crates[0].dependencies[0];
+    assert_eq!(edge.name, "u2");
+    assert_eq!(edge.krate, graph.packages[1].krate);
+    // With `package` given, the key is no longer the name asked for.
+    let app = package(&base.join("app3"), "app3", "1.0.0", &["util = { path = \"../util\", package = \"other\" }"], "");
+    let error = only(&app);
+    assert_eq!(error.code(), "E0173");
+    assert!(error.diagnostic.message.contains("`other`") && error.diagnostic.message.contains("`util`"), "{}", error.diagnostic.message);
+}
+
+#[test]
+fn version_requirements_follow_the_caret_table() {
+    let v = |major, minor, patch| Version { major, minor, patch };
+    let max = u64::MAX;
+    // requirement, lower bound, last admitted, the one below, the first past.
+    let rows = [
+        ("1.2.3", v(1, 2, 3), v(1, max, max), v(1, 2, 2), v(2, 0, 0)),
+        ("1.2", v(1, 2, 0), v(1, max, max), v(1, 1, max), v(2, 0, 0)),
+        ("1", v(1, 0, 0), v(1, max, max), v(0, max, max), v(2, 0, 0)),
+        ("0.2.3", v(0, 2, 3), v(0, 2, max), v(0, 2, 2), v(0, 3, 0)),
+        ("0.2", v(0, 2, 0), v(0, 2, max), v(0, 1, max), v(0, 3, 0)),
+        ("0.0.3", v(0, 0, 3), v(0, 0, 3), v(0, 0, 2), v(0, 0, 4)),
+        ("0.0", v(0, 0, 0), v(0, 0, max), v(0, 0, 0), v(0, 1, 0)),
+        ("0", v(0, 0, 0), v(0, max, max), v(0, 0, 0), v(1, 0, 0)),
+    ];
+    for (text, lower, last, below, past) in rows {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Piperine.toml"), format!("[package]\nname = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nx = {{ path = \".\", version = \"{text}\" }}\n")).unwrap();
+        let manifest = Manifest::load(dir.path()).unwrap();
+        let requirement = manifest.dependencies[0].requirement.expect("a requirement");
+        assert!(requirement.admits(lower), "{text} must admit its lower bound {lower:?}");
+        assert!(requirement.admits(last), "{text} must admit {last:?}");
+        // `0.0` and `0` have nothing below their lower bound: `0.0.0` is the lower bound itself.
+        if text != "0.0" && text != "0" {
+            assert!(!requirement.admits(below), "{text} must reject {below:?}");
+        }
+        assert!(!requirement.admits(past), "{text} must reject {past:?}");
+    }
+}
+
+#[test]
+fn an_unsatisfied_requirement_is_e0173() {
+    let (_tmp, base) = workspace();
+    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\", version = \"1.2\" }"], "");
+    package(&base.join("util"), "util", "2.0.0", &[], "");
+    let error = only(&app);
+    assert_eq!(error.code(), "E0173");
+    assert_eq!(&error.text[error.diagnostic.span().range()], "util");
+    let message = &error.diagnostic.message;
+    assert!(message.contains("1.2") && message.contains("2.0.0"), "{message}");
+    // A satisfied requirement resolves.
+    package(&base.join("util"), "util", "1.9.0", &[], "");
+    ok(&app);
 }

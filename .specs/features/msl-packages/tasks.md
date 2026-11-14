@@ -640,14 +640,14 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_package_of_another_name_is_e0173` passes in `paths.rs` (C90: PKG-11 AC 6)
-- [ ] Test `package_key_renames_a_dependency` passes in `paths.rs` (C91: PKG-11 AC 7)
-- [ ] Test `version_requirements_follow_the_caret_table` passes in `paths.rs` (C92: PKG-11 AC 8)
-- [ ] Test `an_unsatisfied_requirement_is_e0173` passes in `paths.rs` (C93: PKG-11 AC 9)
-- [ ] `version_requirements_follow_the_caret_table` holds the eight rows as data and checks, for each, the lower bound, the last admitted version, the one below and the first past
-- [ ] The `E0173` message names what was asked and what was found; its span is the dependency's key
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_package_of_another_name_is_e0173` passes in `paths.rs` (C90: PKG-11 AC 6)
+- [x] Test `package_key_renames_a_dependency` passes in `paths.rs` (C91: PKG-11 AC 7)
+- [x] Test `version_requirements_follow_the_caret_table` passes in `paths.rs` (C92: PKG-11 AC 8)
+- [x] Test `an_unsatisfied_requirement_is_e0173` passes in `paths.rs` (C93: PKG-11 AC 9)
+- [x] `version_requirements_follow_the_caret_table` holds the eight rows as data and checks, for each, the lower bound, the last admitted version, the one below and the first past
+- [x] The `E0173` message names what was asked and what was found; its span is the dependency's key
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
