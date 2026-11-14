@@ -637,3 +637,26 @@ fn raw_identifier_names_drop_the_prefix() {
     assert_eq!(design.files()[0].to_ast(), parsed);
     assert_eq!(format!("{:?}", design.files()[0].to_ast()), format!("{parsed:?}"));
 }
+
+#[test]
+fn module_with_a_bad_port_still_resolves() {
+    // POL-16 AC 4: the module with a parse error in one port is still found,
+    // a placement of it is an instance, and neither E0161 nor E0401 appears.
+    let src = "\
+module M(in a: , b: bool) { signal s: bool; }
+module Top() {
+    signal x: bool;
+    signal y: bool;
+    let m = M(x, y);
+}
+";
+    let design = build(src);
+    let module = design.module("M").expect("`M` is in the design");
+    assert_eq!(module.name(), Some("M"));
+    let top = design.module("Top").unwrap();
+    let instances = top.instances();
+    assert_eq!(instances.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(instances[0].module(), Some(module));
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(with_code(&design, "E0401").is_empty(), "{:?}", design.diagnostics());
+}

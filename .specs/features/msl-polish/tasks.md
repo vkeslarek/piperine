@@ -759,11 +759,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `a_bad_port_keeps_the_module` passes in `msl_errors.rs` (C91: POL-16 AC 3)
-- [ ] Test `module_with_a_bad_port_still_resolves` passes in `pom_resolve.rs` (C92: POL-16 AC 4)
-- [ ] The bad port is not in `ports()`; no placeholder port is invented
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_bad_port_keeps_the_module` passes in `msl_errors.rs` (C91: POL-16 AC 3)
+- [x] Test `module_with_a_bad_port_still_resolves` passes in `pom_resolve.rs` (C92: POL-16 AC 4)
+- [x] The bad port is not in `ports()`; no placeholder port is invented
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

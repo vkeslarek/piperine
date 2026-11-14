@@ -349,10 +349,25 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
             default,
             span: Loc(e.span()),
         });
+    // A port that fails to parse is skipped to the next `,` or the closing
+    // `)` and dropped: the module keeps its other ports and its body.
+    let bad_port = any()
+        .filter(|t: &Token| !matches!(t, Token::Punct(Punct::Comma | Punct::RParen | Punct::RBracket | Punct::RBrace)))
+        .ignore_then(
+            choice((
+                any().filter(|t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace))).rewind().ignore_then(skip_group()),
+                any().filter(|t: &Token| !matches!(t, Token::Punct(Punct::Comma | Punct::RParen | Punct::RBracket | Punct::RBrace))).ignored(),
+            ))
+            .repeated(),
+        )
+        .to(None);
     let ports = port
+        .map(Some)
+        .recover_with(via_parser(bad_port))
         .separated_by(punct(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
+        .map(|ports| ports.into_iter().flatten().collect::<Vec<Port>>())
         .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
     // The body's last expression is the result, not an item to skip.
     let result_ahead = h

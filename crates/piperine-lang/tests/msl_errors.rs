@@ -1100,3 +1100,29 @@ fn statement_errors_recover_inside_the_block() {
         .count();
     assert!(errors >= 1, "{:?}", body.stmts);
 }
+
+#[test]
+fn a_bad_port_keeps_the_module() {
+    // POL-16 AC 3: one bad port is one diagnostic, at the `,`; the module
+    // keeps its other ports and its body, and the bad port is not invented.
+    use piperine_lang::msl::ast::{ItemKind, ModuleItemKind};
+    let src = "module M(in a: , b: Bit) { signal s: Bit; }";
+    let r = parse(src);
+    let comma = src.find(',').unwrap();
+    let found: Vec<_> = r.diagnostics.iter().map(|d| (&*d.code, d.span())).collect();
+    assert_eq!(found, vec![("E0900", Span::new(comma, comma + 1))], "{:?}", r.diagnostics);
+    assert_eq!(r.file.items.len(), 1);
+    let ItemKind::Module(m) = &r.file.items[0].kind else { panic!("{:?}", r.file.items[0].kind) };
+    assert_eq!(m.ports.iter().map(|p| p.name.name.as_str()).collect::<Vec<_>>(), ["b"]);
+    assert!(m.body.iter().any(|i| matches!(&i.kind, ModuleItemKind::Signal { name, .. } if name.name == "s")), "{:?}", m.body);
+
+    // The last port bad, and a bad port in the middle of three.
+    let r = parse("module M(a: Bit, b: ) { }");
+    assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
+    let ItemKind::Module(m) = &r.file.items[0].kind else { panic!() };
+    assert_eq!(m.ports.iter().map(|p| p.name.name.as_str()).collect::<Vec<_>>(), ["a"]);
+    let r = parse("module M(a: Bit, in : Bit, c: Bit) { }");
+    assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
+    let ItemKind::Module(m) = &r.file.items[0].kind else { panic!() };
+    assert_eq!(m.ports.iter().map(|p| p.name.name.as_str()).collect::<Vec<_>>(), ["a", "c"]);
+}
