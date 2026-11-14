@@ -56,6 +56,7 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .then(
             field
                 .separated_by(punct(Punct::Comma))
+                .at_least(1)
                 .allow_trailing()
                 .collect::<Vec<_>>()
                 .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
@@ -71,7 +72,7 @@ fn signal_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItemKind> {
     kw(Kw::Signal)
         .ignore_then(ident())
         .then_ignore(punct(Punct::Colon))
-        .then(h.ty.clone())
+        .then(ty::sigtype(h))
         .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .then_ignore(punct(Punct::Semi))
         .map(|((name, ty), init)| ModuleItemKind::Signal { name, ty, init })

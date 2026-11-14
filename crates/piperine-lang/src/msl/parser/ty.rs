@@ -117,6 +117,35 @@ pub(crate) fn generics<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Generics> 
         .boxed()
 }
 
+/// A `sigtype` (B.3.3): `flip`, a path and an array of them. Only a `signal`
+/// declaration takes one; a tuple, a reference or a function pointer there is
+/// reported (`E0900`) and the declaration is kept.
+pub(crate) fn sigtype<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
+    fn carrier(t: &Type) -> bool {
+        match &t.kind {
+            TypeKind::Path(_) => true,
+            TypeKind::Flip(inner) | TypeKind::Array { elem: inner, .. } => carrier(inner),
+            _ => false,
+        }
+    }
+    h.ty
+        .clone()
+        .validate(|t, _, emitter| {
+            if !carrier(&t) {
+                emitter.emit(Rich::custom(
+                    t.span.0,
+                    Custom {
+                        code: "E0900",
+                        message: "a signal's type is a nature, a bundle or an array of them".into(),
+                        help: Some("write a nature or bundle: `Bit`, `flip Stream<T>` or `[Bit; 4]`".into()),
+                    },
+                ));
+            }
+            t
+        })
+        .boxed()
+}
+
 /// The type parser (also `sigtype` of B.3: `flip` and arrays are types).
 pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
     let ty = h.ty.clone();

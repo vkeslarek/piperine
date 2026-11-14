@@ -725,7 +725,7 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
     let signal_stmt = kw(Kw::Signal)
         .ignore_then(ident())
         .then_ignore(punct(Punct::Colon))
-        .then(h.ty.clone())
+        .then(ty::sigtype(h))
         .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .then_ignore(punct(Punct::Semi))
         .map_with(move |((name, ty), init), e| mk(StmtKind::Signal { name, ty, init }, e.span()));

@@ -328,13 +328,21 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         macro_rules.boxed(),
     ]);
     let item = meta(h)
-        .then(kw(Kw::Pub).or_not())
+        .then(kw(Kw::Pub).map_with(|_, e| e.span()).or_not())
         .then(kind)
-        .map_with(|((meta, public), kind), e| Item {
-            meta,
-            public: public.is_some(),
-            kind,
-            span: Loc(e.span()),
+        .validate(|((meta, public), kind), e, emitter| {
+            // A behavior block has no visibility: the block is kept, `pub` reported.
+            if let (Some(at), ItemKind::Behavior(_)) = (public, &kind) {
+                emitter.emit(Rich::custom(
+                    at,
+                    Custom {
+                        code: "E0900",
+                        message: "`pub` before a behavior block".into(),
+                        help: Some("a behavior block has no visibility: remove `pub`".into()),
+                    },
+                ));
+            }
+            Item { meta, public: public.is_some(), kind, span: Loc(e.span()) }
         })
         .labelled("item")
         .boxed();

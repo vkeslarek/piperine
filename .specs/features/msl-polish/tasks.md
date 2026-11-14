@@ -639,11 +639,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `pub_on_a_behavior_block_is_e0900` passes in `msl_errors.rs` (C82: POL-14 AC 6)
-- [ ] Test `forms_outside_the_grammar_are_parse_errors` passes in `msl_errors.rs` (C83: POL-14 AC 7)
-- [ ] A port of value type `(Bit, Bit)` is unaffected: only `signal` and carrier positions use `sigtype`
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `pub_on_a_behavior_block_is_e0900` passes in `msl_errors.rs` (C82: POL-14 AC 6)
+- [x] Test `forms_outside_the_grammar_are_parse_errors` passes in `msl_errors.rs` (C83: POL-14 AC 7)
+- [x] A port of value type `(Bit, Bit)` is unaffected: only `signal` and carrier positions use `sigtype`
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

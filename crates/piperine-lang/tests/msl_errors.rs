@@ -841,3 +841,35 @@ fn function_body_reports_e0121_only() {
         }
     }
 }
+
+#[test]
+fn pub_on_a_behavior_block_is_e0900() {
+    // POL-14 AC 6: one E0900 at `pub` with a help; the block is still a Behavior item.
+    for src in ["pub analog for M { }", "pub digital for M { }"] {
+        let r = parse(src);
+        assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
+        let d = &r.diagnostics[0];
+        assert_eq!(d.code, "E0900");
+        assert_eq!(d.span(), Span::new(0, 3), "{src}");
+        assert!(d.help.as_deref().is_some_and(|h| h.contains("visibility")), "{:?}", d.help);
+        assert_eq!(r.file.items.len(), 1, "{src}");
+        assert!(matches!(r.file.items[0].kind, piperine_lang::msl::ast::ItemKind::Behavior(_)), "{src}");
+    }
+    assert!(faults("analog for M { }").is_empty());
+}
+
+#[test]
+fn forms_outside_the_grammar_are_parse_errors() {
+    // POL-14 AC 7: one E0900 for each.
+    for src in ["nature A { }", "module M() { signal g: (Bit, Bit); }", "module M() { signal h: &Bit; }"] {
+        let found = faults(src);
+        assert_eq!(found.len(), 1, "{src}: {found:?}");
+        assert_eq!(found[0].0, "E0900", "{src}");
+    }
+    // The same in a block statement.
+    assert_eq!(faults("analog for M { signal h: &Bit; }").iter().filter(|f| f.0 == "E0900").count(), 1);
+    // A port of value type `(Bit, Bit)` is unaffected: only `signal` uses a sigtype.
+    assert!(faults("module M(a: (Bit, Bit)) { }").is_empty());
+    // Carrier types stay clean.
+    assert!(faults("module M() { signal a: Bit; signal b: flip Stream<T>; signal c: [Bit; 4]; }").is_empty());
+}

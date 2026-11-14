@@ -382,7 +382,7 @@ nature Disc { value: f64 }
 nature Res { value: f64, resolve: pick }
 nature Twice { potential: A { access: a }, potential: B { access: b } }
 nature Mixed { potential: A { access: a }, value: f64 }
-nature Empty { }
+nature Empty { flow: F { access: f } }
 ";
     let design = build(text);
     assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
