@@ -132,6 +132,12 @@ T39 → T40 → T41 → T42 → T43 → T44 → T45 → T46
 T46 → T47 → T48 → T49
 ```
 
+### Phase 10: Verification fixes
+
+```
+T49 → T50 → T51 → T52 → T53 → T54 → T55
+```
+
 ---
 
 ## Task Breakdown
@@ -1339,6 +1345,140 @@ T46 → T47 → T48 → T49
 
 ---
 
+### T50: E0910 counts only closed generic lists; the parser runs on a grown stack
+
+**What**: Fixes verification findings F1, F3.
+**Where**: `crates/piperine-lang/src/msl/parser/entry.rs` (+ `crates/piperine-lang/src/msl/parser/check.rs`, `crates/piperine-lang/tests/msl_errors.rs`)
+**Depends on**: T49
+**Reuses**: the code of the task it corrects
+**Requirement**: POL-15
+**Closes**: A-25
+
+**Done when**:
+
+- [x] Test `comparison_lists_are_not_nesting` passes in `msl_errors.rs` (C130: POL-15 AC 2)
+- [x] Test `flat_chains_survive_a_default_2_mib_thread` passes in `msl_errors.rs` (C131: POL-15 AC 2)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(lang): E0910 counts only closed generic lists; parse on a grown stack`
+
+---
+
+### T51: `Design::from_json` validates the parent tables and the index
+
+**What**: Fixes verification findings F2.
+**Where**: `crates/piperine-lang/src/pom/check.rs` (+ `crates/piperine-lang/src/pom/index.rs`, `crates/piperine-lang/tests/pom_reflect.rs`)
+**Depends on**: T50
+**Reuses**: the code of the task it corrects
+**Requirement**: POL-21
+**Closes**: A-33
+
+**Done when**:
+
+- [x] Test `from_json_never_panics_on_a_corrupted_field` passes in `pom_reflect.rs` (C132: POL-21 AC 2)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(pom): from_json validates the parent tables and the index before use`
+
+---
+
+### T52: Derive names resolve; Appendix H renders its code spans
+
+**What**: Fixes verification findings F4, F13.
+**Where**: `crates/piperine-lang/src/pom/resolve/names.rs` (+ `crates/piperine-lang/tests/pom_resolve.rs`, `crates/piperine-lang/tests/spec_text.rs`, `docs/spec/appendix_h_library.md`)
+**Depends on**: T51
+**Reuses**: the code of the task it corrects
+**Requirement**: POL-02
+**Closes**: A-18
+
+**Done when**:
+
+- [x] Test `catalogue_traits_and_types_resolve` passes in `pom_resolve.rs` (C8: POL-02 AC 5, now asserting each derive name resolved)
+- [x] Test `appendix_h_renders_every_code_span` passes in `spec_text.rs` (C133: POL-02 AC 1)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(pom): derive names resolve against the traits of Appendix H`
+
+---
+
+### T53: B.3.6 is exhaustive; body statements and help texts say what is wrong
+
+**What**: Fixes verification findings F5, F6, F7, F8, F14.
+**Where**: `crates/piperine-lang/src/msl/parser/item.rs` (+ `crates/piperine-lang/src/msl/parser/ty.rs`, `crates/piperine-lang/src/msl/parser/expr.rs`, `crates/piperine-lang/src/msl/parser/msl.rs`, `crates/piperine-lang/src/msl/parser/base.rs`, `crates/piperine-lang/src/msl/parser/entry.rs`, `crates/piperine-lang/tests/msl_errors.rs`, `crates/piperine-lang/tests/spec_text.rs`, `docs/spec/appendix_b_grammar.md`)
+**Depends on**: T52
+**Reuses**: the code of the task it corrects
+**Requirement**: POL-09
+**Closes**: A-17
+
+**Done when**:
+
+- [x] Test `removed_rust_forms_report_targeted_messages` passes in `msl_errors.rs` (C52: POL-09 AC 5, one fixture per position, 20 rows)
+- [x] Test `commit_target_must_be_a_place` passes in `msl_errors.rs` (C77: POL-14 AC 1, a tuple index is no place)
+- [x] Test `behavior_statements_in_a_module_body_are_e0404` passes in `msl_errors.rs` (C80: POL-14 AC 4, `bound_step` included)
+- [x] Test `reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing` passes in `msl_errors.rs` (C134: POL-10 AC 2)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(parser): B.3.6 is exhaustive; where, ::, params, attrs and && get targeted messages`
+
+---
+
+### T54: Duplicate items in a block are `E0162`
+
+**What**: Fixes verification findings F12.
+**Where**: `crates/piperine-lang/src/pom/resolve/names.rs` (+ `crates/piperine-lang/tests/pom_resolve.rs`, `crates/piperine-lang/tests/spec_text.rs`, `docs/spec/part_i_values.md`)
+**Depends on**: T53
+**Reuses**: the code of the task it corrects
+**Requirement**: POL-04
+**Closes**: A-10
+
+**Done when**:
+
+- [x] Test `duplicate_items_in_a_block_are_e0162` passes in `pom_resolve.rs` (C135: POL-04 AC 1)
+- [x] Test `block_items_follow_the_namespace_rules` passes in `spec_text.rs` (C136: POL-04 AC 1)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(pom): duplicate items in a block are E0162 (D5)`
+
+---
+
+### T55: `E0125` messages, the `Block` handle, the section of each diagnostic
+
+**What**: Fixes verification findings F9, F10, F11.
+**Where**: `crates/piperine-lang/src/pom/resolve/shape.rs` (+ `crates/piperine-lang/src/pom/reflect/body.rs`, `crates/piperine-lang/tests/pom_classify.rs`, `crates/piperine-lang/tests/pom_docs.rs`, `docs/pom/resolution.md`)
+**Depends on**: T54
+**Reuses**: the code of the task it corrects
+**Requirement**: POL-18
+**Closes**: A-29
+
+**Done when**:
+
+- [x] Test `function_body_rule_is_e0125` passes in `pom_classify.rs` (C104: POL-18 AC 6, the message states the fault)
+- [x] Test `block_and_stmt_handles_walk_a_body` passes in `pom_body.rs` (C114: POL-20 AC 6, the handle is `Block`)
+- [x] Test `every_code_the_pom_reports_is_documented` passes in `pom_docs.rs` (C125: POL-22 AC 3, the section column)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(pom): E0125 messages state the fault; the block handle is Block`
+
+---
+
 ## Checks
 
 One check per acceptance criterion of `spec.md`. Each proof names the line its test prints.
@@ -1730,6 +1870,27 @@ Proof: run mslcorpus | test every_valid_spec_block_parses_clean ... ok
 **C129** - every spec fence still round-trips through the POM (POL-23, AC 2)
 Proof: run pomcorpus | test every_spec_block_round_trips_to_its_ast ... ok
 
+**C130** - a list of 1000 comparisons in an array, a call, a tuple, a struct literal, match arms and a module body is not nesting, and 300 nested generics still are (POL-15, AC 2)
+Proof: run errors | test comparison_lists_are_not_nesting ... ok
+
+**C131** - four flat chains of 4096 links parse, print, build and convert back on a 2 MiB thread (POL-15, AC 2)
+Proof: run errors | test flat_chains_survive_a_default_2_mib_thread ... ok
+
+**C132** - every numeric field of a design set to an out-of-range id or to 1 is an `Err` or a design every read survives (POL-21, AC 2)
+Proof: run reflect | test from_json_never_panics_on_a_corrupted_field ... ok
+
+**C133** - Appendix H holds no nested or unclosed code span and states that an unknown derive name is `E0161` (POL-02, AC 1)
+Proof: run spec | test appendix_h_renders_every_code_span ... ok
+
+**C134** - the reserved-keyword help names `r#word` for an added keyword and a doc comment before `else` documents nothing (POL-10, AC 2)
+Proof: run errors | test reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing ... ok
+
+**C135** - two items of one name in one table of a block are `E0162` at the later name (POL-04, AC 1)
+Proof: run resolve | test duplicate_items_in_a_block_are_e0162 ... ok
+
+**C136** - §3.4 states the block rule and the `E0162` row names blocks (POL-04, AC 1)
+Proof: run spec | test block_items_follow_the_namespace_rules ... ok
+
 ---
 
 ## Handoff
@@ -1753,7 +1914,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 ## Phase Execution Map
 
 ```
-Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
+Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9 → Phase 10
 
 Phase 1:  T1 ------→ T2 ------→ T3 ------→ T4 ------→ T5 ------→ T6
 Phase 2:  T7 ------→ T8 ------→ T9 ------→ T10
@@ -1764,6 +1925,7 @@ Phase 6:  T27 ------→ T28 ------→ T29 ------→ T30 ------→ T31 ------→ 
 Phase 7:  T34 ------→ T35 ------→ T36 ------→ T37 ------→ T38 ------→ T39
 Phase 8:  T40 ------→ T41 ------→ T42 ------→ T43 ------→ T44 ------→ T45 ------→ T46
 Phase 9:  T47 ------→ T48 ------→ T49
+Phase 10: T50 ------→ T51 ------→ T52 ------→ T53 ------→ T54 ------→ T55
 ```
 
 Execution is strictly sequential. 49 tasks pack into 9 batches of whole phases (4 to 7 tasks each), one Sonnet worker per phase; the Verifier (Opus) runs once after T49, over `check_proofs.py msl-polish`.
@@ -1779,6 +1941,7 @@ Execution is strictly sequential. 49 tasks pack into 9 batches of whole phases (
 | 7 | POM: the spec's codes | T34 to T39 (6) | `src/pom/` |
 | 8 | POM: reflection and robustness | T40 to T46 (7) | `src/pom/` |
 | 9 | Reference docs and closure | T47 to T49 (3) | `docs/pom/`, `docs/spec/` |
+| 10 | Verification fixes | T50 to T55 (6) | `src/msl/`, `src/pom/`, `docs/` |
 
 ---
 
@@ -1835,6 +1998,12 @@ Execution is strictly sequential. 49 tasks pack into 9 batches of whole phases (
 | T47: `docs/pom/mapping.md`: the 65 constructs of B.1 | 1 concern, 1 criterion | ✅ Granular |
 | T48: `docs/pom`: places, diagnostics, built-ins | 1 concern, 4 criteria | ✅ Granular |
 | T49: Appendix G records the decisions | 1 concern, 3 criteria | ✅ Granular |
+| T50: E0910 counts only closed generic lists; the parser runs on a grown stack | 1 concern, 2 criteria | ✅ Granular |
+| T51: `Design::from_json` validates the parent tables and the index | 1 concern, 1 criteria | ✅ Granular |
+| T52: Derive names resolve; Appendix H renders its code spans | 1 concern, 2 criteria | ✅ Granular |
+| T53: B.3.6 is exhaustive; body statements and help texts say what is wrong | 1 concern, 4 criteria | ✅ Granular |
+| T54: Duplicate items in a block are `E0162` | 1 concern, 2 criteria | ✅ Granular |
+| T55: `E0125` messages, the `Block` handle, the section of each diagnostic | 1 concern, 3 criteria | ✅ Granular |
 
 A task's `Where` names one primary file and, in parentheses, the files the same change must touch in the same commit (its test target, the `docs/` page a guard ties to it, the lowering of a new AST field). `validate_tasks.py` warns on these; they are not separable: a new AST field without its lowering does not compile, and a spec row without its fixture turns a guard red.
 
@@ -1891,6 +2060,12 @@ A task's `Where` names one primary file and, in parentheses, the files the same 
 | T47 | T46 | T46 | ✅ Match |
 | T48 | T47 | T47 | ✅ Match |
 | T49 | T48 | T48 | ✅ Match |
+| T50 | T49 | T49 | ✅ Match |
+| T51 | T50 | T50 | ✅ Match |
+| T52 | T51 | T51 | ✅ Match |
+| T53 | T52 | T52 | ✅ Match |
+| T54 | T53 | T53 | ✅ Match |
+| T55 | T54 | T54 | ✅ Match |
 
 ## Test Co-location Validation
 
@@ -1945,6 +2120,12 @@ A task's `Where` names one primary file and, in parentheses, the files the same 
 | T47 | reference docs | integration | integration | ✅ OK |
 | T48 | reference docs | integration | integration | ✅ OK |
 | T49 | specification text | integration | integration | ✅ OK |
+| T50 | POM/parser | integration | integration | ✅ OK |
+| T51 | POM/parser | integration | integration | ✅ OK |
+| T52 | POM/parser | integration | integration | ✅ OK |
+| T53 | POM/parser | integration | integration | ✅ OK |
+| T54 | POM/parser | integration | integration | ✅ OK |
+| T55 | POM/parser | integration | integration | ✅ OK |
 
 ---
 
