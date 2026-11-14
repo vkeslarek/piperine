@@ -893,7 +893,7 @@ A generation `for` or `if` over module or digital items.
 | `is_for(self)` | `bool` | Whether the generation is a `for` (else an `if`). |
 | `pattern(self)` | `Option<Pat<'d>>` | The pattern of a `for`. |
 | `iter(self)` | `Option<Expr<'d>>` | The iterated expression of a `for`. |
-| `items(self)` | `Vec<Decl<'d>>` | The items of the `for` body, or of the first arm of an `if`. |
+| `items(self)` | `Vec<Decl<'d>>` | The items of the `for` body, or of every arm of an `if` chain in source order (`else if` arms included; the nested generation is not itself an item here, see `arms()`). |
 | `arms(self)` | `Vec<GenArm<'d>>` | The arms of an `if` chain in order: each `if` and `else if` condition, then the final `else` with none. A `for` has no arms. |
 | `generations(self)` | `Vec<Generation<'d>>` | The generations written directly inside this one (an `else if` is one of them). |
 
@@ -1139,6 +1139,7 @@ A statement node.
 | `span(self)` | `Span` | The byte range in the file text. |
 | `enclosing(self)` | `Decl<'d>` | The nearest declaration that contains it. |
 | `text(self)` | `&'d str` | The authored text. |
+| `docs(self)` | `&'d [Doc]` | The doc comments written before the statement, one per comment. |
 | `children(self)` | `Vec<Expr<'d>>` | The expressions the statement holds with no expression above them, in source order: a `let`'s initializer (and the expressions of its `else` block's statements), an expression statement's expression, both sides of a contribution, the place, value and delay of a commit. An item, a signal, a reaction and a lone `;` hold none; a nested block's statements are reached through the expression that owns the block. |
 
 ```rust

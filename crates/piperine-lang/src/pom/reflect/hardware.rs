@@ -554,12 +554,14 @@ impl<'d> Generation<'d> {
         }
     }
 
-    /// The items of the `for` body, or of the first arm of an `if`.
+    /// The items of the `for` body, or of every arm of an `if` chain in
+    /// source order (`else if` arms included; the nested generation is not
+    /// itself an item here, see [`Generation::arms`]).
     pub fn items(self) -> Vec<Decl<'d>> {
         let design = self.decl.design();
         match self.data() {
             GenerationData::For { body, .. } => body.iter().map(|d| Decl::new(design, *d)).collect(),
-            GenerationData::If { then, .. } => then.iter().map(|d| Decl::new(design, *d)).collect(),
+            GenerationData::If { .. } => self.arms().into_iter().flat_map(GenArm::items).collect(),
         }
     }
 

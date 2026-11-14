@@ -1205,11 +1205,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `docs_reach_reactions_quantities_definitions_and_statements` passes in `pom_tree.rs` (C67: POL-12 AC 6)
-- [ ] Test `generation_if_items_cover_every_arm` passes in `pom_tree.rs` (C118: POL-20 AC 10)
-- [ ] `generation_if_chain_exposes_three_arms` still passes: `arms()` is unchanged
-- [ ] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `docs_reach_reactions_quantities_definitions_and_statements` passes in `pom_tree.rs` (C67: POL-12 AC 6)
+- [x] Test `generation_if_items_cover_every_arm` passes in `pom_tree.rs` (C118: POL-20 AC 10)
+- [x] `generation_if_chain_exposes_three_arms` still passes: `arms()` is unchanged
+- [x] Gate passes: run tree; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

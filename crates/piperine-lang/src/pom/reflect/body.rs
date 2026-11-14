@@ -8,6 +8,7 @@ use super::super::design::Design;
 use super::super::ids::{ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
 use super::{Decl, Reflect};
+use crate::pom::meta::Doc;
 use crate::msl::{Span, ast};
 
 /// A source file of a [`Design`]: its name, text and retained syntax tree.
@@ -337,6 +338,11 @@ impl<'d> Stmt<'d> {
 
     pub fn text(self) -> &'d str {
         text_in(self.enclosing(), self.span())
+    }
+
+    /// The doc comments written before the statement, one per comment.
+    pub fn docs(self) -> &'d [Doc] {
+        &self.node().meta.docs
     }
 
     /// The expressions this statement holds with no expression above them, in

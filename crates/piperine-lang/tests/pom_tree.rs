@@ -757,3 +757,74 @@ analog for M { 0.0 +> i(p); }
     // The three are in file order, as written.
     assert!(all[0].span().start < all[1].span().start && all[1].span().start < all[2].span().start);
 }
+
+#[test]
+fn docs_reach_reactions_quantities_definitions_and_statements() {
+    let text = "\
+nature Volt {
+    /// the potential
+    potential: Voltage { access: v, units: \"V\", abstol: 1u },
+    flow: Current { access: i, units: \"A\", abstol: 1p },
+}
+module M(a: Bit, out q: Bit) {
+    /// the definition
+    q = a;
+    /// the generation
+    for k in 0..2 { }
+    /// the if
+    if true { }
+    plain: f64 = 1.0;
+}
+digital for M {
+    /// the reaction
+    on a { q <- a; }
+    on q { }
+}
+fn f() -> f64 {
+    /// the let
+    let x = 1.0;
+    /// the expression
+    x;
+    x
+}
+";
+    let design = build(text);
+    let docs = |d: &[piperine_lang::pom::Doc]| d.iter().map(|x| x.text.clone()).collect::<Vec<_>>();
+    let volt = design.nature("Volt").unwrap();
+    let quantities = volt.quantities();
+    assert_eq!(docs(quantities[0].docs()), [" the potential"]);
+    assert!(quantities[1].docs().is_empty());
+    let m = design.module("M").unwrap();
+    assert_eq!(docs(m.definitions()[0].docs()), [" the definition"]);
+    let gens = m.generations();
+    assert_eq!(docs(gens[0].docs()), [" the generation"]);
+    assert_eq!(docs(gens[1].docs()), [" the if"]);
+    let reactions = m.behaviors()[0].reactions();
+    assert_eq!(docs(reactions[0].docs()), [" the reaction"]);
+    assert!(reactions[1].docs().is_empty());
+    let stmts = design.function("f").unwrap().body().unwrap().stmts();
+    assert_eq!(docs(stmts[0].docs()), [" the let"]);
+    assert_eq!(docs(stmts[1].docs()), [" the expression"]);
+    assert!(stmts[2].docs().is_empty());
+}
+
+#[test]
+fn generation_if_items_cover_every_arm() {
+    let design = build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; signal w: Bit; } else { signal z: Bit; } }");
+    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("G").unwrap();
+    let g = m.generations()[0];
+    fn names<'a>(v: Vec<piperine_lang::pom::Decl<'a>>) -> Vec<Option<&'a str>> {
+        v.iter().map(|d| d.name()).collect()
+    }
+    // Every arm's items in source order: the `else if` arm's items are listed, not the nested generation.
+    let items = g.items();
+    let named: Vec<_> = items.iter().map(|d| (d.kind().label(), d.name())).collect();
+    assert_eq!(named, [("Signal", Some("x")), ("Signal", Some("y")), ("Signal", Some("w")), ("Signal", Some("z"))]);
+    // `arms()` is unchanged: three arms.
+    assert_eq!(g.arms().len(), 3);
+    assert_eq!(names(g.arms()[1].items()), [Some("y"), Some("w")]);
+    // A `for` lists its body.
+    let design = build("module G() { for i in 0..2 { signal a: Bit; signal b: Bit; } }");
+    assert_eq!(names(design.module("G").unwrap().generations()[0].items()), [Some("a"), Some("b")]);
+}
