@@ -389,8 +389,13 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 | P4 | Which manifest keys exist | the manifest holds the tables and keys of one closed table; any other is `E0171`. | §3.6 rule 3 |
 | P5 | How a git dependency is pinned | one of `branch`, `tag` or `rev`, or the default branch; the lockfile records the commit and is honoured while the source is unchanged. | §3.6 rules 7, 13, 14 |
 | P6 | When the manifests are read | in a fifth phase, `package`, before parse and elaboration; a model that meets its conditions is rejected. | §0.3 |
+| S1 | How `std` declares an item the engine implements | `extern "intrinsic" fn`, a second ABI string accepted only in the crate `std`: no body, any types, no `#[derivative]`. | §3 rule 10, §22 rule 4 |
+| S2 | Which items of `std` are written in MSL | every item the language can express has a body; the five that read the characters of a `str` (`matches_bits`, `logic`, `table_model`, `parse_table`, `parse_hex`) stay `extern "intrinsic"`. | §22 |
+| S3 | The analysis kind and the pass switch share a name | the analysis kind is `Transient`; the module `Tran` of §22.3.7 keeps its name. | §11.1.1, §22.3.7 |
+| S4 | The namespaces of `std` | `std::constants`, `std::carriers`, `std::values`, `std::analog`, `std::nets`, `std::convert`, `std::monitor`, `std::io`, all re-exported by `std::prelude`. | §22 |
+| S5 | Where the prelude constants live | `Q`, `K_B`, `EPS0`, `PI`, `E` and `inf` are `pub const` items of `std::constants`; `inf` is `1.0 / 0.0`. | §1 rule 3 |
 
-G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)).
+G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)). S1 to S5 number the decisions of the standard library ([§22](part_vii_stdlib.md#22-standard-library)).
 
 ### Other closed items
 

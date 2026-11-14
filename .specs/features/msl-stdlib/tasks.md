@@ -202,12 +202,12 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `s1_constants_are_std_items` passes in `spec_text.rs` (C6: STD-01 AC 6)
-- [ ] Test `appendix_g_records_the_stdlib_decisions` passes in `spec_text.rs` (C10: STD-01 AC 10)
-- [ ] G.38 keeps the status `Open` (T19 closes it)
-- [ ] No fence is added in this task (the §1 fence of the constants is T9)
-- [ ] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `s1_constants_are_std_items` passes in `spec_text.rs` (C6: STD-01 AC 6)
+- [x] Test `appendix_g_records_the_stdlib_decisions` passes in `spec_text.rs` (C10: STD-01 AC 10)
+- [x] G.38 keeps the status `Open` (T19 closes it)
+- [x] No fence is added in this task (the §1 fence of the constants is T9)
+- [x] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

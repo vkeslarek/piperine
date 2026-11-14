@@ -33,7 +33,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   read-only borrow: of an array, slice or string in a function parameter, and of any value as
   a call argument (`(0.1..=10.0).contains(&n)`).
 - **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`
-  and `inf` (table below).
+  and `inf` (table below): they are `pub const` items of `std::constants`, re-exported by the
+  prelude.
 - **§1 rule 4.** Only a type with `Repr` can be carried: it is the `T` of `Bit<T>` and the
   `value` of a nature ([§4](part_ii_carriers.md#4-natures)).
 - **§1 rule 5.** `uN` and `iN` are aliases of `UInt<N>` and `Int<N>` for `N` in 1..=128. `fN`
@@ -62,6 +63,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 
 **Prelude constants**
 
+The six constants are `pub const` items of `std::constants` ([§22](part_vii_stdlib.md#22-standard-library)), re-exported by the prelude.
+
 | Name | Type | Value | Meaning |
 | --- | --- | --- | --- |
 | `Q` | `f64` | `1.602176634e-19` | elementary charge, C |
@@ -69,7 +72,7 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 | `EPS0` | `f64` | `8.8541878128e-12` | vacuum permittivity, F/m |
 | `PI` | `f64` | Rust's `f64::consts::PI` | π |
 | `E` | `f64` | Rust's `f64::consts::E` | Euler's number |
-| `inf` | `f64` | `f64::INFINITY` | positive infinity |
+| `inf` | `f64` | `1.0 / 0.0` | positive infinity |
 
 > **Resolution.** The design names the constants and not their values. `Q` and `K_B` are the
 > exact SI values of 2019; `EPS0` is the CODATA 2018 value.

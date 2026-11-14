@@ -1299,3 +1299,48 @@ fn tran_in_fences_is_the_module() {
         }
     }
 }
+
+const STDLIB_DECISIONS: [(&str, &[&str]); 5] = [
+    ("S1", &["§3 rule 10", "§22 rule 4"]),
+    ("S2", &["§22"]),
+    ("S3", &["§11.1.1"]),
+    ("S4", &["§22"]),
+    ("S5", &["§1 rule 3"]),
+];
+
+#[test]
+fn appendix_g_records_the_stdlib_decisions() {
+    // STD-01 AC 10: S1 to S5 are closed rows of the decision table, each citing its sections.
+    let g = spec("appendix_g_scope.md");
+    let closed = section(&g, "### Closed in this specification");
+    let rows = table_rows(&closed);
+    for (id, cited) in STDLIB_DECISIONS {
+        let row = rows.iter().find(|r| r[0] == id).unwrap_or_else(|| panic!("no row for {id}"));
+        assert_eq!(row.len(), 4, "{id}: Item, Question, Decision, Where: {row:?}");
+        assert!(!row[1].is_empty() && !row[2].is_empty(), "{id}: {row:?}");
+        for c in cited {
+            assert!(row[3].contains(c), "{id} cites {c}: {}", row[3]);
+        }
+    }
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with('S')).count(), 5);
+    let s = |id: &str| rows.iter().find(|r| r[0] == id).unwrap()[2].clone();
+    assert!(s("S1").contains("extern \"intrinsic\""), "{}", s("S1"));
+    assert!(s("S3").contains("`Transient`"), "{}", s("S3"));
+    assert!(s("S5").contains("1.0 / 0.0"), "{}", s("S5"));
+    let closing = one_line(&closed);
+    assert!(closing.contains("S1 to S5 number the decisions of the standard library"), "{closing}");
+    // G.38 keeps its status until the gallery gate closes it.
+    assert!(one_line(&section(&g, "### G.38")).contains("**Status: Open.**"));
+}
+
+#[test]
+fn s1_constants_are_std_items() {
+    // STD-01 AC 6: the six constants are `pub const` items of `std::constants`.
+    let p1 = spec("part_i_values.md");
+    let rule3 = one_line(p1.split("- **§1 rule 3.**").nth(1).unwrap().split("- **§1 rule 4.**").next().unwrap());
+    assert!(rule3.contains("`pub const` items of `std::constants`"), "{rule3}");
+    let at = p1.find("**Prelude constants**").expect("table caption");
+    let block = one_line(&p1[at..p1[at..].find("\n- **§1 rule").map_or(p1.len(), |n| at + n)]);
+    assert!(block.contains("six constants are `pub const` items of `std::constants`"), "{block}");
+    assert!(block.contains("re-exported by the prelude"), "{block}");
+}
