@@ -62,7 +62,7 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("Some", BuiltinKind::Variant, "§1"),
     row("None", BuiltinKind::Variant, "§1"),
     row("Dc", BuiltinKind::Variant, "§11.1.1"),
-    row("Tran", BuiltinKind::Variant, "§11.1.1"),
+    row("Transient", BuiltinKind::Variant, "§11.1.1"),
     row("Ac", BuiltinKind::Variant, "§11.1.1"),
     row("Noise", BuiltinKind::Variant, "§11.1.1"),
     row("Static", BuiltinKind::Variant, "§11.1.1"),

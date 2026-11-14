@@ -1170,3 +1170,11 @@ fn duplicate_items_in_a_block_are_e0162() {
 fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
     builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
 }
+
+#[test]
+fn transient_is_a_builtin_variant() {
+    // STD-15 AC 3: the analysis kind is `Transient`; `Tran` is not a core name.
+    let info = builtin("Transient").expect("Transient is a built-in").info();
+    assert_eq!((info.kind, info.section), (BuiltinKind::Variant, "§11.1.1"));
+    assert!(builtin("Tran").is_none(), "`Tran` is the module of §22.3.7, not a core name");
+}

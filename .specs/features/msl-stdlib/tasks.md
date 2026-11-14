@@ -176,15 +176,15 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `analysis_kinds_list_transient` passes in `spec_text.rs` (C7: STD-01 AC 7)
-- [ ] Test `no_analysis_tran_remains` passes in `spec_text.rs` (C8: STD-01 AC 8)
-- [ ] Test `tran_in_fences_is_the_module` passes in `spec_text.rs` (C9: STD-01 AC 9)
-- [ ] Test `transient_is_a_builtin_variant` passes in `pom_resolve.rs` (C90: STD-15 AC 3)
-- [ ] The module `Tran` keeps its name in §22.3.7, §22.3.8, the §22 Index, `part_iii_structure.md` (the fence near line 454), Appendix C (line 120), Appendix F ("Models referenced", F.4) and G.38
-- [ ] The prose "transient", "transient step", "a transient" is not touched
-- [ ] Any existing test that names the built-in `Tran` is updated to `Transient` and nothing else in it changes; the commit body lists each
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `analysis_kinds_list_transient` passes in `spec_text.rs` (C7: STD-01 AC 7)
+- [x] Test `no_analysis_tran_remains` passes in `spec_text.rs` (C8: STD-01 AC 8)
+- [x] Test `tran_in_fences_is_the_module` passes in `spec_text.rs` (C9: STD-01 AC 9)
+- [x] Test `transient_is_a_builtin_variant` passes in `pom_resolve.rs` (C90: STD-15 AC 3)
+- [x] The module `Tran` keeps its name in §22.3.7, §22.3.8, the §22 Index, `part_iii_structure.md` (the fence near line 454), Appendix C (line 120), Appendix F ("Models referenced", F.4) and G.38
+- [x] The prose "transient", "transient step", "a transient" is not touched
+- [x] Any existing test that names the built-in `Tran` is updated to `Transient` and nothing else in it changes; the commit body lists each
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

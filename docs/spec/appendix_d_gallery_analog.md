@@ -229,7 +229,7 @@ digital for DeltaSigma1 {
 | Drives | One branch, `(x, gnd)`, with a flow contribution. `DeltaSigma1` drives `bit` by commits. `vin` is probed only and carries no flow of this module. |
 | The equation | `x` has this one branch, so KCL gives `c · dv(x)/dt = (v(vin) − fb) / r`. |
 | No DC path | In an equilibrium solve `ddt` is 0 (§16.2). The row of `x` then does not contain `v(x)`. |
-| Operating point of `Tran` | `x` has `= 0.0`, so it is held at 0 V by a source to `gnd` (§16). The hold's flow balances `(v(vin) − fb) / r`. `fb = −vref`, since `bit` starts false. |
+| Operating point of `Transient` | `x` has `= 0.0`, so it is held at 0 V by a source to `gnd` (§16). The hold's flow balances `(v(vin) − fb) / r`. `fb = −vref`, since `bit` starts false. |
 | `(0, 0)` | `bit ← false` is committed. If `clk` starts high, `clk.rise()` fires (§13 rule 6): the reaction reads `v(x) = 0` and commits `false`, which changes nothing. |
 | First step | The hold is removed. `c · v(x)` is a `ddt` state, so the step starts from 0 V with no jump (§16, §15.2.1). |
 | Rising edge, `(t, 0)` | `t` is a time point: the reaction probes (§12.1.5, §17.2.2). The left value is solved first (§15 step 1). The reaction reads it and commits `bit`. |

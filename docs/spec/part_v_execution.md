@@ -65,7 +65,7 @@ constant. There are four kinds, and §16.2 states what each primitive is in each
 | Kind | Definition | Where it occurs |
 | --- | --- | --- |
 | **equilibrium solve** | Newton on the equations with every `ddt` equal to 0 | each round of an operating point; each `Dc` sweep point (§16, §16.1) |
-| **transient step** | Newton on the equations discretized from the previous time point to a later time | advancing a `Tran` analysis (§17.2) |
+| **transient step** | Newton on the equations discretized from the previous time point to a later time | advancing a `Transient` analysis (§17.2) |
 | **jump solve** | Newton on the equations of the jump rule, at an unchanged `t` | step 3.4 below (§15.2) |
 | **small-signal sweep** | one linear solve per frequency of the linearized equations | `Ac`, `Noise` and host analyses built on them (§11.1, §16.3) |
 
@@ -318,7 +318,7 @@ every round of it (§11.1).
   must be right at time 0 is the stdlib `above` (§13, §22.2).
 - **O2.** A crossing found between round `r` and round `r + 1` fires at the microstep after
   the one that caused round `r + 1`.
-- **O3.** In a `Tran` analysis, time advances from this instant. A delayed commit made at
+- **O3.** In a `Transient` analysis, time advances from this instant. A delayed commit made at
   `(0, n)` is due at its time (§15 T2). `at(x)` with `x` at tick 0 is armed with a time equal
   to the current one and fires at `(0, 1)` (§13 rule 4); a negative time never fires.
 - **O4.** A settle commit made at the operating point follows §15 S1 and S6.
@@ -330,7 +330,7 @@ every round of it (§11.1).
 **Held nodes.** A node's `= value` is where Newton starts. In a transient it is also held.
 
 - **H1.** A **held node** is a node declared with `= value`, during the operating point of a
-  `Tran` analysis. Through step 3 and every round of step 4 it is tied to that potential by a
+  `Transient` analysis. Through step 3 and every round of step 4 it is tied to that potential by a
   potential source to `gnd`, the **hold**. The hold is removed as the first step begins
   (SPICE `.ic`).
 - **H2.** The first step starts from the held solution, with the arguments of `ddt` as its
@@ -352,7 +352,7 @@ every round of it (§11.1).
 /// A capacitor that starts charged.
 module CapIc(p: Electrical, n: Electrical) { c: f64; ic: f64; }
 analog for CapIc {
-    if analysis(Tran) && analysis(Static) { v(p, n) +> ic; }      // the transient's operating point
+    if analysis(Transient) && analysis(Static) { v(p, n) +> ic; }      // the transient's operating point
     else { i(p, n) +> ddt(c * v(p, n)); }
 }
 ```
@@ -447,9 +447,9 @@ A host **MUST NOT** expose to a model an analysis kind outside the table's last 
 | --- | --- | --- |
 | transfer function, poles and zeros, S-parameters, AC sensitivity | an operating point and the sweep's linearization, with the host's own stimulus, ports or eigenproblem in place of `ac_stim` | `Ac` |
 | DC sensitivity | `Dc` and the gradients of §21 | `Dc` |
-| distortion, harmonic measures | a transient, and the host's Fourier analysis of its records | `Tran` |
-| periodic steady state | transients, each continued from the last (§16.4), until the state at the end of a period equals the state at its start | `Tran` |
-| periodic small-signal and periodic noise | a periodic steady state, then the small-signal rule (§11.1) at each point of it | `Tran` for the trajectory, `Ac` or `Noise` for the linearization |
+| distortion, harmonic measures | a transient, and the host's Fourier analysis of its records | `Transient` |
+| periodic steady state | transients, each continued from the last (§16.4), until the state at the end of a period equals the state at its start | `Transient` |
+| periodic small-signal and periodic noise | a periodic steady state, then the small-signal rule (§11.1) at each point of it | `Transient` for the trajectory, `Ac` or `Noise` for the linearization |
 
 In a periodic small-signal or periodic noise analysis:
 
@@ -471,7 +471,7 @@ instant of a transient.
 no operating point of its own. No initial value is committed again, nothing is held, no
 `changed()` fires and `init()` does not.
 
-1. **A `Tran` run there is the same transient with a later stop time**: a **continued
+1. **A `Transient` run there is the same transient with a later stop time**: a **continued
    transient**. `analysis(Static)` is never true in it. The old stop time remains a time
    point. Whatever the host `set` or drove between the two runs is a commit collected at
    that instant (§15 step 2), not an initial value.

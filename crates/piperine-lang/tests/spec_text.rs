@@ -1250,3 +1250,52 @@ fn s22_rule_4_names_extern_intrinsic() {
     assert!(rule4.contains("signature and a contract"), "{rule4}");
     assert!(rule4.contains("declared `extern \"intrinsic\"`"), "{rule4}");
 }
+
+#[test]
+fn analysis_kinds_list_transient() {
+    // STD-01 AC 7: §11.1.1 and row 23 of Appendix B.1 list the five kinds.
+    let kinds = "`Dc`, `Transient`, `Ac`, `Noise`, `Static`";
+    let p4 = one_line(&spec("part_iv_behavior.md"));
+    let at = p4.find("- **§11.1.1**").expect("§11.1.1 bullet");
+    assert!(p4[at..at + 400].contains(kinds), "{}", &p4[at..at + 400]);
+    let b = spec("appendix_b_grammar.md");
+    let row = b.lines().find(|l| l.starts_with("| 23 |")).expect("row 23");
+    assert!(row.contains(kinds), "{row}");
+}
+
+#[test]
+fn no_analysis_tran_remains() {
+    // STD-01 AC 8.
+    for (name, text) in all_specs() {
+        assert!(!text.contains("analysis(Tran)"), "{name} still writes analysis(Tran)");
+    }
+}
+
+#[test]
+fn tran_in_fences_is_the_module() {
+    // STD-01 AC 9: in a `rust` or `rust,fragment` fence the token `Tran` is a declaration or
+    // a placement of the module, so `(` follows; the analysis kind is `Transient`.
+    for (name, text) in all_specs() {
+        let mut fenced = false;
+        for (n, line) in text.lines().enumerate() {
+            let t = line.trim_start();
+            if t.starts_with("```") {
+                fenced = !fenced && (t == "```rust" || t.starts_with("```rust,"));
+                continue;
+            }
+            if !fenced {
+                continue;
+            }
+            let b = line.as_bytes();
+            let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+            let mut i = 0;
+            while let Some(k) = line[i..].find("Tran") {
+                let s = i + k;
+                let e = s + 4;
+                let alone = (s == 0 || !word(b[s - 1])) && (e == b.len() || !word(b[e]));
+                assert!(!alone || b.get(e) == Some(&b'('), "{name}:{}: `Tran` not followed by `(`: {line}", n + 1);
+                i = e;
+            }
+        }
+    }
+}

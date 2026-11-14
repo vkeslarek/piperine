@@ -240,7 +240,7 @@ That analysis is defined and not yet implemented (Appendix C.2, G.37).
 Logic that must follow a sweep says so, in one of two ways:
 
 ```rust,fragment
-q = e after if analysis(Tran) { tpd } else { 0.0 };     // §8.2.5 allows it
+q = e after if analysis(Transient) { tpd } else { 0.0 };     // §8.2.5 allows it
 q = inertial(e, tpd);                                    // follows its input in an operating point (§22.5.8)
 ```
 
@@ -255,7 +255,7 @@ Reactions guarded by `analysis(Static)` therefore run. §16.4 does not say wheth
 | `zi_nd` (§22.2.12) | `on settle && analysis(Static)` runs and commits a steady-state history over the sampled one |
 | `idt` with `ic` (§22.2.8) | held at `ic` in those solves, not at its integrated value |
 | `transition`, `inertial` (§22.2.11, §22.5.8) | follow their input directly if it changes in that instant |
-| `CapIc` (§16) | unaffected in `Dc`: its guard also requires `analysis(Tran)` |
+| `CapIc` (§16) | unaffected in `Dc`: its guard also requires `analysis(Transient)` |
 
 What is to be decided: whether `Static` is true there, and if so whether seeding reactions may overwrite state the transient built.
 G.34 decides whether those commits survive.
@@ -285,7 +285,7 @@ A record with `finish = true` on `sim` ends the analysis at its instant, which i
 ### G.36 Flags of a periodic analysis
 
 **Status: Open.**
-The table of §11.1 says `Tran`, `Ac` and `Noise` are constant during an analysis. A periodic small-signal analysis is `Tran` for its trajectory and `Ac` or `Noise` for its linearization (§16.3).
+The table of §11.1 says `Transient`, `Ac` and `Noise` are constant during an analysis. A periodic small-signal analysis is `Transient` for its trajectory and `Ac` or `Noise` for its linearization (§16.3).
 The exception is stated only in the "the model sees" column of §16.3. The table of §11.1 is not amended.
 
 ### G.37 Periodic small-signal: no traced example, no implementation
@@ -362,7 +362,7 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 
 | Item | Question | Decision | Where |
 | --- | --- | --- | --- |
-| G.40 | What an analysis run at a transient's last instant keeps | everything: time, the event queue, discrete state, instance state, the analog history. A `Tran` there is the same transient continued; an analysis without time is one more instant. A periodic steady state is continued transients only. | §16.4, §16.3 |
+| G.40 | What an analysis run at a transient's last instant keeps | everything: time, the event queue, discrete state, instance state, the analog history. A `Transient` there is the same transient continued; an analysis without time is one more instant. A periodic steady state is continued transients only. | §16.4, §16.3 |
 | G.41 | Whether a sampled real value has a sensitivity | a commit of a real value carries the sensitivity of the expression committed, at the commit's instant. The same rule gives the periodic small-signal response. | §23.3.4, §11.1 |
 | G.42 | How the solve tables read in a periodic analysis | the small-signal column is taken at each point of the trajectory, with `now()` its time. `zi_nd` is in its `delay` form there, on purpose. | §16.2, §16.3 |
 | G.43 | A hold that agrees with a potential contribution on the same node | always an error: a hold is a potential source, and a loop of potential contributions is singular whether or not the values agree | §16 |

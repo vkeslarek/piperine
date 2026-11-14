@@ -239,7 +239,7 @@ pub module init() -> Event {
 3. In a sweep `init()` fires at the first sweep point only (§16.1.2).
 4. In an analysis run at a transient's last instant `init()` does not fire (§16.4).
 5. Reactions on `init()` read the first equilibrium solution (§16 step 4).
-6. `init()` is restricted to an analysis by a guard: `init() && analysis(Tran)`.
+6. `init()` is restricted to an analysis by a guard: `init() && analysis(Transient)`.
 
 | At instants | Where time does not advance | Transient | Small-signal sweep |
 | --- | --- | --- | --- |
@@ -669,7 +669,7 @@ pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     signal ys: [Bit<f64>; D];                // ys[k] = y[n−1−k]
     signal vout: Bit<f64>;                   // the current sample y[n]
     signal y: State;
-    let sampled = analysis(Tran) && !analysis(Static);
+    let sampled = analysis(Transient) && !analysis(Static);
     pos(y)
 }
 digital<N, D> for zi_nd<N, D> {
