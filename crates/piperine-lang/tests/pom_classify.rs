@@ -734,6 +734,60 @@ module Top() {
     assert_eq!(args_of("g(1.0, 2.0, b: 3.0)")[2], Resolution::Unresolved);
 }
 
+/// POL-18 AC 3: a bundle literal that names a field the bundle lacks, or one
+/// twice, is one `E0263` at the name, no `E0161`; the first of two equal names links.
+#[test]
+fn bundle_literal_field_errors_are_e0263() {
+    let src = "\
+struct Port2 { hi: Electrical, lo: Electrical, gain: f64 }
+module Top() {
+    signal a: Electrical;
+    signal b: Electrical;
+    let ok = Port2 { hi: a, lo: b, gain: 1.0 };
+    let x = Port2 { hi: a, lo: b, zz: 1.0 };
+    let y = Port2 { hi: a, hi: b, lo: b };
+}
+";
+    let design = with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(found, [("E0263", "zz"), ("E0263", "hi")], "{:?}", design.diagnostics());
+    let second = src.find("hi: a, hi: b").unwrap() + "hi: a, ".len();
+    assert_eq!(design.diagnostics()[1].diagnostic.span().range().start, second);
+    let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with("Port2 { hi: a, hi: b")).unwrap();
+    let ExprKind::Struct { fields, class, .. } = e.kind() else { panic!("a struct expression") };
+    assert_eq!(*class, StructClass::BundleLiteral);
+    assert!(matches!(fields[0].res, Resolution::Decl(_)));
+    assert_eq!(fields[1].res, Resolution::Unresolved);
+}
+
+/// POL-18 AC 4: an unknown field of a struct literal and of a struct pattern is
+/// one `E0161` at the name; the shorthand pattern `S { a }` still binds and links.
+#[test]
+fn unknown_struct_field_is_reported_in_literals_and_patterns() {
+    let src = "\
+struct S { a: f64, b: f64 }
+fn h(s: S) -> f64 {
+    let lit = S { a: 1.0, c: 2.0 };
+    match s {
+        S { a, q } => a,
+        S { b: bb, .. } => bb,
+    }
+}
+";
+    let design = with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(found, [("E0161", "c"), ("E0161", "q")], "{:?}", design.diagnostics());
+    let decl_s = design.find("S").expect("struct S");
+    let field = |name: &str| Resolution::Decl(decl_s.children().into_iter().find(|f| f.name().as_deref() == Some(name)).unwrap().id());
+    let mut seen = Vec::new();
+    for i in 0..design.pat_count() {
+        if let piperine_lang::pom::PatKind::Struct { fields, .. } = &design.pat_node(piperine_lang::pom::PatId(i as u32)).kind {
+            seen.extend(fields.iter().map(|f| (f.name.text.clone(), f.res)));
+        }
+    }
+    assert_eq!(seen, [("a".to_string(), field("a")), ("q".to_string(), Resolution::Unresolved), ("b".to_string(), field("b"))]);
+}
+
 /// §8.4.8: a member that is missing or not `pub` is `E0343`.
 #[test]
 fn missing_instance_member_is_e0343() {

@@ -120,6 +120,8 @@ pub struct FieldPatNode {
     pub name: Name,
     pub pat: Option<PatId>,
     pub binding: Option<DeclId>,
+    /// The field of the struct or variant that the name stands for.
+    pub res: Resolution,
     pub span: Span,
 }
 

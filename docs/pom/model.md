@@ -828,6 +828,7 @@ The forms of a pattern.
 | `name` | `Name` | The field name. |
 | `pat` | `Option<PatId>` | The sub-pattern; none in the shorthand. |
 | `binding` | `Option<DeclId>` | The `Binding` the shorthand introduces. |
+| `res` | `Resolution` | The field of the struct or variant the name stands for; `Unresolved` when it has none. |
 | `span` | `Span` | Byte range in the file text. |
 
 ### `ExprNode`

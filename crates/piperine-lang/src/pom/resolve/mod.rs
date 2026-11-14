@@ -96,6 +96,9 @@ pub(super) fn run(design: &mut Design) {
     for facts in classified.structs {
         design.set_struct(facts.expr, facts.class, &facts.fields);
     }
+    for (pat, index, res) in classified.pattern_fields {
+        design.set_pattern_field(pat, index, res);
+    }
     for facts in classified.calls {
         design.set_call(facts.expr, facts.class, &facts.args, &facts.params);
     }

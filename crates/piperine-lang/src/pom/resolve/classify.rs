@@ -7,11 +7,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::body::{Arg, ExprKind, FieldInit, TypeKind};
+use super::super::body::{Arg, ExprKind, FieldInit, PatKind, TypeKind};
 use super::super::builtin::BuiltinKind;
 use super::super::decl::{DeclKind, FnParamData, GenericParamData, Name};
 use super::super::design::Design;
-use super::super::ids::{DeclId, ExprId, FileId, PathId, TypeId};
+use super::super::ids::{DeclId, ExprId, FileId, PatId, PathId, TypeId};
 use super::super::resolution::{CallClass, PortKind, Resolution, StructClass};
 use crate::msl::Diagnostic;
 
@@ -38,6 +38,8 @@ pub(super) struct Classified {
     pub bundles: Vec<(DeclId, bool)>,
     pub calls: Vec<CallFacts>,
     pub structs: Vec<StructFacts>,
+    /// `(pattern, field index, the field it names)` for each field of a struct pattern.
+    pub pattern_fields: Vec<(PatId, usize, Resolution)>,
     /// `(module, call)` for every instance, in source order.
     pub instances: Vec<(DeclId, ExprId)>,
     pub diagnostics: Vec<(FileId, Diagnostic)>,
@@ -163,6 +165,7 @@ pub(super) fn run(design: &Design) -> Classified {
         }
     }
     let templates = struct_expressions(design, &bundles, &mut out);
+    struct_patterns(design, &mut out);
     call_expressions(design, &templates, &access_table(design), &mut out);
     out
 }
@@ -309,8 +312,10 @@ fn struct_expressions(design: &Design, bundles: &BTreeSet<DeclId>, out: &mut Cla
             seen.push(&f.name.text);
             match (found, class) {
                 (Some(_), StructClass::Template(_)) if repeated => out.diagnostics.push(repeated_binding(design, "E0320", "param", &f.name, from)),
+                (Some(_), StructClass::BundleLiteral) if repeated => out.diagnostics.push(repeated_binding(design, "E0263", "field", &f.name, from)),
                 (Some(d), _) => named.push((k, Resolution::Decl(d))),
                 (None, StructClass::Template(_)) => out.diagnostics.push(missing_binding(design, "E0320", target, "param", &f.name, from)),
+                (None, StructClass::BundleLiteral) => out.diagnostics.push(missing_binding(design, "E0263", target, "field", &f.name, from)),
                 (None, StructClass::Unclassified) => {}
                 (None, _) => out.diagnostics.push(missing_binding(design, "E0161", target, "field", &f.name, from)),
             }
@@ -319,6 +324,26 @@ fn struct_expressions(design: &Design, bundles: &BTreeSet<DeclId>, out: &mut Cla
         out.structs.push(StructFacts { expr, class, fields: named });
     }
     classes
+}
+
+/// The fields a struct pattern names: each links to the field of the struct or
+/// variant its path names; one that does not exist is `E0161`, as in a literal.
+fn struct_patterns(design: &Design, out: &mut Classified) {
+    for i in 0..design.pat_count() {
+        let id = PatId(i as u32);
+        let node = design.pat_node(id);
+        let PatKind::Struct { path, fields, .. } = &node.kind else { continue };
+        let Resolution::Decl(target) = design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) else { continue };
+        if !matches!(design.decl_data(target).kind, DeclKind::Struct(_) | DeclKind::Variant(_)) {
+            continue;
+        }
+        for (k, f) in fields.iter().enumerate() {
+            match child_named(design, target, &f.name.text, is_field) {
+                Some(d) => out.pattern_fields.push((id, k, Resolution::Decl(d))),
+                None => out.diagnostics.push(missing_binding(design, "E0161", target, "field", &f.name, node.owner)),
+            }
+        }
+    }
 }
 
 // ---- calls and instances ----------------------------------------------------------------------

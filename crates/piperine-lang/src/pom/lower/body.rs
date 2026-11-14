@@ -119,12 +119,13 @@ impl Lowerer<'_> {
                             name: name(&f.name),
                             pat: Some(self.pat(sub, origin)),
                             binding: None,
+                            res: Resolution::Unresolved,
                             span: f.span.0,
                         },
                         None => {
                             let binding = self.binding(&f.name, f.span.0, origin);
                             introduced.push(binding);
-                            FieldPatNode { name: name(&f.name), pat: None, binding: Some(binding), span: f.span.0 }
+                            FieldPatNode { name: name(&f.name), pat: None, binding: Some(binding), res: Resolution::Unresolved, span: f.span.0 }
                         }
                     })
                     .collect();

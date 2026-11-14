@@ -990,11 +990,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `bundle_literal_field_errors_are_e0263` passes in `pom_classify.rs` (C101: POL-18 AC 3)
-- [ ] Test `unknown_struct_field_is_reported_in_literals_and_patterns` passes in `pom_classify.rs` (C102: POL-18 AC 4)
-- [ ] The shorthand pattern `S { a }` still binds `a` and resolves the field
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `bundle_literal_field_errors_are_e0263` passes in `pom_classify.rs` (C101: POL-18 AC 3)
+- [x] Test `unknown_struct_field_is_reported_in_literals_and_patterns` passes in `pom_classify.rs` (C102: POL-18 AC 4)
+- [x] The shorthand pattern `S { a }` still binds `a` and resolves the field
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

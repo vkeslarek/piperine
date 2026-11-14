@@ -265,6 +265,15 @@ impl Design {
     }
 
     /// Store what an identifier pattern names (it is a path, not a binder).
+    /// Store the field a struct pattern's `index`th field names.
+    pub(super) fn set_pattern_field(&mut self, pat: PatId, index: usize, res_: super::resolution::Resolution) {
+        if let super::body::PatKind::Struct { fields, .. } = &mut self.pats[pat.index()].kind {
+            if let Some(f) = fields.get_mut(index) {
+                f.res = res_;
+            }
+        }
+    }
+
     pub(super) fn set_pat_res(&mut self, pat: PatId, res: super::resolution::Resolution) {
         if let super::body::PatKind::Ident { res: slot, .. } = &mut self.pats[pat.index()].kind {
             *slot = res;
