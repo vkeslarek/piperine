@@ -152,7 +152,7 @@ impl Lowerer<'_> {
     }
 
     pub(crate) fn field_init(&mut self, f: &ast::FieldInit) -> FieldInit {
-        FieldInit { name: name(&f.name), value: self.expr(&f.value), res: Resolution::Unresolved, span: f.span.0 }
+        FieldInit { name: name(&f.name), value: self.expr(&f.value), shorthand: f.shorthand, res: Resolution::Unresolved, span: f.span.0 }
     }
 
     fn opt_expr(&mut self, e: &Option<Box<ast::Expr>>) -> Option<ExprId> {

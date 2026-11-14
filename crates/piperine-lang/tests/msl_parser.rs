@@ -1032,6 +1032,7 @@ fn struct_expression_field_shorthand() {
     assert_eq!(fields[0].name.name, "v");
     assert!(matches!(&fields[0].value.kind, ExprKind::Path(p) if path_names(p) == ["v"]));
     assert!(matches!(&fields[1].value.kind, ExprKind::Path(p) if path_names(p) == ["Strength", "Strong"]));
+    assert!(fields[0].shorthand && !fields[1].shorthand);
 }
 
 #[test]
@@ -1123,4 +1124,38 @@ fn function_pointer_types_parse() {
     }
     // `fn` at item position is still a function item.
     assert!(matches!(only_item("fn g() {}").kind, ItemKind::Fn(_)));
+}
+
+/// The field list of the `Call`'s param block of a module-body `let`.
+fn let_param_fields(src: &str) -> Vec<FieldInit> {
+    let f = file(src);
+    let ItemKind::Module(m) = &f.items[0].kind else { panic!("not a module") };
+    for item in &m.body {
+        if let ModuleItemKind::Let { value, .. } = &item.kind {
+            if let ExprKind::Call { params: Some(p), .. } = &value.kind {
+                return p.clone();
+            }
+        }
+    }
+    panic!("no let with a param block in {src}")
+}
+
+#[test]
+fn param_block_and_template_shorthand_keep_their_form() {
+    // POL-11 AC 1: `{ r }` holds `shorthand == true` with the path `r` as its
+    // value; `{ r: r }` holds `false`; both in a param block and a template.
+    let fields = let_param_fields("module T() { let x = R(a, b) { r, c: 1p, d: d }; }");
+    assert_eq!(fields.len(), 3);
+    assert!(fields[0].shorthand);
+    assert!(matches!(&fields[0].value.kind, ExprKind::Path(p) if path_names(p) == ["r"]));
+    assert!(!fields[1].shorthand);
+    assert!(!fields[2].shorthand, "`d: d` is the long form");
+    // A template: `R { r, c: 1p }`.
+    let ExprKind::Struct { fields, .. } = &expr("R { r, c: 1p }").kind else { panic!() };
+    assert!(fields[0].shorthand && !fields[1].shorthand);
+    let ExprKind::Struct { fields, .. } = &expr("R { r: r }").kind else { panic!() };
+    assert!(!fields[0].shorthand);
+    // `emit!` arguments are never shorthand.
+    let ExprKind::Emit { fields, .. } = &expr("emit!(\"s\", a = 1)").kind else { panic!() };
+    assert!(fields.iter().all(|f| !f.shorthand));
 }

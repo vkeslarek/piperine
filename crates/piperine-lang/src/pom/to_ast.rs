@@ -214,7 +214,7 @@ impl<'d> Rebuild<'d> {
     }
 
     fn field_init(&self, f: &FieldInit) -> ast::FieldInit {
-        ast::FieldInit { name: ident(&f.name), value: self.expr(f.value), span: loc(f.span) }
+        ast::FieldInit { name: ident(&f.name), value: self.expr(f.value), shorthand: f.shorthand, span: loc(f.span) }
     }
 
     fn boxed(&self, id: ExprId) -> Box<ast::Expr> {

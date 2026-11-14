@@ -331,7 +331,13 @@ fn field_inits(f: &[FieldInit]) -> String {
     if f.is_empty() {
         return "{}".to_string();
     }
-    let items: Vec<String> = f.iter().map(|f| format!("{}: {}", f.name.spelled(), expr(&f.value))).collect();
+    let items: Vec<String> = f
+        .iter()
+        .map(|f| match f.shorthand {
+            true => f.name.spelled(),
+            false => format!("{}: {}", f.name.spelled(), expr(&f.value)),
+        })
+        .collect();
     let inline = format!("{{ {} }}", items.join(", "));
     if inline.len() <= WIDTH && !inline.contains('\n') {
         inline

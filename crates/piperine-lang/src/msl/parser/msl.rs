@@ -20,7 +20,7 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
     let attr = ident()
         .then_ignore(punct(Punct::Colon))
         .then(h.expr.clone())
-        .map_with(|(name, value), e| FieldInit { name, value, span: Loc(e.span()) });
+        .map_with(|(name, value), e| FieldInit { name, value, shorthand: false, span: Loc(e.span()) });
     let attr_block = attr
         .separated_by(punct(Punct::Comma))
         .allow_trailing()

@@ -195,6 +195,7 @@ pub(crate) fn build<'a, I: In<'a>>(
     let field_init = ident()
         .then(punct(Punct::Colon).ignore_then(expr.clone()).or_not())
         .map_with(|(name, value), e| {
+            let shorthand = value.is_none();
             let value = value.unwrap_or_else(|| Expr {
                 span: name.span,
                 kind: ExprKind::Path(Path {
@@ -202,7 +203,7 @@ pub(crate) fn build<'a, I: In<'a>>(
                     span: name.span,
                 }),
             });
-            FieldInit { name, value, span: Loc(e.span()) }
+            FieldInit { name, value, shorthand, span: Loc(e.span()) }
         });
     let field_inits = field_init
         .separated_by(punct(Punct::Comma))
@@ -223,7 +224,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         ident()
             .then_ignore(punct(Punct::Eq))
             .then(expr.clone())
-            .map_with(|(name, value), e| FieldInit { name, value, span: Loc(e.span()) })
+            .map_with(|(name, value), e| FieldInit { name, value, shorthand: false, span: Loc(e.span()) })
             .map(EmitArg::Named)
             .boxed(),
         ident()

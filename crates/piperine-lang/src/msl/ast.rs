@@ -294,6 +294,8 @@ pub struct Arg {
 pub struct FieldInit {
     pub name: Ident,
     pub value: Expr,
+    /// Written `{ r }` for `{ r: r }`: the authored form is kept.
+    pub shorthand: bool,
     pub span: Loc,
 }
 

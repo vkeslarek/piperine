@@ -271,3 +271,18 @@ fn raw_identifiers_print_with_their_prefix() {
     assert!(first == second, "reparse differs:\n{text}");
     assert_eq!(print(&second), text);
 }
+
+#[test]
+fn field_shorthand_prints_as_written() {
+    // POL-11 AC 2: `{ r }` prints `{ r }`, `{ r: r }` prints `{ r: r }`; each
+    // reparses to its own tree.
+    let short = "module T() { let x = R(a, b) { r }; let y = R { r, c: 1p }; }";
+    let long = "module T() { let x = R(a, b) { r: r }; let y = R { r: r, c: 1p }; }";
+    let (s, l) = (parsed("short", short), parsed("long", long));
+    let (st, lt) = (print(&s), print(&l));
+    assert!(st.contains("{ r }") && st.contains("{ r, c: 1p }"), "{st}");
+    assert!(lt.contains("{ r: r }") && lt.contains("{ r: r, c: 1p }"), "{lt}");
+    assert!(s != l, "the two forms are different trees");
+    assert!(parsed("short2", &st) == s && parsed("long2", &lt) == l);
+    assert_eq!(print(&parsed("short3", &st)), st);
+}

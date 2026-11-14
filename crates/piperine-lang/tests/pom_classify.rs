@@ -684,3 +684,32 @@ module Top(a: Electrical) {
     assert_eq!(member_res(&design, "c.nope"), Resolution::Unresolved);
     assert_eq!(support::codes(&design), ["E0343"]);
 }
+
+#[test]
+fn shorthand_field_binds_param_and_reads_the_local() {
+    // POL-11 AC 3: `R(a, b) { r }` binds the param `r` of `R`, its value reads
+    // the `r` in scope, the field is a shorthand, and to_ast restores it.
+    let src = "\
+module R(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+module Top() {
+    signal a: Electrical;
+    signal b: Electrical;
+    r: f64 = 2.0;
+    let x = R(a, b) { r };
+}
+";
+    let design = with_prelude(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let top = design.module("Top").unwrap();
+    let inst = &top.instances()[0];
+    let fields = inst.param_bindings();
+    assert_eq!(fields.len(), 1);
+    assert!(fields[0].is_shorthand());
+    assert_eq!(fields[0].res, Resolution::Decl(design.module("R").unwrap().param("r").unwrap().decl().id()));
+    let ExprKind::Path(p) = design.expr(fields[0].value).kind() else { panic!("a path value") };
+    assert_eq!(design.path(*p).segments()[0].res, Resolution::Decl(top.param("r").unwrap().decl().id()));
+    let parsed = piperine_lang::msl::parser::parse(src).file;
+    let files = design.files();
+    let top_file = files.iter().find(|f| !f.is_prelude()).expect("the root file");
+    assert_eq!(top_file.to_ast(), parsed);
+}

@@ -464,12 +464,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `param_block_and_template_shorthand_keep_their_form` passes in `msl_parser.rs` (C59: POL-11 AC 1)
-- [ ] Test `field_shorthand_prints_as_written` passes in `msl_print.rs` (C60: POL-11 AC 2)
-- [ ] Test `shorthand_field_binds_param_and_reads_the_local` passes in `pom_classify.rs` (C61: POL-11 AC 3)
-- [ ] `struct_expression_field_shorthand` (msl_parser) is strengthened with the flag
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `param_block_and_template_shorthand_keep_their_form` passes in `msl_parser.rs` (C59: POL-11 AC 1)
+- [x] Test `field_shorthand_prints_as_written` passes in `msl_print.rs` (C60: POL-11 AC 2)
+- [x] Test `shorthand_field_binds_param_and_reads_the_local` passes in `pom_classify.rs` (C61: POL-11 AC 3)
+- [x] `struct_expression_field_shorthand` (msl_parser) is strengthened with the flag
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

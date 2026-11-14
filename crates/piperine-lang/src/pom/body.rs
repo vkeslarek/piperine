@@ -146,8 +146,17 @@ pub struct Arg {
 pub struct FieldInit {
     pub name: Name,
     pub value: ExprId,
+    /// Written `{ r }` for `{ r: r }`.
+    pub shorthand: bool,
     pub res: Resolution,
     pub span: Span,
+}
+
+impl FieldInit {
+    /// Whether the field was written `name` for `name: name`.
+    pub fn is_shorthand(&self) -> bool {
+        self.shorthand
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

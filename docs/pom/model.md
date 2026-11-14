@@ -228,7 +228,8 @@ An identifier as written, with its range.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `text` | `String` | The identifier text. |
+| `text` | `String` | The identifier text, without any `r#` prefix. |
+| `raw` | `bool` | Written `r#text` (one of the seven added keywords); `to_ast` restores the prefix. |
 | `span` | `Span` | Byte range in the file text. |
 
 ### `DeclData`
@@ -864,6 +865,7 @@ An argument: positional, or `name: value` after the positional ones. The name li
 | --- | --- | --- |
 | `name` | `Name` | The field, param or port name. |
 | `value` | `ExprId` | The value expression. |
+| `shorthand` | `bool` | Written `{ r }` for `{ r: r }` (`is_shorthand()`); `to_ast` restores the form. |
 | `res` | `Resolution` | What the name refers to (`Unresolved` until name resolution). |
 | `span` | `Span` | Byte range in the file text. |
 
