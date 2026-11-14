@@ -585,8 +585,7 @@ fn every_index_item_is_pub() {
 #[test]
 fn std_declares_no_core_name() {
     let design = embedded();
-    // T20 removes the six `Const` rows of the built-in table; until then they are rows and items at once.
-    let core: BTreeSet<&str> = BUILTINS.iter().map(|row| row.name).filter(|n| !["Q", "K_B", "EPS0", "PI", "E", "inf"].contains(n)).collect();
+    let core: BTreeSet<&str> = BUILTINS.iter().map(|row| row.name).collect();
     let mut clashes = Vec::new();
     for namespace in design.std_crate().root().submodules() {
         for item in namespace.items() {

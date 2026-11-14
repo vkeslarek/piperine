@@ -64,7 +64,7 @@ analog for Resistor {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 11) exists and is growing. The compiler from MSL to the solver does not exist yet: every gallery model in the spec is traced by hand (App. G.38). This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 12) exists and is growing, and it parses and resolves the whole standard library and every gallery model (App. G.38). The compiler from MSL to the solver does not exist yet, so nothing is executed. This book describes the language as specified.</p>
 </div>
 </section>
 
@@ -865,8 +865,251 @@ utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pr
 </section>
 
 <!-- ===================================================== 10 -->
-<section id="errors" class="chapter">
+<section id="core-std" class="chapter">
 <p class="ch-num">Chapter 10</p>
+<h2>Core and standard library</h2>
+
+<p>Every name you write in a model comes from one of three places: your own files, the <strong>core</strong>, or the <strong>standard library</strong>. The core is what only the simulator can provide: reading a voltage, taking a time derivative, locating a crossing. Everything else, <code>idt</code>, <code>transition</code>, <code>Wire</code>, <code>Setup</code>, is ordinary source code written in the language, shipped as the crate <code>std</code>, and you can open it and read it. The specification keeps the core in §14 and the library in Part VII (§22); this chapter is the tour that tells you which is which.</p>
+
+<h3>What is core</h3>
+
+<p>A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457 (§14 rule 1). The list is short on purpose.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Core name</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>gnd</code></td><td>The reference node, the same net everywhere.</td></tr>
+<tr><td><code>Nature</code></td><td>The bound that makes a declaration a nature.</td></tr>
+<tr><td><code>m</code>, <code>dtemp</code></td><td>The multiplicity and the temperature offset every instance carries. They are in scope only inside a module.</td></tr>
+<tr><td><code>str</code></td><td>The type of text. It is how a model reads a name or a file at elaboration.</td></tr>
+</tbody></table></div>
+
+<p>The primitives of §14 come in kinds, and the kind says where each one may appear:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Names</th><th>What they do</th></tr></thead>
+<tbody>
+<tr><td>Probes</td><td><code>potential</code>, <code>flow</code>, <code>inflow</code></td><td>Read the voltage or current of a branch. Your nature gives them their short names, <code>v</code> and <code>i</code>.</td></tr>
+<tr><td>Solver functions</td><td><code>ddx</code>, <code>ac_stim</code></td><td>A partial derivative, and the small-signal stimulus of an AC sweep.</td></tr>
+<tr><td>Environment</td><td><code>temperature</code>, <code>simparam</code>, <code>analysis</code>, <code>now</code>, <code>freq</code></td><td>The temperature, a session parameter, which analysis is running, the time, and the frequency of a small-signal sweep.</td></tr>
+<tr><td>Core modules</td><td><code>ddt</code>, <code>delay</code>, <code>limit</code>, <code>noise</code>, <code>cross</code>, <code>at</code></td><td>Time derivative, a delayed copy of a signal, Newton step limiting, a noise source, and the two ways to schedule an event: located by the solver (<code>cross</code>) or at a known time (<code>at</code>). You place them like any module.</td></tr>
+<tr><td>Events</td><td><code>settle</code>, <code>changed</code></td><td><code>settle</code> fires when a time point has nothing left to do; <code>s.changed()</code> fires when a carrier changes.</td></tr>
+<tr><td>Statements</td><td><code>bound_step</code></td><td>Caps the next time step.</td></tr>
+<tr><td>Carrier methods</td><td><code>prev</code>, <code>others</code>, <code>level</code></td><td>The previous value of a carrier, what the other drivers put on it, and the known flag of one level.</td></tr>
+</tbody></table></div>
+
+<p>Two more names end in <code>!</code> and are the only forms of their kind: <code>emit!</code> writes a record to a stream, and <code>include_str!</code> reads a text file once, at elaboration (§14.11). There are no user macros.</p>
+
+<h3><code>std::prelude</code></h3>
+
+<p>The prelude is the namespace <code>std::prelude</code>. It re-exports every <code>pub</code> item of the other eight namespaces, and it is implied in every file of every crate, so you write <code>Electrical</code> and <code>transition</code> with no <code>use</code>. You can still write the long path, <code>std::analog::transition</code>, when you want to be explicit. A name you declare yourself, or a dependency name, hides a prelude item of the same name.</p>
+
+<pre data-lang="msl">module Tour(p: Electrical, in clk: Bit) {}
+analog for Tour { i(p) +> 0.0; }
+digital for Tour { on clk.rise() { emit!("seen", t = now()); } }</pre>
+
+<p>Each part below is one namespace, in the order of Part VII. The names in a table are the exports; the example under it uses a few of them. The signatures and the exact rules live in the specification, which the headings point to by section number.</p>
+
+<h3><code>std::constants</code>: physical constants</h3>
+
+<p>Six <code>f64</code> constants, in SI units (§1).</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Q</code></td><td>The elementary charge.</td></tr>
+<tr><td><code>K_B</code></td><td>Boltzmann's constant.</td></tr>
+<tr><td><code>EPS0</code></td><td>The vacuum permittivity.</td></tr>
+<tr><td><code>PI</code></td><td>The circle constant.</td></tr>
+<tr><td><code>E</code></td><td>Euler's number.</td></tr>
+<tr><td><code>inf</code></td><td>Positive infinity.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">const VT_300K: f64 = K_B * 300.0 / Q;     // the thermal voltage at 300 K</pre>
+
+<h3><code>std::carriers</code>: natures and the short</h3>
+
+<p>The natures every analog and digital connection is typed with (§4), and one module that joins two nodes (§11).</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Bit</code></td><td>The discrete carrier. <code>Bit</code> is a bit, <code>Bit&lt;u8&gt;</code> a byte, <code>Bit&lt;f64&gt;</code> a real-valued event stream; any of them may be unknown.</td></tr>
+<tr><td><code>Electrical</code></td><td>Voltage across, current through, with the accessors <code>v</code> and <code>i</code>.</td></tr>
+<tr><td><code>Thermal</code></td><td>Temperature and power, with <code>temp</code> and <code>pwr</code>.</td></tr>
+<tr><td><code>VSignal</code></td><td>A voltage-only nature, for signals that carry no current.</td></tr>
+<tr><td><code>Short</code></td><td>A module that makes its two nodes the same node.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Rc(p: Electrical, n: Electrical) {
+    r: f64 = 1k;
+    c: f64 = 1p;
+    signal mid: Electrical;
+}
+analog for Rc {
+    i(p, mid) +> v(p, mid) / r;
+    i(mid, n) +> ddt(c * v(mid, n));
+}</pre>
+
+<h3><code>std::values</code>: unknown values, bit patterns and clocks</h3>
+
+<p>Tools for values that may be unknown (§22.1), and three small time sources.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Known</code></td><td>The trait behind <code>known()</code>, <code>known_or(d)</code> and <code>is_known()</code>: use the value only when every level is known, or fall back to a default.</td></tr>
+<tr><td><code>merge</code></td><td>Keeps the levels two values agree on and makes the rest unknown.</td></tr>
+<tr><td><code>cast</code></td><td>Reads the same levels as another type of the same width.</td></tr>
+<tr><td><code>same</code></td><td>True when two values have identical levels, unknowns included.</td></tr>
+<tr><td><code>matches_bits</code></td><td>Compares a value to a pattern of <code>0</code>, <code>1</code> and <code>x</code>.</td></tr>
+<tr><td><code>logic</code></td><td>Builds a value from such a pattern.</td></tr>
+<tr><td><code>init</code></td><td>An event that fires once, at the start of the analysis.</td></tr>
+<tr><td><code>every</code></td><td>An event that fires at a start time and then every period.</td></tr>
+<tr><td><code>since</code></td><td>The time elapsed since a carrier last changed.</td></tr>
+</tbody></table></div>
+
+<p>The methods <code>rise()</code>, <code>fall()</code> and <code>high()</code> of <code>Bit</code> are defined here too, which is why <code>clk.rise()</code> works everywhere.</p>
+
+<pre data-lang="msl">module Latch(in clk: Bit, in d: Bit&lt;u8&gt;, out q: Bit&lt;u8&gt; = 0) {}
+digital for Latch { on clk.rise() { q &lt;- d.known_or(0); } }</pre>
+
+<h3><code>std::analog</code>: continuous-time building blocks</h3>
+
+<p>The functions and modules a behavioral analog model is made of (§22.2). Most are modules written over the core primitives, so each has a body you can read.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>State</code></td><td>A unitless nature for internal states.</td></tr>
+<tr><td><code>vt</code></td><td>The thermal voltage at the current temperature.</td></tr>
+<tr><td><code>white_noise</code>, <code>flicker_noise</code>, <code>noise_table</code></td><td>Noise sources with a flat, a 1/f and a tabulated spectrum.</td></tr>
+<tr><td><code>limexp</code></td><td>An exponential that is safe for Newton: it grows linearly past a limit.</td></tr>
+<tr><td><code>pnjlim</code>, <code>fetlim</code>, <code>limvds</code>, <code>deltalim</code></td><td>The step limiters that keep a junction, a gate voltage and a drain voltage from jumping too far between iterations.</td></tr>
+<tr><td><code>above</code></td><td>A rising crossing that also fires at the start when the expression is already positive.</td></tr>
+<tr><td><code>absdelta</code></td><td>Fires each time an expression has moved by a given amount.</td></tr>
+<tr><td><code>last_crossing</code></td><td>The time of the last rising crossing.</td></tr>
+<tr><td><code>idt</code></td><td>The time integral.</td></tr>
+<tr><td><code>idtmod</code></td><td>The integral wrapped into a range, for phases.</td></tr>
+<tr><td><code>slew</code></td><td>Follows a signal with a bounded rate of change.</td></tr>
+<tr><td><code>transition</code></td><td>Turns a piecewise-constant input into a signal with a delay and finite rise and fall times.</td></tr>
+<tr><td><code>zi_nd</code>, <code>zi_np</code>, <code>zi_zd</code>, <code>zi_zp</code></td><td>Discrete-time filters, given as numerator and denominator, numerator and poles, zeros and denominator, or zeros and poles.</td></tr>
+<tr><td><code>laplace_nd</code>, <code>laplace_np</code>, <code>laplace_zd</code>, <code>laplace_zp</code></td><td>The same four forms for continuous-time filters H(s).</td></tr>
+<tr><td><code>table_model</code></td><td>Interpolates a table of samples.</td></tr>
+<tr><td><code>db10</code>, <code>db20</code></td><td>A power ratio and an amplitude ratio in decibels.</td></tr>
+<tr><td><code>normal</code></td><td>One step of a random generator with a normal distribution.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module DacRamp(in code: Bit&lt;u8&gt;, vout: Electrical) {
+    vref: f64 = 1.0; tedge: f64 = 100p;
+    let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
+}
+analog for DacRamp { v(vout) +&gt; ramp; }</pre>
+
+<h3><code>std::nets</code>: nets with more than one driver</h3>
+
+<p>What a net does when several modules drive it, and the switch-level parts built on that (§22.3).</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Strength</code></td><td>How hard a driver drives: strong, weak, or not at all.</td></tr>
+<tr><td><code>Logic</code></td><td>A level with a strength, including the high-impedance value.</td></tr>
+<tr><td><code>Wire</code></td><td>The nature of a net with several drivers: the strongest wins, and equal strengths that disagree give unknown.</td></tr>
+<tr><td><code>tri</code>, <code>Tri</code></td><td>A typed bus where one driver at a time is allowed.</td></tr>
+<tr><td><code>sum</code>, <code>SumNet</code></td><td>A real-valued net whose drivers add.</td></tr>
+<tr><td><code>Tribuf</code></td><td>A tristate buffer.</td></tr>
+<tr><td><code>Pullup</code>, <code>Pulldown</code></td><td>A weak driver that holds a net high or low while nobody else drives it.</td></tr>
+<tr><td><code>Keeper</code></td><td>Holds the last driven level, weakly.</td></tr>
+<tr><td><code>Tran</code></td><td>A bidirectional pass gate.</td></tr>
+<tr><td><code>Tgate</code></td><td>A CMOS transmission gate: two <code>Tran</code> in parallel.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
+
+module Board(in req0: Bit, in req1: Bit) {
+    signal irq_n: Wire;
+    let pu = Pullup(irq_n);
+    let s0 = IrqSource(req0, irq_n);
+    let s1 = IrqSource(req1, irq_n);
+}</pre>
+
+<h3><code>std::convert</code>: crossing between analog and digital</h3>
+
+<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node for you; you place a converter (§22.4).</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>D2A</code></td><td>Drives a node from a <code>Bit</code>: a level through a resistance, with finite edges.</td></tr>
+<tr><td><code>A2D</code></td><td>Reads a node into a <code>Bit</code> with hysteresis, right from the operating point.</td></tr>
+<tr><td><code>Bidir</code></td><td>A pad: one <code>Wire</code> and one node, driving and reading both.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Pad(in d: Bit, out q: Bit, node: Electrical, vdd: Electrical) {
+    let drv = D2A(d, node, vdd);
+    let rcv = A2D(node, q);
+}</pre>
+
+<h3><code>std::monitor</code>: temporal checks and delays</h3>
+
+<p>Monitors only report: each is a module that calls <code>require</code> when the property it watches fails (§22.5). They never write what they watch.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>AckWithin</code></td><td>Every request is acknowledged within a number of clock cycles.</td></tr>
+<tr><td><code>Never</code></td><td>A condition never holds at a clock edge.</td></tr>
+<tr><td><code>Stable</code></td><td>A signal does not change while it is enabled.</td></tr>
+<tr><td><code>Setup</code></td><td>A data signal was stable for a given time before the clock edge.</td></tr>
+<tr><td><code>Hold</code></td><td>A data signal stays stable for a given time after the clock edge.</td></tr>
+<tr><td><code>MinPulse</code></td><td>A pulse is at least a given width.</td></tr>
+<tr><td><code>inertial</code></td><td>An inertial delay: a change passes only after the input has been stable for the delay, so short glitches vanish.</td></tr>
+<tr><td><code>TribufDelayed</code></td><td>A tristate buffer with an inertial gate delay, slower to release than to drive.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Reg(in clk: Bit, in d: Bit, out q: Bit = false) {
+    let chk = Setup(clk, d) { ts: 100p };
+}
+digital for Reg { on clk.rise() { q &lt;- d; } }</pre>
+
+<h3><code>std::io</code>: records, checks and data files</h3>
+
+<p>Everything a model writes to a stream is a record (§19, §22.6); these are the functions that write the common ones, and the two readers for data files.</p>
+
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><code>Severity</code></td><td>Info, warning or error.</td></tr>
+<tr><td><code>log</code></td><td>Writes a message with a severity.</td></tr>
+<tr><td><code>finish</code>, <code>fatal</code></td><td>End the analysis, and end it as failed with a message.</td></tr>
+<tr><td><code>require</code></td><td>A check that must pass. A failed one is recorded, not hidden.</td></tr>
+<tr><td><code>cover</code></td><td>Records that a situation was reached.</td></tr>
+<tr><td><code>target</code></td><td>Records how much margin a design has against a goal.</td></tr>
+<tr><td><code>parse_table</code>, <code>parse_hex</code></td><td>Read a table of numbers or a hex memory image from text, at elaboration.</td></tr>
+</tbody></table></div>
+
+<pre data-lang="msl">module Probe(in clk: Bit, in ok: Bit) {}
+digital for Probe { on clk.rise() { require("ok_at_edge", ok); log(Severity::Info, "edge"); } }</pre>
+
+<h3>Implemented by the engine</h3>
+
+<p>Five library items have no body to read, because their job is to read the characters of a <code>str</code>, which the language itself cannot do. They are declared <code>extern "intrinsic"</code>: you see the signature and the contract, and the engine supplies the body (§3 rule 10). Only <code>std</code> may declare one; the same line in your crate is error E0125.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Item</th><th>What the engine does for it</th></tr></thead>
+<tbody>
+<tr><td><code>matches_bits</code></td><td>Compares a value to a pattern text.</td></tr>
+<tr><td><code>logic</code></td><td>Builds a value from a pattern text.</td></tr>
+<tr><td><code>table_model</code></td><td>Reads the control text that picks the interpolation and the extrapolation.</td></tr>
+<tr><td><code>parse_table</code></td><td>Reads whitespace columns of numbers.</td></tr>
+<tr><td><code>parse_hex</code></td><td>Reads a hex memory image.</td></tr>
+</tbody></table></div>
+
+<p>An implementation may also run any other item natively, as long as the result is observably the same as the written definition. That is a speed-up, not a different meaning.</p>
+
+<h3>Replacing a library item</h3>
+
+<p>A library item has no privilege. Declare an item with the same name in your own namespace and yours is the one the names in that scope find; the library's stays untouched (§22 rule 3). Only the core names of this chapter are off limits.</p>
+
+<pre data-lang="msl">pub fn vt() -> f64 { 0.0259 }          // this crate's vt, fixed at room temperature</pre>
+</section>
+
+<!-- ===================================================== 11 -->
+<section id="errors" class="chapter">
+<p class="ch-num">Chapter 11</p>
 <h2>Reading errors</h2>
 
 <p>Every error condition in the spec has one code, <code>Eppnn</code>, where <code>pp</code> is the part that owns the rule. <code>E01xx</code> belongs to Part I (values, files and packages), <code>E04xx</code> to Part IV (behavior), <code>E09xx</code> to the lexer, and so on. Look a code up and you land on the rule that explains it (§0.2).</p>
@@ -926,9 +1169,9 @@ utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pr
 </tbody></table></div>
 </section>
 
-<!-- ===================================================== 11 -->
+<!-- ===================================================== 12 -->
 <section id="pom" class="chapter">
-<p class="ch-num">Chapter 11</p>
+<p class="ch-num">Chapter 12</p>
 <h2>The object model</h2>
 
 <p>The <strong>Piperine Object Model</strong>, the POM, is the in-memory model of a set of MSL sources. One call turns source text into an immutable <code>Design</code>, and every later stage starts from it: a type checker, an elaborator, the simulator front end, an editor. It is the Rust library <code>piperine_lang::pom</code>, and it reads the way Java reflection does. You ask a module for its ports, a signal for the module it is declared in, an instance for the module it places.</p>
@@ -1002,9 +1245,9 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 <p class="linkout">The full reference, every handle and method with an example, lives in the repository at <code>docs/pom/</code>.</p>
 </section>
 
-<!-- ===================================================== 12 -->
+<!-- ===================================================== 13 -->
 <section id="cheatsheet" class="chapter">
-<p class="ch-num">Chapter 12</p>
+<p class="ch-num">Chapter 13</p>
 <h2>Cheat sheet</h2>
 
 <p>One screen of syntax. Everything not here is Rust.</p>

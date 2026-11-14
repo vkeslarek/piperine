@@ -11,6 +11,7 @@ mod spec_corpus;
 use std::path::PathBuf;
 use std::process::Command;
 
+use piperine_lang::pom::{BUILTINS, BuiltinKind, Design, Reflect};
 use spec_corpus::fragment_diagnostics;
 
 fn repo() -> PathBuf {
@@ -98,4 +99,151 @@ fn every_msl_block_parses() {
 fn the_book_has_at_least_40_msl_blocks() {
     let count = blocks(&content()).iter().filter(|(lang, _)| lang == "msl").count();
     assert!(count >= 40, "the Book has {count} msl blocks, at least 40 are required");
+}
+
+// ---- the chapter "Core and standard library" (STD-18 AC 3 to 8, 12) ---------------------------------
+
+/// The text of the chapter `id`, from its `<section>` tag to the first `</section>`.
+fn chapter(html: &str, id: &str) -> String {
+    let open = format!("<section id=\"{id}\" class=\"chapter\">");
+    let at = html.find(&open).unwrap_or_else(|| panic!("the Book has a chapter `{id}`"));
+    let rest = &html[at..];
+    rest[..rest.find("</section>").expect("a chapter closes")].to_string()
+}
+
+/// The decoded text of every `<code>..</code>` span of `html`.
+fn code_spans(html: &str) -> Vec<String> {
+    html.split("<code>").skip(1).filter_map(|s| s.split_once("</code>")).map(|(span, _)| decode(span)).collect()
+}
+
+/// The decoded text of every `<h3>..</h3>` heading of `html`, with its inline tags kept.
+fn headings(html: &str) -> Vec<String> {
+    html.split("<h3>").skip(1).filter_map(|s| s.split_once("</h3>")).map(|(h, _)| decode(h)).collect()
+}
+
+/// Does a code span name `name`? A name of one or two characters (`m`, `E`, `PI`) must be the whole
+/// span or the head of a call; a longer name may be any identifier of the span.
+fn span_names(span: &str, name: &str) -> bool {
+    let bare = name.trim_end_matches('!');
+    if span == name || span.starts_with(&format!("{name}(")) {
+        return true;
+    }
+    if name.len() <= 2 {
+        return false;
+    }
+    let token = |c: char| c.is_alphanumeric() || c == '_';
+    span.split(|c: char| !token(c) && c != '!').any(|t| t == name || t == bare)
+}
+
+/// The names of `names` that no code span of `html` names.
+fn missing(html: &str, names: &[String]) -> Vec<String> {
+    let spans = code_spans(html);
+    names.iter().filter(|n| !spans.iter().any(|s| span_names(s, n))).cloned().collect()
+}
+
+fn embedded() -> Design {
+    Design::builder().source("top.msl", "").build()
+}
+
+/// The core names of §14, read from the built-in table, and the four the table does not carry as rows
+/// of those kinds.
+fn core_names() -> Vec<String> {
+    let kinds = [BuiltinKind::Fn, BuiltinKind::Module, BuiltinKind::Event, BuiltinKind::Statement, BuiltinKind::Method, BuiltinKind::Node, BuiltinKind::ImplicitParam];
+    let mut names: Vec<String> = BUILTINS.iter().filter(|r| kinds.contains(&r.kind)).map(|r| r.name.to_string()).collect();
+    names.extend(["Nature", "str", "emit!", "include_str!"].map(String::from));
+    names
+}
+
+/// The `pub` namespaces of `std`, by name.
+fn std_namespaces(design: &Design) -> Vec<String> {
+    design.std_crate().root().submodules().into_iter().filter(|n| n.is_pub()).filter_map(|n| n.name().map(String::from)).collect()
+}
+
+/// The names `std::prelude` exports: the `pub` named items of each namespace it glob-imports.
+fn prelude_exports(design: &Design) -> Vec<String> {
+    let prelude = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some("prelude")).expect("std declares the prelude");
+    let mut names = Vec::new();
+    for item in prelude.items() {
+        for import in item.as_use().expect("the prelude holds only `use`").imports() {
+            let ns = import.path.text().strip_prefix("crate::").expect("a crate path").to_string();
+            let namespace = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some(ns.as_str())).expect("a namespace");
+            names.extend(namespace.items().into_iter().filter(|i| i.is_pub()).filter_map(|i| i.name().map(String::from)));
+        }
+    }
+    names
+}
+
+#[test]
+fn the_core_std_chapter_follows_packages() {
+    let html = content();
+    let ids = chapter_ids(&html);
+    let at = ids.iter().position(|c| c == "core-std").expect("a chapter `core-std`");
+    assert_eq!(ids.get(at.wrapping_sub(1)).map(String::as_str), Some("packages"), "{ids:?}");
+    assert!(chapter(&html, "core-std").contains("<h2>Core and standard library</h2>"), "the title");
+    let numbers: Vec<usize> = html
+        .split("<p class=\"ch-num\">Chapter ")
+        .skip(1)
+        .map(|s| s.split_once('<').expect("the label closes").0.parse().expect("a chapter number"))
+        .collect();
+    assert_eq!(numbers, (1..=ids.len()).collect::<Vec<_>>(), "chapter numbers are consecutive from 1");
+}
+
+#[test]
+fn the_chapter_names_every_core_name() {
+    let absent = missing(&chapter(&content(), "core-std"), &core_names());
+    assert!(absent.is_empty(), "the chapter does not name these core names: {absent:?}");
+}
+
+#[test]
+fn the_chapter_has_a_part_per_namespace() {
+    let design = embedded();
+    let namespaces = std_namespaces(&design);
+    assert_eq!(namespaces.len(), 9, "{namespaces:?}");
+    let heads = headings(&chapter(&content(), "core-std"));
+    let absent: Vec<String> = namespaces.iter().filter(|n| !heads.iter().any(|h| h.contains(&format!("<code>std::{n}</code>")))).cloned().collect();
+    assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
+}
+
+#[test]
+fn the_chapter_names_every_prelude_export() {
+    let exports = prelude_exports(&embedded());
+    assert!(exports.len() >= 80, "the prelude exports {} names", exports.len());
+    let absent = missing(&chapter(&content(), "core-std"), &exports);
+    assert!(absent.is_empty(), "the chapter does not name these prelude exports: {absent:?}");
+}
+
+#[test]
+fn the_chapter_explains_the_prelude_and_the_engine_items() {
+    let html = chapter(&content(), "core-std");
+    assert!(code_spans(&html).iter().any(|s| s == "std::prelude"), "the chapter names `std::prelude`");
+    let design = embedded();
+    let intrinsics: Vec<String> = design.std_crate().decls().into_iter().filter(|d| d.as_function().is_some_and(|f| f.is_intrinsic())).filter_map(|d| d.name().map(String::from)).collect();
+    assert_eq!(intrinsics.len(), 5, "{intrinsics:?}");
+    let part = html
+        .split("<h3>")
+        .skip(1)
+        .find(|p| p.split_once("</h3>").is_some_and(|(h, _)| h.to_lowercase().contains("engine")))
+        .expect("a heading that contains `engine`");
+    let absent = missing(part.split("<h3>").next().unwrap(), &intrinsics);
+    assert!(absent.is_empty(), "the part on the engine does not name: {absent:?}");
+}
+
+#[test]
+fn chapter_blocks_build_against_std() {
+    let html = chapter(&content(), "core-std");
+    let msl: Vec<String> = blocks(&html).into_iter().filter(|(lang, _)| lang == "msl").map(|(_, text)| text).collect();
+    assert!(!msl.is_empty(), "the chapter has msl blocks");
+    for text in msl {
+        let design = Design::builder().source("top.msl", &text).build();
+        let found: Vec<String> = design.diagnostics().iter().map(|d| format!("{}: {}", d.diagnostic.code, d.diagnostic.message)).collect();
+        assert!(found.is_empty(), "a chapter block does not build against std: {found:?}\n{text}");
+    }
+}
+
+#[test]
+fn a_missing_name_is_listed() {
+    let names: Vec<String> = ["ddt", "delay", "limit", "m", "emit!"].map(String::from).to_vec();
+    let html = "<p><code>ddt(x)</code> and <code>m: f64</code> and <code>emit!(\"a\")</code></p>";
+    assert_eq!(missing(html, &names), ["delay", "limit", "m"], "every missing name is listed, in order");
+    assert!(missing("<code>delay</code>", &["delay".to_string()]).is_empty());
 }

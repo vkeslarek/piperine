@@ -700,18 +700,18 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `the_core_std_chapter_follows_packages` passes in `book.rs` (C103: STD-18 AC 3)
-- [ ] Test `the_chapter_names_every_core_name` passes in `book.rs` (C104: STD-18 AC 4)
-- [ ] Test `the_chapter_has_a_part_per_namespace` passes in `book.rs` (C105: STD-18 AC 5)
-- [ ] Test `the_chapter_names_every_prelude_export` passes in `book.rs` (C106: STD-18 AC 6)
-- [ ] Test `the_chapter_explains_the_prelude_and_the_engine_items` passes in `book.rs` (C107: STD-18 AC 7)
-- [ ] Test `chapter_blocks_build_against_std` passes in `book.rs` (C108: STD-18 AC 8)
-- [ ] Test `a_missing_name_is_listed` passes in `book.rs` (C112: STD-18 AC 12)
-- [ ] The lists of names come from the code (`BUILTINS`, the embedded design), never from an array in the test
-- [ ] Plain language: each item gets what it is for, not its signature; the specification stays the reference and the chapter links to Part VII by section number
-- [ ] Every `msl` block of the chapter is a whole file that builds against the embedded library
-- [ ] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `the_core_std_chapter_follows_packages` passes in `book.rs` (C103: STD-18 AC 3)
+- [x] Test `the_chapter_names_every_core_name` passes in `book.rs` (C104: STD-18 AC 4)
+- [x] Test `the_chapter_has_a_part_per_namespace` passes in `book.rs` (C105: STD-18 AC 5)
+- [x] Test `the_chapter_names_every_prelude_export` passes in `book.rs` (C106: STD-18 AC 6)
+- [x] Test `the_chapter_explains_the_prelude_and_the_engine_items` passes in `book.rs` (C107: STD-18 AC 7)
+- [x] Test `chapter_blocks_build_against_std` passes in `book.rs` (C108: STD-18 AC 8)
+- [x] Test `a_missing_name_is_listed` passes in `book.rs` (C112: STD-18 AC 12)
+- [x] The lists of names come from the code (`BUILTINS`, the embedded design), never from an array in the test
+- [x] Plain language: each item gets what it is for, not its signature; the specification stays the reference and the chapter links to Part VII by section number
+- [x] Every `msl` block of the chapter is a whole file that builds against the embedded library
+- [x] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
