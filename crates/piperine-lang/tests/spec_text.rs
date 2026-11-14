@@ -585,3 +585,45 @@ fn quantity_and_reaction_docs_are_metadata() {
     assert!(s21.contains("a quantity of a nature, a reaction, a definition and a generation"), "{s21}");
     assert!(s21.contains("the docs of a statement are kept in the tree and have no other effect"), "{s21}");
 }
+
+#[test]
+fn post_parse_constraints_name_their_phase() {
+    // POL-08 AC 3: B.3.3 items 8 to 14; E0125, E0370, E0320, E0140, E0201, E0263 stay `elaboration`.
+    let b33 = section(&spec("appendix_b_grammar.md"), "### B.3.3");
+    let items: Vec<String> = b33
+        .lines()
+        .filter(|l| l.len() > 3 && l.as_bytes()[0].is_ascii_digit())
+        .map(|l| l.to_string())
+        .collect();
+    let item = |n: usize| items.iter().find(|l| l.starts_with(&format!("{n}. "))).unwrap_or_else(|| panic!("item {n}")).clone();
+    assert!(item(8).contains("(parse, `E0142`)"), "{}", item(8));
+    for n in 9..=14 {
+        assert!(item(n).contains("(elaboration, at name resolution)"), "{}", item(n));
+    }
+    assert!(one_line(&b33).contains("item 8 is checked at parse and items 9 to 14 at elaboration, during name resolution"), "{b33}");
+    for (file, code) in [
+        ("part_i_values.md", "E0125"),
+        ("part_iii_structure.md", "E0370"),
+        ("part_iii_structure.md", "E0320"),
+        ("part_i_values.md", "E0140"),
+        ("part_ii_carriers.md", "E0201"),
+        ("part_ii_carriers.md", "E0263"),
+    ] {
+        let t = spec(file);
+        let row = t.lines().find(|l| l.starts_with(&format!("| `{code}`"))).unwrap_or_else(|| panic!("{code}"));
+        assert!(row.trim_end().ends_with("| elaboration |"), "{row}");
+    }
+}
+
+#[test]
+fn e0125_covers_bodies() {
+    // POL-08 AC 4: the E0125 row and §3 rule 2.
+    let p1 = spec("part_i_values.md");
+    let row = one_line(p1.lines().find(|l| l.starts_with("| `E0125`")).expect("E0125 row"));
+    assert!(row.contains("an `extern` function with a body"), "{row}");
+    assert!(row.contains("a function without a body that is neither `extern` nor a trait item"), "{row}");
+    assert!(row.ends_with("| elaboration |"), "{row}");
+    let rule2 = one_line(p1.split("- **§3 rule 2.**").nth(1).unwrap().split("- **§3 rule 3.**").next().unwrap());
+    assert!(rule2.contains("a function that is neither `extern` nor a trait item has a body"), "{rule2}");
+    assert!(rule2.contains("`E0125`"), "{rule2}");
+}

@@ -215,8 +215,9 @@ of the functions it calls. A function may belong to several classes; the restric
 
 - **§3 rule 1.** Inside `analog`, calls are differentiated through
   ([§11](part_iv_behavior.md#11-analog) rule 5).
-- **§3 rule 2.** `extern "C" fn` is implemented outside the language and has no body. Called
-  inside `analog`, it needs `#[derivative(f)]`.
+- **§3 rule 2.** `extern "C" fn` is implemented outside the language and has no body; a function
+  that is neither `extern` nor a trait item has a body. Either mismatch is `E0125`. An
+  `extern` function called inside `analog` needs `#[derivative(f)]`.
 - **§3 rule 3.** A **closure** `|a, b| expr` is a value and may be passed to functions. It
   captures by value. Its class is that of its body.
 - **§3 rule 4.** Something with state is a module with a result
@@ -277,7 +278,7 @@ of the functions it calls. A function may belong to several classes; the restric
 | `E0122` | a function is called where one of its classes is not allowed. A core primitive or `emit!` written directly in such a position is `E0450` or `E0601` | elaboration |
 | `E0123` | an `extern` function without `#[derivative]` is called inside `analog` | elaboration |
 | `E0124` | `#[derivative]` names a function with the wrong signature, or the wrong number of functions | elaboration |
-| `E0125` | an ABI string other than `"C"` on a function, or a non-scalar type in its signature | elaboration |
+| `E0125` | an ABI string other than `"C"` on a function, a non-scalar type in its signature, an `extern` function with a body, or a function without a body that is neither `extern` nor a trait item | elaboration |
 | `E0126` | a recursion reached from `analog` that elaboration cannot unroll | elaboration |
 | `E0127` | a `where` on a function that is false for an instantiation | elaboration |
 

@@ -273,15 +273,15 @@ Classification that the grammar leaves to name resolution:
 | | a value input | `T` is a value type |
 | `IDENT ':' T` in a `struct` | a carrier field, making the struct a bundle | `T` names a nature or a bundle |
 
-Constraints on the productions that are checked after parsing:
+Constraints on the productions that are checked after parsing; item 8 is checked at parse and items 9 to 14 at elaboration, during name resolution:
 
-8. In an argument list no positional argument follows a named one (§3.2.4).
-9. A param block `{ … }` after an argument list is allowed only on an `instance`.
-10. The body of an `extern` module holds `param` items only, and no result (§8.5).
-11. `dir` on a `port` or `struct_field` is allowed only on a carrier of a one-driver discrete nature, or on a bundle as `in` (§7, §8.1).
-12. `= expr` on a `port` is allowed only on a carrier the module drives (§8.1).
-13. The left side of a `contribution` is a probe call (§11 rule 1).
-14. `names` repeats the generic names of the module, the same names in the same order; bounds come from the module (§10 rule 1, rule 6).
+8. In an argument list no positional argument follows a named one (§3.2.4) (parse, `E0142`).
+9. A param block `{ … }` after an argument list is allowed only on an `instance` (elaboration, at name resolution).
+10. The body of an `extern` module holds `param` items only, and no result (§8.5) (elaboration, at name resolution).
+11. `dir` on a `port` or `struct_field` is allowed only on a carrier of a one-driver discrete nature, or on a bundle as `in` (§7, §8.1) (elaboration, at name resolution).
+12. `= expr` on a `port` is allowed only on a carrier the module drives (§8.1) (elaboration, at name resolution).
+13. The left side of a `contribution` is a probe call (§11 rule 1) (elaboration, at name resolution).
+14. `names` repeats the generic names of the module, the same names in the same order; bounds come from the module (§10 rule 1, rule 6) (elaboration, at name resolution).
 
 ### B.3.4 Statements inside behavior blocks
 

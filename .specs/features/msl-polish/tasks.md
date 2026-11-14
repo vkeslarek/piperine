@@ -343,11 +343,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `post_parse_constraints_name_their_phase` passes in `spec_text.rs` (C41: POL-08 AC 3)
-- [ ] Test `e0125_covers_bodies` passes in `spec_text.rs` (C42: POL-08 AC 4)
-- [ ] `E0125`, `E0370`, `E0320`, `E0140`, `E0201` and `E0263` keep phase `elaboration`
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `post_parse_constraints_name_their_phase` passes in `spec_text.rs` (C41: POL-08 AC 3)
+- [x] Test `e0125_covers_bodies` passes in `spec_text.rs` (C42: POL-08 AC 4)
+- [x] `E0125`, `E0370`, `E0320`, `E0140`, `E0201` and `E0263` keep phase `elaboration`
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
