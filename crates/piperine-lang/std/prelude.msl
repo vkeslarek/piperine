@@ -3,3 +3,4 @@
 pub use crate::constants::*;
 pub use crate::carriers::*;
 pub use crate::values::*;
+pub use crate::analog::*;

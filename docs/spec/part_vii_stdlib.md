@@ -312,7 +312,7 @@ In an analysis run at a transient's last instant `now()` is that instant (§16.2
 A unitless nature for states of order one.
 
 ```rust
-nature State {
+pub nature State {
     potential: Value { access: pos,  abstol: 1u },
     flow:      Rate  { access: rate, abstol: 1n },
 }
@@ -337,7 +337,10 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 ```rust
 pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
 pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
-pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64, f64); N]; }   // head and params only
+pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
+    table: [(f64, f64); N];
+    noise(table_model(freq(), &table, "1C"), name)
+}
 ```
 
 | Module | Power spectral density |
@@ -351,7 +354,7 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64
 3. `psd` is read only where the source is a source (§16.2). `flicker_noise` is never evaluated at `freq() == 0`.
 4. The implicit param `m` multiplies noise power (§8.5).
 
-> **Resolution.** `noise_table`'s signature is inferred; `table` is a param, since `&` is a function-parameter form (§1 rule 2). It is equivalent to `noise(table_model(freq(), &table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
+> **Resolution.** `table` is a param, since `&` is a function-parameter form (§1 rule 2). The definition is `noise(table_model(freq(), &table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -362,10 +365,42 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 { table: [(f64
 ```rust
 pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
 
-pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64;
-pub fn fetlim(new: f64, old: f64, vth: f64) -> f64;
-pub fn limvds(new: f64, old: f64) -> f64;
-pub fn deltalim(new: f64, old: f64, delta: f64) -> f64;
+pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
+    if !(new > vcrit && (new - old).abs() > 2.0 * nvt) { new }
+    else if old > 0.0 {
+        let arg = 1.0 + (new - old) / nvt;
+        if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
+    } else { nvt * (new / nvt).ln() }
+}
+
+pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
+    let hi = (2.0 * (old - vth)).abs() + 2.0;
+    let lo = (old - vth).abs() + 1.0;
+    let vtox = vth + 3.5;
+    let delv = new - old;
+    if old >= vth {
+        if old >= vtox {
+            if delv <= 0.0 {
+                if new >= vtox { if -delv > lo { old - lo } else { new } }
+                else if new > vth + 2.0 { new } else { vth + 2.0 }
+            } else if delv >= hi { old + hi } else { new }
+        } else if delv <= 0.0 { if new > vth - 0.5 { new } else { vth - 0.5 } }
+        else if new < vth + 4.0 { new } else { vth + 4.0 }
+    } else if delv <= 0.0 { if -delv > hi { old - hi } else { new } }
+    else if new <= vth + 0.5 { if delv > lo { old + lo } else { new } }
+    else { vth + 0.5 }
+}
+
+pub fn limvds(new: f64, old: f64) -> f64 {
+    if old >= 3.5 {
+        if new > old { if new < 3.0 * old + 2.0 { new } else { 3.0 * old + 2.0 } }
+        else if new < 3.5 { if new > 2.0 { new } else { 2.0 } }
+        else { new }
+    } else if new > old { if new < 4.0 { new } else { 4.0 } }
+    else if new > -0.5 { new } else { -0.5 }
+}
+
+pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 { new.clamp(old - delta, old + delta) }
 ```
 
 | Function | Bounds |
@@ -381,7 +416,7 @@ pub fn deltalim(new: f64, old: f64, delta: f64) -> f64;
 4. `limexp` is one `limit` instance per use. It vetoes convergence while active (§17.1.3).
 5. For differentiation `limit` is transparent (§18 rule 3): the derivative of `limexp(x)` is `limexp(x)`.
 
-> **Resolution.** The signatures are inferred from §18 and §22.2. `deltalim(new, old, delta)` is `new.clamp(old − delta, old + delta)`. `pnjlim`, `fetlim` and `limvds` **SHOULD** follow the ngspice functions of the same names (Appendix C.2). Their exact step is not observable at convergence and is not normative.
+> **Resolution.** `deltalim(new, old, delta)` is `new.clamp(old − delta, old + delta)`. `pnjlim`, `fetlim` and `limvds` are the ngspice functions of the same names (Appendix C.2) written in MSL, branch by branch. Their exact step is not observable at convergence and is not normative.
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -496,7 +531,7 @@ Dynamic semantics:
 8. When `reset` falls, integration continues from the held value (§15.2.1).
 9. `idt` follows VAMS 4.5.4 with no rule of its own.
 
-```rust
+```rust,fragment
 analog for Pi { v(outp) +> k1 * v(inp) + k2 * idt(v(inp), 0.0); }
 ```
 
@@ -662,7 +697,7 @@ let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
 A discrete-time filter sampled every `period`:
 `y[n] = Σ num[k]·x[n−k] − Σ den[k]·y[n−1−k]`.
 
-```rust
+```rust,fragment
 pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N]; den: [f64; D];            // den[k] is the coefficient of y[n−1−k]
     signal xs: [Bit<f64>; N];                // xs[k] = x[n−1−k]
@@ -723,7 +758,7 @@ The behavior of `zi_nd` in a `Dc` analysis run at a transient's last instant is 
 
 Discrete-time filters given by roots. Each converts its roots to coefficients at elaboration and places one `zi_nd`. The listing gives heads and params only; the result is that `zi_nd`.
 
-```rust
+```rust,fragment
 pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { zeros: [(f64, f64); N]; poles: [(f64, f64); D]; }
 pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { zeros: [(f64, f64); N]; den: [f64; D]; }
 pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { num: [f64; N]; poles: [(f64, f64); D]; }
@@ -740,7 +775,7 @@ pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { n
 
 Continuous-time filters `H(s)`, with one internal `State` node per pole. The listing gives heads and params only.
 
-```rust
+```rust,fragment
 pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64; N]; den: [f64; D]; }
 pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 { zeros: [(f64, f64); N]; poles: [(f64, f64); D]; }
 pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 { zeros: [(f64, f64); N]; den: [f64; D]; }
@@ -765,7 +800,7 @@ pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64
 Interpolates a table of samples.
 
 ```rust
-pub fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
+pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
 ```
 
 1. `table` holds `(abscissa, value)` pairs with strictly increasing abscissae. Otherwise `E0704`.
@@ -788,9 +823,9 @@ pub fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &st
 7. A table is usually a `const` read from a file (§20, §22.6.4).
 8. The end conditions of the splines `2` and `3` are implementation-defined and **MUST** be documented (G.64).
 
-> **Resolution.** The signature covers one dimension, which is every use in this specification. The control-string table is that of VAMS 9.21 restricted to one dimension.
+> **Resolution.** `table_model` reads the characters of `control`, so it is `extern "intrinsic"` (§22) and rules 1 to 8 are its contract. It covers one dimension, which is every use in this specification. The control-string table is that of VAMS 9.21 restricted to one dimension.
 
-```rust
+```rust,fragment
 const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));
 analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside
 ```
@@ -798,21 +833,35 @@ analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cu
 #### 22.2.16 `db10`, `db20`
 
 ```rust
-pub fn db10(x: f64) -> f64;      // 10·log10(x): a power ratio
-pub fn db20(x: f64) -> f64;      // 20·log10(|x|): an amplitude ratio
+pub fn db10(x: f64) -> f64 { 10.0 * x.log10() }            // a power ratio
+pub fn db20(x: f64) -> f64 { 20.0 * x.abs().log10() }      // an amplitude ratio
 ```
 
 1. Both are pure functions over values, callable anywhere.
 2. `db10` of a non-positive number and `db20(0.0)` are not finite. In `analog` that fails the solve (§17.1).
 
-> **Resolution.** The definitions are inferred from the names and from `target("gain_db", db20(v(vo) / v(vi)) - 40.0)` (§19). `db20` takes the magnitude, so a sign inversion does not make a gain undefined.
+> **Resolution.** `db20` takes the magnitude, so a sign inversion does not make a gain undefined (`target("gain_db", db20(v(vo) / v(vi)) - 40.0)`, §19).
 
 #### 22.2.17 `normal`
 
 One step of a pseudo-random generator with a normal distribution.
 
 ```rust
-pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64);
+/// One step of SplitMix64: a uniform real in [0, 1) and the next state.
+fn uniform(rng: u64) -> (f64, u64) {
+    let s = rng + 0x9E3779B97F4A7C15;
+    let z = (s ^ (s >> 30)) * 0xBF58476D1CE4E5B9;
+    let z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
+    let z = z ^ (z >> 31);
+    ((z >> 11) as f64 / 9007199254740992.0, s)
+}
+
+pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64) {
+    let (a, s1) = uniform(rng);
+    let (b, s2) = uniform(s1);
+    let z = (-2.0 * (1.0 - a).ln()).sqrt() * (2.0 * PI * b).cos();
+    (mean + sigma * z, s2)
+}
 ```
 
 1. `normal` is pure: the sample and the next state are functions of the arguments alone.
@@ -821,7 +870,7 @@ pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64);
 4. The state is kept by the caller, in a signal. A model's random sequence is therefore a function of its seed param.
 5. An unknown `rng` gives an unknown sample and an unknown next state (§3.3.2).
 
-> **Resolution.** The generator algorithm is implementation-defined and **MUST** be documented. Rules 1–5 are the contract. A sequence, and so a result that depends on one, is portable only between implementations that document the same generator (G.64).
+> **Resolution.** The generator is the one written above: SplitMix64 for two uniform draws and Box-Muller for the sample (`1.0 - a` is in `(0, 1]`, so the logarithm is finite). Integer arithmetic wraps (§1 rule 6).
 
 ```rust,fragment
 on clk.changed() {

@@ -82,7 +82,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.40–G.44, D1–D17 | Closed in this specification (one table; D4 is G.38) | Closed |
 | G.45–G.48 | Flagged resolutions (one table) | Flagged |
 | G.49–G.63 | Resolutions that narrow or extend the design (one table) | Resolved provisionally |
-| G.64 | Implementation-defined numerics: `normal`, spline end conditions | Resolved provisionally |
+| G.64 | Implementation-defined numerics: spline end conditions; `normal` is fixed | Resolved provisionally |
 | G.65 | The `"cosim"` interface | Open |
 | G.66 | Session parameter names of `simparam` | Open |
 
@@ -341,9 +341,9 @@ Each item is in force through the `Resolution` note cited, which refers back her
 
 ### G.64 Implementation-defined numerics
 
-**Status: Resolved provisionally.** In force: the generator of `normal` (§22.2.17) and the end conditions of the splines of `table_model` (§22.2.15) are implementation-defined and documented.
-Results that depend on either are portable only between implementations that document the same choice: `ClockGen` (Appendix D.2) is such a model. This is a second exception to §0.1.1, beside G.46.
-For review: fix one generator and one pair of end conditions.
+**Status: Resolved provisionally.** In force: the generator of `normal` is the one written in `std::analog` (§22.2.17): SplitMix64 for two uniform draws and Box-Muller for the sample. The end conditions of the splines of `table_model` (§22.2.15) are implementation-defined and documented.
+Results that depend on the end conditions are portable only between implementations that document the same choice. `ClockGen` (Appendix D.2) depends on the generator, which is now fixed. This is an exception to §0.1.1, beside G.46.
+For review: fix one pair of end conditions.
 
 ### G.65 The `"cosim"` interface
 

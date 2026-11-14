@@ -388,15 +388,15 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `g64_names_the_normal_generator` passes in `spec_text.rs` (C19: STD-02 AC 9)
-- [ ] Test `noise_table_is_noise_of_table_model` passes in `std_library.rs` (C49: STD-08 AC 11)
-- [ ] Test `pure_bodies_name_no_primitive` passes in `std_library.rs` (C50: STD-08 AC 12)
-- [ ] Test `a_private_std_item_is_e0161` passes in `std_library.rs` (C55: STD-09 AC 4)
-- [ ] The three limiters match `limit.rs` branch by branch; the commit body says so
-- [ ] `std_excerpts` and the two cleanliness tests of `std_library` pass with this file
-- [ ] `pure_bodies_name_no_primitive` covers `same` (T10) and the seven functions of this task
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `g64_names_the_normal_generator` passes in `spec_text.rs` (C19: STD-02 AC 9)
+- [x] Test `noise_table_is_noise_of_table_model` passes in `std_library.rs` (C49: STD-08 AC 11)
+- [x] Test `pure_bodies_name_no_primitive` passes in `std_library.rs` (C50: STD-08 AC 12)
+- [x] Test `a_private_std_item_is_e0161` passes in `std_library.rs` (C55: STD-09 AC 4)
+- [x] The three limiters match `limit.rs` branch by branch; the commit body says so
+- [x] `std_excerpts` and the two cleanliness tests of `std_library` pass with this file
+- [x] `pure_bodies_name_no_primitive` covers `same` (T10) and the seven functions of this task
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

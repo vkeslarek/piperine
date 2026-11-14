@@ -1289,3 +1289,11 @@ fn s1_constants_are_std_items() {
     assert!(block.contains("six constants are `pub const` items of `std::constants`"), "{block}");
     assert!(block.contains("re-exported by the prelude"), "{block}");
 }
+
+#[test]
+fn g64_names_the_normal_generator() {
+    // STD-02 AC 9: the generator of `normal` is the one written in `std::analog`.
+    let g = one_line(&section(&spec("appendix_g_scope.md"), "### G.64"));
+    assert!(g.contains("the generator of `normal` is the one written in `std::analog`"), "{g}");
+    assert!(g.contains("SplitMix64"), "{g}");
+}

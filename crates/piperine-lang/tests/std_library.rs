@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use piperine_lang::pom::{BUILTINS, Design, ExprKind, Reference, Reflect, Resolution};
+use piperine_lang::pom::{BUILTINS, BuiltinKind, Design, ExprKind, Reference, Reflect, Resolution};
 
 fn embedded() -> Design {
     Design::builder().source("top.msl", "").build()
@@ -185,4 +185,59 @@ fn known_resolves_into_std_values() {
     assert!(known.krate().is_std());
     assert_eq!(known.file().name(), "values.msl");
     assert_eq!(known.declared_in().and_then(|d| d.name()), Some("Known"));
+}
+
+/// The expressions of a declaration, with the design they belong to.
+fn calls_named<'d>(design: &'d Design, decl: piperine_lang::pom::Decl<'d>, name: &str) -> Vec<piperine_lang::pom::Expr<'d>> {
+    decl.exprs()
+        .into_iter()
+        .filter(|e| matches!(e.kind(), ExprKind::Call { callee, .. } if design.expr(*callee).text() == name))
+        .collect()
+}
+
+#[test]
+fn noise_table_is_noise_of_table_model() {
+    let design = embedded();
+    let table = design.std_crate().find("analog::noise_table").expect("std declares noise_table");
+    let module = table.as_module().expect("noise_table is a module");
+    // The module places `noise` (a core module) and its result is that call.
+    let noise = calls_named(&design, table, "noise");
+    assert_eq!(noise.len(), 1, "one placement of noise");
+    assert_eq!(module.result(), Some(noise[0]), "the result is the noise call");
+    let ExprKind::Call { callee, .. } = noise[0].kind() else { unreachable!() };
+    assert!(matches!(design.expr(*callee).resolution(), Resolution::Builtin(id) if id.name() == "noise"));
+    // Its first argument calls `table_model`, the intrinsic function of std.
+    let model = calls_named(&design, table, "table_model");
+    assert_eq!(model.len(), 1, "one call of table_model");
+    let ExprKind::Call { callee, .. } = model[0].kind() else { unreachable!() };
+    let Resolution::Decl(id) = design.expr(*callee).resolution() else { panic!("table_model resolves to a declaration") };
+    assert!(design.decl(id).as_function().is_some_and(|f| f.is_intrinsic()));
+}
+
+#[test]
+fn pure_bodies_name_no_primitive() {
+    let design = embedded();
+    let mut named = Vec::new();
+    for name in ["values::same", "analog::deltalim", "analog::pnjlim", "analog::fetlim", "analog::limvds", "analog::db10", "analog::db20", "analog::normal"] {
+        let item = design.std_crate().find(name).unwrap_or_else(|| panic!("std declares {name}"));
+        assert!(item.as_function().is_some_and(|f| f.body().is_some()), "{name} has a body");
+        for expr in item.exprs() {
+            if let Resolution::Builtin(id) = expr.resolution() {
+                let info = id.info();
+                let primitive = matches!(info.kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Method | BuiltinKind::Event | BuiltinKind::Statement | BuiltinKind::Node | BuiltinKind::ImplicitParam);
+                if primitive && info.name != "level" {
+                    named.push(format!("{name}: {}", info.name));
+                }
+            }
+        }
+    }
+    assert!(named.is_empty(), "bodies that name a core primitive: {named:?}");
+}
+
+#[test]
+fn a_private_std_item_is_e0161() {
+    let design = Design::builder()
+        .source("top.msl", "fn f(s: std::analog::Slewing) {}\nfn g(s: Slewing) {}\n")
+        .build();
+    assert_eq!(codes(&design), ["E0161", "E0161"], "{:?}", design.diagnostics());
 }

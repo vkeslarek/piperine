@@ -1,0 +1,166 @@
+//! Analog functions and modules (§22.2): `State`, `vt`, noise, limiters, `above`, `absdelta`,
+//! `last_crossing`, `idt`, `idtmod`, `slew`, `transition`, `table_model`, `db10`, `db20`, `normal`.
+
+pub nature State {
+    potential: Value { access: pos,  abstol: 1u },
+    flow:      Rate  { access: rate, abstol: 1n },
+}
+
+pub fn vt() -> f64 { K_B * temperature() / Q }
+
+pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
+pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
+pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
+    table: [(f64, f64); N];
+    noise(table_model(freq(), &table, "1C"), name)
+}
+
+pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
+
+pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
+    if !(new > vcrit && (new - old).abs() > 2.0 * nvt) { new }
+    else if old > 0.0 {
+        let arg = 1.0 + (new - old) / nvt;
+        if arg > 0.0 { old + nvt * arg.ln() } else { vcrit }
+    } else { nvt * (new / nvt).ln() }
+}
+
+pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
+    let hi = (2.0 * (old - vth)).abs() + 2.0;
+    let lo = (old - vth).abs() + 1.0;
+    let vtox = vth + 3.5;
+    let delv = new - old;
+    if old >= vth {
+        if old >= vtox {
+            if delv <= 0.0 {
+                if new >= vtox { if -delv > lo { old - lo } else { new } }
+                else if new > vth + 2.0 { new } else { vth + 2.0 }
+            } else if delv >= hi { old + hi } else { new }
+        } else if delv <= 0.0 { if new > vth - 0.5 { new } else { vth - 0.5 } }
+        else if new < vth + 4.0 { new } else { vth + 4.0 }
+    } else if delv <= 0.0 { if -delv > hi { old - hi } else { new } }
+    else if new <= vth + 0.5 { if delv > lo { old + lo } else { new } }
+    else { vth + 0.5 }
+}
+
+pub fn limvds(new: f64, old: f64) -> f64 {
+    if old >= 3.5 {
+        if new > old { if new < 3.0 * old + 2.0 { new } else { 3.0 * old + 2.0 } }
+        else if new < 3.5 { if new > 2.0 { new } else { 2.0 } }
+        else { new }
+    } else if new > old { if new < 4.0 { new } else { 4.0 } }
+    else if new > -0.5 { new } else { -0.5 }
+}
+
+pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 { new.clamp(old - delta, old + delta) }
+
+pub module above(e: f64, ttol: Option<f64>, etol: Option<f64>) -> Event {
+    cross(e, ttol, etol) || (init() && e > 0.0)
+}
+
+pub module absdelta(e: f64, delta: f64) -> Event {
+    signal last: Bit<f64> = 0.0;
+    let moved = init() || cross(e - last - delta) || cross(last - delta - e);
+    moved
+}
+digital for absdelta { on moved { last <- e; } }
+
+pub module last_crossing(e: f64) -> f64 {
+    signal t: Bit<f64> = -1.0;
+    t.known_or(-1.0)                         // a known real, so analog may read it (§3.3.5)
+}
+digital for last_crossing { on cross(e) { t <- now(); } }
+
+pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
+    signal y: S;
+    potential(y)                             // the result
+}
+
+analog<S> for idt<S> {
+    let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
+    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
+}
+
+pub module idtmod<S: Nature = State>(x: f64, ic: Option<f64>, modulus: f64, offset: Option<f64>) -> f64 {
+    signal base: Bit<f64>;                   // where the integral was last seated
+    signal seat: Bit = false;                // true for the one microstep that seats it
+    let lo = offset.unwrap_or(0.0);
+    let start = lo + (ic.unwrap_or(0.0) - lo).rem_euclid(modulus);
+    let acc = idt::<S>(x, base.known_or(start), reset: seat.known_or(false));
+    acc
+}
+digital<S> for idtmod<S> {
+    on cross(acc - lo - modulus) { base <- acc - modulus; seat <- true; }    // over the top
+    on cross(lo - acc)           { base <- acc + modulus; seat <- true; }    // under the bottom
+    on seat.rise()               { seat <- false; }
+}
+
+#[derive(Repr, Clone, Copy, PartialEq)]
+enum Slewing { Track, Up, Down }
+
+pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
+    signal y: State;
+    signal mode: Bit<Slewing> = Slewing::Track;
+    let (r, f) = (rise.unwrap_or(inf), fall.unwrap_or(inf));
+    let dx = ddt(x);
+    pos(y)
+}
+analog for slew {
+    match mode.known_or(Slewing::Track) {
+        Slewing::Track => { pos(y) +> x; }
+        Slewing::Up    => { rate(y) +> ddt(pos(y)) - r; }
+        Slewing::Down  => { rate(y) +> ddt(pos(y)) + f; }
+    }
+}
+digital for slew {
+    on above(dx - r)  && mode == Slewing::Track { mode <- Slewing::Up; }      // x runs away upward
+    on above(-dx - f) && mode == Slewing::Track { mode <- Slewing::Down; }
+    on (cross(pos(y) - x) || cross(x - pos(y))) && mode != Slewing::Track {   // caught up
+        mode <- if dx > r { Slewing::Up } else if dx < -f { Slewing::Down } else { Slewing::Track };
+    }
+}
+
+pub module transition(in x: Bit<f64>, td: Option<f64>, tr: Option<f64>, tf: Option<f64>) -> f64 {
+    signal xd: Bit<f64>;                     // x after the delay
+    signal y0: Bit<f64>;                     // output where the current edge began
+    signal y1: Bit<f64>;                     // where it ends
+    signal t0: Bit<f64> = 0.0;               // when it began
+    signal dt: Bit<f64> = 0.0;               // its duration; 0.0 at rest
+    xd = x after td.unwrap_or(0.0);
+    let (a, b, s, d) = (y0.known_or(0.0), y1.known_or(0.0), t0.known_or(0.0), dt.known_or(0.0));
+    let y = if analysis(Static) { x.known_or(0.0) }
+            else if d > 0.0 { a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0) }
+            else { b };
+    y
+}
+digital for transition {
+    on at(t0 + dt) && dt > 0.0 { dt <- 0.0; }                 // the far corner
+    on x.changed() && analysis(Static) { y0 <- x; y1 <- x; }  // no delay to wait out, no ramp: at rest on x
+    on xd.changed() && !analysis(Static) {                    // written last: wins a tie (§12.1.2)
+        if let Some(to) = xd.known() {
+            y0 <- y; y1 <- to; t0 <- now();
+            dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 };
+        }
+    }
+}
+
+pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
+
+pub fn db10(x: f64) -> f64 { 10.0 * x.log10() }            // a power ratio
+pub fn db20(x: f64) -> f64 { 20.0 * x.abs().log10() }      // an amplitude ratio
+
+/// One step of SplitMix64: a uniform real in [0, 1) and the next state.
+fn uniform(rng: u64) -> (f64, u64) {
+    let s = rng + 0x9E3779B97F4A7C15;
+    let z = (s ^ (s >> 30)) * 0xBF58476D1CE4E5B9;
+    let z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
+    let z = z ^ (z >> 31);
+    ((z >> 11) as f64 / 9007199254740992.0, s)
+}
+
+pub fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64) {
+    let (a, s1) = uniform(rng);
+    let (b, s2) = uniform(s1);
+    let z = (-2.0 * (1.0 - a).ln()).sqrt() * (2.0 * PI * b).cos();
+    (mean + sigma * z, s2)
+}
