@@ -472,11 +472,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `simprobe` and `SimprobeError` are gone; the unit tests of `introspect.rs` that test only them are named in `removed.txt`
-- [ ] Test `simprobe_is_gone` passes (C19)
-- [ ] `cargo test -p piperine-solver` is green; every name of `baseline.txt` not in `removed.txt` prints `... ok`
-- [ ] `cargo build -p piperine-solver --all-targets` prints no warning
-- [ ] Gate: build
+- [x] `simprobe` and `SimprobeError` are gone; the unit tests of `introspect.rs` that test only them are named in `removed.txt`
+- [x] Test `simprobe_is_gone` passes (C19)
+- [x] `cargo test -p piperine-solver` is green; every name of `baseline.txt` not in `removed.txt` prints `... ok`
+- [x] `cargo build -p piperine-solver --all-targets` prints no warning
+- [x] Gate: build
 
 **Tests**: integration
 **Gate**: build

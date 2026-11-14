@@ -17,7 +17,7 @@ pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::element::{Element, ElementCapabilities};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
-    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind, simprobe, SimprobeError,
+    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
     SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};

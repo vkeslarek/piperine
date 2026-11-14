@@ -9,7 +9,7 @@ pub use crate::core::element::{
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
-    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind, simprobe, SimprobeError,
+    ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind,
     TerminalDescriptor, TerminalKind,
     Value, ValueKind, SignConvention,
 };

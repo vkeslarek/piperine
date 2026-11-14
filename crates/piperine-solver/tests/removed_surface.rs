@@ -157,6 +157,12 @@ fn regions_are_gone() {
 }
 
 #[test]
+fn simprobe_is_gone() {
+    let found = names_found(&["simprobe", "SimprobeError"]);
+    assert!(found.is_empty(), "removed $simprobe helper still named: {found:#?}");
+}
+
+#[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
     assert_eq!(names_in(planted, &["DistoSolver", "HAS_DISTO2"]), vec!["DistoSolver"]);
