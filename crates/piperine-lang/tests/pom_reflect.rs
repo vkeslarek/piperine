@@ -856,7 +856,7 @@ fn from_json_never_panics_on_a_corrupted_field() {
         .stack_size(8 << 20)
         .spawn(|| {
             let src = "mod a { pub const K: f64 = 1.5k; }\nuse a::K;\nmodule M(a: E) { signal s: E; s = a; let x = R(a, a) { r: K }; }\ndigital for M { on e { s[0] <- 1; } }\nfn f(o: Option<u8>) -> u8 { match o { None => 0, Some(x) => x + 1 } }";
-            let design = Design::builder().source("top.msl", src).build();
+            let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("top.msl", src).build();
             let good = serde_json::to_value(&design).unwrap();
             let mut leaves = Vec::new();
             number_leaves(&good, Vec::new(), &mut leaves);

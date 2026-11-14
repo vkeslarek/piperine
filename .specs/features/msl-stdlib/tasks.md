@@ -364,13 +364,13 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `bit_rise_resolves_into_std_values` passes in `std_library.rs` (C57: STD-09 AC 6)
-- [ ] Test `known_resolves_into_std_values` passes in `std_library.rs` (C58: STD-09 AC 7)
-- [ ] `std_excerpts` passes with §22.1 covered in both directions
-- [ ] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file: `self.known_or(false)` in `impl Bit` and `t.known_or(-inf)` in `since` are linked
-- [ ] A body the parser or the POM rejects is a stop: report, do not turn it into an intrinsic
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `bit_rise_resolves_into_std_values` passes in `std_library.rs` (C57: STD-09 AC 6)
+- [x] Test `known_resolves_into_std_values` passes in `std_library.rs` (C58: STD-09 AC 7)
+- [x] `std_excerpts` passes with §22.1 covered in both directions
+- [x] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file: `self.known_or(false)` in `impl Bit` and `t.known_or(-inf)` in `since` are linked
+- [x] A body the parser or the POM rejects is a stop: report, do not turn it into an intrinsic
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

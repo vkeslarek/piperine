@@ -149,3 +149,40 @@ fn a_std_file_sees_another_namespace_through_the_prelude() {
     assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
     assert!(design.std_crate().find("a::A").unwrap().references().len() >= 1, "b.msl reads A by its single name");
 }
+
+/// The declaration the method call `text` of the model `top.msl` resolves to.
+fn called_decl<'d>(design: &'d Design, text: &str) -> piperine_lang::pom::Decl<'d> {
+    let call = design
+        .root_crate()
+        .decls()
+        .into_iter()
+        .flat_map(|d| d.exprs())
+        .find(|e| e.text() == text && matches!(e.kind(), ExprKind::MethodCall { .. }))
+        .unwrap_or_else(|| panic!("the model calls `{text}`"));
+    match call.resolution() {
+        Resolution::Decl(id) => design.decl(id),
+        other => panic!("`{text}` resolves to {other:?}, not to a declaration"),
+    }
+}
+
+#[test]
+fn bit_rise_resolves_into_std_values() {
+    let design = Design::builder().source("top.msl", "module M(in clk: Bit) { let e = clk.rise(); }\n").build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let rise = called_decl(&design, "clk.rise()");
+    assert_eq!(rise.name(), Some("rise"));
+    assert!(rise.krate().is_std());
+    assert_eq!(rise.file().name(), "values.msl");
+    assert!(rise.declared_in().and_then(|d| d.as_impl()).is_some(), "rise is a function of an `impl`");
+}
+
+#[test]
+fn known_resolves_into_std_values() {
+    let design = Design::builder().source("top.msl", "module M(in d: Bit<u8>) { let k = d.known(); }\n").build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let known = called_decl(&design, "d.known()");
+    assert_eq!(known.name(), Some("known"));
+    assert!(known.krate().is_std());
+    assert_eq!(known.file().name(), "values.msl");
+    assert_eq!(known.declared_in().and_then(|d| d.name()), Some("Known"));
+}

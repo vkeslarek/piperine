@@ -171,9 +171,9 @@ byte = cast(sh);            // byte: Bit<u8>; sh[0] is the least significant lev
 #### 22.1.4 `same`, `matches_bits`, `logic`
 
 ```rust
-pub fn same<T: Repr>(a: T, b: T) -> bool;
-pub fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
-pub fn logic<T: Repr>(pattern: &str) -> T;
+pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
+pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
+pub extern "intrinsic" fn logic<T: Repr>(pattern: &str) -> T;
 ```
 
 | Function | Result |
@@ -186,7 +186,7 @@ pub fn logic<T: Repr>(pattern: &str) -> T;
 2. `matches_bits` is a loop over `level`. `logic(p)` is the `merge` of the two values that read each `x` as 0 and as 1.
 3. A pattern has one character per level, each of `0`, `1`, `x`. Any other pattern is `E0702`.
 
-> **Resolution.** The signatures above are inferred from the uses in §5.1 and §22.1. The leftmost pattern character is the highest level (`WIDTH − 1`), as in a Verilog literal: `logic("10xx")` for a `u4` has levels 3 and 2 known.
+> **Resolution.** `same` is its definition. `matches_bits` and `logic` read the characters of a `str`, which no definition in the language can do: they are `extern "intrinsic"` and the contract of rules 2 and 3 is normative. The leftmost pattern character is the highest level (`WIDTH − 1`), as in a Verilog literal: `logic("10xx")` for a `u4` has levels 3 and 2 known.
 
 > **Resolution.** In `matches_bits`, `x` matches any level, known or unknown. `0` and `1` match only a known level of that value; an unknown level does not match them.
 
