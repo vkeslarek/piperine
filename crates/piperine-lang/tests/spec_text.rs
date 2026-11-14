@@ -782,3 +782,14 @@ fn appendix_h_renders_every_code_span() {
     }
     assert!(section(&h, "## H.8").contains("`E0161`"), "H.8 states that an unknown derive name is E0161");
 }
+
+#[test]
+fn block_items_follow_the_namespace_rules() {
+    // D5: the items of a block are one scope; a repeated name in a table is E0162.
+    let s = s34().split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(s.contains("**§3.4.10** The items of a block"), "{s}");
+    assert!(s.contains("`E0162` at the later name; this includes two `fn` of one name"), "{s}");
+    let r = spec("part_i_values.md");
+    let row = r.lines().find(|l| l.starts_with("| `E0162`")).unwrap();
+    assert!(row.contains("one table of one namespace or of one block"), "{row}");
+}

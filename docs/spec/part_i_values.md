@@ -582,6 +582,10 @@ scope, `pub` controls visibility, and a package of models is a crate.
 - **§3.4.9** Two glob imports that provide one name for different declarations are an error
   only where the name is used. Two that provide the same declaration are not. Two `fn` items of
   one name are `E0143`, not `E0162`.
+- **§3.4.10** The items of a block (`fn`, `struct`, `const` and the others a statement position takes)
+  form one scope with the same two tables. A name declared twice in one table of one block is
+  `E0162` at the later name; this includes two `fn` of one name, since `E0143` is the overload rule
+  of namespaces. A block's items shadow the items of the scopes around it without a diagnostic.
 
 > **Resolution.** Rules 7 to 9 are Rust's rules for names, stated because the design is
 > silent on duplicates. `E0162` is the one code for a collision; `E0143` keeps the overload.
@@ -595,4 +599,4 @@ scope, `pub` controls visibility, and a package of models is a crate.
 | --- | --- | --- |
 | [§10](part_iv_behavior.md#10-behavior-blocks) | a behavior block for a module declared in another file (`E0401`) | elaboration |
 | `E0161` | a path, `use` or `mod` that does not resolve, or names a private item | elaboration |
-| `E0162` | a name declared twice in one table of one namespace; an explicit `use` whose name collides with an item or with another explicit `use` of the same table; a name that is used while only two glob imports provide it, for different declarations | elaboration |
+| `E0162` | a name declared twice in one table of one namespace or of one block; an explicit `use` whose name collides with an item or with another explicit `use` of the same table; a name that is used while only two glob imports provide it, for different declarations | elaboration |

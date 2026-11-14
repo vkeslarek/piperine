@@ -528,6 +528,31 @@ impl Names<'_, '_> {
         self.stmt_list(&block.stmts);
     }
 
+    /// `E0162` at each item of a block that repeats a name of its table (D5): the
+    /// block holds items as a namespace does.
+    fn block_duplicates(&mut self, items: &[(String, DeclId)]) {
+        if self.quiet > 0 {
+            return;
+        }
+        let design = self.ctx.design;
+        let span_of = |d: DeclId| {
+            let data = design.decl_data(d);
+            data.name.as_ref().map_or(data.span, |n| n.span)
+        };
+        for (i, (name, decl)) in items.iter().enumerate() {
+            let (types, values) = super::imports::occupies(design, *decl);
+            let first = items[..i].iter().find(|(n, d)| {
+                let (t, v) = super::imports::occupies(design, *d);
+                n == name && ((t && types) || (v && values))
+            });
+            if let Some((_, first)) = first {
+                let message = format!("`{name}` is defined more than once in this block");
+                let diagnostic = crate::msl::Diagnostic::new("E0162", message, span_of(*decl), "defined again here").with_label(span_of(*first), "first defined here");
+                self.out.diagnostics.push((design.decl_data(*decl).file, diagnostic));
+            }
+        }
+    }
+
     /// Statements as one scope.
     fn stmt_list(&mut self, stmts: &[StmtId]) {
         let design = self.ctx.design;
@@ -537,7 +562,8 @@ impl Names<'_, '_> {
                 StmtKind::Item(d) => design.decl_data(*d).name.as_ref().map(|n| (n.text.clone(), *d)),
                 _ => None,
             })
-            .collect();
+            .collect::<Vec<(String, DeclId)>>();
+        self.block_duplicates(&items);
         self.frames.push(Frame::Items(items));
         let imports_at = self.frames.len();
         self.frames.push(Frame::Imports { named: Vec::new(), globs: Vec::new() });

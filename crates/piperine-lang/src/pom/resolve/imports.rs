@@ -463,7 +463,7 @@ struct Taken {
 }
 
 /// The tables an imported declaration occupies: types, values.
-fn occupies(design: &Design, decl: DeclId) -> (bool, bool) {
+pub(super) fn occupies(design: &Design, decl: DeclId) -> (bool, bool) {
     match &design.decl_data(decl).kind {
         DeclKind::Fn(_) | DeclKind::Const(_) | DeclKind::Variant(_) => (false, true),
         DeclKind::Module(_) => (true, true),

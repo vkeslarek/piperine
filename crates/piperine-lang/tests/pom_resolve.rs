@@ -1141,3 +1141,26 @@ fn f() { signal u: f64; let z = u; }
         assert!(kept.module().is_none(), "{name}");
     }
 }
+
+#[test]
+fn duplicate_items_in_a_block_are_e0162() {
+    // D5: a block holds items as a namespace does; one name twice in one table is E0162 at the
+    // later name (two `fn` of one name included: the parser's E0143 covers namespaces only).
+    let src = "fn f() { fn g() {} fn g() {} struct S; struct S; const A: u8 = 1; const A: u8 = 2; }\n";
+    let design = build(src);
+    let found = with_code(&design, "E0162");
+    let at: Vec<(&str, usize)> = found.iter().map(|d| (primary_text(&design, d), d.diagnostic.span().start as usize)).collect();
+    let nth = |needle: &str, n: usize| src.match_indices(needle).nth(n).unwrap().0;
+    assert_eq!(at, [("g", nth("g()", 1)), ("S", nth("S;", 1)), ("A", nth("A:", 1))], "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics().len(), 3, "{:?}", design.diagnostics());
+    // Different tables, different blocks and shadowing an outer item are clean.
+    for clean in [
+        "fn f() { struct S { a: u8 } fn S() {} }",
+        "fn f() { fn g() {} } fn h() { fn g() {} }",
+        "fn g() {} fn f() { fn g() {} }",
+        "fn f() { fn g() {} { fn g() {} } }",
+    ] {
+        let design = build(clean);
+        assert!(design.diagnostics().is_empty(), "{clean}: {:?}", design.diagnostics());
+    }
+}
