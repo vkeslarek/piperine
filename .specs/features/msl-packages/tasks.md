@@ -688,18 +688,18 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_git_dependency_checks_out_the_default_branch` passes in `git.rs` (C96: PKG-12 AC 1)
-- [ ] Test `branch_tag_and_rev_select_their_commit` passes in `git.rs` (C97: PKG-12 AC 2)
-- [ ] Test `an_unreachable_repository_or_ref_is_e0172` passes in `git.rs` (C98: PKG-12 AC 3)
-- [ ] Test `two_commits_of_one_repository_are_two_crates` passes in `git.rs` (C99: PKG-12 AC 4)
-- [ ] Test `one_commit_of_one_repository_is_one_crate` passes in `git.rs` (C100: PKG-12 AC 5)
-- [ ] Test `a_git_package_resolves_its_own_dependencies` passes in `git.rs` (C101: PKG-12 AC 6)
-- [ ] Every repository of the tests is created in a `tempdir` and named by its filesystem path: no test contacts the network
-- [ ] A failed checkout leaves no `<commit>` directory behind
-- [ ] The fixture helper `repo(dir) -> Repository` with `commit(repo, files, message) -> Oid`, `branch`, `tag` lives in `tests/support/mod.rs`
-- [ ] The lockfile is not written yet (T23)
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_git_dependency_checks_out_the_default_branch` passes in `git.rs` (C96: PKG-12 AC 1)
+- [x] Test `branch_tag_and_rev_select_their_commit` passes in `git.rs` (C97: PKG-12 AC 2)
+- [x] Test `an_unreachable_repository_or_ref_is_e0172` passes in `git.rs` (C98: PKG-12 AC 3)
+- [x] Test `two_commits_of_one_repository_are_two_crates` passes in `git.rs` (C99: PKG-12 AC 4)
+- [x] Test `one_commit_of_one_repository_is_one_crate` passes in `git.rs` (C100: PKG-12 AC 5)
+- [x] Test `a_git_package_resolves_its_own_dependencies` passes in `git.rs` (C101: PKG-12 AC 6)
+- [x] Every repository of the tests is created in a `tempdir` and named by its filesystem path: no test contacts the network
+- [x] A failed checkout leaves no `<commit>` directory behind
+- [x] The fixture helper `repo(dir) -> Repository` with `commit(repo, files, message) -> Oid`, `branch`, `tag` lives in `tests/support/mod.rs`
+- [x] The lockfile is not written yet (T23)
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

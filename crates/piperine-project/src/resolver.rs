@@ -9,7 +9,8 @@ use piperine_lang::msl::{Diagnostic, Span};
 use piperine_lang::pom::{CrateGraph, CrateId, GraphError};
 
 use crate::error::PackageError;
-use crate::manifest::{Dependency, MANIFEST, Manifest, Source};
+use crate::git::{GitError, sync_and_checkout};
+use crate::manifest::{Dependency, GitRef, MANIFEST, Manifest, Source};
 
 /// What a resolution may do beyond reading.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -39,6 +40,8 @@ pub struct ResolvedPackage {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Identity {
     Path(PathBuf),
+    /// A repository and the commit checked out of it.
+    Git(String, String),
 }
 
 type Errors = Vec<PackageError>;
@@ -55,12 +58,12 @@ pub fn resolve(dir: &Path, _options: Options) -> Result<PackageGraph, Vec<Packag
         let message = format!("cannot read the package directory `{}`: {e}", dir.display());
         vec![fault(dir, Span::new(0, 0), "E0170", message, "a package holds a `Piperine.toml`", None)]
     })?;
-    let mut walk = Walk { graph: CrateGraph::new(), packages: Vec::new(), ids: HashMap::new(), stack: Vec::new() };
+    let mut walk = Walk { deps: root.join("target").join("deps"), graph: CrateGraph::new(), packages: Vec::new(), ids: HashMap::new(), stack: Vec::new(), resolved: HashMap::new() };
     if !crate_root(&root).is_file() {
         let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&root).display());
         return Err(vec![fault(&root, Span::new(0, 0), "E0175", message, "the crate root is `src/lib.msl`", None)]);
     }
-    walk.enter(&root, Identity::Path(root.clone()), manifest)?;
+    walk.enter(&root, Identity::Path(root.clone()), manifest, None)?;
     Ok(PackageGraph { graph: walk.graph, packages: walk.packages })
 }
 
@@ -74,6 +77,10 @@ fn fault(dir: &Path, span: Span, code: &'static str, message: String, label: &st
 }
 
 struct Walk {
+    /// `<root package>/target/deps`: the repositories and checkouts of git dependencies.
+    deps: PathBuf,
+    /// The commit each git source resolved to in this run.
+    resolved: HashMap<String, String>,
     graph: CrateGraph,
     packages: Vec<ResolvedPackage>,
     ids: HashMap<Identity, CrateId>,
@@ -83,11 +90,11 @@ struct Walk {
 
 impl Walk {
     /// Make the crate of the package at `dir` and walk its dependencies.
-    fn enter(&mut self, dir: &Path, identity: Identity, manifest: Manifest) -> Result<CrateId, Errors> {
+    fn enter(&mut self, dir: &Path, identity: Identity, manifest: Manifest, commit: Option<String>) -> Result<CrateId, Errors> {
         let name = manifest.package.name.clone();
         let id = self.graph.add_crate(&name, crate_root(dir)).map_err(|e| vec![graph_fault(dir, Span::new(0, 0), &e)])?;
         self.ids.insert(identity.clone(), id);
-        self.packages.push(ResolvedPackage { krate: id, dir: dir.to_path_buf(), manifest: manifest.clone(), commit: None });
+        self.packages.push(ResolvedPackage { krate: id, dir: dir.to_path_buf(), manifest: manifest.clone(), commit });
         self.stack.push((identity, name));
         for dependency in &manifest.dependencies {
             let child = self.dependency(dir, dependency)?;
@@ -97,9 +104,41 @@ impl Walk {
         Ok(id)
     }
 
+    /// The directory holding the commit of `url` that `reference` names: the repository is
+    /// cloned or fetched into `<deps>/<url>/db`, and the commit checked out into
+    /// `<deps>/<url>/<commit>`.
+    fn checkout(&mut self, url: &str, reference: &GitRef) -> Result<(PathBuf, String), GitError> {
+        let home = self.deps.join(sanitize(url));
+        let source = crate::git::source_text(url, reference);
+        let commit = match self.resolved.get(&source) {
+            Some(commit) => commit.clone(),
+            None => {
+                let commit = sync_and_checkout(url, &home.join("db"), reference)?;
+                self.resolved.insert(source, commit.clone());
+                commit
+            }
+        };
+        let checkout = home.join(&commit);
+        if !checkout.is_dir() {
+            // Checked out beside, then renamed: a failure leaves no commit directory.
+            let partial = home.join(format!("{commit}.partial"));
+            let _ = std::fs::remove_dir_all(&partial);
+            let db = home.join("db");
+            let made = sync_and_checkout(&db.to_string_lossy(), &partial, &GitRef::Rev(commit.clone())).and_then(|_| {
+                std::fs::rename(&partial, &checkout).map_err(|e| GitError::CheckoutFailed { path: checkout.clone(), target: commit.clone(), msg: e.to_string() })
+            });
+            if let Err(e) = made {
+                let _ = std::fs::remove_dir_all(&partial);
+                return Err(e);
+            }
+        }
+        let checkout = checkout.canonicalize().map_err(|e| GitError::CheckoutFailed { path: checkout.clone(), target: commit.clone(), msg: e.to_string() })?;
+        Ok((checkout, commit))
+    }
+
     /// Locate one dependency of the package at `dir`.
     fn dependency(&mut self, dir: &Path, dependency: &Dependency) -> Result<CrateId, Errors> {
-        let (target, identity) = match &dependency.source {
+        let (target, identity, commit) = match &dependency.source {
             Source::Path(path) => {
                 let target = dir.join(path);
                 if !target.join(MANIFEST).is_file() {
@@ -111,11 +150,19 @@ impl Walk {
                     vec![fault(dir, dependency.name_span, "E0172", message, "no package at this path", None)]
                 })?;
                 let identity = Identity::Path(target.clone());
-                (target, identity)
+                (target, identity, None)
             }
-            Source::Git { .. } => {
-                let message = format!("dependency `{}` is a git dependency; git dependencies are not resolved yet", dependency.name);
-                return Err(vec![fault(dir, dependency.name_span, "E0172", message, "not resolved yet", None)]);
+            Source::Git { url, reference } => {
+                let (target, commit) = self.checkout(url, reference).map_err(|e| {
+                    let message = format!("dependency `{}` cannot be fetched: {e}", dependency.name);
+                    vec![fault(dir, dependency.name_span, "E0172", message, "git could not provide this", None)]
+                })?;
+                if !target.join(MANIFEST).is_file() {
+                    let message = format!("dependency `{}` is not at `{url}`: no `{MANIFEST}` at the root of commit {commit}", dependency.name);
+                    return Err(vec![fault(dir, dependency.name_span, "E0172", message, "no package in this repository", None)]);
+                }
+                let identity = Identity::Git(url.clone(), commit.clone());
+                (target, identity, Some(commit))
             }
         };
         let manifest = Manifest::load(&target)?;
@@ -143,7 +190,7 @@ impl Walk {
         }
         match self.ids.get(&identity) {
             Some(id) => Ok(*id),
-            None => self.enter(&target, identity, manifest),
+            None => self.enter(&target, identity, manifest, commit),
         }
     }
 }
@@ -157,4 +204,9 @@ fn graph_fault(dir: &Path, span: Span, error: &GraphError) -> PackageError {
         }
         other => fault(dir, span, "E0171", format!("the crate graph refused the dependency: {other:?}"), "refused", None),
     }
+}
+
+/// A URL as a directory name: every character outside `[A-Za-z0-9._-]` becomes `_`.
+fn sanitize(url: &str) -> String {
+    url.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '_' }).collect()
 }
