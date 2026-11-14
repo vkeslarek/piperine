@@ -629,3 +629,30 @@ fn std_root_comment_names_the_namespaces() {
         assert!(!comment.to_lowercase().contains(&stale.to_lowercase()), "the file comment says `{stale}`: {comment}");
     }
 }
+
+#[test]
+fn the_fixture_prelude_is_gone() {
+    // STD-16 AC 1: the file does not exist and no test file of the crate names it.
+    let name = format!("{}/{}", "fixtures/pom", "prelude.msl");
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    assert!(!manifest.join("tests").join(&name).exists(), "tests/{name} is deleted");
+    let mut naming = Vec::new();
+    for entry in std::fs::read_dir(manifest.join("tests")).expect("tests directory") {
+        let path = entry.expect("entry").path();
+        if path.extension().is_some_and(|e| e == "rs") && std::fs::read_to_string(&path).expect("test source").contains(&name) {
+            naming.push(path.file_name().unwrap().to_string_lossy().into_owned());
+        }
+    }
+    assert!(naming.is_empty(), "test files that still name the fixture prelude: {naming:?}");
+}
+
+#[test]
+fn no_pom_test_was_removed() {
+    // STD-16 AC 2: the three targets keep at least the tests they had before the fixture left.
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (target, floor) in [("pom_classify", 39), ("pom_reflect", 31), ("pom_resolve", 48)] {
+        let text = std::fs::read_to_string(manifest.join("tests").join(format!("{target}.rs"))).expect("target source");
+        let count = text.lines().filter(|l| l.trim() == "#[test]").count();
+        assert!(count >= floor, "{target} holds {count} tests, at least {floor} are required");
+    }
+}

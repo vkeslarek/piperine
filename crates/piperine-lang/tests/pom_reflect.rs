@@ -5,15 +5,13 @@
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::pom::{Decl, Design, DesignBuilder, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
+use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
 use serde::{Serialize, de::DeserializeOwned};
 use spec_corpus::{Class, corpus};
 
-const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
-
-/// A design of `src` with the fixture prelude beside it.
+/// A design of `src` over the embedded standard library.
 fn with_prelude(src: &str) -> Design {
-    std_lib(Design::builder(), PRELUDE).source("top.msl", src).build()
+    Design::builder().source("top.msl", src).build()
 }
 
 #[test]
@@ -525,9 +523,9 @@ digital for M { on a { q <- s; } }
     let field = design.find("Stream").and_then(|d| d.as_struct()).unwrap().fields()[0].decl();
     let accesses: Vec<_> = (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
-        .filter(|e| matches!(e.kind(), ExprKind::Field { .. }))
+        .filter(|e| matches!(e.kind(), ExprKind::Field { .. }) && e.enclosing().krate().is_root())
         .collect();
-    assert_eq!(accesses.len(), 2);
+    assert_eq!(accesses.len(), 2, "the two accesses of the root file; the library has its own");
     assert!(accesses.iter().all(|e| e.target() == Some(field) && e.as_path().is_none()));
 
     // An expression that names nothing has no target.
@@ -892,8 +890,3 @@ fn from_json_never_panics_on_a_corrupted_field() {
         .unwrap();
 }
 
-/// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
-/// It is a second std file so the fixture's own `//!` comments stay legal.
-fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
-    builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
-}

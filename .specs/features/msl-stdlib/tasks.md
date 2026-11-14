@@ -650,13 +650,13 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `the_fixture_prelude_is_gone` passes in `std_library.rs` (C93: STD-16 AC 1)
-- [ ] Test `no_pom_test_was_removed` passes in `std_library.rs` (C94: STD-16 AC 2)
-- [ ] `cargo test -p piperine-lang --doc` passes (C99: STD-17 AC 5)
-- [ ] No test is deleted; one that asserted a property of a stand-in (`init` as `settle`, `Logic` as a four-variant enum, `State` with `lvl`) asserts the same property of the real item, and the commit body lists each
-- [ ] `cargo test -p piperine-lang --doc` passes
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `the_fixture_prelude_is_gone` passes in `std_library.rs` (C93: STD-16 AC 1)
+- [x] Test `no_pom_test_was_removed` passes in `std_library.rs` (C94: STD-16 AC 2)
+- [x] `cargo test -p piperine-lang --doc` passes (C99: STD-17 AC 5)
+- [x] No test is deleted; one that asserted a property of a stand-in (`init` as `settle`, `Logic` as a four-variant enum, `State` with `lvl`) asserts the same property of the real item, and the commit body lists each
+- [x] `cargo test -p piperine-lang --doc` passes
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

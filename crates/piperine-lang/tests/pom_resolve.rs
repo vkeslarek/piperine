@@ -151,8 +151,6 @@ fn decl(design: &Design, path: &str) -> Resolution {
     Resolution::Decl(design.find(path).unwrap_or_else(|| panic!("`{path}` is declared")).id())
 }
 
-const PRELUDE_FIXTURE: &str = include_str!("fixtures/pom/prelude.msl");
-
 #[test]
 fn use_and_qualified_paths_resolve() {
     let src = "\
@@ -223,13 +221,15 @@ fn prelude_source_items_are_visible_everywhere() {
     let missing = with_code(&design, "E0161");
     assert_eq!(missing.len(), 1, "{missing:?}");
     assert_eq!(primary_text(&design, missing[0]), "Hidden");
-    // The same through the spec fixture: its natures are there for the asking.
-    let design = std_lib(Design::builder(), PRELUDE_FIXTURE).source("top.msl", "use Electrical;\nuse Bit;\n").build();
-    // (Whether the fixture builds clean by itself is `fixture_prelude_builds_clean`'s question.)
+    // The same through the embedded library: its natures are there for the asking.
+    let design = Design::builder().source("top.msl", "use Electrical;\nuse Bit;\n").build();
+    // (Whether the library builds clean by itself is `embedded_std_builds_clean`'s question.)
     let root_file = design.root().file().id();
     assert!(design.diagnostics().iter().all(|d| d.file != root_file), "{:?}", design.diagnostics());
-    let Resolution::Decl(electrical) = one(&design, "Electrical")[0] else { panic!("Electrical resolves") };
-    assert!(design.decl_data(electrical).file != design.root().file().id());
+    for r in resolutions(&design, "Electrical") {
+        let Resolution::Decl(electrical) = r[0] else { panic!("Electrical resolves") };
+        assert!(design.decl_data(electrical).file != design.root().file().id());
+    }
     assert!(design.root().file().id() == piperine_lang::pom::FileId(0));
     assert!(design.files().last().unwrap().krate().is_std());
 }
@@ -589,24 +589,22 @@ fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
 }
 
 #[test]
-fn fixture_prelude_builds_clean() {
-    // As a prelude beside an empty root, and as the root itself: no diagnostics either way.
-    let as_prelude = std_lib(Design::builder(), PRELUDE_FIXTURE).source("top.msl", "").build();
-    assert!(as_prelude.diagnostics().is_empty(), "{:?}", as_prelude.diagnostics());
-    let as_root = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
-    assert!(as_root.diagnostics().is_empty(), "{:?}", as_root.diagnostics());
-    assert!(as_root.check().is_empty());
+fn embedded_std_builds_clean() {
+    // The embedded library beside an empty root: no diagnostics, a sound design.
+    let design = Design::builder().source("top.msl", "").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert!(design.check().is_empty());
     // It declares what the spec says the prelude does.
-    for name in ["Bit", "Wire", "Electrical", "Thermal", "VSignal"] {
-        assert!(as_root.nature(name).is_some(), "nature `{name}`");
+    let std = design.std_crate();
+    for name in ["carriers::Bit", "nets::Wire", "carriers::Electrical", "carriers::Thermal", "carriers::VSignal"] {
+        assert!(std.find(name).and_then(|d| d.as_nature()).is_some(), "nature `{name}`");
     }
-    for name in ["idt", "above", "transition"] {
-        assert!(as_root.module(name).is_some(), "module `{name}`");
+    for name in ["analog::idt", "analog::above", "analog::transition"] {
+        assert!(std.find(name).and_then(|d| d.as_module()).is_some(), "module `{name}`");
     }
-    // The module `idt` is named by its own block, and the block's generic is the module's.
-    let idt = as_root.module("idt").unwrap();
-    assert_eq!(idt.behaviors().len(), 1);
-    assert_eq!(as_root.module("transition").unwrap().digital_blocks().len(), 1);
+    // The module `idt` is named by its own block, and `transition` has its digital block.
+    assert_eq!(std.find("analog::idt").unwrap().as_module().unwrap().behaviors().len(), 1);
+    assert_eq!(std.find("analog::transition").unwrap().as_module().unwrap().digital_blocks().len(), 1);
 }
 
 /// POM-08 AC 7 and AC 9: a `use` in a block is an item of that block, visible
@@ -769,10 +767,14 @@ fn core_names_cannot_be_redeclared() {
 }
 
 #[test]
-fn fixture_prelude_declares_no_core_name() {
-    let design = Design::builder().source("prelude.msl", PRELUDE_FIXTURE).build();
-    for name in ["Nature", "gnd", "m", "dtemp", "str"] {
-        assert!(design.find(name).is_none(), "the fixture prelude declares `{name}`");
+fn embedded_std_declares_no_core_name() {
+    let design = Design::builder().source("top.msl", "").build();
+    for namespace in design.std_crate().root().submodules() {
+        for item in namespace.items() {
+            if let Some(name) = item.name() {
+                assert!(!["Nature", "gnd", "m", "dtemp", "str"].contains(&name), "std declares `{name}`");
+            }
+        }
     }
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
@@ -1404,10 +1406,14 @@ fn k_b_resolves_to_std_constants() {
     // STD-15 AC 2: a model naming `K_B` reaches the constant of `std::constants`.
     let design = Design::builder().source("top.msl", "const X: f64 = K_B;\n").build();
     assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
-    let Resolution::Decl(id) = one(&design, "K_B")[0] else { panic!("K_B resolves to a declaration") };
-    let item = design.decl(id);
-    assert_eq!(item.qualified_name(), "constants::K_B");
-    assert!(item.krate().is_std());
+    let all = resolutions(&design, "K_B");
+    assert!(!all.is_empty(), "`K_B` is written");
+    for r in all {
+        let Resolution::Decl(id) = r[0] else { panic!("K_B resolves to a declaration") };
+        let item = design.decl(id);
+        assert_eq!(item.qualified_name(), "constants::K_B");
+        assert!(item.krate().is_std());
+    }
 }
 
 #[test]
