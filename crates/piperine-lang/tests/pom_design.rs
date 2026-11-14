@@ -6,14 +6,14 @@
 mod support;
 
 use piperine_lang::msl::parser::parse;
-use piperine_lang::pom::{Design, FileId, Reflect};
+use piperine_lang::pom::{Design, FileId, Reflect, SourceFile};
 use support::{build, codes};
 
 #[test]
 fn build_retains_name_text_and_ast() {
     let text = "module R(p, n) {}\nconst N: u32 = 8;\n";
     let design = build(text);
-    let files = design.files();
+    let files = project_files(&design);
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].name(), "top.msl");
     assert_eq!(files[0].text(), text);
@@ -67,9 +67,14 @@ fn two_builds_dump_identical() {
 fn empty_source_has_empty_root() {
     let design = build("");
     assert!(design.root().children().is_empty());
-    assert_eq!(design.files().len(), 1);
+    assert_eq!(project_files(&design).len(), 1);
     assert!(design.diagnostics().is_empty());
     assert!(design.check().is_empty());
+}
+
+/// The files of the project: every file that is not the standard library's.
+fn project_files(design: &Design) -> Vec<SourceFile<'_>> {
+    design.files().into_iter().filter(|f| !f.is_prelude()).collect()
 }
 
 fn files_design(files: &[(&str, &str)]) -> Design {
@@ -101,7 +106,7 @@ fn mod_loads_sibling_file_or_mod_file() {
     let dir = files_design(&[("top.msl", "mod b;\n"), ("b/mod.msl", "module M() {}\n")]);
     assert!(codes(&dir).is_empty(), "{:?}", dir.diagnostics());
     assert_eq!(module_path(&dir, "b::M"), std::path::Path::new("b/mod.msl"));
-    assert_eq!(dir.files().iter().map(|f| f.name()).collect::<Vec<_>>(), ["top.msl", "mod.msl"]);
+    assert_eq!(project_files(&dir).iter().map(|f| f.name()).collect::<Vec<_>>(), ["top.msl", "mod.msl"]);
 }
 
 #[test]
@@ -120,7 +125,7 @@ fn mod_without_file_is_empty_namespace_e0161() {
     assert!(b.items().is_empty());
     assert_eq!(b.origin(), &NamespaceOrigin::External { file: None });
     assert!(b.source_file().is_none());
-    assert_eq!(design.files().len(), 1);
+    assert_eq!(project_files(&design).len(), 1);
     assert!(design.find("R").is_some());
 }
 
@@ -138,7 +143,7 @@ fn mod_with_two_candidates_is_e0161() {
     assert!(diags[0].diagnostic.message.contains("b.msl") && diags[0].diagnostic.message.contains("b/mod.msl"));
     assert!(design.find("b").unwrap().children().is_empty(), "neither file is loaded");
     assert!(design.find("b::A").is_none() && design.find("b::B").is_none());
-    assert_eq!(design.files().len(), 1);
+    assert_eq!(project_files(&design).len(), 1);
 }
 
 #[test]
@@ -154,7 +159,7 @@ fn nested_mod_files_follow_rust_layout() {
     assert!(codes(&plain).is_empty(), "{:?}", plain.diagnostics());
     assert_eq!(module_path(&plain, "b::c::C"), Path::new("b/c.msl"));
     // Files: root, then each loaded file in the order its `mod` is met.
-    assert_eq!(plain.files().iter().map(|f| f.path().unwrap().to_path_buf()).collect::<Vec<_>>(),
+    assert_eq!(project_files(&plain).iter().map(|f| f.path().unwrap().to_path_buf()).collect::<Vec<_>>(),
         [Path::new("top.msl"), Path::new("b.msl"), Path::new("b/c.msl"), Path::new("x.msl")]);
 
     // `b/mod.msl` and `b/c/mod.msl`.
@@ -184,10 +189,10 @@ fn nested_mod_files_follow_rust_layout() {
 }
 
 #[test]
-fn prelude_files_are_numbered_first() {
-    let design = Design::builder().prelude("std.msl", "pub const ONE: u32 = 1;").source("top.msl", "mod b;").source("b.msl", "").build();
+fn library_files_are_numbered_after_the_project() {
+    let design = Design::builder().std_source("std.msl", "pub mod prelude { pub const ONE: u32 = 1; }").source("top.msl", "mod b;").source("b.msl", "").build();
     let files = design.files();
-    assert_eq!(files.iter().map(|f| (f.name(), f.is_prelude())).collect::<Vec<_>>(), [("std.msl", true), ("top.msl", false), ("b.msl", false)]);
+    assert_eq!(files.iter().map(|f| (f.name(), f.is_prelude())).collect::<Vec<_>>(), [("top.msl", false), ("b.msl", false), ("std.msl", true)]);
 }
 
 fn write(root: &std::path::Path, rel: &str, text: &str) {
@@ -213,7 +218,7 @@ fn mod_cycle_is_e0161_and_not_reloaded() {
     assert_eq!(cycles[0].file, FileId(1), "reported in the file that holds `mod back;`");
     assert_eq!(cycles[0].diagnostic.span(), design.find("a::back").unwrap().span());
     // The root and `a/mod.msl` are loaded once; `back` stays empty.
-    assert_eq!(design.files().len(), 2);
+    assert_eq!(project_files(&design).len(), 2);
     assert!(design.find("a::back").unwrap().children().is_empty());
     assert!(design.find("Top").is_some());
 }
@@ -236,7 +241,7 @@ fn load_from_disk_equals_in_memory_build() {
     assert_eq!(disk.dump(), memory.dump());
     assert!(disk.dump().lines().count() > 6);
     assert_eq!(disk.diagnostics(), memory.diagnostics());
-    assert_eq!(disk.files().iter().map(|f| f.name()).collect::<Vec<_>>(), memory.files().iter().map(|f| f.name()).collect::<Vec<_>>());
+    assert_eq!(project_files(&disk).iter().map(|f| f.name()).collect::<Vec<_>>(), project_files(&memory).iter().map(|f| f.name()).collect::<Vec<_>>());
     assert_eq!(disk.files()[0].path(), Some(dir.path().join("top.msl").as_path()));
     assert!(disk.check().is_empty());
 
@@ -251,7 +256,7 @@ fn unreadable_root_is_an_empty_root_with_e0161() {
     let missing = dir.path().join("nope.msl");
     let design = Design::load(&missing);
     assert!(design.root().children().is_empty());
-    assert_eq!(design.files().len(), 1);
+    assert_eq!(project_files(&design).len(), 1);
     let diags = design.diagnostics();
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].diagnostic.code, "E0161");
@@ -271,7 +276,7 @@ fn non_utf8_file_is_a_parse_diagnostic() {
     assert!(diags.iter().all(|d| d.file == FileId(1) && d.diagnostic.code != "E0161"), "{diags:?}");
     assert!(design.find("b").unwrap().children().is_empty());
     assert!(design.find("Top").is_some());
-    assert_eq!(design.files().len(), 2);
+    assert_eq!(project_files(&design).len(), 2);
     assert!(design.check().is_empty());
 }
 
@@ -291,7 +296,7 @@ fn docs_keep_kind_and_file_across_mod_files() {
     for (top, b) in pairs {
         let design = files_design(&[("top.msl", top), ("b.msl", b)]);
         assert!(codes(&design).is_empty(), "{top:?} + {b:?}: {:?}", design.diagnostics());
-        for (file, text) in design.files().iter().zip([top, b]) {
+        for (file, text) in project_files(&design).iter().zip([top, b]) {
             assert_eq!(file.to_ast(), parse(text).file, "{top:?} + {b:?}: {}", file.name());
         }
     }

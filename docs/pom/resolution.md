@@ -16,7 +16,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 0. Load | finds and reads the files of the source tree (`mod b;` follows Rust's layout) | files, `E0161` for a missing, ambiguous or cyclic `mod` file |
 | 1. Lower | builds the declaration tree and the body arenas from the syntax tree, with every slot unset | all nodes |
 | 2. Scopes | per-namespace type and value tables, per-module member tables | `E0457`, `E0330`, `E0162` |
-| 3. Imports | `use` items, `self`/`super`/`crate`, visibility, prelude sources | import resolution |
+| 3. Imports | `use` items, `self`/`super`/`crate`, visibility, `std::prelude` | import resolution |
 | 4. Behaviors | binds each `analog`/`digital` block to its module | `BehaviorData::module`, `ModuleData::behaviors`, `E0401`, `E0402`, `E0403` |
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
 | 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
@@ -40,7 +40,7 @@ A single-segment name is looked up in this order; the first hit wins.
    does not resolve is one `E0161`, as at the top level.
 2. **The items and imports of the enclosing namespace**: its own declarations, its `use` leaves
    and its glob imports.
-3. **The prelude sources**: the `pub` items of every prelude source are visible in every file.
+3. **The prelude**: the `pub` items of the namespace `prelude` of the standard library (`std::prelude`) are visible in every file.
 4. **The built-in table** (below).
 
 A multi-segment path resolves one segment at a time: the first as above (or `crate`, `self`,
@@ -114,11 +114,11 @@ assert!(k.decl().references().is_empty());
 use piperine_lang::pom::{Design, Reflect};
 
 let design = Design::builder()
-    .prelude("std.msl", "pub nature Bit { value: bool }")
+    .std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }")
     .source("top.msl", "mod lib { pub module Cell(p: Bit) {} }\nuse lib::Cell;\nmodule Top(p: Bit) { let c = Cell(p); }")
     .build();
 assert!(design.diagnostics().is_empty());
-// `Bit` comes from the prelude, `Cell` through the `use`; the instance is linked.
+// `Bit` comes from `std::prelude`, `Cell` through the `use`; the instance is linked.
 let top = design.module("Top").unwrap();
 assert_eq!(top.instance("c").unwrap().module(), design.module("Cell"));
 assert_eq!(top.port("p").unwrap().nature(), design.nature("Bit"));
@@ -148,7 +148,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
 `f64`, `f128`). Standard-library modules such as `idt`, `transition` and `above` are *not*
-built in: they are declared in the standard library's prelude sources (Part VII of the
+built in: they are declared in the standard library's `std::prelude` (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. The `Trait` and `Type` rows are kept equal to the tables H.8 and H.9 of Appendix H (plus `Repr`, `Nature`, `Fn` and the §1 types). Methods of the catalogue get no row: a method on a value needs its receiver's type and stays `Deferred(ReceiverTypeUnknown)`. An associated name written through a generic (`A::WIDTH`) resolves through its bounds: an item of a user trait, a `Repr` member row, `E0161` when `Repr` is the only bound and has no such member, and `Deferred(BuiltinTraitMember)` (silently) through any other built-in trait. A namespace item named like a core
 primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
 

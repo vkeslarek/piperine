@@ -1,0 +1,6 @@
+//! The standard library of Piperine, embedded in the `piperine-lang` crate.
+//!
+//! The root declares the namespace `prelude`: its `pub` items are visible in every file with
+//! no import. The content is the work of the `msl-stdlib` feature.
+
+pub mod prelude;

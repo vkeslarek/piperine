@@ -41,7 +41,7 @@ impl Lowerer<'_> {
         let data = SourceFileData {
             name: path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
             path: Some(path.clone()),
-            prelude: false,
+            prelude: self.design.file_data(self.file).prelude,
             text: String::from_utf8_lossy(bytes).into_owned(),
             ast: parsed.file.clone(),
             root: id,

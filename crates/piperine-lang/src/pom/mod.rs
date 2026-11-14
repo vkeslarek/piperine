@@ -43,6 +43,7 @@ mod reflect;
 mod resolve;
 mod resolution;
 mod source;
+mod stdlib;
 mod to_ast;
 
 pub use body::*;

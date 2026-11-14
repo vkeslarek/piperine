@@ -285,19 +285,19 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `embedded_std_builds_clean_and_has_a_prelude` passes in `pom_crates.rs` (C51: PKG-06 AC 1)
-- [ ] Test `prelude_items_resolve_without_an_import` passes in `pom_crates.rs` (C52: PKG-06 AC 2)
-- [ ] Test `only_pub_items_of_std_prelude_are_implicit` passes in `pom_crates.rs` (C53: PKG-06 AC 3)
-- [ ] Test `std_source_replaces_the_embedded_library` passes in `pom_crates.rs` (C54: PKG-06 AC 4)
-- [ ] Test `a_namespace_item_hides_a_prelude_item` passes in `pom_crates.rs` (C55: PKG-06 AC 5)
-- [ ] Test `std_files_are_numbered_last` passes in `pom_crates.rs` (C56: PKG-06 AC 6)
-- [ ] Test `std_files_see_the_prelude` passes in `pom_crates.rs` (C57: PKG-06 AC 7)
-- [ ] `std/lib.msl` and `std/prelude.msl` hold no item: the content is `msl-stdlib`
-- [ ] A design built with no `std_source` and no project source has zero diagnostics
-- [ ] The lookup order is unchanged but for its third step: namespace items and imports, the `pub` items of `std::prelude`, the built-in table
-- [ ] No doctest of `docs/pom/` is removed; `cargo test -p piperine-lang --doc` passes
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `embedded_std_builds_clean_and_has_a_prelude` passes in `pom_crates.rs` (C51: PKG-06 AC 1)
+- [x] Test `prelude_items_resolve_without_an_import` passes in `pom_crates.rs` (C52: PKG-06 AC 2)
+- [x] Test `only_pub_items_of_std_prelude_are_implicit` passes in `pom_crates.rs` (C53: PKG-06 AC 3)
+- [x] Test `std_source_replaces_the_embedded_library` passes in `pom_crates.rs` (C54: PKG-06 AC 4)
+- [x] Test `a_namespace_item_hides_a_prelude_item` passes in `pom_crates.rs` (C55: PKG-06 AC 5)
+- [x] Test `std_files_are_numbered_last` passes in `pom_crates.rs` (C56: PKG-06 AC 6)
+- [x] Test `std_files_see_the_prelude` passes in `pom_crates.rs` (C57: PKG-06 AC 7)
+- [x] `std/lib.msl` and `std/prelude.msl` hold no item: the content is `msl-stdlib`
+- [x] A design built with no `std_source` and no project source has zero diagnostics
+- [x] The lookup order is unchanged but for its third step: namespace items and imports, the `pub` items of `std::prelude`, the built-in table
+- [x] No doctest of `docs/pom/` is removed; `cargo test -p piperine-lang --doc` passes
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

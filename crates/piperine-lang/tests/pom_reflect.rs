@@ -5,7 +5,7 @@
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
+use piperine_lang::pom::{Decl, Design, DesignBuilder, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
 use serde::{Serialize, de::DeserializeOwned};
 use spec_corpus::{Class, corpus};
 
@@ -13,7 +13,7 @@ const PRELUDE: &str = include_str!("fixtures/pom/prelude.msl");
 
 /// A design of `src` with the fixture prelude beside it.
 fn with_prelude(src: &str) -> Design {
-    Design::builder().prelude("prelude.msl", PRELUDE).source("top.msl", src).build()
+    std_lib(Design::builder(), PRELUDE).source("top.msl", src).build()
 }
 
 #[test]
@@ -589,7 +589,7 @@ impl S { fn m(self) -> f64 { 1.0 } }
 ";
 
 fn shadowed() -> Design {
-    Design::builder().prelude("shadow.msl", SHADOW_PRELUDE).source("top.msl", SHADOW_PROJECT).build()
+    Design::builder().std_source("lib.msl", format!("pub mod prelude {{\n{SHADOW_PRELUDE}\n}}\n")).source("top.msl", SHADOW_PROJECT).build()
 }
 
 #[test]
@@ -604,7 +604,7 @@ fn by_name_lookups_prefer_project_files() {
     assert!(project(design.find("S").unwrap()));
     assert!(project(design.find("f").unwrap()));
     // A name only the prelude declares is still found.
-    let only = Design::builder().prelude("shadow.msl", SHADOW_PRELUDE).source("top.msl", "module Top() {}\n").build();
+    let only = Design::builder().std_source("lib.msl", format!("pub mod prelude {{\n{SHADOW_PRELUDE}\n}}\n")).source("top.msl", "module Top() {}\n").build();
     assert!(only.nature("Bit").unwrap().file().is_prelude());
     assert!(only.struct_named("S").unwrap().file().is_prelude());
     assert!(only.function("f").unwrap().file().is_prelude());
@@ -627,7 +627,7 @@ fn collections_list_project_files_only() {
     let prelude = design.prelude_files();
     assert_eq!(prelude.len(), 1);
     assert!(prelude[0].is_prelude());
-    assert_eq!(prelude[0].name(), "shadow.msl");
+    assert_eq!(prelude[0].name(), "lib.msl");
     // `decls()` and `files()` still list everything.
     assert_eq!(design.files().len(), 2);
     assert!(design.decls().iter().any(|d| d.file().is_prelude()));
@@ -854,4 +854,10 @@ fn from_json_never_panics_on_a_corrupted_field() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+/// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
+/// It is a second std file so the fixture's own `//!` comments stay legal.
+fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
+    builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
 }

@@ -213,7 +213,7 @@ impl Ctx<'_> {
     }
 
     /// A single name seen from inside namespace `ns`: its items and imports,
-    /// then the prelude sources, then the built-in table.
+    /// then the `pub` items of `std::prelude`, then the built-in table.
     pub(super) fn scope_lookup(&self, ns: DeclId, name: &str, prefer: Prefer, visiting: &mut Vec<Visit>) -> Option<Resolution> {
         if let Some((found, _)) = self.ns_item(ns, name, prefer, Some(ns), visiting) {
             return Some(Resolution::Decl(found));
@@ -221,8 +221,8 @@ impl Ctx<'_> {
         if self.ambiguous.get() {
             return None;
         }
-        for root in &self.prelude {
-            if let Some((found, true)) = self.ns_item(*root, name, prefer, None, visiting) {
+        if let Some(prelude) = self.prelude {
+            if let Some((found, true)) = self.ns_item(prelude, name, prefer, None, visiting) {
                 return Some(Resolution::Decl(found));
             }
         }

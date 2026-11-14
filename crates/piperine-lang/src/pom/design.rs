@@ -433,15 +433,17 @@ impl Design {
 /// Collects sources, then builds the [`Design`]. `build` never fails.
 #[derive(Debug, Clone, Default)]
 pub struct DesignBuilder {
-    prelude: Vec<(String, String)>,
+    std_sources: Vec<(String, String)>,
     sources: Vec<(String, String)>,
     root_file: Option<PathBuf>,
 }
 
 impl DesignBuilder {
-    /// A prelude source: its `pub` items are visible in every file.
-    pub fn prelude(mut self, name: impl Into<String>, text: impl Into<String>) -> Self {
-        self.prelude.push((name.into(), text.into()));
+    /// A virtual file of the standard library, replacing the embedded one: the first is its root,
+    /// the others are found by the `mod` items of the files that name them. The `pub` items of the
+    /// namespace `prelude` of the root are visible in every file.
+    pub fn std_source(mut self, path: impl Into<String>, text: impl Into<String>) -> Self {
+        self.std_sources.push((path.into(), text.into()));
         self
     }
 
@@ -459,8 +461,8 @@ impl DesignBuilder {
         self
     }
 
-    /// Parse every file and assemble the design. Files are numbered prelude
-    /// sources first, then the root. A parse error never stops the build: the
+    /// Parse every file and assemble the design. Files are numbered the project's first (the root,
+    /// then the files it loads), then the standard library's. A parse error never stops the build: the
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
         let mut design =
@@ -473,6 +475,7 @@ impl DesignBuilder {
                 let message = format!("cannot read the root file `{}`", path.display());
                 design.push_diagnostic(design.root_file, Diagnostic::new("E0161", message, Span::new(0, 0), "unreadable file"));
             }
+            design.add_std(&self.std_sources);
             super::resolve::run(&mut design);
             return design;
         }
@@ -480,18 +483,29 @@ impl DesignBuilder {
         for (path, text) in &self.sources {
             memory.insert(path, text.as_str());
         }
-        for (name, text) in &self.prelude {
-            design.add_file(name, PathBuf::from(name), text.as_bytes(), true, &memory);
-        }
         let empty = (String::new(), String::new());
         let (name, text) = self.sources.first().unwrap_or(&empty);
         design.root_file = design.add_file(name, PathBuf::from(name), text.as_bytes(), false, &memory);
+        design.add_std(&self.std_sources);
         super::resolve::run(&mut design);
         design
     }
 }
 
 impl Design {
+    /// Lower the standard library after every project file: `given` when not empty, else the
+    /// embedded tree. Its own provider keeps its `mod` lookups apart from the project's.
+    fn add_std(&mut self, given: &[(String, String)]) {
+        let files: Vec<(&str, &str)> =
+            if given.is_empty() { super::stdlib::EMBEDDED.to_vec() } else { given.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect() };
+        let mut memory = MemorySources::new();
+        for (path, text) in &files {
+            memory.insert(path, *text);
+        }
+        let (path, text) = files[0];
+        self.add_file(path, PathBuf::from(path), text.as_bytes(), true, &memory);
+    }
+
     fn add_file(&mut self, name: &str, path: PathBuf, bytes: &[u8], prelude: bool, provider: &dyn SourceProvider) -> FileId {
         let id = FileId(self.files.len() as u32);
         let parsed = msl::parser::parse_bytes(bytes);

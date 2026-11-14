@@ -35,8 +35,8 @@ pub(super) struct Ctx<'a> {
     design: &'a Design,
     scopes: scopes::Scopes,
     imports: imports::Imports,
-    /// The root namespace of each prelude source.
-    prelude: Vec<DeclId>,
+    /// The namespace `prelude` of the standard library's root: its `pub` items are implicit.
+    prelude: Option<DeclId>,
     /// The root file's namespace: what `crate` names.
     root: DeclId,
     /// The module each behavior block is bound to (stage 4).
@@ -60,7 +60,7 @@ pub(super) fn run(design: &mut Design) {
             design,
             scopes: scopes::Scopes::build(design),
             imports: imports::Imports::build(design),
-            prelude: design.files.iter().filter(|f| f.prelude).map(|f| f.root).collect(),
+            prelude: std_prelude(design),
             root: design.root_id(),
             links: BTreeMap::new(),
             impls: BTreeMap::new(),
@@ -125,4 +125,13 @@ pub(super) fn run(design: &mut Design) {
     }
     design.sort_diagnostics();
     design.index = super::index::build(design);
+}
+
+/// The `pub` namespace `prelude` declared at the root of the standard library (its first file).
+fn std_prelude(design: &Design) -> Option<DeclId> {
+    let root = design.files.iter().find(|f| f.prelude)?.root;
+    design.decl_data(root).children.iter().copied().find(|c| {
+        let data = design.decl_data(*c);
+        data.public && matches!(data.kind, super::decl::DeclKind::Namespace(_)) && data.name.as_ref().is_some_and(|n| n.text == "prelude")
+    })
 }

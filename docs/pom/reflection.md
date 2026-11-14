@@ -48,7 +48,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `decl_data(&self, id: DeclId)` | `&DeclData` | The declaration with this id. Ids come from this design. |
 | `decl_count(&self)` | `usize` | The number of declarations. |
 | `dump(&self)` | `String` | One line per declaration, depth first, roots in file order: indent (two spaces per level), kind, name (`-` when none), `start..end`. |
-| `files(&self)` | `Vec<SourceFile<'_>>` | Every file, prelude sources first, then the root, then loaded files. |
+| `files(&self)` | `Vec<SourceFile<'_>>` | Every file: the project's (the root, then loaded files), then the standard library's. |
 | `expr(&self, id: ExprId)` | `Expr<'_>` | A handle on the expression with this id. |
 | `stmt(&self, id: StmtId)` | `Stmt<'_>` | A handle on the statement with this id. |
 | `pat(&self, id: PatId)` | `Pat<'_>` | A handle on the pattern with this id. |
@@ -56,8 +56,8 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `path(&self, id: PathId)` | `Path<'_>` | A handle on the path with this id. |
 | `root(&self)` | `Decl<'_>` | The root file's namespace. |
 | `decl(&self, id: DeclId)` | `Decl<'_>` | The declaration with this id, as a handle: the way from a `Resolution::Decl(id)` to the declaration. Ids come from this design. |
-| `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, prelude files first. |
-| `prelude_files(&self)` | `Vec<SourceFile<'_>>` | The prelude sources, in registration order. |
+| `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, the project's files first. |
+| `prelude_files(&self)` | `Vec<SourceFile<'_>>` | The standard library's files, in load order. |
 | `modules(&self)` | `Vec<Module<'_>>` | Every module of the non-prelude files, in source order. |
 | `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the first match in a non-prelude file, else the first match in a prelude source. |
 | `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the non-prelude files, in source order. |
@@ -99,7 +99,7 @@ assert_eq!(design.modules().len(), 2);
 assert_eq!(design.functions().len(), 1);
 assert_eq!(design.structs().len(), 1);
 assert_eq!(design.namespaces().len(), 1);
-assert_eq!(design.files().len(), 1);
+assert_eq!(design.files().iter().filter(|f| !f.is_prelude()).count(), 1);
 
 // A design checks itself and prints its declaration tree.
 assert!(design.check().is_empty());
@@ -130,29 +130,29 @@ Collects sources and builds. `build()` never fails.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
-| `prelude(self, name: impl Into<String>, text: impl Into<String>)` | `Self` | A prelude source: its `pub` items are visible in every file. |
+| `std_source(self, path: impl Into<String>, text: impl Into<String>)` | `Self` | A virtual file of the standard library, replacing the embedded one: the first is its root, the others are found by `mod`. The `pub` items of the namespace `prelude` of the root are visible in every file. |
 | `source(self, path: impl Into<String>, text: impl Into<String>)` | `Self` | A virtual source file. The first one is the root; the others are found by the `mod` items of the files that name them. |
 | `root_file(self, path: impl Into<PathBuf>)` | `Self` | The root file, read from disk with the files its `mod` items name. A root file replaces the virtual sources. |
-| `build(self)` | `Design` | Parse every file and assemble the design. Files are numbered prelude sources first, then the root. A parse error never stops the build: the recovered tree is kept and each diagnostic is listed with its file. |
+| `build(self)` | `Design` | Parse every file and assemble the design. Files are numbered the project's first (the root, then the files it loads), then the standard library's. A parse error never stops the build: the recovered tree is kept and each diagnostic is listed with its file. |
 
 Sources are virtual files; the first is the root and the others are found by the `mod` items
-that name them (`mod b;` loads `b.msl`, or `b/mod.msl`, beside the declaring file). A prelude
-source is parsed first and its `pub` items are visible everywhere.
+that name them (`mod b;` loads `b.msl`, or `b/mod.msl`, beside the declaring file). The standard library is lowered after
+the project and the `pub` items of its `prelude` are visible everywhere.
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
 
 let design = Design::builder()
-    .prelude("std.msl", "pub nature Bit { value: bool }")
+    .std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }")
     .source("top.msl", "mod b;\nmodule Top(p: Bit) {}")
     .source("b.msl", "pub module Inner() {}")
     .build();
 assert!(design.diagnostics().is_empty());
 
-// Files: prelude sources first, then the root, then loaded files.
+// Files: the root, then loaded files, then the standard library's.
 let names: Vec<_> = design.files().iter().map(|f| f.name().to_string()).collect();
-assert_eq!(names, ["std.msl", "top.msl", "b.msl"]);
-assert!(design.files()[0].is_prelude());
+assert_eq!(names, ["top.msl", "b.msl", "lib.msl"]);
+assert!(design.files()[2].is_prelude());
 
 // `mod b;` is a namespace whose source file was loaded.
 let b = design.find("b").unwrap().as_namespace().unwrap();
@@ -1199,7 +1199,7 @@ A call argument, positional or `name: value`. Reached from `Expr::args`.
 use piperine_lang::pom::{Design, Reflect};
 
 let src = "module R(p: Bit, tc: Option<f64>) {}\nmodule T() { signal a: Bit; let x = R(a, tc: 0.5); }";
-let design = Design::builder().prelude("p.msl", "pub nature Bit { value: bool }").source("top.msl", src).build();
+let design = Design::builder().std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }").source("top.msl", src).build();
 let x = design.module("T").unwrap().instance("x").unwrap();
 let args = x.expr().args();
 assert_eq!(args[0].name(), None);

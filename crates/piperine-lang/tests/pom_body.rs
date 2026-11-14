@@ -275,8 +275,8 @@ fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
     // The audit: every node of every arena, nearest declaration that contains it.
     let design = build(AUDIT_SRC);
     assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
-    let text = design.files().last().unwrap().text();
-    let decls: Vec<_> = (0..design.decl_count()).map(|i| (DeclId(i as u32), design.decl_data(DeclId(i as u32)))).collect();
+    let text = design.files().into_iter().filter(|f| !f.is_prelude()).last().unwrap().text();
+    let decls: Vec<_> = (0..design.decl_count()).map(|i| (DeclId(i as u32), design.decl_data(DeclId(i as u32)))).filter(|(id, _)| !design.decl(*id).file().is_prelude()).collect();
     let nearest = |span: piperine_lang::msl::Span, owner: DeclId| {
         // The innermost non-binding declaration whose span holds `span`.
         let best = decls

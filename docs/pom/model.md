@@ -177,7 +177,7 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
-| `files` | `Vec<SourceFileData>` | Every file: prelude sources first, then the root, then files loaded by `mod name;`. Read with `files()`. |
+| `files` | `Vec<SourceFileData>` | Every file: the project's (the root, then files loaded by `mod name;`), then the standard library's. Read with `files()`. |
 | `decls` | `Vec<DeclData>` | The declaration arena. Read with `decl_data`, `decls`, `Decl`. |
 | `exprs / stmts / pats / types / paths` | `Vec<..Node>` | The body arenas. Read with `expr_node`, `stmt_node`, `pat_node`, `type_node`, `path_node` or the handles `expr`, `stmt`, `pat`, `ty`, `path`. |
 | `diagnostics` | `Vec<DesignDiagnostic>` | Parse, loading and resolution diagnostics, in file then source order. Read with `diagnostics()`. |
@@ -189,11 +189,11 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 
 *struct* in `src/pom/design.rs`.
 
-Collects prelude and virtual sources, then builds the [`Design`](#design). `build` never fails: a parse error keeps the recovered tree and is listed in `diagnostics()`.
+Collects virtual sources and the standard library's, then builds the [`Design`](#design). `build` never fails: a parse error keeps the recovered tree and is listed in `diagnostics()`.
 
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
-| `prelude` | `Vec<(String, String)>` | Prelude sources: their `pub` items are visible in every file. |
+| `std_sources` | `Vec<(String, String)>` | Virtual files of `std`, replacing the embedded ones; the first is its root. |
 | `sources` | `Vec<(String, String)>` | Virtual files; the first is the root. |
 | `root_file` | `Option<PathBuf>` | A root file on disk; replaces the virtual sources. |
 

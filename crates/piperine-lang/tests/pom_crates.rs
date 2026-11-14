@@ -2,7 +2,7 @@
 //! and, as later tasks land, the embedded `std` and its prelude (PKG-06), crates in the design
 //! (PKG-04), name resolution across crates (PKG-05) and reflection over crates (PKG-07).
 
-use piperine_lang::pom::{CrateGraph, CrateId, GraphError, is_crate_name};
+use piperine_lang::pom::{CrateGraph, CrateId, Design, DeclId, GraphError, PathId, Reflect, Resolution, is_crate_name};
 
 fn three() -> (CrateGraph, CrateId, CrateId, CrateId) {
     let mut g = CrateGraph::new();
@@ -83,4 +83,109 @@ fn piperine_lang_takes_the_graph_as_data() {
     for name in ["toml", "git2", "piperine-project"] {
         assert!(!manifest.contains(name), "Cargo.toml names `{name}`");
     }
+}
+
+// ---- PKG-06: `std` is embedded and its prelude is implicit (T7) ----
+
+/// Every resolution of the first segment of the single-segment paths named `name`.
+fn resolutions(design: &Design, name: &str) -> Vec<Resolution> {
+    (0..design.path_count())
+        .map(|i| design.path_node(PathId(i as u32)))
+        .filter(|p| p.segments.len() == 1 && p.segments[0].name.text == name)
+        .map(|p| p.segments[0].res)
+        .collect()
+}
+
+fn codes(design: &Design) -> Vec<String> {
+    design.diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect()
+}
+
+/// The file name of the declaration a resolution names.
+fn declared_in(design: &Design, res: Resolution) -> String {
+    let Resolution::Decl(d) = res else { panic!("{res:?} is not a declaration") };
+    design.decl(d).file().name().to_string()
+}
+
+const STD: &str = "pub mod prelude { pub const P: u32 = 1; const HIDDEN: u32 = 2; }\npub const TOP: u32 = 3;\npub mod other { pub const D: u32 = 4; }\n";
+
+fn with_std(project: &str) -> Design {
+    Design::builder().std_source("lib.msl", STD).source("top.msl", project).build()
+}
+
+#[test]
+fn embedded_std_builds_clean_and_has_a_prelude() {
+    let empty = Design::builder().build();
+    assert_eq!(codes(&empty), Vec::<String>::new());
+    let design = Design::builder().source("top.msl", "").build();
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let files = design.files();
+    assert!(files.last().unwrap().is_prelude(), "the embedded library is the last file");
+    let prelude = (0..design.decl_count()).map(|i| DeclId(i as u32)).find(|d| {
+        let data = design.decl_data(*d);
+        data.name.as_ref().is_some_and(|n| n.text == "prelude") && data.kind.label() == "Namespace" && data.public && design.decl(*d).file().is_prelude()
+    });
+    assert!(prelude.is_some(), "std declares a pub namespace `prelude`");
+}
+
+#[test]
+fn prelude_items_resolve_without_an_import() {
+    let design = with_std("const X: u32 = P;\nmod m { const Y: u32 = P; }\n");
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = resolutions(&design, "P");
+    assert_eq!(found.len(), 2);
+    for res in found {
+        assert_eq!(declared_in(&design, res), "lib.msl");
+    }
+}
+
+#[test]
+fn only_pub_items_of_std_prelude_are_implicit() {
+    for name in ["HIDDEN", "TOP", "D"] {
+        let design = with_std(&format!("const X: u32 = {name};\n"));
+        assert_eq!(codes(&design), ["E0161"], "{name}");
+    }
+    assert_eq!(codes(&with_std("const X: u32 = P;\n")), Vec::<String>::new());
+}
+
+#[test]
+fn std_source_replaces_the_embedded_library() {
+    let design = Design::builder()
+        .std_source("root.msl", "pub mod prelude;\n")
+        .std_source("prelude.msl", "pub const MINE: u32 = 1;\n")
+        .source("top.msl", "const X: u32 = MINE;\n")
+        .build();
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let std_files: Vec<String> = design.files().iter().filter(|f| f.is_prelude()).map(|f| f.name().to_string()).collect();
+    assert_eq!(std_files, ["root.msl", "prelude.msl"], "the first given file is the root; nothing embedded remains");
+    assert_eq!(declared_in(&design, resolutions(&design, "MINE")[0]), "prelude.msl");
+}
+
+#[test]
+fn a_namespace_item_hides_a_prelude_item() {
+    let design = with_std("const P: u32 = 9;\nmod m { const P: u32 = 8; const Z: u32 = P; }\nconst W: u32 = P;\n");
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = resolutions(&design, "P");
+    assert_eq!(found.len(), 2);
+    for res in found {
+        assert_eq!(declared_in(&design, res), "top.msl");
+    }
+}
+
+#[test]
+fn std_files_are_numbered_last() {
+    let design = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "").build();
+    let flags: Vec<(String, bool)> = design.files().iter().map(|f| (f.name().to_string(), f.is_prelude())).collect();
+    assert_eq!(flags[0], ("top.msl".to_string(), false));
+    assert_eq!(flags[1], ("b.msl".to_string(), false));
+    assert!(flags[2..].iter().all(|(_, std)| *std) && flags.len() > 2, "{flags:?}");
+}
+
+#[test]
+fn std_files_see_the_prelude() {
+    let std = "pub mod prelude { pub const P: u32 = 1; }\npub mod other { pub const Z: u32 = P; }\n";
+    let design = Design::builder().std_source("lib.msl", std).source("top.msl", "").build();
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = resolutions(&design, "P");
+    assert_eq!(found.len(), 1);
+    assert_eq!(declared_in(&design, found[0]), "lib.msl");
 }
