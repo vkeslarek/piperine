@@ -11,7 +11,13 @@ fn repo_root() -> PathBuf {
 
 /// Every crate this feature has removed so far; each task that removes
 /// crates extends this list.
-const RETIRED_CRATES: &[&str] = &["piperine-codegen", "piperine-ir"];
+const RETIRED_CRATES: &[&str] = &[
+    "piperine-codegen",
+    "piperine-ir",
+    "piperine-python",
+    "piperine-plugin",
+    "piperine-plugin-macros",
+];
 
 /// The root manifest and every `crates/*/Cargo.toml`.
 fn all_manifests() -> Vec<PathBuf> {

@@ -6,9 +6,6 @@ members = [
     "crates/piperine-project",
     "crates/piperine-lang-server",
     "crates/piperine-solver",
-    "crates/piperine-plugin",
-    "crates/piperine-plugin-macros",
-    "crates/piperine-python",
 ]
 
 [workspace.package]
@@ -24,16 +21,9 @@ edition.workspace = true
 piperine-api = { path = "crates/piperine-api" }
 
 # The tests of record stay on this crate importing `piperine::…` — they are
-# the proof the shell re-exports the full host surface. run_examples drives
-# the .py examples through the embedded-CPython host.
+# the proof the shell re-exports the full host surface.
 [dev-dependencies]
-piperine-python = { path = "crates/piperine-python" }
-piperine-plugin = { path = "crates/piperine-plugin" }
-# The `#[pip::…]` macros under their public spelling — the plugin_parity
-# test compile-proves the decorator names against the Python `@pip.…` side.
-pip = { package = "piperine-plugin-macros", path = "crates/piperine-plugin-macros" }
-# The suites also reach lang/codegen directly (SourceMap setup, kernel
-# introspection) — dev-only edges, not part of the shell's public story.
+# The suites also reach lang directly (SourceMap setup) — dev-only edges, not part of the shell's public story.
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-solver = { path = "crates/piperine-solver" }
 num-complex = { workspace = true }

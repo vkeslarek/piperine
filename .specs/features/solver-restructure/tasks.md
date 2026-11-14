@@ -282,10 +282,10 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] The three directories are gone; `ls crates` shows six directories (eight after Phase 4)
-- [ ] `retired_crates_are_gone` (C7) and `no_manifest_names_a_retired_crate` (C8) pass over all five names
-- [ ] `cargo metadata --no-deps --format-version 1 > /dev/null` succeeds
-- [ ] Gate: full
+- [x] The three directories are gone; `ls crates` shows six directories (eight after Phase 4)
+- [x] `retired_crates_are_gone` (C7) and `no_manifest_names_a_retired_crate` (C8) pass over all five names
+- [x] `cargo metadata --no-deps --format-version 1 > /dev/null` succeeds
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full
