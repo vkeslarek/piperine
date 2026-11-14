@@ -1,6 +1,8 @@
 //! The owning [`Design`] and the builder that makes it.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -79,9 +81,68 @@ pub struct Design {
     pub(super) expr_parent: Vec<Option<ExprId>>,
     /// The statement that holds each expression directly, by `ExprId`; filled with `expr_parent`.
     pub(super) expr_stmt: Vec<Option<StmtId>>,
+    /// The by-name lookup tables, built on first use and never serialized.
+    #[serde(skip)]
+    names: NameTables,
+}
+
+/// The sorted by-name tables behind `Design::module` and `Module::signal`:
+/// built from the finished arenas on first use, so a design read from JSON
+/// has them too, and never part of the serialized form or of equality.
+#[derive(Default)]
+struct NameTables(OnceLock<Tables>);
+
+/// Declaration ids in arena (source) order under each key.
+pub(super) struct Tables {
+    /// Every named declaration, by its name.
+    pub by_name: BTreeMap<String, Vec<DeclId>>,
+    /// Ports, params and signals, by the module they belong to (through
+    /// generation) and their name.
+    pub members: BTreeMap<(DeclId, String), Vec<DeclId>>,
+}
+
+impl Clone for NameTables {
+    fn clone(&self) -> Self {
+        NameTables::default()
+    }
+}
+
+impl std::fmt::Debug for NameTables {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("NameTables")
+    }
+}
+
+impl PartialEq for NameTables {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl Design {
+    /// The by-name tables, built on first use.
+    pub(super) fn tables(&self) -> &Tables {
+        self.names.0.get_or_init(|| {
+            let mut by_name: BTreeMap<String, Vec<DeclId>> = BTreeMap::new();
+            let mut members: BTreeMap<(DeclId, String), Vec<DeclId>> = BTreeMap::new();
+            for (i, d) in self.decls.iter().enumerate() {
+                let id = DeclId(i as u32);
+                let Some(name) = &d.name else { continue };
+                by_name.entry(name.text.clone()).or_default().push(id);
+                if matches!(d.kind, DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_)) {
+                    let mut owner = d.parent;
+                    while let Some(p) = owner.filter(|p| matches!(self.decls[p.index()].kind, DeclKind::Generation(_))) {
+                        owner = self.decls[p.index()].parent;
+                    }
+                    if let Some(m) = owner.filter(|m| matches!(self.decls[m.index()].kind, DeclKind::Module(_))) {
+                        members.entry((m, name.text.clone())).or_default().push(id);
+                    }
+                }
+            }
+            Tables { by_name, members }
+        })
+    }
+
     pub fn builder() -> DesignBuilder {
         DesignBuilder::default()
     }
@@ -403,7 +464,7 @@ impl DesignBuilder {
     /// recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
         let mut design =
-            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new(), index: Default::default(), expr_parent: Vec::new(), expr_stmt: Vec::new() };
+            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new(), index: Default::default(), expr_parent: Vec::new(), expr_stmt: Vec::new(), names: NameTables::default() };
         if let Some(path) = &self.root_file {
             let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
             let bytes = DiskSources.read(path);

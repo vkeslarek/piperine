@@ -1254,12 +1254,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `member_tables_scale_subquadratically` passes in `pom_design.rs` (C121: POL-21 AC 3)
-- [ ] Test `name_lookups_do_not_scan` passes in `pom_design.rs` (C122: POL-21 AC 4)
-- [ ] `two_builds_dump_identical` still passes: iteration order is the key order or source order, never a hash order
-- [ ] The lookup tables are `#[serde(skip)]` and rebuilt on read, or serialized deterministically
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `member_tables_scale_subquadratically` passes in `pom_design.rs` (C121: POL-21 AC 3)
+- [x] Test `name_lookups_do_not_scan` passes in `pom_design.rs` (C122: POL-21 AC 4)
+- [x] `two_builds_dump_identical` still passes: iteration order is the key order or source order, never a hash order
+- [x] The lookup tables are `#[serde(skip)]` and rebuilt on read, or serialized deterministically
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

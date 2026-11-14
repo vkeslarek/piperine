@@ -172,6 +172,7 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 | `exprs / stmts / pats / types / paths` | `Vec<..Node>` | The body arenas. Read with `expr_node`, `stmt_node`, `pat_node`, `type_node`, `path_node` or the handles `expr`, `stmt`, `pat`, `ty`, `path`. |
 | `diagnostics` | `Vec<DesignDiagnostic>` | Parse, loading and resolution diagnostics, in file then source order. Read with `diagnostics()`. |
 | `index` | `Index` | The reverse tables. |
+| `names` | by-name tables | Sorted maps (name to declaration ids in source order; module and name to ports, params and signals) behind `Design::module`, `nature`, `struct_named`, `function` and `Module::port`, `param`, `signal`. Built on first use from the finished arenas, never serialized, never part of equality, so a design read from JSON has them too. |
 | `expr_parent / expr_stmt` | `Vec<Option<ExprId>>`, `Vec<Option<StmtId>>` | Side tables by `ExprId`, filled once after lowering from the one child enumeration: the expression that contains each one, and the statement that holds it directly. Read with `Expr::parent` and `Expr::stmt`; `check()` verifies them against `Expr::children`. |
 
 ### `DesignBuilder`

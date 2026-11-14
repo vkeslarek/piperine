@@ -409,10 +409,25 @@ impl Design {
         self.authored().find(|d| accept(*d)).or_else(|| self.decls().into_iter().find(|d| accept(*d)))
     }
 
+    /// [`Design::first_project_first`] over the declarations named `name`,
+    /// read from the sorted name table instead of a scan.
+    fn first_named(&self, name: &str, accept: impl Fn(Decl<'_>) -> bool) -> Option<Decl<'_>> {
+        let ids = self.tables().by_name.get(name)?;
+        let mut candidates = ids.iter().map(|id| Decl::new(self, *id)).filter(|d| accept(*d));
+        let mut first = None;
+        for d in candidates.by_ref() {
+            if !d.file().is_prelude() {
+                return Some(d);
+            }
+            first.get_or_insert(d);
+        }
+        first
+    }
+
     /// The module named `name`: the first match in a non-prelude file, else
     /// the first match in a prelude source.
     pub fn module(&self, name: &str) -> Option<Module<'_>> {
-        self.first_project_first(|d| d.as_module().is_some_and(|m| m.name() == Some(name))).and_then(Decl::as_module)
+        self.first_named(name, |d| d.as_module().is_some()).and_then(Decl::as_module)
     }
 
     /// Every free function (a `fn` directly in a namespace) of the non-prelude
@@ -427,7 +442,7 @@ impl Design {
 
     /// The free function named `name`, project files first.
     pub fn function(&self, name: &str) -> Option<Function<'_>> {
-        self.first_project_first(|d| Design::is_free(&d) && d.as_function().is_some_and(|f| f.name() == Some(name))).and_then(Decl::as_function)
+        self.first_named(name, |d| Design::is_free(&d) && d.as_function().is_some()).and_then(Decl::as_function)
     }
 
     /// Every struct of the non-prelude files, in source order.
@@ -437,7 +452,7 @@ impl Design {
 
     /// The struct named `name`, project files first.
     pub fn struct_named(&self, name: &str) -> Option<Struct<'_>> {
-        self.first_project_first(|d| d.as_struct().is_some_and(|s| s.name() == Some(name))).and_then(Decl::as_struct)
+        self.first_named(name, |d| d.as_struct().is_some()).and_then(Decl::as_struct)
     }
 
     /// Every enum of the non-prelude files, in source order.
@@ -473,7 +488,7 @@ impl Design {
 
     /// The nature named `name`, project files first.
     pub fn nature(&self, name: &str) -> Option<Nature<'_>> {
-        self.first_project_first(|d| d.as_nature().is_some_and(|n| n.name() == Some(name))).and_then(Decl::as_nature)
+        self.first_named(name, |d| d.as_nature().is_some()).and_then(Decl::as_nature)
     }
 
     /// The prelude sources, in registration order. The typed collections do

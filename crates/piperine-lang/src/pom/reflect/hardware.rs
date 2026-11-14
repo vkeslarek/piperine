@@ -28,10 +28,6 @@ fn deep_items<'d>(parent: Decl<'d>, out: &mut Vec<Decl<'d>>) {
     }
 }
 
-fn by_name<'d, T: Reflect<'d>>(items: Vec<T>, name: &str) -> Option<T> {
-    items.into_iter().find(|i| i.name() == Some(name))
-}
-
 // ---- natures ---------------------------------------------------------------------------------
 
 /// `nature Name { potential: .., flow: .., value: .., resolve: .. }`
@@ -184,13 +180,21 @@ impl<'d> Module<'d> {
         self.behaviors().into_iter().filter(|b| b.kind() == BehaviorKind::Digital).collect()
     }
 
+    /// The first port, param or signal of this module named `name` that
+    /// `cast` accepts, from the sorted member table (generation entered).
+    fn first_declared<T>(self, name: &str, cast: impl Fn(Decl<'d>) -> Option<T>) -> Option<T> {
+        let design = self.decl.design();
+        let ids = design.tables().members.get(&(self.decl.id(), name.to_string()))?;
+        ids.iter().find_map(|id| cast(Decl::new(design, *id)))
+    }
+
     /// The ports in source order.
     pub fn ports(self) -> Vec<Port<'d>> {
         self.decl.children().into_iter().filter_map(|c| c.as_port()).collect()
     }
 
     pub fn port(self, name: &str) -> Option<Port<'d>> {
-        by_name(self.ports(), name)
+        self.first_declared(name, Decl::as_port)
     }
 
     /// The body's items in source order, generation held as one item.
@@ -216,7 +220,7 @@ impl<'d> Module<'d> {
     }
 
     pub fn param(self, name: &str) -> Option<Param<'d>> {
-        by_name(self.params(), name)
+        self.first_declared(name, Decl::as_param)
     }
 
     /// The signals in source order, including those written inside
@@ -226,7 +230,7 @@ impl<'d> Module<'d> {
     }
 
     pub fn signal(self, name: &str) -> Option<Signal<'d>> {
-        by_name(self.signals(), name)
+        self.first_declared(name, Decl::as_signal)
     }
 
     /// The `let` items in source order, including those inside generation.

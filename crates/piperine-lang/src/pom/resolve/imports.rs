@@ -2,7 +2,7 @@
 //! sources. Imports are resolved on demand, with a guard against cycles, so
 //! chains of aliases and globs that feed globs need no iteration order.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::body::{PathSegment, TypeKind};
 use super::super::builtin::builtin_member;
@@ -121,8 +121,8 @@ impl Ctx<'_> {
         false
     }
 
-    fn find_entry(table: &[(String, DeclId)], name: &str) -> Option<DeclId> {
-        table.iter().find(|(n, _)| n == name).map(|(_, d)| *d)
+    fn find_entry(table: &super::scopes::Named, name: &str) -> Option<DeclId> {
+        table.get(name)
     }
 
     /// A name in namespace `ns`: its own items, then its `use` names, then its
@@ -399,12 +399,14 @@ impl Ctx<'_> {
         let design = self.design;
         let mut entries: Vec<Taken> = Vec::new();
         if let Some(items) = self.scopes.namespaces.get(&ns) {
+            let in_types: BTreeSet<DeclId> = items.types.iter().map(|(_, d)| *d).collect();
+            let in_values: BTreeSet<DeclId> = items.values.iter().map(|(_, d)| *d).collect();
+            let mut spans = BTreeSet::new();
             for (name, decl) in items.types.iter().chain(&items.values) {
                 let data = design.decl_data(*decl);
                 let span = data.name.as_ref().map_or(data.span, |n| n.span);
-                if entries.iter().all(|e| e.span != span) {
-                    let in_types = items.types.iter().any(|(_, d)| d == decl);
-                    let in_values = items.values.iter().any(|(_, d)| d == decl);
+                if spans.insert((span.start, span.end)) {
+                    let (in_types, in_values) = (in_types.contains(decl), in_values.contains(decl));
                     entries.push(Taken { name: name.clone(), types: in_types, values: in_values, span, import: false, decl: *decl });
                 }
             }
@@ -416,8 +418,11 @@ impl Ctx<'_> {
             entries.push(Taken { name: entry.name.clone(), types, values, span: node.span, import: true, decl: target });
         }
         entries.sort_by_key(|e| e.span.start);
+        let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
         for (i, later) in entries.iter().enumerate() {
-            let first = entries[..i].iter().find(|e| e.name == later.name && ((e.types && later.types) || (e.values && later.values)) && (e.import || later.import) && !(e.decl == later.decl && e.import != later.import));
+            let earlier = by_name.entry(later.name.as_str()).or_default();
+            let first = earlier.iter().map(|j| &entries[*j]).find(|e| e.name == later.name && ((e.types && later.types) || (e.values && later.values)) && (e.import || later.import) && !(e.decl == later.decl && e.import != later.import));
+            earlier.push(i);
             if let Some(first) = first {
                 let message = format!("`{}` is defined more than once in this namespace", later.name);
                 let diagnostic = Diagnostic::new("E0162", message, later.span, "defined again here").with_label(first.span, "first defined here");

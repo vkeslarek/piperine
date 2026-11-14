@@ -296,3 +296,66 @@ fn docs_keep_kind_and_file_across_mod_files() {
         }
     }
 }
+
+/// The best of three runs of `f`, in seconds.
+fn best_of_three(mut f: impl FnMut()) -> f64 {
+    (0..3)
+        .map(|_| {
+            let start = std::time::Instant::now();
+            f();
+            start.elapsed().as_secs_f64()
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// One module of `n` signals, and one definition naming each.
+fn signals_source(n: usize) -> String {
+    let mut text = String::from("module M(a: Bit) {\n");
+    for i in 0..n {
+        text.push_str(&format!("    signal s{i}: Bit;\n"));
+    }
+    text.push_str("    s0 = a;\n}\n");
+    text
+}
+
+#[test]
+fn member_tables_scale_subquadratically() {
+    let (small, large) = (signals_source(2000), signals_source(8000));
+    let t_small = best_of_three(|| {
+        build(&small);
+    });
+    let t_large = best_of_three(|| {
+        build(&large);
+    });
+    // A quadratic table is 16 times slower at four times the size; the bound is half of that.
+    assert!(t_large < 8.0 * t_small, "8000 signals took {t_large:.3}s against {t_small:.3}s for 2000");
+}
+
+#[test]
+fn name_lookups_do_not_scan() {
+    const CALLS: usize = 20_000;
+    let modules = |n: usize| (0..n).map(|i| format!("module M{i}() {{ signal s: Bit; }}\n")).collect::<String>();
+    let (few, many) = (build(&modules(500)), build(&modules(4000)));
+    let lookup = |d: &Design, n: usize| {
+        best_of_three(|| {
+            for i in 0..CALLS {
+                std::hint::black_box(d.module(&format!("M{}", (i * 7919) % n)));
+            }
+        })
+    };
+    let (t_few, t_many) = (lookup(&few, 500), lookup(&many, 4000));
+    // A scan is eight times slower at eight times the size; the bound is half of that.
+    assert!(t_many < 4.0 * t_few, "module lookup: {t_many:.3}s at 4000 against {t_few:.3}s at 500");
+
+    let (few, many) = (build(&signals_source(500)), build(&signals_source(4000)));
+    let signal_lookup = |d: &Design, n: usize| {
+        let m = d.module("M").unwrap();
+        best_of_three(|| {
+            for i in 0..CALLS {
+                std::hint::black_box(m.signal(&format!("s{}", (i * 7919) % n)));
+            }
+        })
+    };
+    let (t_few, t_many) = (signal_lookup(&few, 500), signal_lookup(&many, 4000));
+    assert!(t_many < 4.0 * t_few, "signal lookup: {t_many:.3}s at 4000 against {t_few:.3}s at 500");
+}

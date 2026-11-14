@@ -282,7 +282,6 @@ impl Names<'_, '_> {
 
     /// A single name seen from here.
     fn lookup(&self, name: &str, prefer: Prefer, visiting: &mut Vec<Visit>) -> Option<Resolution> {
-        let design = self.ctx.design;
         let mut hidden = false;
         for frame in self.frames.iter().rev() {
             match frame {
@@ -319,8 +318,8 @@ impl Names<'_, '_> {
                 }
                 Frame::Module(module) => {
                     let members = self.ctx.scopes.members.get(module);
-                    if let Some((_, d)) = members.and_then(|m| m.iter().find(|(n, _)| n == name)) {
-                        return Some(Resolution::Decl(*d));
+                    if let Some(d) = members.and_then(|m| m.get(name)) {
+                        return Some(Resolution::Decl(d));
                     }
                     // `m` and `dtemp` read the instance's effective values (§8.5.2).
                     if let Some(implicit) = builtin_implicit(name) {
@@ -328,11 +327,7 @@ impl Names<'_, '_> {
                     }
                 }
                 Frame::Generics(owner) => {
-                    let found = design.decl_data(*owner).children.iter().copied().find(|c| {
-                        let d = design.decl_data(*c);
-                        matches!(d.kind, DeclKind::GenericParam(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
-                    });
-                    if let Some(c) = found {
+                    if let Some(c) = self.ctx.scopes.generics.get(owner).and_then(|g| g.get(name)) {
                         return Some(Resolution::Decl(c));
                     }
                 }
