@@ -108,7 +108,7 @@ The owner depends on both. `piperine-analog-solver` and `piperine-digital-solver
 
 - **Purpose**: keep `suite_hygiene` enforcing while the root package does not compile.
 - **Location**: `crates/piperine-lang/tests/suite_hygiene.rs` and `crates/piperine-lang/tests/support/sources.rs`, moved with `git mv` from the root `tests/`.
-- **Interfaces**: the same 18 tests. `repo_root()` in `support/sources.rs` resolves to `CARGO_MANIFEST_DIR/../..` instead of `CARGO_MANIFEST_DIR`; the walk functions keep returning repository-relative paths, so every detector and every `file:line` message is unchanged.
+- **Interfaces**: the same 11 tests. `repo_root()` in `support/sources.rs` resolves to `CARGO_MANIFEST_DIR/../..` instead of `CARGO_MANIFEST_DIR`; the walk functions keep returning repository-relative paths, so every detector and every `file:line` message is unchanged.
 - **What changes besides the root**: registrations and exemptions that name a deleted path are removed (the ignored-doc-fence entry for `crates/piperine-plugin/src/lib.rs`, the oversized-`mod.rs` entry for `crates/piperine-codegen/src/resolve/mod.rs`, any entry for a moved solver file is re-pointed to its new path). `root_targets_match_the_naming_rule` stays and passes on an empty root `tests/`.
 - **Why `piperine-lang`**: it is the one non-solver crate that builds, the guard has no dependency beyond `std`, and a guard over the whole repository should not live in a crate the solver features rewrite.
 - **Why last**: it runs after the split, so it walks the final tree and its registrations are fixed once.

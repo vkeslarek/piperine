@@ -42,7 +42,7 @@ Rules every task follows:
 | Digital sub-solver crate | unit | every unit test of the modules it receives passes there, same assertions | `crates/piperine-digital-solver/src/**` (`#[cfg(test)]`) | `cargo test -p piperine-digital-solver` |
 | Test element library | integration | each element checked against an analytic value; each `param_stamps` against a central difference | `crates/piperine-solver/tests/helper_devices.rs` | `cargo test -p piperine-solver --test helper_devices` |
 | Structural guards (manifests, removed names, crate boundary, instruction files) | integration | one test per spec criterion of SR-02, SR-03, SR-04, SR-06 | `crates/piperine-solver/tests/{workspace_shape,removed_surface,crate_boundaries}.rs` | `cargo test -p piperine-solver --test <target>` |
-| The hygiene guard | integration | its 18 tests pass from `piperine-lang`, plus one test that the walk reaches the solver crates | `crates/piperine-lang/tests/suite_hygiene.rs` | `cargo test -p piperine-lang --test suite_hygiene` |
+| The hygiene guard | integration | its 11 tests pass from `piperine-lang`, plus one test that the walk reaches the solver crates | `crates/piperine-lang/tests/suite_hygiene.rs` | `cargo test -p piperine-lang --test suite_hygiene` |
 | Workspace manifests, CI workflows, deleted files, `CLAUDE.md`, `AGENTS.md`, `.specs/STATE.md` | integration | covered by the guard test the same task adds to `workspace_shape.rs` | `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-solver --test workspace_shape` |
 
 ## Gate Check Commands
@@ -682,7 +682,7 @@ T25 → T26 → T27
 
 - [ ] Both files are moved with `git mv`; no `.rs` file remains under the root `tests/`, and `tests/support/` is gone
 - [ ] `repo_root()` resolves to the repository root (`CARGO_MANIFEST_DIR/../..`); the walk functions return the same repository-relative paths as before, so no detector and no message changes
-- [ ] The 18 test functions exist under their names (C40); no detector function (`is_disabled_marker`, `is_ignore_attribute`, `is_file_scope_allow`, `dead_architecture_identifiers_in`, ...) is edited
+- [ ] The 11 test functions exist under their names (C40); no detector function (`is_disabled_marker`, `is_ignore_attribute`, `is_file_scope_allow`, `dead_architecture_identifiers_in`, ...) is edited
 - [ ] Registrations and exemptions that name a path under a removed crate or a deleted file are removed; an entry for a solver file that moved is re-pointed to its new path; nothing else in the registries changes (C41)
 - [ ] A new test `the_walk_covers_the_three_solver_crates` asserts that the library-source walk returns at least one file under each of `crates/piperine-solver/src`, `crates/piperine-analog-solver/src`, `crates/piperine-digital-solver/src` and `crates/piperine-lang/src` (C42)
 - [ ] `cargo test -p piperine-lang --test suite_hygiene` passes (C39). **If a test fails on a kept source for a reason that predates this feature (including the "more than 100 library sources" assertion): stop, change nothing, report the test and its output** (SR-07 AC 6)
@@ -816,7 +816,7 @@ Proof: `test "$(wc -l < .specs/features/solver-restructure/baseline.txt)" -ge 25
 **C39** - The moved guard passes on the kept sources (SR-07, AC 2)
 Proof: `cargo test -p piperine-lang --test suite_hygiene`
 
-**C40** - The moved guard holds the 18 test functions it had at e129b869, by name (SR-07, AC 4)
+**C40** - The moved guard holds the 11 test functions it had at e129b869, by name (SR-07, AC 4)
 Proof: `test -z "$(comm -23 <(git show e129b869:tests/suite_hygiene.rs | grep -A1 '^#\[test\]' | grep -oE '^fn [a-z_0-9]+' | sort) <(grep -oE '^fn [a-z_0-9]+' crates/piperine-lang/tests/suite_hygiene.rs | sort))"`
 
 **C41** - The moved guard names no path under a removed crate (SR-07, AC 5)

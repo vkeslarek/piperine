@@ -169,7 +169,7 @@ Role: the **solver developer** is whoever implements features (B) onward; the **
 1. The guard SHALL live at `crates/piperine-lang/tests/suite_hygiene.rs`, with its walk helper beside it under `crates/piperine-lang/tests/support/`, and no `suite_hygiene.rs` SHALL remain under the root `tests/`.
 2. WHEN `cargo test -p piperine-lang --test suite_hygiene` runs THEN all of its tests SHALL pass.
 3. WHEN the guard walks the repository THEN it SHALL read the root `src/`, every `crates/*/src` and every `crates/*/tests` of the kept crates, the three solver crates included, starting from the repository root and not from the crate that hosts it.
-4. The moved guard SHALL hold each of the 18 test functions it has at e129b869, under the same names.
+4. The moved guard SHALL hold each of the 11 test functions it has at e129b869, under the same names.
 5. The moved guard SHALL hold no registration or exemption that names a path under a removed crate or a deleted file.
 6. IF a test of the guard fails on a kept source for a reason that predates this feature THEN the work SHALL stop and the failure SHALL be reported to the user; no detector SHALL be loosened to pass.
 
