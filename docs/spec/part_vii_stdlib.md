@@ -1014,7 +1014,7 @@ impl Logic {
     }
 }
 
-nature Wire { value: Logic, resolve: Logic::wired }
+pub nature Wire { value: Logic, resolve: Logic::wired }
 ```
 
 | Drives | `wired` |
@@ -1038,7 +1038,7 @@ A typed bus with one driver at a time.
 pub fn tri<T: Repr>(d: &[Option<T>]) -> Option<T> {
     d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
 }
-nature Tri<T: Repr> { value: Option<T>, resolve: tri }
+pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
 ```
 
 | Drives | `tri` |
@@ -1056,7 +1056,7 @@ A real-valued net whose drivers add.
 
 ```rust
 pub fn sum(d: &[f64]) -> f64 { d.iter().sum() }
-nature SumNet { value: f64, resolve: sum }
+pub nature SumNet { value: f64, resolve: sum }
 ```
 
 1. The drives are added in the order of their instance paths (§4 rule 2). The result is a function of the source.
@@ -1066,9 +1066,9 @@ nature SumNet { value: f64, resolve: sum }
 #### 22.3.5 `Tribuf`, `Pullup`, `Pulldown`
 
 ```rust
-module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
-module Pullup(w: Wire)   { w = Logic::pull(true); }
-module Pulldown(w: Wire) { w = Logic::pull(false); }
+pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
+pub module Pullup(w: Wire)   { w = Logic::pull(true); }
+pub module Pulldown(w: Wire) { w = Logic::pull(false); }
 ```
 
 | Module | Drive |
@@ -1087,7 +1087,7 @@ module Pulldown(w: Wire) { w = Logic::pull(false); }
 A bus keeper (Verilog `trireg`): holds the last driven level, weakly.
 
 ```rust
-module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
+pub module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
 digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
 ```
 
@@ -1100,7 +1100,7 @@ digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
 A bidirectional pass gate (Verilog `tranif1`).
 
 ```rust
-module Tran(a: Wire, b: Wire, in en: Bit) {
+pub module Tran(a: Wire, b: Wire, in en: Bit) {
     a = if en { b.others() } else { Logic::Z };
     b = if en { a.others() } else { Logic::Z };
 }
@@ -1118,7 +1118,7 @@ module Tran(a: Wire, b: Wire, in en: Bit) {
 A CMOS transmission gate at switch level: `tranif1` and `tranif0` in parallel.
 
 ```rust
-module Tgate(a: Wire, y: Wire, in s: Bit, in sn: Bit) {
+pub module Tgate(a: Wire, y: Wire, in s: Bit, in sn: Bit) {
     let n = Tran(a, y, s);
     let p = Tran(a, y, !sn);
 }
@@ -1147,7 +1147,7 @@ Discrete carriers and nodes never connect, and no converter is inserted implicit
 `Bit` to node: a level through a resistance, with finite edges.
 
 ```rust
-module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
+pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0; tr: f64 = 20p;
     let ramp = transition(match d.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
 }
@@ -1176,7 +1176,7 @@ analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
 Node to `Bit`, with hysteresis; right from the operating point.
 
 ```rust
-module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+pub module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
 digital for A2D {
     on above(v(a) - vth - hyst / 2.0) { d <- true; }
     on above(vth - hyst / 2.0 - v(a)) { d <- false; }
@@ -1197,7 +1197,7 @@ digital for A2D {
 A pad: one `Wire`, one node.
 
 ```rust
-module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
+pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0; tr: f64 = 20p; vth: f64 = 0.6; hyst: f64 = 50m;
     signal seen: Bit = false;                                  // the node, thresholded
     let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ;   // unknown strength: assume driven
@@ -1369,7 +1369,7 @@ This is the delay to use for logic that must follow a sweep (Appendix G.32).
 A tristate buffer with Verilog's inertial gate delay, slower to release than to drive.
 
 ```rust
-module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
+pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
     ton: f64 = 100p; toff: f64 = 300p;
     y = inertial(if oe { Logic::strong(d) } else { Logic::Z }, if oe { ton } else { toff });
 }

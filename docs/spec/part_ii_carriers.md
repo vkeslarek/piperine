@@ -138,7 +138,7 @@ nature** declares `potential`.
 
 ```rust
 pub nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
-nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib (§22.3): strengths, high impedance
+pub nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib (§22.3): strengths, high impedance
 pub nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
     flow:      Current { access: i, units: "A", abstol: 1p },

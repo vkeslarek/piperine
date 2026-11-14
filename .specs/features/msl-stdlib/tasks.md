@@ -441,13 +441,13 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `tgate_places_two_tran` passes in `std_library.rs` (C51: STD-08 AC 13)
-- [ ] Test `a_std_path_names_the_same_declaration` passes in `std_library.rs` (C54: STD-09 AC 3)
-- [ ] Test `transient_is_the_kind_and_tran_the_module` passes in `std_library.rs` (C65: STD-10 AC 5)
-- [ ] `no_export_has_a_core_name` passes with `Tran` exported: the built-in row is `Transient` since T3
-- [ ] `std_excerpts` and the two cleanliness tests of `std_library` pass with this file
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `tgate_places_two_tran` passes in `std_library.rs` (C51: STD-08 AC 13)
+- [x] Test `a_std_path_names_the_same_declaration` passes in `std_library.rs` (C54: STD-09 AC 3)
+- [x] Test `transient_is_the_kind_and_tran_the_module` passes in `std_library.rs` (C65: STD-10 AC 5)
+- [x] `no_export_has_a_core_name` passes with `Tran` exported: the built-in row is `Transient` since T3
+- [x] `std_excerpts` and the two cleanliness tests of `std_library` pass with this file
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

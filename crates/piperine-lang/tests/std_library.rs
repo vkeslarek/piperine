@@ -294,3 +294,50 @@ fn laplace_nd_has_state_signals_and_an_analog_block() {
     assert!(module.signals().iter().any(|s| s.ty().text().starts_with("[State;")), "a signal that is an array of State");
     assert_eq!(module.analog_blocks().len(), 1, "one analog block");
 }
+
+/// The declaration the expression of the root crate with text `text` resolves to, if it does.
+fn resolved_decl<'d>(design: &'d Design, text: &str) -> Option<piperine_lang::pom::Decl<'d>> {
+    let expr = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text() == text)?;
+    match expr.resolution() {
+        Resolution::Decl(id) => Some(design.decl(id)),
+        _ => None,
+    }
+}
+
+#[test]
+fn tgate_places_two_tran() {
+    let design = embedded();
+    let tran = design.std_crate().find("nets::Tran").expect("std declares Tran in nets");
+    assert!(tran.as_module().is_some(), "Tran is a module");
+    let tgate = design.std_crate().find("nets::Tgate").expect("std declares Tgate in nets");
+    let calls = calls_named(&design, tgate, "Tran");
+    assert_eq!(calls.len(), 2, "Tgate places two Tran");
+    for call in calls {
+        let ExprKind::Call { callee, .. } = call.kind() else { unreachable!() };
+        let Resolution::Decl(id) = design.expr(*callee).resolution() else { panic!("Tran resolves to a declaration") };
+        assert_eq!(design.decl(id).qualified_name(), tran.qualified_name());
+    }
+}
+
+#[test]
+fn a_std_path_names_the_same_declaration() {
+    let design = Design::builder().source("top.msl", "module M(a: std::nets::Wire, b: Wire) { }\n").build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let wire = design.std_crate().find("nets::Wire").expect("std declares Wire in nets");
+    let uses: Vec<String> = wire.references().iter().filter_map(|r| if let Reference::Path(p) = r { Some(p.text().to_string()) } else { None }).collect();
+    assert!(uses.iter().any(|t| t == "std::nets::Wire"), "the long path resolves to Wire: {uses:?}");
+    assert!(uses.iter().any(|t| t == "Wire"), "the single name resolves to Wire: {uses:?}");
+}
+
+#[test]
+fn transient_is_the_kind_and_tran_the_module() {
+    let design = Design::builder()
+        .source("top.msl", "module M(a: Wire, b: Wire, in en: Bit) { let k = analysis(Transient); let g = Tran(a, b, en); }\n")
+        .build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let tran = resolved_decl(&design, "Tran").expect("Tran resolves to a declaration");
+    assert!(tran.as_module().is_some() && tran.krate().is_std());
+    assert_eq!(tran.file().name(), "nets.msl");
+    let kind = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text() == "Transient").expect("the model writes Transient");
+    assert!(matches!(kind.resolution(), Resolution::Builtin(id) if id.name() == "Transient"), "{:?}", kind.resolution());
+}
