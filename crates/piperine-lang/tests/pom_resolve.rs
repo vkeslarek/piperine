@@ -1287,3 +1287,84 @@ fn self_assoc_missing_everywhere_is_e0161() {
         assert_eq!(design.diagnostics().len(), 1, "{src}: {:?}", design.diagnostics());
     }
 }
+
+/// What the field access or method call with this text resolves to, in the root crate.
+fn member_res(design: &Design, text: &str) -> Resolution {
+    use piperine_lang::pom::{ExprId, ExprKind};
+    let e = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .find(|e| e.text() == text && !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
+        .unwrap_or_else(|| panic!("member expression `{text}`"));
+    match e.kind() {
+        ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
+        _ => unreachable!(),
+    }
+}
+
+const BLANKET: &str = "\
+trait Known { fn known(self) -> bool; }
+impl<T: Repr> Known for T { fn known(self) -> bool { true } }
+nature Lvl { value: f64 }
+";
+
+#[test]
+fn blanket_method_resolves_on_a_carrier() {
+    // STD-06 AC 1: no built-in, no nature impl, a blanket `impl<T: Repr> Known for T`.
+    let design = build(&format!("{BLANKET}module M(p: Lvl) {{ let a = p.known(); }}\n"));
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "p.known()"), decl(&design, "Known::known"));
+    // An unbounded blanket `impl<T> Known for T` reads the same.
+    let unbounded = build("trait Known { fn known(self) -> bool; }\nimpl<T> Known for T { fn known(self) -> bool { true } }\nnature Lvl { value: f64 }\nmodule M(p: Lvl) { let a = p.known(); }\n");
+    assert_eq!(member_res(&unbounded, "p.known()"), decl(&unbounded, "Known::known"));
+}
+
+#[test]
+fn blanket_method_resolves_on_self_in_a_nature_impl() {
+    // STD-06 AC 2.
+    let design = build(&format!("{BLANKET}impl Lvl {{ fn again(self) -> bool {{ self.known() }} }}\n"));
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "self.known()"), decl(&design, "Known::known"));
+}
+
+#[test]
+fn a_nature_impl_wins_over_a_blanket() {
+    // STD-06 AC 3.
+    let design = build(&format!("{BLANKET}impl Lvl {{ fn known(self) -> bool {{ false }} }}\nmodule M(p: Lvl) {{ let a = p.known(); }}\n"));
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(member_res(&design, "p.known()"), decl(&design, "impl Lvl.known"));
+}
+
+#[test]
+fn an_unlinked_member_keeps_its_slot() {
+    // STD-06 AC 4: no rule links it; a known receiver stays `Unresolved`, any other `Deferred`.
+    let src = format!(
+        "{BLANKET}trait Other {{ fn other(self) -> bool; }}\nimpl<T: Other> Known2 for T {{ fn two(self) -> bool {{ true }} }}\ntrait Known2 {{ fn two(self) -> bool; }}\n\
+         fn f(v: f64) -> bool {{ v.known() }}\nmodule M(p: Lvl) {{ let a = p.nothing(); let b = p.two(); }}\n"
+    );
+    let design = build(&src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    // A name no trait has.
+    assert_eq!(member_res(&design, "p.nothing()"), Resolution::Unresolved);
+    // A blanket bounded by a trait that is not `Repr` is not searched.
+    assert_eq!(member_res(&design, "p.two()"), Resolution::Unresolved);
+    // A value receiver needs its type: no trait solving.
+    assert_eq!(member_res(&design, "v.known()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+}
+
+#[test]
+fn a_blanket_call_is_a_reference_of_the_trait_method() {
+    // STD-06 AC 5: `known`, `known_or` and `is_known` calls are listed by `references()`.
+    let src = "\
+trait Known { fn known(self) -> bool; fn known_or(self, d: f64) -> f64; fn is_known(self) -> bool; }
+impl<T: Repr> Known for T { fn known(self) -> bool { true } fn known_or(self, d: f64) -> f64 { d } fn is_known(self) -> bool { true } }
+nature Lvl { value: f64 }
+module M(p: Lvl) { let a = p.known(); let b = p.known_or(1.0); let c = p.is_known(); }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    for (method, call) in [("known", "p.known()"), ("known_or", "p.known_or(1.0)"), ("is_known", "p.is_known()")] {
+        let refs = design.find(&format!("Known::{method}")).expect(method).references();
+        let texts: Vec<String> = refs.iter().filter_map(|r| if let piperine_lang::pom::Reference::Member(e) = r { Some(e.text().to_string()) } else { None }).collect();
+        assert_eq!(texts, [call], "{method}");
+    }
+}

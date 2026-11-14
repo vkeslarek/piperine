@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use super::super::body::{ExprKind, PatKind, StmtKind, TypeKind};
 use super::super::builtin::builtin_method;
-use super::super::decl::{DeclKind, FnParamData, NatureFieldNode};
+use super::super::decl::{DeclKind, FnParamData, GenericParamData, NatureFieldNode};
 use super::super::design::Design;
 use super::super::ids::{DeclId, ExprId, FileId, TypeId};
 use super::super::resolution::{CallClass, DeferReason, Resolution};
@@ -129,6 +129,8 @@ impl Reader<'_> {
                     }
                 })
             })
+            // Last: a blanket `impl<T: Repr> Tr for T`, which every carrier satisfies (§4).
+            .or_else(|| self.blanket_method(name).map(Resolution::Decl))
         };
         let found = match self.receiver(recv) {
             Recv::Carrier(nature) => carrier_method(nature),
@@ -143,6 +145,28 @@ impl Reader<'_> {
             Recv::Unknown => return (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
         };
         (found.unwrap_or(Resolution::Unresolved), false)
+    }
+
+    /// The method `name` of a trait that a blanket `impl<T: B> Tr for T` gives every carrier, `B`
+    /// absent or the core `Repr` (the value type of a nature is `Repr`). The impls are read in
+    /// declaration order; no trait is solved, so any other bound is left to a type checker.
+    fn blanket_method(&self, name: &str) -> Option<DeclId> {
+        let design = self.design;
+        (0..design.decl_count()).map(|i| DeclId(i as u32)).find_map(|imp| {
+            let DeclKind::Impl(i) = &design.decl_data(imp).kind else { return None };
+            let TypeKind::Path(self_path) = &design.type_node(i.self_ty).kind else { return None };
+            let Some(Resolution::Decl(generic)) = design.path_node(*self_path).segments.last().map(|s| s.res) else { return None };
+            let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &design.decl_data(generic).kind else { return None };
+            let only_repr = bounds.iter().all(|b| matches!(design.path_node(*b).segments.last().map(|s| s.res), Some(Resolution::Builtin(r)) if r.info().name == "Repr"));
+            if !only_repr || design.decl_data(generic).parent != Some(imp) {
+                return None;
+            }
+            let Some(Resolution::Decl(tr)) = i.trait_.and_then(|t| design.path_node(t).segments.last().map(|s| s.res)) else { return None };
+            if !matches!(design.decl_data(tr).kind, DeclKind::Trait(_)) {
+                return None;
+            }
+            child_fn(design, tr, name)
+        })
     }
 
     /// The type of a receiver chain: paths, fields, indexes and parentheses

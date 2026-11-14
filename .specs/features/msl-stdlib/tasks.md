@@ -277,16 +277,16 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `blanket_method_resolves_on_a_carrier` passes in `pom_resolve.rs` (C29: STD-06 AC 1)
-- [ ] Test `blanket_method_resolves_on_self_in_a_nature_impl` passes in `pom_resolve.rs` (C30: STD-06 AC 2)
-- [ ] Test `a_nature_impl_wins_over_a_blanket` passes in `pom_resolve.rs` (C31: STD-06 AC 3)
-- [ ] Test `an_unlinked_member_keeps_its_slot` passes in `pom_resolve.rs` (C32: STD-06 AC 4)
-- [ ] Test `a_blanket_call_is_a_reference_of_the_trait_method` passes in `pom_resolve.rs` (C33: STD-06 AC 5)
-- [ ] Test `members_doc_lists_the_blanket_step` passes in `pom_docs.rs` (C98: STD-17 AC 4)
-- [ ] A value receiver stays `Deferred(ReceiverTypeUnknown)`: no trait solving is added
-- [ ] An `impl<T: Other> Tr for T` with a bound that is not `Repr` is not searched
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `blanket_method_resolves_on_a_carrier` passes in `pom_resolve.rs` (C29: STD-06 AC 1)
+- [x] Test `blanket_method_resolves_on_self_in_a_nature_impl` passes in `pom_resolve.rs` (C30: STD-06 AC 2)
+- [x] Test `a_nature_impl_wins_over_a_blanket` passes in `pom_resolve.rs` (C31: STD-06 AC 3)
+- [x] Test `an_unlinked_member_keeps_its_slot` passes in `pom_resolve.rs` (C32: STD-06 AC 4)
+- [x] Test `a_blanket_call_is_a_reference_of_the_trait_method` passes in `pom_resolve.rs` (C33: STD-06 AC 5)
+- [x] Test `members_doc_lists_the_blanket_step` passes in `pom_docs.rs` (C98: STD-17 AC 4)
+- [x] A value receiver stays `Deferred(ReceiverTypeUnknown)`: no trait solving is added
+- [x] An `impl<T: Other> Tr for T` with a bound that is not `Repr` is not searched
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

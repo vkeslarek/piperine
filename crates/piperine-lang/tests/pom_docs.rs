@@ -435,3 +435,14 @@ fn resolution_doc_describes_the_supertrait_rule() {
     let line = page.lines().find(|l| l.contains("Self::NAME") && l.contains("supertrait")).expect("a line on `Self::NAME` and supertraits");
     assert!(line.contains("trait"), "{line}");
 }
+
+#[test]
+fn members_doc_lists_the_blanket_step() {
+    // STD-17 AC 4: the Members table ends the carrier row with the blanket implementation.
+    let page = page_of("resolution.md");
+    let row = page.lines().find(|l| l.starts_with("| a carrier of a nature")).expect("the carrier row of the Members table");
+    assert!(row.contains("blanket") && row.contains("impl<T: Repr>"), "{row}");
+    assert!(row.rfind("blanket") > row.rfind("value type"), "the blanket step comes last: {row}");
+    let rule = page.lines().find(|l| l.contains("blanket") && l.contains("Repr") && !l.starts_with('|')).expect("a sentence on the blanket step");
+    assert!(rule.contains("not searched") || rule.contains("other bound"), "{rule}");
+}

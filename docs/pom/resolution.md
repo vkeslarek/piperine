@@ -253,10 +253,13 @@ slot only.
 | --- | --- | --- |
 | an instance of a known module | the module's item of that name: a port, param, signal or `let` | |
 | a value of a declared struct or bundle type (a port, signal or `let` with that annotated type) | the field | |
-| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`, `level`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type |
+| a carrier of a nature | | in order: the carrier built-ins (`changed`, `prev`, `others`, `inflow`, `level`), the `impl` blocks of the nature (or bundle), then the `impl` blocks of the nature's value type, then a blanket `impl<T: Repr> Tr for T` (or `impl<T> Tr for T`) of a trait that has the method |
 | `self` in an `impl` | | a value of the impl's self type, then as above |
 | anything else | `Deferred` | `Deferred` |
 
+* The blanket step, for a `Repr` bound or none, links `d.known()` to `Known::known`; an impl with any other bound is not searched.
+  The call is listed in that method's `references()`. A value receiver stays `Deferred(ReceiverTypeUnknown)`:
+  the POM does no trait solving, so a type checker links it.
 * A member item that is not `pub` still resolves, and `E0343` is reported at the member name. A
   member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8).
 * A field a declared struct does not have stays `Unresolved` with no diagnostic: the POM has no
