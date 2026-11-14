@@ -323,7 +323,7 @@ Each term has one defining occurrence. The table points at it.
 | package | [§3.6](part_i_values.md#36-packages) |
 | panic | [§1](part_i_values.md#1-value-types) rule 11 |
 | param, structural param | [§8.1](part_iii_structure.md#81-ports-and-params) |
-| parse, elaboration, run, host (phases) | [§0.3](#03-conformance) |
+| package, parse, elaboration, run, host (phases) | [§0.3](#03-conformance) |
 | port, value input | [§8.1](part_iii_structure.md#81-ports-and-params) |
 | probe | [§6](part_ii_carriers.md#6-continuous-carriers) |
 | quantity | [§9](part_iii_structure.md#9-quantities) |
