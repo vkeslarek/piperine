@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::body::{ExprKind, TypeKind};
+use super::super::body::{Arg, ExprKind, FieldInit, TypeKind};
 use super::super::builtin::BuiltinKind;
 use super::super::decl::{DeclKind, FnParamData, GenericParamData, Name};
 use super::super::design::Design;
@@ -237,12 +237,34 @@ fn child_named(design: &Design, owner: DeclId, name: &str, want: fn(&DeclKind) -
     None
 }
 
-/// The `E0161` for a name written for something `owner` does not have: a port,
-/// a param, a field or a function parameter.
-fn missing_binding(design: &Design, owner: DeclId, what: &str, name: &Name, from: DeclId) -> (FileId, Diagnostic) {
+/// The diagnostic `code` for a name written for something `owner` does not
+/// have: a port, a param, a field or a function parameter.
+fn missing_binding(design: &Design, code: &'static str, owner: DeclId, what: &str, name: &Name, from: DeclId) -> (FileId, Diagnostic) {
     let owner_name = design.decl_data(owner).name.as_ref().map_or("", |n| n.text.as_str());
     let message = format!("no {what} `{}` in `{owner_name}`", name.text);
-    (design.decl_data(from).file, Diagnostic::new("E0161", message, name.span, "not found"))
+    (design.decl_data(from).file, Diagnostic::new(code, message, name.span, "not found"))
+}
+
+/// The diagnostic for a name that an earlier entry of the same list already bound.
+fn repeated_binding(design: &Design, code: &'static str, what: &str, name: &Name, from: DeclId) -> (FileId, Diagnostic) {
+    let message = format!("{what} `{}` is given twice", name.text);
+    (design.decl_data(from).file, Diagnostic::new(code, message, name.span, "repeated"))
+}
+
+/// Is a declaration's type written `Option<..>`? Syntactic, as §3.2.7 reads it.
+fn is_written_option(design: &Design, decl: DeclId) -> bool {
+    let Some(ty) = design.declared_type(decl) else { return false };
+    match &design.type_node(ty).kind {
+        TypeKind::Path(p) => design.path_node(*p).segments.last().is_some_and(|s| s.name.text == "Option"),
+        _ => false,
+    }
+}
+
+/// The declarations whose position a call counts by: the ports of a module,
+/// the parameters of a function, in order.
+fn positional_slots(design: &Design, owner: DeclId) -> Vec<DeclId> {
+    let want: fn(&DeclKind) -> bool = if matches!(design.decl_data(owner).kind, DeclKind::Module(_)) { is_port } else { is_fn_param };
+    design.decl_data(owner).children.iter().copied().filter(|c| want(&design.decl_data(*c).kind)).collect()
 }
 
 fn is_param(k: &DeclKind) -> bool {
@@ -278,12 +300,19 @@ fn struct_expressions(design: &Design, bundles: &BTreeSet<DeclId>, out: &mut Cla
             DeclKind::Struct(_) | DeclKind::Variant(_) => (StructClass::StructLiteral, is_field),
             _ => (StructClass::Unclassified, is_field),
         };
-        let named: Vec<(usize, Resolution)> = fields.iter().enumerate().filter_map(|(k, f)| Some((k, Resolution::Decl(child_named(design, target, &f.name.text, want)?)))).collect();
-        if class != StructClass::Unclassified {
-            let what = if matches!(class, StructClass::Template(_)) { "param" } else { "field" };
-            let unnamed = fields.iter().enumerate().filter(|(k, _)| !named.iter().any(|(n, _)| n == k));
-            for (_, f) in unnamed {
-                out.diagnostics.push(missing_binding(design, target, what, &f.name, design.expr_node(expr).owner));
+        let from = design.expr_node(expr).owner;
+        let mut named: Vec<(usize, Resolution)> = Vec::new();
+        let mut seen: Vec<&str> = Vec::new();
+        for (k, f) in fields.iter().enumerate() {
+            let found = child_named(design, target, &f.name.text, want);
+            let repeated = seen.contains(&f.name.text.as_str());
+            seen.push(&f.name.text);
+            match (found, class) {
+                (Some(_), StructClass::Template(_)) if repeated => out.diagnostics.push(repeated_binding(design, "E0320", "param", &f.name, from)),
+                (Some(d), _) => named.push((k, Resolution::Decl(d))),
+                (None, StructClass::Template(_)) => out.diagnostics.push(missing_binding(design, "E0320", target, "param", &f.name, from)),
+                (None, StructClass::Unclassified) => {}
+                (None, _) => out.diagnostics.push(missing_binding(design, "E0161", target, "field", &f.name, from)),
             }
         }
         classes.insert(expr, class);
@@ -427,6 +456,49 @@ fn probe_callee(design: &Design, callee: ExprId, first: Option<ExprId>, access: 
     }
 }
 
+/// What the named arguments of a call name: an optional parameter (a port or a
+/// function parameter written `Option<..>`) that no earlier argument bound.
+/// Any other name is `E0140` and its slot stays unresolved (§3.2.9).
+fn named_arguments(design: &Design, owner: DeclId, args: &[Arg], from: DeclId, out: &mut Classified) -> Vec<(usize, Resolution)> {
+    let is_module = matches!(design.decl_data(owner).kind, DeclKind::Module(_));
+    let (what, want): (&str, fn(&DeclKind) -> bool) = if is_module { ("port", is_port) } else { ("parameter", is_fn_param) };
+    let positional = args.iter().filter(|a| a.name.is_none()).count();
+    let mut bound: Vec<DeclId> = positional_slots(design, owner).into_iter().take(positional).collect();
+    let mut links = Vec::new();
+    for (k, a) in args.iter().enumerate() {
+        let Some(name) = &a.name else { continue };
+        let owner_name = design.decl_data(owner).name.as_ref().map_or("", |n| n.text.as_str());
+        match child_named(design, owner, &name.text, want).filter(|d| is_written_option(design, *d)) {
+            Some(d) if !bound.contains(&d) => {
+                bound.push(d);
+                links.push((k, Resolution::Decl(d)));
+            }
+            Some(_) => {
+                let message = format!("the {what} `{}` of `{owner_name}` is already bound", name.text);
+                out.diagnostics.push((design.decl_data(from).file, Diagnostic::new("E0140", message, name.span, "already bound")));
+            }
+            None => {
+                let message = format!("no optional {what} `{}` in `{owner_name}`", name.text);
+                out.diagnostics.push((design.decl_data(from).file, Diagnostic::new("E0140", message, name.span, "not an optional parameter")));
+            }
+        }
+    }
+    links
+}
+
+/// What the param block of an instance names: params of the module, each once.
+fn param_block(design: &Design, module: DeclId, params: &[FieldInit], from: DeclId, out: &mut Classified) -> Vec<(usize, Resolution)> {
+    let mut links = Vec::new();
+    for (k, f) in params.iter().enumerate() {
+        match child_named(design, module, &f.name.text, is_param) {
+            Some(_) if params[..k].iter().any(|e| e.name.text == f.name.text) => out.diagnostics.push(repeated_binding(design, "E0320", "param", &f.name, from)),
+            Some(d) => links.push((k, Resolution::Decl(d))),
+            None => out.diagnostics.push(missing_binding(design, "E0320", module, "param", &f.name, from)),
+        }
+    }
+    links
+}
+
 fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, access: &BTreeMap<String, Vec<DeclId>>, out: &mut Classified) {
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
@@ -438,40 +510,17 @@ fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, 
             continue;
         }
         let (class, target) = callee_class(design, *callee, templates);
-        let named = |want: fn(&DeclKind) -> bool| -> Vec<(usize, Resolution)> {
-            let Some(target) = target else { return Vec::new() };
-            args.iter().enumerate().filter_map(|(k, a)| Some((k, Resolution::Decl(child_named(design, target, &a.name.as_ref()?.text, want)?)))).collect()
-        };
+        let from = node.owner;
         let facts = match target.map(|t| (t, &design.decl_data(t).kind)) {
             Some((module, DeclKind::Module(_))) => CallFacts {
                 expr,
                 class,
-                args: named(is_port),
-                params: params
-                    .iter()
-                    .flatten()
-                    .enumerate()
-                    .filter_map(|(k, f)| Some((k, Resolution::Decl(child_named(design, module, &f.name.text, is_param)?))))
-                    .collect(),
+                args: named_arguments(design, module, args, from, out),
+                params: param_block(design, module, params.as_deref().unwrap_or(&[]), from, out),
             },
-            Some((_, DeclKind::Fn(_))) => CallFacts { expr, class, args: named(is_fn_param), params: Vec::new() },
+            Some((func, DeclKind::Fn(_))) => CallFacts { expr, class, args: named_arguments(design, func, args, from, out), params: Vec::new() },
             _ => CallFacts { expr, class, args: Vec::new(), params: Vec::new() },
         };
-        if let Some(owner) = target {
-            let (arg_what, from) = (if matches!(design.decl_data(owner).kind, DeclKind::Module(_)) { "port" } else { "parameter" }, node.owner);
-            for (k, a) in args.iter().enumerate() {
-                if let Some(name) = &a.name {
-                    if !facts.args.iter().any(|(n, _)| *n == k) {
-                        out.diagnostics.push(missing_binding(design, owner, arg_what, name, from));
-                    }
-                }
-            }
-            for (k, f) in params.iter().flatten().enumerate() {
-                if !facts.params.iter().any(|(n, _)| *n == k) {
-                    out.diagnostics.push(missing_binding(design, owner, "param", &f.name, from));
-                }
-            }
-        }
         if matches!(class, CallClass::Instance { .. }) {
             if let Some(module) = enclosing_module(design, node.owner) {
                 out.instances.push((module, expr));

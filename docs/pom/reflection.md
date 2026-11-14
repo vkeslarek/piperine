@@ -1040,12 +1040,12 @@ nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
     flow:      Current { access: i, units: "A", abstol: 1p },
 }
-module Resistor(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+module Resistor(p: Electrical, n: Electrical, tc: Option<f64>) { r: f64 = 1.0; }
 module Top() {
     signal a: Electrical;
     signal b: Electrical;
     let r1 = Resistor(a, b) { r: 1k };
-    let r2 = Resistor(a, n: b);
+    let r2 = Resistor(a, b, tc: 0.5);
 }
 "#;
 let design = Design::builder().source("top.msl", src).build();
@@ -1062,10 +1062,10 @@ assert_eq!(conns, ["a", "b"]);
 assert_eq!(r1.param_bindings()[0].name.text, "r");
 
 // `connection(port)` finds the argument for a port by name or by position.
-let (p, n) = (resistor.port("p").unwrap(), resistor.port("n").unwrap());
+let (p, tc) = (resistor.port("p").unwrap(), resistor.port("tc").unwrap());
 assert_eq!(r1.connection(p).unwrap().text(), "a");
 let r2 = top.instance("r2").unwrap();
-assert_eq!(r2.connection(n).unwrap().text(), "b");   // written `n: b`
+assert_eq!(r2.connection(tc).unwrap().text(), "0.5");   // written `tc: 0.5`
 
 // An instance is a view of its call, and the call knows it.
 assert_eq!(r1.expr().as_instance(), Some(r1));

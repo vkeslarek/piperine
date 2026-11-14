@@ -163,12 +163,12 @@ fn casts_match_kind_only() {
 #[test]
 fn instance_connection_by_port() {
     let src = "\
-module Resistor(p: Electrical, n: Electrical) {}
+module Resistor(p: Electrical, n: Electrical, tc: Option<f64>) {}
 module Top() {
     signal a: Electrical;
     signal b: Electrical;
     let r1 = Resistor(a, b);
-    let r2 = Resistor(a, n: b);
+    let r2 = Resistor(a, b, tc: 0.5);
     let r3 = Unknown(a, b);
 }
 ";
@@ -182,6 +182,7 @@ module Top() {
     let r2 = top.instance("r2").unwrap();
     assert_eq!(r2.connection(p).unwrap().text(), "a");
     assert_eq!(r2.connection(n).unwrap().text(), "b");
+    assert_eq!(r2.connection(res.port("tc").unwrap()).unwrap().text(), "0.5");
     // A port of another module, and an instance whose module is unknown, give none.
     let other = design.module("Top").unwrap();
     assert!(other.ports().is_empty());

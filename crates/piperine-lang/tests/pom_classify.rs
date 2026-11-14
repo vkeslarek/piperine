@@ -195,12 +195,12 @@ fn struct_classes(design: &Design) -> Vec<(String, StructClass)> {
 #[test]
 fn named_instance_with_connections_and_params() {
     let src = "\
-module Resistor(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+module Resistor(p: Electrical, n: Electrical, tc: Option<f64>) { r: f64 = 1.0; }
 module Top() {
     signal a: Electrical;
     signal b: Electrical;
     let r1 = Resistor(a, b) { r: 1k };
-    let r2 = Resistor(a, n: b);
+    let r2 = Resistor(a, b, tc: 0.5);
 }
 ";
     let design = with_prelude(src);
@@ -226,7 +226,7 @@ module Top() {
     assert!(args.iter().all(|a| a.res == Resolution::Unresolved));
     let r2 = top.instance("r2").expect("instance r2");
     let ExprKind::Call { args, .. } = r2.expr().kind() else { panic!("an instance is a call") };
-    assert_eq!(args[1].res, Resolution::Decl(resistor.port("n").unwrap().decl().id()));
+    assert_eq!(args[2].res, Resolution::Decl(resistor.port("tc").unwrap().decl().id()));
     // The name is the binding of the `let`, and the binding reaches the instance back.
     let binding = top.named("r1").unwrap();
     assert_eq!(binding.instance(), Some(r1.clone()));
@@ -634,35 +634,104 @@ fn generic_carrier_follows_the_resolved_bound() {
     assert_eq!(kinds, [PortKind::Carrier, PortKind::Carrier]);
 }
 
-/// A name written for a port, a param, a field or a parameter that the
-/// callee does not have names nothing: one `E0161` at that name (resolution.md,
-/// "the slot stays `Unresolved`, one `E0161` is reported").
+/// A name written for a port, a param, a field or a parameter that the callee
+/// does not have names nothing: the slot stays `Unresolved` and one diagnostic
+/// is reported at the name, under the code the spec assigns (POL-18, D11):
+/// `E0320` for a param, `E0140` for a named argument, `E0161` for a struct field.
 #[test]
-fn named_binding_without_a_target_is_e0161() {
+fn named_binding_without_a_target_reports_the_spec_code() {
     let src = "\
 struct Plain { x: f64 }
 fn f(a: f64) -> f64 { a }
-module R(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+module R(p: Electrical, n: Electrical, k: Option<f64>) { r: f64 = 1.0; }
 module Top() {
     signal s: Electrical;
-    let ok = R(p: s, n: s) { r: 2.0 };
-    let bad = R(q: s, n: s) { nope: 1.0 };
+    let ok = R(s, s, k: 1.0) { r: 2.0 };
+    let bad = R(s, s, q: s) { nope: 1.0 };
     let pl = Plain { x: 1.0, y: 2.0 };
     let t = R { zz: 3.0 };
     let v = f(b: 1.0);
 }
 ";
     let design = with_prelude(src);
-    let errors = with_code(&design, "E0161");
-    let at: Vec<&str> = errors.iter().map(|d| primary_text(&design, d)).collect();
-    assert_eq!(at, ["q", "nope", "y", "zz", "b"], "{:?}", design.diagnostics());
-    assert!(errors.iter().all(|d| d.diagnostic.message.contains("no ")), "{errors:?}");
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(found, [("E0140", "q"), ("E0320", "nope"), ("E0161", "y"), ("E0320", "zz"), ("E0140", "b")], "{:?}", design.diagnostics());
+    assert!(design.diagnostics().iter().all(|d| d.diagnostic.message.contains("no ")), "{:?}", design.diagnostics());
     // The names that do exist link, the ones that do not stay unresolved.
-    let call = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with("R(q: s")).unwrap();
-    let ExprKind::Call { args, params, .. } = call.kind() else { panic!("a call") };
-    assert_eq!(args[0].res, Resolution::Unresolved);
-    assert!(matches!(args[1].res, Resolution::Decl(_)));
+    let call = |text: &str| (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with(text)).unwrap();
+    let ok = call("R(s, s, k: 1.0)");
+    let ExprKind::Call { args, .. } = ok.kind() else { panic!("a call") };
+    assert!(matches!(args[2].res, Resolution::Decl(_)));
+    let bad = call("R(s, s, q: s)");
+    let ExprKind::Call { args, params, .. } = bad.kind() else { panic!("a call") };
+    assert_eq!(args[2].res, Resolution::Unresolved);
     assert_eq!(params.as_ref().unwrap()[0].res, Resolution::Unresolved);
+}
+
+/// POL-18 AC 1: a param block names no param of the module, or names one twice:
+/// one `E0320` at the name, no `E0161`; the first of two equal names still links.
+#[test]
+fn param_block_errors_are_e0320() {
+    let src = "\
+module R(p: Electrical, n: Electrical) { r: f64 = 1.0; }
+module Top() {
+    signal a: Electrical;
+    signal b: Electrical;
+    let ok = R(a, b) { r: 3.0 };
+    let x = R(a, b) { zz: 1.0 };
+    let y = R(a, b) { r: 1.0, r: 2.0 };
+    let t = R { zz: 3.0 };
+    let u = R { r: 1.0, r: 2.0 };
+}
+";
+    let design = with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(found, [("E0320", "zz"), ("E0320", "r"), ("E0320", "zz"), ("E0320", "r")], "{:?}", design.diagnostics());
+    // A repeated name is reported at its second occurrence.
+    let second = src.find("r: 1.0, r: 2.0").unwrap() + "r: 1.0, ".len();
+    assert_eq!(design.diagnostics()[1].diagnostic.span().range().start, second);
+    let call = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with("R(a, b) { r: 1.0, r: 2.0 }")).unwrap();
+    let ExprKind::Call { params, .. } = call.kind() else { panic!("a call") };
+    let params = params.as_ref().unwrap();
+    assert!(matches!(params[0].res, Resolution::Decl(_)));
+    assert_eq!(params[1].res, Resolution::Unresolved);
+}
+
+/// POL-18 AC 2: a named argument that names no parameter written `Option<..>`,
+/// or one an earlier argument bound, is one `E0140` at the name, no `E0161`.
+#[test]
+fn named_argument_errors_are_e0140() {
+    let src = "\
+fn g(a: f64, b: Option<f64>, c: Option<f64>) -> f64 { a }
+module R(p: Electrical, n: Electrical, k: Option<f64>) { }
+module Top() {
+    signal a: Electrical;
+    signal b: Electrical;
+    let ok1 = g(1.0, c: 2.0);
+    let ok2 = g(1.0, c: 2.0, b: 3.0);
+    let ok3 = R(a, b, k: 1.0);
+    let e1 = g(1.0, d: 3.0);
+    let e2 = g(1.0, a: 2.0);
+    let e3 = g(1.0, 2.0, b: 3.0);
+    let e4 = g(1.0, c: 1.0, c: 2.0);
+    let e5 = R(a, b, q: b);
+    let e6 = R(a, b, p: a);
+}
+";
+    let design = with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let want = [("E0140", "d"), ("E0140", "a"), ("E0140", "b"), ("E0140", "c"), ("E0140", "q"), ("E0140", "p")];
+    assert_eq!(found, want, "{:?}", design.diagnostics());
+    let args_of = |text: &str| {
+        let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with(text)).unwrap();
+        let ExprKind::Call { args, .. } = e.kind() else { panic!("a call") };
+        args.iter().map(|a| a.res).collect::<Vec<_>>()
+    };
+    assert!(matches!(args_of("g(1.0, c: 2.0, b: 3.0)")[2], Resolution::Decl(_)));
+    let e4 = args_of("g(1.0, c: 1.0, c: 2.0)");
+    assert!(matches!(e4[1], Resolution::Decl(_)));
+    assert_eq!(e4[2], Resolution::Unresolved);
+    assert_eq!(args_of("g(1.0, 2.0, b: 3.0)")[2], Resolution::Unresolved);
 }
 
 /// §8.4.8: a member that is missing or not `pub` is `E0343`.

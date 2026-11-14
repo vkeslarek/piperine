@@ -966,12 +966,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `param_block_errors_are_e0320` passes in `pom_classify.rs` (C99: POL-18 AC 1)
-- [ ] Test `named_argument_errors_are_e0140` passes in `pom_classify.rs` (C100: POL-18 AC 2)
-- [ ] `optional` is syntactic: the declared type is written `Option<..>`
-- [ ] The slot of the offending name stays `Unresolved`
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `param_block_errors_are_e0320` passes in `pom_classify.rs` (C99: POL-18 AC 1)
+- [x] Test `named_argument_errors_are_e0140` passes in `pom_classify.rs` (C100: POL-18 AC 2)
+- [x] `optional` is syntactic: the declared type is written `Option<..>`
+- [x] The slot of the offending name stays `Unresolved`
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
