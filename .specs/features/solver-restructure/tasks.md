@@ -840,7 +840,7 @@ Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** none
+**Dispatched:** B1 (T1-T7, Sonnet) at b4b1e768
 **Walked:** not applicable: no screen
 
 ---
