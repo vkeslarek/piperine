@@ -94,8 +94,21 @@ fn place<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
             .boxed(),
         punct(Punct::Dot).ignore_then(ident()).map(Step::Field).boxed(),
     ]);
-    ty::path(h, true)
-        .map_with(|path, e| Expr { span: Loc(e.span()), kind: ExprKind::Path(path) })
+    // A parenthesized place is parsed so that its one diagnostic names it.
+    let paren = h
+        .expr
+        .clone()
+        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .validate(|inner, e, emitter| {
+            let span = e.span();
+            emitter.emit(Rich::custom(span, not_a_place()));
+            Expr { span: Loc(span), kind: ExprKind::Paren(Box::new(inner)) }
+        });
+    let head = first_of(vec![
+        ty::path(h, true).map_with(|path, e| Expr { span: Loc(e.span()), kind: ExprKind::Path(path) }).boxed(),
+        paren.boxed(),
+    ]);
+    head
         .foldl_with(step.repeated(), |lhs, step, e| {
             let kind = match step {
                 Step::Index(i) => ExprKind::Index { expr: Box::new(lhs), index: Box::new(i) },

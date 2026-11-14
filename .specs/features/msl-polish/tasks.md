@@ -589,12 +589,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `commit_target_must_be_a_place` passes in `msl_errors.rs` (C77: POL-14 AC 1)
-- [ ] Test `parenthesized_place_is_rejected_in_both_forms` passes in `msl_errors.rs` (C78: POL-14 AC 2)
-- [ ] One function decides `is this expression a place` for both forms
-- [ ] The commit node is kept in the tree after the diagnostic (recovery), with its left side as written
-- [ ] Gate passes: run errors; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `commit_target_must_be_a_place` passes in `msl_errors.rs` (C77: POL-14 AC 1)
+- [x] Test `parenthesized_place_is_rejected_in_both_forms` passes in `msl_errors.rs` (C78: POL-14 AC 2)
+- [x] One function decides `is this expression a place` for both forms
+- [x] The commit node is kept in the tree after the diagnostic (recovery), with its left side as written
+- [x] Gate passes: run errors; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

@@ -19,6 +19,26 @@ pub struct Custom {
     pub help: Option<String>,
 }
 
+/// Whether `e` is a `place` (B.3.3): a carrier path followed by `[expr]` and
+/// `.name` steps. A parenthesized place is not one. The one decision for the
+/// definition and the commit alike.
+pub(crate) fn is_place(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Path(_) => true,
+        ExprKind::Index { expr, .. } | ExprKind::Field { expr, .. } => is_place(expr),
+        _ => false,
+    }
+}
+
+/// The diagnostic of a left side that is not a `place`.
+pub(crate) fn not_a_place() -> Custom {
+    Custom {
+        code: "E0900",
+        message: "expected a place: a carrier, `x[i]` or `x.f`".into(),
+        help: Some("a place takes no parentheses and no operators: write `q`, `q[i]` or `q.f`".into()),
+    }
+}
+
 impl std::fmt::Display for Custom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)

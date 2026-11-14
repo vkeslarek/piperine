@@ -748,3 +748,53 @@ fn dangling_doc_comment_has_its_own_message() {
         assert_eq!(d.span().end, at + comment.len(), "{src:?}");
     }
 }
+
+/// The diagnostics of `src` as (code, text the span covers, message).
+fn faults(src: &str) -> Vec<(String, String, String)> {
+    parse(src)
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.to_string(), src[d.span().start..d.span().end].to_string(), d.message.clone()))
+        .collect()
+}
+
+#[test]
+fn commit_target_must_be_a_place() {
+    // POL-14 AC 1: six non-places give one E0900 over the left side; four places are clean.
+    for lhs in ["-q", "a + b", "f(q)", "q.x()", "*q", "q as u8"] {
+        let src = format!("digital for M {{ on e {{ {lhs} <- 1; }} }}");
+        let found = faults(&src);
+        assert_eq!(found.len(), 1, "{lhs}: {found:?}");
+        assert_eq!((found[0].0.as_str(), found[0].1.as_str()), ("E0900", lhs), "{lhs}");
+        assert!(found[0].2.starts_with("expected a place"), "{}", found[0].2);
+        for named in ["carrier", "`x[i]`", "`x.f`"] {
+            assert!(found[0].2.contains(named), "{named} in {}", found[0].2);
+        }
+        // The commit stays in the tree, its left side as written.
+        let file = parse(&src).file;
+        let piperine_lang::msl::ast::ItemKind::Behavior(b) = &file.items[0].kind else { panic!("{file:?}") };
+        let piperine_lang::msl::ast::BehaviorBody::Digital(items) = &b.body else { panic!() };
+        let piperine_lang::msl::ast::DigitalItemKind::Reaction(r) = &items[0].kind else { panic!("{items:?}") };
+        assert!(
+            matches!(&r.body.stmts[0].kind, piperine_lang::msl::ast::StmtKind::Commit { place, .. } if place.span.0.end - place.span.0.start == lhs.len()),
+            "{lhs}: {:?}",
+            r.body.stmts
+        );
+    }
+    for lhs in ["q", "q[0]", "st.n", "a.b[2].c"] {
+        let src = format!("digital for M {{ on e {{ {lhs} <- 1; }} }}");
+        assert!(faults(&src).is_empty(), "{lhs}: {:?}", faults(&src));
+    }
+}
+
+#[test]
+fn parenthesized_place_is_rejected_in_both_forms() {
+    // POL-14 AC 2: a definition and a commit alike.
+    for src in ["module M() { (q) = 1; }", "digital for M { on e { (q) <- 1; } }"] {
+        let found = faults(src);
+        assert_eq!(found.len(), 1, "{src}: {found:?}");
+        assert_eq!((found[0].0.as_str(), found[0].1.as_str()), ("E0900", "(q)"), "{src}");
+        assert!(found[0].2.starts_with("expected a place"), "{}", found[0].2);
+    }
+    assert!(faults("module M() { q.f[1] = 1; }").is_empty());
+}
