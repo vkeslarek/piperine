@@ -771,3 +771,87 @@ fn from_json_rejects_a_corrupted_design() {
     let unchecked: Design = serde_json::from_value(good.clone()).unwrap();
     assert!(unchecked.check().is_empty());
 }
+
+fn number_leaves(v: &serde_json::Value, path: Vec<String>, out: &mut Vec<Vec<String>>) {
+    match v {
+        serde_json::Value::Number(_) => out.push(path),
+        serde_json::Value::Array(a) => {
+            for (i, x) in a.iter().enumerate() {
+                number_leaves(x, [path.clone(), vec![i.to_string()]].concat(), out);
+            }
+        }
+        serde_json::Value::Object(o) => {
+            for (k, x) in o {
+                number_leaves(x, [path.clone(), vec![k.clone()]].concat(), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Every read a host makes over a design that `from_json` returned.
+fn exercise(d: &Design) {
+    use piperine_lang::pom::{DeclId, ExprId};
+    let _ = d.dump();
+    for i in 0..d.decl_count() {
+        let decl = d.decl(DeclId(i as u32));
+        let _ = (decl.children(), decl.qualified_name(), decl.text(), decl.references(), decl.exprs());
+    }
+    for i in 0..d.expr_count() {
+        let e = d.expr(ExprId(i as u32));
+        let _ = (e.children(), e.parent(), e.stmt(), e.text());
+    }
+    for m in d.modules() {
+        let _ = m.instances();
+        for s in m.signals() {
+            let _ = s.writers();
+        }
+    }
+    for f in d.files() {
+        let _ = f.to_ast();
+    }
+}
+
+#[test]
+fn from_json_never_panics_on_a_corrupted_field() {
+    // POL-21 AC 2 (A-33): every numeric leaf of a design, set to an id out of
+    // range and to 1, is either an `Err` or a design every read survives.
+    std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            let src = "mod a { pub const K: f64 = 1.5k; }\nuse a::K;\nmodule M(a: E) { signal s: E; s = a; let x = R(a, a) { r: K }; }\ndigital for M { on e { s[0] <- 1; } }\nfn f(o: Option<u8>) -> u8 { match o { None => 0, Some(x) => x + 1 } }";
+            let design = Design::builder().source("top.msl", src).build();
+            let good = serde_json::to_value(&design).unwrap();
+            let mut leaves = Vec::new();
+            number_leaves(&good, Vec::new(), &mut leaves);
+            assert!(leaves.len() > 300, "{}", leaves.len());
+            let mut panics = Vec::new();
+            for leaf in &leaves {
+                for value in [99_999u64, 1] {
+                    let mut v = good.clone();
+                    let mut cur = &mut v;
+                    for k in leaf {
+                        cur = match k.parse::<usize>() {
+                            Ok(i) if cur.is_array() => &mut cur[i],
+                            _ => &mut cur[k.as_str()],
+                        };
+                    }
+                    *cur = serde_json::json!(value);
+                    let text = v.to_string();
+                    match std::panic::catch_unwind(|| Design::from_json(&text)) {
+                        Err(_) => panics.push(format!("from_json: {}={value}", leaf.join("."))),
+                        Ok(Err(problems)) => assert!(!problems.is_empty()),
+                        Ok(Ok(d)) => {
+                            if std::panic::catch_unwind(|| exercise(&d)).is_err() {
+                                panics.push(format!("use: {}={value}", leaf.join(".")));
+                            }
+                        }
+                    }
+                }
+            }
+            assert!(panics.is_empty(), "{} panics, e.g. {:?}", panics.len(), &panics[..panics.len().min(6)]);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

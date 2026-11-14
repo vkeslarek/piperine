@@ -39,6 +39,45 @@ pub struct Index {
 }
 
 impl Index {
+    /// Every id a table holds names a node of `design`; one message per id that does not.
+    pub(crate) fn check(&self, design: &Design, problems: &mut Vec<String>) {
+        let (decls, exprs, stmts) = (design.decl_count(), design.expr_count(), design.stmt_count());
+        let (pats, paths) = (design.pat_count(), design.path_count());
+        for (d, list) in self.references.iter().enumerate() {
+            for r in list {
+                let (kind, id, len) = match r {
+                    ReferenceId::Path(p) => ("path", p.0, paths),
+                    ReferenceId::Member(e) => ("expression", e.0, exprs),
+                    ReferenceId::Pattern(p) => ("pattern", p.0, pats),
+                };
+                if id as usize >= len {
+                    problems.push(format!("index: declaration {d} is referenced by {kind} {id}, which does not exist"));
+                }
+            }
+        }
+        for (d, list) in self.writers.iter().enumerate() {
+            for w in list {
+                let (kind, id, len) = match w {
+                    WriterId::Definition(x) => ("declaration", x.0, decls),
+                    WriterId::Commit(s) => ("statement", s.0, stmts),
+                };
+                if id as usize >= len {
+                    problems.push(format!("index: declaration {d} is written by {kind} {id}, which does not exist"));
+                }
+            }
+        }
+        for (d, list) in self.instantiated_by.iter().enumerate() {
+            for e in list.iter().filter(|e| e.index() >= exprs) {
+                problems.push(format!("index: declaration {d} is instantiated by expression {}, which does not exist", e.0));
+            }
+        }
+        for (name, len) in [("references", self.references.len()), ("writers", self.writers.len()), ("instantiated_by", self.instantiated_by.len())] {
+            if len > decls {
+                problems.push(format!("index: the {name} table has {len} rows for {decls} declarations"));
+            }
+        }
+    }
+
     pub fn references(&self, decl: DeclId) -> &[ReferenceId] {
         self.references.get(decl.index()).map_or(&[], Vec::as_slice)
     }

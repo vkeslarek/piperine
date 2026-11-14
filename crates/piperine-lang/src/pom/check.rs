@@ -359,6 +359,7 @@ impl Design {
     pub fn check(&self) -> Vec<String> {
         let mut problems = Vec::new();
         self.check_links(&mut problems);
+        self.index.check(self, &mut problems);
         self.check_nodes(&mut problems);
         self.check_reachability(&mut problems);
         // The parent table is read through the nodes, so it is checked once every id is known to be in range.
@@ -373,6 +374,17 @@ impl Design {
     fn check_parents(&self, problems: &mut Vec<String>) {
         if self.expr_parent.len() != self.exprs.len() || self.expr_stmt.len() != self.exprs.len() {
             problems.push(format!("the parent tables hold {} and {} entries for {} expressions", self.expr_parent.len(), self.expr_stmt.len(), self.exprs.len()));
+            return;
+        }
+        for i in 0..self.exprs.len() {
+            if let Some(p) = self.expr_parent[i].filter(|p| p.index() >= self.exprs.len()) {
+                problems.push(format!("expression {i} names expression {} as its parent, which does not exist", p.0));
+            }
+            if let Some(st) = self.expr_stmt[i].filter(|st| st.index() >= self.stmts.len()) {
+                problems.push(format!("expression {i} names statement {} as its statement, which does not exist", st.0));
+            }
+        }
+        if !problems.is_empty() {
             return;
         }
         for (i, node) in self.exprs.iter().enumerate() {
