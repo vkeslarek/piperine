@@ -1,6 +1,6 @@
 # msl-packages proofs
 
-**HEAD**: 5e7ecc01
+**HEAD**: ae1f39fd
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 118 pass, 0 fail
@@ -131,29 +131,29 @@
 `Run spec` - exit 0
 
 ```
-test s36_names_are_identifiers ... ok
+test s36_has_no_search_path_and_no_cycle ... ok
+test s36_states_the_lockfile_rule ... ok
 test s36_states_the_dependency_sources ... ok
-test s36_lists_every_manifest_key ... ok
 test std_is_implicit_and_the_prelude_is_std_prelude ... ok
+test e0163_is_defined_in_3_5 ... ok
+test s36_defines_the_package_codes ... ok
+test gnd_and_the_implicit_params_are_core_names ... ok
 test e0162_is_defined_in_3_4 ... ok
 test every_method_called_in_a_spec_fence_is_catalogued ... ok
-test s36_defines_the_package_codes ... ok
-test e0163_is_defined_in_3_5 ... ok
-test gnd_and_the_implicit_params_are_core_names ... ok
 test every_error_code_is_defined_exactly_once ... ok
 
 test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
      Running tests/spec_text.rs (/var/tmp/piperine-target/debug/deps/spec_text-8e0716f5857daff9)
 ```
 
 `Run errors` - exit 0
 
 ```
-test unexpected_token_names_found_and_expected ... ok
-test removed_rust_forms_report_targeted_messages ... ok
+test statements_of_the_wrong_block_kind_report_e0404 ... ok
 test parse_phase_rows_report_their_codes ... ok
+test removed_rust_forms_report_targeted_messages ... ok
 test nesting_without_delimiters_is_also_bounded ... ok
 test depth_limit_fits_8mib_stack_in_debug ... ok
 test depth_over_256_is_diagnostic_not_overflow ... ok
@@ -162,7 +162,7 @@ test comparison_lists_are_not_nesting ... ok
 test flat_chains_up_to_4096_links_are_not_nesting ... ok
 test flat_chains_survive_a_default_2_mib_thread ... ok
 
-test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.47s
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.64s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
      Running tests/msl_errors.rs (/var/tmp/piperine-target/debug/deps/msl_errors-f5f3f043c2e1f80b)
@@ -171,18 +171,18 @@ test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run crates` - exit 0
 
 ```
-test super_at_a_crate_root_is_e0161 ... ok
-test from_json_rejects_a_crate_whose_root_is_not_its_own ... ok
 test use_forms_of_a_dependency_resolve ... ok
 test the_prelude_reaches_every_crate ... ok
+test super_at_a_crate_root_is_e0161 ... ok
 test from_json_rejects_a_dependency_cycle ... ok
 test single_source_design_has_a_root_crate_named_by_its_file ... ok
+test from_json_rejects_a_crate_whose_root_is_not_its_own ... ok
 test from_json_rejects_out_of_range_crate_links ... ok
 test from_json_rejects_a_crate_table_that_breaks_the_graph_rules ... ok
 test only_a_type_namespace_local_clashes_with_a_dependency ... ok
 test from_json_never_panics_on_a_corrupted_crate_field ... ok
 
-test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/pom_crates.rs (/var/tmp/piperine-target/debug/deps/pom_crates-a9f38328ce432af0)
@@ -191,18 +191,18 @@ test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run docs` - exit 0
 
 ```
-test mkdocs_nav_lists_every_pom_page ... ok
 test every_builtin_row_is_documented ... ok
+test mkdocs_nav_lists_every_pom_page ... ok
 test place_has_no_parenthesized_form_in_the_docs ... ok
 test docs_describe_crates_and_no_prelude_sources ... ok
 test every_code_the_pom_reports_is_documented ... ok
 test every_b3_production_is_mapped ... ok
 test every_public_pom_type_has_a_heading ... ok
-test msl_fences_parse_clean ... ok
 test every_b1_construct_is_mapped ... ok
+test msl_fences_parse_clean ... ok
 test every_reflection_method_is_documented ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running tests/pom_docs.rs (/var/tmp/piperine-target/debug/deps/pom_docs-031147b33902f8bc)
@@ -214,8 +214,8 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 test a_missing_or_mistyped_package_key_is_e0171 ... ok
 test a_package_error_renders_as_a_miette_report ... ok
 test an_unknown_key_is_e0171_at_the_key ... ok
-test a_valid_manifest_reads_every_package_field ... ok
 test every_fault_of_a_manifest_is_reported ... ok
+test a_valid_manifest_reads_every_package_field ... ok
 test a_bad_dependency_name_or_requirement_is_e0171 ... ok
 test git_refs_are_exclusive_and_git_only ... ok
 test invalid_toml_is_e0170_at_its_span ... ok
@@ -231,16 +231,16 @@ test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run paths` - exit 0
 
 ```
-test a_package_without_a_crate_root_is_e0175 ... ok
-test package_key_renames_a_dependency ... ok
-test an_unsatisfied_requirement_is_e0173 ... ok
 test a_path_without_a_package_is_e0172 ... ok
 test a_requirement_at_the_integer_limit_does_not_overflow ... ok
+test a_package_without_a_crate_root_is_e0175 ... ok
+test an_unsatisfied_requirement_is_e0173 ... ok
+test a_dependency_cycle_is_e0174_with_its_chain ... ok
 test a_shared_dependency_is_one_crate ... ok
+test package_key_renames_a_dependency ... ok
 test the_graph_mirrors_the_manifests ... ok
 test version_requirements_follow_the_caret_table ... ok
 test path_dependencies_are_relative_to_their_manifest ... ok
-test a_dependency_cycle_is_e0174_with_its_chain ... ok
 
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -251,16 +251,18 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run git` - exit 0
 
 ```
-running 7 tests
-test one_repository_spelled_two_ways_is_one_crate ... ok
+running 9 tests
+test a_trailing_dot_git_is_stripped_only_from_remote_urls ... ok
 test a_git_dependency_checks_out_the_default_branch ... ok
+test an_unreachable_repository_or_ref_is_e0172 ... ok
+test one_repository_spelled_two_ways_is_one_crate ... ok
 test one_commit_of_one_repository_is_one_crate ... ok
 test a_git_package_resolves_its_own_dependencies ... ok
-test an_unreachable_repository_or_ref_is_e0172 ... ok
+test local_repositories_util_and_util_dot_git_stay_two_crates ... ok
 test two_commits_of_one_repository_are_two_crates ... ok
 test branch_tag_and_rev_select_their_commit ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
      Running tests/git.rs (/var/tmp/piperine-target/debug/deps/git-d8585614044d79ba)
@@ -275,12 +277,12 @@ test a_lockfile_commit_must_be_forty_lowercase_hex_digits ... ok
 test a_locked_checkout_needs_no_repository ... ok
 test a_locked_commit_is_kept_when_the_branch_moves ... ok
 test update_moves_the_lock_to_the_new_commit ... ok
-test stale_entries_leave_the_lockfile ... ok
 test only_the_root_lockfile_counts ... ok
+test stale_entries_leave_the_lockfile ... ok
 test the_lockfile_is_deterministic ... ok
 test the_lockfile_records_each_git_package ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
      Running tests/lock.rs (/var/tmp/piperine-target/debug/deps/lock-c995643327bfc307)
@@ -291,10 +293,10 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 running 6 tests
 test a_package_error_stops_load_project ... ok
-test the_crate_holds_no_retired_surface ... ok
 test the_project_root_is_the_nearest_manifest ... ok
-test a_model_error_is_a_diagnostic_not_a_package_error ... ok
+test the_crate_holds_no_retired_surface ... ok
 test the_crate_reports_exactly_the_package_phase_codes ... ok
+test a_model_error_is_a_diagnostic_not_a_package_error ... ok
 test load_project_builds_the_design_of_a_package_graph ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
@@ -306,25 +308,25 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `cargo test -p piperine-lang --doc` - exit 0
 
 ```
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 732) ... ok
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 954) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 93) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 111) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 188) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::reflection (line 954) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 138) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 239) ... ok
-test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 283) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 384) ... ok
+test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 283) ... ok
 test crates/piperine-lang/src/pom/guide.rs - pom::guide::resolution (line 359) ... ok
 
-test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
-all doctests ran in 1.55s; merged doctests compilation took 1.46s
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+all doctests ran in 1.54s; merged doctests compilation took 1.44s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
    Doc-tests piperine_lang
 ```
 
 `cargo build -p piperine-project --all-targets 2>&1 / tee /dev/stderr / (! grep -qE '^(warning/error)')` - exit 0
 
 ```
-Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
 ```
