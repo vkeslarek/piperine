@@ -768,16 +768,16 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `load_project_builds_the_design_of_a_package_graph` passes in `project.rs` (C112: PKG-14 AC 2)
-- [ ] Test `a_package_error_stops_load_project` passes in `project.rs` (C113: PKG-14 AC 3)
-- [ ] Test `a_model_error_is_a_diagnostic_not_a_package_error` passes in `project.rs` (C114: PKG-14 AC 4)
-- [ ] Test `the_crate_reports_exactly_the_package_phase_codes` passes in `project.rs` (C116: PKG-15 AC 2)
-- [ ] `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')` exits 0 (C117: PKG-15 AC 3)
-- [ ] The crate's public surface is `Manifest`, `Package`, `Version`, `Requirement`, `Dependency`, `Source`, `GitRef`, `Options`, `PackageGraph`, `ResolvedPackage`, `Lockfile`, `LockedPackage`, `PackageError`, `resolve`, `load_project`, `find_project_root`
-- [ ] `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')` exits 0 (C117)
-- [ ] `cargo test -p piperine-lang` and `cargo test -p piperine-project` both pass
-- [ ] Gate passes: `cargo test -p piperine-project`; `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `load_project_builds_the_design_of_a_package_graph` passes in `project.rs` (C112: PKG-14 AC 2)
+- [x] Test `a_package_error_stops_load_project` passes in `project.rs` (C113: PKG-14 AC 3)
+- [x] Test `a_model_error_is_a_diagnostic_not_a_package_error` passes in `project.rs` (C114: PKG-14 AC 4)
+- [x] Test `the_crate_reports_exactly_the_package_phase_codes` passes in `project.rs` (C116: PKG-15 AC 2)
+- [x] `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')` exits 0 (C117: PKG-15 AC 3)
+- [x] The crate's public surface is `Manifest`, `Package`, `Version`, `Requirement`, `Dependency`, `Source`, `GitRef`, `Options`, `PackageGraph`, `ResolvedPackage`, `Lockfile`, `LockedPackage`, `PackageError`, `resolve`, `load_project`, `find_project_root`
+- [x] `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')` exits 0 (C117)
+- [x] `cargo test -p piperine-lang` and `cargo test -p piperine-project` both pass
+- [x] Gate passes: `cargo test -p piperine-project`; `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

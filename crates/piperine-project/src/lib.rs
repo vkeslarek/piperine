@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_lang::pom::Design;
+
 pub mod error;
 pub mod git;
 pub mod lockfile;
@@ -25,4 +27,11 @@ pub fn find_project_root(current_dir: &Path) -> Option<PathBuf> {
             return None;
         }
     }
+}
+
+/// Resolve the package at `dir` and read every crate of its graph, `std` last. A package error
+/// returns no design; a language error is a diagnostic of the design that is returned.
+pub fn load_project(dir: &Path) -> Result<Design, Vec<PackageError>> {
+    let packages = resolve(dir, Options::default())?;
+    Ok(Design::load_crates(packages.graph))
 }
