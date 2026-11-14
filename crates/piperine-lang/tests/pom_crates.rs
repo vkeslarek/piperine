@@ -608,3 +608,151 @@ fn a_pub_use_re_exports_across_crates() {
     let design = chain("const X: u32 = util::K;\n", "use deep::K;\n", deep);
     assert_eq!(codes(&design), ["E0161"]);
 }
+
+// ---- PKG-07 AC 3 to 7: reflection over crates (T12) ----
+
+/// `app -> {zeta: b, alpha: c}` over virtual sources; crate order is `app`, `b`, `c`, `std`.
+fn three_crates(app: &str, b: &str, c: &str) -> Design {
+    let mut g = CrateGraph::new();
+    let a = g.add_crate("app", "app/lib.msl").unwrap();
+    let bb = g.add_crate("b", "b/lib.msl").unwrap();
+    let cc = g.add_crate("c", "c/lib.msl").unwrap();
+    g.add_dependency(a, "zeta", bb).unwrap();
+    g.add_dependency(a, "alpha", cc).unwrap();
+    Design::builder().source("app/lib.msl", app).source("b/lib.msl", b).source("c/lib.msl", c).crates(g).build()
+}
+
+#[test]
+fn a_crate_lists_its_declared_dependencies() {
+    let design = three_crates("", "", "");
+    let app = design.root_crate();
+    let deps = app.dependencies();
+    assert_eq!(deps.iter().map(|(n, c)| (*n, c.name())).collect::<Vec<_>>(), [("zeta", "b"), ("alpha", "c")]);
+    assert!(app.dependency("std").is_none(), "std is implicit and not listed");
+    assert_eq!(app.dependency("zeta").unwrap().name(), "b");
+    assert_eq!(app.dependency("alpha").unwrap().name(), "c");
+    assert!(app.dependency("b").is_none(), "a dependency is found by the name the crate gives it");
+    assert!(app.dependency("nope").is_none());
+    assert!(design.crates()[1].dependencies().is_empty());
+    assert!(design.std_crate().dependencies().is_empty());
+}
+
+const KINDS: &str = "pub module {M}() {}\npub fn {F}() -> u32 { 1 }\npub struct {S} { x: u32 }\npub enum {E} { A }\npub trait {T} {}\npub const {K}: u32 = 1;\nimpl {S} { pub const Z: u32 = 2; }\npub mod {N} {}\npub nature {Nat} { value: f64 }\n";
+
+fn kinds(suffix: &str) -> String {
+    let mut text = KINDS.to_string();
+    for key in ["M", "F", "S", "E", "T", "K", "N", "Nat"] {
+        text = text.replace(&format!("{{{key}}}"), &format!("{key}{suffix}"));
+    }
+    text
+}
+
+#[test]
+fn collections_list_the_root_crate_and_a_crate_lists_its_own() {
+    let design = three_crates(&kinds("app"), &kinds("b"), &kinds("c"));
+    let names = |v: Vec<Option<&str>>| v.into_iter().map(|n| n.unwrap_or("-").to_string()).collect::<Vec<_>>();
+    assert_eq!(names(design.modules().iter().map(|x| x.name()).collect()), ["Mapp"]);
+    assert_eq!(names(design.functions().iter().map(|x| x.name()).collect()), ["Fapp"]);
+    assert_eq!(names(design.structs().iter().map(|x| x.name()).collect()), ["Sapp"]);
+    assert_eq!(names(design.enums().iter().map(|x| x.name()).collect()), ["Eapp"]);
+    assert_eq!(names(design.traits().iter().map(|x| x.name()).collect()), ["Tapp"]);
+    assert_eq!(names(design.consts().iter().map(|x| x.name()).collect()), ["Kapp", "Z"]);
+    assert_eq!(design.impls().len(), 1);
+    assert!(design.impls().iter().all(|i| i.decl().krate() == design.root_crate()));
+    assert_eq!(names(design.namespaces().iter().map(|x| x.name()).collect()), ["Napp"]);
+    assert_eq!(names(design.natures().iter().map(|x| x.name()).collect()), ["Natapp"]);
+
+    let b = design.krate("b").unwrap();
+    assert!(b.decls().iter().all(|d| d.krate() == b));
+    assert!(b.decls().iter().any(|d| d.name() == Some("Fb")));
+    assert!(!b.decls().iter().any(|d| d.name() == Some("Fapp") || d.name() == Some("Fc")));
+    assert_eq!(b.modules().iter().map(|m| m.name().unwrap()).collect::<Vec<_>>(), ["Mb"]);
+    assert_eq!(design.root_crate().modules().iter().map(|m| m.name().unwrap()).collect::<Vec<_>>(), ["Mapp"]);
+    assert_eq!(design.std_crate().modules().iter().filter(|m| m.name() == Some("Mapp")).count(), 0);
+}
+
+#[test]
+fn by_name_lookups_prefer_the_root_crate_then_crate_order() {
+    let home = |d: Option<piperine_lang::pom::Decl<'_>>| d.map(|d| d.krate().name().to_string());
+    let some = |s: &str| Some(s.to_string());
+    // The name in every crate: the root crate's.
+    let src = "pub module X() {}\npub fn f() -> u32 { 1 }\npub struct S { x: u32 }\npub nature Nat { value: f64 }\n";
+    let design = three_crates(src, src, src);
+    assert_eq!(home(design.module("X").map(|m| m.decl())), some("app"));
+    assert_eq!(home(design.function("f").map(|m| m.decl())), some("app"));
+    assert_eq!(home(design.struct_named("S").map(|m| m.decl())), some("app"));
+    assert_eq!(home(design.nature("Nat").map(|m| m.decl())), some("app"));
+    // Not in the root crate: the first crate in order, which is `b`, not the dependency named `alpha`.
+    let design = three_crates("", src, src);
+    assert_eq!(home(design.module("X").map(|m| m.decl())), some("b"));
+    assert_eq!(home(design.function("f").map(|m| m.decl())), some("b"));
+    assert_eq!(home(design.struct_named("S").map(|m| m.decl())), some("b"));
+    assert_eq!(home(design.nature("Nat").map(|m| m.decl())), some("b"));
+    assert_eq!(home(design.find("X")), some("b"));
+    // Only the later dependency has it.
+    let design = three_crates("", "", src);
+    assert_eq!(home(design.module("X").map(|m| m.decl())), some("c"));
+    // A dependency before std: a name in `c` and in std is `c`'s.
+    let std = "pub mod prelude {}\npub module X() {}\n";
+    let mut g = CrateGraph::new();
+    let a = g.add_crate("app", "app/lib.msl").unwrap();
+    let c = g.add_crate("c", "c/lib.msl").unwrap();
+    g.add_dependency(a, "c", c).unwrap();
+    let design = Design::builder().std_source("std/lib.msl", std).source("app/lib.msl", "").source("c/lib.msl", "pub module X() {}\n").crates(g).build();
+    assert_eq!(home(design.module("X").map(|m| m.decl())), some("c"));
+    // Only std has it: std's.
+    let design = Design::builder().std_source("std/lib.msl", std).source("app/lib.msl", "").build();
+    assert_eq!(home(design.module("X").map(|m| m.decl())), some("std"));
+}
+
+#[test]
+fn crates_are_found_by_name() {
+    let design = three_crates("", "", "");
+    assert_eq!(design.crates().iter().map(|c| c.name()).collect::<Vec<_>>(), ["app", "b", "c", "std"]);
+    assert_eq!(design.krate("b").unwrap().id(), CrateId(1));
+    assert_eq!(design.krate("std").unwrap(), design.std_crate());
+    assert_eq!(design.krate("app").unwrap(), design.root_crate());
+    assert!(design.krate("zeta").is_none(), "a crate is found by its own name, not a dependency name");
+    assert!(design.krate("").is_none());
+    // The first of a name: two crates called `b`.
+    let mut g = CrateGraph::new();
+    let a = g.add_crate("app", "app/lib.msl").unwrap();
+    let b1 = g.add_crate("b", "b1/lib.msl").unwrap();
+    let b2 = g.add_crate("b", "b2/lib.msl").unwrap();
+    g.add_dependency(a, "one", b1).unwrap();
+    g.add_dependency(a, "two", b2).unwrap();
+    let design = Design::builder().source("app/lib.msl", "").source("b1/lib.msl", "").source("b2/lib.msl", "").crates(g).build();
+    assert_eq!(design.krate("b").unwrap().id(), CrateId(1));
+}
+
+#[test]
+fn crate_find_inverts_qualified_name() {
+    let src = "pub mod a { pub module M(out o: f64) { let w = 1.0; } pub mod b { pub fn deep() -> u32 { 1 } } }\npub struct S { x: u32 }\nimpl S { pub const X: u32 = 1; }\npub enum E { V }\n";
+    let design = three_crates("", src, "pub struct S { y: u32 }\n");
+    let b = design.krate("b").unwrap();
+    let mut seen = 0;
+    for d in b.decls() {
+        if d.name().is_none() {
+            continue;
+        }
+        let q = d.qualified_name();
+        if q.is_empty() {
+            continue;
+        }
+        let found = b.find(&q).unwrap_or_else(|| panic!("`{q}` not found"));
+        assert_eq!(found.qualified_name(), q);
+        assert_eq!(found.krate(), b, "`{q}`");
+        seen += 1;
+    }
+    assert!(seen >= 8, "{seen}");
+    assert_eq!(b.find("a::M").unwrap().krate(), b);
+    assert_eq!(b.find("a::M.w").unwrap().qualified_name(), "a::M.w");
+    assert_eq!(b.find("impl S.X").unwrap().krate(), b);
+    // Another crate's declaration is not found through this crate, even under the same name.
+    let c = design.krate("c").unwrap();
+    assert!(c.find("a::M").is_none());
+    assert_eq!(c.find("S").unwrap().krate(), c);
+    assert!(b.find("nope").is_none());
+    // `qualified_name` is relative to the declaration's own crate.
+    assert_eq!(b.find("a::M").unwrap().qualified_name(), "a::M");
+}

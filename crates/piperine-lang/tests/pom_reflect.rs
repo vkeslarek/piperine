@@ -87,6 +87,7 @@ fn lookups_by_name_and_path() {
     assert_eq!(spaces, ["a", "b"], "named namespaces; file roots are unnamed");
 }
 
+/// A by-name lookup prefers the root crate's declaration over one in `std`.
 #[test]
 fn module_lookup_prefers_authored_files() {
     // The prelude declares `idt`; a design module of that name wins, else the prelude's is found.
@@ -592,6 +593,7 @@ fn shadowed() -> Design {
     Design::builder().std_source("lib.msl", format!("pub mod prelude {{\n{SHADOW_PRELUDE}\n}}\n")).source("top.msl", SHADOW_PROJECT).build()
 }
 
+/// The root crate's declarations win every by-name lookup.
 #[test]
 fn by_name_lookups_prefer_project_files() {
     let design = shadowed();

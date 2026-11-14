@@ -26,7 +26,7 @@ read is in [Model](model.md).
 
 ### `Design`
 
-The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup prefers the project's declaration over one in `std`; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the crates other than `std` only, in source order. `decls()` and `files()` list everything, `std` included; `std_crate().files()` gives the standard library's own files.
+The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup (`module`, `function`, `struct_named`, `nature`, `find`) prefers the root crate's declaration, else the first in crate order; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the root crate only, in source order; `Crate::decls()` and `Crate::modules()` list one crate. `decls()` and `files()` list everything, `std` included; `std_crate().files()` gives the standard library's own files.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
@@ -59,6 +59,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `decl(&self, id: DeclId)` | `Decl<'_>` | The declaration with this id, as a handle: the way from a `Resolution::Decl(id)` to the declaration. Ids come from this design. |
 | `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, the project's files first. |
 | `crates(&self)` | `Vec<Crate<'_>>` | Every crate in graph order: the root crate first, `std` last. |
+| `krate(&self, name: &str)` | `Option<Crate<'_>>` | The first crate of this name, in crate order; a dependency name is not a crate name. |
 | `root_crate(&self)` | `Crate<'_>` | The crate the design was built from. |
 | `std_crate(&self)` | `Crate<'_>` | The standard library. |
 | `modules(&self)` | `Vec<Module<'_>>` | Every module of the non-prelude files, in source order. |
@@ -215,6 +216,11 @@ A crate of the design: the root crate, a dependency, or `std`. A design always h
 | `name(self)` | `&'d str` | The crate's name: its name in the graph, the stem of the root file (every other character `_`, a `_` before a digit) for a design built from one root file, `std` for the standard library. |
 | `root(self)` | `Namespace<'d>` | The root namespace: the namespace of the root file. |
 | `files(self)` | `Vec<SourceFile<'d>>` | Every file of the crate: its root file, then the files its `mod` items load. |
+| `dependencies(self)` | `Vec<(&'d str, Crate<'d>)>` | The declared dependencies in declaration order, each as the name this crate gives it and the crate it names; `std` is implicit and not listed. |
+| `dependency(self, name: &str)` | `Option<Crate<'d>>` | The crate this one reaches under that dependency name. |
+| `decls(self)` | `Vec<Decl<'d>>` | Every declaration of this crate, in source order. |
+| `modules(self)` | `Vec<Module<'d>>` | Every module of this crate, in source order. |
+| `find(self, path: &str)` | `Option<Decl<'d>>` | The declaration at a `::` path from this crate's root, or at the text `qualified_name()` prints for a declaration of this crate. |
 | `is_root(self)` | `bool` | Whether this is the crate the design was built from. |
 | `is_std(self)` | `bool` | Whether this is the standard library. |
 

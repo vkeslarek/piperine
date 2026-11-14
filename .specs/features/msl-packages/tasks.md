@@ -433,15 +433,15 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_crate_lists_its_declared_dependencies` passes in `pom_crates.rs` (C60: PKG-07 AC 3)
-- [ ] Test `collections_list_the_root_crate_and_a_crate_lists_its_own` passes in `pom_crates.rs` (C61: PKG-07 AC 4)
-- [ ] Test `by_name_lookups_prefer_the_root_crate_then_crate_order` passes in `pom_crates.rs` (C62: PKG-07 AC 5)
-- [ ] Test `crates_are_found_by_name` passes in `pom_crates.rs` (C63: PKG-07 AC 6)
-- [ ] Test `crate_find_inverts_qualified_name` passes in `pom_crates.rs` (C64: PKG-07 AC 7)
-- [ ] `qualified_name()` is unchanged: relative to the declaration's own crate
-- [ ] Every new method has its row in `docs/pom/reflection.md` (`pom_docs`)
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_crate_lists_its_declared_dependencies` passes in `pom_crates.rs` (C60: PKG-07 AC 3)
+- [x] Test `collections_list_the_root_crate_and_a_crate_lists_its_own` passes in `pom_crates.rs` (C61: PKG-07 AC 4)
+- [x] Test `by_name_lookups_prefer_the_root_crate_then_crate_order` passes in `pom_crates.rs` (C62: PKG-07 AC 5)
+- [x] Test `crates_are_found_by_name` passes in `pom_crates.rs` (C63: PKG-07 AC 6)
+- [x] Test `crate_find_inverts_qualified_name` passes in `pom_crates.rs` (C64: PKG-07 AC 7)
+- [x] `qualified_name()` is unchanged: relative to the declaration's own crate
+- [x] Every new method has its row in `docs/pom/reflection.md` (`pom_docs`)
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

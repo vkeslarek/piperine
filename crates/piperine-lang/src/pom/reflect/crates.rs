@@ -2,7 +2,7 @@
 
 use super::super::design::Design;
 use super::super::ids::{CrateId, FileId};
-use super::{Namespace, SourceFile};
+use super::{Decl, Module, Namespace, Reflect, SourceFile};
 
 /// A crate of a [`Design`]: the root crate, a dependency, or `std`.
 #[derive(Clone, Copy)]
@@ -40,6 +40,35 @@ impl<'d> Crate<'d> {
             .collect()
     }
 
+    /// The dependencies the crate declares, in declaration order, each as the name this crate
+    /// gives it and the crate it names. `std` is implicit and not listed.
+    pub fn dependencies(self) -> Vec<(&'d str, Crate<'d>)> {
+        let design = self.design;
+        design.crate_data(self.id).dependencies.iter().map(|d| (d.name.as_str(), Crate::new(design, d.krate))).collect()
+    }
+
+    /// The crate this one reaches under the dependency name `name`.
+    pub fn dependency(self, name: &str) -> Option<Crate<'d>> {
+        self.dependencies().into_iter().find(|(n, _)| *n == name).map(|(_, c)| c)
+    }
+
+    /// Every declaration of this crate, in source order.
+    pub fn decls(self) -> Vec<Decl<'d>> {
+        self.design.decls().into_iter().filter(|d| d.krate() == self).collect()
+    }
+
+    /// Every module of this crate, in source order.
+    pub fn modules(self) -> Vec<Module<'d>> {
+        self.decls().into_iter().filter_map(Decl::as_module).collect()
+    }
+
+    /// The declaration at a `::` path from this crate's root, or at a name
+    /// [`Reflect::qualified_name`] prints for a declaration of this crate.
+    pub fn find(self, path: &str) -> Option<Decl<'d>> {
+        let walked = path.split("::").try_fold(self.root().decl(), |at, segment| at.children().into_iter().find(|c| c.name() == Some(segment)));
+        walked.or_else(|| self.decls().into_iter().find(|d| d.qualified_name() == path))
+    }
+
     /// Is this the crate the design was built from: the first of the graph?
     pub fn is_root(self) -> bool {
         self.id == self.design.root_crate
@@ -67,6 +96,11 @@ impl Design {
     /// Every crate in graph order, the root crate first and `std` last.
     pub fn crates(&self) -> Vec<Crate<'_>> {
         (0..self.crates.len()).map(|i| Crate::new(self, CrateId(i as u32))).collect()
+    }
+
+    /// The first crate of this name, in crate order.
+    pub fn krate(&self, name: &str) -> Option<Crate<'_>> {
+        self.crates().into_iter().find(|c| c.name() == name)
     }
 
     /// The crate the design was built from.
