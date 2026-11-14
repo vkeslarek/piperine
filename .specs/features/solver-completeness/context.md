@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-11-14
 **Spec:** `.specs/features/solver-completeness/spec.md`
-**Status:** Waiting for the user's answers (Q1 to Q10). Nothing below is decided; each question carries a recommendation.
+**Status:** Answered. The questions below are kept as asked; the decisions are in the two "User answers" sections at the end and in the Assumptions table of `spec.md`. Next: `.specs/features/solver-restructure/` (feature A).
 
 ---
 

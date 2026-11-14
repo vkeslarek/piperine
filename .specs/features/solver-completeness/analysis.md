@@ -206,3 +206,35 @@ The work is too large for one feature (53 open rows, a new event kernel, a new s
 | 6 | `solver-numerics`: per-nature tolerances, named singular solves, LTE per state, switch-branch pattern, correlated and potential noise | rows 41, 42, 46, 47, 52, 55, 56 | 1 |
 
 Sub-features 4, 5 and 6 are independent of each other. After 1 to 5 the elaborator and codegen have an engine for every dynamic rule of Parts III to VI. Rows 67 and 68 stay out (see `spec.md`, Out of Scope).
+
+## 7. After the user's answers (2026-11-14)
+
+The matrix above is the state of the code and is unchanged. The decisions in `context.md` (rounds 1 and 2) change what closing a row means and how the work is cut.
+
+| Row | Was | Now |
+| --- | --- | --- |
+| 10, 11, 12, 13 (left value, jump solve, per-state restart, lag) | missing or partial against §15 and §15.2 | the solver's present discontinuity handling is kept (Q7). Appendix C.2 is amended to describe it, and what §15.2 says normatively is an open question of feature (B) |
+| 14, 15 (event times that are not time points) | missing | Q8: a digital event cuts an analog step only when it changes something analog reads. Closed by feature (B) |
+| 42 (residual tolerances reversed) | partial | the present mapping is kept for ngspice parity (Q9); §17.1.2 is amended. Per-row tolerances given at build time remain a gap (numerics) |
+| 3, 4, 24 (microstep loop, snapshot, relaxation) | partial | the digital side becomes a levelized DAG propagated to a fixed point, Verilator-style (the user's vision), in feature (B) |
+
+Section 3, per feature:
+
+| Surplus | Removed by | Why there |
+| --- | --- | --- |
+| S1 regions, S3 `specify` delays and timing checks, S5 text and file IO, S6 verification channels, S7 `disto`, S11 `$simprobe`, S14 dependencies | (A) `solver-restructure` | none of them changes the result of a surviving test |
+| S2 strengths and `DriverTable`, S4 four-state `LogicValue`, S12 seq/comb contract and A2D flags | (B) `solver-event-boundary` | they are the live digital logic; replacing them is the logic change |
+| S8 `discontinuity`, S9 `initial_conditions`, S10 `start_analysis`/`finish_analysis`, S13 runtime banks | `solver-time-point` | they are part of the kept discontinuity and start-up paths; revisited with held nodes and continuation |
+
+Section 6, replaced by:
+
+| Order | Feature | Kind | Builds / verifies |
+| --- | --- | --- | --- |
+| A | `solver-restructure`: suite runs alone, dead crates and surplus removed, three-crate split | structure, no logic change | Sonnet / Opus |
+| B | `solver-event-boundary`: typed carriers, levelized DAG propagation, event-only analog/digital boundary, ticks, typed run errors; the spec amendments of Q7 and Q9 | logic | Opus / Fable |
+| 3 | `solver-time-point`: settle, operating-point rounds, held nodes, sweep points, continuation | logic | to be set |
+| 4 | `solver-crossings` | logic | to be set |
+| 5 | `solver-host-seam` | logic | to be set |
+| 6 | `solver-numerics` | logic | to be set |
+
+Crates of the workspace after (A): kept `piperine-lang`, `piperine-project`, `piperine-solver`, `piperine-analog-solver`, `piperine-digital-solver`, `piperine-api`, `piperine-cli`, `piperine-lang-server`; removed `piperine-ir`, `piperine-codegen`, `piperine-python`, `piperine-plugin`, `piperine-plugin-macros`.

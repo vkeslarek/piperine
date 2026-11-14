@@ -1,30 +1,37 @@
 # Solver Completeness Specification
 
+Umbrella for six ordered features. Each feature has its own directory with spec, design and tasks; this document holds the shared goal, the user's decisions and the requirement map. The first feature, `solver-restructure`, is planned in `.specs/features/solver-restructure/`.
+
 ## Problem Statement
 
-The MSL frontend (spec, parser, POM) is done and the solver is the only other crate that builds. The elaborator and codegen that will join them do not exist yet. Before they are written, the solver must offer an engine for every dynamic rule of the MSL specification, and nothing else: today it lacks the MSL instant model (integer ticks, microsteps, typed carriers with `resolve`, the jump solve, settle commits, located crossings), it carries about 3.4k lines that serve only Verilog-AMS, and none of its tests can run because they depend on the dead frontend.
+The MSL frontend (spec, parser, POM) is done and the solver is the only other crate that builds. The elaborator and codegen that will join them do not exist yet. Before they are written, the solver must offer an engine for every dynamic rule of the MSL specification, and nothing else. Today it lacks the MSL discrete model (integer ticks, typed carriers with `resolve`, a clean analog/digital boundary, settle commits, located crossings), it carries about 3.4k lines that serve only Verilog-AMS, and none of its tests can run because they depend on the dead frontend.
 
-Evidence, row by row: `.specs/features/solver-completeness/analysis.md` (68 rules traced: 15 present, 31 partial, 22 missing; 14 surplus items).
+Evidence, row by row: `analysis.md` (68 rules traced: 15 present, 31 partial, 22 missing; 14 surplus items).
+
+The user's vision (2026-11-14): the solver is the owner of events and dispatches to two sub-solvers, analog and digital, "praticamente como dois solvers distintos que rodam no mesmo solver". The boundary between them is events, always. Past a boundary event the digital side propagates Verilator-style over a levelized DAG until it converges or fails.
 
 ## Goals
 
-- [ ] `cargo test -p piperine-solver` builds and passes with no in-tree dev-dependency.
-- [ ] Every row of `analysis.md` section 2 except rows 67 and 68 is `present`, each proven by a solver test that uses hand-written Rust `Element`s only.
-- [ ] Every surplus item of `analysis.md` section 3 that the user approves for removal is gone, and the crate has no in-tree dependency.
-- [ ] The solver stays an engine: it evaluates no model expression, knows no MSL type, formats no output and reads no file.
+- [ ] The solver is three crates: the event owner, the analog sub-solver and the digital sub-solver, and the two sub-solvers exchange nothing but events.
+- [ ] Each solver crate builds and passes its own unit tests with no other crate of the tree.
+- [ ] Every row of `analysis.md` section 2 except rows 67 and 68 is `present`, as amended by the decisions below (rows 11, 12 and 42 keep the solver's present behavior and the spec is amended to it).
+- [ ] The surplus of `analysis.md` section 3 is gone.
+- [ ] The solver stays an engine: it evaluates no model expression, knows no MSL type, formats no output and reads no file. Its complexity is physical, not linguistic.
 
 ## Out of Scope
 
 | Feature | Reason |
 | ------- | ------ |
-| The elaborator, codegen, JIT and any change to `piperine-lang` | they are what this feature prepares for; "depois só conectar" |
-| Repairing `piperine-codegen`, `piperine-api`, `piperine-python`, `piperine-cli`, `piperine-plugin`, `piperine-lang-server` | they target the deleted frontend; separate work |
-| Everything in `analysis.md` section 4 (known-flag arithmetic, symbolic differentiation, `m`/`dtemp` scaling, limiting functions, the stdlib modules, monitors, sweeps, Monte Carlo, Fourier, paths, formatting, Python) | belongs to the language, the elaborator, codegen or the host |
-| Sensitivities along a trajectory and across events (§23.3, `E0807` to `E0809`; row 67) | large and only the optimizer needs it; a later feature once a design runs end to end |
+| The elaborator, codegen and the connection of the solver to `piperine-lang` | planned separately, after a discussion about codegen (user, round 2) |
+| Integration tests and ngspice parity runs | user: "por enquanto vamos ter que nos contentar com unitários pois integrado só vai existir depois que conectarmos o solver ao lang" |
+| Rebuilding `piperine-api` as a solver-backed surface (`Session` over Rust-built circuits, results, waveform, units) | accepted by the user as the target; its own feature after `solver-restructure` |
+| `piperine-cli`, `piperine-lang-server` | stay in the tree; user: "ambos vão ter sua própria feature" |
+| Everything in `analysis.md` section 4 | belongs to the language, the elaborator, codegen or the host |
+| Sensitivities along a trajectory and across events (§23.3; row 67) | a later feature once a design runs end to end |
 | Periodic small-signal and periodic noise (§16.3; row 68) | the spec lists it as unimplemented and untraced (G.37) |
-| The C interface of `extern "cosim"` (G.65) | open in the spec; this feature gives the generic wake request only |
-| New analyses, new integration methods, performance work | the solver must stay minimal; none is required by a rule |
-| Moving `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` to a host crate | no host crate builds, so the move cannot be verified (Q5 in `context.md`) |
+| The C interface of `extern "cosim"` (G.65) | open in the spec |
+| The jump solve of Appendix C.2 as a new algorithm, and a change of the residual test's tolerance mapping | user: the present algorithm and the ngspice-parity mapping stay; the spec is amended instead |
+| Moving `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` to a host crate | user: "Sim, por enquanto beleza" (they stay in the solver) |
 
 ---
 
@@ -32,23 +39,28 @@ Evidence, row by row: `.specs/features/solver-completeness/analysis.md` (68 rule
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| Where the discrete engine lives (Q1) | the event kernel (ticks, queue, carrier store, commit ordering, microstep loop, checkpoint) lives in the solver; evaluation of definitions, `resolve` and reactions is element code called by the kernel | time, ordering and rollback are engine invariants (§15 I1 to I8) and must be owned and tested in one place | n |
-| How the solver stores a carrier value (Q2) | opaque fixed-size bytes per drive and per carrier, laid out by codegen, flags included; a change is a bytewise difference | the solver must not know MSL types; §5.3.4 to §5.3.6 hold bitwise when unknown levels are stored in a canonical form | n |
-| Removal of the Verilog-AMS surface (Q3, Q4) | remove S1 to S14 of `analysis.md` section 3, with the tests that cover only them | "o solver tem que ser mínimo"; each item has no MSL construct | n |
-| Tests that depend on `piperine-codegen` or `piperine-lang` (Q6) | rewrite the five targets against hand-written `Element`s with the same assertions; drop both dev-dependencies | a core crate that cannot be tested alone is not a core | n |
-| Host-built analyses housed in the solver (Q5) | `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` stay; `disto` goes | they need the assembled linearization; §16.3 defines distortion as a transient plus Fourier | n |
-| The jump solve (Q7) | Appendix C.2: backward Euler with `h` equal to one tick, time not advanced, repeated once, `1/h` rows scaled by `h` | the spec allows a finite `h` within tolerance and gives this as the reference | n |
-| Who decides which scheduled times are time points (Q8) | the elaborator gives one `touches_analog` flag per reaction and per carrier; the kernel applies the dynamic test of §17.2.2 | the static half needs the dependency graph, which the solver does not have | n |
-| The residual test's tolerances (Q9) | follow §17.1.2 (node row against the flow `abstol`, potential-branch row against the potential `abstol`) | the spec is the contract; today's code does the reverse | n |
-| `piperine-ir` dependency (Q10) | removed; the secant predictor is 20 lines and moves into the solver | the solver becomes a leaf crate | n |
-| Size of the feature | six ordered sub-features (`analysis.md` section 6); this document is the umbrella and each sub-feature gets its own design and tasks | 53 open rows, a new kernel and a new solve kind do not fit one task list | n |
-| Proof vehicle | every criterion is proven by a solver test built from hand-written Rust `Element`s | no frontend exists to compile a model | y - follows from the brief |
-| Numeric defaults | Appendix C.2.1 (tick 1 fs, 1000 microsteps, 20 rounds, `reltol` 1e-3, `trtol` 7, hold 1e12 S) | the spec's reference values; most are already the code's | y - settled by the spec |
-| Error identity | a run error carries the spec's code (`E0501` to `E0510`, `E0418`, `E0435`, `E0453`, `E0454`), the instant and the names, as typed fields | §15: "the host receives the code, the instant and the names" | y - settled by the spec |
+| Where the discrete engine lives (Q1) | the solver owns events and dispatches to an analog and a digital sub-solver; three crates, each with its exclusive code | user: "pode ser modelado como "solver" o dono dos eventos e dispatch para sub solvers analogicos e digitais. Se quiser dividir em 3 crates, o dono dos eventos, o digital-solver e o analog-solver cada um com seu código exclusivo" | y |
+| The analog/digital boundary | events only, always; no shared state, no snapshot of the other side | user: "A fronteira é via eventos, sempre... Separar em uma fronteira BEM delimitada o que ocorre no analog e o que ocorre no digital" | y |
+| Digital propagation | Verilator-style: levelized DAG evaluation after a boundary event, repeated until it converges or fails | user: "Todo o path depois do evento de borda é feito estilo Verilator, onde a propagação é executada em DAG, até convergir ou falhar" | y |
+| How the solver stores a carrier value (Q2) | opaque fixed-size bytes, laid out by codegen; a change is a bytewise difference | user: "Prefiro bytes também. Solver é o core do negócio e tem que ser mais simples, não ter a complexidade da linguagem e sim a complexidade física" | y |
+| Removal of the Verilog-AMS surface and its tests (Q3) | removed | user: "Ok, o que precisar apagar, pode apagar, aproveitando que estamos fazendo um makeover dele" | y |
+| Constraint, margin and coverage channels (Q4) | removed; one event/record sink replaces them and is a first-class debug surface | user: "Concordo e na verdade o sink de eventos é bem importante para debug" | y |
+| Host-built analyses in the solver (Q5) | `disto` deleted; `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` stay | user: "Sim, por enquanto beleza" | y |
+| Tests that depend on `piperine-codegen` (Q6) | rewritten on hand-written `Element`s, same assertions | user: "Fio, verilog vai embora" | y |
+| The jump solve (Q7) | not built. The solver keeps its present discontinuity handling (land on the event time, apply, solve the step with the new values, restart the integrator); Appendix C.2 is amended to describe it | user: "eu manteria o algoritmo atual do solver que funcionou bem nos testes, inclusive cross validation e convergence com descontinuidades" | y |
+| Which digital events cut an analog step (Q8) | only an event that crosses the boundary, that is, changes something analog reads. Purely digital activity never forces an analog solve. Where analog code exists it is solved at every analog time step | user: "o solver analógico roda em todo timestep... se existir qualquer código analog, tem que rodar ele"; round 2: "Q8. Ok" | y |
+| The residual test's tolerances (Q9) | the present mapping stays (ngspice parity); §17.1.2 is amended to match | user: "a paridade com ngspice é um strenght bem alto e um ponto positivissimo"; round 2: "mantém Q7 e Q9" | y |
+| Crates removed (Q10) | `piperine-ir`, `piperine-codegen`, `piperine-python`, `piperine-plugin`, `piperine-plugin-macros`; the root package's VAMS end-to-end tests; `examples/*.vams` | user: "Vamos remover o IR, cranelift e Python por agora. Vamos deixar apenas a API testável em RUST, solver, linguagem, apenas o core"; round 2: "plugin pro enquanto vai embora" | y |
+| Crates kept | `piperine-lang`, `piperine-project`, the solver crates, `piperine-api` (to be reduced), `piperine-cli`, `piperine-lang-server` | user: "lang-server é bom ficar... cli também... api aceito" | y |
+| The `Element` ABI | may change freely in this refactor | user: "fica a vontade para mudar o ABI também ok?" | y |
+| Feature split and who builds what | (A) `solver-restructure`, structure only: Sonnet implements, Opus verifies. (B) `solver-event-boundary`, logic: Opus implements, Fable verifies. Then `solver-time-point`, `solver-crossings`, `solver-host-seam`, `solver-numerics` | user: "Core cleanup + solver-split poderia ser uma feature só pois é refactor de estrtura. Digital dag + analog split uma feature separada pois quero que mexer no core core (mudança de logica) seja implementada por opus e verificada com fable" | y |
+| Proof vehicle | unit tests on hand-written Rust `Element`s, per crate | user: unit tests only for now | y |
+| Spec amendments | Appendix C.2 (the rows "the jump" and "restart", and G.6's jump row) and §17.1.2 are rewritten to describe the solver's present behavior. They land in `solver-event-boundary`, the first feature that owns the discontinuity path, in the commit whose tests pin that behavior (MD-57) | follows from Q7 and Q9 | y - follows from the answers |
+| Numeric defaults | Appendix C.2.1 | the spec's reference values; most are the code's already | y - settled by the spec |
 
-**Open questions:** Q1 to Q10 are written out with options and a recommendation in `context.md`. They are the user's to answer before this spec is approved.
+**Open questions:** one, for `solver-event-boundary`, not for `solver-restructure`. §15.2 is normative and defines the jump as an instantaneous right value at the same `t` (a shorted capacitor pair reads 0.25 V at `(t, n + 1)`). With Q7 the solver gives that value one step later. Does §15.2 keep its text with Appendix C.2 recording a deviation, or is §15.2 itself amended? It is asked when feature (B) is specified.
 
-**Implicit-requirement dimensions.** Input validation & bounds: SCI-02, SCI-08, SCX-03, SCH-04. Failure / partial failure: SCI-07, SCT-06, SCT-07, SCN-02. Idempotency / retry: SCT-09 (a rejected step leaves no trace). Auth and rate limits: N/A because the solver is an in-process library. Concurrency / ordering: SCI-04, SCI-05, SCI-09 (determinism). Data lifecycle: SCT-12 (what a continuation keeps), SCT-11 (what an analysis without time drops). Observability: SCH-05 (records), SCI-07 (errors with names). External-dependency failure: SCH-07 (cosim), otherwise N/A because the solver calls no external service. State-transition integrity: SCT-01 to SCT-05 (the time-point procedure).
+**Implicit-requirement dimensions.** Input validation & bounds: SCI-02, SCX-03, SCH-04. Failure / partial failure: SCI-07, SCT-07, SCN-02. Idempotency / retry: SCT-09. Auth and rate limits: N/A because the solver is an in-process library. Concurrency / ordering: SCI-04, SCI-05, SCI-09. Data lifecycle: SCT-11, SCT-12. Observability: SCE-04, SCH-05. External-dependency failure: SCH-07, otherwise N/A because the solver calls no service. State-transition integrity: SCE-01 to SCE-03, SCT-05.
 
 ---
 
@@ -56,84 +68,76 @@ Evidence, row by row: `.specs/features/solver-completeness/analysis.md` (68 rule
 
 Roles: the **codegen author** writes the elaborator and device code that will target the solver. The **host author** writes `piperine-api`.
 
-### P1: A solver that can be tested alone and carries nothing MSL lacks ⭐ MVP
+### P1: Restructure: a clean core in three crates ⭐ MVP
 
-**User Story**: As a codegen author, I want the solver's own suite to run with no other crate of the tree, and its surface to hold only what MSL uses, so that I target a small, proven contract.
+**User Story**: As a codegen author, I want the solver cleaned of everything MSL lacks and split into the event owner, the analog sub-solver and the digital sub-solver, each testable alone, so that the logic work that follows lands on a small, proven structure.
 
-**Why P1**: Nothing else can be verified until the suite runs. Sub-feature `solver-baseline`.
+**Why P1**: Nothing can be verified until the suite runs, and the split is the frame of the user's vision. Feature (A) `solver-restructure`; structure only, no logic change. Full criteria: `.specs/features/solver-restructure/spec.md`.
 
 **Acceptance Criteria**:
 
-1. WHEN `cargo test -p piperine-solver` runs on a tree where `piperine-codegen` does not compile THEN the solver SHALL build every test target and pass.
-2. The solver's `Cargo.toml` SHALL list no crate of this workspace under `[dependencies]` or `[dev-dependencies]`.
-3. WHEN the five targets that used JIT devices (`adjoint_dc`, `adjoint_vs_sens`, `pss`, `sens`, `transient_reentry`) run THEN each SHALL assert the same quantities as before, on hand-written `Element`s.
-4. The public surface (`prelude`, `abi`) SHALL export none of: `Region`, `RegionQueue`, `Strength`, `DriverKind`, `DelayTable`, `PathDelay`, `TimingCheckTable`, `SimOutput`, `FileTable`, `McdTable`, `ValidationReport`, `MarginReport`, `CoverageReport`, `CheckPosture`, `CoverPosture`, `RequireScope`, `DistoSolver`, `Disto2`, `Disto3`, `simprobe`.
-5. The `Element` traits SHALL have no method among `discontinuity`, `initial_conditions`, `load_disto2`, `load_disto3`, `validation_reports`, `evaluate_constraints`, `margin_report`, `coverage_report`, `reset_margin_tracking`.
-6. WHEN the surface test (`tests/abi_surface.rs`, `tests/prelude_surface.rs`) runs THEN it SHALL fail if a removed name is exported again.
+1. WHEN the unit tests of each solver crate run on a tree where no other crate compiles THEN each crate SHALL build and pass.
+2. The analog and the digital sub-solver crates SHALL depend on no crate of this workspace.
+3. The workspace SHALL contain none of `piperine-ir`, `piperine-codegen`, `piperine-python`, `piperine-plugin`, `piperine-plugin-macros`.
+4. WHEN a test that passed before the restructure, and whose subject was not removed, runs afterwards THEN it SHALL pass with its assertions unchanged.
 
-**Independent Test**: on this worktree, with codegen broken, `cargo test -p piperine-solver` is green and the surface tests list the removed names.
+**Independent Test**: `cargo test` on each of the three solver crates is green; the numeric baseline target (`parity_baseline`) passes untouched.
 
 ---
 
-### P1: Instants, typed carriers and commits ⭐ MVP
+### P1: The event boundary and the digital DAG ⭐ MVP
 
-**User Story**: As a codegen author, I want an event kernel with integer time, microsteps, typed carriers, drives, `resolve` and commits, so that every `digital` block and every definition of MSL has defined, deterministic execution.
+**User Story**: As a codegen author, I want the digital sub-solver to hold typed carriers and propagate over a levelized DAG, and the analog and digital sides to meet only through events owned by the solver, so that every `digital` block of MSL has deterministic execution and mixed-signal coupling has one seam.
 
-**Why P1**: Every discrete construct of Parts II to IV runs on it. Sub-feature `solver-instants`.
+**Why P1**: It is the core logic change. Feature (B) `solver-event-boundary`; Opus implements, Fable verifies.
 
 **Acceptance Criteria**:
 
-1. The kernel SHALL keep every scheduled time as a signed 64-bit count of ticks, with the tick length a session option whose default is 1 fs.
-2. IF a scheduled time falls outside the 64-bit tick range THEN the kernel SHALL fail the analysis with `E0502` naming what was scheduled.
-3. WHEN a commit is made at time `t` with delay `d` THEN the kernel SHALL make it due at the tick nearest `t + d`, a half-tick tie going to the later tick, or at the next microstep when `d <= 0` or the due tick is not later than `t`.
-4. WHEN several commits to one level of one drive apply in one microstep THEN the kernel SHALL apply them in the order (instant made, source index, execution index) and keep the last.
-5. WHEN a statement makes a commit to a level THEN the kernel SHALL remove the pending commits of the same statement to that level whose due instant is at or after the new one, and no commit of any other statement.
-6. WHILE a microstep runs, every reaction SHALL read the carrier values settled at the start of that microstep, and no commit made in it SHALL be visible in it.
-7. IF the microstep loop of one time exceeds the session's bound (default 1000) THEN the kernel SHALL fail the analysis with `E0501` naming the carriers that changed in the last microstep.
-8. IF a commit is made with a NaN delay THEN the kernel SHALL fail the analysis with `E0435`; a delay of `+inf` SHALL never come due.
-9. WHEN the same elements, initial values and host actions are run twice THEN the kernel SHALL produce the same sequence of (instant, carrier, value) changes.
-10. The kernel SHALL store each carrier and each drive as a fixed number of bytes given at build time, and SHALL treat a carrier as changed in a microstep exactly when its bytes differ from those of the previous microstep.
-11. WHEN any drive of a resolved carrier changes in a microstep THEN the kernel SHALL call that carrier's resolve function with all its drives in the order given at build time and store the result as the carrier's value.
-12. WHEN an element asks for the value of a resolved carrier without its own drive THEN the kernel SHALL return the resolve of every other drive.
-13. WHEN definitions among resolved drives form a loop THEN the kernel SHALL relax it from the empty state for at most (drive count + 1) passes, and SHALL count only the settled value as a change.
-14. WHEN a carrier's value changes THEN the kernel SHALL keep its previous value and make it readable by elements until the next change.
-15. WHEN a scheduled event (`at`) is armed with a tick THEN the kernel SHALL fire it once at microstep 0 of that tick, or at the next microstep when the tick equals the current one, and never when the tick is in the past.
-16. WHEN a host `set` changes a param during a run THEN the kernel SHALL fire that param's change event at the instant the set applies.
-17. IF an element reports a run error while it evaluates (a load, a reaction, a definition) THEN the solver SHALL fail the analysis with that error's code, the instant and the element's instance name.
-18. Every run error of the solver SHALL carry its code, its instant `(t, n)` when it has one, and the names involved, as typed fields.
+1. The analog sub-solver's interface SHALL name no digital type, and the digital sub-solver's interface SHALL name no analog type.
+2. WHEN the analog side must tell the digital side something (a crossing, an accepted point) or the reverse (a carrier that analog reads changed) THEN it SHALL be one event delivered through the owner, and nothing else SHALL cross.
+3. WHEN a boundary event reaches the digital sub-solver THEN it SHALL evaluate its elements in levelized DAG order and repeat until no value changes, or fail.
+4. The owner SHALL make every boundary event observable through one sink, with its time, source and payload.
+5. WHEN a digital event changes nothing that an analog element reads THEN the analog sub-solver SHALL NOT end a step at its time.
+6. WHEN a digital event changes something an analog element reads THEN the analog sub-solver SHALL land on its time, solve the step with the new value and restart its integrator, as the solver does today for a breakpoint.
+7. The digital sub-solver SHALL keep every scheduled time as a signed 64-bit count of ticks, with the tick length a session option whose default is 1 fs.
+8. IF a scheduled time falls outside the tick range THEN the solver SHALL fail the analysis with `E0502`.
+9. The digital sub-solver SHALL store each carrier and each drive as a fixed number of bytes given at build time, and SHALL treat a carrier as changed exactly when its bytes differ.
+10. WHEN any drive of a resolved carrier changes THEN the digital sub-solver SHALL call that carrier's resolve function with all its drives in build order and store the result.
+11. WHEN an element asks for the value of a resolved carrier without its own drive THEN the digital sub-solver SHALL return the resolve of every other drive.
+12. WHEN several commits to one level of one drive apply at one instant THEN they SHALL apply in the order (instant made, source index, execution index) and the last SHALL be the value.
+13. WHEN a statement commits to a level THEN the pending commits of the same statement to that level due at or after the new one SHALL be removed, and no commit of another statement.
+14. WHILE one propagation pass runs, every reaction SHALL read the values settled at its start.
+15. IF propagation at one time does not converge within the session's bound (default 1000 passes) THEN the solver SHALL fail the analysis with `E0501` naming the carriers still changing.
+16. IF a commit is made with a NaN delay THEN the solver SHALL fail the analysis with `E0435`; a delay of `+inf` SHALL never come due.
+17. WHEN the same elements, initial values and host actions are run twice THEN the sequence of (time, carrier, value) changes SHALL be identical.
+18. WHEN a scheduled event is armed with a tick THEN it SHALL fire once at that tick, or at the next pass when the tick equals the current one, and never when the tick is in the past.
+19. IF an element reports a run error while it evaluates THEN the solver SHALL fail the analysis with that error's code, the time and the element's instance name, as typed fields.
 
-**Independent Test**: a purely discrete design of hand-written elements (the `Front` trace of §15.1, a counter, a pulse written as two commits, a three-drive resolved net with a loop) reproduces the spec's tables instant by instant.
+**Independent Test**: a purely discrete design of hand-written elements reproduces the trace of §15.1; a divider clock that no analog element reads adds no analog time point; a `Switch` driven by a carrier makes the analog side land on the change.
 
 ---
 
-### P1: The mixed time point ⭐ MVP
+### P2: The time point
 
-**User Story**: As a codegen author, I want the time-point procedure of §15 and §16 (left value, microstep loop with jump solves, settle, operating-point rounds, held nodes, sweep points, continuation), so that an `analog` block that reads a carrier and a reaction that probes a node meet as the spec says.
+**User Story**: As a codegen author, I want settle, operating-point rounds, held nodes, sweep points and continuation as §15 and §16 state them, on the kept discontinuity algorithm, so that stdlib modules such as `transition` and `zi_nd` run.
 
-**Why P1**: It is the coupling itself; the spec's conformance set (`transition`, `zi_nd`, `inertial`) depends on it. Sub-feature `solver-time-point`.
+**Why P2**: Built on (B). Feature `solver-time-point`.
 
 **Acceptance Criteria**:
 
-1. WHEN the transient reaches a time point `t` THEN the solver SHALL solve the analog system with the discrete state of before `t` first, and only then apply what is due at `(t, 0)`.
-2. WHEN a carrier or param that an analog element reads changes at `(t, n)` to a value the last solve had not read THEN the solver SHALL perform a jump solve at unchanged `t` before microstep `n + 1` reacts.
-3. WHILE a jump solve runs, every charge-like state SHALL be discretized by backward Euler over one tick from its value at the previous solve of the instant, and the solve SHALL be repeated once from its own result.
-4. WHEN a 1 pF capacitor at 1 V is shorted to a 3 pF capacitor at 0 V by a carrier change THEN both SHALL read 0.25 V after the jump within the convergence tolerance.
-5. WHEN a jump solve ends THEN the integrator SHALL drop the history and error estimate of exactly the states whose value or derivative moved by more than the convergence tolerance, and SHALL keep those of every other state.
-6. IF a jump solve does not converge THEN the solver SHALL fail the analysis with `E0504` naming the instant and the carriers or params that changed.
-7. IF the rounds of an operating point exceed the session's bound (default 20) THEN the solver SHALL fail the analysis with `E0506` naming the carriers still changing.
-8. WHEN a scheduled time has no due commit that changes a carrier an analog element reads, and no firing reaction flagged as touching the analog side THEN the solver SHALL run its instants without an analog solve and SHALL NOT end a step there.
-9. WHEN a transient step is rejected THEN carriers, pending commits, armed events, element state and the analog history SHALL equal their values before the step.
-10. WHEN the microstep loop of a time point exits THEN the solver SHALL run every settle reaction once, with the final discrete state and the final solution.
-11. WHEN a settle reaction commits with no advancing delay at time point `t` THEN the commit SHALL be due at microstep 0 of the next time point, the solve that arrives there SHALL already read its value, and no jump solve SHALL run for it.
-12. IF the step to the next time point is rejected THEN a pending settle commit SHALL move to the new next time point.
-13. WHILE the operating point of a transient is solved, every node given a held value at build time SHALL be tied to it by a potential source to ground, removed before the first step.
-14. WHEN a `Dc` analysis runs several sweep points THEN the discrete state SHALL carry from one point to the next, initial values SHALL be committed at the first point only, and settle reactions SHALL run once per point.
-15. WHEN an analysis without time ends THEN every commit and scheduled event that was waiting for a later time SHALL be dropped.
-16. WHEN a transient is continued to a later stop time THEN time, the event queue, carriers, element state and the analog history SHALL be those of its last instant, and no initial value SHALL be committed again.
-17. WHEN a `Dc`, `Ac` or `Noise` analysis runs at a transient's last instant THEN elements SHALL read that instant as the current time, Newton SHALL start from the transient's final solution, and the queue SHALL be unchanged afterwards.
-18. WHILE any solve runs, an element SHALL be able to read the analysis kind (`Dc`, `Tran`, `Ac`, `Noise`) and the kind of solve (equilibrium, transient step, jump, small-signal).
+1. WHEN propagation at an analog time point has converged THEN the solver SHALL run every settle reaction once, with the final discrete state and the final solution.
+2. WHEN a settle reaction commits with no advancing delay THEN the commit SHALL be due at the next analog time point, and the solve that arrives there SHALL already read its value.
+3. IF the step to the next time point is rejected THEN a pending settle commit SHALL move to the new next time point.
+4. IF the rounds of an operating point exceed the session's bound (default 20) THEN the solver SHALL fail the analysis with `E0506` naming the carriers still changing.
+5. WHEN a transient step is rejected THEN carriers, pending commits, armed events, element state and the analog history SHALL equal their values before the step.
+6. WHILE the operating point of a transient is solved, every node given a held value at build time SHALL be tied to it by a potential source to ground, removed before the first step.
+7. WHEN a `Dc` analysis runs several sweep points THEN the discrete state SHALL carry from one point to the next, initial values SHALL be committed at the first point only, and settle reactions SHALL run once per point.
+8. WHEN an analysis without time ends THEN every commit and scheduled event that was waiting for a later time SHALL be dropped.
+9. WHEN a transient is continued to a later stop time THEN time, the event queue, carriers, element state and the analog history SHALL be those of its last instant.
+10. WHEN a `Dc`, `Ac` or `Noise` analysis runs at a transient's last instant THEN elements SHALL read that instant as the current time and the queue SHALL be unchanged afterwards.
+11. WHILE any solve runs, an element SHALL be able to read the analysis kind (`Dc`, `Tran`, `Ac`, `Noise`) and whether the solve is an equilibrium solve.
 
-**Independent Test**: hand-written `Switch`, `SampleHold`, charge-sharing pair and a settle-commit element reproduce the traces of §15.1, §15.2 and Appendix F.5; a divider clock that no analog element reads adds no time point.
+**Independent Test**: hand-written `SampleHold` and settle-commit elements reproduce the tables of §15; a `Dc` sweep of a Schmitt trigger traces its hysteresis.
 
 ---
 
@@ -141,15 +145,15 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 
 **User Story**: As a codegen author, I want the solver to land on a crossing and to honor a step cap, so that `cross`, `above` and every converter built on them fire at the right time.
 
-**Why P2**: `cross` is the only analog-to-digital path of MSL, and it works coarsely today (it fires one step late). Sub-feature `solver-crossings`.
+**Why P2**: `cross` is the only analog-to-digital path of MSL and fires one step late today. Feature `solver-crossings`.
 
 **Acceptance Criteria**:
 
 1. WHEN a crossing expression goes from `<= 0` to `> 0` inside a step THEN the solver SHALL retake the step until the landing time exceeds the true crossing by at most `ttol` plus one tick, or `0 < e < etol` holds there.
-2. WHEN a crossing is located THEN its landing time SHALL be a tick, a time point, and its event SHALL fire at microstep 0 of it.
+2. WHEN a crossing is located THEN its landing time SHALL be a tick and its event SHALL cross the boundary at that time.
 3. IF a crossing is registered with a `ttol` or `etol` that is not finite and positive THEN the solver SHALL fail the analysis with `E0510`.
 4. WHEN several crossings fall in one step THEN the solver SHALL land on the earliest, and those that round to the same tick SHALL fire together.
-5. WHEN a jump solve, a new round of an operating point or the next sweep point moves a crossing expression from `<= 0` to `> 0` THEN its event SHALL fire at the next microstep, or at microstep 0 of the later sweep point.
+5. WHEN a new round of an operating point or the next sweep point moves a crossing expression from `<= 0` to `> 0` THEN its event SHALL fire.
 6. WHEN an element reports a step cap at an accepted solution THEN the next step SHALL be at most the smallest cap reported there.
 7. IF an element reports a step cap that is not finite and positive THEN the solver SHALL fail the analysis with `E0509`.
 
@@ -161,20 +165,20 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 
 **User Story**: As a host author, I want to drive carriers, force and release, act at scheduled times, receive records and stop on `finish`, so that a testbench of §23.1 can be written over the solver.
 
-**Why P2**: Without it a design can run but not be driven or observed as the spec states. Sub-feature `solver-host-seam`.
+**Why P2**: Without it a design runs but cannot be driven or observed as the spec states. Feature `solver-host-seam`.
 
 **Acceptance Criteria**:
 
-1. WHEN the host writes a drive it holds before the run THEN the value SHALL be committed at `(0, 0)` as an initial value.
-2. WHEN the host schedules a drive, a `set`, a `force` or a `release` at a time THEN it SHALL enter that instant with the commits collected there.
+1. WHEN the host writes a drive it holds before the run THEN the value SHALL be committed at time 0 as an initial value.
+2. WHEN the host schedules a drive, a `set`, a `force` or a `release` at a time THEN it SHALL enter that time as an event through the owner.
 3. WHILE a carrier is forced, its value SHALL be the forced value whatever its drives, and its drives SHALL go on updating underneath.
 4. IF the host schedules an action at a time already past THEN the solver SHALL refuse it with `E0806` and change nothing.
-5. WHEN the host schedules a probe at a time THEN that time SHALL be a time point and the host SHALL receive the solution there.
+5. WHEN the host schedules a probe at a time THEN that time SHALL be an analog time point and the host SHALL receive the solution there.
 6. WHEN an element writes a record from a reaction in a step that is later rejected THEN the record SHALL not reach the sink; a record written from an analog evaluation SHALL reach it.
-7. WHEN a record flagged `finish` is accepted THEN the analysis SHALL end at its instant, which SHALL be its last time point.
-8. The record sink SHALL deliver, with each record, the instance name, the analysis kind, the instant, and inside an analog evaluation the Newton iteration.
+7. WHEN a record flagged `finish` is accepted THEN the analysis SHALL end at its time.
+8. The record sink SHALL deliver, with each record, the instance name, the analysis kind, the time, and inside an analog evaluation the Newton iteration.
 9. WHEN an element asks for a session parameter by name THEN the solver SHALL return the value the host set, or report that there is none.
-10. WHEN a discrete element asks to be run again at a time THEN that time SHALL be a scheduled time, and an element flagged as never rolled back SHALL be run only at instants of accepted steps.
+10. WHEN a discrete element asks to be run again at a time THEN that time SHALL be scheduled, and an element flagged as never rolled back SHALL run only at times of accepted steps.
 
 **Independent Test**: a hand-written UART receiver is driven bit by bit from a test acting as the host, with a forced reset, and the host receives the `byte` record and a `finish`.
 
@@ -184,29 +188,27 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 
 **User Story**: As a codegen author, I want tolerances per nature, named singular solves, a per-state truncation test, switch branches and correlated noise, so that the remaining rows of §11, §14 and §17 hold.
 
-**Why P3**: The engine runs without them; results are within today's global tolerances. Sub-feature `solver-numerics`.
+**Why P3**: The engine runs without them. Feature `solver-numerics`.
 
 **Acceptance Criteria**:
 
-1. The update test SHALL use, for each unknown, the absolute tolerance given for it at build time (potential for a node, flow for a branch).
-2. The residual test SHALL use, for each row, the absolute tolerance given for it at build time (flow for a node row, potential for a potential-branch row).
-3. IF a linear solve is singular THEN the solver SHALL fail with `E0503` naming the unknowns of the rows that make it so.
-4. WHERE an element declares a state with its own absolute tolerance, the truncation-error test SHALL measure that state against it.
-5. WHEN an element stamps a different set of matrix positions in one solve than in another, both sets having been declared at build time, THEN each solve SHALL factor correctly.
-6. WHEN one noise source is injected at several rows with complex weights THEN the output density SHALL be that of one fully correlated source.
-7. WHEN a noise source is injected on the row of a potential branch THEN the output density SHALL include it.
+1. The update and residual tests SHALL use, for each unknown and each row, the absolute tolerance given for it at build time, under the solver's present mapping of tolerances to rows.
+2. IF a linear solve is singular THEN the solver SHALL fail with `E0503` naming the unknowns of the rows that make it so.
+3. WHERE an element declares a state with its own absolute tolerance, the truncation-error test SHALL measure that state against it.
+4. WHEN an element stamps a different set of matrix positions in one solve than in another, both sets having been declared at build time, THEN each solve SHALL factor correctly.
+5. WHEN one noise source is injected at several rows with complex weights THEN the output density SHALL be that of one fully correlated source.
+6. WHEN a noise source is injected on the row of a potential branch THEN the output density SHALL include it.
 
-**Independent Test**: a `Nullor` with a 1 µV servo nature converges to that tolerance; a floating node reports its name; a resistor split in two with one shared noise instance gives zero noise across the pair.
+**Independent Test**: a floating node reports its name; a resistor split in two with one shared noise instance gives zero noise across the pair.
 
 ---
 
 ## Edge Cases
 
-- WHEN a design has no analog unknown THEN the solver SHALL still run the operating point, every scheduled instant and the stop time, with settle reactions at the operating point and at the stop time.
-- WHEN a design has no discrete carrier THEN the transient SHALL take the same steps as before this feature within tolerance.
-- IF a commit is due at a time later than the stop time THEN it SHALL stay pending and SHALL be applied only if the transient is continued.
-- WHEN two event times round to the same tick THEN they SHALL be one instant.
-- WHEN a settle commit is made at the stop time and the transient is not continued THEN it SHALL be dropped.
+- WHEN a design has no analog unknown THEN the solver SHALL run every scheduled digital time and the stop time with no analog solve.
+- WHEN a design has no discrete carrier THEN the transient SHALL take the same steps as before these features within tolerance.
+- IF a commit is due later than the stop time THEN it SHALL stay pending and SHALL apply only if the transient is continued.
+- WHEN two event times round to the same tick THEN they SHALL be one time.
 - IF a hold closes a loop of potential sources THEN the solve SHALL fail with `E0503` naming both.
 
 ---
@@ -215,32 +217,30 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| SCB-01 | P1: Baseline, AC 1 to 3 (suite runs alone) | solver-baseline | Pending |
-| SCB-02 | P1: Baseline, AC 4 to 6 (surplus removed, guarded) | solver-baseline | Pending |
-| SCI-01 | P1: Instants, AC 1, 3 (ticks, rounding) | solver-instants | Pending |
-| SCI-02 | P1: Instants, AC 2, 8 (`E0502`, `E0435`) | solver-instants | Pending |
-| SCI-03 | P1: Instants, AC 10, 14 (carrier store, change, previous value) | solver-instants | Pending |
-| SCI-04 | P1: Instants, AC 4, 5 (commit order, transport) | solver-instants | Pending |
-| SCI-05 | P1: Instants, AC 6 (snapshot) | solver-instants | Pending |
-| SCI-06 | P1: Instants, AC 11, 12, 13 (resolve, others, relaxation) | solver-instants | Pending |
-| SCI-07 | P1: Instants, AC 7, 17, 18 (`E0501`, element errors, typed errors) | solver-instants | Pending |
-| SCI-08 | P1: Instants, AC 15, 16 (scheduled events, param change) | solver-instants | Pending |
-| SCI-09 | P1: Instants, AC 9 (determinism) | solver-instants | Pending |
-| SCT-01 | P1: Time point, AC 1 (left value) | solver-time-point | Pending |
-| SCT-02 | P1: Time point, AC 2, 3, 4 (jump solve) | solver-time-point | Pending |
-| SCT-03 | P1: Time point, AC 5 (restart per state) | solver-time-point | Pending |
-| SCT-04 | P1: Time point, AC 8 (event times that are not time points) | solver-time-point | Pending |
-| SCT-05 | P1: Time point, AC 10, 11, 12 (settle, settle commit) | solver-time-point | Pending |
-| SCT-06 | P1: Time point, AC 6 (`E0504`) | solver-time-point | Pending |
-| SCT-07 | P1: Time point, AC 7 (`E0506`) | solver-time-point | Pending |
-| SCT-08 | P1: Time point, AC 13 (held nodes) | solver-time-point | Pending |
-| SCT-09 | P1: Time point, AC 9 (rejection leaves no trace) | solver-time-point | Pending |
-| SCT-10 | P1: Time point, AC 14 (sweep points) | solver-time-point | Pending |
-| SCT-11 | P1: Time point, AC 15 (what waits for time is dropped) | solver-time-point | Pending |
-| SCT-12 | P1: Time point, AC 16, 17 (continuation) | solver-time-point | Pending |
-| SCT-13 | P1: Time point, AC 18 (analysis and solve kind) | solver-time-point | Pending |
+| SCR-01 | P1: Restructure, AC 1 to 4 (detailed as SR-01 to SR-06 in `solver-restructure`) | solver-restructure | In Tasks |
+| SCE-01 | P1: Event boundary, AC 1, 2 (event-only boundary) | solver-event-boundary | Pending |
+| SCE-02 | P1: Event boundary, AC 3, 15 (DAG propagation to convergence or `E0501`) | solver-event-boundary | Pending |
+| SCE-03 | P1: Event boundary, AC 5, 6 (which events cut an analog step) | solver-event-boundary | Pending |
+| SCE-04 | P1: Event boundary, AC 4 (the event sink) | solver-event-boundary | Pending |
+| SCI-01 | P1: Event boundary, AC 7 (ticks) | solver-event-boundary | Pending |
+| SCI-02 | P1: Event boundary, AC 8, 16 (`E0502`, `E0435`) | solver-event-boundary | Pending |
+| SCI-03 | P1: Event boundary, AC 9 (byte carriers) | solver-event-boundary | Pending |
+| SCI-04 | P1: Event boundary, AC 12, 13 (commit order, transport) | solver-event-boundary | Pending |
+| SCI-05 | P1: Event boundary, AC 14 (snapshot) | solver-event-boundary | Pending |
+| SCI-06 | P1: Event boundary, AC 10, 11 (resolve, others) | solver-event-boundary | Pending |
+| SCI-07 | P1: Event boundary, AC 19 (typed run errors) | solver-event-boundary | Pending |
+| SCI-08 | P1: Event boundary, AC 18 (scheduled events) | solver-event-boundary | Pending |
+| SCI-09 | P1: Event boundary, AC 17 (determinism) | solver-event-boundary | Pending |
+| SCT-05 | P2: Time point, AC 1, 2, 3 (settle, settle commit) | solver-time-point | Pending |
+| SCT-07 | P2: Time point, AC 4 (`E0506`) | solver-time-point | Pending |
+| SCT-08 | P2: Time point, AC 6 (held nodes) | solver-time-point | Pending |
+| SCT-09 | P2: Time point, AC 5 (rejection leaves no trace) | solver-time-point | Pending |
+| SCT-10 | P2: Time point, AC 7 (sweep points) | solver-time-point | Pending |
+| SCT-11 | P2: Time point, AC 8 (what waits for time is dropped) | solver-time-point | Pending |
+| SCT-12 | P2: Time point, AC 9, 10 (continuation) | solver-time-point | Pending |
+| SCT-13 | P2: Time point, AC 11 (analysis and solve kind) | solver-time-point | Pending |
 | SCX-01 | P2: Crossings, AC 1, 2, 4 (location) | solver-crossings | Pending |
-| SCX-02 | P2: Crossings, AC 5 (across jumps, rounds, sweep points) | solver-crossings | Pending |
+| SCX-02 | P2: Crossings, AC 5 (across rounds and sweep points) | solver-crossings | Pending |
 | SCX-03 | P2: Crossings, AC 3, 6, 7 (`E0510`, step cap, `E0509`) | solver-crossings | Pending |
 | SCH-01 | P2: Host seam, AC 1, 2 (drives and scheduled actions) | solver-host-seam | Pending |
 | SCH-02 | P2: Host seam, AC 3 (force, release) | solver-host-seam | Pending |
@@ -249,31 +249,29 @@ Roles: the **codegen author** writes the elaborator and device code that will ta
 | SCH-05 | P2: Host seam, AC 6, 7, 8 (records, `finish`) | solver-host-seam | Pending |
 | SCH-06 | P2: Host seam, AC 9 (session parameters) | solver-host-seam | Pending |
 | SCH-07 | P2: Host seam, AC 10 (wake request, no rollback) | solver-host-seam | Pending |
-| SCN-01 | P3: Numerics, AC 1, 2 (tolerances per nature) | solver-numerics | Pending |
-| SCN-02 | P3: Numerics, AC 3 (`E0503` named) | solver-numerics | Pending |
-| SCN-03 | P3: Numerics, AC 4 (truncation per state) | solver-numerics | Pending |
-| SCN-04 | P3: Numerics, AC 5 (switch-branch pattern) | solver-numerics | Pending |
-| SCN-05 | P3: Numerics, AC 6, 7 (correlated and potential noise) | solver-numerics | Pending |
+| SCN-01 | P3: Numerics, AC 1 (tolerances per nature, present mapping) | solver-numerics | Pending |
+| SCN-02 | P3: Numerics, AC 2 (`E0503` named) | solver-numerics | Pending |
+| SCN-03 | P3: Numerics, AC 3 (truncation per state) | solver-numerics | Pending |
+| SCN-04 | P3: Numerics, AC 4 (switch-branch pattern) | solver-numerics | Pending |
+| SCN-05 | P3: Numerics, AC 5, 6 (correlated and potential noise) | solver-numerics | Pending |
 
-**Coverage:** 39 total, 0 mapped to tasks, 39 unmapped. Tasks are written per sub-feature after this spec is approved.
+**Coverage:** 37 total, 1 mapped to tasks (SCR-01, through `solver-restructure`), 36 unmapped: tasks are written per feature, in order.
 
 ---
 
 ## Sources
 
-- `docs/spec/part_v_execution.md` §15 to §18: the time-point procedure, the jump, the operating point, convergence, steps, crossings, limiting.
-- `docs/spec/part_iv_behavior.md` §11 to §14: contributions, switch branches, reactions, commits, events, core primitives.
-- `docs/spec/part_ii_carriers.md` §4, §5 and `part_iii_structure.md` §8.2.3, §8.5: drives, `resolve`, history, relaxation, extern modules.
-- `docs/spec/part_vi_io.md` §19, §21 and `part_viii_host.md` §23: records, metadata, host actions.
-- `docs/spec/appendix_c_implementation.md` C.2: the reference algorithms and defaults; `appendix_g_scope.md` G.0, G.6: what is excluded and what the implementation lacks.
-- `.specs/features/solver-completeness/analysis.md`: the traceability matrix, the surplus list, the split.
-- `.specs/STATE.md` MD-01 (one `Element` ABI), MD-17 (`prelude` + `abi`), MD-18 (no re-JIT during simulation), MD-31 (an invariant lives in a gate).
+- `context.md`, sections "User answers" round 1 and round 2 and the ABI row: every decision above.
+- `docs/spec/part_v_execution.md` §15 to §18; `part_iv_behavior.md` §11 to §14; `part_ii_carriers.md` §4, §5; `part_iii_structure.md` §8.2.3, §8.5; `part_vi_io.md` §19, §21; `part_viii_host.md` §23.
+- `docs/spec/appendix_c_implementation.md` C.2 (to be amended, see Assumptions) and `appendix_g_scope.md` G.0, G.6.
+- `analysis.md`: the traceability matrix, the surplus list, the split.
+- `.specs/STATE.md` MD-01, MD-17, MD-18, MD-31, MD-57.
 
 ---
 
 ## Success Criteria
 
-- [ ] `cargo test -p piperine-solver` is green on a tree where no other crate compiles.
-- [ ] The spec's conformance set (C.2.3) can be written as hand-built elements and passes: the trace of §15.1, `transition`'s commit pattern, `zi_nd`'s settle commits, `inertial`'s re-armed `at`, a relaxed loop of `Tran` on `Wire`s.
+- [ ] `cargo test` on each solver crate is green on a tree where no other crate compiles.
+- [ ] The spec's conformance set (C.2.3) can be written as hand-built elements and passes.
 - [ ] A design with a free-running digital clock that no analog element reads takes the same number of analog steps with and without the clock.
-- [ ] The crate has no in-tree dependency and fewer source lines than at e129b869 after the baseline sub-feature.
+- [ ] No source file of the analog sub-solver names a digital type, and none of the digital sub-solver names an analog type.
