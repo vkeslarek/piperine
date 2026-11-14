@@ -1,9 +1,9 @@
 //! Handles over value items: `Const` here; functions, structs, enums, traits,
 //! impls and imports as the item tasks add them.
 
-use super::body::{Expr, Path, SourceFile, Type};
+use super::body::{BlockHandle, Expr, Path, SourceFile, Type};
 use super::{Decl, Reflect};
-use crate::pom::body::{Block, LitKind};
+use crate::pom::body::LitKind;
 use crate::pom::decl::{NamespaceData, NamespaceOrigin, ConstData, DeclKind, Dir, FieldData, FieldsForm, FnData, FnParamData, GenericParamData, ImplData, StructData, TraitData, UseData, UseTreeNode, VariantData};
 
 /// `const NAME: ty = value;`
@@ -103,9 +103,10 @@ impl<'d> Function<'d> {
         self.data().where_.map(|e| self.decl.design().expr(e))
     }
 
-    /// The body block; none for a declaration ending in `;`.
-    pub fn body(self) -> Option<&'d Block> {
-        self.data().body.as_ref()
+    /// The body block; none for a declaration ending in `;`. The raw block is
+    /// [`BlockHandle::node`].
+    pub fn body(self) -> Option<BlockHandle<'d>> {
+        self.data().body.as_ref().map(|b| BlockHandle::new(self.decl.design(), b))
     }
 }
 

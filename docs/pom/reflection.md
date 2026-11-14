@@ -423,7 +423,7 @@ assert!(!imports[0].glob);
 | `params(self)` | `Vec<FnParam<'d>>` | The parameters in source order; a method's `self` comes first. |
 | `ret(self)` | `Option<Type<'d>>` | The `-> ty` return type. |
 | `where_clause(self)` | `Option<Expr<'d>>` | The `where` condition. |
-| `body(self)` | `Option<&'d Block>` | The body block; none for a declaration ending in `;`. |
+| `body(self)` | `Option<BlockHandle<'d>>` | The body block; none for a declaration ending in `;`. The raw block is `BlockHandle::node()`. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
@@ -995,7 +995,7 @@ assert!(design.diagnostics().iter().any(|d| d.diagnostic.code == "E0401"));
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `event(self)` | `Expr<'d>` | The event expression after `on`. |
-| `body(self)` | `&'d Block` | The block of statements and commits. |
+| `body(self)` | `BlockHandle<'d>` | The block of statements and commits. The raw block is `BlockHandle::node()`. |
 | `commits(self)` | `Vec<Commit<'d>>` | Every commit of the body at any depth, in source order. |
 
 ### `Contribution`
@@ -1098,6 +1098,7 @@ An expression node.
 | `resolution(self)` | `Resolution` | What this expression names: a path's last segment, a struct literal's path, a field access or method call's member, a call's callee. Every other expression names nothing and answers `Unresolved`. |
 | `target(self)` | `Option<Decl<'d>>` | The declaration `resolution()` names, as a handle; none for an unresolved name, a built-in or a deferred one. |
 | `children(self)` | `Vec<Expr<'d>>` | The direct sub-expressions in source order (a call: callee, argument values, param-block values; an `if`: the condition, the expressions of the `then` statements, the `else`). A form holding a block lists the expressions of the block's statements. Types, patterns and generic arguments are not expressions and are not entered. |
+| `stmt(self)` | `Option<Stmt<'d>>` | The nearest statement that holds this expression or an expression above it: its own statement when a statement lists it among its `children()`, else the one of its nearest ancestor that has one. |
 | `parent(self)` | `Option<Expr<'d>>` | The expression that lists this one among its `children()`; none when no expression contains it (a statement's own expression, a declaration's value). A side table filled after lowering and verified against `children()` by `Design::check`. |
 
 Body nodes are read through `Expr`, `Stmt`, `Pat`, `Type` and `Path`. Each gives the node
@@ -1130,6 +1131,7 @@ A statement node.
 | `span(self)` | `Span` | The byte range in the file text. |
 | `enclosing(self)` | `Decl<'d>` | The nearest declaration that contains it. |
 | `text(self)` | `&'d str` | The authored text. |
+| `children(self)` | `Vec<Expr<'d>>` | The expressions the statement holds with no expression above them, in source order: a `let`'s initializer (and the expressions of its `else` block's statements), an expression statement's expression, both sides of a contribution, the place, value and delay of a commit. An item, a signal, a reaction and a lone `;` hold none; a nested block's statements are reached through the expression that owns the block. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect, StmtKind};
@@ -1137,12 +1139,34 @@ use piperine_lang::pom::{Design, Reflect, StmtKind};
 let src = "nature Bit { value: bool }\nmodule M(a: Bit, out q: Bit) {}\ndigital for M { on a { q <- true; let x = 1; } }";
 let design = Design::builder().source("top.msl", src).build();
 let reaction = design.module("M").unwrap().digital_blocks()[0].reactions()[0];
-let stmts = reaction.body().stmts.clone();
-let first = design.stmt(stmts[0]);
+let stmts = reaction.body().stmts();
+let first = stmts[0];
 assert!(matches!(first.kind(), StmtKind::Commit { .. }));
 assert_eq!(first.text(), "q <- true;");
 assert_eq!(first.enclosing(), reaction.decl());
-assert!(matches!(design.stmt(stmts[1]).kind(), StmtKind::Let { .. }));
+assert!(matches!(stmts[1].kind(), StmtKind::Let { .. }));
+```
+
+### `BlockHandle`
+
+A block of statements: the body of a function or a reaction. Named `BlockHandle` because `Block` is the storage type of the same shape (see [Model](model.md)).
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `node(self)` | `&'d Block` | The raw storage block. |
+| `stmts(self)` | `Vec<Stmt<'d>>` | The statements in source order. |
+| `value(self)` | `Option<Expr<'d>>` | The block's value: the expression of a last statement written without a `;`. |
+| `span(self)` | `Span` | The range of the braces and everything between them. |
+
+```rust
+use piperine_lang::pom::Design;
+
+let design = Design::builder().source("top.msl", "fn f() -> f64 { let a = 1.0; a + 2.0 }").build();
+let body = design.function("f").unwrap().body().unwrap();
+assert_eq!(body.stmts().len(), 2);
+assert_eq!(body.value().unwrap().text(), "a + 2.0");
+assert_eq!(body.value().unwrap().stmt(), body.stmts().last().copied());
+assert_eq!(body.node().stmts.len(), 2);
 ```
 
 ### `Pat`

@@ -612,3 +612,52 @@ fn check_reports_a_broken_parent_table() {
     let broken: Design = serde_json::from_value(json).unwrap();
     assert!(!broken.check().is_empty());
 }
+
+#[test]
+fn block_and_stmt_handles_walk_a_body() {
+    let src = "fn f(a: f64) -> f64 { let b = g(a); if a > 0.0 { h(b); } b + 1.0 }\nfn e() { 1.0; }\nfn n() {}\nfn g(x: f64) -> f64 { x }\nfn h(x: f64) {}";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let body = design.function("f").unwrap().body().unwrap();
+    assert_eq!(body.span().range(), 20..src.find("\nfn e").unwrap());
+    let stmts = body.stmts();
+    assert_eq!(stmts.len(), 3);
+    assert_eq!(stmts.iter().map(|s| s.text()).collect::<Vec<_>>(), ["let b = g(a);", "if a > 0.0 { h(b); }", "b + 1.0"]);
+    assert_eq!(body.value().unwrap().text(), "b + 1.0");
+    assert_eq!(body.node().stmts.len(), 3, "the raw block stays reachable as node()");
+    assert!(design.function("e").unwrap().body().unwrap().value().is_none(), "a trailing `;` makes no value");
+    assert!(design.function("n").unwrap().body().unwrap().stmts().is_empty());
+
+    // A statement lists its direct expressions; a nested statement belongs to its own block.
+    assert_eq!(stmts[0].children().iter().map(|e| e.text()).collect::<Vec<_>>(), ["g(a)"]);
+    assert_eq!(stmts[2].children().iter().map(|e| e.text()).collect::<Vec<_>>(), ["b + 1.0"]);
+    let call_g = stmts[0].children()[0];
+    assert_eq!(call_g.stmt(), Some(stmts[0]));
+    let a_in_g = call_g.children()[1];
+    assert_eq!(a_in_g.text(), "a");
+    assert_eq!(a_in_g.stmt(), Some(stmts[0]), "the nearest enclosing statement of a nested expression");
+    let h_call = design.function("f").unwrap().exprs().into_iter().find(|e| e.text() == "h(b)").unwrap();
+    let inner = h_call.stmt().unwrap();
+    assert_eq!(inner.text(), "h(b);");
+    assert_ne!(Some(inner), stmts.get(1).copied(), "the `if` statement is not the nearest statement of what its block holds");
+    let b_in_h = h_call.children()[1];
+    assert_eq!(b_in_h.stmt(), Some(inner));
+    // Round trip: every statement child names its statement.
+    for s in &stmts {
+        for c in s.children() {
+            assert_eq!(c.stmt(), Some(*s));
+        }
+    }
+    // A condition that is no statement's expression still finds the statement above it.
+    let cond = stmts[1].children()[0].children()[0];
+    assert_eq!(cond.text(), "a > 0.0");
+    assert_eq!(cond.stmt(), Some(stmts[1]));
+
+    // A reaction's body is a handle too.
+    let design = build("module M(a: Bit) {}\ndigital for M { on a.rise() { a <- 1.0 after 2.0; } }");
+    let reaction = design.module("M").unwrap().behaviors()[0].reactions()[0];
+    let stmts = reaction.body().stmts();
+    assert_eq!(stmts.len(), 1);
+    assert_eq!(stmts[0].children().iter().map(|e| e.text()).collect::<Vec<_>>(), ["a", "1.0", "2.0"]);
+    assert_eq!(reaction.body().node().stmts.len(), 1);
+}

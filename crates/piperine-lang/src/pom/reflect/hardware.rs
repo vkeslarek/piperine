@@ -2,9 +2,9 @@
 //! with their ports and body items, generation, behavior blocks and
 //! reactions.
 
-use super::body::{Commit, Contribution, Expr, Pat, Path, Type, nested_stmts};
+use super::body::{BlockHandle, Commit, Contribution, Expr, Pat, Path, Type, nested_stmts};
 use super::{Decl, Reflect};
-use crate::pom::body::{Block, BehaviorKind, ExprKind, FieldInit, QuantityRole, StmtKind, TypeKind};
+use crate::pom::body::{BehaviorKind, ExprKind, FieldInit, QuantityRole, StmtKind, TypeKind};
 use crate::pom::decl::{
     BehaviorData, BindingData, BindingOrigin, DeclKind, DefinitionData, Dir, GenElseNode, GenerationData, LetData,
     ModuleData, NatureData, NatureFieldNode, ParamData, PortData, QuantityData, ReactionData, SignalData,
@@ -689,8 +689,9 @@ impl<'d> Reaction<'d> {
         self.decl.design().expr(self.data().event)
     }
 
-    pub fn body(self) -> &'d Block {
-        &self.data().body
+    /// The body block; the raw block is [`BlockHandle::node`].
+    pub fn body(self) -> BlockHandle<'d> {
+        BlockHandle::new(self.decl.design(), &self.data().body)
     }
 
     /// Every commit of the body at any depth, in source order.

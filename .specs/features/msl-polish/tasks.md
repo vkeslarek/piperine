@@ -1157,10 +1157,10 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `block_and_stmt_handles_walk_a_body` passes in `pom_body.rs` (C114: POL-20 AC 6)
-- [ ] Call sites in the existing tests move from the raw block to the handle; their assertions do not change
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `block_and_stmt_handles_walk_a_body` passes in `pom_body.rs` (C114: POL-20 AC 6)
+- [x] Call sites in the existing tests move from the raw block to the handle; their assertions do not change
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

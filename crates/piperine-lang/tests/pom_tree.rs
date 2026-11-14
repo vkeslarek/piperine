@@ -117,7 +117,7 @@ const fn g<T: Repr, const N: u32 = 4>(self, a: T, b: f64) -> T where N >= 1 { a 
     assert!(matches!(params[1].ty().map(|t| t.kind()), Some(TypeKind::Path(_))));
     assert_eq!(g.where_clause().map(|e| e.text()), Some("N >= 1"));
     let body = g.body().expect("a body");
-    assert_eq!(body.stmts.len(), 1);
+    assert_eq!(body.stmts().len(), 1);
 
     let generics = g.generics();
     assert_eq!(generics.len(), 2);
@@ -679,7 +679,7 @@ digital for Q {
     assert_eq!(rs.len(), 2);
     assert_eq!(rs[0].event().text(), "clk.rise()");
     assert_eq!(rs[1].event().text(), "rst");
-    assert_eq!(rs[0].body().stmts.len(), 2);
+    assert_eq!(rs[0].body().stmts().len(), 2);
     let commits = rs[0].commits();
     assert_eq!(commits.len(), 2);
     assert_eq!((commits[0].place().text(), commits[0].value().text()), ("a", "true"));

@@ -130,6 +130,20 @@ impl<'d> Expr<'d> {
         self.design.expr_parent.get(self.id.index()).copied().flatten().map(|p| Expr::new(self.design, p))
     }
 
+    /// The nearest statement that holds this expression or an expression
+    /// above it: its own statement when a statement lists it among its
+    /// [`Stmt::children`], else the one of its nearest ancestor that has one.
+    pub fn stmt(self) -> Option<Stmt<'d>> {
+        let mut at = Some(self);
+        while let Some(e) = at {
+            if let Some(s) = self.design.expr_stmt.get(e.id.index()).copied().flatten() {
+                return Some(Stmt::new(self.design, s));
+            }
+            at = e.parent();
+        }
+        None
+    }
+
     /// The path this expression is, when it is a path expression (`s`, `a::X`).
     pub fn as_path(self) -> Option<Path<'d>> {
         match self.kind() {
@@ -202,6 +216,68 @@ impl<'d> Stmt<'d> {
 
     pub fn text(self) -> &'d str {
         text_in(self.enclosing(), self.span())
+    }
+
+    /// The expressions this statement holds with no expression above them, in
+    /// source order: a `let`'s initializer (and the expressions of its `else`
+    /// block's statements), an expression statement's expression, both sides
+    /// of a contribution, the place, value and delay of a commit. An item, a
+    /// signal, a reaction and a lone `;` hold none; a nested block's
+    /// statements are reached through the expression that owns the block.
+    pub fn children(self) -> Vec<Expr<'d>> {
+        crate::pom::body::stmt_children(self.design, self.id).into_iter().map(|e| Expr::new(self.design, e)).collect()
+    }
+}
+
+/// A block of statements: the body of a function or a reaction.
+// SPEC_DEVIATION: design.md names this handle `Block<'d>`, but `pom::Block` is already the
+// storage type (`pub use body::*`). Reason: one public name cannot be both; the handle is
+// exported as `BlockHandle`, as `QuantityRole` did for the other clash.
+#[derive(Clone, Copy)]
+pub struct BlockHandle<'d> {
+    design: &'d Design,
+    node: &'d crate::pom::body::Block,
+}
+
+impl<'d> BlockHandle<'d> {
+    pub(crate) fn new(design: &'d Design, node: &'d crate::pom::body::Block) -> Self {
+        BlockHandle { design, node }
+    }
+
+    /// The raw storage block.
+    pub fn node(self) -> &'d crate::pom::body::Block {
+        self.node
+    }
+
+    /// The statements in source order.
+    pub fn stmts(self) -> Vec<Stmt<'d>> {
+        self.node.stmts.iter().map(|s| Stmt::new(self.design, *s)).collect()
+    }
+
+    /// The block's value: the expression of a last statement written without
+    /// a `;`.
+    pub fn value(self) -> Option<Expr<'d>> {
+        match self.node.stmts.last().map(|s| &self.design.stmt_node(*s).kind) {
+            Some(StmtKind::Expr { expr, semi: false }) => Some(Expr::new(self.design, *expr)),
+            _ => None,
+        }
+    }
+
+    /// The range of the braces and everything between them.
+    pub fn span(self) -> Span {
+        self.node.span
+    }
+}
+
+impl PartialEq for BlockHandle<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.design, other.design) && std::ptr::eq(self.node, other.node)
+    }
+}
+
+impl std::fmt::Debug for BlockHandle<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BlockHandle({:?})", self.node.span)
     }
 }
 
