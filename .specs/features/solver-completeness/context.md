@@ -119,3 +119,22 @@ None yet. The spec's Assumptions table already carries the recommended default o
 - The C interface of `extern "cosim"` (G.65), once the spec fixes it.
 - Moving `tf`, `pz`, `sp`, `sens`, `adjoint`, `pss` into the rebuilt host crate.
 - A fused or compiled discrete kernel for speed (the old digital-JIT notes); the kernel of this feature is the reference, not the fast path.
+
+---
+
+## User answers (2026-11-14, discussion round 1)
+
+**Vision (user's words):** "Eu estava pensando em um refactor cuidadoso. Eu queria que o core digital funcionasse de algumas maneiras: 1. A fronteira é via eventos, sempre... Isso conecta de maneira bonita com o analog e mixed signal. 2. Todo o path depois do evento de borda é feito estilo Verilator, onde a propagação é executada em DAG, até convergir ou falhar na conversão. 3. Separar em uma fronteira BEM delimitada o que ocorre no analog e o que ocorre no digital, praticamente como dois solvers distintos que rodam no mesmo solver."
+
+| Q | User's words | Reading |
+| - | ------------ | ------- |
+| Q1 | "De acordo, pode ser modelado como "solver" o dono dos eventos e dispatch para sub solvers analogicos e digitais. Se quiser dividir em 3 crates, o dono dos eventos, o digital-solver e o analog-solver cada um com seu código exclusivo." | A, with the event owner dispatching to an analog and a digital sub-solver; 3 crates allowed |
+| Q2 | "Prefiro bytes também. Solver é o core do negócio e tem que ser mais simples, não ter a complexidade da linguagem e sim a complexidade física." | A, opaque bytes |
+| Q8 | "Na verdade o solver analógico roda em todo timestep... Como natureza contínua, se existir qualquer código analog, tem que rodar ele." | analog solves at every analog timestep whenever analog code exists (to confirm: which digital events cut an analog step) |
+| Q3 | "Ok, o que precisar apagar, pode apagar, aproveitando que estamos fazendo um makeover dele..." | A, explicit yes to delete the VAMS surface and its tests |
+| Q4 | "Concordo e na verdade o sink de eventos é bem importante para debug, etc..." | A; the event/record sink is a first-class debug surface |
+| Q5 | "Sim, por enquanto beleza." | A |
+| Q10 | "Vamos remover o IR, cranelift e Python por agora. Vamos deixar apenas a API testável em RUST, solver, linguagem, apenas o core. Pode ser?" | drop `piperine-ir`; remove IR, Cranelift (codegen) and Python crates; keep only the core: language, solver, testable Rust API (to confirm the exact crate list) |
+| Q6 | "Fio, verilog vai embora." | A: rewrite the 5 targets on hand-written `Element`s; Verilog-A goes |
+| Q7 | "Companion model é uma boa mas eu manteria o algoritmo atual do solver que funcionou bem nos testes, inclusive cross validation e convergence com descontinuidades (caracteristico de sistemas mixed signal)." | keep the solver's present discontinuity algorithm; Appendix C.2 is amended to describe it, not the reverse |
+| Q9 | "Não, a paridade com ngspice é um strenght bem alto e um ponto positivissimo." | B: keep the present tolerance mapping (ngspice parity); §17.1.2 is amended to match |
