@@ -61,13 +61,9 @@ fn the_crate_holds_no_retired_surface() {
     }
     let mut files = Vec::new();
     sources(&root.join("src"), &mut files);
-    sources(&root.join("tests"), &mut files);
-    assert!(files.len() >= 3, "{files:?}");
+    assert!(files.len() >= 2, "{files:?}");
+    // The crate's sources: the tests spell a retired table (`[plugins]`) to prove it is refused.
     for file in files {
-        // This file spells the retired names to look for them.
-        if file.file_name().is_some_and(|n| n == "project.rs") {
-            continue;
-        }
         let text = fs::read_to_string(&file).unwrap().to_lowercase();
         for word in ["plugin", "source_map", "sourcemap", "release", "get_current_project_root"] {
             assert!(!text.contains(word), "{} mentions `{word}`", file.display());

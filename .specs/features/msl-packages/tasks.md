@@ -534,13 +534,13 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_missing_manifest_is_e0170` passes in `manifest.rs` (C72: PKG-10 AC 1)
-- [ ] Test `invalid_toml_is_e0170_at_its_span` passes in `manifest.rs` (C73: PKG-10 AC 2)
-- [ ] Test `a_package_error_renders_as_a_miette_report` passes in `manifest.rs` (C74: PKG-10 AC 3)
-- [ ] A missing file has an empty text and a zero span; its message carries the path
-- [ ] The render test reads line and column from the span, as `msl_errors::rendered_output_is_miette_graphical` does
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_missing_manifest_is_e0170` passes in `manifest.rs` (C72: PKG-10 AC 1)
+- [x] Test `invalid_toml_is_e0170_at_its_span` passes in `manifest.rs` (C73: PKG-10 AC 2)
+- [x] Test `a_package_error_renders_as_a_miette_report` passes in `manifest.rs` (C74: PKG-10 AC 3)
+- [x] A missing file has an empty text and a zero span; its message carries the path
+- [x] The render test reads line and column from the span, as `msl_errors::rendered_output_is_miette_graphical` does
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
