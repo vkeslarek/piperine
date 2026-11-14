@@ -815,6 +815,40 @@ fn exercise(d: &Design) {
 }
 
 #[test]
+fn a_nature_field_that_names_no_quantity_is_an_err_not_a_panic() {
+    // The standard library declares natures, so a corrupted field id reaches `to_ast`: `from_json`
+    // reports it and no read panics. The first `Quantity` field of `Electrical` is pointed at the
+    // root namespace (decl 0), which is no quantity.
+    let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "pub nature N { potential: P { access: v, units: \"V\", abstol: 1u } }\n").source("top.msl", "").build();
+    let mut json = serde_json::to_value(&design).unwrap();
+    let mut found = false;
+    fn point_quantities_at_root(v: &mut serde_json::Value, found: &mut bool) {
+        match v {
+            serde_json::Value::Object(map) => {
+                if let Some(q) = map.get_mut("Quantity") {
+                    if q.is_number() {
+                        *q = serde_json::json!(0);
+                        *found = true;
+                    }
+                }
+                for (_, c) in map.iter_mut() {
+                    point_quantities_at_root(c, found);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|c| point_quantities_at_root(c, found)),
+            _ => {}
+        }
+    }
+    point_quantities_at_root(&mut json, &mut found);
+    assert!(found, "the serialized design has a nature field that names a quantity");
+    let text = json.to_string();
+    let result = std::panic::catch_unwind(|| Design::from_json(&text));
+    let result = result.expect("from_json never panics");
+    let problems = result.err().expect("a nature field naming no quantity is rejected");
+    assert!(problems.iter().any(|p| p.contains("quantity")), "{problems:?}");
+}
+
+#[test]
 fn from_json_never_panics_on_a_corrupted_field() {
     // POL-21 AC 2 (A-33): every numeric leaf of a design, set to an id out of
     // range and to 1, is either an `Err` or a design every read survives.

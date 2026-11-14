@@ -332,21 +332,21 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `every_std_file_is_embedded` passes in `std_library.rs` (C38: STD-07 AC 5)
-- [ ] Test `constants_have_the_values_of_s1` passes in `std_library.rs` (C45: STD-08 AC 7)
-- [ ] Test `a_std_item_resolves_by_its_single_name` passes in `std_library.rs` (C52: STD-09 AC 1)
-- [ ] Test `no_export_has_a_core_name` passes in `std_library.rs` (C56: STD-09 AC 5)
-- [ ] Test `embedded_std_has_no_diagnostics` passes in `std_library.rs` (C61: STD-10 AC 1)
-- [ ] Test `std_has_no_unresolved_member` passes in `std_library.rs` (C62: STD-10 AC 2)
-- [ ] Test `embedded_std_passes_check` passes in `std_library.rs` (C63: STD-10 AC 3)
-- [ ] Test `a_replaced_std_without_an_item_is_e0161` passes in `std_library.rs` (C64: STD-10 AC 4)
-- [ ] Test `prelude_items_outside_part_vii_are_shown_pub` passes in `std_excerpts.rs` (C73: STD-12 AC 3)
-- [ ] The built-in `Const` rows stay until T20: a prelude item is found before a core name (§3.5 rule 4), so `K_B` already resolves to `std::constants`
-- [ ] If the prelude step does not see a `pub use` glob, extending it to imports is part of this task (§3.4.2: the prelude "re-exports"); items are never declared in `prelude.msl`
-- [ ] A two-file test proves a `std` file sees another namespace's item through the prelude without `E0162`
-- [ ] `pom_crates::embedded_std_builds_clean_and_has_a_prelude` still passes
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_std_file_is_embedded` passes in `std_library.rs` (C38: STD-07 AC 5)
+- [x] Test `constants_have_the_values_of_s1` passes in `std_library.rs` (C45: STD-08 AC 7)
+- [x] Test `a_std_item_resolves_by_its_single_name` passes in `std_library.rs` (C52: STD-09 AC 1)
+- [x] Test `no_export_has_a_core_name` passes in `std_library.rs` (C56: STD-09 AC 5)
+- [x] Test `embedded_std_has_no_diagnostics` passes in `std_library.rs` (C61: STD-10 AC 1)
+- [x] Test `std_has_no_unresolved_member` passes in `std_library.rs` (C62: STD-10 AC 2)
+- [x] Test `embedded_std_passes_check` passes in `std_library.rs` (C63: STD-10 AC 3)
+- [x] Test `a_replaced_std_without_an_item_is_e0161` passes in `std_library.rs` (C64: STD-10 AC 4)
+- [x] Test `prelude_items_outside_part_vii_are_shown_pub` passes in `std_excerpts.rs` (C73: STD-12 AC 3)
+- [x] The built-in `Const` rows stay until T20: a prelude item is found before a core name (§3.5 rule 4), so `K_B` already resolves to `std::constants`
+- [x] If the prelude step does not see a `pub use` glob, extending it to imports is part of this task (§3.4.2: the prelude "re-exports"); items are never declared in `prelude.msl`
+- [x] A two-file test proves a `std` file sees another namespace's item through the prelude without `E0162`
+- [x] `pom_crates::embedded_std_builds_clean_and_has_a_prelude` still passes
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

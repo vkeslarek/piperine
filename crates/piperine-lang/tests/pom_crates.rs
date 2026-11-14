@@ -284,7 +284,7 @@ fn every_design_holds_std_last() {
 
 #[test]
 fn a_crate_reports_its_name_root_and_files() {
-    let design = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "pub module Inner() {}\n").build();
+    let design = Design::builder().std_source("std/lib.msl", "pub mod prelude;\n").std_source("std/prelude.msl", "").source("top.msl", "mod b;\n").source("b.msl", "pub module Inner() {}\n").build();
     let root = design.root_crate();
     assert_eq!((root.name(), root.is_root(), root.is_std()), ("top", true, false));
     assert_eq!(root.id(), CrateId(0));
@@ -299,7 +299,7 @@ fn a_crate_reports_its_name_root_and_files() {
 
 #[test]
 fn declarations_and_files_know_their_crate() {
-    let design = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "pub module Inner() {}\n").build();
+    let design = Design::builder().std_source("std/lib.msl", "pub mod prelude;\n").std_source("std/prelude.msl", "").source("top.msl", "mod b;\n").source("b.msl", "pub module Inner() {}\n").build();
     let inner = design.module("Inner").unwrap();
     assert_eq!(inner.krate(), design.root_crate());
     assert_eq!(inner.file().krate(), design.root_crate());

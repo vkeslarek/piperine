@@ -74,6 +74,15 @@ The six constants are `pub const` items of `std::constants` ([§22](part_vii_std
 | `E` | `f64` | Rust's `f64::consts::E` | Euler's number |
 | `inf` | `f64` | `1.0 / 0.0` | positive infinity |
 
+```rust
+pub const Q: f64 = 1.602176634e-19;
+pub const K_B: f64 = 1.380649e-23;
+pub const EPS0: f64 = 8.8541878128e-12;
+pub const PI: f64 = 3.141592653589793;
+pub const E: f64 = 2.718281828459045;
+pub const inf: f64 = 1.0 / 0.0;
+```
+
 > **Resolution.** The design names the constants and not their values. `Q` and `K_B` are the
 > exact SI values of 2019; `EPS0` is the CODATA 2018 value.
 

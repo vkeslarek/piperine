@@ -79,7 +79,7 @@ fn section_of_heading(line: &str) -> Option<String> {
         return None;
     }
     let k = parts.next()?;
-    k.bytes().all(|b| b.is_ascii_digit()).then(|| format!("22.{k}"))
+    (!k.is_empty() && k.bytes().all(|b| b.is_ascii_digit())).then(|| format!("22.{k}"))
 }
 
 /// The "Sources" table of §22: (section, file name) for each row that names a `§22.k` section.
@@ -259,10 +259,9 @@ fn every_std_item_is_in_a_fence() {
 
 #[test]
 fn every_std_behavior_block_is_in_a_fence() {
-    let part = part_vii();
-    let fences: Vec<String> = extract("part_vii_stdlib.md", &part).into_iter().filter(|b| b.class != Class::CompileFail).map(|b| b.text).collect();
-    let failures = item_failures(&std_files(), &fences, true);
-    assert!(failures.is_empty(), "std behavior blocks in no fence of Part VII: {failures:#?}");
+    // A block is an excerpt of any fence of `docs/spec/` (decision S4): the block of `Short` is in §11.
+    let failures = item_failures(&std_files(), &all_fence_texts(), true);
+    assert!(failures.is_empty(), "std behavior blocks in no fence of docs/spec: {failures:#?}");
 }
 
 #[test]
@@ -284,4 +283,34 @@ fn a_missing_item_is_named() {
     let blocks = item_failures(&files, &fences, true);
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].line, 9);
+}
+
+/// The lines of the fences of `file` that declare `<keyword> <name>` (after an optional `pub `).
+fn declaring_lines(file: &str, keyword: &str, name: &str) -> Vec<String> {
+    let at_name = |l: &str| {
+        let rest = l.strip_prefix(keyword).and_then(|r| r.strip_prefix(' ')).and_then(|r| r.strip_prefix(name));
+        rest.is_some_and(|r| !r.starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+    };
+    corpus()
+        .into_iter()
+        .filter(|b| b.file == file)
+        .flat_map(|b| b.text.lines().map(str::to_string).collect::<Vec<_>>())
+        .filter(|l| at_name(l.strip_prefix("pub ").unwrap_or(l)))
+        .collect()
+}
+
+#[test]
+fn prelude_items_outside_part_vii_are_shown_pub() {
+    let mut wanted: Vec<(&str, &str, &str)> = ["Q", "K_B", "EPS0", "PI", "E", "inf"].iter().map(|n| ("part_i_values.md", "const", *n)).collect();
+    wanted.extend(["Bit", "Electrical", "Thermal", "VSignal"].iter().map(|n| ("part_ii_carriers.md", "nature", *n)));
+    wanted.push(("part_iv_behavior.md", "module", "Short"));
+    let mut failures = Vec::new();
+    for (file, keyword, name) in wanted {
+        let lines = declaring_lines(file, keyword, name);
+        if lines.is_empty() {
+            failures.push(format!("{file}: no fence declares `{keyword} {name}`"));
+        }
+        failures.extend(lines.iter().filter(|l| !l.starts_with("pub ")).map(|l| format!("{file}: `{l}` is not shown with pub")));
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
