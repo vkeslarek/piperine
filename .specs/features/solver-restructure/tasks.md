@@ -236,12 +236,12 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] No frontend import remains anywhere under `crates/piperine-solver/`
-- [ ] `sine_rc_converges_to_the_analytic_phasor`, `non_periodic_circuit_fails_loud`, `digital_divider_reports_k_times_period` keep their names and assertions and pass
-- [ ] `cargo test -p piperine-solver` builds every target and passes (C2); the 15 ported names all print `... ok` (C3)
-- [ ] Every name of `baseline.txt` prints `... ok`
-- [ ] `cargo build -p piperine-solver --all-targets` prints no warning
-- [ ] Gate: build
+- [x] No frontend import remains anywhere under `crates/piperine-solver/`
+- [x] `sine_rc_converges_to_the_analytic_phasor`, `non_periodic_circuit_fails_loud`, `digital_divider_reports_k_times_period` keep their names and assertions and pass
+- [x] `cargo test -p piperine-solver` builds every target and passes (C2); the 15 ported names all print `... ok` (C3)
+- [x] Every name of `baseline.txt` prints `... ok`
+- [x] `cargo build -p piperine-solver --all-targets` prints no warning
+- [x] Gate: build
 
 **Tests**: integration
 **Gate**: build
