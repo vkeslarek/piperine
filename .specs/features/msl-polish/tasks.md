@@ -613,13 +613,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `signal_outside_a_module_body_is_e0404` passes in `msl_errors.rs` (C79: POL-14 AC 3)
-- [ ] Test `behavior_statements_in_a_module_body_are_e0404` passes in `msl_errors.rs` (C80: POL-14 AC 4)
-- [ ] Test `function_body_reports_e0121_only` passes in `msl_errors.rs` (C81: POL-14 AC 5)
-- [ ] `statements_of_the_wrong_block_kind_report_e0404` and `forbidden_forms_in_a_function_body_report_e0121` still pass unchanged
-- [ ] `a_statement_outside_a_reaction_in_digital_reports_e0434` still passes: the top level of a `digital` block keeps `E0434`
-- [ ] Gate passes: run errors; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `signal_outside_a_module_body_is_e0404` passes in `msl_errors.rs` (C79: POL-14 AC 3)
+- [x] Test `behavior_statements_in_a_module_body_are_e0404` passes in `msl_errors.rs` (C80: POL-14 AC 4)
+- [x] Test `function_body_reports_e0121_only` passes in `msl_errors.rs` (C81: POL-14 AC 5)
+- [x] `statements_of_the_wrong_block_kind_report_e0404` and `forbidden_forms_in_a_function_body_report_e0121` still pass unchanged
+- [x] `a_statement_outside_a_reaction_in_digital_reports_e0434` still passes: the top level of a `digital` block keeps `E0434`
+- [x] Gate passes: run errors; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

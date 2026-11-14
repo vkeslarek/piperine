@@ -798,3 +798,46 @@ fn parenthesized_place_is_rejected_in_both_forms() {
     }
     assert!(faults("module M() { q.f[1] = 1; }").is_empty());
 }
+
+/// Exactly one diagnostic: its code, the text its span covers, whether it has a help.
+fn only(src: &str) -> (String, String, bool) {
+    let r = parse(src);
+    assert_eq!(r.diagnostics.len(), 1, "{src:?}: {:?}", r.diagnostics);
+    let d = &r.diagnostics[0];
+    (d.code.to_string(), src[d.span().start..d.span().end].to_string(), d.help.is_some())
+}
+
+#[test]
+fn signal_outside_a_module_body_is_e0404() {
+    // POL-14 AC 3: `signal` in `analog`, a reaction or a closure outside a function.
+    for src in [
+        "analog for M { signal t: E; }",
+        "digital for M { on e { signal t: E; } }",
+        "module M() { let f = || { signal t: E; }; }",
+    ] {
+        assert_eq!(only(src), ("E0404".into(), "signal t: E;".into(), true), "{src}");
+    }
+}
+
+#[test]
+fn behavior_statements_in_a_module_body_are_e0404() {
+    // POL-14 AC 4: one diagnostic each, over the statement, with a help.
+    for stmt in ["q <- 1;", "i(a) +> 1.0;", "on e { }"] {
+        let src = format!("module M() {{ {stmt} }}");
+        assert_eq!(only(&src), ("E0404".into(), stmt.into(), true), "{src}");
+    }
+    // A module body that is only items stays clean.
+    assert!(faults("module M() { signal s: Bit; q = 1; }").is_empty());
+}
+
+#[test]
+fn function_body_reports_e0121_only() {
+    // POL-14 AC 5: the five forms in a `fn` body, closures inside it included.
+    for stmt in ["x +> 1.0;", "q <- 1;", "on e { }", "signal s: E;", "bound_step(1.0);"] {
+        for src in [format!("fn f() {{ {stmt} }}"), format!("fn f() {{ let g = || {{ {stmt} }}; }}")] {
+            let found = faults(&src);
+            assert_eq!(found.len(), 1, "{src}: {found:?}");
+            assert_eq!(found[0].0, "E0121", "{src}");
+        }
+    }
+}

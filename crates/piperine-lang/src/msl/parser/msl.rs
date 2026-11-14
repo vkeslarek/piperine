@@ -172,6 +172,44 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
     with_late(vec![leaf, meta.then(generation).map(move |(m, g)| wrap(g, m)).boxed()])
 }
 
+/// Looks ahead, without consuming, for a statement that holds `+>` or `<-` at
+/// its own level before its `;`. It reads tokens only, so a failure is
+/// positioned at the item's start and never outweighs another alternative's.
+fn statement_with_arrow<'a, I: In<'a>>() -> impl Parser<'a, I, (), Extra<'a>> + Clone {
+    custom(|inp| {
+        let marker = inp.save();
+        let start = inp.cursor();
+        let (mut depth, mut found) = (0usize, false);
+        while let Some(t) = inp.next() {
+            match t {
+                Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace) => depth += 1,
+                Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace) => match depth.checked_sub(1) {
+                    Some(d) => depth = d,
+                    None => break,
+                },
+                Token::Punct(Punct::PlusGt | Punct::LtMinus) if depth == 0 => {
+                    found = true;
+                    break;
+                }
+                Token::Punct(Punct::Semi) if depth == 0 => break,
+                _ => {}
+            }
+        }
+        let span = inp.span_since(&start);
+        inp.rewind(marker);
+        if found {
+            Ok(())
+        } else {
+            // Expects nothing, so it adds nothing to the message of the alternatives beside it.
+            Err(<Err<'a> as chumsky::label::LabelError<'a, I, chumsky::DefaultExpected<'a, Token>>>::expected_found(
+                std::iter::empty(),
+                None,
+                span,
+            ))
+        }
+    })
+}
+
 /// One item of a module body, with error recovery.
 pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItem> {
     recover_item(h, None)
@@ -241,7 +279,35 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         public: false,
         kind: ModuleItemKind::Gen(g),
     };
-    let item = gen_of(h, first_of(vec![leaf, def]), None, wrap).labelled("module item").boxed();
+    // A commit, a contribution or a reaction written where only items go:
+    // parsed as the statement it is, so one diagnostic names it (E0404).
+    let starts_behavior = first_of(vec![
+        any().filter(|t: &Token| matches!(t, Token::Kw(Kw::On))).rewind().ignored().boxed(),
+        statement_with_arrow().boxed(),
+    ]);
+    let stray = starts_behavior
+        .ignore_then(expr::stmt(h))
+        .validate(|s, e, emitter| {
+            let what = match &s.kind {
+                StmtKind::Commit { .. } => "a commit (`<-`)",
+                StmtKind::Contribution { .. } => "a contribution (`+>`)",
+                _ => "`on`",
+            };
+            let d = check::misplaced(
+                check::Ctx::Module,
+                what,
+                s.span.0,
+                "",
+                "a commit belongs in a reaction (`on event { .. }`) of a `digital` block, a contribution in an `analog` block; a module body holds declarations and definitions",
+            );
+            emitter.emit(Rich::custom(
+                s.span.0,
+                Custom { code: "E0404", message: d.message.clone(), help: d.help.clone() },
+            ));
+            ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(e.span()) }
+        })
+        .boxed();
+    let item = gen_of(h, first_of(vec![leaf, def]), Some(stray), wrap).labelled("module item").boxed();
     recover_unless(
         item,
         true,

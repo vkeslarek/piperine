@@ -12,7 +12,9 @@ use super::*;
 
 /// The kind of block a statement sits in.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Ctx {
+pub(crate) enum Ctx {
+    /// A module body: the statements a module body does not hold.
+    Module,
     /// The body of a `fn` (closures inside it included).
     Fn,
     Analog,
@@ -26,6 +28,7 @@ enum Ctx {
 impl Ctx {
     fn name(self) -> &'static str {
         match self {
+            Ctx::Module => "a module body",
             Ctx::Fn => "a function body",
             Ctx::Analog => "an `analog` block",
             Ctx::Reaction => "a reaction",
@@ -228,7 +231,7 @@ fn fn_decl(f: &FnDecl, out: &mut Vec<Diagnostic>) {
 
 /// The diagnostic of a statement of the wrong kind: `E0121` in a function
 /// body, `E0404` in any other block.
-fn misplaced(ctx: Ctx, what: &str, span: Span, fn_help: &str, help: &str) -> Diagnostic {
+pub(crate) fn misplaced(ctx: Ctx, what: &str, span: Span, fn_help: &str, help: &str) -> Diagnostic {
     if ctx == Ctx::Fn {
         Diagnostic::new(
             "E0121",
@@ -310,9 +313,13 @@ fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
             }
         }
         StmtKind::Signal { init, .. } => {
-            if ctx == Ctx::Fn {
-                out.push(misplaced(ctx, "`signal`", span, "declare the carrier in the body of a `module`", ""));
-            }
+            out.push(misplaced(
+                ctx,
+                "`signal`",
+                span,
+                "declare the carrier in the body of a `module`",
+                "declare the carrier in the body of a `module`: `signal name: Type;`",
+            ));
             if let Some(e) = init {
                 expr(e, ctx, out);
             }
