@@ -147,16 +147,16 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `b36_lists_every_removed_form` passes in `spec_text.rs` (C1: POL-01 AC 1)
-- [ ] Test `b36_names_the_forms_taken_in` passes in `spec_text.rs` (C2: POL-01 AC 2)
-- [ ] Test `b36_rows_carry_a_code_and_a_replacement` passes in `spec_text.rs` (C3: POL-01 AC 3)
-- [ ] Test `every_error_code_is_defined_exactly_once` passes in `spec_text.rs` (C45: POL-08 AC 7)
-- [ ] Test `b1_still_counts_65_constructs` passes in `spec_text.rs` (C46: POL-08 AC 8)
-- [ ] `spec_text.rs` opens with a `//!` scope header and has helpers `spec(file)`, `section(text, heading)`, `table_rows(section)`: plain functions, no macro
-- [ ] The B.3.6 table has no error code in its first cell (the parse-phase fixture guard of `msl_errors` scrapes first cells)
-- [ ] No `rust` fence is added that the parser does not yet accept (function-pointer examples arrive in T12)
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `b36_lists_every_removed_form` passes in `spec_text.rs` (C1: POL-01 AC 1)
+- [x] Test `b36_names_the_forms_taken_in` passes in `spec_text.rs` (C2: POL-01 AC 2)
+- [x] Test `b36_rows_carry_a_code_and_a_replacement` passes in `spec_text.rs` (C3: POL-01 AC 3)
+- [x] Test `every_error_code_is_defined_exactly_once` passes in `spec_text.rs` (C45: POL-08 AC 7)
+- [x] Test `b1_still_counts_65_constructs` passes in `spec_text.rs` (C46: POL-08 AC 8)
+- [x] `spec_text.rs` opens with a `//!` scope header and has helpers `spec(file)`, `section(text, heading)`, `table_rows(section)`: plain functions, no macro
+- [x] The B.3.6 table has no error code in its first cell (the parse-phase fixture guard of `msl_errors` scrapes first cells)
+- [x] No `rust` fence is added that the parser does not yet accept (function-pointer examples arrive in T12)
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

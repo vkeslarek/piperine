@@ -130,6 +130,7 @@ integer and floating-point arithmetic, and the standard methods of the value typ
 
 1. The specification states deltas only. A delta either adds a form
    ([Appendix B.1](appendix_b_grammar.md)) or removes one ([§1](part_i_values.md#1-value-types) rule 2).
+   [Appendix B.3.6](appendix_b_grammar.md#b36-removed-from-rusts-grammar) lists every removed form.
 2. Where a delta and Rust disagree, the delta holds.
 3. The lexer and the grammar are the language's own ([Appendix A](appendix_a_lexical.md)). A
    conforming implementation need not accept any Rust program.

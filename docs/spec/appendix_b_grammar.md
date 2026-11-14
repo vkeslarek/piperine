@@ -178,7 +178,7 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 
 The notation is that of the index (§0). In addition:
 
-1. `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path`, `attrs` and `const_item` are Rust's, apart from Part I's changes.
+1. `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path`, `attrs` and `const_item` are Rust's, apart from Part I's changes and the forms B.3.6 removes.
 2. `IDENT` and `STRING` are token classes (Appendix A). The tokens `+>`, `<-`, the SI-suffixed literal and `Unknown` are defined in Appendix A and are not repeated here.
 3. `( X ',' )*` denotes a comma-separated list of `X`. The comma after the last element is optional, as in Rust.
 4. `gen<X>` is a production parameterized by the production `X`.
@@ -321,12 +321,33 @@ The productions of B.3.2 differ from the design's listing in the places below. E
 
 ### B.3.6 Removed from Rust's grammar
 
-A front end rejects at parse what §1 rule 2, §3.2 and Appendix A.1 remove, and also:
+This table, together with §1 rule 2, §3.2 and A.1, is the complete list of what a front end rejects at parse. A Rust form that none of the four removes is part of the language. Each removed form is reported once, with the code of its row.
 
-| Removed | Note |
-| --- | --- |
-| `static` items | constants are `const` items (§1 rule 3) |
-| struct-update syntax in a template | §8.4 |
-| blocking writes, `wait`, `sleep` | §12.2 |
+| Removed | Reported as | Write instead |
+| --- | --- | --- |
+| type aliases (`type T = f64;`) | `E0903` | write the type out |
+| associated types (`type X;` in a trait or an `impl`) | `E0903` | name the type where it is used |
+| `static` items | `E0903` | a `const` item (§1 rule 3); state lives in signals (§0) |
+| trait-bound `where` clauses (`where T: Tr`) | `E0900` | a bound in the generic list: `<T: Tr>` |
+| `impl Trait` types | `E0900` | a named generic: `<T: Tr>` |
+| qualified paths (`<T as Tr>::X`) | `E0900` | a path through the type: `T::X` |
+| restricted visibility (`pub(crate)`, `pub(super)`) | `E0900` | `pub` or no visibility |
+| loop labels (`'a: loop`, `break 'a`) | `E0905` | restructure the loop |
+| `&self` and `&mut self` receivers | `E0900` | `self` |
+| `mut` and pattern parameters (`mut x: u8`, `(a, b): (u8, u8)`) | `E0900` | a plain name, then `let` |
+| half-open range patterns (`..x`) | `E0900` | `..=x` or a guard |
+| a leading `::` in a path | `E0900` | a path from a name in scope |
+| inner attributes (`#![..]`) | `E0900` | an outer attribute on the item |
+| the never type (`!`) | `E0900` | a unit return type |
+| raw-pointer types (`*const T`, `*mut T`) | `E0900` | a value or an array |
+| `union` items | `E0900` | a `struct` or an `enum` |
+| `extern` blocks | `E0900` | an `extern "C" fn` item |
+
+Taken from Rust. Two forms look removed and are part of the language:
+
+- function-pointer types `fn(T, ..) -> U`, the type §4 rule 8 names;
+- a negative literal as a const generic argument (`Int< -1 >`, `Int<{ -1 }>`; `Int<-1>` is reported at the `<-` token).
+
+A front end cannot reject struct-update syntax in a template (§8.4) or a blocking write, `wait` or `sleep` (§12.2) at parse: the grammar has no production for them, so they are ordinary syntax errors.
 
 > **Resolution.** `static` items are listed as removed because a model keeps state only in signals (§0). The design names `const` as the only constant form and does not mention `static`.
