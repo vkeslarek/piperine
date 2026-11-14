@@ -77,7 +77,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.35 | Continuing after `finish` | Open |
 | G.36 | Flags of a periodic analysis | Open |
 | G.37 | Periodic small-signal: no traced example, no implementation | Open |
-| G.38 | Nothing has been compiled | Open |
+| G.38 | Nothing has been compiled | Closed |
 | G.39 | Size of the addition | Open |
 | G.40–G.44, D1–D17 | Closed in this specification (one table; D4 is G.38) | Closed |
 | G.45–G.48 | Flagged resolutions (one table) | Flagged |
@@ -296,10 +296,9 @@ A traced example is wanted so that the definition is exercised. `SampleHold` (§
 
 ### G.38 Nothing has been compiled
 
-**Status: Open.**
-No compiler for the language exists. Every standard-library and gallery module in this specification is hand-traced only.
-The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
-The open part is the standard library as a source: Part VII's modules and the galleries of Appendices D, E and F are text, not a compiled library. They are to become `std/*.msl` sources that compile with zero diagnostics, and Part VII's fences excerpts of them; until then a front end resolves their names only against a stand-in prelude.
+**Status: Closed.**
+The standard library is source: `crates/piperine-lang/std/*.msl` compile with zero diagnostics in the POM, and Part VII's fences are excerpts of them (§22). Two guards keep that true. `std_excerpts` ties each Part VII fence to its `std` file and each `std` item to a fence. `std_galleries` builds the 18 gallery fences of Appendices D, E and F against the embedded library and requires no diagnostic, a sound design and no unresolved member.
+What the gates prove is a front end: the library and the galleries are parsed and resolved, and nothing is type-checked, elaborated or executed. The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
 
 ### G.39 Size of the addition
 

@@ -109,7 +109,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 
 ### C.2.3 Conformance set
 
-No part of this specification has been compiled or executed; every standard-library and gallery module is hand-traced (Appendix G.38).
+The standard library and the galleries are parsed and resolved by the POM front end, and nothing is executed: no module is type-checked, elaborated or run (Appendix G.38).
 The first compiler pass **SHOULD** run the following as its conformance set:
 
 | Item | Exercises |

@@ -11,6 +11,7 @@ mod spec_corpus;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use piperine_lang::pom::{Design, ExprKind, Reference, Reflect, Resolution};
 use spec_corpus::{Block, Class, corpus};
 
 /// One gallery section: (section, fixture models appended to its fence, `std` items it must
@@ -193,4 +194,162 @@ fn the_fixture_table_names_only_used_models() {
         vec![("D.3".to_string(), "Vco".to_string()), ("D.1".to_string(), "Tx".to_string())],
         "a model the fence defines (Vco in D.3) and a model it does not use (Tx in D.1) are named as pairs"
     );
+}
+
+/// The root file of one gallery: the fence, then the fixtures of its row.
+fn assemble(fence: &str, fixtures: &[&str]) -> String {
+    let mut text = fence.to_string();
+    for model in fixtures {
+        text.push('\n');
+        text.push_str(&fixture(model));
+    }
+    text
+}
+
+fn fixtures_of(section: &str) -> &'static [&'static str] {
+    TABLE.iter().find(|r| r.section == section).unwrap_or_else(|| panic!("a row for {section}")).fixtures
+}
+
+/// The gallery built against the embedded library.
+fn build(text: &str) -> Design {
+    Design::builder().source("top.msl", text).build()
+}
+
+/// The gallery built against a library whose prelude is empty.
+fn build_against_empty_prelude(text: &str) -> Design {
+    Design::builder().std_source("lib.msl", "pub mod prelude {}").source("top.msl", text).build()
+}
+
+fn gallery_design(g: &Gallery) -> Design {
+    build(&assemble(&g.block.text, fixtures_of(&g.section)))
+}
+
+/// The diagnostics of the design, one line each: the fence's file and line, the code, the text of
+/// the offending span, and the file it is in.
+fn diagnostic_lines(design: &Design, g: &Gallery) -> Vec<String> {
+    let files = design.files();
+    design
+        .diagnostics()
+        .iter()
+        .map(|d| {
+            let file = &files[d.file.0 as usize];
+            let span = d.diagnostic.primary.0;
+            let source = file.text().get(span.start..span.end).unwrap_or("?");
+            format!("{}:{}: {} `{source}` in {}", g.block.file, g.block.line, d.diagnostic.code, file.name())
+        })
+        .collect()
+}
+
+/// The `Field` and `MethodCall` slots of the root crate that stayed `Unresolved`, by name.
+fn unresolved_members(design: &Design, g: &Gallery) -> Vec<String> {
+    let mut out = Vec::new();
+    for decl in design.root_crate().decls() {
+        for expr in decl.exprs() {
+            if matches!(expr.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }) && expr.resolution() == Resolution::Unresolved {
+                out.push(format!("{}:{}: unresolved member `{}`", g.block.file, g.block.line, expr.text()));
+            }
+        }
+    }
+    out
+}
+
+/// The items of `names` that are not `std` declarations or have no reference in the root crate.
+fn unreferenced_std_items(design: &Design, names: &[&str]) -> Vec<String> {
+    names
+        .iter()
+        .filter(|name| match design.std_crate().find(name) {
+            Some(item) => {
+                let in_root = item.references().iter().any(|r| match r {
+                    Reference::Path(p) => p.enclosing().krate().is_root(),
+                    Reference::Member(e) => e.enclosing().krate().is_root(),
+                    Reference::Pattern(p) => p.enclosing().krate().is_root(),
+                });
+                !(item.krate().is_std() && in_root)
+            }
+            None => true,
+        })
+        .map(|n| n.to_string())
+        .collect()
+}
+
+/// The gate fails unless it builds exactly 18 fences.
+fn require_18(built: usize) -> Result<(), String> {
+    if built == 18 { Ok(()) } else { Err(format!("the gate built {built} gallery fences, not 18")) }
+}
+
+#[test]
+fn every_gallery_builds_with_no_diagnostics() {
+    let mut all = Vec::new();
+    for g in galleries() {
+        all.extend(diagnostic_lines(&gallery_design(&g), &g));
+    }
+    assert!(all.is_empty(), "{} diagnostics:\n{}", all.len(), all.join("\n"));
+}
+
+#[test]
+fn every_gallery_passes_check() {
+    for g in galleries() {
+        let problems = gallery_design(&g).check();
+        assert!(problems.is_empty(), "{}:{}: {problems:?}", g.block.file, g.block.line);
+    }
+}
+
+#[test]
+fn no_gallery_has_an_unresolved_member() {
+    let mut all = Vec::new();
+    for g in galleries() {
+        all.extend(unresolved_members(&gallery_design(&g), &g));
+    }
+    assert!(all.is_empty(), "{}", all.join("\n"));
+}
+
+#[test]
+fn every_gallery_references_its_std_items() {
+    for g in galleries() {
+        let row = TABLE.iter().find(|r| r.section == g.section).expect("a row");
+        let missing = unreferenced_std_items(&gallery_design(&g), row.std_items);
+        assert!(missing.is_empty(), "{} ({}:{}) does not reference the std items {missing:?}", g.section, g.block.file, g.block.line);
+    }
+}
+
+#[test]
+fn the_gate_builds_18_fences() {
+    let fences = galleries();
+    let built = fences.iter().map(|g| gallery_design(g)).count();
+    assert_eq!(require_18(built), Ok(()));
+    assert!(require_18(17).is_err() && require_18(19).is_err(), "another number fails the gate");
+}
+
+#[test]
+fn a_dirty_gallery_is_reported_by_fence() {
+    let g = Gallery {
+        section: "D.1".to_string(),
+        block: Block { file: "appendix_x.md".to_string(), line: 42, class: Class::Valid, text: "module M(p: Electrical) {}\nconst X: f64 = NoSuchName;\n".to_string() },
+    };
+    let design = build(&g.block.text);
+    let lines = diagnostic_lines(&design, &g);
+    assert!(lines.iter().any(|l| l.starts_with("appendix_x.md:42: E0161 `NoSuchName`")), "{lines:?}");
+    let g2 = Gallery {
+        section: "D.1".to_string(),
+        block: Block { file: "appendix_y.md".to_string(), line: 7, class: Class::Valid, text: "module M(in c: Bit) { }\ndigital for M { on c.nosuchmethod() { } }\n".to_string() },
+    };
+    let unresolved = unresolved_members(&build(&g2.block.text), &g2);
+    assert!(unresolved.iter().any(|l| l.starts_with("appendix_y.md:7: unresolved member") && l.contains("nosuchmethod")), "{unresolved:?}");
+}
+
+#[test]
+fn galleries_fail_against_an_empty_prelude() {
+    for g in galleries() {
+        let design = build_against_empty_prelude(&assemble(&g.block.text, fixtures_of(&g.section)));
+        let e0161 = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0161").count();
+        assert!(e0161 >= 1, "{} ({}:{}) builds without E0161 against an empty prelude", g.section, g.block.file, g.block.line);
+    }
+}
+
+#[test]
+fn every_gallery_lists_a_std_item() {
+    assert_eq!(TABLE.len(), 18);
+    for row in &TABLE {
+        assert!(!row.std_items.is_empty(), "{} lists no std item", row.section);
+    }
 }

@@ -591,20 +591,20 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `g38_is_closed` passes in `spec_text.rs` (C4: STD-01 AC 4)
-- [ ] Test `appendix_c_says_parsed_and_resolved` passes in `spec_text.rs` (C5: STD-01 AC 5)
-- [ ] Test `every_gallery_builds_with_no_diagnostics` passes in `std_galleries.rs` (C80: STD-14 AC 1)
-- [ ] Test `every_gallery_passes_check` passes in `std_galleries.rs` (C81: STD-14 AC 2)
-- [ ] Test `no_gallery_has_an_unresolved_member` passes in `std_galleries.rs` (C82: STD-14 AC 3)
-- [ ] Test `every_gallery_references_its_std_items` passes in `std_galleries.rs` (C83: STD-14 AC 4)
-- [ ] Test `the_gate_builds_18_fences` passes in `std_galleries.rs` (C84: STD-14 AC 5)
-- [ ] Test `a_dirty_gallery_is_reported_by_fence` passes in `std_galleries.rs` (C85: STD-14 AC 6)
-- [ ] Test `galleries_fail_against_an_empty_prelude` passes in `std_galleries.rs` (C86: STD-14 AC 7)
-- [ ] Test `every_gallery_lists_a_std_item` passes in `std_galleries.rs` (C87: STD-14 AC 8)
-- [ ] A gallery that is not clean is a finding about `std`, the POM or the gallery: fix it where it is wrong and say which in the commit body; the gate's assertions are not loosened
-- [ ] A gallery fence is edited only for the rename of T3 or a defect the gate proves; each edit is listed in the commit body
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `g38_is_closed` passes in `spec_text.rs` (C4: STD-01 AC 4)
+- [x] Test `appendix_c_says_parsed_and_resolved` passes in `spec_text.rs` (C5: STD-01 AC 5)
+- [x] Test `every_gallery_builds_with_no_diagnostics` passes in `std_galleries.rs` (C80: STD-14 AC 1)
+- [x] Test `every_gallery_passes_check` passes in `std_galleries.rs` (C81: STD-14 AC 2)
+- [x] Test `no_gallery_has_an_unresolved_member` passes in `std_galleries.rs` (C82: STD-14 AC 3)
+- [x] Test `every_gallery_references_its_std_items` passes in `std_galleries.rs` (C83: STD-14 AC 4)
+- [x] Test `the_gate_builds_18_fences` passes in `std_galleries.rs` (C84: STD-14 AC 5)
+- [x] Test `a_dirty_gallery_is_reported_by_fence` passes in `std_galleries.rs` (C85: STD-14 AC 6)
+- [x] Test `galleries_fail_against_an_empty_prelude` passes in `std_galleries.rs` (C86: STD-14 AC 7)
+- [x] Test `every_gallery_lists_a_std_item` passes in `std_galleries.rs` (C87: STD-14 AC 8)
+- [x] A gallery that is not clean is a finding about `std`, the POM or the gallery: fix it where it is wrong and say which in the commit body; the gate's assertions are not loosened
+- [x] A gallery fence is edited only for the rename of T3 or a defect the gate proves; each edit is listed in the commit body
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

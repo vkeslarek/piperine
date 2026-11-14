@@ -708,11 +708,9 @@ fn appendix_g_records_the_decisions() {
     for item in ["G.40", "G.41", "G.42", "G.43", "G.44"] {
         assert!(rows.iter().any(|r| r[0] == item), "{item} stays");
     }
-    // G.38 stays Open and names the standard-library sources as the open part.
+    // G.38 was Open here; the gallery gate closes it (see `g38_is_closed`) and it still names the standard-library sources.
     let g38 = one_line(&section(&g, "### G.38"));
-    assert!(g38.contains("**Status: Open.**"), "{g38}");
     assert!(g38.contains("standard library") && g38.contains("std/*.msl"), "G.38 names the standard-library sources: {g38}");
-    assert!(g.lines().any(|l| l.starts_with("| G.38 |") && l.trim_end().ends_with("| Open |")), "the overview lists G.38 as Open");
     assert!(g.lines().any(|l| l.starts_with("| G.40") && l.contains("D1")), "the overview names the decision rows");
 }
 
@@ -1050,8 +1048,7 @@ fn appendix_g_records_the_package_decisions() {
     assert_eq!(rows.iter().filter(|r| r[0].starts_with('P')).count(), 6);
     let closing = one_line(&closed);
     assert!(closing.contains("P1 to P6 number the decisions of the crate and package model"), "{closing}");
-    // G.38 is untouched: the library as a source stays open.
-    assert!(one_line(&section(&g, "### G.38")).contains("**Status: Open.**"));
+    // G.38's status is asserted by `g38_is_closed`.
 }
 
 #[test]
@@ -1274,8 +1271,7 @@ fn appendix_g_records_the_stdlib_decisions() {
     assert!(s("S5").contains("1.0 / 0.0"), "{}", s("S5"));
     let closing = one_line(&closed);
     assert!(closing.contains("S1 to S5 number the decisions of the standard library"), "{closing}");
-    // G.38 keeps its status until the gallery gate closes it.
-    assert!(one_line(&section(&g, "### G.38")).contains("**Status: Open.**"));
+    // G.38's status is asserted by `g38_is_closed`.
 }
 
 #[test]
@@ -1316,4 +1312,24 @@ fn laplace_states_the_proper_rule() {
     // STD-02 AC 8: `laplace_nd` requires `D >= 1` and `N <= D`; breaking it is E0304.
     let s = one_line(&section(&spec("part_vii_stdlib.md"), "#### 22.2.14"));
     assert!(s.contains("`D >= 1`") && s.contains("`N <= D`") && s.contains("`E0304`"), "{s}");
+}
+
+#[test]
+fn g38_is_closed() {
+    // STD-01 AC 4: G.38 is Closed and names the two excerpt guards and the gallery gate.
+    let g = spec("appendix_g_scope.md");
+    let g38 = one_line(&section(&g, "### G.38"));
+    assert!(g38.contains("**Status: Closed.**"), "{g38}");
+    for target in ["std_excerpts", "std_galleries"] {
+        assert!(g38.contains(target), "G.38 names {target}: {g38}");
+    }
+    assert!(g.lines().any(|l| l.starts_with("| G.38 |") && l.trim_end().ends_with("| Closed |")), "the overview lists G.38 as Closed");
+}
+
+#[test]
+fn appendix_c_says_parsed_and_resolved() {
+    // STD-01 AC 5: the library and the galleries are parsed and resolved; nothing is executed.
+    let c = one_line(&spec("appendix_c_implementation.md"));
+    assert!(!c.contains("No part of this specification has been compiled"), "the old claim is gone");
+    assert!(c.contains("parsed and resolved") && c.contains("nothing is executed"), "{c}");
 }
