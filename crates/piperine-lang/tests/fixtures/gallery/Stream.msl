@@ -1,0 +1,1 @@
+struct Stream<T: Repr> { out valid: Bit, in ready: Bit, out data: Bit<T> }

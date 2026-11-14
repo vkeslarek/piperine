@@ -1,0 +1,2 @@
+module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 100.0; roff: f64 = 1G; }
+analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }

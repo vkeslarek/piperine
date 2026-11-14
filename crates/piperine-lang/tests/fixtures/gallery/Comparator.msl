@@ -1,0 +1,6 @@
+module Comparator(inp: Electrical, inn: Electrical, out q: Bit = false) {
+    ttol: f64 = 1p;
+    let up = above(v(inp, inn), ttol);
+    let dn = above(-v(inp, inn), ttol);
+}
+digital for Comparator { on up || dn { q <- up; } }

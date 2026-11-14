@@ -566,14 +566,14 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `gallery_fixtures_exist` passes in `std_galleries.rs` (C76: STD-13 AC 1)
-- [ ] Test `every_fixture_line_is_spec_text` passes in `std_galleries.rs` (C77: STD-13 AC 2)
-- [ ] Test `the_fixture_table_covers_every_gallery` passes in `std_galleries.rs` (C78: STD-13 AC 3)
-- [ ] Test `the_fixture_table_names_only_used_models` passes in `std_galleries.rs` (C79: STD-13 AC 4)
-- [ ] A fixture is never listed for the fence that defines the same model (`Vco` in D.3, `RSwitch` in D.6)
-- [ ] The table is data in the test: plain arrays, no macro
-- [ ] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `gallery_fixtures_exist` passes in `std_galleries.rs` (C76: STD-13 AC 1)
+- [x] Test `every_fixture_line_is_spec_text` passes in `std_galleries.rs` (C77: STD-13 AC 2)
+- [x] Test `the_fixture_table_covers_every_gallery` passes in `std_galleries.rs` (C78: STD-13 AC 3)
+- [x] Test `the_fixture_table_names_only_used_models` passes in `std_galleries.rs` (C79: STD-13 AC 4)
+- [x] A fixture is never listed for the fence that defines the same model (`Vco` in D.3, `RSwitch` in D.6)
+- [x] The table is data in the test: plain arrays, no macro
+- [x] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
