@@ -427,3 +427,11 @@ fn resolution_doc_describes_intrinsics() {
     let shape = page.lines().find(|l| l.contains("is_intrinsic")).expect("a line naming `is_intrinsic`");
     assert!(shape.contains("extern \"intrinsic\""), "{shape}");
 }
+
+#[test]
+fn resolution_doc_describes_the_supertrait_rule() {
+    // STD-17 AC 3: `Self::NAME` in a trait resolves through the supertraits.
+    let page = page_of("resolution.md");
+    let line = page.lines().find(|l| l.contains("Self::NAME") && l.contains("supertrait")).expect("a line on `Self::NAME` and supertraits");
+    assert!(line.contains("trait"), "{line}");
+}

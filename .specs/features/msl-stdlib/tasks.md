@@ -253,13 +253,13 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `self_assoc_resolves_through_repr_supertrait` passes in `pom_resolve.rs` (C26: STD-05 AC 1)
-- [ ] Test `self_assoc_resolves_through_a_user_supertrait` passes in `pom_resolve.rs` (C27: STD-05 AC 2)
-- [ ] Test `self_assoc_missing_everywhere_is_e0161` passes in `pom_resolve.rs` (C28: STD-05 AC 3)
-- [ ] Test `resolution_doc_describes_the_supertrait_rule` passes in `pom_docs.rs` (C97: STD-17 AC 3)
-- [ ] Resolution writes the slot only; no node is created (MD-54)
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `self_assoc_resolves_through_repr_supertrait` passes in `pom_resolve.rs` (C26: STD-05 AC 1)
+- [x] Test `self_assoc_resolves_through_a_user_supertrait` passes in `pom_resolve.rs` (C27: STD-05 AC 2)
+- [x] Test `self_assoc_missing_everywhere_is_e0161` passes in `pom_resolve.rs` (C28: STD-05 AC 3)
+- [x] Test `resolution_doc_describes_the_supertrait_rule` passes in `pom_docs.rs` (C97: STD-17 AC 3)
+- [x] Resolution writes the slot only; no node is created (MD-54)
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

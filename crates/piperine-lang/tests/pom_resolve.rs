@@ -1253,3 +1253,37 @@ fn a_call_to_an_intrinsic_resolves() {
     let target = function(&design, "pnjlim").decl().id();
     assert_eq!(design.expr(*callee).resolution(), Resolution::Decl(target));
 }
+
+#[test]
+fn self_assoc_resolves_through_repr_supertrait() {
+    // STD-05 AC 1: `Self::WIDTH` in `trait Known: Repr` is the built-in member `Repr::WIDTH`.
+    let design = build("trait Known: Repr { fn w(self) -> u32 { Self::WIDTH } }\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let member = piperine_lang::pom::builtin_member("Repr", "WIDTH").expect("Repr::WIDTH is a member row");
+    let res = one(&design, "Self::WIDTH");
+    assert_eq!(res, [decl(&design, "Known"), Resolution::Builtin(member)]);
+}
+
+#[test]
+fn self_assoc_resolves_through_a_user_supertrait() {
+    // STD-05 AC 2.
+    let design = build("trait Base { const K: u32 = 1; }\ntrait Sub: Base { fn k(self) -> u32 { Self::K } }\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(one(&design, "Self::K"), [decl(&design, "Sub"), decl(&design, "Base::K")]);
+}
+
+#[test]
+fn self_assoc_missing_everywhere_is_e0161() {
+    // STD-05 AC 3: E0161 at the path, for a Repr supertrait and for a user one.
+    for src in [
+        "trait Known: Repr { fn w(self) -> u32 { Self::NOPE } }\n",
+        "trait Base { const K: u32 = 1; }\ntrait Sub: Base { fn k(self) -> u32 { Self::NOPE } }\n",
+        "trait Alone { fn k(self) -> u32 { Self::NOPE } }\n",
+    ] {
+        let design = build(src);
+        let found = with_code(&design, "E0161");
+        assert_eq!(found.len(), 1, "{src}: {:?}", design.diagnostics());
+        assert_eq!(primary_text(&design, found[0]), "Self::NOPE", "{src}");
+        assert_eq!(design.diagnostics().len(), 1, "{src}: {:?}", design.diagnostics());
+    }
+}

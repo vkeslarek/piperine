@@ -241,6 +241,12 @@ assert_eq!(class("p"), CallClass::Probe);
 
 ## Members
 
+`Self::NAME` inside a trait resolves through the supertraits, as the name after a generic's bounds does:
+first the trait's own items, then each supertrait in the order written. A user supertrait gives its
+item, `Repr` gives the member row (`Self::WIDTH` is `Repr::WIDTH`), any other built-in supertrait gives
+`Deferred(BuiltinTraitMember)`, and a name found nowhere is `E0161` at the path. Resolution writes the
+slot only.
+
 `e.name` and `e.m()` are linked when the declarations alone decide the type of `e`:
 
 | Receiver | `e.name` resolves to | `e.m()` resolves to |

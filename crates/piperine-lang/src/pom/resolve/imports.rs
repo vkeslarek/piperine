@@ -357,7 +357,12 @@ impl Ctx<'_> {
                 Some((Resolution::Decl(found), visible))
             }
             DeclKind::Enum(_) => self.variant(owner, name).or_else(|| self.associated(owner, name)).map(|v| (Resolution::Decl(v), true)),
-            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Trait(_) | DeclKind::Module(_) => {
+            // `Self::NAME` in a trait: its own items, then each supertrait in the order written.
+            DeclKind::Trait(t) => match self.associated(owner, name) {
+                Some(item) => Some((Resolution::Decl(item), true)),
+                None => self.through_bounds(&t.supertraits, name, self.parent_namespace(owner).unwrap_or(from), visiting),
+            },
+            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Module(_) => {
                 self.associated(owner, name).map(|v| (Resolution::Decl(v), true))
             }
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => self.through_bounds(bounds, name, from, visiting),
