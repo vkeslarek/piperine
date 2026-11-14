@@ -209,12 +209,12 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `b36_lists_extern_crate` passes in `spec_text.rs` (C8: PKG-01 AC 8)
-- [ ] Test `extern_crate_is_a_removed_form` passes in `msl_errors.rs` (C9: PKG-01 AC 9)
-- [ ] `extern "C" fn` items and `extern "abi" module` still parse; an `extern` block still reports its own row
-- [ ] The item is kept as `ItemKind::Error`: one fault, one diagnostic
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `b36_lists_extern_crate` passes in `spec_text.rs` (C8: PKG-01 AC 8)
+- [x] Test `extern_crate_is_a_removed_form` passes in `msl_errors.rs` (C9: PKG-01 AC 9)
+- [x] `extern "C" fn` items and `extern "abi" module` still parse; an `extern` block still reports its own row
+- [x] The item is kept as `ItemKind::Error`: one fault, one diagnostic
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
