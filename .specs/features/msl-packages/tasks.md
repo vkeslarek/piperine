@@ -404,17 +404,17 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_crate_that_is_no_dependency_is_e0161_with_help` passes in `pom_crates.rs` (C45: PKG-05 AC 11)
-- [ ] Test `a_private_item_of_another_crate_is_e0161` passes in `pom_crates.rs` (C46: PKG-05 AC 12)
-- [ ] Test `a_pub_item_in_a_private_namespace_is_e0161` passes in `pom_crates.rs` (C47: PKG-05 AC 13)
-- [ ] Test `super_at_a_crate_root_is_e0161` passes in `pom_crates.rs` (C48: PKG-05 AC 14)
-- [ ] Test `a_glob_of_a_dependency_brings_only_pub_items` passes in `pom_crates.rs` (C49: PKG-05 AC 15)
-- [ ] Test `a_pub_use_re_exports_across_crates` passes in `pom_crates.rs` (C50: PKG-05 AC 16)
-- [ ] Each fault is one diagnostic: no `E0161` is doubled by the import and by its use
-- [ ] The help text is `name it under [dependencies] in Piperine.toml` and appears only for a first segment
-- [ ] The `E0161` row of the Diagnostics table of `docs/pom/resolution.md` names the crate case
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_crate_that_is_no_dependency_is_e0161_with_help` passes in `pom_crates.rs` (C45: PKG-05 AC 11)
+- [x] Test `a_private_item_of_another_crate_is_e0161` passes in `pom_crates.rs` (C46: PKG-05 AC 12)
+- [x] Test `a_pub_item_in_a_private_namespace_is_e0161` passes in `pom_crates.rs` (C47: PKG-05 AC 13)
+- [x] Test `super_at_a_crate_root_is_e0161` passes in `pom_crates.rs` (C48: PKG-05 AC 14)
+- [x] Test `a_glob_of_a_dependency_brings_only_pub_items` passes in `pom_crates.rs` (C49: PKG-05 AC 15)
+- [x] Test `a_pub_use_re_exports_across_crates` passes in `pom_crates.rs` (C50: PKG-05 AC 16)
+- [x] Each fault is one diagnostic: no `E0161` is doubled by the import and by its use
+- [x] The help text is `name it under [dependencies] in Piperine.toml` and appears only for a first segment
+- [x] The `E0161` row of the Diagnostics table of `docs/pom/resolution.md` names the crate case
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

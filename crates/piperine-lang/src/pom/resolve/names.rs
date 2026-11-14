@@ -389,7 +389,7 @@ impl Names<'_, '_> {
         }
         if let (Some(error), 0) = (walked.error, self.quiet) {
             let file = ctx.design.decl_data(node.owner).file;
-            self.out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, error)));
+            self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, error)));
         }
         for segment in &node.segments {
             if let Some(args) = &segment.args {
@@ -641,7 +641,7 @@ impl Names<'_, '_> {
                 let node = design.path_node(import.path);
                 if self.block_clash(&node.segments) {
                     let file = design.decl_data(node.owner).file;
-                    self.out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
                     continue;
                 }
                 self.frames.push(Frame::Barrier);

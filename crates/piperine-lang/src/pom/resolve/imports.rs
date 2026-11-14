@@ -418,7 +418,7 @@ impl Ctx<'_> {
                 let node = self.design.path_node(entry.path);
                 if self.use_clash(*ns, &node.segments, &mut vec![own]) {
                     let file = self.design.decl_data(entry.use_decl).file;
-                    out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    out.diagnostics.push((file, path_diagnostic(self.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
                     continue;
                 }
                 let walked = self.walk(&node.segments, *ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(*ns, name, Prefer::Types, visiting));
@@ -430,7 +430,7 @@ impl Ctx<'_> {
                 }
                 let file = self.design.decl_data(entry.use_decl).file;
                 if let Some(error) = walked.error {
-                    out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, error)));
+                    out.diagnostics.push((file, path_diagnostic(self.design, &node.segments, node.span, error)));
                 }
             }
             self.import_collisions(*ns, &named_targets, out);
@@ -478,11 +478,16 @@ impl Ctx<'_> {
 }
 
 /// The `E0161` for a path that stopped at `error`.
-pub(super) fn path_diagnostic(segments: &[PathSegment], span: crate::msl::Span, error: WalkError) -> Diagnostic {
+pub(super) fn path_diagnostic(design: &Design, segments: &[PathSegment], span: crate::msl::Span, error: WalkError) -> Diagnostic {
     match error {
         WalkError::Missing { at } => {
             let name = &segments[at].name.text;
-            Diagnostic::new("E0161", format!("cannot find `{name}` in this scope"), span, "not found")
+            let diagnostic = Diagnostic::new("E0161", format!("cannot find `{name}` in this scope"), span, "not found");
+            // A first segment that is a crate of the design but no dependency of this one.
+            if at == 0 && design.crates.iter().any(|c| c.name == *name) {
+                return diagnostic.with_help("name it under [dependencies] in Piperine.toml");
+            }
+            diagnostic
         }
         WalkError::Private { at } => {
             let name = &segments[at].name.text;

@@ -533,3 +533,78 @@ fn a_dependency_name_hides_a_prelude_item() {
     assert_eq!(codes(&design), Vec::<String>::new());
     assert_eq!(krate_of(&design, path_res(&design, "util::K")[0][1]), "util");
 }
+
+// ---- PKG-05 AC 11 to 16: pub is the only way across a crate (T11) ----
+
+/// `app -> util -> deep` (each depends on the next under its own name), over virtual sources.
+fn chain(app: &str, util: &str, deep: &str) -> Design {
+    let mut g = CrateGraph::new();
+    let a = g.add_crate("app", "app/lib.msl").unwrap();
+    let u = g.add_crate("util", "util/lib.msl").unwrap();
+    let d = g.add_crate("deep", "deep/lib.msl").unwrap();
+    g.add_dependency(a, "util", u).unwrap();
+    g.add_dependency(u, "deep", d).unwrap();
+    Design::builder().source("app/lib.msl", app).source("util/lib.msl", util).source("deep/lib.msl", deep).crates(g).build()
+}
+
+#[test]
+fn a_crate_that_is_no_dependency_is_e0161_with_help() {
+    // A dependency of a dependency, and the crate's own name.
+    for app in ["const X: u32 = deep::K;\n", "pub const A: u32 = 1;\nconst X: u32 = app::A;\n"] {
+        let design = chain(app, "pub const K: u32 = 1;\n", "pub const K: u32 = 1;\n");
+        assert_eq!(codes(&design), ["E0161"], "{app}");
+        let help = design.diagnostics()[0].diagnostic.help.clone().unwrap_or_default();
+        assert_eq!(help, "name it under [dependencies] in Piperine.toml", "{app}");
+    }
+    // A later segment that is missing gets no such help; neither does a plain unknown name.
+    for app in ["const X: u32 = util::Missing;\n", "const X: u32 = nowhere::K;\n"] {
+        let design = chain(app, "pub const K: u32 = 1;\n", "");
+        assert_eq!(codes(&design), ["E0161"], "{app}");
+        assert_eq!(design.diagnostics()[0].diagnostic.help, None, "{app}");
+    }
+}
+
+#[test]
+fn a_private_item_of_another_crate_is_e0161() {
+    let design = chain("const X: u32 = util::K;\n", "const K: u32 = 1;\n", "");
+    assert_eq!(codes(&design), ["E0161"]);
+    assert!(design.diagnostics()[0].diagnostic.message.contains("private"), "{}", design.diagnostics()[0].diagnostic.message);
+}
+
+#[test]
+fn a_pub_item_in_a_private_namespace_is_e0161() {
+    let design = chain("const X: u32 = util::inner::K;\n", "mod inner { pub const K: u32 = 1; }\n", "");
+    assert_eq!(codes(&design), ["E0161"]);
+}
+
+#[test]
+fn super_at_a_crate_root_is_e0161() {
+    let design = chain("pub const A: u32 = 1;\n", "pub const K: u32 = super::A;\n", "");
+    assert_eq!(codes(&design), ["E0161"]);
+    let design = chain("const X: u32 = super::A;\n", "", "");
+    assert_eq!(codes(&design), ["E0161"]);
+}
+
+#[test]
+fn a_glob_of_a_dependency_brings_only_pub_items() {
+    let util = "pub const A: u32 = 1;\nconst B: u32 = 2;\n";
+    let design = chain("use util::*;\nconst X: u32 = A;\n", util, "");
+    assert_eq!(codes(&design), Vec::<String>::new());
+    assert_eq!(krate_of(&design, path_res(&design, "A")[0][0]), "util");
+    let design = chain("use util::*;\nconst Y: u32 = B;\n", util, "");
+    assert_eq!(codes(&design), ["E0161"]);
+}
+
+#[test]
+fn a_pub_use_re_exports_across_crates() {
+    let deep = "pub const K: u32 = 1;\n";
+    // app does not depend on deep: it reaches K through util's `pub use`, by path and by import.
+    let design = chain("use util::K;\nconst X: u32 = K;\nconst Y: u32 = util::K;\n", "pub use deep::K;\n", deep);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    for res in path_res(&design, "K").into_iter().chain(path_res(&design, "util::K")) {
+        assert_eq!(krate_of(&design, *res.last().unwrap()), "deep");
+    }
+    // Without `pub` the import is private to util.
+    let design = chain("const X: u32 = util::K;\n", "use deep::K;\n", deep);
+    assert_eq!(codes(&design), ["E0161"]);
+}

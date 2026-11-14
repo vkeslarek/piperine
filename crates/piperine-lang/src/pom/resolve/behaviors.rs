@@ -33,7 +33,7 @@ impl Ctx<'_> {
                 (Some(WalkError::Missing { .. }), _) => None,
                 (error, Some(Resolution::Decl(d))) => {
                     if let Some(private @ WalkError::Private { .. }) = error {
-                        report(path_diagnostic(&node.segments, node.span, private));
+                        report(path_diagnostic(self.design, &node.segments, node.span, private));
                     }
                     Some(*d)
                 }
