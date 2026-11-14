@@ -487,11 +487,11 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `monitors_resolve_into_std_monitor` passes in `std_library.rs` (C60: STD-09 AC 9)
-- [ ] `std_excerpts` passes with §22.5 covered in both directions
-- [ ] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `monitors_resolve_into_std_monitor` passes in `std_library.rs` (C60: STD-09 AC 9)
+- [x] `std_excerpts` passes with §22.5 covered in both directions
+- [x] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -360,3 +360,14 @@ fn converters_resolve_into_std_convert() {
         assert_eq!(placed_module(&design, name).file().name(), "convert.msl", "{name}");
     }
 }
+
+#[test]
+fn monitors_resolve_into_std_monitor() {
+    let design = Design::builder()
+        .source("top.msl", "module M(in clk: Bit, in d: Bit, in x: Bit, tpd: f64) { let s = Setup(clk, d) { ts: 1n }; let y = inertial(x, tpd); }\n")
+        .build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    for name in ["Setup", "inertial"] {
+        assert_eq!(placed_module(&design, name).file().name(), "monitor.msl", "{name}");
+    }
+}
