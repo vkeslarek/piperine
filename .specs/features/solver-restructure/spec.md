@@ -1,5 +1,7 @@
 # Solver Restructure Specification
 
+**Approved**: 2026-11-14 - user: "Approve and run (Recommended)"
+
 Feature (A) of `.specs/features/solver-completeness/`. Structure only: no solver logic changes.
 
 ## Problem Statement
