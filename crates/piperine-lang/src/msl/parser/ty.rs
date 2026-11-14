@@ -114,7 +114,8 @@ pub(crate) fn generics<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Generics> 
             kind: GenericParamKind::Const { ty, default },
             span: Loc(e.span()),
         });
-    choice((const_param, type_param))
+    super::item::rejected_meta(h)
+        .ignore_then(choice((const_param, type_param)))
         .separated_by(punct(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
@@ -195,9 +196,18 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
         });
 
     // `fn(A, B) -> R`, taken only where a type is expected.
+    // A parameter name is removed (B.3.6): reported, the type kept.
+    let named_param = ident()
+        .then_ignore(punct(Punct::Colon))
+        .then(ty.clone())
+        .validate(|(_, t), e, emitter| {
+            emitter.emit(removed("named function-pointer parameters", e.span()));
+            t
+        });
     let fn_ptr = kw(Kw::Fn)
         .ignore_then(
-            ty.clone()
+            named_param
+                .or(ty.clone())
                 .separated_by(punct(Punct::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()

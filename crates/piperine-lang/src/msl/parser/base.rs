@@ -45,6 +45,9 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
     RemovedForm { row: "inner attributes", code: "E0900", message: "inner attributes are not part of the language", help: "write an outer attribute on the item" },
     RemovedForm { row: "the never type", code: "E0900", message: "the never type is not part of the language", help: "write a unit return type" },
     RemovedForm { row: "raw-pointer types", code: "E0900", message: "raw-pointer types are not part of the language", help: "write a value or an array" },
+    RemovedForm { row: "named function-pointer parameters", code: "E0900", message: "named function-pointer parameters are not part of the language", help: "write the types only: `fn(f64) -> f64`" },
+    RemovedForm { row: "attributes and doc comments on a parameter", code: "E0900", message: "attributes and doc comments on parameters, generic parameters and struct-literal fields are not part of the language", help: "put the attribute or comment on the item" },
+    RemovedForm { row: "double borrows", code: "E0900", message: "double borrows are not part of the language", help: "write one borrow: `&a`" },
     RemovedForm { row: "`union` items", code: "E0900", message: "`union` items are not part of the language", help: "write a `struct` or an `enum`" },
     RemovedForm { row: "`extern` blocks", code: "E0900", message: "`extern` blocks are not part of the language", help: "write an `extern \"C\" fn` item" },
 ];

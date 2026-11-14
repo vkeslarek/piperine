@@ -192,7 +192,8 @@ pub(crate) fn build<'a, I: In<'a>>(
         });
 
     // `name: value`, or the shorthand `name` for `name: name`.
-    let field_init = ident()
+    let field_init = super::item::rejected_meta(h)
+        .ignore_then(ident())
         .then(punct(Punct::Colon).ignore_then(expr.clone()).or_not())
         .map_with(|(name, value), e| {
             let shorthand = value.is_none();
@@ -488,6 +489,11 @@ pub(crate) fn build<'a, I: In<'a>>(
         punct(Punct::Not).to(UnOp::Not),
         punct(Punct::Star).to(UnOp::Deref),
         punct(Punct::And).to(UnOp::Ref),
+        // `&&x` is removed (B.3.6): reported, read as one borrow.
+        punct(Punct::AndAnd).validate(|_, e, emitter| {
+            emitter.emit(removed("double borrows", e.span()));
+            UnOp::Ref
+        }),
     ));
     let mul_op = choice((op(Punct::Star, BinOp::Mul), op(Punct::Slash, BinOp::Div), op(Punct::Percent, BinOp::Rem)));
     let add_op = choice((op(Punct::Plus, BinOp::Add), op(Punct::Minus, BinOp::Sub)));

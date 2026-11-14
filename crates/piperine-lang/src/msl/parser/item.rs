@@ -61,6 +61,31 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
         .boxed()
 }
 
+/// Docs and attributes where Rust takes an outer attribute but the language
+/// does not (a parameter, a generic parameter, a struct-literal field): one
+/// `E0900` (B.3.6), the comments and attributes dropped.
+pub(crate) fn rejected_meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ()> {
+    meta(h)
+        .validate(|m, e, emitter| {
+            if !m.docs.is_empty() || !m.attrs.is_empty() {
+                emitter.emit(removed("attributes and doc comments on a parameter", e.span()));
+            }
+        })
+        .boxed()
+}
+
+/// `where ..` on a struct, enum, trait or impl: every `where` there is the
+/// removed trait-bound form (B.3.6); reported at `where`, the clause skipped.
+fn removed_where<'a, I: In<'a>>() -> P<'a, I, ()> {
+    kw(Kw::Where)
+        .map_with(|_, e| e.span())
+        .then_ignore(skip_head_rest())
+        .validate(|at, _, emitter| emitter.emit(removed("trait-bound `where` clauses", at)))
+        .or_not()
+        .ignored()
+        .boxed()
+}
+
 pub(crate) fn dir<'a, I: In<'a>>() -> impl Parser<'a, I, Dir, Extra<'a>> + Clone {
     choice((kw(Kw::In).to(Dir::In), kw(Kw::Out).to(Dir::Out)))
 }
@@ -104,7 +129,7 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
             emitter.emit(removed("`mut` and pattern parameters", e.span()));
             FnParam::Error(Loc(e.span()))
         });
-    let param = first_of(vec![
+    let param = rejected_meta(h).ignore_then(first_of(vec![
         kw(Kw::SelfLower).map_with(|_, e| FnParam::SelfValue(Loc(e.span()))).boxed(),
         ref_receiver.boxed(),
         ident()
@@ -125,7 +150,7 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
             })
             .boxed(),
         pattern_param.boxed(),
-    ]);
+    ]));
     kw(Kw::Const)
         .or_not()
         .then(kw(Kw::Extern).ignore_then(string_lit()).or_not())
@@ -312,6 +337,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
     let struct_decl = kw(Kw::Struct)
         .ignore_then(ident())
         .then(ty::generics(h).or_not())
+        .then_ignore(removed_where())
         .then(fields(h, true))
         .map(|((name, generics), fields)| ItemKind::Struct(StructDecl { name, generics, fields }));
 
@@ -329,6 +355,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
     let enum_decl = kw(Kw::Enum)
         .ignore_then(ident())
         .then(ty::generics(h).or_not())
+        .then_ignore(removed_where())
         .then(
             variant
                 .separated_by(punct(Punct::Comma))
@@ -342,6 +369,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         .ignore_then(ty::generics(h).or_not())
         .then(h.ty.clone())
         .then(kw(Kw::For).ignore_then(h.ty.clone()).or_not())
+        .then_ignore(removed_where())
         .then(impl_items(h))
         .try_map(|(((generics, first), second), items), span| match second {
             None => Ok(ItemKind::Impl(ImplBlock { generics, trait_: None, self_ty: first, items })),
@@ -364,12 +392,23 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
                 .ignore_then(ty::path(h, false).separated_by(punct(Punct::Plus)).at_least(1).collect::<Vec<_>>())
                 .or_not(),
         )
+        .then_ignore(removed_where())
         .then(impl_items(h))
         .map(|(((name, generics), supertraits), items)| {
             ItemKind::Trait(TraitDecl { name, generics, supertraits: supertraits.unwrap_or_default(), items })
         });
 
-    let use_decl = kw(Kw::Use).ignore_then(use_tree()).then_ignore(punct(Punct::Semi)).map(ItemKind::Use);
+    // A leading `::` is removed (B.3.6): reported at the `::`, the tree kept.
+    let use_decl = kw(Kw::Use)
+        .ignore_then(punct(Punct::ColonColon).map_with(|_, e| e.span()).or_not())
+        .then(use_tree())
+        .then_ignore(punct(Punct::Semi))
+        .validate(|(leading, tree), _, emitter| {
+            if let Some(at) = leading {
+                emitter.emit(removed("a leading `::`", at));
+            }
+            ItemKind::Use(tree)
+        });
 
     let mod_decl = kw(Kw::Mod)
         .ignore_then(ident())

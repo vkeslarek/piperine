@@ -908,6 +908,23 @@ const REMOVED: &[Removed] = &[
     removed("`mut` and pattern parameters", "fn f((a, b): (u8, u8)) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
     removed("half-open range patterns", "fn f() { match x { ..5 => { } _ => { } } }", "E0900", "half-open range patterns are not part of the language", "`..=x`"),
     removed("a leading `::`", "fn f() { let x = ::a::b; }", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
+    removed("a leading `::`", "use ::a::b;", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
+    removed("a leading `::`", "use ::a::{b, c};", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
+    removed("trait-bound `where` clauses", "struct S<T> where T: Tr { a: T }", "E0900", "trait-bound `where` clauses are not part of the language", "<T: Tr>"),
+    removed("trait-bound `where` clauses", "impl<T> S<T> where T: Tr { }", "E0900", "trait-bound `where` clauses are not part of the language", "<T: Tr>"),
+    removed("trait-bound `where` clauses", "impl<T> Tr for S<T> where T: Tr { }", "E0900", "trait-bound `where` clauses are not part of the language", "<T: Tr>"),
+    removed("trait-bound `where` clauses", "trait Tr<T> where T: U { }", "E0900", "trait-bound `where` clauses are not part of the language", "<T: Tr>"),
+    removed("trait-bound `where` clauses", "enum E<T> where T: Tr { A }", "E0900", "trait-bound `where` clauses are not part of the language", "<T: Tr>"),
+    removed("named function-pointer parameters", "fn f(p: fn(x: f64) -> f64) { }", "E0900", "named function-pointer parameters are not part of the language", "`fn(f64) -> f64`"),
+    removed("named function-pointer parameters", "fn f() -> fn(x: f64) { }", "E0900", "named function-pointer parameters are not part of the language", "`fn(f64) -> f64`"),
+    removed("attributes and doc comments on a parameter", "fn f(#[a] x: f64) { }", "E0900", "attributes and doc comments on parameters", "on the item"),
+    removed("attributes and doc comments on a parameter", "fn f(/// x\n y: f64) { }", "E0900", "attributes and doc comments on parameters", "on the item"),
+    removed("attributes and doc comments on a parameter", "fn f<#[a] T>() { }", "E0900", "attributes and doc comments on parameters", "on the item"),
+    removed("attributes and doc comments on a parameter", "fn f<\n/// x\nT>() { }", "E0900", "attributes and doc comments on parameters", "on the item"),
+    removed("attributes and doc comments on a parameter", "fn f() { S { #[a] x: 1 }; }", "E0900", "attributes and doc comments on parameters", "on the item"),
+    removed("attributes and doc comments on a parameter", "fn f() { S { /// d\n x: 1 }; }", "E0900", "attributes and doc comments on parameters", "on the item"),
+    removed("double borrows", "fn f() { g(&&a); }", "E0900", "double borrows are not part of the language", "`&a`"),
+    removed("double borrows", "fn f() { let x = &&a; }", "E0900", "double borrows are not part of the language", "`&a`"),
     removed("inner attributes", "#![allow(x)] fn f() { }", "E0900", "inner attributes are not part of the language", "an outer attribute"),
     removed("the never type", "fn f() -> ! { }", "E0900", "the never type is not part of the language", "a unit return type"),
     removed("raw-pointer types", "fn f(p: *const u8) { }", "E0900", "raw-pointer types are not part of the language", "a value or an array"),
@@ -942,6 +959,8 @@ fn removed_rust_forms_report_targeted_messages() {
         "extern \"C\" fn f();",
         "fn f<T: Tr>(x: T) { }",
         "fn f() { let a = 1 - 1; let g = x * 2; }",
+        "fn f() { let a = x && &y; g(&a); }",
+        "fn f(p: fn(f64) -> f64) { }",
     ] {
         let found = faults(src);
         assert!(found.is_empty(), "{src}: {found:?}");
@@ -960,7 +979,7 @@ fn every_b36_row_has_a_fixture() {
         .filter_map(|l| l.trim_matches('|').split('|').next())
         .map(str::trim)
         .collect();
-    assert_eq!(cells.len(), 17, "{cells:?}");
+    assert_eq!(cells.len(), 20, "{cells:?}");
     for cell in &cells {
         assert!(REMOVED.iter().any(|r| cell.starts_with(r.row)), "B.3.6 row `{cell}` has no fixture");
     }

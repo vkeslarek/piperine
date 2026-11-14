@@ -115,7 +115,7 @@ fn codes_in(text: &str) -> Vec<String> {
     out
 }
 
-const REMOVED_FORMS: [&str; 17] = [
+const REMOVED_FORMS: [&str; 20] = [
     "type aliases",
     "associated types",
     "`static` items",
@@ -133,6 +133,9 @@ const REMOVED_FORMS: [&str; 17] = [
     "raw-pointer types",
     "`union` items",
     "`extern` blocks",
+    "named function-pointer parameters",
+    "attributes and doc comments on a parameter",
+    "double borrows",
 ];
 
 fn b36() -> String {
@@ -148,7 +151,7 @@ fn b36_lists_every_removed_form() {
         let hits = rows.iter().filter(|r| r[0].starts_with(form)).count();
         assert_eq!(hits, 1, "B.3.6 must hold exactly one row for `{form}`: {rows:?}");
     }
-    assert_eq!(rows.len(), REMOVED_FORMS.len(), "B.3.6 holds no row beyond the 17 forms");
+    assert_eq!(rows.len(), REMOVED_FORMS.len(), "B.3.6 holds no row beyond the 20 forms");
     assert!(sec.contains("complete list"), "B.3.6 must say its list is the complete list");
     for part in ["§1 rule 2", "§3.2", "A.1"] {
         assert!(sec.contains(part), "B.3.6 must name {part} beside the table");
@@ -175,7 +178,7 @@ fn b36_rows_carry_a_code_and_a_replacement() {
     // third, and no first cell is a code (the parse-phase fixture guard of
     // `msl_errors` scrapes first cells).
     let rows = table_rows(&b36());
-    assert_eq!(rows.len(), 17);
+    assert_eq!(rows.len(), 20);
     for row in rows {
         assert_eq!(row.len(), 3, "Removed | Reported as | Write instead: {row:?}");
         assert!(!row[0].trim_matches('`').starts_with('E'), "first cell is a code: {row:?}");

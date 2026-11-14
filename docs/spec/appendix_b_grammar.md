@@ -331,7 +331,7 @@ This table, together with §1 rule 2, §3.2 and A.1, is the complete list of wha
 | type aliases (`type T = f64;`) | `E0903` | write the type out |
 | associated types (`type X;` in a trait or an `impl`) | `E0903` | name the type where it is used |
 | `static` items | `E0903` | a `const` item (§1 rule 3); state lives in signals (§0) |
-| trait-bound `where` clauses (`where T: Tr`) | `E0900` | a bound in the generic list: `<T: Tr>` |
+| trait-bound `where` clauses (`where T: Tr`) on a function, struct, enum, trait or `impl` | `E0900` | a bound in the generic list: `<T: Tr>` |
 | `impl Trait` types | `E0900` | a named generic: `<T: Tr>` |
 | qualified paths (`<T as Tr>::X`) | `E0900` | a path through the type: `T::X` |
 | restricted visibility (`pub(crate)`, `pub(super)`) | `E0900` | `pub` or no visibility |
@@ -339,10 +339,13 @@ This table, together with §1 rule 2, §3.2 and A.1, is the complete list of wha
 | `&self` and `&mut self` receivers | `E0900` | `self` |
 | `mut` and pattern parameters (`mut x: u8`, `(a, b): (u8, u8)`) | `E0900` | a plain name, then `let` |
 | half-open range patterns (`..x`) | `E0900` | `..=x` or a guard |
-| a leading `::` in a path | `E0900` | a path from a name in scope |
+| a leading `::` in a path or a `use` (`::a::b`) | `E0900` | a path from a name in scope |
 | inner attributes (`#![..]`) | `E0900` | an outer attribute on the item |
 | the never type (`!`) | `E0900` | a unit return type |
 | raw-pointer types (`*const T`, `*mut T`) | `E0900` | a value or an array |
+| named function-pointer parameters (`fn(x: f64) -> f64`) | `E0900` | the types only: `fn(f64) -> f64` |
+| attributes and doc comments on a parameter, a generic parameter or a struct-literal field (`fn f(#[a] x: f64)`) | `E0900` | the attribute or comment on the item |
+| double borrows (`&&x`) | `E0900` | one borrow: `&x` |
 | `union` items | `E0900` | a `struct` or an `enum` |
 | `extern` blocks | `E0900` | an `extern "C" fn` item |
 
