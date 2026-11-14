@@ -245,7 +245,7 @@ fn single_source_design_has_a_root_crate_named_by_its_file() {
 
 #[test]
 fn a_reserved_root_file_stem_is_reported_and_never_names_std() {
-    for (file, name) in [("std.msl", "std_"), ("fn.msl", "fn_"), ("module.msl", "module_")] {
+    for (file, name) in [("std.msl", "std_"), ("fn.msl", "fn_"), ("module.msl", "module_"), ("_.msl", "__")] {
         let design = Design::builder().source(file, "").build();
         let names: Vec<_> = design.crates().iter().map(|c| c.name().to_string()).collect();
         assert_eq!(names, [name, "std"], "{file}");

@@ -546,7 +546,7 @@ impl DesignBuilder {
 
 /// The name of the crate whose root file is `path`: the file stem, with every character that is
 /// no ASCII letter, digit or `_` replaced by `_` and a `_` before a leading digit. A stem that is
-/// then a keyword or `std` gets a `_` appended, and is returned as the second value so that the
+/// then a keyword, `std` or `_` gets a `_` appended, and is returned as the second value so that the
 /// design can report it (`E0171`).
 fn crate_name(path: &Path) -> (String, Option<String>) {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -554,7 +554,9 @@ fn crate_name(path: &Path) -> (String, Option<String>) {
     if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
         name.insert(0, '_');
     }
-    if name == "_" || is_crate_name(&name) {
+    // A file with no stem at all (the empty design's synthetic root) is `_` by construction and
+    // reports nothing; a stem that is itself `_` is reserved like any other.
+    if is_crate_name(&name) || stem.is_empty() {
         return (name, None);
     }
     let reserved = name.clone();
@@ -568,7 +570,7 @@ impl Design {
         let Some(stem) = reserved else { return };
         let file = self.crates[id.index()].root_file;
         let name = self.crates[id.index()].name.clone();
-        let message = format!("the root file stem `{stem}` is no crate name: it is a keyword or `std`; the crate is named `{name}`");
+        let message = format!("the root file stem `{stem}` is no crate name: it is a keyword, `std` or `_`; the crate is named `{name}`");
         self.push_diagnostic(file, Diagnostic::new("E0171", message, Span::new(0, 0), "rename the file"));
     }
 
