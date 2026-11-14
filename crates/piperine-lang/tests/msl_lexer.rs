@@ -285,3 +285,39 @@ fn raw_identifier_of_an_added_keyword_is_an_identifier() {
     // A bare added keyword is still a keyword.
     assert!(matches!(one_token("out"), Token::Kw(_)));
 }
+
+fn only_code(src: &str, code: &str, span: Span) {
+    let (toks, diags) = lex(src);
+    assert_eq!(diags.len(), 1, "{src:?}: {diags:?}");
+    assert_eq!(diags[0].code, code, "{src:?}");
+    assert_eq!(diags[0].span(), span, "{src:?}");
+    // The token is still produced, so the parse goes on.
+    assert_eq!(toks.len(), 1, "{src:?}: {toks:?}");
+}
+
+#[test]
+fn float_literal_out_of_range_is_e0909() {
+    // POL-13 AC 2.
+    only_code("1e999", "E0909", Span::new(0, 5));
+    let big = "9".repeat(310);
+    let src = format!("{big}T");
+    only_code(&src, "E0909", Span::new(0, src.len()));
+    let src = format!("{big}.5T");
+    only_code(&src, "E0909", Span::new(0, src.len()));
+    assert_eq!(one_token("1.7976931348623157e308"), float(f64::MAX, "1.7976931348623157e308"));
+    assert!(matches!(one_token("5e-324"), Token::Float { .. }));
+}
+
+#[test]
+fn integer_literal_out_of_range_is_e0909() {
+    // POL-13 AC 3: both sides of each boundary.
+    for src in ["256u8", "2u1", "129i8", "65536u16", "340282366920938463463374607431768211456", "0x100u8"] {
+        only_code(src, "E0909", Span::new(0, src.len()));
+    }
+    for src in [
+        "255u8", "128i8", "1u1", "340282366920938463463374607431768211455", "0xffu8",
+        "0xffffffffffffffffffffffffffffffff",
+    ] {
+        assert!(matches!(one_token(src), Token::Int(_)), "{src}");
+    }
+}

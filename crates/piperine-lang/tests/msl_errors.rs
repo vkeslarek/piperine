@@ -502,6 +502,7 @@ fn fixtures() -> Vec<Fixture> {
         // An SI letter with letters that are no type suffix: an unknown suffix.
         fixture("E0900", "const A: f64 = ", "1meg", ";"),
         fixture("E0905", "const A: u8 = ", "'a'", ";"),
+        fixture("E0909", "const A: f64 = ", "1e999", ";"),
         fixture("E0907", "fn f() { let x = a ", "+>", " b; }"),
         fixture("E0907", "fn f() { g(a ", "<-", " b); }"),
         fixture("E0908", "fn f() { let ", "Unknown", " = 1; }"),

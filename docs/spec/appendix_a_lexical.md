@@ -123,6 +123,12 @@ SI_SUFFIX  ::= 'T' | 'G' | 'M' | 'k' | 'm' | 'u' | 'n' | 'p' | 'f' | 'a'
 6. The value is the nearest `f64` to the exact decimal product. `2.2u` equals the literal
    `2.2e-6`. It is not the rounded product `2.2 * 1e-6`.
 7. A leading `-` is the negation operator, not part of the literal.
+8. A literal out of range is `E0909`: a float whose nearest `f64` is infinite (`1e999`, a
+   310-digit number followed by `T`), and an integer that exceeds `2^N - 1` with a suffix `uN`,
+   `2^(N-1)` with a suffix `iN`, or `2^128 - 1` without a suffix. The token is still produced.
+
+> **Resolution.** An `iN` literal admits `2^(N-1)`, so `128i8` lexes: the minus sign is an
+> operator (rule 7), and `-128i8` is the negation of `128i8`.
 
 > **Resolution.** Rules 3–6 settle the cases the design leaves to "a number followed by a
 > suffix": the clash with Rust's type suffixes, non-decimal bases, exponents, and rounding.
@@ -208,4 +214,5 @@ rl: f64 = 1T;
 | `E0906` | `Unknown` where the inferred type does not implement `Repr`, or where no type can be inferred | elaboration |
 | `E0907` | `+>` or `<-` inside an expression, where no statement form accepts it. A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404` | parse |
 | `E0908` | `Unknown` used as a binding, item or field name | parse |
+| `E0909` | a float literal whose nearest `f64` is infinite, or an integer literal that exceeds its suffix type or, without a suffix, 128 bits | parse |
 | `E0910` | nesting deeper than 256 levels (delimiters and operator chains) | parse |

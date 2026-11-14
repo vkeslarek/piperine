@@ -307,7 +307,9 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                 let Token::Int(digits) = prev else { unreachable!("float_dot saw the integer") };
                 let raw = format!("{digits}.");
                 let whole = Span::new(prev_span.start, span.end);
-                tokens.push((Token::Float { value: parse_f64(&digits, 0), raw }, whole));
+                let tok = Token::Float { value: parse_f64(&digits, 0), raw };
+                diags.extend(range_diag(&tok, whole));
+                tokens.push((tok, whole));
             }
             Ok(Raw::Punct(p)) => tokens.push((Token::Punct(p), span)),
             Ok(Raw::Ident) => tokens.push((classify_ident(text), span)),
@@ -319,7 +321,10 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                 }
             },
             Ok(Raw::Number) => match classify_number(text, span) {
-                Ok(tok) => tokens.push((tok, span)),
+                Ok(tok) => {
+                    diags.extend(range_diag(&tok, span));
+                    tokens.push((tok, span));
+                }
                 Err(d) => {
                     diags.push(d);
                     tokens.push((Token::Error, span));
@@ -479,9 +484,78 @@ const SI_SUFFIXES: &[(char, i32)] = &[
     ('u', -6), ('n', -9), ('p', -12), ('f', -15), ('a', -18),
 ];
 
-const INT_SUFFIXES: &[&str] = &[
-    "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
-];
+/// The width and signedness of an integer type suffix: `uN` and `iN` for `N` in
+/// `1..=128` (§1 rule 5), and `usize` and `isize` (64 bits).
+fn int_suffix(s: &str) -> Option<(bool, u32)> {
+    let signed = s.starts_with('i');
+    let width = match s {
+        "usize" | "isize" => 64,
+        _ => {
+            let n = s.strip_prefix(['u', 'i'])?;
+            if n.starts_with('0') || !n.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            n.parse::<u32>().ok().filter(|w| (1..=128).contains(w))?
+        }
+    };
+    Some((signed, width))
+}
+
+/// The three parts of an integer literal's text: its radix, its digits
+/// (underscores included) and its type suffix.
+fn int_parts(text: &str) -> (u32, &str, &str) {
+    let (radix, body) = match text.get(..2) {
+        Some("0x" | "0X") => (16, &text[2..]),
+        Some("0o" | "0O") => (8, &text[2..]),
+        Some("0b" | "0B") => (2, &text[2..]),
+        _ => (10, text),
+    };
+    let end = body.find(|c: char| !(c == '_' || c.is_digit(radix))).unwrap_or(body.len());
+    (radix, &body[..end], &body[end..])
+}
+
+/// The value of an integer literal's digits, `None` past `u128::MAX`.
+pub fn int_value(text: &str) -> Option<u128> {
+    let (radix, digits, _) = int_parts(text);
+    digits
+        .chars()
+        .filter(|c| *c != '_')
+        .try_fold(0u128, |acc, c| acc.checked_mul(radix as u128)?.checked_add(c.to_digit(radix)? as u128))
+}
+
+/// The type suffix of an integer literal's text, empty when there is none.
+pub fn int_suffix_text(text: &str) -> &str {
+    int_parts(text).2
+}
+
+/// `E0909` for a literal out of range: an infinite float, or an integer past
+/// its suffix type (`iN` admits `2^(N-1)`: the minus sign is an operator, A.2
+/// rule 7) or, unsuffixed, past 128 bits.
+fn range_diag(tok: &Token, span: Span) -> Option<Diagnostic> {
+    let (text, what) = match tok {
+        Token::Float { value, raw } if value.is_infinite() => (raw, "a float literal beyond the range of `f64`".to_string()),
+        Token::Int(text) => {
+            let value = int_value(text);
+            let max = match int_suffix(int_suffix_text(text)) {
+                Some((false, w)) => u128::MAX >> (128 - w),
+                Some((true, w)) => 1u128 << (w - 1),
+                None => u128::MAX,
+            };
+            if value.is_some_and(|v| v <= max) {
+                return None;
+            }
+            (text, format!("an integer literal beyond the range of `{}`", match int_suffix_text(text) {
+                "" => "u128",
+                s => s,
+            }))
+        }
+        _ => return None,
+    };
+    Some(
+        Diagnostic::new("E0909", format!("`{text}` is out of range: {what}"), span, "literal out of range")
+            .with_help("write a value the type holds, or a wider type suffix"),
+    )
+}
 
 /// Classify a number lexeme per Appendix A.2: plain integer or float, a
 /// Rust-suffixed literal, or an SI literal; anything else is `E0902` (a
@@ -505,7 +579,7 @@ fn classify_number(text: &str, span: Span) -> Result<Token, Diagnostic> {
         let suffix = &body[digits_end..];
         return if digits_end == 0 {
             Err(unknown_suffix(text, span))
-        } else if suffix.is_empty() || INT_SUFFIXES.contains(&suffix) {
+        } else if suffix.is_empty() || int_suffix(suffix).is_some() {
             Ok(Token::Int(text.to_string()))
         } else if suffix.starts_with(si_letter) {
             Err(malformed_si("a non-decimal literal takes no SI suffix"))
@@ -554,7 +628,7 @@ fn classify_number(text: &str, span: Span) -> Result<Token, Diagnostic> {
     if suffix == "f32" || suffix == "f64" {
         return Ok(Token::Float { value: parse_f64(number, 0), raw: text.to_string() });
     }
-    if INT_SUFFIXES.contains(&suffix) {
+    if int_suffix(suffix).is_some() {
         return if has_frac || has_exp {
             Err(unknown_suffix(text, span))
         } else {
@@ -584,7 +658,7 @@ fn classify_number(text: &str, span: Span) -> Result<Token, Diagnostic> {
 }
 
 fn is_type_suffix(s: &str) -> bool {
-    s == "f32" || s == "f64" || INT_SUFFIXES.contains(&s)
+    s == "f32" || s == "f64" || int_suffix(s).is_some()
 }
 
 fn si_letter(c: char) -> bool {

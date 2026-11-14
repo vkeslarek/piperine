@@ -41,7 +41,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 - **§1 rule 6.** Integer arithmetic wraps modulo `2^N` in every build. `Int<N>` is two's
   complement. There is no overflow error.
 - **§1 rule 7.** An integer literal has an integer type and a float literal a float type, as
-  in Rust. Neither converts implicitly ([§3.2.3](#32-parameters-and-calls)).
+  in Rust. Neither converts implicitly ([§3.2.3](#32-parameters-and-calls)). A literal out of
+  its type's range is `E0909` ([A.2](appendix_a_lexical.md#a2-si-suffixed-reals) rule 8).
 - **§1 rule 8.** A string exists only as a literal, a `const`, or an argument. It has no
   `Repr`.
 - **§1 rule 9.** `Event` ([§13](part_iv_behavior.md#13-events)), `Analysis`

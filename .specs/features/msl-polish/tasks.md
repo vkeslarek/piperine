@@ -537,15 +537,15 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `e0909_is_defined_for_out_of_range_literals` passes in `spec_text.rs` (C68: POL-13 AC 1)
-- [ ] Test `float_literal_out_of_range_is_e0909` passes in `msl_lexer.rs` (C69: POL-13 AC 2)
-- [ ] Test `integer_literal_out_of_range_is_e0909` passes in `msl_lexer.rs` (C70: POL-13 AC 3)
-- [ ] Test `every_parse_phase_row_has_a_fixture` still passes in `msl_errors.rs` (C71: POL-13 AC 4)
-- [ ] The spec row and its fixture land in this one commit (`every_parse_phase_row_has_a_fixture` is green before and after)
-- [ ] A Resolution note says why `iN` admits `2^(N-1)`: the minus sign is an operator (A.2 rule 7)
-- [ ] The token is still produced after the diagnostic, so the parse goes on
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `e0909_is_defined_for_out_of_range_literals` passes in `spec_text.rs` (C68: POL-13 AC 1)
+- [x] Test `float_literal_out_of_range_is_e0909` passes in `msl_lexer.rs` (C69: POL-13 AC 2)
+- [x] Test `integer_literal_out_of_range_is_e0909` passes in `msl_lexer.rs` (C70: POL-13 AC 3)
+- [x] Test `every_parse_phase_row_has_a_fixture` still passes in `msl_errors.rs` (C71: POL-13 AC 4)
+- [x] The spec row and its fixture land in this one commit (`every_parse_phase_row_has_a_fixture` is green before and after)
+- [x] A Resolution note says why `iN` admits `2^(N-1)`: the minus sign is an operator (A.2 rule 7)
+- [x] The token is still produced after the diagnostic, so the parse goes on
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

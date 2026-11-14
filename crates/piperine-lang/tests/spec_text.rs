@@ -681,3 +681,23 @@ fn field_shorthand_is_specified_and_g14_is_closed() {
     assert!(g14.contains("**Status: Closed.**") && g14.contains("Appendix B.3"), "{g14}");
     assert!(!g14.contains("In force: the long form only"), "{g14}");
 }
+
+#[test]
+fn e0909_is_defined_for_out_of_range_literals() {
+    // POL-13 AC 1: A.6 defines E0909 (phase parse); A.2 and §1 rule 7 state the rule.
+    let a = spec("appendix_a_lexical.md");
+    let a6 = section(&a, "## A.6");
+    let row = table_rows(&a6)
+        .into_iter()
+        .find(|r| r[0] == "`E0909`")
+        .expect("A.6 has an E0909 row");
+    assert_eq!(row.last().map(String::as_str), Some("parse"));
+    assert!(row[1].contains("infinite") && row[1].contains("128"), "{}", row[1]);
+    let a2 = section(&a, "## A.2");
+    assert!(a2.contains("E0909"), "A.2 states the range rule");
+    assert!(a2.contains("2^(N-1)"), "A.2 says why `iN` admits 2^(N-1)");
+    let one = section(&spec("part_i_values.md"), "## 1.");
+    let rule7 = one.lines().find(|l| l.contains("§1 rule 7")).expect("§1 rule 7");
+    let at = one.find(rule7).unwrap();
+    assert!(one[at..].lines().take(4).any(|l| l.contains("E0909")), "§1 rule 7 states the range rule");
+}
