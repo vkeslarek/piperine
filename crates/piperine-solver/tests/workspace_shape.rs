@@ -1,7 +1,8 @@
 //! Structural guards over the workspace manifests (feature `solver-restructure`).
 //! Covers SR-01: the solver's own manifest lists no in-tree crate as a
 //! dev-dependency and none of the dependencies the restructure removed.
-//! Covers SR-02: retired crates have no directory and no manifest names them.
+//! Covers SR-02: retired crates have no directory and no manifest names them,
+//! and the root `tests/` holds no Verilog-AMS end-to-end target.
 
 use std::path::PathBuf;
 
@@ -89,4 +90,41 @@ fn no_manifest_names_a_retired_crate() {
         !root.contains("[profile.dev.package.cranelift"),
         "the root manifest keeps a Cranelift profile entry"
     );
+}
+
+/// Every file under `dir`, recursively.
+fn files_under(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).expect("read a directory") {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            files_under(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn root_tests_hold_no_end_to_end_target() {
+    let tests = repo_root().join("tests");
+    let mut files = Vec::new();
+    files_under(&tests, &mut files);
+    let ext = |p: &PathBuf, e: &str| p.extension().is_some_and(|x| x == e);
+    let vams: Vec<_> = files.iter().filter(|p| ext(p, "vams")).collect();
+    assert!(vams.is_empty(), ".vams files remain under tests/: {vams:?}");
+    let cir = files
+        .iter()
+        .filter(|p| ext(p, "cir") && p.starts_with(tests.join("ngspice")))
+        .count();
+    assert!(cir > 0, "tests/ngspice/ lost its .cir fixtures");
+    for entry in std::fs::read_dir(&tests).expect("read tests/") {
+        let path = entry.expect("dir entry").path();
+        if path.is_file() && ext(&path, "rs") {
+            assert!(
+                path.file_name().is_some_and(|n| n == "suite_hygiene.rs"),
+                "{} is a root test target besides the hygiene guard",
+                path.display()
+            );
+        }
+    }
 }

@@ -303,9 +303,9 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `tests/*.rs` is exactly `tests/suite_hygiene.rs`, untouched; `tests/support/` holds only `sources.rs`, untouched; no `.vams` file exists under `tests/`; `tests/ngspice/*.cir` are all still there
-- [ ] `workspace_shape.rs` gains `root_tests_hold_no_end_to_end_target` (C10): no `.vams` under `tests/`, at least one `.cir` under `tests/ngspice/`, and no `.rs` directly under `tests/` other than `suite_hygiene.rs` (T27 tightens this to none)
-- [ ] Gate: full
+- [x] `tests/*.rs` is exactly `tests/suite_hygiene.rs`, untouched; `tests/support/` holds only `sources.rs`, untouched; no `.vams` file exists under `tests/`; `tests/ngspice/*.cir` are all still there
+- [x] `workspace_shape.rs` gains `root_tests_hold_no_end_to_end_target` (C10): no `.vams` under `tests/`, at least one `.cir` under `tests/ngspice/`, and no `.rs` directly under `tests/` other than `suite_hygiene.rs` (T27 tightens this to none)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full
