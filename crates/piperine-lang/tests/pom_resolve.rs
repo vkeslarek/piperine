@@ -3,7 +3,7 @@
 //! resolution of every path in types, signatures and bodies, with the
 //! binding errors `E0161`, `E0330` and `E0457`.
 
-use piperine_lang::pom::{BuiltinKind, builtin};
+use piperine_lang::pom::{BUILTINS, BuiltinKind, builtin};
 
 #[test]
 fn builtin_table_has_every_core_primitive() {
@@ -16,11 +16,8 @@ fn builtin_table_has_every_core_primitive() {
     for name in ["u0", "u129", "i0", "i129", "f8", "f64x", "f", "u", "u01", "u+1"] {
         assert!(builtin(name).is_none(), "`{name}` is not a built-in");
     }
-    // Prelude constants and the option variants (section 1).
-    for name in ["Q", "K_B", "EPS0", "PI", "E", "inf"] {
-        let info = builtin(name).expect(name).info();
-        assert_eq!((info.kind, info.section), (BuiltinKind::Const, "§1"), "{name}");
-    }
+    // The prelude constants are items of `std::constants`, not rows (`the_constants_are_not_builtin`);
+    // the option variants stay (section 1).
     for name in ["Some", "None"] {
         assert_eq!(builtin(name).expect(name).info().kind, BuiltinKind::Variant);
     }
@@ -52,6 +49,39 @@ fn builtin_table_has_every_core_primitive() {
     for name in ["idt", "transition", "above", "limexp", "discontinuity"] {
         assert!(builtin(name).is_none(), "`{name}` is not core");
     }
+}
+
+#[test]
+fn the_constants_are_not_builtin() {
+    // STD-15 AC 1: no row for the six constants of section 1.
+    for name in ["Q", "K_B", "EPS0", "PI", "E", "inf"] {
+        assert!(builtin(name).is_none(), "`{name}` is not a built-in");
+        assert!(BUILTINS.iter().all(|row| row.name != name), "the table has no row `{name}`");
+    }
+}
+
+#[test]
+fn the_core_rows_are_unchanged() {
+    // STD-15 AC 4: every other row is the row the table had before the constants left.
+    use BuiltinKind::*;
+    let rows = [
+        ("uN", Type, "§1"), ("iN", Type, "§1"), ("fN", Type, "§1"), ("bool", Type, "§1"), ("usize", Type, "§1"), ("isize", Type, "§1"),
+        ("UInt", Type, "§1"), ("Int", Type, "§1"), ("Float", Type, "§1"), ("Option", Type, "§1"), ("Event", Type, "§13"), ("Analysis", Type, "§11.1"),
+        ("Some", Variant, "§1"), ("None", Variant, "§1"), ("Dc", Variant, "§11.1.1"), ("Transient", Variant, "§11.1.1"), ("Ac", Variant, "§11.1.1"),
+        ("Noise", Variant, "§11.1.1"), ("Static", Variant, "§11.1.1"),
+        ("Repr", Trait, "§2"), ("Nature", Trait, "§4"), ("Fn", Trait, "§3"), ("Clone", Trait, "App. H"), ("Copy", Trait, "App. H"),
+        ("PartialEq", Trait, "App. H"), ("Eq", Trait, "App. H"), ("PartialOrd", Trait, "App. H"), ("Ord", Trait, "App. H"),
+        ("Default", Trait, "App. H"), ("Debug", Trait, "App. H"), ("Hash", Trait, "App. H"),
+        ("str", Type, "§1"), ("gnd", Node, "§6"), ("m", ImplicitParam, "§8.5"), ("dtemp", ImplicitParam, "§8.5"),
+        ("Repr::WIDTH", Member, "§2"), ("Repr::encode", Member, "§2"), ("Repr::decode", Member, "§2"),
+        ("potential", Fn, "§14.1"), ("flow", Fn, "§14.1"), ("ddx", Fn, "§14.2"), ("ac_stim", Fn, "§14.3"), ("temperature", Fn, "§14.4"),
+        ("simparam", Fn, "§14.4"), ("analysis", Fn, "§14.4"), ("now", Fn, "§14.4"), ("freq", Fn, "§14.4"),
+        ("ddt", Module, "§14.5"), ("delay", Module, "§14.6"), ("limit", Module, "§14.7"), ("noise", Module, "§14.8"),
+        ("cross", Module, "§14.9"), ("at", Module, "§14.9"), ("settle", Event, "§14.9"), ("bound_step", Statement, "§14.10"),
+        ("changed", Method, "§14.9"), ("prev", Method, "§14.12"), ("others", Method, "§14.12"), ("level", Method, "§14.12"), ("inflow", Method, "§14.1"),
+    ];
+    let table: Vec<(&str, BuiltinKind, &str)> = BUILTINS.iter().map(|r| (r.name, r.kind, r.section)).collect();
+    assert_eq!(table, rows.to_vec());
 }
 
 #[path = "support/pom.rs"]
@@ -305,10 +335,10 @@ fn builtin_names_resolve_to_table_entries() {
         }
     }
     // A declaration shadows the table; so does an import.
-    // Core primitives and constants are names of expressions too.
-    let exprs = build("fn g() -> f64 { ddt(temperature()) * K_B }");
+    // Core primitives are names of expressions too.
+    let exprs = build("fn g() -> f64 { ddt(temperature()) }");
     assert!(with_code(&exprs, "E0161").is_empty(), "{:?}", exprs.diagnostics());
-    for (name, section) in [("ddt", "§14.5"), ("temperature", "§14.4"), ("K_B", "§1")] {
+    for (name, section) in [("ddt", "§14.5"), ("temperature", "§14.4")] {
         let Resolution::Builtin(id) = one(&exprs, name)[0] else { panic!("`{name}` is a built-in") };
         assert_eq!((id.name().as_str(), id.info().section), (name, section));
     }
@@ -1367,4 +1397,25 @@ module M(p: Lvl) { let a = p.known(); let b = p.known_or(1.0); let c = p.is_know
         let texts: Vec<String> = refs.iter().filter_map(|r| if let piperine_lang::pom::Reference::Member(e) = r { Some(e.text().to_string()) } else { None }).collect();
         assert_eq!(texts, [call], "{method}");
     }
+}
+
+#[test]
+fn k_b_resolves_to_std_constants() {
+    // STD-15 AC 2: a model naming `K_B` reaches the constant of `std::constants`.
+    let design = Design::builder().source("top.msl", "const X: f64 = K_B;\n").build();
+    assert!(with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let Resolution::Decl(id) = one(&design, "K_B")[0] else { panic!("K_B resolves to a declaration") };
+    let item = design.decl(id);
+    assert_eq!(item.qualified_name(), "constants::K_B");
+    assert!(item.krate().is_std());
+}
+
+#[test]
+fn a_model_constant_hides_the_prelude_constant() {
+    // STD-15 AC 5: a namespace item named like a prelude constant is not E0457 and wins.
+    let design = build("const Q: f64 = 1.0;\nconst Y: f64 = Q;\nmod m { const PI: f64 = 3.0; const Z: f64 = PI; }\n");
+    assert!(with_code(&design, "E0457").is_empty(), "{:?}", design.diagnostics());
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(one(&design, "Q"), [decl(&design, "Q")]);
+    assert_eq!(one(&design, "PI"), [decl(&design, "m::PI")]);
 }

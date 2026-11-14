@@ -1,5 +1,5 @@
 //! The closed table of names the language provides without a declaration:
-//! primitive types, `Some`/`None`, bounds, the prelude constants of §1 and
+//! primitive types, `Some`/`None`, bounds and
 //! every row of the §14 table of core primitives. Plain rows and plain
 //! functions; no macro.
 
@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub enum BuiltinKind {
     Type,
     Trait,
-    Const,
     Variant,
     Fn,
     Module,
@@ -85,12 +84,6 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("Repr::WIDTH", BuiltinKind::Member, "§2"),
     row("Repr::encode", BuiltinKind::Member, "§2"),
     row("Repr::decode", BuiltinKind::Member, "§2"),
-    row("Q", BuiltinKind::Const, "§1"),
-    row("K_B", BuiltinKind::Const, "§1"),
-    row("EPS0", BuiltinKind::Const, "§1"),
-    row("PI", BuiltinKind::Const, "§1"),
-    row("E", BuiltinKind::Const, "§1"),
-    row("inf", BuiltinKind::Const, "§1"),
     row("potential", BuiltinKind::Fn, "§14.1"),
     row("flow", BuiltinKind::Fn, "§14.1"),
     row("ddx", BuiltinKind::Fn, "§14.2"),

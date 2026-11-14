@@ -446,3 +446,17 @@ fn members_doc_lists_the_blanket_step() {
     let rule = page.lines().find(|l| l.contains("blanket") && l.contains("Repr") && !l.starts_with('|')).expect("a sentence on the blanket step");
     assert!(rule.contains("not searched") || rule.contains("other bound"), "{rule}");
 }
+
+#[test]
+fn the_builtin_table_doc_has_no_const_row() {
+    // STD-17 AC 1: the table has no `Const` row and the page says where the constants went.
+    let page = page_of("resolution.md");
+    let table = section_rows(&page, "## The built-in table");
+    assert!(!table.is_empty(), "the built-in table is found");
+    assert!(table.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "no `Const` row");
+    let sentence = page.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(sentence.contains("`std::constants`") && sentence.contains("six constants"), "the page says the six constants are items of `std::constants`");
+    let model = page_of("model.md");
+    let kinds = section_rows(&model, "### `BuiltinKind`");
+    assert!(kinds.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "BuiltinKind has no `Const` variant row");
+}

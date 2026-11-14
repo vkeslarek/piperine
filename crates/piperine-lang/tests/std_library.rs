@@ -86,8 +86,6 @@ fn no_export_has_a_core_name() {
     let core: BTreeSet<&str> = BUILTINS
         .iter()
         .map(|row| row.name)
-        // T20 removes the six `Const` rows; until then these names are rows and exports at once.
-        .filter(|n| !["Q", "K_B", "EPS0", "PI", "E", "inf"].contains(n))
         .collect();
     let mut clashes = Vec::new();
     for namespace in design.std_crate().root().submodules() {

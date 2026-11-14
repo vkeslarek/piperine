@@ -623,15 +623,15 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `the_constants_are_not_builtin` passes in `pom_resolve.rs` (C88: STD-15 AC 1)
-- [ ] Test `k_b_resolves_to_std_constants` passes in `pom_resolve.rs` (C89: STD-15 AC 2)
-- [ ] Test `the_core_rows_are_unchanged` passes in `pom_resolve.rs` (C91: STD-15 AC 4)
-- [ ] Test `a_model_constant_hides_the_prelude_constant` passes in `pom_resolve.rs` (C92: STD-15 AC 5)
-- [ ] Test `the_builtin_table_doc_has_no_const_row` passes in `pom_docs.rs` (C95: STD-17 AC 1)
-- [ ] Every match on `BuiltinKind` in `src/pom/` compiles without the variant; no `_ =>` arm is added to hide it
-- [ ] A test that used a constant with a replaced library declares it in its own `std_source`
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `the_constants_are_not_builtin` passes in `pom_resolve.rs` (C88: STD-15 AC 1)
+- [x] Test `k_b_resolves_to_std_constants` passes in `pom_resolve.rs` (C89: STD-15 AC 2)
+- [x] Test `the_core_rows_are_unchanged` passes in `pom_resolve.rs` (C91: STD-15 AC 4)
+- [x] Test `a_model_constant_hides_the_prelude_constant` passes in `pom_resolve.rs` (C92: STD-15 AC 5)
+- [x] Test `the_builtin_table_doc_has_no_const_row` passes in `pom_docs.rs` (C95: STD-17 AC 1)
+- [x] Every match on `BuiltinKind` in `src/pom/` compiles without the variant; no `_ =>` arm is added to hide it
+- [x] A test that used a constant with a replaced library declares it in its own `std_source`
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

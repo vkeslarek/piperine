@@ -1280,7 +1280,6 @@ What a built-in is.
 | --- | --- | --- |
 | `Type` | — | A primitive or built-in type. |
 | `Trait` | — | A built-in bound. |
-| `Const` | — | A built-in constant. |
 | `Variant` | — | A built-in enum variant (`Some`, `Transient`, ...). |
 | `Fn` | — | A built-in function. |
 | `Module` | — | A built-in module placed as an instance (`ddt`, `delay`, `limit`, `noise`, `cross`, `at`). |

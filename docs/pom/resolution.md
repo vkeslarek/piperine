@@ -148,7 +148,6 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Type` | `str` (§1), `uN` (§1), `iN` (§1), `fN` (§1), `bool` (§1), `usize` (§1), `isize` (§1), `UInt` (§1), `Int` (§1), `Float` (§1), `Option` (§1), `Event` (§13), `Analysis` (§11.1) |
 | `Variant` | `Some` (§1), `None` (§1), `Dc` (§11.1.1), `Transient` (§11.1.1), `Ac` (§11.1.1), `Noise` (§11.1.1), `Static` (§11.1.1) |
 | `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash` (App. H) |
-| `Const` | `Q` (§1), `K_B` (§1), `EPS0` (§1), `PI` (§1), `E` (§1), `inf` (§1) |
 | `Fn` | `potential` (§14.1), `flow` (§14.1), `ddx` (§14.2), `ac_stim` (§14.3), `temperature` (§14.4), `simparam` (§14.4), `analysis` (§14.4), `now` (§14.4), `freq` (§14.4) |
 | `Module` | `ddt` (§14.5), `delay` (§14.6), `limit` (§14.7), `noise` (§14.8), `cross` (§14.9), `at` (§14.9) |
 | `Event` | `settle` (§14.9) |
@@ -159,7 +158,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | `Method` | `changed` (§14.9), `prev` (§14.12), `others` (§14.12), `level` (§14.12), `inflow` (§14.1) |
 
 The rows `uN`, `iN` and `fN` stand for every width (`u1`..`u128`, `i1`..`i128`, `f16`, `f32`,
-`f64`, `f128`). Standard-library modules such as `idt`, `transition` and `above` are *not*
+`f64`, `f128`). The six constants of §1 (`Q`, `K_B`, `EPS0`, `PI`, `E`, `inf`) are not rows: they are items of `std::constants`, found through the prelude like any library item. Standard-library modules such as `idt`, `transition` and `above` are *not*
 built in: they are declared in the standard library's `std::prelude` (Part VII of the
 specification), and a design that does not load them leaves them `Unresolved`. The `Trait` and `Type` rows are kept equal to the tables H.8 and H.9 of Appendix H (plus `Repr`, `Nature`, `Fn` and the §1 types). Methods of the catalogue get no row: a method on a value needs its receiver's type and stays `Deferred(ReceiverTypeUnknown)`. An associated name written through a generic (`A::WIDTH`) resolves through its bounds: an item of a user trait, a `Repr` member row, `E0161` when `Repr` is the only bound and has no such member, and `Deferred(BuiltinTraitMember)` (silently) through any other built-in trait. A namespace item named like a core
 primitive of §14, or `gnd`, `Nature` or `str`, is `E0457` (`m` and `dtemp` are `E0375`, left to elaboration).
