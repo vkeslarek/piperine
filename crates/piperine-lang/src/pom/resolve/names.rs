@@ -248,6 +248,11 @@ impl Names<'_, '_> {
                     self.ty(*t);
                 }
             }
+            TypeKind::FnPtr { params, ret } => {
+                for t in params.iter().chain(ret) {
+                    self.ty(*t);
+                }
+            }
             TypeKind::Infer => {}
         }
     }

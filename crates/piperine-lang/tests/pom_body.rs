@@ -77,6 +77,7 @@ fn type_kind_name(k: &TypeKind) -> &'static str {
         TypeKind::Tuple(_) => "Tuple",
         TypeKind::Ref { .. } => "Ref",
         TypeKind::Flip(_) => "Flip",
+        TypeKind::FnPtr { .. } => "FnPtr",
         TypeKind::Infer => "Infer",
     }
 }
@@ -482,4 +483,22 @@ fn fns_consts_metas_and_generics_round_trip() {
     ] {
         assert_round_trips(src);
     }
+}
+
+#[test]
+fn function_pointer_type_round_trips() {
+    // POL-09 AC 4: a function-pointer type lowers to `TypeKind::FnPtr`
+    // (params and return as type nodes) and converts back to the parsed tree.
+    let src = "fn apply(f: fn(f64) -> f64, g: fn(), h: fn(&[u8]) -> u8) {}\nstruct S { r: fn(f64) -> f64 }";
+    assert_round_trips(src);
+    let design = build(src);
+    assert!(codes(&design).is_empty(), "{:?}", codes(&design));
+    let ptrs: Vec<_> = (0..design.type_count())
+        .filter_map(|i| match &design.type_node(TypeId(i as u32)).kind {
+            TypeKind::FnPtr { params, ret } => Some((params.len(), ret.is_some())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ptrs.len(), 4);
+    assert!(ptrs.contains(&(1, true)) && ptrs.contains(&(0, false)));
 }

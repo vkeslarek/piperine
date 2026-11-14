@@ -181,6 +181,8 @@ pub enum TypeKind {
     Ref { static_lifetime: bool, inner: Box<Type> },
     /// `flip T`: reverses every direction of a bundle type.
     Flip(Box<Type>),
+    /// `fn(A, B) -> R`: a function-pointer type (`ret` is `None` for `fn()`).
+    FnPtr { params: Vec<Type>, ret: Option<Box<Type>> },
     /// `_`
     Infer,
 }

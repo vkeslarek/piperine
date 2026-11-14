@@ -780,6 +780,7 @@ The forms of a type expression.
 | `Tuple` | `(Vec<TypeId>)` | `(A, B)`; the empty tuple is `()`. |
 | `Ref` | `{ static_lifetime: bool, inner: TypeId }` | `&T` or `&'static T`. |
 | `Flip` | `(TypeId)` | `flip T` |
+| `FnPtr` | `{ params: Vec<TypeId>, ret: Option<TypeId> }` | `fn(A, B) -> R`; `ret` is `None` for `fn()`. |
 | `Infer` | — | `_` |
 
 ### `PatNode`

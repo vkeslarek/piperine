@@ -236,6 +236,10 @@ impl Refs {
             }
             TypeKind::Slice(t) | TypeKind::Flip(t) | TypeKind::Ref { inner: t, .. } => self.types.push(*t),
             TypeKind::Tuple(items) => self.types.extend(items),
+            TypeKind::FnPtr { params, ret } => {
+                self.types.extend(params);
+                self.types.extend(ret);
+            }
             TypeKind::Infer => {}
         }
     }

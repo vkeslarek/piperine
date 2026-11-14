@@ -153,6 +153,10 @@ impl<'d> Rebuild<'d> {
             }
             TypeKind::Slice(inner) => ast::TypeKind::Slice(Box::new(self.ty(*inner))),
             TypeKind::Tuple(items) => ast::TypeKind::Tuple(items.iter().map(|t| self.ty(*t)).collect()),
+            TypeKind::FnPtr { params, ret } => ast::TypeKind::FnPtr {
+                params: params.iter().map(|t| self.ty(*t)).collect(),
+                ret: ret.map(|r| Box::new(self.ty(r))),
+            },
             TypeKind::Ref { static_lifetime, inner } => {
                 ast::TypeKind::Ref { static_lifetime: *static_lifetime, inner: Box::new(self.ty(*inner)) }
             }

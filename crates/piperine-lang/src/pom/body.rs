@@ -72,6 +72,8 @@ pub enum TypeKind {
     Ref { static_lifetime: bool, inner: TypeId },
     /// `flip T`
     Flip(TypeId),
+    /// `fn(A, B) -> R`; `ret` is `None` for `fn()`.
+    FnPtr { params: Vec<TypeId>, ret: Option<TypeId> },
     /// `_`
     Infer,
 }

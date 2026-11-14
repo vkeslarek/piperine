@@ -147,6 +147,18 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
             mk(kind, e.span())
         });
 
+    // `fn(A, B) -> R`, taken only where a type is expected.
+    let fn_ptr = kw(Kw::Fn)
+        .ignore_then(
+            ty.clone()
+                .separated_by(punct(Punct::Comma))
+                .allow_trailing()
+                .collect::<Vec<_>>()
+                .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
+        )
+        .then(punct(Punct::Arrow).ignore_then(ty.clone()).or_not())
+        .map_with(move |(params, ret), e| mk(TypeKind::FnPtr { params, ret: ret.map(Box::new) }, e.span()));
+
     // `(T)` is T; `(T,)`, `(A, B)` and `()` are tuples.
     let tuple_or_paren = ty
         .clone()
@@ -165,7 +177,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
     let infer = punct(Punct::Underscore).map_with(move |_, e| mk(TypeKind::Infer, e.span()));
     let path_ty = path(h, false).map_with(move |p, e| mk(TypeKind::Path(p), e.span()));
 
-    first_of(vec![flip.boxed(), reference.boxed(), array_or_slice.boxed(), tuple_or_paren.boxed(), infer.boxed(), path_ty.boxed()])
+    first_of(vec![flip.boxed(), fn_ptr.boxed(), reference.boxed(), array_or_slice.boxed(), tuple_or_paren.boxed(), infer.boxed(), path_ty.boxed()])
         .labelled("type")
         .boxed()
 }

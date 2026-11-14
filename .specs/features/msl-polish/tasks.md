@@ -413,12 +413,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `function_pointer_types_parse` passes in `msl_parser.rs` (C50: POL-09 AC 3)
-- [ ] Test `function_pointer_type_round_trips` passes in `pom_body.rs` (C51: POL-09 AC 4)
-- [ ] `fn` at item position is unchanged: the type form is taken only where a type is expected
-- [ ] `type_kind_name` of `pom_body.rs` and the `TypeKind` section of `docs/pom/model.md` know the new variant
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `function_pointer_types_parse` passes in `msl_parser.rs` (C50: POL-09 AC 3)
+- [x] Test `function_pointer_type_round_trips` passes in `pom_body.rs` (C51: POL-09 AC 4)
+- [x] `fn` at item position is unchanged: the type form is taken only where a type is expected
+- [x] `type_kind_name` of `pom_body.rs` and the `TypeKind` section of `docs/pom/model.md` know the new variant
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

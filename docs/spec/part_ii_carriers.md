@@ -66,6 +66,13 @@ nature** declares `potential`.
 - **§4 rule 8.** `resolve` is a const expression of type `fn(&[T]) -> T`, where `T` is the
   `value` type. The function **MUST** be of class pure
   ([§3](part_i_values.md#3-functions)).
+
+  The type is written with the function-pointer form of the language:
+
+  ```rust
+  fn first(xs: &[f64]) -> f64 { xs[0] }
+  const RESOLVE: fn(&[f64]) -> f64 = first;
+  ```
 - **§4 rule 9.** A **nature quantity** is the `IDENT` after `potential:` or `flow:` with its
   attribute block. The attributes are closed:
 

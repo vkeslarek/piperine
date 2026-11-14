@@ -1090,3 +1090,37 @@ fn commit_token_in_generic_arguments_is_still_an_error() {
         r.diagnostics
     );
 }
+
+#[test]
+fn function_pointer_types_parse() {
+    // POL-09 AC 3: `fn(f64) -> f64`, `fn(&[T]) -> T` and `fn()` in a fn
+    // parameter, a struct field, a `const` and a `let` annotation.
+    let f = ty("fn(f64) -> f64");
+    let TypeKind::FnPtr { params, ret } = &f.kind else { panic!("{f:?}") };
+    assert_eq!(params.len(), 1);
+    assert_path_type(&params[0], &["f64"]);
+    assert_path_type(ret.as_deref().expect("a return type"), &["f64"]);
+
+    let g = ty("fn(&[T]) -> T");
+    let TypeKind::FnPtr { params, ret } = &g.kind else { panic!("{g:?}") };
+    assert!(matches!(&params[0].kind, TypeKind::Ref { inner, .. } if matches!(inner.kind, TypeKind::Slice(_))));
+    assert!(ret.is_some());
+
+    let h = ty("fn()");
+    assert!(matches!(&h.kind, TypeKind::FnPtr { params, ret } if params.is_empty() && ret.is_none()));
+
+    let sources = [
+        "fn apply(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }",
+        "struct S { f: fn(&[T]) -> T }",
+        "const F: fn() = g;",
+        "fn k() { let f: fn(f64) -> f64 = g; }",
+    ];
+    for src in sources {
+        let first = file(src);
+        let text = piperine_lang::msl::print::print(&first);
+        assert!(text.contains("fn("), "{src}: printed as {text}");
+        assert!(first == file(&text), "{src}: printed as {text}");
+    }
+    // `fn` at item position is still a function item.
+    assert!(matches!(only_item("fn g() {}").kind, ItemKind::Fn(_)));
+}

@@ -58,6 +58,10 @@ impl Lowerer<'_> {
             ast::TypeKind::Array { elem, len } => TypeKind::Array { elem: self.ty(elem), len: self.expr(len) },
             ast::TypeKind::Slice(inner) => TypeKind::Slice(self.ty(inner)),
             ast::TypeKind::Tuple(items) => TypeKind::Tuple(items.iter().map(|i| self.ty(i)).collect()),
+            ast::TypeKind::FnPtr { params, ret } => TypeKind::FnPtr {
+                params: params.iter().map(|i| self.ty(i)).collect(),
+                ret: ret.as_ref().map(|r| self.ty(r)),
+            },
             ast::TypeKind::Ref { static_lifetime, inner } => {
                 TypeKind::Ref { static_lifetime: *static_lifetime, inner: self.ty(inner) }
             }

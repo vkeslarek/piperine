@@ -216,6 +216,10 @@ fn ty(t: &Type) -> String {
             format!("&{}{}", if *static_lifetime { "'static " } else { "" }, ty(inner))
         }
         TypeKind::Flip(inner) => format!("flip {}", ty(inner)),
+        TypeKind::FnPtr { params, ret } => {
+            let ret = ret.as_ref().map_or(String::new(), |r| format!(" -> {}", ty(r)));
+            format!("fn({}){ret}", params.iter().map(ty).collect::<Vec<_>>().join(", "))
+        }
         TypeKind::Infer => "_".to_string(),
     }
 }
