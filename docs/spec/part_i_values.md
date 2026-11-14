@@ -560,7 +560,9 @@ scope, `pub` controls visibility, and a package of models is a crate.
   standard library ([§22](part_vii_stdlib.md#22-standard-library)). The **core names** need no
   import and no declaration: `gnd`, `Nature`, `m`, `dtemp`, `str` and the core primitives
   ([§14](part_iv_behavior.md#14-core-primitives)).
-- **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file.
+- **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file. Each is an
+  item at namespace scope, a file or an inline `mod`; a block may sit in any namespace of its
+  module's file and names the module by a path (`a::M`, `super::a::M`).
 - **§3.4.4** Natures, bundles, hardware modules, functions, constants and value types are
   items. They follow Rust's rules for paths, `use` and `pub`.
 - **§3.4.5** A hardware module's name is in the type namespace, as the type of its templates,

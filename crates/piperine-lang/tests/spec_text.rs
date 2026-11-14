@@ -432,3 +432,35 @@ fn identifier_pattern_rule_is_stated() {
     let after = part.split("- **§1 rule 14.**").nth(1).unwrap();
     assert!(after.split("**Errors**").next().unwrap().contains("> **Resolution.** Rule 14"), "a Resolution note");
 }
+
+#[test]
+fn behavior_generics_are_repeated_not_positional() {
+    // POL-05 AC 1: §10 rule 6, its Resolution and B.3.3 item 14.
+    let part = spec("part_iv_behavior.md");
+    let s10 = section(&part, "## 10.");
+    let flat = one_line(&s10);
+    assert!(!flat.contains("positionally"), "§10 no longer says `positionally`");
+    let rule6 = one_line(s10.split("- **§10 rule 6**").nth(1).unwrap().split("- **§10 rule 7**").next().unwrap());
+    assert!(rule6.contains("repeats the generic names of its module"), "{rule6}");
+    assert!(rule6.contains("the same names in the same order"), "{rule6}");
+    let note = flat.split("> **Resolution.** §10 rule 6:").nth(1).expect("Resolution of rule 6");
+    assert!(note.contains("repeated in order"), "{note}");
+    let b33 = one_line(&section(&spec("appendix_b_grammar.md"), "### B.3.3"));
+    assert!(b33.contains("`names` repeats the generic names of the module, the same names in the same order"), "{b33}");
+}
+
+#[test]
+fn items_sit_at_namespace_scope() {
+    // POL-05 AC 2: B.2.1 note 3, §8 rule 1 and §3.4.3; E0401 keeps `the same file`.
+    let b2 = one_line(&section(&spec("appendix_b_grammar.md"), "### B.2.1"));
+    assert!(b2.contains("are items at namespace scope: a file or an inline `mod`"), "{b2}");
+    assert!(b2.contains("A block may sit in any namespace of its module's file"), "{b2}");
+    let p3 = spec("part_iii_structure.md");
+    let rule1 = one_line(p3.split("- **§8 rule 1**").nth(1).unwrap().split("- **§8 rule 2**").next().unwrap());
+    assert!(rule1.contains("namespace scope") && rule1.contains("any namespace of the same file"), "{rule1}");
+    let r343 = one_line(spec("part_i_values.md").split("- **§3.4.3**").nth(1).unwrap().split("- **§3.4.4**").next().unwrap());
+    assert!(r343.contains("namespace scope") && r343.contains("any namespace of"), "{r343}");
+    let row = spec("part_iv_behavior.md");
+    let row = row.lines().find(|l| l.starts_with("| `E0401`")).unwrap();
+    assert!(row.contains("the same file"), "{row}");
+}

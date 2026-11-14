@@ -126,7 +126,7 @@ Notes:
 
 1. Inside a block or a `fn`, an immutable `let` and `let mut` are value-level locals (§8.2). They are allowed wherever statements are.
 2. A reaction reads a body `let` that names an instance. It does not place one (§8.3.4).
-3. `nature`, `module`, `analog for` and `digital for` are items at file scope only.
+3. `nature`, `module`, `analog for` and `digital for` are items at namespace scope: a file or an inline `mod`. A block may sit in any namespace of its module's file (§3.4.3).
 4. `after` is allowed on a definition and on a commit, nowhere else.
 
 ### B.2.2 Expressions
@@ -281,7 +281,7 @@ Constraints on the productions that are checked after parsing:
 11. `dir` on a `port` or `struct_field` is allowed only on a carrier of a one-driver discrete nature, or on a bundle as `in` (§7, §8.1).
 12. `= expr` on a `port` is allowed only on a carrier the module drives (§8.1).
 13. The left side of a `contribution` is a probe call (§11 rule 1).
-14. `names` lists the generic names of the module, in order; bounds come from the module (§10 rule 1).
+14. `names` repeats the generic names of the module, the same names in the same order; bounds come from the module (§10 rule 1, rule 6).
 
 ### B.3.4 Statements inside behavior blocks
 

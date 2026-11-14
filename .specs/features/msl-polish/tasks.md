@@ -271,11 +271,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `behavior_generics_are_repeated_not_positional` passes in `spec_text.rs` (C27: POL-05 AC 1)
-- [ ] Test `items_sit_at_namespace_scope` passes in `spec_text.rs` (C28: POL-05 AC 2)
-- [ ] `E0401` still reads `the same file`
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `behavior_generics_are_repeated_not_positional` passes in `spec_text.rs` (C27: POL-05 AC 1)
+- [x] Test `items_sit_at_namespace_scope` passes in `spec_text.rs` (C28: POL-05 AC 2)
+- [x] `E0401` still reads `the same file`
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

@@ -48,7 +48,7 @@ template       ::= path generic_args? '{' ( IDENT ':' expr ',' )* '}'
 
 **Static semantics**
 
-- **§8 rule 1** A module declaration is an item of the file namespace (§3.4). It **MUST NOT** appear
+- **§8 rule 1** A module declaration is an item at namespace scope, a file or an inline `mod` (§3.4). A behavior block for it may sit in any namespace of the same file (§3.4.3). It **MUST NOT** appear
   inside a module body, a behavior block or a function.
 - **§8 rule 2** A module's name is a type (§8.4). It shares the namespace of types of its file.
 - **§8 rule 3** A module declared with `-> T` **MUST** end its body with an expression of type `T`, the

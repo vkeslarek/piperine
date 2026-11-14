@@ -53,9 +53,9 @@ place          ::= path ( '[' expr ']' | '.' IDENT )*                           
   not observable, because contributions add.
 - **§10 rule 5** A block **MUST** be in the file of its module (§3.4). The path names a module that is
   not `extern` (§8.5.7).
-- **§10 rule 6** The `names` list **MUST** have one name per generic parameter of the module, in
-  order, and the path's generic arguments **MUST** be exactly those names. A block for one
-  specialization is not expressible.
+- **§10 rule 6** A block repeats the generic names of its module: the `names` list **MUST** hold
+  the module's generic parameter names, the same names in the same order, and the path's generic
+  arguments **MUST** be exactly those names. A block for one specialization is not expressible.
 - **§10 rule 7** Each block is its own scope for locals. A local of one block is not visible in
   another. What blocks share is a named expression of the body (§8.2).
 - **§10 rule 8** `contribution` is a statement of an `analog` block and of every nested block inside
@@ -64,8 +64,9 @@ place          ::= path ( '[' expr ']' | '.' IDENT )*                           
 - **§10 rule 9** A block places no item in the netlist. Signals, params and named instances are
   declared in the body. A placement inside a block is an anonymous instance of the module (§8.3.4).
 
-> **Resolution.** §10 rule 6: generic names are bound positionally and a block covers every
-> instantiation. The source design shows only this form.
+> **Resolution.** §10 rule 6: the names are the module's own, repeated in order, so that a block
+> reads as the module reads and covers every instantiation. A block never renames a generic.
+> The source design shows only this form.
 
 > **Resolution.** §10 rule 7 reads "act as one" as ordering, not as one lexical scope. The body's `let`
 > is the stated way for blocks to share a computation.
