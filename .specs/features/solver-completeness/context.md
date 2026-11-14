@@ -152,3 +152,11 @@ User's words: "lang-server é bom ficar... cli também mas ambos vão ter sua pr
 | Q7 / Q9 | the solver's present discontinuity algorithm and tolerance mapping stay; spec Appendix C.2 and §17.1.2 are amended to describe them |
 | Feature split | (A) structure refactor = core cleanup + solver split into three crates (event owner / analog / digital), no logic change - Sonnet implements, Opus verifies. (B) logic change = digital DAG (Verilator-style) + analog/digital boundary split - **Opus implements, Fable verifies**. Then time-point, crossings, host seam, numerics. |
 | Tests | unit tests only for now; integration (and ngspice parity runs) come after solver↔lang connection, which will be planned separately (codegen discussion pending) |
+
+## User answers (2026-11-14, round 3)
+
+| Topic | User's choice | Effect |
+| ----- | ------------- | ------ |
+| solver-restructure approval | "Approve and run (Recommended)" | approved; Sonnet implements, Opus verifies; merge + push at the end |
+| `tests/suite_hygiene.rs`, `examples/*.py` + plots | "Move guard, delete py (Recommended)" | the hygiene guard moves into a crate that builds (piperine-lang tests) and keeps enforcing; `examples/*.py` and plots are deleted |
+| §15.2 instantaneous jump vs the kept algorithm | "Amend §15.2 to the solver (Recommended)" | the logic feature amends §15.2 (with C.2 and §17.1.2) to describe the kept algorithm |
