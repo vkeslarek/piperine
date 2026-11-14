@@ -14,7 +14,7 @@ use piperine_solver::abi::{
 };
 use piperine_solver::abi::{DigitalNet, LogicValue};
 use piperine_solver::prelude::{
-    AnalogReference, Bounds, CircuitInstance, Context, Invalidation, Net, ParamDescriptor,
+    AnalogReference, Bounds, CircuitBuilder, CircuitInstance, Context, Invalidation, Net, ParamDescriptor,
     ParamError, ParamScope, Value, ValueKind,
 };
 
@@ -70,6 +70,45 @@ pub fn net_for(circuit: &CircuitInstance, map: &NodeMap, name: &str) -> Net {
         .into_iter()
         .find(|n| n.analog_variable().map(|v| **v == *var).unwrap_or(false))
         .unwrap_or_else(|| panic!("net `{name}` not solved"))
+}
+
+/// The divider family the DC sensitivity and adjoint targets share, built
+/// from the elements below: `Top` (source over two resistors), `DiodeTop`
+/// (source, resistor, diode), `OptTop` (divider of presence-queried `ROpt`s)
+/// and `RcTop` (source, resistor, capacitor). Nodes: `top`, `mid`.
+pub fn divider_fixture(top: &str) -> (CircuitInstance, NodeMap) {
+    let mut b = CircuitBuilder::new(top);
+    let gnd = b.ground();
+    let top_node = b.node("top");
+    let mid = b.node("mid");
+    match top {
+        "Top" => {
+            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
+            b.element(Box::new(R::new("r2", 1.0e3, mid.clone(), gnd.clone())));
+        }
+        "DiodeTop" => {
+            b.element(Box::new(Vsrc::new("v1", 1.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
+            b.element(Box::new(D::new("d1", 1.0e-14, mid.clone(), gnd.clone())));
+        }
+        "OptTop" => {
+            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(ROpt::new("r1", None, top_node.clone(), mid.clone())));
+            b.element(Box::new(ROpt::new("r2", None, mid.clone(), gnd.clone())));
+        }
+        "RcTop" => {
+            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
+            b.element(Box::new(C::new("c1", 1.0e-9, mid.clone(), gnd.clone())));
+        }
+        other => panic!("no circuit `{other}`"),
+    }
+    let circuit = b.build().expect("build");
+    let mut map = NodeMap::new();
+    map.insert("top", top_node);
+    map.insert("mid", mid);
+    (circuit, map)
 }
 
 // ---------------------------------------------------------------------------

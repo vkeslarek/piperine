@@ -7,40 +7,11 @@
 #[path = "helpers/devices.rs"]
 mod devices;
 
-use devices::{net_for, NodeMap, ROpt, D, R, Vsrc};
-use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, Net, SensAnalysisOptions};
+use devices::{divider_fixture, net_for, NodeMap};
+use piperine_solver::prelude::{CircuitInstance, Context, Net, SensAnalysisOptions};
 
-/// The circuits of the former Verilog-A fixture, built from hand-written
-/// elements: `Top` (divider), `DiodeTop` (source, resistor, diode) and
-/// `OptTop` (divider of presence-queried `ROpt`s).
 fn build(top: &str) -> (CircuitInstance, NodeMap) {
-    let mut b = CircuitBuilder::new(top);
-    let gnd = b.ground();
-    let top_node = b.node("top");
-    let mid = b.node("mid");
-    match top {
-        "Top" => {
-            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
-            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
-            b.element(Box::new(R::new("r2", 1.0e3, mid.clone(), gnd.clone())));
-        }
-        "DiodeTop" => {
-            b.element(Box::new(Vsrc::new("v1", 1.0, top_node.clone(), gnd.clone())));
-            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
-            b.element(Box::new(D::new("d1", 1.0e-14, mid.clone(), gnd.clone())));
-        }
-        "OptTop" => {
-            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
-            b.element(Box::new(ROpt::new("r1", None, top_node.clone(), mid.clone())));
-            b.element(Box::new(ROpt::new("r2", None, mid.clone(), gnd.clone())));
-        }
-        other => panic!("no circuit `{other}`"),
-    }
-    let circuit = b.build().expect("build");
-    let mut map = NodeMap::new();
-    map.insert("top", top_node);
-    map.insert("mid", mid);
-    (circuit, map)
+    divider_fixture(top)
 }
 
 /// Divider analytics: `v_mid = V·r2/(r1+r2)` →

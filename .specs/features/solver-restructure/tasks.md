@@ -176,9 +176,9 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] No frontend import remains
-- [ ] `one_transpose_solve_serves_every_requested_parameter`, `df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution`, `adjoint_runs_on_a_nonlinear_circuit` keep their names and assertions and pass
-- [ ] Gate: quick, on `adjoint_dc`
+- [x] No frontend import remains
+- [x] `one_transpose_solve_serves_every_requested_parameter`, `df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution`, `adjoint_runs_on_a_nonlinear_circuit` keep their names and assertions and pass
+- [x] Gate: quick, on `adjoint_dc`
 
 **Tests**: integration
 **Gate**: quick
