@@ -8,7 +8,7 @@ This feature gives MSL Rust's package model, whole: a crate reaches another only
 
 ## Goals
 
-- [ ] `docs/spec/` defines crates (§3.5) and packages (§3.6) normatively: crate root, dependency names in paths, `crate`/`self`/`super`, `pub` across crates, the implicit `std`, the manifest, path and git dependencies, the lockfile, seven error codes of a new phase `package`.
+- [ ] `docs/spec/` defines crates (§3.5) and packages (§3.6) normatively: crate root, dependency names in paths, `crate`/`self`/`super`, `pub` across crates, the implicit `std`, the manifest, path and git dependencies, the lockfile, the ambiguity code `E0163`, and seven error codes of a new phase `package`.
 - [ ] `piperine_lang::pom::Design` is built over a crate graph given as plain data, holds every crate as authored, resolves names across crates by Rust's rules and offers a `Crate` handle. `piperine-lang` gains no dependency.
 - [ ] `std` is a crate embedded in `piperine-lang`; the prelude is `std::prelude`. The builder's prelude sources are gone.
 - [ ] `piperine-project` reads `Piperine.toml`, resolves path and git dependencies into that graph, keeps `Piperine.lock`, and loads a project with one call. Everything else in the crate is deleted. It builds with zero warnings.
@@ -31,7 +31,7 @@ This feature gives MSL Rust's package model, whole: a crate reaches another only
 
 ## Assumptions & Open Questions
 
-U1 to U5 are the user's decisions (`context.md`, 2026-11-14). The other rows are the planner's choices inside them; each is open to correction and is listed in the planner's hand-off.
+U1 to U6 are the user's decisions (`context.md`, 2026-11-14). The other rows are the planner's choices inside them; each is open to correction and is listed in the planner's hand-off.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
@@ -42,8 +42,9 @@ U1 to U5 are the user's decisions (`context.md`, 2026-11-14). The other rows are
 | U5 Roles | Sonnet implements, Opus verifies | user decision | y - standing rule |
 | Where the rules live in `docs/spec/` | two new sections of Part I: §3.5 Crates (language) and §3.6 Packages (manifest, dependencies, lockfile). No new part, no new file | §3.4 is already "Files and imports"; Part I owns `E01xx`, so the codes need no new prefix; `pom_docs` maps a code to a numbered section | y - planner default |
 | Crate root and extension | `src/lib.msl`, fixed; sources are `.msl` | Cargo's layout. A package holds one library crate: MSL has no `main`, the host picks the top module (G.17). Closes the open half of MD-55 | y - planner default |
-| Name clash between a local name and a dependency | the item or import hides the dependency, silently (Rust 2018: the extern prelude sits below a namespace's own names) | the brief asks for Rust's rule. There is no leading `::` (B.3.6), so the hidden crate is reached by renaming the dependency | y - planner default; brief: "Rust's rule" |
-| Unknown crate, private item across crates | the existing `E0161`, with a help line for the crate case | §0.2: one condition, one code. "A path that does not resolve" already is that condition | y - planner default |
+| U6 Name clash between a local name and a dependency | Rust 2018 exactly: in an ordinary path the item or import wins, silently; in a `use` path the clash is an ambiguity error, never hidden. The help names the two ways out: rename the dependency in the manifest (`package = "…"`) or write `crate::<name>` for the local one | user decision (`context.md` U6) | y - user: U6 |
+| Code of the ambiguity | `E0163`, in §3.5, phase `elaboration` | the next free code after `E0162`; a new condition gets its own code (§0.2) | y - planner default inside U6 |
+| Unknown crate, private item across crates (no new code) | the existing `E0161`, with a help line for the crate case | §0.2: one condition, one code. "A path that does not resolve" already is that condition | y - planner default |
 | A crate's own name | not in scope inside the crate; `crate` names its root | Rust's rule | y - planner default |
 | The prelude | the `pub` items of `std::prelude`, implied in every file of every crate, `std`'s own files included; below dependency names, above core names | closest to Rust while keeping §3.4.2 ("imported implicitly into every file") and §22 rule 1 true. No exception for `std` keeps one rule | y - planner default |
 | Phase of manifest errors | a fifth phase, `package` | a manifest is read before any source is parsed; calling it `elaboration` would stretch §0.3's definition, and `parse` rows are bound to parser fixtures | y - planner default |
@@ -62,7 +63,7 @@ U1 to U5 are the user's decisions (`context.md`, 2026-11-14). The other rows are
 | Diagnostics of `piperine-project` | `piperine_lang::msl::Diagnostic` with the manifest text, rendered by the same `miette` report | one diagnostic type and one renderer in the workspace | y - planner default |
 | Pace | one task per commit, tests first; Sonnet workers, an Opus Verifier | the brief | y - settled by the brief |
 
-**Open questions:** none - U1 to U5 are answered; every planner default above is stated with its reason and is listed in the hand-off for the user to correct.
+**Open questions:** none - U1 to U6 are answered; every planner default above is stated with its reason and is listed in the hand-off for the user to correct.
 
 **Implicit-requirement dimensions.** Input validation & bounds: PKG-03 (graph names, cycles, foreign ids), PKG-10 (every manifest key, name, version and requirement). Failure / partial failure: PKG-04 AC 5 (an unreadable crate root does not stop the build), PKG-10 AC 9 (every fault of a manifest is reported), PKG-14 AC 3 and 4 (a package error returns no design; a model error returns one). Idempotency / retry: PKG-13 AC 4 (two resolutions, identical lockfile), PKG-13 AC 2 (a re-run keeps the pin). Auth boundaries & rate limits: N/A because the resolver passes the URL to git and stores no credential; no server is contacted on a locked build. Concurrency / ordering: N/A because resolution is one sequential walk and the design is immutable; two processes resolving one project at once are not supported and not specified. Data lifecycle: PKG-13 AC 6 (a stale lockfile entry is dropped); checkouts under `target/deps` are a cache the user may delete. Observability: every failure is a coded diagnostic with a span (PKG-10 AC 3); no logging is added. External-dependency failure: PKG-12 AC 3 (repository or reference unreachable is `E0172`), PKG-13 AC 8 (no network needed once locked). State-transition integrity: PKG-03 AC 2 to 4 (a rejected insertion leaves the graph unchanged), PKG-13 AC 7 (an invalid lockfile fetches nothing).
 
@@ -80,13 +81,14 @@ U1 to U5 are the user's decisions (`context.md`, 2026-11-14). The other rows are
 
 1. The specification SHALL hold in Part I a section `3.5 Crates` that defines the terms crate, crate root and dependency name, each bold at one defining occurrence, and SHALL reword the lead of §3.4 to point at it.
 2. The specification SHALL state in §3.5 the order in which the first segment of a path is looked up: the enclosing scopes, the items and imports of the enclosing namespace, the dependency names of the crate, the prelude, the core names.
-3. The specification SHALL state in §3.5 that an item or an import hides a dependency of the same name without a diagnostic, and that no leading `::` exists to reach the hidden crate.
+3. The specification SHALL state in §3.5 that, where an item or an import of the enclosing namespace has the name of a dependency, an ordinary path resolves to the item or import without a diagnostic and a `use` path is ambiguous (`E0163`), and that no leading `::` exists.
 4. The specification SHALL state in §3.5 that `crate` names the root of the crate that contains the path, that a crate's own name is not in scope inside it, and that `super` at a crate root is `E0161`.
 5. The specification SHALL state in §3.5 that an item is visible from another crate only when it and every namespace on the path from its crate root are `pub`.
 6. The specification SHALL state in §3.5 that `std` is a dependency of every crate that no manifest names and no dependency may be called, and SHALL define the prelude in §3.4.2 as the `pub` items of `std::prelude`.
 7. The `E0161` row of §3.4 SHALL name a first segment that is not a dependency of the crate.
 8. The specification SHALL list `extern crate` items in the removed-forms table of Appendix B.3.6 with the code `E0900` and the manifest's `[dependencies]` as what to write instead.
 9. IF a source holds `extern crate util;` THEN the parser SHALL report exactly one `E0900` whose message says that `extern crate` is not part of the language and whose help names `[dependencies]`.
+10. The error table of §3.5 SHALL define `E0163`, of phase `elaboration`, as a `use` path whose first segment names both a dependency and an item or import of the enclosing namespace, and the section SHALL name the two ways out: `package = "…"` under another key in the manifest, and `crate::<name>` for the local one.
 
 **Acceptance Criteria** (PKG-02, The specification defines packages (§3.6)):
 
@@ -137,16 +139,18 @@ U1 to U5 are the user's decisions (`context.md`, 2026-11-14). The other rows are
 2. WHEN a file imports a module of a dependency (`use util::cells::Cell;`) and places it THEN `Instance::module()` SHALL be the module declared in the dependency and the design SHALL hold no diagnostic.
 3. WHEN a path in a file of a dependency starts with `crate` THEN the POM SHALL resolve it to the root of that dependency, not to the root crate.
 4. WHEN a dependency is declared under a name other than the crate's own THEN the POM SHALL resolve the dependency name and SHALL report `E0161` for the crate's own name.
-5. WHEN a namespace item or an explicit import has the name of a dependency THEN the POM SHALL resolve paths that start with that name to the item or import and SHALL report no diagnostic for the clash.
-6. WHEN a path starts with `std` in a crate whose graph entry declares no dependency THEN the POM SHALL resolve it to the root of the `std` crate.
-7. WHEN a file of a dependency crate uses a `pub` item of `std::prelude` by its single name THEN the POM SHALL resolve it without an import.
-8. WHEN a dependency name and a `pub` item of `std::prelude` are the same name THEN the POM SHALL resolve the name to the dependency.
-9. IF a path starts with the name of a crate that is not a dependency of the containing crate (a dependency of a dependency, or the crate's own name) THEN the POM SHALL report one `E0161` whose help names `[dependencies]` of `Piperine.toml`.
-10. IF a path names an item of another crate that is not `pub` THEN the POM SHALL report one `E0161` whose message says the item is private.
-11. IF a path names a `pub` item inside a namespace of another crate that is not `pub` THEN the POM SHALL report one `E0161` at that path.
-12. IF a path at the root of a dependency crate starts with `super` THEN the POM SHALL report one `E0161`.
-13. WHEN a file glob-imports a dependency (`use util::*;`) THEN the POM SHALL bring its `pub` items only: a `pub` name resolves and a private one is `E0161`.
-14. WHEN a dependency re-exports an item of its own dependency with `pub use` THEN the POM SHALL resolve the item through the re-exporting crate from a crate that does not depend on the item's crate.
+5. WHEN a namespace item or an import has the name of a dependency THEN the POM SHALL resolve an ordinary path (in an expression, a type or a pattern) that starts with that name to the item or import and SHALL report no diagnostic.
+6. IF the first segment of a `use` path names both a dependency and an item or import of the enclosing namespace THEN the POM SHALL report exactly one `E0163` at that path, whose help names `package = "…"` in the manifest and `crate::<name>`, SHALL leave the path's segments unresolved, and SHALL report no `E0161` for it.
+7. WHEN that `use` path is written `crate::<name>::..` THEN the POM SHALL resolve it to the local item and report no diagnostic.
+8. WHEN a path starts with `std` in a crate whose graph entry declares no dependency THEN the POM SHALL resolve it to the root of the `std` crate.
+9. WHEN a file of a dependency crate uses a `pub` item of `std::prelude` by its single name THEN the POM SHALL resolve it without an import.
+10. WHEN a dependency name and a `pub` item of `std::prelude` are the same name THEN the POM SHALL resolve the name to the dependency.
+11. IF a path starts with the name of a crate that is not a dependency of the containing crate (a dependency of a dependency, or the crate's own name) THEN the POM SHALL report one `E0161` whose help names `[dependencies]` of `Piperine.toml`.
+12. IF a path names an item of another crate that is not `pub` THEN the POM SHALL report one `E0161` whose message says the item is private.
+13. IF a path names a `pub` item inside a namespace of another crate that is not `pub` THEN the POM SHALL report one `E0161` at that path.
+14. IF a path at the root of a dependency crate starts with `super` THEN the POM SHALL report one `E0161`.
+15. WHEN a file glob-imports a dependency (`use util::*;`) THEN the POM SHALL bring its `pub` items only: a `pub` name resolves and a private one is `E0161`.
+16. WHEN a dependency re-exports an item of its own dependency with `pub use` THEN the POM SHALL resolve the item through the re-exporting crate from a crate that does not depend on the item's crate.
 
 **Independent Test**: build a graph `app -> util` from virtual sources, place `util::cells::Cell` in `app`, and read `instance.module().krate().name() == "util"`.
 
@@ -293,7 +297,8 @@ U1 to U5 are the user's decisions (`context.md`, 2026-11-14). The other rows are
 
 Each is covered by the criterion named.
 
-- IF a dependency key and a local `mod` have one name THEN the POM SHALL resolve to the `mod` and report nothing (PKG-05 AC 5).
+- IF a dependency key and a local `mod` have one name THEN the POM SHALL resolve an ordinary path to the `mod` and report nothing (PKG-05 AC 5).
+- IF a `use` path starts with that name THEN the POM SHALL report `E0163` and no `E0161` (PKG-05 AC 6).
 - IF a manifest names itself through `path = "."` THEN the resolver SHALL report `E0174`, not recurse (PKG-11 AC 11).
 - WHEN two dependents reach one package directory through two spellings of its path THEN the resolver SHALL make one crate (PKG-11 AC 3).
 - IF a crate's root file is missing THEN the design SHALL still hold the crate, empty, with one `E0161` (PKG-04 AC 5).
@@ -325,17 +330,17 @@ Each is covered by the criterion named.
 | PKG-14 | P1: A package loads from its manifest | Tasks | Pending |
 | PKG-15 | P1: A package loads from its manifest | Tasks | Pending |
 
-**Coverage:** 15 requirements, 114 acceptance criteria, 15 mapped to tasks, 0 unmapped.
+**Coverage:** 15 requirements, 117 acceptance criteria, 15 mapped to tasks, 0 unmapped.
 
 ### Requirements, their criteria and their tasks
 
 | Requirement | What | Criteria | Tasks |
 | ----------- | ---- | -------- | ----- |
-| PKG-01 | The specification defines crates (§3.5) | 9 | T1, T4 |
+| PKG-01 | The specification defines crates (§3.5) | 10 | T1, T4 |
 | PKG-02 | The specification defines packages (§3.6) | 11 | T2, T3, T5 |
 | PKG-03 | The crate graph is plain data | 6 | T6 |
 | PKG-04 | A design holds its crates as authored | 7 | T8, T9 |
-| PKG-05 | Names resolve across crates by Rust's rules | 14 | T10, T11 |
+| PKG-05 | Names resolve across crates by Rust's rules | 16 | T10, T11 |
 | PKG-06 | `std` is embedded and its prelude is implicit | 7 | T7 |
 | PKG-07 | Reflection reaches crates | 7 | T8, T12 |
 | PKG-08 | A multi-crate design serializes and is validated | 4 | T13 |
@@ -352,16 +357,17 @@ Each is covered by the criterion named.
 | Decision | Requirement |
 | -------- | ----------- |
 | U1 no search paths, Rust's model | PKG-01, PKG-02 AC 7, PKG-03, PKG-05 |
-| U2 `std` embedded | PKG-06, PKG-04 AC 2, PKG-05 AC 6 |
+| U2 `std` embedded | PKG-06, PKG-04 AC 2, PKG-05 AC 8 |
 | U3 `piperine-project` cut down | PKG-10 to PKG-15 |
 | U4 `msl-stdlib` next | Out of Scope (the library's content) |
 | U5 roles | `tasks.md` (batches, Verifier) |
+| U6 name clash: Rust 2018 exactly | PKG-01 AC 3 and 10, PKG-05 AC 5 to 7 |
 
 ---
 
 ## Sources
 
-- `.specs/features/msl-packages/context.md` - the user's decisions U1 to U5 (2026-11-14)
+- `.specs/features/msl-packages/context.md` - the user's decisions U1 to U6 (2026-11-14)
 - The orchestrator's brief for this feature - what to specify (spec text, POM, `piperine-project` port), the build rules and the task shape
 - `docs/spec/` - the specification this feature amends (§0.3, §0.8, §0.9, §3.4, Appendix B.3.6, Appendix G); `.specs/features/msl-spec/STYLE.md` - how it is written
 - `.specs/STATE.md` MD-54 (the POM is built once; only lowering creates nodes), MD-55 (`.msl`, Rust's `mod` layout), MD-56 (D3 core names, D5 `E0162`), MD-57 (a spec edit lands where its guard can pass)
@@ -374,7 +380,7 @@ Each is covered by the criterion named.
 
 ## Success Criteria
 
-- [ ] All 114 checks of `tasks.md` are green at `HEAD` (`check_proofs.py msl-packages`).
+- [ ] All 117 checks of `tasks.md` are green at `HEAD` (`check_proofs.py msl-packages`).
 - [ ] `cargo test -p piperine-lang` and `cargo test -p piperine-project` report 0 failed, with no test removed and no `#[ignore]`.
 - [ ] Both crates build all targets with no warning.
 - [ ] A package `app` with a path dependency `util` loads with `load_project` into a design with zero diagnostics whose instance links into `util`.

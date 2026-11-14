@@ -80,7 +80,7 @@ Lead: a **crate** is one tree of namespace modules rooted at one file; a crate r
 2. A crate has a name and a set of dependencies. A **dependency name** names one other crate inside this crate. It need not be the other crate's own name (§3.6 rule 8).
 3. `std` is a dependency of every crate. No manifest names it and no dependency may be called `std`.
 4. The first segment of a path, in an expression, a type, a pattern or a `use`, that is not `crate`, `self` or `super` is looked up in this order; the first hit wins: (a) the scopes of the enclosing blocks and declarations; (b) the items and imports of the enclosing namespace; (c) the dependency names of the crate; (d) the prelude; (e) the core names.
-5. By rule 4 an item or an import hides a dependency of the same name, without a diagnostic. There is no leading `::` (B.3.6); the hidden crate is reached by renaming the dependency.
+5. Where an item or an import of the enclosing namespace has the name of a dependency, an ordinary path follows rule 4: the item or import wins, without a diagnostic. A `use` path whose first segment is that name is ambiguous (`E0163`). There is no leading `::` (B.3.6): the dependency is reached under another key (`other = { package = "<name>", .. }`, §3.6 rule 8) and the local one as `crate::<name>`.
 6. A dependency name resolves to the root namespace of that crate. A crate's own name is not in scope inside it.
 7. `crate` names the root of the crate that contains the path. `self` and `super` are relative to the namespace that contains it. `super` at a crate root does not resolve (`E0161`).
 8. From another crate an item is visible only when it is `pub` and every namespace on the path from its crate root to it is `pub`. `pub use` re-exports, as in Rust.
@@ -88,9 +88,9 @@ Lead: a **crate** is one tree of namespace modules rooted at one file; a crate r
 10. The dependencies of the crates form no cycle (§3.6, `E0174`).
 11. `extern crate` is not part of the language (B.3.6).
 
-`Resolution` notes: rules 4 and 5 are Rust 2018's (dependency names sit below a namespace's own names), stated because no `::` exists to disambiguate; rule 9 has no exception for `std`, so one rule holds everywhere.
+`Resolution` notes: rules 4 and 5 are Rust 2018's exactly (dependency names sit below a namespace's own names in a path; an import that could mean either is an error, never a silent choice), stated because no `::` exists to disambiguate; a dependency name against a prelude item is not a clash, the dependency wins; rule 9 has no exception for `std`, so one rule holds everywhere.
 
-Errors: rows keyed by section, as §0.2 prescribes: `[§3.4]` a first segment that names no item, import, dependency, prelude item or core name, or an item not visible from the crate (`E0161`); `[§3.6]` a cycle (`E0174`).
+Errors: the defining row `E0163` (a `use` path whose first segment names both a dependency and an item or import of the enclosing namespace; phase elaboration), then rows keyed by section, as §0.2 prescribes: `[§3.4]` a first segment that names no item, import, dependency, prelude item or core name, or an item not visible from the crate (`E0161`); `[§3.6]` a cycle (`E0174`).
 
 Also edited: the lead of §3.4 ("a package of models is a crate" becomes a pointer to §3.5 and §3.6); §3.4.2 (the **prelude** is the `pub` items of `std::prelude`, which re-exports the standard library of §22); the `E0161` row (adds "a first segment that names no dependency of the crate (§3.5)"); "Terms defined here" of Part I.
 
@@ -154,7 +154,7 @@ Errors (`Code | Condition | Phase`):
 
 §0.3 gains the phase **package** ("the manifests are read, the dependencies located and the crate graph fixed", defined in §3.6), first in the table; "one of four phases" becomes "five"; rule 3 adds it to the phases that reject a model.
 
-Appendix G: G.0 gains "source search paths (`-I`)" (use: a dependency named in the manifest, §3.6 rule 12) and "a package registry" (use: `path` and `git` dependencies). The closed table gains P1 to P6: P1 crate root `src/lib.msl` and the extension `.msl` (§3.6 rule 2); P2 dependency names in paths, hidden by local names, no `extern crate` (§3.5 rules 4, 5, 11); P3 `std` implicit, the prelude is `std::prelude` (§3.5 rules 3 and 9, §3.4.2); P4 the closed manifest (§3.6 rule 3); P5 git references and the lockfile (§3.6 rules 7, 13, 14); P6 the `package` phase (§0.3).
+Appendix G: G.0 gains "source search paths (`-I`)" (use: a dependency named in the manifest, §3.6 rule 12) and "a package registry" (use: `path` and `git` dependencies). The closed table gains P1 to P6: P1 crate root `src/lib.msl` and the extension `.msl` (§3.6 rule 2); P2 dependency names in paths; a local name wins in an ordinary path and clashes in a `use` (`E0163`); no `extern crate` (§3.5 rules 4, 5, 11); P3 `std` implicit, the prelude is `std::prelude` (§3.5 rules 3 and 9, §3.4.2); P4 the closed manifest (§3.6 rule 3); P5 git references and the lockfile (§3.6 rules 7, 13, 14); P6 the `package` phase (§0.3).
 
 ---
 
@@ -227,8 +227,9 @@ Appendix G: G.0 gains "source search paths (`-I`)" (use: a dependency named in t
   - `Ctx` gets, per namespace, its crate (through `decl.file` and the file's crate), and per crate its dependency names; `std` is added to every crate's names.
   - `walk`: `"crate"` is the root of the crate of `ns`.
   - `scope_lookup`: namespace items and imports, then dependency names (a hit is `Resolution::Decl(root namespace of that crate)`), then the `pub` items of the namespace `prelude` of `std`'s root, then the built-in table.
+  - `resolve_imports` (and the block-level `use`): when segment 0 of a `use` path is found among the namespace's items or imports and is also a dependency name of the crate, the walk ends with a new `WalkError::CrateClash` and `path_diagnostic` reports `E0163` with the two-remedy help; the segments stay `Unresolved`. Other paths never take this branch.
   - `path_diagnostic`: when segment 0 is missing and names a crate of the design, the `E0161` carries the help "name it under `[dependencies]` in `Piperine.toml`".
-- **No new code and no new `Resolution` variant**: a crate is its root `Namespace` declaration.
+- **One new code (`E0163`, U6) and no new `Resolution` variant**: a crate is its root `Namespace` declaration.
 - **Reuses**: `ns_item`, `within`, the glob and cycle guards.
 
 ### `Crate` handle (`piperine-lang`)
@@ -336,6 +337,7 @@ pub struct LockedPackage { pub name: String, pub version: Version, pub source: S
 | --- | --- | --- |
 | a path starts with a name that is no item, import, dependency, prelude item or core name | `E0161` in the design's diagnostics; help line when the name is a crate of the graph | the design is still built; the path's segments stay `Unresolved` |
 | a private item or namespace of another crate | `E0161` "`x` is private" | as above |
+| a `use` path whose first segment is both a local name and a dependency | one `E0163` at the path; help: rename the dependency in the manifest (`package = "…"`) or write `crate::<name>` | the import's segments stay `Unresolved`; no `E0161` beside it |
 | a crate root that cannot be read | one `E0161` on the crate's empty root file; the other crates build | paths into that crate report `E0161` |
 | an invalid `CrateGraph` call | `Err(GraphError)`; the graph is unchanged | an API error for the host, never a panic |
 | an empty `CrateGraph` given to the builder | treated as no graph: the virtual sources or the root file decide the root crate | never a panic |
@@ -361,7 +363,7 @@ pub struct LockedPackage { pub name: String, pub version: Version, pub source: S
 | tags are not fetched on a re-fetch | `git.rs:110` (refspec `+refs/heads/*` only) | a tag created after the first clone is not found | T22 adds `+refs/tags/*:refs/tags/*` |
 | `version` maps to a ref `release/v<version>`, "latest" to a ref named `latest` | `resolver.rs:246-249` | conventions of the deleted plugin flow | deleted; §3.6 rules 7 and 9 |
 | the lockfile carries plugin trust fields | `crates/piperine-project/src/lockfile.rs:20-37` | dead with U3 | rewritten in T23 |
-| `piperine-project` does not build today | `crates/piperine-project/src/source_map.rs:9` (`piperine_lang::SourceMap`) | the `**Build**` line of `tasks.md` cannot include it before T15 | the build line covers `piperine-lang`; the project crate's build is C114's lone proof and part of every gate from T15 on |
+| `piperine-project` does not build today | `crates/piperine-project/src/source_map.rs:9` (`piperine_lang::SourceMap`) | the `**Build**` line of `tasks.md` cannot include it before T15 | the build line covers `piperine-lang`; the project crate's build is C117's lone proof and part of every gate from T15 on |
 | tests of the old resolver write under `std::env::temp_dir()` with fixed names | `resolver.rs:301-344` | collisions between runs | every new test uses `tempfile::tempdir()` |
 | `toml::de::DeTable` spans are byte ranges of the manifest text | `toml` 1.1.2, `src/de/parser/detable.rs:16` | none: verified in the vendored source; it is under the default `parse` feature | used as is |
 | the worktree's `CLAUDE.md` describes the retired Verilog-AMS pipeline | `CLAUDE.md` | a worker could follow it | the tasks header says the facts are in `spec.md` and `design.md` |
@@ -386,5 +388,5 @@ pub struct LockedPackage { pub name: String, pub version: Version, pub source: S
 
 **Project-level decisions** (T1 appends them to `.specs/STATE.md` `## Decisions`, status `Locked (msl-packages spec approved <date>)`):
 
-- **MD-58: packages follow Cargo; the front end takes a crate graph as data.** A crate reaches another only through a dependency named in `Piperine.toml` (user, 2026-11-14: "faremos modelo RUST 100%"); there is no search path. `piperine-lang` takes a `CrateGraph` (names, root files, named edges, acyclic by construction) and never reads a manifest or a repository; `piperine-project` owns `Piperine.toml`, path and git resolution and `Piperine.lock`, and nothing else. One `Design` holds every crate as its own tree (navigability rule); a dependency name resolves to the root namespace of the other crate. Trade-off: no include path, ever, and a `Design` whose serialized form carries crates. Scope: `docs/spec` §3.5 and §3.6, `piperine-lang`, `piperine-project`, and every host.
+- **MD-58: packages follow Cargo; the front end takes a crate graph as data.** A crate reaches another only through a dependency named in `Piperine.toml` (user, 2026-11-14: "faremos modelo RUST 100%"); there is no search path. A local name that equals a dependency name wins in an ordinary path and is an ambiguity error (`E0163`) in a `use` path (user, U6). `piperine-lang` takes a `CrateGraph` (names, root files, named edges, acyclic by construction) and never reads a manifest or a repository; `piperine-project` owns `Piperine.toml`, path and git resolution and `Piperine.lock`, and nothing else. One `Design` holds every crate as its own tree (navigability rule); a dependency name resolves to the root namespace of the other crate. Trade-off: no include path, ever, and a `Design` whose serialized form carries crates. Scope: `docs/spec` §3.5 and §3.6, `piperine-lang`, `piperine-project`, and every host.
 - **MD-59: `std` is a crate embedded in `piperine-lang`; the prelude is `std::prelude`.** (user, 2026-11-14: "std fica embutida o binário"). Its sources are `crates/piperine-lang/std/*.msl`, compiled in with `include_str!`; every crate depends on it implicitly; the builder's prelude sources are gone (`std_source` replaces the library in tests). Supersedes the "prelude sources" of MD-54's builder and closes the open half of MD-55 (the extension `.msl` is now in §3.6). Scope: `piperine-lang`, `msl-stdlib`.
