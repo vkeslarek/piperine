@@ -259,12 +259,12 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Both directories are gone; no `Cargo.toml` names either crate
-- [ ] `predict_crossing_interpolates_a_linear_bracket_exactly` and `predict_crossing_rejects_a_non_bracketing_pair` pass inside the solver; `interpolate_a2d_crossing` behaves as before (its two existing tests pass untouched)
-- [ ] `cargo metadata --no-deps --format-version 1 > /dev/null` succeeds (C9)
-- [ ] `workspace_shape.rs` gains `retired_crates_are_gone` and `no_manifest_names_a_retired_crate`, each over the list of crates removed so far (the list is one `const` the next task extends); `no_manifest_names_a_retired_crate` also asserts that the root manifest has no `[profile.dev.package.cranelift` entry
-- [ ] `solver_manifest_has_no_in_tree_dev_dependency` now also rejects `piperine-ir`
-- [ ] Gate: full
+- [x] Both directories are gone; no `Cargo.toml` names either crate
+- [x] `predict_crossing_interpolates_a_linear_bracket_exactly` and `predict_crossing_rejects_a_non_bracketing_pair` pass inside the solver; `interpolate_a2d_crossing` behaves as before (its two existing tests pass untouched)
+- [x] `cargo metadata --no-deps --format-version 1 > /dev/null` succeeds (C9)
+- [x] `workspace_shape.rs` gains `retired_crates_are_gone` and `no_manifest_names_a_retired_crate`, each over the list of crates removed so far (the list is one `const` the next task extends); `no_manifest_names_a_retired_crate` also asserts that the root manifest has no `[profile.dev.package.cranelift` entry
+- [x] `solver_manifest_has_no_in_tree_dev_dependency` now also rejects `piperine-ir`
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full

@@ -6,7 +6,6 @@ description = "Piperine plugin SDK + host: manifest, TOFU trust, native backend,
 
 [dependencies]
 piperine-lang = { path = "../piperine-lang" }
-piperine-codegen = { path = "../piperine-codegen" }
 piperine-solver = { path = "../piperine-solver" }
 piperine-project = { path = "../piperine-project" }
 piperine = { path = "../.." }
