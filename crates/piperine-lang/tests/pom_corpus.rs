@@ -57,7 +57,7 @@ fn a_loaded_file_rebuilds_to_its_own_tree() {
         .source("b.msl", "//! inner\nfn f() { }\nconst Y: u32 = 2;")
         .build();
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    let files: Vec<_> = design.files().into_iter().filter(|f| !f.is_prelude()).collect();
+    let files: Vec<_> = design.files().into_iter().filter(|f| !f.krate().is_std()).collect();
     assert_eq!(files.len(), 2);
     for file in files {
         let parsed = parse(file.text()).file;

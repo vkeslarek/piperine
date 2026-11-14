@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::ids::CrateId;
+use super::ids::{CrateId, DeclId, FileId};
 use crate::msl::lexer::{Token, lex};
 
 /// One crate of a graph: its name, its root file and its named dependencies.
@@ -14,6 +14,18 @@ pub struct CrateNode {
     pub name: String,
     /// The crate root file.
     pub root: PathBuf,
+    pub dependencies: Vec<DependencyData>,
+}
+
+/// A crate as the design stores it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrateData {
+    pub name: String,
+    /// The file the crate is read from.
+    pub root_file: FileId,
+    /// The root `Namespace` declaration: the root file's.
+    pub root: DeclId,
+    /// As declared; `std` is implicit and not listed.
     pub dependencies: Vec<DependencyData>,
 }
 

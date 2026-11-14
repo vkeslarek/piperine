@@ -2,7 +2,7 @@
 //! and, as later tasks land, the embedded `std` and its prelude (PKG-06), crates in the design
 //! (PKG-04), name resolution across crates (PKG-05) and reflection over crates (PKG-07).
 
-use piperine_lang::pom::{CrateGraph, CrateId, Design, DeclId, GraphError, PathId, Reflect, Resolution, is_crate_name};
+use piperine_lang::pom::{CrateGraph, CrateId, Design, DeclId, FileId, GraphError, PathId, Reflect, Resolution, is_crate_name};
 
 fn three() -> (CrateGraph, CrateId, CrateId, CrateId) {
     let mut g = CrateGraph::new();
@@ -119,10 +119,10 @@ fn embedded_std_builds_clean_and_has_a_prelude() {
     let design = Design::builder().source("top.msl", "").build();
     assert_eq!(codes(&design), Vec::<String>::new());
     let files = design.files();
-    assert!(files.last().unwrap().is_prelude(), "the embedded library is the last file");
+    assert!(files.last().unwrap().krate().is_std(), "the embedded library is the last file");
     let prelude = (0..design.decl_count()).map(|i| DeclId(i as u32)).find(|d| {
         let data = design.decl_data(*d);
-        data.name.as_ref().is_some_and(|n| n.text == "prelude") && data.kind.label() == "Namespace" && data.public && design.decl(*d).file().is_prelude()
+        data.name.as_ref().is_some_and(|n| n.text == "prelude") && data.kind.label() == "Namespace" && data.public && design.decl(*d).file().krate().is_std()
     });
     assert!(prelude.is_some(), "std declares a pub namespace `prelude`");
 }
@@ -155,7 +155,7 @@ fn std_source_replaces_the_embedded_library() {
         .source("top.msl", "const X: u32 = MINE;\n")
         .build();
     assert_eq!(codes(&design), Vec::<String>::new());
-    let std_files: Vec<String> = design.files().iter().filter(|f| f.is_prelude()).map(|f| f.name().to_string()).collect();
+    let std_files: Vec<String> = design.files().iter().filter(|f| f.krate().is_std()).map(|f| f.name().to_string()).collect();
     assert_eq!(std_files, ["root.msl", "prelude.msl"], "the first given file is the root; nothing embedded remains");
     assert_eq!(declared_in(&design, resolutions(&design, "MINE")[0]), "prelude.msl");
 }
@@ -174,7 +174,7 @@ fn a_namespace_item_hides_a_prelude_item() {
 #[test]
 fn std_files_are_numbered_last() {
     let design = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "").build();
-    let flags: Vec<(String, bool)> = design.files().iter().map(|f| (f.name().to_string(), f.is_prelude())).collect();
+    let flags: Vec<(String, bool)> = design.files().iter().map(|f| (f.name().to_string(), f.krate().is_std())).collect();
     assert_eq!(flags[0], ("top.msl".to_string(), false));
     assert_eq!(flags[1], ("b.msl".to_string(), false));
     assert!(flags[2..].iter().all(|(_, std)| *std) && flags.len() > 2, "{flags:?}");
@@ -188,4 +188,73 @@ fn std_files_see_the_prelude() {
     let found = resolutions(&design, "P");
     assert_eq!(found.len(), 1);
     assert_eq!(declared_in(&design, found[0]), "lib.msl");
+}
+
+// ---- PKG-04 AC 1 and 2, PKG-07 AC 1 and 2: the design holds its crates (T8) ----
+
+#[test]
+fn single_source_design_has_a_root_crate_named_by_its_file() {
+    let design = Design::builder().source("top.msl", "module M() {}\n").build();
+    let root = design.root_crate();
+    assert_eq!(root.name(), "top");
+    assert_eq!(root.root().file().id(), FileId(0));
+    assert_eq!(design.root(), root.root().decl());
+    // A stem that is no identifier: every other character becomes `_`, a digit gets a leading `_`.
+    for (file, name) in [("9.msl", "_9"), ("a-b.msl", "a_b"), ("x y.msl", "x_y"), ("9a-b.msl", "_9a_b")] {
+        let design = Design::builder().source(file, "").build();
+        assert_eq!(design.root_crate().name(), name, "{file}");
+    }
+    // From disk, the same rule over the file name.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("front-end.msl"), "").unwrap();
+    assert_eq!(Design::load(dir.path().join("front-end.msl")).root_crate().name(), "front_end");
+}
+
+#[test]
+fn every_design_holds_std_last() {
+    for design in [
+        Design::builder().build(),
+        Design::builder().source("top.msl", "").build(),
+        Design::builder().std_source("root.msl", "pub mod prelude {}\n").source("top.msl", "").build(),
+    ] {
+        let crates = design.crates();
+        let last = crates.last().unwrap();
+        assert_eq!(last.name(), "std");
+        assert!(last.is_std() && !last.is_root());
+        assert_eq!(*last, design.std_crate());
+        assert_eq!(crates.iter().filter(|c| c.is_std()).count(), 1);
+        assert_eq!(crates.first().unwrap(), &design.root_crate());
+    }
+    let design = Design::builder().std_source("root.msl", "pub mod prelude {}\n").source("top.msl", "").build();
+    assert_eq!(design.std_crate().files().iter().map(|f| f.name().to_string()).collect::<Vec<_>>(), ["root.msl"]);
+    assert_eq!(design.std_crate().root().file().name(), "root.msl");
+}
+
+#[test]
+fn a_crate_reports_its_name_root_and_files() {
+    let design = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "pub module Inner() {}\n").build();
+    let root = design.root_crate();
+    assert_eq!((root.name(), root.is_root(), root.is_std()), ("top", true, false));
+    assert_eq!(root.id(), CrateId(0));
+    assert_eq!(root.files().iter().map(|f| f.name().to_string()).collect::<Vec<_>>(), ["top.msl", "b.msl"]);
+    assert_eq!(root.root().file().name(), "top.msl");
+    let std = design.std_crate();
+    assert_eq!((std.name(), std.is_root(), std.is_std(), std.id()), ("std", false, true, CrateId(1)));
+    assert_eq!(std.files().iter().map(|f| f.name().to_string()).collect::<Vec<_>>(), ["std/lib.msl", "prelude.msl"]);
+    // Every file belongs to exactly one crate.
+    assert_eq!(root.files().len() + std.files().len(), design.files().len());
+}
+
+#[test]
+fn declarations_and_files_know_their_crate() {
+    let design = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "pub module Inner() {}\n").build();
+    let inner = design.module("Inner").unwrap();
+    assert_eq!(inner.krate(), design.root_crate());
+    assert_eq!(inner.file().krate(), design.root_crate());
+    for file in design.files() {
+        assert_eq!(file.krate().is_std(), file.name() == "std/lib.msl" || file.name() == "prelude.msl", "{}", file.name());
+    }
+    let design = Design::builder().std_source("lib.msl", "pub mod prelude { pub const P: u32 = 1; }\n").source("top.msl", "").build();
+    let std_decl = design.decls().into_iter().find(|d| d.name() == Some("P")).unwrap();
+    assert_eq!(std_decl.krate(), design.std_crate());
 }

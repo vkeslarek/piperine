@@ -26,7 +26,7 @@ read is in [Model](model.md).
 
 ### `Design`
 
-The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup prefers the project's declaration over a prelude source's; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the non-prelude files only, in source order. `decls()` and `files()` list everything, prelude sources included; `prelude_files()` gives the prelude's own files.
+The entry point. Lookups, whole-design listings, files, diagnostics and the raw arenas. Every by-name lookup prefers the project's declaration over one in `std`; every typed collection (`modules()`, `natures()`, `structs()`, `enums()`, `traits()`, `consts()`, `impls()`, `functions()`, `namespaces()`) lists the crates other than `std` only, in source order. `decls()` and `files()` list everything, `std` included; `std_crate().files()` gives the standard library's own files.
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
@@ -57,7 +57,9 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `root(&self)` | `Decl<'_>` | The root file's namespace. |
 | `decl(&self, id: DeclId)` | `Decl<'_>` | The declaration with this id, as a handle: the way from a `Resolution::Decl(id)` to the declaration. Ids come from this design. |
 | `decls(&self)` | `Vec<Decl<'_>>` | Every declaration of the design in arena (source) order, the project's files first. |
-| `prelude_files(&self)` | `Vec<SourceFile<'_>>` | The standard library's files, in load order. |
+| `crates(&self)` | `Vec<Crate<'_>>` | Every crate in graph order: the root crate first, `std` last. |
+| `root_crate(&self)` | `Crate<'_>` | The crate the design was built from. |
+| `std_crate(&self)` | `Crate<'_>` | The standard library. |
 | `modules(&self)` | `Vec<Module<'_>>` | Every module of the non-prelude files, in source order. |
 | `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the first match in a non-prelude file, else the first match in a prelude source. |
 | `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the non-prelude files, in source order. |
@@ -99,7 +101,7 @@ assert_eq!(design.modules().len(), 2);
 assert_eq!(design.functions().len(), 1);
 assert_eq!(design.structs().len(), 1);
 assert_eq!(design.namespaces().len(), 1);
-assert_eq!(design.files().iter().filter(|f| !f.is_prelude()).count(), 1);
+assert_eq!(design.files().iter().filter(|f| !f.krate().is_std()).count(), 1);
 
 // A design checks itself and prints its declaration tree.
 assert!(design.check().is_empty());
@@ -152,7 +154,7 @@ assert!(design.diagnostics().is_empty());
 // Files: the root, then loaded files, then the standard library's.
 let names: Vec<_> = design.files().iter().map(|f| f.name().to_string()).collect();
 assert_eq!(names, ["top.msl", "b.msl", "lib.msl"]);
-assert!(design.files()[2].is_prelude());
+assert!(design.files()[2].krate().is_std());
 
 // `mod b;` is a namespace whose source file was loaded.
 let b = design.find("b").unwrap().as_namespace().unwrap();
@@ -185,7 +187,7 @@ One source file: its text, the syntax tree the parser returned, and the tree reb
 | `path(self)` | `Option<&'d FsPath>` | The path it was read from, virtual or on disk. |
 | `text(self)` | `&'d str` | The text of the file, verbatim. |
 | `ast(self)` | `&'d ast::File` | The syntax tree the parser returned, errors recovered. |
-| `is_prelude(self)` | `bool` | Whether the file is a prelude source. |
+| `krate(self)` | `Crate<'d>` | The crate the file belongs to. |
 
 ```rust
 use piperine_lang::pom::Design;
@@ -195,10 +197,32 @@ let design = Design::builder().source("top.msl", src).build();
 let file = &design.files()[0];
 assert_eq!(file.name(), "top.msl");
 assert_eq!(file.text(), src);
-assert!(!file.is_prelude());
+assert!(!file.krate().is_std());
 
 // The POM is lossless: the syntax tree rebuilt from it equals the one the parser returned.
 assert_eq!(file.to_ast(), *file.ast());
+```
+
+### `Crate`
+
+A crate of the design: the root crate, a dependency, or `std`. A design always holds its root crate first and `std` last.
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `id(self)` | `CrateId` | The id of the crate. |
+| `name(self)` | `&'d str` | The crate's name: its name in the graph, the stem of the root file (every other character `_`, a `_` before a digit) for a design built from one root file, `std` for the standard library. |
+| `root(self)` | `Namespace<'d>` | The root namespace: the namespace of the root file. |
+| `files(self)` | `Vec<SourceFile<'d>>` | Every file of the crate: its root file, then the files its `mod` items load. |
+| `is_root(self)` | `bool` | Whether this is the crate the design was built from. |
+| `is_std(self)` | `bool` | Whether this is the standard library. |
+
+```rust
+use piperine_lang::pom::Design;
+
+let design = Design::builder().source("top.msl", "mod b;").source("b.msl", "").build();
+assert_eq!(design.root_crate().name(), "top");
+assert_eq!(design.root_crate().files().len(), 2);
+assert_eq!(design.crates().last().unwrap().name(), "std");
 ```
 
 ### `Reflect`
@@ -211,6 +235,7 @@ The trait every declaration handle implements. Only `decl()` is required; everyt
 | `name(self)` | `Option<&'d str>` | The declared name; none for an `impl`, a `use`, a behavior block, an error item or a file's root namespace. |
 | `span(self)` | `Span` | The range of the whole declaration (an item's span includes its attributes and docs). |
 | `file(self)` | `SourceFile<'d>` | The file the declaration is written in. |
+| `krate(self)` | `Crate<'d>` | The crate the declaration is written in. |
 | `text(self)` | `&'d str` | The authored text of the declaration. |
 | `docs(self)` | `&'d [Doc]` | The doc comments in order, one per comment. On a file's root namespace these are the file's `//!` comments. |
 | `attrs(self)` | `Vec<Attr<'d>>` | The attributes in order. |

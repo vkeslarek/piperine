@@ -74,7 +74,7 @@ fn empty_source_has_empty_root() {
 
 /// The files of the project: every file that is not the standard library's.
 fn project_files(design: &Design) -> Vec<SourceFile<'_>> {
-    design.files().into_iter().filter(|f| !f.is_prelude()).collect()
+    design.files().into_iter().filter(|f| !f.krate().is_std()).collect()
 }
 
 fn files_design(files: &[(&str, &str)]) -> Design {
@@ -192,7 +192,7 @@ fn nested_mod_files_follow_rust_layout() {
 fn library_files_are_numbered_after_the_project() {
     let design = Design::builder().std_source("std.msl", "pub mod prelude { pub const ONE: u32 = 1; }").source("top.msl", "mod b;").source("b.msl", "").build();
     let files = design.files();
-    assert_eq!(files.iter().map(|f| (f.name(), f.is_prelude())).collect::<Vec<_>>(), [("top.msl", false), ("b.msl", false), ("std.msl", true)]);
+    assert_eq!(files.iter().map(|f| (f.name(), f.krate().is_std())).collect::<Vec<_>>(), [("top.msl", false), ("b.msl", false), ("std.msl", true)]);
 }
 
 fn write(root: &std::path::Path, rel: &str, text: &str) {

@@ -78,7 +78,7 @@ fn lookups_by_name_and_path() {
     assert!(design.find("a::nope").is_none());
     assert!(design.find("nope").is_none());
     let names = |v: Vec<Option<&str>>| v.into_iter().flatten().map(str::to_string).collect::<Vec<_>>();
-    assert_eq!(names(design.modules().iter().filter(|m| !m.file().is_prelude()).map(|m| m.name()).collect()), ["M", "Top"]);
+    assert_eq!(names(design.modules().iter().filter(|m| !m.file().krate().is_std()).map(|m| m.name()).collect()), ["M", "Top"]);
     let functions: Vec<_> = design.functions().iter().filter_map(|f| f.name()).collect();
     assert_eq!(functions, ["helper", "deep", "top_level"], "non-prelude free functions in source order");
     let structs: Vec<_> = design.structs().iter().filter_map(|s| s.name()).collect();
@@ -91,9 +91,9 @@ fn lookups_by_name_and_path() {
 fn module_lookup_prefers_authored_files() {
     // The prelude declares `idt`; a design module of that name wins, else the prelude's is found.
     let design = with_prelude("module idt() {}\n");
-    assert!(!design.module("idt").unwrap().file().is_prelude());
+    assert!(!design.module("idt").unwrap().file().krate().is_std());
     let design = with_prelude("module Top() {}\n");
-    assert!(design.module("idt").unwrap().file().is_prelude());
+    assert!(design.module("idt").unwrap().file().krate().is_std());
 }
 
 #[test]
@@ -377,7 +377,7 @@ fn gallery_signals_are_declared_in_their_module() {
     let mut signals = 0;
     for (at, text) in gallery() {
         let design = with_prelude(&text);
-        for m in design.modules().into_iter().filter(|m| !m.file().is_prelude()) {
+        for m in design.modules().into_iter().filter(|m| !m.file().krate().is_std()) {
             for s in m.signals() {
                 signals += 1;
                 assert_eq!(s.module(), Some(m), "{at}: signal {:?} is declared in {:?}", s.name(), m.name());
@@ -390,7 +390,7 @@ fn gallery_signals_are_declared_in_their_module() {
             }
         }
         // Every signal declaration of the design is listed by exactly one module.
-        for d in design.decls().into_iter().filter(|d| !d.file().is_prelude()) {
+        for d in design.decls().into_iter().filter(|d| !d.file().krate().is_std()) {
             if let Some(s) = d.as_signal() {
                 let owner = s.module().unwrap_or_else(|| panic!("{at}: signal {:?} is in no module", s.name()));
                 assert_eq!(owner.signals().iter().filter(|x| **x == s).count(), 1, "{at}: {:?}", s.name());
@@ -550,15 +550,15 @@ module Z(p: Electrical) { signal q: Electrical; }
 analog for Z { signal z: Electrical; }
 ";
     let design = with_prelude(src);
-    let names: Vec<String> = design.decls().into_iter().filter(|d| !d.file().is_prelude()).map(|d| d.qualified_name()).collect();
+    let names: Vec<String> = design.decls().into_iter().filter(|d| !d.file().krate().is_std()).map(|d| d.qualified_name()).collect();
     for expected in ["impl S.X", "impl Tr for S.X", "impl Tr for S.run", "a::E.A", "Z.q", "analog for Z.z"] {
         assert!(names.iter().any(|n| n == expected), "`{expected}` in {names:?}");
     }
     // Two items named `X` do not share a qualified name.
-    let xs: Vec<_> = design.decls().into_iter().filter(|d| d.name() == Some("X") && !d.file().is_prelude()).map(|d| d.qualified_name()).collect();
+    let xs: Vec<_> = design.decls().into_iter().filter(|d| d.name() == Some("X") && !d.file().krate().is_std()).map(|d| d.qualified_name()).collect();
     assert_eq!(xs, ["impl S.X", "impl Tr for S.X"]);
     // Every name printed finds the declaration that printed it (the first one, for equal names).
-    for d in design.decls().into_iter().filter(|d| !d.file().is_prelude() && d.name().is_some() && !matches!(d.kind(), piperine_lang::pom::DeclKind::Binding(_))) {
+    for d in design.decls().into_iter().filter(|d| !d.file().krate().is_std() && d.name().is_some() && !matches!(d.kind(), piperine_lang::pom::DeclKind::Binding(_))) {
         let q = d.qualified_name();
         let found = design.find(&q).unwrap_or_else(|| panic!("`{q}` finds nothing"));
         assert_eq!(found.qualified_name(), q);
@@ -595,7 +595,7 @@ fn shadowed() -> Design {
 #[test]
 fn by_name_lookups_prefer_project_files() {
     let design = shadowed();
-    let project = |d: Decl<'_>| !d.file().is_prelude();
+    let project = |d: Decl<'_>| !d.file().krate().is_std();
     assert!(project(design.nature("Bit").unwrap().decl()));
     assert!(project(design.module("Buf").unwrap().decl()));
     assert!(project(design.struct_named("S").unwrap().decl()));
@@ -605,15 +605,15 @@ fn by_name_lookups_prefer_project_files() {
     assert!(project(design.find("f").unwrap()));
     // A name only the prelude declares is still found.
     let only = Design::builder().std_source("lib.msl", format!("pub mod prelude {{\n{SHADOW_PRELUDE}\n}}\n")).source("top.msl", "module Top() {}\n").build();
-    assert!(only.nature("Bit").unwrap().file().is_prelude());
-    assert!(only.struct_named("S").unwrap().file().is_prelude());
-    assert!(only.function("f").unwrap().file().is_prelude());
+    assert!(only.nature("Bit").unwrap().file().krate().is_std());
+    assert!(only.struct_named("S").unwrap().file().krate().is_std());
+    assert!(only.function("f").unwrap().file().krate().is_std());
 }
 
 #[test]
 fn collections_list_project_files_only() {
     let design = shadowed();
-    let all_project = |v: Vec<Decl<'_>>| v.iter().all(|d| !d.file().is_prelude());
+    let all_project = |v: Vec<Decl<'_>>| v.iter().all(|d| !d.file().krate().is_std());
     assert!(all_project(design.modules().iter().map(|x| x.decl()).collect()));
     assert!(all_project(design.natures().iter().map(|x| x.decl()).collect()));
     assert!(all_project(design.structs().iter().map(|x| x.decl()).collect()));
@@ -624,13 +624,13 @@ fn collections_list_project_files_only() {
     assert!(all_project(design.functions().iter().map(|x| x.decl()).collect()));
     assert_eq!(design.natures().len(), 1);
     assert_eq!(design.modules().len(), 1);
-    let prelude = design.prelude_files();
+    let prelude = design.std_crate().files();
     assert_eq!(prelude.len(), 1);
-    assert!(prelude[0].is_prelude());
+    assert!(prelude[0].krate().is_std());
     assert_eq!(prelude[0].name(), "lib.msl");
     // `decls()` and `files()` still list everything.
     assert_eq!(design.files().len(), 2);
-    assert!(design.decls().iter().any(|d| d.file().is_prelude()));
+    assert!(design.decls().iter().any(|d| d.file().krate().is_std()));
 }
 
 #[test]

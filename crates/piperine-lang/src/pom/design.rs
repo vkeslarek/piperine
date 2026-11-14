@@ -1,14 +1,15 @@
 //! The owning [`Design`] and the builder that makes it.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
 use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
-use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
+use super::crates::{CrateData, DependencyData};
+use super::ids::{CrateId, DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
 use super::source::{DiskSources, MemorySources, SourceProvider};
 use crate::msl::Span;
@@ -25,7 +26,8 @@ pub struct SourceFileData {
     pub name: String,
     /// The path it was read from (virtual or on disk).
     pub path: Option<PathBuf>,
-    pub prelude: bool,
+    /// The crate the file belongs to.
+    pub krate: CrateId,
     pub text: String,
     pub ast: ast::File,
     /// The file's `Namespace` declaration.
@@ -37,7 +39,7 @@ pub struct SourceFileData {
 pub struct SourceFileRepr {
     pub name: String,
     pub path: Option<PathBuf>,
-    pub prelude: bool,
+    pub krate: CrateId,
     pub text: String,
     pub root: DeclId,
 }
@@ -45,13 +47,13 @@ pub struct SourceFileRepr {
 impl From<SourceFileRepr> for SourceFileData {
     fn from(r: SourceFileRepr) -> Self {
         let ast = msl::parser::parse(&r.text).file;
-        SourceFileData { name: r.name, path: r.path, prelude: r.prelude, text: r.text, ast, root: r.root }
+        SourceFileData { name: r.name, path: r.path, krate: r.krate, text: r.text, ast, root: r.root }
     }
 }
 
 impl From<SourceFileData> for SourceFileRepr {
     fn from(d: SourceFileData) -> Self {
-        SourceFileRepr { name: d.name, path: d.path, prelude: d.prelude, text: d.text, root: d.root }
+        SourceFileRepr { name: d.name, path: d.path, krate: d.krate, text: d.text, root: d.root }
     }
 }
 
@@ -67,7 +69,10 @@ pub struct DesignDiagnostic {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Design {
     pub(super) files: Vec<SourceFileData>,
-    pub(super) root_file: FileId,
+    /// The crates in graph order, `std` last.
+    pub(super) crates: Vec<CrateData>,
+    pub(super) root_crate: CrateId,
+    pub(super) std_crate: CrateId,
     pub(super) decls: Vec<DeclData>,
     pub(super) exprs: Vec<ExprNode>,
     pub(super) stmts: Vec<StmtNode>,
@@ -392,9 +397,13 @@ impl Design {
         self.decls.len()
     }
 
-    /// The root file's namespace declaration.
+    /// The root crate's root namespace declaration.
     pub(crate) fn root_id(&self) -> DeclId {
-        self.files[self.root_file.index()].root
+        self.crates[self.root_crate.index()].root
+    }
+
+    pub(crate) fn crate_data(&self, id: CrateId) -> &CrateData {
+        &self.crates[id.index()]
     }
 
     /// One line per declaration, depth first, roots in file order: indent
@@ -462,34 +471,54 @@ impl DesignBuilder {
     }
 
     /// Parse every file and assemble the design. Files are numbered the project's first (the root,
-    /// then the files it loads), then the standard library's. A parse error never stops the build: the
-    /// recovered tree is kept and each diagnostic is listed with its file.
+    /// then the files it loads), then the standard library's. A parse error never stops the build:
+    /// the recovered tree is kept and each diagnostic is listed with its file.
     pub fn build(self) -> Design {
-        let mut design =
-            Design { files: Vec::new(), root_file: FileId(0), decls: Vec::new(), exprs: Vec::new(), stmts: Vec::new(), pats: Vec::new(), types: Vec::new(), paths: Vec::new(), diagnostics: Vec::new(), index: Default::default(), expr_parent: Vec::new(), expr_stmt: Vec::new(), names: NameTables::default() };
+        let mut design = Design {
+            files: Vec::new(),
+            crates: Vec::new(),
+            root_crate: CrateId(0),
+            std_crate: CrateId(0),
+            decls: Vec::new(),
+            exprs: Vec::new(),
+            stmts: Vec::new(),
+            pats: Vec::new(),
+            types: Vec::new(),
+            paths: Vec::new(),
+            diagnostics: Vec::new(),
+            index: Default::default(),
+            expr_parent: Vec::new(),
+            expr_stmt: Vec::new(),
+            names: NameTables::default(),
+        };
         if let Some(path) = &self.root_file {
-            let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
             let bytes = DiskSources.read(path);
-            design.root_file = design.add_file(&name, path.clone(), bytes.as_deref().unwrap_or_default(), false, &DiskSources);
-            if bytes.is_none() {
-                let message = format!("cannot read the root file `{}`", path.display());
-                design.push_diagnostic(design.root_file, Diagnostic::new("E0161", message, Span::new(0, 0), "unreadable file"));
+            let file_name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+            design.add_crate(&crate_name(path), &file_name, path.clone(), bytes, &DiskSources, Vec::new());
+        } else {
+            let mut memory = MemorySources::new();
+            for (path, text) in &self.sources {
+                memory.insert(path, text.as_str());
             }
-            design.add_std(&self.std_sources);
-            super::resolve::run(&mut design);
-            return design;
+            let empty = (String::new(), String::new());
+            let (name, text) = self.sources.first().unwrap_or(&empty);
+            design.add_crate(&crate_name(Path::new(name)), name, PathBuf::from(name), Some(text.clone().into_bytes()), &memory, Vec::new());
         }
-        let mut memory = MemorySources::new();
-        for (path, text) in &self.sources {
-            memory.insert(path, text.as_str());
-        }
-        let empty = (String::new(), String::new());
-        let (name, text) = self.sources.first().unwrap_or(&empty);
-        design.root_file = design.add_file(name, PathBuf::from(name), text.as_bytes(), false, &memory);
         design.add_std(&self.std_sources);
         super::resolve::run(&mut design);
         design
     }
+}
+
+/// The name of the crate whose root file is `path`: the file stem, with every character that is
+/// no ASCII letter, digit or `_` replaced by `_` and a `_` before a leading digit.
+fn crate_name(path: &Path) -> String {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut name: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+        name.insert(0, '_');
+    }
+    name
 }
 
 impl Design {
@@ -503,10 +532,24 @@ impl Design {
             memory.insert(path, *text);
         }
         let (path, text) = files[0];
-        self.add_file(path, PathBuf::from(path), text.as_bytes(), true, &memory);
+        self.std_crate = self.add_crate("std", path, PathBuf::from(path), Some(text.as_bytes().to_vec()), &memory, Vec::new());
     }
 
-    fn add_file(&mut self, name: &str, path: PathBuf, bytes: &[u8], prelude: bool, provider: &dyn SourceProvider) -> FileId {
+    /// Lower the crate whose root file is `path`, registered as `file_name` (`bytes` is none when it cannot be read: the
+    /// crate is then empty, with one `E0161`) and store it. Returns its id.
+    fn add_crate(&mut self, name: &str, file_name: &str, path: PathBuf, bytes: Option<Vec<u8>>, provider: &dyn SourceProvider, dependencies: Vec<DependencyData>) -> CrateId {
+        let id = CrateId(self.crates.len() as u32);
+        let file = self.add_file(file_name, path.clone(), bytes.as_deref().unwrap_or_default(), id, provider);
+        if bytes.is_none() {
+            let message = format!("cannot read the root file `{}`", path.display());
+            self.push_diagnostic(file, Diagnostic::new("E0161", message, Span::new(0, 0), "unreadable file"));
+        }
+        let root = self.file_root(file);
+        self.crates.push(CrateData { name: name.to_string(), root_file: file, root, dependencies });
+        id
+    }
+
+    fn add_file(&mut self, name: &str, path: PathBuf, bytes: &[u8], krate: CrateId, provider: &dyn SourceProvider) -> FileId {
         let id = FileId(self.files.len() as u32);
         let parsed = msl::parser::parse_bytes(bytes);
         for diagnostic in parsed.diagnostics {
@@ -526,7 +569,7 @@ impl Design {
         self.files.push(SourceFileData {
             name: name.to_string(),
             path: Some(path.clone()),
-            prelude,
+            krate,
             text: String::from_utf8_lossy(bytes).into_owned(),
             ast: parsed.file.clone(),
             root,

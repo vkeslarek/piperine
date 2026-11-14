@@ -316,15 +316,15 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `single_source_design_has_a_root_crate_named_by_its_file` passes in `pom_crates.rs` (C28: PKG-04 AC 1)
-- [ ] Test `every_design_holds_std_last` passes in `pom_crates.rs` (C29: PKG-04 AC 2)
-- [ ] Test `a_crate_reports_its_name_root_and_files` passes in `pom_crates.rs` (C58: PKG-07 AC 1)
-- [ ] Test `declarations_and_files_know_their_crate` passes in `pom_crates.rs` (C59: PKG-07 AC 2)
-- [ ] A root file with no stem that is an identifier (`9.msl`, `a-b.msl`) gives the crate name with every other character replaced by `_` and a leading `_` before a digit
-- [ ] `Design::root()` is `root_crate().root()`; `SourceFileRepr` carries `krate`
-- [ ] Every new public type has its `### ` heading and every new method its row in `docs/pom/` (`pom_docs`)
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `single_source_design_has_a_root_crate_named_by_its_file` passes in `pom_crates.rs` (C28: PKG-04 AC 1)
+- [x] Test `every_design_holds_std_last` passes in `pom_crates.rs` (C29: PKG-04 AC 2)
+- [x] Test `a_crate_reports_its_name_root_and_files` passes in `pom_crates.rs` (C58: PKG-07 AC 1)
+- [x] Test `declarations_and_files_know_their_crate` passes in `pom_crates.rs` (C59: PKG-07 AC 2)
+- [x] A root file with no stem that is an identifier (`9.msl`, `a-b.msl`) gives the crate name with every other character replaced by `_` and a leading `_` before a digit
+- [x] `Design::root()` is `root_crate().root()`; `SourceFileRepr` carries `krate`
+- [x] Every new public type has its `### ` heading and every new method its row in `docs/pom/` (`pom_docs`)
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

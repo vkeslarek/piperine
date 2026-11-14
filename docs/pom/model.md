@@ -139,7 +139,7 @@ Read through the handle `SourceFile` (see [Reflection](reflection.md#sourcefile)
 | --- | --- | --- |
 | `name` | `String` | As registered, or the file name on disk. |
 | `path` | `Option<PathBuf>` | The path it was read from (virtual or on disk). |
-| `prelude` | `bool` | Whether the file is a prelude source. |
+| `krate` | `CrateId` | The crate the file belongs to. |
 | `text` | `String` | The text, verbatim. |
 | `ast` | `ast::File` | The retained syntax tree; not serialized, rebuilt from `text`. |
 | `root` | `DeclId` | The file's `Namespace` declaration. |
@@ -154,7 +154,7 @@ The serialized shape of a `SourceFileData`: every field but the tree.
 | --- | --- | --- |
 | `name` | `String` | As in `SourceFileData`. |
 | `path` | `Option<PathBuf>` | As in `SourceFileData`. |
-| `prelude` | `bool` | As in `SourceFileData`. |
+| `krate` | `CrateId` | As in `SourceFileData`. |
 | `text` | `String` | As in `SourceFileData`. |
 | `root` | `DeclId` | As in `SourceFileData`. |
 
@@ -178,6 +178,8 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
 | `files` | `Vec<SourceFileData>` | Every file: the project's (the root, then files loaded by `mod name;`), then the standard library's. Read with `files()`. |
+| `crates` | `Vec<CrateData>` | The crates in graph order, `std` last. Read with `crates()`, `root_crate()`, `std_crate()` and `Crate`. |
+| `root_crate / std_crate` | `CrateId` | The crate the design was built from, and the standard library. |
 | `decls` | `Vec<DeclData>` | The declaration arena. Read with `decl_data`, `decls`, `Decl`. |
 | `exprs / stmts / pats / types / paths` | `Vec<..Node>` | The body arenas. Read with `expr_node`, `stmt_node`, `pat_node`, `type_node`, `path_node` or the handles `expr`, `stmt`, `pat`, `ty`, `path`. |
 | `diagnostics` | `Vec<DesignDiagnostic>` | Parse, loading and resolution diagnostics, in file then source order. Read with `diagnostics()`. |
@@ -269,6 +271,19 @@ An edge of the graph.
 | --- | --- | --- |
 | `name` | `String` | The name the depending crate gives it. |
 | `krate` | `CrateId` | The crate it names. |
+
+### `CrateData`
+
+*struct* in `src/pom/crates.rs`.
+
+A crate as the design stores it. Read through the handle `Crate` (see [Reflection](reflection.md#crate)).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `String` | The crate's name. |
+| `root_file` | `FileId` | The file the crate is read from. |
+| `root` | `DeclId` | The root `Namespace` declaration: the root file's. |
+| `dependencies` | `Vec<DependencyData>` | As declared; `std` is implicit and not listed. |
 
 ### `GraphError`
 

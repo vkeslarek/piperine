@@ -129,7 +129,7 @@ pub(super) fn run(design: &mut Design) {
 
 /// The `pub` namespace `prelude` declared at the root of the standard library (its first file).
 fn std_prelude(design: &Design) -> Option<DeclId> {
-    let root = design.files.iter().find(|f| f.prelude)?.root;
+    let root = design.crate_data(design.std_crate).root;
     design.decl_data(root).children.iter().copied().find(|c| {
         let data = design.decl_data(*c);
         data.public && matches!(data.kind, super::decl::DeclKind::Namespace(_)) && data.name.as_ref().is_some_and(|n| n.text == "prelude")

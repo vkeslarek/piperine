@@ -201,7 +201,7 @@ fn prelude_source_items_are_visible_everywhere() {
     let Resolution::Decl(electrical) = one(&design, "Electrical")[0] else { panic!("Electrical resolves") };
     assert!(design.decl_data(electrical).file != design.root().file().id());
     assert!(design.root().file().id() == piperine_lang::pom::FileId(0));
-    assert!(design.files().last().unwrap().is_prelude());
+    assert!(design.files().last().unwrap().krate().is_std());
 }
 
 #[test]
