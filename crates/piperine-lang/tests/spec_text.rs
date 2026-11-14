@@ -1136,3 +1136,41 @@ fn glossary_and_file_map_name_crates_and_packages() {
     assert!(part_i[1].contains("crates") && part_i[1].contains("packages"), "{part_i:?}");
     assert!(part_i[2].contains("§1–3"), "{part_i:?}");
 }
+
+/// The text of one `- **§3 rule N.**` bullet of Part I, as one line.
+fn s3_rule(n: u32) -> String {
+    let p1 = spec("part_i_values.md");
+    let start = format!("- **§3 rule {n}.**");
+    let body = p1.split(&start).nth(1).unwrap_or_else(|| panic!("§3 rule {n}"));
+    one_line(body.split("\n- **§3 rule").next().unwrap().split("\n\n").next().unwrap())
+}
+
+#[test]
+fn s3_lists_the_intrinsic_abi() {
+    // STD-02 AC 1: two ABI strings, `"intrinsic"` only in the crate `std`.
+    let r = s3_rule(10);
+    assert!(r.contains("`\"C\"` and `\"intrinsic\"`"), "{r}");
+    assert!(r.contains("`\"intrinsic\"` is accepted only in the crate `std`"), "{r}");
+    assert!(!r.contains("The only ABI string"), "{r}");
+}
+
+#[test]
+fn s3_states_the_intrinsic_contract() {
+    // STD-02 AC 2: no body, no scalar restriction, no `#[derivative]`, the contract is Part VII's entry.
+    let p1 = spec("part_i_values.md");
+    let text = one_line(&p1);
+    let at = text.find("An `extern \"intrinsic\" fn`").expect("a sentence about `extern \"intrinsic\" fn`");
+    let s = &text[at..text[at..].find("\n").map_or(text.len(), |n| at + n).min(at + 600)];
+    for part in ["has no body", "not restricted to scalar types", "takes no `#[derivative]`", "its entry in Part VII"] {
+        assert!(s.contains(part), "missing `{part}` in: {s}");
+    }
+}
+
+#[test]
+fn e0125_covers_intrinsic_outside_std() {
+    // STD-02 AC 3: the E0125 row names the condition; the existing conditions stay.
+    let p1 = spec("part_i_values.md");
+    let row = one_line(p1.lines().find(|l| l.starts_with("| `E0125`")).expect("E0125 row"));
+    assert!(row.contains("the ABI `\"intrinsic\"` outside the crate `std`"), "{row}");
+    assert!(row.contains("an `extern` function with a body"), "{row}");
+}

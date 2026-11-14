@@ -124,14 +124,14 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `s3_lists_the_intrinsic_abi` passes in `spec_text.rs` (C11: STD-02 AC 1)
-- [ ] Test `s3_states_the_intrinsic_contract` passes in `spec_text.rs` (C12: STD-02 AC 2)
-- [ ] Test `e0125_covers_intrinsic_outside_std` passes in `spec_text.rs` (C13: STD-02 AC 3)
-- [ ] Test `b1_still_counts_65_constructs` passes in `spec_text.rs` (C16: STD-02 AC 6)
-- [ ] No grammar production changes (B.3.2 `fn_decl` already takes `extern STRING`); Appendix B.1 is not edited
-- [ ] The existing test `e0125_covers_bodies` still passes unchanged
-- [ ] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `s3_lists_the_intrinsic_abi` passes in `spec_text.rs` (C11: STD-02 AC 1)
+- [x] Test `s3_states_the_intrinsic_contract` passes in `spec_text.rs` (C12: STD-02 AC 2)
+- [x] Test `e0125_covers_intrinsic_outside_std` passes in `spec_text.rs` (C13: STD-02 AC 3)
+- [x] Test `b1_still_counts_65_constructs` passes in `spec_text.rs` (C16: STD-02 AC 6)
+- [x] No grammar production changes (B.3.2 `fn_decl` already takes `extern STRING`); Appendix B.1 is not edited
+- [x] The existing test `e0125_covers_bodies` still passes unchanged
+- [x] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
