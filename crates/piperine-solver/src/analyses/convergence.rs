@@ -16,10 +16,10 @@
 
 use ndarray::Array1;
 use ndarray::{ArrayView1, ArrayViewMut1};
-use crate::analog::Netlist;
+use piperine_analog_solver::netlist::Netlist;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use crate::analyses::config::{Schedules, StepperGains, TraceFlags};
-use crate::analyses::{Policy, Tolerances};
+use piperine_analog_solver::config::{Schedules, StepperGains, TraceFlags};
+use piperine_analog_solver::tolerances::{Policy, Tolerances};
 use crate::core::result::Result;
 
 /// Numerical caps honored across drivers. Replaces the literals that used to
@@ -369,7 +369,7 @@ impl ConvergencePlan {
     }
 
     /// Override the diagnostic trace toggles handed to the strategies
-    /// (drivers seed them from [`Policy::trace`](crate::analyses::Policy)).
+    /// (drivers seed them from [`Policy::trace`](piperine_analog_solver::tolerances::Policy)).
     pub fn with_trace(mut self, trace: TraceFlags) -> Self {
         self.trace = trace;
         self

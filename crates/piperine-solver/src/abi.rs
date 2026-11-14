@@ -16,7 +16,7 @@ pub use crate::core::introspect::{
 // Stamping + naming
 pub use piperine_analog_solver::math::linear::{AsIndex, Stamp};
 pub use piperine_analog_solver::math::iv::InitialValue;
-pub use crate::analog::{
+pub use piperine_analog_solver::netlist::{
     AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier, GND,
 };
 // Solution history + per-analysis states/contexts
@@ -40,7 +40,8 @@ pub use crate::digital::{DigitalEvent, DigitalNet, DriverId, DriverKind, DriverR
 pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches
-pub use crate::analyses::{AnalysisKind, Context, Policy, Tolerances};
+pub use crate::analyses::{AnalysisKind, Context};
+pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::events::{
     EventEntry, EventKind, EventPriority, EventQueue, EventSource, EventTarget, RollbackBehavior,
 };

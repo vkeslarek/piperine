@@ -20,7 +20,7 @@ use ndarray::Array1;
 
 use crate::analyses::context::Context;
 use crate::analyses::dc::DcAnalysisState;
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
 use crate::core::introspect::{Invalidation, ParamError, Value};

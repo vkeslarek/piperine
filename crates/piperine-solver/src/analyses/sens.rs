@@ -17,7 +17,7 @@ use crate::core::introspect::{Invalidation, Value};
 use crate::core::net::Net;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::analyses::dc::DcSolver;
-use crate::analyses::Policy;
+use piperine_analog_solver::tolerances::Policy;
 use crate::Context;
 
 // ── request/state ────────────────────────────────────────────────────────

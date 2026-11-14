@@ -3,7 +3,7 @@
 //! `BranchIdentifier`, `AnalogVariable`), the `AnalogReference` → MNA
 //! unknown-index map, and DC initial values — the analog view of the
 //! circuit handed to MNA assembly.
-use piperine_analog_solver::math::linear::AsIndex;
+use crate::math::linear::AsIndex;
 use bimap::BiMap;
 use std::fmt;
 use std::sync::Arc;
@@ -216,13 +216,6 @@ impl Netlist {
         self.circuit_map.left_values().collect()
     }
 
-    /// Every analog variable as a unified [`Net`](crate::core::net::Net) — the
-    /// public naming layer for result mapping, queries, and diagnostics. Digital
-    /// nets convert through `Net::from(DigitalNet)` at the scheduler boundary.
-    pub fn nets(&self) -> Vec<crate::core::net::Net> {
-        self.circuit_map.left_values().map(Into::into).collect()
-    }
-
     pub fn reference_for(&self, variable: &AnalogVariable) -> Option<&AnalogReference> {
         self.circuit_map.get_by_right(variable)
     }
@@ -234,11 +227,11 @@ impl Netlist {
     pub fn initial_values(
         &self,
         values: &std::collections::HashMap<std::sync::Arc<AnalogVariable>, f64>,
-    ) -> Vec<piperine_analog_solver::math::iv::InitialValue<AnalogReference, f64>> {
+    ) -> Vec<crate::math::iv::InitialValue<AnalogReference, f64>> {
         let mut initial_values = Vec::with_capacity(values.len());
         for (var, value) in values {
             if let Some(reference) = self.reference_for(var).cloned() {
-                initial_values.push(piperine_analog_solver::math::iv::InitialValue {
+                initial_values.push(crate::math::iv::InitialValue {
                     reference,
                     value: *value,
                 });

@@ -18,9 +18,9 @@ use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::TransientAnalysisResult;
 use crate::core::result::TransientStep;
-use crate::analyses::Policy;
+use piperine_analog_solver::tolerances::Policy;
 use crate::Context;
-use crate::analog::AnalogVariable;
+use piperine_analog_solver::netlist::AnalogVariable;
 
 // ── request/state ────────────────────────────────────────────────────────
 

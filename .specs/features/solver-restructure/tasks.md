@@ -517,11 +517,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `Netlist::nets()` is a free function `analog_nets(&Netlist)` in the owner's `core/net.rs`, same body; its callers are updated; no other method of `Netlist` changes
-- [ ] `Tolerances` (with `has_converged`, `residual_test`, `vntol_for`) and `Policy` are byte-for-byte the same code in `tolerances.rs`; `Context`, `AnalysisKind` and `init_global` stay in the owner
-- [ ] The unit test of `config.rs` (`defaults_equal_the_literals_they_replace`) passes in the analog crate
-- [ ] `prelude` and `abi` export the same names
-- [ ] Gate: full (owner and analog)
+- [x] `Netlist::nets()` is a free function `analog_nets(&Netlist)` in the owner's `core/net.rs`, same body; its callers are updated; no other method of `Netlist` changes
+- [x] `Tolerances` (with `has_converged`, `residual_test`, `vntol_for`) and `Policy` are byte-for-byte the same code in `tolerances.rs`; `Context`, `AnalysisKind` and `init_global` stay in the owner
+- [x] The unit test of `config.rs` (`defaults_equal_the_literals_they_replace`) passes in the analog crate
+- [x] `prelude` and `abi` export the same names
+- [x] Gate: full (owner and analog)
 
 **Tests**: unit
 **Gate**: full

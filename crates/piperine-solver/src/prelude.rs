@@ -11,7 +11,7 @@
 //! ```
 
 // ── Building blocks ────────────────────────────────────────────────────────
-pub use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+pub use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 pub use crate::core::builder::CircuitBuilder;
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::element::{Element, ElementCapabilities};
@@ -37,11 +37,11 @@ pub use crate::analyses::sensitivity::{
 pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
 pub use crate::analyses::transient::TransientAnalysisOptions;
 pub use crate::analyses::Context;
-pub use crate::analyses::{Policy, Tolerances};
+pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
-pub use crate::analyses::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};
+pub use piperine_analog_solver::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};
 pub use crate::analyses::convergence::{
     ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepperStrategy,
 };

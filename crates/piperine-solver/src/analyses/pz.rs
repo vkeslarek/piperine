@@ -30,7 +30,7 @@
 //! the textbook transmission-zero definition, exact (no root-search
 //! heuristic). An empty zero set is a legitimate answer, unlike poles.
 
-use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::AcAnalysisContext;
 use crate::analyses::dc::{DcAnalysisState, DcSolver};
@@ -367,7 +367,7 @@ impl<'a> PoleZeroSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analog::{Netlist, NodeIdentifier};
+    use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use crate::core::circuit::CircuitInstance;
     use num_complex::Complex64;

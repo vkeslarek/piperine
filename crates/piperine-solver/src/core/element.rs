@@ -10,7 +10,7 @@ use crate::prelude::DcAnalysisResult;
 use crate::analyses::dc::DcAnalysisState;
 use crate::analyses::noise::Noise;
 use crate::analyses::transient::{TransientAnalysisContext, TransientAnalysisState};
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::introspect::{
     Invalidation, ObservableDescriptor, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
 };

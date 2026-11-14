@@ -8,7 +8,7 @@
 //! [`TransientAnalysisOptions`], the per-step kernel state is
 //! [`TransientAnalysisContext`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::events::{
     EventEntry, EventKind, EventQueue, EventSource,
@@ -217,7 +217,7 @@ mod step_tests {
     use crate::core::net::Net;
     use crate::digital::LogicValue;
     use std::collections::HashMap;
-    use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+    use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
     use std::sync::Arc;
 
     #[test]
@@ -349,7 +349,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         Ok(all_stamps)
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 
@@ -516,7 +516,7 @@ pub struct TransientSolver<'a> {
     event_queue: EventQueue,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
-    pub policy: crate::analyses::Policy,
+    pub policy: piperine_analog_solver::tolerances::Policy,
     /// Host-scheduled live parameter writes (LIVE-06/09).
     sets: SetQueue,
     /// Full-state re-entry point (PSS shooting enabler): when set, the run
@@ -581,7 +581,7 @@ impl<'a> TransientSolver<'a> {
             initial_conditions: Vec::new(),
             plan,
             event_queue: EventQueue::new(),
-            policy: crate::analyses::Policy::default(),
+            policy: piperine_analog_solver::tolerances::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
             top_level: true,

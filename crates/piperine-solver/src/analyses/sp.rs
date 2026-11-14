@@ -26,7 +26,7 @@
 //!    solved for.
 //! 4. Repeat for every `j`, filling column `j` of `S`.
 
-use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analyses::dc::DcSolver;
@@ -104,7 +104,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
         Ok(stamps)
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 }
@@ -116,7 +116,7 @@ pub struct SpSolver<'a> {
     solver: NewtonRaphsonSolver<AnalogReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
     ports: Vec<ResolvedPort>,
     sweep: AcSweepAnalysisOptions,
-    policy: crate::analyses::Policy,
+    policy: piperine_analog_solver::tolerances::Policy,
 }
 
 impl<'a> SpSolver<'a> {
@@ -189,7 +189,7 @@ impl<'a> SpSolver<'a> {
         };
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, ports: resolved, sweep: options.sweep, policy: crate::analyses::Policy::default() })
+        Ok(Self { system, solver, ports: resolved, sweep: options.sweep, policy: piperine_analog_solver::tolerances::Policy::default() })
     }
 
     /// Sweeps every frequency, driving one port at a time, filling the `S`
@@ -235,7 +235,7 @@ impl<'a> SpSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analog::{BranchIdentifier, Netlist, NodeIdentifier};
+    use piperine_analog_solver::netlist::{BranchIdentifier, Netlist, NodeIdentifier};
     use crate::analyses::dc::DcAnalysisState;
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use piperine_analog_solver::math::linear::Stamp as S;

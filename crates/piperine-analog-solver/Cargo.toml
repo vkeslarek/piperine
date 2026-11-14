@@ -9,4 +9,5 @@ num-traits.workspace = true
 faer.workspace = true
 ndarray.workspace = true
 thiserror.workspace = true
+bimap.workspace = true
 

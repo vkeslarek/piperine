@@ -1,5 +1,5 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
-use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
 use crate::digital::LogicValue;
 use ndarray::Array2;

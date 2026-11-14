@@ -8,7 +8,7 @@
 //! (p6-cleanup-architecture D2). The sweep, output/reference nodes and input
 //! source travel on [`NoiseAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analyses::dc::DcSolver;
@@ -354,7 +354,7 @@ impl<'a> NoiseSolver<'a> {
 mod tests {
     use super::*;
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-    use crate::analog::{AnalogReference, Netlist, NodeIdentifier};
+    use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
     use piperine_analog_solver::math::linear::Stamp;
     use num_complex::Complex64;
     use crate::analyses::ac::{AcSweepAnalysisOptions, AcAnalysisContext};

@@ -3,9 +3,10 @@
 //! source scale an element reads while stamping) and the Newton driver
 //! (`DcSystem`/`DcSolver`): gmin/source-stepping homotopy escalation, the
 //! device-bypass stamp cache, and the mixed-signal settle loop.
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::convergence::{ConvergencePlan, HomotopyDriver};
-use crate::analyses::{Context, Policy};
+use crate::analyses::Context;
+use piperine_analog_solver::tolerances::Policy;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
 use crate::digital::LogicValue;
@@ -197,7 +198,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         Ok(self.stamp_cache.clone())
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 

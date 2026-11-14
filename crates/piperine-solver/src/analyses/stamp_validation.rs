@@ -12,7 +12,7 @@
 //! only report a generic "Linear solver returned NaN/Inf" convergence
 //! failure, not a named branch.
 
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::math::linear::Stamp;
 

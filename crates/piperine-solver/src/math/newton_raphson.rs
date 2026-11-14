@@ -7,7 +7,7 @@ use piperine_analog_solver::math::iv::{InitialValue, InitialValueApplyExt};
 use piperine_analog_solver::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use piperine_analog_solver::math::num::Scalar;
 use crate::analyses::convergence::NewtonStrategy;
-use crate::analyses::{Policy, Tolerances};
+use piperine_analog_solver::tolerances::{Policy, Tolerances};
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use tracing::debug;
 
@@ -21,7 +21,7 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     /// reads it for the per-row convergence tests; routing it through the
     /// system (instead of a separate parameter) lets the solver reborrow it
     /// each iteration without aliasing the `&mut system` borrow.
-    fn netlist(&self) -> &crate::analog::Netlist;
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist;
 
     fn converged(&self, _state: &CircularArrayBuffer2<E>, _delta: &ArrayView1<E>) -> bool {
         true

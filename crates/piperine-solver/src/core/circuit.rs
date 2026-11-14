@@ -5,7 +5,8 @@
 use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
-use crate::analog::Netlist;
+use piperine_analog_solver::netlist::Netlist;
+use crate::core::net::analog_nets;
 use crate::core::element::{Element, ElementCapabilities, Introspect};
 use crate::digital::{DigitalState, DigitalTopology};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
@@ -68,7 +69,7 @@ impl CircuitInstance {
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
         use crate::core::net::Net;
         use crate::digital::DigitalNet;
-        let mut nets = self.netlist.nets();
+        let mut nets = analog_nets(&self.netlist);
         nets.extend(
             (0..self.digital_state.nets.len())
                 .map(|i| Net::digital(i, self.digital_state.label_or_default(DigitalNet(i)))),

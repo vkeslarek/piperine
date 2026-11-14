@@ -6,7 +6,7 @@
 //! architecture D2). The sweep tunables travel as
 //! [`AcSweepAnalysisOptions`] arguments, and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use crate::analog::AnalogReference;
+use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
@@ -113,7 +113,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
         Ok(all_stamps)
     }
 
-    fn netlist(&self) -> &crate::analog::Netlist {
+    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
         self.circuit.netlist()
     }
 }
@@ -128,7 +128,7 @@ pub struct AcSolver<'a> {
     pub solver:
         NewtonRaphsonSolver<AnalogReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
     /// Convergence tunables (MD-04); AC is linear, so only `max_iter` matters.
-    pub policy: crate::analyses::Policy,
+    pub policy: piperine_analog_solver::tolerances::Policy,
 }
 
 impl<'a> AcSolver<'a> {
@@ -169,7 +169,7 @@ impl<'a> AcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, policy: crate::analyses::Policy::default() })
+        Ok(Self { system, solver, policy: piperine_analog_solver::tolerances::Policy::default() })
     }
 
     /// Performs AC frequency sweep analysis.

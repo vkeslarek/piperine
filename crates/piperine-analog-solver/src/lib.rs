@@ -2,5 +2,8 @@
 //! linear algebra (`math`). It names no digital concept and depends on no other
 //! crate of the workspace.
 
+pub mod config;
 pub mod error;
 pub mod math;
+pub mod netlist;
+pub mod tolerances;
