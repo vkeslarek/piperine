@@ -9,11 +9,9 @@ tracing-subscriber.workspace = true
 num-complex.workspace = true
 num-traits.workspace = true
 faer.workspace = true
-rand_distr.workspace = true
 ndarray.workspace = true
 bimap.workspace = true
 log = "0.4"
-rayon.workspace = true
 bitflags = "2.6"
 thiserror.workspace = true
 # LRMC-C7-14 (T41): A2D crossing-time interpolation reuses
@@ -24,9 +22,3 @@ piperine-ir = { path = "../piperine-ir" }
 
 [dev-dependencies]
 tempfile.workspace = true
-# Dev-only edges (MD-28): the analysis-level suites drive real PHDL devices, so
-# they elaborate with `piperine-lang` and JIT with `piperine-codegen`. The solver
-# itself depends on neither — this is a dev-dependency cycle cargo resolves
-# separately from the normal graph.
-piperine-lang = { path = "../piperine-lang" }
-piperine-codegen = { path = "../piperine-codegen" }

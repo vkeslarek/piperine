@@ -107,12 +107,12 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `[dev-dependencies]` holds only `tempfile`; `rayon` and `rand_distr` are gone; `piperine-ir` stays until T8
-- [ ] `cargo test -p piperine-solver --lib` passes, and so does `cargo test -p piperine-solver --test <t>` for each of the 34 targets other than `sens`, `adjoint_dc`, `adjoint_vs_sens`, `transient_reentry`, `pss`
-- [ ] **If any of those tests fails: stop here, change nothing else, report the test and its output** (SR-01 AC 5)
-- [ ] `baseline.txt` holds the bare function name of every test that printed `... ok`, sorted, one per line, plus the 15 names of the five unported targets (they are baseline by contract); `removed.txt` exists and is empty
-- [ ] New target `workspace_shape.rs` with a `//!` header, a helper `repo_root()` (`CARGO_MANIFEST_DIR/../..`) and the test `solver_manifest_has_no_in_tree_dev_dependency` (C1), which also asserts the absence of `rayon` and `rand_distr`; from T8 on it also asserts the absence of `piperine-ir`
-- [ ] Gate: quick, on `--lib` and the 34 targets plus `workspace_shape`
+- [x] `[dev-dependencies]` holds only `tempfile`; `rayon` and `rand_distr` are gone; `piperine-ir` stays until T8
+- [x] `cargo test -p piperine-solver --lib` passes, and so does `cargo test -p piperine-solver --test <t>` for each of the 34 targets other than `sens`, `adjoint_dc`, `adjoint_vs_sens`, `transient_reentry`, `pss`
+- [x] **If any of those tests fails: stop here, change nothing else, report the test and its output** (SR-01 AC 5)
+- [x] `baseline.txt` holds the bare function name of every test that printed `... ok`, sorted, one per line, plus the 15 names of the five unported targets (they are baseline by contract); `removed.txt` exists and is empty
+- [x] New target `workspace_shape.rs` with a `//!` header, a helper `repo_root()` (`CARGO_MANIFEST_DIR/../..`) and the test `solver_manifest_has_no_in_tree_dev_dependency` (C1), which also asserts the absence of `rayon` and `rand_distr`; from T8 on it also asserts the absence of `piperine-ir`
+- [x] Gate: quick, on `--lib` and the 34 targets plus `workspace_shape`
 
 **Tests**: integration
 **Gate**: quick
