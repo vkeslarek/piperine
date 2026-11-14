@@ -196,9 +196,9 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] No frontend import remains
-- [ ] `adjoint_matches_sens_on_the_linear_divider`, `adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter`, `adjoint_matches_sens_on_a_nonlinear_diode_circuit`, `a_20_parameter_gradient_costs_exactly_one_extra_solve` keep their names and assertions and pass
-- [ ] Gate: quick, on `adjoint_vs_sens`
+- [x] No frontend import remains
+- [x] `adjoint_matches_sens_on_the_linear_divider`, `adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter`, `adjoint_matches_sens_on_a_nonlinear_diode_circuit`, `a_20_parameter_gradient_costs_exactly_one_extra_solve` keep their names and assertions and pass
+- [x] Gate: quick, on `adjoint_vs_sens`
 
 **Tests**: integration
 **Gate**: quick
