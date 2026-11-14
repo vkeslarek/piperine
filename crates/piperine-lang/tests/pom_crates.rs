@@ -211,6 +211,25 @@ fn single_source_design_has_a_root_crate_named_by_its_file() {
 }
 
 #[test]
+fn a_reserved_root_file_stem_is_reported_and_never_names_std() {
+    for (file, name) in [("std.msl", "std_"), ("fn.msl", "fn_"), ("module.msl", "module_")] {
+        let design = Design::builder().source(file, "").build();
+        let names: Vec<_> = design.crates().iter().map(|c| c.name().to_string()).collect();
+        assert_eq!(names, [name, "std"], "{file}");
+        assert_eq!(codes(&design), ["E0171"], "{file}");
+        let stem = file.trim_end_matches(".msl");
+        let found = &design.diagnostics()[0];
+        assert!(found.diagnostic.message.contains(&format!("`{stem}`")), "{}", found.diagnostic.message);
+        assert_eq!(found.file, design.root_crate().root().file().id());
+        // `krate("std")` is the standard library.
+        assert!(design.krate("std").unwrap().is_std(), "{file}");
+        assert!(is_crate_name(name));
+    }
+    // An ordinary stem reports nothing.
+    assert!(Design::builder().source("top.msl", "").build().diagnostics().is_empty());
+}
+
+#[test]
 fn every_design_holds_std_last() {
     for design in [
         Design::builder().build(),

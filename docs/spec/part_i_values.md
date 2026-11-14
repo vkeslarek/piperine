@@ -680,7 +680,10 @@ A **package** is a directory with a manifest. It holds one crate.
   `name.rs` and `name/mod.rs`; neither or both is `E0161`.
 - **§3.6.3** The manifest holds the tables and keys of the table below and no other (`E0171`).
 - **§3.6.4** A package name and a dependency name are identifiers (A.1) that are no keyword of
-  the language and not `std`. The package name is the crate's name.
+  the language and not `std`. The package name is the crate's name. A single root file that is no package names its crate
+  by its file stem, each character that is no letter, digit or `_` replaced by `_` and a `_`
+  before a leading digit; a stem that is then a keyword or `std` is `E0171`, and the crate is
+  named with a `_` appended.
 - **§3.6.5** A version is `MAJOR.MINOR.PATCH`, three decimal integers.
 - **§3.6.6** A **dependency** is an entry of `[dependencies]`; its key is the dependency name.
   It has exactly one source: `path` or `git`.
@@ -739,7 +742,7 @@ Requirement table (Cargo's caret rule):
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0170` | a package directory without `Piperine.toml`, or a manifest that is not UTF-8 or not valid TOML | package |
-| `E0171` | a manifest entry rules 3 to 9 do not allow: an unknown table or key, a missing `name` or `version`, a value of the wrong type, a name that breaks rule 4, a version or requirement of another form, a dependency without exactly one source, a `branch`, `tag` or `rev` beside another or beside `path`, a `rev` that is not 7 to 40 hexadecimal digits | package |
+| `E0171` | a manifest entry rules 3 to 9 do not allow: an unknown table or key, a missing `name` or `version`, a value of the wrong type, a name that breaks rule 4, a version or requirement of another form, a dependency without exactly one source, a `branch`, `tag` or `rev` beside another or beside `path`, a `rev` that is not 7 to 40 hexadecimal digits, a root file stem that rule 4 forbids | package |
 | `E0172` | a dependency that cannot be located: a `path` with no manifest, a repository that cannot be fetched, a reference the repository does not hold | package |
 | `E0173` | a located package that is not the one asked for: another name, or a version that does not satisfy `version` | package |
 | `E0174` | a cycle among the dependencies | package |

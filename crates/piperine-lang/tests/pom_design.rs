@@ -213,7 +213,10 @@ fn mod_cycle_is_e0161_and_not_reloaded() {
     let design = Design::load(dir.path().join("mod.msl"));
     let cycles: Vec<_> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0161").collect();
     assert_eq!(cycles.len(), 1, "{:?}", design.diagnostics());
-    assert_eq!(design.diagnostics().len(), 1);
+    // The root file is `mod.msl`: `mod` is a keyword, so its stem is a reserved crate name (E0171).
+    let mut all: Vec<_> = design.diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect();
+    all.sort();
+    assert_eq!(all, ["E0161", "E0171"]);
     assert!(cycles[0].diagnostic.message.contains("cycle"), "{}", cycles[0].diagnostic.message);
     assert_eq!(cycles[0].file, FileId(1), "reported in the file that holds `mod back;`");
     assert_eq!(cycles[0].diagnostic.span(), design.find("a::back").unwrap().span());

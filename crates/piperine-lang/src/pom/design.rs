@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
-use super::crates::{CrateData, CrateGraph, DependencyData};
+use super::crates::{CrateData, CrateGraph, DependencyData, is_crate_name};
 use super::ids::{CrateId, DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::lower::lower_file;
 use super::source::{DiskSources, MemorySources, SourceProvider};
@@ -524,7 +524,9 @@ impl DesignBuilder {
         } else if let Some(path) = &self.root_file {
             let bytes = DiskSources.read(path);
             let file_name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
-            design.add_crate(&crate_name(path), &file_name, path.clone(), bytes, &DiskSources, Vec::new());
+            let (name, reserved) = crate_name(path);
+            let id = design.add_crate(&name, &file_name, path.clone(), bytes, &DiskSources, Vec::new());
+            design.report_reserved_stem(id, reserved);
         } else {
             let mut memory = MemorySources::new();
             for (path, text) in &self.sources {
@@ -532,7 +534,9 @@ impl DesignBuilder {
             }
             let empty = (String::new(), String::new());
             let (name, text) = self.sources.first().unwrap_or(&empty);
-            design.add_crate(&crate_name(Path::new(name)), name, PathBuf::from(name), Some(text.clone().into_bytes()), &memory, Vec::new());
+            let (crate_name, reserved) = crate_name(Path::new(name));
+            let id = design.add_crate(&crate_name, name, PathBuf::from(name), Some(text.clone().into_bytes()), &memory, Vec::new());
+            design.report_reserved_stem(id, reserved);
         }
         design.add_std(&self.std_sources);
         super::resolve::run(&mut design);
@@ -541,17 +545,33 @@ impl DesignBuilder {
 }
 
 /// The name of the crate whose root file is `path`: the file stem, with every character that is
-/// no ASCII letter, digit or `_` replaced by `_` and a `_` before a leading digit.
-fn crate_name(path: &Path) -> String {
+/// no ASCII letter, digit or `_` replaced by `_` and a `_` before a leading digit. A stem that is
+/// then a keyword or `std` gets a `_` appended, and is returned as the second value so that the
+/// design can report it (`E0171`).
+fn crate_name(path: &Path) -> (String, Option<String>) {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let mut name: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
     if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
         name.insert(0, '_');
     }
-    name
+    if name == "_" || is_crate_name(&name) {
+        return (name, None);
+    }
+    let reserved = name.clone();
+    name.push('_');
+    (name, Some(reserved))
 }
 
 impl Design {
+    /// `E0171` at the root file of `id` when its stem was reserved (see `crate_name`).
+    fn report_reserved_stem(&mut self, id: CrateId, reserved: Option<String>) {
+        let Some(stem) = reserved else { return };
+        let file = self.crates[id.index()].root_file;
+        let name = self.crates[id.index()].name.clone();
+        let message = format!("the root file stem `{stem}` is no crate name: it is a keyword or `std`; the crate is named `{name}`");
+        self.push_diagnostic(file, Diagnostic::new("E0171", message, Span::new(0, 0), "rename the file"));
+    }
+
     /// Lower the standard library after every project file: `given` when not empty, else the
     /// embedded tree. Its own provider keeps its `mod` lookups apart from the project's.
     fn add_std(&mut self, given: &[(String, String)]) {
