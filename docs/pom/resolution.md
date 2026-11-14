@@ -296,25 +296,25 @@ are then resolved without the module's members, and a name that finds nothing th
 Every diagnostic the POM reports, with the span it points at. Parse diagnostics (codes of the
 parser, such as `E0900`) are copied into `Design::diagnostics()` first, with their file.
 
-| Code | Stage | Meaning | Span |
-| --- | --- | --- | --- |
-| `E0125` | 8 | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one | the function's name |
-| `E0130` | 6 | an `impl` block written for a module | the self type of the `impl` |
-| `E0140` | 6 | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
-| `E0161` | 0, 3, 5 | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
-| `E0162` | 2, 3, 5 | a name declared twice in one table of a namespace; an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
-| `E0201` | 8 | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
-| `E0206` | 6 | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
-| `E0211` | 7 | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |
-| `E0263` | 6 | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
-| `E0320` | 6 | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
-| `E0330` | 2 | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
-| `E0343` | 7 | a member of an instance that is missing or not `pub`, named from outside its module (§8.4.8) | the member name |
-| `E0370` | 8 | an `extern` module with a body item that is not a param, with a result type, or with a value input | the item, the result type or the port |
-| `E0401` | 4 | a behavior block with no usable module | the target path |
-| `E0402` | 4 | a behavior block for an `extern` module | the target path |
-| `E0403` | 4 | the generic names of a behavior block differ from its module's | the head of the block |
-| `E0457` | 2 | a namespace item named like a core primitive of §14 | the item's name |
+| Code | Stage | Defined in | Meaning | Span |
+| --- | --- | --- | --- | --- |
+| `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one | the function's name |
+| `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
+| `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
+| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
+| `E0162` | 2, 3, 5 | `§3.4` | a name declared twice in one table of a namespace; an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
+| `E0201` | 8 | `§4` | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
+| `E0206` | 6 | `§4` | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
+| `E0211` | 7 | `§5.1` | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |
+| `E0263` | 6 | `§7` | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
+| `E0320` | 6 | `§8.1` | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
+| `E0330` | 2 | `§8.2` | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
+| `E0343` | 7 | `§8.2` | a member of an instance that is missing or not `pub`, named from outside its module (§8.4.8) | the member name |
+| `E0370` | 8 | `§8.5` | an `extern` module with a body item that is not a param, with a result type, or with a value input | the item, the result type or the port |
+| `E0401` | 4 | `§10` | a behavior block with no usable module | the target path |
+| `E0402` | 4 | `§10` | a behavior block for an `extern` module | the target path |
+| `E0403` | 4 | `§10` | the generic names of a behavior block differ from its module's | the head of the block |
+| `E0457` | 2 | `§14` | a namespace item named like a core primitive of §14 | the item's name |
 
 ```msl
 module M() { signal s: Bit; signal s: Bit; }     // E0330

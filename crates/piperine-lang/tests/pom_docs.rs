@@ -278,6 +278,42 @@ fn every_code_the_pom_reports_is_documented() {
     let documented: std::collections::BTreeSet<String> = rows.iter().filter_map(|r| r.first()).map(|c| c.trim_matches('`').to_string()).collect();
     let missing: Vec<_> = codes.difference(&documented).collect();
     assert!(missing.is_empty(), "the Diagnostics table of resolution.md has no row for: {missing:?}");
+    // POL-22 AC 3: each row names the spec section that defines its code, and
+    // that is the section the spec defines it in.
+    let header = &rows[0];
+    let col = header.iter().position(|c| c == "Defined in").expect("a `Defined in` column");
+    let defined = spec_definitions();
+    for row in rows.iter().skip(2).filter(|r| r.first().is_some_and(|c| c.starts_with("`E"))) {
+        let code = row[0].trim_matches('`');
+        let cell = row[col].trim_matches('`');
+        let section = cell.strip_prefix('§').unwrap_or_else(|| panic!("{code}: `Defined in` is `{cell}`, not a `§` section"));
+        assert_eq!(defined.get(code).map(String::as_str), Some(section), "{code}: the spec defines it in {:?}", defined.get(code));
+    }
+}
+
+/// The number of the section of `docs/spec` whose table defines each code (the
+/// code is the first cell of a row), as in `3.4` for `### 3.4 Files and imports`.
+fn spec_definitions() -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let dir = repo().join("docs/spec");
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        let mut section = String::new();
+        for line in text.lines() {
+            if let Some(h) = line.strip_prefix('#') {
+                let title = h.trim_start_matches('#').trim();
+                let number = title.split_whitespace().next().unwrap_or("").trim_end_matches('.');
+                if number.starts_with(|c: char| c.is_ascii_digit()) {
+                    section = number.to_string();
+                }
+            } else if let Some(rest) = line.strip_prefix("| `E") {
+                if let Some(code) = rest.get(..4).filter(|d| d.bytes().all(|b| b.is_ascii_digit())) {
+                    out.entry(format!("E{code}")).or_insert_with(|| section.clone());
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The `(name, kind)` of every `row(..)` of `BUILTINS` in `src/pom/builtin.rs`.
