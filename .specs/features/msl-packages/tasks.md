@@ -125,20 +125,20 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `s35_defines_crate_root_and_dependency_name` passes in `spec_text.rs` (C1: PKG-01 AC 1)
-- [ ] Test `s35_orders_the_first_segment_lookup` passes in `spec_text.rs` (C2: PKG-01 AC 2)
-- [ ] Test `s35_local_names_win_in_paths_and_clash_in_use` passes in `spec_text.rs` (C3: PKG-01 AC 3)
-- [ ] Test `s35_crate_and_super_are_per_crate` passes in `spec_text.rs` (C4: PKG-01 AC 4)
-- [ ] Test `s35_only_pub_crosses_a_crate` passes in `spec_text.rs` (C5: PKG-01 AC 5)
-- [ ] Test `std_is_implicit_and_the_prelude_is_std_prelude` passes in `spec_text.rs` (C6: PKG-01 AC 6)
-- [ ] Test `e0161_row_covers_an_unknown_crate` passes in `spec_text.rs` (C7: PKG-01 AC 7)
-- [ ] Test `e0163_is_defined_in_3_5` passes in `spec_text.rs` (C10: PKG-01 AC 10)
-- [ ] §3.5 follows `STYLE.md`: numbered rules `§3.5.n`, sentences under 30 words, each new term bold once
-- [ ] Any `rust` fence added parses today (`use util::cells::Cell;` is plain Rust path syntax); no fence uses `extern crate`
-- [ ] `E0163` is the one new defining row, of phase `elaboration`; the `E0161` row is reworded in place
-- [ ] MD-58 and MD-59 are in `.specs/STATE.md` with the text of `design.md`
-- [ ] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `s35_defines_crate_root_and_dependency_name` passes in `spec_text.rs` (C1: PKG-01 AC 1)
+- [x] Test `s35_orders_the_first_segment_lookup` passes in `spec_text.rs` (C2: PKG-01 AC 2)
+- [x] Test `s35_local_names_win_in_paths_and_clash_in_use` passes in `spec_text.rs` (C3: PKG-01 AC 3)
+- [x] Test `s35_crate_and_super_are_per_crate` passes in `spec_text.rs` (C4: PKG-01 AC 4)
+- [x] Test `s35_only_pub_crosses_a_crate` passes in `spec_text.rs` (C5: PKG-01 AC 5)
+- [x] Test `std_is_implicit_and_the_prelude_is_std_prelude` passes in `spec_text.rs` (C6: PKG-01 AC 6)
+- [x] Test `e0161_row_covers_an_unknown_crate` passes in `spec_text.rs` (C7: PKG-01 AC 7)
+- [x] Test `e0163_is_defined_in_3_5` passes in `spec_text.rs` (C10: PKG-01 AC 10)
+- [x] §3.5 follows `STYLE.md`: numbered rules `§3.5.n`, sentences under 30 words, each new term bold once
+- [x] Any `rust` fence added parses today (`use util::cells::Cell;` is plain Rust path syntax); no fence uses `extern crate`
+- [x] `E0163` is the one new defining row, of phase `elaboration`; the `E0161` row is reworded in place
+- [x] MD-58 and MD-59 are in `.specs/STATE.md` with the text of `design.md`
+- [x] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

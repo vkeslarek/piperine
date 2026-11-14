@@ -793,3 +793,108 @@ fn block_items_follow_the_namespace_rules() {
     let row = r.lines().find(|l| l.starts_with("| `E0162`")).unwrap();
     assert!(row.contains("one table of one namespace or of one block"), "{row}");
 }
+
+// ---- msl-packages: §3.5 Crates (PKG-01 AC 1 to 7 and 10) ----
+
+fn s35() -> String {
+    section(&spec("part_i_values.md"), "### 3.5 ")
+}
+
+fn s35_text() -> String {
+    one_line(&s35())
+}
+
+#[test]
+fn s35_defines_crate_root_and_dependency_name() {
+    // PKG-01 AC 1: three bold defining occurrences, and §3.4's lead points at §3.5.
+    let s = s35_text();
+    assert!(s.contains("A **crate** is one tree of namespace modules rooted at one file"), "{s}");
+    assert!(s.contains("The **crate root** is the file the tree starts from"), "{s}");
+    assert!(s.contains("A **dependency name** names one other crate inside this crate"), "{s}");
+    for term in ["**crate**", "**crate root**", "**dependency name**"] {
+        assert_eq!(s.matches(term).count(), 1, "{term} is bold once");
+    }
+    let lead = one_line(&s34());
+    assert!(lead.contains("a package of models is a crate ([§3.5](#35-crates))"), "{lead}");
+    assert!(lead.contains("[§3.6](#36-packages)"), "{lead}");
+}
+
+#[test]
+fn s35_orders_the_first_segment_lookup() {
+    // PKG-01 AC 2: the five steps, in order.
+    let s = s35_text();
+    let steps = [
+        "the scopes of the enclosing blocks and declarations",
+        "the items and imports of the enclosing namespace",
+        "the dependency names of the crate",
+        "the prelude",
+        "the core names",
+    ];
+    let mut at = s.find("The first segment of a path is looked up in this order").expect("rule 4");
+    for step in steps {
+        let hit = s[at..].find(step).unwrap_or_else(|| panic!("`{step}` out of order in {s}"));
+        at += hit + step.len();
+    }
+}
+
+#[test]
+fn s35_local_names_win_in_paths_and_clash_in_use() {
+    // PKG-01 AC 3.
+    let s = s35_text();
+    assert!(s.contains("an ordinary path follows rule 4: the item or import wins, without a diagnostic"), "{s}");
+    assert!(s.contains("A `use` path whose first segment is that name is ambiguous (`E0163`)"), "{s}");
+    assert!(s.contains("There is no leading `::`"), "{s}");
+    assert!(s.contains("the dependency wins"), "dependency against a prelude item: {s}");
+}
+
+#[test]
+fn s35_crate_and_super_are_per_crate() {
+    // PKG-01 AC 4.
+    let s = s35_text();
+    assert!(s.contains("`crate` names the root of the crate that contains the path"), "{s}");
+    assert!(s.contains("A crate's own name is not in scope inside it"), "{s}");
+    assert!(s.contains("`super` at a crate root does not resolve (`E0161`)"), "{s}");
+}
+
+#[test]
+fn s35_only_pub_crosses_a_crate() {
+    // PKG-01 AC 5.
+    let s = s35_text();
+    assert!(
+        s.contains("an item is visible only when it is `pub` and every namespace on the path from its crate root to it is `pub`"),
+        "{s}"
+    );
+}
+
+#[test]
+fn std_is_implicit_and_the_prelude_is_std_prelude() {
+    // PKG-01 AC 6.
+    let s = s35_text();
+    assert!(s.contains("`std` is a dependency of every crate"), "{s}");
+    assert!(s.contains("No manifest names it and no dependency may be called `std`"), "{s}");
+    assert!(s.contains("The prelude is implied in every file of every crate, the files of `std` included"), "{s}");
+    let t = one_line(&s34());
+    assert!(t.contains("the `pub` items of `std::prelude`"), "§3.4.2: {t}");
+}
+
+#[test]
+fn e0161_row_covers_an_unknown_crate() {
+    // PKG-01 AC 7: the §3.4 row names a first segment that is no dependency.
+    let rows = table_rows(&s34());
+    let row = rows.iter().find(|r| r[0] == "`E0161`").expect("§3.4 defines E0161");
+    assert!(row[1].contains("a first segment that names no dependency of the crate"), "{row:?}");
+    assert_eq!(row[2], "elaboration", "{row:?}");
+}
+
+#[test]
+fn e0163_is_defined_in_3_5() {
+    // PKG-01 AC 10: the defining row, its phase and the two ways out.
+    let rows = table_rows(&s35());
+    let row = rows.iter().find(|r| r[0] == "`E0163`").expect("§3.5 defines E0163");
+    assert_eq!(row[2], "elaboration", "{row:?}");
+    assert!(row[1].contains("first segment names both a dependency and an item or an import of the enclosing namespace"), "{row:?}");
+    assert_eq!(defining_rows()["E0163"], ["part_i_values.md"], "one defining row");
+    let s = s35_text();
+    assert!(s.contains("`other = { package = \"<name>\", .. }`"), "{s}");
+    assert!(s.contains("`crate::<name>`"), "{s}");
+}

@@ -8,7 +8,7 @@ Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
 known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
-module, prelude.
+module, prelude, crate, crate root, dependency name.
 
 ## 1. Value types
 
@@ -552,7 +552,8 @@ on fref.rise() || fvco.rise() {          // state has no initial value here
 ### 3.4 Files and imports
 
 One file is one module of the namespace. `mod` declares submodules, `use` brings names into
-scope, `pub` controls visibility, and a package of models is a crate.
+scope, `pub` controls visibility, a package of models is a crate ([§3.5](#35-crates)), and
+the package holds it ([§3.6](#36-packages)).
 
 **Static semantics**
 
@@ -560,7 +561,8 @@ scope, `pub` controls visibility, and a package of models is a crate.
   qualification always means a hardware module
   ([§8](part_iii_structure.md#8-modules)).
 - **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the
-  standard library ([§22](part_vii_stdlib.md#22-standard-library)). The **core names** need no
+  `pub` items of `std::prelude`, which re-exports the standard library
+  ([§22](part_vii_stdlib.md#22-standard-library)) ([§3.5](#35-crates) rule 9). The **core names** need no
   import and no declaration: `gnd`, `Nature`, `m`, `dtemp`, `str` and the core primitives
   ([§14](part_iv_behavior.md#14-core-primitives)).
 - **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file. Each is an
@@ -598,5 +600,68 @@ scope, `pub` controls visibility, and a package of models is a crate.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | [§10](part_iv_behavior.md#10-behavior-blocks) | a behavior block for a module declared in another file (`E0401`) | elaboration |
-| `E0161` | a path, `use` or `mod` that does not resolve, or names a private item | elaboration |
+| `E0161` | a path, `use` or `mod` that does not resolve, a first segment that names no dependency of the crate ([§3.5](#35-crates)), or a path that names a private item | elaboration |
 | `E0162` | a name declared twice in one table of one namespace or of one block; an explicit `use` whose name collides with an item or with another explicit `use` of the same table; a name that is used while only two glob imports provide it, for different declarations | elaboration |
+
+### 3.5 Crates
+
+A **crate** is one tree of namespace modules rooted at one file. A crate reaches another only
+through a dependency.
+
+**Static semantics**
+
+- **§3.5.1** The **crate root** is the file the tree starts from. Its namespace has no name.
+  `mod` items add the files below it ([§3.6](#36-packages) rule 2).
+- **§3.5.2** A crate has a name and a set of dependencies. A **dependency name** names one
+  other crate inside this crate. It need not be the other crate's own name
+  ([§3.6](#36-packages) rule 8).
+- **§3.5.3** `std` is a dependency of every crate. No manifest names it and no dependency may
+  be called `std`.
+- **§3.5.4** The first segment of a path is looked up in this order, and the first hit wins.
+  The path may sit in an expression, a type, a pattern or a `use`; the segment is not `crate`,
+  `self` or `super`.
+    1. the scopes of the enclosing blocks and declarations;
+    2. the items and imports of the enclosing namespace;
+    3. the dependency names of the crate;
+    4. the prelude ([§3.4.2](#34-files-and-imports));
+    5. the core names.
+- **§3.5.5** Where an item or an import of the enclosing namespace has the name of a
+  dependency, an ordinary path follows rule 4: the item or import wins, without a diagnostic.
+  A `use` path whose first segment is that name is ambiguous (`E0163`). There is no leading
+  `::` ([Appendix B.3.6](appendix_b_grammar.md)). Reach the dependency under another key,
+  `other = { package = "<name>", .. }` ([§3.6](#36-packages) rule 8), and the local item as
+  `crate::<name>`.
+- **§3.5.6** A dependency name resolves to the root namespace of that crate. A crate's own name
+  is not in scope inside it.
+- **§3.5.7** `crate` names the root of the crate that contains the path. `self` and `super`
+  are relative to the namespace that contains them. `super` at a crate root does not resolve
+  (`E0161`).
+- **§3.5.8** From another crate an item is visible only when it is `pub` and every namespace on
+  the path from its crate root to it is `pub`. `pub use` re-exports, as in Rust.
+- **§3.5.9** The prelude is implied in every file of every crate, the files of `std` included.
+- **§3.5.10** The dependencies of the crates form no cycle ([§3.6](#36-packages)).
+- **§3.5.11** `extern crate` is not part of the language
+  ([Appendix B.3.6](appendix_b_grammar.md)).
+
+> **Resolution.** Rules 4 and 5 are Rust 2018's: dependency names sit below a namespace's own
+> names in a path, and an import that could mean either is an error, never a silent choice.
+> They are stated because no `::` exists to disambiguate. A dependency name against a prelude
+> item is not a clash: the dependency wins.
+
+> **Resolution.** Rule 9 has no exception for `std`, so one rule holds in every crate.
+
+**Errors**
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0163` | a `use` path whose first segment names both a dependency and an item or an import of the enclosing namespace | elaboration |
+| [§3.4](#34-files-and-imports) | a first segment that names no item, import, dependency, prelude item or core name, or an item not visible from the crate (`E0161`) | elaboration |
+| [§3.6](#36-packages) | a cycle among the dependencies | package |
+
+**Examples**
+
+```rust
+use util::cells::Cell;
+```
+
+`util` is a dependency name. A local `mod util;` makes this `use` ambiguous (`E0163`).
