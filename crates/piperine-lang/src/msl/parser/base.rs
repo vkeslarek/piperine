@@ -64,6 +64,18 @@ pub(crate) fn skip_to_end<'a, I: In<'a>>() -> impl Parser<'a, I, (), Extra<'a>> 
         .ignored()
 }
 
+/// The rest of an item head up to its `{` or `;` (not consumed); a bracket,
+/// parenthesis or brace group inside it is skipped whole.
+pub(crate) fn skip_head_rest<'a, I: In<'a>>() -> P<'a, I, ()> {
+    choice((
+        any().filter(|t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket))).rewind().ignore_then(skip_group()),
+        any().filter(|t: &Token| !is_closer(t) && !matches!(t, Token::Punct(Punct::Semi | Punct::LBrace))).ignored(),
+    ))
+    .repeated()
+    .ignored()
+    .boxed()
+}
+
 /// `pub`, or `pub(crate)`, `pub(super)`, `pub(self)`, `pub(in path)`: the span
 /// of `pub`. The restricted forms are removed (B.3.6) and reported once.
 pub(crate) fn visibility<'a, I: In<'a>>() -> impl Parser<'a, I, Span, Extra<'a>> + Clone {
@@ -287,7 +299,19 @@ fn skip_rest_of_item<'a, I: In<'a>>() -> P<'a, I, ()> {
         .then(any().filter(|t: &Token| matches!(t, Token::Kw(Kw::For) | Token::Punct(Punct::Lt))))
         .rewind()
         .ignored();
+    // `Name<..>`: a generic list is skipped to its `>`, item keywords inside
+    // it (`const N: u32`) are no place to resume.
+    let angle_list = select! { Token::Ident(_) => () }
+        .then(just(Token::Punct(Punct::Lt)))
+        .ignore_then(
+            any()
+                .filter(|t: &Token| !is_closer(t) && !matches!(t, Token::Punct(Punct::Gt | Punct::Semi | Punct::LBrace)))
+                .repeated(),
+        )
+        .then_ignore(just(Token::Punct(Punct::Gt)).or_not())
+        .ignored();
     let more = choice((
+        angle_list,
         // A bracket or parenthesis group is skipped whole.
         any()
             .filter(|t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket)))

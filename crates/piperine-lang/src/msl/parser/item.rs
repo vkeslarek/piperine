@@ -162,9 +162,27 @@ pub(crate) fn where_clause<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Option
         .map_with(|_, e| e.span())
         .then(h.expr_ns.clone())
         .then(punct(Punct::Colon).ignore_then(skip_to_end()).or_not())
-        .validate(|((at, cond), bounds), _, emitter| {
+        // `where a, b`: one condition only. The comma is the fault; the rest
+        // of the head is skipped up to its `{` or `;`, so the item survives.
+        .then(
+            punct(Punct::Comma)
+                .map_with(|_, e| e.span())
+                .then_ignore(skip_head_rest())
+                .or_not(),
+        )
+        .validate(|(((at, cond), bounds), comma), _, emitter| {
             if bounds.is_some() {
                 emitter.emit(removed("trait-bound `where` clauses", at));
+            }
+            if let Some(span) = comma {
+                emitter.emit(Rich::custom(
+                    span,
+                    Custom {
+                        code: "E0900",
+                        message: "a `where` clause takes one condition".into(),
+                        help: Some("join the conditions with `&&`".into()),
+                    },
+                ));
             }
             cond
         })

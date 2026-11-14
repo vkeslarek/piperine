@@ -1040,3 +1040,29 @@ fn flat_chain_past_4096_links_is_e0910() {
         .expect("spawn");
     handle.join().expect("no stack overflow, no panic");
 }
+
+#[test]
+fn bad_where_list_is_one_diagnostic() {
+    // POL-16 AC 1: a comma in a `where` is one diagnostic, labelled at the
+    // comma; the module keeps its name and its generic.
+    let src = "module M<const N: u32>() where N > 0, N < 5 { }";
+    let r = parse(src);
+    let comma = src.find(',').unwrap();
+    let found: Vec<_> = r.diagnostics.iter().map(|d| (&*d.code, d.span())).collect();
+    assert_eq!(found, vec![("E0900", Span::new(comma, comma + 1))], "{:?}", r.diagnostics);
+    assert_eq!(r.file.items.len(), 1);
+    let piperine_lang::msl::ast::ItemKind::Module(m) = &r.file.items[0].kind else {
+        panic!("M is a Module item, not {:?}", r.file.items[0].kind)
+    };
+    assert_eq!(m.name.name, "M");
+    let generics = m.generics.as_ref().expect("the generic list is kept");
+    assert_eq!(generics.params.len(), 1);
+    assert_eq!(generics.params[0].name.name, "N");
+
+    // An item keyword inside a generic list is not a place to resume: a bad
+    // default is one diagnostic and the next item parses.
+    let src = "module M<const N: u32 = , const K: u32>() { }\nfn g() {}";
+    let r = parse(src);
+    assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
+    assert!(r.file.items.iter().any(|i| matches!(&i.kind, piperine_lang::msl::ast::ItemKind::Fn(f) if f.name.name == "g")));
+}

@@ -715,10 +715,10 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `bad_where_list_is_one_diagnostic` passes in `msl_errors.rs` (C89: POL-16 AC 1)
-- [ ] `one_fault_is_one_diagnostic` and `multiple_errors_in_source_order_with_partial_ast` still pass unchanged
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `bad_where_list_is_one_diagnostic` passes in `msl_errors.rs` (C89: POL-16 AC 1)
+- [x] `one_fault_is_one_diagnostic` and `multiple_errors_in_source_order_with_partial_ast` still pass unchanged
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
