@@ -247,3 +247,45 @@ fn a_missing_name_is_listed() {
     assert_eq!(missing(html, &names), ["delay", "limit", "m"], "every missing name is listed, in order");
     assert!(missing("<code>delay</code>", &["delay".to_string()]).is_empty());
 }
+
+// ---- the packages note, the cheat sheet and the analysis kind (STD-18 AC 10, 13) -----------------------
+
+/// The text of `html` with tags removed and whitespace collapsed.
+fn plain(html: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    decode(&out).split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn packages_and_cheatsheet_name_std() {
+    let html = content();
+    let packages = chapter(&html, "packages");
+    assert!(code_spans(&packages).iter().any(|s| s == "std::prelude"), "the chapter `packages` names `std::prelude` in a code span");
+    let text = plain(&packages);
+    assert!(text.contains("Every crate depends on it"), "packages says `std` is a dependency of every crate: {text}");
+    assert!(text.contains("implied in every file"), "packages says the prelude is implied in every file");
+    let cheat = code_spans(&chapter(&html, "cheatsheet"));
+    let absent: Vec<String> = std_namespaces(&embedded()).into_iter().filter(|n| !cheat.iter().any(|s| *s == format!("std::{n}"))).collect();
+    assert!(absent.is_empty(), "the cheat sheet does not name these namespaces as `std::<name>`: {absent:?}");
+}
+
+#[test]
+fn the_book_says_transient() {
+    let html = content();
+    for (n, (lang, text)) in blocks(&html).into_iter().enumerate() {
+        assert!(!text.contains("analysis(Tran)"), "block {n} ({lang}) writes `analysis(Tran)`: the analysis kind is `Transient`");
+    }
+    assert!(!html.contains("analysis(Tran)"), "no span or paragraph writes `analysis(Tran)` either");
+    // The list of analysis kinds in chapter 6 names the kind, not the pass-gate module.
+    assert!(!html.contains("<code>Dc</code>, <code>Tran</code>"), "the analysis kinds are Dc, Transient, Ac and Noise");
+    assert!(html.contains("<code>Dc</code>, <code>Transient</code>"), "the analysis kinds name `Transient`");
+}

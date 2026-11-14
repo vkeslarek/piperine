@@ -485,7 +485,7 @@ analog for Coupled {
 
 <h3>One block, every analysis</h3>
 
-<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Tran</code>, <code>Ac</code> and <code>Noise</code> (§11.1). <code>analysis(Static)</code> is true during an equilibrium solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does above. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
+<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Transient</code>, <code>Ac</code> and <code>Noise</code> (§11.1). <code>analysis(Static)</code> is true during an equilibrium solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does above. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Construct</th><th>At the operating point</th><th>In the AC sweep</th></tr></thead>
@@ -835,7 +835,7 @@ analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cu
 
 <h3>The standard library and the prelude</h3>
 
-<p><code>std</code> is a crate that ships inside Piperine. Every crate depends on it, no manifest names it, and no dependency may be called <code>std</code> (§3.5.3). The <strong>prelude</strong>, the <code>pub</code> items of <code>std::prelude</code>, is imported into every file, which is why <code>Bit</code>, <code>Electrical</code>, <code>idt</code> and <code>above</code> need no <code>use</code>. A handful of <strong>core names</strong> need nothing at all: <code>gnd</code>, <code>Nature</code>, <code>m</code>, <code>dtemp</code>, <code>str</code> and the core primitives like <code>ddt</code> and <code>cross</code> (§3.4.2).</p>
+<p><code>std</code> is a crate that ships inside Piperine. Every crate depends on it, no manifest names it, and no dependency may be called <code>std</code> (§3.5.3). The <strong>prelude</strong>, the <code>pub</code> items of <code>std::prelude</code>, is implied in every file, which is why <code>Bit</code>, <code>Electrical</code>, <code>idt</code> and <code>above</code> need no <code>use</code>. A handful of <strong>core names</strong> need nothing at all: <code>gnd</code>, <code>Nature</code>, <code>m</code>, <code>dtemp</code>, <code>str</code> and the core primitives like <code>ddt</code> and <code>cross</code> (§3.4.2). Chapter 10 tours both.</p>
 
 <h3>When names collide</h3>
 
@@ -1311,6 +1311,11 @@ let c0 = cell(Cell { wl: w, bl: b });
 let m1 = nch(0.13u, 2u)(d, g, s, b);</pre>
 <pre data-lang="msl">#[link("bsim4.osdi", model = "bsim4")]
 extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Electrical) { l: f64 = 1u; }</pre></div>
+
+<div class="cheat-card"><h4>Where names come from</h4>
+<p><strong>Core</strong>, no import: <code>gnd</code> <code>Nature</code> <code>m</code> <code>dtemp</code> <code>str</code>, the probes, <code>ddt</code> <code>delay</code> <code>limit</code> <code>noise</code> <code>cross</code> <code>at</code>, <code>bound_step</code>, <code>emit!</code> <code>include_str!</code>.</p>
+<p><strong>Library</strong>, implied by <code>std::prelude</code>: <code>std::constants</code> <code>std::carriers</code> <code>std::values</code> <code>std::analog</code> <code>std::nets</code> <code>std::convert</code> <code>std::monitor</code> <code>std::io</code>.</p>
+<p>Yours hides both, except a core name (E0457). Chapter 10.</p></div>
 
 <div class="cheat-card"><h4>Files and data</h4>
 <pre data-lang="msl">mod logic;                  // logic.msl or logic/mod.msl

@@ -729,12 +729,12 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `packages_and_cheatsheet_name_std` passes in `book.rs` (C110: STD-18 AC 10)
-- [ ] Test `the_book_says_transient` passes in `book.rs` (C113: STD-18 AC 13)
-- [ ] `python3 docs/book/build.py` runs and the output holds 13 chapters in its navigation
-- [ ] Publishing the artifact is not part of this task: the orchestrator does it after the merge
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `packages_and_cheatsheet_name_std` passes in `book.rs` (C110: STD-18 AC 10)
+- [x] Test `the_book_says_transient` passes in `book.rs` (C113: STD-18 AC 13)
+- [x] `python3 docs/book/build.py` runs and the output holds 13 chapters in its navigation
+- [x] Publishing the artifact is not part of this task: the orchestrator does it after the merge
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
