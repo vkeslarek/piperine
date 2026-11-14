@@ -840,7 +840,7 @@ Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** B1 (T1-T7, Sonnet) at b4b1e768 - returned (T1-T7 218054f7..3767b691; baseline 354 green; 358 pass after ports; helpers via #[path] mod)
+**Dispatched:** B1 (T1-T7, Sonnet) at b4b1e768 - returned (T1-T7 218054f7..3767b691; baseline 354 green; 358 pass after ports; helpers via #[path] mod); B2 (T8-T12, Sonnet) at 03d18454
 **Walked:** not applicable: no screen
 
 ---
