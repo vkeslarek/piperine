@@ -228,11 +228,11 @@ fn long_chains_print_without_overflow() {
     let handle = std::thread::Builder::new()
         .stack_size(8 << 20)
         .spawn(|| {
-            let sum = format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(250));
-            let text = assert_roundtrip("sum 250", &sum);
+            let sum = format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(4000));
+            let text = assert_roundtrip("sum 4000", &sum);
             assert!(text.len() > 500);
-            let chain = format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(250));
-            assert_roundtrip("else-if 250", &chain);
+            let chain = format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(4000));
+            assert_roundtrip("else-if 4000", &chain);
             for src in [
                 format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(5000)),
                 format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(5000)),

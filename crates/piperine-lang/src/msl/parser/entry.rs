@@ -271,6 +271,11 @@ pub fn parse_block(src: &str) -> Parsed<Block> {
 /// The deepest nesting the parser descends into (E0910).
 pub const MAX_DEPTH: usize = 256;
 
+/// The most links of one chain (binary operators, `.`, calls, indexing, `as`,
+/// `?`, `else if` arms) on one path of an expression (E0910). A chain is flat
+/// in the source, not nesting; the walkers that meet its depth grow the stack.
+pub const MAX_CHAIN: usize = 4096;
+
 fn is_open(t: &Token) -> bool {
     matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace))
 }
@@ -279,20 +284,46 @@ fn is_close(t: &Token) -> bool {
     matches!(t, Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace))
 }
 
-/// A token that adds one level to the tree a chain of it builds: every
-/// operator, `as`, `else` (an `else if` chain nests), `return`, `break`,
-/// `move`, `ref` and `mut`. `,` `;` `:` `::` `=>` `#` `@` `$` `_` and the
-/// delimiters do not: they end a chain or only separate.
-fn is_nesting(t: &Token) -> bool {
-    use Punct::*;
+/// Whether a token ends an operand, so the token after it is infix or
+/// postfix; otherwise the next operator token is a prefix form.
+fn ends_operand(t: &Token) -> bool {
     match t {
-        Token::Kw(Kw::As | Kw::Else | Kw::Return | Kw::Break | Kw::Move | Kw::Ref | Kw::Mut) => true,
-        Token::Punct(p) => !matches!(
-            p,
-            Comma | Semi | Colon | ColonColon | FatArrow | Pound | At | Dollar | Underscore
-                | LParen | RParen | LBracket | RBracket | LBrace | RBrace
-        ),
+        Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. }
+        | Token::Unknown | Token::StaticLifetime => true,
+        Token::Kw(Kw::SelfLower | Kw::SelfUpper | Kw::True | Kw::False) => true,
+        Token::Punct(p) => matches!(p, Punct::RParen | Punct::RBracket | Punct::RBrace | Punct::Question),
         _ => false,
+    }
+}
+
+/// How a token counts against the two bounds of E0910.
+#[derive(Clone, Copy, PartialEq)]
+enum Count {
+    /// Neither: separators, names, literals, `<`/`>` handled by the caller.
+    None,
+    /// One level of tree under the token: a prefix operator, a closure bar,
+    /// `return`, `break`, `move`, `ref`, `mut`.
+    Nest,
+    /// One link of a flat chain: an infix operator, `.`, `?`, `as`, `else`.
+    Link,
+}
+
+/// Classify `t` given the token before it. Delimiters and `<`/`>` are not
+/// classified here.
+fn classify(t: &Token, prev: Option<&Token>) -> Count {
+    use Punct::*;
+    let infix = prev.is_some_and(ends_operand);
+    match t {
+        Token::Kw(Kw::Return | Kw::Break | Kw::Move | Kw::Ref | Kw::Mut) => Count::Nest,
+        Token::Kw(Kw::As | Kw::Else) => Count::Link,
+        Token::Punct(Dot | Question) => Count::Link,
+        Token::Punct(Minus | Not | Star | And | AndAnd | Or | OrOr | Tilde) if !infix => Count::Nest,
+        Token::Punct(p) if !matches!(
+            p,
+            Comma | Semi | Colon | ColonColon | Arrow | FatArrow | Pound | At | Dollar | Underscore
+                | LParen | RParen | LBracket | RBracket | LBrace | RBrace | Lt | Gt
+        ) => Count::Link,
+        _ => Count::None,
     }
 }
 
@@ -332,6 +363,115 @@ fn overflow(diags: &mut Vec<Diagnostic>, span: Span) {
         )
         .with_help("split the expression into `let` bindings or functions"),
     );
+}
+
+fn chain_overflow(diags: &mut Vec<Diagnostic>, span: Span) {
+    diags.push(
+        Diagnostic::new(
+            "E0910",
+            format!("an expression chain longer than {MAX_CHAIN} links"),
+            span,
+            "the parser stops here",
+        )
+        .with_help("split the expression into `let` bindings or functions"),
+    );
+}
+
+/// The counts of one open delimiter level since its last boundary.
+#[derive(Default)]
+struct Level {
+    nest: usize,
+    link: usize,
+    /// Of `nest`, the tentative levels opened by a `<` not yet closed.
+    angles: usize,
+    /// The first `=` of a level is a binding's, free of charge.
+    eq_seen: bool,
+}
+
+/// The two E0910 counts along the path to the current token.
+struct Depth {
+    levels: Vec<Level>,
+    nest: usize,
+    link: usize,
+}
+
+impl Depth {
+    fn new() -> Depth {
+        Depth { levels: vec![Level::default()], nest: 0, link: 0 }
+    }
+
+    fn top(&mut self) -> &mut Level {
+        self.levels.last_mut().expect("the outermost level is never popped")
+    }
+
+    /// A chain or statement ends: the level's counts are free again. `keep_angles`
+    /// leaves the open `<` of a generic list that a `,` continues.
+    fn boundary(&mut self, keep_angles: bool) {
+        let (nest, link) = {
+            let top = self.top();
+            let kept = if keep_angles { top.angles } else { 0 };
+            let taken = (top.nest - kept, top.link);
+            top.nest = kept;
+            top.angles = kept;
+            top.link = 0;
+            top.eq_seen = false;
+            taken
+        };
+        self.nest -= nest;
+        self.link -= link;
+    }
+
+    /// An operator that no type argument list holds: the pending `<` were comparisons.
+    fn release_angles(&mut self) {
+        let top = self.top();
+        let angles = std::mem::take(&mut top.angles);
+        top.nest -= angles;
+        self.nest -= angles;
+    }
+
+    fn open(&mut self, link: usize) {
+        self.top().link += link;
+        self.link += link;
+        self.nest += 1;
+        self.levels.push(Level::default());
+    }
+
+    fn close(&mut self) {
+        if self.levels.len() > 1 {
+            let level = self.levels.pop().unwrap_or_default();
+            self.nest -= level.nest + 1;
+            self.link -= level.link;
+        }
+    }
+
+    fn add(&mut self, count: Count) {
+        let top = self.top();
+        match count {
+            Count::Nest => top.nest += 1,
+            Count::Link => top.link += 1,
+            Count::None => return,
+        }
+        match count {
+            Count::Nest => self.nest += 1,
+            _ => self.link += 1,
+        }
+    }
+
+    fn angle(&mut self) {
+        self.top().angles += 1;
+        self.add(Count::Nest);
+    }
+
+    fn close_angle(&mut self) -> bool {
+        if self.top().angles == 0 {
+            return false;
+        }
+        let top = self.top();
+        top.angles -= 1;
+        top.nest -= 1;
+        self.nest -= 1;
+        true
+    }
 }
 
 /// The primary label of an unclosed-delimiter diagnostic.
@@ -416,11 +556,13 @@ fn drop_dangling_docs(tokens: Vec<(Token, Span)>, diags: &mut Vec<Diagnostic>) -
     out
 }
 
-/// Lex `src`, then bound the nesting: a tree level is a delimiter, or a
-/// token of a chain ([`is_nesting`]) since the last `;`, `,` or end of a
-/// statement. Past [`MAX_DEPTH`] levels the group or the rest of the chain
-/// is replaced by one [`Token::Error`] and `E0910` is reported, so the
-/// parser and every tree walk stay shallow.
+/// Lex `src`, then bound the tree: a nesting level is a delimiter, a prefix
+/// form or a type argument list; a chain link is an infix or postfix token
+/// (see [`classify`]), counted since the last `;`, `,` or end of a statement.
+/// Past [`MAX_DEPTH`] levels, or [`MAX_CHAIN`] links summed along one path, the
+/// group or the rest of the chain is replaced by one [`Token::Error`] and
+/// `E0910` is reported, so the parser stays shallow in nesting and every tree
+/// walk grows its stack only along a chain.
 fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     let (tokens, mut diags) = lex(src);
     let tokens = drop_dangling_docs(tokens, &mut diags);
@@ -430,19 +572,25 @@ fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
         diags.extend(unclosed_delimiters(&tokens, src.len()));
     }
     let mut out = Vec::with_capacity(tokens.len());
-    // Per open delimiter, the chain tokens counted since its last boundary.
-    let mut chains = vec![0usize];
-    // Per level, whether its first `=` (a binding's, free of charge) was seen.
-    let mut eq_seen = vec![false];
-    let mut total = 0usize; // open delimiters + all chain counts
+    let mut depth = Depth::new();
     let mut i = 0;
     while i < tokens.len() {
         let (tok, span) = &tokens[i];
+        let prev = i.checked_sub(1).map(|j| &tokens[j].0);
+        // The rest of a chain is replaced by one error token.
+        let mut cut = |depth: &mut Depth, diags: &mut Vec<Diagnostic>, nesting: bool| {
+            let end = skip_overflow(&tokens, i, false);
+            let last = tokens.get(end.saturating_sub(1)).map_or(span.end, |(_, s)| s.end);
+            if nesting { overflow(diags, *span) } else { chain_overflow(diags, *span) }
+            out.push((Token::Error, Span::new(span.start, last)));
+            depth.boundary(false);
+            end
+        };
         if is_open(tok) {
-            // A call or index chained after `)`/`]` adds a level to its operand.
-            let after_closer = i > 0 && matches!(tokens[i - 1].0, Token::Punct(Punct::RParen | Punct::RBracket));
-            let extra = usize::from(after_closer && !matches!(tok, Token::Punct(Punct::LBrace)));
-            if total + 1 + extra > MAX_DEPTH {
+            // A call or index chained after `)`/`]` adds a link to its operand.
+            let after_closer = prev.is_some_and(|t| matches!(t, Token::Punct(Punct::RParen | Punct::RBracket)));
+            let link = usize::from(after_closer && !matches!(tok, Token::Punct(Punct::LBrace)));
+            if depth.nest + 1 > MAX_DEPTH {
                 let end = skip_overflow(&tokens, i, true);
                 let last = tokens.get(end.saturating_sub(1)).map_or(span.end, |(_, s)| s.end);
                 overflow(&mut diags, *span);
@@ -450,44 +598,58 @@ fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                 i = end;
                 continue;
             }
-            if let Some(c) = chains.last_mut() {
-                *c += extra;
-            }
-            total += 1 + extra;
-            chains.push(0);
-            eq_seen.push(false);
-        } else if is_close(tok) {
-            if chains.len() > 1 {
-                total -= chains.pop().unwrap_or(0) + 1;
-                eq_seen.pop();
-            }
-            let continues = tokens.get(i + 1).is_some_and(|(t, _)| is_nesting(t));
-            if matches!(tok, Token::Punct(Punct::RBrace)) && !continues {
-                total -= chains.last_mut().map_or(0, std::mem::take);
-                eq_seen.last_mut().map(|e| *e = false);
-            }
-        } else if matches!(tok, Token::Punct(Punct::Semi | Punct::Comma)) {
-            total -= chains.last_mut().map_or(0, std::mem::take);
-            eq_seen.last_mut().map(|e| *e = false);
-        } else if matches!(tok, Token::Punct(Punct::Eq)) && eq_seen.last().is_some_and(|e| !*e) {
-            if let Some(e) = eq_seen.last_mut() {
-                *e = true;
-            }
-        } else if is_nesting(tok) {
-            if total + 1 > MAX_DEPTH {
-                let end = skip_overflow(&tokens, i, false);
-                let last = tokens.get(end.saturating_sub(1)).map_or(span.end, |(_, s)| s.end);
-                overflow(&mut diags, *span);
-                out.push((Token::Error, Span::new(span.start, last)));
-                total -= chains.last_mut().map_or(0, std::mem::take);
-                eq_seen.last_mut().map(|e| *e = false);
-                i = end;
+            if depth.link + link > MAX_CHAIN {
+                i = cut(&mut depth, &mut diags, false);
                 continue;
             }
-            if let Some(c) = chains.last_mut() {
-                *c += 1;
+            depth.open(link);
+        } else if is_close(tok) {
+            depth.close();
+            let continues = tokens.get(i + 1).is_some_and(|(t, _)| classify(t, Some(tok)) != Count::None);
+            if matches!(tok, Token::Punct(Punct::RBrace)) && !continues {
+                depth.boundary(false);
             }
-            total += 1;
+        } else if matches!(tok, Token::Punct(Punct::Semi)) {
+            depth.boundary(false);
+        } else if matches!(tok, Token::Punct(Punct::Comma)) {
+            depth.boundary(true);
+        } else if matches!(tok, Token::Punct(Punct::Eq)) && !depth.top().eq_seen {
+            depth.top().eq_seen = true;
+        } else if matches!(tok, Token::Punct(Punct::Gt)) && depth.close_angle() {
+        } else if matches!(tok, Token::Punct(Punct::Lt)) {
+            let type_args = !prev.is_some_and(ends_operand)
+                || matches!(prev, Some(Token::Ident(_) | Token::RawIdent(_) | Token::Kw(Kw::SelfUpper)));
+            if type_args {
+                if depth.nest + 1 > MAX_DEPTH {
+                    i = cut(&mut depth, &mut diags, true);
+                    continue;
+                }
+                depth.angle();
+            } else {
+                if depth.link + 1 > MAX_CHAIN {
+                    i = cut(&mut depth, &mut diags, false);
+                    continue;
+                }
+                depth.add(Count::Link);
+            }
+        } else {
+            match classify(tok, prev) {
+                Count::None => {}
+                Count::Nest if depth.nest + 1 > MAX_DEPTH => {
+                    i = cut(&mut depth, &mut diags, true);
+                    continue;
+                }
+                Count::Link if depth.link + 1 > MAX_CHAIN => {
+                    i = cut(&mut depth, &mut diags, false);
+                    continue;
+                }
+                count => {
+                    if count == Count::Link {
+                        depth.release_angles();
+                    }
+                    depth.add(count);
+                }
+            }
         }
         out.push((tok.clone(), *span));
         i += 1;

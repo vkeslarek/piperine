@@ -439,6 +439,10 @@ fn walk_block(design: &Design, block: &crate::pom::body::Block, out: &mut Vec<St
 }
 
 fn walk_expr(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {
+    crate::stack::deep(|| walk_expr_inner(design, id, out))
+}
+
+fn walk_expr_inner(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {
     match &design.expr_node(id).kind {
         ExprKind::Block(b) | ExprKind::Loop { body: b } | ExprKind::While { body: b, .. } | ExprKind::For { body: b, .. } => {
             walk_block(design, b, out)

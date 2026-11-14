@@ -11,6 +11,7 @@ miette = { version = "7.6.0", features = ["fancy"] }
 chumsky = { version = "=0.13.0", default-features = false, features = ["std", "stacker", "pratt"] }
 logos = "=0.16.1"
 
+stacker = "0.1.25"
 serde.workspace = true
 
 [dev-dependencies]

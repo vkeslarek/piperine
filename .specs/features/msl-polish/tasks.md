@@ -688,15 +688,15 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `e0910_counts_nesting_and_bounds_chains` passes in `spec_text.rs` (C85: POL-15 AC 1)
-- [ ] Test `flat_chains_up_to_4096_links_are_not_nesting` passes in `msl_errors.rs` (C86: POL-15 AC 2)
-- [ ] Test `flat_chain_past_4096_links_is_e0910` passes in `msl_errors.rs` (C87: POL-15 AC 3)
-- [ ] Test `nesting_without_delimiters_is_also_bounded` still passes in `msl_errors.rs` (C88: POL-15 AC 4)
-- [ ] `MAX_DEPTH` stays 256 and `depth_over_256_is_diagnostic_not_overflow` passes unchanged
-- [ ] The helper is one plain function (`deep(|| ..)`), called at the recursion points; no macro
-- [ ] If 4096 links cannot be met on an 8 MiB debug stack, stop and report: the bound is not lowered silently
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `e0910_counts_nesting_and_bounds_chains` passes in `spec_text.rs` (C85: POL-15 AC 1)
+- [x] Test `flat_chains_up_to_4096_links_are_not_nesting` passes in `msl_errors.rs` (C86: POL-15 AC 2)
+- [x] Test `flat_chain_past_4096_links_is_e0910` passes in `msl_errors.rs` (C87: POL-15 AC 3)
+- [x] Test `nesting_without_delimiters_is_also_bounded` still passes in `msl_errors.rs` (C88: POL-15 AC 4)
+- [x] `MAX_DEPTH` stays 256 and `depth_over_256_is_diagnostic_not_overflow` passes unchanged
+- [x] The helper is one plain function (`deep(|| ..)`), called at the recursion points; no macro
+- [x] If 4096 links cannot be met on an 8 MiB debug stack, stop and report: the bound is not lowered silently
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -701,3 +701,22 @@ fn e0909_is_defined_for_out_of_range_literals() {
     let at = one.find(rule7).unwrap();
     assert!(one[at..].lines().take(4).any(|l| l.contains("E0909")), "§1 rule 7 states the range rule");
 }
+
+#[test]
+fn e0910_counts_nesting_and_bounds_chains() {
+    // POL-15 AC 1: A.6 defines E0910 as nesting over 256 levels, or more than
+    // 4096 chain links on one path; a flat chain is not nesting.
+    let a6 = section(&spec("appendix_a_lexical.md"), "## A.6");
+    let row = table_rows(&a6)
+        .into_iter()
+        .find(|r| r[0] == "`E0910`")
+        .expect("A.6 has an E0910 row");
+    assert_eq!(row.last().map(String::as_str), Some("parse"));
+    let text = &row[1];
+    assert!(text.contains("256"), "{text}");
+    assert!(text.contains("4096"), "{text}");
+    for word in ["delimiters", "closures", "return", "break", "type arguments", "binary", "else if", "`as`", "`?`"] {
+        assert!(text.contains(word), "the E0910 row names {word}: {text}");
+    }
+    assert!(!text.contains("operator chains"), "the old wording is gone: {text}");
+}

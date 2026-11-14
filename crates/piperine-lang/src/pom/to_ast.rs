@@ -226,6 +226,10 @@ impl<'d> Rebuild<'d> {
     }
 
     fn expr(&self, id: ExprId) -> ast::Expr {
+        crate::stack::deep(|| self.expr_inner(id))
+    }
+
+    fn expr_inner(&self, id: ExprId) -> ast::Expr {
         let node = self.design.expr_node(id);
         let exprs = |items: &[ExprId]| items.iter().map(|e| self.expr(*e)).collect::<Vec<_>>();
         let kind = match &node.kind {

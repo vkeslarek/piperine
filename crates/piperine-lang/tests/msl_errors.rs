@@ -46,9 +46,7 @@ fn depth_over_256_is_diagnostic_not_overflow() {
 }
 
 /// The nesting shapes that use no delimiter, as `chain_source` builds them.
-const CHAINS: &[&str] = &[
-    "unary minus", "binary +1", "cast chain", "closure chain", "return chain", "else-if chain", "generic angle",
-];
+const CHAINS: &[&str] = &["unary minus", "closure chain", "return chain", "generic angle"];
 
 fn chain_source(kind: &str, n: usize) -> String {
     match kind {
@@ -64,8 +62,8 @@ fn chain_source(kind: &str, n: usize) -> String {
 
 #[test]
 fn nesting_without_delimiters_is_also_bounded() {
-    // MSLP-04 AC 6 says "nesting", not "delimiters": prefix, cast, closure,
-    // `return`, `else if`, generic and binary chains past 256 levels give
+    // MSLP-04 AC 6 says "nesting", not "delimiters": prefix, closure,
+    // `return` and generic nesting past 256 levels give
     // E0910 and no stack overflow, parse and print, on an 8 MiB stack.
     let handle = std::thread::Builder::new()
         .stack_size(8 << 20)
@@ -981,4 +979,64 @@ fn body_let_annotation_has_its_own_message() {
     assert!(found[0].2.contains("body `let` takes no type annotation"), "{}", found[0].2);
     // A `let` in a function keeps its annotation.
     assert!(faults("fn f() { let y: f64 = 1.0; }").is_empty());
+}
+
+/// A flat chain of `n` links, as `flat_source` builds it.
+const FLAT: &[&str] = &["sum", "method calls", "casts", "else-if arms", "try"];
+
+fn flat_source(kind: &str, n: usize) -> String {
+    match kind {
+        "sum" => format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(n - 1)),
+        "method calls" => format!("fn f() -> f64 {{ a{} }}", ".g()".repeat(n)),
+        "casts" => format!("fn f() -> f64 {{ 1 {}}}", "as f64 ".repeat(n)),
+        "else-if arms" => format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(n)),
+        _ => format!("fn f() -> f64 {{ a{} }}", "?".repeat(n)),
+    }
+}
+
+#[test]
+fn flat_chains_up_to_4096_links_are_not_nesting() {
+    // POL-15 AC 2: 4096 links parse clean; print, build and to_ast finish on
+    // an 8 MiB debug stack.
+    let handle = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            for kind in FLAT {
+                let src = flat_source(kind, 4096);
+                let r = parse(&src);
+                assert!(r.diagnostics.is_empty(), "{kind}: {:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
+                let printed = piperine_lang::msl::print(&r.file);
+                assert!(printed.len() > 4096, "{kind}");
+                let design = piperine_lang::pom::Design::builder().source("f.msl", src.as_str()).build();
+                for file in design.files() {
+                    let _ = file.to_ast();
+                }
+            }
+        })
+        .expect("spawn the 8 MiB test thread");
+    handle.join().expect("no stack overflow, no panic");
+}
+
+#[test]
+fn flat_chain_past_4096_links_is_e0910() {
+    // POL-15 AC 3: 4097 and 20000 links give exactly one E0910 naming the
+    // bound; the chain inside 10 nested parentheses is summed along its path.
+    let handle = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            for n in [4097, 20000] {
+                // `n` links: `n` plus signs, so the sum has `n + 1` terms.
+                let r = parse(&flat_source("sum", n + 1));
+                let e: Vec<_> = r.diagnostics.iter().filter(|d| d.code == "E0910").collect();
+                assert_eq!(e.len(), 1, "{n} terms: {:?}", r.diagnostics);
+                assert!(e[0].message.contains("4096"), "{}", e[0].message);
+                assert_eq!(r.diagnostics.len(), 1, "{n} terms: {:?}", r.diagnostics);
+                let _ = piperine_lang::msl::print(&r.file);
+            }
+            let nested = format!("fn f() -> f64 {{ {}1{}{} }}", "(".repeat(10), "+1".repeat(4097), ")".repeat(10));
+            let r = parse(&nested);
+            assert_eq!(r.diagnostics.iter().filter(|d| d.code == "E0910").count(), 1, "{:?}", r.diagnostics);
+        })
+        .expect("spawn");
+    handle.join().expect("no stack overflow, no panic");
 }

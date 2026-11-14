@@ -353,6 +353,10 @@ fn field_inits(f: &[FieldInit]) -> String {
 }
 
 fn expr(e: &Expr) -> String {
+    crate::stack::deep(|| expr_inner(e))
+}
+
+fn expr_inner(e: &Expr) -> String {
     match &e.kind {
         ExprKind::Lit(l) => lit(l),
         ExprKind::Path(p) => path(p),

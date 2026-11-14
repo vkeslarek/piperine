@@ -215,4 +215,4 @@ rl: f64 = 1T;
 | `E0907` | `+>` or `<-` inside an expression, where no statement form accepts it. A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404` | parse |
 | `E0908` | `Unknown` used as a binding, item or field name | parse |
 | `E0909` | a float literal whose nearest `f64` is infinite, or an integer literal that exceeds its suffix type or, without a suffix, 128 bits | parse |
-| `E0910` | nesting deeper than 256 levels (delimiters and operator chains) | parse |
+| `E0910` | nesting deeper than 256 levels (delimiters, blocks, prefix operators, closures, `return` and `break` operands, type arguments), or more than 4096 chain links (binary operators, postfix `.`, call, index, `as` and `?`, `else if` arms) on one path of an expression | parse |

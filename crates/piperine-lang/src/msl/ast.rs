@@ -241,10 +241,19 @@ pub struct FieldPat {
 
 // ---- expressions ------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Loc,
+}
+
+/// A flat chain of up to `MAX_CHAIN` links is a tree that deep: cloning an
+/// expression grows the stack along it (the derived impls of the children
+/// come back through here).
+impl Clone for Expr {
+    fn clone(&self) -> Self {
+        crate::stack::deep(|| Expr { kind: self.kind.clone(), span: self.span })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

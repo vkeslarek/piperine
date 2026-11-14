@@ -160,6 +160,10 @@ impl Lowerer<'_> {
     }
 
     pub(crate) fn expr(&mut self, e: &ast::Expr) -> ExprId {
+        crate::stack::deep(|| self.expr_inner(e))
+    }
+
+    fn expr_inner(&mut self, e: &ast::Expr) -> ExprId {
         let kind = match &e.kind {
             ast::ExprKind::Lit(l) => ExprKind::Lit(l.clone()),
             ast::ExprKind::Path(p) => ExprKind::Path(self.path(p)),
