@@ -1297,3 +1297,23 @@ fn g64_names_the_normal_generator() {
     assert!(g.contains("the generator of `normal` is the one written in `std::analog`"), "{g}");
     assert!(g.contains("SplitMix64"), "{g}");
 }
+
+#[test]
+fn e0707_is_replaced_by_e0317() {
+    // STD-02 AC 7: a complex root without its conjugate and a zero denominator are a false `where`.
+    let p7 = spec("part_vii_stdlib.md");
+    for (file, text) in all_specs() {
+        assert!(!text.contains("E0707"), "{file} still names E0707");
+    }
+    for heading in ["#### 22.2.13", "#### 22.2.14"] {
+        let s = one_line(&section(&p7, heading));
+        assert!(s.contains("`E0317`"), "{heading} gives E0317: {s}");
+    }
+}
+
+#[test]
+fn laplace_states_the_proper_rule() {
+    // STD-02 AC 8: `laplace_nd` requires `D >= 1` and `N <= D`; breaking it is E0304.
+    let s = one_line(&section(&spec("part_vii_stdlib.md"), "#### 22.2.14"));
+    assert!(s.contains("`D >= 1`") && s.contains("`N <= D`") && s.contains("`E0304`"), "{s}");
+}

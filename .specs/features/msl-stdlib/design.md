@@ -285,7 +285,7 @@ pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 
     den: [f64; D] where den.iter().any(|d| *d != 0.0);
     signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
     let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
-    let y: f64 = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
+    let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
     y
 }
 analog<N, D> for laplace_nd<N, D> {

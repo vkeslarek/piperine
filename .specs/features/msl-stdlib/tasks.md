@@ -414,16 +414,16 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `e0707_is_replaced_by_e0317` passes in `spec_text.rs` (C17: STD-02 AC 7)
-- [ ] Test `laplace_states_the_proper_rule` passes in `spec_text.rs` (C18: STD-02 AC 8)
-- [ ] Test `root_forms_place_their_coefficient_form` passes in `std_library.rs` (C46: STD-08 AC 8)
-- [ ] Test `root_params_carry_a_where` passes in `std_library.rs` (C47: STD-08 AC 9)
-- [ ] Test `laplace_nd_has_state_signals_and_an_analog_block` passes in `std_library.rs` (C48: STD-08 AC 10)
-- [ ] `std_excerpts` and the two cleanliness tests of `std_library` pass with the file complete
-- [ ] No other part of `docs/spec/` still cites `E0707` (`every_error_code_is_defined_exactly_once` passes)
-- [ ] A body the parser or the POM rejects is a stop: report the form and the diagnostic, do not turn the module into an intrinsic or back into a head
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `e0707_is_replaced_by_e0317` passes in `spec_text.rs` (C17: STD-02 AC 7)
+- [x] Test `laplace_states_the_proper_rule` passes in `spec_text.rs` (C18: STD-02 AC 8)
+- [x] Test `root_forms_place_their_coefficient_form` passes in `std_library.rs` (C46: STD-08 AC 8)
+- [x] Test `root_params_carry_a_where` passes in `std_library.rs` (C47: STD-08 AC 9)
+- [x] Test `laplace_nd_has_state_signals_and_an_analog_block` passes in `std_library.rs` (C48: STD-08 AC 10)
+- [x] `std_excerpts` and the two cleanliness tests of `std_library` pass with the file complete
+- [x] No other part of `docs/spec/` still cites `E0707` (`every_error_code_is_defined_exactly_once` passes)
+- [x] A body the parser or the POM rejects is a stop: report the form and the diagnostic, do not turn the module into an intrinsic or back into a head
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

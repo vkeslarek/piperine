@@ -241,3 +241,56 @@ fn a_private_std_item_is_e0161() {
         .build();
     assert_eq!(codes(&design), ["E0161", "E0161"], "{:?}", design.diagnostics());
 }
+
+/// The modules of `std::analog` whose name starts with `prefix`, with their names.
+fn analog_modules<'d>(design: &'d Design, prefix: &str) -> Vec<(String, piperine_lang::pom::Module<'d>)> {
+    design
+        .std_crate()
+        .modules()
+        .into_iter()
+        .filter_map(|m| {
+            let name = m.name()?;
+            (name.starts_with(prefix) && m.file().name() == "analog.msl").then(|| (name.to_string(), m))
+        })
+        .collect()
+}
+
+#[test]
+fn root_forms_place_their_coefficient_form() {
+    let design = embedded();
+    for (prefix, placed, forms) in [("zi_", "zi_nd", ["zi_np", "zi_zd", "zi_zp"]), ("laplace_", "laplace_nd", ["laplace_np", "laplace_zd", "laplace_zp"])] {
+        let modules = analog_modules(&design, prefix);
+        for form in forms {
+            let (_, module) = modules.iter().find(|(n, _)| n == form).unwrap_or_else(|| panic!("std::analog declares {form}"));
+            let calls = calls_named(&design, module.decl(), placed);
+            assert_eq!(calls.len(), 1, "{form} places exactly one {placed}");
+            let ExprKind::Call { callee, .. } = calls[0].kind() else { unreachable!() };
+            let Resolution::Decl(id) = design.expr(*callee).resolution() else { panic!("{placed} resolves in {form}") };
+            assert_eq!(design.decl(id).name(), Some(placed));
+            assert!(design.decl(id).krate().is_std());
+        }
+    }
+}
+
+#[test]
+fn root_params_carry_a_where() {
+    let design = embedded();
+    let mut roots = 0;
+    for prefix in ["zi_", "laplace_"] {
+        for (name, module) in analog_modules(&design, prefix) {
+            for param in module.params().into_iter().filter(|p| matches!(p.name(), Some("zeros" | "poles"))) {
+                roots += 1;
+                assert!(param.where_clause().is_some(), "{name}.{} has a where", param.name().unwrap());
+            }
+        }
+    }
+    assert_eq!(roots, 8, "the six root forms declare eight lists of roots");
+}
+
+#[test]
+fn laplace_nd_has_state_signals_and_an_analog_block() {
+    let design = embedded();
+    let module = design.std_crate().find("analog::laplace_nd").and_then(|d| d.as_module()).expect("std declares laplace_nd");
+    assert!(module.signals().iter().any(|s| s.ty().text().starts_with("[State;")), "a signal that is an array of State");
+    assert_eq!(module.analog_blocks().len(), 1, "one analog block");
+}

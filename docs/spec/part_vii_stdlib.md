@@ -105,7 +105,6 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 | `E0704` | `table_model` table: abscissae not strictly increasing, or fewer points than the interpolation degree needs | elaboration |
 | `E0705` | `table_model` input outside the table under extrapolation `E`: a panic (§1 rule 11) with its own code | run |
 | `E0706` | `parse_table` or `parse_hex`: text not in the format of §22.6.4 | elaboration |
-| `E0707` | `laplace_*` or `zi_*`: denominator identically zero, or a complex root without its conjugate | elaboration |
 
 ---
 
@@ -697,7 +696,7 @@ let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
 A discrete-time filter sampled every `period`:
 `y[n] = Σ num[k]·x[n−k] − Σ den[k]·y[n−1−k]`.
 
-```rust,fragment
+```rust
 pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N]; den: [f64; D];            // den[k] is the coefficient of y[n−1−k]
     signal xs: [Bit<f64>; N];                // xs[k] = x[n−1−k]
@@ -756,40 +755,134 @@ The behavior of `zi_nd` in a `Dc` analysis run at a transient's last instant is 
 
 #### 22.2.13 `zi_np`, `zi_zd`, `zi_zp`
 
-Discrete-time filters given by roots. Each converts its roots to coefficients at elaboration and places one `zi_nd`. The listing gives heads and params only; the result is that `zi_nd`.
+Discrete-time filters given by roots. Each converts its roots to coefficients at elaboration and places one `zi_nd`.
 
-```rust,fragment
-pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { zeros: [(f64, f64); N]; poles: [(f64, f64); D]; }
-pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { zeros: [(f64, f64); N]; den: [f64; D]; }
-pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 { num: [f64; N]; poles: [(f64, f64); D]; }
+```rust
+/// True when each complex root has its conjugate as often as itself.
+const fn conjugate_closed<const N: usize>(roots: &[(f64, f64); N]) -> bool {
+    roots.iter().all(|r| r.1 == 0.0
+        || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count()
+        == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count())
+}
+
+/// Coefficients, ascending in `q = z^−1`, of the product of `1 − ρ·q` over the roots.
+const fn poly_q<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
+    let mut c = [(0.0, 0.0); N + 1];
+    c[0] = (1.0, 0.0);
+    for n in 0..N {
+        let (a, b) = roots[n];
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = (c[k].0 - (a * pr - b * pi), c[k].1 - (a * pi + b * pr));
+        }
+    }
+    let mut re = [0.0; N + 1];
+    for k in 0..=N { re[k] = c[k].0; }
+    re
+}
+
+/// The same product without its leading 1: the `den` of `zi_nd` (§22.2.12 rule 1).
+const fn den_q<const D: usize>(poles: &[(f64, f64); D]) -> [f64; D] {
+    let c = poly_q(poles);
+    let mut d = [0.0; D];
+    for k in 0..D { d[k] = c[k + 1]; }
+    d
+}
+
+pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    zi_nd(x, period) { num: poly_q(&zeros), den: den_q(&poles) }
+}
+pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    den: [f64; D];
+    zi_nd(x, period) { num: poly_q(&zeros), den }
+}
+pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
+    num: [f64; N];
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    zi_nd(x, period) { num, den: den_q(&poles) }
+}
 ```
 
-1. A root is a pair `(real, imaginary)`. A root `ρ` contributes the factor `1 − ρ·z^−1` (VAMS 4.5.12).
-2. A complex root **MUST** appear with its conjugate. Otherwise `E0707`.
+1. A root is a pair `(real, imaginary)`. A root `ρ` contributes the factor `1 − ρ·z^−1` (VAMS 4.5.12). The imaginary parts of the product cancel when the roots are conjugate-closed, so the coefficients are the real parts.
+2. A complex root **MUST** appear with its conjugate. Otherwise the `where` of the param is false: `E0317`.
 3. `num` and `den` follow the convention of `zi_nd` (§22.2.12 rule 1).
 4. Behavior in every analysis is that of the `zi_nd` placed.
 
-> **Resolution.** The signatures and param names are inferred by analogy with `zi_nd`. Roots are params, so the conversion to coefficients is an elaboration constant (§8.2).
+> **Resolution.** Roots are params, so the conversion to coefficients is an elaboration constant (§8.2).
 
 #### 22.2.14 `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp`
 
-Continuous-time filters `H(s)`, with one internal `State` node per pole. The listing gives heads and params only.
+Continuous-time filters `H(s)`, with one internal `State` node per pole.
 
-```rust,fragment
-pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64; N]; den: [f64; D]; }
-pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 { zeros: [(f64, f64); N]; poles: [(f64, f64); D]; }
-pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 { zeros: [(f64, f64); N]; den: [f64; D]; }
-pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 { num: [f64; N]; poles: [(f64, f64); D]; }
+```rust
+/// Coefficients, ascending in `s`, of the product of `1 − s/ρ`; a root at zero gives the factor `s`.
+const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
+    let mut c = [(0.0, 0.0); N + 1];
+    c[0] = (1.0, 0.0);
+    for n in 0..N {
+        let (a, b) = roots[n];
+        let zero = a == 0.0 && b == 0.0;
+        let m = a * a + b * b;
+        let (ia, ib) = if zero { (0.0, 0.0) } else { (a / m, -b / m) };        // 1/ρ
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = if zero { (pr, pi) } else { (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr)) };
+        }
+        if zero { c[0] = (0.0, 0.0); }
+    }
+    let mut re = [0.0; N + 1];
+    for k in 0..=N { re[k] = c[k].0; }
+    re
+}
+
+pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
+    num: [f64; N];
+    den: [f64; D] where den.iter().any(|d| *d != 0.0);
+    signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
+    let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
+    let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
+    y
+}
+analog<N, D> for laplace_nd<N, D> {
+    for k in 0..D - 1 {
+        if k + 2 < D { rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]); }
+    }
+    if D > 1 {
+        let mut acc = den[D - 1] * top - x;
+        for j in 0..D - 1 { acc += den[j] * pos(w[j]); }
+        rate(w[D - 2]) +> acc;               // the row of the last state: den(s)·W = x
+    }
+}
+
+pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= D {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    laplace_nd(x) { num: poly_s(&zeros), den: poly_s(&poles) }
+}
+pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
+    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    den: [f64; D];
+    laplace_nd(x) { num: poly_s(&zeros), den }
+}
+pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
+    num: [f64; N];
+    poles: [(f64, f64); D] where conjugate_closed(&poles);
+    laplace_nd(x) { num, den: poly_s(&poles) }
+}
 ```
 
 1. In the `nd` form, `H(s) = Σ num[k]·s^k / Σ den[k]·s^k`, coefficients in ascending powers of `s`.
 2. A root `ρ` contributes the factor `1 − s/ρ`. A root at zero contributes the factor `s` (VAMS 4.5.11).
-3. A complex root **MUST** appear with its conjugate. A denominator that is identically zero is an error. Both are `E0707`.
-4. The filter is realized with `ddt` on internal `State` nodes. Its states obey the jump rule (§15.2.1).
-5. `x` is a value input: it **MAY** probe and is differentiated.
-6. Applied to a noise result, the filter is `H(jω)·n` (§11.1).
+3. A complex root **MUST** appear with its conjugate. A denominator that is identically zero is an error. Each is a false `where` of the param: `E0317`.
+4. `laplace_nd` requires `D >= 1` and `N <= D`: a proper transfer function. A placement that breaks it is `E0304`.
+5. The filter is realized with `ddt` on internal `State` nodes, in the controllable canonical form. Its states obey the jump rule (§15.2.1). With `D == 1` there is no state and the result is `num[0] * x / den[0]`.
+6. `x` is a value input: it **MAY** probe and is differentiated.
+7. Applied to a noise result, the filter is `H(jω)·n` (§11.1).
 
-> **Resolution.** The signatures, param names and coefficient order are inferred from VAMS 4.5.11 and from `zi_nd`. The realization (which state-space form) is not normative; the transfer function and the number of states are.
+> **Resolution.** The transfer function and the number of states are normative; the controllable canonical form is the definition above.
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
