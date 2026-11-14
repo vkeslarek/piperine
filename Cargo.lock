@@ -1458,6 +1458,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-analog-solver"
+version = "0.2.0"
+dependencies = [
+ "faer",
+ "ndarray",
+ "num-complex",
+ "num-traits",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "piperine-api"
 version = "0.2.0"
 dependencies = [
@@ -1536,6 +1547,7 @@ dependencies = [
  "ndarray",
  "num-complex",
  "num-traits",
+ "piperine-analog-solver",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",

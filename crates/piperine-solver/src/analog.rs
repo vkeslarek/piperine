@@ -3,7 +3,7 @@
 //! `BranchIdentifier`, `AnalogVariable`), the `AnalogReference` → MNA
 //! unknown-index map, and DC initial values — the analog view of the
 //! circuit handed to MNA assembly.
-use crate::math::linear::AsIndex;
+use piperine_analog_solver::math::linear::AsIndex;
 use bimap::BiMap;
 use std::fmt;
 use std::sync::Arc;
@@ -234,11 +234,11 @@ impl Netlist {
     pub fn initial_values(
         &self,
         values: &std::collections::HashMap<std::sync::Arc<AnalogVariable>, f64>,
-    ) -> Vec<crate::math::iv::InitialValue<AnalogReference, f64>> {
+    ) -> Vec<piperine_analog_solver::math::iv::InitialValue<AnalogReference, f64>> {
         let mut initial_values = Vec::with_capacity(values.len());
         for (var, value) in values {
             if let Some(reference) = self.reference_for(var).cloned() {
-                initial_values.push(crate::math::iv::InitialValue {
+                initial_values.push(piperine_analog_solver::math::iv::InitialValue {
                     reference,
                     value: *value,
                 });

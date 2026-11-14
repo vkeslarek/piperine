@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::analyses::transient::{TransientAnalysisOptions, TransientSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::error::{Error, SolverDomain};
+use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::TransientAnalysisResult;
 use crate::core::result::TransientStep;
 use crate::analyses::Policy;
@@ -122,7 +122,7 @@ impl<'a> PssSolver<'a> {
             .all_references()
             .into_iter()
             .filter_map(|r| {
-                use crate::math::linear::AsIndex;
+                use piperine_analog_solver::math::linear::AsIndex;
                 r.as_index().map(|i| (i, r.variable().clone()))
             })
             .collect();

@@ -245,7 +245,7 @@ mod tests {
     fn lte_default_element_returns_none() {
         use crate::analyses::transient::TransientAnalysisState;
         use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-        use crate::math::circular_array::CircularArrayBuffer2;
+        use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
         use crate::analyses::Context;
 
         struct PlainElement;
@@ -271,7 +271,7 @@ mod tests {
     fn lte_element_override_returns_custom_dt() {
         use crate::analyses::transient::TransientAnalysisState;
         use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-        use crate::math::circular_array::CircularArrayBuffer2;
+        use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
         use crate::analyses::Context;
 
         struct FixedLte(f64);

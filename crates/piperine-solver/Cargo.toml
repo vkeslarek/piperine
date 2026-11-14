@@ -14,6 +14,7 @@ bimap.workspace = true
 log = "0.4"
 bitflags = "2.6"
 thiserror.workspace = true
+piperine-analog-solver = { path = "../piperine-analog-solver" }
 
 [dev-dependencies]
 tempfile.workspace = true

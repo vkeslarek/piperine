@@ -24,7 +24,11 @@ const RETIRED_CRATES: &[&str] = &[
 
 /// The workspace's `default-members`: the crates that build and test green.
 /// Later tasks extend this list as the sub-solver crates appear.
-const DEFAULT_MEMBERS: &[&str] = &["crates/piperine-lang", "crates/piperine-solver"];
+const DEFAULT_MEMBERS: &[&str] = &[
+    "crates/piperine-analog-solver",
+    "crates/piperine-lang",
+    "crates/piperine-solver",
+];
 
 /// The root manifest and every `crates/*/Cargo.toml`.
 fn all_manifests() -> Vec<PathBuf> {

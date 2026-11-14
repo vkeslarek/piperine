@@ -17,7 +17,7 @@
 use ndarray::Array1;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use crate::analog::Netlist;
-use crate::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::config::{Schedules, StepperGains, TraceFlags};
 use crate::analyses::{Policy, Tolerances};
 use crate::core::result::Result;
@@ -575,7 +575,7 @@ impl HomotopyStrategy for SourceStepping {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::{Error, SolverDomain};
+    use piperine_analog_solver::error::{Error, SolverDomain};
 
     /// Scripted homotopy driver: records every `newton()` call as the
     /// `(src_scale, gmin_extra)` it ran under — the warm-start chain — and

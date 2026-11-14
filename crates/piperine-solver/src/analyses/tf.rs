@@ -10,8 +10,8 @@ use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdent
 use crate::analyses::Context;
 use crate::analyses::dc::{DcAnalysisState, DcSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::math::faer::FaerSymbolicMatrix;
-use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
+use piperine_analog_solver::math::faer::FaerSymbolicMatrix;
+use piperine_analog_solver::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::{TransferFunctionAnalysisResult, TransferType};
 
@@ -118,8 +118,8 @@ impl<'a> TransferFunctionSolver<'a> {
             .netlist()
             .reference_for(&input_branch_var)
             .ok_or_else(|| {
-                crate::error::Error::simple(
-                    crate::error::SolverDomain::Tf,
+                piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Tf,
                     format!(
                         "Input source branch '{}' not found",
                         options.input_source.component
@@ -133,8 +133,8 @@ impl<'a> TransferFunctionSolver<'a> {
             .netlist()
             .reference_for(&options.output)
             .ok_or_else(|| {
-                crate::error::Error::simple(
-                    crate::error::SolverDomain::Tf,
+                piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Tf,
                     "Output variable not found in circuit",
                 )
             })?
@@ -148,8 +148,8 @@ impl<'a> TransferFunctionSolver<'a> {
                     .netlist()
                     .reference_for(&ref_var)
                     .ok_or_else(|| {
-                        crate::error::Error::simple(
-                            crate::error::SolverDomain::Tf,
+                        piperine_analog_solver::error::Error::simple(
+                            piperine_analog_solver::error::SolverDomain::Tf,
                             "Output reference node not found in circuit",
                         )
                     })?
@@ -212,7 +212,7 @@ impl<'a> TransferFunctionSolver<'a> {
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
         context: &Context,
-    ) -> crate::core::result::Result<Vec<crate::math::linear::Stamp<AnalogReference, f64>>> {
+    ) -> crate::core::result::Result<Vec<piperine_analog_solver::math::linear::Stamp<AnalogReference, f64>>> {
         // Create state buffer with DC operating point values
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -230,7 +230,7 @@ impl<'a> TransferFunctionSolver<'a> {
         // CircularArrayBuffer2::new(capacity, size) where:
         // - capacity = number of state snapshots to keep
         // - size = number of variables in each snapshot
-        let mut state = crate::math::circular_array::CircularArrayBuffer2::new(1, size);
+        let mut state = piperine_analog_solver::math::circular_array::CircularArrayBuffer2::new(1, size);
         state.push(&dc_state_array.view());
 
         // Update all devices at DC operating point
@@ -289,8 +289,8 @@ impl<'a> TransferFunctionSolver<'a> {
     /// 3. Solve linearized system
     /// 4. Read output response
     fn calculate_gain(&mut self) -> crate::core::result::Result<(f64, Array1<f64>)> {
-        use crate::math::faer::FaerSparseLinearSystem;
-        use crate::math::linear::{LinearSystem, Stamp};
+        use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+        use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
 
         // Build linear system with ONLY matrix stamps (no RHS)
         // Filter out RHS stamps - we only want the Jacobian matrix
@@ -305,8 +305,8 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Now apply ONLY the unit excitation at input.
         let input_is_voltage = self.input_is_voltage_source().ok_or_else(|| {
-            crate::error::Error::simple(
-                crate::error::SolverDomain::Tf,
+            piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Tf,
                 format!(
                     "TF: input source branch '{}' is not a recognised voltage/current source label",
                     self.options.input_source.component
@@ -318,8 +318,8 @@ impl<'a> TransferFunctionSolver<'a> {
             // Voltage source: apply 1V by setting RHS[branch] = 1.0
             system.apply_stamps(vec![Stamp::Rhs(self.input_branch_ref.clone(), 1.0)]);
         } else {
-            return Err(crate::error::Error::simple(
-                crate::error::SolverDomain::Tf,
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Tf,
                 "TF: current-source input is not supported (D5)",
             ));
         }
@@ -402,8 +402,8 @@ impl<'a> TransferFunctionSolver<'a> {
     /// For voltage output: Apply 1A test current, measure voltage change
     /// For current output: Apply 1V test voltage, measure current change
     fn calculate_output_resistance(&mut self) -> crate::core::result::Result<f64> {
-        use crate::math::faer::FaerSparseLinearSystem;
-        use crate::math::linear::{LinearSystem, Stamp};
+        use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+        use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
 
         // Build linear system (same as gain calculation)
         let stamps = Self::assemble_dc_stamps(self.circuit, &self.dc_point, &self.context)?;

@@ -13,8 +13,8 @@
 //! failure, not a named branch.
 
 use crate::analog::AnalogReference;
-use crate::error::{Error, SolverDomain};
-use crate::math::linear::Stamp;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::linear::Stamp;
 
 /// Returns `None` when every stamp is finite (the common case, checked
 /// with zero allocation); otherwise a typed `SolverDomain::Element` error

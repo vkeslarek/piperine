@@ -35,9 +35,9 @@ use crate::analyses::Context;
 use crate::analyses::ac::AcAnalysisContext;
 use crate::analyses::dc::{DcAnalysisState, DcSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::error::{Error, SolverDomain};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::linear::Stamp;
 use crate::prelude::DcAnalysisResult;
 
 use ndarray::Array2;

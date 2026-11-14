@@ -13,8 +13,8 @@ use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
-use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::NoiseAnalysisResult;
 
@@ -323,12 +323,12 @@ impl<'a> NoiseSolver<'a> {
         let out = net
             .reference_for(&AnalogVariable::Node(opt.output_node.clone()))
             .ok_or_else(|| {
-                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Output node not found")
+                piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Noise, "Output node not found")
             })?;
         let ref_ = net
             .reference_for(&AnalogVariable::Node(opt.reference_node.clone()))
             .ok_or_else(|| {
-                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Reference node not found")
+                piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Noise, "Reference node not found")
             })?;
         Ok((out.clone(), ref_.clone()))
     }
@@ -355,7 +355,7 @@ mod tests {
     use super::*;
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use crate::analog::{AnalogReference, Netlist, NodeIdentifier};
-    use crate::math::linear::Stamp;
+    use piperine_analog_solver::math::linear::Stamp;
     use num_complex::Complex64;
     use crate::analyses::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
     use crate::prelude::DcAnalysisResult;

@@ -53,6 +53,6 @@ pub use crate::core::result::{
 };
 
 // ── Errors ─────────────────────────────────────────────────────────────────
-pub use crate::error::Error;
+pub use piperine_analog_solver::error::Error;
 pub use crate::core::result::Result;
 pub use crate::core::result::SolverStats;

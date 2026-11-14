@@ -31,10 +31,10 @@ use crate::analyses::Context;
 use crate::analyses::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
-use crate::error::{Error, SolverDomain};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::Stamp;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+use piperine_analog_solver::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
 use crate::core::result::SpResult;
@@ -238,7 +238,7 @@ mod tests {
     use crate::analog::{BranchIdentifier, Netlist, NodeIdentifier};
     use crate::analyses::dc::DcAnalysisState;
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-    use crate::math::linear::Stamp as S;
+    use piperine_analog_solver::math::linear::Stamp as S;
     use num_complex::Complex64;
 
     // ── test doubles ─────────────────────────────────────────────────────

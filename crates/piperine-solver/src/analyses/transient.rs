@@ -17,11 +17,11 @@ use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCheckpoint;
 use crate::digital::{DigitalNet, LogicValue};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use crate::math::integration::{TrBdf2, TrBdf2Phase};
-use crate::math::iv::InitialValue;
-use crate::math::linear::{AsIndex, Stamp};
+use piperine_analog_solver::math::iv::InitialValue;
+use piperine_analog_solver::math::linear::{AsIndex, Stamp};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::{TransientAnalysisResult, TransientStep};
 
@@ -614,15 +614,15 @@ impl<'a> TransientSolver<'a> {
     ) -> crate::core::result::Result<()> {
         for (label, observable) in &selection.requests {
             let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Element,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Element,
                     format!("device `{label}` not found"),
                 ));
             };
             let declared = dev.list_observables();
             if !declared.iter().any(|d| &d.name == observable) {
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Element,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Element,
                     format!("device `{label}` has no observable `{observable}`"),
                 ));
             }
@@ -1072,8 +1072,8 @@ impl<'a> TransientSolver<'a> {
             strongest = strongest.max(inv);
         }
         if strongest >= Invalidation::Rebuild {
-            return Err(crate::error::Error::simple(
-                crate::error::SolverDomain::Transient,
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
                 format!(
                     "scheduled set at t={:.3e} needs a structural \
                      rebuild — re-elaborate at the host layer (MD-18)",
@@ -1330,8 +1330,8 @@ impl<'a> TransientSolver<'a> {
             if iterations > self.options.max_steps {
                 let progress = (st.current_time - self.options.start_time)
                     / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Transient,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Transient,
                     format!(
                         "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
                          ({:.2}% of the run) with dt = {:.3e} s \

@@ -143,7 +143,7 @@ impl Tolerances {
         residual: &[f64],
         scale: &[f64],
     ) -> bool {
-        use crate::math::linear::AsIndex;
+        use piperine_analog_solver::math::linear::AsIndex;
         for r in netlist.all_references() {
             let Some(i) = r.as_index() else { continue };
             if i >= residual.len() {

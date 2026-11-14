@@ -16,8 +16,8 @@ use crate::core::introspect::{
 };
 use crate::digital::{DigitalNet, LogicValue};
 use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::linear::Stamp;
 use crate::analyses::Context;
 
 bitflags::bitflags! {

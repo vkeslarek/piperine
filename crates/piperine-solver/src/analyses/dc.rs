@@ -9,10 +9,10 @@ use crate::analyses::{Context, Policy};
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
 use crate::digital::LogicValue;
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::iv::InitialValue;
-use crate::math::linear::Stamp;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
+use piperine_analog_solver::math::iv::InitialValue;
+use piperine_analog_solver::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
 
@@ -351,8 +351,8 @@ impl<'a> DcSolver<'a> {
             {
                 for _ in 0..max_ms_iter {
                     let solution_slice = sol.as_slice().ok_or_else(|| {
-                        crate::error::Error::simple(
-                            crate::error::SolverDomain::Dc,
+                        piperine_analog_solver::error::Error::simple(
+                            piperine_analog_solver::error::SolverDomain::Dc,
                             "solution not contiguous",
                         )
                     })?;

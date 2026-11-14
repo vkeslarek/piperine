@@ -494,12 +494,12 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] The six modules live in the new crate, moved with `git mv`, bodies unchanged apart from `use` paths; the `Result` alias moves beside `Error`
-- [ ] The owner has no `error.rs` and none of the five math files; its internal paths point at `piperine_analog_solver`; `prelude` and `abi` export the same names as before
-- [ ] The new crate's manifest names no workspace crate and lists only the external crates its modules use
-- [ ] `cargo test -p piperine-analog-solver` passes with the unit tests of `faer.rs` (4), among them `singular_system_fails_loud_through_the_existing_error_family` (C27)
-- [ ] The expected list of `default_members_are_the_green_crates` gains the crate
-- [ ] Gate: full (owner and analog)
+- [x] The six modules live in the new crate, moved with `git mv`, bodies unchanged apart from `use` paths; the `Result` alias moves beside `Error`
+- [x] The owner has no `error.rs` and none of the five math files; its internal paths point at `piperine_analog_solver`; `prelude` and `abi` export the same names as before
+- [x] The new crate's manifest names no workspace crate and lists only the external crates its modules use
+- [x] `cargo test -p piperine-analog-solver` passes with the unit tests of `faer.rs` (4), among them `singular_system_fails_loud_through_the_existing_error_family` (C27)
+- [x] The expected list of `default_members_are_the_green_crates` gains the crate
+- [x] Gate: full (owner and analog)
 
 **Tests**: unit
 **Gate**: full

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use crate::core::circuit::CircuitInstance;
 use crate::core::introspect::{Invalidation, Value};
 use crate::core::net::Net;
-use crate::error::{Error, SolverDomain};
+use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::analyses::dc::DcSolver;
 use crate::analyses::Policy;
 use crate::Context;

@@ -26,9 +26,9 @@ use crate::core::element::ElementCapabilities;
 use crate::core::introspect::{Invalidation, ParamError, Value};
 use crate::core::result::Result;
 use crate::digital::LogicValue;
-use crate::error::{Error, SolverDomain};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp;
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::linear::Stamp;
 
 /// One parameter-derivative request: differentiate element `label`'s residual
 /// w.r.t. its parameter `param`, at the converged operating point.

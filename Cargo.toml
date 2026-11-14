@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/piperine-analog-solver",
     "crates/piperine-api",
     "crates/piperine-cli",
     "crates/piperine-lang",
@@ -8,7 +9,7 @@ members = [
     "crates/piperine-solver",
 ]
 
-default-members = ["crates/piperine-lang", "crates/piperine-solver"]
+default-members = ["crates/piperine-analog-solver", "crates/piperine-lang", "crates/piperine-solver"]
 
 [workspace.package]
 version = "0.2.0"

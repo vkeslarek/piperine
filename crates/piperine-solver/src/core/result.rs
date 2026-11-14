@@ -1,5 +1,4 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
-use crate::error::Error;
 use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
 use crate::digital::LogicValue;
@@ -10,7 +9,7 @@ use std::slice::Iter;
 use std::sync::Arc;
 use crate::analyses::noise::NoiseKind;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub use piperine_analog_solver::error::Result;
 
 /// Per-analysis convergence + performance diagnostics. Accumulated during
 /// the solve; returned on the result type. Always-on (counter increments

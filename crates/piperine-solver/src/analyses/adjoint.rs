@@ -28,10 +28,10 @@ use crate::core::circuit::CircuitInstance;
 use crate::core::net::Net;
 use crate::core::result::Result;
 use crate::digital::LogicValue;
-use crate::error::{Error, SolverDomain};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
+use piperine_analog_solver::error::{Error, SolverDomain};
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 
 use ndarray::Array1;

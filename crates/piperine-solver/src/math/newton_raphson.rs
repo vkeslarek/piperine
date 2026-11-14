@@ -1,11 +1,11 @@
 //! The Newton-Raphson engine: the `NonLinearSystem` contract, the
 //! strategy-driven damped iteration loop with predictor seed, and the
 //! solution-history buffer it owns.
-use crate::error::Error;
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::iv::{InitialValue, InitialValueApplyExt};
-use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use crate::math::num::Scalar;
+use piperine_analog_solver::error::Error;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::iv::{InitialValue, InitialValueApplyExt};
+use piperine_analog_solver::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use piperine_analog_solver::math::num::Scalar;
 use crate::analyses::convergence::NewtonStrategy;
 use crate::analyses::{Policy, Tolerances};
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
@@ -198,7 +198,7 @@ where
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
 
                 return Err(Error::simple(
-                    crate::error::SolverDomain::Newton,
+                    piperine_analog_solver::error::SolverDomain::Newton,
                     "Linear solver returned NaN/Inf",
                 ));
             }
@@ -234,7 +234,7 @@ where
         self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
-            crate::error::SolverDomain::Newton,
+            piperine_analog_solver::error::SolverDomain::Newton,
             format!("Failed to converge after {} iterations", max_iter),
         ))
     }
@@ -356,7 +356,7 @@ where
             if current_guess.iter().any(|x| !x.is_finite()) {
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
                 return Err(Error::simple(
-                    crate::error::SolverDomain::Newton,
+                    piperine_analog_solver::error::SolverDomain::Newton,
                     "Linear solver returned NaN/Inf",
                 ));
             }
@@ -405,7 +405,7 @@ where
         self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
-            crate::error::SolverDomain::Newton,
+            piperine_analog_solver::error::SolverDomain::Newton,
             format!("Failed to converge after {} iterations", max_iter),
         ))
     }

@@ -112,8 +112,8 @@ impl DigitalState {
 
             delta_count += 1;
             if delta_count >= max_delta_cycles {
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Digital,
+                return Err(piperine_analog_solver::error::Error::simple(
+                    piperine_analog_solver::error::SolverDomain::Digital,
                     format!(
                         "Delta cycle limit ({}) exceeded at t={}. Possible combinational loop.",
                         max_delta_cycles, t
@@ -258,8 +258,8 @@ impl DigitalState {
                 Some(pos) => {
                     restart_from = pos;
                     if iter + 1 == max_iters {
-                        return Err(crate::error::Error::simple(
-                            crate::error::SolverDomain::Digital,
+                        return Err(piperine_analog_solver::error::Error::simple(
+                            piperine_analog_solver::error::SolverDomain::Digital,
                             format!(
                                 "DAG digital eval: back-edge loop did not converge in {} iters at t={}",
                                 max_iters, t

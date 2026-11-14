@@ -9,7 +9,7 @@ use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::{DigitalNet, DigitalState};
-use crate::error::{Error, SolverDomain};
+use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::Result;
 
 // ── UnknownAllocator ─────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ mod tests {
     use super::*;
     use crate::analog::AnalogReference;
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-    use crate::math::linear::Stamp;
+    use piperine_analog_solver::math::linear::Stamp;
     use crate::analyses::dc::DcAnalysisState;
     use crate::analyses::Context;
 

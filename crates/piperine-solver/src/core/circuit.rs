@@ -8,7 +8,7 @@ use crate::analyses::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
 use crate::core::element::{Element, ElementCapabilities, Introspect};
 use crate::digital::{DigitalState, DigitalTopology};
-use crate::math::circular_array::CircularArrayBuffer2;
+use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
 use crate::analyses::ac::AcSolver;
 use crate::analyses::dc::DcSolver;
@@ -401,8 +401,8 @@ impl CircuitInstance {
         value: crate::core::introspect::Value,
     ) -> crate::core::result::Result<crate::core::introspect::Invalidation> {
         let device = self.devices.iter_mut().find(|d| d.name() == label).ok_or_else(|| {
-            crate::error::Error::simple(
-                crate::error::SolverDomain::Element,
+            piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Element,
                 format!("no element labeled `{label}`"),
             )
         })?;
@@ -416,8 +416,8 @@ impl CircuitInstance {
         {
             let lo = desc.bounds.min.map_or("-inf".to_string(), |m| m.to_string());
             let hi = desc.bounds.max.map_or("inf".to_string(), |m| m.to_string());
-            return Err(crate::error::Error::simple(
-                crate::error::SolverDomain::Element,
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Element,
                 format!(
                     "`{label}`: value {v} is out of bounds for parameter `{param}` \
                      (declared bounds [{lo}, {hi}])"
@@ -440,7 +440,7 @@ impl CircuitInstance {
                 }
                 _ => format!("`{label}`: {e}"),
             };
-            crate::error::Error::simple(crate::error::SolverDomain::Element, detail)
+            piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Element, detail)
         })
     }
 
@@ -450,7 +450,7 @@ impl CircuitInstance {
     /// convergence test (ABI-10). The DC and transient systems delegate here
     /// each iteration.
     pub fn apply_limiting_reports(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
-        use crate::math::linear::AsIndex;
+        use piperine_analog_solver::math::linear::AsIndex;
         for dev in &self.devices {
             if let Some(report) = dev.limiting_report()
                 && let Some(i) = report.net.as_index()
