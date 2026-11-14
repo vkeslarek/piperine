@@ -310,7 +310,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 
 | Code | Stage | Defined in | Meaning | Span |
 | --- | --- | --- | --- | --- |
-| `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one | the function's name |
+| `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one; an `extern "intrinsic"` function in a crate other than `std` (the help reads `only the standard library declares intrinsic functions`). `Function::is_intrinsic` is true exactly for the ABI `intrinsic`; an `extern "intrinsic" fn` of `std` is reported nothing and a call to it is an ordinary `CallClass::Function` | the function's name |
 | `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
 | `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path, including a private item or a private namespace of another crate; a first segment that names a crate of the design that is no dependency of the containing crate (the help reads `name it under [dependencies] in Piperine.toml`); `super` at a crate root; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |

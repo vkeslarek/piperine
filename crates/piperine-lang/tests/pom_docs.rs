@@ -417,3 +417,13 @@ fn mapping_has_a_crate_row() {
         assert!(row.contains(needed), "the `crate` row lacks {needed}: {row}");
     }
 }
+
+#[test]
+fn resolution_doc_describes_intrinsics() {
+    // STD-17 AC 2: the page names `extern "intrinsic"` and `is_intrinsic` where it describes E0125.
+    let page = page_of("resolution.md");
+    let row = page.lines().find(|l| l.starts_with("| `E0125` |")).expect("the E0125 row");
+    assert!(row.contains("extern \"intrinsic\"") && row.contains("`std`"), "{row}");
+    let shape = page.lines().find(|l| l.contains("is_intrinsic")).expect("a line naming `is_intrinsic`");
+    assert!(shape.contains("extern \"intrinsic\""), "{shape}");
+}

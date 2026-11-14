@@ -225,17 +225,17 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `intrinsic_fn_is_accepted_in_std` passes in `pom_resolve.rs` (C20: STD-04 AC 1)
-- [ ] Test `intrinsic_fn_outside_std_is_e0125` passes in `pom_resolve.rs` (C21: STD-04 AC 2)
-- [ ] Test `intrinsic_fn_with_a_body_is_e0125` passes in `pom_resolve.rs` (C22: STD-04 AC 3)
-- [ ] Test `is_intrinsic_reads_the_abi` passes in `pom_resolve.rs` (C23: STD-04 AC 4)
-- [ ] Test `extern_c_fn_is_not_intrinsic` passes in `pom_resolve.rs` (C24: STD-04 AC 5)
-- [ ] Test `a_call_to_an_intrinsic_resolves` passes in `pom_resolve.rs` (C25: STD-04 AC 6)
-- [ ] Test `resolution_doc_describes_intrinsics` passes in `pom_docs.rs` (C96: STD-17 AC 2)
-- [ ] An `extern "C" fn` is reported exactly as before
-- [ ] `pom_docs` passes: the new method has its row, the new condition its text
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `intrinsic_fn_is_accepted_in_std` passes in `pom_resolve.rs` (C20: STD-04 AC 1)
+- [x] Test `intrinsic_fn_outside_std_is_e0125` passes in `pom_resolve.rs` (C21: STD-04 AC 2)
+- [x] Test `intrinsic_fn_with_a_body_is_e0125` passes in `pom_resolve.rs` (C22: STD-04 AC 3)
+- [x] Test `is_intrinsic_reads_the_abi` passes in `pom_resolve.rs` (C23: STD-04 AC 4)
+- [x] Test `extern_c_fn_is_not_intrinsic` passes in `pom_resolve.rs` (C24: STD-04 AC 5)
+- [x] Test `a_call_to_an_intrinsic_resolves` passes in `pom_resolve.rs` (C25: STD-04 AC 6)
+- [x] Test `resolution_doc_describes_intrinsics` passes in `pom_docs.rs` (C96: STD-17 AC 2)
+- [x] An `extern "C" fn` is reported exactly as before
+- [x] `pom_docs` passes: the new method has its row, the new condition its text
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

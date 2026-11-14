@@ -1178,3 +1178,78 @@ fn transient_is_a_builtin_variant() {
     assert_eq!((info.kind, info.section), (BuiltinKind::Variant, "§11.1.1"));
     assert!(builtin("Tran").is_none(), "`Tran` is the module of §22.3.7, not a core name");
 }
+
+const INTRINSIC: &str = "pub extern \"intrinsic\" fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64;\n";
+
+/// The function named `name`, in any crate of the design.
+fn function<'d>(design: &'d Design, name: &str) -> piperine_lang::pom::Function<'d> {
+    let all = design.crates().into_iter().flat_map(|c| c.decls()).filter_map(|d| d.as_function());
+    all.into_iter().find(|f| f.name() == Some(name)).unwrap_or_else(|| panic!("a function `{name}`"))
+}
+
+#[test]
+fn intrinsic_fn_is_accepted_in_std() {
+    // STD-04 AC 1: no diagnostic for an `extern "intrinsic" fn` of the crate `std`.
+    let design = std_lib(Design::builder(), INTRINSIC).source("top.msl", "").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+}
+
+#[test]
+fn intrinsic_fn_outside_std_is_e0125() {
+    // STD-04 AC 2: E0125 at the function's name, with a help line.
+    let src = "extern \"intrinsic\" fn f(x: f64) -> f64;\n";
+    let design = build(src);
+    let found = with_code(&design, "E0125");
+    assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(primary_text(&design, found[0]), "f");
+    assert_eq!(found[0].diagnostic.span().start as usize, src.find("f(").unwrap());
+    assert!(found[0].diagnostic.help.as_deref().is_some_and(|h| h.contains("only the standard library declares intrinsic functions")), "{:?}", found[0].diagnostic.help);
+    assert_eq!(design.diagnostics().len(), 1, "{:?}", design.diagnostics());
+}
+
+#[test]
+fn intrinsic_fn_with_a_body_is_e0125() {
+    // STD-04 AC 3: a body is wrong even in `std`.
+    let std_src = "pub extern \"intrinsic\" fn f(x: f64) -> f64 { x }\n";
+    let design = std_lib(Design::builder(), std_src).source("top.msl", "").build();
+    let found = with_code(&design, "E0125");
+    assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(found[0].diagnostic.span().start as usize, std_src.find("f(").unwrap());
+    assert_eq!(design.diagnostics().len(), 1, "{:?}", design.diagnostics());
+}
+
+#[test]
+fn is_intrinsic_reads_the_abi() {
+    // STD-04 AC 4.
+    let design = std_lib(Design::builder(), &format!("{INTRINSIC}pub fn plain(x: f64) -> f64 {{ x }}\n"))
+        .source("top.msl", "extern \"C\" fn c(x: f64) -> f64;\n")
+        .build();
+    assert!(function(&design, "pnjlim").is_intrinsic());
+    assert!(!function(&design, "plain").is_intrinsic());
+    assert!(!function(&design, "c").is_intrinsic());
+}
+
+#[test]
+fn extern_c_fn_is_not_intrinsic() {
+    // STD-04 AC 5: no diagnostic, and not intrinsic.
+    let design = build("extern \"C\" fn g(x: f64) -> f64;\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(function(&design, "g").abi(), Some("C"));
+    assert!(!function(&design, "g").is_intrinsic());
+}
+
+#[test]
+fn a_call_to_an_intrinsic_resolves() {
+    // STD-04 AC 6: the call is `CallClass::Function` and the callee is the std declaration.
+    use piperine_lang::pom::{CallClass, ExprId, ExprKind};
+    let design = std_lib(Design::builder(), INTRINSIC).source("top.msl", "fn g(a: f64) -> f64 { pnjlim(a, a, a, a) }\n").build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let call = (0..design.expr_count())
+        .map(|i| design.expr(ExprId(i as u32)))
+        .find(|e| !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Call { .. }))
+        .expect("the call");
+    let ExprKind::Call { class, callee, .. } = call.kind() else { unreachable!() };
+    assert_eq!(*class, CallClass::Function);
+    let target = function(&design, "pnjlim").decl().id();
+    assert_eq!(design.expr(*callee).resolution(), Resolution::Decl(target));
+}
