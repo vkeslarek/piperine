@@ -72,6 +72,23 @@ fn disto_is_gone() {
 }
 
 #[test]
+fn text_io_is_gone() {
+    let found = names_found(&[
+        "core::output",
+        "SimOutput",
+        "StdoutSink",
+        "BufferSink",
+        "FileTable",
+        "McdTable",
+        "MemRadix",
+        "parse_memory_text",
+        "pub io:",
+        "io: std::rc::Rc",
+    ]);
+    assert!(found.is_empty(), "removed text/file output surface still named: {found:#?}");
+}
+
+#[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
     assert_eq!(names_in(planted, &["DistoSolver", "HAS_DISTO2"]), vec!["DistoSolver"]);

@@ -386,10 +386,10 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Everything in the removal map row is gone; `Context`'s hand-written `Debug` and `Default` lose only their `io` lines
-- [ ] The 20 unit tests of `output.rs` and any test function wholly about `Context.io` are named in `removed.txt`
-- [ ] Test `text_io_is_gone` passes in `removed_surface.rs` (C15)
-- [ ] Gate: full
+- [x] Everything in the removal map row is gone; `Context`'s hand-written `Debug` and `Default` lose only their `io` lines
+- [x] The 20 unit tests of `output.rs` and any test function wholly about `Context.io` are named in `removed.txt`
+- [x] Test `text_io_is_gone` passes in `removed_surface.rs` (C15)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full

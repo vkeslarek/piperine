@@ -13,6 +13,5 @@ pub mod element;
 pub mod introspect;
 pub mod margin;
 pub mod net;
-pub mod output;
 pub mod result;
 pub mod validation;
