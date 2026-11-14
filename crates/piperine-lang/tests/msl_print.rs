@@ -286,3 +286,68 @@ fn field_shorthand_prints_as_written() {
     assert!(parsed("short2", &st) == s && parsed("long2", &lt) == l);
     assert_eq!(print(&parsed("short3", &st)), st);
 }
+
+#[test]
+fn statement_and_hardware_docs_round_trip() {
+    // POL-12 AC 4: docs and attributes at every new position survive a print:
+    // the reparse equals the first tree and a second print is the same text.
+    let src = "\
+fn f() {
+    /// a let
+    #[x]
+    let y = 1;
+    /// a call
+    g();
+    /// a block
+    if y { }
+}
+nature N {
+    /// pot
+    potential: V { access: v },
+    /// flow
+    flow: I { access: i },
+}
+nature L {
+    /// value
+    value: bool,
+    /// resolve
+    resolve: pick,
+}
+module M() {
+    /// def
+    #[d]
+    s = x after 1;
+    /// gen
+    for i in 0..2 { /// inner
+        s = i; }
+    /// gen if
+    if a { } else { }
+}
+analog for M {
+    /// contribution
+    #[c]
+    i(a) +> 1.0;
+}
+digital for M {
+    /// reaction
+    on e {
+        /// commit
+        q <- 1;
+    }
+    /// dgen
+    for i in 0..2 { /// inner reaction
+        on x { } }
+}
+";
+    let first = parsed("docs", src);
+    let text = print(&first);
+    for doc in [
+        "/// a let", "/// a call", "/// a block", "/// pot", "/// flow", "/// value", "/// resolve", "/// def", "/// gen",
+        "/// inner", "/// gen if", "/// contribution", "/// reaction", "/// commit", "/// dgen", "/// inner reaction",
+    ] {
+        assert!(text.contains(doc), "{doc} lost in:\n{text}");
+    }
+    let second = parsed("docs (printed)", &text);
+    assert!(first == second, "the printed text parses to another tree:\n{text}");
+    assert_eq!(print(&second), text);
+}

@@ -478,6 +478,17 @@ digital for SampleHold { on clk.rise() { held <- v(vin); } }
 analog for SampleHold { v(vout) +> held.known_or(0.0); }
 ```
 
+A doc comment or an attribute goes before a reaction, as before any other item of a `digital`
+block:
+
+```rust
+module Latch(in d: Bit, in en: Bit, out q: Bit = false) {}
+digital for Latch {
+    /// Copies `d` to `q` when `en` rises.
+    on en.rise() { q <- d; }
+}
+```
+
 A `clk` that starts high has risen at `(0, 0)` (§13 rule 6), so `Counter` counts that edge. A model that
 must ignore it says so: `on clk.rise() && clk.prev().is_known()`.
 

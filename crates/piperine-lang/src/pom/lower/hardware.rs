@@ -41,12 +41,19 @@ impl Lowerer<'_> {
             .map(|f| match &f.kind {
                 ast::NatureFieldKind::Quantity { which, name: ident, attrs } => {
                     let id = self.new_decl(DeclKind::Error, Some(ident), f.span.0, false);
-                    let attrs = self.within(id, |lw| attrs.iter().map(|a| lw.field_init(a)).collect());
-                    self.design.decl_mut(id).kind = DeclKind::Quantity(QuantityData { role: *which, attrs });
+                    let (attrs, meta) =
+                        self.within(id, |lw| (attrs.iter().map(|a| lw.field_init(a)).collect(), lw.meta(&f.meta)));
+                    let decl = self.design.decl_mut(id);
+                    decl.kind = DeclKind::Quantity(QuantityData { role: *which, attrs });
+                    decl.meta = meta;
                     NatureFieldNode::Quantity(id)
                 }
-                ast::NatureFieldKind::Value(t) => NatureFieldNode::Value { ty: self.ty(t), span: f.span.0 },
-                ast::NatureFieldKind::Resolve(e) => NatureFieldNode::Resolve { expr: self.expr(e), span: f.span.0 },
+                ast::NatureFieldKind::Value(t) => {
+                    NatureFieldNode::Value { meta: self.meta(&f.meta), ty: self.ty(t), span: f.span.0 }
+                }
+                ast::NatureFieldKind::Resolve(e) => {
+                    NatureFieldNode::Resolve { meta: self.meta(&f.meta), expr: self.expr(e), span: f.span.0 }
+                }
             })
             .collect();
         DeclKind::Nature(NatureData { fields, kind: nature_kind(&n.fields) })
@@ -165,10 +172,13 @@ impl Lowerer<'_> {
     }
 
     fn digital_item(&mut self, item: &ast::DigitalItem) -> DeclId {
-        match &item.kind {
+        let id = match &item.kind {
             ast::DigitalItemKind::Reaction(r) => self.reaction(r, item.span.0),
             ast::DigitalItemKind::Gen(g) => self.generation(g, Self::digital_item),
             ast::DigitalItemKind::Error => self.new_decl(DeclKind::Error, None, item.span.0, false),
-        }
+        };
+        let meta = self.within(id, |lw| lw.meta(&item.meta));
+        self.design.decl_mut(id).meta = meta;
+        id
     }
 }

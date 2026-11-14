@@ -524,6 +524,7 @@ impl<'d> Rebuild<'d> {
                 let data = self.data(*q);
                 let DeclKind::Quantity(qd) = &data.kind else { unreachable!("a nature field names a Quantity") };
                 ast::NatureField {
+                    meta: self.meta(&data.meta),
                     kind: ast::NatureFieldKind::Quantity {
                         which: qd.role,
                         name: ident(self.name(*q)),
@@ -532,12 +533,16 @@ impl<'d> Rebuild<'d> {
                     span: loc(data.span),
                 }
             }
-            NatureFieldNode::Value { ty, span } => {
-                ast::NatureField { kind: ast::NatureFieldKind::Value(self.ty(*ty)), span: loc(*span) }
-            }
-            NatureFieldNode::Resolve { expr, span } => {
-                ast::NatureField { kind: ast::NatureFieldKind::Resolve(self.expr(*expr)), span: loc(*span) }
-            }
+            NatureFieldNode::Value { meta, ty, span } => ast::NatureField {
+                meta: self.meta(meta),
+                kind: ast::NatureFieldKind::Value(self.ty(*ty)),
+                span: loc(*span),
+            },
+            NatureFieldNode::Resolve { meta, expr, span } => ast::NatureField {
+                meta: self.meta(meta),
+                kind: ast::NatureFieldKind::Resolve(self.expr(*expr)),
+                span: loc(*span),
+            },
         }
     }
 
@@ -644,7 +649,7 @@ impl<'d> Rebuild<'d> {
             DeclKind::Error => ast::DigitalItemKind::Error,
             _ => return None,
         };
-        Some(ast::DigitalItem { kind, span: loc(data.span) })
+        Some(ast::DigitalItem { meta: self.meta(&data.meta), kind, span: loc(data.span) })
     }
 
     fn digital_item_of(&self, c: DeclId) -> ast::DigitalItem {

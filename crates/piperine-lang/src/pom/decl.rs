@@ -254,9 +254,9 @@ pub enum NatureFieldNode {
     /// `potential: Voltage { .. }` or `flow: ..`: the `Quantity` declaration.
     Quantity(DeclId),
     /// `value: T`; `span` covers the whole field.
-    Value { ty: TypeId, span: Span },
+    Value { meta: Meta, ty: TypeId, span: Span },
     /// `resolve: expr`; `span` covers the whole field.
-    Resolve { expr: ExprId, span: Span },
+    Resolve { meta: Meta, expr: ExprId, span: Span },
 }
 
 /// `potential: Voltage { access: v, units: "V" }`: the attribute list as

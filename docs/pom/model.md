@@ -521,8 +521,8 @@ One field of a nature, as written.
 | Variant | Payload | Meaning |
 | --- | --- | --- |
 | `Quantity` | `(DeclId)` | `potential: Voltage { .. }` or `flow: ..`: the `Quantity` declaration. |
-| `Value` | `{ ty: TypeId, span: Span }` | `value: T`; `span` covers the whole field. |
-| `Resolve` | `{ expr: ExprId, span: Span }` | `resolve: expr`; `span` covers the whole field. |
+| `Value` | `{ meta: Meta, ty: TypeId, span: Span }` | `value: T`; `span` covers the whole field; `meta` holds its docs and attributes (a quantity keeps them on its declaration). |
+| `Resolve` | `{ meta: Meta, expr: ExprId, span: Span }` | `resolve: expr`; `span` covers the whole field; `meta` as for `Value`. |
 
 ### `QuantityData`
 

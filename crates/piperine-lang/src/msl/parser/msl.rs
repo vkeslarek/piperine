@@ -46,8 +46,9 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .ignore_then(punct(Punct::Colon))
         .ignore_then(h.expr.clone())
         .map(NatureFieldKind::Resolve);
-    let field = first_of(vec![quantity.boxed(), value.boxed(), resolve.boxed()])
-        .map_with(|kind, e| NatureField { kind, span: Loc(e.span()) })
+    let field = item::meta(h)
+        .then(first_of(vec![quantity.boxed(), value.boxed(), resolve.boxed()]))
+        .map_with(|(meta, kind), e| NatureField { meta, kind, span: Loc(e.span()) })
         .labelled("nature field");
     kw(Kw::Nature)
         .ignore_then(ident())
@@ -112,8 +113,10 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
     h: &Handles<'a, I>,
     leaf: P<'a, I, X>,
     late: Option<P<'a, I, X>>,
-    wrap: fn(Gen<X>) -> X,
+    wrap: fn(Gen<X>, Meta) -> X,
 ) -> P<'a, I, X> {
+    // A generation takes outer docs and attributes like any item.
+    let meta = item::meta(h);
     // `late` is tried after a generation: a bare statement that `E0434`
     // names, inside a generation's list too (`else { y = 2; }`).
     let with_late = |mut alts: Vec<P<'a, I, X>>| {
@@ -121,7 +124,10 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
         first_of(alts)
     };
     let generation = recursive(|generation: Recursive<chumsky::recursive::Direct<'a, 'a, I, Gen<X>, Extra<'a>>>| {
-        let item = with_late(vec![leaf.clone(), generation.clone().map(wrap).boxed()]);
+        let item = with_late(vec![
+            leaf.clone(),
+            meta.clone().then(generation.clone()).map(move |(m, g)| wrap(g, m)).boxed(),
+        ]);
         let list = item
             .repeated()
             .collect::<Vec<_>>()
@@ -150,7 +156,7 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
             });
         first_of(vec![for_.boxed(), if_.boxed()])
     });
-    with_late(vec![leaf, generation.map(wrap).boxed()])
+    with_late(vec![leaf, meta.then(generation).map(move |(m, g)| wrap(g, m)).boxed()])
 }
 
 /// One item of a module body, with error recovery.
@@ -212,12 +218,13 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
             span: Loc(e.span()),
         })
         .boxed();
-    let def = def
-        .map_with(|kind, e| ModuleItem { meta: Meta::default(), public: false, kind, span: Loc(e.span()) })
+    let def = item::meta(h)
+        .then(def)
+        .map_with(|(meta, kind), e| ModuleItem { meta, public: false, kind, span: Loc(e.span()) })
         .boxed();
-    let wrap = |g: Gen<ModuleItem>| ModuleItem {
+    let wrap = |g: Gen<ModuleItem>, meta: Meta| ModuleItem {
         span: g.span,
-        meta: Meta::default(),
+        meta,
         public: false,
         kind: ModuleItemKind::Gen(g),
     };
@@ -313,10 +320,11 @@ fn reaction<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Reaction> {
 /// One item of a `digital` block: a reaction or a generation over reactions.
 /// A bare statement is parsed so that `E0434` can name it.
 fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
-    let reaction = reaction(h)
-        .map_with(|r, e| DigitalItem { kind: DigitalItemKind::Reaction(r), span: Loc(e.span()) })
+    let reaction = item::meta(h)
+        .then(reaction(h))
+        .map_with(|(meta, r), e| DigitalItem { meta, kind: DigitalItemKind::Reaction(r), span: Loc(e.span()) })
         .boxed();
-    let wrap = |g: Gen<DigitalItem>| DigitalItem { span: g.span, kind: DigitalItemKind::Gen(g) };
+    let wrap = |g: Gen<DigitalItem>, meta: Meta| DigitalItem { span: g.span, meta, kind: DigitalItemKind::Gen(g) };
     let stray = expr::stmt(h)
         .validate(|_, e, emitter| {
             emitter.emit(Rich::custom(
@@ -327,11 +335,11 @@ fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
                     help: Some("a `digital` block holds reactions: `on event { .. }`".into()),
                 },
             ));
-            DigitalItem { kind: DigitalItemKind::Error, span: Loc(e.span()) }
+            DigitalItem { meta: Meta::default(), kind: DigitalItemKind::Error, span: Loc(e.span()) }
         })
         .boxed();
     let item = gen_of(h, reaction, Some(stray), wrap).labelled("reaction").boxed();
-    recover(item, true, |span| DigitalItem { kind: DigitalItemKind::Error, span: Loc(span) })
+    recover(item, true, |span| DigitalItem { meta: Meta::default(), kind: DigitalItemKind::Error, span: Loc(span) })
 }
 
 /// `analog [<names>] for Path { stmts }` or `digital [<names>] for Path { reactions }`.

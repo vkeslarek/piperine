@@ -191,3 +191,61 @@ fn check_reports_every_kind_of_broken_link() {
     let p = corrupted(|j| j["exprs"][0]["kind"] = json!({ "Unary": { "op": "Neg", "expr": 9999 } }));
     assert!(reports(&p, "expression 9999"), "{p:?}");
 }
+
+#[test]
+fn docs_at_every_position_round_trip() {
+    // POL-12 AC 5: a design built from docs and attributes at every new
+    // position converts back to the parsed tree, spans included.
+    let src = "\
+fn f() {
+    /// a let
+    #[x]
+    let y = 1;
+    /// a call
+    g();
+    /// a block
+    if y { }
+}
+nature N {
+    /// pot
+    potential: V { access: v },
+    #[f]
+    flow: I { access: i },
+}
+nature L {
+    /// value
+    value: bool,
+    /// resolve
+    resolve: pick,
+}
+module M() {
+    /// def
+    #[d = 1]
+    s = x after 1;
+    /// gen
+    for i in 0..2 { /// inner
+        s = i; }
+    /// gen if
+    if a { } else { }
+}
+analog for M {
+    /// contribution
+    #[c]
+    i(a) +> 1.0;
+}
+digital for M {
+    /// reaction
+    on e {
+        /// commit
+        q <- 1;
+    }
+    /// dgen
+    for i in 0..2 { /// inner reaction
+        on x { } }
+}
+";
+    let parsed = parse(src);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let design = Design::builder().source("top.msl", src).build();
+    assert_lossless(&design, &parsed.file, "docs at every position");
+}

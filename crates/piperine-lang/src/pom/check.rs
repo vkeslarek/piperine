@@ -285,8 +285,14 @@ impl Refs {
                 for f in &n.fields {
                     match f {
                         NatureFieldNode::Quantity(d) => self.decls.push(*d),
-                        NatureFieldNode::Value { ty, .. } => self.types.push(*ty),
-                        NatureFieldNode::Resolve { expr, .. } => self.exprs.push(*expr),
+                        NatureFieldNode::Value { meta, ty, .. } => {
+                            self.meta(meta);
+                            self.types.push(*ty);
+                        }
+                        NatureFieldNode::Resolve { meta, expr, .. } => {
+                            self.meta(meta);
+                            self.exprs.push(*expr);
+                        }
                     }
                 }
             }

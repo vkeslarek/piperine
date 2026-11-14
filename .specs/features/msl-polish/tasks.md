@@ -512,13 +512,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `docs_and_attrs_attach_to_hardware_items` passes in `msl_parser.rs` (C64: POL-12 AC 3)
-- [ ] Test `statement_and_hardware_docs_round_trip` passes in `msl_print.rs` (C65: POL-12 AC 4)
-- [ ] Test `docs_at_every_position_round_trip` passes in `pom_corpus.rs` (C66: POL-12 AC 5)
-- [ ] The six misleading diagnostics of A-07 are gone: each of its six sources parses with no diagnostic (asserted in `docs_and_attrs_attach_to_hardware_items`)
-- [ ] `E0434` and `E0903` are no longer reported after a documented reaction or definition
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `docs_and_attrs_attach_to_hardware_items` passes in `msl_parser.rs` (C64: POL-12 AC 3)
+- [x] Test `statement_and_hardware_docs_round_trip` passes in `msl_print.rs` (C65: POL-12 AC 4)
+- [x] Test `docs_at_every_position_round_trip` passes in `pom_corpus.rs` (C66: POL-12 AC 5)
+- [x] The six misleading diagnostics of A-07 are gone: each of its six sources parses with no diagnostic (asserted in `docs_and_attrs_attach_to_hardware_items`)
+- [x] `E0434` and `E0903` are no longer reported after a documented reaction or definition
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

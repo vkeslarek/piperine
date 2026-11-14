@@ -1204,3 +1204,62 @@ fn docs_and_attrs_attach_to_statements() {
     assert_eq!(item.meta.docs.len(), 1);
     assert!(stmts[0].meta.docs.is_empty());
 }
+
+fn doc_texts(m: &Meta) -> Vec<String> {
+    m.docs.iter().map(|d| d.text.trim().to_string()).collect()
+}
+
+fn attr_names(m: &Meta) -> Vec<String> {
+    m.attrs.iter().map(|a| path_names(&a.path).join("::")).collect()
+}
+
+#[test]
+fn docs_and_attrs_attach_to_hardware_items() {
+    // POL-12 AC 3 and the six misleading diagnostics of A-07: each source
+    // parses with no diagnostic, and the docs and attributes are held, in
+    // order, in the metadata of the node they precede.
+    let sources = [
+        "analog for M {\n    /// gate current\n    i(a) +> 1.0;\n}",
+        "fn f() {\n    /// x\n    let y = 1;\n}",
+        "digital for M {\n    /// clock edge\n    on e { }\n}",
+        "module M() {\n    /// drive\n    s = x;\n    for i in 0..2 { }\n}",
+        "nature N {\n    /// level\n    value: bool\n}",
+        "module M() {\n    /// loop\n    for i in 0..2 { }\n}",
+    ];
+    for src in sources {
+        let r = parse(src);
+        assert!(r.diagnostics.is_empty(), "{src}: {:?}", r.diagnostics);
+    }
+
+    // A reaction and a digital generation (`for` and `if`).
+    let f = file(
+        "digital for M {\n    /// clock edge\n    /// second\n    #[a]\n    on e { }\n    /// gen for\n    for i in 0..2 { /// inner\n        on x { } }\n    #[g]\n    /// gen if\n    if true { on y { } } else { on z { } }\n}",
+    );
+    let ItemKind::Behavior(BehaviorBlock { body: BehaviorBody::Digital(d), .. }) = &f.items[0].kind else { panic!() };
+    assert_eq!(doc_texts(&d[0].meta), ["clock edge", "second"]);
+    assert_eq!(attr_names(&d[0].meta), ["a"]);
+    assert!(matches!(d[1].kind, DigitalItemKind::Gen(_)));
+    assert_eq!(doc_texts(&d[1].meta), ["gen for"]);
+    let DigitalItemKind::Gen(Gen { kind: GenKind::For { body, .. }, .. }) = &d[1].kind else { panic!() };
+    assert_eq!(doc_texts(&body[0].meta), ["inner"]);
+    assert_eq!((doc_texts(&d[2].meta), attr_names(&d[2].meta)), (vec!["gen if".to_string()], vec!["g".to_string()]));
+
+    // A definition and a module generation.
+    let f = file("module M() {\n    /// drive\n    #[d]\n    s = x after 1;\n    #[e]\n    /// gen\n    if a { } else { }\n}");
+    let ItemKind::Module(m) = &f.items[0].kind else { panic!() };
+    assert!(matches!(m.body[0].kind, ModuleItemKind::Def { .. }));
+    assert_eq!((doc_texts(&m.body[0].meta), attr_names(&m.body[0].meta)), (vec!["drive".to_string()], vec!["d".to_string()]));
+    assert!(matches!(m.body[1].kind, ModuleItemKind::Gen(_)));
+    assert_eq!((doc_texts(&m.body[1].meta), attr_names(&m.body[1].meta)), (vec!["gen".to_string()], vec!["e".to_string()]));
+
+    // Nature fields: a quantity, a value, a resolve.
+    let f = file(
+        "nature N {\n    /// pot\n    potential: V { access: v },\n    #[f]\n    flow: I { access: i },\n}\nnature L {\n    /// level\n    value: bool,\n    /// pick\n    resolve: pick,\n}",
+    );
+    let ItemKind::Nature(n) = &f.items[0].kind else { panic!() };
+    assert_eq!(doc_texts(&n.fields[0].meta), ["pot"]);
+    assert_eq!(attr_names(&n.fields[1].meta), ["f"]);
+    let ItemKind::Nature(l) = &f.items[1].kind else { panic!() };
+    assert_eq!(doc_texts(&l.fields[0].meta), ["level"]);
+    assert_eq!(doc_texts(&l.fields[1].meta), ["pick"]);
+}

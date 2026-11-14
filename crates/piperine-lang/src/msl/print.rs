@@ -471,7 +471,11 @@ fn block(b: &Block) -> String {
 }
 
 fn stmt(s: &Stmt) -> String {
-    match &s.kind {
+    format!("{}{}", meta(&s.meta), stmt_kind(&s.kind))
+}
+
+fn stmt_kind(k: &StmtKind) -> String {
+    match k {
         StmtKind::Let { pat: p, ty: t, init, else_ } => {
             let mut out = format!("let {}", pat1(p));
             if let Some(t) = t {
@@ -674,7 +678,13 @@ fn nature(n: &NatureDecl) -> String {
     let lines: Vec<String> = n
         .fields
         .iter()
-        .map(|f| match &f.kind {
+        .map(|f| format!("{}{}", meta(&f.meta), nature_field(&f.kind)))
+        .collect();
+    format!("nature {}{} {}", n.name.spelled(), generics(&n.generics), braces(&lines))
+}
+
+fn nature_field(k: &NatureFieldKind) -> String {
+    match k {
             NatureFieldKind::Quantity { which, name, attrs } => {
                 let w = match which {
                     Quantity::Potential => "potential",
@@ -685,9 +695,7 @@ fn nature(n: &NatureDecl) -> String {
             }
             NatureFieldKind::Value(t) => format!("value: {},", ty(t)),
             NatureFieldKind::Resolve(e) => format!("resolve: {},", expr(e)),
-        })
-        .collect();
-    format!("nature {}{} {}", n.name.spelled(), generics(&n.generics), braces(&lines))
+    }
 }
 
 fn module(m: &ModuleDecl) -> String {
@@ -775,9 +783,10 @@ fn behavior(b: &BehaviorBlock) -> String {
 }
 
 fn digital_item(i: &DigitalItem) -> String {
-    match &i.kind {
+    let body = match &i.kind {
         DigitalItemKind::Reaction(r) => reaction(r),
         DigitalItemKind::Gen(g) => generation(g, &|i| digital_item(i)),
         DigitalItemKind::Error => "/* error */".to_string(),
-    }
+    };
+    format!("{}{body}", meta(&i.meta))
 }

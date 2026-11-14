@@ -572,6 +572,7 @@ pub struct NatureDecl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NatureField {
+    pub meta: Meta,
     pub kind: NatureFieldKind,
     pub span: Loc,
 }
@@ -682,6 +683,7 @@ pub enum BehaviorBody {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DigitalItem {
+    pub meta: Meta,
     pub kind: DigitalItemKind,
     pub span: Loc,
 }
