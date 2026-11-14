@@ -126,3 +126,5 @@ Choices made inside the answers. Each is a row of the spec's Assumptions table.
 
 **Awaiting the user.** `laplace_nd` as written requires `D >= 1` and `N <= D` (a proper transfer function), which is narrower than Part VII's contract today. Recommendation: accept it and state it as a rule of §22.2.14 (`E0304`); an improper `H(s)` differentiates the input more than once and is rarely physical. Alternative: keep `laplace_nd` general by making it the sixth intrinsic, which the "reads a string" rule would then no longer describe.
 
+
+| Q6 (laplace_nd proper TF) | "Accept the restriction (Recommended)" | `D >= 1`, `N <= D` becomes a rule of §22.2.14 (`E0304`) |

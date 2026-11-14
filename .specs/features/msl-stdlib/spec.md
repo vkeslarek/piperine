@@ -1,5 +1,7 @@
 # MSL Standard Library Specification
 
+**Approved**: 2026-11-14 - user: "Approve, run after merge (Recommended)"
+
 ## Problem Statement
 
 Part VII of `docs/spec/` describes a standard library that does not exist as source. `crates/piperine-lang/std/` holds a root and an empty `prelude` (`msl-packages`, PKG-06), so every gallery model of Appendices D, E and F fails to resolve: 0 of 18 gallery fences build clean, with 250 `E0161`. The front end has only ever resolved names against a hand-written test fixture of stand-ins (`tests/fixtures/pom/prelude.msl`, audit findings A-03 and A-42).
@@ -53,7 +55,7 @@ D4, D3, U2 and Q1 to Q5 are the user's decisions (`context.md`, "Answers"). The 
 | The intrinsic set | `matches_bits`, `logic`, `table_model`, `parse_table`, `parse_hex`: the five functions that read the characters of a `str` | MSL has no operation on the content of a string: Appendix H lists none, and character and byte literals are not tokens (`E0905`). Everything else is written in MSL (`design.md`, "The split") | y - planner default inside Q2 |
 | `extern "intrinsic"` on a module | not specified now | Q1 allows it, but after Q2 all seven "head and params only" modules have bodies; a form no source uses is dead surface | y - planner default; reported to the user |
 | Errors of the root forms | `E0707` is removed; a complex root without its conjugate and a zero denominator are a false `where` of a param, `E0317` | an MSL body has no way to raise a code of its own; a `where` on the param is the language's form for it | y - planner default inside Q2; reported to the user |
-| `laplace_nd` | requires `D >= 1` and `N <= D` (`E0304`); one `State` per pole, controllable canonical form | Part VII fixes the transfer function and the number of states, not the form; `N > D` needs a second derivative of the input | n - follows from Q2; reported to the user as a new question |
+| `laplace_nd` | requires `D >= 1` and `N <= D` (`E0304`); one `State` per pole, controllable canonical form | Part VII fixes the transfer function and the number of states, not the form; `N > D` needs a second derivative of the input | y - user: "Accept the restriction (Recommended)" |
 | The generator of `normal` | SplitMix64 for two uniform draws, Box-Muller for the sample; the source is its documentation | §22.2.17 leaves the generator implementation-defined and requires it documented; a body in `std` documents it (closes the `normal` half of G.64) | y - planner default inside Q2; reported to the user |
 | `pnjlim`, `fetlim`, `limvds` | transliterated from `crates/piperine-ir/src/limit.rs` | the in-tree functions are the ngspice ones, already checked against ngspice | y - planner default inside Q2 |
 | What "clean" means | zero diagnostics in every file of the design, `Design::check()` empty, no `Unresolved` member slot, and each `std` name the gallery uses linked to a declaration of the crate `std` | only parse and POM resolution exist; a silent `Unresolved` is the one way a POM build hides a miss | y - planner default |
