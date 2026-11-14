@@ -611,16 +611,16 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Test `the_three_solver_crates_exist` passes (C21)
-- [ ] Test `sub_solvers_depend_on_no_workspace_crate` passes (C22): neither manifest holds `path =` or a `piperine-` dependency in any table
-- [ ] Test `owner_depends_on_both_sub_solvers_only` passes (C23)
-- [ ] Test `analog_sources_name_no_digital_type` passes (C24): no `.rs` under the analog crate contains `LogicValue`, `DigitalNet`, `DigitalEvent`, `DigitalState`, `DigitalDevice`
-- [ ] Test `digital_sources_name_no_analog_type` passes (C25): no `.rs` under the digital crate contains `Stamp`, `Netlist`, `AnalogReference`, `Tolerances`, `NewtonRaphsonSolver`
-- [ ] Test `each_sub_solver_holds_its_modules` passes (C26): the files named in the design exist in each crate, and the owner has none of `src/math`, `src/analog.rs`, `src/digital`, `src/error.rs`
-- [ ] `removed_surface.rs` still scans all three `src/` trees (its glob already matches the new crates) and passes
-- [ ] `abi_surface.rs`, `prelude_surface.rs` and `parity_baseline.rs` are byte-identical to e129b869 and pass (C30, C31)
-- [ ] Every name of `baseline.txt` not in `removed.txt` prints `... ok` across the three crates (C32)
-- [ ] Gate: build
+- [x] Test `the_three_solver_crates_exist` passes (C21)
+- [x] Test `sub_solvers_depend_on_no_workspace_crate` passes (C22): neither manifest holds `path =` or a `piperine-` dependency in any table
+- [x] Test `owner_depends_on_both_sub_solvers_only` passes (C23)
+- [x] Test `analog_sources_name_no_digital_type` passes (C24): no `.rs` under the analog crate contains `LogicValue`, `DigitalNet`, `DigitalEvent`, `DigitalState`, `DigitalDevice`
+- [x] Test `digital_sources_name_no_analog_type` passes (C25): no `.rs` under the digital crate contains `Stamp`, `Netlist`, `AnalogReference`, `Tolerances`, `NewtonRaphsonSolver`
+- [x] Test `each_sub_solver_holds_its_modules` passes (C26): the files named in the design exist in each crate, and the owner has none of `src/math`, `src/analog.rs`, `src/digital`, `src/error.rs`
+- [x] `removed_surface.rs` still scans all three `src/` trees (its glob already matches the new crates) and passes
+- [x] `abi_surface.rs`, `prelude_surface.rs` and `parity_baseline.rs` are byte-identical to e129b869 and pass (C30, C31)
+- [x] Every name of `baseline.txt` not in `removed.txt` prints `... ok` across the three crates (C32)
+- [x] Gate: build
 
 **Tests**: integration
 **Gate**: build
