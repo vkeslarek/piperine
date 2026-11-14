@@ -224,3 +224,114 @@ fn b1_still_counts_65_constructs() {
     let last: usize = rows.last().unwrap()[0].parse().expect("row numbers are integers");
     assert_eq!(last, 65);
 }
+
+#[path = "support/spec_corpus.rs"]
+mod spec_corpus;
+
+use piperine_lang::msl::lexer::{Kw, Punct, Token, lex};
+
+/// Names called as methods (`. name (`) and names declared (`fn name`) in
+/// every `rust` or `rust,fragment` fence, found by the crate's lexer.
+fn fence_names() -> (BTreeMap<String, String>, BTreeSet<String>) {
+    let (mut called, mut declared) = (BTreeMap::new(), BTreeSet::new());
+    // A `compile_fail` fence shows what is rejected; it catalogues nothing.
+    for block in spec_corpus::corpus().into_iter().filter(|b| b.class != spec_corpus::Class::CompileFail) {
+        let (tokens, _) = lex(&block.text);
+        for w in tokens.windows(3) {
+            if let (Token::Punct(Punct::Dot), Token::Ident(n), Token::Punct(Punct::LParen)) = (&w[0].0, &w[1].0, &w[2].0) {
+                called.entry(n.clone()).or_insert_with(|| format!("{}:{}", block.file, block.line));
+            }
+            if let (Token::Kw(Kw::Fn), Token::Ident(n)) = (&w[0].0, &w[1].0) {
+                declared.insert(n.clone());
+            }
+        }
+    }
+    (called, declared)
+}
+
+/// The names in the first cell of every table row of `section`, without
+/// backticks and without a trailing parameter list.
+fn first_cell_names(section: &str) -> BTreeSet<String> {
+    table_rows(section)
+        .into_iter()
+        .map(|r| r[0].trim_matches('`').split(['<', '(']).next().unwrap().to_string())
+        .collect()
+}
+
+fn appendix_h() -> String {
+    spec("appendix_h_library.md")
+}
+
+#[test]
+fn appendix_h_has_every_group() {
+    // POL-02 AC 1: the title, the normative mark, nine groups, ten adaptors.
+    let h = appendix_h();
+    assert!(h.starts_with("# Appendix H. Inherited library"), "title");
+    assert!(h.contains("This appendix is normative."));
+    for group in [
+        "## H.1 Integer types",
+        "## H.2 Float types",
+        "## H.3 `bool`",
+        "## H.4 `Option`",
+        "## H.5 Arrays and slices",
+        "## H.6 Ranges",
+        "## H.7 Iterator adaptors",
+        "## H.8 Traits",
+        "## H.9 Types",
+    ] {
+        let sec = section(&h, group);
+        assert!(!table_rows(&sec).is_empty(), "{group} holds a table");
+    }
+    let adaptors = first_cell_names(&section(&h, "## H.7"));
+    for a in ["map", "filter", "fold", "sum", "count", "zip", "enumerate", "rev", "any", "all"] {
+        assert!(adaptors.contains(a), "H.7 lists `{a}`: {adaptors:?}");
+    }
+    assert_eq!(adaptors.len(), 10, "exactly the ten adaptors: {adaptors:?}");
+}
+
+#[test]
+fn every_method_called_in_a_spec_fence_is_catalogued() {
+    // POL-02 AC 2: a called name is in Appendix H, a B.1 method, or declared
+    // by a fence. The scan tokenizes with the crate's lexer.
+    let (called, declared) = fence_names();
+    let h = appendix_h();
+    let mut known = BTreeSet::new();
+    for group in ["## H.1", "## H.2", "## H.3", "## H.4", "## H.5", "## H.6", "## H.7"] {
+        known.extend(first_cell_names(&section(&h, group)));
+    }
+    let b1 = section(&spec("appendix_b_grammar.md"), "### B.1.2");
+    for row in table_rows(&b1) {
+        if row[2].contains("method") {
+            known.insert(row[1].trim_matches('`').to_string());
+        }
+    }
+    let missing: Vec<_> = called.iter().filter(|(n, _)| !known.contains(*n) && !declared.contains(*n)).collect();
+    assert!(missing.is_empty(), "methods called in a fence and listed nowhere: {missing:?}");
+    assert!(called.len() >= 20, "the scan found the fences' methods: {called:?}");
+}
+
+#[test]
+fn catalogue_is_closed_by_e0161() {
+    // POL-02 AC 3: §0.4, Appendix H and the pointers from Part I and A.1.
+    let h = appendix_h();
+    assert!(h.contains("does not resolve (`E0161`)") && h.contains("The catalogue is closed."));
+    let s04 = section(&spec("index.md"), "### 0.4");
+    assert!(s04.contains("Appendix H") && s04.contains("closed") && s04.contains("`E0161`"), "{s04}");
+    let rule1 = spec("part_i_values.md");
+    let rule1 = rule1.split("- **§1 rule 1.**").nth(1).unwrap().split("- **§1 rule 2.**").next().unwrap();
+    assert!(rule1.contains("Appendix H"), "§1 rule 1 points at Appendix H: {rule1}");
+    let a1 = spec("appendix_a_lexical.md");
+    let derive = a1.lines().find(|l| l.starts_with("| `#[derive(")).expect("the derive row of A.1");
+    assert!(derive.contains("Appendix H"), "{derive}");
+    assert!(!derive.contains("other built-in derives"), "the open-ended list is gone: {derive}");
+}
+
+#[test]
+fn appendix_h_is_in_the_file_map_and_nav() {
+    // POL-02 AC 4.
+    let map = section(&spec("index.md"), "### 0.8");
+    assert!(map.contains("appendix_h_library.md"), "§0.8 lists the file");
+    let nav = std::fs::read_to_string(root().join("mkdocs.yml")).expect("mkdocs.yml");
+    let line = nav.lines().find(|l| l.contains("spec/appendix_h_library.md")).expect("nav entry");
+    assert!(line.contains("H."), "{line}");
+}

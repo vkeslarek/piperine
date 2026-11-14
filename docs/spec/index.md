@@ -134,7 +134,10 @@ integer and floating-point arithmetic, and the standard methods of the value typ
 2. Where a delta and Rust disagree, the delta holds.
 3. The lexer and the grammar are the language's own ([Appendix A](appendix_a_lexical.md)). A
    conforming implementation need not accept any Rust program.
-4. "Rust's" in this specification means the behavior of *The Rust Reference* for edition 2024.
+4. The library is the exception: the names a model takes from Rust's standard library are the
+   closed catalogue of [Appendix H](appendix_h_library.md). A method, trait or type it does not
+   list does not resolve (`E0161`).
+5. "Rust's" in this specification means the behavior of *The Rust Reference* for edition 2024.
 
 ### 0.5 The eleven concepts
 
@@ -229,6 +232,7 @@ traced in [§15.1](part_v_execution.md#151-an-instant-traced).
 | [`appendix_e_gallery_digital.md`](appendix_e_gallery_digital.md) | gallery: digital | App. E | — |
 | [`appendix_f_gallery_mixed.md`](appendix_f_gallery_mixed.md) | gallery: mixed-signal systems | App. F | — |
 | [`appendix_g_scope.md`](appendix_g_scope.md) | out of scope, and every open item `G.n` | App. G | — |
+| [`appendix_h_library.md`](appendix_h_library.md) | the closed catalogue of the inherited library | App. H | — |
 
 ### 0.9 Glossary index
 

@@ -26,7 +26,7 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 **Static semantics**
 
 - **§1 rule 1.** `as` truncates or extends, as in Rust. `checked_*` and `saturating_*` work as
-  in Rust.
+  in Rust. The methods a model may call are those of [Appendix H](appendix_h_library.md).
 - **§1 rule 2.** These are left out, because a model is fixed at elaboration: mutable
   references, heap types, `unsafe`, threads, `async`, `dyn`. `&` appears only as a shared,
   read-only borrow of an array, slice or string in a function parameter.

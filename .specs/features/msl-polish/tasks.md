@@ -175,15 +175,15 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `appendix_h_has_every_group` passes in `spec_text.rs` (C4: POL-02 AC 1)
-- [ ] Test `every_method_called_in_a_spec_fence_is_catalogued` passes in `spec_text.rs` (C5: POL-02 AC 2)
-- [ ] Test `catalogue_is_closed_by_e0161` passes in `spec_text.rs` (C6: POL-02 AC 3)
-- [ ] Test `appendix_h_is_in_the_file_map_and_nav` passes in `spec_text.rs` (C7: POL-02 AC 4)
-- [ ] The method scan tokenizes each fence with the crate's lexer (a `.`, an identifier, a `(`), not with a regular expression
-- [ ] Appendix H holds no row the decision does not name or a spec fence does not call: it is a closed list, not Rust's library
-- [ ] The derivable traits of A.1 are replaced by a reference to Appendix H
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `appendix_h_has_every_group` passes in `spec_text.rs` (C4: POL-02 AC 1)
+- [x] Test `every_method_called_in_a_spec_fence_is_catalogued` passes in `spec_text.rs` (C5: POL-02 AC 2)
+- [x] Test `catalogue_is_closed_by_e0161` passes in `spec_text.rs` (C6: POL-02 AC 3)
+- [x] Test `appendix_h_is_in_the_file_map_and_nav` passes in `spec_text.rs` (C7: POL-02 AC 4)
+- [x] The method scan tokenizes each fence with the crate's lexer (a `.`, an identifier, a `(`), not with a regular expression
+- [x] Appendix H holds no row the decision does not name or a spec fence does not call: it is a closed list, not Rust's library
+- [x] The derivable traits of A.1 are replaced by a reference to Appendix H
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

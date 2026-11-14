@@ -58,7 +58,7 @@ lexer and the grammar are the language's own.
 
 | Attribute | On | Defined in |
 | --- | --- | --- |
-| `#[derive(…)]` with `Repr`, `Clone`, `Copy`, `PartialEq`, `PartialOrd` and Rust's other built-in derives | `struct`, `enum` | [§2](part_i_values.md#2-repr) |
+| `#[derive(…)]` with `Repr` and the traits of [Appendix H](appendix_h_library.md) (H.8) | `struct`, `enum` | [§2](part_i_values.md#2-repr) |
 | `#[repr(uN)]` | `enum` | [§2](part_i_values.md#2-repr) |
 | `#[derivative(f, …)]` | `extern "C" fn` | [§3](part_i_values.md#3-functions) rules 2 and 11 |
 | `#[link(…)]` | `extern` module | [§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules) |
