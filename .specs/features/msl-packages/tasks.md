@@ -558,17 +558,17 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_valid_manifest_reads_every_package_field` passes in `manifest.rs` (C75: PKG-10 AC 4)
-- [ ] Test `an_unknown_key_is_e0171_at_the_key` passes in `manifest.rs` (C76: PKG-10 AC 5)
-- [ ] Test `a_missing_or_mistyped_package_key_is_e0171` passes in `manifest.rs` (C77: PKG-10 AC 6)
-- [ ] Test `a_bad_package_name_is_e0171` passes in `manifest.rs` (C78: PKG-10 AC 7)
-- [ ] Test `a_bad_version_is_e0171` passes in `manifest.rs` (C79: PKG-10 AC 8)
-- [ ] Test `every_fault_of_a_manifest_is_reported` passes in `manifest.rs` (C80: PKG-10 AC 9)
-- [ ] The message of an unknown key names the key and the table; its help lists the keys §3.6 allows there
-- [ ] `[dependencies]` is accepted and left unread until T18
-- [ ] Diagnostics are sorted by span start
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_valid_manifest_reads_every_package_field` passes in `manifest.rs` (C75: PKG-10 AC 4)
+- [x] Test `an_unknown_key_is_e0171_at_the_key` passes in `manifest.rs` (C76: PKG-10 AC 5)
+- [x] Test `a_missing_or_mistyped_package_key_is_e0171` passes in `manifest.rs` (C77: PKG-10 AC 6)
+- [x] Test `a_bad_package_name_is_e0171` passes in `manifest.rs` (C78: PKG-10 AC 7)
+- [x] Test `a_bad_version_is_e0171` passes in `manifest.rs` (C79: PKG-10 AC 8)
+- [x] Test `every_fault_of_a_manifest_is_reported` passes in `manifest.rs` (C80: PKG-10 AC 9)
+- [x] The message of an unknown key names the key and the table; its help lists the keys §3.6 allows there
+- [x] `[dependencies]` is accepted and left unread until T18
+- [x] Diagnostics are sorted by span start
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
