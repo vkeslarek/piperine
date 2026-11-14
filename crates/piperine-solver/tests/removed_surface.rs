@@ -122,6 +122,26 @@ fn verification_channels_are_gone() {
 }
 
 #[test]
+fn specify_timing_is_gone() {
+    let found = names_found(&[
+        "digital::delays",
+        "DelayTable",
+        "PathDelay",
+        "TimingCheckKind",
+        "TimingCheckLimit",
+        "TimingCheckTable",
+        "delay_table",
+        "timing_checks",
+        "last_change",
+        "record_change",
+        "check_timing_violations",
+        "with_delay_table",
+        "consume_timing_check_violations",
+    ]);
+    assert!(found.is_empty(), "removed specify timing surface still named: {found:#?}");
+}
+
+#[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
     assert_eq!(names_in(planted, &["DistoSolver", "HAS_DISTO2"]), vec!["DistoSolver"]);

@@ -94,7 +94,6 @@ impl DigitalState {
                 let resolved = apply_driven_event(self, event);
                 if self.nets[event.net.0] != resolved {
                     self.nets[event.net.0] = resolved;
-                    self.record_change(event.net, event.time);
                     changed.insert(event.net);
                 }
             }
@@ -112,8 +111,7 @@ impl DigitalState {
             }
             for (i, device) in devices.iter_mut().enumerate() {
                 if fired[i] || device.has_input_on(&changed) {
-                    let mut sink =
-                        QueueSink::new(&mut self.event_queue, t, i, &mut seq).with_delay_table(&self.delay_table);
+                    let mut sink = QueueSink::new(&mut self.event_queue, t, i, &mut seq);
                     device.comb_phase(&ctx, &mut sink);
                 }
             }
@@ -166,7 +164,6 @@ impl DigitalState {
                     let resolved = apply_driven_event(self, &ev);
                     if self.nets[ev.net.0] != resolved {
                         self.nets[ev.net.0] = resolved;
-                        self.record_change(ev.net, ev.time);
                         all_changed.insert(ev.net);
                     }
                 }
@@ -225,8 +222,7 @@ impl DigitalState {
                     // Scope ctx so the immutable borrow of self.nets ends
                     // before we mutate it below when draining local_q.
                     let ctx = EvalCtx { time: t, nets: &self.nets, analog: analog_slice };
-                    let mut sink =
-                        QueueSink::new(&mut local_q, t, dev_idx, &mut seq).with_delay_table(&self.delay_table);
+                    let mut sink = QueueSink::new(&mut local_q, t, dev_idx, &mut seq);
                     device.comb_phase(&ctx, &mut sink);
                 }
 
@@ -235,8 +231,7 @@ impl DigitalState {
                         let resolved = apply_driven_event(self, &ev);
                         if self.nets[ev.net.0] != resolved {
                             self.nets[ev.net.0] = resolved;
-                            self.record_change(ev.net, ev.time);
-                            all_changed.insert(ev.net);
+                                all_changed.insert(ev.net);
                         }
                     } else {
                         self.event_queue.push(Reverse(ev));

@@ -22,7 +22,6 @@ pub use crate::core::introspect::{
 };
 pub use crate::core::net::{Net, NetKind};
 pub use crate::digital::{DigitalNet, LogicValue};
-pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;

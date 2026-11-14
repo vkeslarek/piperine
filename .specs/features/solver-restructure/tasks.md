@@ -429,10 +429,10 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Everything in the removal map row is gone; `QueueSink::push` computes `time: self.base_time + delay` (the table was empty for every surviving caller, so `extra` was 0.0)
-- [ ] The 5 tests of the deleted target and the 2 unit tests of `delays.rs` are named in `removed.txt`
-- [ ] Test `specify_timing_is_gone` passes (C17)
-- [ ] Gate: full
+- [x] Everything in the removal map row is gone; `QueueSink::push` computes `time: self.base_time + delay` (the table was empty for every surviving caller, so `extra` was 0.0)
+- [x] The 5 tests of the deleted target and the 2 unit tests of `delays.rs` are named in `removed.txt`
+- [x] Test `specify_timing_is_gone` passes (C17)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full

@@ -37,7 +37,6 @@ pub use crate::digital::{DigitalEvent, DigitalNet, DriverId, DriverKind, DriverR
 // codegen circuit builder populates these per destination net at build
 // time, so they need an ABI-surface re-export like every other
 // codegen-visible digital type on this page.
-pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
 pub use crate::digital::regions::{Region, RegionAction, RegionEvent, RegionOutcome, RegionQueue};
 pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
