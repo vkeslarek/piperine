@@ -12,7 +12,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, Netlist};
-use crate::digital::DigitalNet;
+use piperine_digital_solver::events::DigitalNet;
 
 /// What kind of solved signal a [`Net`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

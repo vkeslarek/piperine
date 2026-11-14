@@ -347,7 +347,8 @@ impl std::error::Error for ParamError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
 
     /// A resistor exposing one writable parameter (`r`) and one operating
     /// variable (`g` = 1/r) — a reference implementation of the introspection

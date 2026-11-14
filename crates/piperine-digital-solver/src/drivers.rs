@@ -36,7 +36,7 @@
 
 use std::collections::HashMap;
 
-use super::events::{DigitalNet, LogicValue};
+use crate::events::{DigitalNet, LogicValue};
 
 /// LRM §7.9 Table 7-2 drive-strength levels, ordered strongest-first
 /// within the two classes the resolution table distinguishes: driving

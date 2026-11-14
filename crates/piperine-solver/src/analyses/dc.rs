@@ -9,7 +9,7 @@ use crate::analyses::Context;
 use piperine_analog_solver::tolerances::Policy;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
-use crate::digital::LogicValue;
+use piperine_digital_solver::events::LogicValue;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::iv::InitialValue;

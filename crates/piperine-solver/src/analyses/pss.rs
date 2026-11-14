@@ -144,7 +144,7 @@ impl<'a> PssSolver<'a> {
         for ((_, var), &v) in vars.iter().zip(x) {
             values.insert(var.clone(), v);
         }
-        let digital: Vec<crate::digital::LogicValue> =
+        let digital: Vec<piperine_digital_solver::events::LogicValue> =
             (0..usize::MAX).map_while(|i| digital_from.digital(i)).collect();
         TransientStep::new(time, values).with_digital(digital)
     }

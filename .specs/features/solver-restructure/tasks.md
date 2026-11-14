@@ -562,15 +562,15 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `DigitalDevice` lives in `interface.rs` of the new crate with the same methods and defaults; `Element: AnalogDevice + DigitalDevice + Introspect` in the owner names it from there
-- [ ] `trait DigitalParticipant: DigitalDevice { fn is_digital(&self) -> bool; }` exists in the new crate; the owner has `impl DigitalParticipant for dyn Element` returning `self.capabilities().contains(ElementCapabilities::DIGITAL)`
-- [ ] `DigitalLimits { max_delta_cycles, time_epsilon }` with defaults 1000 and 1e-12, asserted by a unit test `digital_limits_defaults_are_the_literals`
-- [ ] `DigitalError` with the two variants of the design, `Display` equal to today's message texts
-- [ ] The mock devices of the unit tests of `events.rs` and `interface.rs` implement `DigitalDevice` (and `DigitalParticipant` where the test runs the scheduler) instead of the full `Element`; their assertions are unchanged; tests that need the scheduler stay in the owner until T23 and move then
-- [ ] The crate's manifest has no dependency in the tree
-- [ ] `cargo test -p piperine-digital-solver` passes, among its tests `external_model_emits_through_the_sink` (C28)
-- [ ] The expected list of `default_members_are_the_green_crates` gains the crate
-- [ ] Gate: full (owner, analog, digital)
+- [x] `DigitalDevice` lives in `interface.rs` of the new crate with the same methods and defaults; `Element: AnalogDevice + DigitalDevice + Introspect` in the owner names it from there
+- [x] `trait DigitalParticipant: DigitalDevice { fn is_digital(&self) -> bool; }` exists in the new crate; the owner has `impl DigitalParticipant for dyn Element` returning `self.capabilities().contains(ElementCapabilities::DIGITAL)`
+- [x] `DigitalLimits { max_delta_cycles, time_epsilon }` with defaults 1000 and 1e-12, asserted by a unit test `digital_limits_defaults_are_the_literals`
+- [x] `DigitalError` with the two variants of the design, `Display` equal to today's message texts
+- [x] The mock devices of the unit tests of `events.rs` and `interface.rs` implement `DigitalDevice` (and `DigitalParticipant` where the test runs the scheduler) instead of the full `Element`; their assertions are unchanged; tests that need the scheduler stay in the owner until T23 and move then
+- [x] The crate's manifest has no dependency in the tree
+- [x] `cargo test -p piperine-digital-solver` passes, among its tests `external_model_emits_through_the_sink` (C28)
+- [x] The expected list of `default_members_are_the_green_crates` gains the crate
+- [x] Gate: full (owner, analog, digital)
 
 **Tests**: unit
 **Gate**: full

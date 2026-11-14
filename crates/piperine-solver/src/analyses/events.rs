@@ -12,7 +12,7 @@
 //! re-polled, crossings discarded).
 //!
 //! The queue does not *replace* the digital scheduler's storage overnight;
-//! [`digital::DigitalState::event_queue`](crate::digital::DigitalState) can
+//! [`digital::DigitalState::event_queue`](crate::digital::state::DigitalState) can
 //! remain as the backing store for digital events, with [`EventQueue`]
 //! wrapping it via an adapter. The goal is ONE read path in `predict_step`,
 //! not necessarily one storage layer.
@@ -26,7 +26,7 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 
-use crate::digital::{DigitalEvent, DigitalNet};
+use piperine_digital_solver::events::{DigitalEvent, DigitalNet};
 
 // ── enums: kind, priority, source, rollback ────────────────────────────────
 
@@ -256,7 +256,7 @@ struct Checkpoint {
 /// `peek()` returns the earliest entry (min-time, then `Exact` over
 /// `Advisory`).
 ///
-/// One-deep checkpoint semantics mirror [`DigitalState::Checkpoint`](crate::digital::DigitalState):
+/// One-deep checkpoint semantics mirror [`DigitalState::Checkpoint`](crate::digital::state::DigitalState):
 /// `checkpoint()` snapshots the heap before a candidate step; `rollback()`
 /// restores it on rejection, honoring each drained entry's
 /// [`RollbackBehavior`] (ABI-40/41) — `Restore`-tagged entries return to the
@@ -420,7 +420,7 @@ impl EventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::digital::LogicValue;
+    use piperine_digital_solver::events::LogicValue;
 
     fn entry(time: f64, priority: EventPriority, kind: EventKind) -> EventEntry {
         EventEntry {

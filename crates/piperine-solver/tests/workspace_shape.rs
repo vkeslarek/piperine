@@ -26,6 +26,7 @@ const RETIRED_CRATES: &[&str] = &[
 /// Later tasks extend this list as the sub-solver crates appear.
 const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-analog-solver",
+    "crates/piperine-digital-solver",
     "crates/piperine-lang",
     "crates/piperine-solver",
 ];

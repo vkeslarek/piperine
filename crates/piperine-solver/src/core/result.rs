@@ -1,7 +1,7 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
 use piperine_analog_solver::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
-use crate::digital::LogicValue;
+use piperine_digital_solver::events::LogicValue;
 use ndarray::Array2;
 use num_complex::Complex;
 use std::collections::HashMap;

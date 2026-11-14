@@ -21,7 +21,7 @@ pub use crate::core::introspect::{
     SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
-pub use crate::digital::{DigitalNet, LogicValue};
+pub use piperine_digital_solver::events::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;

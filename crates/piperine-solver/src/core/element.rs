@@ -3,7 +3,6 @@
 //! and the stamping/lifecycle vocabulary every participant and every
 //! driver speaks (MD-01 as amended 2026-07-19).
 use num_complex::Complex64;
-use std::collections::HashSet;
 
 use crate::analyses::ac::AcAnalysisContext;
 use crate::prelude::DcAnalysisResult;
@@ -14,8 +13,8 @@ use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::introspect::{
     Invalidation, ObservableDescriptor, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
 };
-use crate::digital::{DigitalNet, LogicValue};
-use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
+use piperine_digital_solver::events::LogicValue;
+use piperine_digital_solver::interface::{DigitalDevice, DigitalParticipant, EventSink};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::linear::Stamp;
 use crate::analyses::Context;
@@ -292,65 +291,6 @@ pub trait AnalogDevice: Send + Sync {
     }
 }
 
-/// Digital participation: two-phase delta cycle + hidden-state round-trip.
-///
-/// The delta cycle is two-phase to preserve non-blocking (NBA) semantics
-/// across register chains (SPEC §9): the scheduler calls `seq_phase` on every
-/// woken element first, then `comb_phase` on every woken element, so a
-/// register samples the pre-edge net snapshot instead of racing ahead.
-///
-/// Every method defaults to an element that drives no nets, so a purely
-/// analog device inherits the inert digital surface untouched.
-pub trait DigitalDevice: Send + Sync {
-    /// Boundary wiring: the nets this element reads (its sensitivity list) and
-    /// the nets it drives. Defaults to driving/reading nothing.
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &[], outputs: &[] }
-    }
-
-    /// Power-on: apply register initial values and emit initial output events
-    /// (typically at `t = 0`). No-op for elements with no digital state.
-    fn init(&mut self, _sink: &mut dyn EventSink) {}
-
-    /// Phase 1 (register commit): detect clock edges against the previous
-    /// evaluation and commit register writes from the pre-settle net snapshot.
-    /// Returns whether any clocked block fired. **Must not** emit output events
-    /// — those happen in [`comb_phase`](DigitalDevice::comb_phase).
-    fn seq_phase(&mut self, _ctx: &EvalCtx<'_>) -> bool { false }
-
-    /// Phase 2 (combinational): recompute outputs from live `ctx.nets` and the
-    /// (possibly just-committed) register banks, emitting change events into
-    /// `sink`.
-    fn comb_phase(&mut self, _ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {}
-
-    /// Fused one-shot evaluation: [`seq_phase`](DigitalDevice::seq_phase) then
-    /// [`comb_phase`](DigitalDevice::comb_phase) in a single call. Used by external
-    /// co-simulators that don't participate in the scheduler's two-phase cycle.
-    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        self.seq_phase(ctx);
-        self.comb_phase(ctx, sink);
-    }
-
-    /// Convenience: true if any of the element's input nets is in `changed`.
-    fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
-        self.boundary().inputs.iter().any(|n| changed.contains(n))
-    }
-
-    /// Hidden digital state (module vars, edge-detection memory) as an
-    /// opaque `(int, real)` carrier, snapshotted into each recorded
-    /// [`crate::core::result::TransientStep`] and restored verbatim on full-state
-    /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
-    /// shot-state contract requires register state to round-trip with the
-    /// digital nets. `None` = stateless (pure combinational) element.
-    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
-        None
-    }
-
-    /// Restore a state previously produced by [`Self::digital_hidden_snapshot`].
-    /// Called on full-state re-entry after `init`, before the first settle.
-    fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
-}
-
 /// OSDI-style introspection: parameters, queries, terminals, opvars.
 ///
 /// All optional. A model exposes as much or as little metadata as it has;
@@ -566,4 +506,10 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// from the last accepted device state — not the dirty rejected-attempt
     /// state. Default: no-op (stateless device).
     fn restore_state(&mut self, _checkpoint: &ElementCheckpoint) {}
+}
+
+impl DigitalParticipant for dyn Element {
+    fn is_digital(&self) -> bool {
+        self.capabilities().contains(ElementCapabilities::DIGITAL)
+    }
 }

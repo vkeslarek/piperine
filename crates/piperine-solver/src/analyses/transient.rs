@@ -16,7 +16,7 @@ use crate::analyses::events::{
 use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCheckpoint;
-use crate::digital::{DigitalNet, LogicValue};
+use piperine_digital_solver::events::{DigitalNet, LogicValue};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
@@ -220,7 +220,7 @@ mod step_tests {
     use super::*;
     use crate::prelude::TransientStep;
     use crate::core::net::Net;
-    use crate::digital::LogicValue;
+    use piperine_digital_solver::events::LogicValue;
     use std::collections::HashMap;
     use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
     use std::sync::Arc;

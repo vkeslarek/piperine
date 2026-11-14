@@ -1,0 +1,6 @@
+[package]
+name = "piperine-digital-solver"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -368,7 +368,8 @@ impl<'a> PoleZeroSolver<'a> {
 mod tests {
     use super::*;
     use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
     use crate::core::circuit::CircuitInstance;
     use num_complex::Complex64;
 

@@ -1,13 +1,13 @@
 //! The digital side of the solver ABI: the value types every discrete
-//! participant shares with the scheduler ([`crate::digital::DigitalState`]).
+//! participant shares with the scheduler (the owner's scheduler state).
 //!
-//! Digital evaluation itself is expressed through [`crate::core::element::Element`]
-//! — the single simulated-thing contract — via its `boundary`/`init`/`seq_phase`/
+//! Digital evaluation itself is expressed through [`DigitalDevice`]
+//! — the digital half of the owner's single simulated-thing contract — via its `boundary`/`init`/`seq_phase`/
 //! `comb_phase` methods. This module owns the surrounding wire types those
 //! methods speak in: [`DigitalPorts`] (boundary wiring), [`EvalCtx`] (the
 //! read-only snapshot), and [`EventSink`] (the write-only event façade). A
 //! JIT-compiled logic cone, the A2D/D2A bridge, and an external co-simulator are
-//! all just Elements; the scheduler never learns which kind sits behind the
+//! all just digital devices; the scheduler never learns which kind sits behind the
 //! contract.
 //!
 //! ## Contract stability
@@ -17,9 +17,9 @@
 //! signature break — so a model compiled or written against version N keeps
 //! working. Treat changes here like changes to a published FFI header.
 
-use crate::digital::{DigitalEvent, DigitalNet, LogicValue};
+use crate::events::{DigitalEvent, DigitalNet, LogicValue};
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashSet};
 
 /// Which sign changes a crossing detector fires on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,7 +106,7 @@ pub trait EventSink {
         net: DigitalNet,
         value: LogicValue,
         delay: f64,
-        strength: crate::digital::drivers::Strength,
+        strength: crate::drivers::Strength,
     ) {
         let _ = strength;
         self.emit(net, value, delay);
@@ -140,7 +140,7 @@ impl<'q> QueueSink<'q> {
 impl QueueSink<'_> {
     /// Shared push logic for [`EventSink::emit`]/[`EventSink::emit_with_strength`]
     /// — the only difference between the two is whether `strength` is `Some`.
-    fn push(&mut self, net: DigitalNet, value: LogicValue, delay: f64, strength: Option<crate::digital::drivers::Strength>) {
+    fn push(&mut self, net: DigitalNet, value: LogicValue, delay: f64, strength: Option<crate::drivers::Strength>) {
         self.queue.push(Reverse(DigitalEvent {
             time: self.base_time + delay,
             net,
@@ -163,7 +163,7 @@ impl EventSink for QueueSink<'_> {
         net: DigitalNet,
         value: LogicValue,
         delay: f64,
-        strength: crate::digital::drivers::Strength,
+        strength: crate::drivers::Strength,
     ) {
         self.push(net, value, delay, Some(strength));
     }
@@ -200,10 +200,77 @@ pub fn interpolate_a2d_crossing(dir: CrossDir, t0: f64, v0: f64, t1: f64, v1: f6
     predict_crossing(dir, t0, v0, t1, v1)
 }
 
+/// Digital participation: two-phase delta cycle + hidden-state round-trip.
+///
+/// The delta cycle is two-phase to preserve non-blocking (NBA) semantics
+/// across register chains (SPEC §9): the scheduler calls `seq_phase` on every
+/// woken element first, then `comb_phase` on every woken element, so a
+/// register samples the pre-edge net snapshot instead of racing ahead.
+///
+/// Every method defaults to an element that drives no nets, so a purely
+/// analog device inherits the inert digital surface untouched.
+pub trait DigitalDevice: Send + Sync {
+    /// Boundary wiring: the nets this element reads (its sensitivity list) and
+    /// the nets it drives. Defaults to driving/reading nothing.
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: &[] }
+    }
+
+    /// Power-on: apply register initial values and emit initial output events
+    /// (typically at `t = 0`). No-op for elements with no digital state.
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    /// Phase 1 (register commit): detect clock edges against the previous
+    /// evaluation and commit register writes from the pre-settle net snapshot.
+    /// Returns whether any clocked block fired. **Must not** emit output events
+    /// — those happen in [`comb_phase`](DigitalDevice::comb_phase).
+    fn seq_phase(&mut self, _ctx: &EvalCtx<'_>) -> bool { false }
+
+    /// Phase 2 (combinational): recompute outputs from live `ctx.nets` and the
+    /// (possibly just-committed) register banks, emitting change events into
+    /// `sink`.
+    fn comb_phase(&mut self, _ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {}
+
+    /// Fused one-shot evaluation: [`seq_phase`](DigitalDevice::seq_phase) then
+    /// [`comb_phase`](DigitalDevice::comb_phase) in a single call. Used by external
+    /// co-simulators that don't participate in the scheduler's two-phase cycle.
+    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        self.seq_phase(ctx);
+        self.comb_phase(ctx, sink);
+    }
+
+    /// Convenience: true if any of the element's input nets is in `changed`.
+    fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
+        self.boundary().inputs.iter().any(|n| changed.contains(n))
+    }
+
+    /// Hidden digital state (module vars, edge-detection memory) as an
+    /// opaque `(int, real)` carrier, snapshotted into each recorded
+    /// `TransientStep` and restored verbatim on full-state
+    /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
+    /// shot-state contract requires register state to round-trip with the
+    /// digital nets. `None` = stateless (pure combinational) element.
+    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        None
+    }
+
+    /// Restore a state previously produced by [`Self::digital_hidden_snapshot`].
+    /// Called on full-state re-entry after `init`, before the first settle.
+    fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
+}
+
+/// A [`DigitalDevice`] the scheduler can tell apart from a purely analog one.
+/// The owner implements it for its composed element type, answering from the
+/// capability flags it declares; the scheduler and the topology are generic
+/// over it.
+pub trait DigitalParticipant: DigitalDevice {
+    /// Whether this participant takes part in digital evaluation.
+    fn is_digital(&self) -> bool;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 
     /// A minimal external-style model: an inverter written directly against the
     /// stable interface, proving a non-JIT participant needs nothing else.
@@ -212,8 +279,6 @@ mod tests {
         output: DigitalNet,
         delay: f64,
     }
-
-    impl AnalogDevice for ExternalInverter {}
 
     impl DigitalDevice for ExternalInverter {
         fn boundary(&self) -> DigitalPorts<'_> {
@@ -230,13 +295,6 @@ mod tests {
             };
             sink.emit(self.output, out, self.delay);
         }
-    }
-
-    impl Introspect for ExternalInverter {}
-
-    impl Element for ExternalInverter {
-        fn name(&self) -> &str { "external_inverter" }
-        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     }
 
     /// LRMC-C7-14/T41: the A2D interpolated crossing time matches the

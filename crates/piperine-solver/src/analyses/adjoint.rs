@@ -27,7 +27,7 @@ use piperine_analog_solver::netlist::AnalogReference;
 use crate::core::circuit::CircuitInstance;
 use crate::core::net::Net;
 use crate::core::result::Result;
-use crate::digital::LogicValue;
+use piperine_digital_solver::events::LogicValue;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};

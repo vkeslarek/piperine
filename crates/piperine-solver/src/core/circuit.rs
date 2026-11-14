@@ -8,7 +8,8 @@ use crate::analyses::transient::TransientAnalysisOptions;
 use piperine_analog_solver::netlist::Netlist;
 use crate::core::net::analog_nets;
 use crate::core::element::{Element, ElementCapabilities, Introspect};
-use crate::digital::{DigitalState, DigitalTopology};
+use crate::digital::state::DigitalState;
+use crate::digital::topology::DigitalTopology;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
 use crate::analyses::ac::AcSolver;
@@ -68,7 +69,7 @@ impl CircuitInstance {
     /// was provided.
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
         use crate::core::net::Net;
-        use crate::digital::DigitalNet;
+        use piperine_digital_solver::events::DigitalNet;
         let mut nets = analog_nets(&self.netlist);
         nets.extend(
             (0..self.digital_state.nets.len())
@@ -80,7 +81,7 @@ impl CircuitInstance {
     /// Look up the digital net's stable source-level label, defaulting to
     /// `d{idx}` when no label was attached. Convenience for diagnostics and
     /// result mapping that don't want to construct a full `Net`.
-    pub fn digital_label(&self, net: crate::digital::DigitalNet) -> String {
+    pub fn digital_label(&self, net: piperine_digital_solver::events::DigitalNet) -> String {
         self.digital_state.label_or_default(net)
     }
 
@@ -242,8 +243,8 @@ impl CircuitInstance {
     /// reflects its power-on state.
     pub fn init_digital(&mut self) -> crate::core::result::Result<()> {
         use std::cmp::Reverse;
-        use crate::digital::DigitalEvent;
-        use crate::digital::interface::QueueSink;
+        use piperine_digital_solver::events::DigitalEvent;
+        use piperine_digital_solver::interface::QueueSink;
 
         let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
         let mut seq: u64 = 0;
@@ -282,7 +283,7 @@ impl CircuitInstance {
         t: f64,
         analog_slice: &[f64],
     ) -> crate::core::result::Result<()> {
-        let limits = crate::digital::scheduler::DigitalPlanLimits::default();
+        let limits = piperine_digital_solver::limits::DigitalLimits::default();
         match &self.digital_topology {
             Some(topo) => self.digital_state.evaluate_dag_ordered(
                 t,
@@ -342,7 +343,7 @@ impl CircuitInstance {
         let mut seq = 0u64;
         for (i, device) in self.devices.iter_mut().enumerate() {
             let mut sink =
-                crate::digital::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
+                piperine_digital_solver::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
             device.accept_timestep(state, t, &before, &mut sink);
         }
         for Reverse(event) in seed_queue {

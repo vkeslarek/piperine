@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::{Element, ElementCapabilities};
-use crate::digital::{DigitalNet, DigitalState};
+use piperine_digital_solver::events::{DigitalNet};
+use crate::digital::state::DigitalState;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::Result;
 
@@ -204,7 +205,8 @@ impl CircuitBuilder {
 mod tests {
     use super::*;
     use piperine_analog_solver::netlist::AnalogReference;
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
     use piperine_analog_solver::math::linear::Stamp;
     use crate::analyses::dc::DcAnalysisState;
     use crate::analyses::Context;

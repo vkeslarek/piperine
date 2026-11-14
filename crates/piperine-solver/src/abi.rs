@@ -3,9 +3,10 @@
 
 // The contract
 pub use crate::core::element::{
-    AnalogDevice, DigitalDevice, Element, ElementCapabilities,
+    AnalogDevice, Element, ElementCapabilities,
     ElementCheckpoint, Introspect, LimitReason, LimitingReport,
 };
+pub use piperine_digital_solver::interface::DigitalDevice;
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
@@ -31,8 +32,9 @@ pub use crate::analyses::transient::{
 // Integration (kernels read phase/coeffs)
 pub use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 // Digital evaluation
-pub use crate::digital::interface::{interpolate_a2d_crossing, CrossDir, DigitalPorts, EvalCtx, EventSink, QueueSink};
-pub use crate::digital::{DigitalEvent, DigitalNet, DriverId, DriverKind, DriverRecord, DriverTable, LogicValue, Strength};
+pub use piperine_digital_solver::interface::{interpolate_a2d_crossing, CrossDir, DigitalPorts, EvalCtx, EventSink, QueueSink};
+pub use piperine_digital_solver::events::{DigitalEvent, DigitalNet, LogicValue};
+pub use piperine_digital_solver::drivers::{DriverId, DriverKind, DriverRecord, DriverTable, Strength};
 // Path delays / timing-check limits (T19/T20, LRMW3-06/LRMW3-07) — a
 // codegen circuit builder populates these per destination net at build
 // time, so they need an ABI-surface re-export like every other

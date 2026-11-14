@@ -1496,6 +1496,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-digital-solver"
+version = "0.2.0"
+
+[[package]]
 name = "piperine-lang"
 version = "0.2.0"
 dependencies = [
@@ -1550,6 +1554,7 @@ dependencies = [
  "num-complex",
  "num-traits",
  "piperine-analog-solver",
+ "piperine-digital-solver",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",

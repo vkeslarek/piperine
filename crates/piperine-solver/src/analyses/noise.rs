@@ -353,7 +353,8 @@ impl<'a> NoiseSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+    use crate::core::element::{AnalogDevice, Element, ElementCapabilities, Introspect};
+    use piperine_digital_solver::interface::DigitalDevice;
     use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
     use piperine_analog_solver::math::linear::Stamp;
     use num_complex::Complex64;
