@@ -3,7 +3,9 @@
 //! crate of the workspace.
 
 pub mod config;
+pub mod convergence;
 pub mod error;
 pub mod math;
 pub mod netlist;
+pub mod stamp_validation;
 pub mod tolerances;

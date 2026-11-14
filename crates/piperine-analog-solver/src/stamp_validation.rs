@@ -12,9 +12,9 @@
 //! only report a generic "Linear solver returned NaN/Inf" convergence
 //! failure, not a named branch.
 
-use piperine_analog_solver::netlist::AnalogReference;
-use piperine_analog_solver::error::{Error, SolverDomain};
-use piperine_analog_solver::math::linear::Stamp;
+use crate::netlist::AnalogReference;
+use crate::error::{Error, SolverDomain};
+use crate::math::linear::Stamp;
 
 /// Returns `None` when every stamp is finite (the common case, checked
 /// with zero allocation); otherwise a typed `SolverDomain::Element` error

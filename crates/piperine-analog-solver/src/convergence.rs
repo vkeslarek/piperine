@@ -10,40 +10,40 @@
 //! [`HomotopyDriver`] the plan drives.
 //!
 //! [`PlanLimits`] is the home for numerical caps that used to live as literals
-//! inside drivers (mixed-signal DC settle cap, digital delta-cycle cap,
-//! scheduler time-equality epsilon). One knob for hosts; one place to look for
-//! the solver's hidden constants.
+//! inside drivers (the mixed-signal DC settle cap). One knob for hosts; one place
+//! to look for the solver's hidden constants.
 
 use ndarray::Array1;
 use ndarray::{ArrayView1, ArrayViewMut1};
-use piperine_analog_solver::netlist::Netlist;
-use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::config::{Schedules, StepperGains, TraceFlags};
-use piperine_analog_solver::tolerances::{Policy, Tolerances};
-use crate::core::result::Result;
+use crate::netlist::Netlist;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::config::{Schedules, StepperGains, TraceFlags};
+use crate::tolerances::{Policy, Tolerances};
+use crate::error::Result;
 
 /// Numerical caps honored across drivers. Replaces the literals that used to
-/// live inline in DC and the digital scheduler.
+/// live inline in DC.
 #[derive(Debug, Clone, Copy)]
 pub struct PlanLimits {
     /// Maximum number of (Newton + digital settle) alternations in DC before
     /// reporting that the mixed-signal loop did not stabilize.
     pub max_mixed_signal_iter: usize,
-    /// Maximum delta cycles in a single digital evaluation time. Above this,
-    /// the scheduler reports a combinational loop instead of warning.
-    pub max_delta_cycles: usize,
-    /// Absolute time equality tolerance when comparing two event times.
-    pub digital_time_epsilon: f64,
 }
 
 impl Default for PlanLimits {
     fn default() -> Self {
         Self {
             max_mixed_signal_iter: 20,
-            max_delta_cycles: 1000,
-            digital_time_epsilon: 1e-12,
         }
     }
+}
+
+/// The two bounds a transient stepper clamps `dt` into: what it reads of the
+/// analysis options.
+#[derive(Debug, Clone, Copy)]
+pub struct StepLimits {
+    pub dt_min: f64,
+    pub dt_max: f64,
 }
 
 // ── NewtonStrategy ─────────────────────────────────────────────────────────
@@ -140,14 +140,14 @@ pub trait StepperStrategy: Send + Sync {
         &mut self,
         lte: f64,
         dt_actual: f64,
-        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
+        limits: &StepLimits,
     ) -> f64;
 
     /// Reduced timestep after a failed (rejected) step.
     fn reject_dt(
         &mut self,
         failed_dt: f64,
-        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
+        limits: &StepLimits,
     ) -> f64;
 }
 
@@ -186,13 +186,13 @@ impl StepperStrategy for PiController {
         &mut self,
         lte: f64,
         dt_actual: f64,
-        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
+        limits: &StepLimits,
     ) -> f64 {
         // No error signal (non-reactive step, or history too short): grow dt
         // toward dt_max without biasing the PI memory.
         if !lte.is_finite() || lte <= 0.0 {
             self.prev_error = None;
-            return (dt_actual * self.gains.grow_factor).clamp(tran_opts.dt_min, tran_opts.dt_max);
+            return (dt_actual * self.gains.grow_factor).clamp(limits.dt_min, limits.dt_max);
         }
         // Exponent: proportional gain + integral correction on error history.
         //
@@ -223,13 +223,13 @@ impl StepperStrategy for PiController {
         // (target/lte)^p: error above tolerance (lte > 1) shrinks dt.
         let (lo, hi) = self.gains.factor_clamp;
         let factor = lte.powf(-p).clamp(lo, hi);
-        (dt_actual * factor).clamp(tran_opts.dt_min, tran_opts.dt_max)
+        (dt_actual * factor).clamp(limits.dt_min, limits.dt_max)
     }
 
     fn reject_dt(
         &mut self,
         failed_dt: f64,
-        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
+        limits: &StepLimits,
     ) -> f64 {
         // Aggressive backtracking: a failed step (Newton non-convergence or
         // LTE-reject) means the local dynamics are too fast for this dt, so
@@ -237,7 +237,7 @@ impl StepperStrategy for PiController {
         // default reaches a workable dt in one retry instead of the timid ÷2
         // cascade.
         self.prev_error = None;
-        (failed_dt / self.gains.reject_divisor).max(tran_opts.dt_min)
+        (failed_dt / self.gains.reject_divisor).max(limits.dt_min)
     }
 }
 
@@ -369,7 +369,7 @@ impl ConvergencePlan {
     }
 
     /// Override the diagnostic trace toggles handed to the strategies
-    /// (drivers seed them from [`Policy::trace`](piperine_analog_solver::tolerances::Policy)).
+    /// (drivers seed them from [`Policy::trace`](crate::tolerances::Policy)).
     pub fn with_trace(mut self, trace: TraceFlags) -> Self {
         self.trace = trace;
         self
@@ -431,7 +431,7 @@ impl ConvergencePlan {
 }
 
 /// What the plan converged and how — the DC driver copies the strategy name
-/// into [`SolverStats`](crate::core::result::SolverStats).
+/// into the owner's `SolverStats`.
 pub struct PlanOutcome {
     pub solution: Array1<f64>,
     /// The homotopy that converged; `None` when plain Newton sufficed.
@@ -575,7 +575,7 @@ impl HomotopyStrategy for SourceStepping {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use piperine_analog_solver::error::{Error, SolverDomain};
+    use crate::error::{Error, SolverDomain};
 
     /// Scripted homotopy driver: records every `newton()` call as the
     /// `(src_scale, gmin_extra)` it ran under — the warm-start chain — and

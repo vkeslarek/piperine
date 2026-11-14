@@ -13,6 +13,27 @@ use crate::digital::state::DigitalState;
 use crate::digital::topology::DigitalTopology;
 use crate::digital::drivers::{default_strength_for, DriverId, DriverKind};
 
+/// The digital caps the scheduler honors: the two fields `PlanLimits` carried
+/// before the analog crate split. Interim home in the owner until the digital
+/// crate takes them as `DigitalLimits`.
+#[derive(Debug, Clone, Copy)]
+pub struct DigitalPlanLimits {
+    /// Maximum delta cycles in a single digital evaluation time. Above this,
+    /// the scheduler reports a combinational loop instead of warning.
+    pub max_delta_cycles: usize,
+    /// Absolute time equality tolerance when comparing two event times.
+    pub digital_time_epsilon: f64,
+}
+
+impl Default for DigitalPlanLimits {
+    fn default() -> Self {
+        Self {
+            max_delta_cycles: 1000,
+            digital_time_epsilon: 1e-12,
+        }
+    }
+}
+
 /// Applies one drained `event` to `nets`/`driver_table` (T54/LRMW2-46):
 /// registers the event's source as `net`'s driver per §7.9 (every event's
 /// `source` is already the emitting device's stable index — the
@@ -63,7 +84,7 @@ impl DigitalState {
         &mut self,
         t: f64,
         devices: &mut [Box<dyn Element>],
-        limits: crate::analyses::convergence::PlanLimits,
+        limits: DigitalPlanLimits,
         analog_slice: &[f64],
     ) -> crate::core::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;
@@ -141,7 +162,7 @@ impl DigitalState {
         t: f64,
         devices: &mut [Box<dyn Element>],
         topology: &DigitalTopology,
-        limits: crate::analyses::convergence::PlanLimits,
+        limits: DigitalPlanLimits,
         analog_slice: &[f64],
     ) -> crate::core::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;

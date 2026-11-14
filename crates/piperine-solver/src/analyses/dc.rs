@@ -4,7 +4,7 @@
 //! (`DcSystem`/`DcSolver`): gmin/source-stepping homotopy escalation, the
 //! device-bypass stamp cache, and the mixed-signal settle loop.
 use piperine_analog_solver::netlist::AnalogReference;
-use crate::analyses::convergence::{ConvergencePlan, HomotopyDriver};
+use piperine_analog_solver::convergence::{ConvergencePlan, HomotopyDriver};
 use crate::analyses::Context;
 use piperine_analog_solver::tolerances::Policy;
 use crate::core::circuit::CircuitInstance;
@@ -14,7 +14,7 @@ use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::Stamp;
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
 
 use ndarray::ArrayView1;
@@ -152,7 +152,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let dc_state = DcAnalysisState::new(state, &digital_state.nets, src_scale);
         for dc in devices.iter_mut() {
             let device_stamps = dc.load_dc(&dc_state, &self.context);
-            if let Some(err) = crate::analyses::non_finite_stamp_error(dc.name(), &device_stamps) {
+            if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error(dc.name(), &device_stamps) {
                 return Err(err);
             }
             all_stamps.extend(device_stamps);
@@ -368,7 +368,7 @@ impl<'a> DcSolver<'a> {
                     // The digital snapshot feeds the stamps, so the bypass
                     // cache is stale even though the analog solution is not.
                     self.system.invalidate_bypass();
-                    let strategy = crate::analyses::convergence::DampedNewton;
+                    let strategy = piperine_analog_solver::convergence::DampedNewton;
                     let policy = self.policy.clone();
                     let tolerances = self.system.context.tolerances.clone();
                     sol = self.solver.solve_with_strategy(
@@ -434,7 +434,7 @@ impl<'a> DcSolver<'a> {
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::core::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
-        let strategy = crate::analyses::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         self.solver.solve_with_strategy(

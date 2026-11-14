@@ -539,12 +539,12 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] The stepper strategy takes `StepLimits { dt_min, dt_max }` in place of `&TransientAnalysisOptions`; the owner builds it from the options at each of the call sites; the arithmetic is unchanged
-- [ ] `PlanLimits` keeps `max_mixed_signal_iter`; its two digital fields stay available to the owner through a struct defined in the owner until T22 moves them (no default value changes: 20, 1000, 1e-12)
-- [ ] The unit tests of `integration.rs` that build a full `Element` (they import `core::element`) move, bodies unchanged, to the owner target `integration_scheme_elements.rs`; the other unit tests of `integration.rs`, `convergence.rs` (4) and the non-finite stamp test stay with their modules and pass in the analog crate
-- [ ] The owner has no `src/math/` and no `src/analog.rs`; no `pub mod math` or `pub mod analog` shim exists
-- [ ] `cargo build --all-targets` prints no warning on the owner and the analog crate
-- [ ] Gate: full (owner and analog)
+- [x] The stepper strategy takes `StepLimits { dt_min, dt_max }` in place of `&TransientAnalysisOptions`; the owner builds it from the options at each of the call sites; the arithmetic is unchanged
+- [x] `PlanLimits` keeps `max_mixed_signal_iter`; its two digital fields stay available to the owner through a struct defined in the owner until T22 moves them (no default value changes: 20, 1000, 1e-12)
+- [x] The unit tests of `integration.rs` that build a full `Element` (they import `core::element`) move, bodies unchanged, to the owner target `integration_scheme_elements.rs`; the other unit tests of `integration.rs`, `convergence.rs` (4) and the non-finite stamp test stay with their modules and pass in the analog crate
+- [x] The owner has no `src/math/` and no `src/analog.rs`; no `pub mod math` or `pub mod analog` shim exists
+- [x] `cargo build --all-targets` prints no warning on the owner and the analog crate
+- [x] Gate: full (owner and analog)
 
 **Tests**: unit
 **Gate**: full

@@ -1,13 +1,13 @@
 //! The Newton-Raphson engine: the `NonLinearSystem` contract, the
 //! strategy-driven damped iteration loop with predictor seed, and the
 //! solution-history buffer it owns.
-use piperine_analog_solver::error::Error;
-use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::math::iv::{InitialValue, InitialValueApplyExt};
-use piperine_analog_solver::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use piperine_analog_solver::math::num::Scalar;
-use crate::analyses::convergence::NewtonStrategy;
-use piperine_analog_solver::tolerances::{Policy, Tolerances};
+use crate::error::Error;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::iv::{InitialValue, InitialValueApplyExt};
+use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use crate::math::num::Scalar;
+use crate::convergence::NewtonStrategy;
+use crate::tolerances::{Policy, Tolerances};
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use tracing::debug;
 
@@ -15,13 +15,13 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<E>,
-    ) -> crate::core::result::Result<Vec<Stamp<A, E>>>;
+    ) -> crate::error::Result<Vec<Stamp<A, E>>>;
 
     /// The netlist naming this system's unknowns. The strategy solve path
     /// reads it for the per-row convergence tests; routing it through the
     /// system (instead of a separate parameter) lets the solver reborrow it
     /// each iteration without aliasing the `&mut system` borrow.
-    fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist;
+    fn netlist(&self) -> &crate::netlist::Netlist;
 
     fn converged(&self, _state: &CircularArrayBuffer2<E>, _delta: &ArrayView1<E>) -> bool {
         true
@@ -115,7 +115,7 @@ where
         system: &mut dyn NonLinearSystem<A, E>,
         size: usize,
         history_depth: usize,
-    ) -> crate::core::result::Result<Self> {
+    ) -> crate::error::Result<Self> {
         let state = CircularArrayBuffer2::new(history_depth, size);
         let dry_run_stamps = system.assemble(&state)?;
         let symbolic = L::SymbolicType::new(size, dry_run_stamps)?;
@@ -173,7 +173,7 @@ where
         &mut self,
         system: &mut dyn NonLinearSystem<A, E>,
         max_iter: usize,
-    ) -> crate::core::result::Result<Array1<E>> {
+    ) -> crate::error::Result<Array1<E>> {
         let guess = if let Some(prev) = self.state.latest() {
             prev.to_owned()
         } else {
@@ -198,7 +198,7 @@ where
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
 
                 return Err(Error::simple(
-                    piperine_analog_solver::error::SolverDomain::Newton,
+                    crate::error::SolverDomain::Newton,
                     "Linear solver returned NaN/Inf",
                 ));
             }
@@ -234,7 +234,7 @@ where
         self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
-            piperine_analog_solver::error::SolverDomain::Newton,
+            crate::error::SolverDomain::Newton,
             format!("Failed to converge after {} iterations", max_iter),
         ))
     }
@@ -319,7 +319,7 @@ where
         strategy: &dyn NewtonStrategy,
         tolerances: &Tolerances,
         policy: &Policy,
-    ) -> crate::core::result::Result<Array1<f64>> {
+    ) -> crate::error::Result<Array1<f64>> {
         // Seed: first-order extrapolation when the driver armed the
         // predictor and two history rows exist (CP-16); else the latest
         // accepted point; else zeros (cold start).
@@ -356,7 +356,7 @@ where
             if current_guess.iter().any(|x| !x.is_finite()) {
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
                 return Err(Error::simple(
-                    piperine_analog_solver::error::SolverDomain::Newton,
+                    crate::error::SolverDomain::Newton,
                     "Linear solver returned NaN/Inf",
                 ));
             }
@@ -405,7 +405,7 @@ where
         self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
-            piperine_analog_solver::error::SolverDomain::Newton,
+            crate::error::SolverDomain::Newton,
             format!("Failed to converge after {} iterations", max_iter),
         ))
     }

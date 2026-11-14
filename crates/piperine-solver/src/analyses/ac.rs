@@ -13,7 +13,7 @@ use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::linear::Stamp;
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::{AcAnalysisResult, AcAnalysisStep};
 

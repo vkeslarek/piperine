@@ -5,7 +5,7 @@
 //! reactive form `i_C = c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}` come from
 //! [`TrBdf2::phase_coeffs`] / [`TrBdf2::stage_coeffs`], so the codegen
 //! kernel does not need to know the integration formula family. (Breakpoint
-//! forcing is an [`Element`][crate::core::element::Element] ABI method,
+//! forcing is an `Element` ABI method,
 //! `next_breakpoints`, not a separate trait.)
 
 /// BDF2 (non-uniform) coefficients for `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}`.
@@ -237,68 +237,6 @@ mod tests {
         assert!((c0 - (2.0 * dt0 + dt1) / (dt0 * sum)).abs() < 1e-9);
         assert!((c1 + sum / (dt0 * dt1)).abs() < 1e-9);
         assert!((c2 - dt0 / (dt1 * sum)).abs() < 1e-9);
-    }
-
-    /// Mock element that returns a fixed timestep, used to verify the
-    /// stepper loop consults elements for LTE via `AnalogDevice::suggest_transient_step`.
-    #[test]
-    fn lte_default_element_returns_none() {
-        use crate::analyses::transient::TransientAnalysisState;
-        use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-        use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-        use crate::analyses::Context;
-
-        struct PlainElement;
-        impl AnalogDevice for PlainElement {}
-        impl DigitalDevice for PlainElement {}
-        impl Introspect for PlainElement {}
-        impl Element for PlainElement {
-            fn name(&self) -> &str { "plain" }
-            fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
-        }
-
-        let buf = CircularArrayBuffer2::new(1, 2);
-        let state = TransientAnalysisState::new(&buf, &[]);
-        let ctx = Context::default();
-
-        let el = PlainElement;
-        assert!(el.suggest_transient_step(&state, &[1e-6], &ctx).is_none());
-    }
-
-    /// Mini element that always returns a fixed dt of 10 μs, confirming the
-    /// stepper can consume the suggestion through the trait.
-    #[test]
-    fn lte_element_override_returns_custom_dt() {
-        use crate::analyses::transient::TransientAnalysisState;
-        use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
-        use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-        use crate::analyses::Context;
-
-        struct FixedLte(f64);
-        impl AnalogDevice for FixedLte {
-            fn suggest_transient_step(
-                &self,
-                _state: &TransientAnalysisState<'_>,
-                _time_history: &[f64],
-                _context: &Context,
-            ) -> Option<f64> {
-                Some(self.0)
-            }
-        }
-        impl DigitalDevice for FixedLte {}
-        impl Introspect for FixedLte {}
-        impl Element for FixedLte {
-            fn name(&self) -> &str { "fixed_lte" }
-            fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
-        }
-
-        let buf = CircularArrayBuffer2::new(1, 2);
-        let state = TransientAnalysisState::new(&buf, &[]);
-        let ctx = Context::default();
-
-        let el = FixedLte(10e-6);
-        let sug = el.suggest_transient_step(&state, &[1e-6], &ctx);
-        assert_eq!(sug, Some(10e-6));
     }
 
     // ── TR-BDF2 ───────────────────────────────────────────────────────────

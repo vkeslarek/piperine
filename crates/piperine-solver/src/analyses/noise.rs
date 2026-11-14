@@ -346,7 +346,7 @@ impl<'a> NoiseSolver<'a> {
     /// # Returns
     /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
-        crate::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
+        piperine_analog_solver::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
     }
 }
 

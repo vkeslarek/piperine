@@ -10,4 +10,5 @@ faer.workspace = true
 ndarray.workspace = true
 thiserror.workspace = true
 bimap.workspace = true
+tracing.workspace = true
 

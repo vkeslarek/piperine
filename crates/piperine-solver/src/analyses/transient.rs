@@ -19,10 +19,10 @@ use crate::core::element::ElementCheckpoint;
 use crate::digital::{DigitalNet, LogicValue};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
-use crate::math::integration::{TrBdf2, TrBdf2Phase};
+use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::{AsIndex, Stamp};
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::{TransientAnalysisResult, TransientStep};
 
 use log::debug;
@@ -123,6 +123,11 @@ pub struct TransientAnalysisOptions {
 }
 
 impl TransientAnalysisOptions {
+    /// The `dt` bounds the stepper strategy clamps into.
+    pub fn step_limits(&self) -> piperine_analog_solver::convergence::StepLimits {
+        piperine_analog_solver::convergence::StepLimits { dt_min: self.dt_min, dt_max: self.dt_max }
+    }
+
     /// Create transient options. The integrator is always adaptive (PI
     /// controller); `dt` is the initial step size, grown/shrunk from there.
     pub fn new(stop_time: f64, dt: f64) -> Self {
@@ -195,7 +200,7 @@ pub struct TransientAnalysisContext {
     /// Which sub-step the kernel is stamping: [`Trapezoidal`][TrBdf2Phase::Trapezoidal]
     /// over `γh` (solving for `x_{n+γ}`) or [`Bdf2`][TrBdf2Phase::Bdf2] over
     /// `(1−γ)h` (solving for `x_{n+1}` from `x_{n+γ}` and `x_n`).
-    pub phase: crate::math::integration::TrBdf2Phase,
+    pub phase: piperine_analog_solver::math::integration::TrBdf2Phase,
     /// The full step size `h = t_{n+1} − t_n`. The companion sub-step (`γh` or
     /// `(1−γ)h`) is derived from `phase` inside `TrBdf2::phase_coeffs`.
     pub h: f64,
@@ -323,7 +328,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         let tran_state = TransientAnalysisState::new(state, &digital_state.nets);
         for tran in devices.iter_mut() {
             let device_stamps = tran.load_transient(&tran_state, &tran_ctx, &self.context);
-            if let Some(err) = crate::analyses::non_finite_stamp_error(tran.name(), &device_stamps) {
+            if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error(tran.name(), &device_stamps) {
                 return Err(err);
             }
             all_stamps.extend(device_stamps);
@@ -506,7 +511,7 @@ pub struct TransientSolver<'a> {
     /// driver delegates `propose_dt`/`reject_dt` to `plan.stepper()` — the
     /// plan is the single strategy owner across analyses (Newton +
     /// Homotopy + Stepper).
-    plan: crate::analyses::convergence::ConvergencePlan,
+    plan: piperine_analog_solver::convergence::ConvergencePlan,
     /// Unified event queue (ABI-36..41). Populated each `predict_step`
     /// from the four sources (digital peek, analog breakpoints, scheduled
     /// sets, `$bound_step` hints). `attempt_step` checkpoints + drains
@@ -538,7 +543,7 @@ impl<'a> TransientSolver<'a> {
         options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::core::result::Result<Self> {
-        Self::with_plan(circuit, options, context, crate::analyses::convergence::ConvergencePlan::default())
+        Self::with_plan(circuit, options, context, piperine_analog_solver::convergence::ConvergencePlan::default())
     }
 
     /// Build a transient solver with an explicit convergence plan (ABI-42):
@@ -548,7 +553,7 @@ impl<'a> TransientSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: TransientAnalysisOptions,
         context: Context,
-        plan: crate::analyses::convergence::ConvergencePlan,
+        plan: piperine_analog_solver::convergence::ConvergencePlan,
     ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
@@ -598,7 +603,7 @@ impl<'a> TransientSolver<'a> {
 
     /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
     /// custom stepper; the driver delegates rejection/proposal to it.
-    pub fn set_plan(&mut self, plan: crate::analyses::convergence::ConvergencePlan) {
+    pub fn set_plan(&mut self, plan: piperine_analog_solver::convergence::ConvergencePlan) {
         self.plan = plan;
     }
 
@@ -632,7 +637,7 @@ impl<'a> TransientSolver<'a> {
 
     /// Read-only access to the convergence plan (e.g., for tests asserting
     /// which strategy is wired).
-    pub fn plan(&self) -> &crate::analyses::convergence::ConvergencePlan {
+    pub fn plan(&self) -> &piperine_analog_solver::convergence::ConvergencePlan {
         &self.plan
     }
 
@@ -807,7 +812,7 @@ impl<'a> TransientSolver<'a> {
         dt: f64,
         use_predictor: bool,
     ) -> crate::core::result::Result<Option<TransientStep>> {
-        let strategy = crate::analyses::convergence::DampedNewton;
+        let strategy = piperine_analog_solver::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances.clone();
         let t_next = t_n + dt;
@@ -1154,7 +1159,7 @@ impl<'a> TransientSolver<'a> {
             // Normalising `milne` by `trtol` here (tried, reverted) closes the
             // safety band and coarsens the grid enough to break `tran_rc`'s
             // ngspice parity at the steep part of the charging curve.
-            self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options)
+            self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options.step_limits())
         };
         if sets_just_applied {
             dt = (1e-3 * dt_actual).max(self.options.dt_min);
@@ -1273,7 +1278,7 @@ impl<'a> TransientSolver<'a> {
         // dropped (re-declared by next_breakpoints next predict), step
         // hints discarded (re-emitted by the device).
         self.event_queue.rollback();
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
         if st.dt <= self.options.dt_min {
             st.dt_min_floor_hits += 1;
             tracing::warn!(
@@ -1309,7 +1314,7 @@ impl<'a> TransientSolver<'a> {
         // retry starts from the pre-attempt checkpoint (ABI-02).
         self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
-        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options.step_limits());
         // Unified event queue rollback — same per-entry semantics as the
         // LTE reject path (ABI-40/41).
         self.event_queue.rollback();
