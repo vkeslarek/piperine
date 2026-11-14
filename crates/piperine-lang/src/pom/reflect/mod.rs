@@ -151,6 +151,7 @@ pub trait Reflect<'d>: Copy {
             .map(|r| match *r {
                 ReferenceId::Path(p) => Reference::Path(d.design().path(p)),
                 ReferenceId::Member(e) => Reference::Member(d.design().expr(e)),
+                ReferenceId::Pattern(p) => Reference::Pattern(d.design().pat(p)),
             })
             .collect()
     }

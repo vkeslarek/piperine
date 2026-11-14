@@ -100,6 +100,7 @@ impl Lowerer<'_> {
                     name: name(ident),
                     sub: sub.as_ref().map(|s| self.pat(s, origin)),
                     binding,
+                    res: Resolution::Unresolved,
                 }
             }
             ast::PatKind::Lit(e) => PatKind::Lit(self.expr(e)),

@@ -13,7 +13,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use super::design::Design;
-use super::ids::{DeclId, FileId, PathId};
+use super::ids::{DeclId, FileId, PatId, PathId};
 use super::resolution::Resolution;
 use crate::msl::Diagnostic;
 
@@ -25,6 +25,8 @@ pub(super) struct Output {
     pub diagnostics: Vec<(FileId, Diagnostic)>,
     /// `(behavior block, module)`.
     pub links: BTreeMap<DeclId, DeclId>,
+    /// Identifier patterns that name a constant, a unit variant or a unit struct.
+    pub pats: Vec<(PatId, Resolution)>,
 }
 
 /// The read-only state every stage shares.
@@ -74,6 +76,9 @@ pub(super) fn run(design: &mut Design) {
     };
     for (path, index, res) in out.segments {
         design.set_segment_res(path, index, res);
+    }
+    for (pat, res) in out.pats {
+        design.set_pat_res(pat, res);
     }
     for (behavior, module) in out.links {
         design.bind_behavior(behavior, module);

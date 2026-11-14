@@ -95,8 +95,11 @@ pub enum PatKind {
     Rest,
     /// `x`, `mut x`, `ref x`, `x @ p`. `binding` is the `Binding`
     /// declaration the identifier introduces (the lowering cannot tell a
-    /// binder from a constant name; resolution may).
-    Ident { by_ref: bool, mutable: bool, name: Name, sub: Option<PatId>, binding: DeclId },
+    /// binder from a constant name; resolution can). `res` is what a plain
+    /// name resolves to when it names a constant, a unit variant or a unit
+    /// struct (§1): then the pattern is a path and binds nothing. It stays
+    /// `Unresolved` for a binder.
+    Ident { by_ref: bool, mutable: bool, name: Name, sub: Option<PatId>, binding: DeclId, res: Resolution },
     /// A literal, possibly negated.
     Lit(ExprId),
     /// A path naming a constant or a unit variant.

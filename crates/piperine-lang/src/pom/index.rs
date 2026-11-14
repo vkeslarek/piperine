@@ -4,10 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::body::{ExprKind, StmtKind};
+use super::body::{ExprKind, PatKind, StmtKind};
 use super::decl::DeclKind;
 use super::design::Design;
-use super::ids::{DeclId, ExprId, PathId, StmtId};
+use super::ids::{DeclId, ExprId, PatId, PathId, StmtId};
 use super::resolution::{CallClass, Resolution};
 
 /// A node that names a declaration.
@@ -17,6 +17,8 @@ pub enum ReferenceId {
     Path(PathId),
     /// A `.name` or `.method()` expression that resolved to it.
     Member(ExprId),
+    /// An identifier pattern that names it (a constant, a unit variant, a unit struct).
+    Pattern(PatId),
 }
 
 /// A statement or item that writes a place.
@@ -93,6 +95,13 @@ pub(super) fn build(design: &Design) -> Index {
         let node = design.expr_node(id);
         if let ExprKind::Field { res: Resolution::Decl(d), .. } | ExprKind::MethodCall { res: Resolution::Decl(d), .. } = &node.kind {
             references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Member(id)));
+        }
+    }
+    for i in 0..design.pat_count() {
+        let id = PatId(i as u32);
+        let node = design.pat_node(id);
+        if let PatKind::Ident { res: Resolution::Decl(d), .. } = &node.kind {
+            references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Pattern(id)));
         }
     }
     for i in 0..n {

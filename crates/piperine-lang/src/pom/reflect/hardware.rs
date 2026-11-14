@@ -458,6 +458,13 @@ impl<'d> Binding<'d> {
         self.data().origin
     }
 
+    /// Does the name bind a value? It does not when the pattern is a plain
+    /// identifier that names a constant, a unit variant or a unit struct:
+    /// that pattern is a path (§1), and this declaration stays for navigation.
+    pub fn is_binding(self) -> bool {
+        !matches!(self.pattern().kind(), crate::pom::body::PatKind::Ident { res, .. } if *res != Resolution::Unresolved)
+    }
+
     /// The pattern that introduces the name.
     pub fn pattern(self) -> Pat<'d> {
         self.decl.design().pat(self.data().pat)

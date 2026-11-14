@@ -915,13 +915,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `identifier_pattern_naming_none_is_a_path` passes in `pom_resolve.rs` (C33: POL-06 AC 3)
-- [ ] Test `identifier_pattern_naming_a_const_variant_or_unit_struct_is_a_path` passes in `pom_resolve.rs` (C34: POL-06 AC 4)
-- [ ] Test `other_identifier_patterns_stay_bindings` passes in `pom_resolve.rs` (C35: POL-06 AC 5)
-- [ ] The `Binding` declaration and the pattern node stay (MD-54 rule 1: resolution adds links only)
-- [ ] `to_ast` is unchanged: the AST keeps `PatKind::Ident`
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `identifier_pattern_naming_none_is_a_path` passes in `pom_resolve.rs` (C33: POL-06 AC 3)
+- [x] Test `identifier_pattern_naming_a_const_variant_or_unit_struct_is_a_path` passes in `pom_resolve.rs` (C34: POL-06 AC 4)
+- [x] Test `other_identifier_patterns_stay_bindings` passes in `pom_resolve.rs` (C35: POL-06 AC 5)
+- [x] The `Binding` declaration and the pattern node stay (MD-54 rule 1: resolution adds links only)
+- [x] `to_ast` is unchanged: the AST keeps `PatKind::Ident`
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -806,7 +806,7 @@ The forms of a pattern.
 | --- | --- | --- |
 | `Wild` | — | `_` |
 | `Rest` | — | `..` |
-| `Ident` | `{ by_ref: bool, mutable: bool, name: Name, sub: Option<PatId>, binding: DeclId }` | `x`, `mut x`, `ref x`, `x @ p`. `binding` is the `Binding` declaration the identifier introduces (the lowering cannot tell a binder from a constant name; resolution may). |
+| `Ident` | `{ by_ref: bool, mutable: bool, name: Name, sub: Option<PatId>, binding: DeclId, res: Resolution }` | `x`, `mut x`, `ref x`, `x @ p`. `binding` is the `Binding` declaration the identifier introduces (the lowering cannot tell a binder from a constant name; resolution can). `res` is what a plain name resolves to when it names a constant, a unit variant, a unit struct or a built-in variant but `Some`: the pattern is a path then and binds nothing; it stays `Unresolved` for a binder. |
 | `Lit` | `(ExprId)` | A literal, possibly negated. |
 | `Path` | `(PathId)` | A path naming a constant or a unit variant. |
 | `Tuple` | `(Vec<PatId>)` | `(a, b)` |
@@ -1138,6 +1138,7 @@ A node that names a declaration.
 | --- | --- | --- |
 | `Path` | `(PathId)` | A path with a segment that resolved to the declaration. |
 | `Member` | `(ExprId)` | A `.name` or `.method()` expression that resolved to it. |
+| `Pattern` | `(PatId)` | An identifier pattern that names it (a constant, a unit variant, a unit struct). |
 
 ### `WriterId`
 

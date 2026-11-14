@@ -206,7 +206,7 @@ The trait every declaration handle implements. Only `decl()` is required; everyt
 | `is_pub(self)` | `bool` | Whether the item is written `pub`. |
 | `module(self)` | `Option<Module<'d>>` | The module this declaration belongs to: itself for a module, else the nearest enclosing module (through generation). None outside any module. |
 | `declared_in(self)` | `Option<Decl<'d>>` | The declaration that lexically contains this one; none for a file's root namespace. |
-| `references(self)` | `Vec<Reference<'d>>` | Every path with a segment, and every member expression, that resolved to this declaration, in source order. |
+| `references(self)` | `Vec<Reference<'d>>` | Every path with a segment, every member expression and every identifier pattern that resolved to this declaration, in source order. |
 | `qualified_name(self)` | `String` | The namespace path joined by `::`, then the member chain joined by `.`: signal `w` of module `M` in `mod a` is `a::M.w`. An `impl` adds its header (`impl S`, `impl Tr for S`) and a behavior block its own (`analog for M`), so their items do not share a name with another impl's or the module's: `impl Tr for S.X`, `analog for M.z`. A generation, a `use` and a file's root namespace add no segment. |
 
 Every declaration handle (`Module`, `Port`, `Signal`, ..., and the generic `Decl`) implements
@@ -844,6 +844,7 @@ One identifier a pattern introduces.
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `origin(self)` | `BindingOrigin` | The syntactic place the binding comes from. |
+| `is_binding(self)` | `bool` | Does the name bind a value? `false` when the pattern is a plain identifier that names a constant, a unit variant or a unit struct: it is a path then (§1), and this declaration stays for navigation. |
 | `pattern(self)` | `Pat<'d>` | The pattern that introduces the name. |
 | `let_item(self)` | `Option<Let<'d>>` | The `let` item the name comes from, for a body `let`. |
 | `instance(self)` | `Option<Instance<'d>>` | The instance this name names: the `let` value is a call classified as an instance and the pattern is this one identifier. |
@@ -1225,6 +1226,7 @@ A node that names a declaration: see `Reflect::references`.
 | --- | --- | --- |
 | `Path` | `(Path<'d>)` | A path (a segment of it resolved to the declaration). |
 | `Member` | `(Expr<'d>)` | A `.name` or `.method()` expression. |
+| `Pattern` | `(Pat<'d>)` | An identifier pattern that names the declaration (a constant, a unit variant, a unit struct). |
 
 ```rust
 use piperine_lang::pom::{Design, Reference, Reflect};

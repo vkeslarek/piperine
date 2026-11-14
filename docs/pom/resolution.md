@@ -56,6 +56,12 @@ below it. A path that reaches a private item of another namespace still resolves
 works) and reports `E0161` with the label "private item". A module's members are reached by
 member access with `E0343` instead (see [Members](#members)).
 
+**Identifier patterns.** A plain identifier pattern (no `mut`, `ref` or `@`) whose name resolves to a
+const, a unit variant, a unit struct or a built-in variant but `Some` is a path to it: `PatKind::Ident::res`
+holds the target, `Binding::is_binding()` is `false`, the name enters no scope, and the pattern is
+listed in the target's `references()`. Every other identifier pattern is a binding. The `Binding`
+declaration and the pattern node stay, and `to_ast` still gives `PatKind::Ident`.
+
 **Repeated names.** A lookup of a name declared twice returns the first declaration. Both stay
 in the tree; a repeated member name of a module is reported as `E0330`. A namespace has one type
 table and one value table; a hardware module and a unit struct are in both. A name declared twice in

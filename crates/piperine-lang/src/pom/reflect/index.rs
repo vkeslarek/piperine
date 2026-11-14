@@ -1,6 +1,6 @@
 //! The handle forms of the reverse tables of [`crate::pom::Index`].
 
-use super::{Commit, Decl, Definition, Expr, Path};
+use super::{Commit, Decl, Definition, Expr, Pat, Path};
 use crate::pom::design::Design;
 use crate::pom::index::WriterId;
 use crate::pom::reflect::hardware::{Module, Instance, Port, Signal};
@@ -13,6 +13,8 @@ pub enum Reference<'d> {
     Path(Path<'d>),
     /// A `.name` or `.method()` expression.
     Member(Expr<'d>),
+    /// An identifier pattern that names it (a constant, a unit variant, a unit struct).
+    Pattern(Pat<'d>),
 }
 
 /// Something that writes a place: see [`Signal::writers`].

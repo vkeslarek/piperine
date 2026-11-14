@@ -990,3 +990,105 @@ fn one_name_in_two_tables_is_clean() {
     let design = build("struct S { a: f64 }\nfn S() {}\n");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
+
+// ---- identifier patterns that name a constant (POL-06) -----------------------------------------
+
+use piperine_lang::pom::{PatId, PatKind, Reference};
+
+/// Every plain identifier pattern named `name`: its id, resolution and binding declaration.
+fn ident_patterns(design: &Design, name: &str) -> Vec<(PatId, Resolution, piperine_lang::pom::DeclId)> {
+    (0..design.pat_count())
+        .filter_map(|i| {
+            let id = PatId(i as u32);
+            match design.pat(id).kind() {
+                PatKind::Ident { name: n, res, binding, .. } if n.text == name => Some((id, *res, *binding)),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+fn is_binding(design: &Design, binding: piperine_lang::pom::DeclId) -> bool {
+    design.decl(binding).as_binding().expect("a Binding declaration").is_binding()
+}
+
+#[test]
+fn identifier_pattern_naming_none_is_a_path() {
+    let src = "fn f(o: Option<u32>) -> Option<u32> { match o { None => None, Some(x) => Some(x) } }\n";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let found = ident_patterns(&design, "None");
+    assert_eq!(found.len(), 1);
+    let (_, res, binding) = found[0];
+    assert_eq!(res, Resolution::Builtin(builtin("None").unwrap()));
+    assert!(!is_binding(&design, binding));
+    // The arm's scope holds no name `None`: the body's `None` is the built-in too.
+    assert_eq!(one(&design, "None"), [Resolution::Builtin(builtin("None").unwrap())]);
+    // `x` stays a binding.
+    assert!(is_binding(&design, ident_patterns(&design, "x")[0].2));
+}
+
+#[test]
+fn identifier_pattern_naming_a_const_variant_or_unit_struct_is_a_path() {
+    let src = "\
+const ZERO: u32 = 0;
+enum E { A, B(u32) }
+struct U;
+use E::*;
+fn f(n: u32, e: E, u: U, a: Analysis) -> u32 {
+    let p = match n { ZERO => 1, _ => 2 };
+    let q = match e { A => 1, B(_) => 2 };
+    let r = match u { U => 1 };
+    let s = match a { Dc => 1, _ => 2 };
+    p + q + r + s
+}
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    for (name, expected) in [
+        ("ZERO", decl(&design, "ZERO")),
+        ("A", decl(&design, "E::A")),
+        ("U", decl(&design, "U")),
+        ("Dc", Resolution::Builtin(builtin("Dc").unwrap())),
+    ] {
+        let found = ident_patterns(&design, name);
+        assert_eq!(found.len(), 1, "{name}");
+        let (id, res, binding) = found[0];
+        assert_eq!(res, expected, "{name}");
+        assert!(!is_binding(&design, binding), "{name}");
+        if let Resolution::Decl(d) = res {
+            let referenced = design.decl(d).references().iter().any(|r| matches!(r, Reference::Pattern(p) if p.id() == id));
+            assert!(referenced, "{name} is listed in references()");
+        }
+    }
+}
+
+#[test]
+fn other_identifier_patterns_stay_bindings() {
+    let src = "\
+enum E { A, B(u32) }
+use E::*;
+fn g() {}
+fn f(o: Option<u32>, e: E) -> u32 {
+    let local = 1;
+    let a = match o { Some(y) => y, mut m => 0 };
+    let b = match e { ref r => 0 };
+    let c = match local { whole @ 1 => whole, nothing => nothing, g => 0, B => 0, local => local };
+    a + b + c
+}
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    for name in ["y", "m", "r", "whole", "nothing", "g", "B", "local"] {
+        for (_, res, binding) in ident_patterns(&design, name) {
+            assert_eq!(res, Resolution::Unresolved, "{name}");
+            assert!(is_binding(&design, binding), "{name}");
+        }
+    }
+    // A later use resolves to the binding the pattern made.
+    for name in ["whole", "nothing", "local"] {
+        let (_, _, binding) = *ident_patterns(&design, name).last().unwrap();
+        let uses = resolutions(&design, name);
+        assert_eq!(uses.last().unwrap(), &[Resolution::Decl(binding)], "{name}");
+    }
+}

@@ -264,6 +264,13 @@ impl Design {
         }
     }
 
+    /// Store what an identifier pattern names (it is a path, not a binder).
+    pub(super) fn set_pat_res(&mut self, pat: PatId, res: super::resolution::Resolution) {
+        if let super::body::PatKind::Ident { res: slot, .. } = &mut self.pats[pat.index()].kind {
+            *slot = res;
+        }
+    }
+
     pub(crate) fn decl_mut(&mut self, id: DeclId) -> &mut DeclData {
         &mut self.decls[id.index()]
     }

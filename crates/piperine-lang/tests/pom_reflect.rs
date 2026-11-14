@@ -228,6 +228,7 @@ fn references_in_source_order() {
         .map(|r| match r {
             Reference::Path(p) => (p.text().to_string(), p.span().start),
             Reference::Member(e) => (e.text().to_string(), e.span().start),
+            Reference::Pattern(p) => (p.text().to_string(), p.span().start),
         })
         .collect();
     // `s = a;`, `Cell(s)` twice, `b & s`, `s <- true`, `(s) <- false`.

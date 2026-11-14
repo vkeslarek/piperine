@@ -7,9 +7,11 @@
 //! sources and last the built-in table. A multi-segment path resolves segment
 //! by segment through `Ctx::walk`.
 
-use super::super::builtin::builtin_implicit;
+use super::super::builtin::{BuiltinKind, builtin_implicit};
+use std::collections::BTreeSet;
+
 use super::super::body::{BehaviorKind, Block, ExprKind, GenericArgNode, GenericArgsNode, PatKind, StmtKind, TypeKind};
-use super::super::decl::{DeclKind, FnParamData, GenerationData, GenericParamData, NatureFieldNode};
+use super::super::decl::{DeclKind, FieldsForm, FnParamData, GenerationData, GenericParamData, NatureFieldNode};
 use super::super::decl::BehaviorData;
 use super::super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
@@ -47,6 +49,8 @@ struct Names<'c, 'a> {
     /// Inside this many behavior blocks bound to no module: a name read
     /// there that finds nothing is not reported (the block already is).
     quiet: u32,
+    /// The identifier patterns that are paths (they bind nothing).
+    path_pats: BTreeSet<PatId>,
 }
 
 impl Ctx<'_> {
@@ -56,7 +60,7 @@ impl Ctx<'_> {
             let id = DeclId(i as u32);
             let data = self.design.decl_data(id);
             if data.parent.is_none() {
-                let mut names = Names { ctx: self, out: &mut *out, frames: Vec::new(), ns: id, quiet: 0 };
+                let mut names = Names { ctx: self, out: &mut *out, frames: Vec::new(), ns: id, quiet: 0, path_pats: BTreeSet::new() };
                 names.decl(id);
             }
         }
@@ -387,7 +391,9 @@ impl Names<'_, '_> {
     fn bindings(&self, id: PatId, out: &mut Vec<(String, DeclId)>) {
         match &self.ctx.design.pat_node(id).kind {
             PatKind::Ident { name, sub, binding, .. } => {
-                out.push((name.text.clone(), *binding));
+                if !self.path_pats.contains(&id) {
+                    out.push((name.text.clone(), *binding));
+                }
                 if let Some(s) = sub {
                     self.bindings(*s, out);
                 }
@@ -412,12 +418,38 @@ impl Names<'_, '_> {
         }
     }
 
+    /// What a plain identifier pattern (no `mut`, `ref` or `@`) names when it
+    /// names a constant, a unit variant, a unit struct or a built-in variant
+    /// but `Some`: it is then a path, not a binder (§1). A name that resolves
+    /// to nothing, to a local, to a function or to a variant with fields is a
+    /// binder.
+    fn constant_named(&self, id: PatId) -> Option<Resolution> {
+        let design = self.ctx.design;
+        let PatKind::Ident { by_ref: false, mutable: false, name, sub: None, .. } = &design.pat_node(id).kind else { return None };
+        let res = self.lookup(&name.text, Prefer::Values, &mut Vec::new())?;
+        let names_one = match res {
+            Resolution::Decl(d) => match &design.decl_data(d).kind {
+                DeclKind::Const(_) => true,
+                DeclKind::Variant(v) => v.form == FieldsForm::Unit,
+                DeclKind::Struct(s) => s.form == FieldsForm::Unit,
+                _ => false,
+            },
+            Resolution::Builtin(b) => b.info().kind == BuiltinKind::Variant && b.info().name != "Some",
+            _ => false,
+        };
+        names_one.then_some(res)
+    }
+
     /// Resolve the paths a pattern mentions (constants, variants, struct
-    /// names); a plain identifier is a binding, never a reference.
+    /// names) and the names of plain identifier patterns that are paths.
     fn pat(&mut self, id: PatId) {
         match &self.ctx.design.pat_node(id).kind {
             PatKind::Wild | PatKind::Rest => {}
             PatKind::Ident { sub, .. } => {
+                if let Some(res) = self.constant_named(id) {
+                    self.path_pats.insert(id);
+                    self.out.pats.push((id, res));
+                }
                 if let Some(s) = sub {
                     self.pat(*s);
                 }
