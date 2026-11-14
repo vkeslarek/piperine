@@ -39,6 +39,7 @@ pub(crate) fn generic_args<'a, I: In<'a>>(
             GenericArg::Const(Expr { span: Loc(e.span()), kind: ExprKind::Block(b) })
         }),
         lit_expr().map(GenericArg::Const),
+        neg_lit_expr().map(GenericArg::Const),
         h.ty.clone().map(GenericArg::Type),
     ));
     let colons = punct(Punct::ColonColon);
@@ -55,6 +56,14 @@ pub(crate) fn generic_args<'a, I: In<'a>>(
     )
     .map_with(|(turbofish, args), e| GenericArgs::Angle { args, turbofish, span: Loc(e.span()) })
     .boxed()
+}
+
+/// `- literal`: a negative literal as a const argument (A.5 rule 4).
+fn neg_lit_expr<'a, I: In<'a>>() -> impl Parser<'a, I, Expr, Extra<'a>> + Clone {
+    punct(Punct::Minus).ignore_then(lit_expr()).map_with(|inner, e| Expr {
+        span: Loc(e.span()),
+        kind: ExprKind::Unary { op: UnOp::Neg, expr: Box::new(inner) },
+    })
 }
 
 /// `(A, B) -> R` after the name `Fn`.

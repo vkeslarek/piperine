@@ -163,7 +163,9 @@ fn generic_args(g: &GenericArgs) -> String {
                     GenericArg::Const(e) => expr(e),
                 })
                 .collect();
-            format!("{}<{}>", if *turbofish { "::" } else { "" }, items.join(", "))
+            // `<-` is the commit operator: a leading minus needs a space.
+            let gap = if items.first().is_some_and(|i| i.starts_with('-')) { " " } else { "" };
+            format!("{}<{gap}{}>", if *turbofish { "::" } else { "" }, items.join(", "))
         }
         GenericArgs::Paren { inputs, output, .. } => {
             let items: Vec<String> = inputs.iter().map(ty).collect();

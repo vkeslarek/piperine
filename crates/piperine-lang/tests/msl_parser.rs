@@ -1050,3 +1050,43 @@ fn nested_tuple_index() {
     assert!(matches!(&expr("a.0.1.2").kind, ExprKind::Field { name, .. } if name.name == "2"));
     assert!(!parse_expr("x.1.5e3").1.is_empty());
 }
+
+#[test]
+fn negative_literal_is_a_const_generic_argument() {
+    // POL-09 AC 1: `Int< -1 >` and `Int<{ -1 }>` parse clean; the argument is
+    // the const expression `-1`; print gives each spelling back.
+    let bare = ty("Int< -1 >");
+    let GenericArg::Const(e) = &angle_args(&bare)[0] else { panic!("not a const argument") };
+    let ExprKind::Unary { op: UnOp::Neg, expr: inner } = &e.kind else { panic!("not -1: {e:?}") };
+    assert!(is_int(inner, "1"));
+    // The braced spelling holds the same `Unary(Neg, Lit)` as its block tail.
+    let braced = ty("Int<{ -1 }>");
+    let GenericArg::Const(Expr { kind: ExprKind::Block(b), .. }) = &angle_args(&braced)[0] else { panic!() };
+    let StmtKind::Expr { expr: tail, semi: false } = &b.stmts[0].kind else { panic!("{b:?}") };
+    assert!(matches!(&tail.kind, ExprKind::Unary { op: UnOp::Neg, .. }), "{tail:?}");
+    // Both spellings print and reparse to the same tree.
+    for src in ["module M(a: Bit<Int< -1 >>) {}", "module M(a: Bit<Int<{ -1 }>>) {}"] {
+        let first = file(src);
+        let text = piperine_lang::msl::print::print(&first);
+        let again = file(&text);
+        assert!(first == again, "{src}: printed as {text}");
+        assert!(text.contains("-1"), "{text}");
+    }
+    // A float literal too.
+    let f = ty("Foo< -1.5, 2 >");
+    assert_eq!(angle_args(&f).len(), 2);
+}
+
+#[test]
+fn commit_token_in_generic_arguments_is_still_an_error() {
+    // POL-09 AC 2: `Int<-1>` lexes `<-` (the commit operator): a diagnostic at it.
+    let src = "module M(a: Bit<Int<-1>>) {}";
+    let r = parse(src);
+    assert!(!r.diagnostics.is_empty(), "no diagnostic");
+    let at = src.find("<-").unwrap();
+    assert!(
+        r.diagnostics.iter().any(|d| d.span().start == at && d.span().end == at + 2),
+        "{:?}",
+        r.diagnostics
+    );
+}

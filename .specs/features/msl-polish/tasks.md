@@ -390,11 +390,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `negative_literal_is_a_const_generic_argument` passes in `msl_parser.rs` (C48: POL-09 AC 1)
-- [ ] Test `commit_token_in_generic_arguments_is_still_an_error` passes in `msl_parser.rs` (C49: POL-09 AC 2)
-- [ ] The argument is the same `Unary(Neg, Lit)` expression the braced spelling gives
-- [ ] Gate passes: run parser; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `negative_literal_is_a_const_generic_argument` passes in `msl_parser.rs` (C48: POL-09 AC 1)
+- [x] Test `commit_token_in_generic_arguments_is_still_an_error` passes in `msl_parser.rs` (C49: POL-09 AC 2)
+- [x] The argument is the same `Unary(Neg, Lit)` expression the braced spelling gives
+- [x] Gate passes: run parser; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
