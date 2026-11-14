@@ -514,6 +514,39 @@ fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
 }
 
 #[test]
+fn only_a_type_namespace_local_clashes_with_a_dependency() {
+    let util = "pub const K: u32 = 1;\n";
+    // A local value item does not hide the crate: `util::K` and `use util::K` reach the dependency.
+    for app in [
+        "fn util() -> u32 { 1 }\nconst X: u32 = util::K;\n",
+        "const util: u32 = 1;\nconst X: u32 = util::K;\n",
+        "fn util() -> u32 { 1 }\nuse util::K;\nconst X: u32 = K;\n",
+        "const util: u32 = 1;\nuse util::K;\nconst X: u32 = K;\n",
+        "mod inner { pub fn g() {} }\nuse inner::g as util;\nuse util::K;\nconst X: u32 = K;\n",
+        "fn f() -> u32 { fn util() -> u32 { 1 } util::K }\n",
+        "fn f() -> u32 { const util: u32 = 1; util::K }\n",
+        "fn util() {}\nuse util::*;\nconst X: u32 = K;\n",
+    ] {
+        let design = two(app, util, "util", None);
+        assert_eq!(codes(&design), Vec::<String>::new(), "{app}: {:?}", design.diagnostics());
+        let found: Vec<_> = path_res(&design, "util::K").into_iter().chain(path_res(&design, "K")).collect();
+        assert!(!found.is_empty(), "{app}");
+        for res in found {
+            assert_eq!(krate_of(&design, *res.last().unwrap()), "util", "{app}: {res:?}");
+        }
+    }
+    // Every type-namespace item clashes in a `use` and wins in an ordinary path.
+    for local in ["mod util { pub const K: u32 = 5; }", "struct util {}", "enum util { A }", "nature util { value: f64 }", "module util() {}", "trait util {}"] {
+        let in_use = two(&format!("{local}\nuse util::K;\n"), util, "util", None);
+        assert_eq!(codes(&in_use), ["E0163"], "{local}: {:?}", in_use.diagnostics());
+        let in_path = two(&format!("{local}\nconst X: u32 = util::K;\n"), util, "util", None);
+        // The local item wins; `K` is not in it, which is an ordinary E0161 (not a clash).
+        assert!(codes(&in_path).iter().all(|c| c == "E0161"), "{local}: {:?}", in_path.diagnostics());
+        assert_eq!(krate_of(&in_path, path_res(&in_path, "util::K")[0][0]), "app", "{local}");
+    }
+}
+
+#[test]
 fn an_import_that_reported_e0163_is_an_errored_binding_that_reports_once() {
     let util = "pub const K: u32 = 1;\n";
     for app in [

@@ -312,6 +312,14 @@ impl Names<'_, '_> {
         }
     }
 
+    /// Can `res` start a longer path (`prefer` is `Head`: only a type-namespace item can)?
+    fn in_head(&self, prefer: Prefer, res: Resolution) -> bool {
+        match res {
+            Resolution::Decl(d) if prefer == Prefer::Head => super::imports::occupies(self.ctx.design, d).0,
+            _ => true,
+        }
+    }
+
     /// A single name seen from here.
     fn lookup(&self, name: &str, prefer: Prefer, visiting: &mut Vec<Visit>) -> Option<Resolution> {
         let mut hidden = false;
@@ -319,12 +327,12 @@ impl Names<'_, '_> {
             match frame {
                 Frame::Barrier => hidden = true,
                 Frame::Items(items) => {
-                    if let Some((_, d)) = items.iter().find(|(n, _)| n == name) {
+                    if let Some((_, d)) = items.iter().find(|(n, d)| n == name && (prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0)) {
                         return Some(Resolution::Decl(*d));
                     }
                 }
                 Frame::Imports { named, globs, .. } => {
-                    if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved) {
+                    if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved && self.in_head(prefer, *res)) {
                         return Some(*res);
                     }
                     let mut found = None;
@@ -343,14 +351,16 @@ impl Names<'_, '_> {
                     }
                 }
                 _ if hidden => {}
+                // A local is a value, but for a generic parameter: only a generic starts a longer path.
                 Frame::Locals(names) => {
-                    if let Some((_, d)) = names.iter().rev().find(|(n, _)| n == name) {
+                    let head_ok = |d: &DeclId| prefer != Prefer::Head || matches!(self.ctx.design.decl_data(*d).kind, DeclKind::GenericParam(_));
+                    if let Some((_, d)) = names.iter().rev().find(|(n, d)| n == name && head_ok(d)) {
                         return Some(Resolution::Decl(*d));
                     }
                 }
                 Frame::Module(module) => {
                     let members = self.ctx.scopes.members.get(module);
-                    if let Some(d) = members.and_then(|m| m.get(name)) {
+                    if let Some(d) = members.and_then(|m| m.get(name)).filter(|d| prefer != Prefer::Head || super::imports::occupies(self.ctx.design, *d).0) {
                         return Some(Resolution::Decl(d));
                     }
                     // `m` and `dtemp` read the instance's effective values (§8.5.2).
@@ -387,7 +397,7 @@ impl Names<'_, '_> {
         let node = ctx.design.path_node(id);
         let walked = {
             let this = &*self;
-            ctx.walk(&node.segments, this.ns, prefer, &mut Vec::new(), &mut |_, name, visiting| this.lookup(name, prefer, visiting))
+            ctx.walk(&node.segments, this.ns, prefer, &mut Vec::new(), &mut |_, name, prefer, visiting| this.lookup(name, prefer, visiting))
         };
         for (i, res) in walked.res.iter().enumerate() {
             self.out.segments.push((id, i, *res));
@@ -634,8 +644,8 @@ impl Names<'_, '_> {
             return false;
         }
         let in_block = self.frames.iter().any(|f| match f {
-            Frame::Items(items) => items.iter().any(|(n, _)| n == name),
-            Frame::Imports { named, .. } => named.iter().any(|(n, _)| n == name),
+            Frame::Items(items) => items.iter().any(|(n, d)| n == name && super::imports::occupies(self.ctx.design, *d).0),
+            Frame::Imports { named, .. } => named.iter().any(|(n, res)| n == name && self.in_head(Prefer::Head, *res)),
             _ => false,
         });
         in_block || self.ctx.has_ns_item(self.ns, name)
@@ -665,7 +675,7 @@ impl Names<'_, '_> {
                     continue;
                 }
                 self.frames.push(Frame::Barrier);
-                let res = self.path(import.path, Prefer::Types);
+                let res = self.path(import.path, super::imports::import_prefer(import.glob));
                 self.frames.pop();
                 let Frame::Imports { named, globs, .. } = &mut self.frames[at] else { continue };
                 match (import.glob, res) {

@@ -24,7 +24,7 @@ impl Ctx<'_> {
             let DeclKind::Behavior(block) = &data.kind else { continue };
             let Some(ns) = self.parent_namespace(id) else { continue };
             let node = design.path_node(block.target);
-            let walked = self.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(ns, name, Prefer::Types, visiting));
+            let walked = self.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, prefer, visiting| this.scope_lookup(ns, name, prefer, visiting));
             for (index, res) in walked.res.iter().enumerate() {
                 out.segments.push((block.target, index, *res));
             }

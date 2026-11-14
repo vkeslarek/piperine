@@ -626,8 +626,12 @@ through a dependency.
     3. the dependency names of the crate;
     4. the prelude ([§3.4.2](#34-files-and-imports));
     5. the core names.
-- **§3.5.5** Where an item or an import of the enclosing namespace has the name of a
-  dependency, an ordinary path follows rule 4: the item or import wins, without a diagnostic.
+- **§3.5.5** The first segment of a path of several segments is looked up in the type
+  namespace, as in Rust 2018. A `mod`, `struct`, `enum`, `nature`, `module` or `trait`, or an
+  import of one, is in it. A `fn`, a `const` or a local binding is in the value namespace and
+  hides no dependency: `util::K` and `use util::K` reach the dependency `util` beside a local
+  `fn util`. Where an item or an import of the type namespace of the enclosing namespace has
+  the name of a dependency, an ordinary path follows rule 4: the item or import wins, without a diagnostic.
   A `use` path whose first segment is that name is ambiguous (`E0163`); the name that `use` binds is an errored binding, and a later read of it reports nothing further. There is no leading
   `::` ([Appendix B.3.6](appendix_b_grammar.md)). Reach the dependency under another key,
   `other = { package = "<name>", .. }` ([§3.6](#36-packages) rule 8), and the local item as
@@ -645,7 +649,8 @@ through a dependency.
   ([Appendix B.3.6](appendix_b_grammar.md)).
 
 > **Resolution.** Rules 4 and 5 are Rust 2018's: dependency names sit below a namespace's own
-> names in a path, and an import that could mean either is an error, never a silent choice.
+> type-namespace names in a path, and an import that could mean either is an error, never a
+> silent choice. A value item of the same name is not a clash.
 > They are stated because no `::` exists to disambiguate. A dependency name against a prelude
 > item is not a clash: the dependency wins.
 
@@ -655,7 +660,7 @@ through a dependency.
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0163` | a `use` path whose first segment names both a dependency and an item or an import of the enclosing namespace | elaboration |
+| `E0163` | a `use` path whose first segment names both a dependency and an item or an import of the enclosing namespace (one of the type namespace, rule 5) | elaboration |
 | [§3.4](#34-files-and-imports) | a first segment that names no item, import, dependency, prelude item or core name, or an item not visible from the crate (`E0161`) | elaboration |
 | [§3.6](#36-packages) | a cycle among the dependencies (`E0174`) | package |
 

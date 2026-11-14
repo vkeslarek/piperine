@@ -67,6 +67,13 @@ impl Imports {
 pub(super) enum Prefer {
     Types,
     Values,
+    /// The first segment of a path of several: the type namespace only.
+    Head,
+}
+
+/// What the last segment of a `use` path is looked up as: a glob names a namespace or an enum.
+pub(super) fn import_prefer(glob: bool) -> Prefer {
+    if glob { Prefer::Head } else { Prefer::Types }
 }
 
 /// An import being resolved: the namespace and the entry's place in it.
@@ -128,7 +135,7 @@ impl Ctx<'_> {
     pub(super) fn use_clash(&self, ns: DeclId, segments: &[PathSegment], visiting: &mut Vec<Visit>) -> bool {
         let Some(head) = segments.first() else { return false };
         let name = head.name.text.as_str();
-        !matches!(name, "crate" | "self" | "super") && self.deps[self.crate_of(ns)].contains_key(name) && self.ns_item(ns, name, Prefer::Types, Some(ns), visiting).is_some()
+        !matches!(name, "crate" | "self" | "super") && self.deps[self.crate_of(ns)].contains_key(name) && self.ns_item(ns, name, Prefer::Head, Some(ns), visiting).is_some()
     }
 
     /// Is `name` bound in `ns` by an explicit `use` that reported `E0163`? Such a name is an
@@ -147,7 +154,7 @@ impl Ctx<'_> {
 
     /// Does the namespace `ns` have an item or an import called `name`?
     pub(super) fn has_ns_item(&self, ns: DeclId, name: &str) -> bool {
-        self.ns_item(ns, name, Prefer::Types, Some(ns), &mut Vec::new()).is_some()
+        self.ns_item(ns, name, Prefer::Head, Some(ns), &mut Vec::new()).is_some()
     }
 
     /// Is `from` the namespace `ns` or one nested inside it?
@@ -172,10 +179,11 @@ impl Ctx<'_> {
         let inside = self.within(from, ns);
         if let Some(table) = self.scopes.namespaces.get(&ns) {
             let (first, second) = match prefer {
-                Prefer::Types => (&table.types, &table.values),
-                Prefer::Values => (&table.values, &table.types),
+                Prefer::Types => (&table.types, Some(&table.values)),
+                Prefer::Values => (&table.values, Some(&table.types)),
+                Prefer::Head => (&table.types, None),
             };
-            if let Some(found) = Self::find_entry(first, name).or_else(|| Self::find_entry(second, name)) {
+            if let Some(found) = Self::find_entry(first, name).or_else(|| second.and_then(|t| Self::find_entry(t, name))) {
                 return Some((found, inside || self.design.decl_data(found).public));
             }
         }
@@ -186,9 +194,9 @@ impl Ctx<'_> {
                 continue;
             }
             visiting.push(visit);
-            let target = self.import_target(entry, ns, visiting);
+            let target = self.import_target(entry, false, ns, visiting);
             visiting.pop();
-            if let Some(target) = target {
+            if let Some(target) = target.filter(|t| prefer != Prefer::Head || occupies(self.design, *t).0) {
                 return Some((target, inside || entry.public));
             }
         }
@@ -217,7 +225,7 @@ impl Ctx<'_> {
     /// What a glob brings under `name`: a public item of the namespace it
     /// names, or a variant of the enum it names.
     fn glob_item(&self, entry: &ImportEntry, ns: DeclId, name: &str, prefer: Prefer, visiting: &mut Vec<Visit>) -> Option<DeclId> {
-        let target = self.import_target(entry, ns, visiting)?;
+        let target = self.import_target(entry, true, ns, visiting)?;
         self.glob_member(target, name, prefer, ns, visiting)
     }
 
@@ -228,7 +236,7 @@ impl Ctx<'_> {
                 let (found, visible) = self.ns_item(target, name, prefer, Some(from), visiting)?;
                 visible.then_some(found)
             }
-            DeclKind::Enum(_) => self.variant(target, name),
+            DeclKind::Enum(_) => self.variant(target, name).filter(|v| prefer != Prefer::Head || occupies(self.design, *v).0),
             _ => None,
         }
     }
@@ -244,12 +252,12 @@ impl Ctx<'_> {
     }
 
     /// The declaration an import names, wherever it is visible from.
-    fn import_target(&self, entry: &ImportEntry, ns: DeclId, visiting: &mut Vec<Visit>) -> Option<DeclId> {
+    fn import_target(&self, entry: &ImportEntry, glob: bool, ns: DeclId, visiting: &mut Vec<Visit>) -> Option<DeclId> {
         let segments = &self.design.path_node(entry.path).segments;
         if self.use_clash(ns, segments, visiting) {
             return None;
         }
-        let walked = self.walk(segments, ns, Prefer::Types, visiting, &mut |this, name, visiting| this.scope_lookup(ns, name, Prefer::Types, visiting));
+        let walked = self.walk(segments, ns, import_prefer(glob), visiting, &mut |this, name, prefer, visiting| this.scope_lookup(ns, name, prefer, visiting));
         match walked.res.last() {
             Some(Resolution::Decl(d)) => Some(*d),
             _ => None,
@@ -285,7 +293,7 @@ impl Ctx<'_> {
         ns: DeclId,
         last: Prefer,
         visiting: &mut Vec<Visit>,
-        first: &mut dyn FnMut(&Self, &str, &mut Vec<Visit>) -> Option<Resolution>,
+        first: &mut dyn FnMut(&Self, &str, Prefer, &mut Vec<Visit>) -> Option<Resolution>,
     ) -> Walked {
         let mut walked = Walked { res: vec![Resolution::Unresolved; segments.len()], error: None };
         self.ambiguous.set(false);
@@ -295,7 +303,9 @@ impl Ctx<'_> {
             "crate" => Some(Resolution::Decl(self.crate_root(ns))),
             "self" if segments.len() > 1 => Some(Resolution::Decl(ns)),
             "super" => self.parent_namespace(ns).map(Resolution::Decl),
-            _ => first(self, head_name, visiting),
+            // A head that starts a longer path names a namespace, an enum or a type: only the
+            // type namespace can (rustc looks `util::` up there, so a local `fn util` is no clash).
+            _ => first(self, head_name, if segments.len() > 1 { Prefer::Head } else { last }, visiting),
         };
         let Some(mut current) = start else {
             walked.error = Some(self.missing(0));
@@ -363,7 +373,7 @@ impl Ctx<'_> {
         let mut deferred = false;
         for bound in bounds {
             let node = self.design.path_node(*bound);
-            let walked = self.walk(&node.segments, from, Prefer::Types, visiting, &mut |this, n, visiting| this.scope_lookup(from, n, Prefer::Types, visiting));
+            let walked = self.walk(&node.segments, from, Prefer::Types, visiting, &mut |this, n, prefer, visiting| this.scope_lookup(from, n, prefer, visiting));
             match walked.res.last() {
                 Some(Resolution::Decl(t)) if matches!(self.design.decl_data(*t).kind, DeclKind::Trait(_)) => {
                     if let Some(item) = self.associated(*t, name) {
@@ -408,7 +418,7 @@ impl Ctx<'_> {
             let TypeKind::Path(path) = &design.type_node(imp.self_ty).kind else { continue };
             let Some(ns) = self.parent_namespace(id) else { continue };
             let node = design.path_node(*path);
-            let walked = self.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(ns, name, Prefer::Types, visiting));
+            let walked = self.walk(&node.segments, ns, Prefer::Types, &mut Vec::new(), &mut |this, name, prefer, visiting| this.scope_lookup(ns, name, prefer, visiting));
             if let (None, Some(Resolution::Decl(target))) = (walked.error, walked.res.last()) {
                 impls.entry(*target).or_default().push(id);
             }
@@ -430,7 +440,7 @@ impl Ctx<'_> {
                     out.diagnostics.push((file, path_diagnostic(self.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
                     continue;
                 }
-                let walked = self.walk(&node.segments, *ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(*ns, name, Prefer::Types, visiting));
+                let walked = self.walk(&node.segments, *ns, import_prefer(own.glob), &mut Vec::new(), &mut |this, name, prefer, visiting| this.scope_lookup(*ns, name, prefer, visiting));
                 for (i, res) in walked.res.iter().enumerate() {
                     out.segments.push((entry.path, i, *res));
                 }

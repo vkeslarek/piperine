@@ -384,7 +384,7 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 | D16 | Field-init shorthand (G.14) | `{ r }` is accepted in param blocks and templates as in a Rust struct expression, and the tree keeps the authored form. | B.3.2, G.14 |
 | D17 | `(s)` as a place | a place is a path with indexes and fields; parentheses are rejected in a definition and in a commit (`E0900`). | B.3.2 note 4 |
 | P1 | Where a crate starts and what its files are called | the crate root is `src/lib.msl` and a source file has the extension `.msl`; `mod name;` loads `name.msl` or `name/mod.msl`. | §3.6 rule 2 |
-| P2 | A dependency name against a local name | a dependency name is the first segment of a path below the names of the enclosing namespace; a local name wins in an ordinary path and clashes in a `use` (`E0163`); `extern crate` is removed. | §3.5 rules 4, 5, 11 |
+| P2 | A dependency name against a local name | a dependency name is the first segment of a path below the names of the enclosing namespace; a local type-namespace name wins in an ordinary path and clashes in a `use` (`E0163`); a value item of that name hides nothing; `extern crate` is removed. | §3.5 rules 4, 5, 11 |
 | P3 | Where `std` comes from | `std` is a dependency of every crate that no manifest names; the prelude is `std::prelude`, implied in every file. | §3.5 rules 3 and 9, §3.4.2 |
 | P4 | Which manifest keys exist | the manifest holds the tables and keys of one closed table; any other is `E0171`. | §3.6 rule 3 |
 | P5 | How a git dependency is pinned | one of `branch`, `tag` or `rev`, or the default branch; the lockfile records the commit and is honoured while the source is unchanged. | §3.6 rules 7, 13, 14 |
