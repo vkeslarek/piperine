@@ -766,3 +766,16 @@ fn appendix_g_records_the_decisions() {
     assert!(g.lines().any(|l| l.starts_with("| G.38 |") && l.trim_end().ends_with("| Open |")), "the overview lists G.38 as Open");
     assert!(g.lines().any(|l| l.starts_with("| G.40") && l.contains("D1")), "the overview names the decision rows");
 }
+
+#[test]
+fn appendix_h_renders_every_code_span() {
+    // POL-02: a cell holds code spans that open and close on their own; a
+    // double backtick or an odd count renders a broken span (and derive names
+    // are stated to resolve like bounds, D2).
+    let h = appendix_h();
+    for (n, line) in h.lines().enumerate() {
+        assert!(!line.contains("``"), "line {}: nested backticks: {line}", n + 1);
+        assert_eq!(line.matches('`').count() % 2, 0, "line {}: an unclosed code span: {line}", n + 1);
+    }
+    assert!(section(&h, "## H.8").contains("`E0161`"), "H.8 states that an unknown derive name is E0161");
+}

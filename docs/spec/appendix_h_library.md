@@ -130,19 +130,19 @@ The ten adaptors and consumers below, on an array's `iter()` and on a range.
 
 ## H.8 Traits
 
-The traits a model may name in a bound or a derive. `Repr` (§2), `Nature` (§4) and `Fn` (§8.4) are the language's own and are not listed here.
+The traits a model may name in a bound or a derive. `Repr` (§2), `Nature` (§4) and `Fn` (§8.4) are the language's own and are not listed here. A name inside `#[derive(..)]` resolves like a name in a bound: it must be one of these traits, `Repr`, or a trait the project declares; any other name (an unknown word, a type, a value) is `E0161` at the name.
 
 | Trait | Written as | Note |
 | --- | --- | --- |
-| `Clone` | ``#[derive(Clone)]`, `T: Clone`` |  |
-| `Copy` | ``#[derive(Copy)]`, `T: Copy`` |  |
-| `PartialEq` | ``#[derive(PartialEq)]`, `T: PartialEq`` | `==`, `!=` |
-| `Eq` | ``#[derive(Eq)]`, `T: Eq`` |  |
-| `PartialOrd` | ``#[derive(PartialOrd)]`, `T: PartialOrd`` | `<`, `<=`, `>`, `>=` |
-| `Ord` | ``#[derive(Ord)]`, `T: Ord`` |  |
-| `Default` | ``#[derive(Default)]`, `T: Default`` |  |
-| `Debug` | ``#[derive(Debug)]`, `T: Debug`` |  |
-| `Hash` | ``#[derive(Hash)]`, `T: Hash`` |  |
+| `Clone` | `#[derive(Clone)]`, `T: Clone` |  |
+| `Copy` | `#[derive(Copy)]`, `T: Copy` |  |
+| `PartialEq` | `#[derive(PartialEq)]`, `T: PartialEq` | `==`, `!=` |
+| `Eq` | `#[derive(Eq)]`, `T: Eq` |  |
+| `PartialOrd` | `#[derive(PartialOrd)]`, `T: PartialOrd` | `<`, `<=`, `>`, `>=` |
+| `Ord` | `#[derive(Ord)]`, `T: Ord` |  |
+| `Default` | `#[derive(Default)]`, `T: Default` |  |
+| `Debug` | `#[derive(Debug)]`, `T: Debug` |  |
+| `Hash` | `#[derive(Hash)]`, `T: Hash` |  |
 
 ## H.9 Types
 
@@ -150,9 +150,9 @@ The types a model may name besides the carriers of Part II and the types it decl
 
 | Type | What it is | Defined in |
 | --- | --- | --- |
-| `bool` | `the boolean type` | §1 |
-| `UInt<N>` | `unsigned integer of `N` levels; `uN`, `usize`` | §1 rule 5 |
-| `Int<N>` | `signed integer of `N` levels; `iN`, `isize`` | §1 rule 5 |
-| `Float<N>` | `IEEE 754 float; `fN`` | §1 |
-| `Option<T>` | `an optional value` | §1, §3.2 |
-| `str` | `the type of `&'static str`` | §1 |
+| `bool` | the boolean type | §1 |
+| `UInt<N>` | unsigned integer of `N` levels; `uN`, `usize` | §1 rule 5 |
+| `Int<N>` | signed integer of `N` levels; `iN`, `isize` | §1 rule 5 |
+| `Float<N>` | IEEE 754 float; `fN` | §1 |
+| `Option<T>` | an optional value | §1, §3.2 |
+| `str` | the type of `&'static str` | §1 |
