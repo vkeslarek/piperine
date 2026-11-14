@@ -6,7 +6,7 @@
 #[allow(dead_code)]
 mod support;
 
-use piperine_project::{Manifest, Options, PackageError, PackageGraph, Version, resolve};
+use piperine_project::{Manifest, Options, PackageError, PackageGraph, Requirement, Version, resolve};
 use support::{package, workspace};
 
 fn ok(dir: &std::path::Path) -> PackageGraph {
@@ -167,6 +167,28 @@ fn version_requirements_follow_the_caret_table() {
             assert!(!requirement.admits(below), "{text} must reject {below:?}");
         }
         assert!(!requirement.admits(past), "{text} must reject {past:?}");
+    }
+}
+
+#[test]
+fn a_requirement_at_the_integer_limit_does_not_overflow() {
+    let max = u64::MAX;
+    let v = |major, minor, patch| Version { major, minor, patch };
+    // The caret's upper bound would overflow: no upper bound.
+    let major = Requirement { major: max, minor: None, patch: None };
+    assert!(major.admits(v(max, 0, 0)) && major.admits(v(max, max, max)));
+    assert!(!major.admits(v(1, 0, 0)));
+    let minor = Requirement { major: 0, minor: Some(max), patch: None };
+    assert!(minor.admits(v(0, max, max)) && !minor.admits(v(0, 1, 0)));
+    let patch = Requirement { major: 0, minor: Some(0), patch: Some(max) };
+    assert!(patch.admits(v(0, 0, max)) && !patch.admits(v(0, 0, 1)));
+    // Through the manifest reader, the resolver's path.
+    for text in ["18446744073709551615", "0.18446744073709551615", "0.0.18446744073709551615"] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Piperine.toml"), format!("[package]\nname = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nx = {{ path = \".\", version = \"{text}\" }}\n")).unwrap();
+        let requirement = Manifest::load(dir.path()).unwrap().dependencies[0].requirement.expect("a requirement");
+        assert!(requirement.admits(v(max, max, max)), "{text}");
+        assert!(!requirement.admits(v(0, 0, 0)), "{text}");
     }
 }
 

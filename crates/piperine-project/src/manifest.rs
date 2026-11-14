@@ -52,17 +52,18 @@ impl Requirement {
     /// version that changes the leftmost non-zero part that was written.
     pub fn admits(&self, version: Version) -> bool {
         let lower = Version { major: self.major, minor: self.minor.unwrap_or(0), patch: self.patch.unwrap_or(0) };
+        // `None` when the bound would overflow: then there is no upper bound.
         let upper = if self.major > 0 {
-            Version { major: self.major + 1, minor: 0, patch: 0 }
+            self.major.checked_add(1).map(|major| Version { major, minor: 0, patch: 0 })
         } else {
             match (self.minor, self.patch) {
-                (None, _) => Version { major: 1, minor: 0, patch: 0 },
-                (Some(minor), _) if minor > 0 => Version { major: 0, minor: minor + 1, patch: 0 },
-                (Some(_), None) => Version { major: 0, minor: 1, patch: 0 },
-                (Some(_), Some(patch)) => Version { major: 0, minor: 0, patch: patch + 1 },
+                (None, _) => Some(Version { major: 1, minor: 0, patch: 0 }),
+                (Some(minor), _) if minor > 0 => minor.checked_add(1).map(|minor| Version { major: 0, minor, patch: 0 }),
+                (Some(_), None) => Some(Version { major: 0, minor: 1, patch: 0 }),
+                (Some(_), Some(patch)) => patch.checked_add(1).map(|patch| Version { major: 0, minor: 0, patch }),
             }
         };
-        lower <= version && version < upper
+        lower <= version && upper.is_none_or(|upper| version < upper)
     }
 }
 
