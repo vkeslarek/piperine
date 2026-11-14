@@ -369,24 +369,24 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_dependency_name_starts_a_path` passes in `pom_crates.rs` (C35: PKG-05 AC 1)
-- [ ] Test `an_instance_links_to_a_module_of_a_dependency` passes in `pom_crates.rs` (C36: PKG-05 AC 2)
-- [ ] Test `crate_names_the_root_of_the_containing_crate` passes in `pom_crates.rs` (C37: PKG-05 AC 3)
-- [ ] Test `a_renamed_dependency_resolves_by_its_dependency_name` passes in `pom_crates.rs` (C38: PKG-05 AC 4)
-- [ ] Test `a_local_name_wins_over_a_dependency_in_a_path` passes in `pom_crates.rs` (C39: PKG-05 AC 5)
-- [ ] Test `a_use_path_that_names_a_local_and_a_dependency_is_e0163` passes in `pom_crates.rs` (C40: PKG-05 AC 6)
-- [ ] Test `crate_prefix_names_the_local_one_in_a_clash` passes in `pom_crates.rs` (C41: PKG-05 AC 7)
-- [ ] Test `std_is_a_dependency_of_every_crate` passes in `pom_crates.rs` (C42: PKG-05 AC 8)
-- [ ] Test `the_prelude_reaches_every_crate` passes in `pom_crates.rs` (C43: PKG-05 AC 9)
-- [ ] Test `a_dependency_name_hides_a_prelude_item` passes in `pom_crates.rs` (C44: PKG-05 AC 10)
-- [ ] `Ctx` holds the crate of each namespace and the dependency names of each crate, computed once
-- [ ] A crate name is `Resolution::Decl` of a `Namespace`: no new `Resolution` variant
-- [ ] `E0163` is reported once, at the `use` path, by a `WalkError` of its own; its help reads `rename the dependency in Piperine.toml (other = { package = "<name>", .. }) or write crate::<name> for the local one`; a block-level `use` follows the same rule
-- [ ] A dependency name against a prelude item is no clash: the dependency wins silently (C of PKG-05 AC 10)
-- [ ] The Diagnostics table of `docs/pom/resolution.md` gains the `E0163` row, defined in `§3.5` (`pom_docs::every_code_the_pom_reports_is_documented`)
-- [ ] `use util::*;`, `use util::{a, b};` and `use util as u;` resolve like any other import
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_dependency_name_starts_a_path` passes in `pom_crates.rs` (C35: PKG-05 AC 1)
+- [x] Test `an_instance_links_to_a_module_of_a_dependency` passes in `pom_crates.rs` (C36: PKG-05 AC 2)
+- [x] Test `crate_names_the_root_of_the_containing_crate` passes in `pom_crates.rs` (C37: PKG-05 AC 3)
+- [x] Test `a_renamed_dependency_resolves_by_its_dependency_name` passes in `pom_crates.rs` (C38: PKG-05 AC 4)
+- [x] Test `a_local_name_wins_over_a_dependency_in_a_path` passes in `pom_crates.rs` (C39: PKG-05 AC 5)
+- [x] Test `a_use_path_that_names_a_local_and_a_dependency_is_e0163` passes in `pom_crates.rs` (C40: PKG-05 AC 6)
+- [x] Test `crate_prefix_names_the_local_one_in_a_clash` passes in `pom_crates.rs` (C41: PKG-05 AC 7)
+- [x] Test `std_is_a_dependency_of_every_crate` passes in `pom_crates.rs` (C42: PKG-05 AC 8)
+- [x] Test `the_prelude_reaches_every_crate` passes in `pom_crates.rs` (C43: PKG-05 AC 9)
+- [x] Test `a_dependency_name_hides_a_prelude_item` passes in `pom_crates.rs` (C44: PKG-05 AC 10)
+- [x] `Ctx` holds the crate of each namespace and the dependency names of each crate, computed once
+- [x] A crate name is `Resolution::Decl` of a `Namespace`: no new `Resolution` variant
+- [x] `E0163` is reported once, at the `use` path, by a `WalkError` of its own; its help reads `rename the dependency in Piperine.toml (other = { package = "<name>", .. }) or write crate::<name> for the local one`; a block-level `use` follows the same rule
+- [x] A dependency name against a prelude item is no clash: the dependency wins silently (C of PKG-05 AC 10)
+- [x] The Diagnostics table of `docs/pom/resolution.md` gains the `E0163` row, defined in `§3.5` (`pom_docs::every_code_the_pom_reports_is_documented`)
+- [x] `use util::*;`, `use util::{a, b};` and `use util as u;` resolve like any other import
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -86,6 +86,9 @@ pub(super) enum WalkError {
     Private { at: usize },
     /// Segment `at` is provided by two glob imports for different declarations.
     Ambiguous { at: usize },
+    /// Segment `at` of a `use` path names both a dependency and an item or import of the
+    /// enclosing namespace (`E0163`).
+    CrateClash { at: usize },
 }
 
 /// The outcome of walking a path: a resolution per segment (those after a
@@ -107,6 +110,35 @@ impl Ctx<'_> {
             at = self.design.decl_data(d).parent;
         }
         None
+    }
+
+    /// The crate that holds the namespace `ns`.
+    fn crate_of(&self, ns: DeclId) -> usize {
+        self.design.file_data(self.design.decl_data(ns).file).krate.index()
+    }
+
+    /// The root namespace of the crate that holds `ns`: what `crate` names there.
+    fn crate_root(&self, ns: DeclId) -> DeclId {
+        self.design.crate_data(self.design.file_data(self.design.decl_data(ns).file).krate).root
+    }
+
+    /// Does the first segment of a `use` path in `ns` name both a dependency of its crate and an
+    /// item or import of the namespace (§3.5 rule 5)? `visiting` holds the import being read, so
+    /// it does not clash with itself.
+    pub(super) fn use_clash(&self, ns: DeclId, segments: &[PathSegment], visiting: &mut Vec<Visit>) -> bool {
+        let Some(head) = segments.first() else { return false };
+        let name = head.name.text.as_str();
+        !matches!(name, "crate" | "self" | "super") && self.deps[self.crate_of(ns)].contains_key(name) && self.ns_item(ns, name, Prefer::Types, Some(ns), visiting).is_some()
+    }
+
+    /// Is `name` a dependency name of the crate that holds `ns`?
+    pub(super) fn is_dependency_name(&self, ns: DeclId, name: &str) -> bool {
+        self.deps[self.crate_of(ns)].contains_key(name)
+    }
+
+    /// Does the namespace `ns` have an item or an import called `name`?
+    pub(super) fn has_ns_item(&self, ns: DeclId, name: &str) -> bool {
+        self.ns_item(ns, name, Prefer::Types, Some(ns), &mut Vec::new()).is_some()
     }
 
     /// Is `from` the namespace `ns` or one nested inside it?
@@ -205,6 +237,9 @@ impl Ctx<'_> {
     /// The declaration an import names, wherever it is visible from.
     fn import_target(&self, entry: &ImportEntry, ns: DeclId, visiting: &mut Vec<Visit>) -> Option<DeclId> {
         let segments = &self.design.path_node(entry.path).segments;
+        if self.use_clash(ns, segments, visiting) {
+            return None;
+        }
         let walked = self.walk(segments, ns, Prefer::Types, visiting, &mut |this, name, visiting| this.scope_lookup(ns, name, Prefer::Types, visiting));
         match walked.res.last() {
             Some(Resolution::Decl(d)) => Some(*d),
@@ -220,6 +255,9 @@ impl Ctx<'_> {
         }
         if self.ambiguous.get() {
             return None;
+        }
+        if let Some(root) = self.deps[self.crate_of(ns)].get(name) {
+            return Some(Resolution::Decl(*root));
         }
         if let Some(prelude) = self.prelude {
             if let Some((found, true)) = self.ns_item(prelude, name, prefer, None, visiting) {
@@ -245,7 +283,7 @@ impl Ctx<'_> {
         let Some(head) = segments.first() else { return walked };
         let head_name = head.name.text.as_str();
         let start = match head_name {
-            "crate" => Some(Resolution::Decl(self.root)),
+            "crate" => Some(Resolution::Decl(self.crate_root(ns))),
             "self" if segments.len() > 1 => Some(Resolution::Decl(ns)),
             "super" => self.parent_namespace(ns).map(Resolution::Decl),
             _ => first(self, head_name, visiting),
@@ -374,8 +412,15 @@ impl Ctx<'_> {
     pub(super) fn resolve_imports(&self, out: &mut Output) {
         for (ns, table) in &self.imports.by_namespace {
             let mut named_targets = Vec::new();
-            for entry in table.named.iter().chain(&table.globs) {
+            let entries = table.named.iter().enumerate().map(|(i, e)| (e, Visit { namespace: *ns, glob: false, index: i }));
+            let entries = entries.chain(table.globs.iter().enumerate().map(|(i, e)| (e, Visit { namespace: *ns, glob: true, index: i })));
+            for (entry, own) in entries {
                 let node = self.design.path_node(entry.path);
+                if self.use_clash(*ns, &node.segments, &mut vec![own]) {
+                    let file = self.design.decl_data(entry.use_decl).file;
+                    out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    continue;
+                }
                 let walked = self.walk(&node.segments, *ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(*ns, name, Prefer::Types, visiting));
                 for (i, res) in walked.res.iter().enumerate() {
                     out.segments.push((entry.path, i, *res));
@@ -442,6 +487,12 @@ pub(super) fn path_diagnostic(segments: &[PathSegment], span: crate::msl::Span, 
         WalkError::Private { at } => {
             let name = &segments[at].name.text;
             Diagnostic::new("E0161", format!("`{name}` is private"), span, "private item")
+        }
+        WalkError::CrateClash { at } => {
+            let name = &segments[at].name.text;
+            Diagnostic::new("E0163", format!("`{name}` names both a dependency and an item of this namespace"), span, "ambiguous name").with_help(format!(
+                "rename the dependency in Piperine.toml (other = {{ package = \"{name}\", .. }}) or write crate::{name} for the local one"
+            ))
         }
         WalkError::Ambiguous { at } => {
             let name = &segments[at].name.text;

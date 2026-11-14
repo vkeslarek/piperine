@@ -40,8 +40,9 @@ A single-segment name is looked up in this order; the first hit wins.
    does not resolve is one `E0161`, as at the top level.
 2. **The items and imports of the enclosing namespace**: its own declarations, its `use` leaves
    and its glob imports.
-3. **The prelude**: the `pub` items of the namespace `prelude` of the standard library (`std::prelude`) are visible in every file.
-4. **The built-in table** (below).
+3. **The dependency names of the crate** that holds the path (`std` among them): the name resolves to the root namespace of that crate, so `util::cells::Cell` reads a module of the dependency `util`. In an ordinary path an item or an import of step 2 wins over a dependency of the same name; the first segment of a `use` path that names both is `E0163`. `crate` is the root namespace of the crate that holds the path.
+4. **The prelude**: the `pub` items of the namespace `prelude` of the standard library (`std::prelude`) are visible in every file; a dependency name hides a prelude item.
+5. **The built-in table** (below).
 
 A multi-segment path resolves one segment at a time: the first as above (or `crate`, `self`,
 `super`), each next one inside what the previous named (a namespace's items, a module's
@@ -301,8 +302,9 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0125` | 8 | `§3` | an `extern` function with a body, or a function that is neither `extern` nor a trait item without one | the function's name |
 | `E0130` | 6 | `§3.1` | an `impl` block written for a module | the self type of the `impl` |
 | `E0140` | 6 | `§3.2` | a named argument of a call or an instance that names no parameter written `Option<..>`, or one an earlier argument bound (§3.2.9); its slot stays `Unresolved` | the name |
-| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
+| `E0161` | 0, 3, 5 | `§3.4` | a name that resolves to nothing, including a field that a struct literal or a struct pattern names and the struct does not have; a private item reached through a path; an unreadable root file or crate root; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
 | `E0162` | 2, 3, 5 | `§3.4` | a name declared twice in one table of a namespace or of a block (§3.4.10); an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
+| `E0163` | 3, 5 | `§3.5` | the first segment of a `use` path (also in a block) names both a dependency of the crate and an item or an import of the enclosing namespace; the path stays `Unresolved`, no `E0161`; the help names `package = ".."` in the manifest and `crate::<name>` | the `use` path |
 | `E0201` | 8 | `§4` | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
 | `E0206` | 6 | `§4` | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
 | `E0211` | 7 | `§5.1` | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |

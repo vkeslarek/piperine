@@ -15,7 +15,7 @@ use super::super::decl::{DeclKind, FieldsForm, FnParamData, GenerationData, Gene
 use super::super::decl::BehaviorData;
 use super::super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
-use super::imports::{Prefer, Visit, path_diagnostic};
+use super::imports::{Prefer, Visit, WalkError, path_diagnostic};
 use super::{Ctx, Output};
 
 /// One level of the scope stack.
@@ -612,6 +612,22 @@ impl Names<'_, '_> {
         self.frames.pop();
     }
 
+    /// Does the first segment of a block-level `use` path name both a dependency and an item or
+    /// import of the block or of the enclosing namespace (§3.5 rule 5)?
+    fn block_clash(&self, segments: &[crate::pom::PathSegment]) -> bool {
+        let Some(head) = segments.first() else { return false };
+        let name = head.name.text.as_str();
+        if matches!(name, "crate" | "self" | "super") || !self.ctx.is_dependency_name(self.ns, name) {
+            return false;
+        }
+        let in_block = self.frames.iter().any(|f| match f {
+            Frame::Items(items) => items.iter().any(|(n, _)| n == name),
+            Frame::Imports { named, .. } => named.iter().any(|(n, _)| n == name),
+            _ => false,
+        });
+        in_block || self.ctx.has_ns_item(self.ns, name)
+    }
+
     /// The `use` items of one block, in source order: each path resolves
     /// from the namespace and the block items (never the locals), and its
     /// name joins the `Imports` frame at `at`, so a later `use` can build on
@@ -622,6 +638,12 @@ impl Names<'_, '_> {
             let StmtKind::Item(d) = &design.stmt_node(*s).kind else { continue };
             let DeclKind::Use(u) = &design.decl_data(*d).kind else { continue };
             for import in &u.imports {
+                let node = design.path_node(import.path);
+                if self.block_clash(&node.segments) {
+                    let file = design.decl_data(node.owner).file;
+                    self.out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    continue;
+                }
                 self.frames.push(Frame::Barrier);
                 let res = self.path(import.path, Prefer::Types);
                 self.frames.pop();

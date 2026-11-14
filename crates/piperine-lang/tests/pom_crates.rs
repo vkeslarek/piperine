@@ -374,3 +374,162 @@ fn disk_and_memory_graphs_build_the_same_design() {
     assert_eq!(disk.crates().iter().map(|c| (c.name().to_string(), c.files().len())).collect::<Vec<_>>(), memory.crates().iter().map(|c| (c.name().to_string(), c.files().len())).collect::<Vec<_>>());
     assert_eq!(codes(&disk), codes(&memory));
 }
+
+// ---- PKG-05 AC 1 to 10: names resolve across crates (T10) ----
+
+/// A design of two crates, `app -> util` (the dependency called `dep`, the crate called `util`),
+/// over virtual sources, with the given std.
+fn two(app: &str, util: &str, dep: &str, std: Option<&str>) -> Design {
+    let mut g = CrateGraph::new();
+    let a = g.add_crate("app", "app/lib.msl").unwrap();
+    let u = g.add_crate("util", "util/lib.msl").unwrap();
+    g.add_dependency(a, dep, u).unwrap();
+    let mut b = Design::builder().source("app/lib.msl", app).source("util/lib.msl", util).crates(g);
+    if let Some(std) = std {
+        b = b.std_source("std/lib.msl", std);
+    }
+    b.build()
+}
+
+/// Every resolution list of the paths written `text` (segments joined by `::`).
+fn path_res(design: &Design, text: &str) -> Vec<Vec<Resolution>> {
+    (0..design.path_count())
+        .map(|i| design.path_node(PathId(i as u32)))
+        .filter(|p| p.segments.iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>().join("::") == text)
+        .map(|p| p.segments.iter().map(|s| s.res).collect())
+        .collect()
+}
+
+/// The crate name of the declaration a resolution names.
+fn krate_of(design: &Design, res: Resolution) -> String {
+    let Resolution::Decl(d) = res else { panic!("{res:?} is not a declaration") };
+    design.decl(d).krate().name().to_string()
+}
+
+#[test]
+fn a_dependency_name_starts_a_path() {
+    let design = two("const X: u32 = util::K;\n", "pub const K: u32 = 1;\n", "util", None);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = path_res(&design, "util::K");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0][0], Resolution::Decl(design.crates()[1].root().decl().id()), "the first segment is the root namespace of util");
+    assert_eq!(krate_of(&design, found[0][1]), "util");
+    assert_eq!(design.decl(match found[0][1] { Resolution::Decl(d) => d, _ => unreachable!() }).name(), Some("K"));
+}
+
+#[test]
+fn use_forms_of_a_dependency_resolve() {
+    let util = "pub mod a { pub const K: u32 = 1; pub const L: u32 = 2; }\n";
+    let app = "use util::a::*;\nuse util::a::{K as K2, L as L2};\nuse util as u;\nconst X: u32 = K + K2 + u::a::L + L2;\n";
+    let design = two(app, util, "util", None);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    assert_eq!(krate_of(&design, path_res(&design, "u::a::L")[0][2]), "util");
+}
+
+#[test]
+fn an_instance_links_to_a_module_of_a_dependency() {
+    let app = "use util::cells::Cell;\nmodule Top() { let c = Cell(); }\n";
+    let design = two(app, "pub mod cells { pub module Cell() {} }\n", "util", None);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let module = design.module("Top").unwrap().instance("c").unwrap().module().unwrap();
+    assert_eq!(module.krate().name(), "util");
+    assert_eq!(Some(module), design.module("Cell"));
+}
+
+#[test]
+fn crate_names_the_root_of_the_containing_crate() {
+    let design = two("pub const A: u32 = 2;\n", "pub const A: u32 = 1;\npub mod m { pub const B: u32 = crate::A; }\n", "util", None);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = path_res(&design, "crate::A");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0][0], Resolution::Decl(design.crates()[1].root().decl().id()));
+    assert_eq!(krate_of(&design, found[0][1]), "util");
+}
+
+#[test]
+fn a_renamed_dependency_resolves_by_its_dependency_name() {
+    let util = "pub const K: u32 = 1;\n";
+    let design = two("const X: u32 = cells::K;\n", util, "cells", None);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    assert_eq!(krate_of(&design, path_res(&design, "cells::K")[0][1]), "util");
+    let design = two("const X: u32 = util::K;\n", util, "cells", None);
+    assert_eq!(codes(&design), ["E0161"], "the crate's own name is not in scope");
+}
+
+#[test]
+fn a_local_name_wins_over_a_dependency_in_a_path() {
+    let util = "pub const K: u32 = 1;\npub struct T {}\n";
+    for app in [
+        "mod util { pub const K: u32 = 5; pub struct T {} }\nconst X: u32 = util::K;\nfn f(x: util::T) {}\n",
+        "mod inner { pub const K: u32 = 5; pub struct T {} }\nuse inner as util;\nconst X: u32 = util::K;\nfn f(x: util::T) {}\n",
+    ] {
+        let design = two(app, util, "util", None);
+        assert_eq!(codes(&design), Vec::<String>::new(), "{app}");
+        for text in ["util::K", "util::T"] {
+            let found = path_res(&design, text);
+            assert_eq!(found.len(), 1, "{text}");
+            assert_eq!(krate_of(&design, found[0][1]), "app", "{text} in {app}");
+        }
+    }
+}
+
+#[test]
+fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
+    let util = "pub const K: u32 = 1;\n";
+    for app in [
+        "mod util { pub const K: u32 = 5; }\nuse util::K;\n",
+        "mod util { pub const K: u32 = 5; }\nuse util::*;\n",
+        "mod util { pub const K: u32 = 5; }\nuse util as u;\n",
+        "mod util { pub const K: u32 = 5; }\nfn f() { use util::K; }\n",
+        "mod inner { pub const K: u32 = 5; }\nuse inner as util;\nuse util::K;\n",
+    ] {
+        let design = two(app, util, "util", None);
+        assert_eq!(codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
+        let d = &design.diagnostics()[0].diagnostic;
+        let help = d.help.as_deref().unwrap_or("");
+        assert!(help.contains("package = \"") && help.contains("crate::util"), "{help}");
+        for res in path_res(&design, "util::K").into_iter().chain(path_res(&design, "util")).chain(path_res(&design, "util::*")) {
+            assert!(res.iter().all(|r| *r == Resolution::Unresolved), "the use path stays unresolved: {res:?}");
+        }
+    }
+}
+
+#[test]
+fn crate_prefix_names_the_local_one_in_a_clash() {
+    let design = two("mod util { pub const K: u32 = 5; }\nuse crate::util::K;\nconst X: u32 = K;\n", "pub const K: u32 = 1;\n", "util", None);
+    assert_eq!(codes(&design), Vec::<String>::new());
+    assert_eq!(krate_of(&design, path_res(&design, "K")[0][0]), "app");
+}
+
+const STD_P: &str = "pub mod prelude { pub const P: u32 = 1; pub mod util { pub const K: u32 = 9; } }\n";
+
+#[test]
+fn std_is_a_dependency_of_every_crate() {
+    let design = two("const X: u32 = std::prelude::P;\n", "pub const Y: u32 = std::prelude::P;\n", "util", Some(STD_P));
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = path_res(&design, "std::prelude::P");
+    assert_eq!(found.len(), 2);
+    for res in found {
+        assert_eq!(res[0], Resolution::Decl(design.std_crate().root().decl().id()));
+        assert_eq!(krate_of(&design, res[2]), "std");
+    }
+}
+
+#[test]
+fn the_prelude_reaches_every_crate() {
+    let design = two("const X: u32 = P;\n", "pub const Y: u32 = P;\nmod deep { pub const Z: u32 = P; }\n", "util", Some(STD_P));
+    assert_eq!(codes(&design), Vec::<String>::new());
+    let found = path_res(&design, "P");
+    assert_eq!(found.len(), 3);
+    for res in found {
+        assert_eq!(krate_of(&design, res[0]), "std");
+    }
+}
+
+#[test]
+fn a_dependency_name_hides_a_prelude_item() {
+    // `std::prelude` has a `pub mod util`, and `util` is also a dependency: the dependency wins.
+    let design = two("const X: u32 = util::K;\n", "pub const K: u32 = 1;\n", "util", Some(STD_P));
+    assert_eq!(codes(&design), Vec::<String>::new());
+    assert_eq!(krate_of(&design, path_res(&design, "util::K")[0][1]), "util");
+}
