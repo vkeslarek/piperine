@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/msl-packages/design.md`
-**Status**: Draft
+**Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning')`
 **Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
@@ -1147,7 +1147,7 @@ Proof: `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** N1-N3 (round 2) - user: "Fix + merge (Recommended)": fixed test-first, proofs + gate, merge without a third verifier round; F10 - U6 "Rust 2018 exactly" means the clash is namespace-aware: only a local name in the type namespace clashes with a dependency, as rustc does (orchestrator, applies U6, 2026-11-14); T1 leaves `E0174` out of §3.5 rule 10 and its `[§3.6]` row (the code-defined-once guard); T3, which defines `E0174` in §3.6, also writes it into those two places (orchestrator, 2026-11-14)
-**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3 - returned (T1-T5 cd533e88..ab419043; T1 tests written after text; phases glossary row fixed by orchestrator); B2 (T6-T11, Sonnet) at e10ac044 - returned (T6-T11 8e04a3b9..00bc5848; deviations: fixture prelude as 2nd std file, find() filters 'not in std', E0163 import cascade E0161; gaps: cycle name order, keyword/std root stems); B3 (T12-T18, Sonnet) at 3d3e963c - returned (T12-T18 74e859be..94e17616; no deviations; gaps: PKG-08 AC2 wording, missing-key spans); B4 (T19-T25, Sonnet) at 303e11c8 - returned (T19-T25 36009a7b..7277e538; deviations: 3 commit subjects lowercased, support mod item-level allow(dead_code), no T19 interim git=E0172 test, caret 0.0 rows skip below-check; gaps: E0176 wording wider than row, non-cycle GraphError as E0171; orchestrator removed stale build.rs); Verifier (Opus) at 190c8789 - returned (FAIL, F1-F11 + 8 weak checks); Fix pass (Sonnet) at 6b3843f2 - returned (fix pass f5ab1373..closure; F1-F11 + 9 weak checks fixed); Verifier round 2 at 10e0a788 - returned (FAIL: F1-F11 closed, N1-N3 open, to user); N1-N3 fix (Sonnet) at d79ff645
+**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3 - returned (T1-T5 cd533e88..ab419043; T1 tests written after text; phases glossary row fixed by orchestrator); B2 (T6-T11, Sonnet) at e10ac044 - returned (T6-T11 8e04a3b9..00bc5848; deviations: fixture prelude as 2nd std file, find() filters 'not in std', E0163 import cascade E0161; gaps: cycle name order, keyword/std root stems); B3 (T12-T18, Sonnet) at 3d3e963c - returned (T12-T18 74e859be..94e17616; no deviations; gaps: PKG-08 AC2 wording, missing-key spans); B4 (T19-T25, Sonnet) at 303e11c8 - returned (T19-T25 36009a7b..7277e538; deviations: 3 commit subjects lowercased, support mod item-level allow(dead_code), no T19 interim git=E0172 test, caret 0.0 rows skip below-check; gaps: E0176 wording wider than row, non-cycle GraphError as E0171; orchestrator removed stale build.rs); Verifier (Opus) at 190c8789 - returned (FAIL, F1-F11 + 8 weak checks); Fix pass (Sonnet) at 6b3843f2 - returned (fix pass f5ab1373..closure; F1-F11 + 9 weak checks fixed); Verifier round 2 at 10e0a788 - returned (FAIL: F1-F11 closed, N1-N3 open, to user); N1-N3 fix (Sonnet) at d79ff645 - returned (N1-N3 closed cf7bb6fd..fccb13f9)
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above
 
 ---
