@@ -12,7 +12,7 @@
 //! re-polled, crossings discarded).
 //!
 //! The queue does not *replace* the digital scheduler's storage overnight;
-//! [`digital::DigitalState::event_queue`](crate::digital::state::DigitalState) can
+//! [`digital::DigitalState::event_queue`](piperine_digital_solver::state::DigitalState) can
 //! remain as the backing store for digital events, with [`EventQueue`]
 //! wrapping it via an adapter. The goal is ONE read path in `predict_step`,
 //! not necessarily one storage layer.
@@ -256,7 +256,7 @@ struct Checkpoint {
 /// `peek()` returns the earliest entry (min-time, then `Exact` over
 /// `Advisory`).
 ///
-/// One-deep checkpoint semantics mirror [`DigitalState::Checkpoint`](crate::digital::state::DigitalState):
+/// One-deep checkpoint semantics mirror [`DigitalState::Checkpoint`](piperine_digital_solver::state::DigitalState):
 /// `checkpoint()` snapshots the heap before a candidate step; `rollback()`
 /// restores it on rejection, honoring each drained entry's
 /// [`RollbackBehavior`] (ABI-40/41) — `Restore`-tagged entries return to the

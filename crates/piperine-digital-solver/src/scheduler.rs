@@ -6,19 +6,19 @@
 //! yields events in ascending `DigitalEvent::Ord` — `(time, seq)`.
 use std::collections::HashSet;
 use std::cmp::Reverse;
-use piperine_digital_solver::events::{LogicValue, DigitalNet, DigitalEvent};
-use piperine_digital_solver::interface::{EvalCtx, QueueSink};
-use crate::core::element::{Element, ElementCapabilities};
-use crate::digital::state::DigitalState;
-use crate::digital::topology::DigitalTopology;
-use piperine_digital_solver::drivers::{default_strength_for, DriverId, DriverKind};
-use piperine_digital_solver::limits::DigitalLimits;
+use crate::events::{LogicValue, DigitalNet, DigitalEvent};
+use crate::interface::{DigitalParticipant, EvalCtx, QueueSink};
+use crate::state::DigitalState;
+use crate::topology::DigitalTopology;
+use crate::drivers::{default_strength_for, DriverId, DriverKind};
+use crate::error::DigitalError;
+use crate::limits::DigitalLimits;
 
 /// Applies one drained `event` to `nets`/`driver_table` (T54/LRMW2-46):
 /// registers the event's source as `net`'s driver per §7.9 (every event's
 /// `source` is already the emitting device's stable index — the
 /// "elaborated instance graph" this table keys off), then resolves the
-/// net through [`piperine_digital_solver::drivers::DriverTable::resolved`] instead
+/// net through [`crate::drivers::DriverTable::resolved`] instead
 /// of overwriting with the raw event value. For the common case (a net
 /// with exactly one live driver) this folds back to the same value as a
 /// direct overwrite — `Strength::resolve` of a single entry against the
@@ -54,19 +54,19 @@ impl DigitalState {
     ///
     /// `limits` controls the delta-cycle cap and the time-equality epsilon.
     /// `analog_slice` is the latest analog solution handed to elements that
-    /// declared [`ElementCapabilities::SAMPLES_ANALOG`]; pass `&[]` when no
+    /// declared `ElementCapabilities::SAMPLES_ANALOG`; pass `&[]` when no
     /// element in the circuit samples analog voltages (the common case for
     /// pure-digital circuits).
     /// Returns `Err` if the cap is reached — the scheduler used to log a
     /// warning and continue; that is no longer acceptable for a production
     /// simulation. A successful run leaves the network settled at `t`.
-    pub fn evaluate_until_stable(
+    pub fn evaluate_until_stable<D: DigitalParticipant + ?Sized>(
         &mut self,
         t: f64,
-        devices: &mut [Box<dyn Element>],
+        devices: &mut [Box<D>],
         limits: DigitalLimits,
         analog_slice: &[f64],
-    ) -> crate::core::result::Result<()> {
+    ) -> Result<(), DigitalError> {
         let epsilon = limits.time_epsilon;
         let max_delta_cycles = limits.max_delta_cycles;
         let mut delta_count = 0;
@@ -113,13 +113,7 @@ impl DigitalState {
 
             delta_count += 1;
             if delta_count >= max_delta_cycles {
-                return Err(piperine_analog_solver::error::Error::simple(
-                    piperine_analog_solver::error::SolverDomain::Digital,
-                    format!(
-                        "Delta cycle limit ({}) exceeded at t={}. Possible combinational loop.",
-                        max_delta_cycles, t
-                    ),
-                ));
+                return Err(DigitalError::DeltaCycleLimit { limit: max_delta_cycles, time: t });
             }
 
             let has_more_at_t = self.event_queue.peek()
@@ -134,17 +128,17 @@ impl DigitalState {
     /// DAG-ordered evaluation (Verilator-style).
     ///
     /// `analog_slice` is forwarded to elements that declared
-    /// [`ElementCapabilities::SAMPLES_ANALOG`] via `EvalCtx.analog`.
+    /// `ElementCapabilities::SAMPLES_ANALOG` via `EvalCtx.analog`.
     /// Returns `Err` if the iteration cap is reached instead of warning; the
     /// cap is shared with [`Self::evaluate_until_stable`] through `limits`.
-    pub fn evaluate_dag_ordered(
+    pub fn evaluate_dag_ordered<D: DigitalParticipant + ?Sized>(
         &mut self,
         t: f64,
-        devices: &mut [Box<dyn Element>],
+        devices: &mut [Box<D>],
         topology: &DigitalTopology,
         limits: DigitalLimits,
         analog_slice: &[f64],
-    ) -> crate::core::result::Result<()> {
+    ) -> Result<(), DigitalError> {
         let epsilon = limits.time_epsilon;
         let max_iters = limits.max_delta_cycles;
         let n = topology.topo_order.len();
@@ -202,7 +196,7 @@ impl DigitalState {
                 let topo_pos = restart_from + offset;
                 let device = &mut devices[dev_idx];
 
-                if !device.capabilities().contains(ElementCapabilities::DIGITAL) {
+                if !device.is_digital() {
                     continue;
                 }
                 if !device.has_input_on(&all_changed) && !seq_fired[dev_idx] {
@@ -259,13 +253,7 @@ impl DigitalState {
                 Some(pos) => {
                     restart_from = pos;
                     if iter + 1 == max_iters {
-                        return Err(piperine_analog_solver::error::Error::simple(
-                            piperine_analog_solver::error::SolverDomain::Digital,
-                            format!(
-                                "DAG digital eval: back-edge loop did not converge in {} iters at t={}",
-                                max_iters, t
-                            ),
-                        ));
+                        return Err(DigitalError::DagNotConverged { iterations: max_iters, time: t });
                     }
                 }
             }

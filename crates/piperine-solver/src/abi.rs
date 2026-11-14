@@ -39,8 +39,8 @@ pub use piperine_digital_solver::drivers::{DriverId, DriverKind, DriverRecord, D
 // codegen circuit builder populates these per destination net at build
 // time, so they need an ABI-surface re-export like every other
 // codegen-visible digital type on this page.
-pub use crate::digital::state::DigitalState;
-pub use crate::digital::topology::DigitalTopology;
+pub use piperine_digital_solver::state::DigitalState;
+pub use piperine_digital_solver::topology::DigitalTopology;
 // Run config + results device code touches
 pub use crate::analyses::{AnalysisKind, Context};
 pub use piperine_analog_solver::tolerances::{Policy, Tolerances};

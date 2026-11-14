@@ -8,8 +8,8 @@ use crate::analyses::transient::TransientAnalysisOptions;
 use piperine_analog_solver::netlist::Netlist;
 use crate::core::net::analog_nets;
 use crate::core::element::{Element, ElementCapabilities, Introspect};
-use crate::digital::state::DigitalState;
-use crate::digital::topology::DigitalTopology;
+use piperine_digital_solver::state::DigitalState;
+use piperine_digital_solver::topology::DigitalTopology;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
 use crate::analyses::ac::AcSolver;
@@ -299,6 +299,7 @@ impl CircuitInstance {
                 analog_slice,
             ),
         }
+        .map_err(crate::core::result::digital_failure)
     }
 
     /// Update all devices' cached analog voltages from a solution vector,

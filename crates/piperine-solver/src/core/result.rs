@@ -1,4 +1,5 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
+use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
 use piperine_digital_solver::events::LogicValue;
@@ -419,4 +420,11 @@ impl std::fmt::Display for TransferType {
             TransferType::CurrentGain => write!(f, "Current Gain (I/I)"),
         }
     }
+}
+
+/// The owner's error for a digital scheduler failure. Not a `From` impl: both
+/// the digital error and `Error` are foreign here, so the orphan rule forbids
+/// one. The message text is `DigitalError`'s `Display`, unchanged.
+pub(crate) fn digital_failure(e: piperine_digital_solver::error::DigitalError) -> Error {
+    Error::simple(SolverDomain::Digital, e.to_string())
 }

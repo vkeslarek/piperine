@@ -588,12 +588,12 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] `evaluate_until_stable`, `evaluate_dag_ordered` and `DigitalTopology::build` are generic over `D: DigitalParticipant + ?Sized` and take `&mut [Box<D>]` / `&[Box<D>]`; the capability test reads `device.is_digital()`; every other line of the three functions is unchanged
-- [ ] The scheduler takes `DigitalLimits` and returns `Result<(), DigitalError>`; the owner has `impl From<DigitalError> for Error` producing `Error::simple(SolverDomain::Digital, e.to_string())`; the texts asserted by `failure_rules.rs` and `mixed_signal.rs` are unchanged and those targets pass untouched
-- [ ] The owner has no `src/digital/` and no `pub mod digital` shim; `analyses/events.rs`, `core/net.rs`, `core/circuit.rs`, `core/result.rs` name the digital crate
-- [ ] The remaining unit tests of the moved modules pass in the digital crate
-- [ ] `cargo build --all-targets` prints no warning on the three solver crates
-- [ ] Gate: full (owner, analog, digital)
+- [x] `evaluate_until_stable`, `evaluate_dag_ordered` and `DigitalTopology::build` are generic over `D: DigitalParticipant + ?Sized` and take `&mut [Box<D>]` / `&[Box<D>]`; the capability test reads `device.is_digital()`; every other line of the three functions is unchanged
+- [x] The scheduler takes `DigitalLimits` and returns `Result<(), DigitalError>`; the owner has `impl From<DigitalError> for Error` producing `Error::simple(SolverDomain::Digital, e.to_string())`; the texts asserted by `failure_rules.rs` and `mixed_signal.rs` are unchanged and those targets pass untouched
+- [x] The owner has no `src/digital/` and no `pub mod digital` shim; `analyses/events.rs`, `core/net.rs`, `core/circuit.rs`, `core/result.rs` name the digital crate
+- [x] The remaining unit tests of the moved modules pass in the digital crate
+- [x] `cargo build --all-targets` prints no warning on the three solver crates
+- [x] Gate: full (owner, analog, digital)
 
 **Tests**: unit
 **Gate**: full

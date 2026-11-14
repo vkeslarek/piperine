@@ -1,8 +1,8 @@
 //! The digital topology: DAG evaluation order + back edges for a fixed
 //! device set, rebuilt on structural change.
 use std::collections::HashMap;
-use piperine_digital_solver::events::DigitalNet;
-use crate::core::element::Element;
+use crate::events::DigitalNet;
+use crate::interface::DigitalParticipant;
 
 // ---------------------------------------------------------------------------
 // DigitalTopology — DAG order + back edges for a fixed set of devices
@@ -17,7 +17,7 @@ pub struct DigitalTopology {
 }
 
 impl DigitalTopology {
-    pub fn build(devices: &[Box<dyn Element>]) -> Self {
+    pub fn build<D: DigitalParticipant + ?Sized>(devices: &[Box<D>]) -> Self {
         let n = devices.len();
         if n == 0 {
             return Self { topo_order: Vec::new(), back_edges: Vec::new() };

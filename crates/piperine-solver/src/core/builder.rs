@@ -9,7 +9,7 @@ use piperine_analog_solver::netlist::{AnalogReference, BranchIdentifier, Netlist
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::{Element, ElementCapabilities};
 use piperine_digital_solver::events::{DigitalNet};
-use crate::digital::state::DigitalState;
+use piperine_digital_solver::state::DigitalState;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use crate::core::result::Result;
 
