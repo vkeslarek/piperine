@@ -13,6 +13,7 @@ tree one level at a time.
 
 | Construct | Source form | Storage node | Handle | Query |
 | --- | --- | --- | --- | --- |
+| `crate` | a package of the build: the root crate, a named dependency, or `std` | `CrateData` in `Design::crates`, linked from `SourceFileData::krate`, with `DependencyData` edges | `Crate` | `design.krate(name)`, `design.crates()`, `Crate::dependencies`, `Crate::dependency(name)`, `Reflect::krate` |
 | `item` | one top-level item of a file | `DeclKind` under the file's `NamespaceData` | `Decl` | `design.root().children()` |
 | `nature_decl` | `pub nature Electrical<..> { .. }` | `NatureData`, with `QuantityData` children | `Nature` | `design.nature("Electrical")` |
 | `nature_field` | `potential: Voltage { access: v, .. }`, `value: T`, `resolve: f` | `NatureFieldNode` (`Quantity`, `Value`, `Resolve`) | `Quantity` | `Nature::quantities`, `value_type`, `resolve_fn` |

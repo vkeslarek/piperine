@@ -31,6 +31,7 @@ its names refer to gives the same nodes in the same order (only the links differ
 ```text
 Design::builder()
     .std_source("lib.msl", std_text)    // optional; replaces the embedded std; the `pub` items of its `prelude` are visible everywhere
+    .crates(graph)                     // optional; the crates to build (`CrateGraph`), the first is the root crate
     .source("top.msl", top_text)       // the first source is the root; others are loaded by `mod`
     .build()                           // never fails
 ```
@@ -66,8 +67,8 @@ digital for Front {
 }
 ```
 
-The standard names the model uses (`Electrical`, `Bit`, `above`) come from `std::prelude`. The
-tour supplies a small one, builds the design and asks it questions:
+The standard names the model uses (`Electrical`, `Bit`, `above`) come from `std::prelude`, the
+standard library crate every crate depends on. The tour supplies a small one, builds the design and asks it questions:
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};

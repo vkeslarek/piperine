@@ -385,3 +385,35 @@ fn mkdocs_nav_lists_every_pom_page() {
         assert!(nav.lines().any(|l| l.trim_end().ends_with(&format!("pom/{file}"))), "mkdocs.yml nav does not list docs/pom/{file}");
     }
 }
+
+#[test]
+fn docs_describe_crates_and_no_prelude_sources() {
+    // PKG-09 AC 1: the scope order names the dependency names and the `std` prelude, and no page
+    // talks about prelude sources.
+    for (name, text) in pom_docs() {
+        let lower = text.to_lowercase();
+        assert!(!lower.contains("prelude source"), "{name} mentions prelude sources");
+        assert!(!text.contains(".prelude("), "{name} mentions `.prelude(`");
+    }
+    let resolution = page_of("resolution.md");
+    let order = page_section(&resolution, "## Scope order").join("\n");
+    assert!(order.contains("dependency names"), "the scope order does not name the dependency names");
+    assert!(order.contains("`std::prelude`"), "the scope order does not name the `std` prelude");
+    let dependencies = order.find("dependency names").unwrap();
+    let prelude = order.find("`std::prelude`").unwrap();
+    assert!(dependencies < prelude, "dependency names come before the prelude in the scope order");
+    assert!(resolution.contains("### Crates and the standard library"), "resolution.md lacks the crates section");
+    assert!(!resolution.contains("### Imports and the prelude"), "resolution.md still has the section this replaced");
+    assert!(page_of("index.md").contains(".crates("), "the build line of the overview does not show `.crates(graph)`");
+    assert!(page_of("model.md").lines().any(|l| l.trim_end() == "## Crates"), "model.md lacks a `## Crates` storage section");
+}
+
+#[test]
+fn mapping_has_a_crate_row() {
+    // PKG-09 AC 2: a row maps a crate to `CrateData`, `Crate` and the lookups that reach it.
+    let mapping = page_of("mapping.md");
+    let row = mapping.lines().find(|l| l.starts_with("| `crate` |")).expect("a `crate` row in mapping.md");
+    for needed in ["`CrateData`", "`Crate`", "design.krate(", "design.crates()", "Crate::dependency"] {
+        assert!(row.contains(needed), "the `crate` row lacks {needed}: {row}");
+    }
+}

@@ -109,19 +109,30 @@ let k = design.root().children().into_iter().find_map(|d| d.as_const()).unwrap()
 assert!(k.decl().references().is_empty());
 ```
 
-### Imports and the prelude
+### Crates and the standard library
+
+A crate names another by the dependency name its graph gives it; `std` is a dependency of every
+crate, and its `prelude` namespace is visible everywhere. Only `pub` items cross a crate.
 
 ```rust
-use piperine_lang::pom::{Design, Reflect};
+use piperine_lang::pom::{CrateGraph, Design, Reflect};
 
+let mut graph = CrateGraph::new();
+let app = graph.add_crate("app", "app/lib.msl").unwrap();
+let util = graph.add_crate("util", "util/lib.msl").unwrap();
+graph.add_dependency(app, "util", util).unwrap();
 let design = Design::builder()
     .std_source("lib.msl", "pub mod prelude { pub nature Bit { value: bool } }")
-    .source("top.msl", "mod lib { pub module Cell(p: Bit) {} }\nuse lib::Cell;\nmodule Top(p: Bit) { let c = Cell(p); }")
+    .source("app/lib.msl", "module Top(p: Bit) { let c = util::Cell(p); }")
+    .source("util/lib.msl", "pub module Cell(p: Bit) {}")
+    .crates(graph)
     .build();
 assert!(design.diagnostics().is_empty());
-// `Bit` comes from `std::prelude`, `Cell` through the `use`; the instance is linked.
+// `util` is a dependency name, `Bit` comes from `std::prelude`; the instance is linked across crates.
 let top = design.module("Top").unwrap();
-assert_eq!(top.instance("c").unwrap().module(), design.module("Cell"));
+let cell = design.module("Cell").unwrap();
+assert_eq!(top.instance("c").unwrap().module(), Some(cell));
+assert_eq!(cell.krate().name(), "util");
 assert_eq!(top.port("p").unwrap().nature(), design.nature("Bit"));
 ```
 

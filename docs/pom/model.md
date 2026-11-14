@@ -231,6 +231,25 @@ Files held in memory, keyed by their normalized path (`.` removed, `..` folded).
 
 The filesystem. `canonical` is `std::fs::canonicalize`, falling back to the path itself.
 
+## Crates
+
+A design is built over a crate graph: the root crate first, its dependencies in graph order and
+`std` last. The storage keeps the crates as plain data beside the arenas, and every file knows
+its crate; no declaration of one crate is a child of another's (the
+[rule](index.md#the-one-rule)), so each crate keeps its authored tree.
+
+```text
+Design
+ ├─ crates:      Vec<CrateData>      name, root file, root namespace, declared dependencies
+ ├─ root_crate:  CrateId             the crate the design was built from
+ ├─ std_crate:   CrateId             the standard library, last in `crates`
+ └─ files:       Vec<SourceFileData> each with its `krate`; numbered crate by crate
+```
+
+`Design::check()` verifies the crate table: every link in range, each crate rooted at a file of
+its own whose root namespace is the crate's root declaration, and no dependency cycle. Read it
+through `Design::crates()`, `krate(name)` and the `Crate` handle; see [Reflection](reflection.md).
+
 ## The crate graph
 
 A build over several crates takes a `CrateGraph`: plain data, built by the host (the package loader or a test), with no manifest and no file read. A rejected call leaves the graph unchanged.

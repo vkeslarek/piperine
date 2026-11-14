@@ -62,18 +62,18 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `krate(&self, name: &str)` | `Option<Crate<'_>>` | The first crate of this name, in crate order; a dependency name is not a crate name. |
 | `root_crate(&self)` | `Crate<'_>` | The crate the design was built from. |
 | `std_crate(&self)` | `Crate<'_>` | The standard library. |
-| `modules(&self)` | `Vec<Module<'_>>` | Every module of the non-prelude files, in source order. |
-| `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the first match in a non-prelude file, else the first match in a prelude source. |
-| `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the non-prelude files, in source order. |
+| `modules(&self)` | `Vec<Module<'_>>` | Every module of the root crate, in source order. |
+| `module(&self, name: &str)` | `Option<Module<'_>>` | The module named `name`: the root crate's, else the first match in crate order. |
+| `functions(&self)` | `Vec<Function<'_>>` | Every free function (a `fn` directly in a namespace) of the root crate, in source order. |
 | `function(&self, name: &str)` | `Option<Function<'_>>` | The free function named `name`, project files first. |
-| `structs(&self)` | `Vec<Struct<'_>>` | Every struct of the non-prelude files, in source order. |
+| `structs(&self)` | `Vec<Struct<'_>>` | Every struct of the root crate, in source order. |
 | `struct_named(&self, name: &str)` | `Option<Struct<'_>>` | The struct named `name`, project files first. |
-| `enums(&self)` | `Vec<Enum<'_>>` | Every enum of the non-prelude files, in source order. |
-| `traits(&self)` | `Vec<Trait<'_>>` | Every trait of the non-prelude files, in source order. |
-| `consts(&self)` | `Vec<Const<'_>>` | Every `const` item of the non-prelude files, in source order. |
-| `impls(&self)` | `Vec<Impl<'_>>` | Every `impl` block of the non-prelude files, in source order. |
-| `namespaces(&self)` | `Vec<Namespace<'_>>` | Every named namespace (`mod a { .. }` or `mod a;`) of the non-prelude files; a file's unnamed root is not listed. |
-| `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the non-prelude files, in source order. |
+| `enums(&self)` | `Vec<Enum<'_>>` | Every enum of the root crate, in source order. |
+| `traits(&self)` | `Vec<Trait<'_>>` | Every trait of the root crate, in source order. |
+| `consts(&self)` | `Vec<Const<'_>>` | Every `const` item of the root crate, in source order. |
+| `impls(&self)` | `Vec<Impl<'_>>` | Every `impl` block of the root crate, in source order. |
+| `namespaces(&self)` | `Vec<Namespace<'_>>` | Every named namespace (`mod a { .. }` or `mod a;`) of the root crate; a file's unnamed root is not listed. |
+| `natures(&self)` | `Vec<Nature<'_>>` | Every nature of the root crate, in source order. |
 | `nature(&self, name: &str)` | `Option<Nature<'_>>` | The nature named `name`, project files first. |
 | `find(&self, path: &str)` | `Option<Decl<'_>>` | The declaration at a `::` path from the root, each segment a child name: `a::M` is `M` inside namespace `a`; or a name `qualified_name` printed (`a::E.A`, `impl S.X`), the first declaration with exactly it, project files first. |
 

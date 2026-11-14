@@ -484,13 +484,13 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `docs_describe_crates_and_no_prelude_sources` passes in `pom_docs.rs` (C69: PKG-09 AC 1)
-- [ ] Test `mapping_has_a_crate_row` passes in `pom_docs.rs` (C70: PKG-09 AC 2)
-- [ ] `cargo test -p piperine-lang --doc` exits 0 (C71: PKG-09 AC 3)
-- [ ] `every_public_pom_type_has_a_heading`, `every_reflection_method_is_documented`, `msl_fences_parse_clean` and `mkdocs_nav_lists_every_pom_page` pass unchanged
-- [ ] The two-crate doctest builds a `CrateGraph` with virtual sources and asserts zero diagnostics
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `docs_describe_crates_and_no_prelude_sources` passes in `pom_docs.rs` (C69: PKG-09 AC 1)
+- [x] Test `mapping_has_a_crate_row` passes in `pom_docs.rs` (C70: PKG-09 AC 2)
+- [x] `cargo test -p piperine-lang --doc` exits 0 (C71: PKG-09 AC 3)
+- [x] `every_public_pom_type_has_a_heading`, `every_reflection_method_is_documented`, `msl_fences_parse_clean` and `mkdocs_nav_lists_every_pom_page` pass unchanged
+- [x] The two-crate doctest builds a `CrateGraph` with virtual sources and asserts zero diagnostics
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
