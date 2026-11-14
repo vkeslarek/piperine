@@ -20,8 +20,8 @@ pub(super) fn run(design: &Design) -> Vec<(FileId, Diagnostic)> {
             DeclKind::Fn(f) => {
                 let in_trait = data.parent.is_some_and(|p| matches!(design.decl_data(p).kind, DeclKind::Trait(_)));
                 let message = match (f.abi.is_some(), f.body.is_some()) {
-                    (true, true) => Some("an `extern` function has no body"),
-                    (false, false) if !in_trait => Some("a function that is neither `extern` nor a trait item has a body"),
+                    (true, true) => Some("an `extern` function cannot have a body"),
+                    (false, false) if !in_trait => Some("this function has no body; only an `extern` function or a trait item may omit it"),
                     _ => None,
                 };
                 if let (Some(message), Some(name)) = (message, &data.name) {

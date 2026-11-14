@@ -944,6 +944,12 @@ impl Tr for S { fn in_impl(self) -> f64; }
     let design = with_prelude(src);
     let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
     assert_eq!(at, [("E0125", "with_body"), ("E0125", "without_body"), ("E0125", "in_impl")], "{:?}", design.diagnostics());
+    // The message states the fault, not the rule read backwards.
+    let messages: Vec<&str> = design.diagnostics().iter().map(|d| d.diagnostic.message.as_ref()).collect();
+    assert!(messages[0].contains("cannot have a body"), "{messages:?}");
+    for m in &messages[1..] {
+        assert!(m.contains("has no body") && m.contains("trait item"), "{m}");
+    }
 }
 
 /// POL-18 AC 7: a nature that repeats a field, mixes discrete and continuous
