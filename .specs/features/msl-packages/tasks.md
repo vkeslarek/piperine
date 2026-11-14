@@ -742,15 +742,15 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `update_moves_the_lock_to_the_new_commit` passes in `lock.rs` (C106: PKG-13 AC 5)
-- [ ] Test `stale_entries_leave_the_lockfile` passes in `lock.rs` (C107: PKG-13 AC 6)
-- [ ] Test `an_invalid_lockfile_is_e0176` passes in `lock.rs` (C108: PKG-13 AC 7)
-- [ ] Test `a_locked_checkout_needs_no_repository` passes in `lock.rs` (C109: PKG-13 AC 8)
-- [ ] Test `only_the_root_lockfile_counts` passes in `lock.rs` (C110: PKG-13 AC 9)
-- [ ] `a_locked_checkout_needs_no_repository` deletes the source repository and the `db` clone before the second resolution
-- [ ] `E0176` has the lockfile as its `file` and the TOML error's span
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `update_moves_the_lock_to_the_new_commit` passes in `lock.rs` (C106: PKG-13 AC 5)
+- [x] Test `stale_entries_leave_the_lockfile` passes in `lock.rs` (C107: PKG-13 AC 6)
+- [x] Test `an_invalid_lockfile_is_e0176` passes in `lock.rs` (C108: PKG-13 AC 7)
+- [x] Test `a_locked_checkout_needs_no_repository` passes in `lock.rs` (C109: PKG-13 AC 8)
+- [x] Test `only_the_root_lockfile_counts` passes in `lock.rs` (C110: PKG-13 AC 9)
+- [x] `a_locked_checkout_needs_no_repository` deletes the source repository and the `db` clone before the second resolution
+- [x] `E0176` has the lockfile as its `file` and the TOML error's span
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

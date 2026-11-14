@@ -15,7 +15,10 @@ use crate::manifest::{Dependency, GitRef, MANIFEST, Manifest, Source};
 
 /// What a resolution may do beyond reading.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Options {}
+pub struct Options {
+    /// Resolve every reference again, ignoring the recorded commits, and rewrite the lockfile.
+    pub update: bool,
+}
 
 /// The packages of a project as a crate graph, and what each crate was read from.
 #[derive(Debug, Clone, PartialEq)]
@@ -53,7 +56,7 @@ fn crate_root(dir: &Path) -> PathBuf {
 }
 
 /// Resolve the package at `dir` and everything it depends on.
-pub fn resolve(dir: &Path, _options: Options) -> Result<PackageGraph, Vec<PackageError>> {
+pub fn resolve(dir: &Path, options: Options) -> Result<PackageGraph, Vec<PackageError>> {
     let manifest = Manifest::load(dir)?;
     let root = dir.canonicalize().map_err(|e| {
         let message = format!("cannot read the package directory `{}`: {e}", dir.display());
@@ -61,7 +64,7 @@ pub fn resolve(dir: &Path, _options: Options) -> Result<PackageGraph, Vec<Packag
     })?;
     let lock = Lockfile::load(&root).map_err(|e| vec![e])?.unwrap_or_default();
     let mut walk = Walk {
-        lock: lock.packages.iter().map(|p| (p.source.clone(), p.commit.clone())).collect(),
+        lock: lock.packages.iter().filter(|_| !options.update).map(|p| (p.source.clone(), p.commit.clone())).collect(),
         recorded: BTreeSet::new(), deps: root.join("target").join("deps"), graph: CrateGraph::new(), packages: Vec::new(), ids: HashMap::new(), stack: Vec::new(), resolved: HashMap::new() };
     if !crate_root(&root).is_file() {
         let message = format!("the package `{}` has no crate root `{}`", manifest.package.name, crate_root(&root).display());

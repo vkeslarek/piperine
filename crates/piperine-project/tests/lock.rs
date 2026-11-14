@@ -12,7 +12,7 @@ use std::fs;
 use std::path::Path;
 
 use piperine_project::{Options, PackageGraph, resolve};
-use support::{commit, package, package_files, repo, tag, url, workspace};
+use support::{commit, package, package_files, repo, tag, url, workspace, write};
 
 fn files(list: &[(String, String)]) -> Vec<(&str, &str)> {
     list.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()
@@ -115,4 +115,93 @@ fn the_lockfile_is_deterministic() {
     let app2 = package(&base.join("app2"), "app2", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util)), "mid = { path = \"../mid\" }"], "");
     ok(&app2);
     assert_eq!(lock_of(&app2).matches("[[package]]").count(), 1);
+}
+
+#[test]
+fn update_moves_the_lock_to_the_new_commit() {
+    let (_tmp, base) = workspace();
+    let (util, first) = named_repo(&base.join("util-repo"), "util", "// first\n");
+    let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
+    ok(&app);
+    let second = commit(&util, &[("src/lib.msl", "// second\n")], "second");
+    let graph = resolve(&app, Options { update: true }).unwrap();
+    assert_eq!(graph.packages[1].commit, Some(second.to_string()));
+    assert_eq!(fs::read_to_string(&graph.graph.crates()[1].root).unwrap(), "// second\n");
+    assert!(lock_of(&app).contains(&second.to_string()) && !lock_of(&app).contains(&first.to_string()));
+    // Without the option the new pin holds.
+    assert_eq!(ok(&app).packages[1].commit, Some(second.to_string()));
+}
+
+#[test]
+fn stale_entries_leave_the_lockfile() {
+    let (_tmp, base) = workspace();
+    let (util, first) = named_repo(&base.join("util-repo"), "util", "// first\n");
+    let default = util.head().unwrap().shorthand().unwrap().to_string();
+    support::branch(&util, "dev", first);
+    support::switch(&util, "dev");
+    let dev = commit(&util, &[("src/lib.msl", "// dev\n")], "dev");
+    support::switch(&util, &default);
+    let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\", branch = \"{default}\" }}", url(&util))], "");
+    ok(&app);
+    assert!(lock_of(&app).contains(&first.to_string()) && lock_of(&app).contains(&format!("?branch={default}")));
+    // The `branch` is edited: the entry is replaced, not kept beside the new one.
+    package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\", branch = \"dev\" }}", url(&util))], "");
+    let graph = ok(&app);
+    assert_eq!(graph.packages[1].commit, Some(dev.to_string()));
+    let text = lock_of(&app);
+    assert_eq!(text.matches("[[package]]").count(), 1, "{text}");
+    assert!(text.contains(&dev.to_string()) && text.contains("?branch=dev") && !text.contains(&first.to_string()), "{text}");
+    // The dependency is removed: the entries go.
+    package(&base.join("app"), "app", "1.0.0", &[], "");
+    ok(&app);
+    assert_eq!(lock_of(&app), "version = 1\n");
+}
+
+#[test]
+fn an_invalid_lockfile_is_e0176() {
+    let (_tmp, base) = workspace();
+    let (util, _) = named_repo(&base.join("util-repo"), "util", "");
+    let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
+    for text in ["version = 1\n\n[[package]\nname = \"util", "version = 2\n", "[[package]]\nname = \"util\"\n"] {
+        write(&app.join("Piperine.lock"), text);
+        let mut errors = resolve(&app, Options::default()).err().expect("the lockfile was accepted");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        let error = errors.remove(0);
+        assert_eq!(error.code(), "E0176", "{text}");
+        assert_eq!(error.file, app.join("Piperine.lock"));
+        assert_eq!(error.text, text);
+        assert!(error.diagnostic.span().end <= text.len() + 1);
+        assert!(!app.join("target/deps").exists(), "{text}: something was fetched");
+    }
+    let error = resolve(&app, Options { update: true }).err().unwrap().remove(0);
+    assert_eq!(error.code(), "E0176");
+}
+
+#[test]
+fn a_locked_checkout_needs_no_repository() {
+    let (_tmp, base) = workspace();
+    let (util, first) = named_repo(&base.join("util-repo"), "util", "// kept\n");
+    let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
+    ok(&app);
+    // The repository, and the clone made of it, are gone.
+    fs::remove_dir_all(base.join("util-repo")).unwrap();
+    for entry in fs::read_dir(app.join("target/deps")).unwrap() {
+        fs::remove_dir_all(entry.unwrap().path().join("db")).unwrap();
+    }
+    let graph = ok(&app);
+    assert_eq!(graph.packages[1].commit, Some(first.to_string()));
+    assert_eq!(fs::read_to_string(&graph.graph.crates()[1].root).unwrap(), "// kept\n");
+}
+
+#[test]
+fn only_the_root_lockfile_counts() {
+    let (_tmp, base) = workspace();
+    let util = repo(&base.join("util-repo"));
+    let mut all = package_files("util", "1.0.0", "");
+    all.push(("Piperine.lock".to_string(), format!("version = 1\n\n[[package]]\nname = \"util\"\nversion = \"1.0.0\"\nsource = \"git+{}\"\ncommit = \"{}\"\n", url(&util), "0123456789abcdef0123456789abcdef01234567")));
+    let oid = commit(&util, &files(&all), "util with a lockfile");
+    let app = package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", url(&util))], "");
+    let graph = ok(&app);
+    assert_eq!(graph.packages[1].commit, Some(oid.to_string()));
+    assert!(lock_of(&app).contains(&oid.to_string()) && !lock_of(&app).contains("0123456789abcdef"));
 }
