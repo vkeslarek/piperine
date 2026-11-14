@@ -9,6 +9,11 @@ use std::path::PathBuf;
 
 use piperine_lang::pom::{BUILTINS, BuiltinKind, Design, ExprKind, Reference, Reflect, Resolution};
 
+#[path = "support/spec_tables.rs"]
+mod spec_tables;
+
+use spec_tables::{section, table_rows};
+
 fn embedded() -> Design {
     Design::builder().source("top.msl", "").build()
 }
@@ -369,5 +374,260 @@ fn monitors_resolve_into_std_monitor() {
     assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
     for name in ["Setup", "inertial"] {
         assert_eq!(placed_module(&design, name).file().name(), "monitor.msl", "{name}");
+    }
+}
+
+// ---- the library as a whole (STD-07 to STD-09, STD-17): layout, Index, intrinsics ----
+
+/// The nine namespaces of the library, the prelude last.
+const NAMESPACES: [&str; 9] = ["constants", "carriers", "values", "analog", "nets", "convert", "monitor", "io", "prelude"];
+
+/// The namespace that holds section `22.k` of Part VII.
+fn namespace_of_section(k: u32) -> &'static str {
+    ["values", "analog", "nets", "convert", "monitor", "io"][k as usize - 1]
+}
+
+fn part_vii() -> String {
+    std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/part_vii_stdlib.md")).expect("part VII exists")
+}
+
+/// One backtick name of the first column of the Index.
+#[derive(Debug)]
+struct IndexName {
+    name: String,
+    /// Written inside parentheses (a member of the item before it) or as `Type::member`.
+    member: bool,
+    /// The namespace its entry's section maps to.
+    namespace: &'static str,
+}
+
+/// Every backtick name of the first column of the §22 Index, with the namespace of its entry.
+fn index_names() -> Vec<IndexName> {
+    let part = part_vii();
+    let mut names = Vec::new();
+    for row in table_rows(&section(&part, "### Index")) {
+        let k: u32 = row[2].strip_prefix("§22.").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("entry `{}` names a §22 section", row[2]));
+        let (mut depth, mut open, mut word) = (0, false, String::new());
+        for c in row[0].chars() {
+            match c {
+                '`' if open => {
+                    open = false;
+                    let member = depth > 0 || word.contains("::");
+                    let name = word.rsplit("::").next().unwrap().to_string();
+                    names.push(IndexName { name, member, namespace: namespace_of_section(k) });
+                    word.clear();
+                }
+                '`' => open = true,
+                '(' if !open => depth += 1,
+                ')' if !open => depth -= 1,
+                c if open => word.push(c),
+                _ => {}
+            }
+        }
+    }
+    names
+}
+
+/// The table "Implemented by the engine" of §22, as the names of its first column.
+fn engine_table() -> BTreeSet<String> {
+    let part = part_vii();
+    let s22 = section(&part, "## 22.");
+    let at = s22.find("**Implemented by the engine.**").expect("§22 has the engine table");
+    let table = &s22[at..];
+    let table = &table[..table.find("\n>").expect("a note follows the engine table")];
+    table_rows(table).into_iter().map(|row| row[0].trim_matches('`').to_string()).take_while(|n| !n.is_empty()).collect()
+}
+
+/// The names of the `pub` items of a namespace.
+fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
+    let ns = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some(namespace)).unwrap_or_else(|| panic!("std declares the namespace `{namespace}`"));
+    ns.items().into_iter().filter(|i| i.is_pub()).filter_map(|i| i.name().map(str::to_string)).collect()
+}
+
+#[test]
+fn std_root_declares_nine_namespaces() {
+    let design = embedded();
+    let root = &design.std_crate().files()[0];
+    let parsed = piperine_lang::msl::parser::parse(root.text());
+    let mut declared = Vec::new();
+    for item in &parsed.file.items {
+        let piperine_lang::msl::ast::ItemKind::Mod(m) = &item.kind else { panic!("the root declares only namespaces, found {:?}", item.kind) };
+        assert!(root.text()[item.span.0.start..item.span.0.end].contains("pub mod"), "`{}` is `pub`", m.name.name);
+        declared.push(m.name.name.clone());
+    }
+    declared.sort();
+    let mut expected: Vec<String> = NAMESPACES.iter().map(|n| n.to_string()).collect();
+    expected.sort();
+    assert_eq!(declared, expected);
+}
+
+#[test]
+fn each_namespace_holds_its_section() {
+    let design = embedded();
+    let names = |ns: &str| pub_names(&design, ns);
+    let set = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
+    assert_eq!(names("constants"), set(&["Q", "K_B", "EPS0", "PI", "E", "inf"]), "constants: §1 rule 3");
+    assert_eq!(names("carriers"), set(&["Bit", "Electrical", "Thermal", "VSignal", "Short"]), "carriers: §4 and §11");
+    for k in 1..=6 {
+        let ns = namespace_of_section(k);
+        let wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member && n.namespace == ns).map(|n| n.name).collect();
+        assert_eq!(names(ns), wanted, "{ns}: the pub items are the Index rows of §22.{k}");
+    }
+}
+
+#[test]
+fn prelude_is_eight_reexports() {
+    let design = embedded();
+    let prelude = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some("prelude")).expect("std declares the prelude");
+    let mut globbed = BTreeSet::new();
+    for item in prelude.items() {
+        let u = item.as_use().unwrap_or_else(|| panic!("the prelude holds only `use`: found `{}`", item.text()));
+        assert!(item.is_pub(), "`{}` is pub", item.text());
+        let imports = u.imports();
+        assert_eq!(imports.len(), 1, "{}", item.text());
+        assert!(imports[0].glob && imports[0].alias.is_none(), "{}", item.text());
+        let path = imports[0].path.text().to_string();
+        globbed.insert(path.strip_prefix("crate::").unwrap_or_else(|| panic!("`{path}` starts with crate::")).to_string());
+    }
+    let expected: BTreeSet<String> = NAMESPACES.iter().filter(|n| **n != "prelude").map(|n| n.to_string()).collect();
+    assert_eq!(globbed, expected);
+    assert_eq!(prelude.items().len(), 8, "one re-export per namespace");
+}
+
+#[test]
+fn embedded_list_names_every_file_once() {
+    let design = embedded();
+    let names: Vec<String> = design.std_crate().files().iter().map(|f| f.name().rsplit('/').next().unwrap().to_string()).collect();
+    assert_eq!(names[0], "lib.msl", "the root is first");
+    let mut on_disk: Vec<String> = std::fs::read_dir(std_dir()).expect("the std directory exists").map(|e| e.expect("entry").file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".msl")).collect();
+    on_disk.sort();
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(sorted, on_disk, "every file of the directory once, and no other");
+}
+
+/// The declarations of `std` named `name` that are written in the file of `namespace`.
+fn declared_in_file<'d>(design: &'d Design, namespace: &str, name: &str) -> Vec<piperine_lang::pom::Decl<'d>> {
+    let file = format!("{namespace}.msl");
+    design.std_crate().decls().into_iter().filter(|d| d.name() == Some(name) && d.file().name().ends_with(&file)).collect()
+}
+
+#[test]
+fn every_index_item_is_declared() {
+    let design = embedded();
+    let missing: Vec<String> = index_names()
+        .into_iter()
+        .filter(|n| {
+            if n.member { declared_in_file(&design, n.namespace, &n.name).is_empty() } else { design.std_crate().find(&format!("{}::{}", n.namespace, n.name)).is_none() }
+        })
+        .map(|n| format!("{}::{}", n.namespace, n.name))
+        .collect();
+    assert!(missing.is_empty(), "Index items that std does not declare in the namespace of their entry: {missing:?}");
+}
+
+#[test]
+fn every_item_but_the_intrinsics_has_a_body() {
+    let design = embedded();
+    let engine = engine_table();
+    let mut bodiless = Vec::new();
+    for decl in design.std_crate().decls() {
+        if let Some(f) = decl.as_function() {
+            let name = decl.name().unwrap_or("?").to_string();
+            if !engine.contains(&name) && f.body().is_none() {
+                bodiless.push(format!("fn {}", decl.qualified_name()));
+            }
+        }
+        if let Some(m) = decl.as_module() {
+            if m.result_type().is_some() && m.result().is_none() {
+                bodiless.push(format!("module {} has a result type but no result expression", decl.qualified_name()));
+            }
+        }
+    }
+    assert!(bodiless.is_empty(), "{bodiless:?}");
+}
+
+#[test]
+fn intrinsics_are_exactly_the_engine_table() {
+    let design = embedded();
+    let intrinsics: BTreeSet<String> = design.std_crate().decls().into_iter().filter(|d| d.as_function().is_some_and(|f| f.is_intrinsic())).filter_map(|d| d.name().map(str::to_string)).collect();
+    assert_eq!(intrinsics, engine_table());
+    assert_eq!(intrinsics.len(), 5);
+}
+
+#[test]
+fn every_intrinsic_reads_a_str() {
+    let design = embedded();
+    let mut without = Vec::new();
+    for decl in design.std_crate().decls() {
+        let Some(f) = decl.as_function().filter(|f| f.is_intrinsic()) else { continue };
+        if !f.params().iter().any(|p| p.ty().is_some_and(|t| t.text().contains("&str"))) {
+            without.push(decl.qualified_name());
+        }
+    }
+    assert!(without.is_empty(), "intrinsics with no `&str` parameter: {without:?}");
+}
+
+#[test]
+fn every_index_item_is_pub() {
+    let design = embedded();
+    let mut private = Vec::new();
+    for n in index_names() {
+        // A member of a trait is public by its trait; a member of an `impl` or a top-level item states `pub`.
+        let decls = if n.member { declared_in_file(&design, n.namespace, &n.name) } else { design.std_crate().find(&format!("{}::{}", n.namespace, n.name)).into_iter().collect() };
+        for d in decls {
+            let in_trait = d.declared_in().is_some_and(|p| p.as_trait().is_some());
+            if !in_trait && !d.is_pub() {
+                private.push(format!("{}::{}", n.namespace, n.name));
+            }
+        }
+    }
+    assert!(private.is_empty(), "Index items declared without `pub`: {private:?}");
+}
+
+#[test]
+fn std_declares_no_core_name() {
+    let design = embedded();
+    // T20 removes the six `Const` rows of the built-in table; until then they are rows and items at once.
+    let core: BTreeSet<&str> = BUILTINS.iter().map(|row| row.name).filter(|n| !["Q", "K_B", "EPS0", "PI", "E", "inf"].contains(n)).collect();
+    let mut clashes = Vec::new();
+    for namespace in design.std_crate().root().submodules() {
+        for item in namespace.items() {
+            if let Some(name) = item.name().filter(|n| core.contains(n)) {
+                clashes.push(format!("{}::{name}", namespace.name().unwrap_or("?")));
+            }
+        }
+    }
+    assert!(clashes.is_empty(), "std items named like a core name: {clashes:?}");
+}
+
+#[test]
+fn prelude_exports_equal_the_index() {
+    let design = embedded();
+    let prelude = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some("prelude")).expect("std declares the prelude");
+    let mut exported = BTreeSet::new();
+    for item in prelude.items() {
+        for import in item.as_use().expect("the prelude holds only `use`").imports() {
+            assert!(import.glob, "{}", item.text());
+            let ns = import.path.text().strip_prefix("crate::").expect("a crate path").to_string();
+            exported.extend(pub_names(&design, &ns));
+        }
+    }
+    let mut wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member).map(|n| n.name).collect();
+    wanted.extend(["Bit", "Electrical", "Thermal", "VSignal", "Short", "Q", "K_B", "EPS0", "PI", "E", "inf"].map(String::from));
+    let extra: Vec<&String> = exported.difference(&wanted).collect();
+    let missing: Vec<&String> = wanted.difference(&exported).collect();
+    assert!(extra.is_empty() && missing.is_empty(), "exported but not in the Index: {extra:?}; in the Index but not exported: {missing:?}");
+}
+
+#[test]
+fn std_root_comment_names_the_namespaces() {
+    let design = embedded();
+    let root = design.std_crate().root();
+    let comment: String = root.docs().iter().map(|d| d.text.clone()).collect::<Vec<_>>().join("\n");
+    for ns in NAMESPACES {
+        assert!(comment.contains(&format!("`{ns}`")), "the file comment of lib.msl names `{ns}`: {comment}");
+    }
+    for stale in ["future", "later", "not yet", "empty", "TODO"] {
+        assert!(!comment.to_lowercase().contains(&stale.to_lowercase()), "the file comment says `{stale}`: {comment}");
     }
 }

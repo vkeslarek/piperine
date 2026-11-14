@@ -531,24 +531,24 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `std_root_declares_nine_namespaces` passes in `std_library.rs` (C34: STD-07 AC 1)
-- [ ] Test `each_namespace_holds_its_section` passes in `std_library.rs` (C35: STD-07 AC 2)
-- [ ] Test `prelude_is_eight_reexports` passes in `std_library.rs` (C36: STD-07 AC 3)
-- [ ] Test `embedded_list_names_every_file_once` passes in `std_library.rs` (C37: STD-07 AC 4)
-- [ ] Test `every_index_item_is_declared` passes in `std_library.rs` (C39: STD-08 AC 1)
-- [ ] Test `every_item_but_the_intrinsics_has_a_body` passes in `std_library.rs` (C40: STD-08 AC 2)
-- [ ] Test `intrinsics_are_exactly_the_engine_table` passes in `std_library.rs` (C41: STD-08 AC 3)
-- [ ] Test `every_intrinsic_reads_a_str` passes in `std_library.rs` (C42: STD-08 AC 4)
-- [ ] Test `every_index_item_is_pub` passes in `std_library.rs` (C43: STD-08 AC 5)
-- [ ] Test `std_declares_no_core_name` passes in `std_library.rs` (C44: STD-08 AC 6)
-- [ ] Test `prelude_exports_equal_the_index` passes in `std_library.rs` (C53: STD-09 AC 2)
-- [ ] Test `the_forward_guard_covers_part_vii` passes in `std_excerpts.rs` (C68: STD-11 AC 3)
-- [ ] Test `the_reverse_guard_covers_std` passes in `std_excerpts.rs` (C75: STD-12 AC 5)
-- [ ] Test `std_root_comment_names_the_namespaces` passes in `std_library.rs` (C100: STD-17 AC 6)
-- [ ] No `std` item is added or changed in this task but the comment of `lib.msl`; a missing item found here is fixed in the file and fence of its section, in this commit, and named in the commit body
-- [ ] The Index and the library agree in both directions; a name in one and not the other fails `prelude_exports_equal_the_index`
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `std_root_declares_nine_namespaces` passes in `std_library.rs` (C34: STD-07 AC 1)
+- [x] Test `each_namespace_holds_its_section` passes in `std_library.rs` (C35: STD-07 AC 2)
+- [x] Test `prelude_is_eight_reexports` passes in `std_library.rs` (C36: STD-07 AC 3)
+- [x] Test `embedded_list_names_every_file_once` passes in `std_library.rs` (C37: STD-07 AC 4)
+- [x] Test `every_index_item_is_declared` passes in `std_library.rs` (C39: STD-08 AC 1)
+- [x] Test `every_item_but_the_intrinsics_has_a_body` passes in `std_library.rs` (C40: STD-08 AC 2)
+- [x] Test `intrinsics_are_exactly_the_engine_table` passes in `std_library.rs` (C41: STD-08 AC 3)
+- [x] Test `every_intrinsic_reads_a_str` passes in `std_library.rs` (C42: STD-08 AC 4)
+- [x] Test `every_index_item_is_pub` passes in `std_library.rs` (C43: STD-08 AC 5)
+- [x] Test `std_declares_no_core_name` passes in `std_library.rs` (C44: STD-08 AC 6)
+- [x] Test `prelude_exports_equal_the_index` passes in `std_library.rs` (C53: STD-09 AC 2)
+- [x] Test `the_forward_guard_covers_part_vii` passes in `std_excerpts.rs` (C68: STD-11 AC 3)
+- [x] Test `the_reverse_guard_covers_std` passes in `std_excerpts.rs` (C75: STD-12 AC 5)
+- [x] Test `std_root_comment_names_the_namespaces` passes in `std_library.rs` (C100: STD-17 AC 6)
+- [x] No `std` item is added or changed in this task but the comment of `lib.msl`; a missing item found here is fixed in the file and fence of its section, in this commit, and named in the commit body
+- [x] The Index and the library agree in both directions; a name in one and not the other fails `prelude_exports_equal_the_index`
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

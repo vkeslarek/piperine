@@ -1,7 +1,8 @@
 //! The standard library of Piperine, embedded in the `piperine-lang` crate.
 //!
-//! The root declares one `pub` namespace per section of Part VII. `prelude` re-exports every
-//! `pub` item of the others: its items are visible in every file with no import.
+//! The root declares one `pub` namespace per section of Part VII: `constants`, `carriers`,
+//! `values`, `analog`, `nets`, `convert`, `monitor` and `io`. `prelude` re-exports every `pub`
+//! item of the others: its items are visible in every file with no import.
 
 pub mod constants;
 pub mod carriers;

@@ -326,3 +326,44 @@ fn part_vii_examples_are_fragments() {
     let wrong: Vec<String> = blocks.iter().filter(|b| b.class != Class::Fragment).map(|b| format!("line {}: {:?}", b.line, b.class)).collect();
     assert!(wrong.is_empty(), "fences of Part VII that are examples but not `rust,fragment`: {wrong:?}");
 }
+
+/// The number of `rust` fences of `markdown` that the forward guard checks: those under a heading
+/// `22.k` whose file is in `files`.
+fn fences_checked(markdown: &str, files: &[(String, String)]) -> usize {
+    let lines: Vec<&str> = markdown.lines().collect();
+    extract("markdown", markdown)
+        .into_iter()
+        .filter(|b| b.class == Class::Valid)
+        .filter(|b| lines[..b.line - 1].iter().rev().find_map(|l| section_of_heading(l)).is_some_and(|s| files.iter().any(|(k, _)| *k == s)))
+        .count()
+}
+
+/// The number of top-level items (behavior blocks included) of `files`: what the reverse guard checks.
+fn items_checked(files: &[(String, String)]) -> usize {
+    files.iter().map(|(_, text)| units(text).len()).sum()
+}
+
+/// A guard that checked fewer than `floor` things checked too little to say anything.
+fn under_floor(what: &str, checked: usize, floor: usize) -> Option<String> {
+    (checked < floor).then(|| format!("{what}: checked {checked}, under the floor of {floor}"))
+}
+
+#[test]
+fn the_forward_guard_covers_part_vii() {
+    let part = part_vii();
+    let checked = fences_checked(&part, &live_sources(&part));
+    assert_eq!(under_floor("fences", checked, 45), None);
+    // The control: a guard that checked 44 fences fails the floor, one that checked 45 does not.
+    assert!(under_floor("fences", 44, 45).is_some());
+    assert!(under_floor("fences", 45, 45).is_none());
+    // And the count is of fences under a section with a file: none here.
+    assert_eq!(fences_checked("### 22.1 A\n\n```rust\npub fn a() {}\n```\n", &[]), 0);
+}
+
+#[test]
+fn the_reverse_guard_covers_std() {
+    let checked = items_checked(&std_files());
+    assert_eq!(under_floor("items", checked, 80), None);
+    assert!(under_floor("items", 79, 80).is_some());
+    assert_eq!(items_checked(&[("a.msl".to_string(), "pub fn a() {}\npub fn b() {}\n".to_string())]), 2);
+}
