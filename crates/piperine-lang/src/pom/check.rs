@@ -417,6 +417,17 @@ impl Design {
                 problems.push(format!("the {what} {} does not exist ({n} crates)", id.0));
             }
         }
+        if n > 0 {
+            if self.root_crate.index() != 0 {
+                problems.push(format!("the root crate is crate {}: it must be the first", self.root_crate.0));
+            }
+            if self.std_crate.index() != n - 1 {
+                problems.push(format!("the std crate is crate {}: it must be the last of {n}", self.std_crate.0));
+            }
+            if self.crates[n - 1].name != "std" {
+                problems.push(format!("the last crate is named `{}`: it must be `std`", self.crates[n - 1].name));
+            }
+        }
         for (i, f) in self.files.iter().enumerate() {
             if f.krate.index() >= n {
                 problems.push(format!("file {i}: crate {} does not exist ({n} crates)", f.krate.0));
@@ -444,6 +455,9 @@ impl Design {
                 }
             }
             for dep in &c.dependencies {
+                if !super::crates::is_crate_name(&dep.name) {
+                    problems.push(format!("crate {i} ({}): the dependency name `{}` is no identifier, or a keyword, or `std`", c.name, dep.name));
+                }
                 if dep.krate.index() >= n {
                     problems.push(format!("crate {i} ({}): dependency `{}` names crate {}, which does not exist ({n} crates)", c.name, dep.name, dep.krate.0));
                 }

@@ -879,6 +879,33 @@ fn from_json_rejects_a_crate_whose_root_is_not_its_own() {
 }
 
 #[test]
+fn from_json_rejects_a_crate_table_that_breaks_the_graph_rules() {
+    let (design, good) = serialized();
+    let last = design.crates().len() - 1;
+    // The root and std crates swapped: std is not last, the root is not first.
+    let swapped = edited(&good, |v| {
+        v["root_crate"] = serde_json::json!(last);
+        v["std_crate"] = serde_json::json!(0);
+    });
+    assert!(swapped.is_err(), "a swapped root and std crate were accepted");
+    // The root crate is not the first one.
+    let moved = edited(&good, |v| v["root_crate"] = serde_json::json!(1));
+    assert!(moved.is_err(), "a root crate that is not the first was accepted");
+    // std is not the last crate.
+    let early = edited(&good, |v| v["std_crate"] = serde_json::json!(1));
+    assert!(early.is_err(), "a std crate that is not the last was accepted");
+    // The last crate is not named `std`.
+    let renamed = edited(&good, |v| v["crates"][last]["name"] = serde_json::json!("lib"));
+    assert!(renamed.is_err(), "a std crate not named `std` was accepted");
+    // A dependency name that is no identifier, a keyword, or `std`.
+    for bad in ["not a name", "fn", "std", "", "9x"] {
+        let named = edited(&good, |v| v["crates"][0]["dependencies"][0]["name"] = serde_json::json!(bad));
+        let problems = named.err().unwrap_or_else(|| panic!("the dependency name {bad:?} was accepted"));
+        assert!(problems.iter().any(|p| p.contains("dependency")), "{bad:?}: {problems:?}");
+    }
+}
+
+#[test]
 fn from_json_never_panics_on_a_corrupted_crate_field() {
     let (_, good) = serialized();
     let leaves = ["root_crate", "std_crate"];
