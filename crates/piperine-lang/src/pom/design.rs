@@ -92,6 +92,18 @@ impl Design {
         Design::builder().root_file(root).build()
     }
 
+    /// Read a design back from its JSON and validate it. The derived
+    /// `Deserialize` accepts any well-formed JSON of the right shape and
+    /// checks nothing; this is the entry point for text that did not come
+    /// from [`Design::build`] in this process. `Err` lists the problems:
+    /// the text is not a design, or [`Design::check`] rejects what it holds.
+    /// It never panics.
+    pub fn from_json(text: &str) -> Result<Design, Vec<String>> {
+        let design: Design = serde_json::from_str(text).map_err(|e| vec![format!("not a design: {e}")])?;
+        let problems = design.check();
+        if problems.is_empty() { Ok(design) } else { Err(problems) }
+    }
+
     /// Every diagnostic of the build (parse diagnostics included), sorted by file, offset and code.
     pub fn diagnostics(&self) -> &[DesignDiagnostic] {
         &self.diagnostics

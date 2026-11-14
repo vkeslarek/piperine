@@ -13,7 +13,8 @@ logos = "=0.16.1"
 
 stacker = "0.1.25"
 serde.workspace = true
+# `Design::from_json` reads the serialized form.
+serde_json = "1"
 
 [dev-dependencies]
-serde_json = "1"
 tempfile.workspace = true

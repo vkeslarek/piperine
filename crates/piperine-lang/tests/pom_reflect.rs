@@ -677,3 +677,97 @@ struct Lone { z: f64 }
     assert!(design.struct_named("Lone").unwrap().impls().is_empty());
     assert!(design.struct_named("Lone").unwrap().method("go").is_none());
 }
+
+const FLOATS: &str = "const A: f64 = 1e999;\nconst B: f64 = 1e308;\nconst C: f64 = 5e-324;\nconst D: f64 = 1.5k;\nconst E: f64 = 2.5e-3f32;\n";
+
+#[test]
+fn float_literals_round_trip_through_json() {
+    // `1e999` is infinite as an `f64`: the lexer reports it, the design still serializes and reads back.
+    let design = Design::builder().source("top.msl", FLOATS).build();
+    assert!(design.diagnostics().iter().any(|d| d.diagnostic.code == "E0909"));
+    let json = serde_json::to_string(&design).expect("a design with an infinite literal serializes");
+    let back: Design = serde_json::from_str(&json).expect("and reads back");
+    assert_eq!(back.dump(), design.dump());
+    assert!(back == design);
+    assert_eq!(serde_json::to_string(&back).unwrap(), json);
+    // The values are those of the text.
+    let value = |d: &Design, name: &str| match d.find(name).and_then(|c| c.as_const()).and_then(|c| c.value()).map(|e| e.kind().clone()) {
+        Some(piperine_lang::pom::ExprKind::Lit(l)) => match l.kind {
+            piperine_lang::pom::LitKind::Float { value, .. } => value,
+            other => panic!("not a float: {other:?}"),
+        },
+        other => panic!("not a literal: {other:?}"),
+    };
+    assert_eq!(value(&back, "A"), f64::INFINITY);
+    assert_eq!(value(&back, "B"), 1e308);
+    assert_eq!(value(&back, "C"), 5e-324);
+    assert_eq!(value(&back, "D"), 1500.0);
+    assert_eq!(value(&back, "E"), 2.5e-3);
+}
+
+#[test]
+fn float_literal_is_serialized_from_its_text() {
+    use piperine_lang::pom::LitKind;
+    let lit = LitKind::Float { value: 1500.0, raw: "1.5k".to_string() };
+    let json = serde_json::to_string(&lit).unwrap();
+    assert!(json.contains("1.5k"), "{json}");
+    assert!(!json.contains("value") && !json.contains("1500"), "no numeric value is stored: {json}");
+    let back: LitKind = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, lit, "the value is recomputed from the text");
+    // The value is a function of the text: a stored number cannot disagree with it.
+    let doctored: LitKind = serde_json::from_str(&json.replace("1.5k", "2u")).unwrap();
+    assert_eq!(doctored, LitKind::Float { value: 2e-6, raw: "2u".to_string() });
+    // Other literal kinds keep their form.
+    for other in [LitKind::Int("5u8".into()), LitKind::Bool(true), LitKind::Unknown, LitKind::Str { text: "a".into(), raw_hashes: Some(1) }] {
+        let again: LitKind = serde_json::from_str(&serde_json::to_string(&other).unwrap()).unwrap();
+        assert_eq!(again, other);
+    }
+}
+
+#[test]
+fn from_json_reads_back_a_valid_design() {
+    for design in [sar_adc(), Design::builder().source("top.msl", FLOATS).build()] {
+        let json = serde_json::to_string(&design).unwrap();
+        let back = Design::from_json(&json).expect("a valid design reads back");
+        assert_eq!(back.dump(), design.dump());
+        assert!(back == design);
+    }
+}
+
+#[test]
+fn from_json_rejects_a_corrupted_design() {
+    let design = Design::builder().source("top.msl", "module M(a: Bit) { signal s: Bit; s = a; }\nfn f() -> f64 { 1.0 + 2.0 }").build();
+    let good = serde_json::to_value(&design).unwrap();
+    let edit = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = good.clone();
+        f(&mut v);
+        Design::from_json(&v.to_string())
+    };
+    let big = serde_json::json!(99_999);
+    // An id out of range, in each arena.
+    let cases = [
+        edit(&|v| v["exprs"][0]["owner"] = big.clone()),
+        edit(&|v| v["decls"][0]["children"].as_array_mut().unwrap().push(big.clone())),
+        edit(&|v| v["files"][0]["root"] = big.clone()),
+        edit(&|v| v["stmts"][0]["owner"] = big.clone()),
+    ];
+    for (i, case) in cases.iter().enumerate() {
+        let problems = case.as_ref().err().unwrap_or_else(|| panic!("case {i}: a corrupted design was accepted"));
+        assert!(!problems.is_empty(), "case {i}");
+    }
+    // A link `check()` rejects: the parent table disagrees with the nodes.
+    let broken = edit(&|v| {
+        let table = v["expr_parent"].as_array_mut().unwrap();
+        let at = table.iter().position(|p| !p.is_null()).unwrap();
+        table[at] = serde_json::Value::Null;
+    });
+    assert!(broken.unwrap_err().iter().any(|p| p.contains("parent")));
+    // Text that is not a design.
+    for text in ["", "[1, 2]", "{\"files\": 3}", "not json"] {
+        let problems = Design::from_json(text).err().unwrap_or_else(|| panic!("`{text}` was accepted"));
+        assert!(!problems.is_empty());
+    }
+    // The derived `Deserialize` stays unvalidated; `from_json` is the entry point.
+    let unchecked: Design = serde_json::from_value(good.clone()).unwrap();
+    assert!(unchecked.check().is_empty());
+}

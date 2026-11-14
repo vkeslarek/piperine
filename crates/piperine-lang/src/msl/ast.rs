@@ -293,10 +293,12 @@ impl Lit {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "LitKindRepr", into = "LitKindRepr")]
 pub enum LitKind {
     /// The text, type suffix included.
     Int(String),
-    /// The value (SI suffix applied) and the original text.
+    /// The value (SI suffix applied) and the original text. Serialized as
+    /// the text alone: the value is a function of it and is recomputed on read.
     Float { value: f64, raw: String },
     /// The text between the quotes, escapes unprocessed; a raw string holds
     /// its body with backslash and quote escaped, and its number of `#`.
@@ -304,6 +306,41 @@ pub enum LitKind {
     Bool(bool),
     /// The `Unknown` literal (A.3).
     Unknown,
+}
+
+/// The serialized shape of a [`LitKind`]: every variant as is, a float as its
+/// text only (a JSON number cannot hold `inf`, and the text is the truth).
+#[derive(Serialize, Deserialize)]
+pub enum LitKindRepr {
+    Int(String),
+    Float { raw: String },
+    Str { text: String, raw_hashes: Option<u8> },
+    Bool(bool),
+    Unknown,
+}
+
+impl From<LitKindRepr> for LitKind {
+    fn from(r: LitKindRepr) -> Self {
+        match r {
+            LitKindRepr::Int(t) => LitKind::Int(t),
+            LitKindRepr::Float { raw } => LitKind::Float { value: super::lexer::float_value(&raw), raw },
+            LitKindRepr::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes },
+            LitKindRepr::Bool(b) => LitKind::Bool(b),
+            LitKindRepr::Unknown => LitKind::Unknown,
+        }
+    }
+}
+
+impl From<LitKind> for LitKindRepr {
+    fn from(k: LitKind) -> Self {
+        match k {
+            LitKind::Int(t) => LitKindRepr::Int(t),
+            LitKind::Float { raw, .. } => LitKindRepr::Float { raw },
+            LitKind::Str { text, raw_hashes } => LitKindRepr::Str { text, raw_hashes },
+            LitKind::Bool(b) => LitKindRepr::Bool(b),
+            LitKind::Unknown => LitKindRepr::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

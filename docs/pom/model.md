@@ -37,7 +37,7 @@ Design
   instance, so classifying a call creates no node. Its name is the binding of the module-body
   `let` whose whole value is that call, when the pattern is one identifier.
 * **Serialization.** Every storage type is `Serialize + Deserialize`. The retained syntax tree
-  is not serialized: it is rebuilt from the file text on load.
+  is not serialized: it is rebuilt from the file text on load. The derived `Deserialize` is unvalidated; `Design::from_json` is the entry point for text that did not come from `build`.
 
 ## Identifiers
 
@@ -172,6 +172,7 @@ The owning, immutable object model of one set of sources. Build it with `Design:
 | `exprs / stmts / pats / types / paths` | `Vec<..Node>` | The body arenas. Read with `expr_node`, `stmt_node`, `pat_node`, `type_node`, `path_node` or the handles `expr`, `stmt`, `pat`, `ty`, `path`. |
 | `diagnostics` | `Vec<DesignDiagnostic>` | Parse, loading and resolution diagnostics, in file then source order. Read with `diagnostics()`. |
 | `index` | `Index` | The reverse tables. |
+| `expr_parent / expr_stmt` | `Vec<Option<ExprId>>`, `Vec<Option<StmtId>>` | Side tables by `ExprId`, filled once after lowering from the one child enumeration: the expression that contains each one, and the statement that holds it directly. Read with `Expr::parent` and `Expr::stmt`; `check()` verifies them against `Expr::children`. |
 
 ### `DesignBuilder`
 
@@ -1477,7 +1478,7 @@ Shape: `pub kind: LitKind`, `pub span: Loc`.
 
 ### `LitKind`
 
-*enum*. The literal forms. `Int` keeps the text with its type suffix; `Float` keeps the SI-scaled value and the raw text; `Str` keeps escapes unprocessed.
+*enum*. The literal forms. `Int` keeps the text with its type suffix; `Float` keeps the SI-scaled value and the raw text (serialized as the raw text only: the value is recomputed from it on read, so `1e999` round-trips through JSON); `Str` keeps escapes unprocessed.
 
 Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`, `Unknown`.
 

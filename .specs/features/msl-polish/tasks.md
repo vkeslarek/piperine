@@ -1228,14 +1228,14 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `float_literals_round_trip_through_json` passes in `pom_reflect.rs` (C75: POL-13 AC 8)
-- [ ] Test `float_literal_is_serialized_from_its_text` passes in `pom_reflect.rs` (C76: POL-13 AC 9)
-- [ ] Test `from_json_reads_back_a_valid_design` passes in `pom_reflect.rs` (C119: POL-21 AC 1)
-- [ ] Test `from_json_rejects_a_corrupted_design` passes in `pom_reflect.rs` (C120: POL-21 AC 2)
-- [ ] `gallery_design_round_trips_through_json` and `json_is_deterministic` still pass unchanged
-- [ ] `docs/pom` says that the derived `Deserialize` is unvalidated and `from_json` is the entry point
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `float_literals_round_trip_through_json` passes in `pom_reflect.rs` (C75: POL-13 AC 8)
+- [x] Test `float_literal_is_serialized_from_its_text` passes in `pom_reflect.rs` (C76: POL-13 AC 9)
+- [x] Test `from_json_reads_back_a_valid_design` passes in `pom_reflect.rs` (C119: POL-21 AC 1)
+- [x] Test `from_json_rejects_a_corrupted_design` passes in `pom_reflect.rs` (C120: POL-21 AC 2)
+- [x] `gallery_design_round_trips_through_json` and `json_is_deterministic` still pass unchanged
+- [x] `docs/pom` says that the derived `Deserialize` is unvalidated and `from_json` is the entry point
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

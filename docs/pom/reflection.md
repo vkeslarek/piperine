@@ -33,6 +33,7 @@ The entry point. Lookups, whole-design listings, files, diagnostics and the raw 
 | `check(&self)` | `Vec<String>` | The internal inconsistencies of the arenas, one message each; empty when the design is well formed. |
 | `builder()` | `DesignBuilder` | A builder with no sources. |
 | `load(root: impl Into<PathBuf>)` | `Design` | Read the tree rooted at `root` from disk: `mod b;` follows Rust's layout. An unreadable root gives an empty root and one `E0161`. |
+| `from_json(text: &str)` | `Result<Design, Vec<String>>` | Read a design back from its JSON and validate it: `Err` lists the problems when the text is not a design or `check()` rejects what it holds; never panics. The derived `Deserialize` is unvalidated, so `from_json` is the entry point for text that did not come from `build`. |
 | `diagnostics(&self)` | `&[DesignDiagnostic]` | Every diagnostic of the build, every diagnostic sorted by file, offset and code. |
 | `expr_node(&self, id: ExprId)` | `&ExprNode` | The expression with this id. Ids come from this design. |
 | `stmt_node(&self, id: StmtId)` | `&StmtNode` | The statement node with this id. |
@@ -106,7 +107,7 @@ assert!(design.dump().starts_with("Namespace"));
 ```
 
 A design is a plain value: it is `Clone`, comparable with `==`, and serializable. The retained
-syntax tree is rebuilt from the text when a design is read back, so it is not part of the JSON.
+syntax tree is rebuilt from the text when a design is read back, so it is not part of the JSON. A float literal is serialized as its source text only (the value is recomputed on read), so a design holding `1e999` round-trips. The derived `Deserialize` checks nothing; read untrusted JSON with `Design::from_json`.
 
 ```rust
 use piperine_lang::pom::Design;
@@ -117,6 +118,10 @@ assert!(!json.contains("\"ast\""));
 let back: Design = serde_json::from_str(&json).unwrap();
 assert!(back == design);
 assert_eq!(back.files()[0].ast(), design.files()[0].ast());
+
+// `from_json` also validates.
+assert!(Design::from_json(&json).is_ok());
+assert!(Design::from_json("[1, 2]").is_err());
 ```
 
 ### `DesignBuilder`

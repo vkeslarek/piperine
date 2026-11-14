@@ -801,6 +801,22 @@ fn unknown_suffix(text: &str, span: Span) -> Diagnostic {
     Diagnostic::new("E0900", format!("invalid literal `{text}`"), span, "unknown literal suffix")
 }
 
+/// The value of a float literal from its text (SI suffix applied, a `f32` or
+/// `f64` suffix ignored): what the lexer computed when it read `raw`. A text
+/// that is no float literal gives `NaN`.
+pub fn float_value(raw: &str) -> f64 {
+    let suffix = float_suffix(raw);
+    let number = &raw[..raw.len() - suffix.len()];
+    let exp = match suffix {
+        "" | "f32" | "f64" => 0,
+        _ => match suffix.chars().next().and_then(|c| SI_SUFFIXES.iter().find(|(s, _)| *s == c)) {
+            Some((_, exp)) if suffix.chars().count() == 1 => *exp,
+            _ => return f64::NAN,
+        },
+    };
+    parse_f64(number, exp)
+}
+
 /// The nearest `f64` to `number` scaled by `10^exp10`: the exact decimal
 /// product, parsed once, never `number * 1e-6` (A.2 rule 6).
 fn parse_f64(number: &str, exp10: i32) -> f64 {
