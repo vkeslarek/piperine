@@ -42,17 +42,17 @@ Feature (A) of `.specs/features/solver-completeness/`. Structure only: no solver
 | `piperine-ir` | removed with the crate; the one function the solver uses (`predict_crossing`, with `CrossDir` and `Prediction`) is copied into the digital crate with its two tests | Q10 | y - user: "Vamos remover o IR, cranelift e Python por agora" |
 | Solver test targets deleted | the eight targets whose every assertion is about removed surface: `check_posture`, `margin_eval_points`, `validation_findings`, `validation_gating`, `validation_postures`, `specify_timing_check_enforcement`, `scheduler_region_queue_parity`, `vams_stratified_regions` (30 tests) | Q3, Q4 | y - user: "o que precisar apagar, pode apagar" |
 | Test functions deleted inside kept targets | only a function whose every assertion is about a removed item (for example the `HAS_DISTO2` rows of `capabilities_contract`); each is named in its commit body | Q3; the rule keeps the verifier able to audit | y - follows from Q3 |
-| Root package tests | every `tests/*.rs` of the root package is deleted except `tests/suite_hygiene.rs`; `tests/support/`, `tests/spice/` and every `.vams` under `tests/` go; `tests/ngspice/*.cir` stay as the oracles of the later parity runs | user: remove "the root package's VAMS e2e tests". All 100 other targets drive the deleted frontend. The hygiene guard is not an end-to-end test; it stays, uncompiled like the rest of the root package, until the host feature rewrites it | n |
-| `examples/` | `examples/*.vams` deleted, as the user said. The `.py` drivers, plots and `Piperine.toml` are left untouched | the user named only the `.vams` files. The `.py` files load them and are dead; deleting them is the user's call | n |
+| Root package tests | every `tests/*.rs` of the root package is deleted; `tests/spice/` and every `.vams` under `tests/` go; `tests/ngspice/*.cir` stay as the oracles of the later parity runs. `tests/suite_hygiene.rs` is not deleted: it moves, with `tests/support/sources.rs`, into `crates/piperine-lang/tests/` and keeps enforcing over the whole repository's kept sources | user: remove "the root package's VAMS e2e tests"; round 3: "Move guard, delete py" | y |
+| `examples/` | `examples/*.vams`, `examples/*.py`, the plot images (`examples/*.png`) and `examples/requirements.txt` are deleted. `examples/Piperine.toml` and `Piperine.lock` stay | user, round 3: "Move guard, delete py"; `requirements.txt` lists only what the Python drivers import | y |
 | Workspace `default-members` | set to `piperine-lang` and the three solver crates, so a bare `cargo build` or `cargo test` at the root covers exactly the crates expected green | five kept crates are expected broken; without this a bare `cargo` command at the root fails | y - planner decision |
 | Baseline | the first task that makes the suite run records the list of passing tests per target; that list minus the announced removals is what must pass at the end. A test that fails on that first run stops the feature for the user | nobody has run this suite since the frontend was deleted | y - planner decision |
 | Unit tests that sit in a module being moved | they move with the module and keep their assertions. The unit tests of `math/integration.rs` that build a full `Element` move to the owner crate | they need the composed `Element`, which stays in the owner | y - planner decision |
 | Lint gate | `cargo build --all-targets` with zero warnings; no `#![allow]` at file scope (MD-33) | the repo's bar ("zero warnings is the bar") | y - settled by the repo |
 | Who builds | Sonnet implements, Opus verifies | user, round 2 | y |
 
-**Open questions:** two rows above are marked `n` (the fate of `tests/suite_hygiene.rs` and of `examples/*.py`). Both have a conservative default that deletes nothing the user did not name. Neither blocks the plan.
+**Open questions:** none. The two rows that were open (the hygiene guard, the Python examples) were answered by the user in round 3 and are recorded above.
 
-**Implicit-requirement dimensions.** Input validation & bounds: N/A because no interface gains an input. Failure / partial failure: SR-01 AC 5 (a red baseline stops the feature). Idempotency / retry: N/A because nothing runs twice. Auth and rate limits: N/A because the solver is an in-process library. Concurrency / ordering: SR-05 AC 2 (event order unchanged when the region key goes). Data lifecycle: N/A because no data is stored. Observability: N/A because no logging changes. External-dependency failure: SR-02 AC 3 (the workspace loads with the crates gone). State-transition integrity: SR-05 (behavior preserved across every move).
+**Implicit-requirement dimensions.** Input validation & bounds: N/A because no interface gains an input. Failure / partial failure: SR-01 AC 5 (a red baseline stops the feature), SR-07 AC 6 (a red guard stops it). Idempotency / retry: N/A because nothing runs twice. Auth and rate limits: N/A because the solver is an in-process library. Concurrency / ordering: SR-05 AC 2 (event order unchanged when the region key goes). Data lifecycle: N/A because no data is stored. Observability: N/A because no logging changes. External-dependency failure: SR-02 AC 3 (the workspace loads with the crates gone). State-transition integrity: SR-05 (behavior preserved across every move).
 
 ---
 
@@ -89,8 +89,8 @@ Role: the **solver developer** is whoever implements features (B) onward; the **
 1. The directories `crates/piperine-ir`, `crates/piperine-codegen`, `crates/piperine-python`, `crates/piperine-plugin` and `crates/piperine-plugin-macros` SHALL not exist.
 2. No `Cargo.toml` of the tree SHALL name one of those five crates, and the root manifest SHALL hold no `[profile.dev.package.*]` entry for a Cranelift crate.
 3. WHEN `cargo metadata --no-deps` runs at the root THEN it SHALL succeed.
-4. The root `tests/` directory SHALL hold no `.rs` file other than `suite_hygiene.rs` and no `.vams` file.
-5. The `examples/` directory SHALL hold no `.vams` file.
+4. The root `tests/` directory SHALL hold no `.rs` file and no `.vams` file, and SHALL still hold the `.cir` files of `tests/ngspice/`.
+5. The `examples/` directory SHALL hold no `.vams`, `.py` or `.png` file and no `requirements.txt`.
 6. The root manifest SHALL set `default-members` to `piperine-lang` and the three solver crates.
 7. No workflow under `.github/workflows/` SHALL build or test a removed crate.
 
@@ -158,6 +158,25 @@ Role: the **solver developer** is whoever implements features (B) onward; the **
 
 ---
 
+### P1: The hygiene guard keeps enforcing ⭐ MVP
+
+**User Story**: As a solver developer, I want the suite-hygiene guard to run in a crate that builds, so that switched-off tests, ignored tests, missing scope headers and file-scope lint suppression are still refused while the root package does not compile.
+
+**Why P1**: The guard is the repository's gate (MD-31). Left in the root package it compiles with nothing and enforces nothing. User, round 3: "Move guard, delete py".
+
+**Acceptance Criteria**:
+
+1. The guard SHALL live at `crates/piperine-lang/tests/suite_hygiene.rs`, with its walk helper beside it under `crates/piperine-lang/tests/support/`, and no `suite_hygiene.rs` SHALL remain under the root `tests/`.
+2. WHEN `cargo test -p piperine-lang --test suite_hygiene` runs THEN all of its tests SHALL pass.
+3. WHEN the guard walks the repository THEN it SHALL read the root `src/`, every `crates/*/src` and every `crates/*/tests` of the kept crates, the three solver crates included, starting from the repository root and not from the crate that hosts it.
+4. The moved guard SHALL hold each of the 18 test functions it has at e129b869, under the same names.
+5. The moved guard SHALL hold no registration or exemption that names a path under a removed crate or a deleted file.
+6. IF a test of the guard fails on a kept source for a reason that predates this feature THEN the work SHALL stop and the failure SHALL be reported to the user; no detector SHALL be loosened to pass.
+
+**Independent Test**: plant `#[ignore]` on one solver test locally; `cargo test -p piperine-lang --test suite_hygiene` names the file and line; remove it and the guard is green.
+
+---
+
 ### P2: The repository says what it now is
 
 **User Story**: As anyone opening the repository, I want the instructions and the decision log to describe the workspace that exists, so that no agent tries to build a crate that is gone.
@@ -193,8 +212,9 @@ Role: the **solver developer** is whoever implements features (B) onward; the **
 | SR-04 | P1: Three crates with a boundary the compiler enforces | Tasks | In Tasks |
 | SR-05 | P1: Nothing changed | Tasks | In Tasks |
 | SR-06 | P2: The repository says what it now is | Tasks | In Tasks |
+| SR-07 | P1: The hygiene guard keeps enforcing | Tasks | In Tasks |
 
-**Coverage:** 6 total, 6 mapped to tasks, 0 unmapped.
+**Coverage:** 7 total, 7 mapped to tasks, 0 unmapped.
 
 ---
 

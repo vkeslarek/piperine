@@ -14,6 +14,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run solver**: `cargo test -p piperine-solver`
 **Run analog**: `cargo test -p piperine-analog-solver`
 **Run digital**: `cargo test -p piperine-digital-solver`
+**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Do not set `CARGO_TARGET_DIR`. Never pass `--workspace` and never run `cargo clean`: five kept crates do not compile (`piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root `piperine` shell) and are expected to stay that way through this feature. Do not push.
 
@@ -41,6 +42,7 @@ Rules every task follows:
 | Digital sub-solver crate | unit | every unit test of the modules it receives passes there, same assertions | `crates/piperine-digital-solver/src/**` (`#[cfg(test)]`) | `cargo test -p piperine-digital-solver` |
 | Test element library | integration | each element checked against an analytic value; each `param_stamps` against a central difference | `crates/piperine-solver/tests/helper_devices.rs` | `cargo test -p piperine-solver --test helper_devices` |
 | Structural guards (manifests, removed names, crate boundary, instruction files) | integration | one test per spec criterion of SR-02, SR-03, SR-04, SR-06 | `crates/piperine-solver/tests/{workspace_shape,removed_surface,crate_boundaries}.rs` | `cargo test -p piperine-solver --test <target>` |
+| The hygiene guard | integration | its 18 tests pass from `piperine-lang`, plus one test that the walk reaches the solver crates | `crates/piperine-lang/tests/suite_hygiene.rs` | `cargo test -p piperine-lang --test suite_hygiene` |
 | Workspace manifests, CI workflows, deleted files, `CLAUDE.md`, `AGENTS.md`, `.specs/STATE.md` | integration | covered by the guard test the same task adds to `workspace_shape.rs` | `crates/piperine-solver/tests/workspace_shape.rs` | `cargo test -p piperine-solver --test workspace_shape` |
 
 ## Gate Check Commands
@@ -57,7 +59,7 @@ Rules every task follows:
 
 ## Execution Plan
 
-Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order. Five batches, one per phase (7, 5, 6, 6, 2 tasks).
+Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order. Five batches, one per phase (7, 5, 6, 6, 3 tasks).
 
 ### Phase 1: The suite runs alone
 
@@ -83,10 +85,10 @@ T13 → T14 → T15 → T16 → T17 → T18
 T19 → T20 → T21 → T22 → T23 → T24
 ```
 
-### Phase 5: Instructions and decision
+### Phase 5: Instructions, decision and the hygiene guard
 
 ```
-T25 → T26
+T25 → T26 → T27
 ```
 
 ---
@@ -291,16 +293,16 @@ T25 → T26
 
 ### T10: Delete the root package's VAMS suite
 
-**What**: Delete every root test target except the hygiene guard, with its support code and Verilog-AMS fixtures.
-**Where**: `tests/` (root: every `*.rs` except `suite_hygiene.rs`; `tests/support/`; `tests/spice/`; every `*.vams` under `tests/`)
+**What**: Delete every root test target except the hygiene guard, with its support code and Verilog-AMS fixtures. The guard stays in place until T27 moves it.
+**Where**: `tests/` (root: every `*.rs` except `suite_hygiene.rs`; everything under `tests/support/` except `sources.rs`, which the guard includes; `tests/spice/`; every `*.vams` under `tests/`)
 **Depends on**: T9
 **Reuses**: nothing
 **Requirement**: SR-02
 
 **Done when**:
 
-- [ ] `tests/*.rs` is exactly `tests/suite_hygiene.rs`, untouched; no `.vams` file exists under `tests/`; `tests/ngspice/*.cir` are all still there
-- [ ] `workspace_shape.rs` gains `root_tests_hold_only_the_hygiene_guard` (C10), which also asserts that at least one `.cir` file remains under `tests/ngspice/`
+- [ ] `tests/*.rs` is exactly `tests/suite_hygiene.rs`, untouched; `tests/support/` holds only `sources.rs`, untouched; no `.vams` file exists under `tests/`; `tests/ngspice/*.cir` are all still there
+- [ ] `workspace_shape.rs` gains `root_tests_hold_no_end_to_end_target` (C10): no `.vams` under `tests/`, at least one `.cir` under `tests/ngspice/`, and no `.rs` directly under `tests/` other than `suite_hygiene.rs` (T27 tightens this to none)
 - [ ] Gate: full
 
 **Tests**: integration
@@ -309,23 +311,23 @@ T25 → T26
 
 ---
 
-### T11: Delete `examples/*.vams`
+### T11: Delete the Verilog-AMS and Python examples
 
-**What**: Delete the Verilog-AMS example sources.
-**Where**: `examples/` (every `*.vams`)
+**What**: Delete the Verilog-AMS example sources, their Python drivers and the plots.
+**Where**: `examples/` (every `*.vams`, `*.py`, `*.png`, and `requirements.txt`)
 **Depends on**: T10
 **Reuses**: nothing
 **Requirement**: SR-02
 
 **Done when**:
 
-- [ ] No `.vams` file exists under `examples/`; every other file of `examples/` is untouched
-- [ ] `workspace_shape.rs` gains `examples_hold_no_vams` (C11)
+- [ ] No `.vams`, `.py` or `.png` file and no `requirements.txt` exists under `examples/`; `Piperine.toml` and `Piperine.lock` are untouched
+- [ ] `workspace_shape.rs` gains `examples_hold_no_vams_or_python` (C11)
 - [ ] Gate: full
 
 **Tests**: integration
 **Gate**: full
-**Commit**: `chore(workspace): delete the Verilog-AMS examples`
+**Commit**: `chore(workspace): delete the Verilog-AMS and Python examples`
 
 ---
 
@@ -660,11 +662,38 @@ T25 → T26
 - [ ] The handoff snapshot gains a short entry for `solver-restructure`
 - [ ] `workspace_shape.rs` gains `state_records_the_solver_structure_decision` (C36): the heading exists and its section names the three crates
 - [ ] `cargo test` on the three solver crates is green; `cargo build --all-targets` on `piperine-lang` and the three solver crates prints no warning (C33)
+- [ ] Gate: full
+
+**Tests**: integration
+**Gate**: full
+**Commit**: `docs(specs): MD-58 the solver is three crates`
+
+---
+
+### T27: Move the hygiene guard into `piperine-lang`
+
+**What**: Move `suite_hygiene` and its walk helper into a crate that builds, rooted at the repository, enforcing over every kept source.
+**Where**: `crates/piperine-lang/tests/suite_hygiene.rs` (+ `crates/piperine-lang/tests/support/sources.rs`; both moved with `git mv` from the root `tests/`)
+**Depends on**: T26
+**Reuses**: the guard as it is; `crates/piperine-lang/tests/support/` (existing directory)
+**Requirement**: SR-07, SR-02
+
+**Done when**:
+
+- [ ] Both files are moved with `git mv`; no `.rs` file remains under the root `tests/`, and `tests/support/` is gone
+- [ ] `repo_root()` resolves to the repository root (`CARGO_MANIFEST_DIR/../..`); the walk functions return the same repository-relative paths as before, so no detector and no message changes
+- [ ] The 18 test functions exist under their names (C40); no detector function (`is_disabled_marker`, `is_ignore_attribute`, `is_file_scope_allow`, `dead_architecture_identifiers_in`, ...) is edited
+- [ ] Registrations and exemptions that name a path under a removed crate or a deleted file are removed; an entry for a solver file that moved is re-pointed to its new path; nothing else in the registries changes (C41)
+- [ ] A new test `the_walk_covers_the_three_solver_crates` asserts that the library-source walk returns at least one file under each of `crates/piperine-solver/src`, `crates/piperine-analog-solver/src`, `crates/piperine-digital-solver/src` and `crates/piperine-lang/src` (C42)
+- [ ] `cargo test -p piperine-lang --test suite_hygiene` passes (C39). **If a test fails on a kept source for a reason that predates this feature (including the "more than 100 library sources" assertion): stop, change nothing, report the test and its output** (SR-07 AC 6)
+- [ ] `root_tests_hold_no_end_to_end_target` in `workspace_shape.rs` is tightened to "no `.rs` file under the root `tests/`", and `workspace_shape.rs` gains `hygiene_guard_lives_in_piperine_lang` (C43)
+- [ ] The new guard targets of this feature (`workspace_shape`, `removed_surface`, `crate_boundaries`, `event_order`, `helper_devices`, `integration_scheme_elements`) pass the guard's own rules: `//!` header, no `#[ignore]`, no file-scope `#![allow]`
+- [ ] `cargo test` on `piperine-lang` and the three solver crates is green; `cargo build --all-targets` on the four prints no warning
 - [ ] Gate: build
 
 **Tests**: integration
 **Gate**: build
-**Commit**: `docs(specs): MD-58 the solver is three crates`
+**Commit**: `test(lang): the suite-hygiene guard moves to piperine-lang`
 
 ---
 
@@ -697,11 +726,11 @@ Proof: run solver | test no_manifest_names_a_retired_crate ... ok
 **C9** - The workspace manifest loads (SR-02, AC 3)
 Proof: `cargo metadata --no-deps --format-version 1 > /dev/null`
 
-**C10** - The root `tests/` holds no `.rs` file but `suite_hygiene.rs`, no `.vams`, and keeps the `.cir` oracles (SR-02, AC 4)
-Proof: run solver | test root_tests_hold_only_the_hygiene_guard ... ok
+**C10** - The root `tests/` holds no `.rs` file and no `.vams`, and keeps the `.cir` oracles (SR-02, AC 4)
+Proof: run solver | test root_tests_hold_no_end_to_end_target ... ok
 
-**C11** - `examples/` holds no `.vams` file (SR-02, AC 5)
-Proof: run solver | test examples_hold_no_vams ... ok
+**C11** - `examples/` holds no `.vams`, `.py` or `.png` file and no `requirements.txt` (SR-02, AC 5)
+Proof: run solver | test examples_hold_no_vams_or_python ... ok
 
 **C12** - `default-members` is `piperine-lang` plus the three solver crates (SR-02, AC 6)
 Proof: run solver | test default_members_are_the_green_crates ... ok
@@ -784,6 +813,24 @@ Proof: `! git diff --diff-filter=M e129b869 -- crates/piperine-solver/tests ':(e
 **C38** - The baseline of the first green run is recorded, so a red test at that point was visible before any structure moved (SR-01, AC 5)
 Proof: `test "$(wc -l < .specs/features/solver-restructure/baseline.txt)" -ge 250`
 
+**C39** - The moved guard passes on the kept sources (SR-07, AC 2)
+Proof: `cargo test -p piperine-lang --test suite_hygiene`
+
+**C40** - The moved guard holds the 18 test functions it had at e129b869, by name (SR-07, AC 4)
+Proof: `test -z "$(comm -23 <(git show e129b869:tests/suite_hygiene.rs | grep -A1 '^#\[test\]' | grep -oE '^fn [a-z_0-9]+' | sort) <(grep -oE '^fn [a-z_0-9]+' crates/piperine-lang/tests/suite_hygiene.rs | sort))"`
+
+**C41** - The moved guard names no path under a removed crate (SR-07, AC 5)
+Proof: `! grep -nE 'crates/piperine-(codegen|ir|python|plugin|plugin-macros)/' crates/piperine-lang/tests/suite_hygiene.rs`
+
+**C42** - The guard's walk starts at the repository root and reaches the three solver crates and `piperine-lang` (SR-07, AC 3)
+Proof: run hygiene | test the_walk_covers_the_three_solver_crates ... ok
+
+**C43** - The guard lives in `crates/piperine-lang/tests/` with its helper, and none remains under the root `tests/` (SR-07, AC 1)
+Proof: run solver | test hygiene_guard_lives_in_piperine_lang ... ok
+
+**C44** - No detector of the guard was loosened: its detector self-test is unchanged and passes (SR-07, AC 6)
+Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok
+
 ---
 
 ## Handoff
@@ -805,10 +852,10 @@ Phase 1:  T1 → T2 → T3 → T4 → T5 → T6 → T7
 Phase 2:  T8 → T9 → T10 → T11 → T12
 Phase 3:  T13 → T14 → T15 → T16 → T17 → T18
 Phase 4:  T19 → T20 → T21 → T22 → T23 → T24
-Phase 5:  T25 → T26
+Phase 5:  T25 → T26 → T27
 ```
 
-Batches: one per phase, five in all (7, 5, 6, 6, 2 tasks). Batch 1 is the only one that can stop the feature on a pre-existing red test (T1).
+Batches: one per phase, five in all (7, 5, 6, 6, 3 tasks). Batch 1 is the only one that can stop the feature on a pre-existing red test (T1).
 
 ## Task Granularity Check
 
@@ -819,10 +866,10 @@ Every task is one move, one removal or one port. The validator's "`Where` names 
 | Kind | Deleted |
 | --- | --- |
 | Crates | `piperine-codegen`, `piperine-ir`, `piperine-python`, `piperine-plugin`, `piperine-plugin-macros` |
-| Root package | every `tests/*.rs` except `suite_hygiene.rs`; `tests/support/`; `tests/spice/`; every `.vams` under `tests/` |
-| Examples | `examples/*.vams` |
+| Root package | every `tests/*.rs` (the hygiene guard and `support/sources.rs` are moved to `piperine-lang`, not deleted); the rest of `tests/support/`; `tests/spice/`; every `.vams` under `tests/` |
+| Examples | `examples/*.vams`, `examples/*.py`, `examples/*.png`, `examples/requirements.txt` |
 | Solver source | `analyses/disto.rs`, `core/output.rs`, `core/validation.rs`, `core/margin.rs`, `core/coverage.rs`, `digital/delays.rs`, `digital/regions.rs`, `simprobe`, the `Element` hooks and capability flags that served them, `Context.io`, the check postures |
 | Solver test targets | `check_posture`, `margin_eval_points`, `validation_findings`, `validation_gating`, `validation_postures`, `specify_timing_check_enforcement`, `scheduler_region_queue_parity`, `vams_stratified_regions` (30 tests), plus single test functions named in `removed.txt` |
 | Dependencies | `rayon`, `rand_distr`, `piperine-ir` (solver); `piperine-lang`, `piperine-codegen` (solver dev); the Cranelift profile entries |
 
-Kept and expected not to compile at the end: `piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root `piperine` shell (with `tests/suite_hygiene.rs`).
+Kept and expected not to compile at the end: `piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root `piperine` shell.

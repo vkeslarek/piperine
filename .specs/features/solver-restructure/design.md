@@ -104,6 +104,15 @@ The owner depends on both. `piperine-analog-solver` and `piperine-digital-solver
 - **Interfaces**: `prelude` and `abi` re-export the same names, now sourced from the sub-crates (`pub use piperine_analog_solver::...`). Internal `crate::math::...`, `crate::analog::...`, `crate::digital::...` paths become the sub-crate paths; no `pub use` shim modules named `math`, `analog` or `digital` are kept in the owner, so a leftover internal path is a compile error, not a silent alias.
 - **Why `AnalogDevice` stays here**: `load_dc` and `load_transient` take `DcAnalysisState` and `TransientAnalysisState`, which hold `digital: &[LogicValue]`. That field is the shared-state coupling feature (B) replaces with events. Moving the trait now would force the analog crate to name a digital type.
 
+### The hygiene guard, moved
+
+- **Purpose**: keep `suite_hygiene` enforcing while the root package does not compile.
+- **Location**: `crates/piperine-lang/tests/suite_hygiene.rs` and `crates/piperine-lang/tests/support/sources.rs`, moved with `git mv` from the root `tests/`.
+- **Interfaces**: the same 18 tests. `repo_root()` in `support/sources.rs` resolves to `CARGO_MANIFEST_DIR/../..` instead of `CARGO_MANIFEST_DIR`; the walk functions keep returning repository-relative paths, so every detector and every `file:line` message is unchanged.
+- **What changes besides the root**: registrations and exemptions that name a deleted path are removed (the ignored-doc-fence entry for `crates/piperine-plugin/src/lib.rs`, the oversized-`mod.rs` entry for `crates/piperine-codegen/src/resolve/mod.rs`, any entry for a moved solver file is re-pointed to its new path). `root_targets_match_the_naming_rule` stays and passes on an empty root `tests/`.
+- **Why `piperine-lang`**: it is the one non-solver crate that builds, the guard has no dependency beyond `std`, and a guard over the whole repository should not live in a crate the solver features rewrite.
+- **Why last**: it runs after the split, so it walks the final tree and its registrations are fixed once.
+
 ### Guards
 
 - **Purpose**: keep the structure true after this feature (MD-31).
@@ -150,6 +159,7 @@ What each phase-3 task removes, and what it must leave alone.
 | `PlanLimits::default()` is built inline in the circuit | `src/core/circuit.rs:298` | splitting the struct could change which default applies | `DigitalLimits::default()` carries the same two literals (1000, 1e-12); a test asserts them |
 | `SolverDomain` keeps `Digital` and `Bridge` variants inside the analog crate | `src/error.rs:7` | the analog crate names a digital concept in an enum | disclosed; feature (B) replaces string errors with typed run errors per side |
 | Root package and four kept crates do not compile | `Cargo.toml`, `crates/piperine-{api,cli,project,lang-server}` | a bare `cargo build` at the root fails | `default-members`; every gate of this feature is `-p` |
+| The moved guard may be red on a kept source for old reasons (it has not compiled since the root package broke), and it asserts that the walk finds more than 100 library sources | `tests/suite_hygiene.rs:51` | a red gate at the end of the feature | T27 stops and reports; no detector or threshold is loosened without the user |
 | CLAUDE.md is loaded into every session and describes the VAMS pipeline | `CLAUDE.md` | agents of later features are misled | Phase 5 rewrites the crate table and the build section |
 
 ---

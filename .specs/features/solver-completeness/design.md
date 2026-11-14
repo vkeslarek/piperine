@@ -106,7 +106,7 @@ The discontinuity path is the solver's present one (Q7): land on the event time,
 | Analog loaders read a digital snapshot | `DcAnalysisState.digital`, `TransientAnalysisState.digital` | the boundary is shared state, not events; it keeps `AnalogDevice` and the drivers in the owner crate through A | (B) replaces the snapshot with boundary events, then moves the analog contract into the analog crate |
 | Every digital event time is a mandatory analog landing point | `src/analyses/transient.rs:890` | a free-running clock cuts every analog step | SCE-03 |
 | The sparsity pattern is fixed from one dry-run load | `src/math/newton_raphson.rs:121` | a switch branch that changes kind can stamp outside the pattern | SCN-04 |
-| §15.2 states an instantaneous jump the kept algorithm does not produce at the same `t` | `docs/spec/part_v_execution.md` §15.2 | spec and solver disagree on one observable | open question of feature (B) |
+| §15.2 states an instantaneous jump the kept algorithm does not produce at the same `t` | `docs/spec/part_v_execution.md` §15.2 | spec and solver disagree on one observable | feature (B) amends §15.2 to the kept algorithm (user, round 3) |
 
 ---
 
