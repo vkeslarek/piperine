@@ -27,12 +27,12 @@ port           ::= attrs dir? IDENT ':' ( sigtype | type ) ( '=' expr )?        
 dir            ::= 'in' | 'out'
 sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
 module_item    ::= attrs 'pub'? ( param | signal_decl | 'let' pat '=' expr ';' )
-                 | place '=' expr ( 'after' expr )? ';'                         // a definition
+                 | attrs place '=' expr ( 'after' expr )? ';'                    // a definition
                  | gen<module_item>
 param          ::= IDENT ':' type ( '=' expr )? ( 'where' expr )? ';'
 signal_decl    ::= 'signal' IDENT ':' sigtype ( '=' expr )? ';'
-gen<X>         ::= 'for' pat 'in' expr '{' X* '}'
-                 | 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
+gen<X>         ::= attrs 'for' pat 'in' expr '{' X* '}'
+                 | attrs 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
 place          ::= path ( '[' expr ']' | '.' IDENT )*                           // a carrier, an element or a field of one
 instance       ::= callee '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')' ( '{' ( IDENT ':' expr ',' )* '}' )?
 callee         ::= path generic_args? | call | '(' expr ')'

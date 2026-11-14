@@ -19,9 +19,9 @@ carrier, change, node, branch, probe, `gnd`, signal-flow node, bundle, view.
 
 ```
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
-nature_field   ::= ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
-                 | 'value' ':' type
-                 | 'resolve' ':' expr                                           // a fn(&[T]) -> T
+nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
+                 | attrs 'value' ':' type
+                 | attrs 'resolve' ':' expr                                           // a fn(&[T]) -> T
 ```
 
 **Static semantics**

@@ -504,3 +504,84 @@ fn place_has_no_parentheses() {
     assert!(b33.contains("A `place` takes no parentheses, in a definition and in a commit alike"), "{b33}");
     assert!(b33.contains("`(q) = 1;`") && b33.contains("`(q) <- 1;`"), "{b33}");
 }
+
+/// The line of `text` that starts with the production name `name` followed by `::=`.
+fn production<'a>(text: &'a str, name: &str) -> Vec<&'a str> {
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines
+        .iter()
+        .position(|l| l.starts_with(name) && l[name.len()..].trim_start().starts_with("::="))
+        .unwrap_or_else(|| panic!("no production `{name}`"));
+    let mut out = vec![lines[start]];
+    for l in &lines[start + 1..] {
+        if l.trim_start().starts_with('|') {
+            out.push(l);
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+#[test]
+fn attrs_are_allowed_before_statements_and_hardware_items() {
+    // POL-08 AC 1: A.4 rule 1, and B.3.2 with its excerpts in §4, §8 and §10.
+    let a4 = one_line(&section(&spec("appendix_a_lexical.md"), "## A.4"));
+    for needle in [
+        "an attribute may precede",
+        "every statement",
+        "a reaction",
+        "a definition",
+        "a generation `for` or `if`",
+        "a nature field",
+        "a contribution",
+        "a commit",
+    ] {
+        assert!(a4.contains(needle), "{needle}: {a4}");
+    }
+    let sources = [
+        ("appendix_b_grammar.md", spec("appendix_b_grammar.md")),
+        ("part_ii_carriers.md", spec("part_ii_carriers.md")),
+        ("part_iii_structure.md", spec("part_iii_structure.md")),
+        ("part_iv_behavior.md", spec("part_iv_behavior.md")),
+    ];
+    for (file, text) in &sources {
+        let has = |name: &str| text.lines().any(|l| l.starts_with(name) && l[name.len()..].trim_start().starts_with("::="));
+        let check = |name: &str, needle: &str, at: &str| {
+            let p = production(text, name).join(" ");
+            let ok = if at == "all" { p.matches(needle).count() >= 1 } else { p.contains(at) };
+            assert!(ok && p.contains(needle), "{file}: `{name}` lacks `{needle}`: {p}");
+        };
+        if has("nature_field") {
+            let p = production(text, "nature_field").join("\n");
+            assert!(p.lines().next().unwrap().contains("attrs ( 'potential'"), "{file}: {p}");
+            assert!(p.contains("| attrs 'value'") && p.contains("| attrs 'resolve'"), "{file}: {p}");
+        }
+        if has("reaction") {
+            check("reaction", "attrs 'on'", "all");
+            check("contribution", "attrs expr", "all");
+        }
+        if has("commit") {
+            check("commit", "attrs place", "all");
+        }
+        if has("gen<X>") {
+            let p = production(text, "gen<X>").join(" ");
+            assert_eq!(p.matches("attrs").count(), 2, "{file}: {p}");
+        }
+        if has("module_item") {
+            let p = production(text, "module_item").join(" ");
+            assert!(p.contains("| attrs place '='"), "{file}: {p}");
+        }
+    }
+}
+
+#[test]
+fn quantity_and_reaction_docs_are_metadata() {
+    // POL-08 AC 2: A.4 and §21.
+    let a4 = one_line(&section(&spec("appendix_a_lexical.md"), "## A.4"));
+    assert!(a4.contains("the doc comments of a quantity and of a reaction are metadata"), "{a4}");
+    assert!(a4.contains("those of a statement are kept in the tree and have no other effect"), "{a4}");
+    let s21 = one_line(&section(&spec("part_vi_io.md"), "## 21."));
+    assert!(s21.contains("a quantity of a nature, a reaction, a definition and a generation"), "{s21}");
+    assert!(s21.contains("the docs of a statement are kept in the tree and have no other effect"), "{s21}");
+}

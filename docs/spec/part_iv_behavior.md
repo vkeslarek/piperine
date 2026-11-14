@@ -24,11 +24,11 @@ behavior_block ::= 'analog'  names? 'for' path generic_args? '{' ( stmt | contri
                  | 'digital' names? 'for' path generic_args? '{' digital_item* '}'
 names          ::= '<' IDENT ( ',' IDENT )* '>'
 digital_item   ::= reaction | gen<digital_item>
-gen<X>         ::= 'for' pat 'in' expr '{' X* '}'
-                 | 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
-reaction       ::= 'on' expr '{' ( stmt | commit )* '}'                      // expr has type Event
-contribution   ::= expr '+>' expr ';'                                         // left side: a probe
-commit         ::= place '<-' expr ( 'after' expr )? ';'
+gen<X>         ::= attrs 'for' pat 'in' expr '{' X* '}'
+                 | attrs 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
+reaction       ::= attrs 'on' expr '{' ( stmt | commit )* '}'                      // expr has type Event
+contribution   ::= attrs expr '+>' expr ';'                                         // left side: a probe
+commit         ::= attrs place '<-' expr ( 'after' expr )? ';'
 place          ::= path ( '[' expr ']' | '.' IDENT )*                           // a carrier, an element or a field of one
 ```
 

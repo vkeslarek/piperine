@@ -319,12 +319,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `attrs_are_allowed_before_statements_and_hardware_items` passes in `spec_text.rs` (C39: POL-08 AC 1)
-- [ ] Test `quantity_and_reaction_docs_are_metadata` passes in `spec_text.rs` (C40: POL-08 AC 2)
-- [ ] The syntax excerpts of §4, §8 and §10 repeat the edited productions verbatim
-- [ ] No `rust` fence with a doc comment before a statement is added yet (T15, T16)
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `attrs_are_allowed_before_statements_and_hardware_items` passes in `spec_text.rs` (C39: POL-08 AC 1)
+- [x] Test `quantity_and_reaction_docs_are_metadata` passes in `spec_text.rs` (C40: POL-08 AC 2)
+- [x] The syntax excerpts of §4, §8 and §10 repeat the edited productions verbatim
+- [x] No `rust` fence with a doc comment before a statement is added yet (T15, T16)
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

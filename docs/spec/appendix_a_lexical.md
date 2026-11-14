@@ -153,9 +153,13 @@ rl: f64 = 1T;
 
 **Static semantics**
 
-1. A doc comment attaches to the item that follows it, as in Rust: a module, a port, a param,
-   a signal, a `let`, a nature, a type, a function.
-2. The text is kept verbatim in the metadata of that item. It has no other effect.
+1. A doc comment, like an attribute, attaches to the node that follows it, as in Rust: a module,
+   a port, a param, a signal, a `let`, a nature, a type, a function. Beyond these, an attribute may precede
+   every statement, a reaction, a definition, a generation `for` or `if`, a nature field, a
+   contribution and a commit; a doc comment is an attribute and goes in the same places.
+2. The text is kept verbatim in the metadata of that node. Of the docs, the doc comments of a quantity and of
+   a reaction are metadata ([§21](part_vi_io.md#21-metadata)); those of a statement are kept in
+   the tree and have no other effect.
 3. An ordinary comment (`//`, `/* */`) is discarded.
 
 ## A.5 Two operators

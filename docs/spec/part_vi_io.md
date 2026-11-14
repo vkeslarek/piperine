@@ -222,6 +222,9 @@ A **path** is the hierarchical name of an item of the elaborated design:
 4. Metadata does not change during a run. A `set` of a structural param makes the host
    re-elaborate (§8.1.2), which produces new metadata.
 5. `pub` decides what other models may use (§8.2). The host can observe everything.
+   The `///` text of a quantity of a nature, a reaction, a definition and a generation is
+   metadata, read in comment order; the docs of a statement are kept in the tree and have no
+   other effect (A.4).
 
 | Item | From | Host operations |
 | --- | --- | --- |

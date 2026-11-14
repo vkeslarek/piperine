@@ -195,9 +195,9 @@ item           ::= nature_decl | module_decl | behavior_block | rust_item
 // ---- natures, bundles, functions ------------------------------------------------------------
 
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
-nature_field   ::= ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
-                 | 'value' ':' type
-                 | 'resolve' ':' expr                                           // a fn(&[T]) -> T
+nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
+                 | attrs 'value' ':' type
+                 | attrs 'resolve' ':' expr                                           // a fn(&[T]) -> T
 struct_field   ::= attrs 'pub'? dir? IDENT ':' ( type | sigtype )               // carrier fields make a bundle
 impl_block     ::= 'impl' generics? path generic_args? ( 'for' path generic_args? )? '{' impl_item* '}'
 impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
@@ -220,7 +220,7 @@ port           ::= attrs dir? IDENT ':' ( sigtype | type ) ( '=' expr )?        
 dir            ::= 'in' | 'out'
 sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
 module_item    ::= attrs 'pub'? ( param | signal_decl | 'let' pat '=' expr ';' )
-                 | place '=' expr ( 'after' expr )? ';'                         // a definition
+                 | attrs place '=' expr ( 'after' expr )? ';'                    // a definition
                  | gen<module_item>
 param          ::= IDENT ':' type ( '=' expr )? ( 'where' expr )? ';'
 signal_decl    ::= 'signal' IDENT ':' sigtype ( '=' expr )? ';'
@@ -231,11 +231,11 @@ behavior_block ::= 'analog'  names? 'for' path generic_args? '{' ( stmt | contri
                  | 'digital' names? 'for' path generic_args? '{' digital_item* '}'
 names          ::= '<' IDENT ( ',' IDENT )* '>'
 digital_item   ::= reaction | gen<digital_item>
-gen<X>         ::= 'for' pat 'in' expr '{' X* '}'
-                 | 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
-reaction       ::= 'on' expr '{' ( stmt | commit )* '}'                      // expr has type Event
-contribution   ::= expr '+>' expr ';'                                         // left side: a probe
-commit         ::= place '<-' expr ( 'after' expr )? ';'
+gen<X>         ::= attrs 'for' pat 'in' expr '{' X* '}'
+                 | attrs 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
+reaction       ::= attrs 'on' expr '{' ( stmt | commit )* '}'                      // expr has type Event
+contribution   ::= attrs expr '+>' expr ';'                                         // left side: a probe
+commit         ::= attrs place '<-' expr ( 'after' expr )? ';'
 place          ::= path ( '[' expr ']' | '.' IDENT )*                           // a carrier, an element or a field of one
 
 // ---- built-in ! forms -------------------------------------------------------------------------
