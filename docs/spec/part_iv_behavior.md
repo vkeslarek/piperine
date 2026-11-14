@@ -737,7 +737,8 @@ library (§22), written in the language over this section.
 
 **Static semantics**
 
-- **§14 rule 1** The names in the table are prelude names. A model **MUST NOT** redefine them at item
+- **§14 rule 1** The names in the table, and `gnd`, `Nature`, `m`, `dtemp` and `str`, are core
+  names. A model **MUST NOT** redefine them at item
   level. An `access` alias is declared by its nature (§4).
 - **§14 rule 2** A core `fn` follows §3: a function that calls one is callable only where that
   primitive is allowed.

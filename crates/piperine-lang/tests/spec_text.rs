@@ -335,3 +335,40 @@ fn appendix_h_is_in_the_file_map_and_nav() {
     let line = nav.lines().find(|l| l.contains("spec/appendix_h_library.md")).expect("nav entry");
     assert!(line.contains("H."), "{line}");
 }
+
+#[test]
+fn gnd_and_the_implicit_params_are_core_names() {
+    // POL-03 AC 1: §6 rule 11, A.1 rule 8 and §3.4.2 say `core name` and
+    // name all five; no sentence calls `gnd` a prelude name.
+    let five = ["`gnd`", "`Nature`", "`m`", "`dtemp`", "`str`"];
+    let carriers = spec("part_ii_carriers.md");
+    let rule11 = carriers.split("- **§6 rule 11.**").nth(1).unwrap().split("\n\n").next().unwrap();
+    assert!(rule11.contains("`gnd` is a core name"), "{rule11}");
+    let after = carriers.split("- **§6 rule 11.**").nth(1).unwrap();
+    let note = after.split("> **Resolution.**").nth(1).unwrap().split("\n\n").next().unwrap();
+    for n in five {
+        assert!(note.contains(n), "the Resolution of §6 names {n}: {note}");
+    }
+    assert!(note.contains("no declaration in the language can define them"), "{note}");
+    let a1 = spec("appendix_a_lexical.md");
+    let rule8 = a1.split("\n8. ").nth(1).unwrap().split("\n\n").next().unwrap();
+    assert!(rule8.contains("core names"), "{rule8}");
+    for n in five {
+        assert!(rule8.contains(n), "A.1 rule 8 names {n}: {rule8}");
+    }
+    let values = spec("part_i_values.md");
+    let r342 = values.split("- **§3.4.2**").nth(1).unwrap().split("- **§3.4.3**").next().unwrap();
+    assert!(r342.contains("core names"), "{r342}");
+    for n in five {
+        assert!(r342.contains(n), "§3.4.2 names {n}: {r342}");
+    }
+    for (file, text) in all_specs() {
+        for sentence in text.split(". ") {
+            let flat = sentence.replace('\n', " ");
+            assert!(
+                !(flat.contains("`gnd`") && flat.contains("prelude name")),
+                "{file} calls gnd a prelude name: {flat}"
+            );
+        }
+    }
+}

@@ -37,8 +37,9 @@ lexer and the grammar are the language's own.
    (`r#out`) are an open item ([G.15](appendix_g_scope.md)).
 7. A contextual keyword is an ordinary identifier outside its context. `potential` and `flow`
    are also the names of the generic probes ([§6](part_ii_carriers.md#6-continuous-carriers)).
-8. `gnd`, `settle`, `inf`, the environment functions and the core primitives are names of the
-   prelude, not keywords ([§14](part_iv_behavior.md#14-core-primitives)).
+8. `gnd`, `Nature`, `m`, `dtemp` and `str` are core names, as are `settle`, `inf`, the
+   environment functions and the core primitives of [§14](part_iv_behavior.md#14-core-primitives).
+   No core name is a keyword.
 
 > **Resolution.** Rust's keywords stay reserved even where their construct is dropped
 > (`unsafe`, `async`, `await`, `dyn`, `mut` outside `let mut`, and the reserved-for-future

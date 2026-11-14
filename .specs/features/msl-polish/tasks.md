@@ -202,10 +202,10 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `gnd_and_the_implicit_params_are_core_names` passes in `spec_text.rs` (C10: POL-03 AC 1)
-- [ ] The B.1 count is untouched: all five names are already rows of B.1.2
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `gnd_and_the_implicit_params_are_core_names` passes in `spec_text.rs` (C10: POL-03 AC 1)
+- [x] The B.1 count is untouched: all five names are already rows of B.1.2
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

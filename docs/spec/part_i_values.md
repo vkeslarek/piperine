@@ -548,9 +548,10 @@ scope, `pub` controls visibility, and a package of models is a crate.
 - **§3.4.1** A **namespace module** is a `mod` item or a file, as in Rust. "Module" without
   qualification always means a hardware module
   ([§8](part_iii_structure.md#8-modules)).
-- **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the core
-  primitives ([§14](part_iv_behavior.md#14-core-primitives)) and the standard library
-  ([§22](part_vii_stdlib.md#22-standard-library)).
+- **§3.4.2** The **prelude** is the set of names imported implicitly into every file: the
+  standard library ([§22](part_vii_stdlib.md#22-standard-library)). The **core names** need no
+  import and no declaration: `gnd`, `Nature`, `m`, `dtemp`, `str` and the core primitives
+  ([§14](part_iv_behavior.md#14-core-primitives)).
 - **§3.4.3** A hardware module and all its behavior blocks **MUST** be in one file.
 - **§3.4.4** Natures, bundles, hardware modules, functions, constants and value types are
   items. They follow Rust's rules for paths, `use` and `pub`.

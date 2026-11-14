@@ -373,8 +373,10 @@ the flow of a branch.
   nets they are connected to. A contribution to `(a, a)` is an error; a probe of it reads 0.
 - **§6 rule 10.** `inflow()` applies to a port of a nature with `flow`. `flow` and its alias
   apply to a nature with `flow`.
-- **§6 rule 11.** `gnd` is a prelude name. It may be passed as a connection and named in a
+- **§6 rule 11.** `gnd` is a core name (§14 rule 1). It may be passed as a connection and named in a
   branch. It has no initial value, no flow probe of its own and no `inflow()`.
+
+> **Resolution.** `gnd`, `Nature`, `m`, `dtemp` and `str` are core names: the language provides them and no declaration in the language can define them (`E0457`, §14 rule 1). The prelude (§3.4.2) holds the standard library and is replaceable (§22).
 
 > **Resolution.** Rule 2 counts a node as signal-flow only when every nature meeting there
 > lacks `flow`. Its one potential driver is one module that contributes potential to
