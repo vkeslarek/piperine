@@ -1737,7 +1737,7 @@ Proof: run pomcorpus | test every_spec_block_round_trips_to_its_ast ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
-**Dispatched:** B1 (Phase 1) Sonnet worker at 8700cc5f - returned (HEAD d6591429, T1–T6); B2 (Phase 2) Sonnet worker at 6778bd6a - returned (HEAD 47f5fc3e, T7–T10); B3 (Phase 3) Sonnet worker at 81417beb - returned (HEAD b45aa82a, T11–T16); B4 (Phase 4) Sonnet worker at 6222563b - returned (HEAD 246c2928, T17–T22)
+**Dispatched:** B1 (Phase 1) Sonnet worker at 8700cc5f - returned (HEAD d6591429, T1–T6); B2 (Phase 2) Sonnet worker at 6778bd6a - returned (HEAD 47f5fc3e, T7–T10); B3 (Phase 3) Sonnet worker at 81417beb - returned (HEAD b45aa82a, T11–T16); B4 (Phase 4) Sonnet worker at 6222563b - returned (HEAD 246c2928, T17–T22); B5 (Phase 5) Sonnet worker at e8b660ba
 **B1 notes:** B.3.6 assigns codes for removed Rust forms: E0903 type aliases/associated types/static, E0905 loop labels, E0900 the rest — T22 must match. §14 rule 1 reworded (core names). T3–T6 spec edits written before tests (no red run).
 **B2 notes:** B.3.3 shorthand note is an unnumbered paragraph after item 7 (items 8–14 referenced by number).
 **B3 notes:** lexer token is Token::RawIdent(String) (design said Ident{name,raw}); dangling doc comments dropped by a pre-parse pass with one E0900 per run (any position); statement span excludes its docs/attrs; printer writes `Int< -1 >` to avoid `<-` lexing.
