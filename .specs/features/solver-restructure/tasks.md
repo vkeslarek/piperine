@@ -407,11 +407,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Everything in the removal map row is gone; the drivers lose only the calls into the removed channels, in place, with no reordering of what remains
-- [ ] `AnalysisKind`, `start_analysis`, `finish_analysis` and `SolverStats.limiting` are untouched
-- [ ] The 19 tests of the five deleted targets, and any other test function wholly about a removed item, are named in `removed.txt`
-- [ ] Test `verification_channels_are_gone` passes (C16)
-- [ ] Gate: full
+- [x] Everything in the removal map row is gone; the drivers lose only the calls into the removed channels, in place, with no reordering of what remains
+- [x] `AnalysisKind`, `start_analysis`, `finish_analysis` and `SolverStats.limiting` are untouched
+- [x] The 19 tests of the five deleted targets, and any other test function wholly about a removed item, are named in `removed.txt`
+- [x] Test `verification_channels_are_gone` passes (C16)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full

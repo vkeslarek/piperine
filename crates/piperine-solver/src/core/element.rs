@@ -86,14 +86,7 @@ bitflags::bitflags! {
 
         // ── Jacobian / derivative capability (ABI-23) ───────────────────────
         // Bits 12, 13 and 14 are vacant (the removed distortion capability flags).
-        /// The model has validation findings to report (DVC-14): constraint
-        /// violations, model self-checks, monitor hits. The solver polls
-        /// [`Element::validation_reports`] **only** on elements declaring
-        /// this bit, and only at the evaluation points design §C3 defines —
-        /// "costs nothing when unused" means *not called*, not *returns
-        /// empty*. Declaring the bit and returning `None` is legal: the bit
-        /// promises capability, not content.
-        const EMITS_VALIDATION = 1 << 15;
+        // Bit 15 is vacant (the removed validation capability flag).
         /// The model provides an analytic `∂F/∂p` kernel (DVG-05): a JIT
         /// device that compiled the parameter-indexed sensitivity function
         /// (DVG-02). The adjoint driver asks the element for analytic
@@ -486,8 +479,7 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// analysis run (LRM §5.10.2's `@(final_step)`, LRMW2-08) — right
     /// before the analysis driver (`analyses::dc::DcSolver::solve`,
     /// `analyses::transient::TransientSolver::solve`, …) returns its
-    /// result. `analysis` is the running kind (same shape
-    /// [`Element::evaluate_constraints`] already takes — `Dc`/`Tran`/`Ac`
+    /// result. `analysis` is the running kind (`Dc`/`Tran`/`Ac`
     /// only, no `Noise` variant exists on `AnalysisKind` yet, a
     /// pre-existing limitation this task does not extend). Distinct from
     /// [`Self::destroy`] (fires once per `CircuitInstance`, on `Drop` —
@@ -574,69 +566,4 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     /// from the last accepted device state — not the dirty rejected-attempt
     /// state. Default: no-op (stateless device).
     fn restore_state(&mut self, _checkpoint: &ElementCheckpoint) {}
-
-    /// Structured validation findings (DVC-13): constraint violations, model
-    /// self-checks, and monitor hits, each carrying severity, label, message,
-    /// value, time, and the authored instance path. Cross-cutting — analog
-    /// and digital elements alike speak through this one channel (it is the
-    /// *primary* mechanism for digital verification, since margins are an
-    /// analog notion). Shaped after [`limiting_report`](AnalogDevice::limiting_report):
-    /// `Option`, not `Vec`, because `None` (nothing to say) is the common
-    /// case. The solver polls only at the evaluation points design §C3
-    /// defines, and only elements declaring
-    /// [`ElementCapabilities::EMITS_VALIDATION`] are ever asked — the default
-    /// `None` here is what an element *without* something to say returns.
-    fn validation_reports(&self) -> Option<crate::core::validation::ValidationReport> { None }
-
-    /// Evaluate the element's declared constraint margins at one accepted
-    /// solution point (DVC-10/11). The analysis drivers call this **only**
-    /// at the evaluation points design §C3 defines — the final converged
-    /// DC solution (never a homotopy stage), each accepted transient step
-    /// (never a rejected attempt, never the UIC/`@initial` t = 0), each AC
-    /// frequency point — through
-    /// [`CircuitInstance::evaluate_constraints_at`](crate::core::circuit::CircuitInstance::evaluate_constraints_at),
-    /// and only on elements declaring
-    /// [`ElementCapabilities::EMITS_VALIDATION`]. Distinct from
-    /// [`accept_timestep`](Element::accept_timestep): the accept hook
-    /// seeds operators and digital events at points that are *not* margin
-    /// evaluation points (a transient's t = 0 operator seeding, the DC
-    /// mixed-signal settle), so margins do not ride it. `state` carries
-    /// the accepted solution as its latest row; `t` is the evaluation
-    /// coordinate (time in transient, `0.0` at a DC point, frequency in
-    /// AC). `analysis` is the running analysis kind (DVC-19) — a `require`
-    /// scoped to `@ dc { … }` is evaluated only when the running analysis
-    /// is `Dc`. The default is no margins to evaluate — zero cost.
-    fn evaluate_constraints(
-        &mut self,
-        _state: &CircularArrayBuffer2<f64>,
-        _t: f64,
-        _analysis: crate::analyses::AnalysisKind,
-    ) {
-    }
-
-    /// The run's margin report (DVC-18): every declared pointwise margin's
-    /// worst value with its argmin, read at the end of an analysis into
-    /// [`SolverStats.margins`](crate::core::result::SolverStats). Shaped
-    /// after [`validation_reports`](Element::validation_reports) —
-    /// `Option`, not `Vec`, because an element with no declared margins
-    /// (the common case) has nothing to say.
-    fn margin_report(&self) -> Option<crate::core::margin::MarginReport> { None }
-
-    /// The `cover` channel's per-run report (dv-tester T33/T34, DVT-40/43):
-    /// every declared `cover` point's + `cover cross`'s raw hit counters
-    /// for *this run only* — `None` for an element with no declared
-    /// `cover` (the common case). Merging across runs is host state
-    /// (T34), never tracked here.
-    fn coverage_report(&self) -> Option<crate::core::coverage::CoverageReport> { None }
-
-    /// Reset the margin tracking (worst + argmin) so the next analysis
-    /// starts from a clean slate — margins are a per-run channel, and one
-    /// analysis's extrema must never leak into the next run on the same
-    /// circuit. Called by the public analysis entries
-    /// ([`CircuitInstance::dc`](crate::core::circuit::CircuitInstance::dc)
-    /// and siblings) before the run; the internal solves an analysis
-    /// drives underneath itself (a transient's t = 0 OP, the DC point
-    /// under an AC sweep) do **not** reset — they are part of the run.
-    /// Default no-op (nothing tracked).
-    fn reset_margin_tracking(&mut self) {}
 }

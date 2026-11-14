@@ -53,12 +53,6 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
              on rejection (analyses/transient.rs, analyses/convergence.rs)"
         }
         // ── Jacobian / derivative capability (ABI-23) ───────────────────────
-        "EMITS_VALIDATION" => {
-            "consumed: validation findings poll — CircuitInstance::validation_reports \
-             (core/circuit.rs) asks only elements declaring it, called at the DC final \
-             converged solution (analyses/dc.rs) and on each accepted transient step \
-             (analyses/transient.rs) (DVC-14)"
-        }
         "HAS_SENSITIVITY" => {
             "consumed: the DC adjoint driver asks only elements declaring this for \
              analytic `AnalogDevice::param_stamps`; an element without it falls back to \

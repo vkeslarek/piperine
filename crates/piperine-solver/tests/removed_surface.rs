@@ -89,6 +89,39 @@ fn text_io_is_gone() {
 }
 
 #[test]
+fn verification_channels_are_gone() {
+    let found = names_found(&[
+        "core::validation",
+        "core::margin",
+        "core::coverage",
+        "ValidationFinding",
+        "ValidationReport",
+        "ValidationSeverity",
+        "MarginReport",
+        "ReportedMargin",
+        "MarginKind",
+        "CoverageReport",
+        "ReportedCoverPoint",
+        "ReportedCoverCross",
+        "CheckPosture",
+        "CoverPosture",
+        "RequireScope",
+        "EMITS_VALIDATION",
+        "validation_reports",
+        "evaluate_constraints",
+        "margin_report",
+        "coverage_report",
+        "reset_margin_tracking",
+        "consume_validation_reports",
+        "margin_reports",
+        "coverage_reports",
+        "pub validation:",
+        "pub margins:",
+    ]);
+    assert!(found.is_empty(), "removed verification surface still named: {found:#?}");
+}
+
+#[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
     assert_eq!(names_in(planted, &["DistoSolver", "HAS_DISTO2"]), vec!["DistoSolver"]);

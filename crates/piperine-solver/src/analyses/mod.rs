@@ -27,6 +27,6 @@ pub mod stamp_validation;
 pub mod tf;
 pub mod transient;
 
-pub use context::{AnalysisKind, CheckPosture, Context, CoverPosture, Policy, RequireScope, Tolerances};
+pub use context::{AnalysisKind, Context, Policy, Tolerances};
 pub use solver::Solver;
 pub use stamp_validation::non_finite_stamp_error;

@@ -40,17 +40,6 @@ pub struct SolverStats {
     // one entry per device whose limiter clamped a value. Empty when no
     // device limited (the common case for linear / well-converged circuits).
     pub limiting: Vec<crate::core::element::LimitingReport>,
-    // DVC-15: validation findings recorded at the analysis's evaluation
-    // points — the collect posture accumulates the whole run; strict
-    // accumulates until the first Error aborts it. Empty when checks are
-    // off (the hook is never polled) or no element declared
-    // EMITS_VALIDATION.
-    pub validation: Vec<crate::core::validation::ValidationFinding>,
-    // DVC-18: the run's margin channel — every declared pointwise
-    // constraint margin's worst value with its argmin, collected from the
-    // elements at end of run. Empty when checks are off (nothing was
-    // evaluated) or no element declared EMITS_VALIDATION.
-    pub margins: Vec<crate::core::margin::ReportedMargin>,
 }
 
 #[derive(Debug)]
@@ -264,9 +253,7 @@ impl TransientStep {
 
 pub struct AcAnalysisResult {
     values: Vec<AcAnalysisStep>,
-    /// Per-analysis statistics: the validation findings recorded at the
-    /// sweep's frequency points (DVC-15) and the margin channel's
-    /// worst-with-argmin per declared margin (DVC-18, argmin = frequency).
+    /// Per-analysis statistics.
     pub stats: SolverStats,
 }
 

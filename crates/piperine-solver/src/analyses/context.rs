@@ -186,51 +186,6 @@ impl Default for Policy {
 
 // ── Context (shared, immutable) ────────────────────────────────────────────
 
-/// The check posture (DVC-12): how an analysis reacts when a validation
-/// finding fires or a `require` margin crosses zero.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CheckPosture {
-    /// A `require` margin below zero — or any `Error` finding — fails the
-    /// analysis loud, naming the constraint, the instance path, the time,
-    /// and the margin value. The default: a silent pass is never the
-    /// default posture.
-    #[default]
-    Strict,
-    /// Margins and findings are recorded (worst margin with its argmin);
-    /// the analysis always completes. The optimizer's inner-loop posture —
-    /// an infeasible iterate is a margin to climb out of, not an exception.
-    Collect,
-    /// Constraint kernels are never called and the findings hook is never
-    /// polled — zero cost, nothing reported.
-    Off,
-}
-
-/// `cover`'s own posture (dv-tester T33, DVT-41, D9) — separate from
-/// [`CheckPosture`] so an optimizer's inner loop (`checks=Collect`, treating
-/// an infeasible iterate as a margin to climb out of) does not also pollute
-/// the coverage database with iterates nobody meant as verification runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CoverPosture {
-    /// `cover` bins are evaluated and their counters incremented on every
-    /// accepted point. The default: coverage collection is normal
-    /// verification behavior, not opt-in.
-    #[default]
-    On,
-    /// No coverage kernel is called at all — zero cost, the database is
-    /// left completely untouched.
-    Off,
-}
-
-/// Which analyses an unscoped `require` holds in (D2). The scope is a
-/// [`Context`] field, not a hard-coded rule — the default is every
-/// analysis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RequireScope {
-    /// An unscoped `require` holds in every analysis (D2's default).
-    #[default]
-    EveryAnalysis,
-}
-
 /// Which analysis is currently running, used to gate scoped requires
 /// (dv-core T28, DVC-19). A `require` inside `@ dc { … }` is evaluated
 /// only when the running analysis is `Dc`; an analysis that never runs
@@ -257,32 +212,21 @@ impl AnalysisKind {
 }
 
 /// The shared context every analysis receives: the immutable
-/// [`Tolerances`], the check posture, and the unscoped-`require` scope.
+/// [`Tolerances`].
 /// Mutable convergence state lives on [`Policy`], owned by the driver;
 /// simulation time reaches elements through their analysis context or as an
-/// explicit argument (MD-04). The posture fields are pure run data —
-/// changing them between analyses triggers no recompilation (MD-18).
+/// explicit argument (MD-04).
 ///
 /// `Debug`/`Default` are hand-written — see the impls below.
 #[derive(Clone)]
 pub struct Context {
     pub tolerances: Tolerances,
-    /// How the analysis reacts to findings and margin crossings (DVC-12).
-    pub checks: CheckPosture,
-    /// Which analyses an unscoped `require` holds in (D2).
-    pub require_scope: RequireScope,
-    /// `cover`'s own posture (dv-tester T33, DVT-41, D9) — separate from
-    /// [`Self::checks`].
-    pub cover: CoverPosture,
 }
 
 impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Context")
             .field("tolerances", &self.tolerances)
-            .field("checks", &self.checks)
-            .field("require_scope", &self.require_scope)
-            .field("cover", &self.cover)
             .finish()
     }
 }
@@ -291,9 +235,6 @@ impl Default for Context {
     fn default() -> Self {
         Self {
             tolerances: Tolerances::default(),
-            checks: CheckPosture::default(),
-            require_scope: RequireScope::default(),
-            cover: CoverPosture::default(),
         }
     }
 }

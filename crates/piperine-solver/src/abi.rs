@@ -7,9 +7,6 @@ pub use crate::core::element::{
     ElementCheckpoint, Introspect, LimitReason, LimitingReport,
 };
 pub use crate::core::circuit::CircuitInstance;
-pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
-pub use crate::core::coverage::{CoverageReport, ReportedCoverCross, ReportedCoverPoint};
-pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind,
     ParamDescriptor, ParamError, ParamScope, ProbeSelection, QueryDescriptor, QueryKind, simprobe, SimprobeError,
@@ -45,7 +42,7 @@ pub use crate::digital::regions::{Region, RegionAction, RegionEvent, RegionOutco
 pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches
-pub use crate::analyses::{AnalysisKind, CheckPosture, Context, CoverPosture, Policy, RequireScope, Tolerances};
+pub use crate::analyses::{AnalysisKind, Context, Policy, Tolerances};
 pub use crate::analyses::events::{
     EventEntry, EventKind, EventPriority, EventQueue, EventSource, EventTarget, RollbackBehavior,
 };

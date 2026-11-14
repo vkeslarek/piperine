@@ -475,11 +475,6 @@ struct TimeLoop {
     sets_just_applied: bool,
     dt_min_seen: f64,
     dt_max_seen: f64,
-    /// Validation findings accumulated at accepted points (DVC-15):
-    /// collect records the whole run; strict records until the first
-    /// Error finding aborts the analysis. Flushed into the result stats
-    /// by `finish_run`.
-    validation: Vec<crate::core::validation::ValidationFinding>,
 }
 
 impl TimeLoop {
@@ -494,7 +489,6 @@ impl TimeLoop {
             sets_just_applied: false,
             dt_min_seen: f64::INFINITY,
             dt_max_seen: 0.0,
-            validation: Vec::new(),
         }
     }
 }
@@ -756,21 +750,12 @@ impl<'a> TransientSolver<'a> {
                 plus.map(|plus| UicClamp { plus, minus, ic })
             })
             .collect();
-        // The t=0 operating point shares the run's check posture (DVC-15):
-        // it is an evaluation point of this analysis — a collect or off
-        // run must not meet a strict OP underneath. Tolerances keep the
-        // pre-existing default (numeric behavior unchanged).
-        let op_context = Context {
-            checks: self.system.context.checks,
-            require_scope: self.system.context.require_scope,
-            cover: self.system.context.cover,
-            ..Default::default()
-        };
+        // The t=0 operating point runs under the default tolerances (numeric
+        // behavior unchanged).
+        let op_context = Context::default();
         let mut dc_solver = DcSolver::new(self.system.circuit, op_context)?;
-        // The t = 0 OP belongs to the transient run (DVC-19): a `@ dc`-
-        // scoped require must not fire here even though a DC solver is
-        // what computes the point. The DC analysis owns DC points; tran
-        // owns its own startup.
+        // The t = 0 OP belongs to the transient run: the DC analysis owns
+        // DC points; tran owns its own startup.
         dc_solver.set_analysis_kind(crate::analyses::AnalysisKind::Tran);
         dc_solver.system.uic_clamps = uic_clamps.clone();
         let dc_result = dc_solver.solve()?;
@@ -1037,36 +1022,6 @@ impl<'a> TransientSolver<'a> {
         self.event_queue.commit();
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
-        // Constraint margins + validation findings (DVC-11/14/15):
-        // accepted steps only — never a rejected attempt (design §C3).
-        // Evaluation is decoupled from the accept hook (`accept_timestep`
-        // seeds operators at points that are not evaluation points, like
-        // the t = 0 operator seeding); the driver evaluates at the just-
-        // accepted solution, then the posture decides: off never
-        // evaluates and never polls, collect records every finding on the
-        // run's stats, strict fails loud on the first Error — aborting
-        // the analysis here.
-        let accepted = self.solver.current_guess().unwrap().to_owned();
-        self.system.circuit.evaluate_constraints_at(
-            self.system.context.checks,
-            accepted.as_slice().unwrap(),
-            t_next,
-            crate::analyses::AnalysisKind::Tran,
-        );
-        self.system.circuit.consume_validation_reports(
-            self.system.context.checks,
-            crate::error::SolverDomain::Transient,
-            &mut st.validation,
-        )?;
-        // `specify` timing-check enforcement (T21, LRMW3-07, spec P2
-        // AC2): same accepted-step-only evaluation point, same posture
-        // gate, same findings sink as the constraint margins just above.
-        self.system.circuit.consume_timing_check_violations(
-            self.system.context.checks,
-            crate::error::SolverDomain::Transient,
-            t_next,
-            &mut st.validation,
-        )?;
         if self.apply_scheduled_sets(st, steps, dt_actual)? {
             // The value jump is a discontinuity: the next TR stage
             // must not re-derive a previous current across it.
@@ -1286,14 +1241,6 @@ impl<'a> TransientSolver<'a> {
         result.stats.dt_max = st.dt_max_seen;
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
-        result.stats.validation = st.validation.clone();
-        // The margin channel (DVC-18): empty under `checks=off` — nothing
-        // was evaluated, so there is nothing honest to report.
-        result.stats.margins = if self.system.context.checks == crate::analyses::CheckPosture::Off {
-            Vec::new()
-        } else {
-            self.system.circuit.margin_reports()
-        };
         result
     }
 

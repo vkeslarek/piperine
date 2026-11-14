@@ -21,8 +21,6 @@ pub use crate::core::introspect::{
     SignConvention, TerminalDescriptor, TerminalKind, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
-pub use crate::core::validation::{ValidationFinding, ValidationReport, ValidationSeverity};
-pub use crate::core::margin::{MarginKind, MarginReport, ReportedMargin};
 pub use crate::digital::{DigitalNet, LogicValue};
 pub use crate::digital::{DelayTable, PathDelay, TimingCheckKind, TimingCheckLimit, TimingCheckTable};
 
@@ -40,7 +38,7 @@ pub use crate::analyses::sensitivity::{
 pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
 pub use crate::analyses::transient::TransientAnalysisOptions;
 pub use crate::analyses::Context;
-pub use crate::analyses::{CheckPosture, Policy, RequireScope, Tolerances};
+pub use crate::analyses::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
