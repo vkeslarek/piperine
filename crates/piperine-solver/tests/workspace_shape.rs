@@ -189,3 +189,77 @@ fn workflows_name_no_retired_crate() {
     assert!(!ci.contains("--workspace"), "ci.yml passes --workspace");
     assert!(!ci.contains("requirements.txt"), "ci.yml installs Python requirements");
 }
+
+/// The eight crates the workspace keeps.
+const KEPT_CRATES: &[&str] = &[
+    "piperine-lang",
+    "piperine-project",
+    "piperine-solver",
+    "piperine-analog-solver",
+    "piperine-digital-solver",
+    "piperine-api",
+    "piperine-cli",
+    "piperine-lang-server",
+];
+
+/// The crate names in the rows of the table under `## Crate responsibilities`
+/// of `CLAUDE.md` (the first backticked cell of each row).
+fn claude_table_crates() -> Vec<String> {
+    let text = std::fs::read_to_string(repo_root().join("CLAUDE.md")).expect("read CLAUDE.md");
+    let body = text
+        .split("## Crate responsibilities")
+        .nth(1)
+        .expect("CLAUDE.md has a `## Crate responsibilities` section");
+    let section = body.split("\n## ").next().unwrap_or(body);
+    section
+        .lines()
+        .filter(|l| l.starts_with("| `"))
+        .filter_map(|l| l.split('`').nth(1).map(str::to_string))
+        .collect()
+}
+
+/// The crate directory names in the fenced block under `## Workspace map` of
+/// `AGENTS.md` (lines of the tree that name a `piperine-*` directory).
+fn agents_map_crates() -> Vec<String> {
+    let text = std::fs::read_to_string(repo_root().join("AGENTS.md")).expect("read AGENTS.md");
+    let body = text
+        .split("## Workspace map")
+        .nth(1)
+        .expect("AGENTS.md has a `## Workspace map` section");
+    let section = body.split("\n## ").next().unwrap_or(body);
+    let block = section.split("```").nth(1).expect("a fenced block under the map");
+    block
+        .lines()
+        .filter_map(|l| {
+            let at = l.find("piperine-")?;
+            let name: String = l[at..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect();
+            Some(name)
+        })
+        .collect()
+}
+
+#[test]
+fn instructions_list_the_kept_crates() {
+    let mut table = claude_table_crates();
+    table.sort();
+    let mut map = agents_map_crates();
+    map.sort();
+    let mut kept: Vec<String> = KEPT_CRATES.iter().map(|s| s.to_string()).collect();
+    kept.sort();
+    assert_eq!(table, kept, "CLAUDE.md crate table");
+    assert_eq!(map, kept, "AGENTS.md workspace map");
+}
+
+#[test]
+fn instructions_have_no_entry_for_a_retired_crate() {
+    let both: Vec<String> = claude_table_crates().into_iter().chain(agents_map_crates()).collect();
+    for retired in RETIRED_CRATES.iter().chain(["piperine-signal", "piperine-vams"].iter()) {
+        assert!(
+            !both.iter().any(|c| c == retired),
+            "an instruction file still lists retired crate {retired}"
+        );
+    }
+}

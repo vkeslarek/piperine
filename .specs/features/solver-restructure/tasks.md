@@ -638,11 +638,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] The crate table of `CLAUDE.md` and the workspace map of `AGENTS.md` list exactly `piperine-lang`, `piperine-project`, `piperine-solver`, `piperine-analog-solver`, `piperine-digital-solver`, `piperine-api`, `piperine-cli`, `piperine-lang-server`, with the owner-depends-on-both direction stated
-- [ ] Both files say which crates compile (`piperine-lang` and the three solver crates) and which do not yet, and give `cargo build` / `cargo test` at the root (default members) as the commands, never `--workspace`
-- [ ] The Verilog-AMS pipeline diagram, the "analog device path", the OSDI and PHDL paragraphs and the "files not to edit casually" entries for deleted paths are removed; sections about `piperine-lang` and MSL written by earlier features are left as they are
-- [ ] `workspace_shape.rs` gains `instructions_list_the_kept_crates` (C34) and `instructions_have_no_entry_for_a_retired_crate` (C35), which read the crate table of `CLAUDE.md` (the rows of the table under `## Crate responsibilities`) and the fenced block under `## Workspace map` of `AGENTS.md`
-- [ ] Gate: full
+- [x] The crate table of `CLAUDE.md` and the workspace map of `AGENTS.md` list exactly `piperine-lang`, `piperine-project`, `piperine-solver`, `piperine-analog-solver`, `piperine-digital-solver`, `piperine-api`, `piperine-cli`, `piperine-lang-server`, with the owner-depends-on-both direction stated
+- [x] Both files say which crates compile (`piperine-lang` and the three solver crates) and which do not yet, and give `cargo build` / `cargo test` at the root (default members) as the commands, never `--workspace`
+- [x] The Verilog-AMS pipeline diagram, the "analog device path", the OSDI and PHDL paragraphs and the "files not to edit casually" entries for deleted paths are removed; sections about `piperine-lang` and MSL written by earlier features are left as they are
+- [x] `workspace_shape.rs` gains `instructions_list_the_kept_crates` (C34) and `instructions_have_no_entry_for_a_retired_crate` (C35), which read the crate table of `CLAUDE.md` (the rows of the table under `## Crate responsibilities`) and the fenced block under `## Workspace map` of `AGENTS.md`
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full
