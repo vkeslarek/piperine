@@ -139,3 +139,16 @@ None yet. The spec's Assumptions table already carries the recommended default o
 | Q7 | "Companion model é uma boa mas eu manteria o algoritmo atual do solver que funcionou bem nos testes, inclusive cross validation e convergence com descontinuidades (caracteristico de sistemas mixed signal)." | keep the solver's present discontinuity algorithm; Appendix C.2 is amended to describe it, not the reverse |
 | Q9 | "Não, a paridade com ngspice é um strenght bem alto e um ponto positivissimo." | B: keep the present tolerance mapping (ngspice parity); §17.1.2 is amended to match |
 | ABI | "Ah, fica a vontade para mudar o ABI também ok?" | the `Element` ABI may change freely in this refactor |
+
+## User answers (2026-11-14, discussion round 2)
+
+User's words: "lang-server é bom ficar... cli também mas ambos vão ter sua própria feature. plugin pro enquanto vai embora. api aceito. Q8. Ok Q10. respondido antes. Q9. mantém Q7 e Q9. Ok . Core cleanup + solver-split poderia ser uma feature só pois é refactor de estrtura. Digital dag + analog split uma feature separada pois quero que mexer no core core (mudança de logica) seja implementada por opus e verificada com fable. Sobre testes, por enquanto vamos ter que nos contentar com unitários pois integrado só vai existir depois que conectarmos o solver ao lang (e vamos planejar isso com cuidado pois precisamos conversar sobre codegen e afins)"
+
+| Topic | Decision |
+| ----- | -------- |
+| Crates kept | `piperine-lang`, `piperine-project`, solver crates, `piperine-api` (reduced to a solver-backed surface: `Session` over Rust-built circuits, results, waveform, units), `piperine-cli` and `piperine-lang-server` (stay in the tree; each gets its own later feature) |
+| Crates removed | `piperine-ir`, `piperine-codegen`, `piperine-python`, `piperine-plugin`, `piperine-plugin-macros`; the root package's VAMS e2e tests and `examples/*.vams` |
+| Q8 | a digital event cuts an analog step only when it crosses the boundary (changes something analog reads); purely digital activity never forces an analog solve |
+| Q7 / Q9 | the solver's present discontinuity algorithm and tolerance mapping stay; spec Appendix C.2 and §17.1.2 are amended to describe them |
+| Feature split | (A) structure refactor = core cleanup + solver split into three crates (event owner / analog / digital), no logic change - Sonnet implements, Opus verifies. (B) logic change = digital DAG (Verilator-style) + analog/digital boundary split - **Opus implements, Fable verifies**. Then time-point, crossings, host seam, numerics. |
+| Tests | unit tests only for now; integration (and ngspice parity runs) come after solver↔lang connection, which will be planned separately (codegen discussion pending) |
