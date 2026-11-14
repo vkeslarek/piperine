@@ -216,9 +216,9 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] No frontend import remains
-- [ ] `reentry_from_captured_state_matches_continuous_run` keeps its name and assertions and passes
-- [ ] Gate: quick, on `transient_reentry`
+- [x] No frontend import remains
+- [x] `reentry_from_captured_state_matches_continuous_run` keeps its name and assertions and passes
+- [x] Gate: quick, on `transient_reentry`
 
 **Tests**: integration
 **Gate**: quick

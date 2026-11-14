@@ -3,61 +3,38 @@
 //! solver's tolerance class. This is the PSS shooting seam
 //! (`TransientSolver::with_initial_state`).
 
-use std::path::PathBuf;
+// Each target includes the library by path: it uses a different subset of it.
+#[allow(dead_code)]
+#[path = "helpers/devices.rs"]
+mod devices;
 
-use piperine_codegen::CircuitCompiler;
-use piperine_lang::SourceMap;
-use piperine_solver::abi::{AnalogVariable, InitialValue};
-use piperine_solver::prelude::{Context, TransientAnalysisOptions};
+use devices::{NodeMap, C, R, Vsrc};
+use piperine_solver::abi::InitialValue;
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions};
 
 /// `v(out) = 0` initial condition (discharged capacitor) so the runs show
 /// the charge transient instead of the DC steady state.
 fn discharged_ic(
-    info: &piperine_codegen::device::CircuitBuildInfo,
-    circuit: &piperine_solver::prelude::CircuitInstance,
+    info: &NodeMap,
+    _circuit: &CircuitInstance,
 ) -> Vec<InitialValue<piperine_solver::abi::AnalogReference, f64>> {
-    let out = info.nets.get("out").expect("net `out`").clone();
-    let reference = circuit
-        .netlist()
-        .reference_for(&AnalogVariable::Node(out))
-        .expect("out is solved")
-        .clone();
+    let reference = info.get("out").clone();
     vec![InitialValue { reference, value: 0.0 }]
 }
 
-const RC: &str = r#"
-    `include "disciplines.vams"
-
-    module R (inout electrical p, inout electrical n);
-        parameter real r = 1.0e3;
-        analog I(p, n) <+ V(p, n) / r;
-    endmodule
-
-    module C (inout electrical p, inout electrical n);
-        parameter real c = 1.0e-6;
-        analog I(p, n) <+ c * ddt(V(p, n));
-    endmodule
-
-    module Vsrc (inout electrical p, inout electrical n);
-        parameter real dc = 5.0;
-        analog V(p, n) <+ dc;
-    endmodule
-
-    module Top ();
-        electrical gnd, top, out;
-        Vsrc v1 (.p(top), .n(gnd));
-        R r1 (.p(top), .n(out));
-        C c1 (.p(out), .n(gnd));
-    endmodule
-"#;
-
-fn headers_source_map() -> SourceMap {
-    let headers =
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone());
-    map.add_namespace("piperine", headers.clone());
-    map.add_namespace("spice", headers.join("spice"));
-    map
+/// The RC charge circuit: 5 V source, 1 kOhm, 1 uF to ground.
+fn build_rc() -> (CircuitInstance, NodeMap) {
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let top = b.node("top");
+    let out = b.node("out");
+    b.element(Box::new(Vsrc::new("v1", 5.0, top.clone(), gnd.clone())));
+    b.element(Box::new(R::new("r1", 1.0e3, top, out.clone())));
+    b.element(Box::new(C::new("c1", 1.0e-6, out.clone(), gnd)));
+    let circuit = b.build().expect("build");
+    let mut map = NodeMap::new();
+    map.insert("out", out);
+    (circuit, map)
 }
 
 /// τ = RC = 1 ms; T = 1 ms. Continuous 0→2T vs captured-at-T re-entry T→2T:
@@ -65,22 +42,13 @@ fn headers_source_map() -> SourceMap {
 /// both sit near the analytic 5·(1−e^(−t/τ)).
 #[test]
 fn reentry_from_captured_state_matches_continuous_run() {
-    let design =
-        piperine_lang::parse_and_elaborate(RC, &headers_source_map()).expect("rc elaborates");
-    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
-    let mut compiler = CircuitCompiler::new(&design, &bodies);
-
     let t_half = 1.0e-3;
-    let read_out = |step: &piperine_solver::prelude::TransientStep,
-                    info: &piperine_codegen::device::CircuitBuildInfo| {
-        let out = info.nets.get("out").expect("net `out`");
-        step.get_node(out).expect("v(out)")
+    let read_out = |step: &piperine_solver::prelude::TransientStep, info: &NodeMap| {
+        step.get_node(&info.id("out")).expect("v(out)")
     };
 
     // Reference: one continuous 0→2T run.
-    let (mut circuit_a, info_a) = compiler.build_circuit_mapped("Top").expect("build A");
-    circuit_a.init_digital().expect("digital");
-    circuit_a.rebuild_digital_topology();
+    let (mut circuit_a, info_a) = build_rc();
     let opts_a = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0);
     let ic_a = discharged_ic(&info_a, &circuit_a);
     let mut solver_a = circuit_a.transient(opts_a, Context::default()).expect("tran A");
@@ -89,9 +57,7 @@ fn reentry_from_captured_state_matches_continuous_run() {
     let v_full_end = read_out(full.last().expect("A has steps"), &info_a);
 
     // Leg 1: 0→T, capture the final step.
-    let (mut circuit_b, info_b) = compiler.build_circuit_mapped("Top").expect("build B");
-    circuit_b.init_digital().expect("digital");
-    circuit_b.rebuild_digital_topology();
+    let (mut circuit_b, info_b) = build_rc();
     let ic_b = discharged_ic(&info_b, &circuit_b);
     let mut solver_b1 = circuit_b
         .transient(TransientAnalysisOptions::new(t_half, t_half / 100.0), Context::default())
