@@ -1147,7 +1147,7 @@ Proof: `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** T1 leaves `E0174` out of §3.5 rule 10 and its `[§3.6]` row (the code-defined-once guard); T3, which defines `E0174` in §3.6, also writes it into those two places (orchestrator, 2026-11-14)
-**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3
+**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3 - returned (T1-T5 cd533e88..ab419043; T1 tests written after text; phases glossary row fixed by orchestrator)
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above
 
 ---
