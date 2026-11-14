@@ -7,6 +7,9 @@ site_description: Piperine mixed-signal language specification
 extra:
   spec_version: "0.4.0"
 # ===================================
+exclude_docs: |
+  book/
+
 theme:
   name: material
 

@@ -674,15 +674,15 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `the_book_source_is_in_docs_book` passes in `book.rs` (C101: STD-18 AC 1)
-- [ ] Test `build_py_writes_an_ignored_index` passes in `book.rs` (C102: STD-18 AC 2)
-- [ ] Test `every_msl_block_parses` passes in `book.rs` (C109: STD-18 AC 9)
-- [ ] Test `the_book_has_at_least_40_msl_blocks` passes in `book.rs` (C111: STD-18 AC 11)
-- [ ] If the scratchpad files are gone, stop and ask the orchestrator for them; the Book is not rewritten from memory
-- [ ] A block that is wrong MSL is fixed in place; a block that illustrates an error is marked `data-lang="msl-error"` and the check requires at least one diagnostic from it; each edit is listed in the commit body
-- [ ] The test runs `python3 docs/book/build.py` and fails loud when Python is missing; it never skips
-- [ ] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `the_book_source_is_in_docs_book` passes in `book.rs` (C101: STD-18 AC 1)
+- [x] Test `build_py_writes_an_ignored_index` passes in `book.rs` (C102: STD-18 AC 2)
+- [x] Test `every_msl_block_parses` passes in `book.rs` (C109: STD-18 AC 9)
+- [x] Test `the_book_has_at_least_40_msl_blocks` passes in `book.rs` (C111: STD-18 AC 11)
+- [x] If the scratchpad files are gone, stop and ask the orchestrator for them; the Book is not rewritten from memory
+- [x] A block that is wrong MSL is fixed in place; a block that illustrates an error is marked `data-lang="msl-error"` and the check requires at least one diagnostic from it; each edit is listed in the commit body
+- [x] The test runs `python3 docs/book/build.py` and fails loud when Python is missing; it never skips
+- [x] Gate passes: the task's `Run` line(s), then `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test spec_text`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
