@@ -33,10 +33,50 @@ pub struct Package {
     pub description: String,
 }
 
+/// A version requirement: `M`, `M.m` or `M.m.p`, Cargo's caret rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Requirement {
+    pub major: u64,
+    pub minor: Option<u64>,
+    pub patch: Option<u64>,
+}
+
+/// The git reference a dependency asks for; none means the repository's default branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitRef {
+    DefaultBranch,
+    Branch(String),
+    Tag(String),
+    Rev(String),
+}
+
+/// Where a dependency is: a directory, or a git repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// As written: relative to the directory of the manifest that names it, or absolute.
+    Path(String),
+    Git { url: String, reference: GitRef },
+}
+
+/// An entry of `[dependencies]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dependency {
+    /// The dependency name: the key.
+    pub name: String,
+    /// The span of the key in the manifest text.
+    pub name_span: Span,
+    pub source: Source,
+    pub requirement: Option<Requirement>,
+    /// The located package's own name, when it differs from the key.
+    pub package: Option<String>,
+}
+
 /// A manifest as read and validated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
     pub package: Package,
+    /// In source order.
+    pub dependencies: Vec<Dependency>,
 }
 
 impl Manifest {
@@ -76,11 +116,11 @@ impl Manifest {
             }
         };
         let mut walk = Walk { text, faults: Vec::new() };
-        let package = walk.manifest(table.get_ref());
+        let (package, dependencies) = walk.manifest(table.get_ref());
         let mut faults = walk.faults;
         faults.sort_by_key(|d| d.span().start);
         match package {
-            Some(package) if faults.is_empty() => Ok(Manifest { package }),
+            Some(package) if faults.is_empty() => Ok(Manifest { package, dependencies }),
             _ => Err(faults.into_iter().map(|diagnostic| PackageError { file: file.to_path_buf(), text: text.to_string(), diagnostic }).collect()),
         }
     }
@@ -114,6 +154,7 @@ fn entries<'a, 'i>(table: &'a DeTable<'i>) -> Vec<(&'a Key<'i>, &'a Value<'i>)> 
 
 const MANIFEST_KEYS: &[&str] = &["package", "dependencies"];
 const PACKAGE_KEYS: &[&str] = &["name", "version", "authors", "description"];
+const DEPENDENCY_KEYS: &[&str] = &["path", "git", "branch", "tag", "rev", "version", "package"];
 
 /// The faults of one manifest, found by walking its spanned table.
 struct Walk<'t> {
@@ -143,8 +184,9 @@ impl Walk<'_> {
         self.fault(value.span(), message, &format!("expected {wants}"), None);
     }
 
-    fn manifest(&mut self, table: &DeTable<'_>) -> Option<Package> {
+    fn manifest(&mut self, table: &DeTable<'_>) -> (Option<Package>, Vec<Dependency>) {
         let mut package = None;
+        let mut dependencies = Vec::new();
         let mut seen = false;
         for (key, value) in entries(table) {
             match key.get_ref().as_ref() {
@@ -155,15 +197,121 @@ impl Walk<'_> {
                         None => self.mistyped("package", value, "a table"),
                     }
                 }
-                // Read by the next task.
-                "dependencies" => {}
+                "dependencies" => match value.get_ref().as_table() {
+                    Some(t) => self.dependencies(t, &mut dependencies),
+                    None => self.mistyped("dependencies", value, "a table"),
+                },
                 _ => self.unknown(key, None, MANIFEST_KEYS),
             }
         }
         if !seen {
             self.fault(0..0, "the manifest has no `package` table".to_string(), "a manifest starts with `[package]`", Some("add a `[package]` table with a `name` and a `version`".to_string()));
         }
-        package
+        (package, dependencies)
+    }
+
+    fn dependencies(&mut self, table: &DeTable<'_>, out: &mut Vec<Dependency>) {
+        for (key, value) in entries(table) {
+            let name = key.get_ref().to_string();
+            let mut broken = false;
+            if !is_crate_name(&name) {
+                let help = "a dependency name is an identifier that is no keyword of the language and not `std`".to_string();
+                self.fault(key.span(), format!("`{name}` is not a dependency name"), "not a dependency name", Some(help));
+                broken = true;
+            }
+            let Some(entry) = value.get_ref().as_table() else {
+                let message = format!("dependency `{name}` must be a table with a `path` or a `git`, found {}", value.get_ref().type_str());
+                self.fault(value.span(), message, "expected a table such as `{ path = \"..\" }`", Some("there is no registry: name a `path` or a `git` source".to_string()));
+                continue;
+            };
+            if let Some(dependency) = self.dependency(key, &name, entry) {
+                if !broken {
+                    out.push(dependency);
+                }
+            }
+        }
+    }
+
+    /// One entry's keys; `None` when it has a fault (each reported once).
+    fn dependency(&mut self, key: &Key<'_>, name: &str, entry: &DeTable<'_>) -> Option<Dependency> {
+        let mut ok = true;
+        let (mut path, mut git, mut package, mut requirement) = (None, None, None, None);
+        // Reference keys in source order, with the span of the key.
+        let mut refs: Vec<(&str, Range<usize>, String)> = Vec::new();
+        for (k, v) in entries(entry) {
+            let k_name = k.get_ref().as_ref();
+            match k_name {
+                "path" | "git" | "branch" | "tag" | "rev" | "version" | "package" => {
+                    let Some(s) = v.get_ref().as_str() else {
+                        self.mistyped(k_name, v, "a string");
+                        ok = false;
+                        continue;
+                    };
+                    match k_name {
+                        "path" => path = Some(s.to_string()),
+                        "git" => git = Some(s.to_string()),
+                        "branch" | "tag" | "rev" => refs.push((k_name, k.span(), s.to_string())),
+                        "version" => match parse_requirement(s) {
+                            Some(r) => requirement = Some(r),
+                            None => {
+                                let help = "a version requirement is `MAJOR`, `MAJOR.MINOR` or `MAJOR.MINOR.PATCH`".to_string();
+                                self.fault(v.span(), format!("`{s}` is not a version requirement"), "expected `1`, `1.2` or `1.2.3`", Some(help));
+                                ok = false;
+                            }
+                        },
+                        _ => {
+                            if is_crate_name(s) {
+                                package = Some(s.to_string());
+                            } else {
+                                let help = "a package name is an identifier that is no keyword of the language and not `std`".to_string();
+                                self.fault(v.span(), format!("`{s}` is not a package name"), "not a package name", Some(help));
+                                ok = false;
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    self.unknown(k, Some(&format!("dependencies.{name}")), DEPENDENCY_KEYS);
+                    ok = false;
+                }
+            }
+        }
+        // A source key of the wrong type was reported at its value: it is not also a missing source.
+        let (has_path, has_git) = (entry.contains_key("path"), entry.contains_key("git"));
+        let source = match (path, git) {
+            (Some(path), None) => Some(Source::Path(path)),
+            (None, Some(url)) => Some(Source::Git { url, reference: GitRef::DefaultBranch }),
+            (None, None) if has_path != has_git => None,
+            _ => {
+                self.fault(key.span(), format!("dependency `{name}` needs exactly one of `path` and `git`"), "name a `path` or a `git` source", None);
+                None
+            }
+        };
+        let mut source = source?;
+        match &mut source {
+            Source::Git { reference, .. } => {
+                if let Some((first, rest)) = refs.split_first() {
+                    if let Some((second, span, _)) = rest.first() {
+                        let message = format!("dependency `{name}` names `{}` and `{second}`: at most one of `branch`, `tag` and `rev`", first.0);
+                        self.fault(span.clone(), message, "one reference only", None);
+                        ok = false;
+                    } else {
+                        *reference = match first.0 {
+                            "branch" => GitRef::Branch(first.2.clone()),
+                            "tag" => GitRef::Tag(first.2.clone()),
+                            _ => GitRef::Rev(first.2.clone()),
+                        };
+                    }
+                }
+            }
+            Source::Path(_) => {
+                if let Some((which, span, _)) = refs.first() {
+                    self.fault(span.clone(), format!("`{which}` needs a `git` source, but dependency `{name}` has a `path`"), "a reference belongs to a `git` dependency", None);
+                    ok = false;
+                }
+            }
+        }
+        ok.then(|| Dependency { name: name.to_string(), name_span: Span::new(key.span().start, key.span().end), source, requirement, package })
     }
 
     fn package(&mut self, header: &Key<'_>, table: &DeTable<'_>) -> Option<Package> {
@@ -255,4 +403,20 @@ fn parse_version(text: &str) -> Option<Version> {
     };
     let version = Version { major: next()?, minor: next()?, patch: next()? };
     parts.next().is_none().then_some(version)
+}
+
+/// `M`, `M.m` or `M.m.p`, each a decimal integer.
+fn parse_requirement(text: &str) -> Option<Requirement> {
+    let parts: Vec<&str> = text.split('.').collect();
+    if parts.len() > 3 {
+        return None;
+    }
+    let mut numbers = Vec::new();
+    for part in parts {
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        numbers.push(part.parse::<u64>().ok()?);
+    }
+    Some(Requirement { major: numbers[0], minor: numbers.get(1).copied(), patch: numbers.get(2).copied() })
 }

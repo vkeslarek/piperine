@@ -1,11 +1,11 @@
 //! Scope: reading a package manifest, `Piperine.toml` (feature `msl-packages`, PKG-10): the
-//! unreadable manifest (`E0170`) and the rendered `PackageError`; the `[package]` table and the
-//! `[dependencies]` table are added by the tasks that follow.
+//! unreadable manifest (`E0170`) and the rendered `PackageError`, the `[package]` table and the
+//! `[dependencies]` table.
 
 use std::fs;
 
 use piperine_lang::msl::{Diagnostic, Span};
-use piperine_project::{Manifest, PackageError, Version};
+use piperine_project::{Dependency, GitRef, Manifest, PackageError, Requirement, Source, Version};
 
 /// A package directory holding exactly these bytes as its manifest.
 fn dir_with(manifest: &[u8]) -> tempfile::TempDir {
@@ -212,4 +212,134 @@ fn every_fault_of_a_manifest_is_reported() {
     let text = "[package]\nname = \"9a\"\nversion = \"x\"\nedition = \"2024\"\n";
     let errors = faults(text);
     assert_eq!(errors.iter().map(|e| &text[e.diagnostic.span().range()]).collect::<Vec<_>>(), ["\"9a\"", "\"x\"", "edition"]);
+}
+
+// ---- the `[dependencies]` table (T18) ----
+
+const PACKAGE: &str = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
+
+/// The manifest of `PACKAGE` followed by `[dependencies]` and these lines.
+fn with_deps(lines: &str) -> String {
+    format!("{PACKAGE}[dependencies]\n{lines}")
+}
+
+#[test]
+fn dependencies_read_in_source_order() {
+    let text = with_deps(
+        "zeta = { path = \"../zeta\" }\n\
+         alpha = { git = \"https://example.org/a.git\", tag = \"v1\" }\n\
+         mid = { git = \"https://example.org/m.git\", package = \"middle\", version = \"1.2\" }\n\
+         b = { git = \"https://example.org/b.git\", branch = \"dev\" }\n\
+         r = { git = \"https://example.org/r.git\", rev = \"0123abc\", version = \"0.2.3\" }\n\
+         d = { git = \"https://example.org/d.git\" }\n",
+    );
+    let manifest = Manifest::parse(&text).unwrap();
+    let names: Vec<&str> = manifest.dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, ["zeta", "alpha", "mid", "b", "r", "d"], "source order, not alphabetical");
+    let dep = |i: usize| -> &Dependency { &manifest.dependencies[i] };
+    assert_eq!(dep(0).source, Source::Path("../zeta".to_string()));
+    assert_eq!((dep(0).requirement, dep(0).package.as_deref()), (None, None));
+    assert_eq!(dep(1).source, Source::Git { url: "https://example.org/a.git".to_string(), reference: GitRef::Tag("v1".to_string()) });
+    assert_eq!(dep(2).package.as_deref(), Some("middle"));
+    assert_eq!(dep(2).requirement, Some(Requirement { major: 1, minor: Some(2), patch: None }));
+    assert!(matches!(&dep(3).source, Source::Git { reference: GitRef::Branch(b), .. } if b == "dev"));
+    assert!(matches!(&dep(4).source, Source::Git { reference: GitRef::Rev(r), .. } if r == "0123abc"));
+    assert_eq!(dep(4).requirement, Some(Requirement { major: 0, minor: Some(2), patch: Some(3) }));
+    assert!(matches!(&dep(5).source, Source::Git { reference: GitRef::DefaultBranch, .. }));
+    // Each entry carries the span of its name.
+    for d in &manifest.dependencies {
+        assert_eq!(&text[d.name_span.range()], d.name);
+    }
+    // A sub-table is the same entry, and no `[dependencies]` is no dependency.
+    let sub = format!("{PACKAGE}[dependencies.util]\npath = \"../util\"\n");
+    assert_eq!(Manifest::parse(&sub).unwrap().dependencies[0].name, "util");
+    assert!(Manifest::parse(PACKAGE).unwrap().dependencies.is_empty());
+    assert!(Manifest::parse(&format!("{PACKAGE}[dependencies]\n")).unwrap().dependencies.is_empty());
+    // Every requirement form.
+    for (text, expected) in [("1", (1, None, None)), ("1.2", (1, Some(2), None)), ("1.2.3", (1, Some(2), Some(3))), ("0", (0, None, None))] {
+        let m = Manifest::parse(&with_deps(&format!("u = {{ path = \"u\", version = \"{text}\" }}\n"))).unwrap();
+        let r = m.dependencies[0].requirement.unwrap();
+        assert_eq!((r.major, r.minor, r.patch), expected, "{text}");
+    }
+}
+
+#[test]
+fn a_dependency_needs_exactly_one_source() {
+    for (line, key) in [
+        ("a = {}", "a"),
+        ("b = { path = \"x\", git = \"y\" }", "b"),
+        ("c = { version = \"1\" }", "c"),
+        ("d = { path = \"x\", git = \"y\", branch = \"z\" }", "d"),
+        ("e = { package = \"e\" }", "e"),
+    ] {
+        let text = with_deps(&format!("{line}\n"));
+        let (error, at) = one_e0171(&text);
+        assert_eq!(at, key, "{line}");
+        assert!(error.diagnostic.message.contains("`path`") && error.diagnostic.message.contains("`git`"), "{}", error.diagnostic.message);
+    }
+    // A wrong type of a source is its own fault at the value.
+    let (_, at) = one_e0171(&with_deps("f = { path = 3 }\n"));
+    assert_eq!(at, "3");
+    let (_, at) = one_e0171(&with_deps("g = { git = true }\n"));
+    assert_eq!(at, "true");
+}
+
+#[test]
+fn git_refs_are_exclusive_and_git_only() {
+    for line in [
+        "a = { git = \"u\", branch = \"b\", rev = \"r\" }",
+        "a = { git = \"u\", branch = \"b\", tag = \"t\" }",
+        "a = { git = \"u\", tag = \"t\", rev = \"r\" }",
+        "a = { git = \"u\", branch = \"b\", tag = \"t\", rev = \"r\" }",
+        "a = { path = \"p\", tag = \"t\" }",
+        "a = { path = \"p\", branch = \"b\" }",
+        "a = { path = \"p\", rev = \"r\" }",
+    ] {
+        let (error, _) = one_e0171(&with_deps(&format!("{line}\n")));
+        let message = &error.diagnostic.message;
+        assert!(message.contains("`branch`") || message.contains("`tag`") || message.contains("`rev`"), "{line}: {message}");
+    }
+    // One reference beside `git` is fine.
+    for line in ["a = { git = \"u\", branch = \"b\" }", "a = { git = \"u\", tag = \"t\" }", "a = { git = \"u\", rev = \"r\" }"] {
+        Manifest::parse(&with_deps(&format!("{line}\n"))).unwrap_or_else(|e| panic!("{line}: {e:?}"));
+    }
+}
+
+#[test]
+fn a_bad_dependency_name_or_requirement_is_e0171() {
+    // Names: `std`, a hyphen, a keyword, a digit first.
+    for (key, written) in [("std", "std"), ("my-dep", "\"my-dep\""), ("fn", "fn"), ("9x", "9x")] {
+        let (error, at) = one_e0171(&with_deps(&format!("{written} = {{ path = \"p\" }}\n")));
+        assert!(at.contains(key), "{key}: the error is at {at:?}");
+        assert!(error.diagnostic.message.contains("dependency name"), "{}", error.diagnostic.message);
+    }
+    // Requirements.
+    for version in [">=1.0", "1.0.0.0", "", "x", "1.x", "^1.0", "1.", "v1", "-1", "1.0.0-rc1"] {
+        let text = with_deps(&format!("u = {{ path = \"p\", version = \"{version}\" }}\n"));
+        let (error, at) = one_e0171(&text);
+        assert_eq!(at, format!("\"{version}\""), "the error is at the string");
+        assert!(error.diagnostic.message.contains("version requirement"), "{}", error.diagnostic.message);
+    }
+    // `package` is a package name.
+    for package in ["my-pkg", "std", "9a"] {
+        let (_, at) = one_e0171(&with_deps(&format!("u = {{ path = \"p\", package = \"{package}\" }}\n")));
+        assert_eq!(at, format!("\"{package}\""));
+    }
+    // Any other key, and a bare string (there is no registry).
+    for key in ["subdir", "features", "registry"] {
+        let (error, at) = one_e0171(&with_deps(&format!("u = {{ path = \"p\", {key} = \"x\" }}\n")));
+        assert_eq!(at, key);
+        assert!(error.diagnostic.message.contains(&format!("`{key}`")), "{}", error.diagnostic.message);
+    }
+    let (error, at) = one_e0171(&with_deps("util = \"1.0\"\n"));
+    assert_eq!(at, "\"1.0\"");
+    assert!(error.diagnostic.message.contains("table"), "{}", error.diagnostic.message);
+    // `[dependencies]` itself is a table.
+    let (_, at) = one_e0171(&format!("dependencies = 3\n{PACKAGE}"));
+    assert_eq!(at, "3");
+    // Faults across entries are all reported, in source order.
+    let text = with_deps("a = {}\nmy-dep = { path = \"p\" }\nc = { path = \"p\", version = \"x\" }\n");
+    let errors = faults(&text);
+    assert_eq!(errors.len(), 3, "{errors:?}");
+    assert!(errors.windows(2).all(|w| w[0].diagnostic.span().start < w[1].diagnostic.span().start));
 }

@@ -586,15 +586,15 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `dependencies_read_in_source_order` passes in `manifest.rs` (C81: PKG-10 AC 10)
-- [ ] Test `a_dependency_needs_exactly_one_source` passes in `manifest.rs` (C82: PKG-10 AC 11)
-- [ ] Test `git_refs_are_exclusive_and_git_only` passes in `manifest.rs` (C83: PKG-10 AC 12)
-- [ ] Test `a_bad_dependency_name_or_requirement_is_e0171` passes in `manifest.rs` (C84: PKG-10 AC 13)
-- [ ] Dependencies keep source order
-- [ ] An unknown key inside a dependency (`subdir`, `features`) is `E0171` at the key
-- [ ] A dependency written as a bare string (`util = "1.0"`) is `E0171`: there is no registry
-- [ ] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `dependencies_read_in_source_order` passes in `manifest.rs` (C81: PKG-10 AC 10)
+- [x] Test `a_dependency_needs_exactly_one_source` passes in `manifest.rs` (C82: PKG-10 AC 11)
+- [x] Test `git_refs_are_exclusive_and_git_only` passes in `manifest.rs` (C83: PKG-10 AC 12)
+- [x] Test `a_bad_dependency_name_or_requirement_is_e0171` passes in `manifest.rs` (C84: PKG-10 AC 13)
+- [x] Dependencies keep source order
+- [x] An unknown key inside a dependency (`subdir`, `features`) is `E0171` at the key
+- [x] A dependency written as a bare string (`util = "1.0"`) is `E0171`: there is no registry
+- [x] Gate passes: `cargo test -p piperine-project`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

@@ -7,7 +7,7 @@ pub mod git;
 pub mod manifest;
 
 pub use error::PackageError;
-pub use manifest::{Manifest, Package, Version};
+pub use manifest::{Dependency, GitRef, Manifest, Package, Requirement, Source, Version};
 
 /// Finds the root directory of the current project by looking for Piperine.toml.
 /// Starts from `current_dir` and traverses up the directory tree.
