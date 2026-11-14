@@ -1147,7 +1147,7 @@ Proof: `cargo build -p piperine-project --all-targets 2>&1 | tee /dev/stderr | (
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** T1 leaves `E0174` out of §3.5 rule 10 and its `[§3.6]` row (the code-defined-once guard); T3, which defines `E0174` in §3.6, also writes it into those two places (orchestrator, 2026-11-14)
-**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3 - returned (T1-T5 cd533e88..ab419043; T1 tests written after text; phases glossary row fixed by orchestrator); B2 (T6-T11, Sonnet) at e10ac044 - returned (T6-T11 8e04a3b9..00bc5848; deviations: fixture prelude as 2nd std file, find() filters 'not in std', E0163 import cascade E0161; gaps: cycle name order, keyword/std root stems); B3 (T12-T18, Sonnet) at 3d3e963c
+**Dispatched:** B1 (T1-T5, Sonnet) at 5e0b75f3 - returned (T1-T5 cd533e88..ab419043; T1 tests written after text; phases glossary row fixed by orchestrator); B2 (T6-T11, Sonnet) at e10ac044 - returned (T6-T11 8e04a3b9..00bc5848; deviations: fixture prelude as 2nd std file, find() filters 'not in std', E0163 import cascade E0161; gaps: cycle name order, keyword/std root stems); B3 (T12-T18, Sonnet) at 3d3e963c - returned (T12-T18 74e859be..94e17616; no deviations; gaps: PKG-08 AC2 wording, missing-key spans)
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above
 
 ---
