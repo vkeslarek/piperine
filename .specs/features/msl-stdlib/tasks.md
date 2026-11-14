@@ -1091,7 +1091,7 @@ Proof: run book | test the_book_says_transient ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** (orchestrator, 2026-11-14, B2 stop) S1 tests that assumed an empty std are scoped, not weakened: where the test is about resolution/structure, build its design with an empty std via `std_source`, else filter to the root crate; every assertion kept. S2 `builtin_names_resolve_to_table_entries` loses `K_B` (etc.) in the task that moves each constant (T9), not T20. S3 the `to_ast.rs` `unreachable!` reached from corrupted JSON is a bug: fix it in T9 with a test (no POM function panics). S4 STD-12 AC 2: a std behavior block may be an excerpt of any docs/spec fence (Short is in Part IV §11), not only Part VII. S5 `no_export_has_a_core_name` exempts the six constant names until T20 removes their built-in rows; T20 removes the exemption.
 **Dispatched:** B1 (T1-T7, Sonnet) at 0ae471d1 - returned (T1-T7 a7fb0985..8dcb9818; gaps: STD-06 visible-trait rule unspecified (all blanket impls scanned); some tests green-before); B2 (T8-T12, Sonnet) at 2f5dc83b
 **Walked:** no screen in this feature; the stories' Independent Tests are the checks above. The Book is a page, but it is published by the orchestrator after the merge and has no binding capture.
 
