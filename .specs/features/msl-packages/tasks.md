@@ -459,14 +459,14 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `a_multi_crate_design_round_trips_through_json` passes in `pom_crates.rs` (C65: PKG-08 AC 1)
-- [ ] Test `from_json_rejects_out_of_range_crate_links` passes in `pom_crates.rs` (C66: PKG-08 AC 2)
-- [ ] Test `from_json_rejects_a_dependency_cycle` passes in `pom_crates.rs` (C67: PKG-08 AC 3)
-- [ ] Test `from_json_rejects_a_crate_whose_root_is_not_its_own` passes in `pom_crates.rs` (C68: PKG-08 AC 4)
-- [ ] No function panics on any JSON: the tests feed each broken link through `from_json`
-- [ ] The cycle check walks stored edges with a visited set
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `a_multi_crate_design_round_trips_through_json` passes in `pom_crates.rs` (C65: PKG-08 AC 1)
+- [x] Test `from_json_rejects_out_of_range_crate_links` passes in `pom_crates.rs` (C66: PKG-08 AC 2)
+- [x] Test `from_json_rejects_a_dependency_cycle` passes in `pom_crates.rs` (C67: PKG-08 AC 3)
+- [x] Test `from_json_rejects_a_crate_whose_root_is_not_its_own` passes in `pom_crates.rs` (C68: PKG-08 AC 4)
+- [x] No function panics on any JSON: the tests feed each broken link through `from_json`
+- [x] The cycle check walks stored edges with a visited set
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

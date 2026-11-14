@@ -11,7 +11,7 @@ use super::decl::{
     DeclKind, GenElseNode, GenerationData, GenericParamData, NamespaceOrigin, NatureFieldNode,
 };
 use super::design::Design;
-use super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
+use super::ids::{CrateId, DeclId, ExprId, PatId, PathId, StmtId, TypeId};
 use super::meta::{AttrArgNode, AttrInputNode, Meta};
 use super::resolution::{CallClass, Resolution, StructClass};
 
@@ -358,6 +358,7 @@ impl Design {
     /// when the design is well formed.
     pub fn check(&self) -> Vec<String> {
         let mut problems = Vec::new();
+        self.check_crates(&mut problems);
         self.check_links(&mut problems);
         self.index.check(self, &mut problems);
         self.check_nodes(&mut problems);
@@ -402,6 +403,90 @@ impl Design {
             if let Some(s) = self.expr_stmt[i] {
                 if !super::body::stmt_own_exprs(self, s).contains(&id) {
                     problems.push(format!("expression {i} names statement {} as its statement, which does not hold it", s.0));
+                }
+            }
+        }
+    }
+
+    /// The crate table: every crate link in range, each crate rooted at a file of its own whose
+    /// root declaration is the crate's, and no dependency cycle.
+    fn check_crates(&self, problems: &mut Vec<String>) {
+        let n = self.crates.len();
+        for (what, id) in [("root crate", self.root_crate), ("std crate", self.std_crate)] {
+            if id.index() >= n {
+                problems.push(format!("the {what} {} does not exist ({n} crates)", id.0));
+            }
+        }
+        for (i, f) in self.files.iter().enumerate() {
+            if f.krate.index() >= n {
+                problems.push(format!("file {i}: crate {} does not exist ({n} crates)", f.krate.0));
+            }
+        }
+        for (i, c) in self.crates.iter().enumerate() {
+            let me = CrateId(i as u32);
+            if c.root.index() >= self.decls.len() {
+                problems.push(format!("crate {i} ({}): root declaration {} does not exist", c.name, c.root.0));
+            }
+            if c.root_file.index() >= self.files.len() {
+                problems.push(format!("crate {i} ({}): root file {} does not exist", c.name, c.root_file.0));
+            } else {
+                let file = &self.files[c.root_file.index()];
+                if file.krate != me {
+                    problems.push(format!("crate {i} ({}): its root file {} belongs to crate {}", c.name, c.root_file.0, file.krate.0));
+                }
+                if file.root != c.root {
+                    problems.push(format!("crate {i} ({}): root declaration {} is not the root namespace {} of its root file", c.name, c.root.0, file.root.0));
+                }
+            }
+            if let Some(d) = self.decls.get(c.root.index()) {
+                if !matches!(d.kind, DeclKind::Namespace(_)) {
+                    problems.push(format!("crate {i} ({}): root declaration {} is not a namespace", c.name, c.root.0));
+                }
+            }
+            for dep in &c.dependencies {
+                if dep.krate.index() >= n {
+                    problems.push(format!("crate {i} ({}): dependency `{}` names crate {}, which does not exist ({n} crates)", c.name, dep.name, dep.krate.0));
+                }
+            }
+        }
+        self.check_cycles(problems);
+    }
+
+    /// A depth-first walk over the stored edges with a visited set: each crate is entered once, and
+    /// an edge back to a crate on the current path is a cycle.
+    fn check_cycles(&self, problems: &mut Vec<String>) {
+        // 0 unvisited, 1 on the current path, 2 done.
+        let mut state = vec![0u8; self.crates.len()];
+        for start in 0..self.crates.len() {
+            if state[start] != 0 {
+                continue;
+            }
+            let mut path = vec![(start, 0usize)];
+            state[start] = 1;
+            while let Some(&(at, next)) = path.last() {
+                let deps = &self.crates[at].dependencies;
+                let Some(dep) = deps.get(next) else {
+                    state[at] = 2;
+                    path.pop();
+                    continue;
+                };
+                path.last_mut().expect("the path is not empty").1 += 1;
+                let to = dep.krate.index();
+                if to >= self.crates.len() {
+                    continue;
+                }
+                match state[to] {
+                    0 => {
+                        state[to] = 1;
+                        path.push((to, 0));
+                    }
+                    1 => {
+                        let from = path.iter().position(|(c, _)| *c == to).unwrap_or(0);
+                        let mut names: Vec<&str> = path[from..].iter().map(|(c, _)| self.crates[*c].name.as_str()).collect();
+                        names.push(self.crates[to].name.as_str());
+                        problems.push(format!("dependency cycle: {}", names.join(" -> ")));
+                    }
+                    _ => {}
                 }
             }
         }

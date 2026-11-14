@@ -756,3 +756,135 @@ fn crate_find_inverts_qualified_name() {
     // `qualified_name` is relative to the declaration's own crate.
     assert_eq!(b.find("a::M").unwrap().qualified_name(), "a::M");
 }
+
+// ---- PKG-08: a multi-crate design serializes and is validated (T13) ----
+
+/// `app -> {zeta: b, alpha: c}`, each crate with a module and a `mod` file, so the JSON holds
+/// crates, dependencies and several files per crate.
+fn serialized() -> (Design, serde_json::Value) {
+    let design = three_crates("mod local;\npub module A() {}\n", "pub module B() {}\n", "pub module C() {}\n");
+    let json = serde_json::to_value(&design).unwrap();
+    (design, json)
+}
+
+fn edited(good: &serde_json::Value, f: impl Fn(&mut serde_json::Value)) -> Result<Design, Vec<String>> {
+    let mut v = good.clone();
+    f(&mut v);
+    Design::from_json(&v.to_string())
+}
+
+#[test]
+fn a_multi_crate_design_round_trips_through_json() {
+    let (design, json) = serialized();
+    assert_eq!(codes(&design).len(), 1, "the missing `local` file is one diagnostic: {:?}", codes(&design));
+    let back = Design::from_json(&json.to_string()).expect("a valid multi-crate design reads back");
+    assert!(back == design);
+    assert_eq!(back.crates().iter().map(|c| c.name()).collect::<Vec<_>>(), ["app", "b", "c", "std"]);
+    assert_eq!(back.root_crate().dependencies().iter().map(|(n, c)| (*n, c.name())).collect::<Vec<_>>(), [("zeta", "b"), ("alpha", "c")]);
+    assert_eq!(back.root_crate().files().len(), design.root_crate().files().len());
+    assert_eq!(back.dump(), design.dump());
+    // Two crates of one name and a diamond survive as well.
+    let mut g = CrateGraph::new();
+    let a = g.add_crate("app", "app/lib.msl").unwrap();
+    let l = g.add_crate("left", "l/lib.msl").unwrap();
+    let r = g.add_crate("right", "r/lib.msl").unwrap();
+    let s = g.add_crate("shared", "s/lib.msl").unwrap();
+    for (from, name, to) in [(a, "left", l), (a, "right", r), (l, "shared", s), (r, "shared", s)] {
+        g.add_dependency(from, name, to).unwrap();
+    }
+    let diamond = Design::builder().source("app/lib.msl", "").source("l/lib.msl", "").source("r/lib.msl", "").source("s/lib.msl", "pub module S() {}\n").crates(g).build();
+    let back = Design::from_json(&serde_json::to_string(&diamond).unwrap()).unwrap();
+    assert!(back == diamond);
+}
+
+#[test]
+fn from_json_rejects_out_of_range_crate_links() {
+    let (_, good) = serialized();
+    let big = serde_json::json!(99_999);
+    let cases: [(&str, &dyn Fn(&mut serde_json::Value)); 6] = [
+        ("a file's crate", &|v| v["files"][0]["krate"] = big.clone()),
+        ("a dependency's crate", &|v| v["crates"][0]["dependencies"][0]["krate"] = big.clone()),
+        ("the root crate", &|v| v["root_crate"] = big.clone()),
+        ("the std crate", &|v| v["std_crate"] = big.clone()),
+        ("a crate's root file", &|v| v["crates"][1]["root_file"] = big.clone()),
+        ("a crate's root declaration", &|v| v["crates"][1]["root"] = big.clone()),
+    ];
+    for (what, f) in cases {
+        let problems = edited(&good, f).err().unwrap_or_else(|| panic!("{what} out of range was accepted"));
+        assert!(problems.iter().any(|p| p.contains("99999")), "{what}: the error does not name the link: {problems:?}");
+    }
+}
+
+#[test]
+fn from_json_rejects_a_dependency_cycle() {
+    let (_, good) = serialized();
+    // b -> app closes app -> b -> app.
+    let two = edited(&good, |v| v["crates"][1]["dependencies"] = serde_json::json!([{ "name": "back", "krate": 0 }]));
+    let problems = two.err().expect("a two-crate cycle was accepted");
+    assert!(problems.iter().any(|p| p.contains("cycle") && p.contains("app") && p.contains('b')), "{problems:?}");
+    // A crate that depends on itself.
+    let one = edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([{ "name": "me", "krate": 2 }]));
+    assert!(one.err().expect("a self dependency was accepted").iter().any(|p| p.contains("cycle")));
+    // A longer loop: app -> b -> c -> app.
+    let three = edited(&good, |v| {
+        v["crates"][1]["dependencies"] = serde_json::json!([{ "name": "c", "krate": 2 }]);
+        v["crates"][2]["dependencies"] = serde_json::json!([{ "name": "app", "krate": 0 }]);
+    });
+    assert!(three.err().expect("a three-crate cycle was accepted").iter().any(|p| p.contains("cycle")));
+    // A diamond is no cycle (the visited set must not report it).
+    let diamond = edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([]));
+    assert!(diamond.is_ok());
+}
+
+#[test]
+fn from_json_rejects_a_crate_whose_root_is_not_its_own() {
+    let (design, good) = serialized();
+    let b_root = good["crates"][1]["root"].clone();
+    // The root declaration of another crate's file.
+    let other = edited(&good, |v| v["crates"][2]["root"] = b_root.clone());
+    assert!(other.is_err(), "crate c with the root declaration of crate b was accepted");
+    // The root file of another crate.
+    let b_file = good["crates"][1]["root_file"].clone();
+    let file = edited(&good, |v| v["crates"][2]["root_file"] = b_file.clone());
+    assert!(file.is_err(), "crate c rooted at the file of crate b was accepted");
+    // A file tagged with another crate.
+    let tagged = edited(&good, |v| {
+        let at = v["crates"][1]["root_file"].as_u64().unwrap() as usize;
+        v["files"][at]["krate"] = serde_json::json!(2);
+    });
+    assert!(tagged.is_err(), "a file of crate b tagged as crate c was accepted");
+    // A root declaration that is not a namespace.
+    let module = design.module("A").unwrap().decl().id();
+    let not_ns = edited(&good, |v| v["crates"][0]["root"] = serde_json::json!(module.0));
+    assert!(not_ns.is_err(), "a module as a crate's root was accepted");
+}
+
+#[test]
+fn from_json_never_panics_on_a_corrupted_crate_field() {
+    let (_, good) = serialized();
+    let leaves = ["root_crate", "std_crate"];
+    let mut edits: Vec<Box<dyn Fn(&mut serde_json::Value)>> = Vec::new();
+    for key in leaves {
+        for value in [99_999u64, 0, 1, 2, 3] {
+            edits.push(Box::new(move |v| v[key] = serde_json::json!(value)));
+        }
+    }
+    for value in [99_999u64, 0, 1, 2, 3] {
+        for field in ["root_file", "root"] {
+            edits.push(Box::new(move |v| v["crates"][1][field] = serde_json::json!(value)));
+        }
+        edits.push(Box::new(move |v| v["crates"][0]["dependencies"][1]["krate"] = serde_json::json!(value)));
+        edits.push(Box::new(move |v| v["files"][1]["krate"] = serde_json::json!(value)));
+    }
+    for f in &edits {
+        if let Ok(design) = edited(&good, f) {
+            for c in design.crates() {
+                let _ = (c.root().name(), c.files(), c.dependencies(), c.decls(), c.modules(), c.name());
+            }
+            let _ = (design.modules(), design.root_crate().root(), design.std_crate().root(), design.dump(), design.krate("b"));
+            for f in design.files() {
+                let _ = f.krate();
+            }
+        }
+    }
+}
