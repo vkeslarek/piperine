@@ -1,15 +1,9 @@
 //! The two-phase delta-cycle scheduler: fixed-point evaluation over the
 //! DAG topology with delta/time event queues (methods on `DigitalState`).
 //!
-//! **T38 (LRMC-C7-12):** both methods below drain `self.event_queue` (a
+//! Both methods below drain `self.event_queue` (a
 //! `BinaryHeap<Reverse<DigitalEvent>>`) via successive `pop()`, which
-//! yields events in ascending `DigitalEvent::Ord` — `(time, region,
-//! seq)` since T38 (`events.rs`/`regions.rs`'s `Region`). A same-
-//! timestamp batch is therefore already applied in strict LRM §8.3
-//! region-priority order (`Active < Inactive < Nba < Monitor`) with no
-//! change to either method's own drain/apply loop below — see
-//! `regions.rs`'s own module doc for why extending `DigitalEvent`'s `Ord`
-//! was chosen over routing through `RegionQueue` in this hot loop.
+//! yields events in ascending `DigitalEvent::Ord` — `(time, seq)`.
 use std::collections::HashSet;
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};

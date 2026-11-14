@@ -147,7 +147,6 @@ impl QueueSink<'_> {
             value,
             source: self.source,
             seq: *self.seq,
-            region: crate::digital::regions::Region::Active,
             strength,
         }));
         *self.seq += 1;

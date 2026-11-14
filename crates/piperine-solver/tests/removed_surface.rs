@@ -142,6 +142,21 @@ fn specify_timing_is_gone() {
 }
 
 #[test]
+fn regions_are_gone() {
+    let found = names_found(&[
+        "digital::regions",
+        "RegionQueue",
+        "RegionAction",
+        "RegionEvent",
+        "RegionOutcome",
+        "Region::",
+        "pub region:",
+        "region: Region",
+    ]);
+    assert!(found.is_empty(), "removed region surface still named: {found:#?}");
+}
+
+#[test]
 fn the_scan_catches_a_planted_name() {
     let planted = "pub struct DistoSolver; // planted";
     assert_eq!(names_in(planted, &["DistoSolver", "HAS_DISTO2"]), vec!["DistoSolver"]);

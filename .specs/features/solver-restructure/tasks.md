@@ -450,11 +450,11 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] Everything in the removal map row is gone; `DigitalEvent::cmp` compares `time` then `seq`; `PartialEq` drops the `region` term only
-- [ ] In kept test files a `region: Region::Active` field is dropped from `DigitalEvent` literals and nothing else changes; a test function wholly about region ordering is removed and named in `removed.txt`, with the 6 tests of the two deleted targets and the 8 unit tests of `regions.rs`
-- [ ] New target `event_order.rs` with the test `same_time_events_order_by_seq` (C29): events pushed at one time with `seq` 2, 0, 1 pop as 0, 1, 2; an earlier time pops before a lower `seq`
-- [ ] Test `regions_are_gone` passes (C18)
-- [ ] Gate: full
+- [x] Everything in the removal map row is gone; `DigitalEvent::cmp` compares `time` then `seq`; `PartialEq` drops the `region` term only
+- [x] In kept test files a `region: Region::Active` field is dropped from `DigitalEvent` literals and nothing else changes; a test function wholly about region ordering is removed and named in `removed.txt`, with the 6 tests of the two deleted targets and the 8 unit tests of `regions.rs`
+- [x] New target `event_order.rs` with the test `same_time_events_order_by_seq` (C29): events pushed at one time with `seq` 2, 0, 1 pop as 0, 1, 2; an earlier time pops before a lower `seq`
+- [x] Test `regions_are_gone` passes (C18)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full
