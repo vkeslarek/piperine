@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-11-14
 **Spec:** `.specs/features/msl-stdlib/spec.md`
-**Status:** Open questions pending (Q1 to Q5 below); the spec and the design are written under the recommended answer of each
+**Status:** Q1 to Q5 answered (see "Answers"); one consequence of Q2 awaits the user (see "Consequences of the answers")
 
 ---
 
@@ -110,3 +110,19 @@ Recommendation: one `pub` namespace per §22.x section, plus two for what Part V
 | Q2 | "As many as possible" | every std item expressible in MSL today gets an MSL body, even though nothing executes bodies yet; only what MSL cannot express stays `extern "intrinsic"` |
 | Q3 | "Rename the analysis kind" | the std module keeps the name `Tran`; the analysis kind `Tran` is renamed; plus a guard that no std export equals a core name |
 | Q4+Q5 | "Yes, both (Recommended)" | namespaces `std::{constants, carriers, values, analog, nets, convert, monitor, io}`, all re-exported by `std::prelude`; `Q`, `K_B`, `EPS0`, `PI`, `E`, `inf` move to `std::constants` (`inf` = `1.0 / 0.0`) |
+
+## Consequences of the answers (planner, 2026-11-14)
+
+Choices made inside the answers. Each is a row of the spec's Assumptions table.
+
+| # | Consequence | Choice |
+| - | ----------- | ------ |
+| Q3 | the new name of the analysis kind | `Transient`: a whole word, as `Noise` and `Static` are, and the word Parts V and VIII already use in prose |
+| Q2 | the intrinsic set, item by item (`design.md`, "The split") | five functions, the ones that read the characters of a `str`: `matches_bits`, `logic`, `table_model`, `parse_table`, `parse_hex`. The other 16 items get MSL bodies |
+| Q1 + Q2 | `extern "intrinsic"` on a module | not specified now: after Q2 no module needs it |
+| Q2 | `E0707` (a complex root without its conjugate, a zero denominator) | removed; both are a false `where` of the param, `E0317`. An MSL body cannot raise a code of its own |
+| Q2 | the generator of `normal` | SplitMix64 for two uniform draws and Box-Muller; the source in `std::analog` is its documentation (closes the `normal` half of G.64) |
+| Q2 | `pnjlim`, `fetlim`, `limvds` | transliterated from `crates/piperine-ir/src/limit.rs` |
+
+**Awaiting the user.** `laplace_nd` as written requires `D >= 1` and `N <= D` (a proper transfer function), which is narrower than Part VII's contract today. Recommendation: accept it and state it as a rule of §22.2.14 (`E0304`); an improper `H(s)` differentiates the input more than once and is rarely physical. Alternative: keep `laplace_nd` general by making it the sixth intrinsic, which the "reads a string" rule would then no longer describe.
+
