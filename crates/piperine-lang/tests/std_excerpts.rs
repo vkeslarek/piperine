@@ -314,3 +314,15 @@ fn prelude_items_outside_part_vii_are_shown_pub() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+#[test]
+fn part_vii_examples_are_fragments() {
+    // A fence that names a module of a model (`Pi`, `MeasuredDiode`) or a file a run never ships
+    // (`boot.hex`) is a piece of a model, not a file of `std` or a file that builds alone.
+    let part = part_vii();
+    let marked = ["module Pi", "MeasuredDiode", "boot.hex"];
+    let blocks: Vec<Block> = extract("part_vii_stdlib.md", &part).into_iter().filter(|b| marked.iter().any(|m| b.text.contains(m))).collect();
+    assert!(!blocks.is_empty(), "Part VII has a fence that names `boot.hex`");
+    let wrong: Vec<String> = blocks.iter().filter(|b| b.class != Class::Fragment).map(|b| format!("line {}: {:?}", b.line, b.class)).collect();
+    assert!(wrong.is_empty(), "fences of Part VII that are examples but not `rust,fragment`: {wrong:?}");
+}

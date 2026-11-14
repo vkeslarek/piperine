@@ -1439,8 +1439,8 @@ pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", nam
 #### 22.6.4 `parse_table`, `parse_hex`
 
 ```rust
-pub const fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
-pub const fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
+pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
+pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
 ```
 
 1. Both are `const fn`s from text to an array. They run at elaboration; a run never reads a file (§20).
@@ -1456,7 +1456,7 @@ pub const fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: a
 
 > **Resolution.** In `parse_hex`, `_` inside a word, `//` and `/* */` comments and `@address` records are accepted as in `$readmemh`. A digit `x` or `z` makes its four levels unknown. An index the text does not write is a misfit under rule 5.
 
-```rust
+```rust,fragment
 const IV:  [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));   // whitespace columns
 const ROM: [u32; 1024]      = parse_hex(include_str!("boot.hex"));         // $readmemh format
 ```

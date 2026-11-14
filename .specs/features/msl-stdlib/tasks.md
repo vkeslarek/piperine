@@ -509,11 +509,11 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `part_vii_examples_are_fragments` passes in `std_excerpts.rs` (C67: STD-11 AC 2)
-- [ ] `std_excerpts` passes with all six sections covered
-- [ ] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `part_vii_examples_are_fragments` passes in `std_excerpts.rs` (C67: STD-11 AC 2)
+- [x] `std_excerpts` passes with all six sections covered
+- [x] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
