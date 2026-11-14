@@ -23,6 +23,14 @@ fn diagnostics(src: &str) -> Vec<Diagnostic> {
     lex(src).1
 }
 
+fn plain(text: &str) -> Token {
+    Token::Str { text: text.to_string(), raw_hashes: None }
+}
+
+fn raw(text: &str, hashes: u8) -> Token {
+    Token::Str { text: text.to_string(), raw_hashes: Some(hashes) }
+}
+
 fn float(value: f64, raw: &str) -> Token {
     Token::Float { value, raw: raw.to_string() }
 }
@@ -221,7 +229,7 @@ fn unterminated_comment_and_string_one_diagnostic() {
     assert_eq!(kinds, vec![&Token::Ident("x".into()), &Token::Punct(Punct::Eq), &Token::Error]);
 
     // A terminated string with an escaped quote is fine.
-    assert_eq!(tokens(r#""a\"b""#), vec![Token::Str(r#"a\"b"#.into())]);
+    assert_eq!(tokens(r#""a\"b""#), vec![plain(r#"a\"b"#)]);
 }
 
 #[test]
@@ -244,9 +252,9 @@ fn inherited_lexical_forms_lex() {
     let (toks, diags) = lex(r###"r"a\b" r#"q"q"# r##"x"#y"##"###);
     assert!(diags.is_empty(), "{diags:?}");
     assert_eq!(toks.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>(), vec![
-        Token::Str("a\\\\b".into()),
-        Token::Str("q\\\"q".into()),
-        Token::Str("x\\\"#y".into()),
+        raw("a\\\\b", 0),
+        raw("q\\\"q", 1),
+        raw("x\\\"#y", 2),
     ]);
     assert_eq!(toks[0].1, Span::new(0, 6));
     // An unterminated raw string is one diagnostic at its opener.
@@ -280,8 +288,8 @@ fn raw_identifier_of_an_added_keyword_is_an_identifier() {
         assert_eq!(toks[0].1, Span::new(0, src.len()), "{src}");
     }
     // The raw-string openers keep lexing as strings.
-    assert_eq!(one_token("r#\"a\"#"), Token::Str("a".into()));
-    assert_eq!(one_token("r\"a\""), Token::Str("a".into()));
+    assert_eq!(one_token("r#\"a\"#"), raw("a", 1));
+    assert_eq!(one_token("r\"a\""), raw("a", 0));
     // A bare added keyword is still a keyword.
     assert!(matches!(one_token("out"), Token::Kw(_)));
 }
@@ -320,4 +328,62 @@ fn integer_literal_out_of_range_is_e0909() {
     ] {
         assert!(matches!(one_token(src), Token::Int(_)), "{src}");
     }
+}
+
+#[test]
+fn invalid_string_escape_is_e0900() {
+    // POL-13 AC 5: one E0900 at each undefined escape.
+    for (src, span) in [
+        (r#""\q""#, Span::new(1, 3)),
+        (r#""ab\x9""#, Span::new(3, 6)),
+        (r#""\u{110000}""#, Span::new(1, 11)),
+    ] {
+        let (_, diags) = lex(src);
+        assert_eq!(diags.len(), 1, "{src}: {diags:?}");
+        assert_eq!(diags[0].code, "E0900", "{src}");
+        assert_eq!(diags[0].span(), span, "{src}");
+    }
+    // Two bad escapes, two diagnostics; the defined ones are clean.
+    assert_eq!(lex(r#""\q\z""#).1.len(), 2);
+    assert!(
+        diagnostics(r#""\n\r\t\\\0\'\"\x41\u{1F600}\u{41}""#).is_empty(),
+        "every Rust escape is defined"
+    );
+    // A raw string has no escapes.
+    assert!(diagnostics(r##"r#"\q \u{110000}"#"##).is_empty());
+}
+
+fn literal(src: &str) -> piperine_lang::msl::ast::Lit {
+    use piperine_lang::msl::ast::ExprKind;
+    let (expr, diags) = piperine_lang::msl::parser::parse_expr(src);
+    let _ = diags;
+    match expr.expect("an expression").kind {
+        ExprKind::Lit(l) => l,
+        other => panic!("{src}: not a literal: {other:?}"),
+    }
+}
+
+#[test]
+fn literal_accessors_return_cooked_values() {
+    // POL-13 AC 7.
+    assert_eq!(literal(r#""a\tb\n\u{41}\x42""#).str_value().as_deref(), Some("a\tb\nAB"));
+    assert_eq!(literal(r##"r#"a"b\c"#"##).str_value().as_deref(), Some(r#"a"b\c"#));
+    assert_eq!(literal("1").str_value(), None);
+    assert_eq!(literal("0xFF").int_value(), Some(255));
+    assert_eq!(literal("0b1010_1u8").int_value(), Some(0b10101));
+    assert_eq!(literal("0o17").int_value(), Some(15));
+    assert_eq!(literal("1_000_000i32").int_value(), Some(1_000_000));
+    assert_eq!(literal("340282366920938463463374607431768211455").int_value(), Some(u128::MAX));
+    assert_eq!(literal("1.5").int_value(), None);
+    // A literal E0909 rejects has no value.
+    assert_eq!(literal("256u8").int_value(), None);
+    assert_eq!(literal("340282366920938463463374607431768211456").int_value(), None);
+    assert_eq!(literal("128i8").int_value(), Some(128));
+    assert_eq!(literal("255u8").suffix(), Some("u8"));
+    assert_eq!(literal("0xffi64").suffix(), Some("i64"));
+    assert_eq!(literal("7").suffix(), None);
+    assert_eq!(literal("1.5f32").suffix(), Some("f32"));
+    assert_eq!(literal("2.2u").suffix(), Some("u"));
+    assert_eq!(literal("1e3").suffix(), None);
+    assert_eq!(literal(r#""s""#).suffix(), None);
 }

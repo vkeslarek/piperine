@@ -253,14 +253,45 @@ pub struct Lit {
     pub span: Loc,
 }
 
+impl Lit {
+    /// The value of a string literal: escapes processed, a raw string verbatim.
+    /// `None` for another kind of literal or a string with an undefined escape.
+    pub fn str_value(&self) -> Option<String> {
+        let LitKind::Str { text, .. } = &self.kind else { return None };
+        let (value, bad) = super::lexer::unescape(text);
+        bad.is_empty().then_some(value)
+    }
+
+    /// The value of an integer literal (any radix, underscores and suffix
+    /// removed); `None` for another kind of literal or one `E0909` rejects.
+    pub fn int_value(&self) -> Option<u128> {
+        match &self.kind {
+            LitKind::Int(text) => super::lexer::int_value(text),
+            _ => None,
+        }
+    }
+
+    /// The suffix of an integer or float literal: a type suffix, or a float's
+    /// SI letter; `None` when there is none.
+    pub fn suffix(&self) -> Option<&str> {
+        let suffix = match &self.kind {
+            LitKind::Int(text) => super::lexer::int_suffix_text(text),
+            LitKind::Float { raw, .. } => super::lexer::float_suffix(raw),
+            _ => "",
+        };
+        (!suffix.is_empty()).then_some(suffix)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LitKind {
     /// The text, type suffix included.
     Int(String),
     /// The value (SI suffix applied) and the original text.
     Float { value: f64, raw: String },
-    /// The text between the quotes, escapes unprocessed.
-    Str(String),
+    /// The text between the quotes, escapes unprocessed; a raw string holds
+    /// its body with backslash and quote escaped, and its number of `#`.
+    Str { text: String, raw_hashes: Option<u8> },
     Bool(bool),
     /// The `Unknown` literal (A.3).
     Unknown,

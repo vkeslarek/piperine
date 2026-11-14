@@ -256,7 +256,7 @@ pub(crate) fn build<'a, I: In<'a>>(
             };
             let mut args = args.into_iter();
             let stream = match args.next() {
-                Some(EmitArg::Positional(Expr { kind: ExprKind::Lit(l @ Lit { kind: LitKind::Str(_), .. }), .. })) => l,
+                Some(EmitArg::Positional(Expr { kind: ExprKind::Lit(l @ Lit { kind: LitKind::Str { .. }, .. }), .. })) => l,
                 Some(EmitArg::Positional(x)) => {
                     emitter.emit(bad(x.span.0, "the first argument is not a string literal"));
                     return mk(ExprKind::Error, e.span());
@@ -312,7 +312,7 @@ pub(crate) fn build<'a, I: In<'a>>(
                 )
             };
             match args.as_slice() {
-                [Expr { kind: ExprKind::Lit(l @ Lit { kind: LitKind::Str(_), .. }), .. }] => {
+                [Expr { kind: ExprKind::Lit(l @ Lit { kind: LitKind::Str { .. }, .. }), .. }] => {
                     mk(ExprKind::IncludeStr(l.clone()), e.span())
                 }
                 [x] => {

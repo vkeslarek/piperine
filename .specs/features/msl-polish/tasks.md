@@ -564,13 +564,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `invalid_string_escape_is_e0900` passes in `msl_lexer.rs` (C72: POL-13 AC 5)
-- [ ] Test `raw_strings_print_as_written` passes in `msl_print.rs` (C73: POL-13 AC 6)
-- [ ] Test `literal_accessors_return_cooked_values` passes in `msl_lexer.rs` (C74: POL-13 AC 7)
-- [ ] `string_literals_are_printed_verbatim` still passes unchanged
-- [ ] The three accessors are plain methods on `Lit`; `int_value()` is none for a literal `E0909` rejected
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `invalid_string_escape_is_e0900` passes in `msl_lexer.rs` (C72: POL-13 AC 5)
+- [x] Test `raw_strings_print_as_written` passes in `msl_print.rs` (C73: POL-13 AC 6)
+- [x] Test `literal_accessors_return_cooked_values` passes in `msl_lexer.rs` (C74: POL-13 AC 7)
+- [x] `string_literals_are_printed_verbatim` still passes unchanged
+- [x] The three accessors are plain methods on `Lit`; `int_value()` is none for a literal `E0909` rejected
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

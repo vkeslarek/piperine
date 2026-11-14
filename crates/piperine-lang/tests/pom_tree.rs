@@ -232,8 +232,8 @@ const M: u32 = 2;
     assert_eq!(link.name(), "link");
     let positional = link.positional();
     assert_eq!(positional.len(), 1);
-    assert_eq!(positional[0].kind, LitKind::Str("bsim4.osdi".into()));
-    assert_eq!(link.named("model").map(|l| &l.kind), Some(&LitKind::Str("bsim4".into())));
+    assert_eq!(positional[0].kind, LitKind::Str { text: "bsim4.osdi".into(), raw_hashes: None });
+    assert_eq!(link.named("model").map(|l| &l.kind), Some(&LitKind::Str { text: "bsim4".into(), raw_hashes: None }));
     assert!(link.named("other").is_none());
     assert_eq!(link.text(), "#[link(\"bsim4.osdi\", model = \"bsim4\")]");
 

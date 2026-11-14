@@ -78,7 +78,7 @@ impl<'d> Function<'d> {
     pub fn abi(self) -> Option<&'d str> {
         match &self.data().abi {
             Some(l) => match &l.kind {
-                LitKind::Str(text) => Some(text.as_str()),
+                LitKind::Str { text, .. } => Some(text.as_str()),
                 _ => None,
             },
             None => None,

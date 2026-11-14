@@ -164,9 +164,9 @@ fn inherited_rust_forms_parse() {
     // Raw strings (`r"..."`, `r#"..."#`) are string literals; the AST keeps the
     // value, a backslash or quote inside it escaped.
     let raw = expr(r##"r#"a "b" \c"#"##);
-    assert!(matches!(&raw.kind, ExprKind::Lit(Lit { kind: LitKind::Str(s), .. }) if s == r#"a \"b\" \\c"#), "{raw:?}");
+    assert!(matches!(&raw.kind, ExprKind::Lit(Lit { kind: LitKind::Str { text: s, raw_hashes: Some(1) }, .. }) if s == r#"a \"b\" \\c"#), "{raw:?}");
     assert_eq!(raw.span.0, Span::new(0, 13));
-    assert!(matches!(&expr(r#"r"x""#).kind, ExprKind::Lit(Lit { kind: LitKind::Str(s), .. }) if s == "x"));
+    assert!(matches!(&expr(r#"r"x""#).kind, ExprKind::Lit(Lit { kind: LitKind::Str { text: s, raw_hashes: Some(0) }, .. }) if s == "x"));
     // `1.` is a float; `1..2`, `1.max(2)` and `t.0.1` keep their meaning.
     assert!(matches!(&expr("1.").kind, ExprKind::Lit(Lit { kind: LitKind::Float { raw, .. }, .. }) if raw == "1."));
     assert!(matches!(&expr("1. + 2.5").kind, ExprKind::Binary { .. }));
@@ -318,7 +318,7 @@ fn inherited_rust_forms_parse_expressions() {
 
     // ---- built-in `!` forms ----
     let ExprKind::Emit { stream, fields } = &expr("emit!(\"sim\", finish = true, msg = msg)").kind else { panic!() };
-    assert!(matches!(&stream.kind, LitKind::Str(s) if s == "sim"));
+    assert!(matches!(&stream.kind, LitKind::Str { text: s, .. } if s == "sim"));
     assert_eq!(fields.len(), 2);
     assert!(matches!(&expr("include_str!(\"diode_iv.tbl\")").kind, ExprKind::IncludeStr(_)));
 
@@ -464,7 +464,7 @@ fn inherited_rust_forms_parse_items() {
     let ItemKind::Fn(f) = only_item("pub fn pnjlim(new: f64, old: f64) -> f64;").kind else { panic!() };
     assert!(f.body.is_none());
     let ItemKind::Fn(f) = only_item("extern \"C\" fn erfcx(x: f64) -> f64;").kind else { panic!() };
-    assert!(matches!(&f.abi, Some(Lit { kind: LitKind::Str(s), .. }) if s == "C"));
+    assert!(matches!(&f.abi, Some(Lit { kind: LitKind::Str { text: s, .. }, .. }) if s == "C"));
     let ItemKind::Fn(f) = only_item("const fn parse(s: &'static str) -> u32 { 0 }").kind else { panic!() };
     assert!(f.is_const);
     let ItemKind::Fn(f) = only_item("fn f<const N: u32>(x: f64) -> f64 where N >= 1 { x }").kind else { panic!() };
@@ -570,7 +570,7 @@ fn doc_comments_and_attrs_attach() {
     // `#[link(..)]` with a string and a name-value argument.
     let item = only_item("#[link(\"bsim4.osdi\", model = \"bsim4\")] fn f() {}");
     let AttrInput::List(args) = &item.meta.attrs[0].input else { panic!() };
-    assert!(matches!(&args[0], AttrArg::Lit(Lit { kind: LitKind::Str(s), .. }) if s == "bsim4.osdi"));
+    assert!(matches!(&args[0], AttrArg::Lit(Lit { kind: LitKind::Str { text: s, .. }, .. }) if s == "bsim4.osdi"));
     assert!(matches!(&args[1], AttrArg::NameValue(n, _) if n.name == "model"));
 
     // Ordinary comments are discarded; `//!` is the file's inner doc.
@@ -701,7 +701,7 @@ fn modules_ports_items_and_generation() {
     let item = only_item(src);
     assert!(item.public);
     let ItemKind::Module(m) = &item.kind else { panic!() };
-    assert_eq!(m.abi.as_ref().map(|l| l.kind.clone()), Some(LitKind::Str("osdi".into())));
+    assert_eq!(m.abi.as_ref().map(|l| l.kind.clone()), Some(LitKind::Str { text: "osdi".into(), raw_hashes: None }));
     assert!(m.generics.is_some() && m.ret.is_some() && m.where_.is_some());
     assert_eq!(m.ports.iter().map(|p| p.dir).collect::<Vec<_>>(), [Some(Dir::In), Some(Dir::Out), None]);
     assert_eq!((m.ports[0].meta.docs.len(), m.ports[0].meta.attrs.len()), (1, 1));
@@ -877,7 +877,7 @@ fn behavior_blocks_and_builtin_forms() {
     let src = "emit!(\"sim\", finish = true, code = 3)";
     let e = expr(src);
     let ExprKind::Emit { stream, fields } = &e.kind else { panic!("{:?}", e.kind) };
-    assert_eq!(stream.kind, LitKind::Str("sim".into()));
+    assert_eq!(stream.kind, LitKind::Str { text: "sim".into(), raw_hashes: None });
     assert_eq!(fields.iter().map(|f| f.name.name.as_str()).collect::<Vec<_>>(), ["finish", "code"]);
     assert_eq!(text(src, &e.span), src);
     assert!(matches!(expr("emit!(\"sim\")").kind, ExprKind::Emit { .. }));
@@ -889,7 +889,7 @@ fn behavior_blocks_and_builtin_forms() {
     let src = "const A: &'static str = include_str!(\"a.txt\");";
     let ItemKind::Const(c) = &only_item(src).kind else { panic!() };
     let value = c.value.as_ref().unwrap();
-    assert!(matches!(&value.kind, ExprKind::IncludeStr(l) if l.kind == LitKind::Str("a.txt".into())));
+    assert!(matches!(&value.kind, ExprKind::IncludeStr(l) if l.kind == LitKind::Str { text: "a.txt".into(), raw_hashes: None }));
     assert_eq!(text(src, &value.span), "include_str!(\"a.txt\")");
 }
 

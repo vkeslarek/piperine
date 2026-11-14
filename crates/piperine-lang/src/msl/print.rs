@@ -303,7 +303,12 @@ fn lit(l: &Lit) -> String {
     match &l.kind {
         LitKind::Int(s) => s.clone(),
         LitKind::Float { raw, .. } => raw.clone(),
-        LitKind::Str(s) => format!("\"{}\"", enc(s)),
+        LitKind::Str { text, raw_hashes: Some(n) } => {
+            let hashes = "#".repeat(usize::from(*n));
+            let body = super::lexer::unescape(text).0;
+            format!("r{hashes}\"{body}\"{hashes}")
+        }
+        LitKind::Str { text, raw_hashes: None } => format!("\"{}\"", enc(text)),
         LitKind::Bool(b) => b.to_string(),
         LitKind::Unknown => "Unknown".to_string(),
     }

@@ -351,3 +351,16 @@ digital for M {
     assert!(first == second, "the printed text parses to another tree:\n{text}");
     assert_eq!(print(&second), text);
 }
+
+#[test]
+fn raw_strings_print_as_written() {
+    // POL-13 AC 6: a raw string keeps its spelling, hashes and body.
+    for lit in [r##"r#"a"b\c"#"##, r#"r"x\y""#, r###"r##"q"#q"##"###, r#"r"""#] {
+        let src = format!("fn f() {{ let s = {lit}; }}");
+        let text = assert_roundtrip(lit, &src);
+        assert!(text.contains(lit), "{lit} is not written back in\n{text}");
+    }
+    // An ordinary string stays ordinary.
+    let text = assert_roundtrip("plain", r#"fn f() { let s = "a\"b"; }"#);
+    assert!(text.contains(r#""a\"b""#), "{text}");
+}

@@ -103,8 +103,10 @@ pub enum Token {
     Int(String),
     /// A float literal: the value (SI suffix applied) and the original text.
     Float { value: f64, raw: String },
-    /// A string literal: the text between the quotes, escapes unprocessed.
-    Str(String),
+    /// A string literal: the text between the quotes, escapes unprocessed. A
+    /// raw string (`r#"..."#`) holds its body with backslash and quote escaped,
+    /// so the text reads back as the same value, and the number of its `#`.
+    Str { text: String, raw_hashes: Option<u8> },
     /// The lifetime `'static`, the only one MSL accepts.
     StaticLifetime,
     /// `///` doc comment: the text after the marker, verbatim.
@@ -129,7 +131,7 @@ impl std::fmt::Display for Token {
             Token::Unknown => f.write_str("`Unknown`"),
             Token::Int(s) => write!(f, "`{s}`"),
             Token::Float { raw, .. } => write!(f, "`{raw}`"),
-            Token::Str(_) => f.write_str("string literal"),
+            Token::Str { .. } => f.write_str("string literal"),
             Token::StaticLifetime => f.write_str("`'static`"),
             Token::DocOuter(_) | Token::DocInner(_) | Token::DocOuterBlock(_) | Token::DocInnerBlock(_) => {
                 f.write_str("doc comment")
@@ -334,13 +336,29 @@ pub fn lex(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
                 let open = text.find('"').map_or(1, |i| i + 1);
                 let hashes = open - 2;
                 let body = &text[open..text.len() - 1 - hashes];
-                tokens.push((Token::Str(cook(body)), span));
+                let raw_hashes = Some(u8::try_from(hashes).unwrap_or(u8::MAX));
+                tokens.push((Token::Str { text: cook(body), raw_hashes }, span));
             }
             Ok(Raw::RawByteStr) => {
                 diags.push(dropped_class("b\"", span));
                 tokens.push((Token::Error, span));
             }
-            Ok(Raw::Str) => tokens.push((Token::Str(text[1..text.len() - 1].to_string()), span)),
+            Ok(Raw::Str) => {
+                let body = &text[1..text.len() - 1];
+                for bad in unescape(body).1 {
+                    let at = Span::new(span.start + 1 + bad.start, span.start + 1 + bad.end);
+                    diags.push(
+                        Diagnostic::new(
+                            "E0900",
+                            format!("undefined escape `{}` in a string literal", &body[bad.clone()]),
+                            at,
+                            "not an escape of the language",
+                        )
+                        .with_help("the escapes are `\\n \\r \\t \\\\ \\0 \\' \\\"`, `\\xHH` up to `\\x7F` and `\\u{..}`"),
+                    );
+                }
+                tokens.push((Token::Str { text: body.to_string(), raw_hashes: None }, span));
+            }
             Ok(Raw::LineComment) => {
                 let line = text.strip_suffix('\r').unwrap_or(text);
                 if line.starts_with("///") && !line.starts_with("////") {
@@ -514,13 +532,105 @@ fn int_parts(text: &str) -> (u32, &str, &str) {
     (radix, &body[..end], &body[end..])
 }
 
-/// The value of an integer literal's digits, `None` past `u128::MAX`.
+/// The value of an integer literal: `None` past its suffix type's range
+/// (`iN` admits `2^(N-1)`, the magnitude of its minimum: the minus sign is an
+/// operator, A.2 rule 7) or, unsuffixed, past `u128::MAX`.
 pub fn int_value(text: &str) -> Option<u128> {
-    let (radix, digits, _) = int_parts(text);
+    let (radix, digits, suffix) = int_parts(text);
+    let max = match int_suffix(suffix) {
+        Some((false, w)) => u128::MAX >> (128 - w),
+        Some((true, w)) => 1u128 << (w - 1),
+        None => u128::MAX,
+    };
     digits
         .chars()
         .filter(|c| *c != '_')
         .try_fold(0u128, |acc, c| acc.checked_mul(radix as u128)?.checked_add(c.to_digit(radix)? as u128))
+        .filter(|v| *v <= max)
+}
+
+/// The suffix of a float literal's text (`f32`, `f64` or an SI letter), empty
+/// when there is none: what follows the digits, the fraction and the exponent.
+pub fn float_suffix(raw: &str) -> &str {
+    let b = raw.as_bytes();
+    let digits = |mut i: usize| {
+        while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_') {
+            i += 1;
+        }
+        i
+    };
+    let mut i = digits(0);
+    if i < b.len() && b[i] == b'.' {
+        i = digits(i + 1);
+    }
+    if i < b.len() && matches!(b[i], b'e' | b'E') {
+        let j = if matches!(b.get(i + 1), Some(b'+' | b'-')) { i + 2 } else { i + 1 };
+        if b.get(j).is_some_and(u8::is_ascii_digit) {
+            i = digits(j);
+        }
+    }
+    &raw[i..]
+}
+
+/// Process the escapes of a string body: the value, and the byte range of each
+/// escape Rust does not define (`\q`, `\x9`, `\x80`, `\u{110000}`). A
+/// backslash before a newline skips the newline and the whitespace after it.
+pub fn unescape(body: &str) -> (String, Vec<std::ops::Range<usize>>) {
+    let b = body.as_bytes();
+    let (mut out, mut bad, mut i) = (String::with_capacity(body.len()), Vec::new(), 0);
+    while i < b.len() {
+        if b[i] != b'\\' {
+            let c = body[i..].chars().next().expect("a char starts at i");
+            out.push(c);
+            i += c.len_utf8();
+            continue;
+        }
+        let start = i;
+        i += 1;
+        let Some(&e) = b.get(i) else {
+            bad.push(start..i);
+            break;
+        };
+        i += 1;
+        match e {
+            b'n' => out.push('\n'),
+            b'r' => out.push('\r'),
+            b't' => out.push('\t'),
+            b'\\' => out.push('\\'),
+            b'0' => out.push('\0'),
+            b'\'' => out.push('\''),
+            b'"' => out.push('"'),
+            b'\n' | b'\r' => {
+                while i < b.len() && matches!(b[i], b' ' | b'\t' | b'\n' | b'\r') {
+                    i += 1;
+                }
+            }
+            b'x' => {
+                let n = b[i..].iter().take(2).take_while(|c| c.is_ascii_hexdigit()).count();
+                i += n;
+                match (n, u8::from_str_radix(&body[i - n..i], 16)) {
+                    (2, Ok(v)) if v <= 0x7f => out.push(v as char),
+                    _ => bad.push(start..i),
+                }
+            }
+            b'u' if b.get(i) == Some(&b'{') => {
+                let close = body[i..].find('}').map(|c| i + c);
+                let end = close.map_or(i + 1, |c| c + 1);
+                let digits = close.map(|c| body[i + 1..c].replace('_', ""));
+                match digits.and_then(|d| u32::from_str_radix(&d, 16).ok()).and_then(char::from_u32) {
+                    Some(c) => out.push(c),
+                    None => bad.push(start..end),
+                }
+                i = end;
+            }
+            _ => {
+                // The escape is the backslash and the char after it.
+                i = start + 1 + body[start + 1..].chars().next().map_or(0, char::len_utf8);
+                bad.push(start..i);
+            }
+        }
+    }
+    (out, bad)
 }
 
 /// The type suffix of an integer literal's text, empty when there is none.
@@ -535,13 +645,7 @@ fn range_diag(tok: &Token, span: Span) -> Option<Diagnostic> {
     let (text, what) = match tok {
         Token::Float { value, raw } if value.is_infinite() => (raw, "a float literal beyond the range of `f64`".to_string()),
         Token::Int(text) => {
-            let value = int_value(text);
-            let max = match int_suffix(int_suffix_text(text)) {
-                Some((false, w)) => u128::MAX >> (128 - w),
-                Some((true, w)) => 1u128 << (w - 1),
-                None => u128::MAX,
-            };
-            if value.is_some_and(|v| v <= max) {
+            if int_value(text).is_some() {
                 return None;
             }
             (text, format!("an integer literal beyond the range of `{}`", match int_suffix_text(text) {

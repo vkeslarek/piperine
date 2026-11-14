@@ -108,7 +108,7 @@ pub(crate) fn lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone
     select! {
         Token::Int(s) => LitKind::Int(s),
         Token::Float { value, raw } => LitKind::Float { value, raw },
-        Token::Str(s) => LitKind::Str(s),
+        Token::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes },
         Token::Kw(Kw::True) => LitKind::Bool(true),
         Token::Kw(Kw::False) => LitKind::Bool(false),
         Token::Unknown => LitKind::Unknown,
@@ -157,7 +157,7 @@ pub(crate) fn macro_error(span: Span) -> Err<'static> {
 
 /// A string literal token as a [`Lit`].
 pub(crate) fn string_lit<'a, I: In<'a>>() -> impl Parser<'a, I, Lit, Extra<'a>> + Clone {
-    select! { Token::Str(s) => LitKind::Str(s) }
+    select! { Token::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes } }
         .map_with(|kind, e| Lit { kind, span: Loc(e.span()) })
         .labelled("string literal")
 }
