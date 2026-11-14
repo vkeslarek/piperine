@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use super::super::builtin::is_core_primitive;
-use super::super::decl::DeclKind;
+use super::super::decl::{DeclKind, FieldsForm};
 use super::super::design::Design;
 use super::super::ids::{DeclId, FileId};
 use crate::msl::Diagnostic;
@@ -64,6 +64,9 @@ impl Scopes {
         }
         // Source order across the namespaces' tables.
         out.sort_by_key(|(_, d)| d.span().start);
+        for (ns, table) in &self.namespaces {
+            out.extend(duplicates(design, *ns, table));
+        }
         for (module, entries) in &self.members {
             let module_name = design.decl_data(*module).name.as_ref().map_or("", |n| n.text.as_str());
             for (i, (name, decl)) in entries.iter().enumerate() {
@@ -82,6 +85,32 @@ impl Scopes {
     }
 }
 
+/// `E0162` for each declaration that repeats a name of its table, at its name,
+/// with a label at the first. A declaration in both tables is reported once.
+/// Two functions are an overload: the parser reports them as `E0143`.
+fn duplicates(design: &Design, ns: DeclId, table: &NsTable) -> Vec<(FileId, Diagnostic)> {
+    let mut out = Vec::new();
+    let mut reported: Vec<DeclId> = Vec::new();
+    for entries in [&table.types, &table.values] {
+        for (i, (name, decl)) in entries.iter().enumerate() {
+            let Some((_, first)) = entries[..i].iter().find(|(n, d)| n == name && d != decl) else { continue };
+            let is_fn = |d: DeclId| matches!(design.decl_data(d).kind, DeclKind::Fn(_));
+            if (is_fn(*decl) && is_fn(*first)) || reported.contains(decl) {
+                continue;
+            }
+            reported.push(*decl);
+            let span_of = |d: DeclId| {
+                let data = design.decl_data(d);
+                data.name.as_ref().map_or(data.span, |n| n.span)
+            };
+            let message = format!("`{name}` is defined more than once in this namespace");
+            let diagnostic = Diagnostic::new("E0162", message, span_of(*decl), "defined again here").with_label(span_of(*first), "first defined here");
+            out.push((design.decl_data(ns).file, diagnostic));
+        }
+    }
+    out
+}
+
 /// The named children of a namespace.
 fn namespace_table(design: &Design, ns: DeclId) -> NsTable {
     let mut table = NsTable::default();
@@ -90,6 +119,11 @@ fn namespace_table(design: &Design, ns: DeclId) -> NsTable {
         let Some(name) = &data.name else { continue };
         let entry = (name.text.clone(), *child);
         match &data.kind {
+            // A unit struct is a value too, as a module is (§3.4.7).
+            DeclKind::Struct(s) if s.form == FieldsForm::Unit => {
+                table.types.push(entry.clone());
+                table.values.push(entry);
+            }
             DeclKind::Nature(_) | DeclKind::Struct(_) | DeclKind::Enum(_) | DeclKind::Trait(_) | DeclKind::Namespace(_) => {
                 table.types.push(entry)
             }

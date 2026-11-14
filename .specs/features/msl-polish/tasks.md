@@ -887,16 +887,16 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `duplicate_item_is_e0162_and_both_are_kept` passes in `pom_resolve.rs` (C21: POL-04 AC 3)
-- [ ] Test `import_colliding_with_an_item_is_e0162` passes in `pom_resolve.rs` (C22: POL-04 AC 4)
-- [ ] Test `ambiguous_glob_is_e0162_only_when_used` passes in `pom_resolve.rs` (C23: POL-04 AC 5)
-- [ ] Test `two_globs_of_one_declaration_are_clean` passes in `pom_resolve.rs` (C24: POL-04 AC 6)
-- [ ] Test `two_functions_of_one_name_stay_e0143` passes in `pom_resolve.rs` (C25: POL-04 AC 7)
-- [ ] Test `one_name_in_two_tables_is_clean` passes in `pom_resolve.rs` (C26: POL-04 AC 8)
-- [ ] Both declarations are kept; resolution adds no node and removes none (`resolution_creates_no_node` unchanged)
-- [ ] `local_item_wins_over_glob` still passes unchanged
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `duplicate_item_is_e0162_and_both_are_kept` passes in `pom_resolve.rs` (C21: POL-04 AC 3)
+- [x] Test `import_colliding_with_an_item_is_e0162` passes in `pom_resolve.rs` (C22: POL-04 AC 4)
+- [x] Test `ambiguous_glob_is_e0162_only_when_used` passes in `pom_resolve.rs` (C23: POL-04 AC 5)
+- [x] Test `two_globs_of_one_declaration_are_clean` passes in `pom_resolve.rs` (C24: POL-04 AC 6)
+- [x] Test `two_functions_of_one_name_stay_e0143` passes in `pom_resolve.rs` (C25: POL-04 AC 7)
+- [x] Test `one_name_in_two_tables_is_clean` passes in `pom_resolve.rs` (C26: POL-04 AC 8)
+- [x] Both declarations are kept; resolution adds no node and removes none (`resolution_creates_no_node` unchanged)
+- [x] `local_item_wins_over_glob` still passes unchanged
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

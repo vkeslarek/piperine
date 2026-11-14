@@ -292,10 +292,19 @@ impl Names<'_, '_> {
                     if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved) {
                         return Some(*res);
                     }
+                    let mut found = None;
                     for target in globs {
-                        if let Some(found) = self.ctx.glob_member(*target, name, prefer, self.ns, visiting) {
-                            return Some(Resolution::Decl(found));
+                        match (self.ctx.glob_member(*target, name, prefer, self.ns, visiting), found) {
+                            (Some(hit), None) => found = Some(hit),
+                            (Some(hit), Some(first)) if hit != first => {
+                                self.ctx.ambiguous.set(true);
+                                return None;
+                            }
+                            _ => {}
                         }
+                    }
+                    if let Some(found) = found {
+                        return Some(Resolution::Decl(found));
                     }
                 }
                 _ if hidden => {}

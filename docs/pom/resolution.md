@@ -15,7 +15,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | --- | --- | --- |
 | 0. Load | finds and reads the files of the source tree (`mod b;` follows Rust's layout) | files, `E0161` for a missing, ambiguous or cyclic `mod` file |
 | 1. Lower | builds the declaration tree and the body arenas from the syntax tree, with every slot unset | all nodes |
-| 2. Scopes | per-namespace type and value tables, per-module member tables | `E0457`, `E0330` |
+| 2. Scopes | per-namespace type and value tables, per-module member tables | `E0457`, `E0330`, `E0162` |
 | 3. Imports | `use` items, `self`/`super`/`crate`, visibility, prelude sources | import resolution |
 | 4. Behaviors | binds each `analog`/`digital` block to its module | `BehaviorData::module`, `ModuleData::behaviors`, `E0401`, `E0402`, `E0403` |
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
@@ -57,7 +57,11 @@ works) and reports `E0161` with the label "private item". A module's members are
 member access with `E0343` instead (see [Members](#members)).
 
 **Repeated names.** A lookup of a name declared twice returns the first declaration. Both stay
-in the tree; a repeated member name of a module is reported as `E0330`.
+in the tree; a repeated member name of a module is reported as `E0330`. A namespace has one type
+table and one value table; a hardware module and a unit struct are in both. A name declared twice in
+one table, an explicit `use` that collides with an item or another explicit `use`, and a name used
+while two glob imports provide it for different declarations are `E0162` (§3.4.7 to §3.4.9); two
+functions of one name stay the parser's `E0143`. An item or an explicit `use` shadows a glob.
 
 ```msl
 nature Bit { value: bool }
@@ -283,6 +287,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | --- | --- | --- | --- |
 | `E0130` | 6 | an `impl` block written for a module | the self type of the `impl` |
 | `E0161` | 0, 3, 5 | a name that resolves to nothing, including a named connection, param binding, struct field or function argument the callee does not have; a private item reached through a path; an unreadable root file; a `mod b;` with no file, with two candidate files, or in a cycle | the path (or the `mod` item) |
+| `E0162` | 2, 3, 5 | a name declared twice in one table of a namespace; an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
 | `E0330` | 2 | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
 | `E0343` | 7 | a member of an instance that is missing or not `pub`, named from outside its module (§8.4.8) | the member name |
 | `E0401` | 4 | a behavior block with no usable module | the target path |

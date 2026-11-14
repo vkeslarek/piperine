@@ -84,6 +84,8 @@ pub(super) enum WalkError {
     Missing { at: usize },
     /// Segment `at` is an item that is not visible from here.
     Private { at: usize },
+    /// Segment `at` is provided by two glob imports for different declarations.
+    Ambiguous { at: usize },
 }
 
 /// The outcome of walking a path: a resolution per segment (those after a
@@ -149,19 +151,26 @@ impl Ctx<'_> {
                 return Some((target, inside || entry.public));
             }
         }
+        let mut found: Option<(DeclId, bool)> = None;
         for (index, entry) in imports.globs.iter().enumerate() {
             let visit = Visit { namespace: ns, glob: true, index };
             if visiting.contains(&visit) {
                 continue;
             }
             visiting.push(visit);
-            let found = self.glob_item(entry, ns, name, prefer, visiting);
+            let hit = self.glob_item(entry, ns, name, prefer, visiting);
             visiting.pop();
-            if let Some(found) = found {
-                return Some((found, inside || entry.public));
+            match (hit, found) {
+                (Some(hit), None) => found = Some((hit, inside || entry.public)),
+                // Two globs, two declarations: the name is ambiguous (§3.4.9).
+                (Some(hit), Some((first, _))) if hit != first => {
+                    self.ambiguous.set(true);
+                    return None;
+                }
+                _ => {}
             }
         }
-        None
+        found
     }
 
     /// What a glob brings under `name`: a public item of the namespace it
@@ -209,6 +218,9 @@ impl Ctx<'_> {
         if let Some((found, _)) = self.ns_item(ns, name, prefer, Some(ns), visiting) {
             return Some(Resolution::Decl(found));
         }
+        if self.ambiguous.get() {
+            return None;
+        }
         for root in &self.prelude {
             if let Some((found, true)) = self.ns_item(*root, name, prefer, None, visiting) {
                 return Some(Resolution::Decl(found));
@@ -229,6 +241,7 @@ impl Ctx<'_> {
         first: &mut dyn FnMut(&Self, &str, &mut Vec<Visit>) -> Option<Resolution>,
     ) -> Walked {
         let mut walked = Walked { res: vec![Resolution::Unresolved; segments.len()], error: None };
+        self.ambiguous.set(false);
         let Some(head) = segments.first() else { return walked };
         let head_name = head.name.text.as_str();
         let start = match head_name {
@@ -238,7 +251,7 @@ impl Ctx<'_> {
             _ => first(self, head_name, visiting),
         };
         let Some(mut current) = start else {
-            walked.error = Some(WalkError::Missing { at: 0 });
+            walked.error = Some(self.missing(0));
             return walked;
         };
         walked.res[0] = current;
@@ -264,12 +277,17 @@ impl Ctx<'_> {
                     walked.res[i] = current;
                 }
                 None => {
-                    walked.error = Some(WalkError::Missing { at: i });
+                    walked.error = Some(self.missing(i));
                     return walked;
                 }
             }
         }
         walked
+    }
+
+    /// Segment `at` found nothing: ambiguous when a glob lookup said so.
+    fn missing(&self, at: usize) -> WalkError {
+        if self.ambiguous.replace(false) { WalkError::Ambiguous { at } } else { WalkError::Missing { at } }
     }
 
     /// `name` after a segment that named `owner`: an item of a namespace, a
@@ -355,16 +373,55 @@ impl Ctx<'_> {
     /// not resolve or name a private item.
     pub(super) fn resolve_imports(&self, out: &mut Output) {
         for (ns, table) in &self.imports.by_namespace {
+            let mut named_targets = Vec::new();
             for entry in table.named.iter().chain(&table.globs) {
                 let node = self.design.path_node(entry.path);
                 let walked = self.walk(&node.segments, *ns, Prefer::Types, &mut Vec::new(), &mut |this, name, visiting| this.scope_lookup(*ns, name, Prefer::Types, visiting));
                 for (i, res) in walked.res.iter().enumerate() {
                     out.segments.push((entry.path, i, *res));
                 }
+                if !entry.name.is_empty() {
+                    named_targets.push((entry, walked.res.last().copied().unwrap_or(Resolution::Unresolved)));
+                }
                 let file = self.design.decl_data(entry.use_decl).file;
                 if let Some(error) = walked.error {
                     out.diagnostics.push((file, path_diagnostic(&node.segments, node.span, error)));
                 }
+            }
+            self.import_collisions(*ns, &named_targets, out);
+        }
+    }
+
+    /// `E0162` at the later of an explicit `use` and an item, or of two
+    /// explicit `use`s, that bring one name into one table (§3.4.8). An import of
+    /// the very item it meets (`use a::{self}` beside `mod a`) is no second name.
+    fn import_collisions(&self, ns: DeclId, named: &[(&ImportEntry, Resolution)], out: &mut Output) {
+        let design = self.design;
+        let mut entries: Vec<Taken> = Vec::new();
+        if let Some(items) = self.scopes.namespaces.get(&ns) {
+            for (name, decl) in items.types.iter().chain(&items.values) {
+                let data = design.decl_data(*decl);
+                let span = data.name.as_ref().map_or(data.span, |n| n.span);
+                if entries.iter().all(|e| e.span != span) {
+                    let in_types = items.types.iter().any(|(_, d)| d == decl);
+                    let in_values = items.values.iter().any(|(_, d)| d == decl);
+                    entries.push(Taken { name: name.clone(), types: in_types, values: in_values, span, import: false, decl: *decl });
+                }
+            }
+        }
+        for (entry, target) in named {
+            let node = design.path_node(entry.path);
+            let Resolution::Decl(target) = *target else { continue };
+            let (types, values) = occupies(design, target);
+            entries.push(Taken { name: entry.name.clone(), types, values, span: node.span, import: true, decl: target });
+        }
+        entries.sort_by_key(|e| e.span.start);
+        for (i, later) in entries.iter().enumerate() {
+            let first = entries[..i].iter().find(|e| e.name == later.name && ((e.types && later.types) || (e.values && later.values)) && (e.import || later.import) && !(e.decl == later.decl && e.import != later.import));
+            if let Some(first) = first {
+                let message = format!("`{}` is defined more than once in this namespace", later.name);
+                let diagnostic = Diagnostic::new("E0162", message, later.span, "defined again here").with_label(first.span, "first defined here");
+                out.diagnostics.push((design.decl_data(ns).file, diagnostic));
             }
         }
     }
@@ -381,5 +438,31 @@ pub(super) fn path_diagnostic(segments: &[PathSegment], span: crate::msl::Span, 
             let name = &segments[at].name.text;
             Diagnostic::new("E0161", format!("`{name}` is private"), span, "private item")
         }
+        WalkError::Ambiguous { at } => {
+            let name = &segments[at].name.text;
+            Diagnostic::new("E0162", format!("`{name}` is provided by two glob imports"), span, "ambiguous name")
+                .with_help("import the one you mean by name: `use path::name;`")
+        }
+    }
+}
+
+/// A name an item or an explicit `use` brings into a namespace, and the tables it takes.
+struct Taken {
+    name: String,
+    types: bool,
+    values: bool,
+    span: crate::msl::Span,
+    import: bool,
+    /// The declaration it is, or for an import the one it names.
+    decl: DeclId,
+}
+
+/// The tables an imported declaration occupies: types, values.
+fn occupies(design: &Design, decl: DeclId) -> (bool, bool) {
+    match &design.decl_data(decl).kind {
+        DeclKind::Fn(_) | DeclKind::Const(_) | DeclKind::Variant(_) => (false, true),
+        DeclKind::Module(_) => (true, true),
+        DeclKind::Struct(s) => (true, s.form == crate::pom::decl::FieldsForm::Unit),
+        _ => (true, false),
     }
 }

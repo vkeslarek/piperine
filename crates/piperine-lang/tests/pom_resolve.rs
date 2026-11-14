@@ -915,3 +915,78 @@ fn member_through_a_builtin_bound_is_deferred() {
     // A user trait bound resolves to the trait's own item.
     assert_eq!(one(&design, "T::run")[1], decl(&design, "Tr::run"));
 }
+
+// ---- E0162: one name per table per namespace (POL-04) ------------------------------------------
+
+#[test]
+fn duplicate_item_is_e0162_and_both_are_kept() {
+    let src = "module M() {}\nmodule M() {}\nstruct N;\nconst N: f64 = 1.0;\nmod a {}\nmod a {}\nstruct T { x: f64 }\nenum T { A }\n";
+    let design = build(src);
+    let found = with_code(&design, "E0162");
+    let at: Vec<(&str, usize)> = found.iter().map(|d| (primary_text(&design, d), d.diagnostic.span().start as usize)).collect();
+    let nth = |needle: &str, n: usize| src.match_indices(needle).nth(n).unwrap().0;
+    assert_eq!(at, [("M", nth("M()", 1)), ("N", nth("N:", 0)), ("a", nth("a {}", 1)), ("T", nth("enum T", 0) + 5)], "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics().len(), 4, "{:?}", design.diagnostics());
+    // Every declaration stays, and the name is the first one.
+    assert_eq!(design.root().children().len(), 8);
+    let first = design.root().children()[0].id();
+    assert_eq!(design.find("M").map(|d| d.id()), Some(first));
+}
+
+#[test]
+fn import_colliding_with_an_item_is_e0162() {
+    let src = "\
+mod a { pub const K: f64 = 1.0; }
+mod b { pub const K: f64 = 2.0; }
+const K: f64 = 0.0;
+use a::K;
+mod m { use super::a::K; use super::b::K; }
+mod n { pub const J: f64 = 1.0; use super::a::K as J; }
+";
+    let design = build(src);
+    let found = with_code(&design, "E0162");
+    let at: Vec<&str> = found.iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(at, ["a::K", "super::b::K", "super::a::K"], "{:?}", design.diagnostics());
+    assert_eq!(design.diagnostics().len(), 3, "{:?}", design.diagnostics());
+}
+
+#[test]
+fn ambiguous_glob_is_e0162_only_when_used() {
+    let src = "\
+mod a { pub const K: f64 = 1.0; }
+mod b { pub const K: f64 = 2.0; }
+mod idle { use super::a::*; use super::b::*; }
+mod busy { use super::a::*; use super::b::*; const Z: f64 = K; }
+";
+    let design = build(src);
+    let found = with_code(&design, "E0162");
+    assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
+    assert_eq!(primary_text(&design, found[0]), "K");
+    assert_eq!(found[0].diagnostic.span().start as usize, src.rfind("K;").unwrap());
+    assert_eq!(design.diagnostics().len(), 1, "no E0161 beside it: {:?}", design.diagnostics());
+    assert_eq!(one(&design, "K"), [Resolution::Unresolved]);
+}
+
+#[test]
+fn two_globs_of_one_declaration_are_clean() {
+    let src = "\
+mod a { pub const K: f64 = 1.0; }
+mod u { pub use super::a::*; }
+mod v { use super::a::*; use super::u::*; const Z: f64 = K; }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    assert_eq!(one(&design, "K"), [decl(&design, "a::K")]);
+}
+
+#[test]
+fn two_functions_of_one_name_stay_e0143() {
+    let design = build("fn f() {}\nfn f() {}\n");
+    assert_eq!(support::codes(&design), ["E0143"]);
+}
+
+#[test]
+fn one_name_in_two_tables_is_clean() {
+    let design = build("struct S { a: f64 }\nfn S() {}\n");
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+}

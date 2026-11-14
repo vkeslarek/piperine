@@ -9,6 +9,7 @@ mod members;
 mod names;
 mod scopes;
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use super::design::Design;
@@ -43,6 +44,9 @@ pub(super) struct Ctx<'a> {
     /// The access names quantities declare (`v`, `i`, ..): a call of one that
     /// no declaration names is an access call, not an unresolved name.
     access: BTreeMap<String, Vec<DeclId>>,
+    /// Set by a lookup that found a name through two glob imports of
+    /// different declarations: the walk reports it as `E0162`, not `E0161`.
+    ambiguous: Cell<bool>,
 }
 
 /// Run every resolution stage over a freshly lowered design.
@@ -57,6 +61,7 @@ pub(super) fn run(design: &mut Design) {
             links: BTreeMap::new(),
             impls: BTreeMap::new(),
             access: classify::access_table(design),
+            ambiguous: Cell::new(false),
         };
         let mut out = Output::default();
         out.diagnostics.extend(ctx.scopes.diagnostics(design));
