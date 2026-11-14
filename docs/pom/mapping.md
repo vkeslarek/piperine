@@ -47,6 +47,78 @@ tree one level at a time.
 | `attr_derive` | `#[derive(Repr)]` | `AttrNode` | `Attr` | `Reflect::attr("derive")`, `Attr::paths` |
 | `attr_link` | `#[link("x.osdi", model = "m")]` | `AttrNode` | `Attr` | `Reflect::attr("link")`, `Attr::positional`, `Attr::named` |
 
+## Constructs of B.1
+
+The 65 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added to Rust, one row each, numbered as there, with the POM type or method that represents it. A construct that is a name (a core module, a core `fn`, a type or a carrier method) has no storage of its own: it is a row of the built-in table (see [Resolution](resolution.md)), and the call, instance or access that uses it carries a `Resolution::Builtin`. `crates/piperine-lang/tests/pom_docs.rs` (`every_b1_construct_is_mapped`) reads the numbers and spellings of B.1.2 and fails when a construct has no row here.
+
+| # | Construct | POM |
+| --- | --- | --- |
+| 1 | `module` | `ModuleData`, `Module`; `design.module(name)` |
+| 2 | `nature` | `NatureData`, `Nature`; `design.nature(name)` |
+| 3 | `signal` | `SignalData`, `Signal`; `Module::signals`, `Module::signal` |
+| 4 | `on` | `ReactionData`, `Reaction`; `Behavior::reactions` |
+| 5 | `out` | `Dir` (`Dir::Out`); `Port::direction`, `Field::dir` |
+| 6 | `flip` | `TypeKind::Flip`; `Type::kind` |
+| 7 | `after` | `DefinitionData::after`, `StmtKind::Commit`; `Definition::after`, `Commit::after` |
+| 8 | `in` (new use) | `Dir` (`Dir::In`); `Port::direction`, `Field::dir` |
+| 9 | `extern` (new use) | `ModuleData::abi`; `Module::abi` |
+| 10 | `analog` | `BehaviorKind::Analog`, `BehaviorData`; `Behavior::kind`, `Module::analog_blocks` |
+| 11 | `digital` | `BehaviorKind::Digital`, `BehaviorData`; `Behavior::kind`, `Module::digital_blocks` |
+| 12 | `potential` | `NatureFieldNode::Quantity`, `QuantityRole`; `Nature::quantities`, `Quantity::role` |
+| 13 | `flow` | `NatureFieldNode::Quantity`, `QuantityRole`; `Nature::quantities`, `Quantity::role` |
+| 14 | `value` | `NatureFieldNode::Value`; `Nature::value_type` |
+| 15 | `resolve` | `NatureFieldNode::Resolve`; `Nature::resolve_fn` |
+| 16 | `+>` | `StmtKind::Contribution`; `Contribution`, `Behavior::contributions` |
+| 17 | `<-` | `StmtKind::Commit`; `Commit`, `Reaction::commits` |
+| 18 | optional trailing `Option` parameters | `PortData::default`; `Port::default`, `Instance::connection` (none for a left-out argument) |
+| 19 | named arguments | `Arg::name`; `Argument::name`, `Expr::args` |
+| 20 | SI suffixes | `LitKind::Float`; `Lit::suffix` |
+| 21 | `Unknown` | `LitKind::Unknown` |
+| 22 | `Event` | `BuiltinKind::Type`; `builtin`, `BuiltinId::info` |
+| 23 | `Analysis` | `BuiltinKind::Type`; `builtin`, `BuiltinId::info` |
+| 24 | `uN` / `iN` / `fN` | `BuiltinKind::Type`; `BuiltinId::width` |
+| 25 | `Repr` | `BuiltinKind::Trait`; `builtin`, `BuiltinId::info` |
+| 26 | `Nature` | `BuiltinKind::Trait`; `builtin`, `BuiltinId::info` |
+| 27 | `changed` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 28 | `prev` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 29 | `others` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 30 | `inflow` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 31 | `level` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 32 | `at` | `BuiltinKind::Module`; `Instance::builtin` |
+| 33 | `cross` | `BuiltinKind::Module`; `Instance::builtin` |
+| 34 | `settle` | `BuiltinKind::Event`; `builtin`, `Expr::resolution` |
+| 35 | `ddt` | `BuiltinKind::Module`; `Instance::builtin` |
+| 36 | `delay` | `BuiltinKind::Module`; `Instance::builtin` |
+| 37 | `ddx` | `BuiltinKind::Fn`, `CallClass::Function`; `Expr::resolution` |
+| 38 | `limit` | `BuiltinKind::Module`; `Instance::builtin` |
+| 39 | `noise` | `BuiltinKind::Module`; `Instance::builtin` |
+| 40 | `ac_stim` | `BuiltinKind::Fn`, `CallClass::Function`; `Expr::resolution` |
+| 41 | `bound_step` | `BuiltinKind::Statement`; `builtin`, `Expr::resolution` |
+| 42 | `now` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 43 | `freq` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 44 | `temperature` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 45 | `simparam` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 46 | `analysis` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 47 | `emit!` | `ExprKind::Emit`; `Expr::fields` |
+| 48 | `include_str!` | `ExprKind::IncludeStr` |
+| 49 | `#[derivative(f, …)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
+| 50 | `#[derive(Repr)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
+| 51 | `#[link(…)]` on an extern module | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::named` |
+| 52 | `gnd` | `BuiltinKind::Node`; `builtin` |
+| 53 | `m` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
+| 54 | `dtemp` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
+| 55 | `"osdi"` | `ModuleData::abi`; `Module::abi` |
+| 56 | `"cosim"` | `ModuleData::abi`; `Module::abi` |
+| 57 | `sim` | `ExprKind::Emit::stream`; `Expr::kind` |
+| 58 | `checks` | `ExprKind::Emit::stream`; `Expr::kind` |
+| 59 | bundle | `StructData::bundle`; `Struct::is_bundle`, `PortKind::Bundle` |
+| 60 | template | `StructClass::Template`, `CallClass::Instance`; `Instance::via_template`, `Instance::via` |
+| 61 | `Fn(P)` bound on modules | `GenericArgsNode::Paren`; `Path::segments` |
+| 62 | value inputs and a result | `PortKind::ValueInput`, `ModuleData::result`; `Module::result`, `Port::kind` |
+| 63 | `impl` on a nature or bundle | `ImplData`; `Impl`, `Nature::impls`, `Struct::impls` |
+| 64 | `pub` on body items | `DeclData::public`; `Reflect::is_pub` |
+| 65 | `where` over const generics | `FnData::where_`, `ModuleData::where_`; `Function::where_clause`, `Module::where_clause` |
+
 ## Rust items MSL keeps
 
 | Construct | Source form | Storage node | Handle | Query |

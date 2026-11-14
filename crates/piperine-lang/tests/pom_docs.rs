@@ -169,6 +169,75 @@ fn every_b3_production_is_mapped() {
     assert!(unmapped.is_empty(), "no row of docs/pom/mapping.md maps: {unmapped:?}");
 }
 
+/// The rows `(number, construct)` of Appendix B.1.2: the lines `| N | construct | ..` of its table.
+fn b12_constructs() -> Vec<(usize, String)> {
+    let text = std::fs::read_to_string(repo().join("docs/spec/appendix_b_grammar.md")).unwrap();
+    let start = text.find("### B.1.2").expect("B.1.2 heading");
+    let end = text[start + 1..].find("\n##").map_or(text.len(), |i| start + 1 + i);
+    text[start..end]
+        .lines()
+        .filter_map(|l| {
+            let mut cells = l.split('|').map(str::trim).skip(1);
+            let number: usize = cells.next()?.parse().ok()?;
+            Some((number, cells.next()?.to_string()))
+        })
+        .collect()
+}
+
+/// The names of every `pub struct|enum|trait` and every `pub fn` under `src/pom`, and in
+/// `src/msl/ast.rs` (the literal and operator types the POM re-exports).
+fn pom_public_names() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    let mut files = rust_files(&repo().join("crates/piperine-lang/src/pom"));
+    files.push(repo().join("crates/piperine-lang/src/msl/ast.rs"));
+    for file in files {
+        for line in std::fs::read_to_string(file).unwrap().lines() {
+            if let Some(t) = public_type_name(line) {
+                names.insert(t.to_string());
+            }
+            if let Some(rest) = line.trim_start().strip_prefix("pub fn ").or_else(|| line.trim_start().strip_prefix("pub const fn ")) {
+                names.insert(rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect());
+            }
+        }
+    }
+    names
+}
+
+/// The lines of the `## heading` section of a page.
+fn page_section<'a>(page: &'a str, heading: &str) -> Vec<&'a str> {
+    let mut lines = page.lines().skip_while(|l| l.trim_end() != heading);
+    lines.next();
+    lines.take_while(|l| !l.starts_with("## ")).collect()
+}
+
+#[test]
+fn every_b1_construct_is_mapped() {
+    let constructs = b12_constructs();
+    assert_eq!(constructs.len(), 65, "B.1.2 lists 65 constructs: {constructs:?}");
+    assert_eq!(constructs.iter().map(|(n, _)| *n).collect::<Vec<_>>(), (1..=65).collect::<Vec<_>>());
+    let docs = pom_docs();
+    let page = &docs.iter().find(|(n, _)| n == "mapping.md").expect("docs/pom/mapping.md").1;
+    let section = page_section(page, "## Constructs of B.1");
+    assert!(!section.is_empty(), "mapping.md has a `## Constructs of B.1` section");
+    let rows: Vec<Vec<&str>> = section.iter().filter(|l| l.starts_with('|')).map(|l| l.split('|').map(str::trim).skip(1).collect()).collect();
+    let names = pom_public_names();
+    let mut unmapped = Vec::new();
+    for (number, construct) in &constructs {
+        let row = rows.iter().find(|r| r.first().and_then(|c| c.parse::<usize>().ok()) == Some(*number));
+        // The row repeats the construct as B.1.2 writes it and names a POM type, method or function.
+        let names_pom = |r: &Vec<&str>| {
+            r.get(2).is_some_and(|cell| {
+                cell.split('`').skip(1).step_by(2).any(|code| code.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|ident| names.contains(ident)))
+            })
+        };
+        if !row.is_some_and(|r| r.get(1).copied() == Some(construct.as_str()) && names_pom(r)) {
+            unmapped.push(format!("{number} {construct}"));
+        }
+    }
+    assert!(unmapped.is_empty(), "no row of the `Constructs of B.1` table maps: {unmapped:?}");
+    assert_eq!(rows.iter().filter(|r| r.first().is_some_and(|c| c.parse::<usize>().is_ok())).count(), 65, "one row per construct, no extra");
+}
+
 #[test]
 fn msl_fences_parse_clean() {
     let mut fences = 0;

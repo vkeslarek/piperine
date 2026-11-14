@@ -1278,10 +1278,10 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `every_b1_construct_is_mapped` passes in `pom_docs.rs` (C123: POL-22 AC 1)
-- [ ] The guard reads the row numbers of B.1.2 from the spec; a construct added there without a row fails
-- [ ] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `every_b1_construct_is_mapped` passes in `pom_docs.rs` (C123: POL-22 AC 1)
+- [x] The guard reads the row numbers of B.1.2 from the spec; a construct added there without a row fails
+- [x] Gate passes: run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
