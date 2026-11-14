@@ -628,7 +628,7 @@ through a dependency.
     5. the core names.
 - **§3.5.5** Where an item or an import of the enclosing namespace has the name of a
   dependency, an ordinary path follows rule 4: the item or import wins, without a diagnostic.
-  A `use` path whose first segment is that name is ambiguous (`E0163`). There is no leading
+  A `use` path whose first segment is that name is ambiguous (`E0163`); the name that `use` binds is an errored binding, and a later read of it reports nothing further. There is no leading
   `::` ([Appendix B.3.6](appendix_b_grammar.md)). Reach the dependency under another key,
   `other = { package = "<name>", .. }` ([§3.6](#36-packages) rule 8), and the local item as
   `crate::<name>`.

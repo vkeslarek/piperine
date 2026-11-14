@@ -131,6 +131,15 @@ impl Ctx<'_> {
         !matches!(name, "crate" | "self" | "super") && self.deps[self.crate_of(ns)].contains_key(name) && self.ns_item(ns, name, Prefer::Types, Some(ns), visiting).is_some()
     }
 
+    /// Is `name` bound in `ns` by an explicit `use` that reported `E0163`? Such a name is an
+    /// errored binding: a later read of it reports nothing further (as rustc reports once).
+    pub(super) fn errored_import(&self, ns: DeclId, name: &str) -> bool {
+        let Some(table) = self.imports.by_namespace.get(&ns) else { return false };
+        table.named.iter().enumerate().any(|(index, entry)| {
+            entry.name == name && self.use_clash(ns, &self.design.path_node(entry.path).segments, &mut vec![Visit { namespace: ns, glob: false, index }])
+        })
+    }
+
     /// Is `name` a dependency name of the crate that holds `ns`?
     pub(super) fn is_dependency_name(&self, ns: DeclId, name: &str) -> bool {
         self.deps[self.crate_of(ns)].contains_key(name)

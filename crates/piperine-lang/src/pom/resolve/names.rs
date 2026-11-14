@@ -34,7 +34,7 @@ enum Frame {
     Items(Vec<(String, DeclId)>),
     /// The names the `use` items of one block bring in: visible in the whole
     /// block like its other items. A glob keeps the declaration it names.
-    Imports { named: Vec<(String, Resolution)>, globs: Vec<DeclId> },
+    Imports { named: Vec<(String, Resolution)>, globs: Vec<DeclId>, errored: Vec<String> },
     /// An item nested in a block does not see the locals and generics around
     /// it, only the items of the blocks it sits in.
     Barrier,
@@ -323,7 +323,7 @@ impl Names<'_, '_> {
                         return Some(Resolution::Decl(*d));
                     }
                 }
-                Frame::Imports { named, globs } => {
+                Frame::Imports { named, globs, .. } => {
                     if let Some((_, res)) = named.iter().find(|(n, res)| n == name && *res != Resolution::Unresolved) {
                         return Some(*res);
                     }
@@ -375,6 +375,11 @@ impl Names<'_, '_> {
         self.ctx.scope_lookup(self.ns, name, prefer, visiting)
     }
 
+    /// Is `name` bound here by a `use` that reported `E0163`: in a block, or in the namespace?
+    fn names_errored_import(&self, name: &str) -> bool {
+        self.frames.iter().any(|f| matches!(f, Frame::Imports { errored, .. } if errored.iter().any(|n| n == name))) || self.ctx.errored_import(self.ns, name)
+    }
+
     /// Resolve one path: record each segment, report the first problem. The
     /// answer is the last segment's.
     fn path(&mut self, id: PathId, prefer: Prefer) -> Resolution {
@@ -388,6 +393,14 @@ impl Names<'_, '_> {
             self.out.segments.push((id, i, *res));
         }
         if let (Some(error), 0) = (walked.error, self.quiet) {
+            if matches!(error, WalkError::Missing { at: 0 }) && self.names_errored_import(&node.segments[0].name.text) {
+                for segment in &node.segments {
+                    if let Some(args) = &segment.args {
+                        self.generic_args(args);
+                    }
+                }
+                return Resolution::Unresolved;
+            }
             let file = ctx.design.decl_data(node.owner).file;
             self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, error)));
         }
@@ -566,7 +579,7 @@ impl Names<'_, '_> {
         self.block_duplicates(&items);
         self.frames.push(Frame::Items(items));
         let imports_at = self.frames.len();
-        self.frames.push(Frame::Imports { named: Vec::new(), globs: Vec::new() });
+        self.frames.push(Frame::Imports { named: Vec::new(), globs: Vec::new(), errored: Vec::new() });
         self.block_uses(stmts, imports_at);
         self.frames.push(Frame::Locals(Vec::new()));
         for s in stmts {
@@ -642,12 +655,19 @@ impl Names<'_, '_> {
                 if self.block_clash(&node.segments) {
                     let file = design.decl_data(node.owner).file;
                     self.out.diagnostics.push((file, path_diagnostic(self.ctx.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    if !import.glob {
+                        let last = node.segments.last().map(|seg| seg.name.text.clone()).unwrap_or_default();
+                        let bound = import.alias.as_ref().map_or(last, |a| a.text.clone());
+                        if let Frame::Imports { errored, .. } = &mut self.frames[at] {
+                            errored.push(bound);
+                        }
+                    }
                     continue;
                 }
                 self.frames.push(Frame::Barrier);
                 let res = self.path(import.path, Prefer::Types);
                 self.frames.pop();
-                let Frame::Imports { named, globs } = &mut self.frames[at] else { continue };
+                let Frame::Imports { named, globs, .. } = &mut self.frames[at] else { continue };
                 match (import.glob, res) {
                     (true, Resolution::Decl(target)) => globs.push(target),
                     (true, _) => {}

@@ -514,6 +514,26 @@ fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
 }
 
 #[test]
+fn an_import_that_reported_e0163_is_an_errored_binding_that_reports_once() {
+    let util = "pub const K: u32 = 1;\n";
+    for app in [
+        // A value use, a type position and an aliased name after the clash.
+        "mod util { pub const K: u32 = 5; }\nuse util::K;\nconst X: u32 = K;\n",
+        "mod util { pub const K: u32 = 5; }\nuse util::K;\nconst X: u32 = K + K;\nconst Y: u32 = K;\n",
+        "mod util { pub const K: u32 = 5; pub struct S {} }\nuse util::S;\nfn f(s: S) {}\n",
+        "mod util { pub const K: u32 = 5; }\nuse util::K as J;\nconst X: u32 = J;\n",
+        // In a block.
+        "mod util { pub const K: u32 = 5; }\nfn f() -> u32 { use util::K; K }\n",
+    ] {
+        let design = two(app, util, "util", None);
+        assert_eq!(codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
+    }
+    // A name that no clash import binds still reports.
+    let design = two("mod util { pub const K: u32 = 5; }\nuse util::K;\nconst X: u32 = Z;\n", util, "util", None);
+    assert_eq!(codes(&design), ["E0163", "E0161"]);
+}
+
+#[test]
 fn crate_prefix_names_the_local_one_in_a_clash() {
     let design = two("mod util { pub const K: u32 = 5; }\nuse crate::util::K;\nconst X: u32 = K;\n", "pub const K: u32 = 1;\n", "util", None);
     assert_eq!(codes(&design), Vec::<String>::new());
