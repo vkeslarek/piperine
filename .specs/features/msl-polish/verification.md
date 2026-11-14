@@ -1,7 +1,7 @@
 # msl-polish verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at f9d533ae (130 pass, uncommitted, not rerun)
+**Verdict**: PASS (round 2; round 1 was FAIL with F1 to F14, all closed)
+**Proofs**: `proofs.md` at 5230a28a (137 pass, uncommitted, not rerun); round 1 read f9d533ae
 **Verifier**: independent sub-agent (author != verifier)
 
 Method: read spec.md, tasks.md `## Checks`, the audit report and the test of every check; re-ran the audit's own evidence and about 300 adversarial sources at f9d533ae through `parse`, `print` (round trip), `Design::build`, `to_ast`, `Design::from_json` and the reflection handles, from a throwaway target (`tests/zz_verify_probe.rs`, removed; a copy is at the scratchpad `verify-polish/zz_verify_probe.rs`). Cargo ran with `-p piperine-lang` only.
@@ -17,7 +17,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | C5 | `spec_text.rs` `every_method_called_in_a_spec_fence_is_catalogued` | yes |
 | C6 | `spec_text.rs` `catalogue_is_closed_by_e0161` | yes |
 | C7 | `spec_text.rs` `appendix_h_is_in_the_file_map_and_nav` | yes |
-| C8 | `pom_resolve.rs` `catalogue_traits_and_types_resolve` | no - the derive half asserts only "no diagnostic" (its own comment: attribute paths are never resolved); `#[derive(Bogus, Iterator)] struct S;` is also clean, so a derive name is neither resolved to a row nor ever `E0161` (F4) |
+| C8 | `pom_resolve.rs` `catalogue_traits_and_types_resolve` | yes (round 2) - derives in S, U, V asserted to resolve to the trait row or the user trait; round 1 was no (F4) |
 | C9 | `pom_resolve.rs` `builtin_table_matches_appendix_h` | yes |
 | C10 | `spec_text.rs` `gnd_and_the_implicit_params_are_core_names` | yes |
 | C11 | `pom_resolve.rs` `str_is_a_builtin_type` | yes |
@@ -51,7 +51,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | C39 | `spec_text.rs` `attrs_are_allowed_before_statements_and_hardware_items` | yes |
 | C40 | `spec_text.rs` `quantity_and_reaction_docs_are_metadata` | yes |
 | C41 | `spec_text.rs` `post_parse_constraints_name_their_phase` | yes |
-| C42 | `spec_text.rs` `e0125_covers_bodies` | yes (text); the POM messages for the two `E0125` faults state the rule, so a bodiless `fn a();` reads "... has a body" (F9) |
+| C42 | `spec_text.rs` `e0125_covers_bodies` | yes |
 | C43 | `spec_text.rs` `raw_identifiers_are_specified_and_g15_is_closed` | yes |
 | C44 | `spec_text.rs` `field_shorthand_is_specified_and_g14_is_closed` | yes |
 | C45 | `spec_text.rs` `every_error_code_is_defined_exactly_once` | yes |
@@ -61,7 +61,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | C49 | `msl_parser.rs` `commit_token_in_generic_arguments_is_still_an_error` | yes |
 | C50 | `msl_parser.rs` `function_pointer_types_parse` | yes |
 | C51 | `pom_body.rs` `function_pointer_type_round_trips` | yes |
-| C52 | `msl_errors.rs` `removed_rust_forms_report_targeted_messages` | no - one position per row; the same rows in other positions get generic messages: `use ::a::b;` (`unexpected ::`), `struct S<T> where T: Tr`, `impl<T> S<T> where T: Tr`, `trait Tr<T> where T: U` (`unexpected where`) (F5) |
+| C52 | `msl_errors.rs` `removed_rust_forms_report_targeted_messages` | yes (round 2) - fixtures now cover `use ::a::b;`, `use ::a::{b, c};` and `where` on struct, inherent impl, trait impl and trait; round 1 was no (F5) |
 | C53 | `msl_errors.rs` `every_b36_row_has_a_fixture` | yes |
 | C54 | `msl_errors.rs` `body_let_annotation_has_its_own_message` | yes |
 | C55 | `msl_lexer.rs` `raw_identifier_of_an_added_keyword_is_an_identifier` | yes |
@@ -86,16 +86,16 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | C74 | `msl_lexer.rs` `literal_accessors_return_cooked_values` | yes |
 | C75 | `pom_reflect.rs` `float_literals_round_trip_through_json` | yes |
 | C76 | `pom_reflect.rs` `float_literal_is_serialized_from_its_text` | yes |
-| C77 | `msl_errors.rs` `commit_target_must_be_a_place` | yes - six non-places and four places at the parser; `q.0 <- 1;` is accepted while `q.0 = 1;` is rejected and B.3.2 `place` has no tuple index (F8) |
+| C77 | `msl_errors.rs` `commit_target_must_be_a_place` | yes - `q.0 <- 1;` is now the place `E0900` too (F8 closed) |
 | C78 | `msl_errors.rs` `parenthesized_place_is_rejected_in_both_forms` | yes |
 | C79 | `msl_errors.rs` `signal_outside_a_module_body_is_e0404` | yes |
-| C80 | `msl_errors.rs` `behavior_statements_in_a_module_body_are_e0404` | yes for the three forms it names; the spec's own `E0404` row also lists `bound_step` in a module body, which gives a generic `E0900` (F7) |
+| C80 | `msl_errors.rs` `behavior_statements_in_a_module_body_are_e0404` | yes - `bound_step` in a module body is now `E0404` (F7 closed) |
 | C81 | `msl_errors.rs` `function_body_reports_e0121_only` | yes |
 | C82 | `msl_errors.rs` `pub_on_a_behavior_block_is_e0900` | yes |
 | C83 | `msl_errors.rs` `forms_outside_the_grammar_are_parse_errors` | yes |
 | C84 | `pom_resolve.rs` `misplaced_signal_declares_nothing` | yes |
 | C85 | `spec_text.rs` `e0910_counts_nesting_and_bounds_chains` | yes |
-| C86 | `msl_errors.rs` `flat_chains_up_to_4096_links_are_not_nesting` | yes on its 8 MiB stack; no case puts comparisons in a list, where D8 is broken (F1), and on a default 2 MiB thread a 4096-term sum aborts the process (F3) |
+| C86 | `msl_errors.rs` `flat_chains_up_to_4096_links_are_not_nesting` | yes - on 8 MiB; C130 and C131 now cover comparison lists and a 2 MiB thread |
 | C87 | `msl_errors.rs` `flat_chain_past_4096_links_is_e0910` | yes - asserts one `E0910` naming 4096 at 4097 and 20000 links (AC text says "4097 terms", which is 4096 links and is clean; the test follows the bound) |
 | C88 | `msl_errors.rs` `nesting_without_delimiters_is_also_bounded` | yes |
 | C89 | `msl_errors.rs` `bad_where_list_is_one_diagnostic` | yes |
@@ -113,7 +113,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | C101 | `pom_classify.rs` `bundle_literal_field_errors_are_e0263` | yes |
 | C102 | `pom_classify.rs` `unknown_struct_field_is_reported_in_literals_and_patterns` | yes |
 | C103 | `pom_classify.rs` `extern_module_shape_is_e0370` | yes |
-| C104 | `pom_classify.rs` `function_body_rule_is_e0125` | yes - asserts code and span; the messages read as the opposite fault (F9) |
+| C104 | `pom_classify.rs` `function_body_rule_is_e0125` | yes - messages now state the fault (F9 closed) |
 | C105 | `pom_classify.rs` `nature_field_errors_are_e0201` | yes |
 | C106 | `pom_classify.rs` `access_of_another_nature_is_e0206` | yes |
 | C107 | `pom_classify.rs` `carrier_method_on_an_array_is_e0211` | yes |
@@ -123,22 +123,29 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | C111 | `pom_reflect.rs` `design_has_a_collection_and_lookup_per_item_kind` | yes |
 | C112 | `pom_body.rs` `expr_children_and_parent_are_inverse` | yes |
 | C113 | `pom_body.rs` `decl_exprs_is_preorder_over_the_body` | yes |
-| C114 | `pom_body.rs` `block_and_stmt_handles_walk_a_body` | yes - BlockHandle, not the `Block` name the criterion and design.md give (documented deviation, F11) |
+| C114 | `pom_body.rs` `block_and_stmt_handles_walk_a_body` | yes - the handle is now `Block`, storage `BlockNode` (F11 closed) |
 | C115 | `pom_classify.rs` `arg_and_field_handles_expose_name_value_target` | yes |
 | C116 | `pom_classify.rs` `builtin_instance_names_its_primitive` | yes |
 | C117 | `pom_reflect.rs` `types_list_their_impls_and_methods` | yes |
 | C118 | `pom_tree.rs` `generation_if_items_cover_every_arm` | yes |
 | C119 | `pom_reflect.rs` `from_json_reads_back_a_valid_design` | yes |
-| C120 | `pom_reflect.rs` `from_json_rejects_a_corrupted_design` | no - corrupts four id fields only; `expr_parent`/`expr_stmt` entries out of range panic inside `from_json` (`check.rs:386`, `design.rs:228`), and an out-of-range `index.writers` id is accepted and panics on use (F2) |
+| C120 | `pom_reflect.rs` `from_json_rejects_a_corrupted_design` | yes (round 2) - narrow alone (four fields), but C132 now sweeps every numeric leaf; round 1 was no (F2) |
 | C121 | `pom_design.rs` `member_tables_scale_subquadratically` | yes |
 | C122 | `pom_design.rs` `name_lookups_do_not_scan` | yes |
 | C123 | `pom_docs.rs` `every_b1_construct_is_mapped` | yes |
 | C124 | `pom_docs.rs` `place_has_no_parenthesized_form_in_the_docs` | yes |
-| C125 | `pom_docs.rs` `every_code_the_pom_reports_is_documented` | no - asserts a row per scraped code but never the spec-section column the criterion requires (F10) |
+| C125 | `pom_docs.rs` `every_code_the_pom_reports_is_documented` | yes (round 2) - each row's `Defined in` cell must be the `§` the spec defines the code in; round 1 was no (F10) |
 | C126 | `pom_docs.rs` `every_builtin_row_is_documented` | yes |
 | C127 | `pom_docs.rs` `every_reflection_method_is_documented` | yes |
 | C128 | `msl_corpus.rs` `every_valid_spec_block_parses_clean` | yes |
 | C129 | `pom_corpus.rs` `every_spec_block_round_trips_to_its_ast` | yes |
+| C130 | `msl_errors.rs` `comparison_lists_are_not_nesting` | yes - 1000 comparisons in array, call, tuple, struct literal, match arms, module body, plus `a < b, c > d` pairs, all clean; 300 nested generics still `E0910` |
+| C131 | `msl_errors.rs` `flat_chains_survive_a_default_2_mib_thread` | yes - all five flat kinds at 4096 links: parse clean, print, build, to_ast on a 2 MiB thread; a join error fails it |
+| C132 | `pom_reflect.rs` `from_json_never_panics_on_a_corrupted_field` | yes - every numeric leaf (more than 300) at 99999 and at 1: a panic in `from_json` or in a full read sweep fails it; my own sweep at HEAD gives 0 panics |
+| C133 | `spec_text.rs` `appendix_h_renders_every_code_span` | yes - rejects double backticks and odd counts per line; an even-count nesting like the old H.9 prose would slip, but the text no longer has one |
+| C134 | `msl_errors.rs` `reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing` | yes - `out` help names `r#out`, `yield` help omits "not supported", doc before `else` is one `E0900` spanning the comment |
+| C135 | `pom_resolve.rs` `duplicate_items_in_a_block_are_e0162` | yes - `g`, `S`, `A` each one `E0162` at the second occurrence, exactly three diagnostics; four clean shapes (other table, other block, outer shadowing, nested block) |
+| C136 | `spec_text.rs` `block_items_follow_the_namespace_rules` | yes - §3.4.10 and the `E0162` row wording |
 
 ## Audit closure
 
@@ -160,7 +167,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | A-14 | closed | `zz` and repeated `r` are `E0320`; `d`, repeated `k`, `q`, carrier `n` are `E0140` |
 | A-15 | closed | `i(t)` on `Th` is `E0206`; a generic-nature port is not reported |
 | A-16 | closed | `arr.rise()` and `arr.changed()` are `E0211`; `arr[0].rise()` resolves |
-| A-17 | open | 15 of 17 forms targeted, but two forms of the audit's own evidence still get generic messages: `use ::a::b;` and `where` on `struct`/`impl`/`trait` (F5); B.3.6's completeness sentence is contradicted by Rust forms it does not list (F6) |
+| A-17 | closed (round 2) | 15 of 17 forms targeted, but two forms of the audit's own evidence still get generic messages: `use ::a::b;` and `where` on `struct`/`impl`/`trait` (F5); B.3.6's completeness sentence is contradicted by Rust forms it does not list (F6) |
 | A-18 | closed | Appendix H exists and is closed by `E0161` in text; the POM side of derives is F4 |
 | A-19 | closed | §1 rule 2 and `E0102` allow `&value` as an argument; `(0.1..=10.0).contains(&n)` parses |
 | A-20 | closed | `analog<X> for M<X>`, reordered and shorter lists are `E0403`; names link by name (C29) |
@@ -168,7 +175,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | A-22 | closed | `pub analog for`/`pub digital for`: one `E0900` at `pub`, block kept |
 | A-23 | closed | `{ r }`, `{ r, }`, `{ r#out }`, `R { r, c: 1p }` keep their form through print and POM |
 | A-24 | closed | `q <- 1;`, `i(a) +> 1.0;`, `on e {}` in a body: one `E0404` with help. `bound_step` in a body is F7 |
-| A-25 | open | flat sums, method, cast, `else if` chains to 4096 links clean, 4097 is one `E0910`; but a list of comparisons is still counted as nesting (F1) |
+| A-25 | closed (round 2) | flat sums, method, cast, `else if` chains to 4096 links clean, 4097 is one `E0910`; but a list of comparisons is still counted as nesting (F1) |
 | A-26 | closed | the three audit sources: one diagnostic at the comma, `f` one item with `let c`, `M` kept with `b` and `s` |
 | A-27 | closed | `\q`, `\x9`, `\x80`, `\u{110000}`, `\u{D800}`, `\u{}` are `E0900` at the escape; raw strings print raw; huge integers are `E0909` |
 | A-28 | closed | `static`, `r#out`, body `let` annotation have targeted messages. Stale `r#` help elsewhere is F14 |
@@ -176,7 +183,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | A-30 | closed | parent `c.w = true;` and `c.w <- true;` give `C.w.writers().len() == 2` |
 | A-31 | closed | `items()` of an `if`/`else if`/`else` generation lists `a`, `b`, `c` |
 | A-32 | closed | C121, C122 green (not re-timed) |
-| A-33 | open | `from_json` panics on 14 of 440 single-field corruptions and accepts one that panics on use (F2) |
+| A-33 | closed (round 2) | `from_json` panics on 14 of 440 single-field corruptions and accepts one that panics on use (F2) |
 | A-34 | closed | `E0125` row extended; POM reports both forms |
 | A-35 | closed | B.3.4 states it (C37) |
 | A-36 | closed | rows state precedence; parser follows it for all five forms |
@@ -191,7 +198,7 @@ Method: read spec.md, tasks.md `## Checks`, the audit report and the test of eve
 | A-45 | closed | `S { a, q }`, `S { q, .. }` and `S { q }` literal all one `E0161` |
 | A-46 | closed | `E0162` covers modules, consts, mods; two `fn` stay `E0143` only |
 
-Count: 42 closed (A-42 counted for its in-scope half), 3 open (A-17, A-25, A-33), 1 deferred (A-03, plus the stdlib half of A-42).
+Count after round 2: 45 closed (A-42 counted for its in-scope half), 0 open, 1 deferred. Round 1 left A-17, A-25, A-33 open; their round-2 evidence is under `## Round 2` (A-03, plus the stdlib half of A-42).
 
 ## Decisions
 
@@ -241,3 +248,24 @@ Count: 42 closed (A-42 counted for its in-scope half), 3 open (A-17, A-25, A-33)
 | F12 MINOR - duplicate items in a block are silent | `fn f() { fn g() {} fn g() {} }` builds with zero diagnostics (no `E0143`, no `E0162`); §3.4 defines namespaces as files and `mod`s and says nothing of block items | state the rule for items in a block and report it | 512e7057 |
 | F13 MINOR - Appendix H tables render broken code spans | H.8 "Written as" cells are ``#[derive(Clone)]`, `T: Clone`` (double-backtick span with inner backticks); H.9 "What it is" wraps prose in code with nested backticks (`unsigned integer of `N` levels; ...`) | write each form as its own code span and the prose plain | ac18ac91 |
 | F14 MINOR - stale and misleading help texts | the `E0903` reserved-keyword help still says "raw identifiers (`r#name`) are not supported", false since D15; a doc comment before `else` reports "`else` is a reserved keyword and cannot be used as an identifier" | drop the stale clause (or name the seven words); report a doc comment before `else` as documenting nothing | bfca400b |
+
+## Round 2
+
+Re-ran the round-1 probe target (scratchpad `verify-polish/zz_verify_probe.rs`, restored temporarily and removed again) plus new adversarial cases at 5230a28a.
+
+- F1 confirmed closed (76367f6d): 255 to 1000 comparisons in array, call, tuple, struct literal, match arms and module-body `let` are clean; `Option<` x257 and x5000 closed still `E0910` nesting; 5000 unclosed `Option<` and `a < a < ...` x5000 give a bounded diagnostic, no overflow.
+- F2 confirmed closed (cfc4f226): my per-leaf sweep (440 leaves at 99999 and 1) gives 0 panics in `from_json` and 0 on use (562 accepted, 318 rejected).
+- F3 confirmed closed (76367f6d): a 4096-term sum parses, builds, prints, converts back and round-trips through JSON on a 2 MiB thread; 5000 parens and 5000 unary minus are `E0910` on 2 MiB with no overflow.
+- F4 confirmed closed (d2031202): `#[derive(Bogus, Iterator)]` is two `E0161`; `#[derive(MyT, Repr, Clone)]` and `#[derive(a::T)]` are clean.
+- F5 confirmed closed (91038e8e): `use ::a::b;` and `where` on struct, impl and trait each give the targeted row message.
+- F6 confirmed closed (91038e8e): named fn-pointer params, attributes and docs on params, generic params, struct-literal and param-block fields, and `&&a` each give one targeted `E0900`. A run of 300 `&` gives one diagnostic per `&&` token (150); pathological, recorded only.
+- F7 confirmed closed (bfca400b): `module M() { bound_step(1.0); }` is one `E0404` with help.
+- F8 confirmed closed (bfca400b): `q.0 <- 1;` and `q.0 <- 1 after 1n;` are the place `E0900`; `q.0 = 1;` is still rejected (generic message, as before).
+- F9 confirmed closed (8dffd7c6): "this function has no body; only an `extern` function or a trait item may omit it" and "an `extern` function cannot have a body".
+- F10 confirmed closed (b2d7e987): C125 asserts each `Defined in` cell equals the defining `§`.
+- F11 confirmed closed (63a365ef): handle `Block`, storage `BlockNode`, reflection.md updated.
+- F12 confirmed closed (512e7057): `fn f() { fn g() {} fn g() {} }` and duplicate consts in a reaction block are `E0162`; `let` shadowing stays clean.
+- F13 confirmed closed (ac18ac91): H.8 and H.9 cells are plain code spans and prose; H.8 states derive names are `E0161` when unknown.
+- F14 confirmed closed (bfca400b): reserved-keyword help is "choose another name" (or `r#word` for an added keyword); a doc before `else` documents nothing.
+
+No new finding.

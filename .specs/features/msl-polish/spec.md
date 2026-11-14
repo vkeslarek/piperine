@@ -373,29 +373,29 @@ Each is covered by the criterion named.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| POL-01 | P1: The Rust boundary is closed | Tasks | In Tasks |
-| POL-02 | P1: The Rust boundary is closed | Tasks | In Tasks |
-| POL-03 | P1: The language's own names resolve | Tasks | In Tasks |
-| POL-04 | P1: The language's own names resolve | Tasks | In Tasks |
-| POL-05 | P1: Statements and places sit where the grammar says | Tasks | In Tasks |
-| POL-06 | P1: The language's own names resolve | Tasks | In Tasks |
-| POL-07 | P1: Statements and places sit where the grammar says | Tasks | In Tasks |
-| POL-08 | P2: The surface the decisions add | Tasks | In Tasks |
-| POL-09 | P1: The Rust boundary is closed | Tasks | In Tasks |
-| POL-10 | P2: The surface the decisions add | Tasks | In Tasks |
-| POL-11 | P2: The surface the decisions add | Tasks | In Tasks |
-| POL-12 | P2: The surface the decisions add | Tasks | In Tasks |
-| POL-13 | P2: The surface the decisions add | Tasks | In Tasks |
-| POL-14 | P1: Statements and places sit where the grammar says | Tasks | In Tasks |
-| POL-15 | P2: Limits and recovery | Tasks | In Tasks |
-| POL-16 | P2: Limits and recovery | Tasks | In Tasks |
-| POL-17 | P1: The language's own names resolve | Tasks | In Tasks |
-| POL-18 | P2: The POM reports the spec's codes and never guesses | Tasks | In Tasks |
-| POL-19 | P2: The POM reports the spec's codes and never guesses | Tasks | In Tasks |
-| POL-20 | P2: Reflection is complete and robust | Tasks | In Tasks |
-| POL-21 | P2: Reflection is complete and robust | Tasks | In Tasks |
-| POL-22 | P3: Reference docs and guards | Tasks | In Tasks |
-| POL-23 | P3: Reference docs and guards | Tasks | In Tasks |
+| POL-01 | P1: The Rust boundary is closed | Tasks | Verified |
+| POL-02 | P1: The Rust boundary is closed | Tasks | Verified |
+| POL-03 | P1: The language's own names resolve | Tasks | Verified |
+| POL-04 | P1: The language's own names resolve | Tasks | Verified |
+| POL-05 | P1: Statements and places sit where the grammar says | Tasks | Verified |
+| POL-06 | P1: The language's own names resolve | Tasks | Verified |
+| POL-07 | P1: Statements and places sit where the grammar says | Tasks | Verified |
+| POL-08 | P2: The surface the decisions add | Tasks | Verified |
+| POL-09 | P1: The Rust boundary is closed | Tasks | Verified |
+| POL-10 | P2: The surface the decisions add | Tasks | Verified |
+| POL-11 | P2: The surface the decisions add | Tasks | Verified |
+| POL-12 | P2: The surface the decisions add | Tasks | Verified |
+| POL-13 | P2: The surface the decisions add | Tasks | Verified |
+| POL-14 | P1: Statements and places sit where the grammar says | Tasks | Verified |
+| POL-15 | P2: Limits and recovery | Tasks | Verified |
+| POL-16 | P2: Limits and recovery | Tasks | Verified |
+| POL-17 | P1: The language's own names resolve | Tasks | Verified |
+| POL-18 | P2: The POM reports the spec's codes and never guesses | Tasks | Verified |
+| POL-19 | P2: The POM reports the spec's codes and never guesses | Tasks | Verified |
+| POL-20 | P2: Reflection is complete and robust | Tasks | Verified |
+| POL-21 | P2: Reflection is complete and robust | Tasks | Verified |
+| POL-22 | P3: Reference docs and guards | Tasks | Verified |
+| POL-23 | P3: Reference docs and guards | Tasks | Verified |
 
 **Coverage:** 23 requirements, 129 acceptance criteria, 23 mapped to tasks, 0 unmapped.
 
