@@ -323,9 +323,9 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] No `.vams`, `.py` or `.png` file and no `requirements.txt` exists under `examples/`; `Piperine.toml` and `Piperine.lock` are untouched
-- [ ] `workspace_shape.rs` gains `examples_hold_no_vams_or_python` (C11)
-- [ ] Gate: full
+- [x] No `.vams`, `.py` or `.png` file and no `requirements.txt` exists under `examples/`; `Piperine.toml` and `Piperine.lock` are untouched
+- [x] `workspace_shape.rs` gains `examples_hold_no_vams_or_python` (C11)
+- [x] Gate: full
 
 **Tests**: integration
 **Gate**: full

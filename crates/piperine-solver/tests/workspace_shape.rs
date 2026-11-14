@@ -2,7 +2,8 @@
 //! Covers SR-01: the solver's own manifest lists no in-tree crate as a
 //! dev-dependency and none of the dependencies the restructure removed.
 //! Covers SR-02: retired crates have no directory and no manifest names them,
-//! and the root `tests/` holds no Verilog-AMS end-to-end target.
+//! the root `tests/` holds no Verilog-AMS end-to-end target, and `examples/`
+//! holds no Verilog-AMS or Python source.
 
 use std::path::PathBuf;
 
@@ -126,5 +127,23 @@ fn root_tests_hold_no_end_to_end_target() {
                 path.display()
             );
         }
+    }
+}
+
+#[test]
+fn examples_hold_no_vams_or_python() {
+    let mut files = Vec::new();
+    files_under(&repo_root().join("examples"), &mut files);
+    for path in files {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        assert!(
+            !matches!(ext, "vams" | "py" | "png") && name != "requirements.txt",
+            "{} remains under examples/",
+            path.display()
+        );
+    }
+    for kept in ["Piperine.toml", "Piperine.lock"] {
+        assert!(repo_root().join("examples").join(kept).exists(), "examples/{kept} was removed");
     }
 }
