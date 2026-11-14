@@ -34,9 +34,9 @@ signal_decl    ::= 'signal' IDENT ':' sigtype ( '=' expr )? ';'
 gen<X>         ::= attrs 'for' pat 'in' expr '{' X* '}'
                  | attrs 'if' expr '{' X* '}' ( 'else' ( '{' X* '}' | gen<X> ) )?
 place          ::= path ( '[' expr ']' | '.' IDENT )*                           // a carrier, an element or a field of one
-instance       ::= callee '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')' ( '{' ( IDENT ':' expr ',' )* '}' )?
+instance       ::= callee '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')' ( '{' ( IDENT ( ':' expr )? ',' )* '}' )?
 callee         ::= path generic_args? | call | '(' expr ')'
-template       ::= path generic_args? '{' ( IDENT ':' expr ',' )* '}'
+template       ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
 ```
 
 | Form | Written | Defined in |

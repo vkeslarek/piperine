@@ -56,8 +56,8 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.10 | Time resolution | Open |
 | G.11 | Custom floats | Open |
 | G.13 | Metastability | Open |
-| G.14 | Field-init shorthand | Open |
-| G.15 | Keywords as names | Open |
+| G.14 | Field-init shorthand | Closed |
+| G.15 | Keywords as names | Closed |
 | G.16 | Shadowed probes | Open |
 | G.17 | The top module | Provisional |
 | G.19 | Depth of history | Provisional |
@@ -161,13 +161,13 @@ A stdlib synchronizer whose first stage commits `Unknown` when `since(d) < tw` a
 
 ### G.14 Field-init shorthand
 
-**Status: Open.**
-`{ r }` for `{ r: r }` in instances and templates. In force: the long form only (Appendix B.3).
+**Status: Closed.**
+`{ r }` for `{ r: r }` in instances and templates is accepted, as in a Rust struct expression, and the tree keeps the authored form (Appendix B.3).
 
 ### G.15 Keywords as names
 
-**Status: Open.**
-Accept raw identifiers (`r#out`), listed without `r#` in metadata. In force: an added keyword is not an identifier (Appendix A.1).
+**Status: Closed.**
+Raw identifiers are accepted for the seven added keywords and for no other word (`r#out`), listed without `r#` in metadata (Appendix A.1).
 
 ### G.16 Shadowed probes
 

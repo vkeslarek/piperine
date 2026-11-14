@@ -33,8 +33,12 @@ lexer and the grammar are the language's own.
 | contextual keywords | `potential`, `flow`, `value`, `resolve` | only as a field name inside a `nature` declaration |
 | Rust keywords | every strict and reserved keyword of Rust 2024 | everywhere |
 
-6. An added keyword **MUST NOT** be used as an identifier. Raw identifiers for them
-   (`r#out`) are an open item ([G.15](appendix_g_scope.md)).
+6. An added keyword **MUST NOT** be used as an identifier, but `r#name` is an identifier for each
+   of the seven added keywords and for no other word: `r#module`, `r#nature`, `r#signal`, `r#on`,
+   `r#out`, `r#flip` and `r#after`. Any other `r#word` (`r#type`, `r#in`, `r#foo`) is `E0900`,
+   and its message lists the seven. The identifier's name is the word without `r#`, and
+   metadata lists the name without `r#` ([G.15](appendix_g_scope.md)). The printer writes the
+   raw form back.
 7. A contextual keyword is an ordinary identifier outside its context. `potential` and `flow`
    are also the names of the generic probes ([§6](part_ii_carriers.md#6-continuous-carriers)).
 8. `gnd`, `Nature`, `m`, `dtemp` and `str` are core names, as are `settle`, `inf`, the
@@ -47,8 +51,10 @@ lexer and the grammar are the language's own.
 > lexically valid Rust apart from the tokens this appendix adds.
 
 > **Resolution.** `out` is reserved, so `signal out: Electrical;` is a parse error. A carrier
-> that would be called `out` takes another name (`vout`, `y`). The same holds for `on`,
-> `after`, `flip`, `signal`, `module` and `nature`.
+> that would be called `out` takes another name (`vout`, `y`) or the raw form,
+> `signal r#out: Electrical;`, which declares a signal named `out`. The same holds for `on`,
+> `after`, `flip`, `signal`, `module` and `nature`. `r#in` and `r#extern` stay errors: they are
+> Rust keywords with a new use, reserved as in Rust.
 
 > **Resolution.** Only the lifetime `'static` is accepted, and only in `&'static str`. Any
 > other lifetime token is an error. `char` is not a value type

@@ -208,9 +208,9 @@ fn_param       ::= 'self' | IDENT ':' type
 
 call           ::= path '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')'           // §3.2
 method_call    ::= expr '.' IDENT generic_args? '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')'
-instance       ::= callee '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')' ( '{' ( IDENT ':' expr ',' )* '}' )?
+instance       ::= callee '(' ( expr ',' )* ( IDENT ':' expr ',' )* ')' ( '{' ( IDENT ( ':' expr )? ',' )* '}' )?
 callee         ::= path generic_args? | call | '(' expr ')'
-template       ::= path generic_args? '{' ( IDENT ':' expr ',' )* '}'
+template       ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
 
 // ---- modules --------------------------------------------------------------------------------
 
@@ -259,6 +259,8 @@ attr_link       ::= '#' '[' 'link' '(' STRING ( ',' IDENT '=' STRING )* ')' ']' 
 5. A trailing `expr` in a module body is the module's result (§8.3.2). It is allowed only when the head has `-> type`.
 6. `rust_item` is every Rust item that Part I keeps: `fn`, `struct`, `enum`, `trait`, `impl`, `const`, `mod`, `use`. Their `struct_field`, `impl_block` and `fn_decl` are the productions above.
 7. An `emit` followed by `;` is a statement. `include_str` is allowed only in the initializer of a `const` item (§20).
+
+In the param block of an `instance` and in a `template`, a field written as an `IDENT` with no `:` is the field-init shorthand, as in a Rust struct expression: `{ r }` means `{ r: r }`, so `R(p, n) { r }` and `R { r, c: 1p }` are well formed. The tree keeps the authored form: a field without `:` is a shorthand field, and `r: r` is not.
 
 Classification that the grammar leaves to name resolution:
 

@@ -627,3 +627,57 @@ fn e0125_covers_bodies() {
     assert!(rule2.contains("a function that is neither `extern` nor a trait item has a body"), "{rule2}");
     assert!(rule2.contains("`E0125`"), "{rule2}");
 }
+
+/// The `### G.<n>` entry of Appendix G.
+fn g_entry(n: &str) -> String {
+    one_line(&section(&spec("appendix_g_scope.md"), &format!("### G.{n} ")))
+}
+
+/// The status cell of the summary row of item `G.<n>`.
+fn g_summary_status(n: &str) -> String {
+    let g = spec("appendix_g_scope.md");
+    let rows = table_rows(&section(&g, "## Summary"));
+    let row = rows.iter().find(|r| r[0] == format!("G.{n}")).unwrap_or_else(|| panic!("summary row G.{n}"));
+    row[2].clone()
+}
+
+#[test]
+fn raw_identifiers_are_specified_and_g15_is_closed() {
+    // POL-08 AC 5: A.1 rule 6 and G.15.
+    let a1 = one_line(&section(&spec("appendix_a_lexical.md"), "## A.1"));
+    let rule6 = one_line(a1.split(" 6. ").nth(1).unwrap().split(" 7. ").next().unwrap());
+    for needle in [
+        "`r#name` is an identifier for each of the seven added keywords and for no other word",
+        "`r#module`, `r#nature`, `r#signal`, `r#on`, `r#out`, `r#flip` and `r#after`",
+        "metadata lists the name without `r#`",
+        "`E0900`",
+    ] {
+        assert!(rule6.contains(needle), "{needle}: {rule6}");
+    }
+    assert!(!rule6.contains("open item"), "{rule6}");
+    assert!(a1.contains("`signal r#out: Electrical;`"), "the Resolution on `out` names the raw form: {a1}");
+    assert_eq!(g_summary_status("15"), "Closed");
+    let g15 = g_entry("15");
+    assert!(g15.contains("**Status: Closed.**") && g15.contains("Appendix A.1"), "{g15}");
+    assert!(!g15.contains("In force: an added keyword is not an identifier"), "{g15}");
+}
+
+#[test]
+fn field_shorthand_is_specified_and_g14_is_closed() {
+    // POL-08 AC 6: B.3.2 `instance` and `template`, B.3.3, the §8 excerpt, and G.14.
+    for (file, text) in [("appendix_b_grammar.md", spec("appendix_b_grammar.md")), ("part_iii_structure.md", spec("part_iii_structure.md"))] {
+        let inst = production(&text, "instance").join(" ");
+        assert!(inst.contains("'{' ( IDENT ( ':' expr )? ',' )* '}'"), "{file}: {inst}");
+        let tmpl = production(&text, "template").join(" ");
+        assert!(tmpl.contains("'{' ( IDENT ( ':' expr )? ',' )* '}'"), "{file}: {tmpl}");
+        assert!(!tmpl.contains("IDENT ':' expr"), "{file}: {tmpl}");
+    }
+    let b33 = one_line(&section(&spec("appendix_b_grammar.md"), "### B.3.3"));
+    assert!(b33.contains("`{ r }` means `{ r: r }`"), "{b33}");
+    assert!(b33.contains("`R(p, n) { r }`") && b33.contains("`R { r, c: 1p }`"), "{b33}");
+    assert!(b33.contains("a field without `:`"), "{b33}");
+    assert_eq!(g_summary_status("14"), "Closed");
+    let g14 = g_entry("14");
+    assert!(g14.contains("**Status: Closed.**") && g14.contains("Appendix B.3"), "{g14}");
+    assert!(!g14.contains("In force: the long form only"), "{g14}");
+}

@@ -366,12 +366,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `raw_identifiers_are_specified_and_g15_is_closed` passes in `spec_text.rs` (C43: POL-08 AC 5)
-- [ ] Test `field_shorthand_is_specified_and_g14_is_closed` passes in `spec_text.rs` (C44: POL-08 AC 6)
-- [ ] No `rust` fence with `r#` is added yet (T13)
-- [ ] The §8 syntax excerpts repeat the edited `instance` and `template` productions
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `raw_identifiers_are_specified_and_g15_is_closed` passes in `spec_text.rs` (C43: POL-08 AC 5)
+- [x] Test `field_shorthand_is_specified_and_g14_is_closed` passes in `spec_text.rs` (C44: POL-08 AC 6)
+- [x] No `rust` fence with `r#` is added yet (T13)
+- [x] The §8 syntax excerpts repeat the edited `instance` and `template` productions
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick
