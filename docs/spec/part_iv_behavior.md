@@ -60,7 +60,9 @@ place          ::= path ( '[' expr ']' | '.' IDENT )*                           
   another. What blocks share is a named expression of the body (§8.2).
 - **§10 rule 8** `contribution` is a statement of an `analog` block and of every nested block inside
   it. `commit` is a statement of a reaction body and of every nested block inside it. Neither
-  appears anywhere else, nor inside a closure or a `fn`.
+  appears anywhere else, nor inside a closure or a `fn`. `<-`, `+>`, `bound_step`, `on` and
+  `signal` written in a block or body that is not theirs, a module body included, are `E0404`;
+  inside a `fn` body, a closure in it included, the code is `E0121`.
 - **§10 rule 9** A block places no item in the netlist. Signals, params and named instances are
   declared in the body. A placement inside a block is an anonymous instance of the module (§8.3.4).
 
@@ -88,7 +90,7 @@ place          ::= path ( '[' expr ']' | '.' IDENT )*                           
 | `E0401` | a block whose path names no module of the same file | elaboration |
 | `E0402` | a block for an `extern` module | elaboration |
 | `E0403` | generic names that do not match the module's generic parameters (§10 rule 6) | elaboration |
-| `E0404` | a well-formed statement in a block of the wrong kind: `<-` or `on` in `analog`; `+>` or `bound_step` in `digital` or a reaction; either inside a `fn` or closure (§10 rule 8). A `+>` or `<-` inside an expression is `E0907` | parse |
+| `E0404` | a well-formed statement in a block or body of the wrong kind: `<-` or `on` in `analog`; `+>` or `bound_step` in `digital` or a reaction; `signal` in `analog`, a reaction or a closure outside a `fn`; `<-`, `+>`, `on`, `bound_step` or `signal` in a module body (§10 rule 8). Inside a `fn` body `E0121` is the code reported (§3 rule 6). A `+>` or `<-` inside an expression is `E0907` | parse |
 
 ---
 

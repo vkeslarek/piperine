@@ -294,13 +294,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `e0404_and_e0121_state_their_precedence` passes in `spec_text.rs` (C36: POL-07 AC 1)
-- [ ] Test `value_blocks_may_hold_contributions_and_commits` passes in `spec_text.rs` (C37: POL-07 AC 2)
-- [ ] Test `place_has_no_parentheses` passes in `spec_text.rs` (C38: POL-07 AC 3)
-- [ ] Both rows stay phase `parse`; their existing fixtures still hold
-- [ ] The `E0907` row is unchanged
-- [ ] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `e0404_and_e0121_state_their_precedence` passes in `spec_text.rs` (C36: POL-07 AC 1)
+- [x] Test `value_blocks_may_hold_contributions_and_commits` passes in `spec_text.rs` (C37: POL-07 AC 2)
+- [x] Test `place_has_no_parentheses` passes in `spec_text.rs` (C38: POL-07 AC 3)
+- [x] Both rows stay phase `parse`; their existing fixtures still hold
+- [x] The `E0907` row is unchanged
+- [x] Gate passes: run spec, run mslcorpus, run pomcorpus, run docs; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

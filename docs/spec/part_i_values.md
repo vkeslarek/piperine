@@ -225,7 +225,8 @@ of the functions it calls. A function may belong to several classes; the restric
   `module f(x: f64) -> f64 { ddt(x) }`.
 - **§3 rule 5.** A function may call `emit!`: output never feeds back into the simulation.
 - **§3 rule 6.** A function body contains no `signal`, no definition, no `<-`, no `+>`, no
-  `bound_step` and no `on`. The placement matrix is
+  `bound_step` and no `on`; a closure inside a function follows the same rule. Such a form in a
+  function body is `E0121`, never `E0404`. The placement matrix is
   [Appendix B.2](appendix_b_grammar.md).
 - **§3 rule 7.** A parameter of a nature or bundle type is a handle
   ([§3.1](#31-impl)). A function reads a carrier only through a handle.
@@ -272,7 +273,7 @@ of the functions it calls. A function may belong to several classes; the restric
 | Code | Condition | Phase |
 | --- | --- | --- |
 | [§8.3](part_iii_structure.md#83-instances-inside-expressions) | a function places an instance: it calls a module with a result, core or not (`E0350`) | elaboration |
-| `E0121` | a function body contains a form excluded by rule 6 | parse |
+| `E0121` | a function body, a closure inside it included, contains a form excluded by rule 6. `E0121` is the code reported, never `E0404` | parse |
 | `E0122` | a function is called where one of its classes is not allowed. A core primitive or `emit!` written directly in such a position is `E0450` or `E0601` | elaboration |
 | `E0123` | an `extern` function without `#[derivative]` is called inside `analog` | elaboration |
 | `E0124` | `#[derivative]` names a function with the wrong signature, or the wrong number of functions | elaboration |

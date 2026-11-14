@@ -255,7 +255,7 @@ attr_link       ::= '#' '[' 'link' '(' STRING ( ',' IDENT '=' STRING )* ')' ']' 
 1. `where` and `;` end a param's default without lookahead.
 2. `flip` belongs to the type, so `rx: flip Stream<T>` and `[flip Stream<T>; N]` both parse.
 3. As in Rust, a `{` after the head of `on`, `if`, `match`, `while` or `for` opens the block. An instance with a param block, or a template, is parenthesized there: `on cross(e) { … }` is a reaction.
-4. A `place` names levels: a commit to `st.n` or `sh[3]` writes those levels of the carrier and no others.
+4. A `place` takes no parentheses, in a definition and in a commit alike: `(q) = 1;` and `(q) <- 1;` are parse errors (`E0900`). A `place` names levels: a commit to `st.n` or `sh[3]` writes those levels of the carrier and no others.
 5. A trailing `expr` in a module body is the module's result (§8.3.2). It is allowed only when the head has `-> type`.
 6. `rust_item` is every Rust item that Part I keeps: `fn`, `struct`, `enum`, `trait`, `impl`, `const`, `mod`, `use`. Their `struct_field`, `impl_block` and `fn_decl` are the productions above.
 7. An `emit` followed by `;` is a statement. `include_str` is allowed only in the initializer of a `const` item (§20).
@@ -291,6 +291,7 @@ The productions `behavior_block` and `reaction` extend `stmt` at the top level o
 2. Inside a reaction, every nested block takes `stmt | commit`, in the same positions.
 3. The body of a closure and the body of a `fn` are not nested blocks in this sense. A `contribution` or a `commit` there is a parse error.
 4. A `contribution` and a `commit` are statements. Neither is an expression; a `match` arm that commits has a block body.
+5. A `contribution` or a `commit` may be written in a nested block that is used as a value, as in `let x = { i(a) +> 1.0; 2.0 };`: the block still sits inside the behavior block.
 
 > **Resolution.** The design's productions list `contribution` and `commit` only at the top level of their blocks. Its examples write them under `if`, `match` and `for` (§11, §12.1), so the extension is recursive. Part IV states the same rule (§10 rule 8).
 

@@ -464,3 +464,43 @@ fn items_sit_at_namespace_scope() {
     let row = row.lines().find(|l| l.starts_with("| `E0401`")).unwrap();
     assert!(row.contains("the same file"), "{row}");
 }
+
+#[test]
+fn e0404_and_e0121_state_their_precedence() {
+    // POL-07 AC 1: the E0404 row, §10 rule 8, the E0121 row and §3 rule 6.
+    let p4 = spec("part_iv_behavior.md");
+    let row = one_line(p4.lines().find(|l| l.starts_with("| `E0404`")).expect("E0404 row"));
+    for needle in ["`signal`", "a module body", "`E0121` is the code reported"] {
+        assert!(row.contains(needle), "{needle}: {row}");
+    }
+    assert!(row.contains("| parse |"), "E0404 stays a parse code: {row}");
+    let rule8 = one_line(p4.split("- **§10 rule 8**").nth(1).unwrap().split("- **§10 rule 9**").next().unwrap());
+    for needle in ["`signal`", "module body", "`E0121`"] {
+        assert!(rule8.contains(needle), "{needle}: {rule8}");
+    }
+    let p1 = spec("part_i_values.md");
+    let row = one_line(p1.lines().find(|l| l.starts_with("| `E0121`")).expect("E0121 row"));
+    assert!(row.contains("`E0121` is the code reported, never `E0404`"), "{row}");
+    assert!(row.contains("| parse |"), "E0121 stays a parse code: {row}");
+    let rule6 = one_line(p1.split("- **§3 rule 6.**").nth(1).unwrap().split("- **§3 rule 7.**").next().unwrap());
+    assert!(rule6.contains("`E0121`") && rule6.contains("never `E0404`"), "{rule6}");
+    let a = spec("appendix_a_lexical.md");
+    assert!(a.lines().any(|l| l.starts_with("| `E0907`") && l.contains("A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404`")));
+}
+
+#[test]
+fn value_blocks_may_hold_contributions_and_commits() {
+    // POL-07 AC 2: B.3.4.
+    let b34 = one_line(&section(&spec("appendix_b_grammar.md"), "### B.3.4"));
+    assert!(b34.contains("a nested block that is used as a value"), "{b34}");
+    assert!(b34.contains("let x = { i(a) +> 1.0; 2.0 };"), "{b34}");
+    assert!(b34.contains("`contribution` or a `commit`"), "{b34}");
+}
+
+#[test]
+fn place_has_no_parentheses() {
+    // POL-07 AC 3: B.3.3.
+    let b33 = one_line(&section(&spec("appendix_b_grammar.md"), "### B.3.3"));
+    assert!(b33.contains("A `place` takes no parentheses, in a definition and in a commit alike"), "{b33}");
+    assert!(b33.contains("`(q) = 1;`") && b33.contains("`(q) <- 1;`"), "{b33}");
+}
