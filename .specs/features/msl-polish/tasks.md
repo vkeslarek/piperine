@@ -940,13 +940,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `mismatched_behavior_names_bind_by_name` passes in `pom_classify.rs` (C29: POL-05 AC 3)
-- [ ] Test `behavior_binds_across_namespaces_of_one_file` passes in `pom_classify.rs` (C30: POL-05 AC 4)
-- [ ] Test `misplaced_signal_declares_nothing` passes in `pom_resolve.rs` (C84: POL-14 AC 8)
-- [ ] `behavior_names_mismatch_is_e0403` still passes unchanged
-- [ ] The misplaced `Signal` declaration stays in `decls()` with `module() == None`
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `mismatched_behavior_names_bind_by_name` passes in `pom_classify.rs` (C29: POL-05 AC 3)
+- [x] Test `behavior_binds_across_namespaces_of_one_file` passes in `pom_classify.rs` (C30: POL-05 AC 4)
+- [x] Test `misplaced_signal_declares_nothing` passes in `pom_resolve.rs` (C84: POL-14 AC 8)
+- [x] `behavior_names_mismatch_is_e0403` still passes unchanged
+- [x] The misplaced `Signal` declaration stays in `decls()` with `module() == None`
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

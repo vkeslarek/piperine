@@ -1092,3 +1092,31 @@ fn f(o: Option<u32>, e: E) -> u32 {
         assert_eq!(uses.last().unwrap(), &[Resolution::Decl(binding)], "{name}");
     }
 }
+
+// ---- a misplaced signal declares nothing (POL-14) ----------------------------------------------
+
+#[test]
+fn misplaced_signal_declares_nothing() {
+    let src = "\
+module M() { signal ok: f64; }
+analog for M { signal s: f64; let x = s; }
+digital for M { on at(1.0) { signal t: f64; let y = t; } }
+fn f() { signal u: f64; let z = u; }
+";
+    let design = build(src);
+    // The parser reports each misplaced `signal`; each later use is an unresolved name.
+    assert_eq!(with_code(&design, "E0404").len(), 2, "{:?}", design.diagnostics());
+    assert_eq!(with_code(&design, "E0121").len(), 1, "{:?}", design.diagnostics());
+    let missing: Vec<&str> = with_code(&design, "E0161").iter().map(|d| primary_text(&design, d)).collect();
+    assert_eq!(missing, ["s", "t", "u"], "{:?}", design.diagnostics());
+    for name in ["s", "t", "u"] {
+        assert_eq!(one(&design, name), [Resolution::Unresolved], "{name}");
+    }
+    // No module lists them; the declarations stay in the tree with no module.
+    let signals: Vec<_> = design.module("M").unwrap().signals().iter().map(|s| s.name().unwrap().to_string()).collect();
+    assert_eq!(signals, ["ok"]);
+    for name in ["s", "t", "u"] {
+        let kept = design.decls().into_iter().filter_map(|d| d.as_signal()).find(|s| s.name() == Some(name)).unwrap_or_else(|| panic!("signal `{name}` stays"));
+        assert!(kept.module().is_none(), "{name}");
+    }
+}

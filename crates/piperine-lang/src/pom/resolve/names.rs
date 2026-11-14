@@ -547,12 +547,9 @@ impl Names<'_, '_> {
                         self.expr(*a);
                     }
                 }
-                StmtKind::Signal(d) => {
-                    self.decl(*d);
-                    if let Some(n) = &design.decl_data(*d).name {
-                        self.declare(vec![(n.text.clone(), *d)]);
-                    }
-                }
+                // A `signal` statement is only ever misplaced (the parser reported it):
+                // the declaration stays in the tree, but its name is in no scope.
+                StmtKind::Signal(d) => self.decl(*d),
                 StmtKind::Reaction(d) => self.decl(*d),
                 StmtKind::Empty => {}
             }
@@ -725,7 +722,7 @@ impl Names<'_, '_> {
 
 impl Names<'_, '_> {
     /// A block reads the members of its module; the generic names it lists
-    /// stand for the module's generics by position. A block bound to no
+    /// stand for the module's generics of the same name. A block bound to no
     /// module, or with the wrong names, reports no name error: it has one.
     fn behavior(&mut self, id: DeclId, block: &BehaviorData) {
         let design = self.ctx.design;
@@ -733,8 +730,19 @@ impl Names<'_, '_> {
         let mut pushed = 0;
         if let Some(m) = module {
             self.frames.push(Frame::Module(m));
-            let generics = design.decl_data(m).children.iter().copied().filter(|c| matches!(design.decl_data(*c).kind, DeclKind::GenericParam(_)));
-            let names = block.names.iter().zip(generics).map(|(n, g)| (n.text.clone(), g)).collect();
+            // Each name stands for the module's generic of that name, never the one
+            // at its position; a name the module has no generic of stays unresolved.
+            let names = block
+                .names
+                .iter()
+                .filter_map(|n| {
+                    let generic = design.decl_data(m).children.iter().copied().find(|c| {
+                        let d = design.decl_data(*c);
+                        matches!(d.kind, DeclKind::GenericParam(_)) && d.name.as_ref().is_some_and(|g| g.text == n.text)
+                    });
+                    generic.map(|g| (n.text.clone(), g))
+                })
+                .collect();
             self.frames.push(Frame::Locals(names));
             pushed = 2;
         }

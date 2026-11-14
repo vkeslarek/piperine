@@ -204,7 +204,7 @@ The trait every declaration handle implements. Only `decl()` is required; everyt
 | `attrs(self)` | `Vec<Attr<'d>>` | The attributes in order. |
 | `attr(self, name: &str)` | `Option<Attr<'d>>` | The first attribute whose path is written `name`. |
 | `is_pub(self)` | `bool` | Whether the item is written `pub`. |
-| `module(self)` | `Option<Module<'d>>` | The module this declaration belongs to: itself for a module, else the nearest enclosing module (through generation). None outside any module. |
+| `module(self)` | `Option<Module<'d>>` | The module this declaration belongs to: itself for a module, else the nearest enclosing module (through generation). None outside any module, and for a `signal` written outside a module body (the parser reported it). |
 | `declared_in(self)` | `Option<Decl<'d>>` | The declaration that lexically contains this one; none for a file's root namespace. |
 | `references(self)` | `Vec<Reference<'d>>` | Every path with a segment, every member expression and every identifier pattern that resolved to this declaration, in source order. |
 | `qualified_name(self)` | `String` | The namespace path joined by `::`, then the member chain joined by `.`: signal `w` of module `M` in `mod a` is `a::M.w`. An `impl` adds its header (`impl S`, `impl Tr for S`) and a behavior block its own (`analog for M`), so their items do not share a name with another impl's or the module's: `impl Tr for S.X`, `analog for M.z`. A generation, a `use` and a file's root namespace add no segment. |

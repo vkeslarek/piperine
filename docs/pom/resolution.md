@@ -56,6 +56,12 @@ below it. A path that reaches a private item of another namespace still resolves
 works) and reports `E0161` with the label "private item". A module's members are reached by
 member access with `E0343` instead (see [Members](#members)).
 
+**Behavior blocks.** The generic names a block lists stand for the module's generics of the same name,
+never the one at the same position; when they differ from the module's the block gets `E0403` and a
+name the module has no generic of stays `Unresolved`. A block binds to a module of any namespace of
+its file (`a::M`, `super::a::M`). A `signal` statement inside a block is only ever misplaced: its
+declaration stays in the tree, its name is in no scope, and no module lists it.
+
 **Identifier patterns.** A plain identifier pattern (no `mut`, `ref` or `@`) whose name resolves to a
 const, a unit variant, a unit struct or a built-in variant but `Some` is a path to it: `PatKind::Ident::res`
 holds the target, `Binding::is_binding()` is `false`, the name enters no scope, and the pattern is

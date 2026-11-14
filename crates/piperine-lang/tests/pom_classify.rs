@@ -728,3 +728,50 @@ fn nature_bound_is_builtin_and_classifies_the_port() {
         .expect("the bound path");
     assert!(matches!(bound.segments()[0].res, Resolution::Builtin(b) if b.info().kind == piperine_lang::pom::BuiltinKind::Trait));
 }
+
+/// POL-05 AC 3: on `E0403` each name of the block links to the module's
+/// generic of the same name, never the one at the same position.
+#[test]
+fn mismatched_behavior_names_bind_by_name() {
+    let src = "\
+module M<T: Repr, const N: u32>() {}
+digital<N, T> for M<N, T> { on at(1.0) { let a = N; let b = T::WIDTH; let c = Other; } }
+";
+    let design = build(src);
+    assert_eq!(with_code(&design, "E0403").len(), 1, "{:?}", design.diagnostics());
+    let generic = |name: &str| {
+        let m = design.module("M").unwrap().decl();
+        m.children().into_iter().find(|c| c.name() == Some(name)).unwrap_or_else(|| panic!("generic {name}")).id()
+    };
+    let read = |joined: &str| -> Vec<Resolution> {
+        (0..design.path_count())
+            .map(|i| design.path(piperine_lang::pom::PathId(i as u32)))
+            .filter(|p| p.segments().iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>().join("::") == joined)
+            .flat_map(|p| p.segments().iter().map(|s| s.res).collect::<Vec<_>>())
+            .collect()
+    };
+    // The paths written in the block: `N` (the const), `T::WIDTH`.
+    assert!(read("N").contains(&Resolution::Decl(generic("N"))), "{:?}", read("N"));
+    assert_eq!(read("T::WIDTH")[0], Resolution::Decl(generic("T")));
+    // The block's own name list and its target's arguments are the other `N` and `T` paths; none names the other generic.
+    assert!(!read("N").contains(&Resolution::Decl(generic("T"))), "{:?}", read("N"));
+    assert!(!read("T").contains(&Resolution::Decl(generic("N"))), "{:?}", read("T"));
+    // A name the module has no generic of stays unresolved, and E0403 already said why.
+    assert_eq!(read("Other"), [Resolution::Unresolved]);
+    assert!(with_code(&design, "E0161").is_empty());
+}
+
+/// POL-05 AC 4 (D13): a block binds to its module from any namespace of the
+/// module's own file.
+#[test]
+fn behavior_binds_across_namespaces_of_one_file() {
+    let src = "\
+mod a { pub module M() {} }
+analog for a::M { }
+mod b { analog for super::a::M { } }
+";
+    let design = build(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    let m = design.find("a::M").and_then(|d| d.as_module()).unwrap();
+    assert_eq!(m.behaviors().len(), 2);
+}

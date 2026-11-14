@@ -117,8 +117,13 @@ pub trait Reflect<'d>: Copy {
 
     /// The module this declaration belongs to: itself for a module, else the
     /// nearest enclosing module (through generation). None outside any
-    /// module.
+    /// module. A `signal` written outside a module body (the parser reported
+    /// it) belongs to no module.
     fn module(self) -> Option<Module<'d>> {
+        let decl = self.decl();
+        if decl.as_signal().is_some() && !decl.declared_in().is_some_and(|p| matches!(p.kind(), DeclKind::Module(_) | DeclKind::Generation(_))) {
+            return None;
+        }
         let mut at = Some(self.decl());
         while let Some(d) = at {
             if let Some(m) = d.as_module() {
