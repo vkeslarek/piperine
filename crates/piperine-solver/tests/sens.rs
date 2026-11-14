@@ -2,97 +2,45 @@
 //! finite-difference independence on a nonlinear (diode) circuit, and the
 //! loud-error paths (unknown element/param, non-analog output).
 
-use std::path::PathBuf;
+// Each target includes the library by path: it uses a different subset of it.
+#[allow(dead_code)]
+#[path = "helpers/devices.rs"]
+mod devices;
 
-use piperine_codegen::CircuitCompiler;
-use piperine_lang::SourceMap;
-use piperine_solver::prelude::{Context, Net, SensAnalysisOptions};
+use devices::{net_for, NodeMap, ROpt, D, R, Vsrc};
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, Net, SensAnalysisOptions};
 
-const DIVIDER: &str = r#"
-    `include "disciplines.vams"
-
-    module R (inout electrical p, inout electrical n);
-        parameter real r = 1.0e3;
-        analog I(p, n) <+ V(p, n) / r;
-    endmodule
-
-    module D (inout electrical p, inout electrical n);
-        parameter real is_sat = 1.0e-14;
-        analog I(p, n) <+ is_sat * (exp(V(p, n) / 0.02585) - 1.0);
-    endmodule
-
-    module Vsrc (inout electrical p, inout electrical n);
-        parameter real dc = 10.0;
-        analog V(p, n) <+ dc;
-    endmodule
-
-    module Top ();
-        electrical gnd, top, mid;
-        Vsrc v1 (.p(top), .n(gnd));
-        R r1 (.p(top), .n(mid));
-        R r2 (.p(mid), .n(gnd));
-    endmodule
-
-    module DiodeTop ();
-        electrical gnd, top, mid;
-        Vsrc #(.dc(1.0)) v1 (.p(top), .n(gnd));
-        R r1 (.p(top), .n(mid));
-        D d1 (.p(mid), .n(gnd));
-    endmodule
-
-    module ROpt (inout electrical p, inout electrical n);
-        parameter real r = 1.0e3;
-        parameter real w = 1.0e-3;
-        real g;
-        analog begin
-            g = 1.0e-3;
-            if ($param_given("w")) g = w;
-            I(p, n) <+ V(p, n) * g;
-        end
-    endmodule
-
-    module OptTop ();
-        electrical gnd, top, mid;
-        Vsrc v1 (.p(top), .n(gnd));
-        ROpt r1 (.p(top), .n(mid));
-        ROpt r2 (.p(mid), .n(gnd));
-    endmodule
-"#;
-
-fn headers_source_map() -> SourceMap {
-    let headers =
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
-    let mut map = SourceMap::new(headers.clone());
-    map.add_namespace("piperine", headers.clone());
-    map.add_namespace("spice", headers.join("spice"));
-    map
-}
-
-fn build(top: &str) -> (piperine_solver::prelude::CircuitInstance, piperine_codegen::device::CircuitBuildInfo) {
-    let design = piperine_lang::parse_and_elaborate(DIVIDER, &headers_source_map())
-        .expect("fixture elaborates");
-    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
-    let mut compiler = CircuitCompiler::new(&design, &bodies);
-    let (mut circuit, info) = compiler.build_circuit_mapped(top).expect("build");
-    circuit.init_digital().expect("digital");
-    circuit.rebuild_digital_topology();
-    (circuit, info)
-}
-
-/// Resolve a Verilog-AMS net name to its solver [`Net`] through the build info's
-/// name→node map (solver labels are internal ids).
-fn net_for(
-    circuit: &piperine_solver::prelude::CircuitInstance,
-    info: &piperine_codegen::device::CircuitBuildInfo,
-    name: &str,
-) -> Net {
-    let node = info.nets.get(name).unwrap_or_else(|| panic!("net `{name}` not mapped")).clone();
-    let var = piperine_solver::abi::AnalogVariable::Node(node);
-    circuit
-        .nets()
-        .into_iter()
-        .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
-        .unwrap_or_else(|| panic!("net `{name}` not solved"))
+/// The circuits of the former Verilog-A fixture, built from hand-written
+/// elements: `Top` (divider), `DiodeTop` (source, resistor, diode) and
+/// `OptTop` (divider of presence-queried `ROpt`s).
+fn build(top: &str) -> (CircuitInstance, NodeMap) {
+    let mut b = CircuitBuilder::new(top);
+    let gnd = b.ground();
+    let top_node = b.node("top");
+    let mid = b.node("mid");
+    match top {
+        "Top" => {
+            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
+            b.element(Box::new(R::new("r2", 1.0e3, mid.clone(), gnd.clone())));
+        }
+        "DiodeTop" => {
+            b.element(Box::new(Vsrc::new("v1", 1.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(R::new("r1", 1.0e3, top_node.clone(), mid.clone())));
+            b.element(Box::new(D::new("d1", 1.0e-14, mid.clone(), gnd.clone())));
+        }
+        "OptTop" => {
+            b.element(Box::new(Vsrc::new("v1", 10.0, top_node.clone(), gnd.clone())));
+            b.element(Box::new(ROpt::new("r1", None, top_node.clone(), mid.clone())));
+            b.element(Box::new(ROpt::new("r2", None, mid.clone(), gnd.clone())));
+        }
+        other => panic!("no circuit `{other}`"),
+    }
+    let circuit = b.build().expect("build");
+    let mut map = NodeMap::new();
+    map.insert("top", top_node);
+    map.insert("mid", mid);
+    (circuit, map)
 }
 
 /// Divider analytics: `v_mid = V·r2/(r1+r2)` →

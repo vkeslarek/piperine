@@ -155,10 +155,10 @@ T25 → T26 → T27
 
 **Done when**:
 
-- [ ] No `piperine_lang` or `piperine_codegen` import remains; `headers_source_map` and the Verilog-A string are gone
-- [ ] The 4 tests keep their names; every `assert` line is unchanged except for the expression that names the circuit or device handle
-- [ ] `divider_sensitivities_match_analytic_values`, `diode_sensitivity_is_step_independent_and_signed`, `sens_error_paths_are_loud`, `sens_rebuild_class_param_fails_loud` pass
-- [ ] Gate: quick, on `sens`
+- [x] No `piperine_lang` or `piperine_codegen` import remains; `headers_source_map` and the Verilog-A string are gone
+- [x] The 4 tests keep their names; every `assert` line is unchanged except for the expression that names the circuit or device handle
+- [x] `divider_sensitivities_match_analytic_values`, `diode_sensitivity_is_step_independent_and_signed`, `sens_error_paths_are_loud`, `sens_rebuild_class_param_fails_loud` pass
+- [x] Gate: quick, on `sens`
 
 **Tests**: integration
 **Gate**: quick
