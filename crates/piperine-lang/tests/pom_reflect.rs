@@ -296,6 +296,29 @@ module M(o: Bit, bus: Bus) {
     assert_eq!(m.port("bus").unwrap().writers().len(), 1, "a field place is rooted at its carrier");
 }
 
+/// POL-19 AC 3: a parent's `c.w = ..` and `c.w <- ..` are writers of `C.w`.
+#[test]
+fn parent_drive_is_a_writer_of_the_child_carrier() {
+    let src = "\
+module C(a: Bit) { pub signal w: Bit; }
+module P(a: Bit) {
+    let c = C(a);
+    c.w = true;
+}
+digital for P {
+    on a.rise() { c.w <- false; }
+}
+";
+    let design = with_prelude(src);
+    let child = design.module("C").unwrap();
+    let writers = child.signal("w").unwrap().writers();
+    assert_eq!(writers.len(), 2, "{writers:?}");
+    assert!(matches!(writers[0], Writer::Definition(d) if d.place().text() == "c.w"));
+    assert!(matches!(writers[1], Writer::Commit(c) if c.place().text() == "c.w"));
+    // The other signals of the child are not touched.
+    assert!(child.port("a").unwrap().writers().is_empty());
+}
+
 #[test]
 fn instantiated_by_lists_instances() {
     let src = "\

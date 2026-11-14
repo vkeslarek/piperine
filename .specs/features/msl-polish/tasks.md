@@ -1084,11 +1084,11 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `parent_drive_is_a_writer_of_the_child_carrier` passes in `pom_reflect.rs` (C108: POL-19 AC 3)
-- [ ] Both existing writer tests still pass unchanged
-- [ ] The root `c` is not listed as written by `c.w = ..`
-- [ ] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `parent_drive_is_a_writer_of_the_child_carrier` passes in `pom_reflect.rs` (C108: POL-19 AC 3)
+- [x] Both existing writer tests still pass unchanged
+- [x] The root `c` is not listed as written by `c.w = ..`
+- [x] Gate passes: run reflect; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

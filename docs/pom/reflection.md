@@ -727,7 +727,7 @@ One port of a module.
 | `default(self)` | `Option<Expr<'d>>` | The `= expr` default of the port (a driven carrier or value input). |
 | `kind(self)` | `PortKind` | The classification of the port (`Unknown` until classified). |
 | `nature(self)` | `Option<Nature<'d>>` | The nature of the port's type, through arrays and `flip`. |
-| `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this port, in source order. |
+| `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this port, or ends in this port as a member of an instance (`c.p`), in source order. |
 
 ```rust
 use piperine_lang::pom::{Design, Dir, PortKind, Reflect};
@@ -783,7 +783,7 @@ assert_eq!(m.param("r").unwrap().ty().text(), "f64");
 | `init(self)` | `Option<Expr<'d>>` | The `= init` value. |
 | `nature(self)` | `Option<Nature<'d>>` | The nature of the signal's type, through arrays and `flip`. |
 | `generation(self)` | `Option<Generation<'d>>` | The generation the signal is written in, if its parent is one. |
-| `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this signal (`s`, `s[i]`, `s.f`, `(s)`), in source order. |
+| `writers(self)` | `Vec<Writer<'d>>` | Every definition and commit whose place is rooted at this signal (`s`, `s[i]`, `s.f`, `(s)`), or ends in it as a member of an instance (`c.w`, `c.w[i]`), in source order. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
@@ -1308,7 +1308,7 @@ A few public functions live on storage types rather than handles.
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `references(&self, decl: DeclId)` | `&[ReferenceId]` | The paths and members that name `decl`, in source order. |
-| `writers(&self, decl: DeclId)` | `&[WriterId]` | The definitions and commits whose place is rooted at `decl`, in source order. |
+| `writers(&self, decl: DeclId)` | `&[WriterId]` | The definitions and commits whose place is rooted at `decl`, or ends in it as a member of an instance, in source order. |
 | `instantiated_by(&self, decl: DeclId)` | `&[ExprId]` | The instance calls that place module `decl`, in source order. |
 
 #### `DeclKind`

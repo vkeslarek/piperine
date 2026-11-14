@@ -1161,7 +1161,7 @@ The three reverse tables, each indexed by `DeclId`. Read them through `Reflect::
 | Storage (private) | Type | Meaning |
 | --- | --- | --- |
 | `references` | `Vec<Vec<ReferenceId>>` | Per declaration: the paths and members that name it, in source order. |
-| `writers` | `Vec<Vec<WriterId>>` | Per declaration: the definitions and commits whose place is rooted at it, in source order. |
+| `writers` | `Vec<Vec<WriterId>>` | Per declaration: the definitions and commits whose place is rooted at it or ends in it as a member of an instance (`c.w`; the instance's own name is then not written), in source order. |
 | `instantiated_by` | `Vec<Vec<ExprId>>` | Per module: the instance calls that place it. |
 
 ## The built-in table

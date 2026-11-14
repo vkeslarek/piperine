@@ -69,6 +69,28 @@ fn place_root(design: &Design, mut at: ExprId) -> Option<DeclId> {
     }
 }
 
+/// The declarations a place writes. A place ending in a resolved member of an
+/// instance (`c.w`, `c.w[i]`) writes that member and not the instance's name; a
+/// bundle field (`bus.valid`) writes the field's carrier root as well as the
+/// field; anything else writes its root.
+fn place_targets(design: &Design, place: ExprId) -> Vec<DeclId> {
+    let mut at = place;
+    loop {
+        match &design.expr_node(at).kind {
+            ExprKind::Index { expr, .. } | ExprKind::Paren(expr) => at = *expr,
+            ExprKind::Field { expr, res: Resolution::Decl(member), .. } => {
+                let item = matches!(design.decl_data(*member).kind, DeclKind::Port(_) | DeclKind::Signal(_) | DeclKind::Param(_) | DeclKind::Binding(_));
+                let mut targets = vec![*member];
+                if !item {
+                    targets.extend(place_root(design, *expr));
+                }
+                return targets;
+            }
+            _ => return place_root(design, place).into_iter().collect(),
+        }
+    }
+}
+
 /// Compute the tables of a resolved design.
 pub(super) fn build(design: &Design) -> Index {
     let n = design.decl_count();
@@ -109,8 +131,8 @@ pub(super) fn build(design: &Design) -> Index {
         let data = design.decl_data(id);
         match &data.kind {
             DeclKind::Definition(def) => {
-                if let Some(root) = place_root(design, def.place) {
-                    writers[root.index()].push((data.file.index(), data.span.start, WriterId::Definition(id)));
+                for target in place_targets(design, def.place) {
+                    writers[target.index()].push((data.file.index(), data.span.start, WriterId::Definition(id)));
                 }
             }
             DeclKind::Module(m) => {
@@ -127,8 +149,8 @@ pub(super) fn build(design: &Design) -> Index {
         let id = StmtId(i as u32);
         let node = design.stmt_node(id);
         if let StmtKind::Commit { place, .. } = &node.kind {
-            if let Some(root) = place_root(design, *place) {
-                writers[root.index()].push((file_of(node.owner), node.span.start, WriterId::Commit(id)));
+            for target in place_targets(design, *place) {
+                writers[target.index()].push((file_of(node.owner), node.span.start, WriterId::Commit(id)));
             }
         }
     }
