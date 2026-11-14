@@ -156,14 +156,14 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25
 
 **Done when**:
 
-- [ ] Test `phase_package_is_listed` passes in `spec_text.rs` (C11: PKG-02 AC 1)
-- [ ] Test `s36_fixes_the_package_layout` passes in `spec_text.rs` (C12: PKG-02 AC 2)
-- [ ] Test `s36_lists_every_manifest_key` passes in `spec_text.rs` (C13: PKG-02 AC 3)
-- [ ] Test `s36_names_are_identifiers` passes in `spec_text.rs` (C14: PKG-02 AC 4)
-- [ ] The example manifest is a `toml` fence (the corpus targets read `rust` fences only)
-- [ ] "Terms defined here" gains package and manifest
-- [ ] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `phase_package_is_listed` passes in `spec_text.rs` (C11: PKG-02 AC 1)
+- [x] Test `s36_fixes_the_package_layout` passes in `spec_text.rs` (C12: PKG-02 AC 2)
+- [x] Test `s36_lists_every_manifest_key` passes in `spec_text.rs` (C13: PKG-02 AC 3)
+- [x] Test `s36_names_are_identifiers` passes in `spec_text.rs` (C14: PKG-02 AC 4)
+- [x] The example manifest is a `toml` fence (the corpus targets read `rust` fences only)
+- [x] "Terms defined here" gains package and manifest
+- [x] Gate passes: run spec; `cargo test -p piperine-lang --test msl_corpus --test pom_corpus --test pom_docs --test msl_errors`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

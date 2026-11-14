@@ -8,7 +8,7 @@ Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
 known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
-module, prelude, crate, crate root, dependency name.
+module, prelude, crate, crate root, dependency name, package, manifest.
 
 ## 1. Value types
 
@@ -665,3 +665,44 @@ use util::cells::Cell;
 ```
 
 `util` is a dependency name. A local `mod util;` makes this `use` ambiguous (`E0163`).
+
+### 3.6 Packages
+
+A **package** is a directory with a manifest. It holds one crate.
+
+**Static semantics**
+
+- **§3.6.1** The **manifest** is the file `Piperine.toml` in the package directory, written in
+  TOML.
+- **§3.6.2** The crate root is `src/lib.msl`. A source file has the extension `.msl`.
+  `mod name;` loads `name.msl` or `name/mod.msl` below the declaring file, as Rust places
+  `name.rs` and `name/mod.rs`; neither or both is `E0161`.
+- **§3.6.3** The manifest holds the tables and keys of the table below and no other.
+- **§3.6.4** A package name and a dependency name are identifiers (A.1) that are no keyword of
+  the language and not `std`. The package name is the crate's name.
+- **§3.6.5** A version is `MAJOR.MINOR.PATCH`, three decimal integers.
+
+Manifest keys:
+
+| Table | Key | Type | Required |
+| --- | --- | --- | --- |
+| `[package]` | `name` | string | yes |
+| `[package]` | `version` | string | yes |
+| `[package]` | `authors` | array of strings | no |
+| `[package]` | `description` | string | no |
+| `[dependencies]` entry | `path` | string | one of `path`, `git` |
+| `[dependencies]` entry | `git` | string | one of `path`, `git` |
+| `[dependencies]` entry | `branch`, `tag`, `rev` | string | no, at most one, with `git` only |
+| `[dependencies]` entry | `version` | string | no |
+| `[dependencies]` entry | `package` | string | no |
+
+**Examples**
+
+```toml
+[package]
+name = "cells"
+version = "0.1.0"
+
+[dependencies]
+util = { path = "../util" }
+```

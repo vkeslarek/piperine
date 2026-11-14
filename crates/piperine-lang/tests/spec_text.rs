@@ -898,3 +898,79 @@ fn e0163_is_defined_in_3_5() {
     assert!(s.contains("`other = { package = \"<name>\", .. }`"), "{s}");
     assert!(s.contains("`crate::<name>`"), "{s}");
 }
+
+// ---- msl-packages: §0.3 and §3.6 Packages, layout and manifest keys (PKG-02 AC 1 to 4) ----
+
+fn s36() -> String {
+    section(&spec("part_i_values.md"), "### 3.6 ")
+}
+
+fn s36_text() -> String {
+    one_line(&s36())
+}
+
+#[test]
+fn phase_package_is_listed() {
+    // PKG-02 AC 1: five phases, `package` first, rule 3 rejects on it.
+    let index = spec("index.md");
+    let s03 = section(&index, "### 0.3 ");
+    let text = one_line(&s03);
+    assert!(text.contains("An error is raised in one of five phases"), "{text}");
+    let rows = table_rows(&s03);
+    assert_eq!(rows[0][0], "**package**", "package is the first phase: {rows:?}");
+    assert!(rows[0][1].contains("manifests are read") && rows[0][1].contains("crate graph fixed"), "{rows:?}");
+    assert!(rows[0][2].contains("§3.6"), "{rows:?}");
+    assert!(text.contains("*package*"), "rule 3 names the phase: {text}");
+    assert!(text.contains("reject a model that meets an error condition of phase *package*, *parse* or *elaboration*"), "{text}");
+}
+
+#[test]
+fn s36_fixes_the_package_layout() {
+    // PKG-02 AC 2.
+    let s = s36_text();
+    assert!(s.contains("A **package** is a directory with a manifest"), "{s}");
+    assert!(s.contains("The **manifest** is the file `Piperine.toml` in the package directory"), "{s}");
+    assert!(s.contains("The crate root is `src/lib.msl`"), "{s}");
+    assert!(s.contains("A source file has the extension `.msl`"), "{s}");
+    assert!(s.contains("`mod name;` loads `name.msl` or `name/mod.msl`"), "{s}");
+    assert!(s.contains("neither or both is `E0161`"), "{s}");
+    assert_eq!(s.matches("**package**").count(), 1);
+    assert_eq!(s.matches("**manifest**").count(), 1);
+}
+
+#[test]
+fn s36_lists_every_manifest_key() {
+    // PKG-02 AC 3: one table; each key has a row; `E0171` joins the wording in T3, with its defining row.
+    let sec = s36();
+    let rows = table_rows(&sec);
+    let key_rows: Vec<&Vec<String>> = rows.iter().filter(|r| r.len() == 4 && r[0].starts_with("`[")).collect();
+    let keys: String = key_rows.iter().map(|r| format!("{} {}", r[0], r[1])).collect::<Vec<_>>().join("; ");
+    for (table, key) in [
+        ("`[package]`", "`name`"),
+        ("`[package]`", "`version`"),
+        ("`[package]`", "`authors`"),
+        ("`[package]`", "`description`"),
+        ("`[dependencies]` entry", "`path`"),
+        ("`[dependencies]` entry", "`git`"),
+        ("`[dependencies]` entry", "`version`"),
+        ("`[dependencies]` entry", "`package`"),
+    ] {
+        assert!(key_rows.iter().any(|r| r[0] == table && r[1].contains(key)), "no row for {table} {key}: {keys}");
+    }
+    let refs = key_rows.iter().find(|r| r[1].contains("`branch`")).expect("branch, tag, rev row");
+    assert!(refs[1].contains("`tag`") && refs[1].contains("`rev`"), "{refs:?}");
+    let s = one_line(&sec);
+    assert!(s.contains("holds the tables and keys of the table below and no other"), "{s}");
+}
+
+#[test]
+fn s36_names_are_identifiers() {
+    // PKG-02 AC 4.
+    let s = s36_text();
+    assert!(
+        s.contains("A package name and a dependency name are identifiers (A.1) that are no keyword of the language and not `std`"),
+        "{s}"
+    );
+    assert!(s.contains("The package name is the crate's name"), "{s}");
+    assert!(s.contains("A version is `MAJOR.MINOR.PATCH`, three decimal integers"), "{s}");
+}

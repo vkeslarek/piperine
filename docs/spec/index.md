@@ -98,8 +98,8 @@ The words **MUST**, **MUST NOT**, **SHALL**, **SHOULD** and **MAY** are used as 
    this specification defines. An implementation that violates a **MUST** is non-conforming.
 2. A **conforming model** is source text that raises no parse error and no elaboration error
    under this specification.
-3. An implementation **MUST** reject a model that meets an error condition of phase *parse* or
-   *elaboration*. It **MUST** fail the analysis when a condition of phase *run* is met. A
+3. An implementation **MUST** reject a model that meets an error condition of phase *package*,
+   *parse* or *elaboration*. It **MUST** fail the analysis when a condition of phase *run* is met. A
    condition of phase *host* refuses one host operation, or answers it with a diagnostic; the
    analysis continues.
 4. A diagnostic **MUST** identify the source location or the hierarchical path the condition
@@ -109,10 +109,11 @@ The words **MUST**, **MUST NOT**, **SHALL**, **SHOULD** and **MAY** are used as 
 6. Numeric defaults of the reference implementation ([Appendix C.2](appendix_c_implementation.md))
    are informative. The guarantees of [Part V](part_v_execution.md) are normative.
 
-An error is raised in one of four phases.
+An error is raised in one of five phases.
 
 | Phase | When | Defined in |
 | --- | --- | --- |
+| **package** | the manifests are read, the dependencies located and the crate graph fixed | [§3.6](part_i_values.md#36-packages) |
 | **parse** | the source text is turned into tokens and a syntax tree | [Appendix A](appendix_a_lexical.md), [Appendix B](appendix_b_grammar.md) |
 | **elaboration** | names and types are resolved, generics and generation are expanded, params are checked, and the netlist is fixed | [Part III](part_iii_structure.md), [§16](part_v_execution.md#16-the-operating-point) step 1 |
 | **run** | an analysis executes | [Part V](part_v_execution.md) |
