@@ -1325,13 +1325,13 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `appendix_g_records_the_decisions` passes in `spec_text.rs` (C47: POL-08 AC 9)
-- [ ] Test `every_valid_spec_block_parses_clean` still passes in `msl_corpus.rs` (C128: POL-23 AC 1)
-- [ ] Test `every_spec_block_round_trips_to_its_ast` still passes in `pom_corpus.rs` (C129: POL-23 AC 2)
-- [ ] Every `**Run**` line of this file is green (`cargo test -p piperine-lang`)
-- [ ] No `Resolution` note of an earlier task is left contradicting a decision: `grep -n positionally docs/spec` and `grep -n "prelude name" docs/spec/part_ii_carriers.md` are empty
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `appendix_g_records_the_decisions` passes in `spec_text.rs` (C47: POL-08 AC 9)
+- [x] Test `every_valid_spec_block_parses_clean` still passes in `msl_corpus.rs` (C128: POL-23 AC 1)
+- [x] Test `every_spec_block_round_trips_to_its_ast` still passes in `pom_corpus.rs` (C129: POL-23 AC 2)
+- [x] Every `**Run**` line of this file is green (`cargo test -p piperine-lang`)
+- [x] No `Resolution` note of an earlier task is left contradicting a decision: `grep -n positionally docs/spec` and `grep -n "prelude name" docs/spec/part_ii_carriers.md` are empty
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

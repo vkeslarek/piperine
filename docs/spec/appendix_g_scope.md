@@ -77,7 +77,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.37 | Periodic small-signal: no traced example, no implementation | Open |
 | G.38 | Nothing has been compiled | Open |
 | G.39 | Size of the addition | Open |
-| G.40–G.44 | Closed in this specification (one table) | Closed |
+| G.40–G.44, D1–D17 | Closed in this specification (one table; D4 is G.38) | Closed |
 | G.45–G.48 | Flagged resolutions (one table) | Flagged |
 | G.49–G.63 | Resolutions that narrow or extend the design (one table) | Resolved provisionally |
 | G.64 | Implementation-defined numerics: `normal`, spline end conditions | Resolved provisionally |
@@ -297,6 +297,7 @@ A traced example is wanted so that the definition is exercised. `SampleHold` (§
 **Status: Open.**
 No compiler for the language exists. Every standard-library and gallery module in this specification is hand-traced only.
 The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
+The open part is the standard library as a source: Part VII's modules and the galleries of Appendices D, E and F are text, not a compiled library. They are to become `std/*.msl` sources that compile with zero diagnostics, and Part VII's fences excerpts of them; until then a front end resolves their names only against a stand-in prelude.
 
 ### G.39 Size of the addition
 
@@ -364,8 +365,24 @@ In force: the contract of §8.5, and §8.5.16 (a step with an unknown input is n
 | G.42 | How the solve tables read in a periodic analysis | the small-signal column is taken at each point of the trajectory, with `now()` its time. `zi_nd` is in its `delay` form there, on purpose. | §16.2, §16.3 |
 | G.43 | A hold that agrees with a potential contribution on the same node | always an error: a hold is a potential source, and a loop of potential contributions is singular whether or not the values agree | §16 |
 | G.44 | Host actions between two runs of a continued transient; the old stop time | a host `set` or drive is a commit collected at the resume instant. The old stop time remains a time point. | §16.4.1 |
+| D1 | Which Rust forms are in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern and `mut` parameters, `&self`. In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
+| D2 | Which Rust library names exist | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays and slices, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
+| D3 | `gnd`, `Nature`, `m`, `dtemp` and `str` | core names, in the built-in table, that no declaration can define. | §6 rule 11, §3.4.2, A.1 rule 8 |
+| D5 | Duplicate names, colliding imports, ambiguous globs | `E0162`, with Rust's rules: one name per table per namespace; an item or an explicit `use` beats a glob; two globs are an error only when the name is used. | §3.4.7, §3.4.8, §3.4.9 |
+| D6 | Generic names of a behavior block | the block repeats the module's generic names in the same order and introduces none of its own. | §10 rule 6, B.3.3 item 14 |
+| D7 | `&` in argument position | a shared borrow of any value is allowed as a call argument; `E0102` covers the rest. | §1 (`E0102`), §3.2 |
+| D8 | What `E0910` counts | nesting only (delimiters, blocks, unary and type nesting) up to 256 levels; flat chains of binary operators, methods and `else if` arms have a separate bound of 4096 links. | A.6 |
+| D9 | Where docs and attributes may be written | everywhere Rust takes an outer attribute, and before reactions, definitions, generation and nature quantities; the docs of a quantity and of a reaction are metadata, those of a statement are kept and ignored. | A.4, §21 |
+| D10 | Identifier patterns | a plain identifier pattern that resolves to a constant, a unit variant or a unit struct is that path, not a binding, as in Rust. | §1 rule 14 |
+| D11 | Structural checks the elaborator reports | `E0320`, `E0140`, `E0370`, `E0201` and `E0263` are reported under the specification's codes, at name resolution. | §8.5.7, §3.2.9, §8.4, §4, B.3.3 |
+| D12 | Out-of-range literals | `E0909`, at parse: a float literal whose nearest `f64` is infinite; an integer literal past its suffix type, or past 128 bits without a suffix. | A.2 rule 8, A.6, §1 rule 7 |
+| D13 | Where items may sit | at namespace scope, in a file or an inline `mod`; a hardware module and its blocks are in one file, any namespace of it. | §3.4.3, B.2 |
+| D14 | Codes of misplaced statements | `E0404` for `<-`, `+>`, `on`, `bound_step` and `signal` in any block or body that is not theirs, a module body included; `E0121` for a `fn` body, where it wins. | §10 rule 8, §3 rule 6, A.6 |
+| D15 | Raw identifiers (G.15) | `r#name` is accepted for the seven added keywords and for no other word. | A.1 rule 6, G.15 |
+| D16 | Field-init shorthand (G.14) | `{ r }` is accepted in param blocks and templates as in a Rust struct expression, and the tree keeps the authored form. | B.3.2, G.14 |
+| D17 | `(s)` as a place | a place is a path with indexes and fields; parentheses are rejected in a definition and in a commit (`E0900`). | B.3.2 note 4 |
 
-G.33 to G.36 are what remains open around G.40 and G.42.
+G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38).
 
 ### Other closed items
 

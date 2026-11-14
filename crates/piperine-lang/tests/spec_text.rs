@@ -720,3 +720,49 @@ fn e0910_counts_nesting_and_bounds_chains() {
     }
     assert!(!text.contains("operator chains"), "the old wording is gone: {text}");
 }
+
+/// What each recorded decision cites as its deciding section: a substring of the `Where` cell.
+const DECIDED_IN: [(&str, &str); 16] = [
+    ("D1", "B.3.6"),
+    ("D2", "Appendix H"),
+    ("D3", "§6 rule 11"),
+    ("D5", "§3.4.7"),
+    ("D6", "§10 rule 6"),
+    ("D7", "§1"),
+    ("D8", "A.6"),
+    ("D9", "A.4"),
+    ("D10", "§1 rule 14"),
+    ("D11", "§8.5.7"),
+    ("D12", "A.2"),
+    ("D13", "§3.4.3"),
+    ("D14", "§10 rule 8"),
+    ("D15", "A.1"),
+    ("D16", "B.3.2"),
+    ("D17", "B.3.2"),
+];
+
+#[test]
+fn appendix_g_records_the_decisions() {
+    // POL-08 AC 9: one row per decision D1 to D17 except D4, naming the deciding section; G.38 stays Open.
+    let g = spec("appendix_g_scope.md");
+    let closed = section(&g, "### Closed in this specification");
+    let rows = table_rows(&closed);
+    for (decision, cited) in DECIDED_IN {
+        let row = rows.iter().find(|r| r[0] == decision).unwrap_or_else(|| panic!("no row for {decision} in `Closed in this specification`"));
+        assert_eq!(row.len(), 4, "{decision}: Item, Question, Decision, Where: {row:?}");
+        assert!(!row[1].is_empty() && !row[2].is_empty(), "{decision}: question and decision are written: {row:?}");
+        assert!(row[3].contains(cited), "{decision} cites {cited}: {}", row[3]);
+    }
+    assert!(rows.iter().all(|r| r[0] != "D4"), "D4 is not decided here: the standard library is G.38");
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with('D')).count(), 16);
+    // The G-numbered rows are still there.
+    for item in ["G.40", "G.41", "G.42", "G.43", "G.44"] {
+        assert!(rows.iter().any(|r| r[0] == item), "{item} stays");
+    }
+    // G.38 stays Open and names the standard-library sources as the open part.
+    let g38 = one_line(&section(&g, "### G.38"));
+    assert!(g38.contains("**Status: Open.**"), "{g38}");
+    assert!(g38.contains("standard library") && g38.contains("std/*.msl"), "G.38 names the standard-library sources: {g38}");
+    assert!(g.lines().any(|l| l.starts_with("| G.38 |") && l.trim_end().ends_with("| Open |")), "the overview lists G.38 as Open");
+    assert!(g.lines().any(|l| l.starts_with("| G.40") && l.contains("D1")), "the overview names the decision rows");
+}
