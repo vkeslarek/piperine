@@ -357,22 +357,19 @@ impl<'d> Stmt<'d> {
 }
 
 /// A block of statements: the body of a function or a reaction.
-// SPEC_DEVIATION: design.md names this handle `Block<'d>`, but `pom::Block` is already the
-// storage type (`pub use body::*`). Reason: one public name cannot be both; the handle is
-// exported as `BlockHandle`, as `QuantityRole` did for the other clash.
 #[derive(Clone, Copy)]
-pub struct BlockHandle<'d> {
+pub struct Block<'d> {
     design: &'d Design,
-    node: &'d crate::pom::body::Block,
+    node: &'d crate::pom::body::BlockNode,
 }
 
-impl<'d> BlockHandle<'d> {
-    pub(crate) fn new(design: &'d Design, node: &'d crate::pom::body::Block) -> Self {
-        BlockHandle { design, node }
+impl<'d> Block<'d> {
+    pub(crate) fn new(design: &'d Design, node: &'d crate::pom::body::BlockNode) -> Self {
+        Block { design, node }
     }
 
     /// The raw storage block.
-    pub fn node(self) -> &'d crate::pom::body::Block {
+    pub fn node(self) -> &'d crate::pom::body::BlockNode {
         self.node
     }
 
@@ -396,15 +393,15 @@ impl<'d> BlockHandle<'d> {
     }
 }
 
-impl PartialEq for BlockHandle<'_> {
+impl PartialEq for Block<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.design, other.design) && std::ptr::eq(self.node, other.node)
     }
 }
 
-impl std::fmt::Debug for BlockHandle<'_> {
+impl std::fmt::Debug for Block<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BlockHandle({:?})", self.node.span)
+        write!(f, "Block({:?})", self.node.span)
     }
 }
 
@@ -649,7 +646,7 @@ fn walk_stmt(design: &Design, id: StmtId, out: &mut Vec<StmtId>) {
     }
 }
 
-fn walk_block(design: &Design, block: &crate::pom::body::Block, out: &mut Vec<StmtId>) {
+fn walk_block(design: &Design, block: &crate::pom::body::BlockNode, out: &mut Vec<StmtId>) {
     for s in &block.stmts {
         walk_stmt(design, *s, out);
     }

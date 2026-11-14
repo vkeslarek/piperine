@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use super::body::{
-    Arg, Arm, Block, ClosureParam, ExprKind, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, PatKind,
+    Arg, Arm, BlockNode, ClosureParam, ExprKind, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, PatKind,
     PathNode, StmtKind, TypeKind,
 };
 use super::decl::{
@@ -323,7 +323,7 @@ impl<'d> Rebuild<'d> {
 
     // ---- statements -----------------------------------------------------------------------
 
-    fn block(&self, b: &Block) -> ast::Block {
+    fn block(&self, b: &BlockNode) -> ast::Block {
         ast::Block { stmts: b.stmts.iter().map(|s| self.stmt(*s)).collect(), span: loc(b.span) }
     }
 

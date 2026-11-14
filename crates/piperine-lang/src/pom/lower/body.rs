@@ -4,7 +4,7 @@
 use super::Lowerer;
 use crate::msl::ast;
 use crate::pom::body::{
-    Arg, Arm, Block, ClosureParam, ExprKind, ExprNode, FieldInit, FieldPatNode, GenericArgNode,
+    Arg, Arm, BlockNode, ClosureParam, ExprKind, ExprNode, FieldInit, FieldPatNode, GenericArgNode,
     GenericArgsNode, PatKind, PatNode, PathNode, PathSegment, StmtKind, StmtNode, TypeKind, TypeNode,
 };
 use crate::pom::decl::{BindingData, BindingOrigin, DeclKind, Name, ReactionData, SignalData};
@@ -263,8 +263,8 @@ impl Lowerer<'_> {
 
     // ---- statements -----------------------------------------------------------------------
 
-    pub(crate) fn block(&mut self, b: &ast::Block) -> Block {
-        Block { stmts: b.stmts.iter().map(|s| self.stmt(s)).collect(), span: b.span.0 }
+    pub(crate) fn block(&mut self, b: &ast::Block) -> BlockNode {
+        BlockNode { stmts: b.stmts.iter().map(|s| self.stmt(s)).collect(), span: b.span.0 }
     }
 
     /// A `Reaction` declaration as the last child of the owner.

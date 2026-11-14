@@ -428,7 +428,7 @@ assert!(!imports[0].glob);
 | `params(self)` | `Vec<FnParam<'d>>` | The parameters in source order; a method's `self` comes first. |
 | `ret(self)` | `Option<Type<'d>>` | The `-> ty` return type. |
 | `where_clause(self)` | `Option<Expr<'d>>` | The `where` condition. |
-| `body(self)` | `Option<BlockHandle<'d>>` | The body block; none for a declaration ending in `;`. The raw block is `BlockHandle::node()`. |
+| `body(self)` | `Option<Block<'d>>` | The body block; none for a declaration ending in `;`. The raw block is `Block::node()`. |
 
 ```rust
 use piperine_lang::pom::{Design, Reflect};
@@ -1005,7 +1005,7 @@ assert!(design.diagnostics().iter().any(|d| d.diagnostic.code == "E0401"));
 | Method | Returns | Meaning |
 | --- | --- | --- |
 | `event(self)` | `Expr<'d>` | The event expression after `on`. |
-| `body(self)` | `BlockHandle<'d>` | The block of statements and commits. The raw block is `BlockHandle::node()`. |
+| `body(self)` | `Block<'d>` | The block of statements and commits. The raw block is `Block::node()`. |
 | `commits(self)` | `Vec<Commit<'d>>` | Every commit of the body at any depth, in source order. |
 
 ### `Contribution`
@@ -1161,13 +1161,13 @@ assert_eq!(first.enclosing(), reaction.decl());
 assert!(matches!(stmts[1].kind(), StmtKind::Let { .. }));
 ```
 
-### `BlockHandle`
+### `Block`
 
-A block of statements: the body of a function or a reaction. Named `BlockHandle` because `Block` is the storage type of the same shape (see [Model](model.md)).
+A block of statements: the body of a function or a reaction. Its storage type is `BlockNode` (see [Model](model.md)).
 
 | Method | Returns | Meaning |
 | --- | --- | --- |
-| `node(self)` | `&'d Block` | The raw storage block. |
+| `node(self)` | `&'d BlockNode` | The raw storage block. |
 | `stmts(self)` | `Vec<Stmt<'d>>` | The statements in source order. |
 | `value(self)` | `Option<Expr<'d>>` | The block's value: the expression of a last statement written without a `;`. |
 | `span(self)` | `Span` | The range of the braces and everything between them. |

@@ -10,7 +10,7 @@
 use super::super::builtin::{BuiltinKind, builtin_implicit};
 use std::collections::BTreeSet;
 
-use super::super::body::{BehaviorKind, Block, ExprKind, GenericArgNode, GenericArgsNode, PatKind, StmtKind, TypeKind};
+use super::super::body::{BehaviorKind, BlockNode, ExprKind, GenericArgNode, GenericArgsNode, PatKind, StmtKind, TypeKind};
 use super::super::decl::{DeclKind, FieldsForm, FnParamData, GenerationData, GenericParamData, NatureFieldNode};
 use super::super::decl::BehaviorData;
 use super::super::ids::{DeclId, ExprId, PatId, PathId, StmtId, TypeId};
@@ -524,7 +524,7 @@ impl Names<'_, '_> {
 
     /// `{ stmts }`: a scope of its own, names bound one after another, the
     /// items it holds visible throughout.
-    fn block(&mut self, block: &Block) {
+    fn block(&mut self, block: &BlockNode) {
         self.stmt_list(&block.stmts);
     }
 

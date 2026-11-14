@@ -388,7 +388,7 @@ Read through the handle `Function` (see [Reflection](reflection.md#function)).
 | `abi` | `Option<Lit>` | `extern "C" fn`: the ABI string. |
 | `ret` | `Option<TypeId>` | The `-> ty`. |
 | `where_` | `Option<ExprId>` | The `where` condition. |
-| `body` | `Option<Block>` | None for a declaration ending in `;`. |
+| `body` | `Option<BlockNode>` | None for a declaration ending in `;`. |
 
 ### `FnParamData`
 
@@ -705,7 +705,7 @@ Read through the handle `Reaction` (see [Reflection](reflection.md#reaction)).
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `event` | `ExprId` | The event expression. |
-| `body` | `Block` | The block. |
+| `body` | `BlockNode` | The block. |
 
 ## Body nodes
 
@@ -898,7 +898,7 @@ One parameter of a closure: `pat: ty`.
 | `ty` | `Option<TypeId>` | The annotated type. |
 | `span` | `Span` | Byte range in the file text. |
 
-### `Block`
+### `BlockNode`
 
 *struct* in `src/pom/body.rs`.
 
@@ -933,13 +933,13 @@ One variant per `ast::ExprKind` variant.
 | `Array` | `(Vec<ExprId>)` | `[a, b]`. |
 | `ArrayRepeat` | `{ elem: ExprId, len: ExprId }` | `[elem; len]`. |
 | `Struct` | `{ path: PathId, fields: Vec<FieldInit>, class: StructClass }` | `Path { f: v }`: a struct literal, a bundle literal or a template (see `StructClass`). |
-| `Block` | `(Block)` | `{ stmts }`. |
-| `If` | `{ cond: ExprId, then: Block, else_: Option<ExprId> }` | `if cond { then } else ..`; `else_` is a block expression or a nested `if`. |
+| `Block` | `(BlockNode)` | `{ stmts }`. |
+| `If` | `{ cond: ExprId, then: BlockNode, else_: Option<ExprId> }` | `if cond { then } else ..`; `else_` is a block expression or a nested `if`. |
 | `Let` | `{ pat: PatId, expr: ExprId }` | `let pat = expr` in a condition. |
 | `Match` | `{ scrutinee: ExprId, arms: Vec<Arm> }` | `match scrutinee { arms }`. |
-| `While` | `{ cond: ExprId, body: Block }` | `while cond { body }`. |
-| `Loop` | `{ body: Block }` | `loop { body }`. |
-| `For` | `{ pat: PatId, iter: ExprId, body: Block }` | `for pat in iter { body }`. |
+| `While` | `{ cond: ExprId, body: BlockNode }` | `while cond { body }`. |
+| `Loop` | `{ body: BlockNode }` | `loop { body }`. |
+| `For` | `{ pat: PatId, iter: ExprId, body: BlockNode }` | `for pat in iter { body }`. |
 | `Break` | `(Option<ExprId>)` | `break value?`. |
 | `Continue` | — | `continue`. |
 | `Return` | `(Option<ExprId>)` | `return value?`. |
@@ -970,7 +970,7 @@ The forms of a statement.
 
 | Variant | Payload | Meaning |
 | --- | --- | --- |
-| `Let` | `{ pat: PatId, ty: Option<TypeId>, init: Option<ExprId>, else_: Option<Block> }` | `let pat: ty = init else { diverge };` |
+| `Let` | `{ pat: PatId, ty: Option<TypeId>, init: Option<ExprId>, else_: Option<BlockNode> }` | `let pat: ty = init else { diverge };` |
 | `Expr` | `{ expr: ExprId, semi: bool }` | `semi: false` on the last statement of a block is the block's value. |
 | `Item` | `(DeclId)` | An item written inside a block; the declaration is a child of the enclosing declaration. |
 | `Contribution` | `{ lhs: ExprId, rhs: ExprId }` | `lhs +> rhs;` |

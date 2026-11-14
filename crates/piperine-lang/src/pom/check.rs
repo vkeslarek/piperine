@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use super::body::{Arg, ExprKind, FieldInit, GenericArgNode, GenericArgsNode, PatKind, PathNode, StmtKind, TypeKind};
-use super::body::Block;
+use super::body::BlockNode;
 use super::decl::{
     DeclKind, GenElseNode, GenerationData, GenericParamData, NamespaceOrigin, NatureFieldNode,
 };
@@ -35,7 +35,7 @@ impl Refs {
         }
     }
 
-    fn block(&mut self, b: &Block) {
+    fn block(&mut self, b: &BlockNode) {
         self.stmts.extend(&b.stmts);
     }
 

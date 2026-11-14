@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::body::{Block, BehaviorKind, FieldInit, Lit, QuantityRole};
+use super::body::{BlockNode, BehaviorKind, FieldInit, Lit, QuantityRole};
 use super::resolution::{NatureKind, PortKind};
 use super::meta::Meta;
 use super::ids::{DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
@@ -168,7 +168,7 @@ pub struct FnData {
     pub ret: Option<TypeId>,
     pub where_: Option<ExprId>,
     /// None for a declaration ending in `;`.
-    pub body: Option<Block>,
+    pub body: Option<BlockNode>,
 }
 
 /// One parameter of a function.
@@ -389,5 +389,5 @@ pub struct BehaviorData {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReactionData {
     pub event: ExprId,
-    pub body: Block,
+    pub body: BlockNode,
 }

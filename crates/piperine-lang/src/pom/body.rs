@@ -183,7 +183,7 @@ pub struct ClosureParam {
 
 /// `{ stmts }`, held by value by the node that owns it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Block {
+pub struct BlockNode {
     pub stmts: Vec<StmtId>,
     pub span: Span,
 }
@@ -210,14 +210,14 @@ pub enum ExprKind {
     Array(Vec<ExprId>),
     ArrayRepeat { elem: ExprId, len: ExprId },
     Struct { path: PathId, fields: Vec<FieldInit>, class: StructClass },
-    Block(Block),
-    If { cond: ExprId, then: Block, else_: Option<ExprId> },
+    Block(BlockNode),
+    If { cond: ExprId, then: BlockNode, else_: Option<ExprId> },
     /// `let pat = expr` in a condition.
     Let { pat: PatId, expr: ExprId },
     Match { scrutinee: ExprId, arms: Vec<Arm> },
-    While { cond: ExprId, body: Block },
-    Loop { body: Block },
-    For { pat: PatId, iter: ExprId, body: Block },
+    While { cond: ExprId, body: BlockNode },
+    Loop { body: BlockNode },
+    For { pat: PatId, iter: ExprId, body: BlockNode },
     Break(Option<ExprId>),
     Continue,
     Return(Option<ExprId>),
@@ -244,7 +244,7 @@ pub struct StmtNode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StmtKind {
     /// `let pat: ty = init else { diverge };`
-    Let { pat: PatId, ty: Option<TypeId>, init: Option<ExprId>, else_: Option<Block> },
+    Let { pat: PatId, ty: Option<TypeId>, init: Option<ExprId>, else_: Option<BlockNode> },
     /// `semi: false` on the last statement of a block is the block's value.
     Expr { expr: ExprId, semi: bool },
     /// An item written inside a block; the declaration is a child of the
@@ -341,7 +341,7 @@ pub(crate) fn stmt_own_exprs(design: &Design, id: StmtId) -> Vec<ExprId> {
 }
 
 /// The children of every statement of a block, in order.
-pub(crate) fn block_exprs(design: &Design, block: &Block) -> Vec<ExprId> {
+pub(crate) fn block_exprs(design: &Design, block: &BlockNode) -> Vec<ExprId> {
     block.stmts.iter().flat_map(|s| stmt_children(design, *s)).collect()
 }
 

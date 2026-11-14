@@ -434,7 +434,7 @@ fn design_and_storage_types_implement_serde() {
     serde::<(NatureData, QuantityData, NatureFieldNode, ModuleData, PortData, ParamData, SignalData, LetData)>();
     serde::<(BindingData, BindingOrigin, DefinitionData, GenerationData, GenElseNode, BehaviorData, ReactionData)>();
     serde::<(ExprNode, ExprKind, StmtNode, StmtKind, PatNode, PatKind, TypeNode, TypeKind, PathNode, PathSegment)>();
-    serde::<(Arg, Arm, Block, ClosureParam, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, Lit, LitKind)>();
+    serde::<(Arg, Arm, BlockNode, ClosureParam, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, Lit, LitKind)>();
     serde::<(Resolution, DeferReason, CallClass, StructClass, PortKind, NatureKind, BuiltinId)>();
     serde::<(Meta, Doc, AttrNode, AttrInputNode, AttrArgNode, Import, Index, ReferenceId, WriterId)>();
 }

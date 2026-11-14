@@ -618,7 +618,9 @@ fn block_and_stmt_handles_walk_a_body() {
     let src = "fn f(a: f64) -> f64 { let b = g(a); if a > 0.0 { h(b); } b + 1.0 }\nfn e() { 1.0; }\nfn n() {}\nfn g(x: f64) -> f64 { x }\nfn h(x: f64) {}";
     let design = build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    let body = design.function("f").unwrap().body().unwrap();
+    // POL-20 AC 6: the handle is `pom::Block`; its storage type is `BlockNode`.
+    let body: piperine_lang::pom::Block<'_> = design.function("f").unwrap().body().unwrap();
+    let _raw: &piperine_lang::pom::BlockNode = body.node();
     assert_eq!(body.span().range(), 20..src.find("\nfn e").unwrap());
     let stmts = body.stmts();
     assert_eq!(stmts.len(), 3);
