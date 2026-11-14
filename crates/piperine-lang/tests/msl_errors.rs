@@ -1066,3 +1066,37 @@ fn bad_where_list_is_one_diagnostic() {
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     assert!(r.file.items.iter().any(|i| matches!(&i.kind, piperine_lang::msl::ast::ItemKind::Fn(f) if f.name.name == "g")));
 }
+
+#[test]
+fn statement_errors_recover_inside_the_block() {
+    // POL-16 AC 2: a bad statement is skipped to its `;`; the block, its
+    // item and the statements after it survive.
+    use piperine_lang::msl::ast::{ExprKind, ItemKind, StmtKind};
+    let src = "fn f() { let a = ; foo(; let c = 3; }";
+    let r = parse(src);
+    let first_semi = src.find(';').unwrap();
+    assert!(
+        r.diagnostics.iter().any(|d| d.span().start == first_semi),
+        "a diagnostic at the first `;`: {:?}",
+        r.diagnostics
+    );
+    let let_c = src.find("let c").unwrap();
+    assert!(
+        r.diagnostics.iter().all(|d| !(d.span().start >= let_c && d.span().start < let_c + "let c = 3;".len())),
+        "no diagnostic labels `let c = 3;`: {:?}",
+        r.diagnostics
+    );
+    assert_eq!(r.file.items.len(), 1, "{:?}", r.file.items);
+    let ItemKind::Fn(f) = &r.file.items[0].kind else { panic!("{:?}", r.file.items[0].kind) };
+    let body = f.body.as_ref().expect("the function keeps its body");
+    let lets: Vec<_> = body.stmts.iter().filter(|s| matches!(s.kind, StmtKind::Let { init: Some(_), .. })).collect();
+    assert_eq!(lets.len(), 1, "{:?}", body.stmts);
+    assert_eq!(lets[0].span.0, Span::new(let_c, let_c + "let c = 3;".len()));
+    // The statements that failed are error nodes, in place.
+    let errors = body
+        .stmts
+        .iter()
+        .filter(|s| matches!(&s.kind, StmtKind::Expr { expr, .. } if matches!(expr.kind, ExprKind::Error)))
+        .count();
+    assert!(errors >= 1, "{:?}", body.stmts);
+}

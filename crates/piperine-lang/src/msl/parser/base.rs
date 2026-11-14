@@ -223,15 +223,24 @@ fn delim_close(t: &Token) -> bool {
     matches!(t, Token::Punct(Punct::RParen | Punct::RBracket | Punct::RBrace))
 }
 
-/// A balanced `( .. )`, `[ .. ]` or `{ .. }` group, contents skipped.
+/// A balanced `( .. )`, `[ .. ]` or `{ .. }` group, contents skipped. An
+/// opener closed by another kind of delimiter (or never) is no group.
 pub(crate) fn skip_group<'a, I: In<'a>>() -> P<'a, I, ()> {
     recursive(|nested| {
         let inner = choice((
             nested,
             any().filter(|t: &Token| !delim_open(t) && !delim_close(t)).ignored(),
         ))
-        .repeated();
-        any().filter(delim_open).ignore_then(inner).then_ignore(any().filter(delim_close)).ignored()
+        .repeated()
+        .boxed();
+        let group = |open: Punct, close: Punct| {
+            just(Token::Punct(open)).ignore_then(inner.clone()).then_ignore(just(Token::Punct(close))).ignored()
+        };
+        choice((
+            group(Punct::LParen, Punct::RParen),
+            group(Punct::LBracket, Punct::RBracket),
+            group(Punct::LBrace, Punct::RBrace),
+        ))
     })
     .boxed()
 }
@@ -334,10 +343,12 @@ fn skip_rest_of_item<'a, I: In<'a>>() -> P<'a, I, ()> {
 /// Skip the rest of a failed statement: through its `;`, or up to the `}`
 /// that closes the block.
 fn skip_rest_of_stmt<'a, I: In<'a>>() -> P<'a, I, ()> {
+    // Only the `}` that ends the block stops the skip; a `)` or `]` that no
+    // group of the statement closes is skipped with it.
     let more = choice((
         any().filter(delim_open).rewind().ignore_then(skip_group()),
         any()
-            .filter(|t: &Token| !is_closer(t) && !matches!(t, Token::Punct(Punct::Semi)))
+            .filter(|t: &Token| !matches!(t, Token::Punct(Punct::Semi | Punct::RBrace)))
             .ignored(),
     ));
     more.repeated().ignore_then(just(Token::Punct(Punct::Semi)).ignored().or_not()).ignored().boxed()

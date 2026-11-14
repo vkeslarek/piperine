@@ -737,10 +737,10 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `statement_errors_recover_inside_the_block` passes in `msl_errors.rs` (C90: POL-16 AC 2)
-- [ ] An unclosed `(` inside the statement is still reported at its opener (`unclosed_delimiter_is_reported_at_the_opener` unchanged)
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `statement_errors_recover_inside_the_block` passes in `msl_errors.rs` (C90: POL-16 AC 2)
+- [x] An unclosed `(` inside the statement is still reported at its opener (`unclosed_delimiter_is_reported_at_the_opener` unchanged)
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

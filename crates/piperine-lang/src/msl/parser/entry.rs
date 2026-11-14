@@ -202,17 +202,30 @@ fn finish<O>(
     };
     let unclosed = |d: &Diagnostic| d.primary.1 == UNCLOSED;
     let eof_error = errors.iter().any(|e| at_eof(e));
-    if !eof_error {
-        diags.retain(|d| !unclosed(d));
-    }
     let ended_early = eof_error && diags.iter().any(|d| unclosed(d) || d.message.starts_with("unterminated"))
         || diags.iter().any(|d| d.message.starts_with("unterminated"));
-    diags.extend(
-        errors
-            .iter()
-            .filter(|e| !reported(e) && !(ended_early && at_eof(e)))
-            .map(|e| to_diagnostic(e, tokens)),
-    );
+    let mut parsed: Vec<Diagnostic> = errors
+        .iter()
+        .filter(|e| !reported(e) && !(ended_early && at_eof(e)))
+        .map(|e| to_diagnostic(e, tokens))
+        .collect();
+    // The first parser error inside an unclosed group is that same fault
+    // seen from within (recovery resumes at the next `;`): the diagnostic at
+    // the opener replaces it, and stays.
+    let mut absorbed = Vec::new();
+    for u in diags.iter().filter(|d| unclosed(d)) {
+        // Only a group that another closing delimiter met: one that ran to the
+        // end of input is reported by the parser where it stopped.
+        let Some((met, _)) = u.secondary.first().filter(|(_, label)| label.starts_with("reached")) else { continue };
+        let end = met.start;
+        let inside = parsed.iter().position(|d| d.span().start > u.span().start && d.span().start <= end);
+        if let Some(at) = inside {
+            parsed.remove(at);
+            absorbed.push(u.span());
+        }
+    }
+    diags.retain(|d| !unclosed(d) || eof_error || absorbed.contains(&d.span()));
+    diags.extend(parsed);
     diags.sort_by_key(|d| d.span().start);
     // Recovery can report one position twice (a rewound alternative and the
     // enclosing group): one diagnostic per code and span.
