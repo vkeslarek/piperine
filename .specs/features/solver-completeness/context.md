@@ -138,3 +138,4 @@ None yet. The spec's Assumptions table already carries the recommended default o
 | Q6 | "Fio, verilog vai embora." | A: rewrite the 5 targets on hand-written `Element`s; Verilog-A goes |
 | Q7 | "Companion model é uma boa mas eu manteria o algoritmo atual do solver que funcionou bem nos testes, inclusive cross validation e convergence com descontinuidades (caracteristico de sistemas mixed signal)." | keep the solver's present discontinuity algorithm; Appendix C.2 is amended to describe it, not the reverse |
 | Q9 | "Não, a paridade com ngspice é um strenght bem alto e um ponto positivissimo." | B: keep the present tolerance mapping (ngspice parity); §17.1.2 is amended to match |
+| ABI | "Ah, fica a vontade para mudar o ABI também ok?" | the `Element` ABI may change freely in this refactor |
