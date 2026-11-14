@@ -8,4 +8,5 @@ pub mod carriers;
 pub mod values;
 pub mod analog;
 pub mod nets;
+pub mod convert;
 pub mod prelude;

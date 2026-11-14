@@ -341,3 +341,22 @@ fn transient_is_the_kind_and_tran_the_module() {
     let kind = design.root_crate().decls().into_iter().flat_map(|d| d.exprs()).find(|e| e.text() == "Transient").expect("the model writes Transient");
     assert!(matches!(kind.resolution(), Resolution::Builtin(id) if id.name() == "Transient"), "{:?}", kind.resolution());
 }
+
+/// The module of `std` that the placement `name(...)` of the root crate resolves to.
+fn placed_module<'d>(design: &'d Design, name: &str) -> piperine_lang::pom::Decl<'d> {
+    let decl = resolved_decl(design, name).unwrap_or_else(|| panic!("`{name}` resolves to a declaration"));
+    assert!(decl.as_module().is_some(), "`{name}` is a module");
+    assert!(decl.krate().is_std(), "`{name}` is a module of std");
+    decl
+}
+
+#[test]
+fn converters_resolve_into_std_convert() {
+    let design = Design::builder()
+        .source("top.msl", "module M(in d: Bit, a: Electrical, vdd: Electrical, q: Bit) { let x = D2A(d, a, vdd); let y = A2D(a, q); }\n")
+        .build();
+    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    for name in ["D2A", "A2D"] {
+        assert_eq!(placed_module(&design, name).file().name(), "convert.msl", "{name}");
+    }
+}

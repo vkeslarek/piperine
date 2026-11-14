@@ -465,11 +465,11 @@ T21 → T22 → T23 → T24
 
 **Done when**:
 
-- [ ] Test `converters_resolve_into_std_convert` passes in `std_library.rs` (C59: STD-09 AC 8)
-- [ ] `std_excerpts` passes with §22.4 covered in both directions (C-level proof: the guards of T8)
-- [ ] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file
-- [ ] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `converters_resolve_into_std_convert` passes in `std_library.rs` (C59: STD-09 AC 8)
+- [x] `std_excerpts` passes with §22.4 covered in both directions (C-level proof: the guards of T8)
+- [x] `std_library::embedded_std_has_no_diagnostics` and `std_has_no_unresolved_member` pass with this file
+- [x] Gate passes: `cargo test -p piperine-lang`; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full
