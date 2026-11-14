@@ -305,6 +305,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0162` | 2, 3, 5 | a name declared twice in one table of a namespace; an explicit `use` colliding with an item or another explicit `use`; a name used while two globs provide it for different declarations (the slot stays `Unresolved`, no `E0161`) | the later name, or the use |
 | `E0201` | 8 | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
 | `E0206` | 6 | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
+| `E0211` | 7 | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |
 | `E0263` | 6 | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
 | `E0320` | 6 | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
 | `E0330` | 2 | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |

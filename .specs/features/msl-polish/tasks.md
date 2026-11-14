@@ -1062,10 +1062,10 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `carrier_method_on_an_array_is_e0211` passes in `pom_classify.rs` (C107: POL-19 AC 2)
-- [ ] A name that is not a carrier method (`arr.len()`) stays `Deferred(ReceiverTypeUnknown)` with no diagnostic
-- [ ] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `carrier_method_on_an_array_is_e0211` passes in `pom_classify.rs` (C107: POL-19 AC 2)
+- [x] A name that is not a carrier method (`arr.len()`) stays `Deferred(ReceiverTypeUnknown)` with no diagnostic
+- [x] Gate passes: run classify; no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: quick

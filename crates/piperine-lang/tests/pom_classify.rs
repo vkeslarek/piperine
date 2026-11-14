@@ -1002,3 +1002,33 @@ analog for M {
         assert!(matches!(callee_res(call), Resolution::Decl(_)), "{call}");
     }
 }
+
+/// POL-19 AC 2: a carrier method called on an array of carriers is `E0211`
+/// and stays `Unresolved`; indexed to an element it resolves to the `impl`
+/// function; a name that is not a carrier method defers with no diagnostic.
+#[test]
+fn carrier_method_on_an_array_is_e0211() {
+    let src = "\
+module M(arr: [Bit; 2], one: Bit, grid: [[Bit; 2]; 2]) {
+    let a = arr.rise();
+    let b = arr[0].rise();
+    let c = arr.len();
+    let d = grid[1].rise();
+    let e = grid[1][0].rise();
+    let f = one.rise();
+    let g = arr.changed();
+}
+";
+    let design = with_prelude(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    assert_eq!(at, [("E0211", "rise"), ("E0211", "rise"), ("E0211", "changed")], "{:?}", design.diagnostics());
+    let starts: Vec<usize> = design.diagnostics().iter().map(|d| d.diagnostic.span().range().start).collect();
+    assert_eq!(starts, [src.find("arr.rise").unwrap() + 4, src.find("grid[1].rise").unwrap() + 8, src.find("arr.changed").unwrap() + 4]);
+    assert_eq!(member_res(&design, "arr.rise()"), Resolution::Unresolved);
+    assert_eq!(member_res(&design, "grid[1].rise()"), Resolution::Unresolved);
+    assert_eq!(member_res(&design, "arr.len()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+    for call in ["arr[0].rise()", "grid[1][0].rise()", "one.rise()"] {
+        assert!(matches!(member_res(&design, call), Resolution::Decl(_)), "{call}");
+    }
+    assert!(matches!(member_res(&design, "arr[0].rise()"), Resolution::Decl(d) if design.decl_data(d).name.as_ref().unwrap().text == "rise"));
+}

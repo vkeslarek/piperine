@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use super::super::body::{ExprKind, PatKind, StmtKind};
+use super::super::body::{ExprKind, PatKind, StmtKind, TypeKind};
 use super::super::builtin::builtin_method;
 use super::super::decl::{DeclKind, FnParamData, NatureFieldNode};
 use super::super::design::Design;
@@ -31,6 +31,8 @@ enum Recv {
     Struct(DeclId),
     /// A carrier of this nature; none for a generic bounded by `Nature`.
     Carrier(Option<DeclId>),
+    /// An array of carriers, still `depth` indexes away from one carrier.
+    CarrierArray(Option<DeclId>, usize),
     /// Nothing declared tells.
     Unknown,
 }
@@ -47,7 +49,13 @@ pub(super) fn run(design: &Design) -> Members {
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
         if let ExprKind::MethodCall { recv, method, .. } = &design.expr_node(expr).kind {
-            out.res.push((expr, reader.method(*recv, &method.text)));
+            let (res, on_array) = reader.method(*recv, &method.text);
+            out.res.push((expr, res));
+            if on_array {
+                let message = format!("the carrier method `{}` is applied to an array of carriers", method.text);
+                let owner = design.expr_node(expr).owner;
+                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "index the array first")));
+            }
         }
         if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
             let (res, error) = reader.field(*recv, &name.text);
@@ -96,17 +104,18 @@ impl Reader<'_> {
                 None => (Resolution::Unresolved, None),
             },
             // The fields of a carrier come from its value type, which needs inference.
-            Recv::Carrier(_) | Recv::Unknown => deferred,
+            Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::Unknown => deferred,
         }
     }
 
     /// The method `name` of the receiver: the carrier built-ins, then the
-    /// `impl`s of its nature or bundle, then those of the value it reads.
-    fn method(&self, recv: ExprId, name: &str) -> Resolution {
+    /// `impl`s of its nature or bundle, then those of the value it reads. The
+    /// flag is set for a carrier method applied to an array of carriers (`E0211`).
+    fn method(&self, recv: ExprId, name: &str) -> (Resolution, bool) {
         let design = self.design;
         let in_impls = |target: DeclId| design.impls_of(target).into_iter().find_map(|i| child_fn(design, i, name)).map(Resolution::Decl);
-        let found = match self.receiver(recv) {
-            Recv::Carrier(nature) => builtin_method(name).map(Resolution::Builtin).or_else(|| {
+        let carrier_method = |nature: Option<DeclId>| -> Option<Resolution> {
+            builtin_method(name).map(Resolution::Builtin).or_else(|| {
                 let nature = nature?;
                 in_impls(nature).or_else(|| {
                     let DeclKind::Nature(n) = &design.decl_data(nature).kind else { return None };
@@ -119,19 +128,34 @@ impl Reader<'_> {
                         _ => None,
                     }
                 })
-            }),
+            })
+        };
+        let found = match self.receiver(recv) {
+            Recv::Carrier(nature) => carrier_method(nature),
+            Recv::CarrierArray(nature, _) => {
+                return match carrier_method(nature) {
+                    Some(_) => (Resolution::Unresolved, true),
+                    None => (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
+                };
+            }
             Recv::Struct(s) => in_impls(s),
             Recv::Instance(_) => None,
-            Recv::Unknown => return Resolution::Deferred(DeferReason::ReceiverTypeUnknown),
+            Recv::Unknown => return (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
         };
-        found.unwrap_or(Resolution::Unresolved)
+        (found.unwrap_or(Resolution::Unresolved), false)
     }
 
     /// The type of a receiver chain: paths, fields, indexes and parentheses
     /// down to a root with a declared type.
     fn receiver(&self, expr: ExprId) -> Recv {
         match &self.design.expr_node(expr).kind {
-            ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => self.receiver(*inner),
+            ExprKind::Paren(inner) => self.receiver(*inner),
+            // An index peels one array level; any other receiver is read as it is.
+            ExprKind::Index { expr: inner, .. } => match self.receiver(*inner) {
+                Recv::CarrierArray(nature, 1) => Recv::Carrier(nature),
+                Recv::CarrierArray(nature, depth) => Recv::CarrierArray(nature, depth - 1),
+                other => other,
+            },
             ExprKind::Path(p) => match self.design.path_node(*p).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(d)) => self.of_decl(d),
                 _ => Recv::Unknown,
@@ -139,7 +163,7 @@ impl Reader<'_> {
             ExprKind::Field { expr: inner, name, .. } => match self.receiver(*inner) {
                 Recv::Instance(m) => self.member_of(m, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
                 Recv::Struct(s) => child_field(self.design, s, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
-                Recv::Carrier(_) | Recv::Unknown => Recv::Unknown,
+                Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::Unknown => Recv::Unknown,
             },
             _ => Recv::Unknown,
         }
@@ -175,16 +199,26 @@ impl Reader<'_> {
         }
     }
 
+    /// What a declared type is a value of. An array of carriers is its own
+    /// receiver: it reads as a carrier only after an index.
     fn of_type(&self, ty: TypeId) -> Recv {
-        match self.design.type_resolution(ty) {
-            Resolution::Decl(t) => match &self.design.decl_data(t).kind {
-                DeclKind::Struct(_) => Recv::Struct(t),
-                DeclKind::Module(_) => Recv::Instance(t),
-                DeclKind::Nature(_) => Recv::Carrier(Some(t)),
-                DeclKind::GenericParam(_) if self.design.is_nature_generic(t) => Recv::Carrier(None),
+        match &self.design.type_node(ty).kind {
+            TypeKind::Flip(inner) => self.of_type(*inner),
+            TypeKind::Array { elem, .. } => match self.of_type(*elem) {
+                Recv::Carrier(nature) => Recv::CarrierArray(nature, 1),
+                Recv::CarrierArray(nature, depth) => Recv::CarrierArray(nature, depth + 1),
+                other => other,
+            },
+            _ => match self.design.type_resolution(ty) {
+                Resolution::Decl(t) => match &self.design.decl_data(t).kind {
+                    DeclKind::Struct(_) => Recv::Struct(t),
+                    DeclKind::Module(_) => Recv::Instance(t),
+                    DeclKind::Nature(_) => Recv::Carrier(Some(t)),
+                    DeclKind::GenericParam(_) if self.design.is_nature_generic(t) => Recv::Carrier(None),
+                    _ => Recv::Unknown,
+                },
                 _ => Recv::Unknown,
             },
-            _ => Recv::Unknown,
         }
     }
 
