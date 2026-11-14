@@ -488,12 +488,12 @@ T46 → T47 → T48 → T49
 
 **Done when**:
 
-- [ ] Test `docs_and_attrs_attach_to_statements` passes in `msl_parser.rs` (C62: POL-12 AC 1)
-- [ ] Test `dangling_doc_comment_has_its_own_message` passes in `msl_errors.rs` (C63: POL-12 AC 2)
-- [ ] An attribute name is not validated here (`E0904` is elaboration)
-- [ ] `pom_corpus` and `msl_print` round trips stay green: the metadata is part of tree equality
-- [ ] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
-- [ ] Build line passes with no warning
+- [x] Test `docs_and_attrs_attach_to_statements` passes in `msl_parser.rs` (C62: POL-12 AC 1)
+- [x] Test `dangling_doc_comment_has_its_own_message` passes in `msl_errors.rs` (C63: POL-12 AC 2)
+- [x] An attribute name is not validated here (`E0904` is elaboration)
+- [x] `pom_corpus` and `msl_print` round trips stay green: the metadata is part of tree equality
+- [x] Gate passes: `cargo test -p piperine-lang` (0 failed); no test removed (the count of passing tests in each target does not drop)
+- [x] Build line passes with no warning
 
 **Tests**: integration
 **Gate**: full

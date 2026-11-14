@@ -642,7 +642,7 @@ pub(crate) fn block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Block> {
 /// statement, a `contribution` (`e +> e;`) or a `commit` (`place <- e
 /// [after e];`). The last statement of a block may omit its `;`.
 pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
-    let mk = |kind: StmtKind, span: Span| Stmt { kind, span: Loc(span) };
+    let mk = |kind: StmtKind, span: Span| Stmt { meta: Meta::default(), kind, span: Loc(span) };
     let semi = punct(Punct::Semi);
 
     let empty = semi.clone().map_with(move |_, e| mk(StmtKind::Empty, e.span()));
@@ -734,34 +734,39 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         .then(h.block.clone())
         .map_with(move |(event, body), e| mk(StmtKind::Reaction(Reaction { event, body }), e.span()));
 
-    // A Rust item inside a block starts with an item keyword or `#`/`///`.
-    let starts_item = |t: &Token| {
+    // A Rust item inside a block starts with an item keyword, after any
+    // doc comments and attributes (which are then the item's own).
+    let item_keyword = any().filter(|t: &Token| {
         matches!(
             t,
             Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Module | Kw::Pub | Kw::Extern)
-                | Token::Punct(Punct::Pound)
-                | Token::DocOuter(_)
-                | Token::DocOuterBlock(_)
         )
-    };
-    let item_stmt = any()
-        .filter(starts_item)
+    });
+    let item_stmt = item::meta(h)
+        .ignore_then(item_keyword)
         .rewind()
         .ignore_then(h.item.clone())
         .map_with(move |item, e| mk(StmtKind::Item(Box::new(item)), e.span()));
 
-    let stmt = first_of(vec![
-        empty.boxed(),
-        let_stmt.boxed(),
-        item_stmt.boxed(),
-        signal_stmt.boxed(),
-        reaction_stmt.boxed(),
-        block_like_stmt.boxed(),
-        simple.boxed(),
-    ])
+    // Every other form takes outer docs and attributes (Rust's `stmt`).
+    let with_meta = item::meta(h)
+        .then(first_of(vec![
+            empty.boxed(),
+            let_stmt.boxed(),
+            signal_stmt.boxed(),
+            reaction_stmt.boxed(),
+            block_like_stmt.boxed(),
+            simple.boxed(),
+        ]))
+        .map(|(meta, mut s): (Meta, Stmt)| {
+            s.meta = meta;
+            s
+        });
+    let stmt = first_of(vec![item_stmt.boxed(), with_meta.boxed()])
     .labelled("statement")
     .boxed();
     recover(stmt, false, |span| Stmt {
+        meta: Meta::default(),
         kind: StmtKind::Expr { expr: Expr { kind: ExprKind::Error, span: Loc(span) }, semi: true },
         span: Loc(span),
     })

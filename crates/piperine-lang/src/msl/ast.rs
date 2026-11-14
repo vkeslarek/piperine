@@ -372,6 +372,9 @@ pub struct Block {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stmt {
+    /// Outer doc comments and attributes before the statement (an item
+    /// statement keeps its own on the item).
+    pub meta: Meta,
     pub kind: StmtKind,
     pub span: Loc,
 }

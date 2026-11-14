@@ -1159,3 +1159,48 @@ fn param_block_and_template_shorthand_keep_their_form() {
     let ExprKind::Emit { fields, .. } = &expr("emit!(\"s\", a = 1)").kind else { panic!() };
     assert!(fields.iter().all(|f| !f.shorthand));
 }
+
+/// The statements of a `fn` body source.
+fn fn_stmts(src: &str) -> Vec<Stmt> {
+    let ItemKind::Fn(f) = only_item(src).kind else { panic!("not a fn") };
+    f.body.expect("a body").stmts
+}
+
+#[test]
+fn docs_and_attrs_attach_to_statements() {
+    // POL-12 AC 1: docs and attributes before a `let`, an expression
+    // statement, a contribution and a commit are held, in order, in the
+    // metadata of that statement.
+    let stmts = fn_stmts(
+        "fn f() {\n    /// first\n    /// second\n    #[a]\n    #[b = 1]\n    let y = 1;\n    /// call\n    g();\n    /// tail\n    #[c]\n    y\n}",
+    );
+    assert_eq!(stmts.len(), 3);
+    let docs = |s: &Stmt| s.meta.docs.iter().map(|d| d.text.trim().to_string()).collect::<Vec<_>>();
+    let attrs = |s: &Stmt| s.meta.attrs.iter().map(|a| path_names(&a.path).join("::")).collect::<Vec<_>>();
+    assert!(matches!(stmts[0].kind, StmtKind::Let { .. }));
+    assert_eq!(docs(&stmts[0]), ["first", "second"]);
+    assert_eq!(attrs(&stmts[0]), ["a", "b"]);
+    assert_eq!(docs(&stmts[1]), ["call"]);
+    assert!(attrs(&stmts[1]).is_empty());
+    assert_eq!((docs(&stmts[2]), attrs(&stmts[2])), (vec!["tail".to_string()], vec!["c".to_string()]));
+
+    // A contribution in an `analog` block, a commit in a reaction, and a
+    // block-like statement.
+    let f = file(
+        "analog for M {\n    /// gate current\n    #[probe]\n    i(a) +> 1.0;\n}\ndigital for M {\n    on e {\n        /// drive\n        q <- 1;\n        /// loop\n        if a { }\n    }\n}",
+    );
+    let ItemKind::Behavior(BehaviorBlock { body: BehaviorBody::Analog(a), .. }) = &f.items[0].kind else { panic!() };
+    assert!(matches!(a[0].kind, StmtKind::Contribution { .. }));
+    assert_eq!((docs(&a[0]), attrs(&a[0])), (vec!["gate current".to_string()], vec!["probe".to_string()]));
+    let ItemKind::Behavior(BehaviorBlock { body: BehaviorBody::Digital(d), .. }) = &f.items[1].kind else { panic!() };
+    let DigitalItemKind::Reaction(r) = &d[0].kind else { panic!("{:?}", d[0].kind) };
+    assert!(matches!(r.body.stmts[0].kind, StmtKind::Commit { .. }));
+    assert_eq!(docs(&r.body.stmts[0]), ["drive"]);
+    assert_eq!(docs(&r.body.stmts[1]), ["loop"]);
+
+    // A doc before an item keyword stays the item's.
+    let stmts = fn_stmts("fn f() { /// the const\n const X: u8 = 1; }");
+    let StmtKind::Item(item) = &stmts[0].kind else { panic!("{:?}", stmts[0].kind) };
+    assert_eq!(item.meta.docs.len(), 1);
+    assert!(stmts[0].meta.docs.is_empty());
+}

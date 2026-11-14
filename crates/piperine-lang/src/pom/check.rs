@@ -442,6 +442,7 @@ impl Design {
         }
         for (i, n) in self.stmts.iter().enumerate() {
             let mut r = Refs::default();
+            r.meta(&n.meta);
             r.stmt(&n.kind);
             each(format!("statement {i}"), Some(n.owner), r);
         }

@@ -954,6 +954,7 @@ A statement node. Statements live in their own arena (`StmtId`).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `meta` | `Meta` | The outer doc comments and attributes written before the statement, in order (an item statement keeps its own on the item). |
 | `kind` | `StmtKind` | What the statement is. |
 | `span` | `Span` | Byte range in the file text. |
 | `owner` | `DeclId` | The nearest enclosing declaration; ties the node to the authored tree. |

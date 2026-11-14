@@ -228,6 +228,8 @@ pub enum ExprKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StmtNode {
+    /// Outer doc comments and attributes before the statement.
+    pub meta: Meta,
     pub kind: StmtKind,
     pub span: Span,
     pub owner: DeclId,

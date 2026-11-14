@@ -349,7 +349,7 @@ impl<'d> Rebuild<'d> {
             }
             StmtKind::Reaction(d) => ast::StmtKind::Reaction(self.reaction(*d)),
         };
-        ast::Stmt { kind, span: loc(node.span) }
+        ast::Stmt { meta: self.meta(&node.meta), kind, span: loc(node.span) }
     }
 
     fn reaction(&self, d: DeclId) -> ast::Reaction {

@@ -270,6 +270,7 @@ impl Lowerer<'_> {
     }
 
     pub(crate) fn stmt(&mut self, s: &ast::Stmt) -> StmtId {
+        let meta = self.meta(&s.meta);
         let kind = match &s.kind {
             ast::StmtKind::Let { pat, ty, init, else_ } => StmtKind::Let {
                 pat: self.pat(pat, BindingOrigin::Local),
@@ -301,6 +302,6 @@ impl Lowerer<'_> {
             }
             ast::StmtKind::Reaction(r) => StmtKind::Reaction(self.reaction(r, s.span.0)),
         };
-        self.design.push_stmt(StmtNode { kind, span: s.span.0, owner: self.owner })
+        self.design.push_stmt(StmtNode { meta, kind, span: s.span.0, owner: self.owner })
     }
 }

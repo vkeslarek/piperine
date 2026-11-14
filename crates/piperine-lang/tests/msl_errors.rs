@@ -726,3 +726,24 @@ fn raw_identifier_of_another_word_is_e0900() {
     let ok = parse("const r#out: u8 = 1;");
     assert!(ok.diagnostics.is_empty(), "{:?}", ok.diagnostics);
 }
+
+#[test]
+fn dangling_doc_comment_has_its_own_message() {
+    // POL-12 AC 2: a doc comment followed by `}` or the end of input is one
+    // E0900 labelled at the comment, saying it documents nothing.
+    for (src, comment) in [
+        ("fn f() { let x = 1; /// nothing\n}", "/// nothing"),
+        ("fn f() { /// only\n}", "/// only"),
+        ("const X: u8 = 1;\n/// nothing", "/// nothing"),
+        ("module M() { signal a: u8; /// last\n}", "/// last"),
+    ] {
+        let r = parse(src);
+        assert_eq!(r.diagnostics.len(), 1, "{src:?}: {:?}", r.diagnostics);
+        let d = &r.diagnostics[0];
+        assert_eq!(d.code, "E0900", "{src:?}");
+        assert!(d.message.contains("documents nothing"), "{src:?}: {}", d.message);
+        let at = src.find(comment).unwrap();
+        assert_eq!(d.span().start, at, "{src:?}");
+        assert_eq!(d.span().end, at + comment.len(), "{src:?}");
+    }
+}

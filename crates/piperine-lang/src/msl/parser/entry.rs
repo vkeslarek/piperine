@@ -384,6 +384,38 @@ fn unclosed_delimiters(tokens: &[(Token, Span)], src_len: usize) -> Vec<Diagnost
     out
 }
 
+/// A run of outer doc comments followed by `}` or the end of input documents
+/// nothing: one `E0900` at the run, and the comments leave the stream so the
+/// parser reports nothing more.
+fn drop_dangling_docs(tokens: Vec<(Token, Span)>, diags: &mut Vec<Diagnostic>) -> Vec<(Token, Span)> {
+    let is_doc = |t: &Token| matches!(t, Token::DocOuter(_) | Token::DocOuterBlock(_));
+    let mut out = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        if !is_doc(&tokens[i].0) {
+            out.push(tokens[i].clone());
+            i += 1;
+            continue;
+        }
+        let mut end = i;
+        while end < tokens.len() && is_doc(&tokens[end].0) {
+            end += 1;
+        }
+        let dangling = tokens.get(end).is_none_or(|(t, _)| matches!(t, Token::Punct(Punct::RBrace)));
+        if dangling {
+            let span = Span::new(tokens[i].1.start, tokens[end - 1].1.end);
+            diags.push(
+                Diagnostic::new("E0900", "this doc comment documents nothing", span, "no item follows it")
+                    .with_help("put the comment before an item, a field, a statement or a reaction, or make it a `//` comment"),
+            );
+        } else {
+            out.extend(tokens[i..end].iter().cloned());
+        }
+        i = end;
+    }
+    out
+}
+
 /// Lex `src`, then bound the nesting: a tree level is a delimiter, or a
 /// token of a chain ([`is_nesting`]) since the last `;`, `,` or end of a
 /// statement. Past [`MAX_DEPTH`] levels the group or the rest of the chain
@@ -391,6 +423,7 @@ fn unclosed_delimiters(tokens: &[(Token, Span)], src_len: usize) -> Vec<Diagnost
 /// parser and every tree walk stay shallow.
 fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
     let (tokens, mut diags) = lex(src);
+    let tokens = drop_dangling_docs(tokens, &mut diags);
     // An unterminated string or comment swallows the rest of the file: the
     // delimiters it hid are not a second fault.
     if !diags.iter().any(|d| d.message.starts_with("unterminated")) {
